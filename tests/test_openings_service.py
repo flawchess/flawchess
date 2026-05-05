@@ -184,6 +184,12 @@ class TestWDLStats:
         assert response.stats.win_pct == pytest.approx(33.3, abs=0.1)
         assert response.stats.draw_pct == pytest.approx(33.3, abs=0.1)
         assert response.stats.loss_pct == pytest.approx(33.3, abs=0.1)
+        # score / confidence / CI regression check (quick task 260504-ttq)
+        # W=1, D=1, L=1, N=3 → score = (1 + 0.5) / 3 ≈ 0.5
+        assert 0.0 <= response.stats.score <= 1.0
+        assert response.stats.confidence in {"low", "medium", "high"}
+        assert 0.0 <= response.stats.ci_low <= response.stats.score
+        assert response.stats.score <= response.stats.ci_high <= 1.0
 
     @pytest.mark.asyncio
     async def test_zero_matches(self, db_session: AsyncSession) -> None:
@@ -396,6 +402,14 @@ class TestGetNextMoves:
         assert move_map["d4"].game_count == 1
         assert move_map["d4"].losses == 1
 
+        # position_stats score / confidence / p_value / CI fields (quick task 260504-ttq)
+        ps = response.position_stats
+        # W=1, D=0, L=1, N=2 → score = 0.5
+        assert ps.score == pytest.approx((1 + 0.5 * 0) / 2)
+        assert ps.confidence in {"low", "medium", "high"}
+        assert 0.0 <= ps.p_value <= 1.0
+        assert 0.0 <= ps.ci_low <= ps.score <= ps.ci_high <= 1.0
+
     @pytest.mark.asyncio
     async def test_result_fen_uses_board_fen(self, db_session: AsyncSession) -> None:
         """result_fen is a piece-placement-only FEN (board_fen, not full fen)."""
@@ -430,6 +444,52 @@ class TestGetNextMoves:
 
         assert response.position_stats.total == 0
         assert response.moves == []
+
+    @pytest.mark.asyncio
+    async def test_position_stats_score_ci(self, db_session: AsyncSession) -> None:
+        """W=8, D=0, L=2, N=10: score=0.8, CI brackets 0.8, bounds in [0,1].
+
+        Verifies quick task 260504-ttq: position_stats includes Wald 95% CI.
+        """
+        SOURCE_HASH = 98765432
+        RESULT_HASH = 98765400
+
+        # 8 wins
+        for _ in range(8):
+            await _seed_game_with_positions(
+                db_session,
+                result="1-0",
+                user_color="white",
+                positions=[
+                    {"ply": 0, "full_hash": SOURCE_HASH, "move_san": "e4"},
+                    {"ply": 1, "full_hash": RESULT_HASH, "move_san": None},
+                ],
+            )
+        # 2 losses
+        for _ in range(2):
+            await _seed_game_with_positions(
+                db_session,
+                result="0-1",
+                user_color="white",
+                positions=[
+                    {"ply": 0, "full_hash": SOURCE_HASH, "move_san": "e4"},
+                    {"ply": 1, "full_hash": RESULT_HASH, "move_san": None},
+                ],
+            )
+
+        request = NextMovesRequest(target_hash=SOURCE_HASH)
+        response = await get_next_moves(db_session, user_id=1, request=request)
+
+        ps = response.position_stats
+        assert ps.total == 10
+        assert ps.wins == 8
+        assert ps.losses == 2
+        assert ps.score == pytest.approx((8 + 0.5 * 0) / 10)
+        assert ps.confidence in {"low", "medium", "high"}
+        assert 0.0 <= ps.p_value <= 1.0
+        # CI must bracket the score and stay within [0, 1]
+        assert 0.0 <= ps.ci_low <= ps.score
+        assert ps.score <= ps.ci_high <= 1.0
 
     @pytest.mark.asyncio
     async def test_transposition_count_gte_game_count(self, db_session: AsyncSession) -> None:

@@ -2,24 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: "v1.15 shipped as draft PR #78 — artifacts to follow (full STATE refresh in this commit; 79-04-PLAN test-plan checkboxes; post-deploy VAL-02 / VAL-03 UI smoke)"
-last_updated: "2026-05-03T14:12:59.111Z"
-last_activity: 2026-05-03
+status: "Phase 80 shipped — PR #80 awaiting CI + UI smoke"
+last_updated: "2026-05-05T20:28:36.955Z"
+last_activity: "2026-05-05 -- Phase 80 shipped — PR #80 opened"
 progress:
   total_phases: 6
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 6
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 79 (Position-phase classifier and middlegame eval) — CODE COMPLETE; draft PR #78 open, deploy + UI smoke pending
-Plan: 4 of 4 (operator cutover) — rounds 1-3 (dev / benchmark / prod backfill) complete; PR merge + bin/deploy.sh + post-deploy UI smoke remaining
-Status: v1.15 shipped as draft PR #78 — artifacts to follow (full STATE refresh in this commit; 79-04-PLAN test-plan checkboxes; post-deploy VAL-02 / VAL-03 UI smoke)
-Last activity: 2026-05-03
+Phase: 80 (opening-stats-middlegame-entry-eval-and-clock-diff-columns) — EXECUTING
+Plan: 1 of 6
+Status: Phase 80 shipped — PR #80 awaiting CI + UI smoke
+Last activity: 2026-05-05 -- Phase 80 shipped — PR #80 opened
 
 ## Project Reference
 
@@ -139,6 +140,13 @@ Carried forward from v1.11 close (still relevant):
 | 260429-ty5 | Replace Opponent Strength ToggleGroup with dual-handle range slider + 4 preset chips (Spike 001) | 2026-04-29 | 124237b | [260429-ty5-opponent-strength-slider](./quick/260429-ty5-opponent-strength-slider/) |
 | 260503-0t8 | Speed up scripts/backfill_eval.py with parallel Stockfish EnginePool, batched UPDATE, and group-by-game PGN parsing (--workers N, default 1) | 2026-05-03 | d1346b4 | [260503-0t8-speed-up-scripts-backfill-eval-py-with-p](./quick/260503-0t8-speed-up-scripts-backfill-eval-py-with-p/) |
 | 260503-fef | Add equal-footing opponent filter (abs(opp - user) <= 100) to /benchmarks SKILL §2/§3/§6 + capture framing decision in note (gsd-fast, no quick/ dir) | 2026-05-03 | 6773475 | n/a |
+| 260504-my2 | Center opening-stats eval bullet chart on color-specific baseline; recalibrate engine-asymmetry baselines from medians (28/-20) to per-game means (31.5/-18.9) | 2026-05-04 | 147b883 | [260504-my2-eval-bullet-chart-baseline-centering-and](./quick/260504-my2-eval-bullet-chart-baseline-centering-and/) |
+| 260504-rvh | Remove eval color-baseline centering: MG-entry bullet chart and backend stats now anchor on 0 cp (engine-balanced); per-color baseline (+0.315 / −0.189) becomes a tick reference instead of the chart center | 2026-05-04 | e1e55bb | [260504-rvh-remove-eval-color-baseline-centering-fro](./quick/260504-rvh-remove-eval-color-baseline-centering-fro/) |
+| 260504-ttq | Add current-position score-vs-50% bullet chart under "Results played as White/Black" WDL bar in Openings → Moves tab; muted when n<10 to double as a sample-size trust indicator for the WDL bar above | 2026-05-04 | 6e3cc51 | [260504-ttq-add-a-current-position-score-vs-50-bulle](./quick/260504-ttq-add-a-current-position-score-vs-50-bulle/) |
+| 260504-acl | Simplify Moves-tab arrow palette from 5 effect-size buckets to 3 score zones (red <=0.45 / blue 0.45-0.55 / green >=0.55); replace HOVER_BLUE with grey for hovered arrows + row tints; update chessboard InfoPopover to describe Score = (W + 0.5·D)/N | 2026-05-04 | 9f586db | [260504-acl-simplify-arrow-color-from-5-to-3-categories](./quick/260504-acl-simplify-arrow-color-from-5-to-3-categories/) |
+| 260505-uzp | Unify Moves-tab arrow + Score column + row background tint on one score-zone signal. Low-data/low-conf rows render in blue (was grey). Blue arrows fade to 0.30 opacity. Hover keeps arrow color, just amplifies size+opacity. Deep-link pulse uses grey alpha levels and lands on the row's natural score-zone tint | 2026-05-05 | 0b3da1f | [260505-uzp-unified-score-zone-palette](./quick/260505-uzp-unified-score-zone-palette/) |
 
 ---
-Last activity: 2026-05-03 — v1.15 (Phases 78 + 79) drafted as PR #78. Operator-driven cutover (rounds 1-3) complete on dev / benchmark / prod. PHASE-VAL-01 / VAL-01 rescinded as moot (proxy removed → metric undefined; /conv-recov-validation Skill deleted). Remaining before mark-ready: full STATE refresh (this commit), 79-04-PLAN test-plan checkboxes, post-deploy UI smoke (VAL-02 / VAL-03). Earlier same day: 260503-fef (equal-footing benchmark filter), 260503-0t8 (backfill_eval.py parallelised via EnginePool).
+Last activity: 2026-05-05 — Completed quick task 260505-uzp: unified Moves-tab arrow + Score column + row tint on one score-zone signal. Reliable green/red rows now carry a faint background tint matching the arrow. Blue arrows render at 0.30 opacity (vs 0.75 for green/red) so reliable strong/weak moves dominate visually. Hover keeps arrow color, scales 1.3x and bumps opacity to 0.9. Deep-link from Insights pulses through grey, lands on score-zone color.
+| 2026-05-04 | fast | Mute opening row when total games < 20; drop confidence-based muting | ✅ |
+| 2026-05-04 | fast | Score zone color in Moves tab + per-move list; drop severity row tint; bump mobile games-count font size | ✅ |

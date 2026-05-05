@@ -1,12 +1,15 @@
 """Stats service: aggregation logic for rating history and global stats."""
 
 import datetime
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.stats_repository import (
+    OpeningPhaseEntryMetrics,
+    PositionWDL,
+    query_opening_phase_entry_metrics_batch,
     query_position_wdl_batch,
     query_rating_history,
     query_results_by_color,
@@ -14,6 +17,9 @@ from app.repositories.stats_repository import (
     query_top_openings_sql_wdl,
 )
 from app.schemas.stats import (
+    BookmarkPhaseEntryItem,
+    BookmarkPhaseEntryQuery,
+    BookmarkPhaseEntryResponse,
     GlobalStatsResponse,
     MostPlayedOpeningsResponse,
     OpeningWDL,
@@ -21,7 +27,13 @@ from app.schemas.stats import (
     RatingHistoryResponse,
     WDLByCategory,
 )
+from app.services.eval_confidence import compute_eval_confidence_bucket
+from app.services.opening_insights_constants import (
+    EVAL_BASELINE_PAWNS_BLACK,
+    EVAL_BASELINE_PAWNS_WHITE,
+)
 from app.services.openings_service import recency_cutoff
+
 
 # Minimum number of games required for an opening to appear in top openings.
 MIN_GAMES_FOR_OPENING = 1
@@ -251,6 +263,10 @@ async def get_most_played_openings(
     Opening selection uses the games table (by opening_eco/name), but the
     displayed game count comes from game_positions (games passing through
     the position). This matches the count shown in "Results by Opening".
+
+    Phase 80: also populates MG-entry eval + clock-diff + EG-entry eval fields
+    via query_opening_phase_entry_metrics_batch (D-01, D-04, D-05, D-08, D-09).
+    Sequential awaits within the same session (CLAUDE.md: AsyncSession not safe for concurrent use).
     """
     cutoff = recency_cutoff(recency)
 
@@ -313,7 +329,36 @@ async def get_most_played_openings(
         opponent_gap_min=filter_params["opponent_gap_min"],
         opponent_gap_max=filter_params["opponent_gap_max"],
     )
+    # Phase 80: batch-query phase-entry metrics (MG + EG eval + clock-diff).
+    # Sequential await — same session, AsyncSession not safe for concurrent use (CLAUDE.md).
+    white_phase_entry_metrics = await query_opening_phase_entry_metrics_batch(
+        session,
+        user_id,
+        [row[5] for row in white_rows if row[5] is not None],
+        color="white",
+        time_control=filter_params["time_control"],
+        platform=filter_params["platform"],
+        rated=filter_params["rated"],
+        opponent_type=filter_params["opponent_type"],
+        recency_cutoff=filter_params["recency_cutoff"],
+        opponent_gap_min=filter_params["opponent_gap_min"],
+        opponent_gap_max=filter_params["opponent_gap_max"],
+    )
     black_position_wdl = await query_position_wdl_batch(
+        session,
+        user_id,
+        [row[5] for row in black_rows if row[5] is not None],
+        color="black",
+        time_control=filter_params["time_control"],
+        platform=filter_params["platform"],
+        rated=filter_params["rated"],
+        opponent_type=filter_params["opponent_type"],
+        recency_cutoff=filter_params["recency_cutoff"],
+        opponent_gap_min=filter_params["opponent_gap_min"],
+        opponent_gap_max=filter_params["opponent_gap_max"],
+    )
+    # Sequential await — same session, AsyncSession not safe for concurrent use.
+    black_phase_entry_metrics = await query_opening_phase_entry_metrics_batch(
         session,
         user_id,
         [row[5] for row in black_rows if row[5] is not None],
@@ -329,7 +374,8 @@ async def get_most_played_openings(
 
     def rows_to_openings(
         rows: list[Row[Any]],
-        position_wdl: dict,
+        position_wdl: dict[int, PositionWDL],
+        phase_entry_metrics: dict[int, OpeningPhaseEntryMetrics],
     ) -> list[OpeningWDL]:
         openings = []
         for eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses in rows:
@@ -344,6 +390,35 @@ async def get_most_played_openings(
                 loss_pct = round(losses / total * 100, 1)
             else:
                 win_pct = draw_pct = loss_pct = 0.0
+
+            # Phase 80: phase-entry eval finalizer (D-01, D-04, D-08).
+            pe = phase_entry_metrics.get(full_hash) if full_hash else None
+
+            # MG-entry pillar (D-01, D-04, D-08)
+            avg_eval_pawns: float | None = None
+            eval_ci_low_pawns: float | None = None
+            eval_ci_high_pawns: float | None = None
+            eval_n = 0
+            eval_p_value: float | None = None
+            eval_confidence: Literal["low", "medium", "high"] = "low"
+
+            if pe is not None and pe.eval_n_mg > 0:
+                # H0: mean == 0 cp (engine-balanced). The per-color engine
+                # asymmetry baseline is shown on the bullet chart as a tick,
+                # not subtracted from the test reference (260504-rvh).
+                confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
+                    pe.eval_sum_mg,
+                    pe.eval_sumsq_mg,
+                    pe.eval_n_mg,
+                )
+                avg_eval_pawns = mean_cp_mg / 100.0  # cp -> pawns
+                if pe.eval_n_mg >= 2:
+                    eval_ci_low_pawns = (mean_cp_mg - ci_half_mg) / 100.0
+                    eval_ci_high_pawns = (mean_cp_mg + ci_half_mg) / 100.0
+                eval_n = pe.eval_n_mg
+                eval_p_value = p_value_mg
+                eval_confidence = confidence_mg
+
             openings.append(
                 OpeningWDL(
                     opening_eco=eco,
@@ -360,6 +435,13 @@ async def get_most_played_openings(
                     win_pct=win_pct,
                     draw_pct=draw_pct,
                     loss_pct=loss_pct,
+                    # Phase 80 MG-entry eval fields
+                    avg_eval_pawns=avg_eval_pawns,
+                    eval_ci_low_pawns=eval_ci_low_pawns,
+                    eval_ci_high_pawns=eval_ci_high_pawns,
+                    eval_n=eval_n,
+                    eval_p_value=eval_p_value,
+                    eval_confidence=eval_confidence,
                 )
             )
         # Sort by position-based game count descending (may differ from
@@ -368,6 +450,106 @@ async def get_most_played_openings(
         return openings
 
     return MostPlayedOpeningsResponse(
-        white=rows_to_openings(white_rows, white_position_wdl),
-        black=rows_to_openings(black_rows, black_position_wdl),
+        white=rows_to_openings(white_rows, white_position_wdl, white_phase_entry_metrics),
+        black=rows_to_openings(black_rows, black_position_wdl, black_phase_entry_metrics),
+        # Per-color engine-asymmetry baselines (in pawns). The frontend renders
+        # these as a small reference tick on the MG-entry bullet chart. They
+        # are NOT used as the chart's center or the z-test H0 — both of those
+        # remain anchored at 0 cp (engine-balanced) per quick task 260504-rvh.
+        eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
+        eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
     )
+
+
+def _phase80_item_from_metrics(
+    target_hash: str,
+    pe: OpeningPhaseEntryMetrics | None,
+) -> BookmarkPhaseEntryItem:
+    """Compute the Phase 80 display fields for a single hash.
+
+    Mirrors the inline finalizer in get_most_played_openings.rows_to_openings
+    (D-01, D-04, D-05, D-08). Kept as a separate helper so the bookmark endpoint
+    can reuse the same numerical logic without depending on the OpeningWDL row shape.
+
+    The eval z-test runs against H0: mean == 0 cp (engine-balanced) regardless
+    of the bookmark's color — the per-color engine-asymmetry baseline is now
+    a display tick on the bullet chart, not the test reference (260504-rvh).
+    """
+    item = BookmarkPhaseEntryItem(target_hash=target_hash)
+    if pe is None:
+        return item
+
+    if pe.eval_n_mg > 0:
+        confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
+            pe.eval_sum_mg,
+            pe.eval_sumsq_mg,
+            pe.eval_n_mg,
+        )
+        item.avg_eval_pawns = mean_cp_mg / 100.0
+        if pe.eval_n_mg >= 2:
+            item.eval_ci_low_pawns = (mean_cp_mg - ci_half_mg) / 100.0
+            item.eval_ci_high_pawns = (mean_cp_mg + ci_half_mg) / 100.0
+        item.eval_n = pe.eval_n_mg
+        item.eval_p_value = p_value_mg
+        item.eval_confidence = confidence_mg
+
+    return item
+
+
+async def get_bookmark_phase_entry_metrics(
+    session: AsyncSession,
+    user_id: int,
+    bookmarks: list[BookmarkPhaseEntryQuery],
+    *,
+    recency: str | None = None,
+    time_control: list[str] | None = None,
+    platform: list[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
+) -> BookmarkPhaseEntryResponse:
+    """Phase 80 fields for arbitrary bookmark target_hashes.
+
+    Groups bookmarks by (match_side, color) — each group is one batched DB call to
+    query_opening_phase_entry_metrics_batch with the matching hash_column. Sequential
+    awaits within the same session (CLAUDE.md: AsyncSession not safe for concurrent use).
+    """
+    if not bookmarks:
+        return BookmarkPhaseEntryResponse(items=[])
+
+    cutoff = recency_cutoff(recency)
+
+    # Group by (match_side, color). Bookmarks with the same group share one DB call.
+    grouped: dict[
+        tuple[Literal["white", "black", "full"], Literal["white", "black"] | None], list[int]
+    ] = {}
+    for b in bookmarks:
+        key = (b.match_side, b.color)
+        grouped.setdefault(key, []).append(int(b.target_hash))
+
+    # Result map: target_hash (signed int) -> OpeningPhaseEntryMetrics
+    metrics_by_hash: dict[int, OpeningPhaseEntryMetrics] = {}
+    for (match_side, color), hashes in grouped.items():
+        # Sequential await — same session.
+        group_metrics = await query_opening_phase_entry_metrics_batch(
+            session,
+            user_id,
+            hashes,
+            color=color,
+            time_control=time_control,
+            platform=platform,
+            rated=rated,
+            opponent_type=opponent_type,
+            recency_cutoff=cutoff,
+            opponent_gap_min=opponent_gap_min,
+            opponent_gap_max=opponent_gap_max,
+            hash_column=match_side,
+        )
+        metrics_by_hash.update(group_metrics)
+
+    items = [
+        _phase80_item_from_metrics(b.target_hash, metrics_by_hash.get(int(b.target_hash)))
+        for b in bookmarks
+    ]
+    return BookmarkPhaseEntryResponse(items=items)

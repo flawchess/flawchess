@@ -13,7 +13,6 @@ for D-01..D-34 locked decisions.
 
 import ctypes
 import datetime
-import math
 from typing import Any, Literal
 
 import chess
@@ -33,12 +32,11 @@ from app.schemas.opening_insights import (
     OpeningInsightsResponse,
 )
 from app.services.opening_insights_constants import (
-    OPENING_INSIGHTS_CI_Z_95 as CI_Z_95,
     OPENING_INSIGHTS_MAJOR_EFFECT as MAJOR_EFFECT,
     OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
-from app.services.score_confidence import compute_confidence_bucket
+from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
 from app.services.openings_service import recency_cutoff
 
 # ---------------------------------------------------------------------------
@@ -249,7 +247,7 @@ def _robustness(finding: OpeningInsightFinding) -> float:
     For strength: wilson_lower(score, n) - 0.5
         — how far above 0.50 the lower bound sits; large = robust strength.
     """
-    lower, upper = _wilson_bounds(finding.score, finding.n_games)
+    lower, upper = wilson_bounds(finding.score, finding.n_games)
     if finding.classification == "weakness":
         return SCORE_PIVOT - upper
     return lower - SCORE_PIVOT
@@ -328,27 +326,6 @@ def _dedupe_continuations(
     return result
 
 
-def _wilson_bounds(p: float, n: int) -> tuple[float, float]:
-    """Return (lower, upper) Wilson 95% score interval bounds, clamped to [0, 1].
-
-    Replaces the Wald CI used in earlier ranking (quick task 260428-v9i).
-    Wilson is well-defined at p=0 and p=1 (no SE=0 degeneracy) and is generally
-    tighter than Wald for small n. Caller guarantees n > 0 (N >=
-    MIN_GAMES_PER_CANDIDATE = 10); the n <= 0 branch is purely defensive.
-    """
-    if n <= 0:
-        # Defensive — should never happen given the discovery floor.
-        return (0.0, 1.0)
-    z = CI_Z_95
-    z2 = z * z
-    denom = 1.0 + z2 / n
-    center = (p + z2 / (2 * n)) / denom
-    margin = (z * math.sqrt(p * (1.0 - p) / n + z2 / (4 * n * n))) / denom
-    lower = max(0.0, min(1.0, center - margin))
-    upper = max(0.0, min(1.0, center + margin))
-    return lower, upper
-
-
 def _rank_section(
     findings_with_se: list[tuple[OpeningInsightFinding, float]],
     direction: Literal["weakness", "strength"],
@@ -380,7 +357,7 @@ def _rank_section(
 
     def sort_key(item: tuple[OpeningInsightFinding, float]) -> float:
         finding, _se = item  # SE unused under Wilson; preserved for upstream compatibility
-        lower, upper = _wilson_bounds(finding.score, finding.n_games)
+        lower, upper = wilson_bounds(finding.score, finding.n_games)
         if direction == "weakness":
             return upper
         # Negate so default ascending sort yields lower-bound descending.
@@ -511,6 +488,7 @@ async def compute_insights(
 
                 score = _compute_score(row)
                 confidence, p_value, se = compute_confidence_bucket(row.w, row.d, row.l, row.n)
+                ci_low, ci_high = wilson_bounds(score, row.n)
 
                 finding = OpeningInsightFinding(
                     color=color_literal,
@@ -534,6 +512,8 @@ async def compute_insights(
                     score=score,
                     confidence=confidence,
                     p_value=p_value,
+                    ci_low=ci_low,
+                    ci_high=ci_high,
                 )
 
                 section_key = (

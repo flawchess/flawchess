@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceArea, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { formatSignedSeconds } from '@/lib/clockFormat';
 import { ENDGAME_VOLUME_BAR_COLOR, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import {
@@ -56,14 +57,6 @@ function formatClockCell(pct: number | null, secs: number | null): string {
   const roundedPct = Math.round(pct);
   const roundedSecs = Math.round(secs);
   return `${roundedPct}% (${roundedSecs.toLocaleString()}s)`;
-}
-
-/** Format signed seconds diff as "+45s", "-5s", or "—" if null. */
-function formatSignedSeconds(diff: number | null): string {
-  if (diff === null) return '—';
-  const rounded = Math.round(diff);
-  if (rounded > 0) return `+${rounded}s`;
-  return `${rounded}s`;
 }
 
 /** Format signed percent diff as "+5%", "-3%", "0%", or "—" if either side is null. */

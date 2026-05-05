@@ -1,7 +1,15 @@
 """CI-enforced consistency: opening_insights_constants must match
 frontend/src/lib/arrowColor.ts. Catches future score-threshold drift
 between the backend classifier (Phase 75) and the board arrow colors
-(Phase 76). Float values, regex-extracted from arrowColor.ts."""
+(Phase 76). Float values, regex-extracted from arrowColor.ts.
+
+Note: the arrow palette was collapsed from 5 categories to 3 in quick
+task 260504-acl, removing the minor/major distinction on the FE. The
+single FE boundary (`SCORE_BOUNDARY`, 0.05) corresponds to the backend
+`OPENING_INSIGHTS_MINOR_EFFECT`. The backend still keeps `MAJOR_EFFECT`
+(0.10) for opening insights classification — that constant is no longer
+used to color arrows, so it has no FE counterpart to compare against.
+"""
 
 import re
 from pathlib import Path
@@ -14,7 +22,6 @@ _ARROW_TS = Path(__file__).resolve().parents[2] / "frontend/src/lib/arrowColor.t
 # constants module is missing (e.g. during initial Phase 75 Plan 01 mid-flight).
 try:
     from app.services.opening_insights_constants import (
-        OPENING_INSIGHTS_MAJOR_EFFECT,
         OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
         OPENING_INSIGHTS_MINOR_EFFECT,
         OPENING_INSIGHTS_SCORE_PIVOT,
@@ -25,7 +32,6 @@ except ImportError:
     _CONSTANTS_AVAILABLE = False
     OPENING_INSIGHTS_SCORE_PIVOT: float = 0.0  # type: ignore[assignment]
     OPENING_INSIGHTS_MINOR_EFFECT: float = 0.0  # type: ignore[assignment]
-    OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.0  # type: ignore[assignment]
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 0  # type: ignore[assignment]
 
 
@@ -53,15 +59,13 @@ def test_score_pivot_matches_frontend() -> None:
 
 
 @pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
-def test_minor_effect_matches_frontend() -> None:
-    """MINOR_EFFECT_SCORE must match OPENING_INSIGHTS_MINOR_EFFECT (D-13)."""
-    assert _extract_float("MINOR_EFFECT_SCORE") == OPENING_INSIGHTS_MINOR_EFFECT
-
-
-@pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
-def test_major_effect_matches_frontend() -> None:
-    """MAJOR_EFFECT_SCORE must match OPENING_INSIGHTS_MAJOR_EFFECT (D-13)."""
-    assert _extract_float("MAJOR_EFFECT_SCORE") == OPENING_INSIGHTS_MAJOR_EFFECT
+def test_score_boundary_matches_frontend() -> None:
+    """SCORE_BOUNDARY (FE single-boundary, 260504-acl) must match
+    OPENING_INSIGHTS_MINOR_EFFECT (D-13). The 5-category palette was
+    collapsed to 3, so the FE no longer carries a separate major-effect
+    threshold — the single boundary is the minor-effect value (0.05).
+    """
+    assert _extract_float("SCORE_BOUNDARY") == OPENING_INSIGHTS_MINOR_EFFECT
 
 
 @pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")

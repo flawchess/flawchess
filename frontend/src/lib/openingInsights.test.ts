@@ -1,10 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  formatCandidateMove,
-  getSeverityBorderColor,
-} from './openingInsights';
+import { formatCandidateMove } from './openingInsights';
 import * as openingInsights from './openingInsights';
-import { DARK_RED, LIGHT_RED, DARK_GREEN, LIGHT_GREEN } from './arrowColor';
 
 describe('formatCandidateMove', () => {
   it('renders a white candidate after a long entry sequence with the move-number prefix only', () => {
@@ -34,25 +30,12 @@ describe('formatCandidateMove', () => {
   });
 });
 
-describe('getSeverityBorderColor', () => {
-  it('returns DARK_RED for major weakness', () => {
-    expect(getSeverityBorderColor('weakness', 'major')).toBe(DARK_RED);
-  });
-
-  it('returns LIGHT_RED for minor weakness', () => {
-    expect(getSeverityBorderColor('weakness', 'minor')).toBe(LIGHT_RED);
-  });
-
-  it('returns DARK_GREEN for major strength', () => {
-    expect(getSeverityBorderColor('strength', 'major')).toBe(DARK_GREEN);
-  });
-
-  it('returns LIGHT_GREEN for minor strength', () => {
-    expect(getSeverityBorderColor('strength', 'minor')).toBe(LIGHT_GREEN);
-  });
-});
-
 describe('shared constants — stale-constant removal (Phase 76 D-20)', () => {
+  it('does not export getSeverityBorderColor', () => {
+    expect((openingInsights as Record<string, unknown>).getSeverityBorderColor).toBeUndefined();
+  });
+
+
   it('does not export MIN_GAMES_FOR_INSIGHT', () => {
     expect((openingInsights as Record<string, unknown>).MIN_GAMES_FOR_INSIGHT).toBeUndefined();
   });

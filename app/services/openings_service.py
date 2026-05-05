@@ -21,7 +21,7 @@ from app.repositories.openings_repository import (
     query_transposition_counts,
     query_wdl_counts,
 )
-from app.services.score_confidence import compute_confidence_bucket
+from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
 from app.schemas.openings import (
     OpeningsRequest,
     OpeningsResponse,
@@ -53,6 +53,48 @@ RECENCY_DELTAS: dict[str, datetime.timedelta] = {
     "3years": datetime.timedelta(days=365 * 3),
     "5years": datetime.timedelta(days=365 * 5),
 }
+
+
+def _build_wdl_stats(wins: int, draws: int, losses: int, total: int) -> WDLStats:
+    """Construct WDLStats with score, confidence, p_value, and Wilson 95% CI.
+
+    Computes score = (W + 0.5·D) / total via compute_confidence_bucket. The CI
+    uses Wilson bounds (shared `wilson_bounds`) — Wald was clamping to [0, 1] at
+    the boundaries and degenerated to width 0 at p=0/1, so it was replaced with
+    Wilson which is well-defined at the boundaries and always contains p.
+    When total == 0, all stats are neutral defaults (score=0.5, CI=[0.5, 0.5]).
+    """
+    if total > 0:
+        win_pct = round(wins / total * 100, 1)
+        draw_pct = round(draws / total * 100, 1)
+        loss_pct = round(losses / total * 100, 1)
+    else:
+        win_pct = draw_pct = loss_pct = 0.0
+
+    confidence, p_value, _se = compute_confidence_bucket(wins, draws, losses, total)
+    if total > 0:
+        score = (wins + 0.5 * draws) / total
+    else:
+        score = 0.5
+    if total > 0:
+        ci_low, ci_high = wilson_bounds(score, total)
+    else:
+        ci_low = ci_high = 0.5
+
+    return WDLStats(
+        wins=wins,
+        draws=draws,
+        losses=losses,
+        total=total,
+        win_pct=win_pct,
+        draw_pct=draw_pct,
+        loss_pct=loss_pct,
+        score=score,
+        confidence=confidence,
+        p_value=p_value,
+        ci_low=ci_low,
+        ci_high=ci_high,
+    )
 
 
 def derive_user_result(result: str, user_color: str) -> Literal["win", "draw", "loss"]:
@@ -119,22 +161,7 @@ async def analyze(
     )
     wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
 
-    if total > 0:
-        win_pct = round(wins / total * 100, 1)
-        draw_pct = round(draws / total * 100, 1)
-        loss_pct = round(losses / total * 100, 1)
-    else:
-        win_pct = draw_pct = loss_pct = 0.0
-
-    stats = WDLStats(
-        wins=wins,
-        draws=draws,
-        losses=losses,
-        total=total,
-        win_pct=win_pct,
-        draw_pct=draw_pct,
-        loss_pct=loss_pct,
-    )
+    stats = _build_wdl_stats(wins, draws, losses, total)
 
     # --- Paginated game list ---
     games, matched_count = await query_matching_games(
@@ -382,18 +409,7 @@ async def get_next_moves(
         opponent_gap_max=request.opponent_gap_max,
     )
     wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
-    win_pct = round(wins / total * 100, 1) if total > 0 else 0.0
-    draw_pct = round(draws / total * 100, 1) if total > 0 else 0.0
-    loss_pct = round(losses / total * 100, 1) if total > 0 else 0.0
-    position_stats = WDLStats(
-        wins=wins,
-        draws=draws,
-        losses=losses,
-        total=total,
-        win_pct=win_pct,
-        draw_pct=draw_pct,
-        loss_pct=loss_pct,
-    )
+    position_stats = _build_wdl_stats(wins, draws, losses, total)
 
     # --- Next moves aggregation ---
     move_rows = await query_next_moves(

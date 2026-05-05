@@ -30,15 +30,23 @@ OPENING_INSIGHTS_SCORE_PIVOT: float = 0.50
 OPENING_INSIGHTS_MINOR_EFFECT: float = 0.05  # |score - pivot| >= 0.05 → minor
 OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.10  # |score - pivot| >= 0.10 → major
 
-# Confidence buckets — one-sided Wald p-value thresholds plus N>=10 gate.
-# One-sided framing matches the directional question a finding card asks
-# ("is this score worse/better than 50%?"); equivalent to halving the
-# two-sided p. With N < 10, confidence is forced to "low" regardless of
-# p-value: small samples already carry the unreliable-stats opacity dim in
-# the UI, and the bucket should match that signal.
+# Confidence buckets — two-sided Wald p-value thresholds plus N>=10 gate,
+# unified across both the score-vs-50% test (score_confidence.py) and the
+# eval-mean-vs-0 test (eval_confidence.py). With N < 10, confidence is forced
+# to "low" regardless of p-value: small samples already carry the
+# unreliable-stats opacity dim in the UI, and the bucket should match that
+# signal.
+#
+# Threshold rationale: p < 0.01 ("high") demands strong evidence —
+# < 1% chance of seeing the observed signal under H0 by chance alone.
+# p < 0.05 ("medium") is the conventional weak-evidence cutoff.
+# Two-sided framing matches industry convention; the one-sided framing
+# previously used for the score test (halving the p) made "high confidence"
+# at p_one_sided < 0.05 effectively equivalent to p_two_sided < 0.10, which
+# was a weaker bar than the eval test was held to.
 OPENING_INSIGHTS_CONFIDENCE_MIN_N: int = 10
-OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_P: float = 0.05
-OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.10
+OPENING_INSIGHTS_CONFIDENCE_HIGH_MAX_P: float = 0.01
+OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.05
 
 # Two-sided 95% normal-approximation z-score (z = 1.96). Used by
 # `opening_insights_service._wilson_bounds` to construct the Wilson 95% score
@@ -50,3 +58,34 @@ OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.10
 # `score_confidence.compute_confidence_bucket` is a different statistical
 # procedure and is not renamed.
 OPENING_INSIGHTS_CI_Z_95: float = 1.96
+
+# --- Phase 80 MG-entry eval test (decoupled from WDL score test) ----------
+# These constants are eval-specific and not shared with score_confidence.
+
+# Engine-asymmetry MG-entry tick-mark positions (in pawns, signed
+# user-perspective). Symmetric ±BASELINE around 0 cp, derived from the 2026-05-04
+# Lichess benchmark v3 deduplicated per-physical-game mean of +25.18 cp
+# (n=1.25M trimmed games — see reports/benchmarks-2026-05-04.md §3a).
+#
+# The previous per-color asymmetric values (+0.315 / -0.189) were a sampling
+# artefact of the per-(user, color) slice: white-user and black-user rows
+# were almost entirely *different* physical games, so the small skill edge of
+# benchmark users vs typical opponents split the per-color means apart.
+# Deduping at the game level cancels that artefact and yields a single
+# symmetric tempo baseline of about ±25 cp (white's first-move advantage).
+#
+# Used only as a visual reference tick on the MG-entry bullet chart, NOT as
+# the H0 reference for the z-test. The test runs against 0 cp (engine-balanced)
+# regardless of color (quick task 260504-rvh).
+EVAL_BASELINE_PAWNS_WHITE: float = 0.25
+EVAL_BASELINE_PAWNS_BLACK: float = -0.25
+
+# N gate for the eval z-test — unified with OPENING_INSIGHTS_CONFIDENCE_MIN_N
+# at n>=10 (was 20 to bound the Edgeworth leading-error term on the normal
+# approximation under ~2% for cp distributions with excess kurtosis ~2.4).
+# Re-aliased rather than removed so the per-helper docstrings can keep their
+# named import; the gate is now a single value across all confidence buckets.
+# Calibration trade-off accepted: at p<0.01 the bucket is robust to a few-%
+# error in tail probability, and the |eval_cp|>=2000 trim already clips the
+# heaviest tails before the helper sees the data.
+EVAL_CONFIDENCE_MIN_N: int = OPENING_INSIGHTS_CONFIDENCE_MIN_N

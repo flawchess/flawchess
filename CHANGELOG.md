@@ -8,6 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Openings: Stats subtab** (Phase 80): five new column cells on bookmarked-openings and most-played-openings tables -- average Stockfish evaluation at middlegame entry (signed from your perspective, with 95% CI whisker on a bullet chart), one-sample t-test confidence pill for the middlegame metric, average clock difference at middlegame entry (% of base time + absolute seconds), average Stockfish evaluation at endgame entry (parallel bullet chart with its own wider domain), and a separate confidence pill for the endgame metric. Outlier evaluations (>= 20 pawns) are trimmed from the means. Mobile rows get two stacked lines: middlegame triple (bullet + pill + clock-diff) and endgame pair (bullet + pill). The chess board is hidden on the Stats subtab on desktop to make horizontal room.
+
+### Changed
+
+- **Code organization** (Phase 80): extracted `<ConfidencePill>` to a shared component (used by Opening Insights cards and the new Openings Stats columns) and extracted clock-formatting helpers (`formatSignedSeconds`, `formatSignedPct1`) to `frontend/src/lib/clockFormat.ts` so the two clock-diff cells across the app render identically.
+
 ## [v1.15] Eval-Based Endgame Classification — 2026-05-03
 
 Replaces the material-imbalance + 4-ply persistence proxy for endgame

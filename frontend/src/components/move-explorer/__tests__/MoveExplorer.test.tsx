@@ -62,8 +62,9 @@ function makeEntry(overrides: Partial<NextMoveEntry> & Pick<NextMoveEntry, 'move
   };
 }
 
-// Use score: 0.50 (neutral) so the severity-tint path produces GREY and the
-// existing highlightedMove tests can assert "no background tint" cleanly.
+// Score 0.50 (neutral) keeps the existing highlightedMove tests asserting
+// "no background tint" cleanly even though severity-tinting was removed —
+// the row no longer carries any non-deeplink background.
 function makeMoves(): NextMoveEntry[] {
   return [
     makeEntry({ move_san: 'e4', score: 0.50 }),
@@ -94,7 +95,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
     expect(row.style.backgroundColor || '').toBe('');
   });
 
-  it('renders severity-tinted background on the matching row', () => {
+  it('attaches the pulse animation class only to the matching row when highlightedMove is set with pulse:true', () => {
     render(
       <MoveExplorer
         moves={makeMoves()}
@@ -102,14 +103,16 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
       />,
     );
     const matched = screen.getByTestId('move-explorer-row-e4');
     const other = screen.getByTestId('move-explorer-row-d4');
-    // jsdom normalizes #ff000026 to rgba(255, 0, 0, 0.149).
-    expect(matched.style.backgroundColor.toLowerCase()).toContain('rgba(255, 0, 0');
-    expect(other.style.backgroundColor || '').toBe('');
+    expect(matched.className).toContain('animate-row-highlight-pulse');
+    expect(other.className).not.toContain('animate-row-highlight-pulse');
+    // Pulse keyframe stops are set as CSS custom props (grey alpha levels).
+    expect(matched.style.getPropertyValue('--row-highlight-low')).toBeTruthy();
+    expect(matched.style.getPropertyValue('--row-highlight-high')).toBeTruthy();
   });
 
   it('does NOT scroll the matching row into view (deeplinks scroll to top instead)', () => {
@@ -120,7 +123,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'd4', color: '#00ff00', pulse: true }}
+        highlightedMove={{ san: 'd4', pulse: true }}
       />,
     );
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
@@ -135,7 +138,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -147,7 +150,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={AFTER_E4_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -168,7 +171,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -180,7 +183,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -196,7 +199,7 @@ describe('MoveExplorer — highlightedMove prop', () => {
         isError={false}
         position={START_FEN}
         onMoveClick={() => {}}
-        highlightedMove={{ san: 'e4', color: '#ff0000', pulse: true }}
+        highlightedMove={{ san: 'e4', pulse: true }}
         onHighlightConsumed={onHighlightConsumed}
       />,
     );
@@ -205,8 +208,8 @@ describe('MoveExplorer — highlightedMove prop', () => {
   });
 });
 
-describe('Phase 76 — Conf column + mute extension', () => {
-  it('renders the Conf header cell with data-testid="move-explorer-th-conf"', () => {
+describe('Score column + mute extension', () => {
+  it('renders the Score header cell with data-testid="move-explorer-th-score"', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4' })]}
@@ -216,17 +219,17 @@ describe('Phase 76 — Conf column + mute extension', () => {
         onMoveClick={() => {}}
       />,
     );
-    const th = screen.getByTestId('move-explorer-th-conf');
-    expect(th.textContent?.trim()).toBe('Conf');
+    const th = screen.getByTestId('move-explorer-th-score');
+    expect(th.textContent?.trim()).toBe('Score');
   });
 
-  it('renders "low" / "med" / "high" labels per entry.confidence when the effect is of interest', () => {
+  it('renders the score percent for every entry', () => {
     render(
       <MoveExplorer
         moves={[
-          makeEntry({ move_san: 'e4', confidence: 'low', score: 0.625 }),
-          makeEntry({ move_san: 'd4', confidence: 'medium', score: 0.625 }),
-          makeEntry({ move_san: 'c4', confidence: 'high', score: 0.625 }),
+          makeEntry({ move_san: 'e4', confidence: 'low', score: 0.45 }),
+          makeEntry({ move_san: 'd4', confidence: 'medium', score: 0.55 }),
+          makeEntry({ move_san: 'c4', confidence: 'high', score: 0.75 }),
         ]}
         isLoading={false}
         isError={false}
@@ -234,12 +237,12 @@ describe('Phase 76 — Conf column + mute extension', () => {
         onMoveClick={() => {}}
       />,
     );
-    expect(screen.getByTestId('move-explorer-row-e4').textContent).toContain('low');
-    expect(screen.getByTestId('move-explorer-row-d4').textContent).toContain('med');
-    expect(screen.getByTestId('move-explorer-row-c4').textContent).toContain('high');
+    expect(screen.getByTestId('move-explorer-row-e4').textContent).toContain('45%');
+    expect(screen.getByTestId('move-explorer-row-d4').textContent).toContain('55%');
+    expect(screen.getByTestId('move-explorer-row-c4').textContent).toContain('75%');
   });
 
-  it('hides the confidence indicator when |score - 0.5| < 0.05 (effect below interest threshold)', () => {
+  it('renders the score in the neutral zone color when 0.45 <= score <= 0.55 (3-category arrow scheme)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.52 })]}
@@ -250,13 +253,15 @@ describe('Phase 76 — Conf column + mute extension', () => {
       />,
     );
     const row = screen.getByTestId('move-explorer-row-e4');
-    // The "high" confidence label must not render — only the move SAN, game count, and (empty) WDL bar remain.
-    expect(row.textContent).not.toContain('high');
-    expect(row.textContent).not.toContain('med');
-    expect(row.textContent).not.toContain('low');
+    expect(row.textContent).toContain('52%');
+    const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
+    // No longer muted: the 45-55% band carries the neutral zone color (blue),
+    // matching the board arrow's DARK_BLUE bucket.
+    expect(scoreSpan?.className).not.toContain('text-muted-foreground');
+    expect(scoreSpan?.getAttribute('style')).toContain('color');
   });
 
-  it('hides the confidence indicator when game_count < 10', () => {
+  it('renders the score in the neutral blue zone color when game_count < 10 (low-data → blue, not muted)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9, score: 0.625 })]}
@@ -267,7 +272,104 @@ describe('Phase 76 — Conf column + mute extension', () => {
       />,
     );
     const row = screen.getByTestId('move-explorer-row-e4');
-    expect(row.textContent).not.toContain('high');
+    expect(row.textContent).toContain('63%');
+    const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
+    expect(scoreSpan?.className).not.toContain('text-muted-foreground');
+    expect(scoreSpan?.getAttribute('style')).toContain('color');
+  });
+
+  it('renders the score in the neutral blue zone color when confidence is "low" (low-conf → blue, not muted)', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'low', game_count: 100, score: 0.625 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
+    expect(scoreSpan?.className).not.toContain('text-muted-foreground');
+    expect(scoreSpan?.getAttribute('style')).toContain('color');
+  });
+
+  it('renders a faint green row tint when score >= 0.55 with reliable sample (n>=10, conf!=low)', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.75 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    // Inline backgroundColor is set to DARK_GREEN + alpha. JSDOM normalizes
+    // hex to rgb, so we just assert a green background is present.
+    const bg = row.style.backgroundColor;
+    expect(bg).not.toBe('');
+    // DARK_GREEN = #1E6B1E → rgb(30, 107, 30) — green dominates
+    expect(bg.toLowerCase()).toMatch(/^(#1e6b1e|rgb\(30, ?107, ?30\)|rgba\(30, ?107, ?30)/i);
+  });
+
+  it('renders a faint red row tint when score <= 0.45 with reliable sample', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.30 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    const bg = row.style.backgroundColor;
+    expect(bg).not.toBe('');
+    // DARK_RED = #9B1C1C → rgb(155, 28, 28)
+    expect(bg.toLowerCase()).toMatch(/^(#9b1c1c|rgb\(155, ?28, ?28\)|rgba\(155, ?28, ?28)/i);
+  });
+
+  it('does NOT tint the row when score is in the neutral 0.45..0.55 band', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.50 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.style.backgroundColor || '').toBe('');
+  });
+
+  it('does NOT tint the row when sample is unreliable (game_count < 10), even with strong score', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9, score: 0.75 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.style.backgroundColor || '').toBe('');
+  });
+
+  it('does NOT tint the row when confidence is "low", even with strong score', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', confidence: 'low', game_count: 100, score: 0.75 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId('move-explorer-row-e4');
+    expect(row.style.backgroundColor || '').toBe('');
   });
 
   it('does NOT mute the row based on confidence alone when game_count >= 10', () => {

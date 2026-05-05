@@ -2,6 +2,7 @@
 
 import datetime
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from sqlalchemy import (
@@ -27,6 +28,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories.query_utils import apply_game_filters
+
+# D-08: trim |eval_cp| >= 2000 (>= ±20 pawns) from eval mean. Decisive positions
+# are statistically uninformative for "typical opening character".
+EVAL_OUTLIER_TRIM_CP: int = 2000
+
+
+@dataclass(slots=True)
+class OpeningPhaseEntryMetrics:
+    """Accumulated phase-entry metrics per opening (full_hash key) for
+    middlegame entry (phase=1).
+
+    Per-phase partition invariant: for every opening with at least one
+    phase-entry row, ``eval_n + mate_n + null_eval_n + outlier_n`` equals the
+    phase-entry-row count. The four buckets are mutually exclusive at the
+    phase-entry row:
+
+    - ``eval_n``      — eval_cp NOT NULL AND eval_mate IS NULL AND |eval_cp| < 2000 (continuous, in-domain)
+    - ``mate_n``      — eval_mate IS NOT NULL (forced-mate; excluded from mean)
+    - ``null_eval_n`` — eval_cp IS NULL AND eval_mate IS NULL (no score available)
+    - ``outlier_n``   — eval_cp NOT NULL AND eval_mate IS NULL AND |eval_cp| >= 2000 (D-08 trim)
+
+    Note: trimmed rows are NOT counted as null_eval; they are explicitly
+    classified as outlier_n so the partition invariant remains testable.
+    """
+
+    # MG-entry pillar (D-01, D-04, D-08)
+    eval_sum_mg: float  # signed user-perspective sum, in centipawns
+    eval_sumsq_mg: float  # sum of squared signed eval_cp values
+    eval_n_mg: int  # phase=1 rows with continuous in-domain eval
+    mate_n_mg: int  # phase=1 rows with eval_mate IS NOT NULL
+    null_eval_n_mg: int  # phase=1 rows with both eval_cp and eval_mate NULL
+    outlier_n_mg: int  # phase=1 rows with |eval_cp| >= 2000 (D-08)
+
 
 # Standalone MetaData (not Base.metadata) keeps the view invisible to Alembic autogenerate.
 _openings_dedup = Table(
@@ -411,5 +445,161 @@ async def query_position_wdl_batch(
     result = await session.execute(stmt)
     return {
         row[0]: PositionWDL(total=row[1], wins=row[2], draws=row[3], losses=row[4])
+        for row in result.fetchall()
+    }
+
+
+async def query_opening_phase_entry_metrics_batch(
+    session: AsyncSession,
+    user_id: int,
+    hashes: list[int],
+    color: Literal["white", "black"] | None = None,
+    time_control: Sequence[str] | None = None,
+    platform: Sequence[str] | None = None,
+    rated: bool | None = None,
+    opponent_type: str = "human",
+    recency_cutoff: datetime.datetime | None = None,
+    opponent_gap_min: int | None = None,
+    opponent_gap_max: int | None = None,
+    hash_column: Literal["full", "white", "black"] = "full",
+) -> dict[int, OpeningPhaseEntryMetrics]:
+    """Return {full_hash: OpeningPhaseEntryMetrics} for games passing through each position.
+
+    Aggregates middlegame-entry (phase=1) eval metrics in a single SQL pass. The
+    phase-entry row per game is identified via DISTINCT ON
+    ``(game_id, phase ORDER BY ply)`` filtered to phase=1.
+
+    Outlier trim: |eval_cp| >= EVAL_OUTLIER_TRIM_CP rows are excluded from the eval mean
+    and counted separately as outlier_n (D-08). Mate rows (eval_mate IS NOT NULL) are
+    excluded and counted as mate_n. This preserves the per-phase partition invariant:
+    eval_n + mate_n + null_eval_n + outlier_n == phase_entry_row_count.
+
+    Sign convention: eval_cp is signed at SQL level via ``case(user_color='white', 1, else=-1) * eval_cp``
+    matching the endgame_service._classify_endgame_bucket convention.
+
+    Performance note: uses GROUP BY + JOIN shape (not IN(subquery)) — the IN(subquery) form
+    caused planner Nested Loop hangs on heavy users (see endgame_repository.py:687-692 for
+    the original bug report and fix rationale). Run EXPLAIN ANALYZE on heavy users pre-merge.
+
+    Uses apply_game_filters() from query_utils — same filter set as query_position_wdl_batch
+    (CLAUDE.md "Shared Query Filters"). AsyncSession is not safe for concurrent use — callers
+    must await this sequentially, not concurrently.
+    """
+    if not hashes:
+        return {}
+
+    # Resolve the hash column. Bookmark callers may filter by white_hash or
+    # black_hash (match_side="mine"/"opponent"); most-played callers use full_hash.
+    hash_col_map = {
+        "full": GamePosition.full_hash,
+        "white": GamePosition.white_hash,
+        "black": GamePosition.black_hash,
+    }
+    hash_col = hash_col_map[hash_column]
+
+    # Step 1: Dedup (hash, game_id) for the opening filter, materialized as a CTE so
+    # Postgres only evaluates the user_id+hash scan once even though we reference it
+    # from the phase_entry derivation below. (Inlined subquery references caused the
+    # planner to recompute the heavy DISTINCT-ON twice.)
+    dedup_select = (
+        select(
+            hash_col.label("full_hash"),
+            Game.id.label("game_id"),
+            Game.user_color.label("user_color"),
+        )
+        .join(Game, GamePosition.game_id == Game.id)
+        .where(
+            GamePosition.user_id == user_id,
+            hash_col.in_(hashes),
+        )
+        .distinct(hash_col, Game.id)
+    )
+    if color is not None:
+        dedup_select = dedup_select.where(Game.user_color == color)
+    dedup_select = apply_game_filters(
+        dedup_select,
+        time_control,
+        platform,
+        rated,
+        opponent_type,
+        recency_cutoff,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+    )
+    dedup_subq = dedup_select.cte("dedup")
+
+    # Step 2: Per-game phase-entry ROW (not just ply) via DISTINCT ON.
+    # Inlines eval_cp / eval_mate into the phase_entry subquery so the heavy
+    # gp_entry JOIN is eliminated entirely (was a Bitmap Heap Scan over
+    # (game_id, ply) without a composite index — ~100k row scans for a heavy user).
+    # Restricted to dedup's game_id set so the scan is ~10x smaller than the full
+    # user partition.
+    phase_entry_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.eval_cp.label("eval_cp"),
+            GamePosition.eval_mate.label("eval_mate"),
+        )
+        .where(
+            GamePosition.phase == 1,
+            GamePosition.game_id.in_(select(dedup_subq.c.game_id)),
+        )
+        .distinct(GamePosition.game_id)
+        .order_by(GamePosition.game_id, GamePosition.ply)
+    ).subquery("phase_entry")
+
+    # Sign expression mirrors endgame_service._classify_endgame_bucket convention.
+    sign_expr = case((dedup_subq.c.user_color == "white", 1), else_=-1)
+    user_eval_expr = sign_expr * phase_entry_subq.c.eval_cp  # signed cp; NULL when eval_cp NULL
+
+    # Eval-state predicates. Trim threshold = EVAL_OUTLIER_TRIM_CP (D-08).
+    has_continuous_in_domain_eval = and_(
+        phase_entry_subq.c.eval_cp.isnot(None),
+        phase_entry_subq.c.eval_mate.is_(None),
+        func.abs(phase_entry_subq.c.eval_cp) < EVAL_OUTLIER_TRIM_CP,
+    )
+    has_mate = phase_entry_subq.c.eval_mate.isnot(None)
+    has_null_eval = and_(
+        phase_entry_subq.c.eval_cp.is_(None),
+        phase_entry_subq.c.eval_mate.is_(None),
+    )
+    has_outlier_eval = and_(
+        phase_entry_subq.c.eval_cp.isnot(None),
+        phase_entry_subq.c.eval_mate.is_(None),
+        func.abs(phase_entry_subq.c.eval_cp) >= EVAL_OUTLIER_TRIM_CP,
+    )
+
+    agg_select = (
+        select(
+            dedup_subq.c.full_hash,
+            # --- MG-entry aggregations (phase=1, filtered upstream) ---
+            func.coalesce(
+                func.sum(user_eval_expr).filter(has_continuous_in_domain_eval),
+                0.0,
+            ).label("eval_sum_mg"),
+            func.coalesce(
+                func.sum(user_eval_expr * user_eval_expr).filter(has_continuous_in_domain_eval),
+                0.0,
+            ).label("eval_sumsq_mg"),
+            func.count().filter(has_continuous_in_domain_eval).label("eval_n_mg"),
+            func.count().filter(has_mate).label("mate_n_mg"),
+            func.count().filter(has_null_eval).label("null_eval_n_mg"),
+            func.count().filter(has_outlier_eval).label("outlier_n_mg"),
+        )
+        .select_from(dedup_subq)
+        .join(phase_entry_subq, phase_entry_subq.c.game_id == dedup_subq.c.game_id)
+        .group_by(dedup_subq.c.full_hash)
+    )
+
+    result = await session.execute(agg_select)
+    return {
+        row[0]: OpeningPhaseEntryMetrics(
+            eval_sum_mg=float(row[1]),
+            eval_sumsq_mg=float(row[2]),
+            eval_n_mg=int(row[3]),
+            mate_n_mg=int(row[4]),
+            null_eval_n_mg=int(row[5]),
+            outlier_n_mg=int(row[6]),
+        )
         for row in result.fetchall()
     }

@@ -41,9 +41,56 @@ export interface OpeningWDL {
   win_pct: number;
   draw_pct: number;
   loss_pct: number;
+
+  // Phase 80 MG-entry pillar (D-01, D-04, D-08).
+  // avg_eval_pawns is signed user-perspective (positive = user better).
+  // eval_n counts games used in the mean (mate-excluded, outlier-trimmed).
+  avg_eval_pawns?: number | null;
+  eval_ci_low_pawns?: number | null;
+  eval_ci_high_pawns?: number | null;
+  eval_n: number;
+  eval_p_value?: number | null;
+  eval_confidence: 'low' | 'medium' | 'high';
 }
 
 export interface MostPlayedOpeningsResponse {
   white: OpeningWDL[];
   black: OpeningWDL[];
+  /** Engine-asymmetry baseline (in pawns) for white-color cells, used to
+   * center the bullet chart on the same H0 the per-row z-test uses. */
+  eval_baseline_pawns_white: number;
+  /** Engine-asymmetry baseline (in pawns) for black-color cells. */
+  eval_baseline_pawns_black: number;
+}
+
+export interface BookmarkPhaseEntryQuery {
+  target_hash: string;
+  match_side: 'white' | 'black' | 'full';
+  color: 'white' | 'black' | null;
+}
+
+export interface BookmarkPhaseEntryItem {
+  target_hash: string;
+
+  avg_eval_pawns?: number | null;
+  eval_ci_low_pawns?: number | null;
+  eval_ci_high_pawns?: number | null;
+  eval_n: number;
+  eval_p_value?: number | null;
+  eval_confidence: 'low' | 'medium' | 'high';
+}
+
+export interface BookmarkPhaseEntryRequest {
+  bookmarks: BookmarkPhaseEntryQuery[];
+  time_control?: string[] | null;
+  platform?: string[] | null;
+  rated?: boolean | null;
+  opponent_type?: string;
+  opponent_gap_min?: number | null;
+  opponent_gap_max?: number | null;
+  recency?: string | null;
+}
+
+export interface BookmarkPhaseEntryResponse {
+  items: BookmarkPhaseEntryItem[];
 }

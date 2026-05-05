@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
-from app.schemas.stats import GlobalStatsResponse, MostPlayedOpeningsResponse, RatingHistoryResponse
+from app.schemas.stats import (
+    BookmarkPhaseEntryRequest,
+    BookmarkPhaseEntryResponse,
+    GlobalStatsResponse,
+    MostPlayedOpeningsResponse,
+    RatingHistoryResponse,
+)
 from app.services import stats_service
 from app.users import current_active_user
 
@@ -90,4 +96,27 @@ async def get_most_played_openings(
         opponent_type=opponent_type,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+    )
+
+
+@router.post("/bookmark-phase-entry-metrics", response_model=BookmarkPhaseEntryResponse)
+async def get_bookmark_phase_entry_metrics(
+    request: BookmarkPhaseEntryRequest,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> BookmarkPhaseEntryResponse:
+    """Phase 80 fields (avg eval, confidence, clock-diff at MG/EG entry) for arbitrary
+    bookmark target_hashes. Body shape allows variable-length hash lists without URL length limits.
+    """
+    return await stats_service.get_bookmark_phase_entry_metrics(
+        session,
+        user.id,
+        request.bookmarks,
+        recency=request.recency,
+        time_control=request.time_control,
+        platform=request.platform,
+        rated=request.rated,
+        opponent_type=request.opponent_type,
+        opponent_gap_min=request.opponent_gap_min,
+        opponent_gap_max=request.opponent_gap_max,
     )

@@ -17,14 +17,14 @@ export const OPENING_INSIGHTS_CONFIDENCE_COPY: ReactNode = (
   <>
     <p>
       <strong>Confidence</strong> is based on the p-value, the chance of seeing
-      this difference by pure chance (one-sided Wald test against 50%). High confidence
+      this difference by pure chance (two-sided Wald test against 50%). High confidence
       can both result from a small difference based on a high number of games, or
       from a large difference based on a small number of games:
     </p>
     <ul className="list-disc pl-4 space-y-0.5">
-      <li><em>high</em>: p &lt; 0.05 (likely a real effect)</li>
-      <li><em>medium</em>: p &lt; 0.10 (possibly a real effect)</li>
-      <li><em>low</em>: p ≥ 0.10, or fewer than 10 games (could plausibly be chance)</li>
+      <li><em>high</em>: p &lt; 0.01 (likely a real effect)</li>
+      <li><em>medium</em>: p &lt; 0.05 (possibly a real effect)</li>
+      <li><em>low</em>: p ≥ 0.05, or fewer than 10 games (could plausibly be chance)</li>
     </ul>
   </>
 );
@@ -198,8 +198,20 @@ function SectionsContent({
     return acc;
   }, []);
 
+  // Mobile (default): single column in the locked SECTIONS order.
+  // Desktop (lg+): 2 columns — White (weaknesses then strengths) on the left,
+  // Black (weaknesses then strengths) on the right. Each section's explicit
+  // lg:col-start/lg:row-start is ignored at mobile widths (grid-cols-1) so the
+  // mobile DOM/visual order matches the legacy single-column stack.
+  const COLUMN_PLACEMENT: Record<SectionMeta['key'], string> = {
+    'white-weaknesses': 'lg:col-start-1 lg:row-start-1',
+    'white-strengths': 'lg:col-start-1 lg:row-start-2',
+    'black-weaknesses': 'lg:col-start-2 lg:row-start-1',
+    'black-strengths': 'lg:col-start-2 lg:row-start-2',
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-4">
       {SECTIONS.map((section, sectionIdx) => (
         <FindingsSection
           key={section.key}
@@ -208,6 +220,7 @@ function SectionsContent({
           startIdx={sectionStartIdxs[sectionIdx] ?? 0}
           onFindingClick={onFindingClick}
           onOpenGames={onOpenGames}
+          className={COLUMN_PLACEMENT[section.key]}
         />
       ))}
     </div>
@@ -220,12 +233,14 @@ function FindingsSection({
   startIdx,
   onFindingClick,
   onOpenGames,
+  className,
 }: {
   section: SectionMeta;
   findings: OpeningInsightFinding[];
   startIdx: number;
   onFindingClick: (finding: OpeningInsightFinding) => void;
   onOpenGames: (finding: OpeningInsightFinding) => void;
+  className?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const swatchClass = section.color === 'white' ? 'bg-white' : 'bg-zinc-900';
@@ -239,7 +254,7 @@ function FindingsSection({
   return (
     <section
       data-testid={`opening-insights-section-${section.key}`}
-      className="space-y-2"
+      className={`space-y-2${className ? ` ${className}` : ''}`}
     >
       <h3 className="text-base font-semibold flex items-center gap-1.5">
         <span

@@ -63,7 +63,7 @@ class OpeningInsightFinding(BaseModel):
     # Pydantic for validation). n_games is gated by the SQL HAVING clause at
     # MIN_GAMES_PER_CANDIDATE; w/d/l are non-negative game counts; score is
     # in [0, 1] by construction (score = (w + d/2)/n); p_value is the
-    # one-sided Wald p, bounded in [0, 0.5] (subset of the schema's [0, 1]).
+    # two-sided Wald p, bounded in [0, 1].
     n_games: int = Field(ge=OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE)
     wins: int = Field(ge=0)
     draws: int = Field(ge=0)
@@ -73,10 +73,15 @@ class OpeningInsightFinding(BaseModel):
     )  # (W + D/2)/n; canonical classification metric (Phase 75 D-09)
     confidence: Literal[
         "low", "medium", "high"
-    ]  # One-sided Wald p-value bucket with N>=10 gate (p<0.05 high, p<0.10 medium) (Phase 75 D-05/D-06)
+    ]  # Two-sided Wald p-value bucket with N>=10 gate (p<0.01 high, p<0.05 medium) (shared via score_confidence.py)
     p_value: float = Field(
         ge=0.0, le=1.0
-    )  # One-sided p-value for directional Wald z-test on H0: score = 0.50 (Phase 75 D-05/D-09)
+    )  # Two-sided Wald z-test p-value on H0: score = 0.50
+    # Wilson 95% score interval bounds, clamped to [0, 1]. Same formula already
+    # used internally for ranking (_wilson_bounds); now exposed so the FE can
+    # render the CI whisker on the bullet chart.
+    ci_low: float = Field(ge=0.0, le=1.0)
+    ci_high: float = Field(ge=0.0, le=1.0)
 
 
 class OpeningInsightsResponse(BaseModel):

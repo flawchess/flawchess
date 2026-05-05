@@ -4,6 +4,19 @@ import type { OpeningWDL } from "@/types/stats"
 import { MinimapPopover } from "./MinimapPopover"
 import { MiniWDLBar } from "./MiniWDLBar"
 import { Tooltip } from "@/components/ui/tooltip"
+import { MiniBulletChart } from "@/components/charts/MiniBulletChart"
+import { BulletConfidencePopover } from "@/components/insights/BulletConfidencePopover"
+import {
+  EVAL_BULLET_DOMAIN_PAWNS,
+  EVAL_NEUTRAL_MAX_PAWNS,
+  EVAL_NEUTRAL_MIN_PAWNS,
+  evalZoneColor,
+} from "@/lib/openingStatsZones"
+import { formatSignedEvalPawns } from "@/lib/clockFormat"
+import {
+  MIN_GAMES_OPENING_ROW,
+  UNRELIABLE_OPACITY,
+} from "@/lib/theme"
 
 // Number of openings to show before the "More" fold
 const INITIAL_VISIBLE_COUNT = 3;
@@ -14,6 +27,13 @@ interface MostPlayedOpeningsTableProps {
   testIdPrefix: string;
   /** Called when user clicks the games link on a row. Receives the full opening object so callers can route on any field. */
   onOpenGames: (opening: OpeningWDL, color: "white" | "black") => void;
+  /** Engine-asymmetry baseline (in pawns) for the table's color. Rendered as
+   * a small reference tick on the MG-entry bullet chart; the chart's center
+   * and the eval-text zone color stay anchored at 0 cp regardless of color
+   * (260504-rvh). Caller picks per-color value from the
+   * MostPlayedOpeningsResponse (eval_baseline_pawns_white/_black) or, for
+   * bookmark sections, the EVAL_BASELINE_PAWNS_WHITE/BLACK fallbacks. */
+  evalBaselinePawns: number;
   /** When true, render every opening without the collapsible "X more" fold. */
   showAll?: boolean;
 }
@@ -35,72 +55,129 @@ function formatName(name: string): React.ReactNode {
   return <span className="font-medium">{name}</span>;
 }
 
-function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, maxTotal }: {
+function OpeningRow({ o, color, index, testIdPrefix, rowKey, onOpenGames, evalBaselinePawns }: {
   o: OpeningWDL;
   color: "white" | "black";
   index: number;
   testIdPrefix: string;
   rowKey: string;
   onOpenGames: (opening: OpeningWDL, color: "white" | "black") => void;
-  maxTotal: number;
+  evalBaselinePawns: number;
 }) {
   const isEvenRow = index % 2 === 0;
 
+  // Mute the whole row when total games are below the opening-row threshold —
+  // anything sparser can't sustain a reliable MG-entry eval signal.
+  const isRowMuted = o.total < MIN_GAMES_OPENING_ROW;
+
+  const hasMgEval =
+    o.eval_n > 0 && o.avg_eval_pawns !== null && o.avg_eval_pawns !== undefined;
+
+  // Phase 80: MG eval text cell — signed pawns to one decimal (e.g. "+2.1").
+  // Color reflects zero-anchored zone (260504-rvh): >= +0.30 success, <= -0.30 danger.
+  const mgEvalTextContent = hasMgEval ? (
+    <span
+      className="font-semibold"
+      style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
+    >
+      {formatSignedEvalPawns(o.avg_eval_pawns as number)}
+    </span>
+  ) : (
+    <span className="text-muted-foreground">—</span>
+  );
+
+  // Phase 80: MG bullet chart cell, anchored on 0 cp (260504-rvh). The per-color
+  // engine baseline is rendered as a small reference tick via tickPawns.
+  const mgBulletContent = hasMgEval ? (
+    <MiniBulletChart
+      value={o.avg_eval_pawns as number}
+      ciLow={o.eval_ci_low_pawns ?? undefined}
+      ciHigh={o.eval_ci_high_pawns ?? undefined}
+      tickPawns={evalBaselinePawns}
+      neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
+      neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
+      domain={EVAL_BULLET_DOMAIN_PAWNS}
+      ariaLabel={`Avg eval at MG entry: ${(o.avg_eval_pawns as number).toFixed(2)} pawns`}
+    />
+  ) : (
+    <span className="text-muted-foreground">—</span>
+  );
+
   return (
     <div
-      className={`grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
       data-testid={`${testIdPrefix}-row-${rowKey}`}
+      style={isRowMuted ? { opacity: UNRELIABLE_OPACITY } : undefined}
     >
-      {/* Column 1: Name + PGN */}
-      <MinimapPopover
-        fen={o.fen}
-        boardOrientation={color}
-        testId={`${testIdPrefix}-minimap-${rowKey}`}
+      {/* Desktop row: 5-column grid (name | games | WDL | eval text | eval bullet) */}
+      <div
+        className={`grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_3.5rem_minmax(120px,200px)_5rem_minmax(100px,160px)] gap-2 items-center rounded px-2 py-1.5 hover:bg-white/5 transition-colors ${isEvenRow ? 'bg-white/[0.02]' : ''}`}
       >
-        <div className="min-w-0">
-          <div className="text-sm leading-tight">
-            {/* display_name carries a "vs. " prefix when the opening is defined by the off-color (PRE-01). */}
-            {formatName(o.display_name)}
-          </div>
-          {o.pgn && (
-            <div className="text-xs text-muted-foreground mt-0.5 break-words sm:truncate">{o.pgn}</div>
-          )}
-        </div>
-      </MinimapPopover>
-
-      {/* Column 2: Game count with link to games tab */}
-      <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
-        <button
-          className="flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
-          aria-label={`View ${o.total} games for ${o.opening_name}`}
-          data-testid={`${testIdPrefix}-games-${rowKey}`}
-          onClick={() => onOpenGames(o, color)}
+        {/* Column 1: Name + PGN */}
+        <MinimapPopover
+          fen={o.fen}
+          boardOrientation={color}
+          testId={`${testIdPrefix}-minimap-${rowKey}`}
         >
-          <span className="tabular-nums">{o.total}</span>
-          <Swords className="h-3.5 w-3.5" />
-        </button>
-      </Tooltip>
+          <div className="min-w-0">
+            <div className="text-sm leading-tight">
+              {/* display_name carries a "vs. " prefix when the opening is defined by the off-color (PRE-01). */}
+              {formatName(o.display_name)}
+            </div>
+            {o.pgn && (
+              <div className="text-xs text-muted-foreground mt-0.5 break-words sm:truncate">{o.pgn}</div>
+            )}
+          </div>
+        </MinimapPopover>
 
-      {/* Column 3: Mini WDL bar + proportional frequency bar below */}
-      <div>
-        <MiniWDLBar win_pct={o.win_pct} draw_pct={o.draw_pct} loss_pct={o.loss_pct} />
-        <div className="h-2 mt-0.5">
-          <div
-            className="h-full rounded-sm"
-            style={{
-              width: maxTotal > 0 ? `${(o.total / maxTotal) * 100}%` : '0%',
-              border: '1px solid oklch(0.6 0 0)',
-              backgroundColor: 'transparent',
-            }}
-            data-testid={`${testIdPrefix}-freq-${rowKey}`}
-          />
+        {/* Column 2: Game count with link to games tab */}
+        <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
+          <button
+            className="flex items-center justify-end gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors justify-self-end"
+            aria-label={`View ${o.total} games for ${o.opening_name}`}
+            data-testid={`${testIdPrefix}-games-${rowKey}`}
+            onClick={() => onOpenGames(o, color)}
+          >
+            <span className="tabular-nums">{o.total}</span>
+            <Swords className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
+
+        {/* Column 3: Mini WDL bar */}
+        <div>
+          <MiniWDLBar win_pct={o.win_pct} draw_pct={o.draw_pct} loss_pct={o.loss_pct} />
+        </div>
+
+        {/* Column 4: MG eval text + info-icon popover trigger (desktop only) */}
+        <div
+          className="hidden sm:flex items-center justify-end gap-1 text-sm tabular-nums"
+          data-testid={`${testIdPrefix}-eval-text-${rowKey}`}
+        >
+          {hasMgEval && (
+            <BulletConfidencePopover
+              level={o.eval_confidence}
+              pValue={o.eval_p_value}
+              gameCount={o.eval_n}
+              evalMeanPawns={o.avg_eval_pawns}
+              color={color}
+              testId={`${testIdPrefix}-bullet-popover-${rowKey}`}
+            />
+          )}
+          {mgEvalTextContent}
+        </div>
+
+        {/* Column 5: MG bullet chart (desktop only) */}
+        <div
+          className="hidden sm:block tabular-nums"
+          data-testid={`${testIdPrefix}-bullet-${rowKey}`}
+        >
+          {mgBulletContent}
         </div>
       </div>
     </div>
   );
 }
 
-export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenGames, showAll = false }: MostPlayedOpeningsTableProps) {
+export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenGames, evalBaselinePawns, showAll = false }: MostPlayedOpeningsTableProps) {
   const [expanded, setExpanded] = React.useState(false);
 
   if (openings.length === 0) return null;
@@ -109,17 +186,16 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenG
   const hiddenCount = openings.length - INITIAL_VISIBLE_COUNT;
   const hasMore = !showAll && hiddenCount > 0;
 
-  // maxTotal spans ALL openings so frequency bar widths are comparable across
-  // the collapse/expand toggle (matches MobileMostPlayedRows behavior).
-  const maxTotal = Math.max(...openings.map((o) => o.total));
-
   return (
     <div data-testid={`${testIdPrefix}-table`}>
-      {/* Table header */}
-      <div className="grid grid-cols-[1fr_auto_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_auto_minmax(120px,200px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
+      {/* Table header — desktop shows 5 columns, mobile shows 3 */}
+      <div className="grid grid-cols-[minmax(0,1fr)_3.5rem_minmax(80px,140px)] sm:grid-cols-[minmax(0,1fr)_3.5rem_minmax(120px,200px)_5rem_minmax(100px,160px)] gap-2 px-2 pb-1 text-xs text-muted-foreground border-b border-white/10 mb-1">
         <span>Name</span>
-        <span>Games</span>
+        <span className="text-right">Games</span>
         <span>Win / Draw / Loss</span>
+        {/* Eval text header has no label — column 4 just carries the signed-pawn number */}
+        <span className="hidden sm:block" />
+        <span className="hidden sm:block">Eval</span>
       </div>
 
       {/* Rows */}
@@ -135,7 +211,7 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenG
               testIdPrefix={testIdPrefix}
               rowKey={rowKey}
               onOpenGames={onOpenGames}
-              maxTotal={maxTotal}
+              evalBaselinePawns={evalBaselinePawns}
             />
           );
         })}
@@ -165,4 +241,3 @@ export function MostPlayedOpeningsTable({ openings, color, testIdPrefix, onOpenG
     </div>
   );
 }
-

@@ -40,7 +40,7 @@ import {
   useUpdateMatchSide,
   useTimeSeries,
 } from '@/hooks/usePositionBookmarks';
-import { useMostPlayedOpenings } from '@/hooks/useStats';
+import { useMostPlayedOpenings, useBookmarkPhaseEntryMetrics } from '@/hooks/useStats';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 import { ChessBoard } from '@/components/board/ChessBoard';
 import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
@@ -56,11 +56,36 @@ import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
 import { MinimapPopover } from '@/components/stats/MinimapPopover';
-import { pgnToSanArray } from '@/lib/pgn';
+import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
+import {
+  SCORE_BULLET_CENTER,
+  SCORE_BULLET_DOMAIN,
+  SCORE_BULLET_NEUTRAL_MAX,
+  SCORE_BULLET_NEUTRAL_MIN,
+  clampScoreCi,
+  scoreZoneColor,
+} from '@/lib/scoreBulletConfig';
+import {
+  EVAL_BULLET_DOMAIN_PAWNS,
+  EVAL_NEUTRAL_MAX_PAWNS,
+  EVAL_NEUTRAL_MIN_PAWNS,
+  EVAL_BASELINE_PAWNS_WHITE,
+  EVAL_BASELINE_PAWNS_BLACK,
+  evalZoneColor,
+} from '@/lib/openingStatsZones';
+import { formatSignedEvalPawns } from '@/lib/clockFormat';
+import {
+  MIN_GAMES_FOR_RELIABLE_STATS,
+  MIN_GAMES_OPENING_ROW,
+  UNRELIABLE_OPACITY,
+} from '@/lib/theme';
+import { pgnToSanArray, sanArrayToPgn } from '@/lib/pgn';
 import { WinRateChart } from '@/components/charts/WinRateChart';
 import { apiClient } from '@/api/client';
 import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
-import { getSeverityBorderColor } from '@/lib/openingInsights';
+import { getBoardContainerClassName } from '@/lib/openingsBoardLayout';
 import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '@/lib/highlightPulse';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
@@ -74,6 +99,26 @@ const PAGE_SIZE = 20;
 
 type SidebarPanel = 'filters' | 'bookmarks';
 
+// Shared body for the chessboard info popover. Device-agnostic copy ("click or
+// tap", "hover or tap") so the same prose works on desktop and mobile.
+function ChessboardInfoCopy() {
+  return (
+    <div className="space-y-2">
+      <p>
+        Play moves by clicking or tapping squares, dragging pieces, or selecting a row in the Moves tab.
+      </p>
+      <p>
+        The arrows show the next moves from your games. Bigger means more frequent. Color reflects the score, but only when there are enough games to trust it:
+      </p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>Green: Score ≥ 55%</li>
+        <li>Red: Score ≤ 45%</li>
+        <li>Faint blue: Score between 45% and 55%, or too few games / low confidence to call it</li>
+      </ul>
+    </div>
+  );
+}
+
 // MOBILE MostPlayedOpenings renderer (STAB-02 / D-11-D-14)
 // Renders each opening as a WDLChartRow, matching the Bookmarked Openings: Results
 // visual style. Desktop keeps the existing MostPlayedOpeningsTable (unchanged).
@@ -85,12 +130,14 @@ function MobileMostPlayedRows({
   color,
   testIdPrefix,
   onOpenGames,
+  evalBaselinePawns,
   showAll = false,
 }: {
   openings: OpeningWDL[];
   color: 'white' | 'black';
   testIdPrefix: string;
   onOpenGames: (opening: OpeningWDL, color: 'white' | 'black') => void;
+  evalBaselinePawns: number;
   showAll?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -103,59 +150,113 @@ function MobileMostPlayedRows({
   const hiddenCount = openings.length - MOBILE_MPO_INITIAL_VISIBLE_COUNT;
   const hasMore = !showAll && hiddenCount > 0;
 
-  // maxTotal spans ALL openings in this color's list so bar widths are comparable
-  // across the collapse/expand toggle (D-10 rationale applied to D-11).
-  const maxTotal = Math.max(...openings.map((o) => o.total));
-
   return (
     <div data-testid={`${testIdPrefix}-mobile-list`}>
       <div className="space-y-3">
         {visibleOpenings.map((o, i) => {
           const rowKey = o.opening_eco || o.full_hash || `${o.opening_name}-${i}`;
+          const isRowMuted = o.total < MIN_GAMES_OPENING_ROW;
+          const hasMgEval =
+            o.eval_n > 0 &&
+            o.avg_eval_pawns !== null &&
+            o.avg_eval_pawns !== undefined;
+          const mgEvalTextContent = hasMgEval ? (
+            <span
+              className="font-semibold"
+              style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
+            >
+              {formatSignedEvalPawns(o.avg_eval_pawns as number)}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          );
+          const mgBulletContent = hasMgEval ? (
+            <MiniBulletChart
+              value={o.avg_eval_pawns as number}
+              ciLow={o.eval_ci_low_pawns ?? undefined}
+              ciHigh={o.eval_ci_high_pawns ?? undefined}
+              tickPawns={evalBaselinePawns}
+              neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
+              neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
+              domain={EVAL_BULLET_DOMAIN_PAWNS}
+              ariaLabel={`Avg eval at MG entry: ${(o.avg_eval_pawns as number).toFixed(2)} pawns`}
+            />
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          );
           return (
             <div
               key={rowKey}
               data-testid={`${testIdPrefix}-row-${rowKey}`}
+              style={isRowMuted ? { opacity: UNRELIABLE_OPACITY } : undefined}
             >
-              {/* Name row: opening name wraps full width, games count shrink-0 on right */}
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <div className="flex-1 min-w-0">
-                  <MinimapPopover
-                    fen={o.fen}
-                    boardOrientation={color}
-                    testId={`${testIdPrefix}-minimap-${rowKey}`}
-                  >
-                    <span className="block text-sm font-medium leading-tight break-words">
-                      {/* display_name carries a "vs. " prefix when off-color (PRE-01). */}
-                      {o.display_name}
-                    </span>
-                  </MinimapPopover>
-                </div>
+              {/* Name row: full-width opening name (games count moved into col 1 below) */}
+              <div className="mb-1">
+                <MinimapPopover
+                  fen={o.fen}
+                  boardOrientation={color}
+                  testId={`${testIdPrefix}-minimap-${rowKey}`}
+                >
+                  <span className="block text-sm font-medium leading-tight break-words">
+                    {/* display_name carries a "vs. " prefix when off-color (PRE-01). */}
+                    {o.display_name}
+                  </span>
+                </MinimapPopover>
+              </div>
+
+              {/* 2-column grid: col 1 = labels (games count, eval text); col 2 = charts (WDL bar, MG bullet) */}
+              <div
+                className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center"
+                data-testid={`${testIdPrefix}-mobile-mg-line-${rowKey}`}
+              >
+                {/* Col 1, row 1: games count link */}
                 <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
                   <button
-                    className="shrink-0 flex items-center gap-1 text-xs text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+                    className="flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                     aria-label={`View ${o.total} games for ${o.opening_name}`}
                     data-testid={`${testIdPrefix}-games-${rowKey}`}
                     onClick={() => onOpenGames(o, color)}
                   >
-                    <span className="tabular-nums">{o.total}</span>
+                    <span className="tabular-nums">{o.total} Games</span>
                     <Swords className="h-3.5 w-3.5" />
                   </button>
                 </Tooltip>
+                {/* Col 2, row 1: WDL bar (no header — games count is in col 1) */}
+                <WDLChartRow
+                  data={{
+                    wins: o.wins,
+                    draws: o.draws,
+                    losses: o.losses,
+                    total: o.total,
+                    win_pct: o.win_pct,
+                    draw_pct: o.draw_pct,
+                    loss_pct: o.loss_pct,
+                  }}
+                  showSegmentCounts={false}
+                />
+                {/* Col 1, row 2: Eval text with info-icon popover trigger */}
+                <span
+                  className="inline-flex items-center gap-1 text-sm tabular-nums"
+                  data-testid={`${testIdPrefix}-eval-text-mobile-${rowKey}`}
+                >
+                  {hasMgEval && (
+                    <BulletConfidencePopover
+                      level={o.eval_confidence}
+                      pValue={o.eval_p_value}
+                      gameCount={o.eval_n}
+                      evalMeanPawns={o.avg_eval_pawns}
+                      color={color}
+                      testId={`${testIdPrefix}-bullet-popover-mobile-${rowKey}`}
+                    />
+                  )}
+                  <span className="text-muted-foreground">Eval:</span>
+                  {mgEvalTextContent}
+                </span>
+                {/* Col 2, row 2: MG-entry bullet chart */}
+                <div data-testid={`${testIdPrefix}-bullet-mobile-${rowKey}`}>
+                  {mgBulletContent}
+                </div>
               </div>
-              {/* Full-width WDL bar below the name */}
-              <WDLChartRow
-                data={{
-                  wins: o.wins,
-                  draws: o.draws,
-                  losses: o.losses,
-                  total: o.total,
-                  win_pct: o.win_pct,
-                  draw_pct: o.draw_pct,
-                  loss_pct: o.loss_pct,
-                }}
-                maxTotal={maxTotal}
-              />
             </div>
           );
         })}
@@ -219,7 +320,7 @@ export function OpeningsPage() {
   // OpeningFindingCard; cleared by MoveExplorer's onHighlightConsumed (position
   // change or row click), by leaving the explorer subtab, and by filter changes
   // (handled below in a baseline-snapshot effect).
-  const [highlightedMove, setHighlightedMove] = useState<{ san: string; color: string } | null>(null);
+  const [highlightedMove, setHighlightedMove] = useState<{ san: string } | null>(null);
 
   // Whether the deep-link pulse animations should currently render. Goes true
   // when highlightedMove is set, then auto-flips false after the pulse window.
@@ -377,15 +478,12 @@ export function OpeningsPage() {
   // ── Moves data ──────────────────────────────────────────────────────
   const nextMoves = useNextMoves(chess.hashes.fullHash, debouncedFilters);
 
-  // Board arrows derived from next move frequencies.
-  // Highlight pulse decision (quick-task 260427-j41): the matching arrow gets
-  // isHighlightPulse=true so its <path> animates briefly. The arrow's COLOR
-  // stays whatever getArrowColor returned — we deliberately do NOT recolor it
-  // to highlightedMove.color. The MoveExplorer row border uses the severity
-  // color (which encodes weakness/strength + minor/major); the on-board pulse
-  // only modulates opacity so the arrow stays consistent with the rest of the
-  // arrow set. This keeps the visual language clean: row = severity-coded
-  // emphasis, arrow = pulse-only attention grab.
+  // Board arrows derived from next move frequencies. The matching arrow on a
+  // deep-link gets isHighlightPulse=true so its <path> pulses briefly. The
+  // arrow's COLOR stays whatever getArrowColor returned (score zone) — pulse
+  // only modulates opacity. Row tint comes from the score zone too, so a
+  // highlighted row pulses through grey alpha levels and lands on the row's
+  // natural score-zone color.
   const boardArrows = useMemo(() => {
     if (!nextMoves.data?.moves.length) return [];
 
@@ -405,7 +503,7 @@ export function OpeningsPage() {
         return {
           startSquare: squares.from,
           endSquare: squares.to,
-          color: getArrowColor(entry.score, entry.game_count, entry.confidence, isHovered),
+          color: getArrowColor(entry.score, entry.game_count, entry.confidence),
           width: entry.game_count / maxCount,
           isHovered,
           isHighlightPulse,
@@ -437,7 +535,11 @@ export function OpeningsPage() {
   // ── Stats tab data ─────────────────────────────────────────────────────────────
 
   // Most played openings — filter params applied to show top openings per color
-  const { data: mostPlayedData } = useMostPlayedOpenings({
+  const {
+    data: mostPlayedData,
+    isLoading: mostPlayedLoading,
+    isError: mostPlayedError,
+  } = useMostPlayedOpenings({
     recency: debouncedFilters.recency,
     timeControls: debouncedFilters.timeControls,
     platforms: debouncedFilters.platforms,
@@ -454,6 +556,37 @@ export function OpeningsPage() {
     () => bookmarks.filter(b => chartEnabledMap[b.id] !== false),
     [bookmarks, chartEnabledMap],
   );
+
+  // Phase 80 fix: per-bookmark MG/EG entry eval + clock-diff metrics.
+  // Without this, bookmark rows in the Stats subtab tables permanently render with
+  // eval_n=0 / "low" / "0 games" because buildBookmarkRows hardcoded those fields.
+  const bookmarkMetricsRequest = useMemo(
+    () =>
+      chartBookmarks.map((b) => ({
+        target_hash: b.target_hash,
+        match_side: resolveMatchSide(b.match_side, (b.color ?? 'white') as Color),
+        color: b.color,
+      })),
+    [chartBookmarks],
+  );
+  const { data: bookmarkPhaseEntryData } = useBookmarkPhaseEntryMetrics(
+    bookmarkMetricsRequest,
+    {
+      recency: debouncedFilters.recency,
+      timeControls: debouncedFilters.timeControls,
+      platforms: debouncedFilters.platforms,
+      rated: debouncedFilters.rated,
+      opponentType: debouncedFilters.opponentType,
+      opponentStrength: debouncedFilters.opponentStrength,
+    },
+  );
+  const bookmarkPhaseEntryByHash = useMemo(() => {
+    const map = new Map<string, NonNullable<typeof bookmarkPhaseEntryData>['items'][number]>();
+    for (const item of bookmarkPhaseEntryData?.items ?? []) {
+      map.set(item.target_hash, item);
+    }
+    return map;
+  }, [bookmarkPhaseEntryData]);
 
   const timeSeriesRequest: TimeSeriesRequest | null = useMemo(() => {
     if (chartBookmarks.length === 0) return null;
@@ -576,12 +709,10 @@ export function OpeningsPage() {
     (finding: OpeningInsightFinding) => {
       chess.loadMoves(finding.entry_san_sequence);
       // Set the deep-link highlight BEFORE navigation so MoveExplorer renders
-      // with the highlight on its first paint after the route change. The
-      // severity color matches the OpeningFindingCard's left-border color.
-      setHighlightedMove({
-        san: finding.candidate_move_san,
-        color: getSeverityBorderColor(finding.classification, finding.severity),
-      });
+      // with the highlight on its first paint after the route change. The row
+      // pulses through grey alpha levels regardless of finding severity — the
+      // steady-state row tint comes from the score zone independently.
+      setHighlightedMove({ san: finding.candidate_move_san });
       setBoardFlipped(finding.color === 'black');
       setFilters((prev) => ({
         ...prev,
@@ -807,20 +938,61 @@ export function OpeningsPage() {
 
   const moveExplorerContent = (
     <div className="flex flex-col gap-4">
-      {gamesData && gamesData.stats.total > 0 && (
-        <div className="charcoal-texture rounded-md p-4 order-2 lg:order-1">
-          <WDLChartRow
-            data={gamesData.stats}
-            label={positionResultsLabel}
-            barHeight="h-6"
-            gamesLink="/openings/games"
-            onGamesLinkClick={() => window.scrollTo({ top: 0 })}
-            gamesLinkTestId="btn-moves-to-games"
-            gamesLinkAriaLabel="View games for this position"
-            testId="wdl-moves-position"
-          />
-        </div>
-      )}
+      {gamesData && gamesData.stats.total > 0 && (() => {
+        const stats = gamesData.stats;
+        const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
+        const scorePct = Math.round(stats.score * 100);
+        return (
+          <div
+            className="charcoal-texture rounded-md p-4 order-2 lg:order-1"
+            style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
+            data-testid="wdl-moves-position"
+          >
+            <div className="text-sm font-medium mb-2">{positionResultsLabel}</div>
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+              {/* Col 1, row 1: Games link */}
+              <Link
+                to="/openings/games"
+                onClick={() => window.scrollTo({ top: 0 })}
+                className="inline-flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+                aria-label="View games for this position"
+                data-testid="btn-moves-to-games"
+              >
+                <span className="tabular-nums">{stats.total} Games{isUnreliable && ' (low)'}</span>
+                <Swords className="h-3.5 w-3.5" />
+              </Link>
+              {/* Col 2, row 1: WDL bar (no header — games count moved to col 1) */}
+              <WDLChartRow data={stats} barHeight="h-6" />
+              {/* Col 1, row 2: Score label with popover trigger */}
+              <span className="inline-flex items-center gap-1 text-sm tabular-nums">
+                <ScoreConfidencePopover
+                  level={stats.confidence}
+                  pValue={stats.p_value}
+                  score={stats.score}
+                  gameCount={stats.total}
+                  testId="score-bullet-popover-trigger"
+                  ariaLabel="Show score confidence details"
+                />
+                <span className="text-muted-foreground">Score:</span>
+                <span className="font-semibold" style={{ color: scoreZoneColor(stats.score) }}>{scorePct}%</span>
+              </span>
+              {/* Col 2, row 2: Score bullet chart */}
+              <div data-testid="score-bullet-position">
+                <MiniBulletChart
+                  value={stats.score}
+                  center={SCORE_BULLET_CENTER}
+                  neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+                  neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+                  domain={SCORE_BULLET_DOMAIN}
+                  ciLow={clampScoreCi(stats.ci_low)}
+                  ciHigh={clampScoreCi(stats.ci_high)}
+                  ariaLabel={`Score ${scorePct}% vs 50% baseline`}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <div className="charcoal-texture rounded-md p-4 order-1 lg:order-2">
         <MoveExplorer
           moves={nextMoves.data?.moves ?? []}
@@ -972,13 +1144,14 @@ export function OpeningsPage() {
               const winPct = s.total > 0 ? (s.wins / s.total) * 100 : 0;
               const drawPct = s.total > 0 ? (s.draws / s.total) * 100 : 0;
               const lossPct = s.total > 0 ? (s.losses / s.total) * 100 : 0;
+              const pe = bookmarkPhaseEntryByHash.get(b.target_hash);
               const row: OpeningWDL = {
                 opening_eco: '',
                 opening_name: b.label,
                 // Bookmarks have no parity context: display_name === canonical name.
                 display_name: b.label,
                 label: b.label,
-                pgn: '',
+                pgn: sanArrayToPgn(b.moves),
                 fen: b.fen,
                 full_hash: b.target_hash,
                 wins: s.wins,
@@ -988,6 +1161,12 @@ export function OpeningsPage() {
                 win_pct: winPct,
                 draw_pct: drawPct,
                 loss_pct: lossPct,
+                avg_eval_pawns: pe?.avg_eval_pawns ?? null,
+                eval_ci_low_pawns: pe?.eval_ci_low_pawns ?? null,
+                eval_ci_high_pawns: pe?.eval_ci_high_pawns ?? null,
+                eval_n: pe?.eval_n ?? 0,
+                eval_p_value: pe?.eval_p_value ?? null,
+                eval_confidence: pe?.eval_confidence ?? 'low',
               };
               return [row];
             })
@@ -1017,14 +1196,10 @@ export function OpeningsPage() {
           <>
             {whiteBookmarkRows.length > 0 && (
               <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-white-section">
-                <h2 className="text-lg font-medium mb-3 flex items-center gap-1">
+                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
                   <BookMarked className="h-5 w-5" />
-                  Bookmarked Openings for
                   <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
-                  White
-                  <InfoPopover ariaLabel="Bookmarked White openings info" testId="bookmarks-white-info" side="top">
-                    Your saved White bookmarks with win, draw, and loss rates based on the current filter settings.
-                  </InfoPopover>
+                  White Opening Bookmarks
                 </h2>
                 <div className="hidden lg:block">
                   <MostPlayedOpeningsTable
@@ -1032,6 +1207,7 @@ export function OpeningsPage() {
                     color="white"
                     testIdPrefix="bookmarks-white"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_white ?? EVAL_BASELINE_PAWNS_WHITE}
                     showAll
                   />
                 </div>
@@ -1041,6 +1217,7 @@ export function OpeningsPage() {
                     color="white"
                     testIdPrefix="bookmarks-white"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_white ?? EVAL_BASELINE_PAWNS_WHITE}
                     showAll
                   />
                 </div>
@@ -1048,14 +1225,10 @@ export function OpeningsPage() {
             )}
             {blackBookmarkRows.length > 0 && (
               <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-black-section">
-                <h2 className="text-lg font-medium mb-3 flex items-center gap-1">
+                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
                   <BookMarked className="h-5 w-5" />
-                  Bookmarked Openings for
                   <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
-                  Black
-                  <InfoPopover ariaLabel="Bookmarked Black openings info" testId="bookmarks-black-info" side="top">
-                    Your saved Black bookmarks with win, draw, and loss rates based on the current filter settings.
-                  </InfoPopover>
+                  Black Opening Bookmarks
                 </h2>
                 <div className="hidden lg:block">
                   <MostPlayedOpeningsTable
@@ -1063,6 +1236,7 @@ export function OpeningsPage() {
                     color="black"
                     testIdPrefix="bookmarks-black"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_black ?? EVAL_BASELINE_PAWNS_BLACK}
                     showAll
                   />
                 </div>
@@ -1072,6 +1246,7 @@ export function OpeningsPage() {
                     color="black"
                     testIdPrefix="bookmarks-black"
                     onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
+                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_black ?? EVAL_BASELINE_PAWNS_BLACK}
                     showAll
                   />
                 </div>
@@ -1084,6 +1259,25 @@ export function OpeningsPage() {
       {tsData && (
         <div className="charcoal-texture rounded-md p-4">
           <WinRateChart bookmarks={chartBookmarks} series={tsData.series} />
+        </div>
+      )}
+      {/* Most Played Openings — error / loading branches per CLAUDE.md.
+          Without these, a failed or hanging /stats/most-played-openings request
+          silently hides both color sections. */}
+      {mostPlayedError && (
+        <div
+          className="charcoal-texture rounded-md p-4 text-center text-muted-foreground"
+          data-testid="mpo-error"
+        >
+          Failed to load most-played openings. Something went wrong. Please try again in a moment.
+        </div>
+      )}
+      {!mostPlayedError && mostPlayedLoading && !mostPlayedData && (
+        <div
+          className="charcoal-texture rounded-md p-4 text-center text-muted-foreground"
+          data-testid="mpo-loading"
+        >
+          Loading most-played openings...
         </div>
       )}
       {/* Most Played Openings as White */}
@@ -1105,6 +1299,7 @@ export function OpeningsPage() {
               color="white"
               testIdPrefix="mpo-white"
               onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
+              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_white}
             />
           </div>
           {/* Mobile: stacked WDLChartRows (STAB-02) */}
@@ -1114,6 +1309,7 @@ export function OpeningsPage() {
               color="white"
               testIdPrefix="mpo-white"
               onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
+              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_white}
             />
           </div>
         </div>
@@ -1137,6 +1333,7 @@ export function OpeningsPage() {
               color="black"
               testIdPrefix="mpo-black"
               onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
+              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_black}
             />
           </div>
           {/* Mobile: stacked WDLChartRows (STAB-02) */}
@@ -1146,6 +1343,7 @@ export function OpeningsPage() {
               color="black"
               testIdPrefix="mpo-black"
               onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
+              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_black}
             />
           </div>
         </div>
@@ -1274,7 +1472,7 @@ export function OpeningsPage() {
               </TabsTrigger>
             </TabsList>
             <div className="mt-4 flex flex-row items-start gap-6">
-              <div className="flex flex-col gap-2 w-[400px] shrink-0">
+              <div className={getBoardContainerClassName(activeTab)} data-testid="openings-board-container">
                 <ChessBoard
                   position={chess.position}
                   onPieceDrop={chess.makeMove}
@@ -1291,10 +1489,7 @@ export function OpeningsPage() {
                   canGoForward={chess.currentPly < chess.moveHistory.length}
                   infoSlot={
                     <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info" side="top">
-                      <div className="space-y-2">
-                        <p>Play moves on the board by clicking on squares or dragging pieces, or by clicking on the moves in the Moves tab.</p>
-                        <p>The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.</p>
-                      </div>
+                      <ChessboardInfoCopy />
                     </InfoPopover>
                   }
                 />
@@ -1465,9 +1660,7 @@ export function OpeningsPage() {
                   </Tooltip>
                   <div className="flex h-11 w-11 items-center justify-center">
                     <InfoPopover ariaLabel="Chessboard info" testId="chessboard-info-mobile" side="left">
-                      Play moves on the board by tapping squares or dragging pieces.
-                      <br /><br />
-                      The arrows on the board show the next moves from your games that match the current filter settings. Thicker arrows mean the move occurred more frequently. Arrow colors indicate your win rate: dark green (60%+), light green (55-60%), grey (45-55%), light red (loss rate 55-60%), dark red (loss rate 60%+). Moves with fewer than 10 games are always grey.
+                      <ChessboardInfoCopy />
                     </InfoPopover>
                   </div>
                 </div>

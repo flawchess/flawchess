@@ -5,7 +5,13 @@ import type {
   PositionBookmarkReorderRequest, TimeSeriesRequest, TimeSeriesResponse,
   MatchSideUpdateRequest
 } from '@/types/position_bookmarks';
-import type { RatingHistoryResponse, GlobalStatsResponse, MostPlayedOpeningsResponse } from '@/types/stats';
+import type {
+  RatingHistoryResponse,
+  GlobalStatsResponse,
+  MostPlayedOpeningsResponse,
+  BookmarkPhaseEntryRequest,
+  BookmarkPhaseEntryResponse,
+} from '@/types/stats';
 import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
@@ -158,6 +164,9 @@ export const statsApi = {
     apiClient.get<MostPlayedOpeningsResponse>('/stats/most-played-openings', {
       params: buildFilterParams(params ?? {}),
     }).then(r => r.data),
+
+  getBookmarkPhaseEntryMetrics: (req: BookmarkPhaseEntryRequest) =>
+    apiClient.post<BookmarkPhaseEntryResponse>('/stats/bookmark-phase-entry-metrics', req).then(r => r.data),
 };
 
 // ─── Endgame Analytics API ────────────────────────────────────────────────────

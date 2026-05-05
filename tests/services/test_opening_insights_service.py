@@ -598,6 +598,8 @@ def _make_weakness_finding(
         score=score,
         confidence=confidence,
         p_value=0.5,
+        ci_low=max(0.0, score - 0.05),
+        ci_high=min(1.0, score + 0.05),
     )
 
 
@@ -627,6 +629,8 @@ def _make_strength_finding(
         score=score,
         confidence=confidence,
         p_value=0.5,
+        ci_low=max(0.0, score - 0.05),
+        ci_high=min(1.0, score + 0.05),
     )
 
 
