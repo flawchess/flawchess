@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: executing
-last_updated: "2026-05-04T22:42:00.000Z"
-last_activity: 2026-05-04 -- Quick task 260504-acl: 3-category arrow palette on Openings Moves tab
+last_updated: "2026-05-05T18:50:00.000Z"
+last_activity: 2026-05-05 -- Quick task 260505-uzp: unified score-zone palette across arrow + Score column + row tint
 progress:
   total_phases: 6
   completed_phases: 0
@@ -144,8 +144,9 @@ Carried forward from v1.11 close (still relevant):
 | 260504-rvh | Remove eval color-baseline centering: MG-entry bullet chart and backend stats now anchor on 0 cp (engine-balanced); per-color baseline (+0.315 / −0.189) becomes a tick reference instead of the chart center | 2026-05-04 | e1e55bb | [260504-rvh-remove-eval-color-baseline-centering-fro](./quick/260504-rvh-remove-eval-color-baseline-centering-fro/) |
 | 260504-ttq | Add current-position score-vs-50% bullet chart under "Results played as White/Black" WDL bar in Openings → Moves tab; muted when n<10 to double as a sample-size trust indicator for the WDL bar above | 2026-05-04 | 6e3cc51 | [260504-ttq-add-a-current-position-score-vs-50-bulle](./quick/260504-ttq-add-a-current-position-score-vs-50-bulle/) |
 | 260504-acl | Simplify Moves-tab arrow palette from 5 effect-size buckets to 3 score zones (red <=0.45 / blue 0.45-0.55 / green >=0.55); replace HOVER_BLUE with grey for hovered arrows + row tints; update chessboard InfoPopover to describe Score = (W + 0.5·D)/N | 2026-05-04 | 9f586db | [260504-acl-simplify-arrow-color-from-5-to-3-categories](./quick/260504-acl-simplify-arrow-color-from-5-to-3-categories/) |
+| 260505-uzp | Unify Moves-tab arrow + Score column + row background tint on one score-zone signal. Low-data/low-conf rows render in blue (was grey). Blue arrows fade to 0.30 opacity. Hover keeps arrow color, just amplifies size+opacity. Deep-link pulse uses grey alpha levels and lands on the row's natural score-zone tint | 2026-05-05 | 0b3da1f | [260505-uzp-unified-score-zone-palette](./quick/260505-uzp-unified-score-zone-palette/) |
 
 ---
-Last activity: 2026-05-04 — Completed quick task 260504-acl: simplified Moves-tab arrow palette to 3 score zones (red <=0.45 / blue 0.45-0.55 / green >=0.55). Hover + selected-row highlight switched from blue to grey. MoveExplorer Score column now renders the neutral blue zone color in the 45-55% band (dropped hasEffectOfInterest gate). LIGHT_GREEN/LIGHT_RED kept as exports — still used by OpeningFindingCard severity borders on the Insights tab.
+Last activity: 2026-05-05 — Completed quick task 260505-uzp: unified Moves-tab arrow + Score column + row tint on one score-zone signal. Reliable green/red rows now carry a faint background tint matching the arrow. Blue arrows render at 0.30 opacity (vs 0.75 for green/red) so reliable strong/weak moves dominate visually. Hover keeps arrow color, scales 1.3x and bumps opacity to 0.9. Deep-link from Insights pulses through grey, lands on score-zone color.
 | 2026-05-04 | fast | Mute opening row when total games < 20; drop confidence-based muting | ✅ |
 | 2026-05-04 | fast | Score zone color in Moves tab + per-move list; drop severity row tint; bump mobile games-count font size | ✅ |
