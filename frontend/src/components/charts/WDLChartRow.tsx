@@ -52,6 +52,9 @@ interface WDLChartRowProps {
   /** Bar height class. Defaults to 'h-5' (reference implementation). */
   barHeight?: 'h-5' | 'h-6';
 
+  /** When false, segment labels show only "{pct}%" without the absolute count in parentheses. Defaults to true. */
+  showSegmentCounts?: boolean;
+
   /** data-testid for the row container */
   testId?: string;
 }
@@ -70,6 +73,7 @@ export function WDLChartRow({
   minGamesForReliable = MIN_GAMES_FOR_RELIABLE_STATS,
   gameCountLabel,
   barHeight = 'h-5',
+  showSegmentCounts = true,
   testId,
 }: WDLChartRowProps) {
   if (data.total === 0) {
@@ -140,7 +144,7 @@ export function WDLChartRow({
           >
             {data.win_pct >= MIN_PCT_FOR_LABEL && (
               <span className="relative z-10 text-white drop-shadow-sm">
-                {Math.round(data.win_pct)}% ({data.wins})
+                {Math.round(data.win_pct)}%{showSegmentCounts && ` (${data.wins})`}
               </span>
             )}
           </div>
@@ -152,7 +156,7 @@ export function WDLChartRow({
           >
             {data.draw_pct >= MIN_PCT_FOR_LABEL && (
               <span className="relative z-10 text-white drop-shadow-sm">
-                {Math.round(data.draw_pct)}% ({data.draws})
+                {Math.round(data.draw_pct)}%{showSegmentCounts && ` (${data.draws})`}
               </span>
             )}
           </div>
@@ -164,7 +168,7 @@ export function WDLChartRow({
           >
             {data.loss_pct >= MIN_PCT_FOR_LABEL && (
               <span className="relative z-10 text-white drop-shadow-sm">
-                {Math.round(data.loss_pct)}% ({data.losses})
+                {Math.round(data.loss_pct)}%{showSegmentCounts && ` (${data.losses})`}
               </span>
             )}
           </div>

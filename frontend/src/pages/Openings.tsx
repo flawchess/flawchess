@@ -232,6 +232,7 @@ function MobileMostPlayedRows({
                     draw_pct: o.draw_pct,
                     loss_pct: o.loss_pct,
                   }}
+                  showSegmentCounts={false}
                 />
                 {/* Col 1, row 2: Eval text with info-icon popover trigger */}
                 <span
