@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
@@ -55,6 +56,17 @@ const VISIBLE_ENDGAME_CLASS_ENTRIES = (
 ).filter(([value]) => !HIDDEN_ENDGAME_CLASSES.has(value));
 
 const DEFAULT_ENDGAME_CLASS: EndgameClass = 'mixed';
+
+const TAB_INFO: Record<'stats' | 'games', { aria: string; text: string }> = {
+  stats: {
+    aria: 'About Endgame Stats',
+    text: 'Performance metrics, conversion and recovery rates, and time-pressure analysis for your endgames.',
+  },
+  games: {
+    aria: 'About Endgame Games',
+    text: 'A list of your games that reached the endgame phase, matching your current filter settings.',
+  },
+};
 
 export function EndgamesPage() {
   const location = useLocation();
@@ -581,10 +593,24 @@ export function EndgamesPage() {
               <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
                 <BarChart2Icon className="mr-1.5 h-4 w-4" />
                 Stats
+                {activeTab === 'stats' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info" side="bottom">
+                      {TAB_INFO.stats.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
                 <SwordsIcon className="mr-1.5 h-4 w-4" />
                 Games
+                {activeTab === 'games' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info" side="bottom">
+                      {TAB_INFO.games.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
             </TabsList>
             <TabsContent value="stats" className="mt-4">
@@ -605,10 +631,24 @@ export function EndgamesPage() {
                 <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                   <BarChart2Icon className="mr-1.5 h-4 w-4" />
                   Stats
+                  {activeTab === 'stats' && (
+                    <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                      <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info-mobile" side="bottom">
+                        {TAB_INFO.stats.text}
+                      </InfoPopover>
+                    </span>
+                  )}
                 </TabsTrigger>
                 <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
                   <SwordsIcon className="mr-1.5 h-4 w-4" />
                   Games
+                  {activeTab === 'games' && (
+                    <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                      <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info-mobile" side="bottom">
+                        {TAB_INFO.games.text}
+                      </InfoPopover>
+                    </span>
+                  )}
                 </TabsTrigger>
               </TabsList>
               <Tooltip content="Open filters" side="left">

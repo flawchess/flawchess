@@ -100,6 +100,25 @@ const PAGE_SIZE = 20;
 
 type SidebarPanel = 'filters' | 'bookmarks';
 
+const TAB_INFO: Record<'explorer' | 'games' | 'stats' | 'insights', { aria: string; text: string }> = {
+  explorer: {
+    aria: 'About Opening Moves',
+    text: 'Interactive opening explorer with win/draw/loss charts and statistical analysis for each move.',
+  },
+  games: {
+    aria: 'About Opening Games',
+    text: 'A list of your games that reached the position on the board, matching your current filter settings.',
+  },
+  stats: {
+    aria: 'About Opening Stats',
+    text: 'Your bookmarked and most played openings, with win/draw/loss charts and Stockfish evaluation at the transition from opening to middlegame.',
+  },
+  insights: {
+    aria: 'About Opening Insights',
+    text: 'Your weakest and strongest opening positions, based on a systematic scan of all your games up to 16 half-moves.',
+  },
+};
+
 // Shared body for the chessboard info popover. Device-agnostic copy ("click or
 // tap", "hover or tap") so the same prose works on desktop and mobile.
 function ChessboardInfoCopy() {
@@ -1463,18 +1482,46 @@ export function OpeningsPage() {
               <TabsTrigger value="explorer" data-testid="tab-move-explorer" className="flex-1">
                 <ArrowRightLeft className="mr-1.5 h-4 w-4" />
                 Moves
+                {activeTab === 'explorer' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.explorer.aria} testId="tab-explorer-info" side="bottom">
+                      {TAB_INFO.explorer.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
                 <Swords className="mr-1.5 h-4 w-4" />
                 Games
+                {activeTab === 'games' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info" side="bottom">
+                      {TAB_INFO.games.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
                 <BarChart2 className="mr-1.5 h-4 w-4" />
                 Stats
+                {activeTab === 'stats' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info" side="bottom">
+                      {TAB_INFO.stats.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger value="insights" data-testid="tab-insights" className="flex-1">
                 <Lightbulb className="mr-1.5 h-4 w-4" />
                 Insights
+                {activeTab === 'insights' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.insights.aria} testId="tab-insights-info" side="bottom">
+                      {TAB_INFO.insights.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
             </TabsList>
             <div className="mt-4 flex flex-row items-start gap-6">
@@ -1544,15 +1591,43 @@ export function OpeningsPage() {
             <TabsList variant="brand" className="flex-1 !h-full !p-0" data-testid="openings-tabs-mobile">
               <TabsTrigger value="explorer" className="flex-1" data-testid="tab-move-explorer-mobile">
                 Moves
+                {activeTab === 'explorer' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.explorer.aria} testId="tab-explorer-info-mobile" side="bottom">
+                      {TAB_INFO.explorer.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger value="games" className="flex-1" data-testid="tab-games-mobile">
                 Games
+                {activeTab === 'games' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.games.aria} testId="tab-games-info-mobile" side="bottom">
+                      {TAB_INFO.games.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger value="stats" className="flex-1" data-testid="tab-stats-mobile">
                 Stats
+                {activeTab === 'stats' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.stats.aria} testId="tab-stats-info-mobile" side="bottom">
+                      {TAB_INFO.stats.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
               <TabsTrigger value="insights" className="flex-1" data-testid="tab-insights-mobile">
                 Insights
+                {activeTab === 'insights' && (
+                  <span className="ml-1.5 inline-flex items-center [&>span]:text-white! [&>span:hover]:text-white/80!" onClick={(e) => e.stopPropagation()}>
+                    <InfoPopover ariaLabel={TAB_INFO.insights.aria} testId="tab-insights-info-mobile" side="bottom">
+                      {TAB_INFO.insights.text}
+                    </InfoPopover>
+                  </span>
+                )}
               </TabsTrigger>
             </TabsList>
             <Tooltip content="Open filters" side="left">
