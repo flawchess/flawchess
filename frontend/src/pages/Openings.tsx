@@ -946,7 +946,7 @@ export function OpeningsPage() {
   );
 
   const insightsContent = (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {/* Phase 71: dedicated Insights subtab. */}
       {/* Hidden block + friendly empty state when user has no imported games (proxy: mostPlayedData empty). */}
       {mostPlayedData &&
