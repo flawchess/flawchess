@@ -61,12 +61,15 @@ interface OpeningInsightsBlockProps {
 type SectionKind = 'weakness' | 'strength';
 type SectionColor = 'white' | 'black';
 
+// Only the four findings keys — not the eval baseline number fields.
+type FindingsKey = 'white_weaknesses' | 'black_weaknesses' | 'white_strengths' | 'black_strengths';
+
 interface SectionMeta {
   key: 'white-weaknesses' | 'black-weaknesses' | 'white-strengths' | 'black-strengths';
   kind: SectionKind;
   color: SectionColor;
   title: string;
-  findingsKey: keyof OpeningInsightsResponse;
+  findingsKey: FindingsKey;
 }
 
 // Order locked by D-01: white-weaknesses, black-weaknesses, white-strengths, black-strengths.
