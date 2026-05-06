@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -54,10 +54,8 @@ import { GameCardList } from '@/components/results/GameCardList';
 import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/SidebarLayout';
 import { getArrowColor } from '@/lib/arrowColor';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
-import { MostPlayedOpeningsTable } from '@/components/stats/MostPlayedOpeningsTable';
-import { MinimapPopover } from '@/components/stats/MinimapPopover';
+import { OpeningStatsSection, type OpeningStatsSectionDescriptor } from '@/components/stats/OpeningStatsSection';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import {
   SCORE_BULLET_CENTER,
@@ -68,17 +66,11 @@ import {
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
 import {
-  EVAL_BULLET_DOMAIN_PAWNS,
-  EVAL_NEUTRAL_MAX_PAWNS,
-  EVAL_NEUTRAL_MIN_PAWNS,
   EVAL_BASELINE_PAWNS_WHITE,
   EVAL_BASELINE_PAWNS_BLACK,
-  evalZoneColor,
 } from '@/lib/openingStatsZones';
-import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
   MIN_GAMES_FOR_RELIABLE_STATS,
-  MIN_GAMES_OPENING_ROW,
   UNRELIABLE_OPACITY,
   ZONE_NEUTRAL,
 } from '@/lib/theme';
@@ -135,173 +127,6 @@ function ChessboardInfoCopy() {
         <li>Red: Score ≤ 45%</li>
         <li>Faint blue: Score between 45% and 55%, or too few games / low confidence to call it</li>
       </ul>
-    </div>
-  );
-}
-
-// MOBILE MostPlayedOpenings renderer (STAB-02 / D-11-D-14)
-// Renders each opening as a WDLChartRow, matching the Bookmarked Openings: Results
-// visual style. Desktop keeps the existing MostPlayedOpeningsTable (unchanged).
-// Preserves the INITIAL_VISIBLE_COUNT = 3 collapse/expand behavior from MostPlayedOpeningsTable.
-const MOBILE_MPO_INITIAL_VISIBLE_COUNT = 3;
-
-function MobileMostPlayedRows({
-  openings,
-  color,
-  testIdPrefix,
-  onOpenGames,
-  evalBaselinePawns,
-  showAll = false,
-}: {
-  openings: OpeningWDL[];
-  color: 'white' | 'black';
-  testIdPrefix: string;
-  onOpenGames: (opening: OpeningWDL, color: 'white' | 'black') => void;
-  evalBaselinePawns: number;
-  showAll?: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (openings.length === 0) return null;
-
-  const visibleOpenings = showAll || expanded
-    ? openings
-    : openings.slice(0, MOBILE_MPO_INITIAL_VISIBLE_COUNT);
-  const hiddenCount = openings.length - MOBILE_MPO_INITIAL_VISIBLE_COUNT;
-  const hasMore = !showAll && hiddenCount > 0;
-
-  return (
-    <div data-testid={`${testIdPrefix}-mobile-list`}>
-      <div className="space-y-3">
-        {visibleOpenings.map((o, i) => {
-          const rowKey = o.opening_eco || o.full_hash || `${o.opening_name}-${i}`;
-          const isRowMuted = o.total < MIN_GAMES_OPENING_ROW;
-          const hasMgEval =
-            o.eval_n > 0 &&
-            o.avg_eval_pawns !== null &&
-            o.avg_eval_pawns !== undefined;
-          const mgEvalTextContent = hasMgEval ? (
-            <span
-              className="font-semibold"
-              style={{ color: evalZoneColor(o.avg_eval_pawns as number) }}
-            >
-              {formatSignedEvalPawns(o.avg_eval_pawns as number)}
-            </span>
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          );
-          const mgBulletContent = hasMgEval ? (
-            <MiniBulletChart
-              value={o.avg_eval_pawns as number}
-              ciLow={o.eval_ci_low_pawns ?? undefined}
-              ciHigh={o.eval_ci_high_pawns ?? undefined}
-              tickPawns={evalBaselinePawns}
-              neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
-              neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
-              domain={EVAL_BULLET_DOMAIN_PAWNS}
-              ariaLabel={`Avg eval at MG entry: ${(o.avg_eval_pawns as number).toFixed(2)} pawns`}
-            />
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          );
-          return (
-            <div
-              key={rowKey}
-              data-testid={`${testIdPrefix}-row-${rowKey}`}
-              style={isRowMuted ? { opacity: UNRELIABLE_OPACITY } : undefined}
-            >
-              {/* Name row: full-width opening name (games count moved into col 1 below) */}
-              <div className="mb-1">
-                <MinimapPopover
-                  fen={o.fen}
-                  boardOrientation={color}
-                  testId={`${testIdPrefix}-minimap-${rowKey}`}
-                >
-                  <span className="block text-sm font-medium leading-tight break-words">
-                    {/* display_name carries a "vs. " prefix when off-color (PRE-01). */}
-                    {o.display_name}
-                  </span>
-                </MinimapPopover>
-              </div>
-
-              {/* 2-column grid: col 1 = labels (games count, eval text); col 2 = charts (WDL bar, MG bullet) */}
-              <div
-                className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center"
-                data-testid={`${testIdPrefix}-mobile-mg-line-${rowKey}`}
-              >
-                {/* Col 1, row 1: games count link */}
-                <Tooltip content={`View ${o.total} games for ${o.opening_name}`}>
-                  <button
-                    className="flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
-                    aria-label={`View ${o.total} games for ${o.opening_name}`}
-                    data-testid={`${testIdPrefix}-games-${rowKey}`}
-                    onClick={() => onOpenGames(o, color)}
-                  >
-                    <span className="tabular-nums">{o.total} Games</span>
-                    <Swords className="h-3.5 w-3.5" />
-                  </button>
-                </Tooltip>
-                {/* Col 2, row 1: WDL bar (no header — games count is in col 1) */}
-                <WDLChartRow
-                  data={{
-                    wins: o.wins,
-                    draws: o.draws,
-                    losses: o.losses,
-                    total: o.total,
-                    win_pct: o.win_pct,
-                    draw_pct: o.draw_pct,
-                    loss_pct: o.loss_pct,
-                  }}
-                  showSegmentCounts={false}
-                />
-                {/* Col 1, row 2: Eval text with info-icon popover trigger */}
-                <span
-                  className="inline-flex items-center gap-1 text-sm tabular-nums"
-                  data-testid={`${testIdPrefix}-eval-text-mobile-${rowKey}`}
-                >
-                  {hasMgEval && (
-                    <BulletConfidencePopover
-                      level={o.eval_confidence}
-                      pValue={o.eval_p_value}
-                      gameCount={o.eval_n}
-                      evalMeanPawns={o.avg_eval_pawns}
-                      color={color}
-                      testId={`${testIdPrefix}-bullet-popover-mobile-${rowKey}`}
-                    />
-                  )}
-                  <span className="text-muted-foreground">Eval:</span>
-                  {mgEvalTextContent}
-                </span>
-                {/* Col 2, row 2: MG-entry bullet chart */}
-                <div data-testid={`${testIdPrefix}-bullet-mobile-${rowKey}`}>
-                  {mgBulletContent}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {hasMore && (
-        <button
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mt-2 px-2"
-          onClick={() => setExpanded(!expanded)}
-          data-testid={`${testIdPrefix}-btn-more-mobile`}
-          aria-label={expanded ? 'Show fewer openings' : `Show ${hiddenCount} more openings`}
-        >
-          {expanded ? (
-            <>
-              <ChevronUp className="h-4 w-4" />
-              Less
-            </>
-          ) : (
-            <>
-              <ChevronDown className="h-4 w-4" />
-              {hiddenCount} more
-            </>
-          )}
-        </button>
-      )}
     </div>
   );
 }
@@ -716,6 +541,21 @@ export function OpeningsPage() {
     setBoardFlipped(color === 'black');
     setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
     navigate('/openings/games');
+    window.scrollTo({ top: 0 });
+  }, [chess, navigate, setFilters]);
+
+  /**
+   * Stats subtab "Moves" link: load the opening's PGN onto the board, set
+   * color/flip/filters, and navigate to the Move Explorer. Mirrors
+   * handleOpenFinding's pattern from the Insights block, but takes an
+   * OpeningWDL (whose pgn is either the canonical opening PGN for most-played
+   * rows or a sanArrayToPgn round-trip of the bookmark moves for bookmark rows).
+   */
+  const handleOpenMoves = useCallback((opening: OpeningWDL, color: "white" | "black") => {
+    chess.loadMoves(pgnToSanArray(opening.pgn));
+    setBoardFlipped(color === 'black');
+    setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
+    navigate('/openings/explorer');
     window.scrollTo({ top: 0 });
   }, [chess, navigate, setFilters]);
 
@@ -1210,77 +1050,61 @@ export function OpeningsPage() {
           );
         }
 
-        // Lookup map so the table's onOpenGames callback can resolve the bookmark by full_hash
+        // Lookup map so the card's onOpenGames callback can resolve the
+        // bookmark by full_hash (bookmark rows route via handleOpenChartBookmarkGames).
         const bookmarkByHash = new Map<string, PositionBookmarkResponse>(
           chartBookmarks.map((b) => [b.target_hash, b])
         );
-        const handleOpenBookmarkRow = (opening: OpeningWDL) => {
+        const handleOpenBookmarkGames = (opening: OpeningWDL) => {
           const bookmark = bookmarkByHash.get(opening.full_hash);
           if (bookmark) handleOpenChartBookmarkGames(bookmark);
         };
 
-        return (
-          <>
-            {whiteBookmarkRows.length > 0 && (
-              <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-white-section">
-                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
-                  <BookMarked className="h-5 w-5" />
-                  <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
-                  White Opening Bookmarks
-                </h2>
-                <div className="hidden lg:block">
-                  <MostPlayedOpeningsTable
-                    openings={whiteBookmarkRows}
-                    color="white"
-                    testIdPrefix="bookmarks-white"
-                    onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
-                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_white ?? EVAL_BASELINE_PAWNS_WHITE}
-                    showAll
-                  />
-                </div>
-                <div className="lg:hidden">
-                  <MobileMostPlayedRows
-                    openings={whiteBookmarkRows}
-                    color="white"
-                    testIdPrefix="bookmarks-white"
-                    onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
-                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_white ?? EVAL_BASELINE_PAWNS_WHITE}
-                    showAll
-                  />
-                </div>
-              </div>
-            )}
-            {blackBookmarkRows.length > 0 && (
-              <div className="charcoal-texture rounded-md p-4" data-testid="bookmarks-black-section">
-                <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
-                  <BookMarked className="h-5 w-5" />
-                  <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
-                  Black Opening Bookmarks
-                </h2>
-                <div className="hidden lg:block">
-                  <MostPlayedOpeningsTable
-                    openings={blackBookmarkRows}
-                    color="black"
-                    testIdPrefix="bookmarks-black"
-                    onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
-                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_black ?? EVAL_BASELINE_PAWNS_BLACK}
-                    showAll
-                  />
-                </div>
-                <div className="lg:hidden">
-                  <MobileMostPlayedRows
-                    openings={blackBookmarkRows}
-                    color="black"
-                    testIdPrefix="bookmarks-black"
-                    onOpenGames={(opening) => handleOpenBookmarkRow(opening)}
-                    evalBaselinePawns={mostPlayedData?.eval_baseline_pawns_black ?? EVAL_BASELINE_PAWNS_BLACK}
-                    showAll
-                  />
-                </div>
-              </div>
-            )}
-          </>
-        );
+        const bookmarkSections: OpeningStatsSectionDescriptor[] = [];
+        if (whiteBookmarkRows.length > 0) {
+          bookmarkSections.push({
+            key: 'white-bookmarks',
+            color: 'white',
+            title: (
+              <span className="inline-flex items-center gap-1.5">
+                <BookMarked className="h-5 w-5" />
+                <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
+                White Opening Bookmarks
+              </span>
+            ),
+            openings: whiteBookmarkRows,
+            evalBaselinePawns:
+              mostPlayedData?.eval_baseline_pawns_white ?? EVAL_BASELINE_PAWNS_WHITE,
+            onOpenMoves: handleOpenMoves,
+            onOpenGames: (opening) => handleOpenBookmarkGames(opening),
+            showAll: true,
+            testId: 'bookmarks-white-section',
+            cardTestIdPrefix: 'bookmarks-white-card',
+          });
+        }
+        if (blackBookmarkRows.length > 0) {
+          bookmarkSections.push({
+            key: 'black-bookmarks',
+            color: 'black',
+            title: (
+              <span className="inline-flex items-center gap-1.5">
+                <BookMarked className="h-5 w-5" />
+                <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
+                Black Opening Bookmarks
+              </span>
+            ),
+            openings: blackBookmarkRows,
+            evalBaselinePawns:
+              mostPlayedData?.eval_baseline_pawns_black ?? EVAL_BASELINE_PAWNS_BLACK,
+            onOpenMoves: handleOpenMoves,
+            onOpenGames: (opening) => handleOpenBookmarkGames(opening),
+            showAll: true,
+            testId: 'bookmarks-black-section',
+            cardTestIdPrefix: 'bookmarks-black-card',
+          });
+        }
+
+        return <OpeningStatsSection sections={bookmarkSections} />;
       })()}
       {/* Win Rate Over Time — shown when bookmarks have time series data */}
       {tsData && (
@@ -1307,74 +1131,59 @@ export function OpeningsPage() {
           Loading most-played openings...
         </div>
       )}
-      {/* Most Played Openings as White */}
-      {mostPlayedData && mostPlayedData.white.length > 0 && (
-        <div className="charcoal-texture rounded-md p-4" data-testid="mpo-white-section">
-          <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
-            <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
-            <span className="inline-flex items-center gap-1">
-              Most Played Openings as White
-              <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
-                Your most frequently played openings as White, based on the lichess opening table. Games passing through each opening's position are counted, including games that continued into deeper variations. Openings under 3 half-moves are excluded, so trivial trunks like 1.d4 don't dominate. Rows prefixed with "vs." are openings defined by Black's move (e.g. "vs. Sicilian Defense") that you faced as White.
-              </InfoPopover>
-            </span>
-          </h2>
-          {/* Desktop: 3-col table (unchanged) */}
-          <div className="hidden lg:block">
-            <MostPlayedOpeningsTable
-              openings={mostPlayedData.white}
-              color="white"
-              testIdPrefix="mpo-white"
-              onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
-              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_white}
-            />
-          </div>
-          {/* Mobile: stacked WDLChartRows (STAB-02) */}
-          <div className="lg:hidden">
-            <MobileMostPlayedRows
-              openings={mostPlayedData.white}
-              color="white"
-              testIdPrefix="mpo-white"
-              onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
-              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_white}
-            />
-          </div>
-        </div>
-      )}
-      {/* Most Played Openings as Black */}
-      {mostPlayedData && mostPlayedData.black.length > 0 && (
-        <div className="charcoal-texture rounded-md p-4" data-testid="mpo-black-section">
-          <h2 className="text-lg font-medium mb-3 flex items-center gap-1.5">
-            <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
-            <span className="inline-flex items-center gap-1">
-              Most Played Openings as Black
-              <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
-                Your most frequently played openings as Black, based on the lichess opening table. Games passing through each opening's position are counted, including games that continued into deeper variations. Openings under 3 half-moves are excluded, so trivial trunks like 1.e4 don't dominate. Rows prefixed with "vs." are openings defined by White's move (e.g. "vs. Blackmar-Diemer Gambit") that you faced as Black.
-              </InfoPopover>
-            </span>
-          </h2>
-          {/* Desktop: 3-col table (unchanged) */}
-          <div className="hidden lg:block">
-            <MostPlayedOpeningsTable
-              openings={mostPlayedData.black}
-              color="black"
-              testIdPrefix="mpo-black"
-              onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
-              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_black}
-            />
-          </div>
-          {/* Mobile: stacked WDLChartRows (STAB-02) */}
-          <div className="lg:hidden">
-            <MobileMostPlayedRows
-              openings={mostPlayedData.black}
-              color="black"
-              testIdPrefix="mpo-black"
-              onOpenGames={(opening, color) => handleOpenGames(opening.pgn, color)}
-              evalBaselinePawns={mostPlayedData.eval_baseline_pawns_black}
-            />
-          </div>
-        </div>
-      )}
+      {/* Most Played Openings — white left / black right at lg+, single column on mobile */}
+      {mostPlayedData &&
+        (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) &&
+        (() => {
+          const mpoSections: OpeningStatsSectionDescriptor[] = [];
+          if (mostPlayedData.white.length > 0) {
+            mpoSections.push({
+              key: 'mpo-white',
+              color: 'white',
+              title: (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
+                  Most Played Openings as White
+                </span>
+              ),
+              headingExtra: (
+                <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
+                  Your most frequently played openings as White, based on the lichess opening table. Games passing through each opening's position are counted, including games that continued into deeper variations. Openings under 3 half-moves are excluded, so trivial trunks like 1.d4 don't dominate. Rows prefixed with "vs." are openings defined by Black's move (e.g. "vs. Sicilian Defense") that you faced as White.
+                </InfoPopover>
+              ),
+              openings: mostPlayedData.white,
+              evalBaselinePawns: mostPlayedData.eval_baseline_pawns_white,
+              onOpenMoves: handleOpenMoves,
+              onOpenGames: (opening, color) => handleOpenGames(opening.pgn, color),
+              testId: 'mpo-white-section',
+              cardTestIdPrefix: 'mpo-white-card',
+            });
+          }
+          if (mostPlayedData.black.length > 0) {
+            mpoSections.push({
+              key: 'mpo-black',
+              color: 'black',
+              title: (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
+                  Most Played Openings as Black
+                </span>
+              ),
+              headingExtra: (
+                <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
+                  Your most frequently played openings as Black, based on the lichess opening table. Games passing through each opening's position are counted, including games that continued into deeper variations. Openings under 3 half-moves are excluded, so trivial trunks like 1.e4 don't dominate. Rows prefixed with "vs." are openings defined by White's move (e.g. "vs. Blackmar-Diemer Gambit") that you faced as Black.
+                </InfoPopover>
+              ),
+              openings: mostPlayedData.black,
+              evalBaselinePawns: mostPlayedData.eval_baseline_pawns_black,
+              onOpenMoves: handleOpenMoves,
+              onOpenGames: (opening, color) => handleOpenGames(opening.pgn, color),
+              testId: 'mpo-black-section',
+              cardTestIdPrefix: 'mpo-black-card',
+            });
+          }
+          return <OpeningStatsSection sections={mpoSections} />;
+        })()}
     </div>
   );
 
