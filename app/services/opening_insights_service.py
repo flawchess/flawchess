@@ -26,12 +26,19 @@ from app.repositories.openings_repository import (
     query_opening_transitions,
     query_openings_by_hashes,
 )
+from app.repositories.stats_repository import (
+    OpeningPhaseEntryMetrics,
+    query_opening_phase_entry_metrics_batch,
+)
 from app.schemas.opening_insights import (
     OpeningInsightFinding,
     OpeningInsightsRequest,
     OpeningInsightsResponse,
 )
+from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.opening_insights_constants import (
+    EVAL_BASELINE_PAWNS_BLACK,
+    EVAL_BASELINE_PAWNS_WHITE,
     OPENING_INSIGHTS_MAJOR_EFFECT as MAJOR_EFFECT,
     OPENING_INSIGHTS_MINOR_EFFECT as MINOR_EFFECT,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
@@ -368,6 +375,41 @@ def _rank_section(
 
 
 # ---------------------------------------------------------------------------
+# MG-entry eval helpers (quick task 260506-u2b — parity with OpeningWDL)
+# ---------------------------------------------------------------------------
+
+
+def _apply_eval_metrics_to_finding(
+    finding: OpeningInsightFinding,
+    pe: OpeningPhaseEntryMetrics,
+) -> OpeningInsightFinding:
+    """Populate the six MG-entry eval fields on a finding from phase-entry metrics.
+
+    Mirrors the finalizer logic in stats_service._phase80_item_from_metrics so
+    there is a single source of eval math without duplicating SQL or confidence
+    bucket computation. The H0 is 0 cp (engine-balanced) per quick task 260504-rvh.
+    """
+    if pe.eval_n_mg <= 0:
+        return finding
+
+    confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
+        pe.eval_sum_mg,
+        pe.eval_sumsq_mg,
+        pe.eval_n_mg,
+    )
+    return finding.model_copy(
+        update={
+            "avg_eval_pawns": mean_cp_mg / 100.0,
+            "eval_ci_low_pawns": (mean_cp_mg - ci_half_mg) / 100.0 if pe.eval_n_mg >= 2 else None,
+            "eval_ci_high_pawns": (mean_cp_mg + ci_half_mg) / 100.0 if pe.eval_n_mg >= 2 else None,
+            "eval_n": pe.eval_n_mg,
+            "eval_p_value": p_value_mg,
+            "eval_confidence": confidence_mg,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -540,11 +582,77 @@ async def compute_insights(
             cap = WEAKNESS_CAP_PER_COLOR if "weaknesses" in key else STRENGTH_CAP_PER_COLOR
             final_sections[key] = ranked[:cap]
 
+        # Populate MG-entry eval fields on all surviving findings.
+        # Call the shared batch helper once per color (sequential per CLAUDE.md
+        # AsyncSession rule). Key is resulting_full_hash (the position immediately
+        # after the candidate move) — mirrors how Stats keys MG-entry eval.
+        all_white_findings: list[OpeningInsightFinding] = (
+            final_sections["white_weaknesses"] + final_sections["white_strengths"]
+        )
+        all_black_findings: list[OpeningInsightFinding] = (
+            final_sections["black_weaknesses"] + final_sections["black_strengths"]
+        )
+
+        white_hashes: list[int] = list({int(f.resulting_full_hash) for f in all_white_findings})
+        black_hashes: list[int] = list({int(f.resulting_full_hash) for f in all_black_findings})
+
+        # Sequential awaits — AsyncSession not safe for concurrent use.
+        white_eval_metrics: dict[int, OpeningPhaseEntryMetrics] = {}
+        if white_hashes:
+            white_eval_metrics = await query_opening_phase_entry_metrics_batch(
+                session=session,
+                user_id=user_id,
+                hashes=white_hashes,
+                color="white",
+                time_control=request.time_control,
+                platform=request.platform,
+                rated=request.rated,
+                opponent_type=request.opponent_type,
+                recency_cutoff=cutoff,
+                opponent_gap_min=request.opponent_gap_min,
+                opponent_gap_max=request.opponent_gap_max,
+            )
+
+        black_eval_metrics: dict[int, OpeningPhaseEntryMetrics] = {}
+        if black_hashes:
+            black_eval_metrics = await query_opening_phase_entry_metrics_batch(
+                session=session,
+                user_id=user_id,
+                hashes=black_hashes,
+                color="black",
+                time_control=request.time_control,
+                platform=request.platform,
+                rated=request.rated,
+                opponent_type=request.opponent_type,
+                recency_cutoff=cutoff,
+                opponent_gap_min=request.opponent_gap_min,
+                opponent_gap_max=request.opponent_gap_max,
+            )
+
+        def _enrich_findings(
+            findings: list[OpeningInsightFinding],
+            metrics_map: dict[int, OpeningPhaseEntryMetrics],
+        ) -> list[OpeningInsightFinding]:
+            result: list[OpeningInsightFinding] = []
+            for f in findings:
+                pe = metrics_map.get(int(f.resulting_full_hash))
+                if pe is not None:
+                    result.append(_apply_eval_metrics_to_finding(f, pe))
+                else:
+                    result.append(f)
+            return result
+
         return OpeningInsightsResponse(
-            white_weaknesses=final_sections["white_weaknesses"],
-            black_weaknesses=final_sections["black_weaknesses"],
-            white_strengths=final_sections["white_strengths"],
-            black_strengths=final_sections["black_strengths"],
+            white_weaknesses=_enrich_findings(
+                final_sections["white_weaknesses"], white_eval_metrics
+            ),
+            black_weaknesses=_enrich_findings(
+                final_sections["black_weaknesses"], black_eval_metrics
+            ),
+            white_strengths=_enrich_findings(final_sections["white_strengths"], white_eval_metrics),
+            black_strengths=_enrich_findings(final_sections["black_strengths"], black_eval_metrics),
+            eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
+            eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
         )
     except Exception as exc:
         # CLAUDE.md §Sentry: pass variable data via set_context; never embed

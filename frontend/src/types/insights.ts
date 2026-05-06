@@ -87,6 +87,13 @@ export interface OpeningInsightFinding {
   p_value: number;
   ci_low: number;
   ci_high: number;
+  // MG-entry eval fields (quick task 260506-u2b — parity with OpeningWDL Phase 80)
+  avg_eval_pawns?: number | null;
+  eval_ci_low_pawns?: number | null;
+  eval_ci_high_pawns?: number | null;
+  eval_n?: number;
+  eval_p_value?: number | null;
+  eval_confidence?: 'low' | 'medium' | 'high';
 }
 
 export interface OpeningInsightsResponse {
@@ -94,4 +101,7 @@ export interface OpeningInsightsResponse {
   black_weaknesses: OpeningInsightFinding[];
   white_strengths: OpeningInsightFinding[];
   black_strengths: OpeningInsightFinding[];
+  /** Per-color engine-asymmetry baselines (in pawns). Rendered as a reference tick on the finding card's eval bullet chart. */
+  eval_baseline_pawns_white: number;
+  eval_baseline_pawns_black: number;
 }

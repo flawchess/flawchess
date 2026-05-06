@@ -70,6 +70,13 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
     p_value: 0.05,          // Phase 76 D-21
     ci_low: 0.25,
     ci_high: 0.35,
+    // MG-entry eval fields (quick task 260506-u2b)
+    avg_eval_pawns: 0.5,
+    eval_n: 18,
+    eval_ci_low_pawns: 0.2,
+    eval_ci_high_pawns: 0.8,
+    eval_p_value: 0.05,
+    eval_confidence: 'medium',
     ...overrides,
   };
 }
@@ -77,14 +84,22 @@ function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningIns
 function renderCard(props: {
   finding: OpeningInsightFinding;
   idx?: number;
+  evalBaselinePawns?: number;
   onFindingClick?: (f: OpeningInsightFinding) => void;
   onOpenGames?: (f: OpeningInsightFinding) => void;
 }) {
-  const { finding, idx = 0, onFindingClick = () => {}, onOpenGames = () => {} } = props;
+  const {
+    finding,
+    idx = 0,
+    evalBaselinePawns = 0.25,
+    onFindingClick = () => {},
+    onOpenGames = () => {},
+  } = props;
   return render(
     <OpeningFindingCard
       finding={finding}
       idx={idx}
+      evalBaselinePawns={evalBaselinePawns}
       onFindingClick={onFindingClick}
       onOpenGames={onOpenGames}
     />,
@@ -104,29 +119,29 @@ afterEach(() => {
 });
 
 describe('OpeningFindingCard', () => {
-  it('renders "You score X% as Black" prose for weakness section', () => {
+  it('renders "Score X% after <move>" prose (abbreviated — no "You score" / "as Color")', () => {
     const finding = makeFinding({ classification: 'weakness', color: 'black', score: 0.30 });
     renderCard({ finding, idx: 0 });
     const card = screen.getByTestId('opening-finding-card-0');
     const text = card.textContent ?? '';
-    // Both mobile + desktop branches render — text content includes both; check it contains the right pieces
-    expect(text).toMatch(/You score/);
+    expect(text).toMatch(/Score/);
     expect(text).toMatch(/30%/);
-    expect(text).toMatch(/Black/);
-    expect(text).not.toMatch(/You lose/);
-    expect(text).not.toMatch(/You win/);
+    expect(text).toMatch(/after/);
+    // Abbreviated prose: no "You score" / "as Black/White"
+    expect(text).not.toMatch(/You score/);
+    expect(text).not.toMatch(/as Black/);
+    expect(text).not.toMatch(/as White/);
   });
 
-  it('renders "You score X% as White" prose for strength section', () => {
+  it('renders "Score X% after <move>" prose for strength section', () => {
     const finding = makeFinding({ classification: 'strength', color: 'white', score: 0.58 });
     renderCard({ finding, idx: 1 });
     const card = screen.getByTestId('opening-finding-card-1');
     const text = card.textContent ?? '';
-    expect(text).toMatch(/You score/);
+    expect(text).toMatch(/Score/);
     expect(text).toMatch(/58%/);
-    expect(text).toMatch(/White/);
-    expect(text).not.toMatch(/You lose/);
-    expect(text).not.toMatch(/You win/);
+    expect(text).toMatch(/after/);
+    expect(text).not.toMatch(/You score/);
   });
 
   it('does NOT render "lose" or "win" verbs in prose (Phase 76 D-02)', () => {
@@ -153,6 +168,7 @@ describe('OpeningFindingCard', () => {
       <OpeningFindingCard
         finding={makeFinding({ classification: 'weakness', score: 0.30 })}
         idx={2}
+        evalBaselinePawns={0.25}
         onFindingClick={() => {}}
         onOpenGames={() => {}}
       />,
@@ -166,6 +182,7 @@ describe('OpeningFindingCard', () => {
       <OpeningFindingCard
         finding={makeFinding({ classification: 'weakness', score: 0.49 })}
         idx={3}
+        evalBaselinePawns={0.25}
         onFindingClick={() => {}}
         onOpenGames={() => {}}
       />,
@@ -179,6 +196,7 @@ describe('OpeningFindingCard', () => {
       <OpeningFindingCard
         finding={makeFinding({ classification: 'strength', score: 0.60 })}
         idx={4}
+        evalBaselinePawns={0.25}
         onFindingClick={() => {}}
         onOpenGames={() => {}}
       />,
@@ -194,6 +212,7 @@ describe('OpeningFindingCard', () => {
       <OpeningFindingCard
         finding={finding}
         idx={6}
+        evalBaselinePawns={0.25}
         onFindingClick={onFindingClick}
         onOpenGames={() => {}}
       />,
@@ -211,6 +230,7 @@ describe('OpeningFindingCard', () => {
       <OpeningFindingCard
         finding={finding}
         idx={7}
+        evalBaselinePawns={0.25}
         onFindingClick={() => {}}
         onOpenGames={onOpenGames}
       />,
@@ -229,6 +249,7 @@ describe('OpeningFindingCard', () => {
       <OpeningFindingCard
         finding={makeFinding()}
         idx={8}
+        evalBaselinePawns={0.25}
         onFindingClick={onFindingClick}
         onOpenGames={onOpenGames}
       />,
@@ -243,6 +264,7 @@ describe('OpeningFindingCard', () => {
       <OpeningFindingCard
         finding={makeFinding({ display_name: 'Caro-Kann Defense', opening_eco: 'B10' })}
         idx={9}
+        evalBaselinePawns={0.25}
         onFindingClick={() => {}}
         onOpenGames={() => {}}
       />,
@@ -260,6 +282,7 @@ describe('OpeningFindingCard', () => {
           display_name: '<unnamed line>',
         })}
         idx={10}
+        evalBaselinePawns={0.25}
         onFindingClick={() => {}}
         onOpenGames={() => {}}
       />,
@@ -279,6 +302,7 @@ describe('OpeningFindingCard', () => {
       <OpeningFindingCard
         finding={finding}
         idx={11}
+        evalBaselinePawns={0.25}
         onFindingClick={() => {}}
         onOpenGames={() => {}}
       />,
@@ -289,25 +313,49 @@ describe('OpeningFindingCard', () => {
     expect(text).not.toContain('3.d4 cxd4');
   });
 
-  describe('Score bullet + confidence-info popover (260505 refactor)', () => {
-    it('renders the score bullet chart with the popover info trigger to its right', () => {
+  describe('WDL bar row + eval bullet row (quick task 260506-u2b)', () => {
+    it('renders the WDL chart row (replaces legacy score-bullet)', () => {
       const finding = makeFinding({ confidence: 'medium' });
       renderCard({ finding, idx: 3 });
       // Both mobile + desktop branches render — same testids.
-      const bullets = screen.getAllByTestId('opening-finding-card-3-score-bullet');
-      expect(bullets.length).toBeGreaterThanOrEqual(1);
-      // The bullet container holds the MiniBulletChart and the popover trigger.
-      expect(bullets[0]!.querySelector('[data-testid="mini-bullet-chart"]')).not.toBeNull();
-      expect(bullets[0]!.querySelector(
-        '[data-testid="opening-finding-card-3-confidence-info"]',
-      )).not.toBeNull();
+      const wdlRows = screen.getAllByTestId('opening-finding-card-3-wdl');
+      expect(wdlRows.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('renders the CI whisker on the bullet chart from finding.ci_low/ci_high', () => {
-      const finding = makeFinding({ ci_low: 0.40, ci_high: 0.55 });
+    it('does NOT render the legacy score-bullet testid', () => {
+      const finding = makeFinding({ confidence: 'medium' });
+      renderCard({ finding, idx: 3 });
+      expect(screen.queryAllByTestId('opening-finding-card-3-score-bullet').length).toBe(0);
+    });
+
+    it('does NOT render the legacy confidence-info testid', () => {
+      const finding = makeFinding({ confidence: 'medium' });
+      renderCard({ finding, idx: 3 });
+      expect(screen.queryAllByTestId('opening-finding-card-3-confidence-info').length).toBe(0);
+    });
+
+    it('renders eval bullet container when eval_n > 0', () => {
+      const finding = makeFinding({ eval_n: 18, avg_eval_pawns: 0.5 });
       renderCard({ finding, idx: 5 });
-      const bullet = screen.getAllByTestId('opening-finding-card-5-score-bullet')[0]!;
-      expect(bullet.querySelector('[data-testid="mini-bullet-whisker"]')).not.toBeNull();
+      const bullets = screen.getAllByTestId('opening-finding-card-5-bullet');
+      expect(bullets.length).toBeGreaterThanOrEqual(1);
+      expect(bullets[0]!.querySelector('[data-testid="mini-bullet-chart"]')).not.toBeNull();
+    });
+
+    it('renders em-dash fallback in eval bullet when eval_n === 0', () => {
+      const finding = makeFinding({ eval_n: 0, avg_eval_pawns: null });
+      renderCard({ finding, idx: 5 });
+      // eval-text container should contain "—" placeholder
+      const evalTexts = screen.getAllByTestId('opening-finding-card-5-eval-text');
+      expect(evalTexts.length).toBeGreaterThanOrEqual(1);
+      expect(evalTexts[0]!.textContent).toContain('—');
+    });
+
+    it('renders BulletConfidencePopover trigger when eval_n > 0', () => {
+      const finding = makeFinding({ eval_n: 18, avg_eval_pawns: 0.5, eval_confidence: 'medium' });
+      renderCard({ finding, idx: 5 });
+      const popovers = screen.getAllByTestId('opening-finding-card-5-bullet-popover');
+      expect(popovers.length).toBeGreaterThanOrEqual(1);
     });
 
     it('does NOT render the legacy Confidence: <level> text line', () => {
