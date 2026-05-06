@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+    EVAL_BASELINE_PAWNS_WHITE,
+    EVAL_BASELINE_PAWNS_BLACK,
 )
 
 
@@ -82,6 +84,15 @@ class OpeningInsightFinding(BaseModel):
     # render the CI whisker on the bullet chart.
     ci_low: float = Field(ge=0.0, le=1.0)
     ci_high: float = Field(ge=0.0, le=1.0)
+    # MG-entry pillar (parity with OpeningWDL Phase 80 — quick task 260506-u2b).
+    # Populated after the finding is built by looking up resulting_full_hash in
+    # query_opening_phase_entry_metrics_batch. Defaults mirror OpeningWDL defaults.
+    avg_eval_pawns: float | None = None
+    eval_ci_low_pawns: float | None = None
+    eval_ci_high_pawns: float | None = None
+    eval_n: int = 0
+    eval_p_value: float | None = None
+    eval_confidence: Literal["low", "medium", "high"] = "low"
 
 
 class OpeningInsightsResponse(BaseModel):
@@ -89,9 +100,18 @@ class OpeningInsightsResponse(BaseModel):
 
     All four lists are always present; empty sections are valid empty-state
     (D-20). Phase 71 renders four labeled sections.
+
+    Quick task 260506-u2b: top-level per-color MG-entry eval baselines mirror
+    MostPlayedOpeningsResponse so the FE can render the same reference tick on
+    the finding cards' eval bullet charts.
     """
 
     white_weaknesses: list[OpeningInsightFinding] = Field(default_factory=list)
     black_weaknesses: list[OpeningInsightFinding] = Field(default_factory=list)
     white_strengths: list[OpeningInsightFinding] = Field(default_factory=list)
     black_strengths: list[OpeningInsightFinding] = Field(default_factory=list)
+    # Per-color engine-asymmetry baselines (in pawns). Rendered as a small
+    # reference tick on the finding card's MG-entry bullet chart. NOT used as
+    # the H0 reference for the z-test (anchored at 0 cp per 260504-rvh).
+    eval_baseline_pawns_white: float = EVAL_BASELINE_PAWNS_WHITE
+    eval_baseline_pawns_black: float = EVAL_BASELINE_PAWNS_BLACK

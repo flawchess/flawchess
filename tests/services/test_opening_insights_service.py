@@ -93,7 +93,12 @@ async def _run_compute(
     openings_by_hash: dict[int, Opening] | None = None,
     color: str = "white",
 ) -> OpeningInsightsResponse:
-    """Helper: patch both repo functions and run compute_insights."""
+    """Helper: patch repo functions and run compute_insights.
+
+    Also patches query_opening_phase_entry_metrics_batch (added quick task
+    260506-u2b) to return an empty dict so existing tests are unaffected by
+    the new eval-enrichment step.
+    """
     if openings_by_hash is None:
         openings_by_hash = {100: _make_opening()}
 
@@ -106,9 +111,14 @@ async def _run_compute(
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
         ) as mock_attribution,
+        patch(
+            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+            new_callable=AsyncMock,
+        ) as mock_eval,
     ):
         mock_transitions.return_value = rows
         mock_attribution.return_value = openings_by_hash
+        mock_eval.return_value = {}  # no MG-entry metrics (existing tests unaffected)
 
         return await compute_insights(
             session=AsyncMock(),
@@ -251,6 +261,10 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
         ) as mock_attribution,
+        patch(
+            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+            new_callable=AsyncMock,
+        ) as mock_eval,
     ):
         # First call (white) → row_white, second call (black) → row_black
         mock_transitions.side_effect = [
@@ -258,6 +272,7 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
             [row_black],
         ]
         mock_attribution.return_value = {100: opening}
+        mock_eval.return_value = {}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -326,6 +341,10 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
         ) as mock_attribution,
+        patch(
+            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+            new_callable=AsyncMock,
+        ) as mock_eval,
     ):
         # White call returns shallow + deep, black call returns mid.
         mock_transitions.side_effect = [
@@ -333,6 +352,7 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
             [row_black_mid],
         ]
         mock_attribution.return_value = {100: opening_a, 200: opening_b, 300: opening_c}
+        mock_eval.return_value = {}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -487,6 +507,10 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
         ) as mock_attribution,
+        patch(
+            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+            new_callable=AsyncMock,
+        ) as mock_eval,
     ):
         row = _make_row(
             entry_hash=entry_hash_at_ply3,
@@ -504,6 +528,7 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
             {},  # direct pass: no opening at ply=3
             {parent_hash: parent_opening},  # parent pass: Sicilian at ply=2
         ]
+        mock_eval.return_value = {}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -528,11 +553,16 @@ async def test_attribution_drops_finding_when_no_lineage_match() -> None:
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
         ) as mock_attribution,
+        patch(
+            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+            new_callable=AsyncMock,
+        ) as mock_eval,
     ):
         row = _make_row(n=20, w=2, d=2, losses=16, entry_hash=9999)
         mock_transitions.return_value = [row]
         # Both passes return empty dicts — no attribution possible
         mock_attribution.return_value = {}
+        mock_eval.return_value = {}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -878,9 +908,14 @@ async def test_color_optimization_skips_unused_color_query() -> None:
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
         ) as mock_attribution,
+        patch(
+            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+            new_callable=AsyncMock,
+        ) as mock_eval,
     ):
         mock_transitions.return_value = [row]
         mock_attribution.return_value = {100: opening}
+        mock_eval.return_value = {}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -925,12 +960,17 @@ async def test_display_name_vs_prefix_when_attribution_parity_disagrees() -> Non
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
         ) as mock_attribution,
+        patch(
+            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+            new_callable=AsyncMock,
+        ) as mock_eval,
     ):
         mock_transitions.side_effect = [
             [],  # white query: no rows
             [row],  # black query: one weakness
         ]
         mock_attribution.return_value = {100: white_defined_opening}
+        mock_eval.return_value = {}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -962,3 +1002,157 @@ def test_bookmarks_not_consumed_by_algorithm() -> None:
     param_names = list(sig.parameters.keys())
     assert "bookmark" not in param_names
     assert "bookmarks" not in param_names
+
+
+# ---------------------------------------------------------------------------
+# Phase 80 MG-entry eval fields on OpeningInsightFinding (quick task 260506-u2b)
+# ---------------------------------------------------------------------------
+
+
+def test_opening_insight_finding_eval_fields_default() -> None:
+    """OpeningInsightFinding defaults: eval fields are None / 0 / 'low'."""
+    finding = OpeningInsightFinding(
+        color="white",
+        classification="weakness",
+        severity="minor",
+        opening_name="Test",
+        opening_eco="A00",
+        display_name="Test",
+        entry_fen="",
+        entry_san_sequence=[],
+        entry_full_hash="0",
+        candidate_move_san="e4",
+        resulting_full_hash="0",
+        n_games=10,
+        wins=2,
+        draws=2,
+        losses=6,
+        score=0.30,
+        confidence="low",
+        p_value=0.5,
+        ci_low=0.20,
+        ci_high=0.40,
+    )
+    assert finding.avg_eval_pawns is None
+    assert finding.eval_ci_low_pawns is None
+    assert finding.eval_ci_high_pawns is None
+    assert finding.eval_n == 0
+    assert finding.eval_p_value is None
+    assert finding.eval_confidence == "low"
+
+
+def test_opening_insights_response_carries_eval_baselines() -> None:
+    """OpeningInsightsResponse must expose eval_baseline_pawns_white and _black."""
+    from app.services.opening_insights_constants import (
+        EVAL_BASELINE_PAWNS_WHITE,
+        EVAL_BASELINE_PAWNS_BLACK,
+    )
+
+    resp = OpeningInsightsResponse(
+        eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
+        eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
+    )
+    assert resp.eval_baseline_pawns_white == EVAL_BASELINE_PAWNS_WHITE
+    assert resp.eval_baseline_pawns_black == EVAL_BASELINE_PAWNS_BLACK
+
+
+@pytest.mark.asyncio
+async def test_compute_insights_eval_fields_populated_when_metrics_present() -> None:
+    """When query_opening_phase_entry_metrics_batch returns metrics for a finding's
+    resulting_full_hash, the service populates the six eval fields on the finding."""
+    from unittest.mock import AsyncMock, patch
+    from app.repositories.stats_repository import OpeningPhaseEntryMetrics
+
+    row = _make_row(n=20, w=4, d=4, losses=12, resulting_full_hash=999)
+    opening = _make_opening(full_hash=100)
+
+    # Synthetic metrics for the resulting_full_hash=999
+    synthetic_metrics: dict[int, OpeningPhaseEntryMetrics] = {
+        999: OpeningPhaseEntryMetrics(
+            eval_sum_mg=2000.0,   # mean = 2000/20 = 100 cp = 1.0 pawns
+            eval_sumsq_mg=220000.0,
+            eval_n_mg=20,
+            mate_n_mg=0,
+            null_eval_n_mg=0,
+            outlier_n_mg=0,
+        ),
+    }
+
+    with (
+        patch(
+            "app.services.opening_insights_service.query_opening_transitions",
+            new_callable=AsyncMock,
+        ) as mock_transitions,
+        patch(
+            "app.services.opening_insights_service.query_openings_by_hashes",
+            new_callable=AsyncMock,
+        ) as mock_attribution,
+        patch(
+            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+            new_callable=AsyncMock,
+        ) as mock_eval,
+    ):
+        mock_transitions.return_value = [row]
+        mock_attribution.return_value = {100: opening}
+        mock_eval.return_value = synthetic_metrics
+
+        response = await compute_insights(
+            session=AsyncMock(),
+            user_id=1,
+            request=_default_request(color="white"),
+        )
+
+    assert len(response.white_weaknesses) == 1
+    finding = response.white_weaknesses[0]
+    # eval fields should be populated
+    assert finding.eval_n == 20
+    assert finding.avg_eval_pawns is not None
+    assert abs(finding.avg_eval_pawns - 1.0) < 0.01  # 100 cp = 1.0 pawns
+    assert finding.eval_p_value is not None
+    assert finding.eval_confidence in ("low", "medium", "high")
+    # Baselines are present on the response
+    assert isinstance(response.eval_baseline_pawns_white, float)
+    assert isinstance(response.eval_baseline_pawns_black, float)
+
+
+@pytest.mark.asyncio
+async def test_compute_insights_eval_fields_stay_at_defaults_when_no_metrics() -> None:
+    """When query_opening_phase_entry_metrics_batch returns empty dict (no MG entry data),
+    eval fields stay at defaults (eval_n=0, avg_eval_pawns=None, eval_confidence='low')."""
+    from unittest.mock import AsyncMock, patch
+
+    row = _make_row(n=20, w=4, d=4, losses=12, resulting_full_hash=999)
+    opening = _make_opening(full_hash=100)
+
+    with (
+        patch(
+            "app.services.opening_insights_service.query_opening_transitions",
+            new_callable=AsyncMock,
+        ) as mock_transitions,
+        patch(
+            "app.services.opening_insights_service.query_openings_by_hashes",
+            new_callable=AsyncMock,
+        ) as mock_attribution,
+        patch(
+            "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+            new_callable=AsyncMock,
+        ) as mock_eval,
+    ):
+        mock_transitions.return_value = [row]
+        mock_attribution.return_value = {100: opening}
+        mock_eval.return_value = {}  # no metrics
+
+        response = await compute_insights(
+            session=AsyncMock(),
+            user_id=1,
+            request=_default_request(color="white"),
+        )
+
+    assert len(response.white_weaknesses) == 1
+    finding = response.white_weaknesses[0]
+    assert finding.eval_n == 0
+    assert finding.avg_eval_pawns is None
+    assert finding.eval_ci_low_pawns is None
+    assert finding.eval_ci_high_pawns is None
+    assert finding.eval_p_value is None
+    assert finding.eval_confidence == "low"
