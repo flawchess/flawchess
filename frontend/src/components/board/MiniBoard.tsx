@@ -7,8 +7,8 @@ import { squareToCoords, buildArrowPath } from './arrowGeometry';
 // scale. MiniBoard arrows are decorative pointers ("which move scored well/
 // poorly?"), so they stay visually thin even on small boards. All values are
 // fractions of a single square's pixel size.
-const MINI_SHAFT_WIDTH = 0.18;
-const MINI_HEAD_WIDTH = 0.50;
+const MINI_SHAFT_WIDTH = 0.27;
+const MINI_HEAD_WIDTH = 0.75;
 const MINI_HEAD_LENGTH_RATIO = 0.7;
 const MINI_ARROW_OPACITY = 0.85;
 const MINI_TIP_OVERSHOOT = 0.16;
