@@ -126,10 +126,17 @@ export function OpeningStatsCard({
 
   const evalLine = (
     <div className="flex items-center gap-2">
+      <div
+        className="flex-1 min-w-0 tabular-nums"
+        data-testid={`${cardTestId}-bullet`}
+      >
+        {mgBulletContent}
+      </div>
       <span
         className="inline-flex items-center gap-1 text-sm tabular-nums"
         data-testid={`${cardTestId}-eval-text`}
       >
+        {mgEvalTextContent}
         {hasMgEval && (
           <BulletConfidencePopover
             level={opening.eval_confidence}
@@ -140,14 +147,7 @@ export function OpeningStatsCard({
             testId={`${cardTestId}-bullet-popover`}
           />
         )}
-        {mgEvalTextContent}
       </span>
-      <div
-        className="flex-1 min-w-0 tabular-nums"
-        data-testid={`${cardTestId}-bullet`}
-      >
-        {mgBulletContent}
-      </div>
     </div>
   );
 
