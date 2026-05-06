@@ -61,10 +61,10 @@ import { BulletConfidencePopover } from '@/components/insights/BulletConfidenceP
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import {
   SCORE_BULLET_CENTER,
-  SCORE_BULLET_DOMAIN,
   SCORE_BULLET_NEUTRAL_MAX,
   SCORE_BULLET_NEUTRAL_MIN,
   clampScoreCi,
+  scoreBulletDomain,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
 import {
@@ -111,7 +111,7 @@ const TAB_INFO: Record<'explorer' | 'games' | 'stats' | 'insights', { aria: stri
   },
   stats: {
     aria: 'About Opening Stats',
-    text: 'Your bookmarked and most played openings, with win/draw/loss charts and Stockfish evaluation at the transition from opening to middlegame.',
+    text: 'Shows the performance of your bookmarked and most played openings, with win/draw/loss charts and Stockfish evaluation at the transition from opening to middlegame.',
   },
   insights: {
     aria: 'About Opening Insights',
@@ -1001,14 +1001,16 @@ export function OpeningsPage() {
                 <span className="text-muted-foreground">Score:</span>
                 <span className="font-semibold" style={{ color: scoreColor }}>{scorePct}%</span>
               </span>
-              {/* Col 2, row 2: Score bullet chart */}
+              {/* Col 2, row 2: Score bullet chart. Domain is 30-70% by default,
+                  widened to 0-100% when the CI overflows that window so the
+                  whisker stays visible. */}
               <div data-testid="score-bullet-position">
                 <MiniBulletChart
                   value={stats.score}
                   center={SCORE_BULLET_CENTER}
                   neutralMin={SCORE_BULLET_NEUTRAL_MIN}
                   neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-                  domain={SCORE_BULLET_DOMAIN}
+                  domain={scoreBulletDomain(clampScoreCi(stats.ci_low), clampScoreCi(stats.ci_high))}
                   ciLow={clampScoreCi(stats.ci_low)}
                   ciHigh={clampScoreCi(stats.ci_high)}
                   ariaLabel={`Score ${scorePct}% vs 50% baseline`}
