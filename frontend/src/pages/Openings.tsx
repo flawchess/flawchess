@@ -1133,7 +1133,17 @@ export function OpeningsPage() {
           </div>
         )}
 
-        {/* 1. Win Rate Over Time — only when bookmarks exist with time series data */}
+        {/* 1. White Opening Bookmarks (full width) */}
+        {whiteBookmarkRows.length > 0 && (
+          <OpeningStatsSection section={whiteBookmarksSection} />
+        )}
+
+        {/* 2. Black Opening Bookmarks (full width) */}
+        {blackBookmarkRows.length > 0 && (
+          <OpeningStatsSection section={blackBookmarksSection} />
+        )}
+
+        {/* 3. Win Rate Over Time — only when bookmarks exist with time series data */}
         {bookmarks.length > 0 && tsData && (
           <div className="charcoal-texture rounded-md p-4">
             <WinRateChart bookmarks={chartBookmarks} series={tsData.series} />
@@ -1145,16 +1155,6 @@ export function OpeningsPage() {
           <div className="charcoal-texture rounded-md p-4 text-center text-muted-foreground">
             Loading chart data...
           </div>
-        )}
-
-        {/* 2. White Opening Bookmarks (full width) */}
-        {whiteBookmarkRows.length > 0 && (
-          <OpeningStatsSection section={whiteBookmarksSection} />
-        )}
-
-        {/* 3. Black Opening Bookmarks (full width) */}
-        {blackBookmarkRows.length > 0 && (
-          <OpeningStatsSection section={blackBookmarksSection} />
         )}
 
         {/* Most Played Openings — error / loading branches per CLAUDE.md */}
