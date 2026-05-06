@@ -15,6 +15,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - **Code organization** (Phase 80): extracted `<ConfidencePill>` to a shared component (used by Opening Insights cards and the new Openings Stats columns) and extracted clock-formatting helpers (`formatSignedSeconds`, `formatSignedPct1`) to `frontend/src/lib/clockFormat.ts` so the two clock-diff cells across the app render identically.
+- **Openings: Insights tab** evidence floor raised from n=10 to n=20 per (entry, candidate) transition. The SQL pre-filter on score <= 0.45 OR score >= 0.55 selects on the same statistic the Wald p-value then tests, so at small n the score-vs-50% test is anti-conservative; n>=20 mitigates the worst of that post-selection inflation. The explorer's arrow-color threshold (`MIN_GAMES_FOR_COLOR`) stays at 10 — the two thresholds are now decoupled.
 
 ## [v1.15] Eval-Based Endgame Classification — 2026-05-03
 

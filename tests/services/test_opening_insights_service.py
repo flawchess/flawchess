@@ -195,9 +195,15 @@ def test_classify_row_major_strength_at_score_060_exact() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_min_games_floor_constant_is_10() -> None:
-    """D-04 / Phase 75 INSIGHT-SCORE-05: discovery floor dropped from 20 to 10."""
-    assert MIN_GAMES_PER_CANDIDATE == 10
+def test_min_games_floor_constant_is_20() -> None:
+    """Quick 260506: discovery floor raised back from 10 to 20.
+
+    Rationale: the SQL pre-filter on score <= 0.45 OR score >= 0.55 selects on
+    the same statistic the Wald p-value then tests, so at n in 10..19 the
+    score-vs-50% test is systematically anti-conservative. n>=20 mitigates the
+    worst of the post-selection inflation.
+    """
+    assert MIN_GAMES_PER_CANDIDATE == 20
 
 
 def test_classify_row_does_not_filter_below_min_games() -> None:
@@ -724,13 +730,13 @@ def test_ranking_small_n_high_effect_does_not_outrank_large_n_moderate_effect_wi
     moderate-effect finding within the same bucket — small N widens the Wilson
     interval and demotes the row.
 
-      A (small N, high effect):     score=0.20, n_games=10  -> Wilson upper ~ 0.5098.
+      A (small N, high effect):     score=0.20, n_games=20  -> Wilson upper ~ 0.4160.
       B (large N, moderate effect): score=0.30, n_games=400 -> Wilson upper ~ 0.3466.
 
-    New Wilson-bound rule: B.upper (0.347) < A.upper (0.510) -> B sorts FIRST.
+    New Wilson-bound rule: B.upper (0.347) < A.upper (0.416) -> B sorts FIRST.
     Old |score-0.5| rule would have ordered A.|delta|=0.30 > B.|delta|=0.20 -> A first.
     """
-    a_small_n = _make_weakness_finding(score=0.20, candidate="a", confidence="high", n_games=10)
+    a_small_n = _make_weakness_finding(score=0.20, candidate="a", confidence="high", n_games=20)
     b_large_n = _make_weakness_finding(score=0.30, candidate="b", confidence="high", n_games=400)
 
     # SE=0 makes the old Wald formula collapse to score-only, where A (0.20)
@@ -769,17 +775,17 @@ def test_ranking_bound_handles_boundary_scores() -> None:
     in the implementation for safety, but ordering does not depend on it.
 
     Weakness side:
-      f_extreme: score=0.95, n_games=10  -> Wilson upper ~ 0.9948 (NOT clamped).
+      f_extreme: score=0.95, n_games=20  -> Wilson upper ~ 0.9911 (NOT clamped).
       f_normal:  score=0.30, n_games=400 -> Wilson upper ~ 0.3466.
     Normal row sorts first (its bound is much further below 0.5).
 
     Strength side:
-      s_extreme: score=0.05, n_games=10  -> Wilson lower ~ 0.0052.
+      s_extreme: score=0.05, n_games=20  -> Wilson lower ~ 0.0089.
       s_normal:  score=0.70, n_games=400 -> Wilson lower ~ 0.6534.
     Normal row sorts first (its bound is much further above 0.5).
     """
     f_extreme = _make_weakness_finding(
-        score=0.95, candidate="extreme", confidence="high", n_games=10
+        score=0.95, candidate="extreme", confidence="high", n_games=20
     )
     f_normal = _make_weakness_finding(
         score=0.30, candidate="normal", confidence="high", n_games=400
@@ -787,18 +793,18 @@ def test_ranking_bound_handles_boundary_scores() -> None:
 
     # SE values arbitrary — Wilson uses only score and n_games.
     ranked = _rank_section([(f_extreme, 0.0), (f_normal, 0.0)], direction="weakness")
-    # Normal row (upper ~0.347) sorts before extreme row (upper ~0.995).
+    # Normal row (upper ~0.347) sorts before extreme row (upper ~0.991).
     assert [f.candidate_move_san for f in ranked] == ["normal", "extreme"]
 
     s_extreme = _make_strength_finding(
-        score=0.05, candidate="extreme", confidence="high", n_games=10
+        score=0.05, candidate="extreme", confidence="high", n_games=20
     )
     s_normal = _make_strength_finding(
         score=0.70, candidate="normal", confidence="high", n_games=400
     )
 
     ranked_s = _rank_section([(s_extreme, 0.0), (s_normal, 0.0)], direction="strength")
-    # Normal row (lower ~0.653) sorts before extreme row (lower ~0.005).
+    # Normal row (lower ~0.653) sorts before extreme row (lower ~0.009).
     assert [f.candidate_move_san for f in ranked_s] == ["normal", "extreme"]
 
 
@@ -1023,10 +1029,10 @@ def test_opening_insight_finding_eval_fields_default() -> None:
         entry_full_hash="0",
         candidate_move_san="e4",
         resulting_full_hash="0",
-        n_games=10,
-        wins=2,
-        draws=2,
-        losses=6,
+        n_games=20,
+        wins=4,
+        draws=4,
+        losses=12,
         score=0.30,
         confidence="low",
         p_value=0.5,

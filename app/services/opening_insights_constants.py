@@ -18,10 +18,18 @@ so the constants cannot live in either file.
 OPENING_INSIGHTS_MIN_ENTRY_PLY: int = 0
 OPENING_INSIGHTS_MAX_ENTRY_PLY: int = 16
 
-# Discovery floor — was 20, dropped to 10 per INSIGHT-SCORE-05 / D-04.
-# Borderline-evidence findings surface with confidence="low" rather than
-# being filtered out (the confidence badge replaces the prior hard floor).
-OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 10
+# Discovery floor. Was 20 → 10 per INSIGHT-SCORE-05 / D-04 (confidence badge
+# replaces hard-floor gate), then back to 20 (quick task 260506) after the
+# eval-bullet rollout exposed that small-N findings are dominated by
+# post-selection inference noise: the SQL pre-filter on score <= 0.45 OR
+# score >= 0.55 selects the very statistic the Wald p-value then tests, so at
+# n in 10..19 the score-vs-50% test is systematically anti-conservative.
+# Raising the floor to 20 mitigates the worst of that inflation; the
+# confidence badge still down-weights borderline n=20..29 findings.
+# Decoupled from the explorer's MIN_GAMES_FOR_COLOR (frontend, still 10) —
+# the explorer arrow palette can tolerate weaker evidence than a surfaced
+# "weakness" card on the Insights tab.
+OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 20
 
 # Score classifier — replaces the Phase 70 LIGHT_THRESHOLD / DARK_THRESHOLD
 # pair. Pivot is fixed at 0.50; effect-size gate is symmetric on both sides.
