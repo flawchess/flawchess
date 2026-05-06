@@ -76,9 +76,7 @@ class OpeningInsightFinding(BaseModel):
     confidence: Literal[
         "low", "medium", "high"
     ]  # Two-sided Wald p-value bucket with N>=10 gate (p<0.01 high, p<0.05 medium) (shared via score_confidence.py)
-    p_value: float = Field(
-        ge=0.0, le=1.0
-    )  # Two-sided Wald z-test p-value on H0: score = 0.50
+    p_value: float = Field(ge=0.0, le=1.0)  # Two-sided Wald z-test p-value on H0: score = 0.50
     # Wilson 95% score interval bounds, clamped to [0, 1]. Same formula already
     # used internally for ranking (_wilson_bounds); now exposed so the FE can
     # render the CI whisker on the bullet chart.

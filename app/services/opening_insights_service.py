@@ -649,12 +649,8 @@ async def compute_insights(
             black_weaknesses=_enrich_findings(
                 final_sections["black_weaknesses"], black_eval_metrics
             ),
-            white_strengths=_enrich_findings(
-                final_sections["white_strengths"], white_eval_metrics
-            ),
-            black_strengths=_enrich_findings(
-                final_sections["black_strengths"], black_eval_metrics
-            ),
+            white_strengths=_enrich_findings(final_sections["white_strengths"], white_eval_metrics),
+            black_strengths=_enrich_findings(final_sections["black_strengths"], black_eval_metrics),
             eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
             eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
         )

@@ -1069,7 +1069,7 @@ async def test_compute_insights_eval_fields_populated_when_metrics_present() -> 
     # Synthetic metrics for the resulting_full_hash=999
     synthetic_metrics: dict[int, OpeningPhaseEntryMetrics] = {
         999: OpeningPhaseEntryMetrics(
-            eval_sum_mg=2000.0,   # mean = 2000/20 = 100 cp = 1.0 pawns
+            eval_sum_mg=2000.0,  # mean = 2000/20 = 100 cp = 1.0 pawns
             eval_sumsq_mg=220000.0,
             eval_n_mg=20,
             mate_n_mg=0,
