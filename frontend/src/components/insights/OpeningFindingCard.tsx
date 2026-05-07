@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Swords } from 'lucide-react';
+import { ArrowRightLeft, Cpu, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
@@ -144,10 +144,11 @@ export function OpeningFindingCard({
 
   const mgEvalTextContent = hasMgEval ? (
     <span
-      className="font-semibold"
+      className="font-semibold inline-flex items-center gap-0.5"
       style={{ color: evalZoneColor(avgEvalPawns as number) }}
     >
       {formatSignedEvalPawns(avgEvalPawns as number)}
+      <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
     </span>
   ) : (
     <span className="text-muted-foreground">—</span>

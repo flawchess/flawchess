@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Swords } from 'lucide-react';
+import { ArrowRightLeft, Cpu, Swords } from 'lucide-react';
 import type { OpeningWDL } from '@/types/stats';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
@@ -69,10 +69,11 @@ export function OpeningStatsCard({
   // anchored at 0 cp. Mirrors MostPlayedOpeningsTable lines 78-87.
   const mgEvalTextContent = hasMgEval ? (
     <span
-      className="font-semibold"
+      className="font-semibold inline-flex items-center gap-0.5"
       style={{ color: evalZoneColor(opening.avg_eval_pawns as number) }}
     >
       {formatSignedEvalPawns(opening.avg_eval_pawns as number)}
+      <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
     </span>
   ) : (
     <span className="text-muted-foreground">—</span>
