@@ -211,6 +211,10 @@ export function OpeningFindingCard({
 
   const linksRow = (
     <div className="flex items-center gap-4">
+      <span className="hidden sm:inline text-sm text-muted-foreground">
+        after{' '}
+        <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
+      </span>
       <Tooltip content={`Open ${finding.display_name} in the Move Explorer`}>
         <button
           type="button"
@@ -239,10 +243,11 @@ export function OpeningFindingCard({
     </div>
   );
 
-  // Move-anchor caption sits directly under the miniboard so the visual +
-  // textual move anchor read as a single unit. Bumped from text-xs to text-sm
-  // (260507-mwn) — the move is the primary anchor for the card and was being
-  // outweighed by the surrounding labels.
+  // Mobile move-anchor caption — sits directly under the miniboard so the
+  // visual + textual move anchor read as a single unit. On desktop the move
+  // anchor lives at the left of the Moves/Games row (rendered inside linksRow
+  // with `hidden sm:inline`), reclaiming the under-board caption row for the
+  // bullet stack.
   const moveCaption = (
     <span className="text-sm text-muted-foreground">
       after{' '}
@@ -279,10 +284,9 @@ export function OpeningFindingCard({
         </div>
       </div>
 
-      {/* Desktop: board + caption left, content stacked right (header above on both).
-          items-start so the WDL bar lines up with the top edge of the miniboard
-          (the caption hangs below the board, making the column taller than the
-          content stack). */}
+      {/* Desktop: board left, content stacked right (header above on both).
+          Move anchor lives in linksRow (left of Moves/Games), not under the
+          board, so the bullet rows can sit closer to the miniboard. */}
       <div className="hidden sm:flex gap-3 items-start mt-2">
         <div className="flex flex-col items-end gap-1">
           <LazyMiniBoard
@@ -291,7 +295,6 @@ export function OpeningFindingCard({
             size={DESKTOP_BOARD_SIZE}
             arrows={arrows}
           />
-          {moveCaption}
         </div>
         <div className="min-w-0 flex-1 flex flex-col gap-2">
           {wdlLine}

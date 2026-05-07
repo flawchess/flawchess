@@ -1,10 +1,12 @@
 ---
 id: SEED-011
-status: dormant
+status: closed
 planted: 2026-05-07
+closed: 2026-05-08
 planted_during: /gsd-explore session on Openings tab chart layout (Moves vs Stats vs Insights)
 trigger_when: phase 80.1 (transpositions in Move Explorer + Opening Insights) has shipped
 scope: quick-task (`/gsd-quick`) — single-phase UI rework
+closed_by: implementation completed; final desktop tweak (move anchor relocated from under-board to Moves/Games row) applied 2026-05-08
 ---
 
 # SEED-011: Add score bullet chart to Openings → Stats and Insights tabs
@@ -75,18 +77,21 @@ This means changing `OpeningStatsCard.tsx` to use `scoreZoneColor` for the left 
 
 Refactor:
 - Drop the "Score X%" prefix entirely.
-- Render the move anchor (e.g. "after 2.c4") as a **small caption directly under the miniboard** — keeps it tightly co-located with the arrow it describes, so the visual + textual move anchor read as a single unit.
+- **Mobile**: render the move anchor (e.g. "after 2.c4") as a small caption directly under the miniboard — tightly co-located with the arrow it describes.
+- **Desktop**: place the move anchor on the same row as the existing **Moves** / **Games** indicators (`OpeningFindingCard.tsx` lines ~219–236), positioned to the **left** of them. Same row uses already-allocated vertical space, and the desktop layout has horizontal room there. Keeps the move anchor close enough to the miniboard arrow to read as a unit, while reclaiming the under-miniboard caption row for the bullet rows.
 - This frees a row of vertical space, which the new score bullet row consumes.
 
 ### Card layout: use the mobile layout on desktop too
 
 Today's desktop card likely puts the miniboard on one side and the stats column on the other (side-by-side), which constrains horizontal width for the bullet rows. With three bullet rows now in play, that horizontal squeeze hurts.
 
-**Decision: adopt the mobile layout on desktop as well** — opening name spans the full card width on top, miniboard sits below it, then the bullet rows stack vertically beneath the miniboard's caption. This gives the bullet rows the full card width on every viewport and unifies the responsive code path (one layout instead of two).
+**Decision: adopt the mobile layout on desktop as well** — opening name spans the full card width on top, miniboard sits below it, then the bullet rows stack vertically beneath. This gives the bullet rows the full card width on every viewport and largely unifies the responsive code path.
+
+The **only intentional viewport divergence** is the move-anchor placement (see "Drop the prose" section above): mobile shows it as a caption under the miniboard, desktop folds it into the Moves/Games row to reclaim that vertical space. Everything else (card structure, bullet stacking, header) is identical across viewports.
 
 Implications:
 - Cards become taller and narrower-feeling on desktop. Confirm this still feels reasonable on the Stats and Insights tab grids (likely fine — Insights already uses 1-column or narrow-column layouts).
-- The "always apply changes to mobile too" CLAUDE.md rule becomes easier to honor because there's now only one card layout to maintain.
+- The "always apply changes to mobile too" CLAUDE.md rule becomes easier to honor because there's now mostly one card layout to maintain, with one small responsive split.
 
 ### Three-row bullet layout
 
