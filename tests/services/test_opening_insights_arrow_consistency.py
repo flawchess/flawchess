@@ -68,17 +68,17 @@ def test_score_boundary_matches_frontend() -> None:
     assert _extract_float("SCORE_BOUNDARY") == OPENING_INSIGHTS_MINOR_EFFECT
 
 
-@pytest.mark.skipif(not _CONSTANTS_AVAILABLE, reason="constants module not yet available")
-def test_min_games_matches_frontend() -> None:
-    """MIN_GAMES_FOR_COLOR must match OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE (D-13)."""
-    assert _extract_int("MIN_GAMES_FOR_COLOR") == OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
+# test_min_games_matches_frontend removed (quick 260506): the two thresholds
+# were decoupled. The Insights tab now uses n>=20 (post-selection inference
+# mitigation), while the explorer's MIN_GAMES_FOR_COLOR stays at 10 — the
+# arrow palette can tolerate weaker evidence than a surfaced "weakness" card.
 
 
 def test_compute_confidence_bucket_is_single_implementation() -> None:
     """Phase 76 D-22 fallback: structural assertion that
     score_confidence.compute_confidence_bucket is the only implementation of the
-    trinomial Wald formula. The boundary behavior is exercised by
-    tests/services/test_score_confidence.py.
+    Wilson score-test formula (migrated from trinomial Wald in quick 260507-aw5).
+    The boundary behavior is exercised by tests/services/test_score_confidence.py.
     """
     from app.services import score_confidence
 

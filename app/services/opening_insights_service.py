@@ -13,6 +13,8 @@ for D-01..D-34 locked decisions.
 
 import ctypes
 import datetime
+import logging
+from types import SimpleNamespace  # Phase 80.1: adapter for resulting-position W/D/L
 from typing import Any, Literal
 
 import chess
@@ -25,6 +27,7 @@ from app.models.opening import Opening
 from app.repositories.openings_repository import (
     query_opening_transitions,
     query_openings_by_hashes,
+    query_resulting_position_wdl,  # Phase 80.1 D-03: resulting-position WDL
 )
 from app.repositories.stats_repository import (
     OpeningPhaseEntryMetrics,
@@ -47,9 +50,10 @@ from app.services.score_confidence import compute_confidence_bucket, wilson_boun
 from app.services.openings_service import recency_cutoff
 
 # ---------------------------------------------------------------------------
-# Phase 75 thresholds. Score-based effect-size gate (D-03, D-11) and
-# trinomial Wald confidence buckets (D-05, D-06) are imported from
-# app.services.opening_insights_constants above. The CI consistency test
+# Phase 75 thresholds. Score-based effect-size gate (D-03, D-11) and Wilson
+# score-test confidence buckets (D-05, D-06; migrated from trinomial Wald in
+# quick 260507-aw5) are imported from app.services.opening_insights_constants
+# above. The CI consistency test
 # (tests/services/test_opening_insights_arrow_consistency.py) keeps the
 # backend constants and frontend/src/lib/arrowColor.ts in lock-step.
 # ---------------------------------------------------------------------------
@@ -61,6 +65,12 @@ WEAKNESS_CAP_PER_COLOR: int = 10
 STRENGTH_CAP_PER_COLOR: int = 10
 UNNAMED_LINE_NAME: str = "<unnamed line>"
 UNNAMED_LINE_ECO: str = ""
+
+# Phase 80.1: surfaced when the resulting-position WDL lookup misses a
+# resulting_full_hash that came back from query_opening_transitions. Should be
+# zero under correct filter parity; non-zero indicates a divergence between the
+# two query call sites that needs investigation.
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -480,6 +490,49 @@ async def compute_insights(
                     )
         parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
 
+        # Phase 80.1 D-03/D-05: aggregate W/D/L per resulting_full_hash across
+        # ALL move orders (transposition-inclusive). Surfacing gate already ran
+        # in query_opening_transitions HAVING n_games >= OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
+        # on move-played n (per D-04). The values below feed _classify_row /
+        # _compute_score / compute_confidence_bucket / wilson_bounds /
+        # OpeningInsightFinding via a SimpleNamespace adapter so those helpers
+        # don't change.
+        #
+        # WR-01 fix (post code review): query per-color, scoped to that color's
+        # resulting_full_hash set, and pass color=color to query_resulting_position_wdl.
+        # query_opening_transitions IS color-filtered (explicit predicate
+        # `Game.user_color == color` at openings_repository.py:836; it only passes
+        # color=None to apply_game_filters to avoid double-filtering). Calling
+        # query_resulting_position_wdl with color=None therefore blended white-
+        # perspective and black-perspective games into one denominator, yielding
+        # different totals for the same (entry, candidate) on the white-section
+        # finding versus the click-through Move Explorer view (which IS color-
+        # filtered via openings_service.get_next_moves passing color=request.color).
+        # Sequential awaits per CLAUDE.md AsyncSession rule (no asyncio.gather).
+        pos_wdl_by_color: dict[
+            Literal["white", "black"], dict[int, tuple[int, int, int]]
+        ] = {}
+        for color in colors_to_query:
+            color_resulting_hashes: list[int] = list(
+                {int(r.resulting_full_hash) for r in rows_by_color[color]}
+            )
+            if not color_resulting_hashes:
+                pos_wdl_by_color[color] = {}
+                continue
+            pos_wdl_by_color[color] = await query_resulting_position_wdl(
+                session=session,
+                user_id=user_id,
+                hash_list=color_resulting_hashes,
+                time_control=request.time_control,
+                platform=request.platform,
+                rated=request.rated,
+                opponent_type=request.opponent_type,
+                recency_cutoff=cutoff,
+                color=color,  # per-color: matches query_opening_transitions' Game.user_color filter
+                opponent_gap_min=request.opponent_gap_min,
+                opponent_gap_max=request.opponent_gap_max,
+            )
+
         # ---- Build sections ----
         # Each section accumulates (OpeningInsightFinding, ply_count, se) tuples:
         # - ply_count drives the D-24 deeper-entry-wins dedupe in _dedupe_within_section
@@ -497,7 +550,28 @@ async def compute_insights(
         for color in colors_to_query:
             color_literal: Literal["white", "black"] = color
             for row in rows_by_color[color]:
-                cls = _classify_row(row)
+                # Phase 80.1 D-03: feed _classify_row / _compute_score /
+                # compute_confidence_bucket / wilson_bounds / OpeningInsightFinding
+                # the resulting-position W/D/L via a SimpleNamespace adapter so
+                # those helpers stay byte-identical. Non-WDL fields (move_san,
+                # entry_*, resulting_full_hash) continue to come from `row`.
+                pos = pos_wdl_by_color[color_literal].get(int(row.resulting_full_hash))
+                if pos is None:
+                    # Filter mismatch defensive fallback (RESEARCH.md Pitfall 4).
+                    # Should not fire when query_resulting_position_wdl filters
+                    # mirror query_opening_transitions; logged for diagnosis.
+                    logger.warning(
+                        "query_resulting_position_wdl missing resulting_full_hash=%s; "
+                        "falling back to move-played WDL",
+                        row.resulting_full_hash,
+                    )
+                    pos_row: Any = row
+                else:
+                    pos_w, pos_d, pos_l = pos
+                    pos_n = pos_w + pos_d + pos_l
+                    pos_row = SimpleNamespace(w=pos_w, d=pos_d, l=pos_l, n=pos_n)
+
+                cls = _classify_row(pos_row)
                 if cls is None:
                     continue
                 classification, severity = cls
@@ -528,9 +602,11 @@ async def compute_insights(
                     matched_opening = openings_by_hash.get(int(row.resulting_full_hash))
                 opening_ply_count = matched_opening.ply_count if matched_opening else 0
 
-                score = _compute_score(row)
-                confidence, p_value, se = compute_confidence_bucket(row.w, row.d, row.l, row.n)
-                ci_low, ci_high = wilson_bounds(score, row.n)
+                score = _compute_score(pos_row)
+                confidence, p_value, se = compute_confidence_bucket(
+                    pos_row.w, pos_row.d, pos_row.l, pos_row.n
+                )
+                ci_low, ci_high = wilson_bounds(score, pos_row.n)
 
                 finding = OpeningInsightFinding(
                     color=color_literal,
@@ -547,10 +623,10 @@ async def compute_insights(
                     entry_full_hash=str(int(row.entry_hash)),
                     candidate_move_san=row.move_san,
                     resulting_full_hash=str(int(row.resulting_full_hash)),
-                    n_games=row.n,
-                    wins=row.w,
-                    draws=row.d,
-                    losses=row.l,
+                    n_games=pos_row.n,
+                    wins=pos_row.w,
+                    draws=pos_row.d,
+                    losses=pos_row.l,
                     score=score,
                     confidence=confidence,
                     p_value=p_value,

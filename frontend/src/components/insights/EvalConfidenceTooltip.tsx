@@ -47,9 +47,10 @@ interface EvalConfidenceTooltipProps {
 
 /**
  * Tooltip body for the MG-entry eval bullet chart (z-test against 0 cp).
- * Used by BulletConfidencePopover. Mirrors WdlConfidenceTooltip's verdict-first
- * layout: bold headline, stats line, footer explainer. CI numbers are not
- * shown in text — the bullet's whisker carries that.
+ * Used by BulletConfidencePopover. Finding-first layout: signed-pawn metric
+ * with inline explainer, then bold verdict + confidence, then italic footer
+ * for the chart-decoration legend. CI numbers are not shown in text — the
+ * bullet's whisker carries that.
  *
  * The chart is centered on 0 cp regardless of color; the per-color engine
  * baseline is a tick on the chart, not subtracted from the displayed mean
@@ -67,14 +68,13 @@ export function EvalConfidenceTooltip({
   return (
     <div className="text-left space-y-1">
       <p>
+        <strong>{fmtSigned(evalMeanPawns)} pawns</strong> over {gameCount} games (average stockfish eval at middlegame entry).
+      </p>
+      <p>
         <strong>{headline(level, evalMeanPawns)}</strong> {CONFIDENCE_LABEL[level]} confidence
         (p = {pValue.toFixed(3)}).
       </p>
-      <p>
-        {fmtSigned(evalMeanPawns)} pawns over {gameCount} games.
-      </p>
       <p className="opacity-70 italic">
-        Eval: average stockfish eval at middlegame entry.<br />
         Dashed tick: typical eval for {color} ({fmtSigned(baselinePawns)} pawns).<br />
         Test: two-sided Wald z vs 0 pawns.<br />
         Confidence interval: Wald 95% (whiskers).

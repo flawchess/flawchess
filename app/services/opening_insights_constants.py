@@ -18,10 +18,21 @@ so the constants cannot live in either file.
 OPENING_INSIGHTS_MIN_ENTRY_PLY: int = 0
 OPENING_INSIGHTS_MAX_ENTRY_PLY: int = 16
 
-# Discovery floor — was 20, dropped to 10 per INSIGHT-SCORE-05 / D-04.
-# Borderline-evidence findings surface with confidence="low" rather than
-# being filtered out (the confidence badge replaces the prior hard floor).
-OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 10
+# Discovery floor. Was 20 → 10 per INSIGHT-SCORE-05 / D-04 (confidence badge
+# replaces hard-floor gate), then back to 20 (quick task 260506) after the
+# eval-bullet rollout exposed that small-N findings are dominated by
+# post-selection inference noise: the SQL pre-filter on score <= 0.45 OR
+# score >= 0.55 selects the very statistic the score-vs-50% test then uses,
+# so at n in 10..19 the test was anti-conservative under the previous Wald
+# formulation. Quick task 260507-aw5 migrated the p-value from Wald to the
+# Wilson score test (null SE = 0.5/sqrt(n)), which is less sensitive to the
+# selection (null SE doesn't depend on observed score), but the floor stays
+# at 20 — the empirical finding rate at n=10..19 was the original motivation
+# and lowering it again is a separate decision.
+# Decoupled from the explorer's MIN_GAMES_FOR_COLOR (frontend, still 10) —
+# the explorer arrow palette can tolerate weaker evidence than a surfaced
+# "weakness" card on the Insights tab.
+OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE: int = 20
 
 # Score classifier — replaces the Phase 70 LIGHT_THRESHOLD / DARK_THRESHOLD
 # pair. Pivot is fixed at 0.50; effect-size gate is symmetric on both sides.
@@ -30,12 +41,13 @@ OPENING_INSIGHTS_SCORE_PIVOT: float = 0.50
 OPENING_INSIGHTS_MINOR_EFFECT: float = 0.05  # |score - pivot| >= 0.05 → minor
 OPENING_INSIGHTS_MAJOR_EFFECT: float = 0.10  # |score - pivot| >= 0.10 → major
 
-# Confidence buckets — two-sided Wald p-value thresholds plus N>=10 gate,
-# unified across both the score-vs-50% test (score_confidence.py) and the
-# eval-mean-vs-0 test (eval_confidence.py). With N < 10, confidence is forced
-# to "low" regardless of p-value: small samples already carry the
-# unreliable-stats opacity dim in the UI, and the bucket should match that
-# signal.
+# Confidence buckets — two-sided p-value thresholds plus N>=10 gate, unified
+# across both the score-vs-50% test (score_confidence.py — Wilson score test
+# as of quick 260507-aw5) and the eval-mean-vs-0 test (eval_confidence.py —
+# Wald-z, Wilson does not apply to continuous one-sample mean tests). With
+# N < 10, confidence is forced to "low" regardless of p-value: small samples
+# already carry the unreliable-stats opacity dim in the UI, and the bucket
+# should match that signal.
 #
 # Threshold rationale: p < 0.01 ("high") demands strong evidence —
 # < 1% chance of seeing the observed signal under H0 by chance alone.
@@ -54,9 +66,10 @@ OPENING_INSIGHTS_CONFIDENCE_MEDIUM_MAX_P: float = 0.05
 # 260428-v9i, replacing the earlier Wald CI). The same z value is also the
 # implicit threshold for the p < 0.05 "high" confidence bucket above;
 # collocating it keeps both 95%-normal-approximation parameters in one place.
-# Note: the trinomial *Wald* p-value used by
-# `score_confidence.compute_confidence_bucket` is a different statistical
-# procedure and is not renamed.
+# Note: the Wilson score-test p-value used by
+# `score_confidence.compute_confidence_bucket` (since quick 260507-aw5) and
+# the Wilson CI bound are inversions of one another — they share this z but
+# are still two separate computations.
 OPENING_INSIGHTS_CI_Z_95: float = 1.96
 
 # --- Phase 80 MG-entry eval test (decoupled from WDL score test) ----------

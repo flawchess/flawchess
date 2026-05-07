@@ -17,7 +17,7 @@ export const OPENING_INSIGHTS_CONFIDENCE_COPY: ReactNode = (
   <>
     <p>
       <strong>Confidence</strong> is based on the p-value, the chance of seeing
-      this difference by pure chance (two-sided Wald test against 50%). High confidence
+      this difference by pure chance (two-sided Wilson score test vs 50%). High confidence
       can both result from a small difference based on a high number of games, or
       from a large difference based on a small number of games:
     </p>
@@ -37,7 +37,7 @@ const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
     </p>
     <p>
       A finding shows up when your score is below 45% or above 55% over at
-      least 10 games, enough of a difference from 50% to be worth a closer look.
+      least 20 games, enough of a difference from 50% to be worth a closer look.
     </p>
     {OPENING_INSIGHTS_CONFIDENCE_COPY}
     <p className="italic">

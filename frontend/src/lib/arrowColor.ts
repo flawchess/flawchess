@@ -17,8 +17,10 @@
 //
 export const MIN_GAMES_FOR_COLOR = 10;
 
-// Score-based thresholds. MIN_GAMES_FOR_COLOR is 10 — matching
-// OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE on the backend.
+// Score-based thresholds. MIN_GAMES_FOR_COLOR is 10 — intentionally lower
+// than the Insights tab's OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE (20). The
+// explorer arrow palette can tolerate weaker evidence; a surfaced "weakness"
+// card on the Insights tab cannot.
 export const SCORE_PIVOT = 0.50;
 export const SCORE_BOUNDARY = 0.05;  // boundaries: >=0.55 / <=0.45
 

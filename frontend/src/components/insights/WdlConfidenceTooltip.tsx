@@ -32,14 +32,22 @@ function headline(level: ConfidenceLevel, score: number): string {
   return `${lead} a real ${verdict}.`;
 }
 
-function statsLine(score: number, gameCount: number): string {
+function statsLine(score: number, gameCount: number): ReactNode {
   const scorePct = (score * 100).toFixed(1);
   const diffPct = Math.abs(score * 100 - 50).toFixed(1);
   if (diffPct === '0.0') {
-    return `${scorePct}% score over ${gameCount} games, at the 50% baseline.`;
+    return (
+      <>
+        <strong>{scorePct}% score</strong> over {gameCount} games, at the 50% baseline.
+      </>
+    );
   }
   const direction = score >= 0.5 ? 'above' : 'below';
-  return `${scorePct}% score over ${gameCount} games, ${diffPct}% ${direction} the 50% baseline.`;
+  return (
+    <>
+      <strong>{scorePct}% score</strong> over {gameCount} games, {diffPct}% {direction} the 50% baseline.
+    </>
+  );
 }
 
 interface WdlConfidenceTooltipProps {
@@ -50,9 +58,10 @@ interface WdlConfidenceTooltipProps {
 }
 
 /**
- * Tooltip body for WDL-context confidence indicators (two-sided Wald test
- * against the 50% baseline). Used by OpeningFindingCard (via ScoreConfidencePopover),
- * the move-explorer Score column, and the stats-board Score bullet popover.
+ * Tooltip body for WDL-context confidence indicators (two-sided Wilson score
+ * test against the 50% baseline). Used by OpeningFindingCard (via
+ * ScoreConfidencePopover), the move-explorer Score column, and the stats-board
+ * Score bullet popover.
  */
 export function WdlConfidenceTooltip({
   level,
@@ -62,14 +71,14 @@ export function WdlConfidenceTooltip({
 }: WdlConfidenceTooltipProps): ReactNode {
   return (
     <div className="text-left space-y-1">
+      <p>{statsLine(score, gameCount)}</p>
       <p>
         <strong>{headline(level, score)}</strong> {CONFIDENCE_LABEL[level]} confidence
         (p = {pValue.toFixed(3)}).
       </p>
-      <p>{statsLine(score, gameCount)}</p>
       <p className="opacity-70 italic">
         Score: wins + ½ draws.<br />
-        Test: two-sided Wald z vs 50%.<br />
+        Test: two-sided Wilson score test vs 50%.<br />
         Confidence interval: Wilson 95% (whiskers).
       </p>
     </div>

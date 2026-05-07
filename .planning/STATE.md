@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: "Phase 80 merged — PR #80 squash-merged to main (18456f6); awaiting bin/deploy.sh + post-deploy UI smoke"
-last_updated: "2026-05-05T21:10:29.856Z"
-last_activity: "2026-05-05 -- Phase 80 PR #80 squash-merged to main; local main reset to origin; feature branch deleted"
+status: "Phase 80.1 shipped — PR #82"
+last_updated: "2026-05-07T18:43:59.821Z"
+last_activity: 2026-05-07
 progress:
-  total_phases: 6
-  completed_phases: 1
-  total_plans: 6
-  completed_plans: 6
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 10
+  completed_plans: 10
   percent: 100
 ---
 
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 80 (opening-stats-middlegame-entry-eval-and-clock-diff-columns) — EXECUTING
-Plan: 1 of 6
-Status: Phase 80 merged — PR #80 squash-merged to main (18456f6); awaiting bin/deploy.sh + post-deploy UI smoke
-Last activity: 2026-05-05 -- Phase 80 PR #80 squash-merged to main; local main reset to origin; feature branch deleted
+Phase: 80.1
+Plan: Not started
+Status: Phase 80.1 shipped — PR #82
+Last activity: 2026-05-07
 
 ## Project Reference
 
@@ -147,8 +147,9 @@ Carried forward from v1.11 close (still relevant):
 | 260505-uzp | Unify Moves-tab arrow + Score column + row background tint on one score-zone signal. Low-data/low-conf rows render in blue (was grey). Blue arrows fade to 0.30 opacity. Hover keeps arrow color, just amplifies size+opacity. Deep-link pulse uses grey alpha levels and lands on the row's natural score-zone tint | 2026-05-05 | 0b3da1f | [260505-uzp-unified-score-zone-palette](./quick/260505-uzp-unified-score-zone-palette/) |
 | 260506-rtk | Replace Openings → Stats subtab table with two-column card grid (white left, black right) mirroring Insights tab. New OpeningStatsCard reuses Insights card shell: permanent miniboard, header, WDL chart row, eval bullet chart, Moves + Games links. Drops MostPlayedOpeningsTable and MinimapPopover (hover preview replaced by always-on miniboard) | 2026-05-06 | b08512c5 | [260506-rtk-change-openings-stats-page-layout-to-two](./quick/260506-rtk-change-openings-stats-page-layout-to-two/) |
 | 260506-u2b | Align Openings Insights card with Stats card layout: replace MiniBulletChart score bullet with shared WDLChartRow, add MG-entry eval bullet row below it (mirrors OpeningStatsCard), abbreviate prose to "Score X% after <move>". Card border + on-board arrow keep score-zone tint. Backend extends OpeningInsightFinding with eval_* fields and adds per-color eval_baseline_pawns to OpeningInsightsResponse, computed via the existing query_opening_phase_entry_metrics_batch helper (no duplicated SQL) | 2026-05-06 | 37c37bb4 | [260506-u2b-align-openings-insights-card-with-stats-](./quick/260506-u2b-align-openings-insights-card-with-stats-/) |
+| 260507-aw5 | Complete Wilson migration on score side: replace trinomial Wald p-value in score_confidence.py with Wilson score-test p-value (null SE = 0.5/sqrt(n)). CI bounds were already Wilson; the test is now the inversion of the CI so they agree by construction. SE=0 degeneracy at all-wins/all-losses gone. Tooltips, Field comments, and module docstrings updated. Eval-side stays on Wald-z (Wilson is binomial-specific) | 2026-05-07 | b47505be | [260507-aw5-complete-wilson-migration-on-score-side-](./quick/260507-aw5-complete-wilson-migration-on-score-side-/) |
 
 ---
-Last activity: 2026-05-06 — Completed quick task 260506-u2b: Openings → Insights cards now mirror Stats card layout — WDLChartRow + MG-entry eval bullet replace the legacy score bullet, prose abbreviated to "Score X% after <move>", score-zone left border and on-board arrow preserved. Backend reuses the Stats MG-entry eval helper for per-finding eval data + per-color baselines.
+Last activity: 2026-05-07 — Completed Phase 80.1 (4/4 plans). Plan 80.1-04 closed the regression matrix: backend pytest 1254 passed / 6 skipped / 1 deselected in 16.47s, ty + ruff clean, dedicated transposition tests 16 passed in 0.30s; frontend npm test 281 passed in 1.51s, lint + knip clean, build success in 4.99s. D-09 prod sanity check (read-only via `bin/prod_db_tunnel.sh`) on 3 representative users — heavy (4: 23,225 games), light (18: 261 games), moderate (35: 1,450 games) — verdict PASS: pre 40/2/16, post 40/3/14, all within the planner's 50–200% band, no zero-flip, no recalibration warranted (D-07 honored). New `scripts/prodcheck_80_1.py` committed for future regression checks. CHANGELOG entry queued under `## [Unreleased]` → `### Changed` for v1.16 milestone close. Project-wide ruff format drift (89 files) logged in `deferred-items.md` as out-of-scope follow-up. Commits `a35514f2`, `4e4fa514`, `ab29a3d9`, `7bb10cc0`, `47fe2dc5`. Phase 80.1 ready for PR. Next: open PR for Phase 80.1, then queue Phase 81.
 | 2026-05-04 | fast | Mute opening row when total games < 20; drop confidence-based muting | ✅ |
 | 2026-05-04 | fast | Score zone color in Moves tab + per-move list; drop severity row tint; bump mobile games-count font size | ✅ |

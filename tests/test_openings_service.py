@@ -32,6 +32,7 @@ from app.services.openings_service import (
 async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure test user IDs exist in the users table (FK constraint)."""
     from tests.conftest import ensure_test_user
+
     for uid in [1]:
         await ensure_test_user(db_session, uid)
 
@@ -664,11 +665,179 @@ class TestNextMovesScoreConfidence:
         assert entry.confidence in ("low", "medium", "high")
         assert 0.0 <= entry.p_value <= 1.0
 
-        # Cross-check: same value as the helper would return directly for (w, d, l, n).
+        # Phase 80.1: wins+draws+losses is resulting-position N; game_count is
+        # move-played N. When no transposition is seeded (as in this fixture),
+        # the two are equal, but compute the helper input from pos_n explicitly
+        # to document the new contract.
+        pos_n = entry.wins + entry.draws + entry.losses
         expected_confidence, expected_p, _expected_se = compute_confidence_bucket(
-            entry.wins, entry.draws, entry.losses, entry.game_count
+            entry.wins, entry.draws, entry.losses, pos_n
         )
-        expected_score = (entry.wins + 0.5 * entry.draws) / entry.game_count
+        expected_score = (entry.wins + 0.5 * entry.draws) / pos_n
         assert entry.score == pytest.approx(expected_score, abs=1e-9)
         assert entry.confidence == expected_confidence
         assert entry.p_value == pytest.approx(expected_p, abs=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# TestNextMovesTranspositionWdl — Phase 80.1 D-01/D-02
+# ---------------------------------------------------------------------------
+
+
+# Hash range reserved for Phase 80.1 Plan 02 transposition fixtures.
+# 0xAA** / 0xBB** are reserved by Plan 80.1-01 (TestQueryTranspositionWdl /
+# TestQueryResultingPositionWdl). 0xCC** is the per-test isolation namespace
+# for Plan 80.1-02 service-level integration tests.
+_TWDL_SOURCE_HASH = 0xCC01
+_TWDL_OTHER_SOURCE_HASH = 0xCC02
+_TWDL_RESULT_HASH = 0xCC03
+_TWDL_SO_SOURCE_HASH = 0xCC04
+_TWDL_SO_RESULT_HASH = 0xCC05
+_TWDL_FP_SOURCE_HASH = 0xCC06
+_TWDL_FP_OTHER_SOURCE_HASH = 0xCC07
+_TWDL_FP_RESULT_HASH = 0xCC08
+
+
+class TestNextMovesTranspositionWdl:
+    """Phase 80.1 D-01/D-02: Move Explorer rows show resulting-position WDL.
+
+    game_count stays move-played per D-01; wins+draws+losses reflects all
+    games visiting result_hash (transposition-inclusive) per D-02.
+    """
+
+    @pytest.mark.asyncio
+    async def test_wdl_includes_transposition_games(self, db_session: AsyncSession) -> None:
+        """Validation case #1 (canonical convergence): a candidate's resulting
+        position is reached by both an e4 game (win) and a d4-transposition
+        game (loss). The e4 row's game_count = 1 (only the e4 game played e4
+        from SOURCE_HASH), but wins + losses = 2 (both games visit the
+        resulting position under the same filters).
+        """
+        # Game A: played e4 from SOURCE_HASH → RESULT_HASH (win).
+        await _seed_game_with_positions(
+            db_session,
+            result="1-0",
+            user_color="white",
+            positions=[
+                {"ply": 0, "full_hash": _TWDL_SOURCE_HASH, "move_san": "e4"},
+                {"ply": 1, "full_hash": _TWDL_RESULT_HASH, "move_san": None},
+            ],
+        )
+        # Game B: reaches RESULT_HASH via OTHER_SOURCE_HASH (transposition,
+        # loss). Different entry hash, same resulting hash — Game B never
+        # appears as a candidate from SOURCE_HASH but contributes to the
+        # resulting-position WDL of Game A's e4 row.
+        await _seed_game_with_positions(
+            db_session,
+            result="0-1",
+            user_color="white",
+            positions=[
+                {"ply": 0, "full_hash": _TWDL_OTHER_SOURCE_HASH, "move_san": "d4"},
+                {"ply": 1, "full_hash": _TWDL_RESULT_HASH, "move_san": None},
+            ],
+        )
+
+        request = NextMovesRequest(target_hash=_TWDL_SOURCE_HASH)
+        response = await get_next_moves(db_session, user_id=1, request=request)
+
+        assert len(response.moves) == 1
+        entry = response.moves[0]
+        assert entry.move_san == "e4"
+        # game_count is move-played (D-01): only Game A played e4 from SOURCE.
+        assert entry.game_count == 1
+        # W/D/L are resulting-position (D-02): both games visit RESULT_HASH.
+        assert entry.wins == 1
+        assert entry.draws == 0
+        assert entry.losses == 1
+        assert entry.wins + entry.draws + entry.losses == 2
+        # Score reflects pos N (1 win + 1 loss out of 2 games visiting
+        # RESULT_HASH) = 0.5, not 1.0 (the move-played 1-of-1 win rate).
+        assert entry.score == pytest.approx(1.0 / 2.0)
+
+    @pytest.mark.asyncio
+    async def test_single_order_game_count_equals_wdl_total(self, db_session: AsyncSession) -> None:
+        """Validation case #3: when no transposition exists for a candidate,
+        game_count == wins+draws+losses (single-order parity invariant).
+        """
+        await _seed_game_with_positions(
+            db_session,
+            result="1-0",
+            user_color="white",
+            positions=[
+                {"ply": 0, "full_hash": _TWDL_SO_SOURCE_HASH, "move_san": "e4"},
+                {"ply": 1, "full_hash": _TWDL_SO_RESULT_HASH, "move_san": None},
+            ],
+        )
+
+        request = NextMovesRequest(target_hash=_TWDL_SO_SOURCE_HASH)
+        response = await get_next_moves(db_session, user_id=1, request=request)
+
+        assert len(response.moves) == 1
+        entry = response.moves[0]
+        assert entry.game_count == 1
+        assert entry.wins + entry.draws + entry.losses == 1
+        assert entry.game_count == entry.wins + entry.draws + entry.losses
+
+    @pytest.mark.asyncio
+    async def test_transposition_wdl_filter_parity(self, db_session: AsyncSession) -> None:
+        """Validation case #2: a filter applied to query_next_moves and
+        query_transposition_wdl must drop the same games from BOTH counts
+        (filter parity invariant). Threat T-80.1-05 mitigation.
+
+        Setup: Game A (rated=True) plays e4 from SOURCE → RESULT. Game B
+        (rated=False) is a transposition reaching the same RESULT via
+        OTHER_SOURCE.
+
+        - rated=True filter: Game B excluded from BOTH game_count AND pos
+          WDL → entry.game_count == 1 AND wins+draws+losses == 1.
+        - rated=None (no rated filter): Game B included in pos WDL but not
+          in game_count (it never played e4 from SOURCE) → entry.game_count
+          == 1 AND wins+draws+losses == 2.
+        """
+        # Game A: rated=True, e4 from SOURCE → RESULT (win)
+        await _seed_game_with_positions(
+            db_session,
+            result="1-0",
+            user_color="white",
+            rated=True,
+            positions=[
+                {"ply": 0, "full_hash": _TWDL_FP_SOURCE_HASH, "move_san": "e4"},
+                {"ply": 1, "full_hash": _TWDL_FP_RESULT_HASH, "move_san": None},
+            ],
+        )
+        # Game B: rated=False, d4 from OTHER_SOURCE → RESULT (loss, transposition)
+        await _seed_game_with_positions(
+            db_session,
+            result="0-1",
+            user_color="white",
+            rated=False,
+            positions=[
+                {
+                    "ply": 0,
+                    "full_hash": _TWDL_FP_OTHER_SOURCE_HASH,
+                    "move_san": "d4",
+                },
+                {"ply": 1, "full_hash": _TWDL_FP_RESULT_HASH, "move_san": None},
+            ],
+        )
+
+        # rated=True: Game B dropped from BOTH counts.
+        request_rated = NextMovesRequest(target_hash=_TWDL_FP_SOURCE_HASH, rated=True)
+        response_rated = await get_next_moves(db_session, user_id=1, request=request_rated)
+        assert len(response_rated.moves) == 1
+        entry_rated = response_rated.moves[0]
+        assert entry_rated.game_count == 1
+        assert entry_rated.wins + entry_rated.draws + entry_rated.losses == 1, (
+            "filter parity violated: rated=True should drop Game B from pos WDL "
+            "as well as from game_count"
+        )
+
+        # rated=None: Game B included in pos WDL but not game_count.
+        request_all = NextMovesRequest(target_hash=_TWDL_FP_SOURCE_HASH, rated=None)
+        response_all = await get_next_moves(db_session, user_id=1, request=request_all)
+        assert len(response_all.moves) == 1
+        entry_all = response_all.moves[0]
+        assert entry_all.game_count == 1  # only Game A played e4 from SOURCE
+        assert entry_all.wins + entry_all.draws + entry_all.losses == 2, (
+            "rated=None should include Game B in pos WDL"
+        )
