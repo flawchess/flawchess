@@ -385,12 +385,12 @@ async def test_window_does_not_leak_across_games(
 
 
 @pytest.mark.asyncio
-async def test_min_games_per_candidate_floor_at_10(db_session: AsyncSession) -> None:
-    """Phase 75 D-04 / D-08: n=9 excluded, n=10 included by the HAVING clause.
+async def test_min_games_per_candidate_floor_at_20(db_session: AsyncSession) -> None:
+    """Phase 79 evidence-floor bump (n>=20): n=19 excluded, n=20 included.
 
     Seeds two different entry hashes:
-    - entry_hash=A with 10 games (score=0.0, all losses): should appear
-    - entry_hash=B with 9 games (score=0.0, all losses): should NOT appear
+    - entry_hash=A with 20 games (score=0.0, all losses): should appear
+    - entry_hash=B with 19 games (score=0.0, all losses): should NOT appear
     """
     user_id = 10
     H_ENTRY_A = 40003
@@ -398,8 +398,8 @@ async def test_min_games_per_candidate_floor_at_10(db_session: AsyncSession) -> 
     H_CAND_A = 40004
     H_CAND_B = 50004
 
-    # 10 games for entry A
-    for _ in range(10):
+    # 20 games for entry A
+    for _ in range(20):
         await _seed_game_with_positions(
             db_session,
             user_id=user_id,
@@ -414,8 +414,8 @@ async def test_min_games_per_candidate_floor_at_10(db_session: AsyncSession) -> 
             ],
         )
 
-    # 9 games for entry B
-    for _ in range(9):
+    # 19 games for entry B
+    for _ in range(19):
         await _seed_game_with_positions(
             db_session,
             user_id=user_id,
@@ -438,8 +438,8 @@ async def test_min_games_per_candidate_floor_at_10(db_session: AsyncSession) -> 
     )
 
     entry_hashes_in_result = [r.entry_hash for r in rows]
-    assert H_ENTRY_A in entry_hashes_in_result, "10-game entry should be included"
-    assert H_ENTRY_B not in entry_hashes_in_result, "9-game entry should be excluded"
+    assert H_ENTRY_A in entry_hashes_in_result, "20-game entry should be included"
+    assert H_ENTRY_B not in entry_hashes_in_result, "19-game entry should be excluded"
 
 
 @pytest.mark.asyncio
