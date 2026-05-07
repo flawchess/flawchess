@@ -11,8 +11,8 @@ import { render, fireEvent, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { OpeningWDL } from '@/types/stats';
 import { OpeningStatsCard } from '../OpeningStatsCard';
-import { UNRELIABLE_OPACITY } from '@/lib/theme';
-import { evalZoneColor } from '@/lib/openingStatsZones';
+import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
+import { scoreZoneColor } from '@/lib/scoreBulletConfig';
 
 afterEach(() => {
   cleanup();
@@ -119,7 +119,7 @@ describe('OpeningStatsCard — WDL chart row', () => {
 });
 
 describe('OpeningStatsCard — eval cell', () => {
-  it('eval_n > 0 renders signed pawn text in zone color, MiniBulletChart, and confidence info icon', () => {
+  it('eval_n > 0 renders signed pawn text, MiniBulletChart, and confidence info icon', () => {
     const opening = makeOpening({
       avg_eval_pawns: 0.65,
       eval_ci_low_pawns: 0.3,
@@ -132,8 +132,6 @@ describe('OpeningStatsCard — eval cell', () => {
     const evalText = document.querySelector('[data-testid="opening-stats-card-1-eval-text"]');
     expect(evalText).not.toBeNull();
     expect(evalText?.textContent).toContain('+0.7');
-    const span = evalText?.querySelector('span.font-semibold') as HTMLElement | null;
-    expect(normalizeColor(span?.style.color ?? '')).toBe(normalizeColor(evalZoneColor(0.65)));
     const bullet = document.querySelector('[data-testid="opening-stats-card-1-bullet"]');
     expect(bullet?.querySelector('[data-testid="mini-bullet-chart"]')).not.toBeNull();
     const popover = document.querySelector('[data-testid="opening-stats-card-1-bullet-popover"]');
@@ -203,28 +201,108 @@ describe('OpeningStatsCard — low-data muting', () => {
   });
 });
 
-describe('OpeningStatsCard — border-left color', () => {
-  it('uses evalZoneColor when MG eval is present', () => {
-    const opening = makeOpening({
-      avg_eval_pawns: -0.5,
-      eval_n: 30,
-      eval_confidence: 'high',
-    });
+describe('OpeningStatsCard — border-left color (score-zone, 260507-t4r)', () => {
+  // Test S1a: Reliable score (total >= MIN_GAMES_FOR_RELIABLE_STATS) uses score-zone color
+  it('S1a: total >= MIN_GAMES_FOR_RELIABLE_STATS uses scoreZoneColor(derivedScore)', () => {
+    // derivedScore = (wins + 0.5*draws) / total = (10 + 0.5*5) / 20 = 12.5/20 = 0.625 -> ZONE_SUCCESS
+    const opening = makeOpening({ wins: 10, draws: 5, losses: 5, total: 20 });
     renderCard({ opening, idx: 7 });
     const card = document.querySelector(
       '[data-testid="opening-stats-card-7"]',
     ) as HTMLElement | null;
+    const derivedScore = (10 + 0.5 * 5) / 20;
     expect(normalizeColor(card?.style.borderLeftColor ?? '')).toBe(
-      normalizeColor(evalZoneColor(-0.5)),
+      normalizeColor(scoreZoneColor(derivedScore)),
     );
   });
 
-  it('falls back to transparent border when eval_n === 0', () => {
-    const opening = makeOpening({ eval_n: 0 });
+  // Test S1b: Unreliable score (total < MIN_GAMES_FOR_RELIABLE_STATS) uses transparent border
+  it('S1b: total < MIN_GAMES_FOR_RELIABLE_STATS falls back to transparent border', () => {
+    const opening = makeOpening({ total: MIN_GAMES_FOR_RELIABLE_STATS - 1, wins: 3, draws: 2, losses: 4 });
     renderCard({ opening, idx: 8 });
     const card = document.querySelector(
       '[data-testid="opening-stats-card-8"]',
     ) as HTMLElement | null;
     expect(card?.style.borderLeftColor).toBe('transparent');
+  });
+
+  // Test S1c: Even when eval data is present, border uses score-zone (not eval-zone)
+  it('S1c: border uses score-zone even when MG eval is present', () => {
+    const opening = makeOpening({
+      wins: 10, draws: 5, losses: 5, total: 20,
+      avg_eval_pawns: -0.5,
+      eval_n: 30,
+      eval_confidence: 'high',
+    });
+    renderCard({ opening, idx: 9 });
+    const card = document.querySelector(
+      '[data-testid="opening-stats-card-9"]',
+    ) as HTMLElement | null;
+    const derivedScore = (10 + 0.5 * 5) / 20;
+    expect(normalizeColor(card?.style.borderLeftColor ?? '')).toBe(
+      normalizeColor(scoreZoneColor(derivedScore)),
+    );
+  });
+});
+
+describe('OpeningStatsCard — score bullet row (260507-t4r)', () => {
+  // Test S2: Card renders three rows in fixed order: WDL, Score bullet, Eval bullet
+  it('S2: renders WDL, score-bullet, and eval-bullet testids in that DOM order', () => {
+    const opening = makeOpening({
+      avg_eval_pawns: 0.1,
+      eval_n: 30,
+      eval_confidence: 'medium',
+    });
+    renderCard({ opening, idx: 10 });
+    const wdl = document.querySelector('[data-testid="opening-stats-card-10-wdl"]');
+    const scoreBullet = document.querySelector('[data-testid="opening-stats-card-10-score-bullet"]');
+    const evalBullet = document.querySelector('[data-testid="opening-stats-card-10-bullet"]');
+    expect(wdl).not.toBeNull();
+    expect(scoreBullet).not.toBeNull();
+    expect(evalBullet).not.toBeNull();
+    // DOM order check: score-bullet comes after wdl, eval-bullet comes after score-bullet
+    const allElements = Array.from(document.querySelectorAll('[data-testid]'));
+    const wdlIdx = allElements.findIndex(el => el.getAttribute('data-testid') === 'opening-stats-card-10-wdl');
+    const scoreIdx = allElements.findIndex(el => el.getAttribute('data-testid') === 'opening-stats-card-10-score-bullet');
+    const evalIdx = allElements.findIndex(el => el.getAttribute('data-testid') === 'opening-stats-card-10-bullet');
+    expect(wdlIdx).toBeGreaterThan(-1);
+    expect(scoreIdx).toBeGreaterThan(wdlIdx);
+    expect(evalIdx).toBeGreaterThan(scoreIdx);
+  });
+
+  // Test S3: Score bullet row testid exists
+  it('S7: data-testid score-bullet wrapper exists', () => {
+    renderCard({ idx: 11 });
+    const scoreBullet = document.querySelector('[data-testid="opening-stats-card-11-score-bullet"]');
+    expect(scoreBullet).not.toBeNull();
+  });
+
+  // Test S5: When eval_n === 0, score row still renders
+  it('S5: when eval_n === 0, score bullet row still renders', () => {
+    const opening = makeOpening({ eval_n: 0, wins: 10, draws: 5, losses: 5, total: 20 });
+    renderCard({ opening, idx: 12 });
+    const scoreBullet = document.querySelector('[data-testid="opening-stats-card-12-score-bullet"]');
+    expect(scoreBullet).not.toBeNull();
+  });
+
+  // Test S4: score-text testid exists
+  it('S4: score-text element exists with percent value', () => {
+    const opening = makeOpening({ wins: 10, draws: 5, losses: 5, total: 20 });
+    renderCard({ opening, idx: 13 });
+    const scoreText = document.querySelector('[data-testid="opening-stats-card-13-score-text"]');
+    expect(scoreText).not.toBeNull();
+    // derivedScore = 0.625, rounds to 63%
+    expect(scoreText?.textContent).toContain('63%');
+  });
+
+  // Test S6: No sm:hidden / hidden sm:flex dual layout (unified single-column)
+  it('S6: card does not use sm:hidden or hidden sm:flex split layout', () => {
+    renderCard({ idx: 14 });
+    const card = document.querySelector('[data-testid="opening-stats-card-14"]');
+    // The old mobile/desktop split used these classes on direct children
+    const smHidden = card?.querySelector('.sm\\:hidden');
+    const hiddenSm = card?.querySelector('.hidden.sm\\:flex');
+    expect(smHidden).toBeNull();
+    expect(hiddenSm).toBeNull();
   });
 });
