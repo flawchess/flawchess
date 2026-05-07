@@ -34,14 +34,6 @@ vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-// Phase 77: stub the curated data so tests are independent of the live trollOpenings.ts contents.
-// Sentinel: starting position with white's e-pawn moved to e4 (post-1.e4) — derives to
-//   "8/8/8/8/4P3/8/PPPP1PPP/RNBQKBNR" for white-side. Tests reference this key directly so
-//   they don't depend on the actual curated set shipped in src/data/trollOpenings.ts.
-vi.mock('@/data/trollOpenings', () => ({
-  WHITE_TROLL_KEYS: new Set(['8/8/8/8/4P3/8/PPPP1PPP/RNBQKBNR']),
-  BLACK_TROLL_KEYS: new Set<string>(),
-}));
 import type * as React from 'react';
 
 import { OpeningFindingCard } from './OpeningFindingCard';
@@ -105,14 +97,6 @@ function renderCard(props: {
     />,
   );
 }
-
-// Phase 77: fixture FENs.
-// TROLL_FIXTURE_FEN derives — for side='white' — to the key seeded in the
-// vi.mock('@/data/trollOpenings') above, so it triggers the watermark.
-const TROLL_FIXTURE_FEN =
-  'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
-const NON_TROLL_FIXTURE_FEN =
-  'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 afterEach(() => {
   cleanup();
@@ -390,103 +374,6 @@ describe('OpeningFindingCard', () => {
       renderCard({ finding, idx: 0 });
       const card = screen.getByTestId('opening-finding-card-0');
       expect(card.getAttribute('style') ?? '').not.toMatch(/opacity:\s*0\.5/);
-    });
-  });
-
-  describe('Phase 77 — Troll-opening watermark', () => {
-    it('renders the watermark img when entry_fen + color match the troll set', () => {
-      const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });
-      renderCard({ finding, idx: 7 });
-      const watermark = screen.getByTestId('opening-finding-card-7-troll-watermark');
-      expect(watermark.tagName).toBe('IMG');
-    });
-
-    it('does not render the watermark when the position is not in the troll set', () => {
-      const finding = makeFinding({ entry_fen: NON_TROLL_FIXTURE_FEN, color: 'white' });
-      renderCard({ finding, idx: 7 });
-      expect(screen.queryByTestId('opening-finding-card-7-troll-watermark')).toBeNull();
-    });
-
-    it('does not render the watermark when color routes to the empty BLACK_TROLL_KEYS set', () => {
-      const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'black' });
-      renderCard({ finding, idx: 7 });
-      expect(screen.queryByTestId('opening-finding-card-7-troll-watermark')).toBeNull();
-    });
-
-    it('watermark has pointer-events-none class (D-04)', () => {
-      const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });
-      renderCard({ finding, idx: 7 });
-      const watermark = screen.getByTestId('opening-finding-card-7-troll-watermark');
-      expect(watermark.className).toContain('pointer-events-none');
-    });
-
-    it('watermark is decorative (alt="" + aria-hidden)', () => {
-      const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });
-      renderCard({ finding, idx: 7 });
-      const watermark = screen.getByTestId('opening-finding-card-7-troll-watermark');
-      expect(watermark.getAttribute('alt')).toBe('');
-      expect(watermark.getAttribute('aria-hidden')).toBe('true');
-    });
-
-    it('renders for weakness/major (D-05 always-on)', () => {
-      const finding = makeFinding({
-        entry_fen: TROLL_FIXTURE_FEN,
-        color: 'white',
-        classification: 'weakness',
-        severity: 'major',
-      });
-      renderCard({ finding, idx: 7 });
-      expect(screen.getByTestId('opening-finding-card-7-troll-watermark')).toBeTruthy();
-    });
-
-    it('renders for strength/minor (D-05 always-on)', () => {
-      const finding = makeFinding({
-        entry_fen: TROLL_FIXTURE_FEN,
-        color: 'white',
-        classification: 'strength',
-        severity: 'minor',
-      });
-      renderCard({ finding, idx: 7 });
-      expect(screen.getByTestId('opening-finding-card-7-troll-watermark')).toBeTruthy();
-    });
-
-    it('renders exactly once (single sibling outside the layout blocks)', () => {
-      const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });
-      renderCard({ finding, idx: 7 });
-      const elements = screen.getAllByTestId('opening-finding-card-7-troll-watermark');
-      expect(elements.length).toBe(1);
-    });
-
-    it('renders the watermark when the candidate move LEADS to a troll position', () => {
-      // Starting position is not a troll position, but after 1.e4 the resulting
-      // FEN derives (white-side) to the seeded WHITE_TROLL_KEYS entry.
-      const finding = makeFinding({
-        entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-        candidate_move_san: 'e4',
-        color: 'white',
-      });
-      renderCard({ finding, idx: 7 });
-      expect(screen.getByTestId('opening-finding-card-7-troll-watermark')).toBeTruthy();
-    });
-
-    it('does not render the watermark when neither entry nor resulting position match', () => {
-      const finding = makeFinding({
-        entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-        candidate_move_san: 'd4', // resulting FEN is not the seeded troll key
-        color: 'white',
-      });
-      renderCard({ finding, idx: 7 });
-      expect(screen.queryByTestId('opening-finding-card-7-troll-watermark')).toBeNull();
-    });
-
-    it('does not block clicks on the Moves button (D-04)', () => {
-      const onFindingClick = vi.fn();
-      const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });
-      renderCard({ finding, idx: 7, onFindingClick });
-      // Dual layout: testid is duplicated across mobile + desktop blocks.
-      const movesBtn = screen.getAllByTestId('opening-finding-card-7-moves')[0]!;
-      fireEvent.click(movesBtn);
-      expect(onFindingClick).toHaveBeenCalled();
     });
   });
 

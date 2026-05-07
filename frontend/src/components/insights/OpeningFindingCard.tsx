@@ -6,7 +6,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { formatCandidateMove } from '@/lib/openingInsights';
-import { fenAfterMove, sanToSquares } from '@/lib/sanToSquares';
+import { sanToSquares } from '@/lib/sanToSquares';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
@@ -22,9 +22,7 @@ import {
   clampScoreCi,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
-import { MIN_GAMES_FOR_RELIABLE_STATS, TROLL_WATERMARK_OPACITY, UNRELIABLE_OPACITY } from '@/lib/theme';
-import { isTrollPosition } from '@/lib/trollOpenings';
-import trollFaceUrl from '@/assets/troll-face.svg';
+import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
 
 const MOBILE_BOARD_SIZE = 115;
@@ -69,16 +67,6 @@ export function OpeningFindingCard({
     borderLeftColor,
     ...(isUnreliable ? { opacity: UNRELIABLE_OPACITY } : {}),
   };
-
-  // Phase 77 D-02/D-10: Show troll-face watermark when the entry position OR the
-  // post-candidate-move position matches a curated troll line. Pure O(1) Set.has
-  // lookups after a tiny string transform — no useMemo needed. fenAfterMove()
-  // returns null on illegal SAN / malformed FEN, which isTrollPosition treats as
-  // a non-match, so the second branch degrades safely.
-  const resultingFen = fenAfterMove(finding.entry_fen, finding.candidate_move_san);
-  const showTroll =
-    isTrollPosition(finding.entry_fen, finding.color) ||
-    (resultingFen !== null && isTrollPosition(resultingFen, finding.color));
 
   const cardTestId = `opening-finding-card-${idx}`;
 
@@ -312,19 +300,6 @@ export function OpeningFindingCard({
         </div>
       </div>
 
-      {/* Phase 77 D-02/D-03/D-04/D-05: Troll-opening watermark. Single sibling positioned
-          absolute bottom-right covers both mobile and desktop layouts. pointer-events-none
-          so the Moves/Games buttons remain clickable. Decorative — alt="" + aria-hidden. */}
-      {showTroll && (
-        <img
-          src={trollFaceUrl}
-          alt=""
-          aria-hidden="true"
-          data-testid={`${cardTestId}-troll-watermark`}
-          className="hidden sm:block absolute right-3 top-1/2 -translate-y-1/2 sm:h-[100px] w-auto pointer-events-none select-none"
-          style={{ opacity: TROLL_WATERMARK_OPACITY }}
-        />
-      )}
     </div>
   );
 }
