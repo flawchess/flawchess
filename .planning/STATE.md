@@ -2,24 +2,24 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: executing
+status: milestone_complete
 last_updated: "2026-05-07T18:30:00.000Z"
 last_activity: 2026-05-07
 progress:
   total_phases: 2
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 10
   completed_plans: 10
-  percent: 100
+  percent: 150
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 80.1 (include-transpositions-in-move-explorer-and-opening-insights-stats) — COMPLETE (4/4 plans)
-Plan: 4 of 4 (Wave 3 — smoke/regression matrix + D-09 prod sanity + CHANGELOG; complete)
-Status: Phase ready for PR / merge to v1.16. Next: open PR for Phase 80.1, then proceed to Phase 81 (or whichever v1.16 phase is queued).
+Phase: 80.1
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-05-07
 
 ## Project Reference
