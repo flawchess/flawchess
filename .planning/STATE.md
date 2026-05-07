@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: executing
-last_updated: "2026-05-07T17:41:11.888Z"
+last_updated: "2026-05-07T17:53:26.161Z"
 last_activity: 2026-05-07
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 10
-  completed_plans: 8
-  percent: 80
+  completed_plans: 9
+  percent: 90
 ---
 
 # Project State: FlawChess
@@ -18,9 +18,9 @@ progress:
 ## Current Position
 
 Phase: 80.1 (include-transpositions-in-move-explorer-and-opening-insights-stats) — EXECUTING
-Plan: 2 of 4 (Wave 2 — service field swap on Move Explorer; complete)
-Status: Ready to execute Plan 80.1-03 (Opening Insights service field swap)
-Last activity: 2026-05-07 — Completed Plan 80.1-02: get_next_moves now consumes query_transposition_wdl; canonical convergence + filter-parity tests added (26/26 pass)
+Plan: 3 of 4 (Wave 2 — service field swap on Move Explorer; complete)
+Status: Ready to execute
+Last activity: 2026-05-07
 
 ## Project Reference
 

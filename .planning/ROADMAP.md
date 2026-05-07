@@ -72,7 +72,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [x] 80.1-02-PLAN.md — Move Explorer service: get_next_moves WDL field swap + canonical convergence test (Wave 2)
-- [ ] 80.1-03-PLAN.md — Opening Insights service: compute_insights SimpleNamespace adapter + transposition-divergence tests (Wave 2)
+- [x] 80.1-03-PLAN.md — Opening Insights service: compute_insights SimpleNamespace adapter + transposition-divergence tests (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 80.1-04-PLAN.md — Smoke / regression matrix + prod-DB sanity check (D-09) + CHANGELOG entry (Wave 3)
