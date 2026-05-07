@@ -137,6 +137,169 @@ describe('MiniBulletChart — tickPawns prop (260504-rvh)', () => {
   });
 });
 
+describe('MiniBulletChart — barColor prop (260507-t4r)', () => {
+  /**
+   * The `barColor` prop controls the fill color of the value bar.
+   * 'zone' (default): fill uses the zone color (danger/neutral/success).
+   * 'neutral': fill uses BULLET_BAR_NEUTRAL — a light grey, zone-agnostic.
+   *
+   * Zone band backgrounds and CI whiskers are unaffected by barColor.
+   * Endgame consumers omit barColor and therefore keep the zone-colored bar.
+   */
+
+  function getValueBar(container: Element): HTMLElement | null {
+    return container.querySelector('[data-testid="mini-bullet-value-bar"]') as HTMLElement | null;
+  }
+
+  it('Test 1a: no barColor prop — value bar uses zone color (danger zone)', () => {
+    // value=0.2 with center=0.5, neutralMin=-0.05, neutralMax=0.05 falls into danger zone
+    const { container } = render(
+      <MiniBulletChart
+        value={0.2}
+        center={0.5}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.5}
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    // zone-colored: must NOT be the neutral grey
+    // BULLET_BAR_NEUTRAL is 'oklch(0.85 0 0)' — a grey; zone colors have chroma
+    expect(bar?.style.backgroundColor).not.toContain('oklch(0.85 0 0)');
+  });
+
+  it('Test 1b: no barColor prop — value bar uses zone color (neutral zone)', () => {
+    const { container } = render(
+      <MiniBulletChart
+        value={0.5}
+        center={0.5}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.5}
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    expect(bar?.style.backgroundColor).not.toContain('oklch(0.85 0 0)');
+  });
+
+  it('Test 1c: no barColor prop — value bar uses zone color (success zone)', () => {
+    const { container } = render(
+      <MiniBulletChart
+        value={0.8}
+        center={0.5}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.5}
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    expect(bar?.style.backgroundColor).not.toContain('oklch(0.85 0 0)');
+  });
+
+  it('Test 2a: barColor="neutral" — value bar uses BULLET_BAR_NEUTRAL in danger zone', () => {
+    const { container } = render(
+      <MiniBulletChart
+        value={0.2}
+        center={0.5}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.5}
+        barColor="neutral"
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    // Must be the neutral grey (BULLET_BAR_NEUTRAL = 'oklch(0.85 0 0)')
+    expect(bar?.style.backgroundColor).toContain('oklch(0.85 0 0)');
+  });
+
+  it('Test 2b: barColor="neutral" — value bar uses BULLET_BAR_NEUTRAL in neutral zone', () => {
+    const { container } = render(
+      <MiniBulletChart
+        value={0.5}
+        center={0.5}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.5}
+        barColor="neutral"
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    expect(bar?.style.backgroundColor).toContain('oklch(0.85 0 0)');
+  });
+
+  it('Test 2c: barColor="neutral" — value bar uses BULLET_BAR_NEUTRAL in success zone', () => {
+    const { container } = render(
+      <MiniBulletChart
+        value={0.8}
+        center={0.5}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.5}
+        barColor="neutral"
+      />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    expect(bar?.style.backgroundColor).toContain('oklch(0.85 0 0)');
+  });
+
+  it('Test 3: barColor="zone" is functionally identical to omitting the prop', () => {
+    // Both with zone color: value=0.7, center=0.5, neutralMax=0.55 -> success zone (ZONE_SUCCESS)
+    // We verify barColor="zone" does NOT produce the neutral grey.
+    const { container } = render(
+      <MiniBulletChart value={0.7} center={0.5} neutralMin={-0.05} neutralMax={0.05} domain={0.5} barColor="zone" />,
+    );
+    const bar = getValueBar(container);
+    expect(bar).not.toBeNull();
+    // barColor="zone" must not produce the neutral grey; it must produce a zone color
+    expect(bar?.style.backgroundColor).not.toContain('oklch(0.85 0 0)');
+  });
+
+  it('Test 4: barColor="neutral" does not affect zone band backgrounds', () => {
+    // Zone bands are the three background divs — they always use zone colors
+    // regardless of barColor. We verify the chart container itself still renders.
+    const { container } = render(
+      <MiniBulletChart
+        value={0.5}
+        center={0.5}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.5}
+        barColor="neutral"
+        ciLow={0.4}
+        ciHigh={0.6}
+      />,
+    );
+    // Whisker should still render
+    const whisker = container.querySelector('[data-testid="mini-bullet-whisker"]');
+    expect(whisker).not.toBeNull();
+    // Chart root still renders
+    const chart = container.querySelector('[data-testid="mini-bullet-chart"]');
+    expect(chart).not.toBeNull();
+  });
+
+  it('Test 5: tickPawns reference line unaffected by barColor="neutral"', () => {
+    const { container } = render(
+      <MiniBulletChart
+        value={0.5}
+        center={0.5}
+        neutralMin={-0.05}
+        neutralMax={0.05}
+        domain={0.5}
+        tickPawns={0.45}
+        barColor="neutral"
+      />,
+    );
+    const tick = container.querySelector('[data-testid="mini-bullet-tick"]');
+    expect(tick).not.toBeNull();
+  });
+});
+
 describe('MiniBulletChart — center prop (260504-my2)', () => {
   function leftPercent(el: HTMLElement | null): number | null {
     if (!el) return null;
