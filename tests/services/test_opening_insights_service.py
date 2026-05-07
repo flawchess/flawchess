@@ -1331,6 +1331,163 @@ class TestComputeInsightsTranspositionWdl:
         assert finding.n_games == 40
 
     @pytest.mark.asyncio
+    async def test_pos_wdl_queried_per_color_with_matching_color_filter(self) -> None:
+        """WR-01 regression: query_resulting_position_wdl must be invoked once
+        per color in colors_to_query, scoped to that color's resulting hashes,
+        and with color=color (matching query_opening_transitions' explicit
+        Game.user_color predicate). The cross-color blended call site
+        (color=None) silently inflated/deflated white-section and black-section
+        denominators against the click-through Move Explorer view, which IS
+        color-filtered. See app/services/opening_insights_service.py header
+        comment near pos_wdl_by_color and 80.1-REVIEW.md WR-01.
+        """
+        # Two rows, same resulting_full_hash but in different color sections.
+        # Each color's pos_wdl mock returns a *different* (w, d, l) so we can
+        # detect cross-section blending if it happened.
+        WHITE_HASH = 0xDD10
+        BLACK_HASH = 0xDD11
+        row_white = _make_row(
+            entry_hash=100,
+            move_san="e4",
+            resulting_full_hash=WHITE_HASH,
+            entry_san_sequence=["e4"],
+            n=20,
+            w=4,
+            d=4,
+            losses=12,
+        )
+        row_black = _make_row(
+            entry_hash=200,
+            move_san="e5",
+            resulting_full_hash=BLACK_HASH,
+            entry_san_sequence=["e4", "e5"],
+            n=20,
+            w=14,
+            d=2,
+            losses=4,
+        )
+        opening_w = _make_opening(full_hash=100, ply_count=1)
+        opening_b = _make_opening(full_hash=200, ply_count=2)
+
+        # Per-color pos_wdl: white sees (8, 8, 24) for n=40, black sees
+        # (28, 4, 8) for n=40. If the implementation reverted to a single
+        # cross-color call and reused the same dict for both colors, we'd
+        # see different counts on at least one finding.
+        async def pos_wdl_side_effect(
+            *, session: Any, user_id: int, hash_list: list[int], color: str | None, **_: Any
+        ) -> dict[int, tuple[int, int, int]]:
+            # WR-01: caller must pass a real color literal, never None, when
+            # called per-color. Assert here so a regression is impossible to
+            # mock around.
+            assert color in ("white", "black"), (
+                f"WR-01: query_resulting_position_wdl must be called with "
+                f"color in {{'white','black'}}, got {color!r}"
+            )
+            if color == "white":
+                # White scope: only WHITE_HASH should be requested.
+                assert hash_list == [WHITE_HASH], (
+                    f"white-color call must scope to white-section hashes, got {hash_list}"
+                )
+                return {WHITE_HASH: (8, 8, 24)}
+            assert hash_list == [BLACK_HASH], (
+                f"black-color call must scope to black-section hashes, got {hash_list}"
+            )
+            return {BLACK_HASH: (28, 4, 8)}
+
+        with (
+            patch(
+                "app.services.opening_insights_service.query_opening_transitions",
+                new_callable=AsyncMock,
+            ) as mock_transitions,
+            patch(
+                "app.services.opening_insights_service.query_openings_by_hashes",
+                new_callable=AsyncMock,
+            ) as mock_attribution,
+            patch(
+                "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+                new_callable=AsyncMock,
+            ) as mock_eval,
+            patch(
+                "app.services.opening_insights_service.query_resulting_position_wdl",
+                side_effect=pos_wdl_side_effect,
+            ) as mock_pos_wdl,
+        ):
+            # White call returns the white row, black returns the black row.
+            mock_transitions.side_effect = [[row_white], [row_black]]
+            mock_attribution.return_value = {100: opening_w, 200: opening_b}
+            mock_eval.return_value = {}
+
+            response = await compute_insights(
+                session=AsyncMock(),
+                user_id=1,
+                request=_default_request(color="all"),
+            )
+
+        # Two calls, one per color (sequential per CLAUDE.md AsyncSession rule).
+        assert mock_pos_wdl.call_count == 2
+        # White finding picks up white-color pos_wdl: (8, 8, 24), n=40, score=12/40=0.30.
+        assert len(response.white_weaknesses) == 1
+        wf = response.white_weaknesses[0]
+        assert (wf.wins, wf.draws, wf.losses, wf.n_games) == (8, 8, 24, 40)
+        # Black finding picks up black-color pos_wdl: (28, 4, 8), n=40, score=30/40=0.75.
+        assert len(response.black_strengths) == 1
+        bf = response.black_strengths[0]
+        assert (bf.wins, bf.draws, bf.losses, bf.n_games) == (28, 4, 8, 40)
+
+    @pytest.mark.asyncio
+    async def test_pos_wdl_skipped_when_color_has_no_rows(self) -> None:
+        """When a color produced zero transition rows (e.g. user has only one
+        color active), query_resulting_position_wdl must NOT be invoked for
+        that color — empty hash_list short-circuit retained from pre-WR-01."""
+        row_white = _make_row(
+            entry_hash=100,
+            move_san="e4",
+            resulting_full_hash=0xDD20,
+            entry_san_sequence=["e4"],
+            n=20,
+            w=4,
+            d=4,
+            losses=12,
+        )
+        opening = _make_opening(full_hash=100, ply_count=1)
+
+        with (
+            patch(
+                "app.services.opening_insights_service.query_opening_transitions",
+                new_callable=AsyncMock,
+            ) as mock_transitions,
+            patch(
+                "app.services.opening_insights_service.query_openings_by_hashes",
+                new_callable=AsyncMock,
+            ) as mock_attribution,
+            patch(
+                "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
+                new_callable=AsyncMock,
+            ) as mock_eval,
+            patch(
+                "app.services.opening_insights_service.query_resulting_position_wdl",
+                new_callable=AsyncMock,
+            ) as mock_pos_wdl,
+        ):
+            # White returns one row, black returns nothing.
+            mock_transitions.side_effect = [[row_white], []]
+            mock_attribution.return_value = {100: opening}
+            mock_eval.return_value = {}
+            mock_pos_wdl.return_value = {0xDD20: (4, 4, 12)}
+
+            await compute_insights(
+                session=AsyncMock(),
+                user_id=1,
+                request=_default_request(color="all"),
+            )
+
+        # Exactly one call: only the white color (black short-circuited).
+        assert mock_pos_wdl.call_count == 1
+        kwargs = mock_pos_wdl.await_args_list[0].kwargs
+        assert kwargs["color"] == "white"
+        assert kwargs["hash_list"] == [0xDD20]
+
+    @pytest.mark.asyncio
     async def test_finding_n_games_validator_satisfied_when_pos_n_gt_move_played_n(
         self,
     ) -> None:
