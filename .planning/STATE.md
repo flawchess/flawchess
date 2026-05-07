@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: "Phase 80 merged — PR #80 squash-merged to main (18456f6); awaiting bin/deploy.sh + post-deploy UI smoke"
-last_updated: "2026-05-05T21:10:29.856Z"
-last_activity: "2026-05-05 -- Phase 80 PR #80 squash-merged to main; local main reset to origin; feature branch deleted"
+status: executing
+last_updated: "2026-05-07T17:18:32.973Z"
+last_activity: 2026-05-07 -- Phase 80.1 planning complete
 progress:
-  total_phases: 6
+  total_phases: 2
   completed_phases: 1
-  total_plans: 6
+  total_plans: 10
   completed_plans: 6
-  percent: 100
+  percent: 60
 ---
 
 # Project State: FlawChess
@@ -19,8 +19,8 @@ progress:
 
 Phase: 80 (opening-stats-middlegame-entry-eval-and-clock-diff-columns) — EXECUTING
 Plan: 1 of 6
-Status: Phase 80 merged — PR #80 squash-merged to main (18456f6); awaiting bin/deploy.sh + post-deploy UI smoke
-Last activity: 2026-05-05 -- Phase 80 PR #80 squash-merged to main; local main reset to origin; feature branch deleted
+Status: Ready to execute
+Last activity: 2026-05-07 -- Phase 80.1 planning complete
 
 ## Project Reference
 
