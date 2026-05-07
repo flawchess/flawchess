@@ -2,6 +2,7 @@
 
 import datetime
 import io
+import logging
 from typing import Literal
 
 import sentry_sdk
@@ -19,6 +20,7 @@ from app.repositories.openings_repository import (
     query_next_moves,
     query_time_series,
     query_transposition_counts,
+    query_transposition_wdl,  # Phase 80.1 D-02 — resulting-position WDL
     query_wdl_counts,
 )
 from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
@@ -35,6 +37,8 @@ from app.schemas.openings import (
     TimeSeriesResponse,
     WDLStats,
 )
+
+logger = logging.getLogger(__name__)
 
 # Rolling window size for win-rate time series computation.
 ROLLING_WINDOW_SIZE = 50
@@ -445,26 +449,63 @@ async def get_next_moves(
         opponent_gap_max=request.opponent_gap_max,
     )
 
+    # --- Resulting-position WDL (batch) — Phase 80.1 D-02 ---
+    # Sequential await (NOT asyncio.gather): AsyncSession is not concurrency-safe
+    # per CLAUDE.md. Filter parameters mirror query_transposition_counts above
+    # exactly to preserve filter parity (Pitfall 1 from RESEARCH.md).
+    pos_wdl = await query_transposition_wdl(
+        session=session,
+        user_id=user_id,
+        result_hash_list=result_hashes,
+        time_control=request.time_control,
+        platform=request.platform,
+        rated=request.rated,
+        opponent_type=request.opponent_type,
+        recency_cutoff=cutoff,
+        color=request.color,
+        opponent_gap_min=request.opponent_gap_min,
+        opponent_gap_max=request.opponent_gap_max,
+    )
+
     # --- Result FENs via PGN replay ---
     result_fens = await _fetch_result_fens(session, user_id, result_hashes)
 
     # --- Build move entries ---
+    # Phase 80.1 D-01/D-02: game_count stays move-played; W/D/L flip to
+    # resulting-position WDL (combined across all games visiting result_hash,
+    # including transpositions). The two denominators (gc and pos_total)
+    # legitimately diverge when transpositions exist — see TranspositionInfo
+    # popover in MoveExplorer.tsx for the user-facing explanation.
     moves: list[NextMoveEntry] = []
     for row in move_rows:
-        gc = row.game_count
-        w, d, lo = row.wins, row.draws, row.losses
-        wp = round(w / gc * 100, 1) if gc > 0 else 0.0
-        dp = round(d / gc * 100, 1) if gc > 0 else 0.0
-        lp = round(lo / gc * 100, 1) if gc > 0 else 0.0
-        score = (w + 0.5 * d) / gc if gc > 0 else 0.5
+        gc = row.game_count  # move-played, stays per D-01
+        pos = pos_wdl.get(row.result_hash)
+        if pos is None:
+            # Filter mismatch defensive fallback (Pitfall 4 from RESEARCH.md).
+            # Should not occur if query_transposition_wdl applies identical
+            # filters to query_next_moves; logged so it surfaces in dev/prod.
+            logger.warning(
+                "query_transposition_wdl missing result_hash=%s; falling back to move-played WDL",
+                row.result_hash,
+            )
+            w, d, lo = row.wins, row.draws, row.losses
+            pos_total = gc
+        else:
+            w, d, lo = pos
+            pos_total = w + d + lo
+
+        wp = round(w / pos_total * 100, 1) if pos_total > 0 else 0.0
+        dp = round(d / pos_total * 100, 1) if pos_total > 0 else 0.0
+        lp = round(lo / pos_total * 100, 1) if pos_total > 0 else 0.0
+        score = (w + 0.5 * d) / pos_total if pos_total > 0 else 0.5
         # Move Explorer rows are sorted by frequency or win_rate (not Wald CI bound),
         # so SE is not needed here — `_se` underscore signals "intentionally unused".
-        confidence, p_value, _se = compute_confidence_bucket(w, d, lo, gc)
+        confidence, p_value, _se = compute_confidence_bucket(w, d, lo, pos_total)
         moves.append(
             NextMoveEntry(
                 move_san=row.move_san,
-                game_count=gc,
-                wins=w,
+                game_count=gc,  # move-played per D-01
+                wins=w,  # resulting-position per D-02
                 draws=d,
                 losses=lo,
                 win_pct=wp,
