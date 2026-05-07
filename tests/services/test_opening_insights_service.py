@@ -92,15 +92,31 @@ async def _run_compute(
     rows: list[SimpleNamespace],
     openings_by_hash: dict[int, Opening] | None = None,
     color: str = "white",
+    pos_wdl: dict[int, tuple[int, int, int]] | None = None,
 ) -> OpeningInsightsResponse:
     """Helper: patch repo functions and run compute_insights.
 
     Also patches query_opening_phase_entry_metrics_batch (added quick task
     260506-u2b) to return an empty dict so existing tests are unaffected by
     the new eval-enrichment step.
+
+    Phase 80.1: also patches query_resulting_position_wdl. When pos_wdl is
+    None (the default), the mock returns a dict where each row.resulting_full_hash
+    maps to (row.w, row.d, row.l) — i.e. resulting-position WDL == move-played
+    WDL. This preserves existing test expectations because _classify_row,
+    _compute_score, compute_confidence_bucket, wilson_bounds, and the
+    OpeningInsightFinding fields all see the same numbers they did pre-Phase 80.1.
+    Tests that need to drive a divergence between move-played and resulting-position
+    WDL (the new transposition tests) pass an explicit pos_wdl mapping.
     """
     if openings_by_hash is None:
         openings_by_hash = {100: _make_opening()}
+    if pos_wdl is None:
+        # Default: resulting-position WDL == move-played WDL (no transpositions
+        # in fixture). Phase 80.1: existing tests that compute expected score
+        # from row.w/d/l/n produce the same expected score under the new
+        # aggregation because pos == row by default.
+        pos_wdl = {int(row.resulting_full_hash): (row.w, row.d, row.l) for row in rows}
 
     with (
         patch(
@@ -115,10 +131,15 @@ async def _run_compute(
             "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
             new_callable=AsyncMock,
         ) as mock_eval,
+        patch(
+            "app.services.opening_insights_service.query_resulting_position_wdl",
+            new_callable=AsyncMock,
+        ) as mock_pos_wdl,
     ):
         mock_transitions.return_value = rows
         mock_attribution.return_value = openings_by_hash
         mock_eval.return_value = {}  # no MG-entry metrics (existing tests unaffected)
+        mock_pos_wdl.return_value = pos_wdl
 
         return await compute_insights(
             session=AsyncMock(),
@@ -271,6 +292,10 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
             "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
             new_callable=AsyncMock,
         ) as mock_eval,
+        patch(
+            "app.services.opening_insights_service.query_resulting_position_wdl",
+            new_callable=AsyncMock,
+        ) as mock_pos_wdl,
     ):
         # First call (white) → row_white, second call (black) → row_black
         mock_transitions.side_effect = [
@@ -279,6 +304,8 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
         ]
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}
+        # Phase 80.1: pos WDL == move-played WDL (no transposition in fixture).
+        mock_pos_wdl.return_value = {999: (2, 2, 16)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -351,6 +378,10 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
             "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
             new_callable=AsyncMock,
         ) as mock_eval,
+        patch(
+            "app.services.opening_insights_service.query_resulting_position_wdl",
+            new_callable=AsyncMock,
+        ) as mock_pos_wdl,
     ):
         # White call returns shallow + deep, black call returns mid.
         mock_transitions.side_effect = [
@@ -359,6 +390,8 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
         ]
         mock_attribution.return_value = {100: opening_a, 200: opening_b, 300: opening_c}
         mock_eval.return_value = {}
+        # Phase 80.1: pos WDL == move-played WDL across all three rows.
+        mock_pos_wdl.return_value = {200: (4, 4, 12), 400: (4, 4, 12), 300: (4, 4, 12)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -517,6 +550,10 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
             "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
             new_callable=AsyncMock,
         ) as mock_eval,
+        patch(
+            "app.services.opening_insights_service.query_resulting_position_wdl",
+            new_callable=AsyncMock,
+        ) as mock_pos_wdl,
     ):
         row = _make_row(
             entry_hash=entry_hash_at_ply3,
@@ -535,6 +572,8 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
             {parent_hash: parent_opening},  # parent pass: Sicilian at ply=2
         ]
         mock_eval.return_value = {}
+        # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
+        mock_pos_wdl.return_value = {200: (2, 2, 16)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -563,12 +602,18 @@ async def test_attribution_drops_finding_when_no_lineage_match() -> None:
             "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
             new_callable=AsyncMock,
         ) as mock_eval,
+        patch(
+            "app.services.opening_insights_service.query_resulting_position_wdl",
+            new_callable=AsyncMock,
+        ) as mock_pos_wdl,
     ):
         row = _make_row(n=20, w=2, d=2, losses=16, entry_hash=9999)
         mock_transitions.return_value = [row]
         # Both passes return empty dicts — no attribution possible
         mock_attribution.return_value = {}
         mock_eval.return_value = {}
+        # Phase 80.1: pos WDL == move-played WDL.
+        mock_pos_wdl.return_value = {200: (2, 2, 16)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -918,10 +963,16 @@ async def test_color_optimization_skips_unused_color_query() -> None:
             "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
             new_callable=AsyncMock,
         ) as mock_eval,
+        patch(
+            "app.services.opening_insights_service.query_resulting_position_wdl",
+            new_callable=AsyncMock,
+        ) as mock_pos_wdl,
     ):
         mock_transitions.return_value = [row]
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}
+        # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
+        mock_pos_wdl.return_value = {200: (12, 4, 4)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -970,6 +1021,10 @@ async def test_display_name_vs_prefix_when_attribution_parity_disagrees() -> Non
             "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
             new_callable=AsyncMock,
         ) as mock_eval,
+        patch(
+            "app.services.opening_insights_service.query_resulting_position_wdl",
+            new_callable=AsyncMock,
+        ) as mock_pos_wdl,
     ):
         mock_transitions.side_effect = [
             [],  # white query: no rows
@@ -977,6 +1032,8 @@ async def test_display_name_vs_prefix_when_attribution_parity_disagrees() -> Non
         ]
         mock_attribution.return_value = {100: white_defined_opening}
         mock_eval.return_value = {}
+        # Phase 80.1: pos WDL == move-played WDL.
+        mock_pos_wdl.return_value = {200: (2, 2, 16)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -1097,10 +1154,16 @@ async def test_compute_insights_eval_fields_populated_when_metrics_present() -> 
             "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
             new_callable=AsyncMock,
         ) as mock_eval,
+        patch(
+            "app.services.opening_insights_service.query_resulting_position_wdl",
+            new_callable=AsyncMock,
+        ) as mock_pos_wdl,
     ):
         mock_transitions.return_value = [row]
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = synthetic_metrics
+        # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
+        mock_pos_wdl.return_value = {999: (4, 4, 12)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -1143,10 +1206,16 @@ async def test_compute_insights_eval_fields_stay_at_defaults_when_no_metrics() -
             "app.services.opening_insights_service.query_opening_phase_entry_metrics_batch",
             new_callable=AsyncMock,
         ) as mock_eval,
+        patch(
+            "app.services.opening_insights_service.query_resulting_position_wdl",
+            new_callable=AsyncMock,
+        ) as mock_pos_wdl,
     ):
         mock_transitions.return_value = [row]
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}  # no metrics
+        # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
+        mock_pos_wdl.return_value = {999: (4, 4, 12)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -1162,3 +1231,137 @@ async def test_compute_insights_eval_fields_stay_at_defaults_when_no_metrics() -
     assert finding.eval_ci_high_pawns is None
     assert finding.eval_p_value is None
     assert finding.eval_confidence == "low"
+
+
+# ---------------------------------------------------------------------------
+# Phase 80.1 D-03/D-05: resulting-position WDL drives classification + fields
+# ---------------------------------------------------------------------------
+#
+# Hash namespace 0xDD** is reserved for Phase 80.1 service-level transposition
+# tests (mirrors Plan 02's 0xCC** for openings_service tests). These tests
+# drive a divergence between move-played WDL (carried on `row`) and resulting-
+# position WDL (returned by query_resulting_position_wdl) so we can verify
+# that compute_insights classifies, ranks, and populates fields from the
+# resulting-position aggregation, not from the move-played counts.
+DIVERGE_HASH = 0xDD01
+FLIP_HASH = 0xDD02
+VALIDATOR_HASH = 0xDD03
+
+
+class TestComputeInsightsTranspositionWdl:
+    """Phase 80.1 D-03/D-05: resulting-position WDL drives classification + fields."""
+
+    @pytest.mark.asyncio
+    async def test_finding_uses_resulting_position_wdl_when_diverges_from_move_played(
+        self,
+    ) -> None:
+        """When pos_wdl diverges from row (transposition: more games visit the
+        resulting position than played the candidate from this entry),
+        finding.{n_games, wins, draws, losses, score} all reflect pos_wdl,
+        not the move-played row."""
+        # Move-played: w=15, d=3, l=2, n=20 → score = 16.5/20 = 0.825 (major strength)
+        # Pos WDL:     w=24, d=6, l=10, n=40 → score = 27/40 = 0.675 (still major strength)
+        # Surfacing gate (HAVING n_games >= 20) passes on move-played n=20.
+        # Field validator (Field(ge=20) on n_games) passes on pos_n=40.
+        row = _make_row(
+            entry_hash=100,
+            move_san="e4",
+            resulting_full_hash=DIVERGE_HASH,
+            entry_san_sequence=["e4"],
+            n=20,
+            w=15,
+            d=3,
+            losses=2,
+        )
+        opening = _make_opening(full_hash=100, ply_count=1)
+
+        response = await _run_compute(
+            rows=[row],
+            openings_by_hash={100: opening},
+            color="white",
+            pos_wdl={DIVERGE_HASH: (24, 6, 10)},
+        )
+
+        assert len(response.white_strengths) == 1
+        finding = response.white_strengths[0]
+        # Field semantics flip to resulting-position WDL.
+        assert finding.n_games == 40
+        assert finding.wins == 24
+        assert finding.draws == 6
+        assert finding.losses == 10
+        assert finding.score == pytest.approx(27 / 40, abs=1e-9)
+        # Classification stays strength (0.675 still >= 0.60 = major threshold).
+        assert finding.classification == "strength"
+        assert finding.severity == "major"
+
+    @pytest.mark.asyncio
+    async def test_finding_classification_uses_resulting_position_score(self) -> None:
+        """When move-played score classifies as strength but pos_wdl yields a
+        weakness score, the finding surfaces in the WEAKNESS section
+        (classification flipped) — _classify_row sees pos_row, not row."""
+        # Move-played: w=12, d=1, l=7, n=20 → score = 12.5/20 = 0.625 (minor strength)
+        # Pos WDL:     w=10, d=10, l=20, n=40 → score = 15/40 = 0.375 (major weakness)
+        # Surfacing gate passes on move-played n=20. Validator passes on pos_n=40.
+        row = _make_row(
+            entry_hash=100,
+            move_san="e4",
+            resulting_full_hash=FLIP_HASH,
+            entry_san_sequence=["e4"],
+            n=20,
+            w=12,
+            d=1,
+            losses=7,
+        )
+        opening = _make_opening(full_hash=100, ply_count=1)
+
+        response = await _run_compute(
+            rows=[row],
+            openings_by_hash={100: opening},
+            color="white",
+            pos_wdl={FLIP_HASH: (10, 10, 20)},
+        )
+
+        # Classification flipped: appears in WEAKNESSES, not strengths.
+        assert len(response.white_strengths) == 0
+        assert len(response.white_weaknesses) == 1
+        finding = response.white_weaknesses[0]
+        assert finding.classification == "weakness"
+        assert finding.severity == "major"  # 0.375 <= 0.40
+        assert finding.score == pytest.approx(15 / 40, abs=1e-9)
+        assert finding.n_games == 40
+
+    @pytest.mark.asyncio
+    async def test_finding_n_games_validator_satisfied_when_pos_n_gt_move_played_n(
+        self,
+    ) -> None:
+        """Pydantic Field(ge=OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE=20) on
+        n_games stays satisfied because pos_n is always >= move-played n by
+        construction (every move-played game also visits the resulting
+        position). Regression test for Pitfall 3 from RESEARCH.md."""
+        # Move-played: n=20 (exactly at the gate).
+        # Pos WDL: n=25 (transposition adds 5 games via other move orders).
+        row = _make_row(
+            entry_hash=100,
+            move_san="e4",
+            resulting_full_hash=VALIDATOR_HASH,
+            entry_san_sequence=["e4"],
+            n=20,
+            w=12,
+            d=1,
+            losses=7,
+        )
+        opening = _make_opening(full_hash=100, ply_count=1)
+
+        # Pos: w=15, d=0, l=10 → score = 15/25 = 0.60 (strength, major boundary).
+        response = await _run_compute(
+            rows=[row],
+            openings_by_hash={100: opening},
+            color="white",
+            pos_wdl={VALIDATOR_HASH: (15, 0, 10)},
+        )
+
+        # Validator did not raise; finding is constructed with pos_n=25.
+        assert len(response.white_strengths) == 1
+        finding = response.white_strengths[0]
+        assert finding.n_games == 25
+        assert finding.n_games >= MIN_GAMES_PER_CANDIDATE  # validator gate
