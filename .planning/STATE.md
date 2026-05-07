@@ -3,24 +3,24 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: executing
-last_updated: "2026-05-07T17:18:32.973Z"
-last_activity: 2026-05-07 -- Phase 80.1 planning complete
+last_updated: "2026-05-07T17:41:11.888Z"
+last_activity: 2026-05-07
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 10
-  completed_plans: 6
-  percent: 60
+  completed_plans: 8
+  percent: 80
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 80 (opening-stats-middlegame-entry-eval-and-clock-diff-columns) — EXECUTING
-Plan: 1 of 6
-Status: Ready to execute
-Last activity: 2026-05-07 -- Phase 80.1 planning complete
+Phase: 80.1 (include-transpositions-in-move-explorer-and-opening-insights-stats) — EXECUTING
+Plan: 2 of 4 (Wave 2 — service field swap on Move Explorer; complete)
+Status: Ready to execute Plan 80.1-03 (Opening Insights service field swap)
+Last activity: 2026-05-07 — Completed Plan 80.1-02: get_next_moves now consumes query_transposition_wdl; canonical convergence + filter-parity tests added (26/26 pass)
 
 ## Project Reference
 
@@ -150,6 +150,6 @@ Carried forward from v1.11 close (still relevant):
 | 260507-aw5 | Complete Wilson migration on score side: replace trinomial Wald p-value in score_confidence.py with Wilson score-test p-value (null SE = 0.5/sqrt(n)). CI bounds were already Wilson; the test is now the inversion of the CI so they agree by construction. SE=0 degeneracy at all-wins/all-losses gone. Tooltips, Field comments, and module docstrings updated. Eval-side stays on Wald-z (Wilson is binomial-specific) | 2026-05-07 | b47505be | [260507-aw5-complete-wilson-migration-on-score-side-](./quick/260507-aw5-complete-wilson-migration-on-score-side-/) |
 
 ---
-Last activity: 2026-05-07 — Completed quick task 260507-aw5: Wilson migration on score side. `score_confidence.compute_confidence_bucket` now uses the Wilson score-test (null variance) instead of trinomial Wald (estimated variance); CI and significance call agree by construction. Tooltips and Field comments updated. Eval side intentionally stays on Wald-z.
+Last activity: 2026-05-07 — Completed Plan 80.1-02 (Move Explorer service field swap): `get_next_moves` now consumes the new `query_transposition_wdl` from Plan 01 and swaps WDL-derived fields on `NextMoveEntry` to resulting-position aggregation. `game_count` stays move-played per D-01; W/D/L / score / confidence / p_value flip to resulting-position per D-02. Closes the 57%→61% click-through mismatch by construction. New `TestNextMovesTranspositionWdl` (3 tests: canonical convergence, single-order parity, filter-parity / T-80.1-05 mitigation) plus restructured `test_get_next_moves_populates_score_confidence_p_value` to compute the helper input from `pos_n` explicitly. Full module green: 26/26 in 0.35s. Commits `84179982` (feat) + `ca4f89d1` (test). Next: Plan 80.1-03 (Opening Insights service field swap).
 | 2026-05-04 | fast | Mute opening row when total games < 20; drop confidence-based muting | ✅ |
 | 2026-05-04 | fast | Score zone color in Moves tab + per-move list; drop severity row tint; bump mobile games-count font size | ✅ |

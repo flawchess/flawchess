@@ -68,10 +68,10 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 80.1-01-PLAN.md — Repository: query_transposition_wdl + query_resulting_position_wdl siblings + Wave 0 transposition fixtures (Wave 1)
+- [x] 80.1-01-PLAN.md — Repository: query_transposition_wdl + query_resulting_position_wdl siblings + Wave 0 transposition fixtures (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 80.1-02-PLAN.md — Move Explorer service: get_next_moves WDL field swap + canonical convergence test (Wave 2)
+- [x] 80.1-02-PLAN.md — Move Explorer service: get_next_moves WDL field swap + canonical convergence test (Wave 2)
 - [ ] 80.1-03-PLAN.md — Opening Insights service: compute_insights SimpleNamespace adapter + transposition-divergence tests (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
