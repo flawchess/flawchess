@@ -295,14 +295,13 @@ describe('OpeningStatsCard — score bullet row (260507-t4r)', () => {
     expect(scoreText?.textContent).toContain('63%');
   });
 
-  // Test S6: No sm:hidden / hidden sm:flex dual layout (unified single-column)
-  it('S6: card does not use sm:hidden or hidden sm:flex split layout', () => {
+  // Test S6: dual sm:hidden / hidden sm:flex layout (board left, charts right on desktop)
+  it('S6: card uses sm:hidden mobile block and hidden sm:flex desktop block', () => {
     renderCard({ idx: 14 });
     const card = document.querySelector('[data-testid="opening-stats-card-14"]');
-    // The old mobile/desktop split used these classes on direct children
     const smHidden = card?.querySelector('.sm\\:hidden');
     const hiddenSm = card?.querySelector('.hidden.sm\\:flex');
-    expect(smHidden).toBeNull();
-    expect(hiddenSm).toBeNull();
+    expect(smHidden).not.toBeNull();
+    expect(hiddenSm).not.toBeNull();
   });
 });

@@ -222,8 +222,8 @@ describe('OpeningFindingCard', () => {
         onOpenGames={() => {}}
       />,
     );
-    // 260507-t4r: unified layout — single Moves button (was two: mobile + desktop).
-    const movesBtn = screen.getByTestId('opening-finding-card-6-moves');
+    // Dual layout: testid is duplicated across mobile + desktop blocks.
+    const movesBtn = screen.getAllByTestId('opening-finding-card-6-moves')[0]!;
     fireEvent.click(movesBtn);
     expect(onFindingClick).toHaveBeenCalledWith(finding);
   });
@@ -240,8 +240,8 @@ describe('OpeningFindingCard', () => {
         onOpenGames={onOpenGames}
       />,
     );
-    // 260507-t4r: unified layout — single Games button.
-    const gamesBtn = screen.getByTestId('opening-finding-card-7-games');
+    // Dual layout: testid is duplicated across mobile + desktop blocks.
+    const gamesBtn = screen.getAllByTestId('opening-finding-card-7-games')[0]!;
     expect(gamesBtn.textContent).toMatch(/42/);
     expect(gamesBtn.textContent).toMatch(/Games/);
     fireEvent.click(gamesBtn);
@@ -323,9 +323,9 @@ describe('OpeningFindingCard', () => {
     it('renders the WDL chart row', () => {
       const finding = makeFinding({ confidence: 'medium' });
       renderCard({ finding, idx: 3 });
-      // 260507-t4r: unified layout — single WDL row.
-      const wdlRow = screen.getByTestId('opening-finding-card-3-wdl');
-      expect(wdlRow).not.toBeNull();
+      // Dual layout: testid is duplicated across mobile + desktop blocks.
+      const wdlRows = screen.getAllByTestId('opening-finding-card-3-wdl');
+      expect(wdlRows.length).toBeGreaterThanOrEqual(1);
     });
 
     it('renders the score-bullet row (260507-t4r: score bullet added to Insights cards)', () => {
@@ -343,25 +343,25 @@ describe('OpeningFindingCard', () => {
     it('renders eval bullet container when eval_n > 0', () => {
       const finding = makeFinding({ eval_n: 18, avg_eval_pawns: 0.5 });
       renderCard({ finding, idx: 5 });
-      // 260507-t4r: unified layout — single bullet element.
-      const bullet = screen.getByTestId('opening-finding-card-5-bullet');
+      // Dual layout: testid is duplicated across mobile + desktop blocks.
+      const bullet = screen.getAllByTestId('opening-finding-card-5-bullet')[0]!;
       expect(bullet.querySelector('[data-testid="mini-bullet-chart"]')).not.toBeNull();
     });
 
     it('renders em-dash fallback in eval bullet when eval_n === 0', () => {
       const finding = makeFinding({ eval_n: 0, avg_eval_pawns: null });
       renderCard({ finding, idx: 5 });
-      // 260507-t4r: unified layout — single eval-text element.
-      const evalText = screen.getByTestId('opening-finding-card-5-eval-text');
+      // Dual layout: testid is duplicated across mobile + desktop blocks.
+      const evalText = screen.getAllByTestId('opening-finding-card-5-eval-text')[0]!;
       expect(evalText.textContent).toContain('—');
     });
 
     it('renders BulletConfidencePopover trigger when eval_n > 0', () => {
       const finding = makeFinding({ eval_n: 18, avg_eval_pawns: 0.5, eval_confidence: 'medium' });
       renderCard({ finding, idx: 5 });
-      // 260507-t4r: unified layout — single popover.
-      const popover = screen.getByTestId('opening-finding-card-5-bullet-popover');
-      expect(popover).not.toBeNull();
+      // Dual layout: testid is duplicated across mobile + desktop blocks.
+      const popovers = screen.getAllByTestId('opening-finding-card-5-bullet-popover');
+      expect(popovers.length).toBeGreaterThanOrEqual(1);
     });
 
     it('does NOT render the legacy Confidence: <level> text line', () => {
@@ -450,7 +450,7 @@ describe('OpeningFindingCard', () => {
       expect(screen.getByTestId('opening-finding-card-7-troll-watermark')).toBeTruthy();
     });
 
-    it('renders exactly once in the unified layout (D-03, 260507-t4r: single layout)', () => {
+    it('renders exactly once (single sibling outside the layout blocks)', () => {
       const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });
       renderCard({ finding, idx: 7 });
       const elements = screen.getAllByTestId('opening-finding-card-7-troll-watermark');
@@ -483,25 +483,23 @@ describe('OpeningFindingCard', () => {
       const onFindingClick = vi.fn();
       const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });
       renderCard({ finding, idx: 7, onFindingClick });
-      // 260507-t4r: unified layout — single Moves button.
-      const movesBtn = screen.getByTestId('opening-finding-card-7-moves');
+      // Dual layout: testid is duplicated across mobile + desktop blocks.
+      const movesBtn = screen.getAllByTestId('opening-finding-card-7-moves')[0]!;
       fireEvent.click(movesBtn);
       expect(onFindingClick).toHaveBeenCalled();
     });
   });
 
   describe('Quick task 260429-gmj — score-colored after-move arrow', () => {
-    // Test A: arrow overlay renders in the unified single-column layout.
-    // 260507-t4r: unified layout replaced the two-block sm:hidden / hidden sm:flex split,
-    // so there is now exactly 1 board (and 1 arrow overlay) instead of 2.
-    it('renders <svg data-testid="mini-board-arrow-overlay"> in the unified layout', () => {
+    // Test A: arrow overlay renders in both mobile + desktop layouts.
+    it('renders <svg data-testid="mini-board-arrow-overlay"> in both mobile and desktop layouts', () => {
       const finding = makeFinding({
         entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
         candidate_move_san: 'e4',
       });
       renderCard({ finding, idx: 0 });
       const overlays = screen.getAllByTestId('mini-board-arrow-overlay');
-      expect(overlays.length).toBe(1); // unified layout: one board, one overlay
+      expect(overlays.length).toBe(2); // one in sm:hidden, one in hidden sm:flex
     });
 
     // Test B: arrow color is driven by score zone (matches Moves-tab scoreZoneColor).
@@ -540,7 +538,6 @@ describe('OpeningFindingCard', () => {
     });
 
     // Test D: arrow renders for both color sides (board flipped for black).
-    // 260507-t4r: unified layout has 1 board, so expect 1 overlay.
     it('renders the arrow overlay when finding.color === "black" (flipped board)', () => {
       const finding = makeFinding({
         color: 'black',
@@ -550,7 +547,7 @@ describe('OpeningFindingCard', () => {
       });
       renderCard({ finding, idx: 0 });
       const overlays = screen.getAllByTestId('mini-board-arrow-overlay');
-      expect(overlays.length).toBe(1); // unified layout: one board, one overlay
+      expect(overlays.length).toBe(2); // dual layout: one board per block
     });
   });
 });

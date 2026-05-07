@@ -21,10 +21,8 @@ import {
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import { MIN_GAMES_FOR_RELIABLE_STATS, MIN_GAMES_OPENING_ROW, UNRELIABLE_OPACITY } from '@/lib/theme';
 
-// Unified layout board size (260507-t4r): single-column on every viewport.
-// Using DESKTOP_BOARD_SIZE = 110 as the canonical size; the separate mobile
-// constant is no longer needed with the unified layout.
-const BOARD_SIZE = 110;
+const MOBILE_BOARD_SIZE = 115;
+const DESKTOP_BOARD_SIZE = 110;
 
 interface OpeningStatsCardProps {
   opening: OpeningWDL;
@@ -237,22 +235,38 @@ export function OpeningStatsCard({
       className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
       style={cardStyle}
     >
-      {/* Unified single-column layout on every viewport (260507-t4r D6).
-          Header full-width on top, board centered below, bullet rows stacked beneath.
-          Removes the sm:hidden / hidden sm:flex two-block split — one layout to maintain. */}
-      <div className="flex flex-col gap-2">
+      {/* Mobile: header full-width on top, board + content row below */}
+      <div className="flex flex-col gap-2 sm:hidden">
         {headerLine}
-        <div className="flex justify-center">
+        <div className="flex gap-3 items-start">
           <LazyMiniBoard
             fen={opening.fen}
             flipped={color === 'black'}
-            size={BOARD_SIZE}
+            size={MOBILE_BOARD_SIZE}
           />
+          <div className="flex-1 min-w-0 flex flex-col gap-2">
+            {wdlLine}
+            {scoreLine}
+            {evalLine}
+            {linksRow}
+          </div>
         </div>
-        {wdlLine}
-        {scoreLine}
-        {evalLine}
-        {linksRow}
+      </div>
+
+      {/* Desktop: board left, header + content stacked right */}
+      <div className="hidden sm:flex gap-3 items-center">
+        <LazyMiniBoard
+          fen={opening.fen}
+          flipped={color === 'black'}
+          size={DESKTOP_BOARD_SIZE}
+        />
+        <div className="min-w-0 flex-1 flex flex-col gap-2">
+          {headerLine}
+          {wdlLine}
+          {scoreLine}
+          {evalLine}
+          {linksRow}
+        </div>
       </div>
     </div>
   );

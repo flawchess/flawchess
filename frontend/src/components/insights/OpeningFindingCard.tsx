@@ -26,9 +26,8 @@ import { isTrollPosition } from '@/lib/trollOpenings';
 import trollFaceUrl from '@/assets/troll-face.svg';
 import type { OpeningInsightFinding } from '@/types/insights';
 
-// Unified layout board size (260507-t4r): single-column on every viewport.
-// Using DESKTOP_BOARD_SIZE = 110 as canonical; MOBILE_BOARD_SIZE no longer needed.
-const BOARD_SIZE = 110;
+const MOBILE_BOARD_SIZE = 115;
+const DESKTOP_BOARD_SIZE = 110;
 const UNNAMED_SENTINEL = '<unnamed line>';
 
 export function OpeningFindingCard({
@@ -255,41 +254,67 @@ export function OpeningFindingCard({
     </div>
   );
 
+  // Move-anchor caption (260507-t4r D5): replaces the dropped "Score X% after [move]"
+  // prose line. Sits directly under the miniboard so the visual + textual move anchor
+  // read as a single unit.
+  const moveCaption = (
+    <span className="text-xs text-muted-foreground">
+      after{' '}
+      <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
+    </span>
+  );
+
   return (
     <div
       data-testid={cardTestId}
       className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
       style={cardStyle}
     >
-      {/* Unified single-column layout on every viewport (260507-t4r D6).
-          Header full-width on top, miniboard + caption below, bullet rows stacked beneath.
-          Removes the sm:hidden / hidden sm:flex two-block split — one layout to maintain. */}
-      <div className="flex flex-col gap-2">
+      {/* Mobile: header full-width on top, board + caption left, content right */}
+      <div className="flex flex-col gap-2 sm:hidden">
         {headerLine}
-        {/* Miniboard with move-anchor caption tightly co-located beneath it (D5).
-            The "after 2.c4" caption replaces the prose "Score X% after [move]" line. */}
+        <div className="flex gap-3 items-start">
+          <div className="flex flex-col items-center gap-1">
+            <LazyMiniBoard
+              fen={finding.entry_fen}
+              flipped={finding.color === 'black'}
+              size={MOBILE_BOARD_SIZE}
+              arrows={arrows}
+            />
+            {moveCaption}
+          </div>
+          <div className="flex-1 min-w-0 flex flex-col gap-2">
+            {wdlLine}
+            {scoreLine}
+            {evalLine}
+            {linksRow}
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop: board + caption left, header + content stacked right */}
+      <div className="hidden sm:flex gap-3 items-center">
         <div className="flex flex-col items-center gap-1">
           <LazyMiniBoard
             fen={finding.entry_fen}
             flipped={finding.color === 'black'}
-            size={BOARD_SIZE}
+            size={DESKTOP_BOARD_SIZE}
             arrows={arrows}
           />
-          <span className="text-xs text-muted-foreground">
-            after{' '}
-            <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
-          </span>
+          {moveCaption}
         </div>
-        {wdlLine}
-        {scoreLine}
-        {evalLine}
-        {linksRow}
+        <div className="min-w-0 flex-1 flex flex-col gap-2">
+          {headerLine}
+          {wdlLine}
+          {scoreLine}
+          {evalLine}
+          {linksRow}
+        </div>
       </div>
 
-      {/* Phase 77 D-02/D-03/D-04/D-05: Troll-opening watermark. Preserved as
-          desktop-only (hidden on mobile via hidden sm:block) because the unified
-          layout is already visually tight on small screens — confirmed acceptable
-          pending visual review at the checkpoint. */}
+      {/* Phase 77 D-02/D-03/D-04/D-05: Troll-opening watermark. Single sibling positioned
+          absolute bottom-right covers both mobile and desktop layouts. pointer-events-none
+          so the Moves/Games buttons remain clickable. Decorative — alt="" + aria-hidden. */}
       {showTroll && (
         <img
           src={trollFaceUrl}
