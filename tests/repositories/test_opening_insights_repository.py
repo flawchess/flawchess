@@ -1206,9 +1206,7 @@ class TestQueryResultingPositionWdl:
     """
 
     @pytest.mark.asyncio
-    async def test_query_resulting_position_wdl_convergence(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_query_resulting_position_wdl_convergence(self, db_session: AsyncSession) -> None:
         """Two games reach RPWDL_RESULT_HASH via different entry hashes;
         query returns combined WDL across both.
         """
@@ -1316,10 +1314,7 @@ class TestQueryResultingPositionWdl:
         )
         # Patch Game A bucket to rapid (the seed helper hardcodes blitz).
         await db_session.execute(
-            text(
-                "UPDATE games SET time_control_bucket = 'rapid' "
-                "WHERE id = :gid"
-            ),
+            text("UPDATE games SET time_control_bucket = 'rapid' WHERE id = :gid"),
             {"gid": game_a_id},
         )
 
@@ -1443,9 +1438,7 @@ class TestQueryResultingPositionWdl:
         assert wdl_white == {RPWDL_RESULT_HASH: (1, 0, 0)}
 
     @pytest.mark.asyncio
-    async def test_query_resulting_position_wdl_empty_list(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_query_resulting_position_wdl_empty_list(self, db_session: AsyncSession) -> None:
         """Empty hash_list returns {} immediately (no DB round trip)."""
         from app.repositories.openings_repository import query_resulting_position_wdl
 

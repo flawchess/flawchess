@@ -32,6 +32,7 @@ from app.services.openings_service import (
 async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure test user IDs exist in the users table (FK constraint)."""
     from tests.conftest import ensure_test_user
+
     for uid in [1]:
         await ensure_test_user(db_session, uid)
 
@@ -705,9 +706,7 @@ class TestNextMovesTranspositionWdl:
     """
 
     @pytest.mark.asyncio
-    async def test_wdl_includes_transposition_games(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_wdl_includes_transposition_games(self, db_session: AsyncSession) -> None:
         """Validation case #1 (canonical convergence): a candidate's resulting
         position is reached by both an e4 game (win) and a d4-transposition
         game (loss). The e4 row's game_count = 1 (only the e4 game played e4
@@ -756,9 +755,7 @@ class TestNextMovesTranspositionWdl:
         assert entry.score == pytest.approx(1.0 / 2.0)
 
     @pytest.mark.asyncio
-    async def test_single_order_game_count_equals_wdl_total(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_single_order_game_count_equals_wdl_total(self, db_session: AsyncSession) -> None:
         """Validation case #3: when no transposition exists for a candidate,
         game_count == wins+draws+losses (single-order parity invariant).
         """
@@ -782,9 +779,7 @@ class TestNextMovesTranspositionWdl:
         assert entry.game_count == entry.wins + entry.draws + entry.losses
 
     @pytest.mark.asyncio
-    async def test_transposition_wdl_filter_parity(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_transposition_wdl_filter_parity(self, db_session: AsyncSession) -> None:
         """Validation case #2: a filter applied to query_next_moves and
         query_transposition_wdl must drop the same games from BOTH counts
         (filter parity invariant). Threat T-80.1-05 mitigation.
@@ -827,12 +822,8 @@ class TestNextMovesTranspositionWdl:
         )
 
         # rated=True: Game B dropped from BOTH counts.
-        request_rated = NextMovesRequest(
-            target_hash=_TWDL_FP_SOURCE_HASH, rated=True
-        )
-        response_rated = await get_next_moves(
-            db_session, user_id=1, request=request_rated
-        )
+        request_rated = NextMovesRequest(target_hash=_TWDL_FP_SOURCE_HASH, rated=True)
+        response_rated = await get_next_moves(db_session, user_id=1, request=request_rated)
         assert len(response_rated.moves) == 1
         entry_rated = response_rated.moves[0]
         assert entry_rated.game_count == 1
@@ -843,9 +834,7 @@ class TestNextMovesTranspositionWdl:
 
         # rated=None: Game B included in pos WDL but not game_count.
         request_all = NextMovesRequest(target_hash=_TWDL_FP_SOURCE_HASH, rated=None)
-        response_all = await get_next_moves(
-            db_session, user_id=1, request=request_all
-        )
+        response_all = await get_next_moves(db_session, user_id=1, request=request_all)
         assert len(response_all.moves) == 1
         entry_all = response_all.moves[0]
         assert entry_all.game_count == 1  # only Game A played e4 from SOURCE

@@ -37,6 +37,7 @@ from app.repositories.openings_repository import (
 async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure test user IDs exist in the users table (FK constraint)."""
     from tests.conftest import ensure_test_user
+
     for uid in [1, 2]:
         await ensure_test_user(db_session, uid)
 
@@ -541,12 +542,22 @@ class TestTimeSeries:
         mar = datetime.datetime(2025, 3, 10, tzinfo=datetime.timezone.utc)
 
         # Jan: 2 wins, 1 loss
-        await _seed_game(db_session, played_at=jan, result="1-0", user_color="white", full_hash=TS_HASH)
-        await _seed_game(db_session, played_at=jan, result="1-0", user_color="white", full_hash=TS_HASH)
-        await _seed_game(db_session, played_at=jan, result="0-1", user_color="white", full_hash=TS_HASH)
+        await _seed_game(
+            db_session, played_at=jan, result="1-0", user_color="white", full_hash=TS_HASH
+        )
+        await _seed_game(
+            db_session, played_at=jan, result="1-0", user_color="white", full_hash=TS_HASH
+        )
+        await _seed_game(
+            db_session, played_at=jan, result="0-1", user_color="white", full_hash=TS_HASH
+        )
         # Mar: 1 win, 1 draw
-        await _seed_game(db_session, played_at=mar, result="1-0", user_color="white", full_hash=TS_HASH)
-        await _seed_game(db_session, played_at=mar, result="1/2-1/2", user_color="white", full_hash=TS_HASH)
+        await _seed_game(
+            db_session, played_at=mar, result="1-0", user_color="white", full_hash=TS_HASH
+        )
+        await _seed_game(
+            db_session, played_at=mar, result="1/2-1/2", user_color="white", full_hash=TS_HASH
+        )
 
         rows = await query_time_series(
             db_session,
@@ -558,6 +569,7 @@ class TestTimeSeries:
 
         # Group by month
         from collections import defaultdict
+
         by_month: dict[str, list] = defaultdict(list)
         for month_dt, result, user_color in rows:
             key = month_dt.strftime("%Y-%m")
@@ -645,7 +657,9 @@ class TestTimeSeries:
         played = datetime.datetime(2025, 8, 15, tzinfo=datetime.timezone.utc)
 
         # Game with matching white_hash
-        await _seed_game(db_session, played_at=played, white_hash=TS_HASH, full_hash=0, black_hash=0)
+        await _seed_game(
+            db_session, played_at=played, white_hash=TS_HASH, full_hash=0, black_hash=0
+        )
         # Game without matching white_hash
         await _seed_game(db_session, played_at=played, white_hash=99999, full_hash=0, black_hash=0)
 
@@ -665,8 +679,8 @@ class TestTimeSeries:
 # ---------------------------------------------------------------------------
 
 NM_SOURCE_HASH = 100  # queried source position hash
-NM_E4_HASH = 200      # result hash after e4
-NM_D4_HASH = 300      # result hash after d4
+NM_E4_HASH = 200  # result hash after e4
+NM_D4_HASH = 300  # result hash after d4
 
 
 class TestNextMoves:
@@ -690,9 +704,7 @@ class TestNextMoves:
             full_hash=NM_SOURCE_HASH,
             move_san="e4",
         )
-        await _add_position(
-            db_session, game1.id, 1, ply=2, full_hash=NM_E4_HASH
-        )
+        await _add_position(db_session, game1.id, 1, ply=2, full_hash=NM_E4_HASH)
 
         # Game 2: e4 → draw
         game2, _ = await _seed_game(
@@ -702,9 +714,7 @@ class TestNextMoves:
             full_hash=NM_SOURCE_HASH,
             move_san="e4",
         )
-        await _add_position(
-            db_session, game2.id, 1, ply=2, full_hash=NM_E4_HASH
-        )
+        await _add_position(db_session, game2.id, 1, ply=2, full_hash=NM_E4_HASH)
 
         # Game 3: d4 → loss
         game3, _ = await _seed_game(
@@ -714,9 +724,7 @@ class TestNextMoves:
             full_hash=NM_SOURCE_HASH,
             move_san="d4",
         )
-        await _add_position(
-            db_session, game3.id, 1, ply=2, full_hash=NM_D4_HASH
-        )
+        await _add_position(db_session, game3.id, 1, ply=2, full_hash=NM_D4_HASH)
 
         rows = await query_next_moves(
             db_session,
@@ -789,10 +797,18 @@ class TestNextMovesTranspositions:
         await db_session.flush()
 
         # Same source position at ply 2 and ply 6
-        await _add_position(db_session, game.id, 1, ply=2, full_hash=NM_TRANS_SOURCE_HASH, move_san="Nf3")
-        await _add_position(db_session, game.id, 1, ply=3, full_hash=NM_TRANS_RESULT_HASH)  # result at ply 3
-        await _add_position(db_session, game.id, 1, ply=6, full_hash=NM_TRANS_SOURCE_HASH, move_san="Nf3")
-        await _add_position(db_session, game.id, 1, ply=7, full_hash=NM_TRANS_RESULT_HASH)  # result at ply 7
+        await _add_position(
+            db_session, game.id, 1, ply=2, full_hash=NM_TRANS_SOURCE_HASH, move_san="Nf3"
+        )
+        await _add_position(
+            db_session, game.id, 1, ply=3, full_hash=NM_TRANS_RESULT_HASH
+        )  # result at ply 3
+        await _add_position(
+            db_session, game.id, 1, ply=6, full_hash=NM_TRANS_SOURCE_HASH, move_san="Nf3"
+        )
+        await _add_position(
+            db_session, game.id, 1, ply=7, full_hash=NM_TRANS_RESULT_HASH
+        )  # result at ply 7
 
         rows = await query_next_moves(
             db_session,
@@ -872,7 +888,9 @@ class TestNextMovesFilters:
             full_hash=NM_FILTER_HASH,
             move_san="d4",
         )
-        await _add_position(db_session, game_rated.id, 1, ply=2, full_hash=NM_FILTER_RESULT_HASH + 1)
+        await _add_position(
+            db_session, game_rated.id, 1, ply=2, full_hash=NM_FILTER_RESULT_HASH + 1
+        )
 
         # Unrated game plays same move
         game_unrated, _ = await _seed_game(
@@ -881,7 +899,9 @@ class TestNextMovesFilters:
             full_hash=NM_FILTER_HASH,
             move_san="d4",
         )
-        await _add_position(db_session, game_unrated.id, 1, ply=2, full_hash=NM_FILTER_RESULT_HASH + 1)
+        await _add_position(
+            db_session, game_unrated.id, 1, ply=2, full_hash=NM_FILTER_RESULT_HASH + 1
+        )
 
         rows = await query_next_moves(
             db_session,
@@ -920,9 +940,7 @@ class TestTranspositionCounts:
         from app.repositories.openings_repository import query_transposition_counts
 
         # Game A: plays e4 from source_hash=100 → result_hash=600
-        game_a, _ = await _seed_game(
-            db_session, full_hash=100, move_san="e4"
-        )
+        game_a, _ = await _seed_game(db_session, full_hash=100, move_san="e4")
         await _add_position(db_session, game_a.id, 1, ply=2, full_hash=TC_RESULT_HASH)
 
         # Game B: plays c4 from source_hash=150 → result_hash=600 (transposition)
@@ -1048,7 +1066,9 @@ class TestQueryWDLCounts:
         from app.models.game_position import GamePosition
 
         await _seed_game(db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH)
-        await _seed_game(db_session, result="1/2-1/2", user_color="white", full_hash=WDL_TARGET_HASH)
+        await _seed_game(
+            db_session, result="1/2-1/2", user_color="white", full_hash=WDL_TARGET_HASH
+        )
         await _seed_game(db_session, result="0-1", user_color="white", full_hash=WDL_TARGET_HASH)
 
         row = await query_wdl_counts(
@@ -1075,10 +1095,16 @@ class TestQueryWDLCounts:
         from app.repositories.openings_repository import query_wdl_counts
 
         # Seed 2 wins for user 1 (at different hashes — no position filter)
-        await _seed_game(db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH + 1)
-        await _seed_game(db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH + 2)
+        await _seed_game(
+            db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH + 1
+        )
+        await _seed_game(
+            db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH + 2
+        )
         # Seed 1 loss for user 2 (must not appear in user 1's count)
-        await _seed_game(db_session, user_id=2, result="0-1", user_color="white", full_hash=WDL_TARGET_HASH + 1)
+        await _seed_game(
+            db_session, user_id=2, result="0-1", user_color="white", full_hash=WDL_TARGET_HASH + 1
+        )
 
         row = await query_wdl_counts(
             db_session,
@@ -1104,18 +1130,27 @@ class TestQueryWDLCounts:
 
         # Blitz win as white
         await _seed_game(
-            db_session, result="1-0", user_color="white",
-            time_control_bucket="blitz", full_hash=WDL_TARGET_HASH + 10,
+            db_session,
+            result="1-0",
+            user_color="white",
+            time_control_bucket="blitz",
+            full_hash=WDL_TARGET_HASH + 10,
         )
         # Rapid loss as white (excluded by time_control filter)
         await _seed_game(
-            db_session, result="0-1", user_color="white",
-            time_control_bucket="rapid", full_hash=WDL_TARGET_HASH + 10,
+            db_session,
+            result="0-1",
+            user_color="white",
+            time_control_bucket="rapid",
+            full_hash=WDL_TARGET_HASH + 10,
         )
         # Blitz win as black (excluded by color filter)
         await _seed_game(
-            db_session, result="0-1", user_color="black",
-            time_control_bucket="blitz", full_hash=WDL_TARGET_HASH + 10,
+            db_session,
+            result="0-1",
+            user_color="black",
+            time_control_bucket="blitz",
+            full_hash=WDL_TARGET_HASH + 10,
         )
 
         row = await query_wdl_counts(
@@ -1264,9 +1299,7 @@ async def _seed_path_to_result_hash(
         game.time_control_seconds = time_control_seconds
         db_session.add(game)
         await db_session.flush()
-    await _add_position(
-        db_session, game.id, user_id, ply=2, full_hash=result_hash, move_san=None
-    )
+    await _add_position(db_session, game.id, user_id, ply=2, full_hash=result_hash, move_san=None)
     return game
 
 
@@ -1329,9 +1362,7 @@ class TestQueryTranspositionWdl:
         assert wdl == {TWDL_RESULT_HASH: (1, 0, 1)}
 
     @pytest.mark.asyncio
-    async def test_query_transposition_wdl_single_order(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_query_transposition_wdl_single_order(self, db_session: AsyncSession) -> None:
         """Single game visiting RESULT_HASH; pos WDL == move-played WDL."""
         from app.repositories.openings_repository import query_transposition_wdl
 
@@ -1437,9 +1468,7 @@ class TestQueryTranspositionWdl:
         assert wdl_blitz == {TWDL_RESULT_HASH: (0, 0, 1)}
 
     @pytest.mark.asyncio
-    async def test_query_transposition_wdl_empty_list(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_query_transposition_wdl_empty_list(self, db_session: AsyncSession) -> None:
         """Empty result_hash_list returns {} immediately (no DB round trip)."""
         from app.repositories.openings_repository import query_transposition_wdl
 
@@ -1457,9 +1486,7 @@ class TestQueryTranspositionWdl:
         assert wdl == {}
 
     @pytest.mark.asyncio
-    async def test_query_transposition_wdl_unknown_hash(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_query_transposition_wdl_unknown_hash(self, db_session: AsyncSession) -> None:
         """Hash not present in any game is omitted from the dict (NOT (0,0,0))."""
         from app.repositories.openings_repository import query_transposition_wdl
 
