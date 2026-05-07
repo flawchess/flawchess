@@ -60,7 +60,8 @@ class WDLStats(BaseModel):
     draw_pct: float
     loss_pct: float
     # Score and confidence fields — computed via compute_confidence_bucket
-    # (same Wald formula as per-move pipeline). Added in quick task 260504-ttq.
+    # (same Wilson score-test formula as per-move pipeline). Added in quick
+    # task 260504-ttq; migrated Wald → Wilson in quick task 260507-aw5.
     score: float
     confidence: Literal["low", "medium", "high"]
     p_value: float
@@ -213,10 +214,10 @@ class NextMoveEntry(BaseModel):
     )  # (W + 0.5*D)/n; canonical classification metric (Phase 75 D-09, Phase 76 D-13)
     confidence: Literal[
         "low", "medium", "high"
-    ]  # Two-sided Wald p-value bucket with N>=10 gate (p<0.01 high, p<0.05 medium) (shared via score_confidence.py)
+    ]  # Two-sided Wilson score-test p-value bucket with N>=10 gate (p<0.01 high, p<0.05 medium) (shared via score_confidence.py)
     p_value: float = Field(
         ge=0.0, le=1.0
-    )  # Two-sided Wald z-test p-value on H0: score = 0.50
+    )  # Two-sided Wilson score-test p-value on H0: score = 0.50 (null SE = 0.5/sqrt(n))
 
 
 class NextMovesResponse(BaseModel):

@@ -47,9 +47,10 @@ from app.services.score_confidence import compute_confidence_bucket, wilson_boun
 from app.services.openings_service import recency_cutoff
 
 # ---------------------------------------------------------------------------
-# Phase 75 thresholds. Score-based effect-size gate (D-03, D-11) and
-# trinomial Wald confidence buckets (D-05, D-06) are imported from
-# app.services.opening_insights_constants above. The CI consistency test
+# Phase 75 thresholds. Score-based effect-size gate (D-03, D-11) and Wilson
+# score-test confidence buckets (D-05, D-06; migrated from trinomial Wald in
+# quick 260507-aw5) are imported from app.services.opening_insights_constants
+# above. The CI consistency test
 # (tests/services/test_opening_insights_arrow_consistency.py) keeps the
 # backend constants and frontend/src/lib/arrowColor.ts in lock-step.
 # ---------------------------------------------------------------------------

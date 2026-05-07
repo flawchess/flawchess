@@ -50,9 +50,10 @@ interface WdlConfidenceTooltipProps {
 }
 
 /**
- * Tooltip body for WDL-context confidence indicators (two-sided Wald test
- * against the 50% baseline). Used by OpeningFindingCard (via ScoreConfidencePopover),
- * the move-explorer Score column, and the stats-board Score bullet popover.
+ * Tooltip body for WDL-context confidence indicators (two-sided Wilson score
+ * test against the 50% baseline). Used by OpeningFindingCard (via
+ * ScoreConfidencePopover), the move-explorer Score column, and the stats-board
+ * Score bullet popover.
  */
 export function WdlConfidenceTooltip({
   level,
@@ -69,7 +70,7 @@ export function WdlConfidenceTooltip({
       <p>{statsLine(score, gameCount)}</p>
       <p className="opacity-70 italic">
         Score: wins + ½ draws.<br />
-        Test: two-sided Wald z vs 50%.<br />
+        Test: two-sided Wilson score test vs 50%.<br />
         Confidence interval: Wilson 95% (whiskers).
       </p>
     </div>

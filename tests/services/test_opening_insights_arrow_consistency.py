@@ -77,8 +77,8 @@ def test_score_boundary_matches_frontend() -> None:
 def test_compute_confidence_bucket_is_single_implementation() -> None:
     """Phase 76 D-22 fallback: structural assertion that
     score_confidence.compute_confidence_bucket is the only implementation of the
-    trinomial Wald formula. The boundary behavior is exercised by
-    tests/services/test_score_confidence.py.
+    Wilson score-test formula (migrated from trinomial Wald in quick 260507-aw5).
+    The boundary behavior is exercised by tests/services/test_score_confidence.py.
     """
     from app.services import score_confidence
 

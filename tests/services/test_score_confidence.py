@@ -6,12 +6,17 @@ Bucketing rule under test (unified two-sided standard, 260505):
   - n >= 10 and p_value < 0.05    -> "medium"
   - n >= 10 and p_value >= 0.05   -> "low"
 
-p_value is the two-sided Wald z-test p on H0: score == 0.50, computed as
-erfc(|z| / sqrt(2)). SE == 0 cases produce p_value = 1.0 if score == 0.5
-(all draws — the null) or 0.0 otherwise (all wins / all losses — extreme
-observation).
+p_value is the two-sided Wilson score-test p on H0: score == 0.50, computed
+as erfc(|z| / sqrt(2)) with z = (score - 0.5) / SE_null and
+SE_null = sqrt(0.5 * 0.5 / n) = 0.5 / sqrt(n) (null variance, not empirical).
 
-The helper returns a 3-tuple (confidence, p_value, se).
+Wilson is well-defined at all boundaries: all-wins gives p ~ 0.00157 at n=10
+(not 0.0 as under Wald's degenerate SE=0 case); all-losses likewise; all-draws
+gives p = 1.0 (z = 0).
+
+The helper returns a 3-tuple (confidence, p_value, se). The third element is
+the *empirical* trinomial standard error, retained for backward compat and
+informational only — not used in the Wilson p-value computation.
 """
 
 import math
@@ -25,14 +30,15 @@ from app.services.score_confidence import compute_confidence_bucket
 
 
 def test_n_below_gate_returns_low_even_with_strong_evidence() -> None:
-    # n=9 all wins: p_value would be 0.0 (SE=0) but n<10 forces "low".
+    # n=9 all wins under Wilson: z = sqrt(9) = 3.0, p ~ 0.0027 — but n<10 forces "low".
     confidence, p_value, _se = compute_confidence_bucket(w=9, d=0, losses=0, n=9)
     assert confidence == "low"
-    assert p_value == 0.0
+    assert p_value == pytest.approx(0.0026997961, abs=1e-6)
 
 
 def test_n_below_gate_single_win_is_low() -> None:
-    # n=1 single win used to produce "high, p=0.0" under the old rule. Now: "low".
+    # n=1 single win: under Wilson z = 1/sqrt(1) = 1.0, p ~ 0.317 — well above any threshold.
+    # The N gate would force "low" anyway; this test pins the gate behavior.
     confidence, _p, _se = compute_confidence_bucket(w=1, d=0, losses=0, n=1)
     assert confidence == "low"
 
@@ -55,59 +61,67 @@ def test_n_zero_returns_low_one() -> None:
 
 
 def test_high_at_strong_evidence() -> None:
-    # n=400 with score = 0.30: SE small, |z| large, two-sided p << 0.01.
+    # n=400, w=80, d=80, losses=240: score = 0.30, z = (0.30-0.5)/sqrt(0.25/400) = -8.0,
+    # two-sided p ~ 1.2e-15, well below 0.01.
     confidence, p_value, _se = compute_confidence_bucket(w=80, d=80, losses=240, n=400)
     assert confidence == "high"
     assert p_value < 0.01
 
 
 def test_medium_at_moderate_evidence() -> None:
-    # n=100, w=40, d=10, losses=50: score=0.45, |z|≈0.998, two-sided p ≈ 0.318 — too low.
-    # Use a stronger signal: n=200, w=85, d=0, losses=115: score=0.425, |z|≈2.121,
-    # two-sided p ≈ 0.0339, lands in [0.01, 0.05) -> medium.
+    # n=200, w=85, d=0, losses=115: score=0.425, z = -0.075/sqrt(0.25/200) = -2.121,
+    # two-sided p ~ 0.0339, lands in [0.01, 0.05) -> medium.
     confidence, p_value, _se = compute_confidence_bucket(w=85, d=0, losses=115, n=200)
     assert confidence == "medium"
     assert 0.01 <= p_value < 0.05
 
 
 def test_low_at_weak_evidence_with_large_n() -> None:
-    # Score exactly 0.50 with n=100: |z| = 0, two-sided p = 1.0 -> low.
+    # Score exactly 0.50 with n=100: z = 0, two-sided p = 1.0 -> low.
     confidence, p_value, _se = compute_confidence_bucket(w=48, d=4, losses=48, n=100)
     assert confidence == "low"
     assert p_value == pytest.approx(1.0, abs=1e-9)
 
 
 def test_low_at_n10_balanced() -> None:
-    # n=10 score exactly 0.5: two-sided p = 1.0, n>=10, falls into "else low".
+    # n=10 score exactly 0.5: z = 0, two-sided p = 1.0, n>=10, falls into "else low".
     confidence, p_value, _se = compute_confidence_bucket(w=2, d=6, losses=2, n=10)
     assert confidence == "low"
     assert p_value == pytest.approx(1.0, abs=1e-9)
 
 
-# --- SE == 0 boundary cases (n >= 10) -----------------------------------
+# --- Boundary cases (Wilson is well-defined; no SE=0 degeneracy) ---------
 
 
-def test_se_zero_all_wins_n10_is_high() -> None:
-    """All wins at n=10: score=1.0, p=0.0 -> high (10+ identical outcomes is strong evidence)."""
+def test_all_wins_n10_is_high() -> None:
+    """All wins at n=10: z = sqrt(10) ~ 3.162, p ~ 0.00157 -> high.
+
+    Under the previous Wald formula, this case had SE=0 and was special-cased
+    to p=0.0. Wilson's null SE = 0.5/sqrt(n) is positive for any n>0, so the
+    test is well-defined without a special case.
+    """
     confidence, p_value, _se = compute_confidence_bucket(w=10, d=0, losses=0, n=10)
     assert confidence == "high"
-    assert p_value == 0.0
+    assert p_value == pytest.approx(0.0015654023, abs=1e-6)
 
 
-def test_se_zero_all_losses_n10_is_high() -> None:
+def test_all_losses_n10_is_high() -> None:
     confidence, p_value, _se = compute_confidence_bucket(w=0, d=0, losses=10, n=10)
     assert confidence == "high"
-    assert p_value == 0.0
+    assert p_value == pytest.approx(0.0015654023, abs=1e-6)
 
 
-def test_se_zero_all_draws_n10_is_low() -> None:
-    """All draws at n=10: score=0.5, two-sided p=1.0 -> low (no evidence of any direction)."""
+def test_all_draws_n10_is_low() -> None:
+    """All draws at n=10: score=0.5 -> z=0 -> two-sided p=1.0 -> low (no evidence)."""
     confidence, p_value, _se = compute_confidence_bucket(w=0, d=10, losses=0, n=10)
     assert confidence == "low"
     assert p_value == 1.0
 
 
 # --- SE component (third tuple element) ----------------------------------
+# The returned SE is the *empirical* trinomial SE, not the Wilson null SE
+# used in the test. Retained for backward compat with callers that built Wald
+# CI bounds — informational only since the score CI is now Wilson everywhere.
 
 
 def test_se_returned_alongside_confidence_and_p() -> None:
