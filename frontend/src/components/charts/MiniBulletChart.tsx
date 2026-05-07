@@ -10,7 +10,7 @@
  * material, the neutral band sits higher than when recovering).
  */
 
-import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import { BULLET_BAR_NEUTRAL, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 // Default bar domain: values beyond +/- DEFAULT_DOMAIN are clamped to the edge.
 // 0.40 covers realistic score-diff ranges without making typical values look tiny.
@@ -55,6 +55,16 @@ interface MiniBulletChartProps {
    * as a thin dashed line distinct from the solid center reference. Suppressed
    * when the value falls outside the visible axis [center - domain, center + domain]. */
   tickPawns?: number;
+  /**
+   * Controls the fill color of the value bar.
+   * - 'zone' (default): fill uses the zone color (danger/neutral/success) based
+   *   on where the value lands. Preserves current behavior for Endgame consumers
+   *   (EndgamePerformanceSection, EndgameScoreGapSection) — they must not change.
+   * - 'neutral': fill uses BULLET_BAR_NEUTRAL (light grey). Zone bands still
+   *   carry the verdict color; the bar only encodes position. Used on Openings
+   *   Stats and Insights cards (Tufte/Few bullet-chart convention).
+   */
+  barColor?: 'zone' | 'neutral';
 }
 
 function formatSigned(value: number): string {
@@ -74,6 +84,7 @@ export function MiniBulletChart({
   ciLow,
   ciHigh,
   tickPawns,
+  barColor = 'zone',
 }: MiniBulletChartProps) {
   // Axis spans [center - domain, center + domain], so the reference line and
   // neutral band sit at the visual middle regardless of `center`. With center=0
@@ -103,6 +114,10 @@ export function MiniBulletChart({
   } else {
     fillColor = ZONE_DANGER;
   }
+
+  // Actual bar fill: neutral grey when barColor='neutral' (Openings cards),
+  // zone color when barColor='zone' (default — Endgame consumers unchanged).
+  const valueBarColor = barColor === 'neutral' ? BULLET_BAR_NEUTRAL : fillColor;
 
   // Overlay bar spans from the center to the clamped value.
   const barLeft = value >= center ? centerPct : markerPct;
@@ -169,14 +184,16 @@ export function MiniBulletChart({
           aria-hidden="true"
         />
       )}
-      {/* Value fill bar — thinner than zones, vertically centered */}
+      {/* Value fill bar — thinner than zones, vertically centered.
+          data-testid enables tests to assert barColor behavior directly. */}
       <div
         className={`absolute top-1/2 -translate-y-1/2 ${valueHeightClass}`}
         style={{
           left: `${barLeft}%`,
           width: `${barWidth}%`,
-          backgroundColor: fillColor,
+          backgroundColor: valueBarColor,
         }}
+        data-testid="mini-bullet-value-bar"
       />
       {/* CI whisker overlay — only rendered when both ciLow and ciHigh are provided */}
       {ciLow !== undefined && ciHigh !== undefined && (() => {

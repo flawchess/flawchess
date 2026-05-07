@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Cpu, Swords } from 'lucide-react';
+import { ArrowRightLeft, Cpu, Swords, Users } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
@@ -14,6 +14,11 @@ import {
 } from '@/lib/openingStatsZones';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
+  SCORE_BULLET_CENTER,
+  SCORE_BULLET_NEUTRAL_MIN,
+  SCORE_BULLET_NEUTRAL_MAX,
+  scoreBulletDomain,
+  clampScoreCi,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
 import { MIN_GAMES_FOR_RELIABLE_STATS, TROLL_WATERMARK_OPACITY, UNRELIABLE_OPACITY } from '@/lib/theme';
@@ -21,17 +26,9 @@ import { isTrollPosition } from '@/lib/trollOpenings';
 import trollFaceUrl from '@/assets/troll-face.svg';
 import type { OpeningInsightFinding } from '@/types/insights';
 
-interface OpeningFindingCardProps {
-  finding: OpeningInsightFinding;
-  idx: number;
-  /** Per-color engine-asymmetry baseline (in pawns). Rendered as reference tick on eval bullet chart. */
-  evalBaselinePawns: number;
-  onFindingClick: (finding: OpeningInsightFinding) => void;
-  onOpenGames: (finding: OpeningInsightFinding) => void;
-}
-
-const MOBILE_BOARD_SIZE = 115;
-const DESKTOP_BOARD_SIZE = 110;
+// Unified layout board size (260507-t4r): single-column on every viewport.
+// Using DESKTOP_BOARD_SIZE = 110 as canonical; MOBILE_BOARD_SIZE no longer needed.
+const BOARD_SIZE = 110;
 const UNNAMED_SENTINEL = '<unnamed line>';
 
 export function OpeningFindingCard({
@@ -40,7 +37,13 @@ export function OpeningFindingCard({
   evalBaselinePawns,
   onFindingClick,
   onOpenGames,
-}: OpeningFindingCardProps) {
+}: {
+  finding: OpeningInsightFinding;
+  idx: number;
+  evalBaselinePawns: number;
+  onFindingClick: (finding: OpeningInsightFinding) => void;
+  onOpenGames: (finding: OpeningInsightFinding) => void;
+}) {
   const candidateMoveDisplay = formatCandidateMove(
     finding.entry_san_sequence,
     finding.candidate_move_san,
@@ -58,15 +61,6 @@ export function OpeningFindingCard({
     ? ([{ from: moveSquares.from, to: moveSquares.to, color: borderLeftColor }] as const)
     : undefined;
   const isUnnamed = finding.opening_name === UNNAMED_SENTINEL;
-
-  // D-02: Abbreviated prose — "Score <X>% after <candidate_move>".
-  // Edge case: if rounding to integer would show 50% but classification implies otherwise,
-  // fall back to one decimal place to avoid contradicting the section title.
-  const rawPercent = finding.score * 100;
-  const wouldContradict =
-    (finding.classification === 'weakness' && Math.round(rawPercent) >= 50) ||
-    (finding.classification === 'strength' && Math.round(rawPercent) <= 50);
-  const scoreDisplay = wouldContradict ? rawPercent.toFixed(1) : Math.round(rawPercent).toString();
 
   // D-11: Apply UNRELIABLE_OPACITY when n_games < 10 OR confidence is low.
   const isUnreliable =
@@ -103,20 +97,7 @@ export function OpeningFindingCard({
     </div>
   );
 
-  // Abbreviated prose: "Score <X>% after <move>" — no "You score X% as <Color>".
-  // Section title carries the polarity; score-zone tint conveys direction visually.
-  const proseLine = (
-    <p className="text-sm text-muted-foreground">
-      Score{' '}
-      <span style={{ color: borderLeftColor }} className="font-semibold">
-        {scoreDisplay}%
-      </span>{' '}
-      after{' '}
-      <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
-    </p>
-  );
-
-  // WDL bar — same pattern as OpeningStatsCard.tsx lines 109-125.
+  // WDL bar — same pattern as OpeningStatsCard.tsx.
   // Compute pcts inline, guarding div-by-zero.
   const nGames = finding.n_games;
   const wdlData = {
@@ -137,7 +118,54 @@ export function OpeningFindingCard({
     />
   );
 
-  // MG-entry eval line — structurally identical to OpeningStatsCard.tsx lines 127-152.
+  // Score bullet row (260507-t4r): replaces the "Score X% after [move]" prose line.
+  // Uses Wilson CI from the finding (ci_low/ci_high) — a whisker renders here.
+  // barColor="neutral" so the bar encodes position; zone bands carry verdict.
+  const ciLow = clampScoreCi(finding.ci_low);
+  const ciHigh = clampScoreCi(finding.ci_high);
+  const scoreDomain = scoreBulletDomain(ciLow, ciHigh);
+  const scoreLine = (
+    <div className="flex items-center gap-2">
+      <div
+        className="flex-1 min-w-0 tabular-nums"
+        data-testid={`${cardTestId}-score-bullet`}
+      >
+        <MiniBulletChart
+          value={finding.score}
+          center={SCORE_BULLET_CENTER}
+          neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+          neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+          domain={scoreDomain}
+          ciLow={ciLow}
+          ciHigh={ciHigh}
+          barColor="neutral"
+          ariaLabel={`Score ${Math.round(finding.score * 100)}% vs 50% baseline`}
+        />
+      </div>
+      <span
+        className="inline-flex items-center gap-1 text-sm tabular-nums"
+        data-testid={`${cardTestId}-score-text`}
+      >
+        <span
+          className="font-semibold inline-flex items-center gap-0.5"
+          style={{ color: borderLeftColor }}
+        >
+          {Math.round(finding.score * 100)}%
+          <Users className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+        <BulletConfidencePopover
+          level={finding.confidence}
+          pValue={finding.eval_p_value}
+          gameCount={finding.n_games}
+          evalMeanPawns={null}
+          color={finding.color}
+          testId={`${cardTestId}-score-popover`}
+        />
+      </span>
+    </div>
+  );
+
+  // MG-entry eval line — structurally identical to OpeningStatsCard.
   const evalN = finding.eval_n ?? 0;
   const avgEvalPawns = finding.avg_eval_pawns ?? null;
   const hasMgEval = evalN > 0 && avgEvalPawns !== null && avgEvalPawns !== undefined;
@@ -163,6 +191,7 @@ export function OpeningFindingCard({
       neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
       neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
       domain={EVAL_BULLET_DOMAIN_PAWNS}
+      barColor="neutral"
       ariaLabel={`Avg eval at MG entry: ${(avgEvalPawns as number).toFixed(2)} pawns`}
     />
   ) : (
@@ -232,45 +261,35 @@ export function OpeningFindingCard({
       className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
       style={cardStyle}
     >
-      {/* Mobile: header full-width on top, board + prose/links row below */}
-      <div className="flex flex-col gap-2 sm:hidden">
+      {/* Unified single-column layout on every viewport (260507-t4r D6).
+          Header full-width on top, miniboard + caption below, bullet rows stacked beneath.
+          Removes the sm:hidden / hidden sm:flex two-block split — one layout to maintain. */}
+      <div className="flex flex-col gap-2">
         {headerLine}
-        <div className="flex gap-3 items-start">
+        {/* Miniboard with move-anchor caption tightly co-located beneath it (D5).
+            The "after 2.c4" caption replaces the prose "Score X% after [move]" line. */}
+        <div className="flex flex-col items-center gap-1">
           <LazyMiniBoard
             fen={finding.entry_fen}
             flipped={finding.color === 'black'}
-            size={MOBILE_BOARD_SIZE}
+            size={BOARD_SIZE}
             arrows={arrows}
           />
-          <div className="flex-1 min-w-0 flex flex-col gap-2">
-            {proseLine}
-            {wdlLine}
-            {evalLine}
-            {linksRow}
-          </div>
+          <span className="text-xs text-muted-foreground">
+            after{' '}
+            <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
+          </span>
         </div>
+        {wdlLine}
+        {scoreLine}
+        {evalLine}
+        {linksRow}
       </div>
 
-      {/* Desktop: board left, header + prose + links stacked right */}
-      <div className="hidden sm:flex gap-3 items-center">
-        <LazyMiniBoard
-          fen={finding.entry_fen}
-          flipped={finding.color === 'black'}
-          size={DESKTOP_BOARD_SIZE}
-          arrows={arrows}
-        />
-        <div className="min-w-0 flex-1 flex flex-col gap-2">
-          {headerLine}
-          {proseLine}
-          {wdlLine}
-          {evalLine}
-          {linksRow}
-        </div>
-      </div>
-
-      {/* Phase 77 D-02/D-03/D-04/D-05: Troll-opening watermark. Single sibling positioned
-          absolute bottom-right covers both mobile and desktop layouts. pointer-events-none
-          so the Moves/Games buttons remain clickable. Decorative — alt="" + aria-hidden. */}
+      {/* Phase 77 D-02/D-03/D-04/D-05: Troll-opening watermark. Preserved as
+          desktop-only (hidden on mobile via hidden sm:block) because the unified
+          layout is already visually tight on small screens — confirmed acceptable
+          pending visual review at the checkpoint. */}
       {showTroll && (
         <img
           src={trollFaceUrl}

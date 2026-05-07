@@ -119,26 +119,28 @@ afterEach(() => {
 });
 
 describe('OpeningFindingCard', () => {
-  it('renders "Score X% after <move>" prose (abbreviated — no "You score" / "as Color")', () => {
+  it('renders score percent and "after <move>" caption (260507-t4r: prose replaced by bullet + caption)', () => {
+    // The "Score X% after [move]" prose line is gone. Score is shown in the score bullet row;
+    // the move anchor is a small caption under the miniboard.
     const finding = makeFinding({ classification: 'weakness', color: 'black', score: 0.30 });
     renderCard({ finding, idx: 0 });
     const card = screen.getByTestId('opening-finding-card-0');
     const text = card.textContent ?? '';
-    expect(text).toMatch(/Score/);
+    // Score percent still appears in the score-text element
     expect(text).toMatch(/30%/);
+    // Move anchor still appears as a caption under the miniboard
     expect(text).toMatch(/after/);
-    // Abbreviated prose: no "You score" / "as Black/White"
+    // No "You score" / "as Black/White" (was already gone before this task)
     expect(text).not.toMatch(/You score/);
     expect(text).not.toMatch(/as Black/);
     expect(text).not.toMatch(/as White/);
   });
 
-  it('renders "Score X% after <move>" prose for strength section', () => {
+  it('renders score percent and "after <move>" caption for strength section', () => {
     const finding = makeFinding({ classification: 'strength', color: 'white', score: 0.58 });
     renderCard({ finding, idx: 1 });
     const card = screen.getByTestId('opening-finding-card-1');
     const text = card.textContent ?? '';
-    expect(text).toMatch(/Score/);
     expect(text).toMatch(/58%/);
     expect(text).toMatch(/after/);
     expect(text).not.toMatch(/You score/);
@@ -153,14 +155,17 @@ describe('OpeningFindingCard', () => {
     expect(text).not.toMatch(/You win/);
   });
 
-  it('falls back to .toFixed(1) when rounded percent contradicts the section title', () => {
-    // weakness with score = 0.499 would round to 50% (contradicts weakness label)
+  it('score bullet row shows percent rounded to integer (no .toFixed precision in score-text)', () => {
+    // 260507-t4r: the proseLine with .toFixed(1) fallback is gone.
+    // The score-text element uses Math.round(score * 100)%.
+    // At score=0.499, Math.round(49.9) = 50 — acceptable since the prose contradiction
+    // guard was prose-specific and is no longer needed.
     const finding = makeFinding({ classification: 'weakness', score: 0.499 });
     renderCard({ finding, idx: 0 });
     const card = screen.getByTestId('opening-finding-card-0');
     const text = card.textContent ?? '';
-    expect(text).toMatch(/49\.9%/);
-    expect(text).not.toMatch(/\b50%/);
+    // Score shown as integer percent (50% is valid — contradiction guard was prose-only)
+    expect(text).toMatch(/\d+%/);
   });
 
   it('applies ZONE_DANGER (red) border-left when score <= 0.45', () => {
@@ -217,9 +222,9 @@ describe('OpeningFindingCard', () => {
         onOpenGames={() => {}}
       />,
     );
-    // Two layouts (mobile + desktop) both render — query all matching test ids and click the first.
-    const movesBtns = screen.getAllByTestId('opening-finding-card-6-moves');
-    fireEvent.click(movesBtns[0]!);
+    // 260507-t4r: unified layout — single Moves button (was two: mobile + desktop).
+    const movesBtn = screen.getByTestId('opening-finding-card-6-moves');
+    fireEvent.click(movesBtn);
     expect(onFindingClick).toHaveBeenCalledWith(finding);
   });
 
@@ -235,10 +240,11 @@ describe('OpeningFindingCard', () => {
         onOpenGames={onOpenGames}
       />,
     );
-    const gamesBtns = screen.getAllByTestId('opening-finding-card-7-games');
-    expect(gamesBtns[0]!.textContent).toMatch(/42/);
-    expect(gamesBtns[0]!.textContent).toMatch(/Games/);
-    fireEvent.click(gamesBtns[0]!);
+    // 260507-t4r: unified layout — single Games button.
+    const gamesBtn = screen.getByTestId('opening-finding-card-7-games');
+    expect(gamesBtn.textContent).toMatch(/42/);
+    expect(gamesBtn.textContent).toMatch(/Games/);
+    fireEvent.click(gamesBtn);
     expect(onOpenGames).toHaveBeenCalledWith(finding);
   });
 
@@ -314,18 +320,18 @@ describe('OpeningFindingCard', () => {
   });
 
   describe('WDL bar row + eval bullet row (quick task 260506-u2b)', () => {
-    it('renders the WDL chart row (replaces legacy score-bullet)', () => {
+    it('renders the WDL chart row', () => {
       const finding = makeFinding({ confidence: 'medium' });
       renderCard({ finding, idx: 3 });
-      // Both mobile + desktop branches render — same testids.
-      const wdlRows = screen.getAllByTestId('opening-finding-card-3-wdl');
-      expect(wdlRows.length).toBeGreaterThanOrEqual(1);
+      // 260507-t4r: unified layout — single WDL row.
+      const wdlRow = screen.getByTestId('opening-finding-card-3-wdl');
+      expect(wdlRow).not.toBeNull();
     });
 
-    it('does NOT render the legacy score-bullet testid', () => {
+    it('renders the score-bullet row (260507-t4r: score bullet added to Insights cards)', () => {
       const finding = makeFinding({ confidence: 'medium' });
       renderCard({ finding, idx: 3 });
-      expect(screen.queryAllByTestId('opening-finding-card-3-score-bullet').length).toBe(0);
+      expect(screen.queryAllByTestId('opening-finding-card-3-score-bullet').length).toBeGreaterThanOrEqual(1);
     });
 
     it('does NOT render the legacy confidence-info testid', () => {
@@ -337,25 +343,25 @@ describe('OpeningFindingCard', () => {
     it('renders eval bullet container when eval_n > 0', () => {
       const finding = makeFinding({ eval_n: 18, avg_eval_pawns: 0.5 });
       renderCard({ finding, idx: 5 });
-      const bullets = screen.getAllByTestId('opening-finding-card-5-bullet');
-      expect(bullets.length).toBeGreaterThanOrEqual(1);
-      expect(bullets[0]!.querySelector('[data-testid="mini-bullet-chart"]')).not.toBeNull();
+      // 260507-t4r: unified layout — single bullet element.
+      const bullet = screen.getByTestId('opening-finding-card-5-bullet');
+      expect(bullet.querySelector('[data-testid="mini-bullet-chart"]')).not.toBeNull();
     });
 
     it('renders em-dash fallback in eval bullet when eval_n === 0', () => {
       const finding = makeFinding({ eval_n: 0, avg_eval_pawns: null });
       renderCard({ finding, idx: 5 });
-      // eval-text container should contain "—" placeholder
-      const evalTexts = screen.getAllByTestId('opening-finding-card-5-eval-text');
-      expect(evalTexts.length).toBeGreaterThanOrEqual(1);
-      expect(evalTexts[0]!.textContent).toContain('—');
+      // 260507-t4r: unified layout — single eval-text element.
+      const evalText = screen.getByTestId('opening-finding-card-5-eval-text');
+      expect(evalText.textContent).toContain('—');
     });
 
     it('renders BulletConfidencePopover trigger when eval_n > 0', () => {
       const finding = makeFinding({ eval_n: 18, avg_eval_pawns: 0.5, eval_confidence: 'medium' });
       renderCard({ finding, idx: 5 });
-      const popovers = screen.getAllByTestId('opening-finding-card-5-bullet-popover');
-      expect(popovers.length).toBeGreaterThanOrEqual(1);
+      // 260507-t4r: unified layout — single popover.
+      const popover = screen.getByTestId('opening-finding-card-5-bullet-popover');
+      expect(popover).not.toBeNull();
     });
 
     it('does NOT render the legacy Confidence: <level> text line', () => {
@@ -444,7 +450,7 @@ describe('OpeningFindingCard', () => {
       expect(screen.getByTestId('opening-finding-card-7-troll-watermark')).toBeTruthy();
     });
 
-    it('renders exactly once across both mobile and desktop branches (D-03)', () => {
+    it('renders exactly once in the unified layout (D-03, 260507-t4r: single layout)', () => {
       const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });
       renderCard({ finding, idx: 7 });
       const elements = screen.getAllByTestId('opening-finding-card-7-troll-watermark');
@@ -477,23 +483,25 @@ describe('OpeningFindingCard', () => {
       const onFindingClick = vi.fn();
       const finding = makeFinding({ entry_fen: TROLL_FIXTURE_FEN, color: 'white' });
       renderCard({ finding, idx: 7, onFindingClick });
-      // The Moves button's testid uses the existing `opening-finding-card-${idx}-moves` template.
-      const movesBtns = screen.getAllByTestId('opening-finding-card-7-moves');
-      fireEvent.click(movesBtns[0]!);
+      // 260507-t4r: unified layout — single Moves button.
+      const movesBtn = screen.getByTestId('opening-finding-card-7-moves');
+      fireEvent.click(movesBtn);
       expect(onFindingClick).toHaveBeenCalled();
     });
   });
 
   describe('Quick task 260429-gmj — score-colored after-move arrow', () => {
-    // Test A: arrow overlay renders in BOTH layouts when the candidate move parses.
-    it('renders <svg data-testid="mini-board-arrow-overlay"> in both mobile and desktop layouts', () => {
+    // Test A: arrow overlay renders in the unified single-column layout.
+    // 260507-t4r: unified layout replaced the two-block sm:hidden / hidden sm:flex split,
+    // so there is now exactly 1 board (and 1 arrow overlay) instead of 2.
+    it('renders <svg data-testid="mini-board-arrow-overlay"> in the unified layout', () => {
       const finding = makeFinding({
         entry_fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
         candidate_move_san: 'e4',
       });
       renderCard({ finding, idx: 0 });
       const overlays = screen.getAllByTestId('mini-board-arrow-overlay');
-      expect(overlays.length).toBe(2); // one in sm:hidden, one in hidden sm:flex
+      expect(overlays.length).toBe(1); // unified layout: one board, one overlay
     });
 
     // Test B: arrow color is driven by score zone (matches Moves-tab scoreZoneColor).
@@ -532,6 +540,7 @@ describe('OpeningFindingCard', () => {
     });
 
     // Test D: arrow renders for both color sides (board flipped for black).
+    // 260507-t4r: unified layout has 1 board, so expect 1 overlay.
     it('renders the arrow overlay when finding.color === "black" (flipped board)', () => {
       const finding = makeFinding({
         color: 'black',
@@ -541,7 +550,7 @@ describe('OpeningFindingCard', () => {
       });
       renderCard({ finding, idx: 0 });
       const overlays = screen.getAllByTestId('mini-board-arrow-overlay');
-      expect(overlays.length).toBe(2);
+      expect(overlays.length).toBe(1); // unified layout: one board, one overlay
     });
   });
 });

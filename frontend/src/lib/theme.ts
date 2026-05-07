@@ -133,6 +133,13 @@ export const ELO_COMBO_COLORS: Record<EloComboKey, { bright: string; dark: strin
 // glow and the icon tint matched.
 export const INSIGHT_GOLD = 'oklch(0.82 0.17 85)';
 
+// Neutral fill color for score/eval bullets on Openings cards (260507-t4r).
+// Tufte/Few bullet-chart convention: the bar carries position only; the colored
+// zone bands behind it carry the qualitative verdict. High contrast against the
+// 0.35-opacity zone fills; zero chroma so it reads as genuinely neutral.
+// Endgame consumers keep the zone-colored bar via the `barColor` prop default.
+export const BULLET_BAR_NEUTRAL = 'oklch(0.85 0 0)';
+
 // Endgame ELO Timeline volume bars (Phase 57.1). Muted gray with alpha so the
 // bars read as "context, not data" on the charcoal-texture card surface.
 // L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
