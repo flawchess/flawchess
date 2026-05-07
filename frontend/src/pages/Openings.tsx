@@ -850,7 +850,7 @@ export function OpeningsPage() {
                   center={SCORE_BULLET_CENTER}
                   neutralMin={SCORE_BULLET_NEUTRAL_MIN}
                   neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-                  domain={scoreBulletDomain(clampScoreCi(stats.ci_low), clampScoreCi(stats.ci_high))}
+                  domain={scoreBulletDomain()}
                   ciLow={clampScoreCi(stats.ci_low)}
                   ciHigh={clampScoreCi(stats.ci_high)}
                   ariaLabel={`Score ${scorePct}% vs 50% baseline`}

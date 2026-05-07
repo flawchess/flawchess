@@ -1,7 +1,8 @@
 /**
  * Score-domain bullet chart configuration. Used by the current-position
- * score-vs-50% bullet on the Openings Moves tab. Domain matches the
- * MoveExplorer Conf-column visual scale.
+ * score-vs-50% bullet on the Openings Moves tab and the Insights/Stats cards.
+ * Domain is fixed at 25-75% so the visual scale stays comparable across
+ * surfaces — wide CIs simply render with open-ended whiskers.
  */
 
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
@@ -19,22 +20,16 @@ export const SCORE_BULLET_NEUTRAL_MAX = 0.05;
 export const SCORE_NEUTRAL_LOW = SCORE_BULLET_CENTER + SCORE_BULLET_NEUTRAL_MIN;
 export const SCORE_NEUTRAL_HIGH = SCORE_BULLET_CENTER + SCORE_BULLET_NEUTRAL_MAX;
 
-// Default axis half-width: spans the 30-70% score range around the 0.5 center.
-// Tighter than the full 0-100% range so typical CIs read clearly; falls back
-// to the wide domain when a CI extends past the [0.3, 0.7] window.
-export const SCORE_BULLET_DOMAIN = 0.2;
+// Axis half-width: spans the 25-75% score range around the 0.5 center.
+// CIs that overflow this window render with open-ended whiskers (the
+// MiniBulletChart suppresses end-caps past the axis edge).
+export const SCORE_BULLET_DOMAIN = 0.25;
 
-// Wide axis half-width: spans the full 0-100% range. Used when the CI
-// overlaps the default 30-70% boundaries so the whisker stays in view.
-export const SCORE_BULLET_DOMAIN_WIDE = 0.5;
-
-/** Pick the bullet chart axis half-width based on whether the 95% CI fits
- * within the default 30-70% window. Returns the wide domain (full 0-100%)
- * if either bound is outside, otherwise the tighter default. */
-export function scoreBulletDomain(ciLow: number, ciHigh: number): number {
-  const min = SCORE_BULLET_CENTER - SCORE_BULLET_DOMAIN;
-  const max = SCORE_BULLET_CENTER + SCORE_BULLET_DOMAIN;
-  if (ciLow < min || ciHigh > max) return SCORE_BULLET_DOMAIN_WIDE;
+/** Returns the score bullet axis half-width. The domain is fixed at 25-75%
+ *  so all score bullets share one scale; CIs that overflow render with
+ *  open-ended whiskers instead of widening the axis.
+ */
+export function scoreBulletDomain(): number {
   return SCORE_BULLET_DOMAIN;
 }
 

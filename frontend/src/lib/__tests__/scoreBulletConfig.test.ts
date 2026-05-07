@@ -4,7 +4,6 @@ import {
   SCORE_BULLET_NEUTRAL_MIN,
   SCORE_BULLET_NEUTRAL_MAX,
   SCORE_BULLET_DOMAIN,
-  SCORE_BULLET_DOMAIN_WIDE,
   clampScoreCi,
   scoreBulletDomain,
 } from '../scoreBulletConfig';
@@ -12,6 +11,11 @@ import {
 describe('scoreBulletConfig', () => {
   it('center is 0.5', () => {
     expect(SCORE_BULLET_CENTER).toBe(0.5);
+  });
+
+  it('domain spans 25-75%', () => {
+    expect(SCORE_BULLET_CENTER - SCORE_BULLET_DOMAIN).toBeCloseTo(0.25);
+    expect(SCORE_BULLET_CENTER + SCORE_BULLET_DOMAIN).toBeCloseTo(0.75);
   });
 
   it('neutral zone is symmetric and non-empty', () => {
@@ -26,17 +30,8 @@ describe('scoreBulletConfig', () => {
 });
 
 describe('scoreBulletDomain', () => {
-  it('returns the default (tighter) domain when CI fits inside [0.3, 0.7]', () => {
-    expect(scoreBulletDomain(0.4, 0.6)).toBe(SCORE_BULLET_DOMAIN);
-    expect(scoreBulletDomain(0.3, 0.7)).toBe(SCORE_BULLET_DOMAIN);
-  });
-
-  it('returns the wide domain when CI low overflows the default window', () => {
-    expect(scoreBulletDomain(0.29, 0.6)).toBe(SCORE_BULLET_DOMAIN_WIDE);
-  });
-
-  it('returns the wide domain when CI high overflows the default window', () => {
-    expect(scoreBulletDomain(0.4, 0.71)).toBe(SCORE_BULLET_DOMAIN_WIDE);
+  it('always returns the fixed 25-75% domain', () => {
+    expect(scoreBulletDomain()).toBe(SCORE_BULLET_DOMAIN);
   });
 });
 

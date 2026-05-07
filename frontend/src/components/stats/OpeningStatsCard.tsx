@@ -1,10 +1,11 @@
-import { ArrowRightLeft, Cpu, Swords, Users } from 'lucide-react';
+import { ArrowRightLeft, Cpu, Swords } from 'lucide-react';
 import type { OpeningWDL } from '@/types/stats';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
@@ -18,6 +19,7 @@ import {
   SCORE_BULLET_DOMAIN,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
+import { computeScoreConfidence } from '@/lib/scoreConfidence';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import { MIN_GAMES_FOR_RELIABLE_STATS, MIN_GAMES_OPENING_ROW, UNRELIABLE_OPACITY } from '@/lib/theme';
 
@@ -60,10 +62,15 @@ export function OpeningStatsCard({
     opening.avg_eval_pawns !== null &&
     opening.avg_eval_pawns !== undefined;
 
-  // Derived score: (wins + 0.5*draws) / total. Falls back to 0.5 on zero total.
-  const derivedScore = opening.total > 0
-    ? (opening.wins + 0.5 * opening.draws) / opening.total
-    : 0.5;
+  // Wilson score confidence computed client-side from (W, D, total). Mirrors
+  // the backend `compute_confidence_bucket` so the Stats info icon surfaces
+  // the same stats the Insights tab reports for finding rows.
+  const scoreStats = computeScoreConfidence(
+    opening.wins,
+    opening.draws,
+    opening.total,
+  );
+  const derivedScore = scoreStats.score;
 
   // Border color uses the score zone (reliability-gated). Eval loses the border
   // but keeps its bullet row, Cpu icon, and eval-text color — plenty of signal.
@@ -139,12 +146,14 @@ export function OpeningStatsCard({
     />
   );
 
-  // Score bullet row: derived score vs 50% baseline. No CI whisker (OpeningWDL
-  // lacks score CI — accepted limitation of this FE-only quick task).
-  const scoreLine = (
-    <div className="flex items-center gap-2">
+  // Score + eval rows in a 2-col grid so both bullets share the same width
+  // regardless of how the right-hand label renders. The right column auto-sizes
+  // to max(score-text, eval-text), keeping the bullet bars visually aligned.
+  const scoreEvalBlock = (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-2 items-center">
+      {/* Score row */}
       <div
-        className="flex-1 min-w-0 tabular-nums"
+        className="min-w-0 tabular-nums"
         data-testid={`${cardTestId}-score-bullet`}
       >
         <MiniBulletChart
@@ -153,38 +162,45 @@ export function OpeningStatsCard({
           neutralMin={SCORE_BULLET_NEUTRAL_MIN}
           neutralMax={SCORE_BULLET_NEUTRAL_MAX}
           domain={SCORE_BULLET_DOMAIN}
+          ciLow={scoreStats.ciLow}
+          ciHigh={scoreStats.ciHigh}
           barColor="neutral"
           ariaLabel={`Score ${Math.round(derivedScore * 100)}% vs 50% baseline`}
         />
       </div>
       <span
-        className="inline-flex items-center gap-1 text-sm tabular-nums"
+        className="flex items-center gap-1 text-sm tabular-nums w-full"
         data-testid={`${cardTestId}-score-text`}
       >
+        <span className="hidden sm:inline text-muted-foreground">Score:</span>
         <span
-          className="font-semibold inline-flex items-center gap-0.5"
+          className="ml-auto font-semibold"
           style={{ color: isReliableScore ? scoreZoneColor(derivedScore) : undefined }}
         >
           {Math.round(derivedScore * 100)}%
-          <Users className="h-3.5 w-3.5" aria-hidden="true" />
         </span>
+        <ScoreConfidencePopover
+          level={scoreStats.confidence}
+          pValue={scoreStats.pValue}
+          score={derivedScore}
+          gameCount={opening.total}
+          testId={`${cardTestId}-score-popover`}
+        />
       </span>
-    </div>
-  );
 
-  const evalLine = (
-    <div className="flex items-center gap-2">
+      {/* Eval row */}
       <div
-        className="flex-1 min-w-0 tabular-nums"
+        className="min-w-0 tabular-nums"
         data-testid={`${cardTestId}-bullet`}
       >
         {mgBulletContent}
       </div>
       <span
-        className="inline-flex items-center gap-1 text-sm tabular-nums"
+        className="flex items-center gap-1 text-sm tabular-nums w-full"
         data-testid={`${cardTestId}-eval-text`}
       >
-        {mgEvalTextContent}
+        <span className="hidden sm:inline text-muted-foreground">Eval:</span>
+        <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
         {hasMgEval && (
           <BulletConfidencePopover
             level={opening.eval_confidence}
@@ -235,9 +251,11 @@ export function OpeningStatsCard({
       className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
       style={cardStyle}
     >
-      {/* Mobile: header full-width on top, board + content row below */}
-      <div className="flex flex-col gap-2 sm:hidden">
-        {headerLine}
+      {/* Header above board on both viewports (260507-tu1). */}
+      {headerLine}
+
+      {/* Mobile: board left, content right */}
+      <div className="flex flex-col gap-2 sm:hidden mt-2">
         <div className="flex gap-3 items-start">
           <LazyMiniBoard
             fen={opening.fen}
@@ -246,25 +264,22 @@ export function OpeningStatsCard({
           />
           <div className="flex-1 min-w-0 flex flex-col gap-2">
             {wdlLine}
-            {scoreLine}
-            {evalLine}
+            {scoreEvalBlock}
             {linksRow}
           </div>
         </div>
       </div>
 
-      {/* Desktop: board left, header + content stacked right */}
-      <div className="hidden sm:flex gap-3 items-center">
+      {/* Desktop: board left, content right (header lives above on both) */}
+      <div className="hidden sm:flex gap-3 items-center mt-2">
         <LazyMiniBoard
           fen={opening.fen}
           flipped={color === 'black'}
           size={DESKTOP_BOARD_SIZE}
         />
         <div className="min-w-0 flex-1 flex flex-col gap-2">
-          {headerLine}
           {wdlLine}
-          {scoreLine}
-          {evalLine}
+          {scoreEvalBlock}
           {linksRow}
         </div>
       </div>

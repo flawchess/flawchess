@@ -1,9 +1,10 @@
-import { ArrowRightLeft, Cpu, Swords, Users } from 'lucide-react';
+import { ArrowRightLeft, Cpu, Swords } from 'lucide-react';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { formatCandidateMove } from '@/lib/openingInsights';
 import { fenAfterMove, sanToSquares } from '@/lib/sanToSquares';
 import {
@@ -17,7 +18,7 @@ import {
   SCORE_BULLET_CENTER,
   SCORE_BULLET_NEUTRAL_MIN,
   SCORE_BULLET_NEUTRAL_MAX,
-  scoreBulletDomain,
+  SCORE_BULLET_DOMAIN,
   clampScoreCi,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
@@ -117,54 +118,11 @@ export function OpeningFindingCard({
     />
   );
 
-  // Score bullet row (260507-t4r): replaces the "Score X% after [move]" prose line.
-  // Uses Wilson CI from the finding (ci_low/ci_high) — a whisker renders here.
-  // barColor="neutral" so the bar encodes position; zone bands carry verdict.
+  // Score whiskers come from the finding's Wilson CI (backend).
   const ciLow = clampScoreCi(finding.ci_low);
   const ciHigh = clampScoreCi(finding.ci_high);
-  const scoreDomain = scoreBulletDomain(ciLow, ciHigh);
-  const scoreLine = (
-    <div className="flex items-center gap-2">
-      <div
-        className="flex-1 min-w-0 tabular-nums"
-        data-testid={`${cardTestId}-score-bullet`}
-      >
-        <MiniBulletChart
-          value={finding.score}
-          center={SCORE_BULLET_CENTER}
-          neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-          neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-          domain={scoreDomain}
-          ciLow={ciLow}
-          ciHigh={ciHigh}
-          barColor="neutral"
-          ariaLabel={`Score ${Math.round(finding.score * 100)}% vs 50% baseline`}
-        />
-      </div>
-      <span
-        className="inline-flex items-center gap-1 text-sm tabular-nums"
-        data-testid={`${cardTestId}-score-text`}
-      >
-        <span
-          className="font-semibold inline-flex items-center gap-0.5"
-          style={{ color: borderLeftColor }}
-        >
-          {Math.round(finding.score * 100)}%
-          <Users className="h-3.5 w-3.5" aria-hidden="true" />
-        </span>
-        <BulletConfidencePopover
-          level={finding.confidence}
-          pValue={finding.eval_p_value}
-          gameCount={finding.n_games}
-          evalMeanPawns={null}
-          color={finding.color}
-          testId={`${cardTestId}-score-popover`}
-        />
-      </span>
-    </div>
-  );
 
-  // MG-entry eval line — structurally identical to OpeningStatsCard.
+  // MG-entry eval bullet — structurally identical to OpeningStatsCard.
   const evalN = finding.eval_n ?? 0;
   const avgEvalPawns = finding.avg_eval_pawns ?? null;
   const hasMgEval = evalN > 0 && avgEvalPawns !== null && avgEvalPawns !== undefined;
@@ -197,19 +155,58 @@ export function OpeningFindingCard({
     <span className="text-muted-foreground">—</span>
   );
 
-  const evalLine = (
-    <div className="flex items-center gap-2">
+  // Score + eval rows in a 2-col grid so both bullets share the same width
+  // regardless of how the right-hand label renders. The right column auto-sizes
+  // to max(score-text, eval-text), keeping the bullet bars visually aligned.
+  const scoreEvalBlock = (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-2 items-center">
+      {/* Score row */}
       <div
-        className="flex-1 min-w-0 tabular-nums"
+        className="min-w-0 tabular-nums"
+        data-testid={`${cardTestId}-score-bullet`}
+      >
+        <MiniBulletChart
+          value={finding.score}
+          center={SCORE_BULLET_CENTER}
+          neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+          neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+          domain={SCORE_BULLET_DOMAIN}
+          ciLow={ciLow}
+          ciHigh={ciHigh}
+          barColor="neutral"
+          ariaLabel={`Score ${Math.round(finding.score * 100)}% vs 50% baseline`}
+        />
+      </div>
+      <span
+        className="flex items-center gap-1 text-sm tabular-nums w-full"
+        data-testid={`${cardTestId}-score-text`}
+      >
+        <span className="hidden sm:inline text-muted-foreground">Score:</span>
+        <span className="ml-auto font-semibold" style={{ color: borderLeftColor }}>
+          {Math.round(finding.score * 100)}%
+        </span>
+        <ScoreConfidencePopover
+          level={finding.confidence}
+          pValue={finding.p_value ?? 1}
+          score={finding.score}
+          gameCount={finding.n_games}
+          testId={`${cardTestId}-score-popover`}
+        />
+      </span>
+
+      {/* Eval row */}
+      <div
+        className="min-w-0 tabular-nums"
         data-testid={`${cardTestId}-bullet`}
       >
         {mgBulletContent}
       </div>
       <span
-        className="inline-flex items-center gap-1 text-sm tabular-nums"
+        className="flex items-center gap-1 text-sm tabular-nums w-full"
         data-testid={`${cardTestId}-eval-text`}
       >
-        {mgEvalTextContent}
+        <span className="hidden sm:inline text-muted-foreground">Eval:</span>
+        <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
         {hasMgEval && (
           <BulletConfidencePopover
             level={finding.eval_confidence ?? 'low'}
@@ -254,11 +251,12 @@ export function OpeningFindingCard({
     </div>
   );
 
-  // Move-anchor caption (260507-t4r D5): replaces the dropped "Score X% after [move]"
-  // prose line. Sits directly under the miniboard so the visual + textual move anchor
-  // read as a single unit.
+  // Move-anchor caption sits directly under the miniboard so the visual +
+  // textual move anchor read as a single unit. Bumped from text-xs to text-sm
+  // (260507-mwn) — the move is the primary anchor for the card and was being
+  // outweighed by the surrounding labels.
   const moveCaption = (
-    <span className="text-xs text-muted-foreground">
+    <span className="text-sm text-muted-foreground">
       after{' '}
       <span className="font-mono text-foreground">{candidateMoveDisplay}</span>
     </span>
@@ -270,11 +268,13 @@ export function OpeningFindingCard({
       className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
       style={cardStyle}
     >
-      {/* Mobile: header full-width on top, board + caption left, content right */}
-      <div className="flex flex-col gap-2 sm:hidden">
-        {headerLine}
+      {/* Header above board on both viewports (260507-tu1). */}
+      {headerLine}
+
+      {/* Mobile: board + caption left, content right */}
+      <div className="flex flex-col gap-2 sm:hidden mt-2">
         <div className="flex gap-3 items-start">
-          <div className="flex flex-col items-center gap-1">
+          <div className="flex flex-col items-end gap-1">
             <LazyMiniBoard
               fen={finding.entry_fen}
               flipped={finding.color === 'black'}
@@ -285,16 +285,18 @@ export function OpeningFindingCard({
           </div>
           <div className="flex-1 min-w-0 flex flex-col gap-2">
             {wdlLine}
-            {scoreLine}
-            {evalLine}
+            {scoreEvalBlock}
             {linksRow}
           </div>
         </div>
       </div>
 
-      {/* Desktop: board + caption left, header + content stacked right */}
-      <div className="hidden sm:flex gap-3 items-center">
-        <div className="flex flex-col items-center gap-1">
+      {/* Desktop: board + caption left, content stacked right (header above on both).
+          items-start so the WDL bar lines up with the top edge of the miniboard
+          (the caption hangs below the board, making the column taller than the
+          content stack). */}
+      <div className="hidden sm:flex gap-3 items-start mt-2">
+        <div className="flex flex-col items-end gap-1">
           <LazyMiniBoard
             fen={finding.entry_fen}
             flipped={finding.color === 'black'}
@@ -304,10 +306,8 @@ export function OpeningFindingCard({
           {moveCaption}
         </div>
         <div className="min-w-0 flex-1 flex flex-col gap-2">
-          {headerLine}
           {wdlLine}
-          {scoreLine}
-          {evalLine}
+          {scoreEvalBlock}
           {linksRow}
         </div>
       </div>

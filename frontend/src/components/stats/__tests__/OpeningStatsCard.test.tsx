@@ -143,7 +143,9 @@ describe('OpeningStatsCard — eval cell', () => {
     renderCard({ opening, idx: 0 });
     const evalText = document.querySelector('[data-testid="opening-stats-card-0-eval-text"]');
     const bullet = document.querySelector('[data-testid="opening-stats-card-0-bullet"]');
-    expect(evalText?.textContent).toBe('—');
+    // Desktop "Eval" prefix is rendered via `hidden sm:inline` — visible only at sm+,
+    // but textContent in jsdom includes hidden-display nodes. Assert containment.
+    expect(evalText?.textContent).toContain('—');
     expect(bullet?.textContent).toBe('—');
     expect(bullet?.querySelector('[data-testid="mini-bullet-chart"]')).toBeNull();
     expect(
