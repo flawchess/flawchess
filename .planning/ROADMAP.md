@@ -28,7 +28,7 @@
 Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp` / `eval_mate` on `game_positions`). Additional phases will be added as new analyses are scoped from `.planning/notes/phase-aware-analytics-ideas.md` and other brainstorms.
 
 - [ ] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (6 plans) — planned
-- [ ] Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats (0 plans, INSERTED) — not planned yet
+- [x] Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats (4/4 plans) — completed 2026-05-07
 - [ ] Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance (0 plans) — not planned yet
 
 ### Phase 80: Opening stats: middlegame-entry eval and clock-diff columns
@@ -75,7 +75,7 @@ Plans:
 - [x] 80.1-03-PLAN.md — Opening Insights service: compute_insights SimpleNamespace adapter + transposition-divergence tests (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 80.1-04-PLAN.md — Smoke / regression matrix + prod-DB sanity check (D-09) + CHANGELOG entry (Wave 3)
+- [x] 80.1-04-PLAN.md — Smoke / regression matrix + prod-DB sanity check (D-09) + CHANGELOG entry (Wave 3)
 
 ### Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance
 

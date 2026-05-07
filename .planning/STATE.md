@@ -3,23 +3,23 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: executing
-last_updated: "2026-05-07T17:53:26.161Z"
+last_updated: "2026-05-07T18:30:00.000Z"
 last_activity: 2026-05-07
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 9
-  percent: 90
+  completed_plans: 10
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 80.1 (include-transpositions-in-move-explorer-and-opening-insights-stats) — EXECUTING
-Plan: 3 of 4 (Wave 2 — service field swap on Move Explorer; complete)
-Status: Ready to execute
+Phase: 80.1 (include-transpositions-in-move-explorer-and-opening-insights-stats) — COMPLETE (4/4 plans)
+Plan: 4 of 4 (Wave 3 — smoke/regression matrix + D-09 prod sanity + CHANGELOG; complete)
+Status: Phase ready for PR / merge to v1.16. Next: open PR for Phase 80.1, then proceed to Phase 81 (or whichever v1.16 phase is queued).
 Last activity: 2026-05-07
 
 ## Project Reference
@@ -150,6 +150,6 @@ Carried forward from v1.11 close (still relevant):
 | 260507-aw5 | Complete Wilson migration on score side: replace trinomial Wald p-value in score_confidence.py with Wilson score-test p-value (null SE = 0.5/sqrt(n)). CI bounds were already Wilson; the test is now the inversion of the CI so they agree by construction. SE=0 degeneracy at all-wins/all-losses gone. Tooltips, Field comments, and module docstrings updated. Eval-side stays on Wald-z (Wilson is binomial-specific) | 2026-05-07 | b47505be | [260507-aw5-complete-wilson-migration-on-score-side-](./quick/260507-aw5-complete-wilson-migration-on-score-side-/) |
 
 ---
-Last activity: 2026-05-07 — Completed Plan 80.1-02 (Move Explorer service field swap): `get_next_moves` now consumes the new `query_transposition_wdl` from Plan 01 and swaps WDL-derived fields on `NextMoveEntry` to resulting-position aggregation. `game_count` stays move-played per D-01; W/D/L / score / confidence / p_value flip to resulting-position per D-02. Closes the 57%→61% click-through mismatch by construction. New `TestNextMovesTranspositionWdl` (3 tests: canonical convergence, single-order parity, filter-parity / T-80.1-05 mitigation) plus restructured `test_get_next_moves_populates_score_confidence_p_value` to compute the helper input from `pos_n` explicitly. Full module green: 26/26 in 0.35s. Commits `84179982` (feat) + `ca4f89d1` (test). Next: Plan 80.1-03 (Opening Insights service field swap).
+Last activity: 2026-05-07 — Completed Phase 80.1 (4/4 plans). Plan 80.1-04 closed the regression matrix: backend pytest 1254 passed / 6 skipped / 1 deselected in 16.47s, ty + ruff clean, dedicated transposition tests 16 passed in 0.30s; frontend npm test 281 passed in 1.51s, lint + knip clean, build success in 4.99s. D-09 prod sanity check (read-only via `bin/prod_db_tunnel.sh`) on 3 representative users — heavy (4: 23,225 games), light (18: 261 games), moderate (35: 1,450 games) — verdict PASS: pre 40/2/16, post 40/3/14, all within the planner's 50–200% band, no zero-flip, no recalibration warranted (D-07 honored). New `scripts/prodcheck_80_1.py` committed for future regression checks. CHANGELOG entry queued under `## [Unreleased]` → `### Changed` for v1.16 milestone close. Project-wide ruff format drift (89 files) logged in `deferred-items.md` as out-of-scope follow-up. Commits `a35514f2`, `4e4fa514`, `ab29a3d9`, `7bb10cc0`, `47fe2dc5`. Phase 80.1 ready for PR. Next: open PR for Phase 80.1, then queue Phase 81.
 | 2026-05-04 | fast | Mute opening row when total games < 20; drop confidence-based muting | ✅ |
 | 2026-05-04 | fast | Score zone color in Moves tab + per-move list; drop severity row tint; bump mobile games-count font size | ✅ |
