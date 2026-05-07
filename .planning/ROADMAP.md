@@ -18,7 +18,7 @@
 - ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
 - ✅ **v1.15 Eval-Based Endgame Classification** — Phases 78, 79 (shipped 2026-05-03; VAL-01 / PHASE-VAL-01 rescinded) — see [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md)
-- 🚧 **v1.16 Stockfish Eval Analyses** — Phases 80, 81+ (in progress, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`). Phase 80: opening-stats columns for middlegame-entry eval and clock diff. Phase 81: twin-tile (entry eval + score gap) decomposition in Endgame Overall Performance. More phases TBD.
+- 🚧 **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81+ (in progress, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`), plus opportunistic UX fixes that fall in the same area. Phase 80: opening-stats columns for middlegame-entry eval and clock diff. Phase 80.1: include transpositions in Move Explorer and Opening Insights stats. Phase 81: twin-tile (entry eval + score gap) decomposition in Endgame Overall Performance. More phases TBD.
 
 ## Phases
 
@@ -28,6 +28,7 @@
 Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp` / `eval_mate` on `game_positions`). Additional phases will be added as new analyses are scoped from `.planning/notes/phase-aware-analytics-ideas.md` and other brainstorms.
 
 - [ ] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (6 plans) — planned
+- [ ] Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats (0 plans, INSERTED) — not planned yet
 - [ ] Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance (0 plans) — not planned yet
 
 ### Phase 80: Opening stats: middlegame-entry eval and clock-diff columns
@@ -52,6 +53,21 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 80-06-PLAN.md — Smoke / regression matrix + CHANGELOG + human UI checkpoint (Wave 4)
+
+### Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats
+
+**Goal:** Make WDL/score on the Openings → Moves rows and on Opening Insights findings reflect the *resulting position* including transpositions, not just games that played the exact candidate move from the exact entry. Today, clicking a row showing 57% in the moves list lands on a position summary showing 61% because the position is reached via other move orders too — the row's WDL ignored those games. The fix: the row's `game_count` column stays as games-that-actually-played-this-move (already explained by the existing transposition tooltip — `MoveExplorer.tsx:359-365` — "Position reached in N total games (M via other move orders)"), but `wins/draws/losses/win_pct/draw_pct/loss_pct/score/confidence/p_value` are recomputed over all games visiting `result_hash`. Same shift on `OpeningInsightFinding`: classification (weakness vs. strength), Wilson confidence, ranking, and displayed bar all switch to resulting-position WDL. The `n>=10` surfacing gate stays on the move-played count so we only flag positions the user reached via the called-out move meaningfully often.
+**Requirements:** TBD (defined during /gsd-spec-phase 80.1 or /gsd-discuss-phase 80.1)
+**Depends on:** Independent of Phase 80 plans; touches `app/repositories/openings_repository.py` (`query_next_moves`, `query_transposition_counts`, `query_opening_transitions`) and the corresponding services / FE wording.
+**Plans:** 0 plans
+**Context:** openingtree.com includes transpositions; lichess excludes them. The 57%→61% mismatch on click is the loud UX bug. Implementation sketch:
+- **Moves list:** extend `query_transposition_counts` (or add a sibling) to also return W/D/L per `result_hash` in a single batch query. In `get_next_moves`, keep `game_count` from `query_next_moves` but recompute every WDL-derived field from the new transposition-inclusive numbers, denominator = transposition count.
+- **Insights:** harder. `query_opening_transitions` aggregates per `(entry_hash, candidate_san)` over move-played games — need a second pass / sub-CTE that joins `game_positions` on `resulting_full_hash` to compute resulting-position W/D/L per candidate row. Classification (`_classify_row`), `_wilson_bounds`, ranking, and the HAVING/effect-size gate all switch to resulting-position score. Surfacing gate (`OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE`) stays on move-played count. Consider adding `n_position_reached` field to `OpeningInsightFinding` for honest disclosure on the card.
+- **Frontend:** transposition tooltip wording on the moves list already does the right work — no change needed. `OpeningFindingCard` score-badge tooltip should clarify "Score across all games reaching this position, via any move order."
+- **Risks:** every test asserting WDL/score numbers in `test_opening_insights_*` and `test_openings_service_*` needs updating; expect significant test churn. The Phase 75 score thresholds (`SCORE_PIVOT` ± `MAJOR_EFFECT`/`MINOR_EFFECT`) were calibrated against move-played distributions — resulting-position scores may cluster tighter (closer to user's overall average), shifting finding volumes. Sanity-check against prod-DB queries during execute-phase.
+
+Plans:
+- [ ] TBD (run `/gsd-plan-phase 80.1` to break down)
 
 ### Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance
 
