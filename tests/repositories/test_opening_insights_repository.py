@@ -1181,3 +1181,283 @@ async def test_query_openings_by_hashes_skips_null_full_hash(
     # Also verify querying an empty set for null-hash produces no KeyError
     result_empty = await query_openings_by_hashes(db_session, [])
     assert result_empty == {}
+
+
+# ---------------------------------------------------------------------------
+# TestQueryResultingPositionWdl — Phase 80.1 D-06
+# ---------------------------------------------------------------------------
+
+# Unique hashes for query_resulting_position_wdl tests (avoid collision with
+# the H_ENTRY_PLY16/17 family used by transition tests above).
+RPWDL_ENTRY_A = 0xBB01
+RPWDL_ENTRY_B = 0xBB02
+RPWDL_RESULT_HASH = 0xBB03
+RPWDL_OTHER_RESULT_HASH = 0xBB04
+RPWDL_UNUSED_HASH = 0xBB05
+
+
+class TestQueryResultingPositionWdl:
+    """Phase 80.1 D-06: query_resulting_position_wdl returns
+    {resulting_full_hash: (W, D, L)} for the Opening Insights field swap.
+
+    The function powers compute_insights' switch from move-played WDL to
+    resulting-position WDL. Convergence (two move orders ending at the same
+    resulting_full_hash) is the signal case.
+    """
+
+    @pytest.mark.asyncio
+    async def test_query_resulting_position_wdl_convergence(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Two games reach RPWDL_RESULT_HASH via different entry hashes;
+        query returns combined WDL across both.
+        """
+        from app.repositories.openings_repository import query_resulting_position_wdl
+
+        user_id = 10
+        # Game A: entry=RPWDL_ENTRY_A, candidate move e4 → RPWDL_RESULT_HASH (win)
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="white",
+            positions=[
+                (3, RPWDL_ENTRY_A, "e4"),
+                (4, RPWDL_RESULT_HASH, None),
+            ],
+        )
+        # Game B: entry=RPWDL_ENTRY_B (different move order), candidate d4 →
+        # RPWDL_RESULT_HASH (loss). Different ply-0 hash so the two games
+        # arrive at the same resulting position via genuinely different paths.
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (3, RPWDL_ENTRY_B, "d4"),
+                (4, RPWDL_RESULT_HASH, None),
+            ],
+        )
+
+        wdl = await query_resulting_position_wdl(
+            db_session,
+            user_id=user_id,
+            hash_list=[RPWDL_RESULT_HASH],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,  # compute_insights passes color=None
+        )
+
+        # Both games visit the resulting position: 1 win + 1 loss.
+        assert wdl == {RPWDL_RESULT_HASH: (1, 0, 1)}
+
+    @pytest.mark.asyncio
+    async def test_query_resulting_position_wdl_single_order(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Single game; pos WDL == move-played WDL."""
+        from app.repositories.openings_repository import query_resulting_position_wdl
+
+        user_id = 10
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="white",
+            positions=[
+                (3, RPWDL_ENTRY_A, "e4"),
+                (4, RPWDL_RESULT_HASH, None),
+            ],
+        )
+
+        wdl = await query_resulting_position_wdl(
+            db_session,
+            user_id=user_id,
+            hash_list=[RPWDL_RESULT_HASH],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert wdl == {RPWDL_RESULT_HASH: (1, 0, 0)}
+
+    @pytest.mark.asyncio
+    async def test_query_resulting_position_wdl_filter_parity(
+        self, db_session: AsyncSession
+    ) -> None:
+        """time_control filter drops games symmetrically across the two
+        converging paths.
+
+        apply_game_filters operates on Game.time_control_bucket (the seed
+        helper hard-codes this to "blitz"); we override the bucket on Game A
+        post-seed to create one rapid + one blitz game converging at the same
+        resulting hash.
+        """
+        from app.repositories.openings_repository import query_resulting_position_wdl
+
+        user_id = 10
+        # Game A: win, via ENTRY_A; will be patched to time_control_bucket="rapid"
+        game_a_id = await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="white",
+            positions=[
+                (3, RPWDL_ENTRY_A, "e4"),
+                (4, RPWDL_RESULT_HASH, None),
+            ],
+        )
+        # Patch Game A bucket to rapid (the seed helper hardcodes blitz).
+        await db_session.execute(
+            text(
+                "UPDATE games SET time_control_bucket = 'rapid' "
+                "WHERE id = :gid"
+            ),
+            {"gid": game_a_id},
+        )
+
+        # Game B: loss, via ENTRY_B (transposition), stays as blitz
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (3, RPWDL_ENTRY_B, "d4"),
+                (4, RPWDL_RESULT_HASH, None),
+            ],
+        )
+
+        # No filter → both games count (1 rapid win + 1 blitz loss)
+        wdl_all = await query_resulting_position_wdl(
+            db_session,
+            user_id=user_id,
+            hash_list=[RPWDL_RESULT_HASH],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+        assert wdl_all == {RPWDL_RESULT_HASH: (1, 0, 1)}
+
+        # Filter rapid → blitz loss is dropped
+        wdl_rapid = await query_resulting_position_wdl(
+            db_session,
+            user_id=user_id,
+            hash_list=[RPWDL_RESULT_HASH],
+            time_control=["rapid"],
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+        assert wdl_rapid == {RPWDL_RESULT_HASH: (1, 0, 0)}
+
+        # Filter blitz → rapid win is dropped (symmetric)
+        wdl_blitz = await query_resulting_position_wdl(
+            db_session,
+            user_id=user_id,
+            hash_list=[RPWDL_RESULT_HASH],
+            time_control=["blitz"],
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+        assert wdl_blitz == {RPWDL_RESULT_HASH: (0, 0, 1)}
+
+    @pytest.mark.asyncio
+    async def test_query_resulting_position_wdl_color_none_passes_through(
+        self, db_session: AsyncSession
+    ) -> None:
+        """compute_insights passes color=None so both white-perspective and
+        black-perspective games visiting the same resulting_full_hash are
+        aggregated. This documents the call-site contract.
+        """
+        from app.repositories.openings_repository import query_resulting_position_wdl
+
+        user_id = 10
+        # White-perspective game: win
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="white",
+            positions=[
+                (3, RPWDL_ENTRY_A, "e4"),
+                (4, RPWDL_RESULT_HASH, None),
+            ],
+        )
+        # Black-perspective game (different user_color): also visits the same
+        # resulting hash. From black's perspective a 1-0 result is a loss.
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",
+            user_color="black",
+            positions=[
+                (3, RPWDL_ENTRY_B, "d4"),
+                (4, RPWDL_RESULT_HASH, None),
+            ],
+        )
+
+        # color=None → both contribute
+        wdl_none = await query_resulting_position_wdl(
+            db_session,
+            user_id=user_id,
+            hash_list=[RPWDL_RESULT_HASH],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+        # White game: 1-0 with user_color=white → win
+        # Black game: 1-0 with user_color=black → loss
+        assert wdl_none == {RPWDL_RESULT_HASH: (1, 0, 1)}
+
+        # color="white" → only the white game contributes
+        wdl_white = await query_resulting_position_wdl(
+            db_session,
+            user_id=user_id,
+            hash_list=[RPWDL_RESULT_HASH],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color="white",
+        )
+        assert wdl_white == {RPWDL_RESULT_HASH: (1, 0, 0)}
+
+    @pytest.mark.asyncio
+    async def test_query_resulting_position_wdl_empty_list(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Empty hash_list returns {} immediately (no DB round trip)."""
+        from app.repositories.openings_repository import query_resulting_position_wdl
+
+        wdl = await query_resulting_position_wdl(
+            db_session,
+            user_id=10,
+            hash_list=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+        assert wdl == {}
