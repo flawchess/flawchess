@@ -496,26 +496,39 @@ async def compute_insights(
         # on move-played n (per D-04). The values below feed _classify_row /
         # _compute_score / compute_confidence_bucket / wilson_bounds /
         # OpeningInsightFinding via a SimpleNamespace adapter so those helpers
-        # don't change. Sequential await per CLAUDE.md AsyncSession rule.
-        all_resulting_hashes: list[int] = list(
-            {
-                int(r.resulting_full_hash)
-                for color_rows in rows_by_color.values()
-                for r in color_rows
-            }
-        )
-        pos_wdl: dict[int, tuple[int, int, int]] = {}
-        if all_resulting_hashes:
-            pos_wdl = await query_resulting_position_wdl(
+        # don't change.
+        #
+        # WR-01 fix (post code review): query per-color, scoped to that color's
+        # resulting_full_hash set, and pass color=color to query_resulting_position_wdl.
+        # query_opening_transitions IS color-filtered (explicit predicate
+        # `Game.user_color == color` at openings_repository.py:836; it only passes
+        # color=None to apply_game_filters to avoid double-filtering). Calling
+        # query_resulting_position_wdl with color=None therefore blended white-
+        # perspective and black-perspective games into one denominator, yielding
+        # different totals for the same (entry, candidate) on the white-section
+        # finding versus the click-through Move Explorer view (which IS color-
+        # filtered via openings_service.get_next_moves passing color=request.color).
+        # Sequential awaits per CLAUDE.md AsyncSession rule (no asyncio.gather).
+        pos_wdl_by_color: dict[
+            Literal["white", "black"], dict[int, tuple[int, int, int]]
+        ] = {}
+        for color in colors_to_query:
+            color_resulting_hashes: list[int] = list(
+                {int(r.resulting_full_hash) for r in rows_by_color[color]}
+            )
+            if not color_resulting_hashes:
+                pos_wdl_by_color[color] = {}
+                continue
+            pos_wdl_by_color[color] = await query_resulting_position_wdl(
                 session=session,
                 user_id=user_id,
-                hash_list=all_resulting_hashes,
+                hash_list=color_resulting_hashes,
                 time_control=request.time_control,
                 platform=request.platform,
                 rated=request.rated,
                 opponent_type=request.opponent_type,
                 recency_cutoff=cutoff,
-                color=None,  # mirror query_opening_transitions filter behavior
+                color=color,  # per-color: matches query_opening_transitions' Game.user_color filter
                 opponent_gap_min=request.opponent_gap_min,
                 opponent_gap_max=request.opponent_gap_max,
             )
@@ -542,7 +555,7 @@ async def compute_insights(
                 # the resulting-position W/D/L via a SimpleNamespace adapter so
                 # those helpers stay byte-identical. Non-WDL fields (move_san,
                 # entry_*, resulting_full_hash) continue to come from `row`.
-                pos = pos_wdl.get(int(row.resulting_full_hash))
+                pos = pos_wdl_by_color[color_literal].get(int(row.resulting_full_hash))
                 if pos is None:
                     # Filter mismatch defensive fallback (RESEARCH.md Pitfall 4).
                     # Should not fire when query_resulting_position_wdl filters
