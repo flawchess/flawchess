@@ -858,7 +858,7 @@ export function OpeningsPage() {
                 data-testid="btn-moves-to-games"
               >
                 <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">Games:</span>
+                <span>Games:</span>
                 <span className="ml-auto font-semibold tabular-nums">
                   {stats.total}
                   {isUnreliable && ' (low)'}
@@ -883,7 +883,7 @@ export function OpeningsPage() {
                 className="flex items-center gap-1 text-sm tabular-nums w-full"
                 data-testid="score-text-position"
               >
-                <span className="hidden sm:inline text-muted-foreground">Score:</span>
+                <span className="text-muted-foreground">Score:</span>
                 <span
                   className="ml-auto font-semibold"
                   style={scoreColor ? { color: scoreColor } : undefined}
@@ -923,7 +923,7 @@ export function OpeningsPage() {
                 className="flex items-center gap-1 text-sm tabular-nums w-full"
                 data-testid="eval-text-position"
               >
-                <span className="hidden sm:inline text-muted-foreground">Eval:</span>
+                <span className="text-muted-foreground">Eval:</span>
                 {hasMgEval ? (
                   <span
                     className="ml-auto font-semibold inline-flex items-center gap-0.5"
