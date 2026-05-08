@@ -75,13 +75,20 @@ gh pr checks <pr-number>        # Check PR status
 ### `bin/`
 - **`deploy.sh`** — Triggers GitHub Actions CI/deploy workflow for main and monitors progress
 - **`run_local.sh`** — Starts local dev environment with backend and frontend servers
-- **`reset_db.sh`** — Tears down and recreates the dev database from scratch, then runs migrations
+- **`reset_db.sh`** — Tears down and recreates the dev database from scratch, then runs migrations. DO NOT RUN WITHOUT EXPLICIT PERMISSION FROM THE USER.
 - **`prod_db_tunnel.sh`** — Opens/closes SSH tunnel forwarding production PostgreSQL to localhost:15432
+- **`benchmark_db.sh`** — Lifecycle for the isolated benchmark Postgres on port 5433 (`start` / `stop` / `reset`); runs Alembic migrations and re-grants read-only privileges on start
+- **`download_1password.sh`** / **`upload_1password.sh`** — Sync `.env` and `.prod.env` to/from the FlawChess 1Password vault
+- **`env_vars.sh`** — Shared variables sourced by the 1Password scripts (vault name, env file paths)
 
 ### `scripts/`
 - **`seed_openings.py`** — Populates openings table from `app/data/openings.tsv` with precomputed Zobrist hashes
 - **`reimport_games.py`** — Deletes and re-imports all games for a user or all users to backfill new data fields
 - **`reclassify_positions.py`** — Reclassifies existing game positions with updated metadata by replaying stored PGNs
+- **`select_benchmark_users.py`** — Streams a Lichess monthly PGN dump (`.pgn.zst`) and populates `benchmark_selected_users` with per-(rating bucket, TC bucket) username pools
+- **`import_benchmark_users.py`** — Orchestrates Lichess game import for the selected benchmark users, checkpointing per (user, TC) into `benchmark_ingest_checkpoints`
+- **`backfill_eval.py`** — Backfills Stockfish `eval_cp` / `eval_mate` into endgame span-entry rows; supports `--db dev|benchmark|prod` (prod requires `prod_db_tunnel.sh`)
+- **`gen_endgame_zones_ts.py`** — Regenerates `frontend/src/generated/endgameZones.ts` from `app/services/endgame_zones.py`. CI fails on drift, so re-run after editing the Python registry
 
 ## Database Access (MCP)
 
