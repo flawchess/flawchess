@@ -854,10 +854,7 @@ export function OpeningsPage() {
               >
                 <Swords className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Games:</span>
-                <span className="font-semibold tabular-nums">
-                  {stats.total}
-                  {isUnreliable && ' (low)'}
-                </span>
+                <span className="font-semibold tabular-nums">{stats.total}</span>
               </Link>
               <div className="min-w-0" data-testid="wdl-bar-position">
                 <WDLChartRow data={stats} barHeight="h-6" showSegmentCounts={false} />
@@ -906,7 +903,7 @@ export function OpeningsPage() {
                 <span className="text-muted-foreground">Eval:</span>
                 {hasMgEval ? (
                   <span
-                    className="ml-auto font-semibold inline-flex items-center gap-0.5"
+                    className="ml-auto font-semibold inline-flex items-center gap-0.3"
                     style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
                   >
                     {formatSignedEvalPawns(stats.avg_eval_pawns as number)}

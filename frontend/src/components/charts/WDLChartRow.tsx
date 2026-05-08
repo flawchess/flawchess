@@ -106,7 +106,7 @@ export function WDLChartRow({
                 aria-label={gamesLinkAriaLabel}
                 data-testid={gamesLinkTestId}
               >
-                <span>{data.total} Games{isUnreliable && ' (low)'}</span>
+                <span>{data.total} Games</span>
                 <Swords className="h-3.5 w-3.5" />
               </Link>
             </Tooltip>
@@ -118,14 +118,14 @@ export function WDLChartRow({
                 aria-label="View games for this opening"
                 data-testid={openGamesTestId}
               >
-                <span>{data.total} games{isUnreliable && ' (low)'}</span>
+                <span>{data.total} games</span>
                 <Swords className="h-3.5 w-3.5" />
               </button>
             </Tooltip>
           ) : (
             <span className="inline-flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">
-                {gameCountLabel ?? <>{data.total} games{isUnreliable && ' (low)'}</>}
+                {gameCountLabel ?? <>{data.total} games</>}
               </span>
             </span>
           )}

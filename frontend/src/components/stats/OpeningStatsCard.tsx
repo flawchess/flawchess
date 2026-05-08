@@ -111,7 +111,7 @@ export function OpeningStatsCard({
   // anchored at 0 cp. Mirrors MostPlayedOpeningsTable lines 78-87.
   const mgEvalTextContent = hasMgEval ? (
     <span
-      className="font-semibold inline-flex items-center gap-0.5"
+      className="font-semibold inline-flex items-center gap-0.3"
       style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
     >
       {formatSignedEvalPawns(opening.avg_eval_pawns as number)}

@@ -132,7 +132,7 @@ export function OpeningFindingCard({
 
   const mgEvalTextContent = hasMgEval ? (
     <span
-      className="font-semibold inline-flex items-center gap-0.5"
+      className="font-semibold inline-flex items-center gap-0.3"
       style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
     >
       {formatSignedEvalPawns(avgEvalPawns as number)}

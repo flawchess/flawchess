@@ -113,9 +113,7 @@ function EndgameCategoryRowDesktop({
             aria-label={`View ${cat.label} endgame games`}
             data-testid={`endgame-games-link-${cat.slug}`}
           >
-            <span>
-              {cat.total.toLocaleString()} Games{isUnreliable && ' (low)'}
-            </span>
+            <span>{cat.total.toLocaleString()} Games</span>
             <Swords className="h-3.5 w-3.5" />
           </Link>
         </Tooltip>
@@ -200,9 +198,7 @@ function EndgameCategoryCardMobile({
             aria-label={`View ${cat.label} endgame games`}
             data-testid={`endgame-games-link-${cat.slug}-mobile`}
           >
-            <span>
-              {cat.total.toLocaleString()} Games{isUnreliable && ' (low)'}
-            </span>
+            <span>{cat.total.toLocaleString()} Games</span>
             <Swords className="h-3.5 w-3.5" />
           </Link>
         </Tooltip>
