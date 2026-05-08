@@ -67,6 +67,18 @@ class WDLStats(BaseModel):
     p_value: float
     ci_low: float
     ci_high: float
+    # MG-entry eval fields (quick task 260508-f9o). Mirror the OpeningWDL
+    # shape from app/schemas/stats.py so the Openings → Moves "Results played
+    # as" section can render the same WDL + Score + Eval three-pillar layout
+    # used by the Stats and Insights tabs. Optional because the position +
+    # filter combo may have no MG-entry rows; the frontend renders an em-dash
+    # in that case. Defaults match the OpeningWDL "no eval data" state.
+    avg_eval_pawns: float | None = None
+    eval_ci_low_pawns: float | None = None
+    eval_ci_high_pawns: float | None = None
+    eval_n: int = 0
+    eval_p_value: float | None = None
+    eval_confidence: Literal["low", "medium", "high"] = "low"
 
 
 class GameRecord(BaseModel):
@@ -99,6 +111,11 @@ class OpeningsResponse(BaseModel):
     matched_count: int
     offset: int
     limit: int
+    # Per-color engine-asymmetry baseline (in pawns). Resolved server-side
+    # from the request's color (BLACK when color == "black", WHITE otherwise).
+    # The frontend renders this as a small reference tick on the MG-entry
+    # bullet chart, mirroring the Stats and Insights tab cards.
+    eval_baseline_pawns: float
 
 
 class TimeSeriesBookmarkParam(BaseModel):
