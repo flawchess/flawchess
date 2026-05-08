@@ -474,6 +474,7 @@ function ScoreInfo({ entry }: { entry: NextMoveEntry }) {
             score={entry.score}
             gameCount={entry.game_count}
             lastPlayedAt={entry.last_played_at}
+            showConfidenceInterval={false}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

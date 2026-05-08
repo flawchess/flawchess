@@ -64,6 +64,13 @@ interface WdlConfidenceTooltipProps {
    * Quick task 260508-r61.
    */
   lastPlayedAt?: string | null;
+  /**
+   * Whether to render the "Confidence interval: Wilson 95% (whiskers)" line.
+   * Defaults to true. Set to false in contexts that don't show a bullet chart
+   * with whiskers (e.g. the move-explorer Score column), where the line has
+   * no referent.
+   */
+  showConfidenceInterval?: boolean;
 }
 
 /**
@@ -78,6 +85,7 @@ export function WdlConfidenceTooltip({
   score,
   gameCount,
   lastPlayedAt,
+  showConfidenceInterval = true,
 }: WdlConfidenceTooltipProps): ReactNode {
   return (
     <div className="text-left space-y-1">
@@ -94,8 +102,13 @@ export function WdlConfidenceTooltip({
       )}
       <p className="opacity-70 italic">
         Score: wins + ½ draws.<br />
-        Test: two-sided Wilson score test vs 50%.<br />
-        Confidence interval: Wilson 95% (whiskers).
+        Test: two-sided Wilson score test vs 50%.
+        {showConfidenceInterval && (
+          <>
+            <br />
+            Confidence interval: Wilson 95% (whiskers).
+          </>
+        )}
       </p>
     </div>
   );
