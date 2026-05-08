@@ -22,7 +22,8 @@ import {
   clampScoreCi,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
-import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY } from '@/lib/theme';
+import { isSignificant } from '@/lib/significance';
+import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
 
 const MOBILE_BOARD_SIZE = 115;
@@ -115,10 +116,26 @@ export function OpeningFindingCard({
   const avgEvalPawns = finding.avg_eval_pawns ?? null;
   const hasMgEval = evalN > 0 && avgEvalPawns !== null && avgEvalPawns !== undefined;
 
+  // Quick task 260508-dcp: gate Score % and Eval text on (a) reliability,
+  // (b) p < 0.05, AND (c) value lands in a colored zone (red/green). The
+  // card border + on-board arrow keep their existing zone tint — only the
+  // font colors are gated here.
+  const scoreZoneHex = scoreZoneColor(finding.score);
+  const showScoreZoneFont =
+    finding.n_games >= MIN_GAMES_FOR_RELIABLE_STATS &&
+    isSignificant(finding.p_value) &&
+    scoreZoneHex !== ZONE_NEUTRAL;
+
+  const evalZoneHex = hasMgEval ? evalZoneColor(avgEvalPawns as number) : null;
+  const showEvalZoneFont =
+    hasMgEval &&
+    isSignificant(finding.eval_p_value) &&
+    evalZoneHex !== ZONE_NEUTRAL;
+
   const mgEvalTextContent = hasMgEval ? (
     <span
       className="font-semibold inline-flex items-center gap-0.5"
-      style={{ color: evalZoneColor(avgEvalPawns as number) }}
+      style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
     >
       {formatSignedEvalPawns(avgEvalPawns as number)}
       <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
@@ -170,7 +187,7 @@ export function OpeningFindingCard({
         data-testid={`${cardTestId}-score-text`}
       >
         <span className="hidden sm:inline text-muted-foreground">Score:</span>
-        <span className="ml-auto font-semibold" style={{ color: borderLeftColor }}>
+        <span className="ml-auto font-semibold" style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}>
           {Math.round(finding.score * 100)}%
         </span>
         <ScoreConfidencePopover
