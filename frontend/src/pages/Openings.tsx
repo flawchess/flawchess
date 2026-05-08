@@ -842,43 +842,28 @@ export function OpeningsPage() {
           >
             <div className="text-sm font-medium mb-2">{positionResultsLabel}</div>
 
-            {/* Three same-width chart rows (chart-left / indicator-right),
-                mirroring OpeningStatsCard.scoreEvalBlock and
-                OpeningFindingCard.scoreEvalBlock. */}
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-2 items-center">
-              {/* Row 1: WDL bar + linked games indicator. */}
-              <div className="min-w-0" data-testid="wdl-bar-position">
-                <WDLChartRow data={stats} barHeight="h-6" showSegmentCounts={false} />
-              </div>
+            {/* Three same-width chart rows (indicator-left / chart-right). */}
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+              {/* Row 1: linked games indicator + WDL bar. */}
               <Link
                 to="/openings/games"
                 onClick={() => window.scrollTo({ top: 0 })}
-                className="flex items-center gap-1 text-sm tabular-nums w-full text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+                className="flex items-center gap-1 text-sm tabular-nums text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                 aria-label="View games for this position"
                 data-testid="btn-moves-to-games"
               >
                 <Swords className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Games:</span>
-                <span className="ml-auto font-semibold tabular-nums">
+                <span className="font-semibold tabular-nums">
                   {stats.total}
                   {isUnreliable && ' (low)'}
                 </span>
               </Link>
-
-              {/* Row 2: Score bullet + Score % + popover. */}
-              <div className="min-w-0 tabular-nums" data-testid="score-bullet-position">
-                <MiniBulletChart
-                  value={stats.score}
-                  center={SCORE_BULLET_CENTER}
-                  neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-                  neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-                  domain={scoreBulletDomain()}
-                  ciLow={clampScoreCi(stats.ci_low)}
-                  ciHigh={clampScoreCi(stats.ci_high)}
-                  barColor="neutral"
-                  ariaLabel={`Score ${scorePct}% vs 50% baseline`}
-                />
+              <div className="min-w-0" data-testid="wdl-bar-position">
+                <WDLChartRow data={stats} barHeight="h-6" showSegmentCounts={false} />
               </div>
+
+              {/* Row 2: Score % + popover + Score bullet. */}
               <span
                 className="flex items-center gap-1 text-sm tabular-nums w-full"
                 data-testid="score-text-position"
@@ -899,26 +884,21 @@ export function OpeningsPage() {
                   ariaLabel="Show score confidence details"
                 />
               </span>
-
-              {/* Row 3 (NEW): Eval bullet + signed pawns + Cpu + popover.
-                  Mirrors OpeningStatsCard / OpeningFindingCard eval row. */}
-              <div className="min-w-0 tabular-nums" data-testid="eval-bullet-position">
-                {hasMgEval ? (
-                  <MiniBulletChart
-                    value={stats.avg_eval_pawns as number}
-                    ciLow={stats.eval_ci_low_pawns ?? undefined}
-                    ciHigh={stats.eval_ci_high_pawns ?? undefined}
-                    tickPawns={evalBaselinePawns}
-                    neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
-                    neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
-                    domain={EVAL_BULLET_DOMAIN_PAWNS}
-                    barColor="neutral"
-                    ariaLabel={`Avg eval at MG entry: ${(stats.avg_eval_pawns as number).toFixed(2)} pawns`}
-                  />
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
+              <div className="min-w-0 tabular-nums" data-testid="score-bullet-position">
+                <MiniBulletChart
+                  value={stats.score}
+                  center={SCORE_BULLET_CENTER}
+                  neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+                  neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+                  domain={scoreBulletDomain()}
+                  ciLow={clampScoreCi(stats.ci_low)}
+                  ciHigh={clampScoreCi(stats.ci_high)}
+                  barColor="neutral"
+                  ariaLabel={`Score ${scorePct}% vs 50% baseline`}
+                />
               </div>
+
+              {/* Row 3: Eval value + Cpu + popover + Eval bullet. */}
               <span
                 className="flex items-center gap-1 text-sm tabular-nums w-full"
                 data-testid="eval-text-position"
@@ -946,6 +926,23 @@ export function OpeningsPage() {
                   />
                 )}
               </span>
+              <div className="min-w-0 tabular-nums" data-testid="eval-bullet-position">
+                {hasMgEval ? (
+                  <MiniBulletChart
+                    value={stats.avg_eval_pawns as number}
+                    ciLow={stats.eval_ci_low_pawns ?? undefined}
+                    ciHigh={stats.eval_ci_high_pawns ?? undefined}
+                    tickPawns={evalBaselinePawns}
+                    neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
+                    neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
+                    domain={EVAL_BULLET_DOMAIN_PAWNS}
+                    barColor="neutral"
+                    ariaLabel={`Avg eval at MG entry: ${(stats.avg_eval_pawns as number).toFixed(2)} pawns`}
+                  />
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </div>
             </div>
           </div>
         );
