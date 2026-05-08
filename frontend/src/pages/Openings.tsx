@@ -840,39 +840,29 @@ export function OpeningsPage() {
             style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
             data-testid="wdl-moves-position"
           >
-            {/* Section header pulled out of the grid: label + games link.
-                Lifting the games link out lets the WDL bar use the full chart
-                column on row 1, so all three chart bars (WDL / Score / Eval)
-                share the same minmax(0,1fr) width. */}
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <div className="text-sm font-medium">{positionResultsLabel}</div>
-              <Link
-                to="/openings/games"
-                onClick={() => window.scrollTo({ top: 0 })}
-                className="inline-flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
-                aria-label="View games for this position"
-                data-testid="btn-moves-to-games"
-              >
-                <Swords className="h-3.5 w-3.5" />
-                <span className="tabular-nums">{stats.total} Games{isUnreliable && ' (low)'}</span>
-              </Link>
-            </div>
+            <div className="text-sm font-medium mb-2">{positionResultsLabel}</div>
 
             {/* Three same-width chart rows (chart-left / indicator-right),
                 mirroring OpeningStatsCard.scoreEvalBlock and
                 OpeningFindingCard.scoreEvalBlock. */}
             <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-2 items-center">
-              {/* Row 1: WDL bar + games-count indicator. */}
+              {/* Row 1: WDL bar + linked games indicator. */}
               <div className="min-w-0" data-testid="wdl-bar-position">
                 <WDLChartRow data={stats} barHeight="h-6" showSegmentCounts={false} />
               </div>
-              <span
-                className="flex items-center gap-1 text-sm tabular-nums w-full"
-                data-testid="wdl-games-indicator"
+              <Link
+                to="/openings/games"
+                onClick={() => window.scrollTo({ top: 0 })}
+                className="flex items-center gap-1 text-sm tabular-nums w-full text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+                aria-label="View games for this position"
+                data-testid="btn-moves-to-games"
               >
-                <span className="hidden sm:inline text-muted-foreground">Games:</span>
-                <span className="ml-auto font-semibold tabular-nums">{stats.total}</span>
-              </span>
+                <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="ml-auto font-semibold tabular-nums">
+                  {stats.total}
+                  {isUnreliable && ' (low)'}
+                </span>
+              </Link>
 
               {/* Row 2: Score bullet + Score % + popover. */}
               <div className="min-w-0 tabular-nums" data-testid="score-bullet-position">
