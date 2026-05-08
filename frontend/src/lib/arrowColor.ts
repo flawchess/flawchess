@@ -7,7 +7,7 @@
 //   everything else                    → DARK_BLUE
 //     ↳ "everything else" includes the in-between band (0.45..0.55) AND
 //       low-data rows (gameCount < MIN_GAMES_FOR_COLOR) AND low-confidence
-//       rows. The board renders these blue arrows at a much lower opacity
+//       rows. The board renders these grey arrows at a much lower opacity
 //       (see ARROW_LOW_EMPHASIS_OPACITY in ChessBoard.tsx) so reliable
 //       red/green moves dominate visually.
 //
@@ -15,6 +15,8 @@
 // instead. Sorting hovered arrows on top happens in ChessBoard.tsx via a
 // separate isHovered-first comparator, not via this color value.
 //
+import { ARROW_NEUTRAL } from '@/lib/theme';
+
 export const MIN_GAMES_FOR_COLOR = 10;
 
 // Score-based thresholds. MIN_GAMES_FOR_COLOR is 10 — intentionally lower
@@ -27,7 +29,9 @@ export const SCORE_BOUNDARY = 0.05;  // boundaries: >=0.55 / <=0.45
 // Categorical color constants — hex strings for direct equality checks.
 export const DARK_GREEN = '#1E6B1E';
 export const DARK_RED = '#9B1C1C';
-export const DARK_BLUE = '#1E40AF';
+// Historically blue; now grey via ARROW_NEUTRAL — categorical equality preserved.
+// (Renaming would touch every `=== DARK_BLUE` call site; out of scope for now.)
+export const DARK_BLUE = ARROW_NEUTRAL;
 
 /**
  * Returns a categorical hex color string for a board arrow / row tint based on

@@ -134,6 +134,18 @@ export const INSIGHT_GOLD = 'oklch(0.82 0.17 85)';
 // Endgame consumers keep the zone-colored bar via the `barColor` prop default.
 export const BULLET_BAR_NEUTRAL = 'oklch(0.85 0 0)';
 
+// Categorical "neutral" board arrow color (Move Explorer). Used for arrows
+// whose move falls in the in-between score band, has too few games, or has
+// low statistical confidence. Rendered at ARROW_LOW_EMPHASIS_OPACITY (0.30)
+// in ChessBoard.tsx so it visually reads as a transparent grey on both the
+// warm-wood light squares and the darker square — high contrast against
+// DARK_GREEN/DARK_RED in the same overlay.
+//
+// Hex (not oklch) because the Move Explorer + ChessBoard rely on string
+// equality `arrow.color === DARK_BLUE` to choose the low-emphasis opacity
+// branch, so DARK_BLUE in arrowColor.ts re-exports this exact string.
+export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORDER_DRAW
+
 // Endgame ELO Timeline volume bars (Phase 57.1). Muted gray with alpha so the
 // bars read as "context, not data" on the charcoal-texture card surface.
 // L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
