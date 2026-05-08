@@ -90,6 +90,11 @@ export interface WDLStats {
   eval_n: number;
   eval_p_value?: number | null;
   eval_confidence: 'low' | 'medium' | 'high';
+  // MAX(games.played_at) across the games contributing to these stats. ISO
+  // 8601 string from FastAPI; null when no contributing game has a populated
+  // played_at. Drives the "Last played: <relative>" line in the WDL
+  // confidence tooltip (quick task 260508-r61).
+  last_played_at?: string | null;
 }
 
 export interface GameRecord {
@@ -142,6 +147,11 @@ export interface NextMoveEntry {
   score: number;
   confidence: 'low' | 'medium' | 'high';
   p_value: number;
+  // MAX(games.played_at) across all games where the user played this candidate
+  // move from the queried position. Drives the "Last played: <relative>" line
+  // in the move-explorer Score popover (quick task 260508-r61). ISO 8601
+  // string; null when contributing games all have NULL played_at.
+  last_played_at?: string | null;
 }
 
 export interface NextMovesResponse {

@@ -51,6 +51,11 @@ export interface OpeningWDL {
   eval_n: number;
   eval_p_value?: number | null;
   eval_confidence: 'low' | 'medium' | 'high';
+  // MAX(games.played_at) across the games visiting this opening's full_hash.
+  // ISO 8601 string; null when contributing games all have NULL played_at.
+  // Drives the OpeningStatsCard score-confidence popover's "Last played:
+  // <relative>" line (quick task 260508-r61).
+  last_played_at?: string | null;
 }
 
 export interface MostPlayedOpeningsResponse {

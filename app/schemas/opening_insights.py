@@ -1,5 +1,6 @@
 """Pydantic v2 schemas for Phase 70 opening insights backend (D-26)."""
 
+import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -94,6 +95,11 @@ class OpeningInsightFinding(BaseModel):
     eval_n: int = 0
     eval_p_value: float | None = None
     eval_confidence: Literal["low", "medium", "high"] = "low"
+    # MAX(games.played_at) across all games where the user reached this
+    # (entry, candidate) transition. Drives the "Last played: <relative>" line
+    # in the OpeningFindingCard score-confidence popover (quick task
+    # 260508-r61). None when every contributing game has a NULL played_at.
+    last_played_at: datetime.datetime | None = None
 
 
 class OpeningInsightsResponse(BaseModel):

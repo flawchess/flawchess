@@ -67,6 +67,11 @@ class WDLStats(BaseModel):
     p_value: float
     ci_low: float
     ci_high: float
+    # MAX(games.played_at) across the games contributing to these stats. Drives
+    # the "Last played: <relative>" line in the WDL confidence tooltip (quick
+    # task 260508-r61). None when no contributing game has a populated
+    # played_at — the FE omits the line entirely in that case.
+    last_played_at: datetime.datetime | None = None
     # MG-entry eval fields (quick task 260508-f9o). Mirror the OpeningWDL
     # shape from app/schemas/stats.py so the Openings → Moves "Results played
     # as" section can render the same WDL + Score + Eval three-pillar layout
@@ -235,6 +240,11 @@ class NextMoveEntry(BaseModel):
     p_value: float = Field(
         ge=0.0, le=1.0
     )  # Two-sided Wilson score-test p-value on H0: score = 0.50 (null SE = 0.5/sqrt(n))
+    # MAX(games.played_at) across all games where the user played this candidate
+    # move from the queried position. Surfaces the "Last played: <relative>"
+    # line in the move-explorer Score popover (quick task 260508-r61). None
+    # when every contributing game has a NULL played_at (rare).
+    last_played_at: datetime.datetime | None = None
 
 
 class NextMovesResponse(BaseModel):

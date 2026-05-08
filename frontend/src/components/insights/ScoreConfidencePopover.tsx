@@ -15,6 +15,12 @@ interface ScoreConfidencePopoverProps {
   ariaLabel?: string;
   /** Extra classes for the trigger span (e.g. positioning). */
   triggerClassName?: string;
+  /**
+   * MAX(games.played_at) (ISO 8601). When present, the inner tooltip renders
+   * a "Last played: <relative>" paragraph; null/undefined omits the line.
+   * Quick task 260508-r61.
+   */
+  lastPlayedAt?: string | null;
 }
 
 // Hover- and tap-activated popover for the current-position score-vs-50%
@@ -29,6 +35,7 @@ export function ScoreConfidencePopover({
   testId,
   ariaLabel = 'Show score confidence details',
   triggerClassName,
+  lastPlayedAt,
 }: ScoreConfidencePopoverProps) {
   const [open, setOpen] = React.useState(false);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,6 +88,7 @@ export function ScoreConfidencePopover({
             pValue={pValue}
             score={score}
             gameCount={gameCount}
+            lastPlayedAt={lastPlayedAt}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

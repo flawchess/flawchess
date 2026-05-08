@@ -1,5 +1,6 @@
 """Pydantic v2 schemas for stats endpoints."""
 
+import datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -67,6 +68,11 @@ class OpeningWDL(BaseModel):
     eval_n: int = 0  # games used in the mean (mate-excluded, NULL-excluded, outlier-trimmed)
     eval_p_value: float | None = None  # two-sided p-value vs zero
     eval_confidence: Literal["low", "medium", "high"] = "low"
+    # Quick task 260508-r61: MAX(games.played_at) across the games visiting
+    # this opening's full_hash. Drives the "Last played: <relative>" line in
+    # the OpeningStatsCard score-confidence popover. None when every
+    # contributing game has a NULL played_at (rare).
+    last_played_at: datetime.datetime | None = None
 
 
 class MostPlayedOpeningsResponse(BaseModel):

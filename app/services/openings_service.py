@@ -65,7 +65,13 @@ RECENCY_DELTAS: dict[str, datetime.timedelta] = {
 }
 
 
-def _build_wdl_stats(wins: int, draws: int, losses: int, total: int) -> WDLStats:
+def _build_wdl_stats(
+    wins: int,
+    draws: int,
+    losses: int,
+    total: int,
+    last_played_at: datetime.datetime | None = None,
+) -> WDLStats:
     """Construct WDLStats with score, confidence, p_value, and Wilson 95% CI.
 
     Computes score = (W + 0.5·D) / total via compute_confidence_bucket. The CI
@@ -73,6 +79,10 @@ def _build_wdl_stats(wins: int, draws: int, losses: int, total: int) -> WDLStats
     the boundaries and degenerated to width 0 at p=0/1, so it was replaced with
     Wilson which is well-defined at the boundaries and always contains p.
     When total == 0, all stats are neutral defaults (score=0.5, CI=[0.5, 0.5]).
+
+    `last_played_at` is the MAX(games.played_at) across the contributing games
+    (quick task 260508-r61); the FE renders a "Last played: <relative>" line
+    in the WDL confidence tooltip when it is non-None.
     """
     if total > 0:
         win_pct = round(wins / total * 100, 1)
@@ -104,6 +114,7 @@ def _build_wdl_stats(wins: int, draws: int, losses: int, total: int) -> WDLStats
         p_value=p_value,
         ci_low=ci_low,
         ci_high=ci_high,
+        last_played_at=last_played_at,
     )
 
 
@@ -171,7 +182,7 @@ async def analyze(
     )
     wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
 
-    stats = _build_wdl_stats(wins, draws, losses, total)
+    stats = _build_wdl_stats(wins, draws, losses, total, last_played_at=wdl_row.last_played_at)
 
     # --- MG-entry eval pillar (quick task 260508-f9o) ---
     # Reuse the same helper + finalizer used by stats_service.get_most_played_openings
@@ -467,7 +478,9 @@ async def get_next_moves(
         opponent_gap_max=request.opponent_gap_max,
     )
     wins, draws, losses, total = wdl_row.wins, wdl_row.draws, wdl_row.losses, wdl_row.total
-    position_stats = _build_wdl_stats(wins, draws, losses, total)
+    position_stats = _build_wdl_stats(
+        wins, draws, losses, total, last_played_at=wdl_row.last_played_at
+    )
 
     # --- Next moves aggregation ---
     move_rows = await query_next_moves(
@@ -571,6 +584,11 @@ async def get_next_moves(
                 score=score,
                 confidence=confidence,
                 p_value=p_value,
+                # MAX(played_at) across all games where the user played this
+                # candidate move from the queried position (move-played
+                # semantics). Drives the move-explorer Score popover's
+                # "Last played: <relative>" line (quick task 260508-r61).
+                last_played_at=row.last_played_at,
             )
         )
 

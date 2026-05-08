@@ -1251,7 +1251,11 @@ class TestQueryResultingPositionWdl:
         )
 
         # Both games visit the resulting position: 1 win + 1 loss.
-        assert wdl == {RPWDL_RESULT_HASH: (1, 0, 1)}
+        # last_played_at (4th element, quick task 260508-r61) is the MAX of the
+        # two seeded games' played_at; we don't pin a specific value here, just
+        # assert it's populated (the seed helper always sets played_at).
+        assert wdl[RPWDL_RESULT_HASH][:3] == (1, 0, 1)
+        assert wdl[RPWDL_RESULT_HASH][3] is not None
 
     @pytest.mark.asyncio
     async def test_query_resulting_position_wdl_single_order(
@@ -1284,7 +1288,8 @@ class TestQueryResultingPositionWdl:
             color=None,
         )
 
-        assert wdl == {RPWDL_RESULT_HASH: (1, 0, 0)}
+        assert wdl[RPWDL_RESULT_HASH][:3] == (1, 0, 0)
+        assert wdl[RPWDL_RESULT_HASH][3] is not None
 
     @pytest.mark.asyncio
     async def test_query_resulting_position_wdl_filter_parity(
@@ -1342,7 +1347,8 @@ class TestQueryResultingPositionWdl:
             recency_cutoff=None,
             color=None,
         )
-        assert wdl_all == {RPWDL_RESULT_HASH: (1, 0, 1)}
+        assert wdl_all[RPWDL_RESULT_HASH][:3] == (1, 0, 1)
+        assert wdl_all[RPWDL_RESULT_HASH][3] is not None
 
         # Filter rapid → blitz loss is dropped
         wdl_rapid = await query_resulting_position_wdl(
@@ -1356,7 +1362,8 @@ class TestQueryResultingPositionWdl:
             recency_cutoff=None,
             color=None,
         )
-        assert wdl_rapid == {RPWDL_RESULT_HASH: (1, 0, 0)}
+        assert wdl_rapid[RPWDL_RESULT_HASH][:3] == (1, 0, 0)
+        assert wdl_rapid[RPWDL_RESULT_HASH][3] is not None
 
         # Filter blitz → rapid win is dropped (symmetric)
         wdl_blitz = await query_resulting_position_wdl(
@@ -1370,7 +1377,8 @@ class TestQueryResultingPositionWdl:
             recency_cutoff=None,
             color=None,
         )
-        assert wdl_blitz == {RPWDL_RESULT_HASH: (0, 0, 1)}
+        assert wdl_blitz[RPWDL_RESULT_HASH][:3] == (0, 0, 1)
+        assert wdl_blitz[RPWDL_RESULT_HASH][3] is not None
 
     @pytest.mark.asyncio
     async def test_query_resulting_position_wdl_color_none_passes_through(
@@ -1421,7 +1429,8 @@ class TestQueryResultingPositionWdl:
         )
         # White game: 1-0 with user_color=white → win
         # Black game: 1-0 with user_color=black → loss
-        assert wdl_none == {RPWDL_RESULT_HASH: (1, 0, 1)}
+        assert wdl_none[RPWDL_RESULT_HASH][:3] == (1, 0, 1)
+        assert wdl_none[RPWDL_RESULT_HASH][3] is not None
 
         # color="white" → only the white game contributes
         wdl_white = await query_resulting_position_wdl(
@@ -1435,7 +1444,8 @@ class TestQueryResultingPositionWdl:
             recency_cutoff=None,
             color="white",
         )
-        assert wdl_white == {RPWDL_RESULT_HASH: (1, 0, 0)}
+        assert wdl_white[RPWDL_RESULT_HASH][:3] == (1, 0, 0)
+        assert wdl_white[RPWDL_RESULT_HASH][3] is not None
 
     @pytest.mark.asyncio
     async def test_query_resulting_position_wdl_empty_list(self, db_session: AsyncSession) -> None:

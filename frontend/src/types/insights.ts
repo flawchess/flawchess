@@ -94,6 +94,11 @@ export interface OpeningInsightFinding {
   eval_n?: number;
   eval_p_value?: number | null;
   eval_confidence?: 'low' | 'medium' | 'high';
+  // MAX(games.played_at) across all games visiting this (entry, candidate)
+  // transition. ISO 8601 string; null when contributing games all have NULL
+  // played_at. Drives the OpeningFindingCard score-confidence popover's
+  // "Last played: <relative>" line (quick task 260508-r61).
+  last_played_at?: string | null;
 }
 
 export interface OpeningInsightsResponse {

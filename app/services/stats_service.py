@@ -382,6 +382,11 @@ async def get_most_played_openings(
             # Use position-based WDL if available, falling back to
             # opening-name WDL for openings without a hash
             pos = position_wdl.get(full_hash) if full_hash else None
+            # Quick task 260508-r61: surface MAX(played_at) on each card so the
+            # score-confidence popover can render "Last played: <relative>".
+            # Only the position-based path carries played_at — name-only fallback
+            # rows leave this as None (no associated full_hash bucket to query).
+            last_played_at = pos.last_played_at if pos else None
             if pos:
                 total, wins, draws, losses = pos.total, pos.wins, pos.draws, pos.losses
             if total > 0:
@@ -442,6 +447,7 @@ async def get_most_played_openings(
                     eval_n=eval_n,
                     eval_p_value=eval_p_value,
                     eval_confidence=eval_confidence,
+                    last_played_at=last_played_at,
                 )
             )
         # Sort by position-based game count descending (may differ from

@@ -245,19 +245,24 @@ async def query_wdl_counts(
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> Row[Any]:
-    """Return a single row (total, wins, draws, losses) via SQL aggregation.
+    """Return a single row (total, wins, draws, losses, last_played_at) via SQL aggregation.
 
     Wraps _build_base_query() as a subquery to get deduplicated (result,
-    user_color) pairs, then applies func.count().filter() on the subquery
-    columns to compute W/D/L counts in a single SQL round-trip.
+    user_color, played_at) tuples, then applies func.count().filter() on the
+    subquery columns to compute W/D/L counts and func.max() to capture the
+    most recent played_at across the surviving games — all in a single SQL
+    round-trip.
 
-    Always returns exactly one row even when no games match (all counts = 0).
+    Always returns exactly one row even when no games match (counts = 0,
+    last_played_at IS NULL).
     Uses the same win/draw/loss conditions as stats_repository.py to ensure
     consistent counting across all W/D/L aggregations in the codebase.
     """
-    # Deduplicated (result, user_color) pairs — one row per game (DISTINCT by game_id)
+    # Deduplicated (result, user_color, played_at) tuples — one row per game
+    # (DISTINCT by game_id). played_at is carried so the outer query can
+    # compute MAX(played_at) for the "Last played: <relative>" tooltip line.
     dedup = _build_base_query(
-        select_entity=[Game.result, Game.user_color],
+        select_entity=[Game.result, Game.user_color, Game.played_at],
         user_id=user_id,
         hash_column=hash_column,
         target_hash=target_hash,
@@ -287,6 +292,7 @@ async def query_wdl_counts(
         func.count().filter(win_cond).label("wins"),
         func.count().filter(draw_cond).label("draws"),
         func.count().filter(loss_cond).label("losses"),
+        func.max(dedup.c.played_at).label("last_played_at"),
     ).select_from(dedup)
 
     result = await session.execute(stmt)
@@ -427,6 +433,9 @@ async def query_next_moves(
             func.count(win_case.distinct()).label("wins"),
             func.count(draw_case.distinct()).label("draws"),
             func.count(loss_case.distinct()).label("losses"),
+            # Latest played_at across all games contributing to this (move, result_hash)
+            # bucket; surfaces "Last played: <relative>" in the score-confidence tooltip.
+            func.max(Game.played_at).label("last_played_at"),
         )
         .join(Game, Game.id == gp1.game_id)
         .join(gp2, (gp2.game_id == gp1.game_id) & (gp2.ply == gp1.ply + 1))
@@ -595,7 +604,7 @@ async def query_resulting_position_wdl(
     color: str | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
-) -> dict[int, tuple[int, int, int]]:
+) -> dict[int, tuple[int, int, int, datetime.datetime | None]]:
     """Return {resulting_full_hash: (wins, draws, losses)} for Opening Insights.
 
     Phase 80.1 D-06: Opening Insights findings show resulting-position WDL.
@@ -612,6 +621,11 @@ async def query_resulting_position_wdl(
     Kept as a separate function (not a default-named alias) so call sites in
     openings_service vs opening_insights_service stay visually distinct, and so
     future filter divergence between the two surfaces lands cleanly.
+
+    Returns ``{full_hash: (wins, draws, losses, last_played_at)}``. The
+    last_played_at element is ``MAX(games.played_at)`` across the games that
+    contributed to the WDL counts; it is ``None`` when every contributing game
+    has a NULL played_at (rare; the column is nullable on Game).
 
     Missing hashes (no games match under filters) are omitted from the dict.
     """
@@ -642,6 +656,8 @@ async def query_resulting_position_wdl(
             func.count(win_case.distinct()).label("wins"),
             func.count(draw_case.distinct()).label("draws"),
             func.count(loss_case.distinct()).label("losses"),
+            # MAX(played_at) for the "Last played: <relative>" tooltip line.
+            func.max(Game.played_at).label("last_played_at"),
         )
         .join(Game, Game.id == GamePosition.game_id)
         .where(
@@ -664,7 +680,7 @@ async def query_resulting_position_wdl(
     )
 
     rows = await session.execute(stmt)
-    return {row.result_hash: (row.wins, row.draws, row.losses) for row in rows}
+    return {row.result_hash: (row.wins, row.draws, row.losses, row.last_played_at) for row in rows}
 
 
 async def query_opening_transitions(
@@ -828,6 +844,10 @@ async def query_opening_transitions(
             wins.label("w"),
             draws.label("d"),
             losses.label("l"),
+            # MAX(played_at) across all games visiting this (entry_hash, move_san)
+            # surfaces the "Last played: <relative>" line in the score-confidence
+            # tooltip on Opening Insights cards.
+            func.max(Game.played_at).label("last_played_at"),
         )
         .select_from(transitions_cte)
         .join(Game, Game.id == transitions_cte.c.game_id)

@@ -445,7 +445,9 @@ describe('Phase 77 — Troll-opening inline icon', () => {
 
   it('icon renders on mobile and desktop with muted-foreground tint', () => {
     // D-07 reversed (post-77 polish): the smiley now shows on mobile too,
-    // tinted to text-muted-foreground to match the confidence column.
+    // tinted to text-muted-foreground to match the confidence column. After
+    // quick task 260508-r61 the SVG lives inside a <button> wrapper that
+    // carries the muted-foreground class (the SVG inherits via currentColor).
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
@@ -460,7 +462,10 @@ describe('Phase 77 — Troll-opening inline icon', () => {
     const classes = icon.getAttribute('class') ?? '';
     expect(classes).toContain('inline-block');
     expect(classes).not.toContain('hidden');
-    expect(classes).toContain('text-muted-foreground');
+    // The muted-foreground class moved to the button wrapper after quick task
+    // 260508-r61; assert it on the button instead of the SVG.
+    const button = screen.getByTestId('move-explorer-troll-e4');
+    expect(button.getAttribute('class') ?? '').toContain('text-muted-foreground');
   });
 
   it('throws when position is a board-only FEN with no side-to-move token (Pitfall 7)', () => {
@@ -481,8 +486,10 @@ describe('Phase 77 — Troll-opening inline icon', () => {
   });
 
   it('icon is exposed to assistive tech with role and label', () => {
-    // Tooltip is visual-only, so the SVG itself carries role="img" + aria-label
-    // for screen readers (commit d2983dc).
+    // Quick task 260508-r61 swapped the wrapper from a hover-only Tooltip to a
+    // tap-friendly Radix popover. The button now owns the aria-label (the SVG
+    // is purely decorative inside the button) so screen readers announce a
+    // single labeled control rather than nested labels.
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
@@ -494,6 +501,111 @@ describe('Phase 77 — Troll-opening inline icon', () => {
     );
     const icon = screen.getByTestId('move-list-row-e4-troll-icon');
     expect(icon.getAttribute('role')).toBe('img');
-    expect(icon.getAttribute('aria-label')).toBe('Considered a troll opening');
+    const button = screen.getByTestId('move-explorer-troll-e4');
+    expect(button.getAttribute('aria-label')).toBe('Considered a troll opening');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Quick task 260508-r61 — Score info popover, troll-icon popover, selected-row !
+// ---------------------------------------------------------------------------
+
+describe('260508-r61 — Score cell info-icon popover', () => {
+  it('renders the HelpCircle button with the expected testid for every move row', () => {
+    render(
+      <MoveExplorer
+        moves={makeMoves()}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('move-explorer-score-info-e4')).not.toBeNull();
+    expect(screen.getByTestId('move-explorer-score-info-d4')).not.toBeNull();
+    expect(screen.getByTestId('move-explorer-score-info-Nf3')).not.toBeNull();
+  });
+
+  it('clicking the score info button does NOT trigger the row onMoveClick', () => {
+    const onMoveClick = vi.fn();
+    render(
+      <MoveExplorer
+        moves={makeMoves()}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={onMoveClick}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('move-explorer-score-info-e4'));
+    expect(onMoveClick).not.toHaveBeenCalled();
+  });
+
+  it('exposes the move-specific aria-label for assistive tech', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4' })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const btn = screen.getByTestId('move-explorer-score-info-e4');
+    expect(btn.getAttribute('aria-label')).toBe('Score confidence details for e4');
+  });
+});
+
+describe('260508-r61 — Troll icon popover', () => {
+  it('renders a button with the kebab-case testid for the troll trigger', () => {
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={() => {}}
+      />,
+    );
+    const button = screen.getByTestId('move-explorer-troll-e4');
+    expect(button.tagName.toLowerCase()).toBe('button');
+  });
+
+  it('clicking the troll icon does NOT trigger the row onMoveClick', () => {
+    const onMoveClick = vi.fn();
+    render(
+      <MoveExplorer
+        moves={[makeEntry({ move_san: 'e4', result_fen: RESULT_FEN_AFTER_E5 })]}
+        isLoading={false}
+        isError={false}
+        position={START_FEN}
+        onMoveClick={onMoveClick}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('move-explorer-troll-e4'));
+    expect(onMoveClick).not.toHaveBeenCalled();
+  });
+});
+
+describe('260508-r61 — Selected-row important suffix on tinted backgrounds', () => {
+  // The MoveRow `cn()` chain adds `bg-foreground/10!` (Tailwind v4 important
+  // suffix) for both the hover and the selectedMove paths so the static class
+  // wins over the inline `style.backgroundColor` set for score-zone tinted
+  // rows. Before quick task 260508-r61 the selected branch was missing the `!`
+  // and the selection was invisible on green/red zones. This regression guard
+  // reads the source file directly so it survives bundler transformations
+  // that would otherwise strip the literal from MoveExplorer.toString().
+  it('source file contains bg-foreground/10! for both hover and selected paths', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '..', 'MoveExplorer.tsx'),
+      'utf-8',
+    );
+    const matches = source.match(/bg-foreground\/10!/g) ?? [];
+    // Two occurrences expected: one for the !IS_TOUCH hover branch, one for
+    // the selectedMove branch. Both must carry the important suffix to beat
+    // the inline tint (rowStyle.backgroundColor).
+    expect(matches.length).toBeGreaterThanOrEqual(2);
   });
 });

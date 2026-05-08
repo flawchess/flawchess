@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
-import { ArrowLeftRight } from 'lucide-react';
+import { ArrowLeftRight, HelpCircle } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import { scoreZoneColor } from '@/lib/scoreBulletConfig';
@@ -15,7 +15,6 @@ import {
 } from '@/lib/highlightPulse';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { Tooltip } from '@/components/ui/tooltip';
 import { WdlConfidenceTooltip } from '@/components/insights/WdlConfidenceTooltip';
 import { cn } from '@/lib/utils';
 import { isTrollPosition } from '@/lib/trollOpenings';
@@ -201,7 +200,7 @@ export function MoveExplorer({
               </th>
               <th className="w-[5.5rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
               <th
-                className="w-[3rem] text-right text-xs text-muted-foreground font-normal pb-1"
+                className="w-[4.5rem] text-right text-xs text-muted-foreground font-normal pb-1"
                 data-testid="move-explorer-th-score"
               >
                 Score
@@ -314,11 +313,14 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
       data-testid={`move-explorer-row-${entry.move_san}`}
       className={cn(
         'cursor-pointer min-h-[44px]',
-        // `!` (Tailwind v4 important suffix) is needed so the hover background
-        // beats the inline severity tint set via `style.backgroundColor`.
+        // `!` (Tailwind v4 important suffix) is needed so the hover and
+        // selected backgrounds beat the inline score-zone tint set via
+        // `style.backgroundColor` (`rowStyle`). Without `!` on `bg-foreground/10`,
+        // the inline tint wins and the selected row looks identical to its
+        // unselected siblings on green/red zones (quick task 260508-r61).
         // hover:bg-foreground/10 sticks on mobile after tap, causing two highlighted rows
         !IS_TOUCH && 'hover:bg-foreground/10!',
-        selectedMove === entry.move_san && 'bg-foreground/10',
+        selectedMove === entry.move_san && 'bg-foreground/10!',
         highlightPulse && 'animate-row-highlight-pulse',
       )}
       style={Object.keys(rowStyle).length > 0 ? rowStyle : undefined}
@@ -332,30 +334,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
       <td className="py-1 text-sm text-foreground font-normal whitespace-nowrap">
         <span className="inline-flex items-center gap-1">
           <span>{entry.move_san}</span>
-          {showTroll && (
-            <Tooltip content="Considered a troll opening">
-            <span className="inline-flex">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 64 64"
-              aria-label="Considered a troll opening"
-              role="img"
-              data-testid={`move-list-row-${entry.move_san}-troll-icon`}
-              className="inline-block h-4 w-4 text-muted-foreground"
-            >
-              <g fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="32" cy="32" r="27" />
-                <path d="M22 43.5c2.9 3 6.3 4.5 10 4.5s7.1-1.5 10-4.5" />
-              </g>
-              <g fill="currentColor">
-                <path d="M11.5 24.5c.5-2.3 2.4-3.5 5.1-3.5h10.1c2.4 0 3.9 1.4 3.5 3.7l-.9 5.8c-.5 3.4-2.7 5.5-6.1 5.5H19c-2.8 0-4.6-1.4-5.4-4.2l-2.1-7.3z" />
-                <path d="M52.5 24.5c-.5-2.3-2.4-3.5-5.1-3.5H37.3c-2.4 0-3.9 1.4-3.5 3.7l.9 5.8c.5 3.4 2.7 5.5 6.1 5.5H45c2.8 0 4.6-1.4 5.4-4.2l2.1-7.3z" />
-                <path d="M29.3 24h5.4v4h-5.4z" />
-              </g>
-            </svg>
-            </span>
-            </Tooltip>
-          )}
+          {showTroll && <TrollIcon moveSan={entry.move_san} />}
         </span>
       </td>
       <td className="py-1 text-right tabular-nums">
@@ -371,20 +350,12 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
         </span>
       </td>
       <td className="py-1 text-right tabular-nums">
-        <Tooltip
-          content={
-            <WdlConfidenceTooltip
-              level={entry.confidence}
-              pValue={entry.p_value}
-              score={entry.score}
-              gameCount={entry.game_count}
-            />
-          }
-        >
+        <span className="inline-flex items-center justify-end gap-1">
+          <ScoreInfo entry={entry} />
           <span className="font-semibold" style={scoreColor ? { color: scoreColor } : undefined}>
             {Math.round(entry.score * 100)}%
           </span>
-        </Tooltip>
+        </span>
       </td>
       <td className="py-1 pl-2">
         {!hasWdl ? (
@@ -443,6 +414,146 @@ function TranspositionInfo({ moveSan, transpositionCount, gameCount }: {
           )}
         >
           Position reached in {transpositionCount} total games ({transpositionCount - gameCount} via other move orders)
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
+  );
+}
+
+/**
+ * Tap/hover-friendly score-confidence info icon for the Score cell. Replaces
+ * the prior hover-only Tooltip wrapper around the `%` text so the popover is
+ * usable on touch devices (Radix popover handles tap natively; the 100ms
+ * hover delay is the desktop accelerator). Quick task 260508-r61.
+ */
+function ScoreInfo({ entry }: { entry: NextMoveEntry }) {
+  const [open, setOpen] = useState(false);
+  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger asChild>
+        <button
+          type="button"
+          data-testid={`move-explorer-score-info-${entry.move_san}`}
+          aria-label={`Score confidence details for ${entry.move_san}`}
+          className="text-muted-foreground hover:text-foreground focus:outline-none"
+          onClick={(e) => e.stopPropagation()}
+          onMouseEnter={() => {
+            hoverTimeout.current = setTimeout(() => setOpen(true), 100);
+          }}
+          onMouseLeave={() => {
+            if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+            setOpen(false);
+          }}
+        >
+          <HelpCircle className="inline h-4 w-4" />
+        </button>
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          side="top"
+          sideOffset={4}
+          onMouseEnter={() => {
+            if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+          }}
+          onMouseLeave={() => {
+            if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+            setOpen(false);
+          }}
+          className={cn(
+            'z-50 max-w-xs rounded-md border-0 outline-none bg-foreground px-3 py-1.5 text-xs text-background',
+            'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+            'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+            'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
+          )}
+        >
+          <WdlConfidenceTooltip
+            level={entry.confidence}
+            pValue={entry.p_value}
+            score={entry.score}
+            gameCount={entry.game_count}
+            lastPlayedAt={entry.last_played_at}
+          />
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
+  );
+}
+
+/**
+ * Tap/hover-friendly troll-opening info icon. Was a hover-only Tooltip; on
+ * mobile that broke the troll-icon UX entirely (no hover, and the Tooltip
+ * passed taps straight through to the row click that plays the move). Same
+ * Radix popover pattern as TranspositionInfo and ScoreInfo. Quick task
+ * 260508-r61.
+ */
+function TrollIcon({ moveSan }: { moveSan: string }) {
+  const [open, setOpen] = useState(false);
+  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger asChild>
+        <button
+          type="button"
+          data-testid={`move-explorer-troll-${moveSan}`}
+          aria-label="Considered a troll opening"
+          className="inline-flex text-muted-foreground hover:text-foreground focus:outline-none"
+          onClick={(e) => e.stopPropagation()}
+          onMouseEnter={() => {
+            hoverTimeout.current = setTimeout(() => setOpen(true), 100);
+          }}
+          onMouseLeave={() => {
+            if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+            setOpen(false);
+          }}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 64 64"
+            role="img"
+            data-testid={`move-list-row-${moveSan}-troll-icon`}
+            className="inline-block h-4 w-4"
+            aria-hidden="true"
+          >
+            <g
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="32" cy="32" r="27" />
+              <path d="M22 43.5c2.9 3 6.3 4.5 10 4.5s7.1-1.5 10-4.5" />
+            </g>
+            <g fill="currentColor">
+              <path d="M11.5 24.5c.5-2.3 2.4-3.5 5.1-3.5h10.1c2.4 0 3.9 1.4 3.5 3.7l-.9 5.8c-.5 3.4-2.7 5.5-6.1 5.5H19c-2.8 0-4.6-1.4-5.4-4.2l-2.1-7.3z" />
+              <path d="M52.5 24.5c-.5-2.3-2.4-3.5-5.1-3.5H37.3c-2.4 0-3.9 1.4-3.5 3.7l.9 5.8c.5 3.4 2.7 5.5 6.1 5.5H45c2.8 0 4.6-1.4 5.4-4.2l2.1-7.3z" />
+              <path d="M29.3 24h5.4v4h-5.4z" />
+            </g>
+          </svg>
+        </button>
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          side="top"
+          sideOffset={4}
+          onMouseEnter={() => {
+            if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+          }}
+          onMouseLeave={() => {
+            if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+            setOpen(false);
+          }}
+          className={cn(
+            'z-50 max-w-xs rounded-md border-0 outline-none bg-foreground px-3 py-1.5 text-xs text-background',
+            'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+            'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+            'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2',
+          )}
+        >
+          Considered a troll opening
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
