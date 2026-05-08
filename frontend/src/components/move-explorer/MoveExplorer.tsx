@@ -200,7 +200,7 @@ export function MoveExplorer({
               </th>
               <th className="w-[5.5rem] text-right text-xs text-muted-foreground font-normal pb-1">Games</th>
               <th
-                className="w-[4.5rem] text-right text-xs text-muted-foreground font-normal pb-1"
+                className="w-[4.5rem] text-center text-xs text-muted-foreground font-normal pb-1"
                 data-testid="move-explorer-th-score"
               >
                 Score
