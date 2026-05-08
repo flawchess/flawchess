@@ -29,7 +29,7 @@ files_modified:
 
 ## One-liner
 
-Gate Score % and Stockfish eval font colors on every Openings subtab to require statistical significance (p < 0.05) AND colored zone, neutralize all Openings + Endgames Stats MiniBulletChart bars, and recolor the categorical "neutral" board arrow from blue to transparent grey.
+Gate Score % and Stockfish eval font colors on every Openings subtab to require a confident bucket (`'medium'` or `'high'`, not `'low'`) AND colored zone, neutralize all Openings + Endgames Stats MiniBulletChart bars, and recolor the categorical "neutral" board arrow from blue to transparent grey.
 
 ## What changed
 
@@ -38,17 +38,20 @@ Gate Score % and Stockfish eval font colors on every Openings subtab to require 
 The Score % and Stockfish eval text on every Openings subtab now render in zone color (red or green) only when:
 
 - the value lands in the red or green zone (not the in-between band), AND
-- the result is statistically significant at p < 0.05.
+- the result is statistically confident — bucket is `'medium'` or `'high'`, not `'low'`.
 
 Otherwise the text reads in the default foreground color.
 
-For the score domain, `confidence !== 'low'` is equivalent to `p_value < 0.05` because `computeScoreConfidence` buckets exactly at `CONFIDENCE_MEDIUM_MAX_P = 0.05` (see `scoreConfidence.ts`). The new helper accepts a `p_value` directly so call sites can use whichever they have on hand:
+The gate is keyed on the categorical confidence bucket rather than a hard-coded p-value, so the underlying bucket thresholds in `scoreConfidence.ts` (`CONFIDENCE_MEDIUM_MAX_P = 0.05`, `CONFIDENCE_HIGH_MAX_P = 0.01`) can move without touching every call site.
 
 ```ts
 // frontend/src/lib/significance.ts
-export const SIGNIFICANCE_P_THRESHOLD = 0.05;
-export function isSignificant(p: number | null | undefined): boolean {
-  return p != null && p < SIGNIFICANCE_P_THRESHOLD;
+import type { ConfidenceLevel } from '@/lib/scoreConfidence';
+
+export function isConfident(
+  confidence: ConfidenceLevel | null | undefined,
+): boolean {
+  return confidence != null && confidence !== 'low';
 }
 ```
 
@@ -111,6 +114,8 @@ Three pre-existing `MoveExplorer.test.tsx` cases that asserted the **old** behav
 
 None. Three pre-existing test cases needed their assertions updated (anticipated by the plan: "if any do, update them to assert the new gated behavior") — done in commit `fb8ca37a`.
 
+A follow-up post-execution refactor (after user feedback) swapped the `isSignificant(pValue)` helper for `isConfident(confidence)` so the gate keys on the categorical bucket; the redundant artificial low-data test case (`confidence: 'high', game_count: 9` — impossible in real data because n<10 always buckets to `'low'`) was deleted. Other callers naturally collapsed: the explicit `n >= MIN_GAMES_FOR_RELIABLE_STATS` check disappeared from the font gate because `confidence !== 'low'` already encodes it.
+
 ## Commits
 
 | Hash       | Message                                                                                                       |
@@ -119,6 +124,7 @@ None. Three pre-existing test cases needed their assertions updated (anticipated
 | `fb8ca37a` | Gate Openings Moves subtab score-text on significance + neutralize position bullet                            |
 | `4a67a901` | Gate Stats + Insights card score/eval font on significance + colored zone                                     |
 | `4a409726` | Neutralize Endgames Stats MiniBulletChart bars (no font changes)                                              |
+| (this)     | Switch significance gate from raw p-value to `confidence !== 'low'` bucket                                    |
 
 ## Self-Check: PASSED
 

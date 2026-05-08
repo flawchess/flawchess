@@ -22,7 +22,7 @@ import {
   clampScoreCi,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
-import { isSignificant } from '@/lib/significance';
+import { isConfident } from '@/lib/significance';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
 
@@ -116,20 +116,18 @@ export function OpeningFindingCard({
   const avgEvalPawns = finding.avg_eval_pawns ?? null;
   const hasMgEval = evalN > 0 && avgEvalPawns !== null && avgEvalPawns !== undefined;
 
-  // Quick task 260508-dcp: gate Score % and Eval text on (a) reliability,
-  // (b) p < 0.05, AND (c) value lands in a colored zone (red/green). The
-  // card border + on-board arrow keep their existing zone tint — only the
-  // font colors are gated here.
+  // Quick task 260508-dcp: gate Score % and Eval text on confidence bucket
+  // ('medium' or 'high', not 'low') AND value lands in a colored zone
+  // (red/green). The card border + on-board arrow keep their existing zone
+  // tint — only the font colors are gated here.
   const scoreZoneHex = scoreZoneColor(finding.score);
   const showScoreZoneFont =
-    finding.n_games >= MIN_GAMES_FOR_RELIABLE_STATS &&
-    isSignificant(finding.p_value) &&
-    scoreZoneHex !== ZONE_NEUTRAL;
+    isConfident(finding.confidence) && scoreZoneHex !== ZONE_NEUTRAL;
 
   const evalZoneHex = hasMgEval ? evalZoneColor(avgEvalPawns as number) : null;
   const showEvalZoneFont =
     hasMgEval &&
-    isSignificant(finding.eval_p_value) &&
+    isConfident(finding.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
   const mgEvalTextContent = hasMgEval ? (

@@ -4,7 +4,7 @@ import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import { scoreZoneColor } from '@/lib/scoreBulletConfig';
-import { isSignificant } from '@/lib/significance';
+import { isConfident } from '@/lib/significance';
 import { DARK_GREEN, DARK_RED, getArrowColor } from '@/lib/arrowColor';
 import {
   HIGHLIGHT_PULSE_DURATION_MS,
@@ -261,16 +261,13 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   const showTroll = isTrollPosition(entry.result_fen, sideJustMoved);
 
   // Score-text font gate. Paint the Score % in the zone color only when:
-  //   - n >= MIN_GAMES_FOR_RELIABLE_STATS (reliability)
-  //   - p < 0.05 (statistical significance)
+  //   - confidence bucket is 'medium' or 'high' (n>=10 + p below the medium
+  //     threshold; current threshold is p<0.05, see scoreConfidence.ts)
   //   - the score lands in a colored zone (red or green), not the in-between band
   // Otherwise leave undefined → falls back to the default foreground.
   const zoneHex = scoreZoneColor(entry.score);
   const isInColoredZone = zoneHex !== ZONE_NEUTRAL;
-  const showZoneFontColor =
-    entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS &&
-    isSignificant(entry.p_value) &&
-    isInColoredZone;
+  const showZoneFontColor = isConfident(entry.confidence) && isInColoredZone;
   const scoreColor: string | undefined = showZoneFontColor ? zoneHex : undefined;
 
   // Row-bg score-zone tint. Only red and green zones get a row tint — the

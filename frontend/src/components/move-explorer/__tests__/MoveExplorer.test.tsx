@@ -262,23 +262,6 @@ describe('Score column + mute extension', () => {
     expect(scoreSpan?.getAttribute('style')).toBeNull();
   });
 
-  it('renders the score in the default foreground when game_count < 10 (low-data → no zone font color)', () => {
-    render(
-      <MoveExplorer
-        moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9, score: 0.625 })]}
-        isLoading={false}
-        isError={false}
-        position={START_FEN}
-        onMoveClick={() => {}}
-      />,
-    );
-    const row = screen.getByTestId('move-explorer-row-e4');
-    expect(row.textContent).toContain('63%');
-    const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
-    expect(scoreSpan?.className).not.toContain('text-muted-foreground');
-    expect(scoreSpan?.getAttribute('style')).toBeNull();
-  });
-
   it('renders the score in the default foreground when confidence is "low" (insignificant → no zone font color)', () => {
     render(
       <MoveExplorer

@@ -65,7 +65,7 @@ import {
   scoreBulletDomain,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
-import { isSignificant } from '@/lib/significance';
+import { isConfident } from '@/lib/significance';
 import {
   EVAL_BASELINE_PAWNS_WHITE,
   EVAL_BASELINE_PAWNS_BLACK,
@@ -804,14 +804,11 @@ export function OpeningsPage() {
         const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
         const scorePct = Math.round(stats.score * 100);
         // Score-color font gate mirrors MoveExplorer.tsx: paint Score % in the
-        // zone color only when n >= 10 AND p < 0.05 AND the score is in a
-        // colored zone. Otherwise default foreground.
+        // zone color only when confidence is 'medium'/'high' (not 'low') AND
+        // the score is in a colored zone. Otherwise default foreground.
         const zoneHex = scoreZoneColor(stats.score);
         const isInColoredZone = zoneHex !== ZONE_NEUTRAL;
-        const showZoneFontColor =
-          stats.total >= MIN_GAMES_FOR_RELIABLE_STATS &&
-          isSignificant(stats.p_value) &&
-          isInColoredZone;
+        const showZoneFontColor = isConfident(stats.confidence) && isInColoredZone;
         const scoreColor: string | undefined = showZoneFontColor ? zoneHex : undefined;
         return (
           <div

@@ -20,7 +20,7 @@ import {
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
 import { computeScoreConfidence } from '@/lib/scoreConfidence';
-import { isSignificant } from '@/lib/significance';
+import { isConfident } from '@/lib/significance';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
   MIN_GAMES_FOR_RELIABLE_STATS,
@@ -87,20 +87,19 @@ export function OpeningStatsCard({
   const borderLeftColor = isReliableScore ? scoreZoneHex : 'transparent';
 
   // Quick task 260508-dcp: separate gate for the Score % FONT color.
-  // Font reads in zone color only when (a) n >= 10, (b) p < 0.05, AND
-  // (c) zone is colored (red/green, not the in-between band). The card
-  // border keeps the existing reliability-only gate above (border treatment
-  // is out of scope for the significance tightening).
+  // Font reads in zone color only when the confidence bucket is 'medium' or
+  // 'high' (n>=10 + p below the medium threshold; current threshold is
+  // p<0.05) AND the zone is colored (red/green, not the in-between band).
+  // The card border keeps the existing reliability-only gate above (border
+  // treatment is out of scope for the significance tightening).
   const showScoreZoneFont =
-    opening.total >= MIN_GAMES_FOR_RELIABLE_STATS &&
-    isSignificant(scoreStats.pValue) &&
-    scoreZoneHex !== ZONE_NEUTRAL;
+    isConfident(scoreStats.confidence) && scoreZoneHex !== ZONE_NEUTRAL;
 
-  // Eval-text gate: same shape but uses the eval-domain p-value and zone.
+  // Eval-text gate: same shape but uses the eval-domain confidence + zone.
   const evalZoneHex = hasMgEval ? evalZoneColor(opening.avg_eval_pawns as number) : null;
   const showEvalZoneFont =
     hasMgEval &&
-    isSignificant(opening.eval_p_value) &&
+    isConfident(opening.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
   const cardStyle: React.CSSProperties = {
