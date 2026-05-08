@@ -65,6 +65,7 @@ import {
   scoreBulletDomain,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
+import { isSignificant } from '@/lib/significance';
 import {
   EVAL_BASELINE_PAWNS_WHITE,
   EVAL_BASELINE_PAWNS_BLACK,
@@ -802,11 +803,16 @@ export function OpeningsPage() {
         const stats = gamesData.stats;
         const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
         const scorePct = Math.round(stats.score * 100);
-        // Score-color reliability gate mirrors MoveExplorer.tsx so the position
-        // panel and the moves table agree on when green/red is meaningful.
-        const isReliableScore =
-          stats.total >= MIN_GAMES_FOR_RELIABLE_STATS && stats.confidence !== 'low';
-        const scoreColor = isReliableScore ? scoreZoneColor(stats.score) : ZONE_NEUTRAL;
+        // Score-color font gate mirrors MoveExplorer.tsx: paint Score % in the
+        // zone color only when n >= 10 AND p < 0.05 AND the score is in a
+        // colored zone. Otherwise default foreground.
+        const zoneHex = scoreZoneColor(stats.score);
+        const isInColoredZone = zoneHex !== ZONE_NEUTRAL;
+        const showZoneFontColor =
+          stats.total >= MIN_GAMES_FOR_RELIABLE_STATS &&
+          isSignificant(stats.p_value) &&
+          isInColoredZone;
+        const scoreColor: string | undefined = showZoneFontColor ? zoneHex : undefined;
         return (
           <div
             className="charcoal-texture rounded-md p-4 order-2 lg:order-1"
@@ -839,7 +845,7 @@ export function OpeningsPage() {
                   ariaLabel="Show score confidence details"
                 />
                 <span className="text-muted-foreground">Score:</span>
-                <span className="font-semibold" style={{ color: scoreColor }}>{scorePct}%</span>
+                <span className="font-semibold" style={scoreColor ? { color: scoreColor } : undefined}>{scorePct}%</span>
               </span>
               {/* Col 2, row 2: Score bullet chart. Domain is 30-70% by default,
                   widened to 0-100% when the CI overflows that window so the
@@ -853,6 +859,7 @@ export function OpeningsPage() {
                   domain={scoreBulletDomain()}
                   ciLow={clampScoreCi(stats.ci_low)}
                   ciHigh={clampScoreCi(stats.ci_high)}
+                  barColor="neutral"
                   ariaLabel={`Score ${scorePct}% vs 50% baseline`}
                 />
               </div>

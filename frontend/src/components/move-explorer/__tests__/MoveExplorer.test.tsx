@@ -242,7 +242,7 @@ describe('Score column + mute extension', () => {
     expect(screen.getByTestId('move-explorer-row-c4').textContent).toContain('75%');
   });
 
-  it('renders the score in the neutral zone color when 0.45 <= score <= 0.55 (3-category arrow scheme)', () => {
+  it('renders the score in the default foreground (no inline color) when 0.45 <= score <= 0.55 (in-between band)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 100, score: 0.52 })]}
@@ -255,13 +255,14 @@ describe('Score column + mute extension', () => {
     const row = screen.getByTestId('move-explorer-row-e4');
     expect(row.textContent).toContain('52%');
     const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
-    // No longer muted: the 45-55% band carries the neutral zone color (blue),
-    // matching the board arrow's DARK_BLUE bucket.
+    // Quick task 260508-dcp: in-between band no longer paints zone color on
+    // the font. The font is only colored when the score lands in red/green
+    // AND the result is significant (p < 0.05).
     expect(scoreSpan?.className).not.toContain('text-muted-foreground');
-    expect(scoreSpan?.getAttribute('style')).toContain('color');
+    expect(scoreSpan?.getAttribute('style')).toBeNull();
   });
 
-  it('renders the score in the neutral blue zone color when game_count < 10 (low-data → blue, not muted)', () => {
+  it('renders the score in the default foreground when game_count < 10 (low-data → no zone font color)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'high', game_count: 9, score: 0.625 })]}
@@ -275,10 +276,10 @@ describe('Score column + mute extension', () => {
     expect(row.textContent).toContain('63%');
     const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
     expect(scoreSpan?.className).not.toContain('text-muted-foreground');
-    expect(scoreSpan?.getAttribute('style')).toContain('color');
+    expect(scoreSpan?.getAttribute('style')).toBeNull();
   });
 
-  it('renders the score in the neutral blue zone color when confidence is "low" (low-conf → blue, not muted)', () => {
+  it('renders the score in the default foreground when confidence is "low" (insignificant → no zone font color)', () => {
     render(
       <MoveExplorer
         moves={[makeEntry({ move_san: 'e4', confidence: 'low', game_count: 100, score: 0.625 })]}
@@ -291,7 +292,7 @@ describe('Score column + mute extension', () => {
     const row = screen.getByTestId('move-explorer-row-e4');
     const scoreSpan = row.querySelectorAll('td')[2]?.querySelector('span');
     expect(scoreSpan?.className).not.toContain('text-muted-foreground');
-    expect(scoreSpan?.getAttribute('style')).toContain('color');
+    expect(scoreSpan?.getAttribute('style')).toBeNull();
   });
 
   it('renders a faint green row tint when score >= 0.55 with reliable sample (n>=10, conf!=low)', () => {

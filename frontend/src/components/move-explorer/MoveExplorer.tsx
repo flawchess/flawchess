@@ -4,6 +4,7 @@ import { ArrowLeftRight } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import { scoreZoneColor } from '@/lib/scoreBulletConfig';
+import { isSignificant } from '@/lib/significance';
 import { DARK_GREEN, DARK_RED, getArrowColor } from '@/lib/arrowColor';
 import {
   HIGHLIGHT_PULSE_DURATION_MS,
@@ -259,12 +260,18 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
   // no useMemo (RESEARCH.md anti-pattern note).
   const showTroll = isTrollPosition(entry.result_fen, sideJustMoved);
 
-  // Reliability gate. Drives BOTH the Score column color and the row-bg tint:
-  // unreliable rows render the Score number in the neutral blue zone color
-  // (matching the faint blue arrow on the board) and skip the row tint.
-  const isReliable =
-    entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS && entry.confidence !== 'low';
-  const scoreColor = isReliable ? scoreZoneColor(entry.score) : ZONE_NEUTRAL;
+  // Score-text font gate. Paint the Score % in the zone color only when:
+  //   - n >= MIN_GAMES_FOR_RELIABLE_STATS (reliability)
+  //   - p < 0.05 (statistical significance)
+  //   - the score lands in a colored zone (red or green), not the in-between band
+  // Otherwise leave undefined → falls back to the default foreground.
+  const zoneHex = scoreZoneColor(entry.score);
+  const isInColoredZone = zoneHex !== ZONE_NEUTRAL;
+  const showZoneFontColor =
+    entry.game_count >= MIN_GAMES_FOR_RELIABLE_STATS &&
+    isSignificant(entry.p_value) &&
+    isInColoredZone;
+  const scoreColor: string | undefined = showZoneFontColor ? zoneHex : undefined;
 
   // Row-bg score-zone tint. Only red and green zones get a row tint — the
   // blue (in-between OR unreliable) class stays untinted so the eye is drawn
@@ -377,7 +384,7 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
             />
           }
         >
-          <span className="font-semibold" style={{ color: scoreColor }}>
+          <span className="font-semibold" style={scoreColor ? { color: scoreColor } : undefined}>
             {Math.round(entry.score * 100)}%
           </span>
         </Tooltip>
