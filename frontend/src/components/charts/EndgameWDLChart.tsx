@@ -161,6 +161,7 @@ function EndgameCategoryRowDesktop({
             neutralMin={NEUTRAL_ZONE_MIN}
             neutralMax={NEUTRAL_ZONE_MAX}
             domain={BULLET_DOMAIN}
+            barColor="neutral"
             ariaLabel={`${cat.label}: ${formatDiffPct(userR, oppR)} score gap`}
           />
         )}
@@ -251,6 +252,7 @@ function EndgameCategoryCardMobile({
             neutralMin={NEUTRAL_ZONE_MIN}
             neutralMax={NEUTRAL_ZONE_MAX}
             domain={BULLET_DOMAIN}
+            barColor="neutral"
             ariaLabel={`${cat.label}: ${formatDiffPct(userR, oppR)} score gap`}
           />
         </div>

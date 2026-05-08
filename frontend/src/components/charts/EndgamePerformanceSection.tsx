@@ -181,6 +181,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
                         neutralMin={SCORE_GAP_NEUTRAL_MIN}
                         neutralMax={SCORE_GAP_NEUTRAL_MAX}
                         domain={SCORE_GAP_DOMAIN}
+                        barColor="neutral"
                         ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
                       />
                     </td>
@@ -244,6 +245,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
               neutralMin={SCORE_GAP_NEUTRAL_MIN}
               neutralMax={SCORE_GAP_NEUTRAL_MAX}
               domain={SCORE_GAP_DOMAIN}
+              barColor="neutral"
               ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
             />
           </div>

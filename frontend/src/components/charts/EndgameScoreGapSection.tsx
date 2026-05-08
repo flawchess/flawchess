@@ -379,6 +379,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                         neutralMin={NEUTRAL_ZONE_MIN}
                         neutralMax={NEUTRAL_ZONE_MAX}
                         domain={BULLET_DOMAIN}
+                        barColor="neutral"
                         ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${formatDiffPct(userR, oppR as number)} vs opponents`}
                       />
                     ) : (
@@ -491,6 +492,7 @@ export function EndgameScoreGapSection({ data }: EndgameScoreGapSectionProps) {
                     neutralMin={NEUTRAL_ZONE_MIN}
                     neutralMax={NEUTRAL_ZONE_MAX}
                     domain={BULLET_DOMAIN}
+                    barColor="neutral"
                     ariaLabel={`${BUCKET_DISPLAY_LABELS[row.bucket]}: ${formatDiffPct(userR, oppR as number)} vs opponents`}
                   />
                 ) : (
