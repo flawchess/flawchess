@@ -12,7 +12,7 @@ import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X, Cpu } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -57,6 +57,8 @@ import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { OpeningStatsSection, type OpeningStatsSectionDescriptor } from '@/components/stats/OpeningStatsSection';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
+import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
   SCORE_BULLET_CENTER,
   SCORE_BULLET_NEUTRAL_MAX,
@@ -69,6 +71,10 @@ import { isConfident } from '@/lib/significance';
 import {
   EVAL_BASELINE_PAWNS_WHITE,
   EVAL_BASELINE_PAWNS_BLACK,
+  EVAL_BULLET_DOMAIN_PAWNS,
+  EVAL_NEUTRAL_MIN_PAWNS,
+  EVAL_NEUTRAL_MAX_PAWNS,
+  evalZoneColor,
 } from '@/lib/openingStatsZones';
 import {
   MIN_GAMES_FOR_RELIABLE_STATS,
@@ -810,15 +816,36 @@ export function OpeningsPage() {
         const isInColoredZone = zoneHex !== ZONE_NEUTRAL;
         const showZoneFontColor = isConfident(stats.confidence) && isInColoredZone;
         const scoreColor: string | undefined = showZoneFontColor ? zoneHex : undefined;
+        // MG-entry eval row (quick task 260508-f9o). Mirrors OpeningStatsCard /
+        // OpeningFindingCard scoreEvalBlock: a third bullet chart row showing
+        // signed pawns + Cpu icon + BulletConfidencePopover when MG eval data
+        // is available, em-dash otherwise.
+        const hasMgEval =
+          stats.eval_n > 0 &&
+          stats.avg_eval_pawns !== null &&
+          stats.avg_eval_pawns !== undefined;
+        const evalZoneHex = hasMgEval ? evalZoneColor(stats.avg_eval_pawns as number) : null;
+        const showEvalZoneFont =
+          hasMgEval &&
+          isConfident(stats.eval_confidence) &&
+          evalZoneHex !== ZONE_NEUTRAL;
+        // Prefer the backend-provided baseline; fall back to the local
+        // per-color constant if a stale cache returns no field.
+        const evalBaselinePawnsLocal =
+          filters.color === 'black' ? EVAL_BASELINE_PAWNS_BLACK : EVAL_BASELINE_PAWNS_WHITE;
+        const evalBaselinePawns = gamesData.eval_baseline_pawns ?? evalBaselinePawnsLocal;
         return (
           <div
             className="charcoal-texture rounded-md p-4 order-2 lg:order-1"
             style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
             data-testid="wdl-moves-position"
           >
-            <div className="text-sm font-medium mb-2">{positionResultsLabel}</div>
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
-              {/* Col 1, row 1: Games link */}
+            {/* Section header pulled out of the grid: label + games link.
+                Lifting the games link out lets the WDL bar use the full chart
+                column on row 1, so all three chart bars (WDL / Score / Eval)
+                share the same minmax(0,1fr) width. */}
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="text-sm font-medium">{positionResultsLabel}</div>
               <Link
                 to="/openings/games"
                 onClick={() => window.scrollTo({ top: 0 })}
@@ -826,28 +853,29 @@ export function OpeningsPage() {
                 aria-label="View games for this position"
                 data-testid="btn-moves-to-games"
               >
-                <span className="tabular-nums">{stats.total} Games{isUnreliable && ' (low)'}</span>
                 <Swords className="h-3.5 w-3.5" />
+                <span className="tabular-nums">{stats.total} Games{isUnreliable && ' (low)'}</span>
               </Link>
-              {/* Col 2, row 1: WDL bar (no header — games count moved to col 1) */}
-              <WDLChartRow data={stats} barHeight="h-6" />
-              {/* Col 1, row 2: Score label with popover trigger */}
-              <span className="inline-flex items-center gap-1 text-sm tabular-nums">
-                <ScoreConfidencePopover
-                  level={stats.confidence}
-                  pValue={stats.p_value}
-                  score={stats.score}
-                  gameCount={stats.total}
-                  testId="score-bullet-popover-trigger"
-                  ariaLabel="Show score confidence details"
-                />
-                <span className="text-muted-foreground">Score:</span>
-                <span className="font-semibold" style={scoreColor ? { color: scoreColor } : undefined}>{scorePct}%</span>
+            </div>
+
+            {/* Three same-width chart rows (chart-left / indicator-right),
+                mirroring OpeningStatsCard.scoreEvalBlock and
+                OpeningFindingCard.scoreEvalBlock. */}
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-2 items-center">
+              {/* Row 1: WDL bar + games-count indicator. */}
+              <div className="min-w-0" data-testid="wdl-bar-position">
+                <WDLChartRow data={stats} barHeight="h-6" showSegmentCounts={false} />
+              </div>
+              <span
+                className="flex items-center gap-1 text-sm tabular-nums w-full"
+                data-testid="wdl-games-indicator"
+              >
+                <span className="hidden sm:inline text-muted-foreground">Games:</span>
+                <span className="ml-auto font-semibold tabular-nums">{stats.total}</span>
               </span>
-              {/* Col 2, row 2: Score bullet chart. Domain is 30-70% by default,
-                  widened to 0-100% when the CI overflows that window so the
-                  whisker stays visible. */}
-              <div data-testid="score-bullet-position">
+
+              {/* Row 2: Score bullet + Score % + popover. */}
+              <div className="min-w-0 tabular-nums" data-testid="score-bullet-position">
                 <MiniBulletChart
                   value={stats.score}
                   center={SCORE_BULLET_CENTER}
@@ -860,6 +888,73 @@ export function OpeningsPage() {
                   ariaLabel={`Score ${scorePct}% vs 50% baseline`}
                 />
               </div>
+              <span
+                className="flex items-center gap-1 text-sm tabular-nums w-full"
+                data-testid="score-text-position"
+              >
+                <span className="hidden sm:inline text-muted-foreground">Score:</span>
+                <span
+                  className="ml-auto font-semibold"
+                  style={scoreColor ? { color: scoreColor } : undefined}
+                >
+                  {scorePct}%
+                </span>
+                <ScoreConfidencePopover
+                  level={stats.confidence}
+                  pValue={stats.p_value}
+                  score={stats.score}
+                  gameCount={stats.total}
+                  testId="score-bullet-popover-trigger"
+                  ariaLabel="Show score confidence details"
+                />
+              </span>
+
+              {/* Row 3 (NEW): Eval bullet + signed pawns + Cpu + popover.
+                  Mirrors OpeningStatsCard / OpeningFindingCard eval row. */}
+              <div className="min-w-0 tabular-nums" data-testid="eval-bullet-position">
+                {hasMgEval ? (
+                  <MiniBulletChart
+                    value={stats.avg_eval_pawns as number}
+                    ciLow={stats.eval_ci_low_pawns ?? undefined}
+                    ciHigh={stats.eval_ci_high_pawns ?? undefined}
+                    tickPawns={evalBaselinePawns}
+                    neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
+                    neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
+                    domain={EVAL_BULLET_DOMAIN_PAWNS}
+                    barColor="neutral"
+                    ariaLabel={`Avg eval at MG entry: ${(stats.avg_eval_pawns as number).toFixed(2)} pawns`}
+                  />
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </div>
+              <span
+                className="flex items-center gap-1 text-sm tabular-nums w-full"
+                data-testid="eval-text-position"
+              >
+                <span className="hidden sm:inline text-muted-foreground">Eval:</span>
+                {hasMgEval ? (
+                  <span
+                    className="ml-auto font-semibold inline-flex items-center gap-0.5"
+                    style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
+                  >
+                    {formatSignedEvalPawns(stats.avg_eval_pawns as number)}
+                    <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                ) : (
+                  <span className="ml-auto text-muted-foreground">—</span>
+                )}
+                {hasMgEval && (
+                  <BulletConfidencePopover
+                    level={stats.eval_confidence}
+                    pValue={stats.eval_p_value}
+                    gameCount={stats.eval_n}
+                    evalMeanPawns={stats.avg_eval_pawns}
+                    color={filters.color}
+                    testId="eval-bullet-popover-trigger"
+                  />
+                )}
+              </span>
             </div>
           </div>
         );
