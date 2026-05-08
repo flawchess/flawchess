@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import type { ReactNode } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -7,27 +6,6 @@ import { OpeningFindingCard } from './OpeningFindingCard';
 import { useOpeningInsights } from '@/hooks/useOpeningInsights';
 import type { OpeningInsightFinding, OpeningInsightsResponse } from '@/types/insights';
 import type { FilterState } from '@/components/filters/FilterPanel';
-
-// Phase 76 D-17 — single shared copy for all four section-title InfoPopovers.
-// Co-located with consumer (this file) per RESEARCH.md Open Question 3 — keeps
-// openingInsights.ts as a pure .ts module (no JSX rename).
-// Exported so the Move Explorer's "Move" header InfoPopover can reuse the same
-// confidence explanation verbatim.
-export const OPENING_INSIGHTS_CONFIDENCE_COPY: ReactNode = (
-  <>
-    <p>
-      <strong>Confidence</strong> is based on the p-value, the chance of seeing
-      this difference by pure chance (two-sided Wilson score test vs 50%). High confidence
-      can both result from a small difference based on a high number of games, or
-      from a large difference based on a small number of games:
-    </p>
-    <ul className="list-disc pl-4 space-y-0.5">
-      <li><em>high</em>: p &lt; 0.01 (likely a real effect)</li>
-      <li><em>medium</em>: p &lt; 0.05 (possibly a real effect)</li>
-      <li><em>low</em>: p ≥ 0.05, or fewer than 10 games (could plausibly be chance)</li>
-    </ul>
-  </>
-);
 
 // Show the top 4 findings per section by default; remaining (up to backend cap of 10) are
 // revealed via a "X more" toggle. The backend always returns up to 10 per section so a
