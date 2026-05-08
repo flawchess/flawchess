@@ -23,6 +23,12 @@ from app.repositories.openings_repository import (
     query_transposition_wdl,  # Phase 80.1 D-02 — resulting-position WDL
     query_wdl_counts,
 )
+from app.repositories.stats_repository import query_opening_phase_entry_metrics_batch
+from app.services.eval_confidence import compute_eval_confidence_bucket
+from app.services.opening_insights_constants import (
+    EVAL_BASELINE_PAWNS_BLACK,
+    EVAL_BASELINE_PAWNS_WHITE,
+)
 from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
 from app.schemas.openings import (
     OpeningsRequest,
@@ -167,6 +173,51 @@ async def analyze(
 
     stats = _build_wdl_stats(wins, draws, losses, total)
 
+    # --- MG-entry eval pillar (quick task 260508-f9o) ---
+    # Reuse the same helper + finalizer used by stats_service.get_most_played_openings
+    # (lines 405-420) so the Moves-tab "Results played as" section gets the same
+    # avg_eval_pawns / CI / confidence triple shown by the Stats and Insights cards.
+    # AsyncSession is not safe for asyncio.gather (CLAUDE.md) — sequential await.
+    if request.target_hash is not None:
+        phase_entry_metrics = await query_opening_phase_entry_metrics_batch(
+            session=session,
+            user_id=user_id,
+            hashes=[request.target_hash],
+            color=request.color,
+            time_control=request.time_control,
+            platform=request.platform,
+            rated=request.rated,
+            opponent_type=request.opponent_type,
+            recency_cutoff=cutoff,
+            opponent_gap_min=request.opponent_gap_min,
+            opponent_gap_max=request.opponent_gap_max,
+            hash_column=request.match_side,
+        )
+        pe = phase_entry_metrics.get(request.target_hash)
+        if pe is not None and pe.eval_n_mg > 0:
+            # Mirrors stats_service.py:405-420 verbatim. H0: mean == 0 cp
+            # (engine-balanced); the per-color baseline is a display tick on
+            # the bullet chart, not the test reference (260504-rvh).
+            confidence_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
+                pe.eval_sum_mg,
+                pe.eval_sumsq_mg,
+                pe.eval_n_mg,
+            )
+            stats.avg_eval_pawns = mean_cp_mg / 100.0  # cp -> pawns
+            if pe.eval_n_mg >= 2:
+                stats.eval_ci_low_pawns = (mean_cp_mg - ci_half_mg) / 100.0
+                stats.eval_ci_high_pawns = (mean_cp_mg + ci_half_mg) / 100.0
+            stats.eval_n = pe.eval_n_mg
+            stats.eval_p_value = p_value_mg
+            stats.eval_confidence = confidence_mg
+
+    # Per-color engine-asymmetry baseline (rendered as a tick on the bullet
+    # chart). When request.color is None ("either color"), default to the
+    # white baseline — matches the convention in stats_service / opening_insights.
+    eval_baseline_pawns = (
+        EVAL_BASELINE_PAWNS_BLACK if request.color == "black" else EVAL_BASELINE_PAWNS_WHITE
+    )
+
     # --- Paginated game list ---
     games, matched_count = await query_matching_games(
         session=session,
@@ -214,6 +265,7 @@ async def analyze(
         matched_count=matched_count,
         offset=request.offset,
         limit=request.limit,
+        eval_baseline_pawns=eval_baseline_pawns,
     )
 
 

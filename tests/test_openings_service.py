@@ -291,6 +291,148 @@ class TestPaginationResponse:
 
 
 # ---------------------------------------------------------------------------
+# TestEvalFields — quick task 260508-f9o
+# ---------------------------------------------------------------------------
+
+
+EVAL_HASH = 77777777
+
+
+async def _seed_game_with_mg_eval(
+    session: AsyncSession,
+    *,
+    user_id: int = 1,
+    user_color: str = "white",
+    full_hash: int = EVAL_HASH,
+    eval_cp: int | None = 30,
+    result: str = "1-0",
+) -> Game:
+    """Seed a Game + opening anchor row + MG-entry (phase=1) row carrying eval_cp."""
+    game = Game(
+        user_id=user_id,
+        platform="chess.com",
+        platform_game_id=_unique_id(),
+        pgn="1. e4 e5 *",
+        result=result,
+        user_color=user_color,
+        time_control_str="600+0",
+        time_control_bucket="blitz",
+        time_control_seconds=600,
+        rated=True,
+        white_username="testuser",
+        black_username="opponent",
+    )
+    game.played_at = datetime.datetime.now(tz=datetime.timezone.utc)
+    session.add(game)
+    await session.flush()
+
+    # Opening anchor row (phase=None) — feeds query_wdl_counts.
+    session.add(
+        GamePosition(
+            game_id=game.id,
+            user_id=user_id,
+            ply=10,
+            full_hash=full_hash,
+            white_hash=full_hash + 1000,
+            black_hash=full_hash + 2000,
+            phase=None,
+        )
+    )
+    # MG-entry row (phase=1) carrying eval_cp — feeds the new eval pillar.
+    session.add(
+        GamePosition(
+            game_id=game.id,
+            user_id=user_id,
+            ply=20,
+            full_hash=full_hash,
+            white_hash=full_hash + 1000,
+            black_hash=full_hash + 2000,
+            phase=1,
+            eval_cp=eval_cp,
+        )
+    )
+    await session.flush()
+    return game
+
+
+class TestAnalyzeEvalFields:
+    """Quick task 260508-f9o: analyze() populates MG-entry eval fields and
+    OpeningsResponse.eval_baseline_pawns from the position's phase=1 rows."""
+
+    @pytest.mark.asyncio
+    async def test_eval_fields_populated_when_mg_data_exists(
+        self, db_session: AsyncSession
+    ) -> None:
+        """Position with eval data → response.stats.avg_eval_pawns is not None,
+        eval_n > 0, eval_baseline_pawns matches the request's color."""
+        # Seed 12 white games with varying MG eval (need variance for CI bounds).
+        for cp in [20, 25, 25, 28, 30, 30, 30, 32, 35, 35, 38, 42]:
+            await _seed_game_with_mg_eval(
+                db_session, full_hash=EVAL_HASH, user_color="white", eval_cp=cp
+            )
+
+        request = OpeningsRequest(target_hash=EVAL_HASH, match_side="full", color="white")
+        response = await analyze(db_session, user_id=1, request=request)
+
+        assert response.stats.eval_n == 12
+        assert response.stats.avg_eval_pawns is not None
+        # Mean of eval_cp values is 30.83, in pawns ≈ 0.31.
+        assert response.stats.avg_eval_pawns == pytest.approx(0.3083, abs=0.005)
+        assert response.stats.eval_ci_low_pawns is not None
+        assert response.stats.eval_ci_high_pawns is not None
+        assert (
+            response.stats.eval_ci_low_pawns
+            < response.stats.avg_eval_pawns
+            < response.stats.eval_ci_high_pawns
+        )
+        assert response.stats.eval_confidence in {"low", "medium", "high"}
+        # White color → +0.25 baseline (EVAL_BASELINE_PAWNS_WHITE).
+        assert response.stats.eval_p_value is not None
+        assert response.eval_baseline_pawns == pytest.approx(0.25)
+
+    @pytest.mark.asyncio
+    async def test_eval_fields_default_when_no_mg_data(self, db_session: AsyncSession) -> None:
+        """Position with no MG-entry eval → eval_n == 0, avg_eval_pawns is None,
+        eval_confidence == 'low' (defaults), response still validates."""
+        # Seed 3 games with eval_cp=None on the MG-entry row.
+        for _ in range(3):
+            await _seed_game_with_mg_eval(
+                db_session, full_hash=EVAL_HASH + 1, user_color="white", eval_cp=None
+            )
+
+        request = OpeningsRequest(target_hash=EVAL_HASH + 1, match_side="full", color="white")
+        response = await analyze(db_session, user_id=1, request=request)
+
+        assert response.stats.total == 3  # WDL still computed
+        assert response.stats.eval_n == 0
+        assert response.stats.avg_eval_pawns is None
+        assert response.stats.eval_ci_low_pawns is None
+        assert response.stats.eval_ci_high_pawns is None
+        assert response.stats.eval_confidence == "low"
+        assert response.stats.eval_p_value is None
+
+    @pytest.mark.asyncio
+    async def test_eval_fields_when_target_hash_none(self, db_session: AsyncSession) -> None:
+        """target_hash=None skips the eval fetch entirely; defaults preserved."""
+        request = OpeningsRequest(target_hash=None, match_side="full", color="black")
+        response = await analyze(db_session, user_id=1, request=request)
+
+        assert response.stats.eval_n == 0
+        assert response.stats.avg_eval_pawns is None
+        assert response.stats.eval_confidence == "low"
+        # Black color → -0.25 baseline (EVAL_BASELINE_PAWNS_BLACK).
+        assert response.eval_baseline_pawns == pytest.approx(-0.25)
+
+    @pytest.mark.asyncio
+    async def test_eval_baseline_white_when_color_none(self, db_session: AsyncSession) -> None:
+        """color=None falls back to the white baseline (matches stats_service convention)."""
+        request = OpeningsRequest(target_hash=EVAL_HASH + 99, match_side="full", color=None)
+        response = await analyze(db_session, user_id=1, request=request)
+
+        assert response.eval_baseline_pawns == pytest.approx(0.25)
+
+
+# ---------------------------------------------------------------------------
 # _seed_game_with_positions — multi-position seed helper
 # ---------------------------------------------------------------------------
 
