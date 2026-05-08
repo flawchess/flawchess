@@ -462,13 +462,17 @@ export function OpeningsPage() {
 
   // Derive WDL stats per bookmark using aggregate fields (not rolling sub-counts)
   const wdlStatsMap = useMemo(() => {
-    const map: Record<number, { wins: number; draws: number; losses: number; total: number }> = {};
+    const map: Record<
+      number,
+      { wins: number; draws: number; losses: number; total: number; last_played_at: string | null }
+    > = {};
     for (const s of tsData?.series ?? []) {
       map[s.bookmark_id] = {
         wins: s.total_wins,
         draws: s.total_draws,
         losses: s.total_losses,
         total: s.total_games,
+        last_played_at: s.last_played_at ?? null,
       };
     }
     return map;
@@ -1084,6 +1088,7 @@ export function OpeningsPage() {
             eval_n: pe?.eval_n ?? 0,
             eval_p_value: pe?.eval_p_value ?? null,
             eval_confidence: pe?.eval_confidence ?? 'low',
+            last_played_at: s.last_played_at,
           };
           return [row];
         })

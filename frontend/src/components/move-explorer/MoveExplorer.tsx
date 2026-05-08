@@ -351,10 +351,10 @@ function MoveRow({ entry, selectedMove, onRowClick, onRowKeyDown, onMoveHover, h
       </td>
       <td className="py-1 text-right tabular-nums">
         <span className="inline-flex items-center justify-end gap-1">
-          <ScoreInfo entry={entry} />
           <span className="font-semibold" style={scoreColor ? { color: scoreColor } : undefined}>
             {Math.round(entry.score * 100)}%
           </span>
+          <ScoreInfo entry={entry} />
         </span>
       </td>
       <td className="py-1 pl-2">
@@ -384,7 +384,7 @@ function TranspositionInfo({ moveSan, transpositionCount, gameCount }: {
           type="button"
           data-testid={`move-explorer-transpose-${moveSan}`}
           aria-label={`Transposition info for ${moveSan}`}
-          className="text-muted-foreground hover:text-foreground focus:outline-none"
+          className="inline-flex items-center text-muted-foreground hover:text-foreground focus:outline-none"
           onClick={(e) => e.stopPropagation()}
           onMouseEnter={() => {
             hoverTimeout.current = setTimeout(() => setOpen(true), 100);
@@ -437,7 +437,7 @@ function ScoreInfo({ entry }: { entry: NextMoveEntry }) {
           type="button"
           data-testid={`move-explorer-score-info-${entry.move_san}`}
           aria-label={`Score confidence details for ${entry.move_san}`}
-          className="text-muted-foreground hover:text-foreground focus:outline-none"
+          className="inline-flex items-center text-brand-brown-light/70 hover:text-brand-brown focus:outline-none"
           onClick={(e) => e.stopPropagation()}
           onMouseEnter={() => {
             hoverTimeout.current = setTimeout(() => setOpen(true), 100);
@@ -499,7 +499,7 @@ function TrollIcon({ moveSan }: { moveSan: string }) {
           type="button"
           data-testid={`move-explorer-troll-${moveSan}`}
           aria-label="Considered a troll opening"
-          className="inline-flex text-muted-foreground hover:text-foreground focus:outline-none"
+          className="inline-flex items-center text-muted-foreground hover:text-foreground focus:outline-none"
           onClick={(e) => e.stopPropagation()}
           onMouseEnter={() => {
             hoverTimeout.current = setTimeout(() => setOpen(true), 100);

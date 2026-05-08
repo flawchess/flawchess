@@ -175,6 +175,10 @@ class BookmarkTimeSeries(BaseModel):
     total_draws: int
     total_losses: int
     total_games: int
+    # MAX(games.played_at) across the games visiting this bookmark's target_hash
+    # under the same recency window as the totals. Drives the bookmark card
+    # score-confidence popover's "Last played: <relative>" line.
+    last_played_at: datetime.datetime | None = None
 
 
 class TimeSeriesResponse(BaseModel):

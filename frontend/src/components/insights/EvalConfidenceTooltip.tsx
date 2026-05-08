@@ -23,7 +23,7 @@ function pickVerdict(evalMeanPawns: number): Verdict {
 }
 
 function headline(level: ConfidenceLevel, evalMeanPawns: number): string {
-  if (level === 'low') return 'Could plausibly be chance.';
+  if (level === 'low') return 'Inconclusive.';
   const verdict = pickVerdict(evalMeanPawns);
   const lead = level === 'high' ? 'Likely' : 'Possibly';
   if (verdict === 'deviation') return `${lead} a real deviation from 0 pawns.`;

@@ -321,6 +321,7 @@ async def get_time_series(
         # Dict keyed by date keeps only the last game's rolling window per day.
         results_so_far: list[str] = []  # "win", "draw", or "loss" per game
         total_wins = total_draws = total_losses = 0
+        last_played_at: datetime.datetime | None = None
         data_by_date: dict[str, TimeSeriesPoint] = {}
 
         for played_at, result, user_color in rows:
@@ -334,6 +335,7 @@ async def get_time_series(
                 total_draws += 1
             else:
                 total_losses += 1
+            last_played_at = played_at  # rows ordered ASC; final assignment wins
 
             # Rolling window: trailing ROLLING_WINDOW_SIZE results
             window = results_so_far[-ROLLING_WINDOW_SIZE:]
@@ -356,6 +358,7 @@ async def get_time_series(
             data = [pt for pt in data if pt.date >= cutoff_str]
             # Recompute totals from filtered period only
             total_wins = total_draws = total_losses = 0
+            last_played_at = None
             for played_at, result, user_color in rows:
                 if played_at.strftime("%Y-%m-%d") >= cutoff_str:
                     outcome = derive_user_result(result, user_color)
@@ -365,6 +368,7 @@ async def get_time_series(
                         total_draws += 1
                     else:
                         total_losses += 1
+                    last_played_at = played_at  # rows ordered ASC; final assignment wins
 
         total_games = total_wins + total_draws + total_losses
         series.append(
@@ -375,6 +379,7 @@ async def get_time_series(
                 total_draws=total_draws,
                 total_losses=total_losses,
                 total_games=total_games,
+                last_played_at=last_played_at,
             )
         )
 

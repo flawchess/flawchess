@@ -26,7 +26,7 @@ function pickVerdict(score: number): Verdict {
 }
 
 function headline(level: ConfidenceLevel, score: number): string {
-  if (level === 'low') return 'Could plausibly be chance.';
+  if (level === 'low') return 'Inconclusive.';
   const verdict = pickVerdict(score);
   const lead = level === 'high' ? 'Likely' : 'Possibly';
   if (verdict === 'difference') return `${lead} a real difference from the 50% baseline.`;
@@ -88,7 +88,7 @@ export function WdlConfidenceTooltip({
       </p>
       {lastPlayedAt && (
         <p>
-          Last played:{' '}
+          <strong>Last played</strong>:{' '}
           <span title={formatAbsoluteDate(lastPlayedAt)}>{formatRelativeDate(lastPlayedAt)}</span>
         </p>
       )}

@@ -68,6 +68,9 @@ export interface BookmarkTimeSeries {
   total_draws: number;
   total_losses: number;
   total_games: number;
+  // ISO 8601 (or null when no qualifying games). MAX(played_at) under the
+  // recency window — drives the bookmark card "Last played: <relative>" line.
+  last_played_at?: string | null;
 }
 
 export interface TimeSeriesResponse {
