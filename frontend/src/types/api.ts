@@ -78,6 +78,18 @@ export interface WDLStats {
   p_value: number;
   ci_low: number;
   ci_high: number;
+  // MG-entry eval fields (quick task 260508-f9o). Optional because the
+  // position + filter combo may have no MG-entry rows; the Moves-tab
+  // "Results played as" section renders an em-dash in that case.
+  // NextMovesResponse.position_stats reuses this shape; the next-moves
+  // pipeline doesn't populate eval fields today, so consumers should
+  // tolerate the defaults (eval_n: 0, avg_eval_pawns: null/undefined).
+  avg_eval_pawns?: number | null;
+  eval_ci_low_pawns?: number | null;
+  eval_ci_high_pawns?: number | null;
+  eval_n: number;
+  eval_p_value?: number | null;
+  eval_confidence: 'low' | 'medium' | 'high';
 }
 
 export interface GameRecord {
@@ -106,6 +118,11 @@ export interface OpeningsResponse {
   matched_count: number;
   offset: number;
   limit: number;
+  // Per-color engine-asymmetry baseline in pawns (quick task 260508-f9o).
+  // Rendered as a small reference tick on the MG-entry bullet chart in the
+  // Moves-tab "Results played as" section. Resolved server-side from the
+  // request's color field (BLACK when 'black', else WHITE).
+  eval_baseline_pawns: number;
 }
 
 // ─── Next Moves ──────────────────────────────────────────────────────────────
