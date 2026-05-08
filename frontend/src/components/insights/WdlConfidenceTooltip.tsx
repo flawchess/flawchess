@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { formatAbsoluteDate, formatRelativeDate } from '@/lib/relativeDate';
 
 type ConfidenceLevel = 'low' | 'medium' | 'high';
 
@@ -55,6 +56,14 @@ interface WdlConfidenceTooltipProps {
   pValue: number;
   score: number;
   gameCount: number;
+  /**
+   * MAX(games.played_at) across the games contributing to these stats. ISO
+   * 8601 string from the API (FastAPI serializes datetime as ISO). When
+   * provided, renders a "Last played: <relative>" line between the headline
+   * and the methodology block. When null/undefined, the line is omitted.
+   * Quick task 260508-r61.
+   */
+  lastPlayedAt?: string | null;
 }
 
 /**
@@ -68,6 +77,7 @@ export function WdlConfidenceTooltip({
   pValue,
   score,
   gameCount,
+  lastPlayedAt,
 }: WdlConfidenceTooltipProps): ReactNode {
   return (
     <div className="text-left space-y-1">
@@ -76,6 +86,12 @@ export function WdlConfidenceTooltip({
         <strong>{headline(level, score)}</strong> {CONFIDENCE_LABEL[level]} confidence
         (p = {pValue.toFixed(3)}).
       </p>
+      {lastPlayedAt && (
+        <p>
+          Last played:{' '}
+          <span title={formatAbsoluteDate(lastPlayedAt)}>{formatRelativeDate(lastPlayedAt)}</span>
+        </p>
+      )}
       <p className="opacity-70 italic">
         Score: wins + ½ draws.<br />
         Test: two-sided Wilson score test vs 50%.<br />

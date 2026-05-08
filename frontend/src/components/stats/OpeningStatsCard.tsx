@@ -207,6 +207,7 @@ export function OpeningStatsCard({
           pValue={scoreStats.pValue}
           score={derivedScore}
           gameCount={opening.total}
+          lastPlayedAt={opening.last_played_at}
           testId={`${cardTestId}-score-popover`}
         />
       </span>

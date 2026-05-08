@@ -193,6 +193,7 @@ export function OpeningFindingCard({
           pValue={finding.p_value ?? 1}
           score={finding.score}
           gameCount={finding.n_games}
+          lastPlayedAt={finding.last_played_at}
           testId={`${cardTestId}-score-popover`}
         />
       </span>

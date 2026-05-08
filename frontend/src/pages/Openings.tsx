@@ -879,6 +879,7 @@ export function OpeningsPage() {
                   pValue={stats.p_value}
                   score={stats.score}
                   gameCount={stats.total}
+                  lastPlayedAt={stats.last_played_at}
                   testId="score-bullet-popover-trigger"
                   ariaLabel="Show score confidence details"
                 />
