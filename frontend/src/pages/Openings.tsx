@@ -126,7 +126,7 @@ function ChessboardInfoCopy() {
       <ul className="list-disc pl-5 space-y-1">
         <li>Green: Score ≥ 55%</li>
         <li>Red: Score ≤ 45%</li>
-        <li>Faint blue: Score between 45% and 55%, or too few games / low confidence to call it</li>
+        <li>Faint grey: Score between 45% and 55%, or too few games / low confidence to call it</li>
       </ul>
     </div>
   );
