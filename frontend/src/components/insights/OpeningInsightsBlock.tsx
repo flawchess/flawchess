@@ -29,24 +29,6 @@ export const OPENING_INSIGHTS_CONFIDENCE_COPY: ReactNode = (
   </>
 );
 
-const OPENING_INSIGHTS_POPOVER_COPY: ReactNode = (
-  <div className="space-y-2">
-    <p>
-      <strong>Score</strong> is your win rate plus half your draw rate.
-      50% means you and your opponents broke even.
-    </p>
-    <p>
-      A finding shows up when your score is below 45% or above 55% over at
-      least 20 games, enough of a difference from 50% to be worth a closer look.
-    </p>
-    {OPENING_INSIGHTS_CONFIDENCE_COPY}
-    <p className="italic">
-      Tip: Use the filters to select recency, time control, or opponent strength
-      for a more targeted search.
-    </p>
-  </div>
-);
-
 // Show the top 4 findings per section by default; remaining (up to backend cap of 10) are
 // revealed via a "X more" toggle. The backend always returns up to 10 per section so a
 // single roundtrip covers both states. 4 fits exactly two rows of the lg+ 2-column card grid.
@@ -267,7 +249,16 @@ function FindingsSection({
           testId={`opening-insights-section-${section.key}-info`}
           side="bottom"
         >
-          {OPENING_INSIGHTS_POPOVER_COPY}
+          <div className="space-y-2">
+            <p>
+              A strength or weakness shows up when your score is below 45% or above 55% over at
+              least 20 games, and when it's unlikely to be due to chance. All your games are scanned up to 16 half-moves, and evaluated with Stockfish at the transition from opening to middlegame.
+            </p>
+            <p className="italic">
+              Tip: Use the filters to select recency, time control, or opponent strength
+              for a more targeted search.
+            </p>
+          </div>
         </InfoPopover>
       </h3>
       {findings.length === 0 ? (

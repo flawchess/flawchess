@@ -1,4 +1,3 @@
-// OPENING_INSIGHTS_POPOVER_COPY lives in OpeningInsightsBlock.tsx (JSX co-location).
 // ConfidenceTooltipContent (JSX tooltip body) lives in
 // components/insights/ConfidenceTooltipContent.tsx — kept separate so
 // react-refresh can fast-refresh component vs. helper changes.

@@ -68,7 +68,7 @@ export function EvalConfidenceTooltip({
   return (
     <div className="text-left space-y-1">
       <p>
-        <strong>{fmtSigned(evalMeanPawns)} pawns</strong> over {gameCount} games (average stockfish eval at middlegame entry).
+        <strong>{fmtSigned(evalMeanPawns)} pawns</strong> over {gameCount} games (average Stockfish eval when transitioning from opening to middlegame).
       </p>
       <p>
         <strong>{headline(level, evalMeanPawns)}</strong> {CONFIDENCE_LABEL[level]} confidence
