@@ -28,7 +28,7 @@ import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
 import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
-import { useEndgameInsights } from '@/hooks/useEndgameInsights';
+import { useCachedEndgameInsights, useEndgameInsights } from '@/hooks/useEndgameInsights';
 import { useActiveJobs } from '@/hooks/useImport';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
@@ -101,6 +101,27 @@ export function EndgamesPage() {
   const [insightsCache, setInsightsCache] = useState<
     Array<{ filters: FilterState; response: EndgameInsightsResponse }>
   >([]);
+
+  // Auto-load any previously-cached report for the current applied filters.
+  // GET /insights/endgame/cached never invokes the LLM and never consumes
+  // rate-limit budget, so it is safe to fire on mount and on every filter
+  // change. On a 404 (no cache row), the hook resolves to null silently —
+  // matchingInsights stays null and the user sees the pre-Generate state.
+  const cachedInsights = useCachedEndgameInsights(appliedFilters);
+  useEffect(() => {
+    const result = cachedInsights.data;
+    if (!result) return;
+    setInsightsCache((prev) => {
+      const idx = prev.findIndex((entry) => areFiltersEqual(entry.filters, appliedFilters));
+      if (idx >= 0) {
+        if (prev[idx]?.response === result) return prev;
+        const next = [...prev];
+        next[idx] = { filters: appliedFilters, response: result };
+        return next;
+      }
+      return [...prev, { filters: appliedFilters, response: result }];
+    });
+  }, [cachedInsights.data, appliedFilters]);
 
   const handleGenerateInsights = useCallback(async () => {
     try {

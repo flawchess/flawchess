@@ -584,3 +584,192 @@ class TestFilterPassing:
                 assert response.status_code == 400, f"expected 400 for params={params}"
                 body = response.json()
                 assert body["detail"]["error"] == "filters_not_supported"
+
+
+# ---------------------------------------------------------------------------
+# TestCachedEndpoint — GET /api/insights/endgame/cached (260508-q1z)
+# ---------------------------------------------------------------------------
+
+
+CACHED_ENDPOINT = "/api/insights/endgame/cached"
+
+
+class TestCachedEndpoint:
+    @pytest.mark.asyncio
+    async def test_unauthenticated_returns_401(self) -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(CACHED_ENDPOINT)
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_returns_200(
+        self,
+        authed_user_with_session: tuple[dict[str, str], User],
+        monkeypatch: pytest.MonkeyPatch,
+        test_engine: AsyncEngine,
+    ) -> None:
+        """Fresh cache row → 200 with status='cache_hit'. LLM never invoked."""
+        headers, user = authed_user_with_session
+
+        # Spy on compute_findings + LLM agent — they must NOT be called.
+        compute_calls = {"n": 0}
+
+        async def _spy_compute(
+            fc: FilterContext, session: AsyncSession, uid: int
+        ) -> EndgameTabFindings:
+            compute_calls["n"] += 1
+            return EndgameTabFindings(
+                as_of=datetime.datetime.now(datetime.UTC),
+                filters=fc,
+                findings=[],
+                findings_hash="x" * 64,
+            )
+
+        monkeypatch.setattr("app.services.insights_llm.compute_findings", _spy_compute)
+
+        # Seed a fresh cache row matching default opponent_strength="any".
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        valid_report = _sample_report()
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_row(
+                    user.id,
+                    response_json=valid_report.model_dump(),
+                    error=None,
+                    model=insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS,
+                    prompt_version=insights_llm._PROMPT_VERSION,
+                    opponent_strength="any",
+                ),
+            )
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(CACHED_ENDPOINT, headers=headers)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "cache_hit"
+        assert body["report"]["overview"] == "FlawChess played solidly overall."
+        # Cache-only path must never run compute_findings or invoke the LLM.
+        assert compute_calls["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_returns_404(
+        self,
+        auth_headers: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """No cache row → 404. compute_findings not called."""
+        compute_calls = {"n": 0}
+
+        async def _spy_compute(
+            fc: FilterContext, session: AsyncSession, uid: int
+        ) -> EndgameTabFindings:
+            compute_calls["n"] += 1
+            return EndgameTabFindings(
+                as_of=datetime.datetime.now(datetime.UTC),
+                filters=fc,
+                findings=[],
+                findings_hash="x" * 64,
+            )
+
+        monkeypatch.setattr("app.services.insights_llm.compute_findings", _spy_compute)
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(CACHED_ENDPOINT, headers=auth_headers)
+
+        assert response.status_code == 404
+        assert compute_calls["n"] == 0
+
+    @pytest.mark.asyncio
+    async def test_non_default_filter_returns_404_silently(
+        self,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Non-default filters do NOT 400 here — they 404 because the cache
+        is keyed only on opponent_strength, so other filters cannot match a row."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(
+                CACHED_ENDPOINT,
+                params={"time_control": "blitz", "recency": "3months"},
+                headers=auth_headers,
+            )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_custom_opponent_gap_returns_404(
+        self,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Custom (non-preset) opponent gap → 404 (cache miss), not 400."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(
+                CACHED_ENDPOINT,
+                params={"opponent_gap_min": 13, "opponent_gap_max": 27},
+                headers=auth_headers,
+            )
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_invalidated_by_recent_import(
+        self,
+        authed_user_with_session: tuple[dict[str, str], User],
+        test_engine: AsyncEngine,
+    ) -> None:
+        """Cache row is invalidated when an import with games > 0 lands after
+        the row was written. Endpoint returns 404 in that case."""
+        from app.models.import_job import ImportJob
+
+        headers, user = authed_user_with_session
+        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+        valid_report = _sample_report()
+
+        cache_written_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            hours=2
+        )
+        import_completed_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            hours=1
+        )
+
+        async with session_maker() as session:
+            await _seed(
+                session,
+                _make_row(
+                    user.id,
+                    created_at=cache_written_at,
+                    response_json=valid_report.model_dump(),
+                    error=None,
+                    model=insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS,
+                    prompt_version=insights_llm._PROMPT_VERSION,
+                    opponent_strength="any",
+                ),
+            )
+            session.add(
+                ImportJob(
+                    id=str(uuid.uuid4()),
+                    user_id=user.id,
+                    platform="lichess",
+                    username="someone",
+                    status="completed",
+                    games_imported=5,
+                    completed_at=import_completed_at,
+                )
+            )
+            await session.commit()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(CACHED_ENDPOINT, headers=headers)
+
+        assert response.status_code == 404

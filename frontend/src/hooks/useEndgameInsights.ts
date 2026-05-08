@@ -1,10 +1,25 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import { apiClient, buildFilterParams } from '@/api/client';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type {
   EndgameInsightsResponse,
   InsightsAxiosError,
 } from '@/types/insights';
+
+function buildInsightsParams(filters: FilterState): Record<string, unknown> {
+  return {
+    ...buildFilterParams({
+      time_control: filters.timeControls,
+      platform: filters.platforms,
+      recency: filters.recency,
+      rated: filters.rated,
+      // NOTE: opponent_type intentionally omitted — insights router rejects it.
+      opponent_strength: filters.opponentStrength,
+    }),
+    color: filters.color,
+  };
+}
 
 /**
  * POST /api/insights/endgame — generate LLM-produced Endgame Insights report.
@@ -20,17 +35,7 @@ import type {
 export function useEndgameInsights() {
   return useMutation<EndgameInsightsResponse, InsightsAxiosError, FilterState>({
     mutationFn: async (filters: FilterState) => {
-      const params = {
-        ...buildFilterParams({
-          time_control: filters.timeControls,
-          platform: filters.platforms,
-          recency: filters.recency,
-          rated: filters.rated,
-          // NOTE: opponent_type intentionally omitted — insights router rejects it.
-          opponent_strength: filters.opponentStrength,
-        }),
-        color: filters.color,
-      };
+      const params = buildInsightsParams(filters);
       const response = await apiClient.post<EndgameInsightsResponse>(
         '/insights/endgame',
         null,
@@ -38,5 +43,40 @@ export function useEndgameInsights() {
       );
       return response.data;
     },
+  });
+}
+
+/**
+ * GET /api/insights/endgame/cached — auto-load a previously-cached report.
+ *
+ * Returns null on 404 (no cache row) so callers can render the empty state
+ * silently. Other axios errors propagate. The endpoint never invokes the LLM
+ * and never consumes rate-limit budget, so it is safe to fire on every page
+ * mount and filter change.
+ *
+ * Shares filter serialization with useEndgameInsights via buildInsightsParams
+ * so the cache lookup keys exactly match what a Generate click would produce.
+ */
+export function useCachedEndgameInsights(filters: FilterState) {
+  const params = buildInsightsParams(filters);
+  return useQuery<EndgameInsightsResponse | null>({
+    queryKey: ['endgame-insights', 'cached', params],
+    queryFn: async () => {
+      try {
+        const response = await apiClient.get<EndgameInsightsResponse>(
+          '/insights/endgame/cached',
+          { params },
+        );
+        return response.data;
+      } catch (err) {
+        if (axios.isAxiosError(err) && err.response?.status === 404) {
+          return null;
+        }
+        throw err;
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
   });
 }

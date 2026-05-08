@@ -4,16 +4,18 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import type { FilterState } from '@/components/filters/FilterPanel';
-import { useEndgameInsights } from '../useEndgameInsights';
+import { useCachedEndgameInsights, useEndgameInsights } from '../useEndgameInsights';
 
-// Mock apiClient.post at the module level. Use importActual so buildFilterParams
-// (real export) is preserved — the hook imports it alongside apiClient.
+// Mock apiClient.post / .get at the module level. Use importActual so
+// buildFilterParams (real export) is preserved — the hooks import it
+// alongside apiClient.
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client');
   return {
     ...actual,
     apiClient: {
       post: vi.fn(),
+      get: vi.fn(),
     },
   };
 });
@@ -22,7 +24,10 @@ import { apiClient } from '@/api/client';
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({
-    defaultOptions: { mutations: { retry: false } },
+    defaultOptions: {
+      mutations: { retry: false },
+      queries: { retry: false },
+    },
   });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
@@ -94,6 +99,57 @@ describe('useEndgameInsights', () => {
     const [, , config] = call;
     const params = (config as { params: Record<string, unknown> }).params;
     expect(params).not.toHaveProperty('opponent_type');
+  });
+
+  it('useCachedEndgameInsights returns the cached response on 200', async () => {
+    const cached = {
+      report: {
+        overview: 'Overview text.',
+        sections: [],
+        model_used: 'anthropic:claude-haiku-4-5-20251001',
+        prompt_version: 'endgame_v22',
+      },
+      status: 'cache_hit',
+      stale_filters: null,
+    };
+    vi.mocked(apiClient.get).mockResolvedValue({ data: cached });
+
+    const { result } = renderHook(() => useCachedEndgameInsights(BASE_FILTERS), { wrapper });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data).toEqual(cached);
+    expect(apiClient.get).toHaveBeenCalledTimes(1);
+    const [url, config] = vi.mocked(apiClient.get).mock.calls[0]!;
+    expect(url).toBe('/insights/endgame/cached');
+    const params = (config as { params: Record<string, unknown> }).params;
+    expect(params).toMatchObject({
+      time_control: ['blitz', 'rapid'],
+      platform: ['chess.com'],
+      recency: '90d',
+      rated: true,
+      opponent_gap_min: -50,
+      opponent_gap_max: 50,
+      color: 'white',
+    });
+    expect(params).not.toHaveProperty('opponent_type');
+  });
+
+  it('useCachedEndgameInsights returns null on 404 (no error)', async () => {
+    const axios404 = Object.assign(new Error('404'), {
+      isAxiosError: true,
+      response: { status: 404, data: { detail: 'no_cached_report' } },
+    });
+    vi.mocked(apiClient.get).mockRejectedValue(axios404);
+
+    const { result } = renderHook(() => useCachedEndgameInsights(BASE_FILTERS), { wrapper });
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data).toBeNull();
+    expect(result.current.isError).toBe(false);
   });
 
   it('surfaces AxiosError on mutation failure', async () => {

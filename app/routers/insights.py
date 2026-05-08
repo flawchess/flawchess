@@ -31,8 +31,15 @@ from app.schemas.opening_insights import (
     OpeningInsightsRequest,
     OpeningInsightsResponse,
 )
+from app.core.config import settings
+from app.repositories.import_job_repository import (
+    get_latest_completed_import_with_games_at,
+)
+from app.repositories.llm_log_repository import get_latest_successful_log_for_user
+from app.schemas.insights import EndgameInsightsReport
 from app.services import insights_llm
 from app.services.insights_llm import (
+    INSIGHTS_CACHE_MAX_AGE,
     InsightsProviderError,
     InsightsRateLimitExceeded,
     InsightsValidationFailure,
@@ -164,6 +171,78 @@ async def get_endgame_insights(
                 retry_after_seconds=None,
             ).model_dump(),
         )
+
+
+@router.get("/endgame/cached", response_model=EndgameInsightsResponse)
+async def get_cached_endgame_insights(
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+    time_control: list[str] | None = Query(default=None),
+    platform: list[str] | None = Query(default=None),
+    recency: Literal[
+        "all_time", "week", "month", "3months", "6months", "year", "3years", "5years"
+    ] = Query(default="all_time"),
+    rated: bool | None = Query(default=None),
+    opponent_gap_min: int | None = Query(default=None),
+    opponent_gap_max: int | None = Query(default=None),
+    color: Literal["all", "white", "black"] = Query(default="all"),
+) -> EndgameInsightsResponse:
+    """Cache-only lookup of the Tier-1 structural insights cache.
+
+    Mirrors the Tier-1 logic from `app.services.insights_llm.generate_insights`
+    (insights_llm.py:1830-1857) without invoking compute_findings or the LLM,
+    and without consuming any rate-limit budget. Used by the frontend to
+    auto-render a previously-generated report when the Endgames page mounts.
+
+    Query params mirror POST /insights/endgame for hook reuse, but
+    `_validate_full_history_filters` is intentionally NOT called: any
+    non-default filter (or a custom non-preset opponent gap) simply produces
+    a 404 because no cache row matches that combination.
+
+    Returns:
+        200: EndgameInsightsResponse(status='cache_hit') when a fresh,
+             non-stale (no qualifying import since written) cache row exists
+             for (user_id, prompt_version, model, opponent_strength).
+        404: when no qualifying cache row exists.
+    """
+    preset = derive_preset(opponent_gap_min, opponent_gap_max)
+    if preset == "custom":
+        raise HTTPException(status_code=404, detail="no_cached_report")
+
+    # color, time_controls, platforms, rated_only do not affect the structural
+    # cache key — opponent_strength is the only filter dimension that does.
+    # Build a FilterContext purely to keep the param-derivation contract
+    # symmetric with POST; the lookup below only consults `preset`.
+    _ = FilterContext(
+        recency=recency,
+        opponent_strength=preset,
+        color=color,
+        time_controls=time_control or [],
+        platforms=platform or [],
+        rated_only=bool(rated) if rated is not None else False,
+    )
+
+    model = settings.PYDANTIC_AI_MODEL_INSIGHTS
+    cached = await get_latest_successful_log_for_user(
+        session,
+        user_id=user.id,
+        prompt_version=insights_llm._PROMPT_VERSION,
+        model=model,
+        opponent_strength=preset,
+        max_age=INSIGHTS_CACHE_MAX_AGE,
+    )
+    if cached is None:
+        raise HTTPException(status_code=404, detail="no_cached_report")
+
+    last_import_at = await get_latest_completed_import_with_games_at(session, user.id)
+    if last_import_at is not None and last_import_at > cached.created_at:
+        raise HTTPException(status_code=404, detail="no_cached_report")
+
+    report = EndgameInsightsReport.model_validate(cached.response_json)
+    return EndgameInsightsResponse(
+        report=insights_llm._maybe_strip_overview(report),
+        status="cache_hit",
+    )
 
 
 @router.post("/openings", response_model=OpeningInsightsResponse)
