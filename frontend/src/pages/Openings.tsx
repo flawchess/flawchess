@@ -848,13 +848,15 @@ export function OpeningsPage() {
               <Link
                 to="/openings/games"
                 onClick={() => window.scrollTo({ top: 0 })}
-                className="flex items-center gap-1 text-sm tabular-nums text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
+                className="flex items-center gap-1 text-sm tabular-nums w-full text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
                 aria-label="View games for this position"
                 data-testid="btn-moves-to-games"
               >
-                <Swords className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Games:</span>
-                <span className="font-semibold tabular-nums">{stats.total}</span>
+                <span className="ml-auto font-semibold tabular-nums inline-flex items-center gap-0.3">
+                  {stats.total}
+                  <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+                </span>
               </Link>
               <div className="min-w-0" data-testid="wdl-bar-position">
                 <WDLChartRow data={stats} barHeight="h-6" showSegmentCounts={false} />
