@@ -858,6 +858,7 @@ export function OpeningsPage() {
                 data-testid="btn-moves-to-games"
               >
                 <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline">Games:</span>
                 <span className="ml-auto font-semibold tabular-nums">
                   {stats.total}
                   {isUnreliable && ' (low)'}
