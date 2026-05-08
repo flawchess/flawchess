@@ -360,13 +360,25 @@ async def query_top_openings_sql_wdl(
 class PositionWDL:
     """Position-based WDL stats for a single hash."""
 
-    __slots__ = ("total", "wins", "draws", "losses")
+    __slots__ = ("total", "wins", "draws", "losses", "last_played_at")
 
-    def __init__(self, total: int, wins: int, draws: int, losses: int):
+    def __init__(
+        self,
+        total: int,
+        wins: int,
+        draws: int,
+        losses: int,
+        last_played_at: datetime.datetime | None = None,
+    ):
         self.total = total
         self.wins = wins
         self.draws = draws
         self.losses = losses
+        # MAX(games.played_at) for the games contributing to this (full_hash)
+        # bucket; surfaces "Last played: <relative>" in the OpeningStatsCard
+        # score-confidence popover. None when no contributing game has a
+        # populated played_at (rare; column is nullable on Game).
+        self.last_played_at = last_played_at
 
 
 async def query_position_wdl_batch(
@@ -391,13 +403,18 @@ async def query_position_wdl_batch(
     if not hashes:
         return {}
 
-    # Deduplicate game_id per hash first (subquery), then aggregate WDL
+    # Deduplicate game_id per hash first (subquery), then aggregate WDL.
+    # `played_at` is carried through the dedup so the outer query can compute
+    # MAX(played_at) per full_hash for the "Last played: <relative>" tooltip
+    # line — at most one row per (full_hash, game_id) so the MAX matches the
+    # set of games that contribute to the WDL counts.
     dedup = (
         select(
             GamePosition.full_hash,
             Game.id.label("game_id"),
             Game.result,
             Game.user_color,
+            Game.played_at,
         )
         .join(Game, GamePosition.game_id == Game.id)
         .where(
@@ -440,11 +457,14 @@ async def query_position_wdl_batch(
             )
         )
         .label("losses"),
+        func.max(dedup.c.played_at).label("last_played_at"),
     ).group_by(dedup.c.full_hash)
 
     result = await session.execute(stmt)
     return {
-        row[0]: PositionWDL(total=row[1], wins=row[2], draws=row[3], losses=row[4])
+        row[0]: PositionWDL(
+            total=row[1], wins=row[2], draws=row[3], losses=row[4], last_played_at=row[5]
+        )
         for row in result.fetchall()
     }
 

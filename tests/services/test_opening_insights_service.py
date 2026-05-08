@@ -8,6 +8,7 @@ parity, color optimization, and bookmark isolation (D-18).
 from __future__ import annotations
 
 import ctypes
+import datetime
 from typing import Any, Literal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -49,6 +50,7 @@ def _make_row(
     w: int = 4,
     d: int = 4,
     losses: int = 12,
+    last_played_at: datetime.datetime | None = None,
 ) -> SimpleNamespace:
     """Construct a synthetic repository Row compatible with compute_insights."""
     if entry_san_sequence is None:
@@ -62,6 +64,11 @@ def _make_row(
         w=w,
         d=d,
         l=losses,
+        # Quick task 260508-r61: query_opening_transitions now selects
+        # MAX(played_at). The service falls back to it when the resulting-position
+        # WDL lookup misses; the fixture default of None mirrors a row whose
+        # contributing games all have NULL played_at (rare but valid).
+        last_played_at=last_played_at,
     )
 
 
@@ -92,7 +99,7 @@ async def _run_compute(
     rows: list[SimpleNamespace],
     openings_by_hash: dict[int, Opening] | None = None,
     color: str = "white",
-    pos_wdl: dict[int, tuple[int, int, int]] | None = None,
+    pos_wdl: dict[int, tuple[int, int, int, datetime.datetime | None]] | None = None,
 ) -> OpeningInsightsResponse:
     """Helper: patch repo functions and run compute_insights.
 
@@ -102,12 +109,16 @@ async def _run_compute(
 
     Phase 80.1: also patches query_resulting_position_wdl. When pos_wdl is
     None (the default), the mock returns a dict where each row.resulting_full_hash
-    maps to (row.w, row.d, row.l) — i.e. resulting-position WDL == move-played
-    WDL. This preserves existing test expectations because _classify_row,
-    _compute_score, compute_confidence_bucket, wilson_bounds, and the
-    OpeningInsightFinding fields all see the same numbers they did pre-Phase 80.1.
-    Tests that need to drive a divergence between move-played and resulting-position
-    WDL (the new transposition tests) pass an explicit pos_wdl mapping.
+    maps to (row.w, row.d, row.l, row.last_played_at) — i.e. resulting-position
+    WDL == move-played WDL plus the move-played MAX(played_at). This preserves
+    existing test expectations because _classify_row, _compute_score,
+    compute_confidence_bucket, wilson_bounds, and the OpeningInsightFinding
+    fields all see the same numbers they did pre-Phase 80.1. Tests that need to
+    drive a divergence between move-played and resulting-position WDL (the new
+    transposition tests) pass an explicit pos_wdl mapping.
+
+    Quick task 260508-r61: pos_wdl tuples are now 4-element to carry
+    last_played_at through to the OpeningInsightFinding.last_played_at field.
     """
     if openings_by_hash is None:
         openings_by_hash = {100: _make_opening()}
@@ -116,7 +127,10 @@ async def _run_compute(
         # in fixture). Phase 80.1: existing tests that compute expected score
         # from row.w/d/l/n produce the same expected score under the new
         # aggregation because pos == row by default.
-        pos_wdl = {int(row.resulting_full_hash): (row.w, row.d, row.l) for row in rows}
+        pos_wdl = {
+            int(row.resulting_full_hash): (row.w, row.d, row.l, row.last_played_at)
+            for row in rows
+        }
 
     with (
         patch(
@@ -305,7 +319,7 @@ async def test_cross_color_same_hash_kept_as_two_findings() -> None:
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}
         # Phase 80.1: pos WDL == move-played WDL (no transposition in fixture).
-        mock_pos_wdl.return_value = {999: (2, 2, 16)}
+        mock_pos_wdl.return_value = {999: (2, 2, 16, None)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -391,7 +405,7 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
         mock_attribution.return_value = {100: opening_a, 200: opening_b, 300: opening_c}
         mock_eval.return_value = {}
         # Phase 80.1: pos WDL == move-played WDL across all three rows.
-        mock_pos_wdl.return_value = {200: (4, 4, 12), 400: (4, 4, 12), 300: (4, 4, 12)}
+        mock_pos_wdl.return_value = {200: (4, 4, 12, None), 400: (4, 4, 12, None), 300: (4, 4, 12, None)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -573,7 +587,7 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
         ]
         mock_eval.return_value = {}
         # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
-        mock_pos_wdl.return_value = {200: (2, 2, 16)}
+        mock_pos_wdl.return_value = {200: (2, 2, 16, None)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -613,7 +627,7 @@ async def test_attribution_drops_finding_when_no_lineage_match() -> None:
         mock_attribution.return_value = {}
         mock_eval.return_value = {}
         # Phase 80.1: pos WDL == move-played WDL.
-        mock_pos_wdl.return_value = {200: (2, 2, 16)}
+        mock_pos_wdl.return_value = {200: (2, 2, 16, None)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -972,7 +986,7 @@ async def test_color_optimization_skips_unused_color_query() -> None:
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}
         # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
-        mock_pos_wdl.return_value = {200: (12, 4, 4)}
+        mock_pos_wdl.return_value = {200: (12, 4, 4, None)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -1033,7 +1047,7 @@ async def test_display_name_vs_prefix_when_attribution_parity_disagrees() -> Non
         mock_attribution.return_value = {100: white_defined_opening}
         mock_eval.return_value = {}
         # Phase 80.1: pos WDL == move-played WDL.
-        mock_pos_wdl.return_value = {200: (2, 2, 16)}
+        mock_pos_wdl.return_value = {200: (2, 2, 16, None)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -1163,7 +1177,7 @@ async def test_compute_insights_eval_fields_populated_when_metrics_present() -> 
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = synthetic_metrics
         # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
-        mock_pos_wdl.return_value = {999: (4, 4, 12)}
+        mock_pos_wdl.return_value = {999: (4, 4, 12, None)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -1215,7 +1229,7 @@ async def test_compute_insights_eval_fields_stay_at_defaults_when_no_metrics() -
         mock_attribution.return_value = {100: opening}
         mock_eval.return_value = {}  # no metrics
         # Phase 80.1: pos WDL == move-played WDL (no transposition fixture).
-        mock_pos_wdl.return_value = {999: (4, 4, 12)}
+        mock_pos_wdl.return_value = {999: (4, 4, 12, None)}
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -1279,7 +1293,7 @@ class TestComputeInsightsTranspositionWdl:
             rows=[row],
             openings_by_hash={100: opening},
             color="white",
-            pos_wdl={DIVERGE_HASH: (24, 6, 10)},
+            pos_wdl={DIVERGE_HASH: (24, 6, 10, None)},
         )
 
         assert len(response.white_strengths) == 1
@@ -1318,7 +1332,7 @@ class TestComputeInsightsTranspositionWdl:
             rows=[row],
             openings_by_hash={100: opening},
             color="white",
-            pos_wdl={FLIP_HASH: (10, 10, 20)},
+            pos_wdl={FLIP_HASH: (10, 10, 20, None)},
         )
 
         # Classification flipped: appears in WEAKNESSES, not strengths.
@@ -1375,7 +1389,7 @@ class TestComputeInsightsTranspositionWdl:
         # see different counts on at least one finding.
         async def pos_wdl_side_effect(
             *, session: Any, user_id: int, hash_list: list[int], color: str | None, **_: Any
-        ) -> dict[int, tuple[int, int, int]]:
+        ) -> dict[int, tuple[int, int, int, datetime.datetime | None]]:
             # WR-01: caller must pass a real color literal, never None, when
             # called per-color. Assert here so a regression is impossible to
             # mock around.
@@ -1388,11 +1402,11 @@ class TestComputeInsightsTranspositionWdl:
                 assert hash_list == [WHITE_HASH], (
                     f"white-color call must scope to white-section hashes, got {hash_list}"
                 )
-                return {WHITE_HASH: (8, 8, 24)}
+                return {WHITE_HASH: (8, 8, 24, None)}
             assert hash_list == [BLACK_HASH], (
                 f"black-color call must scope to black-section hashes, got {hash_list}"
             )
-            return {BLACK_HASH: (28, 4, 8)}
+            return {BLACK_HASH: (28, 4, 8, None)}
 
         with (
             patch(
@@ -1473,7 +1487,7 @@ class TestComputeInsightsTranspositionWdl:
             mock_transitions.side_effect = [[row_white], []]
             mock_attribution.return_value = {100: opening}
             mock_eval.return_value = {}
-            mock_pos_wdl.return_value = {0xDD20: (4, 4, 12)}
+            mock_pos_wdl.return_value = {0xDD20: (4, 4, 12, None)}
 
             await compute_insights(
                 session=AsyncMock(),
@@ -1514,7 +1528,7 @@ class TestComputeInsightsTranspositionWdl:
             rows=[row],
             openings_by_hash={100: opening},
             color="white",
-            pos_wdl={VALIDATOR_HASH: (15, 0, 10)},
+            pos_wdl={VALIDATOR_HASH: (15, 0, 10, None)},
         )
 
         # Validator did not raise; finding is constructed with pos_n=25.

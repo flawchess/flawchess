@@ -757,6 +757,49 @@ class TestNextMoves:
         assert d4.losses == 1
         assert d4.result_hash == NM_D4_HASH
 
+    @pytest.mark.asyncio
+    async def test_next_moves_last_played_at_max(self, db_session: AsyncSession) -> None:
+        """Quick task 260508-r61: query_next_moves returns MAX(games.played_at)
+        per (move_san, result_hash) so the FE can render the
+        "Last played: <relative>" line in the Score popover.
+        """
+        from app.repositories.openings_repository import query_next_moves
+
+        # Three games at the same source playing e4. Pick distinct played_at
+        # values so we can pin which one is the MAX.
+        old_date = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+        mid_date = datetime.datetime(2024, 6, 1, tzinfo=datetime.timezone.utc)
+        recent_date = datetime.datetime(2024, 12, 1, tzinfo=datetime.timezone.utc)
+
+        for played_at in (old_date, mid_date, recent_date):
+            game, _ = await _seed_game(
+                db_session,
+                result="1-0",
+                user_color="white",
+                full_hash=NM_SOURCE_HASH,
+                move_san="e4",
+                played_at=played_at,
+            )
+            await _add_position(db_session, game.id, 1, ply=2, full_hash=NM_E4_HASH)
+
+        rows = await query_next_moves(
+            db_session,
+            user_id=1,
+            target_hash=NM_SOURCE_HASH,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+            color=None,
+        )
+
+        assert len(rows) == 1
+        assert rows[0].move_san == "e4"
+        assert rows[0].game_count == 3
+        # MAX(played_at) = the most recent of the three seeded games.
+        assert rows[0].last_played_at == recent_date
+
 
 # ---------------------------------------------------------------------------
 # TestNextMovesTranspositions — MEXP-05

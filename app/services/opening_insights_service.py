@@ -510,7 +510,7 @@ async def compute_insights(
         # filtered via openings_service.get_next_moves passing color=request.color).
         # Sequential awaits per CLAUDE.md AsyncSession rule (no asyncio.gather).
         pos_wdl_by_color: dict[
-            Literal["white", "black"], dict[int, tuple[int, int, int]]
+            Literal["white", "black"], dict[int, tuple[int, int, int, datetime.datetime | None]]
         ] = {}
         for color in colors_to_query:
             color_resulting_hashes: list[int] = list(
@@ -566,10 +566,15 @@ async def compute_insights(
                         row.resulting_full_hash,
                     )
                     pos_row: Any = row
+                    # Fall back to the move-played MAX(played_at) from
+                    # query_opening_transitions (still the same user, same
+                    # filters) rather than dropping the line silently.
+                    finding_last_played_at: datetime.datetime | None = row.last_played_at
                 else:
-                    pos_w, pos_d, pos_l = pos
+                    pos_w, pos_d, pos_l, pos_last_played_at = pos
                     pos_n = pos_w + pos_d + pos_l
                     pos_row = SimpleNamespace(w=pos_w, d=pos_d, l=pos_l, n=pos_n)
+                    finding_last_played_at = pos_last_played_at
 
                 cls = _classify_row(pos_row)
                 if cls is None:
@@ -632,6 +637,12 @@ async def compute_insights(
                     p_value=p_value,
                     ci_low=ci_low,
                     ci_high=ci_high,
+                    # Quick task 260508-r61: MAX(played_at) across all games
+                    # visiting the resulting position (transposition-inclusive,
+                    # color-filtered). Falls back to the move-played MAX from
+                    # query_opening_transitions when the resulting-position
+                    # lookup misses (matches the W/D/L fallback above).
+                    last_played_at=finding_last_played_at,
                 )
 
                 section_key = (
