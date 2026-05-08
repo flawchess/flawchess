@@ -186,7 +186,7 @@ export function MoveExplorer({
             <tr>
               <th className="w-8 sm:w-12 text-left text-xs text-muted-foreground font-normal pb-1">
                 <span className="inline-flex items-center gap-1">
-                  <span className="sr-only sm:not-sr-only">Move</span>
+                  <span>Move</span>
                   <InfoPopover ariaLabel="Move arrows info" testId="move-arrows-info" side="top">
                     <div className="space-y-2">
                       <p>
