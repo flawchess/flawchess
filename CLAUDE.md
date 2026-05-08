@@ -20,11 +20,12 @@ Users import their games from chess.com and/or lichess and analyze win/draw/loss
 
 ### User Flow
 
-1. Sign up (free, no credit card)
+1. Sign up (free, no credit card), or use as guest
 2. Import games from chess.com and/or lichess (background async import)
-3. Explore openings on the interactive board with WDL statistics
-4. Analyze endgame performance by type with conversion/recovery metrics
-5. Optionally scout opponents or bookmark positions
+3. Explore openings on the interactive board with WDL statistics and AI-narrated insights
+4. Analyze endgame performance by type with conversion/recovery metrics and AI-narrated feedback
+5. Inspect time management stats: clock advantage at endgame entry, performance under time pressure, flag rates per time control
+6. Optionally bookmark openings to track them over time, or scout an opponent's repertoire before a match
 
 ## Tech Stack
 

@@ -53,7 +53,7 @@ export default defineConfig({
       manifest: {
         name: 'FlawChess',
         short_name: 'FlawChess',
-        description: 'Chess opening analysis by position',
+        description: 'Free chess analysis across your chess.com and lichess games. Find leaks in your openings, endgames, and time management.',
         theme_color: '#0a0a0a',
         background_color: '#0a0a0a',
         display: 'standalone',

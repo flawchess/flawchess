@@ -25,7 +25,7 @@
 
 ## What is FlawChess?
 
-A free, open-source chess analysis platform. Import games from chess.com and lichess to find exactly where you win and lose — across openings, endgames, and time management. Position matching uses Zobrist hashes (not opening names), so analysis stays consistent across platforms.
+A free, open-source chess analysis platform. Import games from chess.com and lichess to find leaks in your openings, endgames, and time management, with AI-narrated insights that explain what your stats mean. Position matching uses Zobrist hashes (not opening names), so analysis stays consistent across platforms.
 
 ![Opening Explorer](frontend/public/screenshots/opening-explorer.png)
 
