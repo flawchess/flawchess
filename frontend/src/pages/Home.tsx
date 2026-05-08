@@ -18,7 +18,8 @@ import { cn } from '@/lib/utils';
 import { Scale, Filter, TrophyIcon, Timer, Compass, Loader2, UserPlus, DoorOpen } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-// Feature sections — imagePosition alternates right/left so text and image swap sides on desktop.
+// Feature sections — the first entry is rendered in the hero (desktop right column +
+// mobile standalone section); the rest alternate image left/right below.
 // All screenshots are landscape orientation with a 2fr/3fr text/image ratio.
 const FEATURES: {
   slug: string;
@@ -33,11 +34,24 @@ const FEATURES: {
     icon: Compass,
     heading: 'Opening Explorer & Insights',
     desc: [
-        "Step through any opening and see your win/draw/loss rate for every move you\u2019ve played.",
-        'Automatically scan all your games 16 half-moves deep to surface opening strengths and weaknesses.',
-        "Scout your opponents\u2019 weaknesses and tendencies before a match.",
+        'Get a detailed statistical analysis for every move you’ve played.',
+        'Compare your win/draw/loss rate to the Stockfish evaluation at the end of the opening.',
+        'Scan the first 8 moves of all your games to surface opening strengths and weaknesses.',
+        'Scout your opponent\'s repertoire before a match.',
     ],
-    screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss bars per candidate move' },
+    screenshot: { src: '/screenshots/opening-explorer.png', alt: 'Board with move explorer showing win/draw/loss rate and stockfish evaluation per candidate move' },
+    imagePosition: 'right',
+  },
+  {
+    slug: 'endgame-analytics',
+    icon: TrophyIcon,
+    heading: 'Endgame Analytics',
+    desc: [
+      'Measure how well you convert winning endgames and recover from losing ones.',
+      'Track your Endgame ELO over time by platform and time control.',
+      'Get personalized feedback on what your stats mean.',
+    ],
+    screenshot: { src: '/screenshots/endgame-metrics-and-elo-llm-badge.png', alt: 'Endgame metrics and Endgame ELO timeline over time' },
     imagePosition: 'left',
   },
   {
@@ -46,8 +60,8 @@ const FEATURES: {
     heading: 'Time Management Stats',
     desc: [
         'See your average time advantage or deficit when entering the endgame.',
-        'Find out if you crack more than your opponents under matching time-pressure levels.',
-        'Track whether you flag more or less than your opponents per time control.',
+        'Find out if you crack under time pressure more than your opponents.',
+        'Compare your flag rate to your opponents\' per time control.',
     ],
     screenshot: { src: '/screenshots/time-management-stats.png', alt: 'Average clock difference over time and time-pressure-vs-performance charts' },
     imagePosition: 'right',
@@ -58,8 +72,8 @@ const FEATURES: {
     heading: 'Opening Comparison and Tracking',
     desc: [
         'Bookmark your favorite openings and compare their performance.',
-        'Find out how your opening study impacts your win rate over time.',
-        'Use the filters to see which openings work best for which time controls.',
+        'See how your opening study impacts your win rate over time.',
+        'Filter by time control to find which openings work best where.',
     ],
     screenshot: { src: '/screenshots/opening-comparison.png', alt: 'Win rate trends over time for multiple openings' },
     imagePosition: 'left',
@@ -69,9 +83,9 @@ const FEATURES: {
     icon: Filter,
     heading: 'System Opening Filter',
     desc: [
-        'You play the London, but your analysis tool scatters your games across 5 different opening names.',
-        "FlawChess lets you filter by your pieces only, ignoring your opponent\u2019s responses.",
-        'Calculate win/draw/loss rates for your system openings across all variations.',
+        'Group system openings (like the London) across all variations.',
+        'Filter by your pieces only, ignoring opponents\' responses.',
+        'Get win/draw/loss rates for the entire system, not scattered names.',
     ],
     screenshot: { src: '/screenshots/system-openings.png', alt: 'Opening bookmarks grouping system opening variations' },
     imagePosition: 'right',
@@ -79,6 +93,14 @@ const FEATURES: {
 ];
 
 // ─── Homepage content (unauthenticated) ───────────────────────────────────────
+
+// Hero shows the first feature in its right column (desktop) and as a standalone
+// charcoal section (mobile). The remaining features render in the alternating
+// screenshots grid below.
+const heroFeature = FEATURES[0]!;
+const featureSections = FEATURES.slice(1);
+const HeroIcon = heroFeature.icon;
+const heroDescItems = Array.isArray(heroFeature.desc) ? heroFeature.desc : [heroFeature.desc];
 
 export function HomePageContent() {
   const { loginAsGuest, isLoading } = useAuth();
@@ -117,7 +139,7 @@ export function HomePageContent() {
               </span>
             </h1>
             <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-              Import games from chess.com and lichess. Explore openings move by move, track endgame performance, and find exactly where you win and lose.
+              Free analysis across your chess.com and lichess games, with AI-narrated insights. Find leaks in your openings, endgames, and time management.
             </p>
             <div className="mt-8 flex flex-row items-center justify-center gap-3">
               <Button
@@ -163,54 +185,53 @@ export function HomePageContent() {
             </div>
           </div>
 
-          {/* Right column: Endgame Analytics preview — lg and up only.
+          {/* Right column: hero feature preview — lg and up only.
               Title → image → bullets stacking matches the feature sections below.
               Below lg the preview renders as a standalone charcoal section further down. */}
-          <div data-testid="hero-endgame-preview" className="hidden lg:block">
-            <h2 className="text-2xl font-bold mb-4">Endgame Analytics</h2>
+          <div data-testid="hero-feature-preview" className="hidden lg:block">
+            <div className="flex items-center gap-4 mb-4">
+              <HeroIcon className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+              <h2 className="text-2xl font-bold">{heroFeature.heading}</h2>
+            </div>
             <img
-              src="/screenshots/endgame-metrics-and-elo-llm-badge.png"
-              alt="Endgame metrics and Endgame ELO timeline over time"
+              src={heroFeature.screenshot.src}
+              alt={heroFeature.screenshot.alt}
               className="rounded-lg border border-border shadow-md w-full mb-4"
             />
             <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-              <li>Measure how well you convert winning endgames and recover from losing ones.</li>
-              <li>Track your Endgame ELO over time by platform and time control.</li>
-              <li>Get personalized feedback explaining what your endgame stats mean.</li>
+              {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
             </ul>
           </div>
         </div>
       </section>
       </div>
 
-      {/* Endgame Analytics — standalone section (mobile / small desktop only).
+      {/* Hero feature — standalone section (mobile / small desktop only).
           Title → image → bullets, matching the feature sections below. Hidden on lg+
           because the hero's right column already shows the same content there. */}
       <section
-        data-testid="feature-endgame-analytics-mobile"
+        data-testid={`feature-${heroFeature.slug}-mobile`}
         className="lg:hidden bg-[#1a1a1a] py-12"
       >
         <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
           <div className="flex items-center gap-4">
-            <TrophyIcon className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
-            <h2 className="text-2xl font-bold">Endgame Analytics</h2>
+            <HeroIcon className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <h2 className="text-2xl font-bold">{heroFeature.heading}</h2>
           </div>
           <img
-            src="/screenshots/endgame-metrics-and-elo-llm-badge.png"
-            alt="Endgame metrics and Endgame ELO timeline over time"
+            src={heroFeature.screenshot.src}
+            alt={heroFeature.screenshot.alt}
             className="rounded-lg border border-border shadow-md w-full"
           />
           <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
-            <li>Measure how well you convert winning endgames and recover from losing ones.</li>
-              <li>Track your Endgame ELO over time by platform and time control.</li>
-              <li>Get personalized feedback explaining what your endgame stats mean.</li>
+            {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
           </ul>
         </div>
       </section>
 
-      {/* Feature sections — alternating image left/right */}
+      {/* Feature sections — alternating image left/right (skips the hero feature) */}
       <div id="features" data-testid="screenshots-section" className="scroll-mt-16">
-        {FEATURES.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }, index) => {
+        {featureSections.map(({ slug, icon: Icon, heading, desc, screenshot, imagePosition }, index) => {
           // On desktop, even-indexed features get charcoal bg. On mobile the Interactive
           // Opening Explorer (charcoal) sits in front of the feature list, so the mobile
           // alternation is flipped: odd-indexed features get charcoal on mobile to avoid
@@ -339,6 +360,14 @@ export function HomePageContent() {
               filterable by time control, color, and recency.
             </AccordionContent>
           </AccordionItem>
+          <AccordionItem value="engine" data-testid="faq-item-engine">
+            <AccordionTrigger>Does FlawChess use a chess engine?</AccordionTrigger>
+            <AccordionContent>
+              Yes. Stockfish 18 evaluates key transition positions in your games (end of opening,
+              endgame entry) so we can compare your actual results against the engine's
+              verdict.
+            </AccordionContent>
+          </AccordionItem>
           <AccordionItem value="requests" data-testid="faq-item-requests">
             <AccordionTrigger>Where can I make feature requests?</AccordionTrigger>
             <AccordionContent>
@@ -429,6 +458,17 @@ export function HomePageContent() {
               python-chess
             </a>{' '}
             &mdash; chess logic, move generation, and Zobrist hashing
+          </li>
+          <li>
+            <a
+              href="https://stockfishchess.org"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Stockfish
+            </a>{' '}
+            &mdash; open-source chess engine for position evaluation
           </li>
           <li>
             <a
