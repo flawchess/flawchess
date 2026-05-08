@@ -275,7 +275,7 @@ class TestRollingWindowBoundaries:
         resp = await get_time_series(db_session, user_id=_USER_ROLLING, request=req)
         assert len(resp.series[0].data) == 1
         assert resp.series[0].data[0].game_count == 10
-        assert resp.series[0].data[0].win_rate == 1.0  # all wins
+        assert resp.series[0].data[0].score == 1.0  # all wins
 
     @pytest.mark.asyncio
     async def test_same_day_games_collapse_to_one_point(self, db_session: AsyncSession) -> None:

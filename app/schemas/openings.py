@@ -136,10 +136,10 @@ class TimeSeriesRequest(BaseModel):
 
 
 class TimeSeriesPoint(BaseModel):
-    """Win-rate data for a single rolling-window datapoint."""
+    """Score data for a single rolling-window datapoint."""
 
     date: str  # "2025-01-15" (ISO date of the game)
-    win_rate: float  # wins / total in trailing window
+    score: float  # (wins + 0.5 * draws) / total in trailing window
     game_count: int  # total games in the window (1..window_size)
     window_size: int  # the configured window size (always ROLLING_WINDOW_SIZE)
 

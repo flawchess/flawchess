@@ -222,12 +222,13 @@ async def get_time_series(
     user_id: int,
     request: TimeSeriesRequest,
 ) -> TimeSeriesResponse:
-    """Return rolling-window win-rate time series for each bookmark in the request.
+    """Return rolling-window chess-score time series for each bookmark in the request.
 
     Processes all bookmarks in a single service call — no N+1 HTTP calls.
-    Each datapoint represents the win rate over the trailing ROLLING_WINDOW_SIZE
-    games (or all games so far if fewer than ROLLING_WINDOW_SIZE have been played).
-    Partial windows (games 1 to ROLLING_WINDOW_SIZE-1) are included from the start.
+    Each datapoint represents the chess score (W + 0.5·D) / N over the trailing
+    ROLLING_WINDOW_SIZE games (or all games so far if fewer than ROLLING_WINDOW_SIZE
+    have been played). Partial windows (games 1 to ROLLING_WINDOW_SIZE-1) are
+    included from the start.
     """
     cutoff = recency_cutoff(request.recency)
     cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
@@ -274,12 +275,13 @@ async def get_time_series(
             # Rolling window: trailing ROLLING_WINDOW_SIZE results
             window = results_so_far[-ROLLING_WINDOW_SIZE:]
             window_wins = window.count("win")
+            window_draws = window.count("draw")
             window_total = len(window)
-            win_rate = window_wins / window_total if window_total > 0 else 0.0
+            score = (window_wins + 0.5 * window_draws) / window_total if window_total > 0 else 0.0
 
             data_by_date[played_at.strftime("%Y-%m-%d")] = TimeSeriesPoint(
                 date=played_at.strftime("%Y-%m-%d"),
-                win_rate=round(win_rate, 4),
+                score=round(score, 4),
                 game_count=window_total,
                 window_size=ROLLING_WINDOW_SIZE,
             )

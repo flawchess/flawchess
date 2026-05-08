@@ -56,7 +56,7 @@ export interface TimeSeriesRequest {
 
 export interface TimeSeriesPoint {
   date: string;          // "2025-01-15"
-  win_rate: number;      // 0.0 - 1.0
+  score: number;         // chess score (W + 0.5·D) / N, 0.0 - 1.0
   game_count: number;    // games in rolling window (1..window_size)
   window_size: number;   // configured window size (ROLLING_WINDOW_SIZE)
 }

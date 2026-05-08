@@ -6,7 +6,8 @@ This module tests the rolling-window computation logic in openings_service.py
 Key mechanics under test:
 - query_time_series returns rows ordered by played_at ASC.
 - For each row the service appends the outcome to results_so_far and slices
-  the trailing ROLLING_WINDOW_SIZE entries to compute win_rate.
+  the trailing ROLLING_WINDOW_SIZE entries to compute the chess score
+  (W + 0.5·D) / N.
 - data_by_date keeps only the LAST game's rolling window per calendar day.
 - The recency filter trims output datapoints (but rolling windows are computed
   over the full chronological history first).
@@ -232,7 +233,8 @@ class TestRollingWindow:
         assert len(bts.data) == 1
         pt = bts.data[0]
         assert pt.date == "2026-03-05"
-        assert pt.win_rate == pytest.approx(wins / n, abs=0.01)
+        # Pure W/L (no draws): score == wins / n
+        assert pt.score == pytest.approx(wins / n, abs=0.01)
         assert pt.game_count == n
 
         # Totals
@@ -241,7 +243,7 @@ class TestRollingWindow:
         assert bts.total_losses == losses
 
     @pytest.mark.asyncio
-    async def test_win_rate_across_multiple_days(self, db_session: AsyncSession) -> None:
+    async def test_score_across_multiple_days(self, db_session: AsyncSession) -> None:
         """12 games across 12 days — first data point appears at MIN_GAMES_FOR_TIMELINE."""
         uid = _USER_ROLLING
         fh = 9_100_004
@@ -273,9 +275,9 @@ class TestRollingWindow:
         first_pt = bts.data[0]
         assert first_pt.game_count == n
 
-        # Final game (all 12 in window): 8W + 4L ≈ 66.7% win rate
+        # Final game (all 12 in window): 8W + 4L (no draws) -> score = 8/12
         last_pt = bts.data[-1]
-        assert last_pt.win_rate == pytest.approx(8 / 12, abs=0.01)
+        assert last_pt.score == pytest.approx(8 / 12, abs=0.01)
         assert last_pt.game_count == 12
 
         # Totals reflect full history
@@ -431,9 +433,9 @@ class TestRecencyFilter:
         assert len(today_points) >= 1, "Expected at least today's data point"
 
         pt = today_points[0]
-        # Rolling window includes all n+1 games -> win_rate = n/(n+1)
+        # Rolling window includes all n+1 games (n wins, 1 loss) -> score = n/(n+1)
         assert pt.game_count == n + 1
-        assert pt.win_rate == pytest.approx(n / (n + 1), abs=0.01)
+        assert pt.score == pytest.approx(n / (n + 1), abs=0.01)
 
         # Totals are recomputed from the filtered period only (1 recent loss)
         assert bts.total_losses == 1
@@ -514,7 +516,7 @@ class TestMultipleBookmarks:
         assert series_b.total_losses == n
         assert series_b.total_games == n
         assert len(series_b.data) == 1
-        assert series_b.data[0].win_rate == 0.0
+        assert series_b.data[0].score == 0.0
 
     @pytest.mark.asyncio
     async def test_empty_and_populated_bookmark_together(
@@ -562,7 +564,8 @@ class TestMultipleBookmarks:
 
         assert len(series_pop.data) == 1  # first point at game n
         assert series_pop.total_draws == n
-        assert series_pop.data[0].win_rate == 0.0  # draws -> 0 wins
+        # All draws -> score = 0.5 * n / n = 0.5
+        assert series_pop.data[0].score == 0.5
 
         assert len(series_emp.data) == 0
         assert series_emp.total_games == 0

@@ -76,7 +76,7 @@ import {
   ZONE_NEUTRAL,
 } from '@/lib/theme';
 import { pgnToSanArray, sanArrayToPgn } from '@/lib/pgn';
-import { WinRateChart } from '@/components/charts/WinRateChart';
+import { ScoreChart } from '@/components/charts/ScoreChart';
 import { apiClient } from '@/api/client';
 import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
 import { getBoardContainerClassName } from '@/lib/openingsBoardLayout';
@@ -1147,10 +1147,10 @@ export function OpeningsPage() {
           <OpeningStatsSection section={blackBookmarksSection} />
         )}
 
-        {/* 3. Win Rate Over Time — only when bookmarks exist with time series data */}
+        {/* 3. Score over Time — only when bookmarks exist with time series data */}
         {bookmarks.length > 0 && tsData && (
           <div className="charcoal-texture rounded-md p-4">
-            <WinRateChart bookmarks={chartBookmarks} series={tsData.series} />
+            <ScoreChart bookmarks={chartBookmarks} series={tsData.series} />
           </div>
         )}
 
