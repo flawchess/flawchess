@@ -252,7 +252,7 @@ function FindingsSection({
           <div className="space-y-2">
             <p>
               A strength or weakness shows up when your score is below 45% or above 55% over at
-              least 20 games, and when it's unlikely to be due to chance. All your games are scanned up to 16 half-moves, and evaluated with Stockfish at the transition from opening to middlegame.
+              least 20 games. The cards are dimmed when it's plausibly due to chance. All your games are scanned up to 16 half-moves, and evaluated with Stockfish at the transition from opening to middlegame.
             </p>
             <p className="italic">
               Tip: Use the filters to select recency, time control, or opponent strength
