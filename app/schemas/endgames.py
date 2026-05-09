@@ -118,6 +118,27 @@ class EndgamePerformanceResponse(BaseModel):
     non_endgame_wdl: EndgameWDLSummary  # games NOT reaching any endgame class
     endgame_win_rate: float  # wins / total for endgame games only, 0-100
 
+    # Phase 81 (D-11): entry-eval aggregation for "Endgame Start vs End" twin-tile section.
+    # Defaults are required so existing call sites that build the response without these
+    # fields (tests, prior callers) keep working — see Pitfall 7 in 81-RESEARCH.md.
+    entry_eval_mean_pawns: float = 0.0
+    """Avg Stockfish eval at endgame entry, signed from user's perspective, in pawns. 0.0 when n=0."""
+
+    entry_eval_n: int = 0
+    """Count of games contributing to entry_eval_mean_pawns. Mate scores and NULL evals excluded; per-game (deduped over multi-class entry_rows)."""
+
+    entry_eval_p_value: float | None = None
+    """Wald-z two-sided p-value of mean vs 0 cp. None when entry_eval_n < 10 (D-05 reliability gate)."""
+
+    endgame_score_p_value: float | None = None
+    """Wilson score-test two-sided p-value of endgame_wdl score vs 50%. None when endgame_wdl.total < 10."""
+
+    entry_eval_ci_low_pawns: float | None = None
+    """Lower bound of 95% Wald-z CI on entry_eval_mean_pawns (signed, in pawns). None when entry_eval_n < 2."""
+
+    entry_eval_ci_high_pawns: float | None = None
+    """Upper bound of 95% Wald-z CI on entry_eval_mean_pawns (signed, in pawns). None when entry_eval_n < 2."""
+
 
 class EndgameTimelinePoint(BaseModel):
     """Single data point in the per-type rolling-window time series, sampled weekly.

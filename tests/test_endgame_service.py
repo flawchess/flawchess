@@ -36,6 +36,7 @@ from app.services.endgame_service import (
     _endgame_elo_from_skill,
     _endgame_skill_from_bucket_rows,
     _extract_entry_clocks,
+    _get_endgame_performance_from_rows,
     _wdl_to_score,
     classify_endgame_class,
     get_endgame_games,
@@ -3794,3 +3795,185 @@ def test_endgame_elo_timeline_point_constructs():
     assert pt.endgame_elo == 1500
     assert pt.endgame_games_in_window == 42
     assert pt.per_week_endgame_games == 8
+
+
+class TestEntryEvalAggregation:
+    """Phase 81 (D-07, D-08, D-10, D-11, D-12) — entry-eval / endgame-score aggregation
+    inside `_get_endgame_performance_from_rows`.
+
+    Covers:
+      - per-game dedupe over multi-class entry_rows (Pitfall 1)
+      - sign flip for black users (Pitfall 2)
+      - mate / NULL exclusion (Pitfall 3)
+      - n < 10 -> p_value is None (Pitfall 5)
+      - endgame_score_p_value gated on endgame_wdl.total >= 10
+      - CI bound exposure for the bullet whisker
+    """
+
+    def _entry(
+        self,
+        game_id: int,
+        endgame_class: int = 1,
+        result: str = "1-0",
+        user_color: str = "white",
+        eval_cp: int | None = 0,
+        eval_mate: int | None = None,
+    ) -> _FakeRow:
+        """Build a single entry-row stand-in mirroring query_endgame_entry_rows columns."""
+        return _FakeRow(
+            game_id=game_id,
+            endgame_class=endgame_class,
+            result=result,
+            user_color=user_color,
+            eval_cp=eval_cp,
+            eval_mate=eval_mate,
+        )
+
+    def _wdl_rows(self, wins: int, draws: int, losses: int) -> list[Any]:
+        """Build (played_at, result, user_color) WDL rows for endgame_rows / non_endgame_rows."""
+        rows: list[Any] = []
+        d = 0
+        for _ in range(wins):
+            rows.append(_row("1-0", "white", d))
+            d += 1
+        for _ in range(draws):
+            rows.append(_row("1/2-1/2", "white", d))
+            d += 1
+        for _ in range(losses):
+            rows.append(_row("0-1", "white", d))
+            d += 1
+        return rows
+
+    def test_empty_entry_rows_yields_defaults(self) -> None:
+        """No entry_rows -> n=0, mean=0.0, p_value=None, CI bounds None."""
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=[],
+            non_endgame_rows=[],
+            entry_rows=[],
+        )
+        assert resp.entry_eval_n == 0
+        assert resp.entry_eval_mean_pawns == 0.0
+        assert resp.entry_eval_p_value is None
+        assert resp.entry_eval_ci_low_pawns is None
+        assert resp.entry_eval_ci_high_pawns is None
+
+    def test_n_nine_p_value_gated_to_none(self) -> None:
+        """9 distinct games at eval_cp=200 -> n=9, p_value None (n < 10 reliability gate)."""
+        entry_rows = [self._entry(game_id=i, eval_cp=200) for i in range(9)]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=9, draws=0, losses=0),
+            non_endgame_rows=[],
+            entry_rows=entry_rows,
+        )
+        assert resp.entry_eval_n == 9
+        assert resp.entry_eval_p_value is None
+        # Mean still computed (D-11 only gates p_value)
+        assert resp.entry_eval_mean_pawns == pytest.approx(2.0)
+
+    def test_n_ten_with_zero_mean_yields_p_close_to_one(self) -> None:
+        """10 games at eval_cp=0 -> n=10, mean=0.0, p_value ~ 1.0."""
+        entry_rows = [self._entry(game_id=i, eval_cp=0) for i in range(10)]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
+            non_endgame_rows=[],
+            entry_rows=entry_rows,
+        )
+        assert resp.entry_eval_n == 10
+        assert resp.entry_eval_mean_pawns == 0.0
+        assert resp.entry_eval_p_value is not None
+        assert resp.entry_eval_p_value == pytest.approx(1.0)
+
+    def test_per_game_dedupe_over_multi_class_rows(self) -> None:
+        """Same game_id in 3 endgame_class rows counts once."""
+        entry_rows = [
+            self._entry(game_id=1, endgame_class=1, eval_cp=100),
+            self._entry(game_id=1, endgame_class=2, eval_cp=100),
+            self._entry(game_id=1, endgame_class=3, eval_cp=100),
+        ]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=1, draws=0, losses=0),
+            non_endgame_rows=[],
+            entry_rows=entry_rows,
+        )
+        assert resp.entry_eval_n == 1
+        assert resp.entry_eval_mean_pawns == pytest.approx(1.0)
+
+    def test_sign_flip_for_black_users(self) -> None:
+        """Black user with raw eval_cp=200 -> mean_pawns=-2.0 (user-perspective sign flip)."""
+        entry_rows = [
+            self._entry(game_id=i, user_color="black", eval_cp=200) for i in range(10)
+        ]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
+            non_endgame_rows=[],
+            entry_rows=entry_rows,
+        )
+        assert resp.entry_eval_n == 10
+        assert resp.entry_eval_mean_pawns == pytest.approx(-2.0)
+
+    def test_mate_row_excluded_from_aggregation(self) -> None:
+        """Row with eval_mate set is excluded; eval_cp rows are counted."""
+        entry_rows = [self._entry(game_id=i, eval_cp=0) for i in range(10)]
+        # One additional row with eval_mate set
+        entry_rows.append(self._entry(game_id=11, eval_cp=None, eval_mate=5))
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
+            non_endgame_rows=[],
+            entry_rows=entry_rows,
+        )
+        assert resp.entry_eval_n == 10  # mate row dropped
+
+    def test_null_eval_row_excluded_from_aggregation(self) -> None:
+        """Row with both eval_cp and eval_mate None is excluded."""
+        entry_rows = [self._entry(game_id=i, eval_cp=0) for i in range(10)]
+        entry_rows.append(self._entry(game_id=11, eval_cp=None, eval_mate=None))
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
+            non_endgame_rows=[],
+            entry_rows=entry_rows,
+        )
+        assert resp.entry_eval_n == 10
+
+    def test_endgame_score_p_value_gated_below_n_ten(self) -> None:
+        """endgame_wdl.total < 10 -> endgame_score_p_value is None; >= 10 -> float."""
+        # Below gate
+        resp_low = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=3, draws=2, losses=1),  # total=6
+            non_endgame_rows=[],
+            entry_rows=[],
+        )
+        assert resp_low.endgame_score_p_value is None
+
+        # At/above gate
+        resp_ok = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),  # total=10
+            non_endgame_rows=[],
+            entry_rows=[],
+        )
+        assert resp_ok.endgame_score_p_value is not None
+        assert isinstance(resp_ok.endgame_score_p_value, float)
+        assert 0.0 <= resp_ok.endgame_score_p_value <= 1.0
+
+    def test_ci_bounds_set_when_n_ge_two(self) -> None:
+        """When n >= 2, both CI bounds are floats; below n=2 they are None."""
+        # n=10 -> CI bounds set
+        entry_rows = [self._entry(game_id=i, eval_cp=100) for i in range(10)]
+        resp_ok = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
+            non_endgame_rows=[],
+            entry_rows=entry_rows,
+        )
+        assert resp_ok.entry_eval_ci_low_pawns is not None
+        assert resp_ok.entry_eval_ci_high_pawns is not None
+        # CI is centered on the mean (1.0 pawns); bounds should bracket it
+        assert resp_ok.entry_eval_ci_low_pawns <= resp_ok.entry_eval_mean_pawns
+        assert resp_ok.entry_eval_ci_high_pawns >= resp_ok.entry_eval_mean_pawns
+
+        # n=1 -> CI bounds are None (variance undefined)
+        resp_one = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=1, draws=0, losses=0),
+            non_endgame_rows=[],
+            entry_rows=[self._entry(game_id=1, eval_cp=200)],
+        )
+        assert resp_one.entry_eval_ci_low_pawns is None
+        assert resp_one.entry_eval_ci_high_pawns is None
