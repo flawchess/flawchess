@@ -63,7 +63,9 @@ from app.schemas.endgames import (
     TimePressureBucketPoint,
     TimePressureChartResponse,
 )
+from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
+from app.services.score_confidence import compute_confidence_bucket
 
 
 class EndgameClassInt(IntEnum):
@@ -1648,18 +1650,85 @@ def _get_endgame_performance_from_rows(
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 
     Phase 59 removed the aggregate conversion/recovery/skill fields this function
-    previously computed; it now returns only the WDL comparison and endgame_win_rate.
-    The `entry_rows` parameter is retained for call-site compatibility with
-    get_endgame_overview (which passes the same entry_rows to _compute_score_gap_material
-    and _aggregate_endgame_stats) but is no longer consumed here.
+    previously computed; Phase 81 (D-11, D-12) brings entry-eval aggregation back
+    by consuming `entry_rows` (already fetched by `get_endgame_overview` and
+    `get_endgame_performance`). For each game we pick a single row (deterministic
+    via lowest endgame_class — mirrors `_compute_score_gap_material` per-game
+    dedupe), exclude mate / NULL evals, and apply the user-perspective sign flip
+    before accumulating sum/sumsq for the Wald-z mean test. The Wilson score
+    test of `endgame_wdl` against 50% is also computed here.
+
+    No new SQL: all data lives in `entry_rows` already.
     """
-    del entry_rows  # kept for signature compat; aggregates moved out in Phase 59
     endgame_wdl = _build_wdl_summary(endgame_rows)
     non_endgame_wdl = _build_wdl_summary(non_endgame_rows)
+
+    # --- Phase 81: per-game dedupe over entry_rows (Pitfall 1) ---
+    # query_endgame_entry_rows returns one row per (game, endgame_class) span; a
+    # game with multiple class spans (e.g. KR_KR -> KP_KP) appears multiple times.
+    # Mirror the bucket-row pattern in _compute_score_gap_material (lines ~744-775)
+    # by grouping rows by game_id and picking the lowest endgame_class — this is
+    # deterministic and corresponds to the FIRST qualifying span per game.
+    rows_by_game: dict[int, list[Row[Any]]] = defaultdict(list)
+    for row in entry_rows:
+        rows_by_game[row.game_id].append(row)  # ty: ignore[unresolved-attribute, invalid-argument-type]
+
+    eval_sum = 0.0
+    eval_sumsq = 0.0
+    eval_n = 0
+    for _game_id, game_rows in rows_by_game.items():
+        chosen = min(game_rows, key=lambda r: r.endgame_class)
+        # Pitfall 3: explicit None checks. Never use `or` for numeric defaulting
+        # on Optional columns — Python's truthiness would silently turn None -> 0.
+        if chosen.eval_mate is not None:
+            continue  # mate-excluded per D-07
+        if chosen.eval_cp is None:
+            continue  # NULL eval excluded
+        # Pitfall 2: sign-flip per user color so positive = user is ahead.
+        # Raw eval_cp is white-perspective; mirrors _classify_endgame_bucket.
+        sign = 1 if chosen.user_color == "white" else -1
+        signed_cp = float(sign * chosen.eval_cp)
+        eval_sum += signed_cp
+        eval_sumsq += signed_cp * signed_cp
+        eval_n += 1
+
+    # Wald-z one-sample test of mean vs 0 cp. Helper handles n<10 / n=1 / SE=0.
+    _conf_e, p_eval_raw, mean_cp, ci_half_cp = compute_eval_confidence_bucket(
+        eval_sum, eval_sumsq, eval_n
+    )
+    # Pitfall 5: gate the wire-format p-value to None when below the reliability
+    # threshold (D-11). The helper returns 1.0 in that branch; surfacing 1.0 to
+    # the API would conflate "no data" with "definitely consistent with H0".
+    entry_eval_p_value: float | None = p_eval_raw if eval_n >= 10 else None
+    entry_eval_mean_pawns = mean_cp / 100.0 if eval_n > 0 else 0.0
+    entry_eval_ci_low_pawns: float | None
+    entry_eval_ci_high_pawns: float | None
+    if eval_n >= 2:
+        entry_eval_ci_low_pawns = (mean_cp - ci_half_cp) / 100.0
+        entry_eval_ci_high_pawns = (mean_cp + ci_half_cp) / 100.0
+    else:
+        # Variance undefined for n < 2; CI bounds are not meaningful.
+        entry_eval_ci_low_pawns = None
+        entry_eval_ci_high_pawns = None
+
+    # Wilson score test of endgame_wdl against 50% (D-08).
+    _conf_s, p_score_raw, _se = compute_confidence_bucket(
+        endgame_wdl.wins, endgame_wdl.draws, endgame_wdl.losses, endgame_wdl.total
+    )
+    endgame_score_p_value: float | None = (
+        p_score_raw if endgame_wdl.total >= 10 else None
+    )
+
     return EndgamePerformanceResponse(
         endgame_wdl=endgame_wdl,
         non_endgame_wdl=non_endgame_wdl,
         endgame_win_rate=endgame_wdl.win_pct,
+        entry_eval_mean_pawns=entry_eval_mean_pawns,
+        entry_eval_n=eval_n,
+        entry_eval_p_value=entry_eval_p_value,
+        endgame_score_p_value=endgame_score_p_value,
+        entry_eval_ci_low_pawns=entry_eval_ci_low_pawns,
+        entry_eval_ci_high_pawns=entry_eval_ci_high_pawns,
     )
 
 
