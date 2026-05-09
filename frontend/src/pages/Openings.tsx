@@ -8,11 +8,11 @@ function getChartEnabled(bookmarkId: number): boolean {
 function setChartEnabledStorage(bookmarkId: number, enabled: boolean): void {
   localStorage.setItem(`bookmark-chart-enabled-${bookmarkId}`, String(enabled));
 }
-import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { Chess } from 'chess.js';
 import { useQuery } from '@tanstack/react-query';
-import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X, Cpu } from 'lucide-react';
+import { Save, Sparkles, ArrowRightLeft, Swords, BarChart2, Lightbulb, SlidersHorizontal, BookMarked, X } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -36,68 +36,37 @@ import { useDebounce } from '@/hooks/useDebounce';
 import {
   usePositionBookmarks,
   useCreatePositionBookmark,
-  useReorderPositionBookmarks,
   useUpdateMatchSide,
   useTimeSeries,
 } from '@/hooks/usePositionBookmarks';
 import { useMostPlayedOpenings, useBookmarkPhaseEntryMetrics } from '@/hooks/useStats';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 import { ChessBoard } from '@/components/board/ChessBoard';
-import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
 import { MoveList } from '@/components/board/MoveList';
 import { BoardControls } from '@/components/board/BoardControls';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { PositionBookmarkList } from '@/components/position-bookmarks/PositionBookmarkList';
 import { SuggestionsModal } from '@/components/position-bookmarks/SuggestionsModal';
-import { GameCardList } from '@/components/results/GameCardList';
 import { SidebarLayout, type SidebarPanelConfig } from '@/components/layout/SidebarLayout';
 import { getArrowColor } from '@/lib/arrowColor';
-import { WDLChartRow } from '@/components/charts/WDLChartRow';
-import { OpeningStatsSection, type OpeningStatsSectionDescriptor } from '@/components/stats/OpeningStatsSection';
-import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
-import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
-import { formatSignedEvalPawns } from '@/lib/clockFormat';
-import {
-  SCORE_BULLET_CENTER,
-  SCORE_BULLET_NEUTRAL_MAX,
-  SCORE_BULLET_NEUTRAL_MIN,
-  clampScoreCi,
-  scoreBulletDomain,
-  scoreZoneColor,
-} from '@/lib/scoreBulletConfig';
-import { isConfident } from '@/lib/significance';
-import {
-  EVAL_BASELINE_PAWNS_WHITE,
-  EVAL_BASELINE_PAWNS_BLACK,
-  EVAL_BULLET_DOMAIN_PAWNS,
-  EVAL_NEUTRAL_MIN_PAWNS,
-  EVAL_NEUTRAL_MAX_PAWNS,
-  evalZoneColor,
-} from '@/lib/openingStatsZones';
-import {
-  MIN_GAMES_FOR_RELIABLE_STATS,
-  UNRELIABLE_OPACITY,
-  ZONE_NEUTRAL,
-} from '@/lib/theme';
-import { pgnToSanArray, sanArrayToPgn } from '@/lib/pgn';
-import { ScoreChart } from '@/components/charts/ScoreChart';
 import { apiClient } from '@/api/client';
-import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
 import { getBoardContainerClassName } from '@/lib/openingsBoardLayout';
-import { HIGHLIGHT_PULSE_DURATION_MS, HIGHLIGHT_PULSE_ITERATIONS } from '@/lib/highlightPulse';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
 import type { PositionBookmarkResponse, TimeSeriesRequest } from '@/types/position_bookmarks';
-import type { OpeningWDL } from '@/types/stats';
-import type { OpeningInsightFinding } from '@/types/insights';
+import { useDeepLinkHighlight } from './openings/useDeepLinkHighlight';
+import { useSidebarState, type SidebarPanel } from './openings/useSidebarState';
+import { useTabReset } from './openings/useTabReset';
+import { useOpeningsHandlers } from './openings/useOpeningsHandlers';
+import { ExplorerTab } from './openings/ExplorerTab';
+import { GamesTab } from './openings/GamesTab';
+import { StatsTab, type WdlStatsRow } from './openings/StatsTab';
+import { InsightsTab } from './openings/InsightsTab';
 
 const PAGE_SIZE = 20;
 // Number of most-played openings per color to use as default chart data when no bookmarks exist
-
-type SidebarPanel = 'filters' | 'bookmarks';
 
 const TAB_INFO: Record<'explorer' | 'games' | 'stats' | 'insights', { aria: string; text: string }> = {
   explorer: {
@@ -168,111 +137,35 @@ export function OpeningsPage() {
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
 
   // ── Deep-link highlight (Insights → MoveExplorer / quick-task 260427-j41) ──
-  // Set by handleOpenFinding when the user clicks a "Moves" link on an
-  // OpeningFindingCard; cleared by MoveExplorer's onHighlightConsumed (position
-  // change or row click), by leaving the explorer subtab, and by filter changes
-  // (handled below in a baseline-snapshot effect).
-  const [highlightedMove, setHighlightedMove] = useState<{ san: string } | null>(null);
-
-  // Whether the deep-link pulse animations should currently render. Goes true
-  // when highlightedMove is set, then auto-flips false after the pulse window.
-  // Decoupling pulse-active from highlight-active prevents any later React
-  // re-render (e.g. when hovering another move re-sorts the arrow list) from
-  // re-attaching .animate-arrow-pulse and restarting the CSS animation. The
-  // arrow/row sit at their static rest opacity/tint once the pulse expires.
-  const [pulseActive, setPulseActive] = useState(false);
-  useEffect(() => {
-    if (highlightedMove == null) {
-      setPulseActive(false);
-      return;
-    }
-    setPulseActive(true);
-    const timeoutId = window.setTimeout(
-      () => setPulseActive(false),
-      HIGHLIGHT_PULSE_ITERATIONS * HIGHLIGHT_PULSE_DURATION_MS,
-    );
-    return () => window.clearTimeout(timeoutId);
-  }, [highlightedMove]);
-
-  // ── Sidebar state (desktop only) ────────────────────────────────────────────
-  const [sidebarOpen, setSidebarOpen] = useState<SidebarPanel | null>(null);
-  const [playedAsHintDismissed, setPlayedAsHintDismissed] = useState(
-    () => localStorage.getItem('played-as-hint-dismissed') === 'true'
-  );
-  const [filtersHintDismissed, setFiltersHintDismissed] = useState(
-    () => localStorage.getItem('filters-hint-dismissed') === 'true'
+  const { highlightedMove, setHighlightedMove, pulseActive } = useDeepLinkHighlight(
+    activeTab,
+    filters,
   );
 
-  const dismissPlayedAsHint = useCallback(() => {
-    setPlayedAsHintDismissed(true);
-    localStorage.setItem('played-as-hint-dismissed', 'true');
-  }, []);
+  // ── Sidebar / drawer state + onboarding hint dismissal ──────────────────────
+  const sidebar = useSidebarState();
 
-  // ── Mobile sidebar state ────────────────────────────────────────────────────
-  const [filterSidebarOpen, setFilterSidebarOpen] = useState(false);
-  const [bookmarkSidebarOpen, setBookmarkSidebarOpen] = useState(false);
+  // ── Mobile sidebar deferred-apply local state ───────────────────────────────
   const [localChartEnabled, setLocalChartEnabled] = useState<Record<number, boolean>>({});
   const [localMatchSides, setLocalMatchSides] = useState<Record<number, MatchSide>>({});
   const [localFilters, setLocalFilters] = useState<FilterState>(filters);
 
-  // ── Games tab pagination ────────────────────────────────────────────────────
-  const [gamesOffset, setGamesOffset] = useState(0);
-
-  // Reset pagination on tab switch
-  const [prevTab, setPrevTab] = useState(activeTab);
-  if (activeTab !== prevTab) {
-    setPrevTab(activeTab);
-    setGamesOffset(0);
-  }
-
-  // Clear the deep-link highlight when leaving the explorer subtab — the
-  // highlighted row only makes sense inside MoveExplorer, so don't carry it
-  // across tab navigations. Mirrors the prevTab pattern above.
-  const [prevTabForHighlight, setPrevTabForHighlight] = useState(activeTab);
-  if (activeTab !== prevTabForHighlight) {
-    setPrevTabForHighlight(activeTab);
-    if (activeTab !== 'explorer' && highlightedMove !== null) {
-      setHighlightedMove(null);
-    }
-  }
-
-  // Clear the deep-link highlight when filters change AFTER the highlight was
-  // set. Snapshot the filter identity at the moment the highlight transitions
-  // to non-null; later filter changes (with the same highlight active) clear it.
-  // Living here (not in MoveExplorer) avoids a false-trigger from the moves-array
-  // reference change when the useNextMoves query first resolves on tab mount.
-  const filtersAtHighlightRef = useRef<FilterState | null>(null);
-  const prevHighlightForFilterClearRef = useRef(highlightedMove);
-  useEffect(() => {
-    const highlightChanged = prevHighlightForFilterClearRef.current !== highlightedMove;
-    prevHighlightForFilterClearRef.current = highlightedMove;
-    if (highlightedMove == null) {
-      filtersAtHighlightRef.current = null;
-      return;
-    }
-    if (highlightChanged) {
-      filtersAtHighlightRef.current = filters;
-      return;
-    }
-    if (filtersAtHighlightRef.current !== null && filtersAtHighlightRef.current !== filters) {
-      setHighlightedMove(null);
-    }
-  }, [filters, highlightedMove]);
+  // ── Games tab pagination + tab-switch resets ────────────────────────────────
+  const { gamesOffset, setGamesOffset } = useTabReset(activeTab);
 
   // ── Bookmarks ───────────────────────────────────────────────────────────────
   const { data: bookmarks = [] } = usePositionBookmarks();
   const createBookmark = useCreatePositionBookmark();
-  const reorder = useReorderPositionBookmarks();
   const [bookmarkDialogOpen, setBookmarkDialogOpen] = useState(false);
   const [bookmarkLabel, setBookmarkLabel] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
   // Onboarding hint progression (only one red dot visible at a time):
   // played-as → filters → bookmarks. Each step unlocks the next once used.
-  const showPlayedAsHint = hasGames && !playedAsHintDismissed;
-  const showFiltersHint = hasGames && playedAsHintDismissed && !filtersHintDismissed;
+  const showPlayedAsHint = hasGames && !sidebar.playedAsHintDismissed;
+  const showFiltersHint = hasGames && sidebar.playedAsHintDismissed && !sidebar.filtersHintDismissed;
   const showBookmarksHint =
-    hasGames && playedAsHintDismissed && filtersHintDismissed && bookmarks.length === 0;
+    hasGames && sidebar.playedAsHintDismissed && sidebar.filtersHintDismissed && bookmarks.length === 0;
 
   // ── Modified-filters indicator ─────────────────────────────────────────────
   // Desktop: filters apply immediately, so the dot tracks `filters` directly.
@@ -462,10 +355,7 @@ export function OpeningsPage() {
 
   // Derive WDL stats per bookmark using aggregate fields (not rolling sub-counts)
   const wdlStatsMap = useMemo(() => {
-    const map: Record<
-      number,
-      { wins: number; draws: number; losses: number; total: number; last_played_at: string | null }
-    > = {};
+    const map: Record<number, WdlStatsRow> = {};
     for (const s of tsData?.series ?? []) {
       map[s.bookmark_id] = {
         wins: s.total_wins,
@@ -489,9 +379,8 @@ export function OpeningsPage() {
   const handleFiltersChange = useCallback((newFilters: FilterState) => {
     setFilters(newFilters);
     setGamesOffset(0);
-    setFiltersHintDismissed(true);
-    localStorage.setItem('filters-hint-dismissed', 'true');
-  }, [setFilters]);
+    sidebar.setFiltersHintDismissed(true);
+  }, [setFilters, setGamesOffset, sidebar]);
 
   const openBookmarkDialog = useCallback(() => {
     // Use currentPly, not full moveHistory length — user may have navigated back
@@ -505,10 +394,10 @@ export function OpeningsPage() {
     if (!label) return;
 
     const matchSide = filters.matchSide;
-    const targetHash = chess.getHashForOpenings(matchSide, filters.color);
+    const targetHashLocal = chess.getHashForOpenings(matchSide, filters.color);
     const data = {
       label,
-      target_hash: targetHash,
+      target_hash: targetHashLocal,
       fen: chess.position,
       // Truncate to currentPly — bookmark saves the displayed position, not moves played after it
       moves: chess.moveHistory.slice(0, chess.currentPly),
@@ -520,123 +409,42 @@ export function OpeningsPage() {
       await createBookmark.mutateAsync(data);
       setBookmarkDialogOpen(false);
       if (activeTab !== 'stats') navigate('/openings/stats');
-      setSidebarOpen('bookmarks');
+      sidebar.setSidebarOpen('bookmarks');
     } catch {
       toast.error('Failed to save bookmark');
     }
-  }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark, activeTab, navigate]);
+  }, [chess, filters, boardFlipped, bookmarkLabel, createBookmark, activeTab, navigate, sidebar]);
 
-  /** Open games for a chart bookmark — loads position on board and navigates to games tab */
-  const handleOpenChartBookmarkGames = useCallback((bookmark: PositionBookmarkResponse) => {
-    if (bookmark.moves.length > 0) {
-      // Real bookmark — load its moves
-      chess.loadMoves(bookmark.moves);
-    } else if (mostPlayedData) {
-      // Default chart entry — find PGN from most-played data
-      const allOpenings = [...(mostPlayedData.white ?? []), ...(mostPlayedData.black ?? [])];
-      const opening = allOpenings.find(o => o.full_hash === bookmark.target_hash);
-      if (opening) {
-        chess.loadMoves(pgnToSanArray(opening.pgn));
-      }
-    }
-    const color = bookmark.color ?? 'white';
-    setBoardFlipped(color === 'black');
-    setFilters(prev => ({ ...prev, color, matchSide: bookmark.match_side }));
-    navigate('/openings/games');
-    window.scrollTo({ top: 0 });
-  }, [chess, navigate, mostPlayedData, setFilters]);
-
-  /** Load opening PGN onto the board, set color/flip/filters, and navigate to games subtab */
-  const handleOpenGames = useCallback((pgn: string, color: "white" | "black") => {
-    chess.loadMoves(pgnToSanArray(pgn));
-    setBoardFlipped(color === 'black');
-    setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
-    navigate('/openings/games');
-    window.scrollTo({ top: 0 });
-  }, [chess, navigate, setFilters]);
-
-  /**
-   * Stats subtab "Moves" link: load the opening's PGN onto the board, set
-   * color/flip/filters, and navigate to the Move Explorer. Mirrors
-   * handleOpenFinding's pattern from the Insights block, but takes an
-   * OpeningWDL (whose pgn is either the canonical opening PGN for most-played
-   * rows or a sanArrayToPgn round-trip of the bookmark moves for bookmark rows).
-   */
-  const handleOpenMoves = useCallback((opening: OpeningWDL, color: "white" | "black") => {
-    chess.loadMoves(pgnToSanArray(opening.pgn));
-    setBoardFlipped(color === 'black');
-    setFilters(prev => ({ ...prev, color, matchSide: 'both' as MatchSide }));
-    navigate('/openings/explorer');
-    window.scrollTo({ top: 0 });
-  }, [chess, navigate, setFilters]);
-
-  /**
-   * Phase 71 (D-13): Deep-link from OpeningInsightsBlock to Move Explorer.
-   * Mirror of handleOpenGames retargeted at /openings/explorer. The finding
-   * carries entry_san_sequence as a pre-parsed string[], so no pgnToSanArray
-   * conversion is needed.
-   */
-  const handleOpenFinding = useCallback(
-    (finding: OpeningInsightFinding) => {
-      chess.loadMoves(finding.entry_san_sequence);
-      // Set the deep-link highlight BEFORE navigation so MoveExplorer renders
-      // with the highlight on its first paint after the route change. The row
-      // pulses through grey alpha levels regardless of finding severity — the
-      // steady-state row tint comes from the score zone independently.
-      setHighlightedMove({ san: finding.candidate_move_san });
-      setBoardFlipped(finding.color === 'black');
-      setFilters((prev) => ({
-        ...prev,
-        color: finding.color,
-        matchSide: 'both' as MatchSide,
-      }));
-      navigate('/openings/explorer');
-      window.scrollTo({ top: 0 });
-    },
-    [chess, navigate, setFilters],
-  );
-
-  /**
-   * Same as handleOpenFinding but routes to the Games subtab. Loads the position
-   * AFTER the candidate move (entry_san_sequence + candidate_move_san) so the
-   * Games filter matches the resulting position, not the entry position.
-   */
-  const handleOpenFindingGames = useCallback(
-    (finding: OpeningInsightFinding) => {
-      chess.loadMoves([...finding.entry_san_sequence, finding.candidate_move_san]);
-      setBoardFlipped(finding.color === 'black');
-      setFilters((prev) => ({
-        ...prev,
-        color: finding.color,
-        matchSide: 'both' as MatchSide,
-      }));
-      navigate('/openings/games');
-      window.scrollTo({ top: 0 });
-    },
-    [chess, navigate, setFilters],
-  );
-
-  const handleLoadBookmark = useCallback((bkm: PositionBookmarkResponse) => {
-    chess.loadMoves(bkm.moves);
-    setBoardFlipped(bkm.is_flipped ?? false);
-    setFilters(prev => ({ ...prev, color: bkm.color ?? 'white', matchSide: bkm.match_side }));
-    if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
-    window.scrollTo({ top: 0 });
-  }, [chess, setFilters, activeTab, navigate]);
-
-  const handleReorder = useCallback((orderedIds: number[]) => {
-    reorder.mutate(orderedIds);
-  }, [reorder]);
+  // Navigation handlers (deep-link / open-from-{X}) bundled into a single hook.
+  // All handlers preserve original behavior exactly: chess.loadMoves → flip board
+  // → update filters → navigate → scrollTo top.
+  const {
+    handleOpenChartBookmarkGames,
+    handleOpenGames,
+    handleOpenMoves,
+    handleOpenFinding,
+    handleOpenFindingGames,
+    handleLoadBookmark,
+    handleReorder,
+  } = useOpeningsHandlers({
+    chess,
+    navigate,
+    activeTab,
+    setBoardFlipped,
+    setFilters,
+    setHighlightedMove,
+    mostPlayedData,
+  });
 
   // ── Mobile sidebar handlers ──────────────────────────────────────────────────
 
   const openFilterSidebar = useCallback(() => {
     setLocalFilters({ ...filters });
-    setFilterSidebarOpen(true);
-  }, [filters]);
+    sidebar.setFilterSidebarOpen(true);
+  }, [filters, sidebar]);
 
   const handleFilterSidebarOpenChange = useCallback((open: boolean) => {
-    if (!open && filterSidebarOpen) {
+    if (!open && sidebar.filterSidebarOpen) {
       // Pulse the filter indicator if the drawer commit actually changes `filters`.
       // Check BEFORE handleFiltersChange runs (which updates `filters`).
       if (!areFiltersEqual(localFilters, filters)) {
@@ -651,19 +459,19 @@ export function OpeningsPage() {
         navigate('/openings/explorer');
       }
     }
-    setFilterSidebarOpen(open);
-  }, [filterSidebarOpen, localFilters, handleFiltersChange, filters, activeTab, navigate]);
+    sidebar.setFilterSidebarOpen(open);
+  }, [sidebar, localFilters, handleFiltersChange, filters, activeTab, navigate]);
 
   const updateMatchSide = useUpdateMatchSide();
 
   const openBookmarkSidebar = useCallback(() => {
     setLocalChartEnabled({ ...chartEnabledMap });
     setLocalMatchSides({});
-    setBookmarkSidebarOpen(true);
-  }, [chartEnabledMap]);
+    sidebar.setBookmarkSidebarOpen(true);
+  }, [chartEnabledMap, sidebar]);
 
   const handleBookmarkSidebarOpenChange = useCallback((open: boolean) => {
-    if (!open && bookmarkSidebarOpen) {
+    if (!open && sidebar.bookmarkSidebarOpen) {
       // Commit deferred chart toggle changes on close
       for (const [idStr, enabled] of Object.entries(localChartEnabled)) {
         const id = Number(idStr);
@@ -683,8 +491,8 @@ export function OpeningsPage() {
         if (activeTab !== 'stats') navigate('/openings/stats');
       }
     }
-    setBookmarkSidebarOpen(open);
-  }, [bookmarkSidebarOpen, localChartEnabled, localMatchSides, chartEnabledMap, updateMatchSide, activeTab, navigate]);
+    sidebar.setBookmarkSidebarOpen(open);
+  }, [sidebar, localChartEnabled, localMatchSides, chartEnabledMap, updateMatchSide, activeTab, navigate]);
 
   const handleLocalChartEnabledChange = useCallback((id: number, enabled: boolean) => {
     setLocalChartEnabled(prev => ({ ...prev, [id]: enabled }));
@@ -705,13 +513,13 @@ export function OpeningsPage() {
 
   const handleLoadBookmarkFromSidebar = useCallback((bkm: PositionBookmarkResponse) => {
     handleLoadBookmark(bkm);
-    setBookmarkSidebarOpen(false);
-  }, [handleLoadBookmark]);
+    sidebar.setBookmarkSidebarOpen(false);
+  }, [handleLoadBookmark, sidebar]);
 
   const handleLoadBookmarkFromDesktopSidebar = useCallback((bkm: PositionBookmarkResponse) => {
     handleLoadBookmark(bkm);
-    setSidebarOpen(null);
-  }, [handleLoadBookmark]);
+    sidebar.setSidebarOpen(null);
+  }, [handleLoadBookmark, sidebar]);
 
   // ── Desktop sidebar panel content ───────────────────────────────────────────
 
@@ -807,474 +615,64 @@ export function OpeningsPage() {
     </span>
   );
 
-  const moveExplorerContent = (
-    <div className="flex flex-col gap-4">
-      {gamesData && gamesData.stats.total > 0 && (() => {
-        const stats = gamesData.stats;
-        const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
-        const scorePct = Math.round(stats.score * 100);
-        // Score-color font gate mirrors MoveExplorer.tsx: paint Score % in the
-        // zone color only when confidence is 'medium'/'high' (not 'low') AND
-        // the score is in a colored zone. Otherwise default foreground.
-        const zoneHex = scoreZoneColor(stats.score);
-        const isInColoredZone = zoneHex !== ZONE_NEUTRAL;
-        const showZoneFontColor = isConfident(stats.confidence) && isInColoredZone;
-        const scoreColor: string | undefined = showZoneFontColor ? zoneHex : undefined;
-        // MG-entry eval row (quick task 260508-f9o). Mirrors OpeningStatsCard /
-        // OpeningFindingCard scoreEvalBlock: a third bullet chart row showing
-        // signed pawns + Cpu icon + BulletConfidencePopover when MG eval data
-        // is available, em-dash otherwise.
-        const hasMgEval =
-          stats.eval_n > 0 &&
-          stats.avg_eval_pawns !== null &&
-          stats.avg_eval_pawns !== undefined;
-        const evalZoneHex = hasMgEval ? evalZoneColor(stats.avg_eval_pawns as number) : null;
-        const showEvalZoneFont =
-          hasMgEval &&
-          isConfident(stats.eval_confidence) &&
-          evalZoneHex !== ZONE_NEUTRAL;
-        // Prefer the backend-provided baseline; fall back to the local
-        // per-color constant if a stale cache returns no field.
-        const evalBaselinePawnsLocal =
-          filters.color === 'black' ? EVAL_BASELINE_PAWNS_BLACK : EVAL_BASELINE_PAWNS_WHITE;
-        const evalBaselinePawns = gamesData.eval_baseline_pawns ?? evalBaselinePawnsLocal;
-        return (
-          <div
-            className="charcoal-texture rounded-md p-4 order-2 lg:order-1"
-            style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
-            data-testid="wdl-moves-position"
-          >
-            <div className="text-sm font-medium mb-2">{positionResultsLabel}</div>
+  const hasOpenings = !!mostPlayedData &&
+    (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0);
 
-            {/* Three same-width chart rows (indicator-left / chart-right). */}
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
-              {/* Row 1: linked games indicator + WDL bar. */}
-              <Link
-                to="/openings/games"
-                onClick={() => window.scrollTo({ top: 0 })}
-                className="flex items-center gap-1 text-sm tabular-nums w-full text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
-                aria-label="View games for this position"
-                data-testid="btn-moves-to-games"
-              >
-                <span>Games:</span>
-                <span className="ml-auto font-semibold tabular-nums inline-flex items-center gap-0.3">
-                  {stats.total}
-                  <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-                </span>
-              </Link>
-              <div className="min-w-0" data-testid="wdl-bar-position">
-                <WDLChartRow data={stats} barHeight="h-6" showSegmentCounts={false} />
-              </div>
-
-              {/* Row 2: Score % + popover + Score bullet. */}
-              <span
-                className="flex items-center gap-1 text-sm tabular-nums w-full"
-                data-testid="score-text-position"
-              >
-                <span className="text-muted-foreground">Score:</span>
-                <span
-                  className="ml-auto font-semibold"
-                  style={scoreColor ? { color: scoreColor } : undefined}
-                >
-                  {scorePct}%
-                </span>
-                <ScoreConfidencePopover
-                  level={stats.confidence}
-                  pValue={stats.p_value}
-                  score={stats.score}
-                  gameCount={stats.total}
-                  lastPlayedAt={stats.last_played_at}
-                  testId="score-bullet-popover-trigger"
-                  ariaLabel="Show score confidence details"
-                />
-              </span>
-              <div className="min-w-0 tabular-nums" data-testid="score-bullet-position">
-                <MiniBulletChart
-                  value={stats.score}
-                  center={SCORE_BULLET_CENTER}
-                  neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-                  neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-                  domain={scoreBulletDomain()}
-                  ciLow={clampScoreCi(stats.ci_low)}
-                  ciHigh={clampScoreCi(stats.ci_high)}
-                  barColor="neutral"
-                  ariaLabel={`Score ${scorePct}% vs 50% baseline`}
-                />
-              </div>
-
-              {/* Row 3: Eval value + Cpu + popover + Eval bullet. */}
-              <span
-                className="flex items-center gap-1 text-sm tabular-nums w-full"
-                data-testid="eval-text-position"
-              >
-                <span className="text-muted-foreground">Eval:</span>
-                {hasMgEval ? (
-                  <span
-                    className="ml-auto font-semibold inline-flex items-center gap-0.3"
-                    style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
-                  >
-                    {formatSignedEvalPawns(stats.avg_eval_pawns as number)}
-                    <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                  </span>
-                ) : (
-                  <span className="ml-auto text-muted-foreground">—</span>
-                )}
-                {hasMgEval && (
-                  <BulletConfidencePopover
-                    level={stats.eval_confidence}
-                    pValue={stats.eval_p_value}
-                    gameCount={stats.eval_n}
-                    evalMeanPawns={stats.avg_eval_pawns}
-                    color={filters.color}
-                    testId="eval-bullet-popover-trigger"
-                  />
-                )}
-              </span>
-              <div className="min-w-0 tabular-nums" data-testid="eval-bullet-position">
-                {hasMgEval ? (
-                  <MiniBulletChart
-                    value={stats.avg_eval_pawns as number}
-                    ciLow={stats.eval_ci_low_pawns ?? undefined}
-                    ciHigh={stats.eval_ci_high_pawns ?? undefined}
-                    tickPawns={evalBaselinePawns}
-                    neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
-                    neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
-                    domain={EVAL_BULLET_DOMAIN_PAWNS}
-                    barColor="neutral"
-                    ariaLabel={`Avg eval at MG entry: ${(stats.avg_eval_pawns as number).toFixed(2)} pawns`}
-                  />
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-      <div className="charcoal-texture rounded-md p-4 order-1 lg:order-2">
-        <MoveExplorer
-          moves={nextMoves.data?.moves ?? []}
-          isLoading={nextMoves.isLoading}
-          isError={nextMoves.isError}
-          position={chess.position}
-          onMoveClick={(from, to) => chess.makeMove(from, to)}
-          onMoveHover={setHoveredMove}
-          highlightedMove={
-            highlightedMove !== null
-              ? { ...highlightedMove, pulse: pulseActive }
-              : null
-          }
-          onHighlightConsumed={() => setHighlightedMove(null)}
-        />
-      </div>
-    </div>
+  const explorerTabEl = (
+    <ExplorerTab
+      gamesData={gamesData}
+      filterColor={filters.color}
+      positionResultsLabel={positionResultsLabel}
+      nextMoves={nextMoves}
+      position={chess.position}
+      onMoveClick={(from, to) => chess.makeMove(from, to)}
+      onMoveHover={setHoveredMove}
+      highlightedMove={highlightedMove}
+      pulseActive={pulseActive}
+      onHighlightConsumed={() => setHighlightedMove(null)}
+    />
   );
 
-  const gamesContent = (
-    <div className="flex flex-col gap-4">
-      {gamesQuery.isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">Loading games...</p>
-        </div>
-      ) : hasNoGames ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">No games imported yet</p>
-          <p className="mb-6 text-sm text-muted-foreground">
-            Import your games from chess.com or lichess to start analyzing positions.
-          </p>
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/import">Import Games</Link>
-          </Button>
-        </div>
-      ) : filtersMatchNothing ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center text-muted-foreground">
-          <p className="text-base font-medium text-foreground">No games matched</p>
-          <p className="mt-1 text-sm">Try adjusting the time control, opponent, rated, or recency filters.</p>
-        </div>
-      ) : gamesQuery.isError ? (
-        <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
-          <p className="mb-2 text-base font-medium text-foreground">Failed to load games</p>
-          <p className="text-sm text-muted-foreground">
-            Something went wrong. Please try again in a moment.
-          </p>
-        </div>
-      ) : gamesData ? (
-        <>
-          <div className="charcoal-texture rounded-md p-4">
-            <WDLChartRow
-              data={gamesData.stats}
-              label={positionResultsLabel}
-              barHeight="h-6"
-              testId="wdl-games-position"
-            />
-          </div>
-          <GameCardList
-            games={gamesData.games}
-            matchedCount={gamesData.matched_count}
-            totalGames={gameCount ?? gamesData.stats.total}
-            offset={gamesOffset}
-            limit={PAGE_SIZE}
-            onPageChange={setGamesOffset}
-            hideMatchLabelOnMobile
-            matchLabel={(() => {
-              const total = gameCount ?? gamesData.stats.total;
-              const pct = total > 0 ? (gamesData.matched_count / total * 100).toFixed(1) : '0.0';
-              return (
-                <>
-                  {gamesData.matched_count} of {total} ({pct}%) games played as{' '}
-                  <span className="inline-flex items-center gap-1 align-middle">
-                    {colorIconSquare}
-                    {filters.color}
-                  </span>
-                  {' '}matched
-                </>
-              );
-            })()}
-          />
-        </>
-      ) : null}
-    </div>
+  const gamesTabEl = (
+    <GamesTab
+      gamesQuery={gamesQuery}
+      hasNoGames={hasNoGames}
+      filtersMatchNothing={filtersMatchNothing}
+      gameCount={gameCount}
+      positionResultsLabel={positionResultsLabel}
+      colorIconSquare={colorIconSquare}
+      filterColor={filters.color}
+      gamesOffset={gamesOffset}
+      pageSize={PAGE_SIZE}
+      onPageChange={setGamesOffset}
+    />
   );
 
-  const insightsContent = (
-    <div className="flex flex-col gap-6">
-      {/* Phase 71: dedicated Insights subtab. */}
-      {/* Hidden block + friendly empty state when user has no imported games (proxy: mostPlayedData empty). */}
-      {mostPlayedData &&
-      (mostPlayedData.white.length > 0 || mostPlayedData.black.length > 0) ? (
-        <OpeningInsightsBlock
-          debouncedFilters={debouncedFilters}
-          onFindingClick={handleOpenFinding}
-          onOpenGames={handleOpenFindingGames}
-        />
-      ) : (
-        <p className="text-sm text-muted-foreground" data-testid="opening-insights-no-games">
-          Import some games to see opening insights.
-        </p>
-      )}
-    </div>
+  const statsTabEl = (
+    <StatsTab
+      bookmarks={bookmarks}
+      chartBookmarks={chartBookmarks}
+      wdlStatsMap={wdlStatsMap}
+      bookmarkPhaseEntryByHash={bookmarkPhaseEntryByHash}
+      mostPlayedData={mostPlayedData}
+      mostPlayedLoading={mostPlayedLoading}
+      mostPlayedError={mostPlayedError}
+      tsData={tsData}
+      onOpenMoves={handleOpenMoves}
+      onOpenChartBookmarkGames={handleOpenChartBookmarkGames}
+      onOpenGames={handleOpenGames}
+      onOpenSuggestions={() => setSuggestionsOpen(true)}
+    />
   );
 
-  const statisticsContent = (() => {
-    // Build bookmark rows for a given color (used when bookmarks exist)
-    const buildBookmarkRows = (targetColor: 'white' | 'black'): OpeningWDL[] =>
-      chartBookmarks
-        .filter((b) => b.color === targetColor)
-        .flatMap((b) => {
-          const s = wdlStatsMap[b.id];
-          if (!s || s.total <= 0) return [];
-          const winPct = s.total > 0 ? (s.wins / s.total) * 100 : 0;
-          const drawPct = s.total > 0 ? (s.draws / s.total) * 100 : 0;
-          const lossPct = s.total > 0 ? (s.losses / s.total) * 100 : 0;
-          const pe = bookmarkPhaseEntryByHash.get(b.target_hash);
-          const row: OpeningWDL = {
-            opening_eco: '',
-            opening_name: b.label,
-            display_name: b.label,
-            label: b.label,
-            pgn: sanArrayToPgn(b.moves),
-            fen: b.fen,
-            full_hash: b.target_hash,
-            wins: s.wins,
-            draws: s.draws,
-            losses: s.losses,
-            total: s.total,
-            win_pct: winPct,
-            draw_pct: drawPct,
-            loss_pct: lossPct,
-            avg_eval_pawns: pe?.avg_eval_pawns ?? null,
-            eval_ci_low_pawns: pe?.eval_ci_low_pawns ?? null,
-            eval_ci_high_pawns: pe?.eval_ci_high_pawns ?? null,
-            eval_n: pe?.eval_n ?? 0,
-            eval_p_value: pe?.eval_p_value ?? null,
-            eval_confidence: pe?.eval_confidence ?? 'low',
-            last_played_at: s.last_played_at,
-          };
-          return [row];
-        })
-        .sort((a, b) => b.total - a.total);
-
-    const whiteBookmarkRows = bookmarks.length > 0 ? buildBookmarkRows('white') : [];
-    const blackBookmarkRows = bookmarks.length > 0 ? buildBookmarkRows('black') : [];
-
-    const bookmarkByHash = new Map<string, PositionBookmarkResponse>(
-      chartBookmarks.map((b) => [b.target_hash, b])
-    );
-    const handleOpenBookmarkGames = (opening: OpeningWDL) => {
-      const bookmark = bookmarkByHash.get(opening.full_hash);
-      if (bookmark) handleOpenChartBookmarkGames(bookmark);
-    };
-
-    const whiteBookmarksSection: OpeningStatsSectionDescriptor = {
-      key: 'white-bookmarks',
-      color: 'white',
-      title: (
-        <span className="inline-flex items-center gap-1.5">
-          <BookMarked className="h-5 w-5" />
-          <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
-          White Opening Bookmarks
-        </span>
-      ),
-      openings: whiteBookmarkRows,
-      evalBaselinePawns:
-        mostPlayedData?.eval_baseline_pawns_white ?? EVAL_BASELINE_PAWNS_WHITE,
-      onOpenMoves: handleOpenMoves,
-      onOpenGames: (opening) => handleOpenBookmarkGames(opening),
-      showAll: true,
-      testId: 'bookmarks-white-section',
-      cardTestIdPrefix: 'bookmarks-white-card',
-    };
-
-    const blackBookmarksSection: OpeningStatsSectionDescriptor = {
-      key: 'black-bookmarks',
-      color: 'black',
-      title: (
-        <span className="inline-flex items-center gap-1.5">
-          <BookMarked className="h-5 w-5" />
-          <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
-          Black Opening Bookmarks
-        </span>
-      ),
-      openings: blackBookmarkRows,
-      evalBaselinePawns:
-        mostPlayedData?.eval_baseline_pawns_black ?? EVAL_BASELINE_PAWNS_BLACK,
-      onOpenMoves: handleOpenMoves,
-      onOpenGames: (opening) => handleOpenBookmarkGames(opening),
-      showAll: true,
-      testId: 'bookmarks-black-section',
-      cardTestIdPrefix: 'bookmarks-black-card',
-    };
-
-    const whiteMpoSection: OpeningStatsSectionDescriptor | null = mostPlayedData &&
-      mostPlayedData.white.length > 0
-      ? {
-          key: 'mpo-white',
-          color: 'white',
-          title: (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-white" />
-              Most Played Openings as White
-            </span>
-          ),
-          headingExtra: (
-            <InfoPopover ariaLabel="White openings info" testId="mpo-white-info" side="top">
-              Your most frequently played openings as White, based on the lichess opening table. Games passing through each opening's position are counted, including games that continued into deeper variations. Openings under 3 half-moves are excluded, so trivial trunks like 1.d4 don't dominate. Rows prefixed with "vs." are openings defined by Black's move (e.g. "vs. Sicilian Defense") that you faced as White.
-            </InfoPopover>
-          ),
-          openings: mostPlayedData.white,
-          evalBaselinePawns: mostPlayedData.eval_baseline_pawns_white,
-          onOpenMoves: handleOpenMoves,
-          onOpenGames: (opening, color) => handleOpenGames(opening.pgn, color),
-          testId: 'mpo-white-section',
-          cardTestIdPrefix: 'mpo-white-card',
-        }
-      : null;
-
-    const blackMpoSection: OpeningStatsSectionDescriptor | null = mostPlayedData &&
-      mostPlayedData.black.length > 0
-      ? {
-          key: 'mpo-black',
-          color: 'black',
-          title: (
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3.5 w-3.5 rounded-xs border border-muted-foreground bg-zinc-900" />
-              Most Played Openings as Black
-            </span>
-          ),
-          headingExtra: (
-            <InfoPopover ariaLabel="Black openings info" testId="mpo-black-info" side="top">
-              Your most frequently played openings as Black, based on the lichess opening table. Games passing through each opening's position are counted, including games that continued into deeper variations. Openings under 3 half-moves are excluded, so trivial trunks like 1.e4 don't dominate. Rows prefixed with "vs." are openings defined by White's move (e.g. "vs. Blackmar-Diemer Gambit") that you faced as Black.
-            </InfoPopover>
-          ),
-          openings: mostPlayedData.black,
-          evalBaselinePawns: mostPlayedData.eval_baseline_pawns_black,
-          onOpenMoves: handleOpenMoves,
-          onOpenGames: (opening, color) => handleOpenGames(opening.pgn, color),
-          testId: 'mpo-black-section',
-          cardTestIdPrefix: 'mpo-black-card',
-        }
-      : null;
-
-    return (
-      <div className="flex flex-col gap-6">
-        {/* Empty-state hint when there are no bookmarks at all */}
-        {bookmarks.length === 0 && (
-          <div className="charcoal-texture rounded-md p-4">
-            <h2 className="text-lg font-medium mb-3">
-              <span className="inline-flex items-center gap-1">
-                <BookMarked className="h-5 w-5" />
-                Bookmarked Openings
-              </span>
-            </h2>
-            <p
-              className="text-sm italic text-muted-foreground mb-3"
-              data-testid="bookmarks-tip"
-            >
-              <span className="font-semibold text-foreground/80">Tip:</span> Save some openings as bookmarks to see your results and win rate over time here. Each bookmark has a Piece filter setting (Mine/Opponent/Both) that controls how positions are matched. Use the Suggest button to pick from your most-played positions.
-            </p>
-            <Button
-              size="lg"
-              variant="brand-outline"
-              className="w-full"
-              onClick={() => setSuggestionsOpen(true)}
-              data-testid="btn-suggest-bookmarks-empty"
-            >
-              <Sparkles className="h-4 w-4" />
-              Suggest
-            </Button>
-          </div>
-        )}
-
-        {/* 1. White Opening Bookmarks (full width) */}
-        {whiteBookmarkRows.length > 0 && (
-          <OpeningStatsSection section={whiteBookmarksSection} />
-        )}
-
-        {/* 2. Black Opening Bookmarks (full width) */}
-        {blackBookmarkRows.length > 0 && (
-          <OpeningStatsSection section={blackBookmarksSection} />
-        )}
-
-        {/* 3. Score over Time — only when bookmarks exist with time series data */}
-        {bookmarks.length > 0 && tsData && (
-          <div className="charcoal-texture rounded-md p-4">
-            <ScoreChart bookmarks={chartBookmarks} series={tsData.series} />
-          </div>
-        )}
-
-        {/* Loading state when bookmarks exist but tsData is not ready */}
-        {bookmarks.length > 0 && chartBookmarks.length > 0 && !tsData && (
-          <div className="charcoal-texture rounded-md p-4 text-center text-muted-foreground">
-            Loading chart data...
-          </div>
-        )}
-
-        {/* Most Played Openings — error / loading branches per CLAUDE.md */}
-        {mostPlayedError && (
-          <div
-            className="charcoal-texture rounded-md p-4 text-center text-muted-foreground"
-            data-testid="mpo-error"
-          >
-            Failed to load most-played openings. Something went wrong. Please try again in a moment.
-          </div>
-        )}
-        {!mostPlayedError && mostPlayedLoading && !mostPlayedData && (
-          <div
-            className="charcoal-texture rounded-md p-4 text-center text-muted-foreground"
-            data-testid="mpo-loading"
-          >
-            Loading most-played openings...
-          </div>
-        )}
-
-        {/* 4. Most Played Openings as White (full width) */}
-        {whiteMpoSection && <OpeningStatsSection section={whiteMpoSection} />}
-
-        {/* 5. Most Played Openings as Black (full width) */}
-        {blackMpoSection && <OpeningStatsSection section={blackMpoSection} />}
-      </div>
-    );
-  })();
+  const insightsTabEl = (
+    <InsightsTab
+      hasOpenings={hasOpenings}
+      debouncedFilters={debouncedFilters}
+      onFindingClick={handleOpenFinding}
+      onOpenGames={handleOpenFindingGames}
+    />
+  );
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -1346,8 +744,8 @@ export function OpeningsPage() {
               ) : undefined,
             },
           ] satisfies SidebarPanelConfig[]}
-          activePanel={sidebarOpen}
-          onActivePanelChange={(panel) => setSidebarOpen(panel as SidebarPanel | null)}
+          activePanel={sidebar.sidebarOpen}
+          onActivePanelChange={(panel) => sidebar.setSidebarOpen(panel as SidebarPanel | null)}
           stripExtra={
             <Tooltip content={`Played as: ${filters.color === 'white' ? 'White' : 'Black'}`} side="right">
               <Button
@@ -1358,7 +756,7 @@ export function OpeningsPage() {
                   const next = filters.color === 'white' ? 'black' : 'white';
                   setFilters(prev => ({ ...prev, color: next as Color }));
                   setBoardFlipped(next === 'black');
-                  dismissPlayedAsHint();
+                  sidebar.dismissPlayedAsHint();
                 }}
                 aria-label={`Switch to ${filters.color === 'white' ? 'black' : 'white'}`}
                 data-testid="sidebar-strip-btn-color"
@@ -1463,18 +861,10 @@ export function OpeningsPage() {
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <TabsContent value="explorer">
-                  {moveExplorerContent}
-                </TabsContent>
-                <TabsContent value="games">
-                  {gamesContent}
-                </TabsContent>
-                <TabsContent value="stats">
-                  {statisticsContent}
-                </TabsContent>
-                <TabsContent value="insights">
-                  {insightsContent}
-                </TabsContent>
+                <TabsContent value="explorer">{explorerTabEl}</TabsContent>
+                <TabsContent value="games">{gamesTabEl}</TabsContent>
+                <TabsContent value="stats">{statsTabEl}</TabsContent>
+                <TabsContent value="insights">{insightsTabEl}</TabsContent>
               </div>
             </div>
           </Tabs>
@@ -1621,7 +1011,7 @@ export function OpeningsPage() {
                         setFilters({ ...filters, color: newColor });
                         setGamesOffset(0);
                         setBoardFlipped(newColor === 'black');
-                        dismissPlayedAsHint();
+                        sidebar.dismissPlayedAsHint();
                         if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
                       }}
                       data-testid="btn-toggle-played-as"
@@ -1666,7 +1056,7 @@ export function OpeningsPage() {
           )}
 
           {/* Filter sidebar (D-04, D-05, D-06, D-10, D-12) */}
-          <Drawer open={filterSidebarOpen} onOpenChange={handleFilterSidebarOpenChange} direction="right">
+          <Drawer open={sidebar.filterSidebarOpen} onOpenChange={handleFilterSidebarOpenChange} direction="right">
             <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
                 <DrawerTitle>Filters</DrawerTitle>
@@ -1717,7 +1107,7 @@ export function OpeningsPage() {
           </Drawer>
 
           {/* Bookmark sidebar (D-04, D-05, D-06, D-13, D-14) */}
-          <Drawer open={bookmarkSidebarOpen} onOpenChange={handleBookmarkSidebarOpenChange} direction="right">
+          <Drawer open={sidebar.bookmarkSidebarOpen} onOpenChange={handleBookmarkSidebarOpenChange} direction="right">
             <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-bookmark-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
                 <DrawerTitle className="flex items-center gap-1">
@@ -1782,18 +1172,10 @@ export function OpeningsPage() {
             </DrawerContent>
           </Drawer>
 
-          <TabsContent value="explorer" className="mt-2">
-            {moveExplorerContent}
-          </TabsContent>
-          <TabsContent value="games" className="mt-2">
-            {gamesContent}
-          </TabsContent>
-          <TabsContent value="stats" className="mt-2">
-            {statisticsContent}
-          </TabsContent>
-          <TabsContent value="insights" className="mt-2">
-            {insightsContent}
-          </TabsContent>
+          <TabsContent value="explorer" className="mt-2">{explorerTabEl}</TabsContent>
+          <TabsContent value="games" className="mt-2">{gamesTabEl}</TabsContent>
+          <TabsContent value="stats" className="mt-2">{statsTabEl}</TabsContent>
+          <TabsContent value="insights" className="mt-2">{insightsTabEl}</TabsContent>
         </Tabs>
       </main>
 
@@ -1835,7 +1217,7 @@ export function OpeningsPage() {
         bookmarks={bookmarks}
         onSaved={() => {
           if (activeTab !== 'stats') navigate('/openings/stats');
-          setSidebarOpen('bookmarks');
+          sidebar.setSidebarOpen('bookmarks');
         }}
       />
     </div>
