@@ -247,6 +247,16 @@ These apply to both backend and frontend code. For frontend-only rules, see the 
   - Use Pydantic models at system boundaries (external API input/output) and TypedDicts for internal structured data (filter params, accumulators). See `app/schemas/normalization.py` and `app/services/stats_service.py` for examples.
   - Use `# ty: ignore[rule-name]` (not `# type: ignore`) to suppress errors that can't be fixed (e.g., SQLAlchemy forward refs, FastAPI-Users generics). Always include the rule name and a brief reason.
 - **Comment bug fixes** — when fixing a bug, add a comment at the fix site explaining what broke and why. Future readers shouldn't have to dig through git history to understand why non-obvious code exists.
+- **Keep functions small and shallow** — the strongest signals are nesting depth and branching density; raw LOC is a cheap proxy. Limits:
+  - **Nesting depth**: soft 3, hard 4 inside any function body. This is the firm rule (Linus' "if you need more than 3 levels of indentation, you're screwed" applies in both stacks).
+  - **Logic LOC**: soft 100, hard 200. Measure *logic* lines — exclude the returned JSX tree, large literal config objects (Recharts axis/gradient configs, lookup tables), docstrings, and blank lines. A component with a 30-line hook body and a 200-line declarative JSX return is fine; the same component with 200 lines of `if/else` data shaping before the return is not.
+  - **Cognitive complexity**: aim for ≤15 per function (SonarQube default). If a function has many branches but each branch is one line, it can still be too complex even at low LOC.
+  Past these limits, split before continuing. Common splits:
+  - **Pipeline orchestrators** (insights, import, normalization): one function per stage (`_fetch`, `_classify`, `_attribute`, `_dedupe`, `_rank`), with the top-level function reading as a list of stage calls.
+  - **React components mixing data + JSX**: extract data shaping into a `useXyzData` hook; split desktop and mobile renderers into sibling components when both branches exceed ~40 LOC of *logic* (not JSX); pull large Recharts subtrees (gradients, custom tooltips, axis configs) into named sub-components only when they have real reuse value or hide complexity — don't fragment a cohesive declarative tree just to hit a line count.
+  - **Routers doing more than HTTP**: keep routers thin — validation, service call, response shaping. Push branching/caching/aggregation into the service layer.
+  - **Deeply nested loops**: invert with early `continue`/`return`, extract the inner body into a helper that takes the loop variable, or replace manual bucketing with a dict/`Counter` accumulator.
+- **Refactor bloated code on sight** — when editing a file, if you encounter a function that already breaches the limits above (deep nesting, high logic LOC, mixes 3+ concerns), refactor it as part of the task rather than adding to it. Exceptions: do not refactor outside the scope of a GSD phase plan without flagging it; for `/gsd-quick`/`/gsd-fast` work, prefer a follow-up note over an unscoped refactor. When in doubt, surface the bloat and ask before expanding scope.
 
 ## Error Handling & Sentry
 
