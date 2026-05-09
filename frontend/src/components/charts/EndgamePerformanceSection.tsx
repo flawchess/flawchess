@@ -105,7 +105,7 @@ export function EndgamePerformanceSection({ data, scoreGap }: EndgamePerformance
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="endgame-performance-section">
       <div>
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
