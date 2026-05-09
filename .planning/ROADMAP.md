@@ -91,7 +91,7 @@ Plans:
 - [x] 81-02-PLAN.md — Frontend: types mirror + endgameEntryEvalZones constants/helper (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 81-03-PLAN.md — Frontend: EndgameStartVsEndSection component + tests (Wave 2)
+- [x] 81-03-PLAN.md — Frontend: EndgameStartVsEndSection component + tests (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 81-04-PLAN.md — Frontend: Endgames.tsx integration + 2 accordion paragraphs + page test (Wave 3)
