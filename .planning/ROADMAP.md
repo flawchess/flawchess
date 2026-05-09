@@ -97,7 +97,7 @@ Plans:
 - [x] 81-04-PLAN.md — Frontend: Endgames.tsx integration + 2 accordion paragraphs + page test (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 81-05-PLAN.md — Manual UAT checkpoint (visual parity, mobile stacking, popover content, three-state color) (Wave 4)
+- [x] 81-05-PLAN.md — Manual UAT checkpoint (visual parity, mobile stacking, popover content, three-state color) (Wave 4)
 
 </details>
 
