@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
 status: executing
-last_updated: "2026-05-09T14:46:23.048Z"
-last_activity: 2026-05-09 -- Phase 81 planning complete
+last_updated: "2026-05-09T15:16:07.301Z"
+last_activity: 2026-05-09 -- Phase 81 execution started
 progress:
   total_phases: 3
   completed_phases: 2
@@ -17,11 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 81
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-05-09 -- Phase 81 planning complete
-Resume file: .planning/phases/81-endgame-start-vs-end-twin-tile-section-above-the-wdl-table/81-CONTEXT.md
+Phase: 81 (endgame-start-vs-end-twin-tile-section-above-the-wdl-table) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 81
+Last activity: 2026-05-09 -- Phase 81 execution started
 
 ## Project Reference
 
