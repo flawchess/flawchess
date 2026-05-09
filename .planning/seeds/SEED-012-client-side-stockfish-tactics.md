@@ -1,0 +1,168 @@
+---
+id: SEED-012
+status: dormant
+planted: 2026-05-09
+planted_during: /gsd-explore session on offloading bulk Stockfish analysis to clients
+trigger_when: tactics features come up on roadmap (likely during or after Library milestone — see SEED-010), OR when a user explicitly requests "find missed tactics" / "filter games by missed forks", OR when client-side Stockfish prerequisites land (COOP/COEP audit + iOS Safari verification)
+scope: milestone (multi-phase) — eval pipeline + storage + tactics classifier + UI surfaces
+---
+
+# SEED-012: Client-side Stockfish for full-game eval coverage + tactics features
+
+## Why This Matters
+
+FlawChess currently slices games by **position** (Zobrist hash → WDL) and by **type** (endgame class). It cannot answer questions of the form "you missed a fork on move 23" or "you find pins 60% of the time but skewers only 30%". Doing so requires per-move engine evals across the entire game library, which the production server cannot afford to compute (a 4-vCPU Hetzner box cannot Stockfish-analyze every imported game; even just endgame entry positions are batched via `backfill_eval.py`).
+
+The unlock is **client-side bulk analysis via `stockfish.wasm`** (Lichess-maintained, NNUE, multi-threaded via SharedArrayBuffer + Web Workers). Modern clients reach ~1–3M nps single-threaded and 4× that with workers. Lichess does exactly this for "Request a computer analysis" — proven pattern.
+
+Once per-move evals exist for a user's library, an entire feature family lights up:
+
+1. **Tactics found/missed by type** — fork, pin, skewer, discovered attack, removing the defender. Needs a separate classifier on top of the engine output (see "Two-layer architecture" below).
+2. **Filter games by missed tactics** — "show me games where I missed a fork" — feeds directly into the SEED-010 Library page game-level filter dimension.
+3. **Stats by tactic type** — "you find forks 70% of the time, skewers 35%" — natural Insights surface.
+4. **Move accuracy / ACPL** — Lichess-style accuracy %, blunder/mistake/inaccuracy classification per move, accuracy timeline.
+5. **Opening eval insights** — "your London is +0.4 objectively but you score 40% — execution problem, not preparation."
+6. **Time-pressure × accuracy correlation** — combined with existing clock data: "your accuracy collapses below 30s on the clock."
+
+This seed is **the enabler** for SEED-010's deferred tactical-pattern filters and for several Insights surfaces that currently have no data source.
+
+## When to Surface
+
+**Trigger options:**
+- During or after the Library milestone (SEED-010), when tactical filters become near-term.
+- When a user explicitly asks for missed-tactics features.
+- When the prerequisites land (see "Prerequisites" below) — at that point the seed is ready to promote to a milestone via `/gsd-new-milestone`.
+
+**Do not surface yet** — the current calibration/insights/Library work has clearer ROI per engineering hour, and this seed has real prerequisites that should be researched before committing.
+
+## Decisions Locked During Exploration
+
+These are the design choices made during the `/gsd-explore` session on 2026-05-09. They should not be re-litigated unless new information surfaces; future planning should treat them as the starting point.
+
+### 1. Bank everything, not just tactical moments
+
+Store **every per-move eval**, not only the flagged tactical moments. Rationale: the marginal cost of persisting an eval once you've already paid the client-CPU cost is small, and the product roadmap (move accuracy, opening eval insights, time-vs-accuracy, ACPL graphs) keeps growing in directions that all want full eval coverage. Storing only flagged moments locks future features into re-running analysis.
+
+This is a real commitment — it will become the largest table in the system, comparable to or larger than `game_positions`.
+
+### 2. Position-keyed schema, not game-keyed
+
+Evals are deterministic functions of `(position, engine_version, depth)`. Same Zobrist hash → same eval, always. Therefore the storage table is keyed on the position, not the (game, ply) pair:
+
+```
+position_evals(
+  full_hash       BIGINT,
+  sf_version      TEXT,
+  depth           SMALLINT,
+  eval_cp         INTEGER NULL,
+  eval_mate       SMALLINT NULL,
+  best_move_uci   TEXT,
+  pv_san          TEXT,
+  multipv_rank    SMALLINT,  -- 1 for best line; 2-3 if multiPV pass was run
+  computed_at     TIMESTAMPTZ,
+  computed_by_user_id  -- audit only; not part of key
+  PRIMARY KEY (full_hash, sf_version, depth, multipv_rank)
+)
+```
+
+Two big wins:
+- **Cross-user sharing** — opening positions are seen by thousands of users; the first user's evals serve everyone. Realistically saves 20–30% of work on the first 10–15 plies, near zero after that.
+- **Cross-game dedup within one user** — repeat positions, transpositions, and especially endgame positions reuse evals.
+
+Cost is one join (`game_positions` → `position_evals` on `full_hash`) at query time. Existing hash indexes make this cheap.
+
+Engine upgrades do not invalidate old data — `(sf_version, depth)` is part of the key, so v17 evals coexist with v16 evals and queries pick whichever set is preferred.
+
+### 3. Opt-in, batched, explicit UX
+
+User picks filters ("analyze my last 200 rapid games" or "all bullet games from the past 90 days") and runs that batch only. Closer to the existing import-flow mental model. **Not** background-while-browsing (feels like spyware-fan-noise) and **not** a single "analyze everything" button (multi-day jobs need bounded scope to feel sane).
+
+Implication: **tactics features in the UI must communicate that they only operate on analyzed subsets.** Most filters in Library / Insights will need an "(only analyzed games)" indicator and a CTA to analyze more.
+
+### 4. No eval validation / trust model — explicit non-goal
+
+Clients can fake evals. **We do not validate.** Blast radius is the user's *own* tactics stats — no leaderboard, no shared aggregates, nothing to game. The position-keyed schema does mean one user's bad evals could corrupt another's queries, which is a real concern; mitigation is to scope cross-user sharing to *book/opening* positions (low value to fake) and keep middlegame/endgame evals user-scoped if abuse ever surfaces. Until there's a reason, punt on validation entirely.
+
+This is recorded as an explicit non-goal so it doesn't get reinvented later.
+
+### 5. Two-pass adaptive depth
+
+Uniform depth-18 across all positions is wasteful. The pipeline should:
+
+1. **Skip book** — match first 8–12 plies against the existing `openings` table; book moves don't need eval.
+2. **Skip forced moves** — single legal move, or only one non-losing move (cheap legality check first, no engine call).
+3. **First pass at d=10–12** (~5× faster than d=18) — flags candidate tactical moments where eval delta exceeds a threshold.
+4. **Second pass at d=22 with multiPV=2 or 3** — only on flagged candidates. multiPV is needed for tactic classification (compare what was played vs alternative best lines).
+
+Realistically reduces a first-time analysis from ~16 hours of background CPU per user (uniform d=18, all moves) to **~2–5 hours** for a user with 2k–5k games. Subsequent runs on newly-imported games are minutes per session.
+
+## Two-Layer Architecture
+
+The product feature is **tactics classification**, not raw evals. That decomposes into two layers:
+
+1. **Engine layer (client, `stockfish.wasm`)** — finds *where* a tactic existed: positions where the played move's eval is much worse than the best move, or where mate-in-N was missed. Returns evals + best-line PVs to the server.
+2. **Classifier layer (server, stateless)** — given `(position, best_move, played_move, eval_delta, pv)`, decides *what kind* of tactic it was: fork, pin, skewer, discovered attack, removing the defender, etc. This is rule-based or ML-based pattern recognition on the resulting position — not Stockfish's job.
+
+The classifier is computed server-side after evals arrive, ideally as a stateless transform that can be re-run when classifier rules improve, without re-analyzing.
+
+## Prerequisites — Must Research Before Promoting
+
+These need to be answered before this seed can become a milestone. Both are real "could kill the idea" risks.
+
+### Prerequisite 1: iOS Safari + SharedArrayBuffer + COOP/COEP
+
+The multi-threaded `stockfish.wasm` path needs cross-origin isolation headers (`Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp`). iOS Safari is historically the most fragile here. Single-threaded fallback works but is 3–4× slower on phones, exactly where users care most about fans/battery.
+
+**Open questions:**
+- Does iOS Safari (current version) actually work with `stockfish.wasm` multi-threaded? Or fall back to single-threaded?
+- What breaks on `flawchess.com` if we set COOP/COEP site-wide? Any third-party embeds (auth providers, image hosts, analytics) that would need `crossorigin` attributes or move behind a proxy?
+- Can we scope COOP/COEP to a single sub-route (e.g. `/analyze`) instead of site-wide?
+
+A research-spike (`/gsd-spike`) on this is the right next step before any planning.
+
+### Prerequisite 2: Tactics classifier prior art
+
+Building a tactic classifier from scratch is its own multi-week project. Open-source prior art exists:
+- `lila-tactics` (Lichess) — Scala, but the heuristics are documented and portable.
+- `chess-tactics` / `chess-tactics-classifier` — npm and PyPI packages of varying quality.
+- Lichess Tactical Trainer dataset — labeled positions by tactic type, usable as training data or as a test set.
+
+**Open questions:**
+- What's the cleanest open-source primitive to vendor or port?
+- Heuristic vs ML classifier — what's the accuracy floor for heuristics on the common patterns (fork/pin/skewer)?
+- License compatibility with FlawChess (AGPL implications from Lichess code).
+
+A research pass before planning would save a lot of churn.
+
+## Storage & Compute Budget — Rough Estimates
+
+For sizing decisions and gut-check on viability.
+
+**Storage:**
+- ~50 half-moves per game × ~30 bytes per eval row (eval_cp + best_move_uci + pv_san + version metadata) ≈ 1.5 KB per game.
+- 1M games (current production order of magnitude) × 1.5 KB ≈ **1.5 GB raw**, perhaps 3 GB with indexes and multiPV expansion.
+- With position-keyed dedup, realistically 30–50% smaller for the opening prefix and shared endgames.
+- **Manageable on the current Hetzner box** (75 GB NVMe, currently using a small fraction). Not a blocker.
+
+**Client compute (first run, per user, 2k–5k games):**
+- Naive uniform d=18: 16+ hours background CPU.
+- With book skipping + forced-move skipping + two-pass adaptive depth: **2–5 hours**, spread across multiple sessions.
+- Subsequent runs on newly imported games: minutes.
+- Phone (single-threaded fallback): 4× slower; explicitly advise desktop for first run.
+
+**Server compute:**
+- Classifier is stateless and cheap (rule-based on board state). Negligible.
+- Receiving and persisting eval batches: I/O bound, comparable to the existing import pipeline.
+
+## What This Seed Does NOT Cover
+
+- **Server-side analysis fallback** — for users who never run client analysis, no evals exist. That's fine; tactics features are explicitly opt-in. Do not silently fall back to a server-side queue; that's the failure mode this seed is designed to avoid.
+- **Real-time analysis during play** — out of scope. FlawChess is post-game analytics, not a play platform.
+- **Cloud eval API integration** (chessdb.cn, lichess cloud eval, etc.) — possible future optimization for the opening prefix, but adds external-dependency risk. Not part of v1 of this seed.
+- **Self-validation against tactical puzzles** — interesting product surface but separate from the pipeline.
+
+## Cross-References
+
+- **SEED-010** (Library milestone) — explicitly defers tactical-pattern filters until "Stockfish eval coverage or a client-side eval pipeline makes those reliable." This seed *is* that pipeline.
+- `scripts/backfill_eval.py` — existing server-side backfill of endgame entry positions only. Stays as-is; the client-side path covers the rest.
+- `app/repositories/query_utils.py` — existing shared filter layer; tactical filters added here.
