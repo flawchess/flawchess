@@ -14,7 +14,8 @@ import logging
 import time
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
@@ -24,6 +25,7 @@ import chess.pgn
 import httpx
 import sentry_sdk
 from sqlalchemy import case, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
 from app.models.game import Game
@@ -83,6 +85,24 @@ class _EvalTarget:
     eval_kind: Literal["middlegame_entry", "endgame_span_entry"]
     endgame_class: int | None  # None for middlegame; int for endgame span entry
     board: chess.Board
+
+
+@dataclass(slots=True)
+class _PositionRowsResult:
+    """Aggregate output of `_collect_position_rows`.
+
+    Carries the position rows ready for bulk insert plus the per-game
+    metadata needed by downstream stages (move_count / result_fen bulk
+    UPDATE, and the post-insert engine eval pass).
+    """
+
+    new_game_ids: Sequence[int]
+    position_rows: list[dict[str, Any]] = field(default_factory=list)
+    move_counts: dict[int, int] = field(default_factory=dict)
+    result_fens: dict[int, str | None] = field(default_factory=dict)
+    # Each entry is (game_id, pgn_text, plies_list) — used by the eval pass
+    # to avoid a second PGN parse loop and to call _board_at_ply on demand.
+    game_eval_data: list[tuple[int, str, list[PlyData]]] = field(default_factory=list)
 
 
 class JobStatus(str, Enum):
@@ -462,7 +482,92 @@ async def _flush_batch(
     Returns:
         Number of newly inserted games (duplicates excluded).
     """
-    # 1. Build platform_game_id -> PGN lookup from batch (D-03: avoid SELECT Game.pgn)
+    # Stage 1: bulk-insert games + reparse PGNs into position rows + per-game
+    # eval data. Helper handles the early-empty-batch case via empty result.
+    rows_result = await _collect_position_rows(session, batch, user_id)
+    if not rows_result.new_game_ids:
+        await session.commit()
+        return 0
+
+    # Stage 2: bulk insert positions (chunked at 1,700 rows by repository).
+    if rows_result.position_rows:
+        await game_repository.bulk_insert_positions(session, rows_result.position_rows)
+
+    # Stage 3 / 3a: collect engine eval targets (middlegame entries + per-class
+    # endgame span entries). Phase 78 IMP-01 / Phase 79 PHASE-IMP-01 — runs
+    # AFTER bulk_insert_positions (rows exist in DB) and BEFORE the final
+    # session.commit() so all eval UPDATEs land in the same transaction.
+    #
+    # Two-phase to fan out engine work to the EnginePool:
+    #   (a) collect all eval targets across the import batch (no engine, no DB),
+    #   (b) await asyncio.gather(engine.evaluate(...) for each) — concurrency is
+    #       bounded by the pool's internal queue (size = STOCKFISH_POOL_SIZE),
+    #   (c) apply UPDATEs sequentially against the shared session (CLAUDE.md
+    #       constraint: AsyncSession is not safe under asyncio.gather).
+    # With pool size 1 this is equivalent to the previous serial loop. With
+    # pool size N, up to N evaluations run in parallel.
+    eval_pass_start = time.perf_counter()
+    eval_targets: list[_EvalTarget] = []
+    eval_targets.extend(_collect_midgame_eval_targets(rows_result.game_eval_data))
+    eval_targets.extend(_collect_endgame_span_eval_targets(rows_result.game_eval_data))
+
+    # Stage 4: fan out engine evaluations and apply UPDATEs sequentially.
+    # The engine call site stays here in the orchestrator so the asyncio.gather
+    # is colocated with the AsyncSession ownership boundary (CLAUDE.md hard rule).
+    eval_calls_made = 0
+    eval_calls_failed = 0
+    if eval_targets:
+        eval_results = await asyncio.gather(
+            *(engine_service.evaluate(t.board) for t in eval_targets)
+        )
+        eval_calls_made, eval_calls_failed = await _apply_eval_results(
+            session, eval_targets, eval_results
+        )
+
+    eval_pass_ms = (time.perf_counter() - eval_pass_start) * 1000
+    logger.info(
+        "import_eval_pass",
+        extra={
+            "games_in_batch": len(rows_result.game_eval_data),
+            "eval_calls_made": eval_calls_made,
+            "eval_calls_failed": eval_calls_failed,
+            "eval_pass_ms": round(eval_pass_ms, 1),
+        },
+    )
+
+    # Stage 5: bulk UPDATE move_count and result_fen via CASE expressions (D-04).
+    if rows_result.move_counts:
+        # Filter None result_fens — let NULL remain as default for those games.
+        fen_case_map = {
+            gid: fen for gid, fen in rows_result.result_fens.items() if fen is not None
+        }
+        values_dict: dict[str, Any] = {
+            "move_count": case(rows_result.move_counts, value=Game.id),
+        }
+        if fen_case_map:
+            values_dict["result_fen"] = case(fen_case_map, value=Game.id, else_=None)
+        await session.execute(
+            update(Game)
+            .where(Game.id.in_(list(rows_result.move_counts.keys())))
+            .values(**values_dict)
+        )
+
+    await session.commit()
+    return len(rows_result.new_game_ids)
+
+
+async def _collect_position_rows(
+    session: AsyncSession,
+    batch: Sequence[NormalizedGame],
+    user_id: int,
+) -> _PositionRowsResult:
+    """Bulk-insert games + reparse PGNs into position rows + per-game eval data.
+
+    Returns an aggregate result with `new_game_ids` empty if no games were
+    inserted (caller should short-circuit). The session is owned by the caller
+    and the bulk_insert_games + select queries execute within its transaction.
+    """
+    # Build platform_game_id -> PGN lookup from batch (D-03: avoid SELECT Game.pgn).
     pgn_by_platform_id: dict[str, str] = {}
     for g in batch:
         if isinstance(g, NormalizedGame):
@@ -470,28 +575,22 @@ async def _flush_batch(
         else:
             pgn_by_platform_id[g.get("platform_game_id", "")] = g.get("pgn", "")  # type: ignore[union-attr] — dict fallback for test mocks
 
-    # 2. Convert to dicts and bulk insert games
+    # Convert to dicts and bulk insert games.
     game_dicts = [g.model_dump() if isinstance(g, NormalizedGame) else g for g in batch]  # type: ignore[union-attr] — dict fallback for test mocks
     new_game_ids = await game_repository.bulk_insert_games(session, game_dicts)
 
     if not new_game_ids:
-        await session.commit()
-        return 0
+        return _PositionRowsResult(new_game_ids=[])
 
-    # 3. Lightweight SELECT for (id, platform_game_id) only — no PGN transfer (D-03)
+    # Lightweight SELECT for (id, platform_game_id) only — no PGN transfer (D-03).
     result = await session.execute(
         select(Game.id, Game.platform_game_id).where(Game.id.in_(new_game_ids))
     )
     id_platform_pairs = result.fetchall()
 
-    # 4. Process each game's PGN with unified function (D-01: single parse)
-    position_rows: list[dict[str, Any]] = []
-    move_counts: dict[int, int] = {}
-    result_fens: dict[int, str | None] = {}
-    # Phase 78 IMP-01: retain per-game data for the post-insert eval pass.
-    # Each entry is (game_id, pgn_text, plies_list) — collected alongside position_rows.
-    game_eval_data: list[tuple[int, str, list[PlyData]]] = []
+    out = _PositionRowsResult(new_game_ids=new_game_ids)
 
+    # Process each game's PGN with unified function (D-01: single parse).
     for game_id, platform_game_id in id_platform_pairs:
         pgn = pgn_by_platform_id.get(platform_game_id, "")
         if not pgn:
@@ -507,14 +606,14 @@ async def _flush_batch(
         if processing_result is None:
             continue
 
-        # Accumulate move_count and result_fen for bulk UPDATE (D-04)
-        move_counts[game_id] = processing_result["move_count"]
-        result_fens[game_id] = processing_result["result_fen"]
+        # Accumulate move_count and result_fen for bulk UPDATE (D-04).
+        out.move_counts[game_id] = processing_result["move_count"]
+        out.result_fens[game_id] = processing_result["result_fen"]
 
         # Retain plies for the eval pass — done here to avoid a second PGN parse loop.
-        game_eval_data.append((game_id, pgn, list(processing_result["plies"])))
+        out.game_eval_data.append((game_id, pgn, list(processing_result["plies"])))
 
-        # Build position rows from plies
+        # Build position rows from plies.
         for ply_data in processing_result["plies"]:
             row: dict[str, Any] = {
                 "game_id": game_id,
@@ -537,60 +636,59 @@ async def _flush_batch(
                 "endgame_class": ply_data["endgame_class"],
                 "phase": ply_data["phase"],
             }
-            position_rows.append(row)
+            out.position_rows.append(row)
 
-    # 5. Bulk insert positions (chunked at 1,700 rows)
-    if position_rows:
-        await game_repository.bulk_insert_positions(session, position_rows)
+    return out
 
-    # 5a. Phase 78 IMP-01 / Phase 79 PHASE-IMP-01: evaluate middlegame-entry and
-    # per-class endgame span-entry rows where lichess %eval did NOT already
-    # populate them. Runs AFTER bulk_insert_positions (rows exist in DB) and
-    # BEFORE the final session.commit() so all eval UPDATEs land in the same
-    # transaction.
-    #
-    # Two-phase to fan out engine work to the EnginePool:
-    #   (a) collect all eval targets across the import batch (no engine, no DB),
-    #   (b) await asyncio.gather(engine.evaluate(...) for each) — concurrency is
-    #       bounded by the pool's internal queue (size = STOCKFISH_POOL_SIZE),
-    #   (c) apply UPDATEs sequentially against the shared session (CLAUDE.md
-    #       constraint: AsyncSession is not safe under asyncio.gather).
-    # With pool size 1 this is equivalent to the previous serial loop. With
-    # pool size N, up to N evaluations run in parallel.
-    #
-    # Each contiguous run of the same endgame_class within a game is its own
-    # span: a class=1 → class=2 → class=1 sequence yields two class=1 entry
-    # evals, not one. Spans of any length are evaluated; the repository's
-    # ENDGAME_PLY_THRESHOLD is intentionally not enforced here so endgame
-    # eval coverage stays uniform across short and long spans.
-    eval_pass_start = time.perf_counter()
-    eval_calls_made = 0
-    eval_calls_failed = 0
 
-    eval_targets: list[_EvalTarget] = []
+def _collect_midgame_eval_targets(
+    game_eval_data: Sequence[tuple[int, str, list[PlyData]]],
+) -> list[_EvalTarget]:
+    """Phase 79 PHASE-IMP-01: middlegame entry eval — MIN(ply) where phase == 1.
+
+    At most one middlegame entry per game (later phase=1 stretches after an
+    endgame are NOT re-evaluated, mirroring lichess Divider's single
+    Division(midGame, endGame) return — D-79-08). Skips plies where lichess
+    %eval already populated the row (T-78-17).
+    """
+    targets: list[_EvalTarget] = []
     for g_id, pgn_text, plies_list in game_eval_data:
-        # Phase 79 PHASE-IMP-01: middlegame entry eval — MIN(ply) where phase == 1.
-        # At most one middlegame entry per game (later phase=1 stretches after an
-        # endgame are NOT re-evaluated, mirroring lichess Divider's single
-        # Division(midGame, endGame) return — D-79-08).
         midgame_entries = [pd for pd in plies_list if pd["phase"] == 1]
-        if midgame_entries:
-            mid_pd = min(midgame_entries, key=lambda p: p["ply"])
-            # T-78-17 lichess preservation: skip if lichess %eval already populated the row.
-            if mid_pd["eval_cp"] is None and mid_pd["eval_mate"] is None:
-                mid_board = _board_at_ply(pgn_text, mid_pd["ply"])
-                if mid_board is not None:
-                    eval_targets.append(
-                        _EvalTarget(
-                            game_id=g_id,
-                            ply=mid_pd["ply"],
-                            eval_kind="middlegame_entry",
-                            endgame_class=None,
-                            board=mid_board,
-                        )
-                    )
+        if not midgame_entries:
+            continue
+        mid_pd = min(midgame_entries, key=lambda p: p["ply"])
+        # T-78-17 lichess preservation: skip if lichess %eval already populated the row.
+        if mid_pd["eval_cp"] is not None or mid_pd["eval_mate"] is not None:
+            continue
+        mid_board = _board_at_ply(pgn_text, mid_pd["ply"])
+        if mid_board is None:
+            continue
+        targets.append(
+            _EvalTarget(
+                game_id=g_id,
+                ply=mid_pd["ply"],
+                eval_kind="middlegame_entry",
+                endgame_class=None,
+                board=mid_board,
+            )
+        )
+    return targets
 
-        # Phase 78 per-class endgame span entry collection.
+
+def _collect_endgame_span_eval_targets(
+    game_eval_data: Sequence[tuple[int, str, list[PlyData]]],
+) -> list[_EvalTarget]:
+    """Phase 78 per-class endgame span entry collection.
+
+    Each contiguous run of the same endgame_class within a game is its own
+    span: a class=1 → class=2 → class=1 sequence yields two class=1 entry
+    evals, not one. Spans of any length are evaluated; the repository's
+    ENDGAME_PLY_THRESHOLD is intentionally not enforced here so endgame
+    eval coverage stays uniform across short and long spans. Skips plies
+    where lichess %eval already populated the row (T-78-17).
+    """
+    targets: list[_EvalTarget] = []
+    for g_id, pgn_text, plies_list in game_eval_data:
         # Group plies by endgame_class; only endgame plies have a non-None class.
         class_plies: dict[int, list[PlyData]] = defaultdict(list)
         for pd in plies_list:
@@ -599,101 +697,103 @@ async def _flush_batch(
                 class_plies[ec].append(pd)
 
         for ec, pds in class_plies.items():
-            # Split per-class plies into contiguous runs ("islands"). A new
-            # island starts whenever the ply gap to the previous entry is > 1
-            # — i.e. the class was interrupted by a non-class ply. plies_list
-            # is already in ply order, so pds is too; sort defensively.
-            pds_sorted = sorted(pds, key=lambda p: p["ply"])
-            islands: list[list[PlyData]] = []
-            current: list[PlyData] = []
-            for pd in pds_sorted:
-                if current and pd["ply"] != current[-1]["ply"] + 1:
-                    islands.append(current)
-                    current = []
-                current.append(pd)
-            if current:
-                islands.append(current)
+            islands = _split_into_contiguous_islands(pds)
+            targets.extend(_island_eval_targets(g_id, pgn_text, ec, islands))
+    return targets
 
-            for island in islands:
-                span_pd = island[0]  # entry ply = first ply of the contiguous run
 
-                if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
-                    # Lichess %eval already populated this ply — do not overwrite (T-78-17).
-                    continue
+def _split_into_contiguous_islands(pds: Sequence[PlyData]) -> list[list[PlyData]]:
+    """Split per-class plies into contiguous runs ("islands").
 
-                span_board = _board_at_ply(pgn_text, span_pd["ply"])
-                if span_board is None:
-                    # PGN replay failed — skip row, no Sentry (parse error is unusual but not urgent).
-                    continue
+    A new island starts whenever the ply gap to the previous entry is > 1
+    — i.e. the class was interrupted by a non-class ply. plies_list is
+    already in ply order, so pds is too; sort defensively.
+    """
+    pds_sorted = sorted(pds, key=lambda p: p["ply"])
+    islands: list[list[PlyData]] = []
+    current: list[PlyData] = []
+    for pd in pds_sorted:
+        if current and pd["ply"] != current[-1]["ply"] + 1:
+            islands.append(current)
+            current = []
+        current.append(pd)
+    if current:
+        islands.append(current)
+    return islands
 
-                eval_targets.append(
-                    _EvalTarget(
-                        game_id=g_id,
-                        ply=span_pd["ply"],
-                        eval_kind="endgame_span_entry",
-                        endgame_class=ec,
-                        board=span_board,
-                    )
-                )
 
-    # Fan out engine evaluations across the EnginePool. The pool's internal
-    # queue caps in-flight analyses at STOCKFISH_POOL_SIZE; remaining calls
-    # await their slot. With pool size 1 this serializes (legacy behavior).
-    if eval_targets:
-        results = await asyncio.gather(*(engine_service.evaluate(t.board) for t in eval_targets))
+def _island_eval_targets(
+    g_id: int,
+    pgn_text: str,
+    ec: int,
+    islands: Sequence[Sequence[PlyData]],
+) -> list[_EvalTarget]:
+    """Build _EvalTarget rows for each island's entry ply.
 
-        for target, (eval_cp, eval_mate) in zip(eval_targets, results, strict=True):
-            eval_calls_made += 1
-            if eval_cp is None and eval_mate is None:
-                # D-11: engine error / timeout — skip row, capture to Sentry, continue import.
-                eval_calls_failed += 1
-                # Bounded Sentry context (D-79-04, T-78-18: no PGN/FEN/user_id).
-                ctx: dict[str, Any] = {"game_id": target.game_id, "ply": target.ply}
-                if target.endgame_class is not None:
-                    ctx["endgame_class"] = target.endgame_class
-                sentry_sdk.set_context("eval", ctx)
-                sentry_sdk.set_tag("source", "import")
-                sentry_sdk.set_tag("eval_kind", target.eval_kind)
-                sentry_sdk.capture_message(
-                    "import-time engine returned None tuple", level="warning"
-                )
-                continue
-
-            # Build the WHERE clause for this eval kind. Endgame span entries
-            # filter by endgame_class to disambiguate when the same ply could
-            # in principle belong to multiple class spans (defensive — current
-            # schema has at most one row per (game_id, ply)).
-            stmt = update(GamePosition).where(
-                GamePosition.game_id == target.game_id,
-                GamePosition.ply == target.ply,
+    Skips islands where lichess %eval already populated the entry ply
+    (T-78-17) or where _board_at_ply replay fails (rare, no Sentry —
+    parse error is unusual but not urgent).
+    """
+    targets: list[_EvalTarget] = []
+    for island in islands:
+        span_pd = island[0]  # entry ply = first ply of the contiguous run
+        if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
+            # Lichess %eval already populated this ply — do not overwrite (T-78-17).
+            continue
+        span_board = _board_at_ply(pgn_text, span_pd["ply"])
+        if span_board is None:
+            continue
+        targets.append(
+            _EvalTarget(
+                game_id=g_id,
+                ply=span_pd["ply"],
+                eval_kind="endgame_span_entry",
+                endgame_class=ec,
+                board=span_board,
             )
-            if target.endgame_class is not None:
-                stmt = stmt.where(GamePosition.endgame_class == target.endgame_class)
-            await session.execute(stmt.values(eval_cp=eval_cp, eval_mate=eval_mate))
-
-    eval_pass_ms = (time.perf_counter() - eval_pass_start) * 1000
-    logger.info(
-        "import_eval_pass",
-        extra={
-            "games_in_batch": len(game_eval_data),
-            "eval_calls_made": eval_calls_made,
-            "eval_calls_failed": eval_calls_failed,
-            "eval_pass_ms": round(eval_pass_ms, 1),
-        },
-    )
-
-    # 6. Bulk UPDATE move_count and result_fen via CASE expressions (D-04)
-    if move_counts:
-        # Filter None result_fens — let NULL remain as default for those games
-        fen_case_map = {gid: fen for gid, fen in result_fens.items() if fen is not None}
-        values_dict: dict[str, Any] = {
-            "move_count": case(move_counts, value=Game.id),
-        }
-        if fen_case_map:
-            values_dict["result_fen"] = case(fen_case_map, value=Game.id, else_=None)
-        await session.execute(
-            update(Game).where(Game.id.in_(list(move_counts.keys()))).values(**values_dict)
         )
+    return targets
 
-    await session.commit()
-    return len(new_game_ids)
+
+async def _apply_eval_results(
+    session: AsyncSession,
+    eval_targets: Sequence[_EvalTarget],
+    eval_results: Sequence[tuple[int | None, int | None]],
+) -> tuple[int, int]:
+    """Apply engine eval results to GamePosition rows via per-row UPDATE.
+
+    UPDATEs run sequentially against the shared session (CLAUDE.md hard
+    rule: AsyncSession is not safe under asyncio.gather). The session is
+    owned by the caller and the UPDATEs land in its transaction.
+
+    Returns (eval_calls_made, eval_calls_failed).
+    """
+    eval_calls_made = 0
+    eval_calls_failed = 0
+    for target, (eval_cp, eval_mate) in zip(eval_targets, eval_results, strict=True):
+        eval_calls_made += 1
+        if eval_cp is None and eval_mate is None:
+            # D-11: engine error / timeout — skip row, capture to Sentry, continue import.
+            eval_calls_failed += 1
+            # Bounded Sentry context (D-79-04, T-78-18: no PGN/FEN/user_id).
+            ctx: dict[str, Any] = {"game_id": target.game_id, "ply": target.ply}
+            if target.endgame_class is not None:
+                ctx["endgame_class"] = target.endgame_class
+            sentry_sdk.set_context("eval", ctx)
+            sentry_sdk.set_tag("source", "import")
+            sentry_sdk.set_tag("eval_kind", target.eval_kind)
+            sentry_sdk.capture_message("import-time engine returned None tuple", level="warning")
+            continue
+
+        # Build the WHERE clause for this eval kind. Endgame span entries
+        # filter by endgame_class to disambiguate when the same ply could
+        # in principle belong to multiple class spans (defensive — current
+        # schema has at most one row per (game_id, ply)).
+        stmt = update(GamePosition).where(
+            GamePosition.game_id == target.game_id,
+            GamePosition.ply == target.ply,
+        )
+        if target.endgame_class is not None:
+            stmt = stmt.where(GamePosition.endgame_class == target.endgame_class)
+        await session.execute(stmt.values(eval_cp=eval_cp, eval_mate=eval_mate))
+    return eval_calls_made, eval_calls_failed
