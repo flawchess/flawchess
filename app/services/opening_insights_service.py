@@ -14,6 +14,8 @@ for D-01..D-34 locked decisions.
 import ctypes
 import datetime
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from types import SimpleNamespace  # Phase 80.1: adapter for resulting-position W/D/L
 from typing import Any, Literal
 
@@ -420,6 +422,416 @@ def _apply_eval_metrics_to_finding(
 
 
 # ---------------------------------------------------------------------------
+# compute_insights stage helpers (quick task 260509-gm9 mechanical extraction)
+#
+# compute_insights reads as a short pipeline:
+#   1. _collect_attribution_hashes  — pass-1 transitions + direct openings lookup
+#   2. _fetch_position_wdl_per_color — pass-2 parent walk + per-color WDL fetch
+#   3. _build_sections              — classify → attribute → dedupe → rank → cap → eval enrich
+# Each helper is module-private and called sequentially; no behavior changes.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class _AttributionContext:
+    """Pass-1 attribution context: per-color transition rows + direct openings lookup.
+
+    Carried between _collect_attribution_hashes and _fetch_position_wdl_per_color.
+    """
+
+    rows_by_color: dict[str, list[Row[Any]]] = field(default_factory=dict)
+    openings_by_hash: dict[int, Opening] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class _PipelineContext:
+    """Combined pass-1 + pass-2 context handed to _build_sections.
+
+    Bundles transition rows, direct opening lookup, parent-lineage lookup,
+    and per-color resulting-position WDL maps so the section-builder takes
+    a single context parameter rather than 4+ positional arguments.
+    """
+
+    rows_by_color: dict[str, list[Row[Any]]]
+    openings_by_hash: dict[int, Opening]
+    parents_by_hash: dict[int, Opening]
+    pos_wdl_by_color: dict[
+        Literal["white", "black"],
+        dict[int, tuple[int, int, int, datetime.datetime | None]],
+    ]
+
+
+async def _collect_attribution_hashes(
+    session: AsyncSession,
+    user_id: int,
+    request: OpeningInsightsRequest,
+    cutoff: datetime.datetime | None,
+    colors_to_query: Sequence[Literal["white", "black"]],
+) -> _AttributionContext:
+    """Stage 1: query transitions per color and resolve direct opening attribution.
+
+    Runs query_opening_transitions sequentially per color (CLAUDE.md AsyncSession
+    rule) and looks up the union of entry hashes — plus resulting_full_hash for
+    ply=0 entries (empty SAN sequence) so the ply=0 attribution fallback in
+    `_attribute_finding` can name them by the resulting position
+    (e.g. "1.e4" → "King's Pawn Opening").
+    """
+    rows_by_color: dict[str, list[Row[Any]]] = {}
+    # CLAUDE.md §Critical Constraints: AsyncSession not safe for asyncio.gather.
+    for color in colors_to_query:
+        rows_by_color[color] = await query_opening_transitions(
+            session=session,
+            user_id=user_id,
+            color=color,
+            time_control=request.time_control,
+            platform=request.platform,
+            rated=request.rated,
+            opponent_type=request.opponent_type,
+            recency_cutoff=cutoff,
+            opponent_gap_min=request.opponent_gap_min,
+            opponent_gap_max=request.opponent_gap_max,
+        )
+
+    # Pass 1: direct attribution for all entry hashes. Also include
+    # resulting_full_hash for ply=0 entries (empty SAN sequence) so the
+    # ply=0 attribution fallback in `_attribute_finding` can name them
+    # by the resulting position (e.g. "1.e4" → "King's Pawn Opening").
+    direct_entry_hashes_set: set[int] = set()
+    for rows in rows_by_color.values():
+        for r in rows:
+            direct_entry_hashes_set.add(int(r.entry_hash))
+            if not (r.entry_san_sequence or []):
+                direct_entry_hashes_set.add(int(r.resulting_full_hash))
+    openings_by_hash = await query_openings_by_hashes(session, list(direct_entry_hashes_set))
+
+    return _AttributionContext(rows_by_color=rows_by_color, openings_by_hash=openings_by_hash)
+
+
+async def _fetch_position_wdl_per_color(
+    session: AsyncSession,
+    user_id: int,
+    request: OpeningInsightsRequest,
+    cutoff: datetime.datetime | None,
+    colors_to_query: Sequence[Literal["white", "black"]],
+    ctx: _AttributionContext,
+) -> _PipelineContext:
+    """Stage 2: parent-lineage attribution + per-color resulting-position WDL.
+
+    First walks parent prefix hashes for any entry hashes that missed direct
+    attribution (BLOCKER-1 / D-34), then fetches per-color resulting-position
+    W/D/L (Phase 80.1 D-03/D-05) — aggregated across ALL move orders
+    (transposition-inclusive). Sequential awaits per CLAUDE.md AsyncSession rule.
+
+    WR-01: queries per color, scoped to that color's resulting_full_hash set,
+    and passes color=color to query_resulting_position_wdl so the denominator
+    matches query_opening_transitions' Game.user_color filter (avoids blending
+    white-perspective and black-perspective games).
+    """
+    rows_by_color = ctx.rows_by_color
+    openings_by_hash = ctx.openings_by_hash
+
+    # Pass 2: parent-lineage attribution for unmatched (BLOCKER-1 / D-34).
+    unmatched_parent_hashes: set[int] = set()
+    for rows in rows_by_color.values():
+        for r in rows:
+            if int(r.entry_hash) not in openings_by_hash:
+                # With MIN_ENTRY_PLY=0, ply=0 entries have a NULL SAN
+                # sequence (no preceding moves) — coerce to [] so the
+                # prefix walk no-ops instead of crashing.
+                unmatched_parent_hashes.update(
+                    _compute_prefix_hashes(list(r.entry_san_sequence or []))
+                )
+    parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
+
+    # Phase 80.1 D-03/D-05: aggregate W/D/L per resulting_full_hash across
+    # ALL move orders (transposition-inclusive). Surfacing gate already ran
+    # in query_opening_transitions HAVING n_games >= OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
+    # on move-played n (per D-04). The values below feed _classify_row /
+    # _compute_score / compute_confidence_bucket / wilson_bounds /
+    # OpeningInsightFinding via a SimpleNamespace adapter so those helpers
+    # don't change.
+    pos_wdl_by_color: dict[
+        Literal["white", "black"], dict[int, tuple[int, int, int, datetime.datetime | None]]
+    ] = {}
+    for color in colors_to_query:
+        color_resulting_hashes: list[int] = list(
+            {int(r.resulting_full_hash) for r in rows_by_color[color]}
+        )
+        if not color_resulting_hashes:
+            pos_wdl_by_color[color] = {}
+            continue
+        pos_wdl_by_color[color] = await query_resulting_position_wdl(
+            session=session,
+            user_id=user_id,
+            hash_list=color_resulting_hashes,
+            time_control=request.time_control,
+            platform=request.platform,
+            rated=request.rated,
+            opponent_type=request.opponent_type,
+            recency_cutoff=cutoff,
+            color=color,  # per-color: matches query_opening_transitions' Game.user_color filter
+            opponent_gap_min=request.opponent_gap_min,
+            opponent_gap_max=request.opponent_gap_max,
+        )
+
+    return _PipelineContext(
+        rows_by_color=rows_by_color,
+        openings_by_hash=openings_by_hash,
+        parents_by_hash=parents_by_hash,
+        pos_wdl_by_color=pos_wdl_by_color,
+    )
+
+
+def _row_to_finding(
+    row: Any,
+    color_literal: Literal["white", "black"],
+    pos_wdl_for_color: dict[int, tuple[int, int, int, datetime.datetime | None]],
+    openings_by_hash: dict[int, Opening],
+    parents_by_hash: dict[int, Opening],
+) -> tuple[OpeningInsightFinding, int, float] | None:
+    """Convert one transition row into a (finding, ply_count, se) tuple, or None.
+
+    Returns None when the row is neutral (classify miss) or when attribution
+    fails at every depth (D-34 drop). Mirrors the inner-loop body of the
+    original compute_insights pipeline byte-for-byte.
+    """
+    # Phase 80.1 D-03: feed _classify_row / _compute_score /
+    # compute_confidence_bucket / wilson_bounds / OpeningInsightFinding
+    # the resulting-position W/D/L via a SimpleNamespace adapter so
+    # those helpers stay byte-identical. Non-WDL fields (move_san,
+    # entry_*, resulting_full_hash) continue to come from `row`.
+    pos = pos_wdl_for_color.get(int(row.resulting_full_hash))
+    if pos is None:
+        # Filter mismatch defensive fallback (RESEARCH.md Pitfall 4).
+        # Should not fire when query_resulting_position_wdl filters
+        # mirror query_opening_transitions; logged for diagnosis.
+        logger.warning(
+            "query_resulting_position_wdl missing resulting_full_hash=%s; "
+            "falling back to move-played WDL",
+            row.resulting_full_hash,
+        )
+        pos_row: Any = row
+        # Fall back to the move-played MAX(played_at) from
+        # query_opening_transitions (still the same user, same
+        # filters) rather than dropping the line silently.
+        finding_last_played_at: datetime.datetime | None = row.last_played_at
+    else:
+        pos_w, pos_d, pos_l, pos_last_played_at = pos
+        pos_n = pos_w + pos_d + pos_l
+        pos_row = SimpleNamespace(w=pos_w, d=pos_d, l=pos_l, n=pos_n)
+        finding_last_played_at = pos_last_played_at
+
+    cls = _classify_row(pos_row)
+    if cls is None:
+        return None
+    classification, severity = cls
+
+    # BLOCKER-1: single attribution path. None => DROP per D-34.
+    attribution = _attribute_finding(row, openings_by_hash, parents_by_hash, color_literal)
+    if attribution is None:
+        sentry_sdk.set_tag("openings.attribution.unmatched_dropped", True)
+        return None
+    opening_name, opening_eco, display_name = attribution
+
+    # BLOCKER-1 / D-25: entry_fen reconstructed by replaying the
+    # actual SAN sequence the user played up to the entry. With
+    # MIN_ENTRY_PLY=0, ply=0 entries legitimately replay zero
+    # moves and yield the starting FEN — coerce NULL→[] so
+    # _replay_san_sequence sees an empty list instead of None.
+    entry_fen = _replay_san_sequence(list(row.entry_san_sequence or []))
+
+    # Carry the matched Opening.ply_count alongside for D-24
+    # deeper-entry-wins dedupe; use 0 for parent-only matches
+    # (parent-matched entries have lower specificity than direct matches).
+    # ply=0 entries attribute via resulting_full_hash, so mirror
+    # that lookup here to avoid under-counting their depth.
+    matched_opening = openings_by_hash.get(int(row.entry_hash))
+    if matched_opening is None and not (row.entry_san_sequence or []):
+        matched_opening = openings_by_hash.get(int(row.resulting_full_hash))
+    opening_ply_count = matched_opening.ply_count if matched_opening else 0
+
+    score = _compute_score(pos_row)
+    confidence, p_value, se = compute_confidence_bucket(
+        pos_row.w, pos_row.d, pos_row.l, pos_row.n
+    )
+    ci_low, ci_high = wilson_bounds(score, pos_row.n)
+
+    finding = OpeningInsightFinding(
+        color=color_literal,
+        classification=classification,
+        severity=severity,
+        opening_name=opening_name,
+        opening_eco=opening_eco,
+        display_name=display_name,
+        entry_fen=entry_fen,
+        entry_san_sequence=list(
+            row.entry_san_sequence or []
+        ),  # Phase 71 (D-13): SAN sequence start→entry; empty for entry_ply=0 (no preceding moves)
+        # BLOCKER-5 / Pitfall 1: stringify 64-bit ints at the API boundary.
+        entry_full_hash=str(int(row.entry_hash)),
+        candidate_move_san=row.move_san,
+        resulting_full_hash=str(int(row.resulting_full_hash)),
+        n_games=pos_row.n,
+        wins=pos_row.w,
+        draws=pos_row.d,
+        losses=pos_row.l,
+        score=score,
+        confidence=confidence,
+        p_value=p_value,
+        ci_low=ci_low,
+        ci_high=ci_high,
+        # Quick task 260508-r61: MAX(played_at) across all games
+        # visiting the resulting position (transposition-inclusive,
+        # color-filtered). Falls back to the move-played MAX from
+        # query_opening_transitions when the resulting-position
+        # lookup misses (matches the W/D/L fallback above).
+        last_played_at=finding_last_played_at,
+    )
+    return finding, opening_ply_count, se
+
+
+async def _build_sections(
+    session: AsyncSession,
+    user_id: int,
+    request: OpeningInsightsRequest,
+    cutoff: datetime.datetime | None,
+    colors_to_query: Sequence[Literal["white", "black"]],
+    ctx: _PipelineContext,
+) -> dict[str, list[OpeningInsightFinding]]:
+    """Stage 3: classify → attribute → assemble → dedupe → rank → cap → enrich.
+
+    Builds the four sections (white/black × weaknesses/strengths), runs
+    per-section transposition dedupe (D-24) and global continuation dedupe
+    (Phase 71 UAT fix), ranks each section by Wilson 95% CI bound, caps per
+    D-02, then enriches surviving findings with MG-entry eval metrics
+    (sequential per-color batch awaits per CLAUDE.md AsyncSession rule).
+    """
+    # ---- Build sections ----
+    # Each section accumulates (OpeningInsightFinding, ply_count, se) tuples:
+    # - ply_count drives the D-24 deeper-entry-wins dedupe in _dedupe_within_section
+    #   (consumed there and not propagated downstream).
+    # - se threads through dedupe stages but is ignored by _rank_section under
+    #   the Wilson 95% CI bound (quick task 260428-v9i — replaces Wald to fix
+    #   small-N degeneracy). SE is still produced for the UI confidence badge.
+    sections: dict[str, list[tuple[OpeningInsightFinding, int, float]]] = {
+        "white_weaknesses": [],
+        "black_weaknesses": [],
+        "white_strengths": [],
+        "black_strengths": [],
+    }
+
+    for color in colors_to_query:
+        color_literal: Literal["white", "black"] = color
+        for row in ctx.rows_by_color[color]:
+            built = _row_to_finding(
+                row,
+                color_literal,
+                ctx.pos_wdl_by_color[color_literal],
+                ctx.openings_by_hash,
+                ctx.parents_by_hash,
+            )
+            if built is None:
+                continue
+            finding, opening_ply_count, se = built
+            section_key = (
+                f"{color}_{'weaknesses' if finding.classification == 'weakness' else 'strengths'}"
+            )
+            sections[section_key].append((finding, opening_ply_count, se))
+
+    # Per-section transposition dedupe (D-24) → global continuation dedupe
+    # (Phase 71 UAT fix) → rank → cap (D-02 caps: 5 weaknesses, 3 strengths).
+    # Quick 260428-v9i: ranks by Wilson 95% CI bound (direction-aware),
+    # using (score, n_games) and ignoring SE — replaces the earlier Wald
+    # CI to fix small-N degeneracy. Confidence bucket is no longer part of
+    # the sort key, only a UI badge.
+    deduped_sections: dict[str, list[tuple[OpeningInsightFinding, float]]] = {
+        key: _dedupe_within_section(items) for key, items in sections.items()
+    }
+    deduped_sections = _dedupe_continuations(deduped_sections)
+    final_sections: dict[str, list[OpeningInsightFinding]] = {}
+    for key, findings_with_se in deduped_sections.items():
+        direction: Literal["weakness", "strength"] = (
+            "weakness" if "weaknesses" in key else "strength"
+        )
+        ranked = _rank_section(findings_with_se, direction=direction)
+        cap = WEAKNESS_CAP_PER_COLOR if "weaknesses" in key else STRENGTH_CAP_PER_COLOR
+        final_sections[key] = ranked[:cap]
+
+    # Populate MG-entry eval fields on all surviving findings.
+    # Call the shared batch helper once per color (sequential per CLAUDE.md
+    # AsyncSession rule). Key is resulting_full_hash (the position immediately
+    # after the candidate move) — mirrors how Stats keys MG-entry eval.
+    all_white_findings: list[OpeningInsightFinding] = (
+        final_sections["white_weaknesses"] + final_sections["white_strengths"]
+    )
+    all_black_findings: list[OpeningInsightFinding] = (
+        final_sections["black_weaknesses"] + final_sections["black_strengths"]
+    )
+
+    white_hashes: list[int] = list({int(f.resulting_full_hash) for f in all_white_findings})
+    black_hashes: list[int] = list({int(f.resulting_full_hash) for f in all_black_findings})
+
+    # Sequential awaits — AsyncSession not safe for concurrent use.
+    white_eval_metrics: dict[int, OpeningPhaseEntryMetrics] = {}
+    if white_hashes:
+        white_eval_metrics = await query_opening_phase_entry_metrics_batch(
+            session=session,
+            user_id=user_id,
+            hashes=white_hashes,
+            color="white",
+            time_control=request.time_control,
+            platform=request.platform,
+            rated=request.rated,
+            opponent_type=request.opponent_type,
+            recency_cutoff=cutoff,
+            opponent_gap_min=request.opponent_gap_min,
+            opponent_gap_max=request.opponent_gap_max,
+        )
+
+    black_eval_metrics: dict[int, OpeningPhaseEntryMetrics] = {}
+    if black_hashes:
+        black_eval_metrics = await query_opening_phase_entry_metrics_batch(
+            session=session,
+            user_id=user_id,
+            hashes=black_hashes,
+            color="black",
+            time_control=request.time_control,
+            platform=request.platform,
+            rated=request.rated,
+            opponent_type=request.opponent_type,
+            recency_cutoff=cutoff,
+            opponent_gap_min=request.opponent_gap_min,
+            opponent_gap_max=request.opponent_gap_max,
+        )
+
+    return {
+        "white_weaknesses": _enrich_findings(
+            final_sections["white_weaknesses"], white_eval_metrics
+        ),
+        "black_weaknesses": _enrich_findings(
+            final_sections["black_weaknesses"], black_eval_metrics
+        ),
+        "white_strengths": _enrich_findings(final_sections["white_strengths"], white_eval_metrics),
+        "black_strengths": _enrich_findings(final_sections["black_strengths"], black_eval_metrics),
+    }
+
+
+def _enrich_findings(
+    findings: Sequence[OpeningInsightFinding],
+    metrics_map: dict[int, OpeningPhaseEntryMetrics],
+) -> list[OpeningInsightFinding]:
+    """Apply MG-entry eval metrics to each finding when present in metrics_map."""
+    result: list[OpeningInsightFinding] = []
+    for f in findings:
+        pe = metrics_map.get(int(f.resulting_full_hash))
+        if pe is not None:
+            result.append(_apply_eval_metrics_to_finding(f, pe))
+        else:
+            result.append(f)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -449,295 +861,20 @@ async def compute_insights(
     # rank + cap) is wrapped in a single try/except so any exception in
     # pure-Python stages also gets the Sentry context + tags.
     try:
-        rows_by_color: dict[str, list[Row[Any]]] = {}
-        # CLAUDE.md §Critical Constraints: AsyncSession not safe for asyncio.gather.
-        for color in colors_to_query:
-            rows_by_color[color] = await query_opening_transitions(
-                session=session,
-                user_id=user_id,
-                color=color,
-                time_control=request.time_control,
-                platform=request.platform,
-                rated=request.rated,
-                opponent_type=request.opponent_type,
-                recency_cutoff=cutoff,
-                opponent_gap_min=request.opponent_gap_min,
-                opponent_gap_max=request.opponent_gap_max,
-            )
-
-        # Pass 1: direct attribution for all entry hashes. Also include
-        # resulting_full_hash for ply=0 entries (empty SAN sequence) so the
-        # ply=0 attribution fallback in `_attribute_finding` can name them
-        # by the resulting position (e.g. "1.e4" → "King's Pawn Opening").
-        direct_entry_hashes_set: set[int] = set()
-        for rows in rows_by_color.values():
-            for r in rows:
-                direct_entry_hashes_set.add(int(r.entry_hash))
-                if not (r.entry_san_sequence or []):
-                    direct_entry_hashes_set.add(int(r.resulting_full_hash))
-        openings_by_hash = await query_openings_by_hashes(session, list(direct_entry_hashes_set))
-
-        # Pass 2: parent-lineage attribution for unmatched (BLOCKER-1 / D-34).
-        unmatched_parent_hashes: set[int] = set()
-        for rows in rows_by_color.values():
-            for r in rows:
-                if int(r.entry_hash) not in openings_by_hash:
-                    # With MIN_ENTRY_PLY=0, ply=0 entries have a NULL SAN
-                    # sequence (no preceding moves) — coerce to [] so the
-                    # prefix walk no-ops instead of crashing.
-                    unmatched_parent_hashes.update(
-                        _compute_prefix_hashes(list(r.entry_san_sequence or []))
-                    )
-        parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
-
-        # Phase 80.1 D-03/D-05: aggregate W/D/L per resulting_full_hash across
-        # ALL move orders (transposition-inclusive). Surfacing gate already ran
-        # in query_opening_transitions HAVING n_games >= OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE
-        # on move-played n (per D-04). The values below feed _classify_row /
-        # _compute_score / compute_confidence_bucket / wilson_bounds /
-        # OpeningInsightFinding via a SimpleNamespace adapter so those helpers
-        # don't change.
-        #
-        # WR-01 fix (post code review): query per-color, scoped to that color's
-        # resulting_full_hash set, and pass color=color to query_resulting_position_wdl.
-        # query_opening_transitions IS color-filtered (explicit predicate
-        # `Game.user_color == color` at openings_repository.py:836; it only passes
-        # color=None to apply_game_filters to avoid double-filtering). Calling
-        # query_resulting_position_wdl with color=None therefore blended white-
-        # perspective and black-perspective games into one denominator, yielding
-        # different totals for the same (entry, candidate) on the white-section
-        # finding versus the click-through Move Explorer view (which IS color-
-        # filtered via openings_service.get_next_moves passing color=request.color).
-        # Sequential awaits per CLAUDE.md AsyncSession rule (no asyncio.gather).
-        pos_wdl_by_color: dict[
-            Literal["white", "black"], dict[int, tuple[int, int, int, datetime.datetime | None]]
-        ] = {}
-        for color in colors_to_query:
-            color_resulting_hashes: list[int] = list(
-                {int(r.resulting_full_hash) for r in rows_by_color[color]}
-            )
-            if not color_resulting_hashes:
-                pos_wdl_by_color[color] = {}
-                continue
-            pos_wdl_by_color[color] = await query_resulting_position_wdl(
-                session=session,
-                user_id=user_id,
-                hash_list=color_resulting_hashes,
-                time_control=request.time_control,
-                platform=request.platform,
-                rated=request.rated,
-                opponent_type=request.opponent_type,
-                recency_cutoff=cutoff,
-                color=color,  # per-color: matches query_opening_transitions' Game.user_color filter
-                opponent_gap_min=request.opponent_gap_min,
-                opponent_gap_max=request.opponent_gap_max,
-            )
-
-        # ---- Build sections ----
-        # Each section accumulates (OpeningInsightFinding, ply_count, se) tuples:
-        # - ply_count drives the D-24 deeper-entry-wins dedupe in _dedupe_within_section
-        #   (consumed there and not propagated downstream).
-        # - se threads through dedupe stages but is ignored by _rank_section under
-        #   the Wilson 95% CI bound (quick task 260428-v9i — replaces Wald to fix
-        #   small-N degeneracy). SE is still produced for the UI confidence badge.
-        sections: dict[str, list[tuple[OpeningInsightFinding, int, float]]] = {
-            "white_weaknesses": [],
-            "black_weaknesses": [],
-            "white_strengths": [],
-            "black_strengths": [],
-        }
-
-        for color in colors_to_query:
-            color_literal: Literal["white", "black"] = color
-            for row in rows_by_color[color]:
-                # Phase 80.1 D-03: feed _classify_row / _compute_score /
-                # compute_confidence_bucket / wilson_bounds / OpeningInsightFinding
-                # the resulting-position W/D/L via a SimpleNamespace adapter so
-                # those helpers stay byte-identical. Non-WDL fields (move_san,
-                # entry_*, resulting_full_hash) continue to come from `row`.
-                pos = pos_wdl_by_color[color_literal].get(int(row.resulting_full_hash))
-                if pos is None:
-                    # Filter mismatch defensive fallback (RESEARCH.md Pitfall 4).
-                    # Should not fire when query_resulting_position_wdl filters
-                    # mirror query_opening_transitions; logged for diagnosis.
-                    logger.warning(
-                        "query_resulting_position_wdl missing resulting_full_hash=%s; "
-                        "falling back to move-played WDL",
-                        row.resulting_full_hash,
-                    )
-                    pos_row: Any = row
-                    # Fall back to the move-played MAX(played_at) from
-                    # query_opening_transitions (still the same user, same
-                    # filters) rather than dropping the line silently.
-                    finding_last_played_at: datetime.datetime | None = row.last_played_at
-                else:
-                    pos_w, pos_d, pos_l, pos_last_played_at = pos
-                    pos_n = pos_w + pos_d + pos_l
-                    pos_row = SimpleNamespace(w=pos_w, d=pos_d, l=pos_l, n=pos_n)
-                    finding_last_played_at = pos_last_played_at
-
-                cls = _classify_row(pos_row)
-                if cls is None:
-                    continue
-                classification, severity = cls
-
-                # BLOCKER-1: single attribution path. None => DROP per D-34.
-                attribution = _attribute_finding(
-                    row, openings_by_hash, parents_by_hash, color_literal
-                )
-                if attribution is None:
-                    sentry_sdk.set_tag("openings.attribution.unmatched_dropped", True)
-                    continue
-                opening_name, opening_eco, display_name = attribution
-
-                # BLOCKER-1 / D-25: entry_fen reconstructed by replaying the
-                # actual SAN sequence the user played up to the entry. With
-                # MIN_ENTRY_PLY=0, ply=0 entries legitimately replay zero
-                # moves and yield the starting FEN — coerce NULL→[] so
-                # _replay_san_sequence sees an empty list instead of None.
-                entry_fen = _replay_san_sequence(list(row.entry_san_sequence or []))
-
-                # Carry the matched Opening.ply_count alongside for D-24
-                # deeper-entry-wins dedupe; use 0 for parent-only matches
-                # (parent-matched entries have lower specificity than direct matches).
-                # ply=0 entries attribute via resulting_full_hash, so mirror
-                # that lookup here to avoid under-counting their depth.
-                matched_opening = openings_by_hash.get(int(row.entry_hash))
-                if matched_opening is None and not (row.entry_san_sequence or []):
-                    matched_opening = openings_by_hash.get(int(row.resulting_full_hash))
-                opening_ply_count = matched_opening.ply_count if matched_opening else 0
-
-                score = _compute_score(pos_row)
-                confidence, p_value, se = compute_confidence_bucket(
-                    pos_row.w, pos_row.d, pos_row.l, pos_row.n
-                )
-                ci_low, ci_high = wilson_bounds(score, pos_row.n)
-
-                finding = OpeningInsightFinding(
-                    color=color_literal,
-                    classification=classification,
-                    severity=severity,
-                    opening_name=opening_name,
-                    opening_eco=opening_eco,
-                    display_name=display_name,
-                    entry_fen=entry_fen,
-                    entry_san_sequence=list(
-                        row.entry_san_sequence or []
-                    ),  # Phase 71 (D-13): SAN sequence start→entry; empty for entry_ply=0 (no preceding moves)
-                    # BLOCKER-5 / Pitfall 1: stringify 64-bit ints at the API boundary.
-                    entry_full_hash=str(int(row.entry_hash)),
-                    candidate_move_san=row.move_san,
-                    resulting_full_hash=str(int(row.resulting_full_hash)),
-                    n_games=pos_row.n,
-                    wins=pos_row.w,
-                    draws=pos_row.d,
-                    losses=pos_row.l,
-                    score=score,
-                    confidence=confidence,
-                    p_value=p_value,
-                    ci_low=ci_low,
-                    ci_high=ci_high,
-                    # Quick task 260508-r61: MAX(played_at) across all games
-                    # visiting the resulting position (transposition-inclusive,
-                    # color-filtered). Falls back to the move-played MAX from
-                    # query_opening_transitions when the resulting-position
-                    # lookup misses (matches the W/D/L fallback above).
-                    last_played_at=finding_last_played_at,
-                )
-
-                section_key = (
-                    f"{color}_{'weaknesses' if classification == 'weakness' else 'strengths'}"
-                )
-                sections[section_key].append((finding, opening_ply_count, se))
-
-        # Per-section transposition dedupe (D-24) → global continuation dedupe
-        # (Phase 71 UAT fix) → rank → cap (D-02 caps: 5 weaknesses, 3 strengths).
-        # Quick 260428-v9i: ranks by Wilson 95% CI bound (direction-aware),
-        # using (score, n_games) and ignoring SE — replaces the earlier Wald
-        # CI to fix small-N degeneracy. Confidence bucket is no longer part of
-        # the sort key, only a UI badge.
-        deduped_sections: dict[str, list[tuple[OpeningInsightFinding, float]]] = {
-            key: _dedupe_within_section(items) for key, items in sections.items()
-        }
-        deduped_sections = _dedupe_continuations(deduped_sections)
-        final_sections: dict[str, list[OpeningInsightFinding]] = {}
-        for key, findings_with_se in deduped_sections.items():
-            direction: Literal["weakness", "strength"] = (
-                "weakness" if "weaknesses" in key else "strength"
-            )
-            ranked = _rank_section(findings_with_se, direction=direction)
-            cap = WEAKNESS_CAP_PER_COLOR if "weaknesses" in key else STRENGTH_CAP_PER_COLOR
-            final_sections[key] = ranked[:cap]
-
-        # Populate MG-entry eval fields on all surviving findings.
-        # Call the shared batch helper once per color (sequential per CLAUDE.md
-        # AsyncSession rule). Key is resulting_full_hash (the position immediately
-        # after the candidate move) — mirrors how Stats keys MG-entry eval.
-        all_white_findings: list[OpeningInsightFinding] = (
-            final_sections["white_weaknesses"] + final_sections["white_strengths"]
+        attribution_ctx = await _collect_attribution_hashes(
+            session, user_id, request, cutoff, colors_to_query
         )
-        all_black_findings: list[OpeningInsightFinding] = (
-            final_sections["black_weaknesses"] + final_sections["black_strengths"]
+        pipeline_ctx = await _fetch_position_wdl_per_color(
+            session, user_id, request, cutoff, colors_to_query, attribution_ctx
         )
-
-        white_hashes: list[int] = list({int(f.resulting_full_hash) for f in all_white_findings})
-        black_hashes: list[int] = list({int(f.resulting_full_hash) for f in all_black_findings})
-
-        # Sequential awaits — AsyncSession not safe for concurrent use.
-        white_eval_metrics: dict[int, OpeningPhaseEntryMetrics] = {}
-        if white_hashes:
-            white_eval_metrics = await query_opening_phase_entry_metrics_batch(
-                session=session,
-                user_id=user_id,
-                hashes=white_hashes,
-                color="white",
-                time_control=request.time_control,
-                platform=request.platform,
-                rated=request.rated,
-                opponent_type=request.opponent_type,
-                recency_cutoff=cutoff,
-                opponent_gap_min=request.opponent_gap_min,
-                opponent_gap_max=request.opponent_gap_max,
-            )
-
-        black_eval_metrics: dict[int, OpeningPhaseEntryMetrics] = {}
-        if black_hashes:
-            black_eval_metrics = await query_opening_phase_entry_metrics_batch(
-                session=session,
-                user_id=user_id,
-                hashes=black_hashes,
-                color="black",
-                time_control=request.time_control,
-                platform=request.platform,
-                rated=request.rated,
-                opponent_type=request.opponent_type,
-                recency_cutoff=cutoff,
-                opponent_gap_min=request.opponent_gap_min,
-                opponent_gap_max=request.opponent_gap_max,
-            )
-
-        def _enrich_findings(
-            findings: list[OpeningInsightFinding],
-            metrics_map: dict[int, OpeningPhaseEntryMetrics],
-        ) -> list[OpeningInsightFinding]:
-            result: list[OpeningInsightFinding] = []
-            for f in findings:
-                pe = metrics_map.get(int(f.resulting_full_hash))
-                if pe is not None:
-                    result.append(_apply_eval_metrics_to_finding(f, pe))
-                else:
-                    result.append(f)
-            return result
-
+        final_sections = await _build_sections(
+            session, user_id, request, cutoff, colors_to_query, pipeline_ctx
+        )
         return OpeningInsightsResponse(
-            white_weaknesses=_enrich_findings(
-                final_sections["white_weaknesses"], white_eval_metrics
-            ),
-            black_weaknesses=_enrich_findings(
-                final_sections["black_weaknesses"], black_eval_metrics
-            ),
-            white_strengths=_enrich_findings(final_sections["white_strengths"], white_eval_metrics),
-            black_strengths=_enrich_findings(final_sections["black_strengths"], black_eval_metrics),
+            white_weaknesses=final_sections["white_weaknesses"],
+            black_weaknesses=final_sections["black_weaknesses"],
+            white_strengths=final_sections["white_strengths"],
+            black_strengths=final_sections["black_strengths"],
             eval_baseline_pawns_white=EVAL_BASELINE_PAWNS_WHITE,
             eval_baseline_pawns_black=EVAL_BASELINE_PAWNS_BLACK,
         )
