@@ -132,12 +132,23 @@ export function HomePageContent() {
               alt="FlawChess logo"
               className="mx-auto mb-2 h-32 w-32 lg:h-36 lg:w-36"
             />
-            <h1 className="text-4xl font-bold leading-tight font-brand">
+            <h1 className="text-3xl lg:text-4xl font-bold leading-tight font-brand">
               Engines are flawless, humans play{' '}
               <span className="bg-gradient-to-r from-brand-brown-light to-brand-brown bg-clip-text text-transparent">
                 FlawChess
               </span>
             </h1>
+            {/* Decorative light-burst divider — golden bronze glow matching the hero radial. Desktop only. */}
+            <div
+              aria-hidden="true"
+              className="relative mx-auto mt-6 hidden h-10 w-full max-w-lg lg:block"
+              data-testid="hero-divider"
+            >
+              {/* Thin line, transparent → bronze → bright center → bronze → transparent */}
+              <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-[linear-gradient(to_right,transparent,rgba(205,127,50,0.85)_25%,#FFE9B8_50%,rgba(205,127,50,0.85)_75%,transparent)]" />
+              {/* Outer wide soft halo */}
+              <div className="absolute left-1/2 top-1/2 h-10 w-72 -translate-x-1/2 -translate-y-1/2 bg-[radial-gradient(ellipse_at_center,rgba(205,127,50,0.35),transparent_70%)] blur-md" />
+            </div>
             <p className="mt-4 text-base leading-relaxed text-muted-foreground">
               Free analysis across your chess.com and lichess games, with AI-narrated insights. Find leaks in your openings, endgames, and time management.
             </p>
@@ -190,8 +201,8 @@ export function HomePageContent() {
               Below lg the preview renders as a standalone charcoal section further down. */}
           <div data-testid="hero-feature-preview" className="hidden lg:block">
             <div className="flex items-center gap-4 mb-4">
-              <HeroIcon className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
-              <h2 className="text-2xl font-bold">{heroFeature.heading}</h2>
+              <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+              <h2 className="text-xl lg:text-2xl font-bold">{heroFeature.heading}</h2>
             </div>
             <img
               src={heroFeature.screenshot.src}
@@ -215,8 +226,8 @@ export function HomePageContent() {
       >
         <div className="max-w-5xl mx-auto px-4 flex flex-col gap-6">
           <div className="flex items-center gap-4">
-            <HeroIcon className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
-            <h2 className="text-2xl font-bold">{heroFeature.heading}</h2>
+            <HeroIcon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <h2 className="text-xl lg:text-2xl font-bold">{heroFeature.heading}</h2>
           </div>
           <img
             src={heroFeature.screenshot.src}
@@ -245,8 +256,8 @@ export function HomePageContent() {
 
           const titleBlock = (
             <div className="flex items-center gap-4">
-              <Icon className="h-10 w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
-              <h2 className="text-2xl font-bold">{heading}</h2>
+              <Icon className="h-7 w-7 lg:h-10 lg:w-10 text-muted-foreground shrink-0" strokeWidth={1.5} />
+              <h2 className="text-xl lg:text-2xl font-bold">{heading}</h2>
             </div>
           );
           const bulletsBlock = Array.isArray(desc) ? (
