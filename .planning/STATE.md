@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: "Phase 80.1 shipped — PR #82"
-last_updated: "2026-05-08T09:55:00.000Z"
-last_activity: 2026-05-08
+status: "Phase 81 shipped — PR #85"
+last_updated: "2026-05-09T22:36:52.568Z"
+last_activity: 2026-05-10
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 10
-  completed_plans: 10
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 15
+  completed_plans: 15
   percent: 100
 ---
 
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 80.1
+Phase: 81
 Plan: Not started
-Status: Phase 80.1 shipped — PR #82
-Last activity: 2026-05-08
+Status: Phase 81 shipped — PR #85
+Last activity: 2026-05-10
 
 ## Project Reference
 

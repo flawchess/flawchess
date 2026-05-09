@@ -59,6 +59,13 @@ export interface EndgamePerformanceResponse {
   endgame_wdl: EndgameWDLSummary;
   non_endgame_wdl: EndgameWDLSummary;
   endgame_win_rate: number;
+  // Phase 81 (D-11): entry-eval aggregation for "Endgame Start vs End" section.
+  entry_eval_mean_pawns: number;
+  entry_eval_n: number;
+  entry_eval_p_value: number | null;
+  endgame_score_p_value: number | null;
+  entry_eval_ci_low_pawns: number | null;
+  entry_eval_ci_high_pawns: number | null;
 }
 
 /** Single data point in the per-type weekly win-rate time series.
