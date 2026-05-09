@@ -604,7 +604,9 @@ const showStartVsEnd = !!(perfData && perfData.endgame_wdl.total > 0);
 
 **All other claims are VERIFIED** (file/line citation in the codebase) **or CITED** (from benchmark report / project docs / existing tests). The Assumptions Log is intentionally short — this phase is well-mapped.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Each question carries an inline **Recommendation** that the planning phase has accepted. Resolutions are reflected in `81-01..81-04-PLAN.md` and `81-CONTEXT.md` Q1/A1 rows.
 
 1. **EG-entry neutral band — reuse MG ±0.30 or define new ±0.75?**
    - What we know: benchmark v3 §3c recommends ±0.75 pawns; the project does not have an existing EG-entry constant.
