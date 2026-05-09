@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.15
 milestone_name: Eval-Based Endgame Classification
-status: executing
+status: milestone_complete
 last_updated: "2026-05-09T15:16:07.301Z"
 last_activity: 2026-05-09 -- Phase 81 execution started
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 15
   completed_plans: 10
-  percent: 67
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 81 (endgame-start-vs-end-twin-tile-section-above-the-wdl-table) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 81
-Last activity: 2026-05-09 -- Phase 81 execution started
+Phase: 81
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-05-09
 
 ## Project Reference
 
