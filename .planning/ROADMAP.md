@@ -87,8 +87,8 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 81-01-PLAN.md — Backend: schema + service aggregation + tests (entry-eval Wald-z, score Wilson) (Wave 1)
-- [ ] 81-02-PLAN.md — Frontend: types mirror + endgameEntryEvalZones constants/helper (Wave 1)
+- [x] 81-01-PLAN.md — Backend: schema + service aggregation + tests (entry-eval Wald-z, score Wilson) (Wave 1)
+- [x] 81-02-PLAN.md — Frontend: types mirror + endgameEntryEvalZones constants/helper (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 81-03-PLAN.md — Frontend: EndgameStartVsEndSection component + tests (Wave 2)
