@@ -381,7 +381,7 @@ export function EndgamesPage() {
                       and drew or won. Measures how well you defend losing endgames.
                     </p>
                     <p>
-                      <strong>Avg eval at endgame entry:</strong> the average Stockfish evaluation of
+                      <strong>Endgame entry eval:</strong> the average Stockfish evaluation of
                       the position where the endgame begins, measured in pawns from your perspective
                       (positive means you have the better position). Mate scores are excluded. We test
                       this against 0, the equal-footing baseline you'd expect against rating-matched
@@ -390,7 +390,7 @@ export function EndgamesPage() {
                       not that the effect is zero.
                     </p>
                     <p>
-                      <strong>Absolute endgame score:</strong> your win rate (with draws counted as half)
+                      <strong>Endgame score:</strong> your win rate (with draws counted as half)
                       across all games that reach an endgame, tested against 50%, the break-even line
                       you'd expect against rating-matched opponents. Use the Opponent Strength filter
                       to tighten the test against equal-rated opponents specifically. The same

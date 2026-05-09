@@ -100,9 +100,11 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
         >
           <h3 className="text-base font-semibold mb-2">Where you start</h3>
           {showTile1Chart ? (
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+            // grid-cols-1 stacks label-row and chart on mobile; lg+ puts them
+            // side-by-side once each tile is wide enough to fit both.
+            <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
               <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-                <span className="text-muted-foreground">Avg eval at endgame entry:</span>
+                <span className="text-muted-foreground">Endgame entry eval:</span>
                 <span
                   className="ml-auto font-semibold inline-flex items-center gap-0.5"
                   style={evalColor ? { color: evalColor } : undefined}
@@ -133,7 +135,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                   ciLow={data.entry_eval_ci_low_pawns ?? undefined}
                   ciHigh={data.entry_eval_ci_high_pawns ?? undefined}
                   barColor="neutral"
-                  ariaLabel={`Avg eval at endgame entry: ${data.entry_eval_mean_pawns.toFixed(2)} pawns`}
+                  ariaLabel={`Endgame entry eval: ${data.entry_eval_mean_pawns.toFixed(2)} pawns`}
                 />
               </div>
             </div>
@@ -149,7 +151,9 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
         >
           <h3 className="text-base font-semibold mb-2">What you do with it</h3>
           {showTile2Chart ? (
-            <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+            // grid-cols-1 stacks label-row and chart on mobile; lg+ puts them
+            // side-by-side once each tile is wide enough to fit both.
+            <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
               <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                 <span className="text-muted-foreground">Endgame score:</span>
                 <span

@@ -292,16 +292,17 @@ describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
     ).toBeNull();
   });
 
-  it('contains both new accordion paragraphs ("Avg eval at endgame entry" + "Absolute endgame score") (D-13)', () => {
+  it('contains both new accordion paragraphs ("Endgame entry eval" + "Endgame score") (D-13)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
     // Open the first accordion trigger (radix collapses content when closed,
     // so the new paragraphs need to be expanded to be in the DOM tree).
     openConceptsAccordion(container);
     // Both paragraph leads appear; getAllByText accepts multiple hits because
-    // both desktop and mobile layouts mount the same TabsContent in jsdom.
-    expect(screen.getAllByText(/Avg eval at endgame entry:/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Absolute endgame score:/).length).toBeGreaterThan(0);
+    // both desktop and mobile layouts mount the same TabsContent in jsdom,
+    // and the inline tile labels share text with the accordion explainers.
+    expect(screen.getAllByText(/Endgame entry eval:/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Endgame score:/).length).toBeGreaterThan(0);
   });
 
   it('places the 2 new accordion paragraphs AFTER Recovery and BEFORE the rating-changes caveat (D-14)', () => {
@@ -319,9 +320,9 @@ describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
     ) as HTMLParagraphElement[];
     const text = paragraphs.map((p) => p.textContent ?? '');
     const recoveryIdx = text.findIndex((t) => /Recovery:/.test(t));
-    const entryEvalIdx = text.findIndex((t) => /Avg eval at endgame entry:/.test(t));
+    const entryEvalIdx = text.findIndex((t) => /Endgame entry eval:/.test(t));
     const endgameScoreIdx = text.findIndex((t) =>
-      /Absolute endgame score:/.test(t),
+      /Endgame score:/.test(t),
     );
     const ratingChangesIdx = text.findIndex((t) =>
       /usually reflect your performance against opponents at your rating/.test(t),
