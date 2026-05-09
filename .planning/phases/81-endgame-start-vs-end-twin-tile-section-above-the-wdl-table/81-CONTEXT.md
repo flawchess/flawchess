@@ -87,6 +87,10 @@ Each tile renders:
 - Final visual polish (spacing, alignment of the inline value row, info-icon placement) — iterate during UI review.
 - Whether to colorize the punchy title text or only the value text. Default: only the value text is colored, matching the Openings ExplorerTab pattern.
 
+### UAT Amendment — Entry-Eval Aggregation Source (added 2026-05-09)
+
+- **D-22 (LOCKED, post-UAT):** Entry-eval aggregation consumes **bucket_rows** (one row per endgame game, eval at the **chronologically first** endgame position) instead of per-class **entry_rows**. Surfaced during UAT against user 28: the original per-class pipeline (group by `(game_id, endgame_class)`, dedupe by lowest endgame_class) excluded ~5 games per typical user where total endgame plies met the 6-ply threshold but no single class span did (e.g. 1 ply rook + 5 plies mixed). The bucket query groups by `game_id` only and applies the same threshold game-globally, so `entry_eval_n + mate_excluded == endgame_wdl.total` holds by construction. Chronologically-first eval is also a more intuitive match for the tile label "Where you start". Implementation lives in `_get_endgame_performance_from_rows` (calls `query_endgame_bucket_rows`); per-game dedupe loop removed.
+
 </decisions>
 
 <canonical_refs>

@@ -87,17 +87,17 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 81-01-PLAN.md — Backend: schema + service aggregation + tests (entry-eval Wald-z, score Wilson) (Wave 1)
-- [ ] 81-02-PLAN.md — Frontend: types mirror + endgameEntryEvalZones constants/helper (Wave 1)
+- [x] 81-01-PLAN.md — Backend: schema + service aggregation + tests (entry-eval Wald-z, score Wilson) (Wave 1)
+- [x] 81-02-PLAN.md — Frontend: types mirror + endgameEntryEvalZones constants/helper (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 81-03-PLAN.md — Frontend: EndgameStartVsEndSection component + tests (Wave 2)
+- [x] 81-03-PLAN.md — Frontend: EndgameStartVsEndSection component + tests (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 81-04-PLAN.md — Frontend: Endgames.tsx integration + 2 accordion paragraphs + page test (Wave 3)
+- [x] 81-04-PLAN.md — Frontend: Endgames.tsx integration + 2 accordion paragraphs + page test (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 81-05-PLAN.md — Manual UAT checkpoint (visual parity, mobile stacking, popover content, three-state color) (Wave 4)
+- [x] 81-05-PLAN.md — Manual UAT checkpoint (visual parity, mobile stacking, popover content, three-state color) (Wave 4)
 
 </details>
 

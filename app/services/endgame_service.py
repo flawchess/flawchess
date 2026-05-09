@@ -63,7 +63,9 @@ from app.schemas.endgames import (
     TimePressureBucketPoint,
     TimePressureChartResponse,
 )
+from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
+from app.services.score_confidence import compute_confidence_bucket
 
 
 class EndgameClassInt(IntEnum):
@@ -1643,23 +1645,90 @@ def _compute_weekly_rolling_series(
 def _get_endgame_performance_from_rows(
     endgame_rows: list[Row[Any]],
     non_endgame_rows: list[Row[Any]],
-    entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
 ) -> EndgamePerformanceResponse:
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 
-    Phase 59 removed the aggregate conversion/recovery/skill fields this function
-    previously computed; it now returns only the WDL comparison and endgame_win_rate.
-    The `entry_rows` parameter is retained for call-site compatibility with
-    get_endgame_overview (which passes the same entry_rows to _compute_score_gap_material
-    and _aggregate_endgame_stats) but is no longer consumed here.
+    Phase 81 UAT amendment: entry-eval aggregation now consumes `bucket_rows`
+    (one row per endgame game, eval at the chronologically first endgame
+    position) instead of the per-class `entry_rows`. The bucket query applies
+    the same game-level ENDGAME_PLY_THRESHOLD HAVING that drives the WDL
+    denominator, so
+
+        entry_eval_n + mate_excluded + null_eval_excluded == endgame_wdl.total
+
+    by construction. NULL evals (engine errors / not-yet-backfilled positions)
+    are dropped from the entry-eval mean even though they count toward
+    `endgame_wdl.total` — including them would bias the mean toward 0. For a
+    freshly imported user with incomplete eval backfill, `entry_eval_n` will
+    lag `endgame_wdl.total` until backfill catches up.
+
+    The previous per-class pipeline also excluded ~5 games per typical user
+    (multi-class transitions where no single span reached the 6-ply threshold).
+    Mate exclusion follows D-07. The user-perspective sign flip is unchanged.
+    The Wilson score test of `endgame_wdl` against 50% still runs here.
     """
-    del entry_rows  # kept for signature compat; aggregates moved out in Phase 59
     endgame_wdl = _build_wdl_summary(endgame_rows)
     non_endgame_wdl = _build_wdl_summary(non_endgame_rows)
+
+    # bucket_rows: one row per endgame game, eval at the first chronological
+    # endgame position. No per-game dedupe needed — the SQL already returns
+    # one row per game (GROUP BY game_id).
+    eval_sum = 0.0
+    eval_sumsq = 0.0
+    eval_n = 0
+    for row in bucket_rows:
+        # Pitfall 3: explicit None checks. Never use `or` for numeric defaulting
+        # on Optional columns — Python's truthiness would silently turn None -> 0.
+        if row.eval_mate is not None:  # ty: ignore[unresolved-attribute]
+            continue  # mate-excluded per D-07
+        if row.eval_cp is None:  # ty: ignore[unresolved-attribute]
+            continue  # NULL eval excluded
+        # Pitfall 2: sign-flip per user color so positive = user is ahead.
+        # Raw eval_cp is white-perspective; mirrors _classify_endgame_bucket.
+        sign = 1 if row.user_color == "white" else -1  # ty: ignore[unresolved-attribute]
+        signed_cp = float(sign * row.eval_cp)  # ty: ignore[unresolved-attribute]
+        eval_sum += signed_cp
+        eval_sumsq += signed_cp * signed_cp
+        eval_n += 1
+
+    # Wald-z one-sample test of mean vs 0 cp. Helper handles n<10 / n=1 / SE=0.
+    _conf_e, p_eval_raw, mean_cp, ci_half_cp = compute_eval_confidence_bucket(
+        eval_sum, eval_sumsq, eval_n
+    )
+    # Pitfall 5: gate the wire-format p-value to None when below the reliability
+    # threshold (D-11). The helper returns 1.0 in that branch; surfacing 1.0 to
+    # the API would conflate "no data" with "definitely consistent with H0".
+    entry_eval_p_value: float | None = p_eval_raw if eval_n >= 10 else None
+    entry_eval_mean_pawns = mean_cp / 100.0 if eval_n > 0 else 0.0
+    entry_eval_ci_low_pawns: float | None
+    entry_eval_ci_high_pawns: float | None
+    if eval_n >= 2:
+        entry_eval_ci_low_pawns = (mean_cp - ci_half_cp) / 100.0
+        entry_eval_ci_high_pawns = (mean_cp + ci_half_cp) / 100.0
+    else:
+        # Variance undefined for n < 2; CI bounds are not meaningful.
+        entry_eval_ci_low_pawns = None
+        entry_eval_ci_high_pawns = None
+
+    # Wilson score test of endgame_wdl against 50% (D-08).
+    _conf_s, p_score_raw, _se = compute_confidence_bucket(
+        endgame_wdl.wins, endgame_wdl.draws, endgame_wdl.losses, endgame_wdl.total
+    )
+    endgame_score_p_value: float | None = (
+        p_score_raw if endgame_wdl.total >= 10 else None
+    )
+
     return EndgamePerformanceResponse(
         endgame_wdl=endgame_wdl,
         non_endgame_wdl=non_endgame_wdl,
         endgame_win_rate=endgame_wdl.win_pct,
+        entry_eval_mean_pawns=entry_eval_mean_pawns,
+        entry_eval_n=eval_n,
+        entry_eval_p_value=entry_eval_p_value,
+        endgame_score_p_value=endgame_score_p_value,
+        entry_eval_ci_low_pawns=entry_eval_ci_low_pawns,
+        entry_eval_ci_high_pawns=entry_eval_ci_high_pawns,
     )
 
 
@@ -1697,7 +1766,7 @@ async def get_endgame_performance(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    entry_rows = await query_endgame_entry_rows(
+    bucket_rows = await query_endgame_bucket_rows(
         session,
         user_id=user_id,
         time_control=time_control,
@@ -1709,7 +1778,7 @@ async def get_endgame_performance(
         opponent_gap_max=opponent_gap_max,
     )
 
-    return _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
+    return _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, bucket_rows)
 
 
 async def get_endgame_timeline(
@@ -2014,13 +2083,13 @@ async def get_endgame_overview(
     else:
         endgame_rows = list(endgame_rows_all)
         non_endgame_rows = list(non_endgame_rows_all)
-    performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
 
-    # Score gap & material breakdown — use game-level bucket_rows (one row per endgame
-    # game, no per-class split). Post quick-260414-ae4 the bucket query applies the
-    # same ENDGAME_PLY_THRESHOLD HAVING as `_any_endgame_ply_subquery`, so the invariant
-    # sum(material_rows.games) == endgame_wdl.total is preserved by construction: both
-    # sides of the split now exclude the same short-endgame games.
+    # Score gap & material breakdown + Phase 81 entry-eval aggregation both need
+    # game-level bucket_rows (one row per endgame game). Post quick-260414-ae4 the
+    # bucket query applies the same ENDGAME_PLY_THRESHOLD HAVING as `_any_endgame_ply_subquery`,
+    # so sum(material_rows.games) == endgame_wdl.total. Entry-eval n satisfies
+    # `entry_eval_n + mate_excluded + null_eval_excluded == endgame_wdl.total`;
+    # see _get_endgame_performance_from_rows for why NULL evals are dropped.
     bucket_rows = await query_endgame_bucket_rows(
         session,
         user_id=user_id,
@@ -2032,6 +2101,8 @@ async def get_endgame_overview(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
+
+    performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, bucket_rows)
     # Build score-gap timeline from unfiltered rows so the rolling 100-game
     # window per side is pre-filled with games before the cutoff; then drop
     # output points dated before the cutoff via cutoff_str.

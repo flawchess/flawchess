@@ -294,6 +294,59 @@ class TestOverviewScoreGapMaterial:
             )
 
 
+class TestOverviewStartVsEndFields:
+    """Phase 81 (D-11): GET /api/endgames/overview response.performance carries the
+    six new entry-eval / endgame-score fields with correct types."""
+
+    @pytest.mark.asyncio
+    async def test_overview_includes_start_vs_end_fields(
+        self, auth_headers: dict[str, str]
+    ) -> None:
+        """response.performance has entry_eval_*, endgame_score_p_value, CI bounds."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/endgames/overview", headers=auth_headers)
+
+        assert resp.status_code == 200
+        perf = resp.json()["performance"]
+
+        # All six new keys present (D-11)
+        for key in (
+            "entry_eval_mean_pawns",
+            "entry_eval_n",
+            "entry_eval_p_value",
+            "endgame_score_p_value",
+            "entry_eval_ci_low_pawns",
+            "entry_eval_ci_high_pawns",
+        ):
+            assert key in perf, f"missing key: {key}"
+
+        # Type contract: mean is numeric, n is int, p-values + CIs are numeric-or-null
+        assert isinstance(perf["entry_eval_mean_pawns"], (int, float))
+        assert isinstance(perf["entry_eval_n"], int)
+        assert perf["entry_eval_p_value"] is None or isinstance(
+            perf["entry_eval_p_value"], (int, float)
+        )
+        assert perf["endgame_score_p_value"] is None or isinstance(
+            perf["endgame_score_p_value"], (int, float)
+        )
+        assert perf["entry_eval_ci_low_pawns"] is None or isinstance(
+            perf["entry_eval_ci_low_pawns"], (int, float)
+        )
+        assert perf["entry_eval_ci_high_pawns"] is None or isinstance(
+            perf["entry_eval_ci_high_pawns"], (int, float)
+        )
+
+        # Empty user has no endgame games; defaults must surface (Pitfall 5 / Pitfall 7)
+        assert perf["entry_eval_n"] == 0
+        assert perf["entry_eval_mean_pawns"] == 0.0
+        assert perf["entry_eval_p_value"] is None
+        assert perf["endgame_score_p_value"] is None
+        assert perf["entry_eval_ci_low_pawns"] is None
+        assert perf["entry_eval_ci_high_pawns"] is None
+
+
 class TestLegacyEndpointsRemoved:
     """The four legacy endpoints must return 404 after removal."""
 
