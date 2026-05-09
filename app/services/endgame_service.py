@@ -1653,14 +1653,20 @@ def _get_endgame_performance_from_rows(
     (one row per endgame game, eval at the chronologically first endgame
     position) instead of the per-class `entry_rows`. The bucket query applies
     the same game-level ENDGAME_PLY_THRESHOLD HAVING that drives the WDL
-    denominator, so `entry_eval_n + mate_excluded == endgame_wdl.total` by
-    construction. The previous per-class pipeline excluded ~5 games per
-    typical user (multi-class transitions where no single span reached the
-    6-ply threshold).
+    denominator, so
 
-    Mate / NULL evals are still skipped per D-07. The user-perspective sign
-    flip is unchanged. The Wilson score test of `endgame_wdl` against 50%
-    still runs here.
+        entry_eval_n + mate_excluded + null_eval_excluded == endgame_wdl.total
+
+    by construction. NULL evals (engine errors / not-yet-backfilled positions)
+    are dropped from the entry-eval mean even though they count toward
+    `endgame_wdl.total` — including them would bias the mean toward 0. For a
+    freshly imported user with incomplete eval backfill, `entry_eval_n` will
+    lag `endgame_wdl.total` until backfill catches up.
+
+    The previous per-class pipeline also excluded ~5 games per typical user
+    (multi-class transitions where no single span reached the 6-ply threshold).
+    Mate exclusion follows D-07. The user-perspective sign flip is unchanged.
+    The Wilson score test of `endgame_wdl` against 50% still runs here.
     """
     endgame_wdl = _build_wdl_summary(endgame_rows)
     non_endgame_wdl = _build_wdl_summary(non_endgame_rows)
@@ -2081,8 +2087,9 @@ async def get_endgame_overview(
     # Score gap & material breakdown + Phase 81 entry-eval aggregation both need
     # game-level bucket_rows (one row per endgame game). Post quick-260414-ae4 the
     # bucket query applies the same ENDGAME_PLY_THRESHOLD HAVING as `_any_endgame_ply_subquery`,
-    # so sum(material_rows.games) == endgame_wdl.total == entry_eval_n + mate_excluded
-    # by construction.
+    # so sum(material_rows.games) == endgame_wdl.total. Entry-eval n satisfies
+    # `entry_eval_n + mate_excluded + null_eval_excluded == endgame_wdl.total`;
+    # see _get_endgame_performance_from_rows for why NULL evals are dropped.
     bucket_rows = await query_endgame_bucket_rows(
         session,
         user_id=user_id,

@@ -72,6 +72,12 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
   const showTile1Chart = data.entry_eval_n >= MIN_GAMES_FOR_RELIABLE_STATS;
 
   // ── Tile 2 derived values (endgame score vs 50%) ─────────────────────────
+  // `score`, the Wilson CI bounds (computed locally), and `endgame_score_p_value`
+  // (computed on the backend) are all derived from `endgame_wdl.{wins,draws,losses,total}`.
+  // Backend Wilson p-value uses the same formula as `wilsonBounds` here (see
+  // scoreConfidence.ts header). Do not substitute a different score source
+  // without re-deriving the p-value too — the displayed score / CI / verdict
+  // would silently disagree.
   const totalGames = data.endgame_wdl.total;
   const score =
     totalGames > 0
@@ -85,9 +91,10 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
   const [scoreCiLow, scoreCiHigh] = wilsonBounds(score, totalGames);
   const showTile2Chart = totalGames >= MIN_GAMES_FOR_RELIABLE_STATS;
 
-  // ScoreConfidencePopover.pValue is non-nullable; coerce null to 1.0
-  // (the popover's "no signal" baseline — same coercion BulletConfidencePopover
-  // does internally).
+  // ScoreConfidencePopover.pValue is non-nullable (unlike BulletConfidencePopover,
+  // which accepts number | null | undefined). Coerce null to 1 — under the gate
+  // `showTile2Chart = totalGames >= 10`, the backend always ships a non-null
+  // p-value, so this branch is defensive only.
   const scorePValueForPopover = data.endgame_score_p_value ?? 1;
 
   return (
