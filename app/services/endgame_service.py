@@ -1645,49 +1645,43 @@ def _compute_weekly_rolling_series(
 def _get_endgame_performance_from_rows(
     endgame_rows: list[Row[Any]],
     non_endgame_rows: list[Row[Any]],
-    entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
 ) -> EndgamePerformanceResponse:
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 
-    Phase 59 removed the aggregate conversion/recovery/skill fields this function
-    previously computed; Phase 81 (D-11, D-12) brings entry-eval aggregation back
-    by consuming `entry_rows` (already fetched by `get_endgame_overview` and
-    `get_endgame_performance`). For each game we pick a single row (deterministic
-    via lowest endgame_class — mirrors `_compute_score_gap_material` per-game
-    dedupe), exclude mate / NULL evals, and apply the user-perspective sign flip
-    before accumulating sum/sumsq for the Wald-z mean test. The Wilson score
-    test of `endgame_wdl` against 50% is also computed here.
+    Phase 81 UAT amendment: entry-eval aggregation now consumes `bucket_rows`
+    (one row per endgame game, eval at the chronologically first endgame
+    position) instead of the per-class `entry_rows`. The bucket query applies
+    the same game-level ENDGAME_PLY_THRESHOLD HAVING that drives the WDL
+    denominator, so `entry_eval_n + mate_excluded == endgame_wdl.total` by
+    construction. The previous per-class pipeline excluded ~5 games per
+    typical user (multi-class transitions where no single span reached the
+    6-ply threshold).
 
-    No new SQL: all data lives in `entry_rows` already.
+    Mate / NULL evals are still skipped per D-07. The user-perspective sign
+    flip is unchanged. The Wilson score test of `endgame_wdl` against 50%
+    still runs here.
     """
     endgame_wdl = _build_wdl_summary(endgame_rows)
     non_endgame_wdl = _build_wdl_summary(non_endgame_rows)
 
-    # --- Phase 81: per-game dedupe over entry_rows (Pitfall 1) ---
-    # query_endgame_entry_rows returns one row per (game, endgame_class) span; a
-    # game with multiple class spans (e.g. KR_KR -> KP_KP) appears multiple times.
-    # Mirror the bucket-row pattern in _compute_score_gap_material (lines ~744-775)
-    # by grouping rows by game_id and picking the lowest endgame_class — this is
-    # deterministic and corresponds to the FIRST qualifying span per game.
-    rows_by_game: dict[int, list[Row[Any]]] = defaultdict(list)
-    for row in entry_rows:
-        rows_by_game[row.game_id].append(row)  # ty: ignore[unresolved-attribute, invalid-argument-type]
-
+    # bucket_rows: one row per endgame game, eval at the first chronological
+    # endgame position. No per-game dedupe needed — the SQL already returns
+    # one row per game (GROUP BY game_id).
     eval_sum = 0.0
     eval_sumsq = 0.0
     eval_n = 0
-    for _game_id, game_rows in rows_by_game.items():
-        chosen = min(game_rows, key=lambda r: r.endgame_class)
+    for row in bucket_rows:
         # Pitfall 3: explicit None checks. Never use `or` for numeric defaulting
         # on Optional columns — Python's truthiness would silently turn None -> 0.
-        if chosen.eval_mate is not None:
+        if row.eval_mate is not None:  # ty: ignore[unresolved-attribute]
             continue  # mate-excluded per D-07
-        if chosen.eval_cp is None:
+        if row.eval_cp is None:  # ty: ignore[unresolved-attribute]
             continue  # NULL eval excluded
         # Pitfall 2: sign-flip per user color so positive = user is ahead.
         # Raw eval_cp is white-perspective; mirrors _classify_endgame_bucket.
-        sign = 1 if chosen.user_color == "white" else -1
-        signed_cp = float(sign * chosen.eval_cp)
+        sign = 1 if row.user_color == "white" else -1  # ty: ignore[unresolved-attribute]
+        signed_cp = float(sign * row.eval_cp)  # ty: ignore[unresolved-attribute]
         eval_sum += signed_cp
         eval_sumsq += signed_cp * signed_cp
         eval_n += 1
@@ -1766,7 +1760,7 @@ async def get_endgame_performance(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    entry_rows = await query_endgame_entry_rows(
+    bucket_rows = await query_endgame_bucket_rows(
         session,
         user_id=user_id,
         time_control=time_control,
@@ -1778,7 +1772,7 @@ async def get_endgame_performance(
         opponent_gap_max=opponent_gap_max,
     )
 
-    return _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
+    return _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, bucket_rows)
 
 
 async def get_endgame_timeline(
@@ -2083,13 +2077,12 @@ async def get_endgame_overview(
     else:
         endgame_rows = list(endgame_rows_all)
         non_endgame_rows = list(non_endgame_rows_all)
-    performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, entry_rows)
 
-    # Score gap & material breakdown — use game-level bucket_rows (one row per endgame
-    # game, no per-class split). Post quick-260414-ae4 the bucket query applies the
-    # same ENDGAME_PLY_THRESHOLD HAVING as `_any_endgame_ply_subquery`, so the invariant
-    # sum(material_rows.games) == endgame_wdl.total is preserved by construction: both
-    # sides of the split now exclude the same short-endgame games.
+    # Score gap & material breakdown + Phase 81 entry-eval aggregation both need
+    # game-level bucket_rows (one row per endgame game). Post quick-260414-ae4 the
+    # bucket query applies the same ENDGAME_PLY_THRESHOLD HAVING as `_any_endgame_ply_subquery`,
+    # so sum(material_rows.games) == endgame_wdl.total == entry_eval_n + mate_excluded
+    # by construction.
     bucket_rows = await query_endgame_bucket_rows(
         session,
         user_id=user_id,
@@ -2101,6 +2094,8 @@ async def get_endgame_overview(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
+
+    performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, bucket_rows)
     # Build score-gap timeline from unfiltered rows so the rolling 100-game
     # window per side is pre-filled with games before the cutoff; then drop
     # output points dated before the cutoff via cutoff_str.

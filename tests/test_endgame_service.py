@@ -616,11 +616,11 @@ class TestGetEndgamePerformance:
                 new_callable=AsyncMock,
             ) as mock_perf,
             patch(
-                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
-            ) as mock_entry,
+                "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
+            ) as mock_bucket,
         ):
             mock_perf.return_value = ([], [])
-            mock_entry.return_value = []
+            mock_bucket.return_value = []
 
             result = await get_endgame_performance(
                 AsyncMock(),
@@ -648,11 +648,11 @@ class TestGetEndgamePerformance:
                 new_callable=AsyncMock,
             ) as mock_perf,
             patch(
-                "app.services.endgame_service.query_endgame_entry_rows", new_callable=AsyncMock
-            ) as mock_entry,
+                "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
+            ) as mock_bucket,
         ):
             mock_perf.return_value = (endgame_rows, non_endgame_rows)
-            mock_entry.return_value = []
+            mock_bucket.return_value = []
 
             result = await get_endgame_performance(
                 AsyncMock(),
@@ -3801,16 +3801,19 @@ class TestEntryEvalAggregation:
     """Phase 81 (D-07, D-08, D-10, D-11, D-12) — entry-eval / endgame-score aggregation
     inside `_get_endgame_performance_from_rows`.
 
+    Phase 81 UAT amendment: aggregation now consumes bucket_rows (one row per game,
+    eval at first chronological endgame position) instead of per-class entry_rows.
+    The per-game dedup is gone — bucket_rows already returns one row per game.
+
     Covers:
-      - per-game dedupe over multi-class entry_rows (Pitfall 1)
-      - sign flip for black users (Pitfall 2)
-      - mate / NULL exclusion (Pitfall 3)
-      - n < 10 -> p_value is None (Pitfall 5)
-      - endgame_score_p_value gated on endgame_wdl.total >= 10
+      - sign flip for black users
+      - mate / NULL exclusion (D-07)
+      - n < 10 -> p_value is None (D-11)
+      - endgame_score_p_value gated on endgame_wdl.total >= 10 (D-08)
       - CI bound exposure for the bullet whisker
     """
 
-    def _entry(
+    def _bucket(
         self,
         game_id: int,
         endgame_class: int = 1,
@@ -3819,7 +3822,11 @@ class TestEntryEvalAggregation:
         eval_cp: int | None = 0,
         eval_mate: int | None = None,
     ) -> _FakeRow:
-        """Build a single entry-row stand-in mirroring query_endgame_entry_rows columns."""
+        """Build a single bucket-row stand-in mirroring query_endgame_bucket_rows columns.
+
+        Tuple shape matches query_endgame_entry_rows; the difference is that
+        bucket_rows returns one row per game (not per (game, class)).
+        """
         return _FakeRow(
             game_id=game_id,
             endgame_class=endgame_class,
@@ -3844,12 +3851,12 @@ class TestEntryEvalAggregation:
             d += 1
         return rows
 
-    def test_empty_entry_rows_yields_defaults(self) -> None:
-        """No entry_rows -> n=0, mean=0.0, p_value=None, CI bounds None."""
+    def test_empty_bucket_rows_yields_defaults(self) -> None:
+        """No bucket_rows -> n=0, mean=0.0, p_value=None, CI bounds None."""
         resp = _get_endgame_performance_from_rows(
             endgame_rows=[],
             non_endgame_rows=[],
-            entry_rows=[],
+            bucket_rows=[],
         )
         assert resp.entry_eval_n == 0
         assert resp.entry_eval_mean_pawns == 0.0
@@ -3859,11 +3866,11 @@ class TestEntryEvalAggregation:
 
     def test_n_nine_p_value_gated_to_none(self) -> None:
         """9 distinct games at eval_cp=200 -> n=9, p_value None (n < 10 reliability gate)."""
-        entry_rows = [self._entry(game_id=i, eval_cp=200) for i in range(9)]
+        bucket_rows = [self._bucket(game_id=i, eval_cp=200) for i in range(9)]
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=9, draws=0, losses=0),
             non_endgame_rows=[],
-            entry_rows=entry_rows,
+            bucket_rows=bucket_rows,
         )
         assert resp.entry_eval_n == 9
         assert resp.entry_eval_p_value is None
@@ -3872,65 +3879,67 @@ class TestEntryEvalAggregation:
 
     def test_n_ten_with_zero_mean_yields_p_close_to_one(self) -> None:
         """10 games at eval_cp=0 -> n=10, mean=0.0, p_value ~ 1.0."""
-        entry_rows = [self._entry(game_id=i, eval_cp=0) for i in range(10)]
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
             non_endgame_rows=[],
-            entry_rows=entry_rows,
+            bucket_rows=bucket_rows,
         )
         assert resp.entry_eval_n == 10
         assert resp.entry_eval_mean_pawns == 0.0
         assert resp.entry_eval_p_value is not None
         assert resp.entry_eval_p_value == pytest.approx(1.0)
 
-    def test_per_game_dedupe_over_multi_class_rows(self) -> None:
-        """Same game_id in 3 endgame_class rows counts once."""
-        entry_rows = [
-            self._entry(game_id=1, endgame_class=1, eval_cp=100),
-            self._entry(game_id=1, endgame_class=2, eval_cp=100),
-            self._entry(game_id=1, endgame_class=3, eval_cp=100),
+    def test_one_row_per_game(self) -> None:
+        """bucket_rows returns one row per game; no per-game dedupe needed.
+
+        Three rows with distinct game_ids count as three games.
+        """
+        bucket_rows = [
+            self._bucket(game_id=1, eval_cp=100),
+            self._bucket(game_id=2, eval_cp=100),
+            self._bucket(game_id=3, eval_cp=100),
         ]
         resp = _get_endgame_performance_from_rows(
-            endgame_rows=self._wdl_rows(wins=1, draws=0, losses=0),
+            endgame_rows=self._wdl_rows(wins=3, draws=0, losses=0),
             non_endgame_rows=[],
-            entry_rows=entry_rows,
+            bucket_rows=bucket_rows,
         )
-        assert resp.entry_eval_n == 1
+        assert resp.entry_eval_n == 3
         assert resp.entry_eval_mean_pawns == pytest.approx(1.0)
 
     def test_sign_flip_for_black_users(self) -> None:
         """Black user with raw eval_cp=200 -> mean_pawns=-2.0 (user-perspective sign flip)."""
-        entry_rows = [
-            self._entry(game_id=i, user_color="black", eval_cp=200) for i in range(10)
+        bucket_rows = [
+            self._bucket(game_id=i, user_color="black", eval_cp=200) for i in range(10)
         ]
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
             non_endgame_rows=[],
-            entry_rows=entry_rows,
+            bucket_rows=bucket_rows,
         )
         assert resp.entry_eval_n == 10
         assert resp.entry_eval_mean_pawns == pytest.approx(-2.0)
 
     def test_mate_row_excluded_from_aggregation(self) -> None:
         """Row with eval_mate set is excluded; eval_cp rows are counted."""
-        entry_rows = [self._entry(game_id=i, eval_cp=0) for i in range(10)]
-        # One additional row with eval_mate set
-        entry_rows.append(self._entry(game_id=11, eval_cp=None, eval_mate=5))
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        bucket_rows.append(self._bucket(game_id=11, eval_cp=None, eval_mate=5))
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
             non_endgame_rows=[],
-            entry_rows=entry_rows,
+            bucket_rows=bucket_rows,
         )
         assert resp.entry_eval_n == 10  # mate row dropped
 
     def test_null_eval_row_excluded_from_aggregation(self) -> None:
         """Row with both eval_cp and eval_mate None is excluded."""
-        entry_rows = [self._entry(game_id=i, eval_cp=0) for i in range(10)]
-        entry_rows.append(self._entry(game_id=11, eval_cp=None, eval_mate=None))
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        bucket_rows.append(self._bucket(game_id=11, eval_cp=None, eval_mate=None))
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
             non_endgame_rows=[],
-            entry_rows=entry_rows,
+            bucket_rows=bucket_rows,
         )
         assert resp.entry_eval_n == 10
 
@@ -3940,7 +3949,7 @@ class TestEntryEvalAggregation:
         resp_low = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=3, draws=2, losses=1),  # total=6
             non_endgame_rows=[],
-            entry_rows=[],
+            bucket_rows=[],
         )
         assert resp_low.endgame_score_p_value is None
 
@@ -3948,7 +3957,7 @@ class TestEntryEvalAggregation:
         resp_ok = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),  # total=10
             non_endgame_rows=[],
-            entry_rows=[],
+            bucket_rows=[],
         )
         assert resp_ok.endgame_score_p_value is not None
         assert isinstance(resp_ok.endgame_score_p_value, float)
@@ -3957,11 +3966,11 @@ class TestEntryEvalAggregation:
     def test_ci_bounds_set_when_n_ge_two(self) -> None:
         """When n >= 2, both CI bounds are floats; below n=2 they are None."""
         # n=10 -> CI bounds set
-        entry_rows = [self._entry(game_id=i, eval_cp=100) for i in range(10)]
+        bucket_rows = [self._bucket(game_id=i, eval_cp=100) for i in range(10)]
         resp_ok = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
             non_endgame_rows=[],
-            entry_rows=entry_rows,
+            bucket_rows=bucket_rows,
         )
         assert resp_ok.entry_eval_ci_low_pawns is not None
         assert resp_ok.entry_eval_ci_high_pawns is not None
@@ -3973,7 +3982,7 @@ class TestEntryEvalAggregation:
         resp_one = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=1, draws=0, losses=0),
             non_endgame_rows=[],
-            entry_rows=[self._entry(game_id=1, eval_cp=200)],
+            bucket_rows=[self._bucket(game_id=1, eval_cp=200)],
         )
         assert resp_one.entry_eval_ci_low_pawns is None
         assert resp_one.entry_eval_ci_high_pawns is None
