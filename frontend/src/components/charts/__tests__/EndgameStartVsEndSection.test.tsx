@@ -78,6 +78,16 @@ afterEach(() => {
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { EndgameStartVsEndSection } from '../EndgameStartVsEndSection';
 
+// jsdom normalizes oklch trailing zeros ("0.50" → "0.5") when reading
+// element.style.color back. Compare on a normalized form so the assertions
+// are robust to jsdom's cosmetic rewrite without weakening the contract.
+function normalizeColor(value: string): string {
+  return value.replace(/(\d+)\.(\d*?)0+(?=\D|$)/g, (match, intPart: string, frac: string) => {
+    if (frac === '') return `${intPart}`;
+    return `${intPart}.${frac}`;
+  });
+}
+
 // Helper: build a fully populated EndgameWDLSummary with sensible derived
 // percentages. Tests override what they need.
 function buildWdl(
@@ -143,7 +153,7 @@ describe('EndgameStartVsEndSection', () => {
     );
     const tile = screen.getByTestId('tile-entry-eval');
     const valueSpan = within(tile).getByTestId('entry-eval-value');
-    expect(valueSpan.style.color).toBe(ZONE_SUCCESS);
+    expect(normalizeColor(valueSpan.style.color)).toBe(normalizeColor(ZONE_SUCCESS));
   });
 
   it('Tile 1 value text is ZONE_DANGER when significant + below the neutral band', () => {
@@ -158,7 +168,7 @@ describe('EndgameStartVsEndSection', () => {
     );
     const tile = screen.getByTestId('tile-entry-eval');
     const valueSpan = within(tile).getByTestId('entry-eval-value');
-    expect(valueSpan.style.color).toBe(ZONE_DANGER);
+    expect(normalizeColor(valueSpan.style.color)).toBe(normalizeColor(ZONE_DANGER));
   });
 
   it('Tile 1 value text is unstyled when not significant', () => {
@@ -202,7 +212,7 @@ describe('EndgameStartVsEndSection', () => {
     );
     const tile = screen.getByTestId('tile-endgame-score');
     const valueSpan = within(tile).getByTestId('endgame-score-value');
-    expect(valueSpan.style.color).toBe(ZONE_SUCCESS);
+    expect(normalizeColor(valueSpan.style.color)).toBe(normalizeColor(ZONE_SUCCESS));
   });
 
   it('Tile 2 value text is ZONE_DANGER when score is low + p < 0.05', () => {
@@ -216,7 +226,7 @@ describe('EndgameStartVsEndSection', () => {
     );
     const tile = screen.getByTestId('tile-endgame-score');
     const valueSpan = within(tile).getByTestId('endgame-score-value');
-    expect(valueSpan.style.color).toBe(ZONE_DANGER);
+    expect(normalizeColor(valueSpan.style.color)).toBe(normalizeColor(ZONE_DANGER));
   });
 
   it('Tile 2 value text is unstyled when not significant', () => {
