@@ -16,10 +16,11 @@
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactElement } from 'react';
 import { cloneElement, isValidElement } from 'react';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import type {
   EndgameOverviewResponse,
   EndgamePerformanceResponse,
@@ -254,7 +255,9 @@ function buildOverview(overrides?: {
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={['/endgames/stats']}>
-      <EndgamesPage />
+      <TooltipProvider>
+        <EndgamesPage />
+      </TooltipProvider>
     </MemoryRouter>,
   );
 }
@@ -273,7 +276,6 @@ describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
     expect(startVsEnd).not.toBeNull();
     expect(perfSection).not.toBeNull();
     // DOCUMENT_POSITION_FOLLOWING = 4: startVsEnd is followed by perfSection.
-    // eslint-disable-next-line no-bitwise
     const followingMask =
       startVsEnd!.compareDocumentPosition(perfSection!) &
       Node.DOCUMENT_POSITION_FOLLOWING;
@@ -292,23 +294,28 @@ describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
 
   it('contains both new accordion paragraphs ("Avg eval at endgame entry" + "Absolute endgame score") (D-13)', () => {
     overviewState.data = buildOverview();
-    renderPage();
-    expect(screen.getByText(/Avg eval at endgame entry:/)).toBeTruthy();
-    expect(screen.getByText(/Absolute endgame score:/)).toBeTruthy();
+    const { container } = renderPage();
+    // Open the first accordion trigger (radix collapses content when closed,
+    // so the new paragraphs need to be expanded to be in the DOM tree).
+    openConceptsAccordion(container);
+    // Both paragraph leads appear; getAllByText accepts multiple hits because
+    // both desktop and mobile layouts mount the same TabsContent in jsdom.
+    expect(screen.getAllByText(/Avg eval at endgame entry:/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Absolute endgame score:/).length).toBeGreaterThan(0);
   });
 
   it('places the 2 new accordion paragraphs AFTER Recovery and BEFORE the rating-changes caveat (D-14)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
-    const accordionContent = container.querySelector(
+    openConceptsAccordion(container);
+    // Scope to the FIRST accordion item — radix mounts an open
+    // AccordionContent with role="region"; query inside it.
+    const accordionItem = container.querySelector(
       '[data-testid="endgame-concepts-trigger"]',
     );
-    expect(accordionContent).not.toBeNull();
-    // Read all <p> blocks inside the accordion's content area; jsdom renders
-    // them all because radix's <Accordion> mounts content as hidden when
-    // collapsed, but it is still part of the DOM.
+    expect(accordionItem).not.toBeNull();
     const paragraphs = Array.from(
-      accordionContent!.querySelectorAll('p'),
+      accordionItem!.querySelectorAll('p'),
     ) as HTMLParagraphElement[];
     const text = paragraphs.map((p) => p.textContent ?? '');
     const recoveryIdx = text.findIndex((t) => /Recovery:/.test(t));
@@ -345,7 +352,28 @@ describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
 
   it('references the Opponent Strength filter as plain text in the new accordion paragraphs (D-13)', () => {
     overviewState.data = buildOverview();
-    renderPage();
-    expect(screen.getByText(/Opponent Strength filter/)).toBeTruthy();
+    const { container } = renderPage();
+    openConceptsAccordion(container);
+    // The phrase appears in both the new D-13 paragraph and the existing
+    // rating-changes caveat. getAllByText accepts multiple matches; we just
+    // need at least one.
+    expect(screen.getAllByText(/Opponent Strength filter/).length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * Click the first concepts-accordion trigger so radix mounts its
+ * AccordionContent into the DOM. The page renders the accordion in both the
+ * desktop sidebar and the mobile drawer layouts; opening either one is
+ * enough to expose the paragraph text to query selectors.
+ */
+function openConceptsAccordion(container: HTMLElement): void {
+  const trigger = container.querySelector(
+    '[data-testid="endgame-concepts-trigger"] [data-slot="accordion-trigger"]',
+  ) as HTMLButtonElement | null;
+  if (trigger) {
+    act(() => {
+      fireEvent.click(trigger);
+    });
+  }
+}
