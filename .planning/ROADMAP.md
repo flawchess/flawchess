@@ -29,7 +29,7 @@ Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlega
 
 - [ ] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (6 plans) — planned
 - [x] Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats (4/4 plans) — completed 2026-05-07
-- [ ] Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance (0 plans) — not planned yet
+- [ ] Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance (5 plans) — planned
 
 ### Phase 80: Opening stats: middlegame-entry eval and clock-diff columns
 
@@ -82,11 +82,22 @@ Plans:
 **Goal:** Add a new **Endgame Start vs End** section to the Endgame Overall Performance area of the Endgames page, positioned **above** the existing "Games with vs without Endgame" WDL table. The section renders two tiles via the existing `MiniBulletChart`: *"where you start"* (avg eval at endgame entry, in pawns, sig-tested against 0) + *"what you do with it"* (**absolute endgame score**, sig-tested against 50% — the equal-footing break-even line). Both tiles: p<0.05, three-state color (sig positive → green / sig negative → red / not sig → neutral). Phase 81 is **purely additive**: the existing WDL table (incl. the Score Gap column) and the "Endgame vs Non-Endgame Score over Time" chart remain unchanged. Concept-explainer accordion gains paragraphs for both new tested metrics. Visual presentation, sub-header copy, mobile ordering, axis ranges, and final section heading wording are deferred to /gsd-discuss-phase 81.
 **Requirements**: TBD (defined during /gsd-spec-phase 81 or /gsd-discuss-phase 81)
 **Depends on:** v1.15 shipped (Phase 79 — needs endgame-entry `eval_cp`/`eval_mate` populated on benchmark + prod). Independent of Phase 80 (different page, different subset of positions).
-**Plans:** 0 plans
+**Plans:** 5 plans
 **Context:** Design swap from earlier draft (2026-05-09 exploration): the second tile shows **absolute endgame score vs 50%**, not the endgame-vs-non-endgame Score Gap. Reason: a player with exceptional pre-endgame play can have a large negative Score Gap while their endgame score is still well above 50% — coloring that red ("squanders advantage") is misleading. Against rating-matched opponents (and tightenable via the opponent-strength filter), 50% is a clean, honest null with a textbook one-sample test; deviation is endgame-specific signal. Score Gap stays in the WDL table (descriptive, untested) where it bridges into the existing time-series chart. Backend reuses the existing `first_endgame` ply walk in `app/repositories/endgame_repository.py` (same SQL path conv/parity/recov use). `EndgamePerformanceResponse` gains: `entry_eval_mean_pawns: float`, `entry_eval_n: int` (mate excluded, `eval_cp NOT NULL`), `entry_eval_p_value: float | None` (Wald z), and `endgame_score_p_value: float | None` (Wilson score test). Frontend reuses `MiniBulletChart`; new component is the section container + sig-test color logic. Population baseline for entry eval: ~0 cp under equal-footing (per benchmark DB 2026-05-03), per-game SD ≈ 418 cp ⇒ sig test reliably catches users systematically entering at ≳+150 cp on a few-hundred-game corpus; UI copy phrases the null as "we can't tell," not "no advantage." Decision NOT to pair entry eval with clock-diff in this section: cross-user analysis showed the "paid for it with time" trade-off only holds for bullet/blitz (r ≈ −0.4), vanishes for rapid/classical (r ≈ 0). Original design: `.planning/notes/endgame-entry-eval-tile-design.md` — note: that doc still reflects the Score-Gap-as-second-tile framing and the WDL-table-restructure plan; both are now obsolete and will be reconciled during /gsd-discuss-phase 81. Population reference data: `.claude/skills/benchmarks/SKILL.md` §2 + `reports/benchmarks-2026-05-03.md`.
 
 Plans:
-- [ ] TBD (run `/gsd-plan-phase 81` to break down)
+**Wave 1**
+- [ ] 81-01-PLAN.md — Backend: schema + service aggregation + tests (entry-eval Wald-z, score Wilson) (Wave 1)
+- [ ] 81-02-PLAN.md — Frontend: types mirror + endgameEntryEvalZones constants/helper (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 81-03-PLAN.md — Frontend: EndgameStartVsEndSection component + tests (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 81-04-PLAN.md — Frontend: Endgames.tsx integration + 2 accordion paragraphs + page test (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 81-05-PLAN.md — Manual UAT checkpoint (visual parity, mobile stacking, popover content, three-state color) (Wave 4)
 
 </details>
 
