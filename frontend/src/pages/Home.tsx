@@ -207,7 +207,7 @@ export function HomePageContent() {
             <img
               src={heroFeature.screenshot.src}
               alt={heroFeature.screenshot.alt}
-              className="rounded-lg border border-border shadow-md w-full mb-4"
+              className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full mb-4"
             />
             <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
               {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
@@ -232,7 +232,7 @@ export function HomePageContent() {
           <img
             src={heroFeature.screenshot.src}
             alt={heroFeature.screenshot.alt}
-            className="rounded-lg border border-border shadow-md w-full"
+            className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full"
           />
           <ul className="list-disc pl-5 space-y-1 text-base leading-relaxed text-muted-foreground">
             {heroDescItems.map((item, i) => <li key={i}>{item}</li>)}
@@ -271,7 +271,7 @@ export function HomePageContent() {
             <img
               src={screenshot.src}
               alt={screenshot.alt}
-              className="rounded-lg border border-border shadow-md w-full lg:transition-transform lg:duration-300 lg:hover:scale-[1.02] lg:hover:shadow-lg"
+              className="rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] w-full lg:transition-transform lg:duration-300 lg:hover:scale-[1.02] lg:hover:shadow-[0_0_32px_rgba(205,127,50,0.5)]"
             />
           );
           const desktopTextCol = (
@@ -315,7 +315,7 @@ export function HomePageContent() {
       {/* Development banner */}
       <div className="max-w-2xl mx-auto px-4 pt-12">
         <p
-          className="mx-auto max-w-lg rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-4 py-3 text-sm text-muted-foreground text-center"
+          className="mx-auto max-w-lg rounded-lg border border-[rgba(205,127,50,0.85)] shadow-[0_0_24px_rgba(205,127,50,0.35)] px-4 py-3 text-sm text-muted-foreground text-center"
           data-testid="beta-badge"
         >
           🏗️ Under active development. Bug
