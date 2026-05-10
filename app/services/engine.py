@@ -5,6 +5,12 @@ an internal `EnginePool` of size `STOCKFISH_POOL_SIZE` (env var, default 1).
 Sign convention is white-perspective and matches app/services/zobrist.py:183-197
 byte-for-byte.
 
+On Linux, every Stockfish subprocess is spawned under SCHED_IDLE (see
+`_sched_idle_preexec`), so the kernel preempts it instantly whenever any other
+runnable task wants CPU. This makes pool sizes equal to the host's vCPU count
+safe without starving Uvicorn or Postgres. macOS / Windows fall back to default
+scheduling (the relevant `os.sched_setscheduler` API is Linux-only).
+
 Two APIs:
     Module-level (live FastAPI traffic, prod imports):
         start_engine()       -- call from FastAPI lifespan startup.
@@ -33,6 +39,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
+from typing import Any
 
 import chess
 import chess.engine
@@ -49,13 +57,50 @@ _DEPTH: int = 15
 # D-05: defensive per-eval timeout
 _TIMEOUT_S: float = 2.0
 # Module-level pool size. Default 1 = legacy singleton behavior. Prod sets
-# STOCKFISH_POOL_SIZE=2 to use 2 of 4 vCPUs for parallel import-time evals
-# while leaving headroom for Postgres + uvicorn. Read at start_engine() time.
+# STOCKFISH_POOL_SIZE=4 to use all 4 vCPUs for parallel import-time evals;
+# safe because each child runs under Linux SCHED_IDLE (see _sched_idle_preexec)
+# and only consumes idle cycles. Read at start_engine() time.
 _POOL_SIZE_ENV: str = "STOCKFISH_POOL_SIZE"
 _DEFAULT_POOL_SIZE: int = 1
 
 # Module-level pool. None until start_engine() is called.
 _pool: EnginePool | None = None
+
+
+def _sched_idle_preexec() -> None:
+    """preexec_fn: switch the just-forked child to SCHED_IDLE before exec.
+
+    Linux SCHED_IDLE makes the process consume only idle CPU. The kernel
+    preempts it instantly whenever any other runnable task (Uvicorn worker,
+    Postgres, system daemons) wants the core. This lets us safely run as many
+    Stockfish workers as we have vCPUs without harming API latency.
+
+    Unprivileged SCHED_IDLE does NOT require CAP_SYS_NICE on Linux 2.6.23+.
+    Errors are swallowed: if the kernel rejects the call (containerised host
+    with seccomp filter, exotic distro), we'd rather have Stockfish run at
+    normal priority than crash the worker spawn.
+    """
+    try:
+        os.sched_setscheduler(0, os.SCHED_IDLE, os.sched_param(0))
+    except OSError:
+        pass
+
+
+def _engine_popen_kwargs() -> dict[str, Any]:
+    """Return popen kwargs for Stockfish subprocesses.
+
+    On Linux, request SCHED_IDLE scheduling for the child. On macOS / Windows
+    the os.sched_setscheduler API doesn't exist, so we spawn with default
+    scheduling. Dev-on-Mac behaves exactly as before this change.
+
+    Return type is `dict[str, Any]` (not `dict[str, object]`) because
+    `chess.engine.popen_uci` declares a typed `setpgrp: bool` keyword in
+    addition to `**popen_args: Any`; ty resolves splatted kwargs against the
+    typed param first and rejects `object`.
+    """
+    if sys.platform == "linux":
+        return {"preexec_fn": _sched_idle_preexec}
+    return {}
 
 
 def _read_pool_size() -> int:
@@ -162,7 +207,9 @@ class EnginePool:
         if self._started:
             return
         for _ in range(self._size):
-            transport, protocol = await chess.engine.popen_uci(_STOCKFISH_PATH)
+            transport, protocol = await chess.engine.popen_uci(
+                _STOCKFISH_PATH, **_engine_popen_kwargs()
+            )
             await protocol.configure({"Hash": _HASH_MB, "Threads": _THREADS})
             idx = len(self._transports)
             self._transports.append(transport)
@@ -194,7 +241,9 @@ class EnginePool:
             except (chess.engine.EngineError, chess.engine.EngineTerminatedError):
                 pass
         try:
-            transport, protocol = await chess.engine.popen_uci(_STOCKFISH_PATH)
+            transport, protocol = await chess.engine.popen_uci(
+                _STOCKFISH_PATH, **_engine_popen_kwargs()
+            )
             await protocol.configure({"Hash": _HASH_MB, "Threads": _THREADS})
         except Exception:
             self._transports[idx] = None
