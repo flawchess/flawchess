@@ -112,7 +112,7 @@ Plans:
 
 Plans:
 **Wave 1**
-- [ ] 82-01-PLAN.md — Backend: MetricId / SubsectionId rename + ZoneSpec registration + `_findings_endgame_start_vs_end` emitter + insights_service tests (Wave 1)
+- [x] 82-01-PLAN.md — Backend: MetricId / SubsectionId rename + ZoneSpec registration + `_findings_endgame_start_vs_end` emitter + insights_service tests (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 82-02-PLAN.md — Prompt: glossary entries + `### Subsection: endgame_start_vs_end` block + mapping-table row + `_PROMPT_VERSION` bump to `endgame_v23` (Wave 2)
