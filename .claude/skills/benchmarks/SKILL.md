@@ -250,9 +250,10 @@ Before running each section, grep the code for the constants the section's gauge
 
 | Section | Metric | File | Constants |
 |---|---|---|---|
+| 0 | Endgame score (per-user, EG-only) | `frontend/src/lib/scoreBulletConfig.ts` (shared with Openings score bullet) | `SCORE_BULLET_CENTER = 0.5`, `SCORE_BULLET_NEUTRAL_MIN = -0.05`, `SCORE_BULLET_NEUTRAL_MAX = +0.05`, `SCORE_BULLET_DOMAIN = 0.25`. The score bullet config is shared across surfaces; §0 calibrates the **endgame-only** subset of users that the "What you do with it" tile reads. |
 | 1 | Score gap (eg vs non-eg) + timeline | `frontend/src/components/charts/EndgamePerformanceSection.tsx` | `SCORE_GAP_NEUTRAL_MIN/MAX`, `SCORE_GAP_DOMAIN`, `SCORE_TIMELINE_Y_DOMAIN`, any `SCORE_TIMELINE_NEUTRAL_*` constants |
 | 2 | Conv / Par / Recov + Endgame Skill | `frontend/src/components/charts/EndgameScoreGapSection.tsx`, `frontend/src/generated/endgameZones.ts` | `FIXED_GAUGE_ZONES`, `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, `ENDGAME_SKILL_ZONES` |
-| 3 | Phase-entry eval (mid + eg) | TBD — bullet chart not yet implemented (target `frontend/src/components/charts/PhaseEntryEvalSection.tsx` or similar). For the **symmetric engine-asymmetry baseline** (consumed by the in-app z-test), grep `app/services/opening_insights_constants.py` for `EVAL_BASELINE_CP_WHITE`, `EVAL_BASELINE_CP_BLACK`, and `EVAL_CONFIDENCE_MIN_N`. `EVAL_BASELINE_CP_BLACK` must equal `-EVAL_BASELINE_CP_WHITE` (symmetric by construction — flag if violated). | Bullet-chart bounds: TBD. Baseline: live values are `EVAL_BASELINE_CP_WHITE = 28`, `EVAL_BASELINE_CP_BLACK = -20` (re-grep at run time), `EVAL_CONFIDENCE_MIN_N = 20`. |
+| 3 | Phase-entry eval (mid + eg) | MG-entry bullet: `frontend/src/lib/openingStatsZones.ts` — `EVAL_NEUTRAL_MIN/MAX_PAWNS`, `EVAL_BULLET_DOMAIN_PAWNS`. EG-entry bullet (Phase 81, "Where you start" tile): `frontend/src/lib/endgameEntryEvalZones.ts` — `ENDGAME_ENTRY_EVAL_NEUTRAL_MIN/MAX_PAWNS`, `ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS`, `ENDGAME_ENTRY_EVAL_CENTER`. For the **symmetric engine-asymmetry baseline** (live z-test, MG only), grep `app/services/opening_insights_constants.py` for `EVAL_BASELINE_PAWNS_WHITE`, `EVAL_BASELINE_PAWNS_BLACK`, `EVAL_CONFIDENCE_MIN_N`. `EVAL_BASELINE_PAWNS_BLACK` must equal `-EVAL_BASELINE_PAWNS_WHITE` (symmetric by construction — flag if violated). | MG-entry: `EVAL_NEUTRAL_MIN_PAWNS = -0.30`, `EVAL_NEUTRAL_MAX_PAWNS = +0.30`, `EVAL_BULLET_DOMAIN_PAWNS = 1.5`. EG-entry: `ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.75`, `ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = +0.75`, `ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS = 2.0`, `ENDGAME_ENTRY_EVAL_CENTER = 0`. Baseline (MG only): `EVAL_BASELINE_PAWNS_WHITE = 0.25`, `EVAL_BASELINE_PAWNS_BLACK = -0.25`, `EVAL_CONFIDENCE_MIN_N = 20` (re-grep at run time). **EG-entry tile is 0-centered** (null = 0, no baseline subtraction) — unlike the MG-entry tile which centers on the symmetric ±baseline. §3 EG-entry recommendations therefore feed `endgameEntryEvalZones.ts` directly from the **uncentered** distribution; do not center against the EG pass-1 baseline when calibrating the EG bullet. |
 | 4 | Clock-diff + net timeout | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD` |
 | 5 | Time-pressure chart | `app/services/endgame_service.py::_compute_time_pressure_chart`, `EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
 | 6 | Per-class score-diff + conv/recov | `frontend/src/components/charts/EndgameWDLChart.tsx`, `EndgameConvRecovChart.tsx` | `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`; conv/recov chart has no per-class zones today |
@@ -303,6 +304,117 @@ Every query: `g.rated AND NOT g.is_computer_game` PLUS the **equal-footing oppon
 | 5 pressure-vs-performance | per-(TC × time-bucket) cell shown if n ≥ 100 |
 | 6 endgame-type | per-(cell × class): n ≥ 100 for score, ≥30 for conversion / recovery |
 | Cohen's d | ≥10 users per marginal level |
+
+---
+
+## Section 0 — Endgame score (per-user, endgame-reaching games only)
+
+**Question:** How does the per-user **absolute** endgame score (`(W + 0.5·D) / total` over endgame-reaching games) distribute across the population, and does it shift across (TC × ELO) cells? This calibrates the "What you do with it" tile's neutral band and confirms whether the score bullet's static 0.45–0.55 / 0.25–0.75 axis remains population-honest at the EG-only subset.
+
+**Why a separate section from §1:** §1 measures the **differential** `eg_score − non_eg_score` (does the user lose ground in endgames?). §0 measures the **absolute** EG-only score (where do they actually finish?). The live UI tile reads the absolute number against a fixed 50% null; §0's pooled distribution and per-cell spread tell us whether a cohort-band overlay is needed (per-ELO or pooled) and where its `[p25, p75]` bounds sit.
+
+**Per-user metric:**
+- `eg_score = (W + 0.5·D) / total` over the user's endgame-reaching games in their selected TC.
+- "Endgame-reaching" = `game_id` in `endgame_game_ids` (the shared `≥6 plies with endgame_class IS NOT NULL` building block — same gate §1, §2, §4, §6 use). The metric is the simple per-user score; it is **not** centered on any baseline (the live tile's null is a fixed 50%).
+
+**Sample floor:** ≥20 endgame games per user per cell (matches §2's per-user floor; tighter than §1's ≥30 because there is no non-endgame slice to also pass a floor on).
+
+### Currently set in code
+
+| Constant | Live value | File |
+|---|---:|---|
+| `SCORE_BULLET_CENTER` | `0.5` | `frontend/src/lib/scoreBulletConfig.ts` |
+| `SCORE_BULLET_NEUTRAL_MIN` | `-0.05` | same |
+| `SCORE_BULLET_NEUTRAL_MAX` | `+0.05` | same |
+| `SCORE_BULLET_DOMAIN` | `0.25` (half-width — axis 0.25–0.75) | same |
+
+The score-bullet config is **shared** with the Openings score bullet (per-position WDL on the Moves tab). §0 calibrates the EG-only subset specifically — if the pooled EG `[p25, p75]` differs materially from the existing ±0.05 band, the right call is usually a dedicated EG-only zones module (mirroring `endgameEntryEvalZones.ts` vs `openingStatsZones.ts`), not retuning the shared constant.
+
+### Query
+
+```sql
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+endgame_game_ids AS (
+  SELECT game_id FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+rows AS (
+  SELECT
+    g.user_id,
+    su.rating_bucket AS elo_bucket,
+    su.tc_bucket AS tc,
+    CASE
+      WHEN (g.result = '1-0' AND g.user_color = 'white')
+        OR (g.result = '0-1' AND g.user_color = 'black') THEN 1.0
+      WHEN g.result = '1/2-1/2' THEN 0.5
+      ELSE 0.0
+    END AS score
+  FROM games g
+  JOIN selected_users su ON su.user_id = g.user_id
+  JOIN endgame_game_ids eg ON eg.game_id = g.id
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all sections)")
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+),
+per_user AS (
+  SELECT
+    user_id, elo_bucket, tc,
+    count(*) AS eg_games,
+    avg(score) AS eg_score
+  FROM rows
+  GROUP BY user_id, elo_bucket, tc
+  HAVING count(*) >= 20
+),
+per_user_excl_sparse AS (
+  -- Sparse-cell exclusion mirrors §1–§6 universal handling
+  SELECT * FROM per_user
+  WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
+)
+SELECT
+  elo_bucket, tc,
+  count(*) AS n_users,
+  round(avg(eg_score)::numeric, 4) AS eg_mean,
+  round(stddev_samp(eg_score)::numeric, 4) AS eg_sd,
+  round(var_samp(eg_score)::numeric, 6) AS eg_var,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY eg_score)::numeric, 4) AS eg_p95
+FROM per_user_excl_sparse
+GROUP BY elo_bucket, tc
+HAVING count(*) >= 10
+ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
+```
+
+The full 5×4 cell table also re-runs the same shape for the sparse `(2400, classical)` cell with an `n=12*` footnote. TC marginal, ELO marginal, and pooled overall come from re-aggregating `per_user_excl_sparse` over `tc` only / `elo_bucket` only / no group. The `eg_mean` / `eg_var` columns feed Cohen's d per the canonical "Computing Cohen's d in SQL" recipe.
+
+### Output
+
+1. **5×4 cell table** of per-user `eg_score` (`p25 / p50 / p75 (n_users)`), sparse cell footnoted.
+2. **TC marginal** (4 rows pooled across ELO): `n_users / mean / SD / p25 / p50 / p75`.
+3. **ELO marginal** (5 rows pooled across TC): same columns.
+4. **Pooled overall**: 1 row — feeds the cohort-band recommendation.
+5. **Recommendations:**
+   - **Cohort neutral band** = pooled `[eg_p25, eg_p75]`, rounded to 2 decimal places. Compare to `[SCORE_BULLET_CENTER + SCORE_BULLET_NEUTRAL_MIN, SCORE_BULLET_CENTER + SCORE_BULLET_NEUTRAL_MAX] = [0.45, 0.55]`. If `|pooled mean − 0.50| > 0.01`, flag — the population mean should land within ±1pp of 50% (sanity check on the equal-footing filter).
+   - **Cohort domain bounds** = pooled `[eg_p05, eg_p95]`. Compare to `[0.25, 0.75]` (current bullet axis).
+   - **Per-ELO stratification check**: if ELO-marginal `eg_p50` spread (max − min) exceeds the pooled IQR width, recommend a per-ELO `ENDGAME_SCORE_ZONES` registry (mirroring `ENDGAME_SKILL_ZONES`) — see SEED-013 Plan 3.
+   - **Recommendation routing**: if collapse verdict says "single global zone", calibration goes into a new EG-only score-zone module (do **not** retune the shared `SCORE_BULLET_NEUTRAL_*` — that constant also drives the Openings score bullet, where the population is different).
+6. **Collapse verdict block**: TC d_max + ELO d_max from per-user `eg_score` distribution, plus a 5×4 heatmap of `eg_p50`. Per the canonical thresholds (< 0.2 collapse / 0.2–0.5 review / ≥ 0.5 keep separate).
 
 ---
 
@@ -1150,6 +1262,9 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). Layout:
 - **Sample floors**: <floors used per section>
 - **Cell coverage** (status='completed' users per cell): <inline 5×4 table, sparse cell flagged>
 
+## 0. Endgame score (per-user, endgame-reaching games only)
+... (cell table, marginals, pooled, recommendations, **collapse verdict block**)
+
 ## 1. Score gap (endgame vs non-endgame)
 ... (cell table, marginals, recommendations, **collapse verdict block**)
 
@@ -1172,6 +1287,7 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). Layout:
 
 | Metric | TC verdict (d_max) | ELO verdict (d_max) | Implication |
 |---|---|---|---|
+| Endgame score (per-user, EG only) | ... | ... | ... |
 | Score gap (eg − non_eg) | ... | ... | ... |
 | Conversion (per-user) | ... | ... | ... |
 | Parity (per-user) | ... | ... | ... |
