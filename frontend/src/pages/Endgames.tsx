@@ -355,6 +355,17 @@ export function EndgamesPage() {
                       phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as no endgame.
                     </p>
                     <p>
+                      <strong>Endgame entry eval:</strong> the average Stockfish evaluation of
+                      the position where the endgame begins, measured in pawns from your perspective
+                      (positive means you have the better position). Mate scores are excluded.
+                    </p>
+                    <p>
+                      <strong>Endgame score:</strong> your win rate (with draws counted as half)
+                      across all games that reach an endgame, tested against 50%, the break-even line
+                      you'd expect against rating-matched opponents. Use the Opponent Strength filter
+                      to tighten the test against equal-rated opponents specifically.
+                    </p>
+                    <p>
                       <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
                       Queen, and Mixed (two or more piece types).
                     </p>
@@ -379,24 +390,6 @@ export function EndgamesPage() {
                       <strong>Recovery:</strong> percentage of games where you entered the endgame with a
                       Stockfish evaluation of -1.0 or worse (you behind by at least one pawn of disadvantage)
                       and drew or won. Measures how well you defend losing endgames.
-                    </p>
-                    <p>
-                      <strong>Endgame entry eval:</strong> the average Stockfish evaluation of
-                      the position where the endgame begins, measured in pawns from your perspective
-                      (positive means you have the better position). Mate scores are excluded. We test
-                      this against 0, the equal-footing baseline you'd expect against rating-matched
-                      opponents. When we can't reject 0 with confidence, we say so plainly: a flat
-                      verdict on a few-hundred-game corpus often means we couldn't detect the effect,
-                      not that the effect is zero.
-                    </p>
-                    <p>
-                      <strong>Endgame score:</strong> your win rate (with draws counted as half)
-                      across all games that reach an endgame, tested against 50%, the break-even line
-                      you'd expect against rating-matched opponents. Use the Opponent Strength filter
-                      to tighten the test against equal-rated opponents specifically. The same
-                      "we can't tell" framing applies: a non-significant result means the data can't
-                      distinguish your endgame play from the break-even reference, not that you're
-                      exactly average.
                     </p>
                     <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating
