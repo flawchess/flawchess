@@ -102,6 +102,93 @@ class TestSampleQuality:
         assert sample_quality("results_by_endgame_type", 50) == "rich"
 
 
+class TestNewMetricZones:
+    """Boundary tests for Phase 82 D-08/D-10 new ZoneSpec entries.
+
+    entry_eval_pawns: typical = [-0.50, +0.50], higher_is_better.
+    endgame_score: typical = [0.45, 0.55], higher_is_better.
+    Both replace old score-timeline no-op entries (D-01/D-02 rename) and
+    register the new endgame_start_vs_end subsection metrics (D-03/D-04).
+    """
+
+    # --- entry_eval_pawns boundaries ---
+
+    def test_entry_eval_above_band_is_strong(self) -> None:
+        assert assign_zone("entry_eval_pawns", 0.80) == "strong"
+
+    def test_entry_eval_at_upper_boundary_is_strong(self) -> None:
+        """Upper boundary is inclusive on the strong side (>= typical_upper)."""
+        assert assign_zone("entry_eval_pawns", 0.50) == "strong"
+
+    def test_entry_eval_inside_band_is_typical(self) -> None:
+        assert assign_zone("entry_eval_pawns", 0.49) == "typical"
+
+    def test_entry_eval_zero_is_typical(self) -> None:
+        assert assign_zone("entry_eval_pawns", 0.0) == "typical"
+
+    def test_entry_eval_at_lower_boundary_is_typical(self) -> None:
+        """Lower boundary is inclusive on the typical side (>= typical_lower)."""
+        assert assign_zone("entry_eval_pawns", -0.50) == "typical"
+
+    def test_entry_eval_below_band_is_weak(self) -> None:
+        assert assign_zone("entry_eval_pawns", -0.80) == "weak"
+
+    def test_entry_eval_nan_is_typical(self) -> None:
+        assert assign_zone("entry_eval_pawns", float("nan")) == "typical"
+
+    # --- endgame_score boundaries ---
+
+    def test_endgame_score_above_band_is_strong(self) -> None:
+        assert assign_zone("endgame_score", 0.60) == "strong"
+
+    def test_endgame_score_at_upper_boundary_is_strong(self) -> None:
+        """Upper boundary 0.55 inclusive on strong side."""
+        assert assign_zone("endgame_score", 0.55) == "strong"
+
+    def test_endgame_score_inside_band_is_typical(self) -> None:
+        assert assign_zone("endgame_score", 0.50) == "typical"
+
+    def test_endgame_score_at_lower_boundary_is_typical(self) -> None:
+        """Lower boundary 0.45 inclusive on typical side."""
+        assert assign_zone("endgame_score", 0.45) == "typical"
+
+    def test_endgame_score_below_band_is_weak(self) -> None:
+        assert assign_zone("endgame_score", 0.40) == "weak"
+
+    def test_endgame_score_nan_is_typical(self) -> None:
+        assert assign_zone("endgame_score", float("nan")) == "typical"
+
+    # --- endgame_start_vs_end sample_quality bands ---
+
+    def test_endgame_start_vs_end_thin_below_10(self) -> None:
+        assert sample_quality("endgame_start_vs_end", 9) == "thin"
+
+    def test_endgame_start_vs_end_adequate_at_10(self) -> None:
+        """Boundary: n=10 is the strict-`<` floor for thin; must be `adequate`.
+
+        Phase 82 IN-03: paired with test_tile1_at_n_eval_10_is_populated_adequate
+        in test_insights_service.py — both pin the off-by-one between the
+        emitter's `< 10` empty gate and the band classifier so a future band
+        shift cannot produce an emitted finding (n=10 not empty) that is then
+        classified as `thin` and suppressed at headline-eligibility time.
+        """
+        assert sample_quality("endgame_start_vs_end", 10) == "adequate"
+
+    def test_endgame_start_vs_end_adequate_between(self) -> None:
+        assert sample_quality("endgame_start_vs_end", 25) == "adequate"
+
+    def test_endgame_start_vs_end_adequate_at_49(self) -> None:
+        """Boundary: n=49 just below the rich threshold (50) is still adequate."""
+        assert sample_quality("endgame_start_vs_end", 49) == "adequate"
+
+    def test_endgame_start_vs_end_rich_at_50(self) -> None:
+        """Boundary: n=50 is the strict-`<` floor for adequate; must be `rich`."""
+        assert sample_quality("endgame_start_vs_end", 50) == "rich"
+
+    def test_endgame_start_vs_end_rich_above_50(self) -> None:
+        assert sample_quality("endgame_start_vs_end", 60) == "rich"
+
+
 class TestRegistrySanity:
     """Sanity checks on registry shape and constants."""
 
@@ -109,16 +196,19 @@ class TestRegistrySanity:
         """ZONE_REGISTRY covers exactly the scalar metrics (bucketed metrics
         live in BUCKETED_ZONE_REGISTRY).
 
-        Phase 68 v14 (260424-pc6) added `endgame_score` / `non_endgame_score`
-        entries with a full-range `[0, 1]` typical band (no calibrated cohort
-        band for per-part absolute scores — assign_zone always returns
-        "typical" for these). See `_format_zone_bounds` in insights_llm.py
-        for the matching bounds-suppression guard.
+        Phase 82 (D-01..D-04, D-08, D-10): `endgame_score` / `non_endgame_score`
+        are renamed to `endgame_score_timeline` / `non_endgame_score_timeline`
+        (no-op [0, 1] band preserved). Two new entries added:
+        `entry_eval_pawns` (±0.50 band) and `endgame_score` (repurposed, [0.45,
+        0.55] band). See `_format_zone_bounds` in insights_llm.py for the
+        matching bounds-suppression guard on timeline metrics.
         """
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
+            "entry_eval_pawns",
             "endgame_score",
-            "non_endgame_score",
+            "endgame_score_timeline",
+            "non_endgame_score_timeline",
             "endgame_skill",
             "avg_clock_diff_pct",
             "net_timeout_rate",

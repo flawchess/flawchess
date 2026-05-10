@@ -462,13 +462,16 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_score_timeline_emits_three_findings_per_window(self) -> None:
         """Phase 68 v14 (260424-pc6): score_timeline emits THREE findings per window.
+        Phase 82 D-01/D-02: MetricId renamed to endgame_score_timeline /
+        non_endgame_score_timeline.
 
-        One finding per distinct metric (endgame_score, non_endgame_score,
-        score_gap). No `part` dim tag — each metric id is the unique key.
-        Deterministic order: endgame_score, non_endgame_score, score_gap.
-        Only the endgame_score finding is headline-eligible when the trend
-        gate passes; non_endgame_score and score_gap are never headlines
-        (score_gap's headline already lives on the `overall` subsection).
+        One finding per distinct metric (endgame_score_timeline,
+        non_endgame_score_timeline, score_gap). No `part` dim tag — each
+        metric id is the unique key.
+        Deterministic order: endgame_score_timeline, non_endgame_score_timeline, score_gap.
+        Only the endgame_score_timeline finding is headline-eligible when the
+        trend gate passes; non_endgame_score_timeline and score_gap are never
+        headlines (score_gap's headline already lives on the `overall` subsection).
         """
         mock_response = _make_minimal_response()
         with patch.object(
@@ -492,9 +495,9 @@ class TestIntegration:
                 f"Expected exactly 3 score_timeline findings for window={window}, "
                 f"got {len(st_findings)}"
             )
-            # Order: endgame_score, non_endgame_score, score_gap.
-            assert st_findings[0].metric == "endgame_score"
-            assert st_findings[1].metric == "non_endgame_score"
+            # Order: endgame_score_timeline, non_endgame_score_timeline, score_gap.
+            assert st_findings[0].metric == "endgame_score_timeline"
+            assert st_findings[1].metric == "non_endgame_score_timeline"
             assert st_findings[2].metric == "score_gap"
             # No findings carry a `part` dim.
             for f in st_findings:
@@ -539,8 +542,8 @@ class TestIntegration:
         ]
         assert len(st_last_3mo) == 3
         endgame_f, non_endgame_f, gap_f = st_last_3mo
-        assert endgame_f.metric == "endgame_score"
-        assert non_endgame_f.metric == "non_endgame_score"
+        assert endgame_f.metric == "endgame_score_timeline"
+        assert non_endgame_f.metric == "non_endgame_score_timeline"
         assert gap_f.metric == "score_gap"
         assert endgame_f.series is not None
         assert non_endgame_f.series is not None
@@ -628,8 +631,8 @@ class TestScoreTimelineIntegration:
             assert len(st_findings) == 3, (
                 f"Expected exactly 3 score_timeline findings for window={window}"
             )
-            assert st_findings[0].metric == "endgame_score"
-            assert st_findings[1].metric == "non_endgame_score"
+            assert st_findings[0].metric == "endgame_score_timeline"
+            assert st_findings[1].metric == "non_endgame_score_timeline"
             assert st_findings[2].metric == "score_gap"
             for f in st_findings:
                 assert f.dimension is None
@@ -655,9 +658,10 @@ class TestScoreTimelineIntegration:
             else rendered[timeline_start:]
         )
 
-        # v14: THREE summary blocks under score_timeline, one per metric.
-        assert timeline_slice.count("[summary endgame_score]") == 1
-        assert timeline_slice.count("[summary non_endgame_score]") == 1
+        # v14 (Phase 82 D-01/D-02 rename): THREE summary blocks under score_timeline,
+        # one per metric — now endgame_score_timeline / non_endgame_score_timeline.
+        assert timeline_slice.count("[summary endgame_score_timeline]") == 1
+        assert timeline_slice.count("[summary non_endgame_score_timeline]") == 1
         assert timeline_slice.count("[summary score_gap]") == 1
 
         # No part-dim-tagged summaries leak through anywhere.
@@ -668,12 +672,12 @@ class TestScoreTimelineIntegration:
         # of window. C5 dedupe (drop last_3mo series when all_time exists for
         # same (metric, subsection)) still applies — only the all_time series
         # is emitted for each metric here.
-        assert "[series endgame_score, all_time, weekly]" in rendered
-        assert "[series non_endgame_score, all_time, weekly]" in rendered
+        assert "[series endgame_score_timeline, all_time, weekly]" in rendered
+        assert "[series non_endgame_score_timeline, all_time, weekly]" in rendered
         assert "[series score_gap, all_time, weekly]" in rendered
 
         # Never monthly for score_timeline — granularity pin regression guard.
-        for metric in ("endgame_score", "non_endgame_score", "score_gap"):
+        for metric in ("endgame_score_timeline", "non_endgame_score_timeline", "score_gap"):
             assert f"[series {metric}, all_time, monthly" not in rendered
             assert f"[series {metric}, last_3mo, monthly" not in rendered
 

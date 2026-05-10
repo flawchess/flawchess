@@ -29,15 +29,19 @@ Window = Literal["all_time", "last_3mo"]
 
 MetricId = Literal[
     "score_gap",
+    "entry_eval_pawns",            # Phase 82 D-04: new endgame_start_vs_end Tile 1
+    "endgame_score",               # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
     # Phase 68 (260424-pc6): per-part absolute score metrics emitted by the
     # score_timeline subsection. `score_gap` still carries the signed
-    # aggregate; `endgame_score` / `non_endgame_score` carry each side's
-    # absolute 0-100% score so the prompt narrates two absolute lines
-    # instead of two part-tagged score_gap blocks whose labels contradicted
-    # their series values. Neither has a calibrated zone band — callers
-    # render them as "typical" (see assign_zone NaN/unregistered handling).
-    "endgame_score",
-    "non_endgame_score",
+    # aggregate; `endgame_score_timeline` / `non_endgame_score_timeline` carry
+    # each side's absolute 0-100% score so the prompt narrates two absolute
+    # lines instead of two part-tagged score_gap blocks whose labels
+    # contradicted their series values. Neither has a calibrated zone band —
+    # callers render them as "typical" (see assign_zone NaN/unregistered
+    # handling). Phase 82 D-01/D-02: renamed from "endgame_score" /
+    # "non_endgame_score" to free the clean slot for the new subsection.
+    "endgame_score_timeline",      # Phase 82 D-01: renamed from "endgame_score" (score_timeline subsection)
+    "non_endgame_score_timeline",  # Phase 82 D-02: renamed from "non_endgame_score"
     "endgame_skill",
     "conversion_win_pct",
     "parity_score_pct",
@@ -50,6 +54,7 @@ MetricId = Literal[
 
 SubsectionId = Literal[
     "overall",
+    "endgame_start_vs_end",  # Phase 82 D-05
     "score_timeline",
     "endgame_metrics",
     "endgame_elo_timeline",
@@ -131,6 +136,27 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=0.10,
         direction="higher_is_better",
     ),
+    # entry_eval_pawns: average Stockfish eval at endgame entry, signed from
+    # user's perspective. Phase 82 D-08.
+    "entry_eval_pawns": ZoneSpec(
+        # Editorial tightening from benchmark IQR (±0.75) to ±0.50 —
+        # half-a-pawn average swing at endgame entry is narratable. Single
+        # global band justified (TC max d=0.22, ELO max d=0.28 per
+        # benchmarks-2026-05-10.md §3 — both "review", not "keep separate").
+        # Unit: signed pawns.
+        typical_lower=-0.50,
+        typical_upper=0.50,
+        direction="higher_is_better",
+    ),
+    "endgame_score": ZoneSpec(
+        # Phase 82 D-10: reuse the live shared SCORE_BULLET_NEUTRAL band
+        # (±0.05 around 0.5 → [0.45, 0.55]) for visual parity with the
+        # Openings score bullet. Per-ELO ENDGAME_SCORE_ZONES deferred
+        # (D-11). Unit: 0–1 scale (NOT percent).
+        typical_lower=0.45,
+        typical_upper=0.55,
+        direction="higher_is_better",
+    ),
     # Phase 68 (260424-pc6): absolute per-part rolling Score % used by the
     # score_timeline subsection's two-line chart. There is no calibrated
     # cohort band for "your endgame Score in isolation" (the zoned signal is
@@ -140,12 +166,15 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     # unknown metrics) preserves the MetricId-Literal invariant and the
     # single-source-of-truth contract for all metrics referenced in
     # compute_findings.
-    "endgame_score": ZoneSpec(
+    # Phase 82 D-01/D-02: renamed from "endgame_score" / "non_endgame_score"
+    # to free the clean slot for the new endgame_start_vs_end subsection.
+    # score_timeline-only; no calibrated band.
+    "endgame_score_timeline": ZoneSpec(
         typical_lower=0.0,
         typical_upper=1.0,
         direction="higher_is_better",
     ),
-    "non_endgame_score": ZoneSpec(
+    "non_endgame_score_timeline": ZoneSpec(
         typical_lower=0.0,
         typical_upper=1.0,
         direction="higher_is_better",
@@ -240,6 +269,10 @@ BUCKETED_ZONE_REGISTRY: Mapping[BucketedMetricId, Mapping[MaterialBucket, ZoneSp
 
 SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "overall": (50, 200),
+    # Phase 82 D-05: new subsection, gates match time_pressure_at_entry
+    # (thin < 10, adequate < 50, rich >= 50) — two single-aggregate tiles,
+    # no per-type breakdown, so larger thin boundary than per-type subsections.
+    "endgame_start_vs_end": (10, 50),
     "score_timeline": (10, 52),
     "endgame_metrics": (30, 100),
     "endgame_elo_timeline": (10, 40),

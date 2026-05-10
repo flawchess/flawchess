@@ -194,18 +194,21 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v22 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v23 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
     - The UAT-pass emitter-shape documentation describes the THREE-summary +
       THREE-series score_timeline shape keyed on distinct metrics
-      (endgame_score, non_endgame_score, score_gap) with weekly granularity
+      (endgame_score_timeline, non_endgame_score_timeline, score_gap) with weekly granularity
       and the `[n=<N> for every point]` disclosure for constant-N series.
+    - Phase 82 (D-22, D-23, D-24): new glossary entries for entry_eval_pawns and endgame_score,
+      renamed glossary entries to endgame_score_timeline / non_endgame_score_timeline,
+      new ### Subsection: endgame_start_vs_end block, updated mapping table.
     """
 
-    def test_prompt_version_is_v22(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v22"
+    def test_prompt_version_is_v23(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v23"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -230,8 +233,9 @@ class TestPromptVersionAndBody:
 
         # Positive invariants — renamed id + v14 emitter-shape documentation present.
         assert "score_timeline" in body
-        assert "[summary endgame_score]" in body
-        assert "[summary non_endgame_score]" in body
+        # Phase 82 D-01/D-02: renamed to _timeline variants in the line-125 paragraph.
+        assert "[summary endgame_score_timeline]" in body
+        assert "[summary non_endgame_score_timeline]" in body
         assert "[summary score_gap]" in body
         assert "[n=<N> for every point]" in body
         assert "weekly" in body
@@ -256,6 +260,60 @@ class TestPromptVersionAndBody:
             "missing `| score_timeline ... | overall |` row in mapping table"
         )
 
+    def test_prompt_contains_endgame_start_vs_end_subsection(self) -> None:
+        """Phase 82 (D-23): new ### Subsection: endgame_start_vs_end block is present."""
+        from pathlib import Path
+
+        body_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        with open(body_path) as f:
+            body = f.read()
+        assert "### Subsection: endgame_start_vs_end" in body
+        # setup → execution framing must appear inside the block
+        assert "setup → execution" in body  # → character
+
+    def test_prompt_glossary_contains_entry_eval_pawns(self) -> None:
+        """Phase 82 (D-22): entry_eval_pawns glossary entry is present."""
+        from pathlib import Path
+
+        body_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        with open(body_path) as f:
+            body = f.read()
+        # Entry must appear under the glossary header as a bold heading
+        assert "**entry_eval_pawns**" in body
+
+    def test_prompt_glossary_renames_score_timeline_metrics(self) -> None:
+        """Phase 82 (D-22): glossary entries renamed to _timeline variants."""
+        from pathlib import Path
+
+        body_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        with open(body_path) as f:
+            body = f.read()
+        assert "**endgame_score_timeline**" in body
+        assert "**non_endgame_score_timeline**" in body
+
+    def test_prompt_mapping_table_includes_endgame_start_vs_end_row(self) -> None:
+        """Phase 82 (D-24): endgame_start_vs_end row present in mapping table under overall."""
+        from pathlib import Path
+
+        body_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        with open(body_path) as f:
+            body = f.read()
+        found = False
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("| endgame_start_vs_end") and stripped.endswith("|") and "overall" in stripped:
+                found = True
+                break
+        assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
+
     def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
         """v14 (260424-pc6 C): when every point's `n` is equal, the series block
         emits a single `[n=<N> for every point]` disclosure line after the
@@ -267,7 +325,7 @@ class TestPromptVersionAndBody:
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="endgame_score",
+            metric="endgame_score_timeline",
             value=0.55,
             zone="typical",
             trend="improving",
@@ -352,13 +410,14 @@ class TestPromptAssembly:
             series=None,
         )
         # Phase 68 (260424-pc6): score_timeline emits THREE findings per
-        # window — one per metric (endgame_score, non_endgame_score,
-        # score_gap). No `part` dim; each metric id is the unique key.
+        # window — one per metric. Phase 82 D-01/D-02: renamed to
+        # endgame_score_timeline / non_endgame_score_timeline / score_gap.
+        # No `part` dim; each metric id is the unique key.
         timeline_endgame = SubsectionFinding(
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="endgame_score",
+            metric="endgame_score_timeline",
             value=0.55,
             zone="typical",
             trend="improving",
@@ -376,7 +435,7 @@ class TestPromptAssembly:
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="non_endgame_score",
+            metric="non_endgame_score_timeline",
             value=0.52,
             zone="typical",
             trend="stable",
@@ -420,15 +479,179 @@ class TestPromptAssembly:
         assert "Flags:" not in prompt
         assert "### Subsection: overall" in prompt
         assert "### Subsection: score_timeline" in prompt
-        # Phase 68 (v14): three series blocks (one per metric), all pinned to weekly.
-        assert "[series endgame_score, last_3mo, weekly]" in prompt
-        assert "[series non_endgame_score, last_3mo, weekly]" in prompt
+        # Phase 68 (v14) / Phase 82 D-01/D-02 rename: three series blocks (one
+        # per metric), all pinned to weekly.
+        assert "[series endgame_score_timeline, last_3mo, weekly]" in prompt
+        assert "[series non_endgame_score_timeline, last_3mo, weekly]" in prompt
         assert "[series score_gap, last_3mo, weekly]" in prompt
         # No `part=` dim on any score_timeline series block.
         assert "part=endgame" not in prompt
         assert "part=non_endgame" not in prompt
         assert "2026-01-06" in prompt
         assert "2026-01-13" in prompt
+
+    def test_endgame_start_vs_end_findings_render_in_prompt(self) -> None:
+        """Phase 82 (D-23): findings on subsection `endgame_start_vs_end` must appear
+        in the assembled user prompt under section `overall`, between the `overall`
+        scalar block and the `score_timeline` block. Regression for the missing
+        `_SECTION_LAYOUT` entry that caused the new findings to be silently dropped.
+
+        Also asserts the rendered SCALE for both metrics:
+        - entry_eval_pawns is in PAWNS — value 0.46 must render as "+0.46", band as
+          "(typical -0.50 to +0.50)". The prompt glossary (D-22) explicitly says
+          "Render as signed one-decimal value with the unit 'pawns' ... Do NOT
+          convert to centipawns." Phase 82 initially shipped with the metric
+          missing from `_NON_FRACTIONAL_METRICS`, which scaled values by 100×
+          and corrupted every prompt.
+        - endgame_score is on the 0-100 percent scale — value 0.58 must render
+          as "+58", band as "(typical +45 to +55)".
+        """
+        filters = _sample_filter_context()
+        entry_eval = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="entry_eval_pawns",
+            value=0.46,
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=80,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        endgame_score = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="endgame_score",
+            value=0.58,
+            zone="strong",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=80,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        tab_findings = _fake_findings(filters, findings=[entry_eval, endgame_score])
+        prompt = _assemble_user_prompt(tab_findings)
+
+        assert "### Subsection: endgame_start_vs_end" in prompt
+        assert "[summary entry_eval_pawns]" in prompt
+        assert "[summary endgame_score]" in prompt
+
+        # entry_eval_pawns scale: pawns with 2-decimal precision.
+        assert "mean=+0.46" in prompt, (
+            "entry_eval_pawns must render in pawns (e.g. +0.46), not centipawns "
+            f"(+46). Prompt slice:\n{prompt}"
+        )
+        assert "(typical -0.50 to +0.50)" in prompt, (
+            "entry_eval_pawns zone band must render in pawns (-0.50 to +0.50), "
+            f"not centipawns (-50 to +50). Prompt slice:\n{prompt}"
+        )
+        # Negative invariant: no centipawn rendering of entry_eval_pawns.
+        assert "mean=+46" not in prompt
+        assert "(typical -50 to +50)" not in prompt
+
+        # endgame_score scale: integer percentage (0-100). Value 0.58 → +58.
+        assert "mean=+58" in prompt
+        assert "(typical +45 to +55)" in prompt
+
+    def test_endgame_start_vs_end_renders_only_populated_tile(self) -> None:
+        """Phase 82 (D-17, WR-01): asymmetric tile case — `entry_eval_pawns` gated
+        out (n_eval < 10, e.g. Stockfish backfill incomplete) but `endgame_score`
+        populated. The subsection header must render with exactly one [summary]
+        block (the populated one); the missing tile must NOT appear, and the
+        populated tile must NOT be silently dropped along with it.
+        """
+        import math
+
+        filters = _sample_filter_context()
+        # Tile 1 — empty/thin (gated out). Mirrors what _empty_finding produces.
+        empty_entry_eval = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="entry_eval_pawns",
+            value=math.nan,
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=0,
+            sample_quality="thin",
+            is_headline_eligible=False,
+            dimension=None,
+            series=None,
+        )
+        # Tile 2 — populated.
+        endgame_score = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="endgame_score",
+            value=0.52,
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=80,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        tab_findings = _fake_findings(filters, findings=[empty_entry_eval, endgame_score])
+        prompt = _assemble_user_prompt(tab_findings)
+
+        # Section header renders.
+        assert "### Subsection: endgame_start_vs_end" in prompt
+        # Populated tile appears.
+        assert "[summary endgame_score]" in prompt
+        # Empty tile is filtered (NaN + sample_size==0 + thin → A2 filter).
+        assert "[summary entry_eval_pawns]" not in prompt
+
+    def test_format_zone_bounds_skips_no_op_timeline_metrics(self) -> None:
+        """Phase 82 (WR-03): the no-op `[0, 1]` band on the renamed timeline
+        metrics must NOT render an inline `(typical ...)` tag — that would put
+        a meaningless `(typical +0 to +100)` next to every score-timeline finding.
+        Direct unit test on the skip-list mechanism so a future rename of either
+        the MetricId Literal or `_NO_BAND_METRICS` cannot silently regress.
+        """
+        from app.services.insights_llm import _format_zone_bounds, _NO_BAND_METRICS
+
+        assert _format_zone_bounds("endgame_score_timeline", None) == ""
+        assert _format_zone_bounds("non_endgame_score_timeline", None) == ""
+        # Pin the constant contents so a future rename has a single touchpoint.
+        assert _NO_BAND_METRICS == frozenset(
+            {"endgame_score_timeline", "non_endgame_score_timeline"}
+        )
+
+    def test_format_zone_bounds_renders_for_endgame_score(self) -> None:
+        """Phase 82 (WR-03): the repurposed `endgame_score` (in subsection
+        endgame_start_vs_end) DOES have a calibrated [0.45, 0.55] band; the
+        skip-list must NOT mute it. Negative pair to the timeline test above.
+        """
+        from app.services.insights_llm import _format_zone_bounds
+
+        result = _format_zone_bounds("endgame_score", None)
+        assert "+45" in result
+        assert "+55" in result
+
+    def test_format_zone_bounds_renders_pawns_with_decimals(self) -> None:
+        """Phase 82 (CR-01): `entry_eval_pawns` band must render as decimal
+        pawns, not centipawns. Pins the precision plumbing introduced alongside
+        `_NON_FRACTIONAL_METRICS`.
+        """
+        from app.services.insights_llm import _format_zone_bounds
+
+        result = _format_zone_bounds("entry_eval_pawns", None)
+        assert "-0.50" in result
+        assert "+0.50" in result
+        # Negative invariant: no centipawn-style render.
+        assert "-50 to" not in result
 
     def test_system_prompt_loaded_from_file(self) -> None:
         """_SYSTEM_PROMPT is the markdown file contents + auto-generated zone appendix.
@@ -1205,7 +1428,7 @@ class TestPromptAssembly:
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="endgame_score",
+            metric="endgame_score_timeline",
             value=0.565,
             zone="typical",
             trend="improving",
@@ -1220,7 +1443,7 @@ class TestPromptAssembly:
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="non_endgame_score",
+            metric="non_endgame_score_timeline",
             value=0.5075,
             zone="typical",
             trend="stable",
@@ -1256,19 +1479,20 @@ class TestPromptAssembly:
         timeline_chunk = prompt[timeline_start:]
 
         # Exactly three [summary <metric>] blocks, one per metric, no dim tag.
-        assert timeline_chunk.count("[summary endgame_score]") == 1
-        assert timeline_chunk.count("[summary non_endgame_score]") == 1
+        # Phase 82 D-01/D-02: renamed to endgame_score_timeline / non_endgame_score_timeline.
+        assert timeline_chunk.count("[summary endgame_score_timeline]") == 1
+        assert timeline_chunk.count("[summary non_endgame_score_timeline]") == 1
         assert timeline_chunk.count("[summary score_gap]") == 1
         # No leftover part-dim-tagged summaries.
         assert "part=endgame" not in timeline_chunk
         assert "part=non_endgame" not in timeline_chunk
         # Exactly three [series ...] blocks, pinned weekly regardless of window.
-        assert timeline_chunk.count("[series endgame_score, last_3mo, weekly]") == 1
-        assert timeline_chunk.count("[series non_endgame_score, last_3mo, weekly]") == 1
+        assert timeline_chunk.count("[series endgame_score_timeline, last_3mo, weekly]") == 1
+        assert timeline_chunk.count("[series non_endgame_score_timeline, last_3mo, weekly]") == 1
         assert timeline_chunk.count("[series score_gap, last_3mo, weekly]") == 1
-        # Deterministic order: endgame_score → non_endgame_score → score_gap.
-        endgame_idx = timeline_chunk.index("[summary endgame_score]")
-        non_endgame_idx = timeline_chunk.index("[summary non_endgame_score]")
+        # Deterministic order: endgame_score_timeline -> non_endgame_score_timeline -> score_gap.
+        endgame_idx = timeline_chunk.index("[summary endgame_score_timeline]")
+        non_endgame_idx = timeline_chunk.index("[summary non_endgame_score_timeline]")
         gap_idx = timeline_chunk.index("[summary score_gap]")
         assert endgame_idx < non_endgame_idx < gap_idx
         # Constant-n disclosure appears (n=12 for endgame/non_endgame, n=24 for gap)
@@ -1885,7 +2109,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v22"
+        assert response.report.prompt_version == "endgame_v23"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1909,7 +2133,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v22"
+        assert log.response_json["prompt_version"] == "endgame_v23"
 
 
 class TestCacheBehavior:

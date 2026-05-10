@@ -63,7 +63,7 @@ from app.services.insights_service import compute_findings
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v22"  # v22 (260503 eval-proxy cutover): rewrote the Conversion / Parity / Recovery glossary entries and the bucket descriptions in the metric glossary to reflect the Stockfish eval at endgame entry replacing the old material_imbalance + 4-ply persistence proxy. Conversion now means "entered with eval ≥ +1.0", Recovery "entered with eval ≤ -1.0", Parity "entered with eval between -1.0 and +1.0". Display threshold expressed as a signed one-decimal pawn value ("+1.0" / "-1.0") to match the rest of the page's eval rendering. v21 (260501-s0u pass2 polish): score_pct_diff in the type WDL chart is now derived from rounded score_pct − opp_score_pct (avoids 1pp mismatch e.g. 47 − 53 = -6 vs the unrounded -6.8 → -7). Raised SAMPLE_QUALITY_BANDS thin_max from 10 to 20 for per-type subsections (results_by_endgame_type, conversion_recovery_by_type) so 10-19 sequences no longer label as `adequate`. v20 (260501-s0u pass2 type_breakdown cleanup): restored the per-type WDL chart at `### Chart: results_by_endgame_type_wdl` (endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff). The v18 conv/recov delta table was redundant with the conversion_recovery_by_type [summary] blocks (same per-type conv_pct / recov_pct + per-class typical bands) and got dropped. Reordered type_breakdown to chart wdl → results_by_endgame_type → conversion_recovery_by_type so the LLM reads aggregate WDL, then per-type win_rate, then per-type Conv/Recov detail. _format_zone_bounds and the zone classifier (insights_service._findings_conversion_recovery_by_type) now dispatch via PER_CLASS_GAUGE_ZONES when a finding carries `endgame_class` for conversion_win_pct / recovery_save_pct, so per-class [summary] zone labels and inline `(typical LO to UP)` match the table-side per-class baselines. v19 (260501-s0u terminology pass): standardize on "endgame type" instead of "endgame class" in LLM-facing strings — column header is now `endgame_type`, caption and prompt prose use "per-type" / "type-specific" / "type baseline" framing. v18 (260501-s0u benchmark calibration v2): drop per-class win_rate framing in favor of per-class delta-from-baseline. Conversion / Recovery are now narrated against class-specific typical bands sourced from PER_CLASS_GAUGE_ZONES (reports/benchmarks-2026-05-01.md). Per-class user prompt payload replaced win_pct/score_pct rows with conv_pct, recov_pct, class baseline midpoints, and signed deltas. type_win_rate_timeline subsection deprecated — no longer rendered on the UI. v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
+_PROMPT_VERSION = "endgame_v23"  # v23 (260510 endgame_start_vs_end): wire Phase 81 entry-eval and endgame-score metrics into the LLM payload via a new `endgame_start_vs_end` subsection under section_id `overall`. Renamed score_timeline `endgame_score` → `endgame_score_timeline` and `non_endgame_score` → `non_endgame_score_timeline` to free the clean `endgame_score` name for the new subsection. Tile color rule amended from sig-only to `zone × p<0.05` (Phase 81 D-09 amendment). EG-entry-eval neutral band tightened from ±0.75 to ±0.50 for both tile and LLM. v22 (260503 eval-proxy cutover): rewrote the Conversion / Parity / Recovery glossary entries and the bucket descriptions in the metric glossary to reflect the Stockfish eval at endgame entry replacing the old material_imbalance + 4-ply persistence proxy. Conversion now means "entered with eval ≥ +1.0", Recovery "entered with eval ≤ -1.0", Parity "entered with eval between -1.0 and +1.0". Display threshold expressed as a signed one-decimal pawn value ("+1.0" / "-1.0") to match the rest of the page's eval rendering. v21 (260501-s0u pass2 polish): score_pct_diff in the type WDL chart is now derived from rounded score_pct − opp_score_pct (avoids 1pp mismatch e.g. 47 − 53 = -6 vs the unrounded -6.8 → -7). Raised SAMPLE_QUALITY_BANDS thin_max from 10 to 20 for per-type subsections (results_by_endgame_type, conversion_recovery_by_type) so 10-19 sequences no longer label as `adequate`. v20 (260501-s0u pass2 type_breakdown cleanup): restored the per-type WDL chart at `### Chart: results_by_endgame_type_wdl` (endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff). The v18 conv/recov delta table was redundant with the conversion_recovery_by_type [summary] blocks (same per-type conv_pct / recov_pct + per-class typical bands) and got dropped. Reordered type_breakdown to chart wdl → results_by_endgame_type → conversion_recovery_by_type so the LLM reads aggregate WDL, then per-type win_rate, then per-type Conv/Recov detail. _format_zone_bounds and the zone classifier (insights_service._findings_conversion_recovery_by_type) now dispatch via PER_CLASS_GAUGE_ZONES when a finding carries `endgame_class` for conversion_win_pct / recovery_save_pct, so per-class [summary] zone labels and inline `(typical LO to UP)` match the table-side per-class baselines. v19 (260501-s0u terminology pass): standardize on "endgame type" instead of "endgame class" in LLM-facing strings — column header is now `endgame_type`, caption and prompt prose use "per-type" / "type-specific" / "type baseline" framing. v18 (260501-s0u benchmark calibration v2): drop per-class win_rate framing in favor of per-class delta-from-baseline. Conversion / Recovery are now narrated against class-specific typical bands sourced from PER_CLASS_GAUGE_ZONES (reports/benchmarks-2026-05-01.md). Per-class user prompt payload replaced win_pct/score_pct rows with conv_pct, recov_pct, class baseline midpoints, and signed deltas. type_win_rate_timeline subsection deprecated — no longer rendered on the UI. v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -98,13 +98,35 @@ _MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
 # 0-100 percentage scale (v6 shape). Keeping the registry/service layer fractional
 # keeps the frontend gauge codegen unchanged; the scale flip lives at the formatter only.
 _NON_FRACTIONAL_METRICS: frozenset[str] = frozenset(
-    {"endgame_elo_gap", "avg_clock_diff_pct", "net_timeout_rate"}
+    {"endgame_elo_gap", "avg_clock_diff_pct", "net_timeout_rate", "entry_eval_pawns"}
 )
+
+# Metrics whose ZONE_REGISTRY entry is a no-op `[0, 1]` placeholder (registered
+# only so `assign_zone` does not raise). They must not render an inline
+# `(typical ...)` band tag, since the band would be meaningless. Phase 82
+# (260510): renamed from the bare `endgame_score` / `non_endgame_score` after
+# the timeline metrics gained the `_timeline` suffix; the new bare
+# `endgame_score` (in subsection `endgame_start_vs_end`) DOES have a real
+# [0.45, 0.55] band and is intentionally absent from this set.
+_NO_BAND_METRICS: frozenset[str] = frozenset(
+    {"endgame_score_timeline", "non_endgame_score_timeline"}
+)
+
+# Metrics whose raw payload value is already on the rendered scale AND should
+# render with sub-integer precision. Phase 82 (260510) added entry_eval_pawns
+# at 2 decimals so values like `+0.47` survive the round-trip into the prompt
+# instead of collapsing to `+0` under the default `:+.0f` format.
+_VALUE_PRECISION: dict[str, int] = {"entry_eval_pawns": 2}
 
 
 def _scale_for_metric(metric_id: str) -> float:
     """Multiplier applied to a raw metric value before rendering in the prompt."""
     return 1.0 if metric_id in _NON_FRACTIONAL_METRICS else 100.0
+
+
+def _precision_for_metric(metric_id: str) -> int:
+    """Decimal precision for rendering a metric's scaled value."""
+    return _VALUE_PRECISION.get(metric_id, 0)
 
 
 # Batch 2 enrichment thresholds (v6).
@@ -135,6 +157,10 @@ _DELTA_SMALL_SAMPLE_RATIO: float = 0.20  # last_3mo_n / all_time_n below this �
 # percent-scale metrics (0-100) and Elo-scale metrics.
 _PROXIMITY_PCT_THRESHOLD: float = 2.0
 _PROXIMITY_ELO_THRESHOLD: float = 20.0
+# Phase 82: entry_eval_pawns lives on a sub-integer scale (raw pawns).
+# Distance-from-band-edge threshold is 5 cp ≈ 0.05 pawns — same eyeball
+# proximity as ±2pp on a 0-100 scale.
+_PROXIMITY_PAWN_THRESHOLD: float = 0.05
 
 # v7 weakest-type tag: requires the lowest score_pct to be clearly separated
 # from the next-lowest AND to have a meaningful sample (avoids noise calls).
@@ -168,28 +194,34 @@ def _build_zone_threshold_appendix() -> str:
     lines.append("")
     for metric_id, spec in ZONE_REGISTRY.items():
         scale = _scale_for_metric(metric_id)
+        precision = _precision_for_metric(metric_id)
         lo = spec.typical_lower * scale
         hi = spec.typical_upper * scale
         if spec.direction == "higher_is_better":
             lines.append(
-                f"- `{metric_id}`: weak<{lo:.0f}, typical [{lo:.0f}, {hi:.0f}], strong>{hi:.0f}"
+                f"- `{metric_id}`: weak<{lo:.{precision}f}, "
+                f"typical [{lo:.{precision}f}, {hi:.{precision}f}], "
+                f"strong>{hi:.{precision}f}"
             )
         else:
             lines.append(
-                f"- `{metric_id}` (lower_is_better): strong<={lo:.0f}, "
-                f"typical [{lo:.0f}, {hi:.0f}], "
-                f"weak>{hi:.0f}"
+                f"- `{metric_id}` (lower_is_better): strong<={lo:.{precision}f}, "
+                f"typical [{lo:.{precision}f}, {hi:.{precision}f}], "
+                f"weak>{hi:.{precision}f}"
             )
     lines.append("")
     lines.append("Bucketed metrics (one band per MaterialBucket):")
     for metric_id, buckets in BUCKETED_ZONE_REGISTRY.items():
         scale = _scale_for_metric(metric_id)
+        precision = _precision_for_metric(metric_id)
         lines.append(f"- `{metric_id}`:")
         for bucket, spec in buckets.items():
             lo = spec.typical_lower * scale
             hi = spec.typical_upper * scale
             lines.append(
-                f"  - {bucket}: weak<{lo:.0f}, typical [{lo:.0f}, {hi:.0f}], strong>{hi:.0f}"
+                f"  - {bucket}: weak<{lo:.{precision}f}, "
+                f"typical [{lo:.{precision}f}, {hi:.{precision}f}], "
+                f"strong>{hi:.{precision}f}"
             )
     return "\n".join(lines) + "\n"
 
@@ -327,12 +359,18 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     finding's `zone` label was computed against. Without this, every per-type
     Conv/Recov line printed the same global band and contradicted the table.
 
-    Phase 68 (260424-pc6): endgame_score / non_endgame_score have no
-    calibrated zone band — their registry entries span [0, 1] only so
+    Phase 68 (260424-pc6): endgame_score_timeline / non_endgame_score_timeline
+    have no calibrated zone band — their registry entries span [0, 1] only so
     assign_zone does not raise. Skip the bounds render for those two so
     the prompt does not show a meaningless `(typical +0 to +100)` tag.
+    Phase 82 (260510): renamed from `endgame_score` / `non_endgame_score`
+    after the timeline metric ids gained a `_timeline` suffix to free the
+    clean `endgame_score` slot for the new `endgame_start_vs_end` subsection
+    (which DOES have a calibrated [0.45, 0.55] band that should render).
+    The skip-set lives in `_NO_BAND_METRICS` so future renames have a
+    single discoverable touchpoint.
     """
-    if metric_id in ("endgame_score", "non_endgame_score"):
+    if metric_id in _NO_BAND_METRICS:
         return ""
     spec: ZoneSpec | None = None
     bucket = dimension.get("bucket") if dimension else None
@@ -354,10 +392,11 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     if spec is None:
         return ""
     scale = _scale_for_metric(metric_id)
+    precision = _precision_for_metric(metric_id)
     lo = spec.typical_lower * scale
     hi = spec.typical_upper * scale
     direction_note = ", lower is better" if spec.direction == "lower_is_better" else ""
-    return f"(typical {lo:+.0f} to {hi:+.0f}{direction_note})"
+    return f"(typical {lo:+.{precision}f} to {hi:+.{precision}f}{direction_note})"
 
 
 def _format_filters_for_prompt(filters: FilterContext) -> list[str]:
@@ -752,9 +791,12 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
     scale = _scale_for_metric(metric_id)
     lo = spec.typical_lower * scale
     hi = spec.typical_upper * scale
-    threshold = (
-        _PROXIMITY_ELO_THRESHOLD if metric_id == "endgame_elo_gap" else _PROXIMITY_PCT_THRESHOLD
-    )
+    if metric_id == "endgame_elo_gap":
+        threshold = _PROXIMITY_ELO_THRESHOLD
+    elif metric_id == "entry_eval_pawns":
+        threshold = _PROXIMITY_PAWN_THRESHOLD
+    else:
+        threshold = _PROXIMITY_PCT_THRESHOLD
     if abs(value_scaled - lo) <= threshold or abs(value_scaled - hi) <= threshold:
         return " [near edge]"
     return ""
@@ -929,9 +971,14 @@ def _within_noise_shift(
     shift: float,
 ) -> bool:
     """Shift is within-noise when it's below the metric cap AND the last_3mo window is much smaller."""
-    noise_cap = (
-        _DELTA_WITHIN_NOISE_ELO if metric == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
-    )
+    if metric == "endgame_elo_gap":
+        noise_cap = _DELTA_WITHIN_NOISE_ELO
+    elif metric == "entry_eval_pawns":
+        # Phase 82: 0.05 pawns is the within-noise cap for entry_eval_pawns
+        # (matches the proximity threshold; ~5 cp is below the calibrated ±0.5 band).
+        noise_cap = 0.05
+    else:
+        noise_cap = _DELTA_WITHIN_NOISE_SHIFT
     sample_mismatch = (
         all_time.sample_size > 0
         and (last_3mo.sample_size / all_time.sample_size) < _DELTA_SMALL_SAMPLE_RATIO
@@ -967,13 +1014,14 @@ def _summary_window_line(
     applicable. All numbers on the UI 0-100 scale (or Elo points).
     """
     scale = _scale_for_metric(finding.metric)
+    precision = _precision_for_metric(finding.metric)
     value_scaled = finding.value * scale
     bounds = _format_zone_bounds(finding.metric, finding.dimension)
     zone_part = f"zone={finding.zone}"
     if bounds:
         zone_part += f" {bounds}"
 
-    parts: list[str] = [f"mean={value_scaled:+.0f}", f"n={finding.sample_size}"]
+    parts: list[str] = [f"mean={value_scaled:+.{precision}f}", f"n={finding.sample_size}"]
     if series_points and len(series_points) >= _TREND_MIN_POINTS:
         info = _trend_info(finding.metric, series_points)
         if info is not None:
@@ -983,7 +1031,7 @@ def _summary_window_line(
             parts.append(zone_part)
             parts.append(f"quality={finding.sample_quality}")
             parts.append(f"trend={direction}")
-            parts.append(f"std={series_std:.0f}")
+            parts.append(f"std={series_std:.{precision}f}")
             if within_noise:
                 parts.append("within-noise")
             if stale_suffix:
@@ -1009,8 +1057,9 @@ def _summary_shift_line(
 ) -> str:
     """Render `  shift=<Z>[, within-noise]` closing a [summary] block with paired windows."""
     scale = _scale_for_metric(metric)
+    precision = _precision_for_metric(metric)
     shift = (last_3mo.value - all_time.value) * scale
-    line = f"  shift={shift:+.0f}"
+    line = f"  shift={shift:+.{precision}f}"
     if _within_noise_shift(metric, all_time, last_3mo, shift):
         line += ", within-noise"
     return line
@@ -1271,6 +1320,7 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
             # Scalar `overall` subsection emits only when the overall_wdl chart
             # does NOT (C4 gate below suppresses it when both exist).
             ("subsection", "overall"),
+            ("subsection", "endgame_start_vs_end"),
             ("subsection", "score_timeline"),
         ],
     ),
