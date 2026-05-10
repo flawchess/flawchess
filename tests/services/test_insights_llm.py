@@ -561,6 +561,98 @@ class TestPromptAssembly:
         assert "mean=+58" in prompt
         assert "(typical +45 to +55)" in prompt
 
+    def test_endgame_start_vs_end_renders_only_populated_tile(self) -> None:
+        """Phase 82 (D-17, WR-01): asymmetric tile case — `entry_eval_pawns` gated
+        out (n_eval < 10, e.g. Stockfish backfill incomplete) but `endgame_score`
+        populated. The subsection header must render with exactly one [summary]
+        block (the populated one); the missing tile must NOT appear, and the
+        populated tile must NOT be silently dropped along with it.
+        """
+        import math
+
+        filters = _sample_filter_context()
+        # Tile 1 — empty/thin (gated out). Mirrors what _empty_finding produces.
+        empty_entry_eval = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="entry_eval_pawns",
+            value=math.nan,
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=0,
+            sample_quality="thin",
+            is_headline_eligible=False,
+            dimension=None,
+            series=None,
+        )
+        # Tile 2 — populated.
+        endgame_score = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="endgame_score",
+            value=0.52,
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=80,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        tab_findings = _fake_findings(filters, findings=[empty_entry_eval, endgame_score])
+        prompt = _assemble_user_prompt(tab_findings)
+
+        # Section header renders.
+        assert "### Subsection: endgame_start_vs_end" in prompt
+        # Populated tile appears.
+        assert "[summary endgame_score]" in prompt
+        # Empty tile is filtered (NaN + sample_size==0 + thin → A2 filter).
+        assert "[summary entry_eval_pawns]" not in prompt
+
+    def test_format_zone_bounds_skips_no_op_timeline_metrics(self) -> None:
+        """Phase 82 (WR-03): the no-op `[0, 1]` band on the renamed timeline
+        metrics must NOT render an inline `(typical ...)` tag — that would put
+        a meaningless `(typical +0 to +100)` next to every score-timeline finding.
+        Direct unit test on the skip-list mechanism so a future rename of either
+        the MetricId Literal or `_NO_BAND_METRICS` cannot silently regress.
+        """
+        from app.services.insights_llm import _format_zone_bounds, _NO_BAND_METRICS
+
+        assert _format_zone_bounds("endgame_score_timeline", None) == ""
+        assert _format_zone_bounds("non_endgame_score_timeline", None) == ""
+        # Pin the constant contents so a future rename has a single touchpoint.
+        assert _NO_BAND_METRICS == frozenset(
+            {"endgame_score_timeline", "non_endgame_score_timeline"}
+        )
+
+    def test_format_zone_bounds_renders_for_endgame_score(self) -> None:
+        """Phase 82 (WR-03): the repurposed `endgame_score` (in subsection
+        endgame_start_vs_end) DOES have a calibrated [0.45, 0.55] band; the
+        skip-list must NOT mute it. Negative pair to the timeline test above.
+        """
+        from app.services.insights_llm import _format_zone_bounds
+
+        result = _format_zone_bounds("endgame_score", None)
+        assert "+45" in result
+        assert "+55" in result
+
+    def test_format_zone_bounds_renders_pawns_with_decimals(self) -> None:
+        """Phase 82 (CR-01): `entry_eval_pawns` band must render as decimal
+        pawns, not centipawns. Pins the precision plumbing introduced alongside
+        `_NON_FRACTIONAL_METRICS`.
+        """
+        from app.services.insights_llm import _format_zone_bounds
+
+        result = _format_zone_bounds("entry_eval_pawns", None)
+        assert "-0.50" in result
+        assert "+0.50" in result
+        # Negative invariant: no centipawn-style render.
+        assert "-50 to" not in result
+
     def test_system_prompt_loaded_from_file(self) -> None:
         """_SYSTEM_PROMPT is the markdown file contents + auto-generated zone appendix.
 

@@ -163,8 +163,27 @@ class TestNewMetricZones:
     def test_endgame_start_vs_end_thin_below_10(self) -> None:
         assert sample_quality("endgame_start_vs_end", 9) == "thin"
 
+    def test_endgame_start_vs_end_adequate_at_10(self) -> None:
+        """Boundary: n=10 is the strict-`<` floor for thin; must be `adequate`.
+
+        Phase 82 IN-03: paired with test_tile1_at_n_eval_10_is_populated_adequate
+        in test_insights_service.py — both pin the off-by-one between the
+        emitter's `< 10` empty gate and the band classifier so a future band
+        shift cannot produce an emitted finding (n=10 not empty) that is then
+        classified as `thin` and suppressed at headline-eligibility time.
+        """
+        assert sample_quality("endgame_start_vs_end", 10) == "adequate"
+
     def test_endgame_start_vs_end_adequate_between(self) -> None:
         assert sample_quality("endgame_start_vs_end", 25) == "adequate"
+
+    def test_endgame_start_vs_end_adequate_at_49(self) -> None:
+        """Boundary: n=49 just below the rich threshold (50) is still adequate."""
+        assert sample_quality("endgame_start_vs_end", 49) == "adequate"
+
+    def test_endgame_start_vs_end_rich_at_50(self) -> None:
+        """Boundary: n=50 is the strict-`<` floor for adequate; must be `rich`."""
+        assert sample_quality("endgame_start_vs_end", 50) == "rich"
 
     def test_endgame_start_vs_end_rich_above_50(self) -> None:
         assert sample_quality("endgame_start_vs_end", 60) == "rich"

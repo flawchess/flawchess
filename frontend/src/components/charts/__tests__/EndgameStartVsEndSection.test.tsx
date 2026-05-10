@@ -223,7 +223,8 @@ describe('EndgameStartVsEndSection', () => {
 
   it(
     'Tile 1 value text is unstyled for value 0.46 + p<0.001 ' +
-    '(Phase 82 D-14: user-28 borderline-but-sig case reads neutral, tile and LLM agree)',
+    '(Phase 82 D-14: 0.46 sits inside the tightened ±0.5 neutral band, ' +
+    'so significance alone does not paint the tile; tile and LLM agree on neutral)',
     () => {
       render(
         <EndgameStartVsEndSection

@@ -405,7 +405,17 @@ def _finding_overall(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> SubsectionFinding:
-    """overall -> score_gap from score_gap_material.score_difference."""
+    """overall -> score_gap from score_gap_material.score_difference.
+
+    Empty-window gate intentionally diverges from `_findings_endgame_start_vs_end`'s
+    `< 10` floor. The `score_gap` denominator is endgame + non_endgame games, so a
+    `>= 1` payload is informationally meaningful even when each side alone would
+    be thin. The downstream `_assemble_user_prompt` filter (sample_size == 0 AND
+    quality == "thin") still drops sub-`SAMPLE_QUALITY_BANDS["overall"][0]` (50)
+    payloads from the rendered prompt via the per-finding sample-quality classifier,
+    so 1..9-game payloads are emitted but suppressed before the LLM sees them.
+    Keep the `== 0` floor here; tighten the rendered-output filter only.
+    """
     sample_size = (
         response.performance.endgame_wdl.total + response.performance.non_endgame_wdl.total
     )
@@ -448,9 +458,7 @@ def _findings_endgame_start_vs_end(
     # Tile 1 — entry eval (D-17: gate on entry_eval_n >= 10)
     n_eval = perf.entry_eval_n
     entry_eval = perf.entry_eval_mean_pawns
-    if n_eval < 10 or entry_eval is None:
-        # entry_eval is None only when n_eval < 10 — gate above covers both.
-        # Defensive: model_construct callers may omit the field (defaults to 0.0).
+    if n_eval < 10:
         tile1 = _empty_finding("endgame_start_vs_end", window, "entry_eval_pawns")
     else:
         eval_quality = sample_quality("endgame_start_vs_end", n_eval)

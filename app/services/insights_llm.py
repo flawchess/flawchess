@@ -101,6 +101,17 @@ _NON_FRACTIONAL_METRICS: frozenset[str] = frozenset(
     {"endgame_elo_gap", "avg_clock_diff_pct", "net_timeout_rate", "entry_eval_pawns"}
 )
 
+# Metrics whose ZONE_REGISTRY entry is a no-op `[0, 1]` placeholder (registered
+# only so `assign_zone` does not raise). They must not render an inline
+# `(typical ...)` band tag, since the band would be meaningless. Phase 82
+# (260510): renamed from the bare `endgame_score` / `non_endgame_score` after
+# the timeline metrics gained the `_timeline` suffix; the new bare
+# `endgame_score` (in subsection `endgame_start_vs_end`) DOES have a real
+# [0.45, 0.55] band and is intentionally absent from this set.
+_NO_BAND_METRICS: frozenset[str] = frozenset(
+    {"endgame_score_timeline", "non_endgame_score_timeline"}
+)
+
 # Metrics whose raw payload value is already on the rendered scale AND should
 # render with sub-integer precision. Phase 82 (260510) added entry_eval_pawns
 # at 2 decimals so values like `+0.47` survive the round-trip into the prompt
@@ -356,8 +367,10 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     after the timeline metric ids gained a `_timeline` suffix to free the
     clean `endgame_score` slot for the new `endgame_start_vs_end` subsection
     (which DOES have a calibrated [0.45, 0.55] band that should render).
+    The skip-set lives in `_NO_BAND_METRICS` so future renames have a
+    single discoverable touchpoint.
     """
-    if metric_id in ("endgame_score_timeline", "non_endgame_score_timeline"):
+    if metric_id in _NO_BAND_METRICS:
         return ""
     spec: ZoneSpec | None = None
     bucket = dimension.get("bucket") if dimension else None

@@ -809,6 +809,55 @@ class TestFindingsEndgameStartVsEnd:
         assert findings[0].sample_quality == "thin"
         assert findings[1].sample_quality == "thin"
 
+    def test_tile1_at_n_eval_10_is_populated_adequate(self) -> None:
+        """Boundary: entry_eval_n == 10 (the strict-`<` floor) -> tile1 populated, adequate.
+
+        Phase 82 D-17 gates on `n_eval < 10`. n=10 must NOT be empty. Pairs with
+        SAMPLE_QUALITY_BANDS["endgame_start_vs_end"] = (10, 50) which classifies
+        n=10 as `adequate` (`thin` is `< 10`).
+        """
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_eval_mean_pawns=0.30,
+            entry_eval_n=10,
+            wins=25, draws=10, losses=15,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].metric == "entry_eval_pawns"
+        assert findings[0].sample_size == 10
+        assert findings[0].sample_quality == "adequate"
+        assert findings[0].is_headline_eligible is True
+
+    def test_tile2_at_total_10_is_populated_adequate(self) -> None:
+        """Boundary: endgame_wdl.total == 10 -> tile2 populated, adequate."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_eval_n=50,
+            wins=5, draws=2, losses=3,  # total=10
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[1].metric == "endgame_score"
+        assert findings[1].sample_size == 10
+        assert findings[1].sample_quality == "adequate"
+        assert findings[1].is_headline_eligible is True
+
+    def test_tile1_at_n_eval_9_is_thin(self) -> None:
+        """Boundary: entry_eval_n == 9 (just below the floor) -> empty/thin.
+
+        Pins the off-by-one: 9 < 10 -> empty_finding, no headline.
+        """
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(entry_eval_n=9, wins=25, draws=10, losses=15)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].sample_quality == "thin"
+        assert findings[0].is_headline_eligible is False
+
     def test_zone_strong_for_entry_eval_above_band(self) -> None:
         """entry_eval_mean_pawns = 0.80 -> zone = 'strong' (above typical_upper=0.50)."""
         from app.services.insights_service import _findings_endgame_start_vs_end
