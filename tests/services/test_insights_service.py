@@ -709,3 +709,188 @@ class TestFindingsEndgameMetrics:
 
         recov = next(f for f in findings if f.dimension and f.dimension.get("bucket") == "recovery")
         assert recov.value == pytest.approx(0.35)
+
+
+class TestFindingsEndgameStartVsEnd:
+    """Unit tests for _findings_endgame_start_vs_end (Phase 82 D-16/D-17/D-18/D-19/D-20).
+
+    Covers two-tile shape (entry_eval_pawns + endgame_score), independent gates
+    on entry_eval_n and endgame_wdl.total, zone boundary dispatch via
+    assign_zone, and is_headline_eligible = (sample_quality != "thin").
+    """
+
+    def _make_overview(
+        self,
+        *,
+        entry_eval_mean_pawns: float = 0.0,
+        entry_eval_n: int = 50,
+        wins: int = 25,
+        draws: int = 10,
+        losses: int = 15,
+    ) -> Any:
+        """Build a minimal EndgameOverviewResponse for endgame_start_vs_end tests."""
+        from app.schemas.endgames import (
+            EndgameOverviewResponse,
+            EndgamePerformanceResponse,
+            EndgameWDLSummary,
+        )
+
+        total = wins + draws + losses
+        perf = EndgamePerformanceResponse.model_construct(
+            entry_eval_mean_pawns=entry_eval_mean_pawns,
+            entry_eval_n=entry_eval_n,
+            endgame_wdl=EndgameWDLSummary(
+                wins=wins,
+                draws=draws,
+                losses=losses,
+                total=total,
+                win_pct=wins / total * 100 if total else 0.0,
+                draw_pct=draws / total * 100 if total else 0.0,
+                loss_pct=losses / total * 100 if total else 0.0,
+            ),
+            non_endgame_wdl=EndgameWDLSummary(
+                wins=0, draws=0, losses=0, total=0,
+                win_pct=0.0, draw_pct=0.0, loss_pct=0.0,
+            ),
+            endgame_win_rate=wins / total * 100 if total else 0.0,
+        )
+        return EndgameOverviewResponse.model_construct(performance=perf)
+
+    def test_populated_both_tiles_returns_two_findings(self) -> None:
+        """Both gates pass -> exactly 2 findings with correct metric ids."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_eval_mean_pawns=0.62,
+            entry_eval_n=50,
+            wins=25,
+            draws=10,
+            losses=15,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert len(findings) == 2
+        assert findings[0].metric == "entry_eval_pawns"
+        assert findings[1].metric == "endgame_score"
+
+    def test_empty_tile1_when_n_eval_lt_10(self) -> None:
+        """entry_eval_n < 10 -> tile1 is empty (thin, not headline eligible)."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(entry_eval_n=5, wins=25, draws=10, losses=15)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert len(findings) == 2
+        assert findings[0].sample_quality == "thin"
+        assert findings[0].is_headline_eligible is False
+        # tile2 is still populated
+        assert findings[1].sample_quality != "thin"
+
+    def test_empty_tile2_when_total_lt_10(self) -> None:
+        """endgame_wdl.total < 10 -> tile2 is empty; tile1 is populated."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(entry_eval_n=50, wins=3, draws=1, losses=1)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert len(findings) == 2
+        assert findings[1].sample_quality == "thin"
+        assert findings[1].is_headline_eligible is False
+        assert findings[0].sample_quality != "thin"
+
+    def test_empty_both_when_both_lt_10(self) -> None:
+        """Both gates fail -> both findings are empty."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(entry_eval_n=5, wins=2, draws=1, losses=2)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert len(findings) == 2
+        assert findings[0].sample_quality == "thin"
+        assert findings[1].sample_quality == "thin"
+
+    def test_zone_strong_for_entry_eval_above_band(self) -> None:
+        """entry_eval_mean_pawns = 0.80 -> zone = 'strong' (above typical_upper=0.50)."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(entry_eval_mean_pawns=0.80, entry_eval_n=50)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].zone == "strong"
+
+    def test_zone_weak_for_entry_eval_below_band(self) -> None:
+        """entry_eval_mean_pawns = -0.80 -> zone = 'weak' (below typical_lower=-0.50)."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(entry_eval_mean_pawns=-0.80, entry_eval_n=50)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].zone == "weak"
+
+    def test_zone_typical_for_entry_eval_inside_band(self) -> None:
+        """entry_eval_mean_pawns = 0.30 -> zone = 'typical' (inside [-0.50, 0.50])."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(entry_eval_mean_pawns=0.30, entry_eval_n=50)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].zone == "typical"
+
+    def test_zone_strong_for_endgame_score_above_band(self) -> None:
+        """wins=12, draws=4, losses=4 -> score=14/20=0.70 -> zone='strong'."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(wins=12, draws=4, losses=4)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[1].zone == "strong"
+
+    def test_zone_weak_for_endgame_score_below_band(self) -> None:
+        """wins=4, draws=4, losses=12 -> score=6/20=0.30 -> zone='weak'."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(wins=4, draws=4, losses=12)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[1].zone == "weak"
+
+    def test_dimension_is_none(self) -> None:
+        """Both findings must have dimension=None (no per-dim fan-out, D-20)."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview()
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].dimension is None
+        assert findings[1].dimension is None
+
+    def test_series_is_none(self) -> None:
+        """Both findings must have series=None (non-timeline finding, D-19)."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview()
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].series is None
+        assert findings[1].series is None
+
+    def test_populated_adequate_quality_is_headline_eligible(self) -> None:
+        """n=25 (between thin=10 and adequate=50) -> is_headline_eligible=True."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(entry_eval_n=25)
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].is_headline_eligible is True
+
+    def test_subsection_and_window_propagate(self) -> None:
+        """Both findings carry correct subsection_id and window."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview()
+        findings = _findings_endgame_start_vs_end(response, "last_3mo")
+
+        for f in findings:
+            assert f.subsection_id == "endgame_start_vs_end"
+            assert f.window == "last_3mo"
+            assert f.parent_subsection_id is None
