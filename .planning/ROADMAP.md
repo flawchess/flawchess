@@ -18,7 +18,7 @@
 - ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
 - ✅ **v1.15 Eval-Based Endgame Classification** — Phases 78, 79 (shipped 2026-05-03; VAL-01 / PHASE-VAL-01 rescinded) — see [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md)
-- 🚧 **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81+ (in progress, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`), plus opportunistic UX fixes that fall in the same area. Phase 80: opening-stats columns for middlegame-entry eval and clock diff. Phase 80.1: include transpositions in Move Explorer and Opening Insights stats. Phase 81: twin-tile (entry eval + score gap) decomposition in Endgame Overall Performance. More phases TBD.
+- 🚧 **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82+ (in progress, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`), plus opportunistic UX fixes that fall in the same area. Phase 80: opening-stats columns for middlegame-entry eval and clock diff. Phase 80.1: include transpositions in Move Explorer and Opening Insights stats. Phase 81: twin-tile (entry eval + endgame score) decomposition in Endgame Overall Performance. Phase 82: LLM prompt awareness of the Phase 81 metrics (insights pipeline + prompt update). More phases TBD.
 
 ## Phases
 
@@ -30,6 +30,7 @@ Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlega
 - [ ] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (6 plans) — planned
 - [x] Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats (4/4 plans) — completed 2026-05-07
 - [ ] Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance (5 plans) — planned
+- [ ] Phase 82: LLM prompt awareness of Endgame Start vs End metrics (4 plans) — planned
 
 ### Phase 80: Opening stats: middlegame-entry eval and clock-diff columns
 
@@ -98,6 +99,26 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 81-05-PLAN.md — Manual UAT checkpoint (visual parity, mobile stacking, popover content, three-state color) (Wave 4)
+
+### Phase 82: LLM prompt awareness of Endgame Start vs End metrics
+
+**Goal:** Wire the two Phase 81 metrics (`entry_eval_mean_pawns` + `endgame_score_p_value` against 50%) through the Endgame Insights LLM pipeline so the narrated Endgame Insights section can mention them alongside Conversion / Parity / Recovery and the score-gap timeline. Phase 81 was purely additive UI; the LLM prompt path was deliberately deferred. Today the user-visible "Endgame Start vs End" tiles are in production but `app/services/insights_service.py` emits no findings for either metric and `app/prompts/endgame_insights.md` has no glossary entry or subsection for them — the LLM can't narrate ~⅓ of the visible Endgame Overall Performance section. This phase closes that gap.
+
+**Requirements:** TBD (defined during /gsd-discuss-phase 82)
+
+**Depends on:** Phase 81 shipped (the Phase 81 schema fields `entry_eval_mean_pawns`, `entry_eval_n`, `entry_eval_p_value`, `endgame_score_p_value` already populated). Independent of Phase 80 / Phase 80.1.
+
+**Plans:** 4 plans (Plans 1–2 of SEED-013 — extend `/benchmarks` SKILL.md and run /benchmarks — already shipped via `reports/benchmarks-2026-05-10.md` §0 "Endgame score" + §3 EG-entry baseline & distributions; Plan 6's tile-color rule amendment may ship as a follow-up `/gsd-quick` rather than in-phase).
+
+**Context:** Sections §0 (Endgame score, per-user) and §3 (EG-entry eval, per-(user, color)) of `reports/benchmarks-2026-05-10.md` provide the population data needed to bake cohort bands into the LLM zone classification. Key benchmark verdicts:
+- **EG-entry eval**: pooled `[p25, p75] = [-0.56, +0.75]` pawns; TC review (max d=0.22), ELO review (max d=0.28) ⇒ **single global zone** suffices; live tile already uses `±0.75` neutral. ELO ramp `-15 → +22 cp` (800 → 2400) is real but small.
+- **Endgame score**: pooled `[p25, p75] = [0.4627, 0.5581]`; TC review (max d=0.27), ELO **keep separate** (max d=0.84, 800 vs 2400). Per-ELO `ENDGAME_SCORE_ZONES` registry justified by separation (mirrors `ENDGAME_SKILL_ZONES`); live shared `SCORE_BULLET_NEUTRAL` constants stay untouched (they also drive the Openings score bullet — different population).
+
+The new findings emit a **`verdict`** field carrying the sig-test outcome that `zone` (cohort-band) cannot capture. The pair `(zone=typical, verdict=above_null)` with high n is exactly the user-28 pattern: cohort says "ordinary", sig test says "very confident this is non-zero" — the LLM combines them. Without the new field the LLM would skip these cohort-typical findings.
+
+Tile-color rule amendment is small enough to ship as a separate `/gsd-quick` after Phase 82 lands the cohort bands: switch `EndgameStartVsEndSection` from "sig-only" coloring to `(value in green/red band) AND p < 0.05`. Borderline cases (e.g. user 28: `+0.46 inside typical, p<0.001`) correctly read as **neutral on the tile** while the LLM still narrates them via the `verdict` field. Defer scope decision (in-phase vs split) to /gsd-discuss-phase 82.
+
+Source: `.planning/seeds/SEED-013-llm-prompt-awareness-of-endgame-start-vs-end.md`. Population reference: `reports/benchmarks-2026-05-10.md` §0 + §3.
 
 </details>
 
