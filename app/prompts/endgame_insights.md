@@ -56,10 +56,20 @@ Forbidden phrasings when `within-noise` is present:
 Legal frames when `within-noise` is present:
 - ✓ "Recent value (last 3 months): X%"
 - ✓ "Over the last 3 months: X% (typical over the window)"
-- ✓ "Currently sitting at X%"
-- ✓ "Stable at X% over the recent window"
+- ✓ "Stable over the last 3 months at X%"
+- ✓ "All-time aggregate sits at X% (the gauge value)"
 
 This applies to the overview paragraph text as much as to section bullets.
+
+## Anchoring window references — last_3mo vs all_time
+
+When citing a `last_3mo` value, every sentence that quotes the number MUST contain an explicit "last 3 months" anchor — "in the last 3 months", "over the last 3 months", or "across the last 3 months" are all fine. The user cannot see `last_3mo` aggregates on the dashboard; the headline gauges show `all_time` aggregates. Naming a `last_3mo` value without the window anchor leaves the user hunting for a number that simply is not on screen.
+
+Forbidden anchors when quoting a `last_3mo` value: "currently", "recently", "lately", "of late", "now", "today", "at the moment", "the recent window", "right now", "presently". These are acceptable only when quoting an `all_time` aggregate.
+
+When citing an `all_time` mean, prefer "all-time" / "overall" / "across all games" anchors, or quote the value without a temporal anchor at all. Vague present-tense framings ("currently", "today") are acceptable here because the dashboard gauges are the `all_time` aggregate.
+
+If you want to mention a metric without a window comparison, prefer the `all_time` value so the narration matches what the user sees on screen.
 
 ## UI vocabulary — match what the user sees
 
@@ -138,7 +148,7 @@ Rules for narrating trends:
 - When `trend=` is absent from the summary, too few buckets remain — do not narrate a trend.
 - When narrating an aggregate number (all_time or last_3mo), always cite the summary's `mean`, never a bucket value from the raw series. Cite a bucket value only when explicitly narrating a specific bucket (e.g. "after the mid-2024 lull").
 
-Stale combos: when a window line carries `stale: ...`, treat that window as historical — do not frame it as present-day performance. For `endgame_elo_gap`, per-combo series sometimes end well before the most recent data appears in other combos; their series blocks are dropped when a live combo exists, so narrate the live combo instead.
+Stale combos: when a window line carries `stale: ...`, do NOT cite that window's `mean` (or any other numeric field — `n`, `trend`, `std`, bucket counts) in the narrative. You may reference the combo qualitatively in past tense ("previously played", "historically ranged at this level") when it adds useful context, but no specific value from the stale window appears in the narration. This rule applies to BOTH the `all_time` and `last_3mo` window lines of a stale series — even when only the `all_time` line carries the stale marker, the corresponding `last_3mo` data for the same series is also treated as not-narratable. For `endgame_elo_gap`, per-combo series sometimes end well before the most recent data appears in other combos; their series blocks are dropped when a live combo exists, so narrate the live combo instead.
 
 ## Precomputed signals
 
