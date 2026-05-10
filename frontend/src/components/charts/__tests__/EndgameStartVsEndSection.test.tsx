@@ -186,11 +186,11 @@ describe('EndgameStartVsEndSection', () => {
     expect(valueSpan.style.color).toBe('');
   });
 
-  it('Tile 1 value text is unstyled when significant but inside the neutral band', () => {
+  it('Tile 1 value text is unstyled when significant but inside the neutral band (±0.5, Phase 82 D-09)', () => {
     render(
       <EndgameStartVsEndSection
         data={buildPerf({
-          entry_eval_mean_pawns: 0.5,
+          entry_eval_mean_pawns: 0.4,        // Clearly inside tightened ±0.5 band → NEUTRAL
           entry_eval_p_value: 0.001,
           entry_eval_n: 50,
         })}
@@ -200,6 +200,65 @@ describe('EndgameStartVsEndSection', () => {
     const valueSpan = within(tile).getByTestId('entry-eval-value');
     expect(valueSpan.style.color).toBe('');
   });
+
+  it(
+    'Tile 1 value text is ZONE_SUCCESS at the ±0.5 boundary when significant ' +
+    '(Phase 82 D-09 + D-12: boundary case under tightened band)',
+    () => {
+      render(
+        <EndgameStartVsEndSection
+          data={buildPerf({
+            entry_eval_mean_pawns: 0.5,        // ON the new boundary → ZONE_SUCCESS
+            entry_eval_p_value: 0.001,
+            entry_eval_n: 50,
+          })}
+        />,
+      );
+      const valueSpan = within(screen.getByTestId('tile-entry-eval'))
+        .getByTestId('entry-eval-value');
+      expect(normalizeColor(valueSpan.style.color))
+        .toBe(normalizeColor(ZONE_SUCCESS));
+    },
+  );
+
+  it(
+    'Tile 1 value text is unstyled for value 0.46 + p<0.001 ' +
+    '(Phase 82 D-14: user-28 borderline-but-sig case reads neutral, tile and LLM agree)',
+    () => {
+      render(
+        <EndgameStartVsEndSection
+          data={buildPerf({
+            entry_eval_mean_pawns: 0.46,       // Inside ±0.5 band → NEUTRAL regardless of significance
+            entry_eval_p_value: 0.001,
+            entry_eval_n: 50,
+          })}
+        />,
+      );
+      const valueSpan = within(screen.getByTestId('tile-entry-eval'))
+        .getByTestId('entry-eval-value');
+      expect(valueSpan.style.color).toBe('');
+    },
+  );
+
+  it(
+    'Tile 1 value text is ZONE_DANGER for value -0.6 + p<0.05 ' +
+    '(Phase 82 D-12: zone × sig negative case)',
+    () => {
+      render(
+        <EndgameStartVsEndSection
+          data={buildPerf({
+            entry_eval_mean_pawns: -0.6,
+            entry_eval_p_value: 0.01,
+            entry_eval_n: 50,
+          })}
+        />,
+      );
+      const valueSpan = within(screen.getByTestId('tile-entry-eval'))
+        .getByTestId('entry-eval-value');
+      expect(normalizeColor(valueSpan.style.color))
+        .toBe(normalizeColor(ZONE_DANGER));
+    },
+  );
 
   it('Tile 2 value text is ZONE_SUCCESS when score is high + p < 0.05', () => {
     render(
@@ -270,7 +329,7 @@ describe('EndgameStartVsEndSection', () => {
     render(<EndgameStartVsEndSection data={buildPerf()} />);
     const calls = vi.mocked(MiniBulletChart).mock.calls;
     // Find the call that came from Tile 1: identified by center=0 and the
-    // ±0.75 neutral band and the ±2.0 domain (D-15).
+    // ±0.5 neutral band (Phase 82 D-09) and the ±2.0 domain (Phase 81 D-15).
     const tile1Call = calls.find(
       ([props]) =>
         (props as { center?: number }).center === 0 &&
@@ -280,8 +339,8 @@ describe('EndgameStartVsEndSection', () => {
     expect(tile1Call?.[0]).toMatchObject({
       value: 1.2,
       center: 0,
-      neutralMin: -0.75,
-      neutralMax: 0.75,
+      neutralMin: -0.5,
+      neutralMax: 0.5,
       domain: 2.0,
       ciLow: 0.4,
       ciHigh: 2.0,
