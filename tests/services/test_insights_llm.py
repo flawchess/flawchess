@@ -194,18 +194,21 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v22 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v23 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
     - The UAT-pass emitter-shape documentation describes the THREE-summary +
       THREE-series score_timeline shape keyed on distinct metrics
-      (endgame_score, non_endgame_score, score_gap) with weekly granularity
+      (endgame_score_timeline, non_endgame_score_timeline, score_gap) with weekly granularity
       and the `[n=<N> for every point]` disclosure for constant-N series.
+    - Phase 82 (D-22, D-23, D-24): new glossary entries for entry_eval_pawns and endgame_score,
+      renamed glossary entries to endgame_score_timeline / non_endgame_score_timeline,
+      new ### Subsection: endgame_start_vs_end block, updated mapping table.
     """
 
-    def test_prompt_version_is_v22(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v22"
+    def test_prompt_version_is_v23(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v23"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -230,8 +233,9 @@ class TestPromptVersionAndBody:
 
         # Positive invariants — renamed id + v14 emitter-shape documentation present.
         assert "score_timeline" in body
-        assert "[summary endgame_score]" in body
-        assert "[summary non_endgame_score]" in body
+        # Phase 82 D-01/D-02: renamed to _timeline variants in the line-125 paragraph.
+        assert "[summary endgame_score_timeline]" in body
+        assert "[summary non_endgame_score_timeline]" in body
         assert "[summary score_gap]" in body
         assert "[n=<N> for every point]" in body
         assert "weekly" in body
@@ -255,6 +259,60 @@ class TestPromptVersionAndBody:
         assert mapping_row is not None, (
             "missing `| score_timeline ... | overall |` row in mapping table"
         )
+
+    def test_prompt_contains_endgame_start_vs_end_subsection(self) -> None:
+        """Phase 82 (D-23): new ### Subsection: endgame_start_vs_end block is present."""
+        from pathlib import Path
+
+        body_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        with open(body_path) as f:
+            body = f.read()
+        assert "### Subsection: endgame_start_vs_end" in body
+        # setup → execution framing must appear inside the block
+        assert "setup → execution" in body  # → character
+
+    def test_prompt_glossary_contains_entry_eval_pawns(self) -> None:
+        """Phase 82 (D-22): entry_eval_pawns glossary entry is present."""
+        from pathlib import Path
+
+        body_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        with open(body_path) as f:
+            body = f.read()
+        # Entry must appear under the glossary header as a bold heading
+        assert "**entry_eval_pawns**" in body
+
+    def test_prompt_glossary_renames_score_timeline_metrics(self) -> None:
+        """Phase 82 (D-22): glossary entries renamed to _timeline variants."""
+        from pathlib import Path
+
+        body_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        with open(body_path) as f:
+            body = f.read()
+        assert "**endgame_score_timeline**" in body
+        assert "**non_endgame_score_timeline**" in body
+
+    def test_prompt_mapping_table_includes_endgame_start_vs_end_row(self) -> None:
+        """Phase 82 (D-24): endgame_start_vs_end row present in mapping table under overall."""
+        from pathlib import Path
+
+        body_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        with open(body_path) as f:
+            body = f.read()
+        found = False
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("| endgame_start_vs_end") and stripped.endswith("|") and "overall" in stripped:
+                found = True
+                break
+        assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
 
     def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
         """v14 (260424-pc6 C): when every point's `n` is equal, the series block
@@ -1888,7 +1946,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v22"
+        assert response.report.prompt_version == "endgame_v23"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -1912,7 +1970,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v22"
+        assert log.response_json["prompt_version"] == "endgame_v23"
 
 
 class TestCacheBehavior:
