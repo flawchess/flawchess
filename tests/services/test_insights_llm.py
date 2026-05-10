@@ -495,6 +495,16 @@ class TestPromptAssembly:
         in the assembled user prompt under section `overall`, between the `overall`
         scalar block and the `score_timeline` block. Regression for the missing
         `_SECTION_LAYOUT` entry that caused the new findings to be silently dropped.
+
+        Also asserts the rendered SCALE for both metrics:
+        - entry_eval_pawns is in PAWNS — value 0.46 must render as "+0.46", band as
+          "(typical -0.50 to +0.50)". The prompt glossary (D-22) explicitly says
+          "Render as signed one-decimal value with the unit 'pawns' ... Do NOT
+          convert to centipawns." Phase 82 initially shipped with the metric
+          missing from `_NON_FRACTIONAL_METRICS`, which scaled values by 100×
+          and corrupted every prompt.
+        - endgame_score is on the 0-100 percent scale — value 0.58 must render
+          as "+58", band as "(typical +45 to +55)".
         """
         filters = _sample_filter_context()
         entry_eval = SubsectionFinding(
@@ -533,6 +543,23 @@ class TestPromptAssembly:
         assert "### Subsection: endgame_start_vs_end" in prompt
         assert "[summary entry_eval_pawns]" in prompt
         assert "[summary endgame_score]" in prompt
+
+        # entry_eval_pawns scale: pawns with 2-decimal precision.
+        assert "mean=+0.46" in prompt, (
+            "entry_eval_pawns must render in pawns (e.g. +0.46), not centipawns "
+            f"(+46). Prompt slice:\n{prompt}"
+        )
+        assert "(typical -0.50 to +0.50)" in prompt, (
+            "entry_eval_pawns zone band must render in pawns (-0.50 to +0.50), "
+            f"not centipawns (-50 to +50). Prompt slice:\n{prompt}"
+        )
+        # Negative invariant: no centipawn rendering of entry_eval_pawns.
+        assert "mean=+46" not in prompt
+        assert "(typical -50 to +50)" not in prompt
+
+        # endgame_score scale: integer percentage (0-100). Value 0.58 → +58.
+        assert "mean=+58" in prompt
+        assert "(typical +45 to +55)" in prompt
 
     def test_system_prompt_loaded_from_file(self) -> None:
         """_SYSTEM_PROMPT is the markdown file contents + auto-generated zone appendix.

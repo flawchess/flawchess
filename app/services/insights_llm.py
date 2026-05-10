@@ -98,13 +98,24 @@ _MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
 # 0-100 percentage scale (v6 shape). Keeping the registry/service layer fractional
 # keeps the frontend gauge codegen unchanged; the scale flip lives at the formatter only.
 _NON_FRACTIONAL_METRICS: frozenset[str] = frozenset(
-    {"endgame_elo_gap", "avg_clock_diff_pct", "net_timeout_rate"}
+    {"endgame_elo_gap", "avg_clock_diff_pct", "net_timeout_rate", "entry_eval_pawns"}
 )
+
+# Metrics whose raw payload value is already on the rendered scale AND should
+# render with sub-integer precision. Phase 82 (260510) added entry_eval_pawns
+# at 2 decimals so values like `+0.47` survive the round-trip into the prompt
+# instead of collapsing to `+0` under the default `:+.0f` format.
+_VALUE_PRECISION: dict[str, int] = {"entry_eval_pawns": 2}
 
 
 def _scale_for_metric(metric_id: str) -> float:
     """Multiplier applied to a raw metric value before rendering in the prompt."""
     return 1.0 if metric_id in _NON_FRACTIONAL_METRICS else 100.0
+
+
+def _precision_for_metric(metric_id: str) -> int:
+    """Decimal precision for rendering a metric's scaled value."""
+    return _VALUE_PRECISION.get(metric_id, 0)
 
 
 # Batch 2 enrichment thresholds (v6).
@@ -135,6 +146,10 @@ _DELTA_SMALL_SAMPLE_RATIO: float = 0.20  # last_3mo_n / all_time_n below this �
 # percent-scale metrics (0-100) and Elo-scale metrics.
 _PROXIMITY_PCT_THRESHOLD: float = 2.0
 _PROXIMITY_ELO_THRESHOLD: float = 20.0
+# Phase 82: entry_eval_pawns lives on a sub-integer scale (raw pawns).
+# Distance-from-band-edge threshold is 5 cp ≈ 0.05 pawns — same eyeball
+# proximity as ±2pp on a 0-100 scale.
+_PROXIMITY_PAWN_THRESHOLD: float = 0.05
 
 # v7 weakest-type tag: requires the lowest score_pct to be clearly separated
 # from the next-lowest AND to have a meaningful sample (avoids noise calls).
@@ -168,28 +183,34 @@ def _build_zone_threshold_appendix() -> str:
     lines.append("")
     for metric_id, spec in ZONE_REGISTRY.items():
         scale = _scale_for_metric(metric_id)
+        precision = _precision_for_metric(metric_id)
         lo = spec.typical_lower * scale
         hi = spec.typical_upper * scale
         if spec.direction == "higher_is_better":
             lines.append(
-                f"- `{metric_id}`: weak<{lo:.0f}, typical [{lo:.0f}, {hi:.0f}], strong>{hi:.0f}"
+                f"- `{metric_id}`: weak<{lo:.{precision}f}, "
+                f"typical [{lo:.{precision}f}, {hi:.{precision}f}], "
+                f"strong>{hi:.{precision}f}"
             )
         else:
             lines.append(
-                f"- `{metric_id}` (lower_is_better): strong<={lo:.0f}, "
-                f"typical [{lo:.0f}, {hi:.0f}], "
-                f"weak>{hi:.0f}"
+                f"- `{metric_id}` (lower_is_better): strong<={lo:.{precision}f}, "
+                f"typical [{lo:.{precision}f}, {hi:.{precision}f}], "
+                f"weak>{hi:.{precision}f}"
             )
     lines.append("")
     lines.append("Bucketed metrics (one band per MaterialBucket):")
     for metric_id, buckets in BUCKETED_ZONE_REGISTRY.items():
         scale = _scale_for_metric(metric_id)
+        precision = _precision_for_metric(metric_id)
         lines.append(f"- `{metric_id}`:")
         for bucket, spec in buckets.items():
             lo = spec.typical_lower * scale
             hi = spec.typical_upper * scale
             lines.append(
-                f"  - {bucket}: weak<{lo:.0f}, typical [{lo:.0f}, {hi:.0f}], strong>{hi:.0f}"
+                f"  - {bucket}: weak<{lo:.{precision}f}, "
+                f"typical [{lo:.{precision}f}, {hi:.{precision}f}], "
+                f"strong>{hi:.{precision}f}"
             )
     return "\n".join(lines) + "\n"
 
@@ -358,10 +379,11 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     if spec is None:
         return ""
     scale = _scale_for_metric(metric_id)
+    precision = _precision_for_metric(metric_id)
     lo = spec.typical_lower * scale
     hi = spec.typical_upper * scale
     direction_note = ", lower is better" if spec.direction == "lower_is_better" else ""
-    return f"(typical {lo:+.0f} to {hi:+.0f}{direction_note})"
+    return f"(typical {lo:+.{precision}f} to {hi:+.{precision}f}{direction_note})"
 
 
 def _format_filters_for_prompt(filters: FilterContext) -> list[str]:
@@ -756,9 +778,12 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
     scale = _scale_for_metric(metric_id)
     lo = spec.typical_lower * scale
     hi = spec.typical_upper * scale
-    threshold = (
-        _PROXIMITY_ELO_THRESHOLD if metric_id == "endgame_elo_gap" else _PROXIMITY_PCT_THRESHOLD
-    )
+    if metric_id == "endgame_elo_gap":
+        threshold = _PROXIMITY_ELO_THRESHOLD
+    elif metric_id == "entry_eval_pawns":
+        threshold = _PROXIMITY_PAWN_THRESHOLD
+    else:
+        threshold = _PROXIMITY_PCT_THRESHOLD
     if abs(value_scaled - lo) <= threshold or abs(value_scaled - hi) <= threshold:
         return " [near edge]"
     return ""
@@ -933,9 +958,14 @@ def _within_noise_shift(
     shift: float,
 ) -> bool:
     """Shift is within-noise when it's below the metric cap AND the last_3mo window is much smaller."""
-    noise_cap = (
-        _DELTA_WITHIN_NOISE_ELO if metric == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
-    )
+    if metric == "endgame_elo_gap":
+        noise_cap = _DELTA_WITHIN_NOISE_ELO
+    elif metric == "entry_eval_pawns":
+        # Phase 82: 0.05 pawns is the within-noise cap for entry_eval_pawns
+        # (matches the proximity threshold; ~5 cp is below the calibrated ±0.5 band).
+        noise_cap = 0.05
+    else:
+        noise_cap = _DELTA_WITHIN_NOISE_SHIFT
     sample_mismatch = (
         all_time.sample_size > 0
         and (last_3mo.sample_size / all_time.sample_size) < _DELTA_SMALL_SAMPLE_RATIO
@@ -971,13 +1001,14 @@ def _summary_window_line(
     applicable. All numbers on the UI 0-100 scale (or Elo points).
     """
     scale = _scale_for_metric(finding.metric)
+    precision = _precision_for_metric(finding.metric)
     value_scaled = finding.value * scale
     bounds = _format_zone_bounds(finding.metric, finding.dimension)
     zone_part = f"zone={finding.zone}"
     if bounds:
         zone_part += f" {bounds}"
 
-    parts: list[str] = [f"mean={value_scaled:+.0f}", f"n={finding.sample_size}"]
+    parts: list[str] = [f"mean={value_scaled:+.{precision}f}", f"n={finding.sample_size}"]
     if series_points and len(series_points) >= _TREND_MIN_POINTS:
         info = _trend_info(finding.metric, series_points)
         if info is not None:
@@ -987,7 +1018,7 @@ def _summary_window_line(
             parts.append(zone_part)
             parts.append(f"quality={finding.sample_quality}")
             parts.append(f"trend={direction}")
-            parts.append(f"std={series_std:.0f}")
+            parts.append(f"std={series_std:.{precision}f}")
             if within_noise:
                 parts.append("within-noise")
             if stale_suffix:
@@ -1013,8 +1044,9 @@ def _summary_shift_line(
 ) -> str:
     """Render `  shift=<Z>[, within-noise]` closing a [summary] block with paired windows."""
     scale = _scale_for_metric(metric)
+    precision = _precision_for_metric(metric)
     shift = (last_3mo.value - all_time.value) * scale
-    line = f"  shift={shift:+.0f}"
+    line = f"  shift={shift:+.{precision}f}"
     if _within_noise_shift(metric, all_time, last_3mo, shift):
         line += ", within-noise"
     return line
