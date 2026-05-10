@@ -194,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v23 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v24 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -207,8 +207,8 @@ class TestPromptVersionAndBody:
       new ### Subsection: endgame_start_vs_end block, updated mapping table.
     """
 
-    def test_prompt_version_is_v23(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v23"
+    def test_prompt_version_is_v24(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v24"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -2109,7 +2109,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v23"
+        assert response.report.prompt_version == "endgame_v24"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2133,7 +2133,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v23"
+        assert log.response_json["prompt_version"] == "endgame_v24"
 
 
 class TestCacheBehavior:
