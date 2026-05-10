@@ -115,8 +115,8 @@ Plans:
 - [x] 82-01-PLAN.md — Backend: MetricId / SubsectionId rename + ZoneSpec registration + `_findings_endgame_start_vs_end` emitter + insights_service tests (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 82-02-PLAN.md — Prompt: glossary entries + `### Subsection: endgame_start_vs_end` block + mapping-table row + `_PROMPT_VERSION` bump to `endgame_v23` (Wave 2)
-- [ ] 82-03-PLAN.md — Frontend: `endgameEntryEvalZones.ts` constants tightened to ±0.5 + tile-color rule amendment via constant change (D-09, D-12, D-14) + component tests (Wave 2)
+- [x] 82-02-PLAN.md — Prompt: glossary entries + `### Subsection: endgame_start_vs_end` block + mapping-table row + `_PROMPT_VERSION` bump to `endgame_v23` (Wave 2)
+- [x] 82-03-PLAN.md — Frontend: `endgameEntryEvalZones.ts` constants tightened to ±0.5 + tile-color rule amendment via constant change (D-09, D-12, D-14) + component tests (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 82-04-PLAN.md — Manual UAT (live LLM run on dev DB; tile-vs-LLM agreement; no Conv/Parity/Recovery regression) + CHANGELOG entry (Wave 3)
