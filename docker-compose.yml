@@ -40,10 +40,11 @@ services:
     env_file: .env
     environment:
       # Number of long-lived Stockfish UCI processes shared across the API.
-      # 2 of 4 vCPUs lets import-time eval fan-out parallelise across workers
-      # while leaving headroom for Postgres + Uvicorn under live traffic.
+      # Workers run under Linux SCHED_IDLE (see app/services/engine.py), so
+      # they only consume idle CPU and never preempt Uvicorn / Postgres. That
+      # makes pool size = vCPU count safe; default 4 matches the prod box.
       # Override via .env (STOCKFISH_POOL_SIZE) on hosts with different CPU.
-      STOCKFISH_POOL_SIZE: ${STOCKFISH_POOL_SIZE:-2}
+      STOCKFISH_POOL_SIZE: ${STOCKFISH_POOL_SIZE:-4}
     expose:
       - "8000"
     depends_on:
