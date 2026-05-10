@@ -108,15 +108,26 @@ Plans:
 
 **Depends on:** Phase 81 shipped (the Phase 81 schema fields `entry_eval_mean_pawns`, `entry_eval_n`, `entry_eval_p_value`, `endgame_score_p_value` already populated). Independent of Phase 80 / Phase 80.1.
 
-**Plans:** 4 plans (Plans 1–2 of SEED-013 — extend `/benchmarks` SKILL.md and run /benchmarks — already shipped via `reports/benchmarks-2026-05-10.md` §0 "Endgame score" + §3 EG-entry baseline & distributions; Plan 6's tile-color rule amendment may ship as a follow-up `/gsd-quick` rather than in-phase).
+**Plans:** 4 plans (locked during /gsd-discuss-phase 82, see 82-CONTEXT.md decisions D-01..D-25).
+
+Plans:
+**Wave 1**
+- [ ] 82-01-PLAN.md — Backend: MetricId / SubsectionId rename + ZoneSpec registration + `_findings_endgame_start_vs_end` emitter + insights_service tests (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 82-02-PLAN.md — Prompt: glossary entries + `### Subsection: endgame_start_vs_end` block + mapping-table row + `_PROMPT_VERSION` bump to `endgame_v23` (Wave 2)
+- [ ] 82-03-PLAN.md — Frontend: `endgameEntryEvalZones.ts` constants tightened to ±0.5 + tile-color rule amendment via constant change (D-09, D-12, D-14) + component tests (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 82-04-PLAN.md — Manual UAT (live LLM run on dev DB; tile-vs-LLM agreement; no Conv/Parity/Recovery regression) + CHANGELOG entry (Wave 3)
 
 **Context:** Sections §0 (Endgame score, per-user) and §3 (EG-entry eval, per-(user, color)) of `reports/benchmarks-2026-05-10.md` provide the population data needed to bake cohort bands into the LLM zone classification. Key benchmark verdicts:
 - **EG-entry eval**: pooled `[p25, p75] = [-0.56, +0.75]` pawns; TC review (max d=0.22), ELO review (max d=0.28) ⇒ **single global zone** suffices; live tile already uses `±0.75` neutral. ELO ramp `-15 → +22 cp` (800 → 2400) is real but small.
 - **Endgame score**: pooled `[p25, p75] = [0.4627, 0.5581]`; TC review (max d=0.27), ELO **keep separate** (max d=0.84, 800 vs 2400). Per-ELO `ENDGAME_SCORE_ZONES` registry justified by separation (mirrors `ENDGAME_SKILL_ZONES`); live shared `SCORE_BULLET_NEUTRAL` constants stay untouched (they also drive the Openings score bullet — different population).
 
-The new findings emit a **`verdict`** field carrying the sig-test outcome that `zone` (cohort-band) cannot capture. The pair `(zone=typical, verdict=above_null)` with high n is exactly the user-28 pattern: cohort says "ordinary", sig test says "very confident this is non-zero" — the LLM combines them. Without the new field the LLM would skip these cohort-typical findings.
+**Decision-log amendment (2026-05-10, /gsd-discuss-phase 82):** the seed-stage `verdict` field on `SubsectionFinding` was REJECTED (D-06). Rationale: significance independent of cohort would license the LLM to narrate small-but-significant findings, which is exactly the over-emphasis Phase 82 wants to avoid. Instead, the cohort band on `entry_eval_pawns` was tightened from IQR ±0.75 to ±0.5 (D-08) so borderline-but-significant cases land in `zone="typical"` and stay silent on both tile and LLM (D-12 / D-14). The user-28 pattern is now correctly under-narrated rather than over-narrated.
 
-Tile-color rule amendment is small enough to ship as a separate `/gsd-quick` after Phase 82 lands the cohort bands: switch `EndgameStartVsEndSection` from "sig-only" coloring to `(value in green/red band) AND p < 0.05`. Borderline cases (e.g. user 28: `+0.46 inside typical, p<0.001`) correctly read as **neutral on the tile** while the LLM still narrates them via the `verdict` field. Defer scope decision (in-phase vs split) to /gsd-discuss-phase 82.
+**Decision-log amendment (2026-05-10, /gsd-discuss-phase 82):** the tile-color rule amendment ships IN-PHASE (D-13), not as a separate `/gsd-quick`. Reasoning: the LLM finding `zone` and the tile color must agree from day one — shipping the LLM update first leaves users seeing a colored tile with a non-narrating LLM (or vice versa). Per RESEARCH.md / PATTERNS.md, the existing `isConfident(level) && isInColoredZone` gate in `EndgameStartVsEndSection.tsx` already implements `(zone != neutral) AND p < 0.05` once the underlying neutral-band constants tighten to ±0.5 — so the source file requires no logic change beyond the constant update.
 
 Source: `.planning/seeds/SEED-013-llm-prompt-awareness-of-endgame-start-vs-end.md`. Population reference: `reports/benchmarks-2026-05-10.md` §0 + §3.
 
