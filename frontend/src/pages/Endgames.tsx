@@ -355,17 +355,6 @@ export function EndgamesPage() {
                       phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as no endgame.
                     </p>
                     <p>
-                      <strong>Endgame entry eval:</strong> the average Stockfish evaluation of
-                      the position where the endgame begins, measured in pawns from your perspective
-                      (positive means you have the better position). Mate scores are excluded.
-                    </p>
-                    <p>
-                      <strong>Endgame score:</strong> your win rate (with draws counted as half)
-                      across all games that reach an endgame, tested against 50%, the break-even line
-                      you'd expect against rating-matched opponents. Use the Opponent Strength filter
-                      to tighten the test against equal-rated opponents specifically.
-                    </p>
-                    <p>
                       <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
                       Queen, and Mixed (two or more piece types).
                     </p>
@@ -390,6 +379,17 @@ export function EndgamesPage() {
                       <strong>Recovery:</strong> percentage of games where you entered the endgame with a
                       Stockfish evaluation of -1.0 or worse (you behind by at least one pawn of disadvantage)
                       and drew or won. Measures how well you defend losing endgames.
+                    </p>
+                    <p>
+                      <strong>Endgame entry eval:</strong> the average Stockfish evaluation of
+                      the position where the endgame begins, measured in pawns from your perspective
+                      (positive means you have the better position). Mate scores are excluded.
+                    </p>
+                    <p>
+                      <strong>Endgame score:</strong> your win rate (with draws counted as half)
+                      across all games that reach an endgame, tested against 50%, the break-even line
+                      you'd expect against rating-matched opponents. Use the Opponent Strength filter
+                      to tighten the test against equal-rated opponents specifically.
                     </p>
                     <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating
