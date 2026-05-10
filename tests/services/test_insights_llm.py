@@ -490,6 +490,50 @@ class TestPromptAssembly:
         assert "2026-01-06" in prompt
         assert "2026-01-13" in prompt
 
+    def test_endgame_start_vs_end_findings_render_in_prompt(self) -> None:
+        """Phase 82 (D-23): findings on subsection `endgame_start_vs_end` must appear
+        in the assembled user prompt under section `overall`, between the `overall`
+        scalar block and the `score_timeline` block. Regression for the missing
+        `_SECTION_LAYOUT` entry that caused the new findings to be silently dropped.
+        """
+        filters = _sample_filter_context()
+        entry_eval = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="entry_eval_pawns",
+            value=0.46,
+            zone="typical",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=80,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        endgame_score = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="endgame_score",
+            value=0.58,
+            zone="strong",
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=80,
+            sample_quality="adequate",
+            is_headline_eligible=True,
+            dimension=None,
+            series=None,
+        )
+        tab_findings = _fake_findings(filters, findings=[entry_eval, endgame_score])
+        prompt = _assemble_user_prompt(tab_findings)
+
+        assert "### Subsection: endgame_start_vs_end" in prompt
+        assert "[summary entry_eval_pawns]" in prompt
+        assert "[summary endgame_score]" in prompt
+
     def test_system_prompt_loaded_from_file(self) -> None:
         """_SYSTEM_PROMPT is the markdown file contents + auto-generated zone appendix.
 

@@ -327,12 +327,16 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     finding's `zone` label was computed against. Without this, every per-type
     Conv/Recov line printed the same global band and contradicted the table.
 
-    Phase 68 (260424-pc6): endgame_score / non_endgame_score have no
-    calibrated zone band — their registry entries span [0, 1] only so
+    Phase 68 (260424-pc6): endgame_score_timeline / non_endgame_score_timeline
+    have no calibrated zone band — their registry entries span [0, 1] only so
     assign_zone does not raise. Skip the bounds render for those two so
     the prompt does not show a meaningless `(typical +0 to +100)` tag.
+    Phase 82 (260510): renamed from `endgame_score` / `non_endgame_score`
+    after the timeline metric ids gained a `_timeline` suffix to free the
+    clean `endgame_score` slot for the new `endgame_start_vs_end` subsection
+    (which DOES have a calibrated [0.45, 0.55] band that should render).
     """
-    if metric_id in ("endgame_score", "non_endgame_score"):
+    if metric_id in ("endgame_score_timeline", "non_endgame_score_timeline"):
         return ""
     spec: ZoneSpec | None = None
     bucket = dimension.get("bucket") if dimension else None
@@ -1271,6 +1275,7 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
             # Scalar `overall` subsection emits only when the overall_wdl chart
             # does NOT (C4 gate below suppresses it when both exist).
             ("subsection", "overall"),
+            ("subsection", "endgame_start_vs_end"),
             ("subsection", "score_timeline"),
         ],
     ),
