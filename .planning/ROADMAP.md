@@ -119,7 +119,7 @@ Plans:
 - [x] 82-03-PLAN.md — Frontend: `endgameEntryEvalZones.ts` constants tightened to ±0.5 + tile-color rule amendment via constant change (D-09, D-12, D-14) + component tests (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 82-04-PLAN.md — Manual UAT (live LLM run on dev DB; tile-vs-LLM agreement; no Conv/Parity/Recovery regression) + CHANGELOG entry (Wave 3)
+- [x] 82-04-PLAN.md — Manual UAT (live LLM run on dev DB; tile-vs-LLM agreement; no Conv/Parity/Recovery regression) + CHANGELOG entry (Wave 3)
 
 **Context:** Sections §0 (Endgame score, per-user) and §3 (EG-entry eval, per-(user, color)) of `reports/benchmarks-2026-05-10.md` provide the population data needed to bake cohort bands into the LLM zone classification. Key benchmark verdicts:
 - **EG-entry eval**: pooled `[p25, p75] = [-0.56, +0.75]` pawns; TC review (max d=0.22), ELO review (max d=0.28) ⇒ **single global zone** suffices; live tile already uses `±0.75` neutral. ELO ramp `-15 → +22 cp` (800 → 2400) is real but small.
