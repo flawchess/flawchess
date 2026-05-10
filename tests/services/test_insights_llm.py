@@ -267,7 +267,7 @@ class TestPromptVersionAndBody:
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="endgame_score",
+            metric="endgame_score_timeline",
             value=0.55,
             zone="typical",
             trend="improving",
@@ -352,13 +352,14 @@ class TestPromptAssembly:
             series=None,
         )
         # Phase 68 (260424-pc6): score_timeline emits THREE findings per
-        # window — one per metric (endgame_score, non_endgame_score,
-        # score_gap). No `part` dim; each metric id is the unique key.
+        # window — one per metric. Phase 82 D-01/D-02: renamed to
+        # endgame_score_timeline / non_endgame_score_timeline / score_gap.
+        # No `part` dim; each metric id is the unique key.
         timeline_endgame = SubsectionFinding(
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="endgame_score",
+            metric="endgame_score_timeline",
             value=0.55,
             zone="typical",
             trend="improving",
@@ -376,7 +377,7 @@ class TestPromptAssembly:
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="non_endgame_score",
+            metric="non_endgame_score_timeline",
             value=0.52,
             zone="typical",
             trend="stable",
@@ -420,9 +421,10 @@ class TestPromptAssembly:
         assert "Flags:" not in prompt
         assert "### Subsection: overall" in prompt
         assert "### Subsection: score_timeline" in prompt
-        # Phase 68 (v14): three series blocks (one per metric), all pinned to weekly.
-        assert "[series endgame_score, last_3mo, weekly]" in prompt
-        assert "[series non_endgame_score, last_3mo, weekly]" in prompt
+        # Phase 68 (v14) / Phase 82 D-01/D-02 rename: three series blocks (one
+        # per metric), all pinned to weekly.
+        assert "[series endgame_score_timeline, last_3mo, weekly]" in prompt
+        assert "[series non_endgame_score_timeline, last_3mo, weekly]" in prompt
         assert "[series score_gap, last_3mo, weekly]" in prompt
         # No `part=` dim on any score_timeline series block.
         assert "part=endgame" not in prompt
@@ -1205,7 +1207,7 @@ class TestPromptAssembly:
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="endgame_score",
+            metric="endgame_score_timeline",
             value=0.565,
             zone="typical",
             trend="improving",
@@ -1220,7 +1222,7 @@ class TestPromptAssembly:
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window="last_3mo",
-            metric="non_endgame_score",
+            metric="non_endgame_score_timeline",
             value=0.5075,
             zone="typical",
             trend="stable",
@@ -1256,19 +1258,20 @@ class TestPromptAssembly:
         timeline_chunk = prompt[timeline_start:]
 
         # Exactly three [summary <metric>] blocks, one per metric, no dim tag.
-        assert timeline_chunk.count("[summary endgame_score]") == 1
-        assert timeline_chunk.count("[summary non_endgame_score]") == 1
+        # Phase 82 D-01/D-02: renamed to endgame_score_timeline / non_endgame_score_timeline.
+        assert timeline_chunk.count("[summary endgame_score_timeline]") == 1
+        assert timeline_chunk.count("[summary non_endgame_score_timeline]") == 1
         assert timeline_chunk.count("[summary score_gap]") == 1
         # No leftover part-dim-tagged summaries.
         assert "part=endgame" not in timeline_chunk
         assert "part=non_endgame" not in timeline_chunk
         # Exactly three [series ...] blocks, pinned weekly regardless of window.
-        assert timeline_chunk.count("[series endgame_score, last_3mo, weekly]") == 1
-        assert timeline_chunk.count("[series non_endgame_score, last_3mo, weekly]") == 1
+        assert timeline_chunk.count("[series endgame_score_timeline, last_3mo, weekly]") == 1
+        assert timeline_chunk.count("[series non_endgame_score_timeline, last_3mo, weekly]") == 1
         assert timeline_chunk.count("[series score_gap, last_3mo, weekly]") == 1
-        # Deterministic order: endgame_score → non_endgame_score → score_gap.
-        endgame_idx = timeline_chunk.index("[summary endgame_score]")
-        non_endgame_idx = timeline_chunk.index("[summary non_endgame_score]")
+        # Deterministic order: endgame_score_timeline -> non_endgame_score_timeline -> score_gap.
+        endgame_idx = timeline_chunk.index("[summary endgame_score_timeline]")
+        non_endgame_idx = timeline_chunk.index("[summary non_endgame_score_timeline]")
         gap_idx = timeline_chunk.index("[summary score_gap]")
         assert endgame_idx < non_endgame_idx < gap_idx
         # Constant-n disclosure appears (n=12 for endgame/non_endgame, n=24 for gap)

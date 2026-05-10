@@ -382,6 +382,7 @@ def _compute_subsection_findings(
     findings: list[SubsectionFinding] = []
 
     findings.append(_finding_overall(response, window))
+    findings.extend(_findings_endgame_start_vs_end(response, window))  # Phase 82 D-16
     findings.extend(_findings_score_timeline(response, window))
     findings.extend(_findings_endgame_metrics(response, window))
     findings.extend(_findings_endgame_elo_timeline(response, window))
@@ -429,11 +430,75 @@ def _finding_overall(
     )
 
 
+def _findings_endgame_start_vs_end(
+    response: EndgameOverviewResponse,
+    window: Window,
+) -> list[SubsectionFinding]:
+    """endgame_start_vs_end -> TWO findings (entry_eval_pawns, endgame_score).
+
+    Phase 82 (D-16): wire Phase 81 entry_eval_mean_pawns and endgame
+    Score-vs-50% into the LLM payload. Both are single-aggregate, no
+    series, no dimension (D-19, D-20). Empty-window convention:
+    entry_eval_n < 10 OR endgame_wdl.total < 10 -> _empty_finding for
+    the affected tile (gated independently per D-17).
+    is_headline_eligible = sample_quality != "thin" (D-18).
+    """
+    perf = response.performance
+
+    # Tile 1 — entry eval (D-17: gate on entry_eval_n >= 10)
+    n_eval = perf.entry_eval_n
+    entry_eval = perf.entry_eval_mean_pawns
+    if n_eval < 10 or entry_eval is None:
+        # entry_eval is None only when n_eval < 10 — gate above covers both.
+        # Defensive: model_construct callers may omit the field (defaults to 0.0).
+        tile1 = _empty_finding("endgame_start_vs_end", window, "entry_eval_pawns")
+    else:
+        eval_quality = sample_quality("endgame_start_vs_end", n_eval)
+        tile1 = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window=window,
+            metric="entry_eval_pawns",
+            value=entry_eval,
+            zone=assign_zone("entry_eval_pawns", entry_eval),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=n_eval,
+            sample_quality=eval_quality,
+            is_headline_eligible=eval_quality != "thin",
+            dimension=None,
+        )
+
+    # Tile 2 — endgame score vs 50% (D-17: gate on endgame_wdl.total >= 10)
+    total = perf.endgame_wdl.total
+    if total < 10:
+        tile2 = _empty_finding("endgame_start_vs_end", window, "endgame_score")
+    else:
+        score = (perf.endgame_wdl.wins + 0.5 * perf.endgame_wdl.draws) / total
+        score_quality = sample_quality("endgame_start_vs_end", total)
+        tile2 = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window=window,
+            metric="endgame_score",
+            value=score,
+            zone=assign_zone("endgame_score", score),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=total,
+            sample_quality=score_quality,
+            is_headline_eligible=score_quality != "thin",
+            dimension=None,
+        )
+
+    return [tile1, tile2]
+
+
 def _findings_score_timeline(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """score_timeline -> THREE findings per window (endgame_score, non_endgame_score, score_gap).
+    """score_timeline -> THREE findings per window (endgame_score_timeline, non_endgame_score_timeline, score_gap).
 
     Phase 68 (260424-pc6, UAT pass): replaces the prior B4-option-c
     two-findings-with-part-dim shape. The old shape emitted two
@@ -443,19 +508,22 @@ def _findings_score_timeline(
     shape emits ONE finding per distinct metric, each with its own scalar
     value, zone, trend, and series:
 
-    1. `metric="endgame_score"`: absolute endgame-side Score (0-1), series is
-       each week's endgame_score. Headline-eligible when trend gate passes
-       (this is the side that actually drives insight narration).
-    2. `metric="non_endgame_score"`: absolute non-endgame-side Score (0-1),
-       series is each week's non_endgame_score. Never headline-eligible on
-       its own — it is the partner context for the endgame side.
+    1. `metric="endgame_score_timeline"`: absolute endgame-side Score (0-1),
+       series is each week's endgame_score. Headline-eligible when trend gate
+       passes (this is the side that actually drives insight narration).
+       Phase 82 D-01: renamed from "endgame_score" to free that slot for the
+       new endgame_start_vs_end subsection.
+    2. `metric="non_endgame_score_timeline"`: absolute non-endgame-side Score
+       (0-1), series is each week's non_endgame_score. Never headline-eligible
+       on its own — it is the partner context for the endgame side.
+       Phase 82 D-02: renamed from "non_endgame_score".
     3. `metric="score_gap"`: signed aggregate gap (endgame - non_endgame),
        series is each week's per-bucket gap. Never headline-eligible —
        the `overall` subsection already emits the authoritative
        `[summary score_gap]`; this row gives the LLM the gap's own
        timeseries trajectory without forcing it to subtract two series.
 
-    Deterministic order: endgame_score, non_endgame_score, score_gap.
+    Deterministic order: endgame_score_timeline, non_endgame_score_timeline, score_gap.
     Findings carry no `dimension` — each metric id is unique, so no
     per-dim fan-out is needed to keep summary headers distinct.
 
@@ -468,8 +536,8 @@ def _findings_score_timeline(
     timeline: list[ScoreGapTimelinePoint] = response.score_gap_material.timeline
     if not timeline:
         return [
-            _empty_finding("score_timeline", window, "endgame_score"),
-            _empty_finding("score_timeline", window, "non_endgame_score"),
+            _empty_finding("score_timeline", window, "endgame_score_timeline"),
+            _empty_finding("score_timeline", window, "non_endgame_score_timeline"),
             _empty_finding("score_timeline", window, "score_gap"),
         ]
 
@@ -515,17 +583,19 @@ def _findings_score_timeline(
     diffs = [p.score_difference for p in timeline]
     gap_trend, gap_weekly_points = _compute_trend(diffs)
 
-    # Only the endgame_score finding is headline-eligible — the narrative
-    # convention says "endgame side drives the insight". non_endgame is
-    # the partner; score_gap's headline already lives on `overall`.
+    # Only the endgame_score_timeline finding is headline-eligible — the
+    # narrative convention says "endgame side drives the insight".
+    # non_endgame_score_timeline is the partner; score_gap's headline already
+    # lives on `overall`. Phase 82 D-01/D-02: metric names renamed from
+    # "endgame_score" / "non_endgame_score" to the _timeline variants.
     return [
         SubsectionFinding(
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window=window,
-            metric="endgame_score",
+            metric="endgame_score_timeline",
             value=endgame_mean,
-            zone=assign_zone("endgame_score", endgame_mean),
+            zone=assign_zone("endgame_score_timeline", endgame_mean),
             trend=endgame_trend,
             weekly_points_in_window=endgame_weekly_points,
             sample_size=sample_size,
@@ -538,9 +608,9 @@ def _findings_score_timeline(
             subsection_id="score_timeline",
             parent_subsection_id=None,
             window=window,
-            metric="non_endgame_score",
+            metric="non_endgame_score_timeline",
             value=non_endgame_mean,
-            zone=assign_zone("non_endgame_score", non_endgame_mean),
+            zone=assign_zone("non_endgame_score_timeline", non_endgame_mean),
             trend=non_endgame_trend,
             weekly_points_in_window=non_endgame_weekly_points,
             sample_size=sample_size,
