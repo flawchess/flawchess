@@ -17,12 +17,12 @@ describe('endgameEntryEvalZones constants', () => {
   it('centers on 0 pawns (D-07 H0)', () => {
     expect(ENDGAME_ENTRY_EVAL_CENTER).toBe(0);
   });
-  it('uses ±3.75 pawn axis so the neutral band fills 20% of the chart (matches Achievable-score proportion)', () => {
-    expect(ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS).toBe(3.75);
+  it('uses ±2.25 pawn axis so the neutral band fills ≈1/3 of the chart (matches score-bullet proportion)', () => {
+    expect(ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS).toBe(2.25);
     const neutralFraction =
       (ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS - ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS) /
       (2 * ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS);
-    expect(neutralFraction).toBeCloseTo(0.2, 6);
+    expect(neutralFraction).toBeCloseTo(1 / 3, 6);
   });
 });
 

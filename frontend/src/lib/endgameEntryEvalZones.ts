@@ -27,11 +27,11 @@ export const ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.75;
 export const ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = 0.75;
 
 /** EG-entry: bullet-chart half-domain in pawns. Sized so the neutral band
- * (width 1.5 pawns) fills 20% of the axis, matching the visual proportion of
- * the Achievable-score neutral band (0.45–0.55 inside the 0.25–0.75 axis).
- * Wider than the cohort p05/p95 range (±1.99 pawns) — values cluster near
- * center by design; CI whiskers past ±domain render open-ended. */
-export const ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS = 3.75;
+ * (width 1.5 pawns) fills ≈1/3 of the axis (1.5 / 4.5), matching the visual
+ * proportion of the Achievable- and Endgame-score bullets on the same page.
+ * Slightly wider than the cohort p05/p95 range (±1.99 pawns); CI whiskers
+ * past ±domain render open-ended. */
+export const ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS = 2.25;
 
 /** Center of the bullet axis (Tile 1 H0 per D-07). */
 export const ENDGAME_ENTRY_EVAL_CENTER = 0;
