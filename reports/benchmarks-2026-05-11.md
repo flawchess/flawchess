@@ -19,7 +19,14 @@ This metric answers: **"At endgame entry, what score does Stockfish predict for 
 
 ### Currently set in code
 
-*To be filled in by Plan 83-04 Task 3 after band approval.*
+| Constant | Live value | File |
+|---|---:|---|
+| `entry_expected_score` ZoneSpec | `typical_lower=0.45, typical_upper=0.55` | `app/services/endgame_zones.py` |
+| `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN` | `0.45` | `frontend/src/generated/endgameZones.ts` |
+| `ENTRY_EXPECTED_SCORE_NEUTRAL_MAX` | `0.55` | `frontend/src/generated/endgameZones.ts` |
+| `entryExpectedScoreZoneColor()` | (generated) | `frontend/src/generated/endgameZones.ts` |
+
+Band locked by operator (Phase 83 D-15 editorial call): chose `[0.45, 0.55]` over the strict pooled IQR `[0.4629, 0.5536]` for round numbers, near-IQR proximity, and visual parity with the `endgame_score` (§0 final-score) ZoneSpec which uses the identical band. `direction="higher_is_better"`.
 
 ### Cell table — per-user `entry_xs` `p25 / p50 / p75 (n)`
 

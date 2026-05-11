@@ -202,10 +202,16 @@ class TestRegistrySanity:
         `entry_eval_pawns` (±0.50 band) and `endgame_score` (repurposed, [0.45,
         0.55] band). See `_format_zone_bounds` in insights_llm.py for the
         matching bounds-suppression guard on timeline metrics.
+
+        Phase 83 (D-14..D-17): `entry_expected_score` ([0.45, 0.55] band)
+        added — Lichess-sigmoid expected score at endgame entry over the user's
+        cohort, surfaced as the "achievable score" row of the new Tile 1 (Plan
+        83-03). Source: reports/benchmarks-2026-05-11.md §7.
         """
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
             "entry_eval_pawns",
+            "entry_expected_score",
             "endgame_score",
             "endgame_score_timeline",
             "non_endgame_score_timeline",

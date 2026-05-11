@@ -30,6 +30,7 @@ Window = Literal["all_time", "last_3mo"]
 MetricId = Literal[
     "score_gap",
     "entry_eval_pawns",            # Phase 82 D-04: new endgame_start_vs_end Tile 1
+    "entry_expected_score",        # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",               # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
     # Phase 68 (260424-pc6): per-part absolute score metrics emitted by the
     # score_timeline subsection. `score_gap` still carries the signed
@@ -146,6 +147,23 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         # Unit: signed pawns.
         typical_lower=-0.50,
         typical_upper=0.50,
+        direction="higher_is_better",
+    ),
+    # entry_expected_score: per-user mean expected score (Lichess winning-
+    # chances sigmoid applied to entry-ply Stockfish eval) over endgame-
+    # reaching games. Phase 83 D-14/D-15/D-17.
+    "entry_expected_score": ZoneSpec(
+        # Pooled benchmark IQR (excl. sparse cell): [0.4629, 0.5536]
+        # (reports/benchmarks-2026-05-11.md §7). Single global band justified —
+        # TC max d=0.218 (bullet vs rapid), ELO max d=0.224 (800 vs 2000),
+        # both "review" (≥ 0.2, < 0.5). Per-ELO stratification deferred.
+        # Band locked to [0.45, 0.55]: round numbers, very close to pooled IQR,
+        # match existing endgame_score band for visual parity with the §0
+        # final-score zone (memory feedback_zone_band_judgement.md — band
+        # alignment with neighbouring tile preferred over symmetric +1pp drift).
+        # Unit: 0–1 scale (NOT percent), centered at 0.5 chess-fairness null.
+        typical_lower=0.45,
+        typical_upper=0.55,
         direction="higher_is_better",
     ),
     "endgame_score": ZoneSpec(
