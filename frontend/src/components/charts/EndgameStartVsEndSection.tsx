@@ -43,9 +43,15 @@ import {
   SCORE_BULLET_NEUTRAL_MAX,
   SCORE_BULLET_NEUTRAL_MIN,
   clampScoreCi,
-  scoreBulletDomain,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
+
+// Endgame tile half-domain for the W+0.5D bullets. Locally overridden (not
+// SCORE_BULLET_DOMAIN) so the Achievable- and Endgame-score bullets show the
+// neutral band ([0.45, 0.55]) filling ≈1/3 of the axis (0.10 / 0.30), matching
+// the entry-eval bullet on Tile 1. Axis spans 35-65%; CIs past it render with
+// open-ended whiskers. Openings cards keep the wider 25-75% scale.
+const ENDGAME_TILE_SCORE_DOMAIN = 0.15;
 import { wilsonBounds } from '@/lib/scoreConfidence';
 import type { ConfidenceLevel } from '@/lib/scoreConfidence';
 import { isConfident } from '@/lib/significance';
@@ -209,7 +215,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                       center={SCORE_BULLET_CENTER}
                       neutralMin={ENTRY_EXPECTED_SCORE_NEUTRAL_MIN - SCORE_BULLET_CENTER}
                       neutralMax={ENTRY_EXPECTED_SCORE_NEUTRAL_MAX - SCORE_BULLET_CENTER}
-                      domain={scoreBulletDomain()}
+                      domain={ENDGAME_TILE_SCORE_DOMAIN}
                       ciLow={
                         data.entry_expected_score_ci_low != null
                           ? clampScoreCi(data.entry_expected_score_ci_low)
@@ -284,7 +290,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                     center={SCORE_BULLET_CENTER}
                     neutralMin={SCORE_BULLET_NEUTRAL_MIN}
                     neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-                    domain={scoreBulletDomain()}
+                    domain={ENDGAME_TILE_SCORE_DOMAIN}
                     ciLow={clampScoreCi(scoreCiLow)}
                     ciHigh={clampScoreCi(scoreCiHigh)}
                     barColor="neutral"

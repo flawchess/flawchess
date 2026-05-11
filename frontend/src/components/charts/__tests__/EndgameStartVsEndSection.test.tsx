@@ -338,8 +338,8 @@ describe('EndgameStartVsEndSection', () => {
     const calls = vi.mocked(MiniBulletChart).mock.calls;
     // Find the call that came from Tile 1: identified by center=0 and the
     // ±0.75 neutral band (benchmark IQR max(|p25|, |p75|) = 75 cp). Domain
-    // ±3.75 makes the neutral band fill 20% of the axis to match the
-    // Achievable-score chart's neutral-band proportion.
+    // ±2.25 makes the neutral band fill ≈1/3 of the axis, matching the
+    // score-bullet proportion on the same page.
     const tile1Call = calls.find(
       ([props]) =>
         (props as { center?: number }).center === 0 &&
@@ -351,7 +351,7 @@ describe('EndgameStartVsEndSection', () => {
       center: 0,
       neutralMin: -0.75,
       neutralMax: 0.75,
-      domain: 3.75,
+      domain: 2.25,
       ciLow: 0.4,
       ciHigh: 2.0,
     });
@@ -369,7 +369,8 @@ describe('EndgameStartVsEndSection', () => {
     const calls = vi.mocked(MiniBulletChart).mock.calls;
     // Phase 83: there are now two W+0.5D bullets (achievable + endgame score).
     // Disambiguate via Tile 2's distinct ±0.05 neutral band (vs achievable's
-    // 0.45-0.55 band).
+    // 0.45-0.55 band). Domain locally overridden to 0.15 so the neutral band
+    // fills ≈1/3 of the axis (matches the entry-eval bullet proportion).
     const tile2Call = calls.find(
       ([props]) =>
         (props as { center?: number }).center === 0.5 &&
@@ -381,7 +382,7 @@ describe('EndgameStartVsEndSection', () => {
       center: 0.5,
       neutralMin: -0.05,
       neutralMax: 0.05,
-      domain: 0.25,
+      domain: 0.15,
     });
   });
 
@@ -541,7 +542,7 @@ describe('EndgameStartVsEndSection', () => {
     expect(achievableCall?.[0]).toMatchObject({
       value: 0.62,
       center: 0.5,
-      domain: 0.25,
+      domain: 0.15,
     });
     const achievableProps = achievableCall?.[0] as {
       neutralMin: number;
