@@ -365,8 +365,13 @@ describe('EndgameStartVsEndSection', () => {
       />,
     );
     const calls = vi.mocked(MiniBulletChart).mock.calls;
+    // Phase 83: there are now two W+0.5D bullets (achievable + endgame score).
+    // Disambiguate via Tile 2's distinct ±0.05 neutral band (vs achievable's
+    // 0.45-0.55 band).
     const tile2Call = calls.find(
-      ([props]) => (props as { center?: number }).center === 0.5,
+      ([props]) =>
+        (props as { center?: number }).center === 0.5 &&
+        (props as { neutralMin?: number }).neutralMin === -0.05,
     );
     expect(tile2Call).toBeDefined();
     expect(tile2Call?.[0]).toMatchObject({
