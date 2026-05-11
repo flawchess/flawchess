@@ -1,10 +1,12 @@
 ---
 id: SEED-013
-status: dormant
+status: closed
 planted: 2026-05-10
+closed: 2026-05-11
 planted_during: /gsd-explore session after Phase 81 ("Endgame Start vs End — twin-tile section above the WDL table") shipped
 trigger_when: ready to start a follow-up phase (Phase 82) on Endgame Insights LLM coverage; the two new tiles are in production but the LLM narration is unaware of them
 scope: phase (single, ~5 plans) — /benchmarks extension + zone bake-in + findings emission + prompt update + (optional) tile-rule amendment
+closed_by: superseded — entry_eval / endgame_score were wired into the LLM prompt directly (see commit eebcc7cd bumping `_PROMPT_VERSION` to `endgame_v24` and recent endgame_insights.md updates). Per feedback_llm_significance_signal, the planned `verdict` field was rejected in favor of tightening cohort bands; follow-up work now lives in SEED-014 / SEED-015.
 ---
 
 # SEED-013: LLM prompt awareness of "Where you start" / "What you do with it" (Phase 81 follow-up)
