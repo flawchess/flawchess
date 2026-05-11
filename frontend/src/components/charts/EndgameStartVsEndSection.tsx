@@ -196,11 +196,14 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                     <AchievableScorePopover />
                   </span>
                   <div className="min-w-0 tabular-nums">
+                    {/* MiniBulletChart neutralMin/neutralMax are OFFSETS from center; the
+                        registry stores absolute bounds, so convert by subtracting center
+                        (CR-01 fix: passing absolute bounds collapses the neutral band). */}
                     <MiniBulletChart
                       value={data.entry_expected_score}
                       center={SCORE_BULLET_CENTER}
-                      neutralMin={ENTRY_EXPECTED_SCORE_NEUTRAL_MIN}
-                      neutralMax={ENTRY_EXPECTED_SCORE_NEUTRAL_MAX}
+                      neutralMin={ENTRY_EXPECTED_SCORE_NEUTRAL_MIN - SCORE_BULLET_CENTER}
+                      neutralMax={ENTRY_EXPECTED_SCORE_NEUTRAL_MAX - SCORE_BULLET_CENTER}
                       domain={scoreBulletDomain()}
                       ciLow={
                         data.entry_expected_score_ci_low != null

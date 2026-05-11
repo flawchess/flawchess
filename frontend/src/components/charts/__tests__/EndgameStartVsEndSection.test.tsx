@@ -530,12 +530,22 @@ describe('EndgameStartVsEndSection', () => {
         (props as { value?: number }).value === 0.62,
     );
     expect(achievableCall).toBeDefined();
+    // MiniBulletChart's neutralMin/neutralMax are offsets from center; the
+    // registry's [0.45, 0.55] absolute band must be passed as [-0.05, +0.05]
+    // when center=0.5. Asserting the offset (not the absolute) is what catches
+    // CR-01: passing absolute bounds collapses the neutral band to zero width
+    // once the chart converts via `center + offset`. closeTo absorbs the float
+    // artifact from 0.55 - 0.5 = 0.050000000000000044.
     expect(achievableCall?.[0]).toMatchObject({
       value: 0.62,
       center: 0.5,
-      neutralMin: 0.45,
-      neutralMax: 0.55,
       domain: 0.25,
     });
+    const achievableProps = achievableCall?.[0] as {
+      neutralMin: number;
+      neutralMax: number;
+    };
+    expect(achievableProps.neutralMin).toBeCloseTo(-0.05, 6);
+    expect(achievableProps.neutralMax).toBeCloseTo(0.05, 6);
   });
 });

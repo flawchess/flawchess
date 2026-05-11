@@ -79,6 +79,7 @@ The narrative sits next to charts and info popovers with specific labels. Use th
 | ----------------------------- | ----------------------------------- | ---------------------- |
 | `score_pct` (in any chart)    | "Score"                             | "Score of 62%"         |
 | `score_gap`                   | "endgame vs non-endgame Score gap"  | "Score gap of -9%"     |
+| `entry_expected_score`        | "Achievable score"                  | "Achievable 49%"       |
 | `endgame_skill`               | "Endgame Skill"                     | "Endgame Skill of 45%" |
 | `conversion_win_pct`          | "Conversion (Win)"                  | "Conversion at 65%"    |
 | `parity_score_pct`            | "Parity (Score)"                    | "Parity at 45%"        |
