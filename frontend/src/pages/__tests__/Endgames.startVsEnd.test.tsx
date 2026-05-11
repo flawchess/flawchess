@@ -177,6 +177,12 @@ function buildPerf(
     endgame_score_p_value: 0.001,
     entry_eval_ci_low_pawns: 0.1,
     entry_eval_ci_high_pawns: 0.7,
+    // Phase 83: in-band default; tests targeting the achievable bullet override.
+    entry_expected_score: 0.5,
+    entry_expected_score_n: 50,
+    entry_expected_score_p_value: 1.0,
+    entry_expected_score_ci_low: 0.45,
+    entry_expected_score_ci_high: 0.55,
     ...overrides,
   };
 }
