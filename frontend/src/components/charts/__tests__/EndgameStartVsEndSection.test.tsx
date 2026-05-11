@@ -121,6 +121,13 @@ function buildPerf(
     endgame_score_p_value: 0.001,
     entry_eval_ci_low_pawns: 0.4,
     entry_eval_ci_high_pawns: 2.0,
+    // Phase 83: default to a neutral, in-band achievable score so existing
+    // tests stay unaffected. Tests targeting the new bullet override these.
+    entry_expected_score: 0.5,
+    entry_expected_score_n: 50,
+    entry_expected_score_p_value: 1.0,
+    entry_expected_score_ci_low: 0.45,
+    entry_expected_score_ci_high: 0.55,
     ...overrides,
   };
 }
@@ -358,8 +365,13 @@ describe('EndgameStartVsEndSection', () => {
       />,
     );
     const calls = vi.mocked(MiniBulletChart).mock.calls;
+    // Phase 83: there are now two W+0.5D bullets (achievable + endgame score).
+    // Disambiguate via Tile 2's distinct ±0.05 neutral band (vs achievable's
+    // 0.45-0.55 band).
     const tile2Call = calls.find(
-      ([props]) => (props as { center?: number }).center === 0.5,
+      ([props]) =>
+        (props as { center?: number }).center === 0.5 &&
+        (props as { neutralMin?: number }).neutralMin === -0.05,
     );
     expect(tile2Call).toBeDefined();
     expect(tile2Call?.[0]).toMatchObject({
@@ -375,5 +387,155 @@ describe('EndgameStartVsEndSection', () => {
     render(<EndgameStartVsEndSection data={buildPerf()} />);
     expect(screen.getByTestId('entry-eval-popover-trigger')).toBeTruthy();
     expect(screen.getByTestId('endgame-score-popover-trigger')).toBeTruthy();
+  });
+
+  // ── Phase 83 Plan 03: 2x2 grid restructure (D-08..D-13) ────────────────────
+
+  it('renders the achievable-score bullet inside tile-1 when entry_expected_score_n >= 10', () => {
+    render(
+      <EndgameStartVsEndSection
+        data={buildPerf({
+          entry_expected_score: 0.62,
+          entry_expected_score_n: 50,
+          entry_expected_score_p_value: 0.001,
+          entry_expected_score_ci_low: 0.55,
+          entry_expected_score_ci_high: 0.68,
+        })}
+      />,
+    );
+    const tile1 = screen.getByTestId('tile-entry-eval');
+    expect(within(tile1).getByTestId('endgame-achievable-score')).toBeTruthy();
+    expect(within(tile1).getByTestId('achievable-score-value')).toBeTruthy();
+    expect(within(tile1).getByTestId('achievable-score-value').textContent).toMatch(/62/);
+  });
+
+  it(
+    'renders "Not enough data yet" inside tile-1 row 2 when entry_expected_score_n < 10, ' +
+      'independent of tile-1 row 1 entry-eval gate',
+    () => {
+      render(
+        <EndgameStartVsEndSection
+          data={buildPerf({
+            // Row 1 (entry-eval) still has plenty of data
+            entry_eval_n: 50,
+            entry_eval_mean_pawns: 1.2,
+            entry_eval_p_value: 0.001,
+            // Row 2 (achievable score) is below the gate
+            entry_expected_score_n: 5,
+            entry_expected_score: 0.5,
+          })}
+        />,
+      );
+      const tile1 = screen.getByTestId('tile-entry-eval');
+      // Row 1 still rendered
+      expect(within(tile1).queryByTestId('entry-eval-value')).toBeTruthy();
+      // Row 2 placeholder rendered, no value span
+      expect(within(tile1).queryByTestId('achievable-score-value')).toBeNull();
+      const placeholders = within(tile1).getAllByText(/Not enough data/i);
+      expect(placeholders.length).toBeGreaterThanOrEqual(1);
+    },
+  );
+
+  it('paints achievable-score value color when zone != neutral AND p < 0.05 (above band)', () => {
+    render(
+      <EndgameStartVsEndSection
+        data={buildPerf({
+          entry_expected_score: 0.62, // above 0.55 neutral max
+          entry_expected_score_n: 50,
+          entry_expected_score_p_value: 0.001,
+        })}
+      />,
+    );
+    const valueSpan = within(screen.getByTestId('tile-entry-eval')).getByTestId(
+      'achievable-score-value',
+    );
+    expect(normalizeColor(valueSpan.style.color)).toBe(normalizeColor(ZONE_SUCCESS));
+  });
+
+  it('paints achievable-score value color when zone != neutral AND p < 0.05 (below band)', () => {
+    render(
+      <EndgameStartVsEndSection
+        data={buildPerf({
+          entry_expected_score: 0.40, // below 0.45 neutral min
+          entry_expected_score_n: 50,
+          entry_expected_score_p_value: 0.001,
+        })}
+      />,
+    );
+    const valueSpan = within(screen.getByTestId('tile-entry-eval')).getByTestId(
+      'achievable-score-value',
+    );
+    expect(normalizeColor(valueSpan.style.color)).toBe(normalizeColor(ZONE_DANGER));
+  });
+
+  it(
+    'does NOT paint achievable-score color when sig but inside neutral band ' +
+      '(Phase 82 D-12 zone-AND-sig rule carried forward to D-11)',
+    () => {
+      render(
+        <EndgameStartVsEndSection
+          data={buildPerf({
+            entry_expected_score: 0.52, // inside [0.45, 0.55] band
+            entry_expected_score_n: 50,
+            entry_expected_score_p_value: 0.001, // significant
+          })}
+        />,
+      );
+      const valueSpan = within(screen.getByTestId('tile-entry-eval')).getByTestId(
+        'achievable-score-value',
+      );
+      expect(valueSpan.style.color).toBe('');
+    },
+  );
+
+  it('renders MiniWDLBar at the top of tile-2 (D-13)', () => {
+    render(<EndgameStartVsEndSection data={buildPerf()} />);
+    const tile2 = screen.getByTestId('tile-endgame-score');
+    expect(within(tile2).getByTestId('mini-wdl-bar')).toBeTruthy();
+  });
+
+  it('achievable-score popover trigger has data-testid="popover-trigger-achievable-score"', () => {
+    render(<EndgameStartVsEndSection data={buildPerf()} />);
+    expect(screen.getByTestId('popover-trigger-achievable-score')).toBeTruthy();
+  });
+
+  it('achievable-score popover body does NOT contain the word "underperformance" (D-10)', async () => {
+    render(<EndgameStartVsEndSection data={buildPerf()} />);
+    const trigger = screen.getByTestId('popover-trigger-achievable-score');
+    // Open via click; the popover lives inside a radix Portal.
+    trigger.click();
+    // The portal renders synchronously after click; await a microtask so React
+    // commits the open state.
+    await Promise.resolve();
+    expect(document.body.textContent ?? '').not.toMatch(/underperformance/i);
+  });
+
+  it('passes achievable-score W+0.5D constants to MiniBulletChart (D-12 axis parity)', () => {
+    render(
+      <EndgameStartVsEndSection
+        data={buildPerf({
+          entry_expected_score: 0.62,
+          entry_expected_score_n: 50,
+          entry_expected_score_ci_low: 0.55,
+          entry_expected_score_ci_high: 0.68,
+        })}
+      />,
+    );
+    const calls = vi.mocked(MiniBulletChart).mock.calls;
+    // The achievable bullet uses center=0.5 AND value=0.62 (distinct from
+    // Tile 2 endgame score which is computed from endgame_wdl WDL counts).
+    const achievableCall = calls.find(
+      ([props]) =>
+        (props as { center?: number }).center === 0.5 &&
+        (props as { value?: number }).value === 0.62,
+    );
+    expect(achievableCall).toBeDefined();
+    expect(achievableCall?.[0]).toMatchObject({
+      value: 0.62,
+      center: 0.5,
+      neutralMin: 0.45,
+      neutralMax: 0.55,
+      domain: 0.25,
+    });
   });
 });
