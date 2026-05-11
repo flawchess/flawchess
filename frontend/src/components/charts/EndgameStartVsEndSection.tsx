@@ -18,6 +18,8 @@
  * thresholds — n >= 10, p < 0.01 high, p < 0.05 medium).
  */
 
+import { Cpu } from 'lucide-react';
+
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
@@ -118,6 +120,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                   data-testid="entry-eval-value"
                 >
                   {formatSignedEvalPawns(data.entry_eval_mean_pawns)}
+                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
                 <BulletConfidencePopover
                   level={evalLevel}
