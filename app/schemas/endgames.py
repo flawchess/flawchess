@@ -139,6 +139,23 @@ class EndgamePerformanceResponse(BaseModel):
     entry_eval_ci_high_pawns: float | None = None
     """Upper bound of 95% Wald-z CI on entry_eval_mean_pawns (signed, in pawns). None when entry_eval_n < 2."""
 
+    # Phase 83 (D-21): Stockfish-baseline achievable score for "Where you start" tile.
+    # Defaults match the Phase 81 D-11 safe-empty pattern so existing call sites keep working.
+    entry_expected_score: float = 0.0
+    """Mean per-game expected score from endgame-entry eval, via Lichess sigmoid (mate->0/1). 0.0 when n=0."""
+
+    entry_expected_score_n: int = 0
+    """Count of games contributing to entry_expected_score. Mate INCLUDED (D-06); NULL evals excluded; |eval_cp| < 2000 clip applied."""
+
+    entry_expected_score_p_value: float | None = None
+    """Two-sided p-value vs 50%. None when entry_expected_score_n < 10."""
+
+    entry_expected_score_ci_low: float | None = None
+    """Lower bound of 95% CI on entry_expected_score. None when entry_expected_score_n < 2."""
+
+    entry_expected_score_ci_high: float | None = None
+    """Upper bound of 95% CI on entry_expected_score. None when entry_expected_score_n < 2."""
+
 
 class EndgameTimelinePoint(BaseModel):
     """Single data point in the per-type rolling-window time series, sampled weekly.
