@@ -31,6 +31,7 @@ Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlega
 - [x] Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats (4/4 plans) — completed 2026-05-07
 - [ ] Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance (5 plans) — planned
 - [ ] Phase 82: LLM prompt awareness of Endgame Start vs End metrics (4 plans) — planned
+- [ ] Phase 83: Stockfish-baseline predicted endgame score (3-5 plans) — planned
 
 ### Phase 80: Opening stats: middlegame-entry eval and clock-diff columns
 
@@ -130,6 +131,23 @@ Plans:
 **Decision-log amendment (2026-05-10, /gsd-discuss-phase 82):** the tile-color rule amendment ships IN-PHASE (D-13), not as a separate `/gsd-quick`. Reasoning: the LLM finding `zone` and the tile color must agree from day one — shipping the LLM update first leaves users seeing a colored tile with a non-narrating LLM (or vice versa). Per RESEARCH.md / PATTERNS.md, the existing `isConfident(level) && isInColoredZone` gate in `EndgameStartVsEndSection.tsx` already implements `(zone != neutral) AND p < 0.05` once the underlying neutral-band constants tighten to ±0.5 — so the source file requires no logic change beyond the constant update.
 
 Source: `.planning/seeds/SEED-013-llm-prompt-awareness-of-endgame-start-vs-end.md`. Population reference: `reports/benchmarks-2026-05-10.md` §0 + §3.
+
+### Phase 83: Stockfish-baseline predicted endgame score
+
+**Goal:** Add a Stockfish-baseline **predicted score** to the Endgame Overall Performance section so users can read "what a 2300+ player would score from positions like mine" against the achieved endgame score in the same W+0.5D units. Convert each per-game endgame-entry `eval_cp` to an expected score in [0, 1] via the Lichess winning-chances sigmoid (`1 / (1 + e^(-0.00368208 * cp))`); aggregate per-user with a Wilson-style test against 50%; surface as a new bullet chart inside the existing **"Where you start"** tile, juxtaposed with the **"Endgame score"** bullet chart in **"What you do with it"**. The two tiles restructure into a 2×2 grid: eval / WDL on top, score-axis bullets on the bottom so the predicted-vs-achieved gap is directly readable. Mate scores map to 0/1 directly (not via the sigmoid). Framing is **Stockfish baseline / ceiling**, NOT "expected" or "underperformance" — the Lichess curve was fit on 2300+ play and weaker players systematically score below from positive evals (that gap is rating-tilt, not a flaw to flag).
+
+**Requirements:** TBD (defined during /gsd-discuss-phase 83)
+
+**Depends on:** Phase 82 shipped (twin-tile section + LLM prompt awareness in production; share the Phase 82 cohort filter `|eval_cp| < 2000`, sign convention from `_classify_endgame_bucket`, and the Wilson chess-score util).
+
+**Plans:** 3-5 plans (3 core ship + 2 optional — locked during /gsd-discuss-phase 83):
+1. `app/services/eval_utils.py` — Lichess sigmoid + mate→0/1 helpers + unit tests
+2. Per-game expected-score plumbing in `endgame_repository.py` / `endgame_service.py` + new `entry_expected_score*` schema fields + Wilson test
+3. 2×2 UI restructure of the twin-tile section: add "Predicted score" bullet to "Where you start"; lift WDL chart into top of "What you do with it"
+4. *(Optional)* Extend `/benchmarks` SKILL.md with an `entry_expected_score` section + cohort bands in `endgame_zones.py`
+5. *(Optional)* Glossary entry + subsection guidance in `app/prompts/endgame_insights.md` + `_PROMPT_VERSION` bump
+
+**Context:** Source: `.planning/seeds/SEED-014-stockfish-baseline-vs-achieved-endgame-score.md` (comprehensive design, edge cases, methodology lessons inherited from Phase 82). Today the two tiles live in different units (centipawns vs W+0.5D score) — the LLM translates one to the other in prose; the UI cannot. This phase closes that gap by adding a second bullet chart in the same units as `endgame_score` so the predicted-vs-achieved gap is visually readable. Complements Conv/Parity/Recovery (which use discrete ±1.0-pawn thresholds and binary outcomes) — sigmoid handles the +0.99 vs +1.01 transition smoothly and uses the full eval magnitude. Sign convention mirrors `_classify_endgame_bucket` in `app/services/endgame_service.py:170-204`; mirror the entry-eval plumbing in `app/repositories/endgame_repository.py:793-841` and `app/services/endgame_service.py:1670-1712`. The new schema field will be `entry_expected_score` (parallel to `entry_eval_mean_pawns`); `endgame_score` key is already taken by Phase 81. NULL eval coverage on prod is not 100% — cohort filter must require `eval_cp IS NOT NULL OR eval_mate IS NOT NULL`. WDL chart in row 1 of "What you do with it" reuses the existing component from "Games with vs without Endgame" — lift and parameterize, do not reimplement.
 
 </details>
 
