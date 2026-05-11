@@ -194,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v25 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v26 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -210,8 +210,8 @@ class TestPromptVersionAndBody:
       block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
-    def test_prompt_version_is_v25(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v25"
+    def test_prompt_version_is_v26(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v26"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -549,7 +549,7 @@ class TestPromptAssembly:
 
         Also asserts the rendered SCALE for both metrics:
         - entry_eval_pawns is in PAWNS — value 0.46 must render as "+0.46", band as
-          "(typical -0.50 to +0.50)". The prompt glossary (D-22) explicitly says
+          "(typical -0.75 to +0.75)". The prompt glossary (D-22) explicitly says
           "Render as signed one-decimal value with the unit 'pawns' ... Do NOT
           convert to centipawns." Phase 82 initially shipped with the metric
           missing from `_NON_FRACTIONAL_METRICS`, which scaled values by 100×
@@ -600,13 +600,13 @@ class TestPromptAssembly:
             "entry_eval_pawns must render in pawns (e.g. +0.46), not centipawns "
             f"(+46). Prompt slice:\n{prompt}"
         )
-        assert "(typical -0.50 to +0.50)" in prompt, (
-            "entry_eval_pawns zone band must render in pawns (-0.50 to +0.50), "
-            f"not centipawns (-50 to +50). Prompt slice:\n{prompt}"
+        assert "(typical -0.75 to +0.75)" in prompt, (
+            "entry_eval_pawns zone band must render in pawns (-0.75 to +0.75), "
+            f"not centipawns (-75 to +75). Prompt slice:\n{prompt}"
         )
         # Negative invariant: no centipawn rendering of entry_eval_pawns.
         assert "mean=+46" not in prompt
-        assert "(typical -50 to +50)" not in prompt
+        assert "(typical -75 to +75)" not in prompt
 
         # endgame_score scale: integer percentage (0-100). Value 0.58 → +58.
         assert "mean=+58" in prompt
@@ -699,10 +699,10 @@ class TestPromptAssembly:
         from app.services.insights_llm import _format_zone_bounds
 
         result = _format_zone_bounds("entry_eval_pawns", None)
-        assert "-0.50" in result
-        assert "+0.50" in result
+        assert "-0.75" in result
+        assert "+0.75" in result
         # Negative invariant: no centipawn-style render.
-        assert "-50 to" not in result
+        assert "-75 to" not in result
 
     def test_system_prompt_loaded_from_file(self) -> None:
         """_SYSTEM_PROMPT is the markdown file contents + auto-generated zone appendix.
@@ -2160,7 +2160,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v25"
+        assert response.report.prompt_version == "endgame_v26"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2184,7 +2184,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v25"
+        assert log.response_json["prompt_version"] == "endgame_v26"
 
 
 class TestCacheBehavior:

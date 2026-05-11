@@ -868,25 +868,25 @@ class TestFindingsEndgameStartVsEnd:
         assert findings[0].is_headline_eligible is False
 
     def test_zone_strong_for_entry_eval_above_band(self) -> None:
-        """entry_eval_mean_pawns = 0.80 -> zone = 'strong' (above typical_upper=0.50)."""
+        """entry_eval_mean_pawns = 1.00 -> zone = 'strong' (above typical_upper=0.75)."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_mean_pawns=0.80, entry_eval_n=50)
+        response = self._make_overview(entry_eval_mean_pawns=1.00, entry_eval_n=50)
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
         assert findings[0].zone == "strong"
 
     def test_zone_weak_for_entry_eval_below_band(self) -> None:
-        """entry_eval_mean_pawns = -0.80 -> zone = 'weak' (below typical_lower=-0.50)."""
+        """entry_eval_mean_pawns = -1.00 -> zone = 'weak' (below typical_lower=-0.75)."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
-        response = self._make_overview(entry_eval_mean_pawns=-0.80, entry_eval_n=50)
+        response = self._make_overview(entry_eval_mean_pawns=-1.00, entry_eval_n=50)
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
         assert findings[0].zone == "weak"
 
     def test_zone_typical_for_entry_eval_inside_band(self) -> None:
-        """entry_eval_mean_pawns = 0.30 -> zone = 'typical' (inside [-0.50, 0.50])."""
+        """entry_eval_mean_pawns = 0.30 -> zone = 'typical' (inside [-0.75, 0.75])."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
         response = self._make_overview(entry_eval_mean_pawns=0.30, entry_eval_n=50)

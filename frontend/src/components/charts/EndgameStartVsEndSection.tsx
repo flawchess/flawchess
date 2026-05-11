@@ -138,7 +138,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
           <div className="flex flex-col gap-4">
             {/* Row 1: entry-eval bullet (pawns) */}
             {showTile1Chart ? (
-              <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+              <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
                 <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                   <span className="text-muted-foreground">Endgame entry eval:</span>
                   <span
@@ -183,7 +183,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
             {/* Row 2: achievable score bullet (W+0.5D axis, shared with tile 2 row 2). */}
             <div data-testid="endgame-achievable-score">
               {showAchievableChart ? (
-                <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+                <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
                   <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                     <span className="text-muted-foreground">Achievable score:</span>
                     <span
@@ -239,7 +239,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
             {/* Row 1: WDL mini bar (D-13) — lifted from the existing
                 Games-with-vs-without-Endgame table below the section. */}
             <div data-testid="endgame-wdl-bar-row">
-              <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+              <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
                 <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                   <span className="text-muted-foreground">Win / Draw / Loss:</span>
                 </span>
@@ -255,7 +255,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
 
             {/* Row 2: endgame-score bullet (existing). */}
             {showTile2Chart ? (
-              <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+              <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
                 <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                   <span className="text-muted-foreground">Endgame score:</span>
                   <span

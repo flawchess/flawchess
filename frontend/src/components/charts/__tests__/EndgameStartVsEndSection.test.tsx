@@ -197,7 +197,7 @@ describe('EndgameStartVsEndSection', () => {
     render(
       <EndgameStartVsEndSection
         data={buildPerf({
-          entry_eval_mean_pawns: 0.4,        // Clearly inside tightened ±0.5 band → NEUTRAL
+          entry_eval_mean_pawns: 0.4,        // Clearly inside ±0.75 band → NEUTRAL
           entry_eval_p_value: 0.001,
           entry_eval_n: 50,
         })}
@@ -209,13 +209,13 @@ describe('EndgameStartVsEndSection', () => {
   });
 
   it(
-    'Tile 1 value text is ZONE_SUCCESS at the ±0.5 boundary when significant ' +
-    '(Phase 82 D-09 + D-12: boundary case under tightened band)',
+    'Tile 1 value text is ZONE_SUCCESS at the ±0.75 boundary when significant ' +
+    '(Phase 82 D-12: boundary case for benchmark-IQR band)',
     () => {
       render(
         <EndgameStartVsEndSection
           data={buildPerf({
-            entry_eval_mean_pawns: 0.5,        // ON the new boundary → ZONE_SUCCESS
+            entry_eval_mean_pawns: 0.75,        // ON the boundary → ZONE_SUCCESS
             entry_eval_p_value: 0.001,
             entry_eval_n: 50,
           })}
@@ -230,13 +230,13 @@ describe('EndgameStartVsEndSection', () => {
 
   it(
     'Tile 1 value text is unstyled for value 0.46 + p<0.001 ' +
-    '(Phase 82 D-14: 0.46 sits inside the tightened ±0.5 neutral band, ' +
+    '(Phase 82 D-14: 0.46 sits inside the ±0.75 neutral band, ' +
     'so significance alone does not paint the tile; tile and LLM agree on neutral)',
     () => {
       render(
         <EndgameStartVsEndSection
           data={buildPerf({
-            entry_eval_mean_pawns: 0.46,       // Inside ±0.5 band → NEUTRAL regardless of significance
+            entry_eval_mean_pawns: 0.46,       // Inside ±0.75 band → NEUTRAL regardless of significance
             entry_eval_p_value: 0.001,
             entry_eval_n: 50,
           })}
@@ -249,13 +249,13 @@ describe('EndgameStartVsEndSection', () => {
   );
 
   it(
-    'Tile 1 value text is ZONE_DANGER for value -0.6 + p<0.05 ' +
-    '(Phase 82 D-12: zone × sig negative case)',
+    'Tile 1 value text is ZONE_DANGER for value -0.8 + p<0.05 ' +
+    '(Phase 82 D-12: zone × sig negative case, ±0.75 band)',
     () => {
       render(
         <EndgameStartVsEndSection
           data={buildPerf({
-            entry_eval_mean_pawns: -0.6,
+            entry_eval_mean_pawns: -0.8,
             entry_eval_p_value: 0.01,
             entry_eval_n: 50,
           })}
@@ -337,19 +337,21 @@ describe('EndgameStartVsEndSection', () => {
     render(<EndgameStartVsEndSection data={buildPerf()} />);
     const calls = vi.mocked(MiniBulletChart).mock.calls;
     // Find the call that came from Tile 1: identified by center=0 and the
-    // ±0.5 neutral band (Phase 82 D-09) and the ±2.0 domain (Phase 81 D-15).
+    // ±0.75 neutral band (benchmark IQR max(|p25|, |p75|) = 75 cp). Domain
+    // ±3.75 makes the neutral band fill 20% of the axis to match the
+    // Achievable-score chart's neutral-band proportion.
     const tile1Call = calls.find(
       ([props]) =>
         (props as { center?: number }).center === 0 &&
-        (props as { domain?: number }).domain === 2.0,
+        (props as { neutralMin?: number }).neutralMin === -0.75,
     );
     expect(tile1Call).toBeDefined();
     expect(tile1Call?.[0]).toMatchObject({
       value: 1.2,
       center: 0,
-      neutralMin: -0.5,
-      neutralMax: 0.5,
-      domain: 2.0,
+      neutralMin: -0.75,
+      neutralMax: 0.75,
+      domain: 3.75,
       ciLow: 0.4,
       ciHigh: 2.0,
     });

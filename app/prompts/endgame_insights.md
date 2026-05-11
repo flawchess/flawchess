@@ -278,7 +278,7 @@ Together the three answer: "given the positions this user reaches endgames from,
 - Either metric `typical` → don't feature it as a headline; it is background context for the `score_gap` / `score_timeline` story
 
 **Within-noise and borderline cases:**
-- If `entry_eval_pawns` is `typical` (inside ±0.50): narrate as "entering endgames at roughly equal footing" or skip.
+- If `entry_eval_pawns` is `typical` (inside ±0.75): narrate as "entering endgames at roughly equal footing" or skip.
 - If `endgame_score` is `typical` (inside 45–55%): skip or use as neutral context.
 - `[near edge]` suffix: the value is just outside the typical band but the sample is still supporting (adequate or rich). Narrate as "a small but real pattern" rather than a clear strength/weakness signal.
 
@@ -342,7 +342,7 @@ Interpret each metric using the definitions below. These match the user-facing i
 
 - **entry_eval_pawns** (UI label: "Endgame entry eval"): user's mean Stockfish evaluation at endgame entry in pawns, signed user-perspective. Positive = user was ahead at the moment the endgame phase started; negative = user was behind. Mate positions are excluded from the mean (eval_cp is NULL for mate rows). Higher is better.
   - Scale: signed decimal pawns (e.g. `+0.62` = "entering endgames 0.62 pawns ahead on average"). Render as signed one-decimal value with the unit "pawns" (e.g. "+0.6 pawns"). Do NOT convert to centipawns.
-  - Cohort typical band: **±0.50 pawns** (pooled benchmark-calibrated band; editorial tightening from IQR ±0.75 to ±0.50 to surface half-pawn average swings as narratable). A value inside ±0.50 is within-noise; outside the band with `[near edge]` suffix is borderline narratable.
+  - Cohort typical band: **±0.75 pawns** (pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`, reports/benchmarks-2026-05-10.md §3). A value inside ±0.75 is within-noise; outside the band with `[near edge]` suffix is borderline narratable.
   - The tile on the UI uses a significance test (Welch t-test vs H0 = 0 cp). The LLM does NOT receive the sig-test outcome — narrate strictly from `zone` + `sample_quality` + the `[near edge]` suffix for borderline cases. Do not mention p-values.
   - Emitted in subsection `endgame_start_vs_end`, `dimension=None`.
 

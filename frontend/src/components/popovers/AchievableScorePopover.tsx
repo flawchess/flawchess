@@ -70,13 +70,18 @@ export function AchievableScorePopover({
             'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
           )}
         >
-          <p className="leading-relaxed">
-            This is what a 2300+ rated player would score from your endgame-entry
-            positions, via the Lichess winning-chances sigmoid. The Lichess curve
-            is fitted on 2300+ rapid games, so scoring below this baseline from
-            positive evals is normal at lower ratings and is not a flaw. Compare
-            against your achieved Endgame score in the other tile.
-          </p>
+          <div className="space-y-2">
+            <p>
+              This is what a 2300+ rated player would score from your endgame-entry
+              positions. The score is calculated from your Endgame entry eval,
+              using the Lichess winning chances formula.
+            </p>
+            <p>
+              The Lichess curve is fitted on 2300+ rapid games, so scoring a little below this
+              baseline from positive evals is normal at lower ratings. Compare this
+              against your achieved Endgame score in the other tile.
+            </p>
+          </div>
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>

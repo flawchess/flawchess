@@ -140,13 +140,12 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     # entry_eval_pawns: average Stockfish eval at endgame entry, signed from
     # user's perspective. Phase 82 D-08.
     "entry_eval_pawns": ZoneSpec(
-        # Editorial tightening from benchmark IQR (±0.75) to ±0.50 —
-        # half-a-pawn average swing at endgame entry is narratable. Single
-        # global band justified (TC max d=0.22, ELO max d=0.28 per
-        # benchmarks-2026-05-10.md §3 — both "review", not "keep separate").
-        # Unit: signed pawns.
-        typical_lower=-0.50,
-        typical_upper=0.50,
+        # Pooled benchmark IQR `max(|p25|, |p75|) = 75 cp = 0.75 pawns`
+        # (reports/benchmarks-2026-05-10.md §3, line 281). Single global
+        # band justified (TC max d=0.22, ELO max d=0.28 per the same
+        # §3 — both "review", not "keep separate"). Unit: signed pawns.
+        typical_lower=-0.75,
+        typical_upper=0.75,
         direction="higher_is_better",
     ),
     # entry_expected_score: per-user mean expected score (Lichess winning-
