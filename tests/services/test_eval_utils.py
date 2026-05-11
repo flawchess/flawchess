@@ -14,6 +14,7 @@ flat unit tests with only one color would have missed.
 """
 
 import math
+from typing import Literal
 
 import pytest
 
@@ -89,9 +90,10 @@ class TestSigmoid:
 
     def test_range_in_unit_interval(self) -> None:
         """Output is always in (0, 1) for any finite int cp."""
+        colors: tuple[Literal["white", "black"], ...] = ("white", "black")
         for cp in (-100000, -1500, 0, 1500, 100000):
-            for color in ("white", "black"):
-                score = eval_cp_to_expected_score(cp, color)  # type: ignore[arg-type]
+            for color in colors:
+                score = eval_cp_to_expected_score(cp, color)
                 assert 0.0 <= score <= 1.0, f"out of range at cp={cp}, color={color}: {score}"
 
 
@@ -130,8 +132,13 @@ class TestMate:
 
     def test_mate_output_is_exactly_zero_or_one(self) -> None:
         """Outputs are exact floats 0.0 / 1.0 (no sigmoid rounding)."""
-        cases = [(+5, "white", 1.0), (+5, "black", 0.0), (-5, "white", 0.0), (-5, "black", 1.0)]
+        cases: list[tuple[int, Literal["white", "black"], float]] = [
+            (+5, "white", 1.0),
+            (+5, "black", 0.0),
+            (-5, "white", 0.0),
+            (-5, "black", 1.0),
+        ]
         for eval_mate, color, expected in cases:
-            actual = eval_mate_to_expected_score(eval_mate, color)  # type: ignore[arg-type]
+            actual = eval_mate_to_expected_score(eval_mate, color)
             assert actual == expected
             assert isinstance(actual, float)
