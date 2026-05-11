@@ -2,6 +2,61 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.16 — Stockfish Eval Analyses
+
+**Shipped:** 2026-05-11
+**Phases:** 5 (80, 80.1, 81, 82, 83) | **Plans:** 24 | **Delivered via:** PRs #80, #82, #85, #86, #88
+**Stats:** 267 files changed, +47,752 / -4,427 lines, 118 commits over 7 days (2026-05-05 → 2026-05-11) since v1.15 (commit 64441744 → 46f78231)
+**Source:** v1.15 substrate (per-position `phase` SmallInteger + Stockfish eval at endgame span-entry + middlegame-entry rows) unlocked five downstream consumer phases.
+
+### What Was Built
+
+- **Phase 80** — Opening Stats subtab: avg eval at middlegame entry ± std (user POV) with one-sample t-test confidence pill via `compute_eval_confidence_bucket` and CI-whisker MiniBulletChart on bookmarked + most-played tables. Later restructured into a two-column card grid via quick task `260506-rtk` that replaced `MostPlayedOpeningsTable`.
+- **Phase 80.1** (mid-milestone insert) — Move Explorer + Opening Insights WDL/score/confidence/p_value now reflect resulting-position (transposition-inclusive) instead of move-played. `query_transposition_wdl` + `query_resulting_position_wdl` repo helpers; `game_count` and the n≥10 surfacing gate stay move-played for honest disclosure. Closes the loud 57%→61% mismatch surfaced during Phase 80 UAT.
+- **Phase 81** — Endgame Start vs End twin-tile section above the Endgame Overall Performance WDL table: entry-eval (cp, Wald-z sig-tested vs 0) + endgame score (Wilson score test vs 50%), three-state color, n≥10 reliability gate, "we can't tell" framing for non-significant verdicts. `EndgamePerformanceResponse` gains 6 fields. Aggregation runs against `query_endgame_bucket_rows` (D-22 amendment), locking `n + mate + null == total` by construction.
+- **Phase 82** — LLM endgame-insights prompt awareness of Start vs End metrics: `MetricId` + `SubsectionId` Literal extensions, `ZONE_REGISTRY` entries for `entry_eval_pawns` (band ±0.5 after D-08 tightening) + `endgame_score` (band [0.45, 0.55]); prompt `endgame_v23` → `endgame_v24`. Mid-phase UAT surfaced two bugs (`_SECTION_LAYOUT` missing the subsection; `_format_zone_bounds` filtering renamed timeline metrics), fixed inline before close.
+- **Phase 83** — Stockfish-baseline predicted endgame score: `eval_cp_to_expected_score` (Lichess sigmoid k=0.00368208) + `eval_mate_to_expected_score`; 5 new `EndgamePerformanceResponse` fields (`entry_expected_score` + `_n` / `_p_value` / `_ci_low` / `_ci_high`); 2×2 grid restructure of Start vs End so achievable + achieved share the same units (W+0.5D ∈ [0,1]); LLM prompt `endgame_v25` → `endgame_v26` narrates achievable-vs-achieved gap as headline diagnostic. Closes SEED-014.
+
+### What Worked
+
+- **Wave-based plan execution stayed tight across all five phases.** Each phase locked plans into 2-4 waves with clear dependencies. No mid-execution wave reshuffling across 24 plans suggests the wave-graph shape is right.
+- **Mid-milestone phase insert (80.1) over carrying tech debt.** The 57%→61% transposition mismatch surfaced during Phase 80 UAT; inserting Phase 80.1 immediately kept the fix close to the data-shape understanding that produced it. Same pattern as v1.13 Phase 71.1.
+- **Live LLM UAT caught two regressions before deploy (Phase 82).** Plan 82-04 ran a live `/endgames` call against dev DB before merging. Initial run showed `endgame_score` missing from the prompt; triaged to `_SECTION_LAYOUT` + `_format_zone_bounds` issues from the metric rename in Plan 82-01. Both fixed inline; regression test `test_endgame_start_vs_end_findings_render_in_prompt` added. Pre-merge live UAT is cheap insurance for LLM-pipeline changes.
+- **Tighten cohort bands over adding a `verdict` field (Phase 82 D-06, Phase 83 D-19).** Original SEED proposal exposed significance independent of cohort. Rejected because it would license LLM over-narration. Instead, `entry_eval_pawns` cohort band tightened IQR ±0.75 → ±0.5 (D-08) so borderline-but-significant cases land in `zone="typical"` and stay silent. Codified in `feedback_llm_significance_signal.md`.
+- **2×2 grid restructure (Phase 83) over inserting a third tile.** Stockfish baseline + user achieved share the same units and visual idiom; the achievable-vs-achieved gap is visually readable; the LLM no longer needs to translate centipawns → score in prose. Reusing `MiniBulletChart` across both columns kept the implementation small.
+- **D-22 amendment switched entry-eval source to `query_endgame_bucket_rows` (Phase 81).** UAT against user 28 surfaced a ~5-game under-count when aggregating per-class entry rows. Bucket-rows gives one row per game at chronologically first endgame position, locking `n + mate + null == total` by construction. Always prefer structural invariants over asserted-by-tests.
+- **Forbidden-word regression test on prompt asset (Phase 83).** Single source of truth: narration-guidance lines using forbidden terms ("expected", "underperformance") fail CI before the prompt ships. Cheaper than per-PR LLM evals.
+- **Stat methodology choices stayed consistent.** Wald-z for one-sample mean tests, Wilson for binomial-style proportion tests. Reused project-wide `compute_confidence_bucket` / Wilson half-width utils — no per-feature reinvention.
+
+### What Was Inefficient
+
+- **Phase 80 column structure didn't survive a week.** Quick task `260506-rtk` replaced the wide-column table with a two-column card grid ~1 day after Phase 80 shipped. The replacement wasn't anticipated during Phase 80 design — UAT scenarios on the original layout (8 deferred items in the audit) became moot. Lesson: when the existing UI is itself under reconsideration, ship the data plumbing first, prototype the visual treatment as a quick task, then commit to the layout.
+- **VALIDATION.md draft flags accumulating (Phases 80.1, 82).** Both phases shipped with `status: draft` / `nyquist_compliant: false` despite verification passing. Frontmatter flag never got flipped to `approved` after verification. Process step missing — either VERIFICATION auto-flips VALIDATION on pass, or VALIDATION gets folded into VERIFICATION (one source of truth on phase status).
+- **`_SECTION_LAYOUT` + `_format_zone_bounds` regressions caught at UAT, not CI.** Plan 82-01's MetricId rename should have failed CI: no test asserted "every emitted subsection appears in `_SECTION_LAYOUT`" or "every active MetricId has a non-skipped zone-bounds path". Both invariants are structural; worth a test to lock down so the next rename doesn't repeat the cycle.
+- **Phase 80 +47k LOC headline dominated by generated artifacts.** `endgameZones.ts` regen + package-lock churn + LLM prompt-version chronological snapshots are not actual code volume. Future milestone-close should exclude generated files from the stats query.
+
+### Patterns Established
+
+- **Mid-milestone phase insert is the standard response to UX bugs surfaced during UAT.** Name the insert `<parent>.1`, lock plans during discuss-phase, run normal waves.
+- **Tighten cohort bands over adding payload fields when the LLM narrates from significance** (`feedback_llm_significance_signal.md`).
+- **Forbidden-word regression tests on prompt assets.** Cheap CI guard against narration drift.
+- **2×2 grid as canonical layout for baseline-vs-achieved comparison** when there are natural columns (Stockfish baseline + your value) × rows (input + output).
+- **Live LLM UAT before merge** is required for any phase touching the LLM prompt or insights service.
+
+### Key Lessons
+
+- **Add invariant tests when renaming Literal types or registry keys.** "Every emitted SubsectionId is in `_SECTION_LAYOUT`" and "every MetricId has a zone-bounds path" are both invariants either could have caught the Phase 82 regressions at CI time.
+- **Process debt accumulates quietly.** VALIDATION.md draft flag is the canonical example — caught only by audit, never blocked the milestone, but is now noise that future readers have to triage.
+- **Headline LOC misleads when codegen dominates.** Future milestone-close should exclude generated files from the stats query.
+- **Seed → phase → close-on-merge.** Phase 83 closed SEED-014 cleanly. Worth keeping seed-status updates in the milestone close workflow so dormant seeds don't accumulate stale references to shipped features.
+
+### Cost Observations
+
+- Sessions: ~5 (one per phase) plus mid-milestone quick tasks.
+- Notable: phases 80, 81, 83 all hit verification on first try; phases 80.1, 82 required mid-execution amendments (transposition test churn + LLM UAT regressions). Both within normal wave-execution variance.
+
+---
+
 ## Milestone: v1.15 — Eval-Based Endgame Classification
 
 **Shipped:** 2026-05-03

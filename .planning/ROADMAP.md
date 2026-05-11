@@ -18,146 +18,23 @@
 - ✅ **v1.13 Opening Insights** — Phases 70, 71, 71.1 (shipped 2026-04-27; Phases 72-74 descoped) — see [milestones/v1.13-ROADMAP.md](milestones/v1.13-ROADMAP.md)
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
 - ✅ **v1.15 Eval-Based Endgame Classification** — Phases 78, 79 (shipped 2026-05-03; VAL-01 / PHASE-VAL-01 rescinded) — see [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md)
-- 🚧 **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82+ (in progress, opened 2026-05-03) — Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`), plus opportunistic UX fixes that fall in the same area. Phase 80: opening-stats columns for middlegame-entry eval and clock diff. Phase 80.1: include transpositions in Move Explorer and Opening Insights stats. Phase 81: twin-tile (entry eval + endgame score) decomposition in Endgame Overall Performance. Phase 82: LLM prompt awareness of the Phase 81 metrics (insights pipeline + prompt update). More phases TBD.
+- ✅ **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82, 83 (shipped 2026-05-11) — see [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md)
 
 ## Phases
 
-<details open>
-<summary>🚧 v1.16 Stockfish Eval Analyses (Phases 80, 81+) — IN PROGRESS (opened 2026-05-03)</summary>
+<details>
+<summary>✅ v1.16 Stockfish Eval Analyses (Phases 80, 80.1, 81, 82, 83) — SHIPPED 2026-05-11</summary>
 
-Downstream consumers of the v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp` / `eval_mate` on `game_positions`). Additional phases will be added as new analyses are scoped from `.planning/notes/phase-aware-analytics-ideas.md` and other brainstorms.
+- [x] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (6/6 plans) — completed 2026-05-05 (PR #80)
+- [x] Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats (4/4 plans) — completed 2026-05-07 (PR #82)
+- [x] Phase 81: Endgame Start vs End — twin-tile section above the WDL table (5/5 plans) — completed 2026-05-09 (PR #85)
+- [x] Phase 82: LLM prompt awareness of Endgame Start vs End metrics (4/4 plans) — completed 2026-05-10 (PR #86)
+- [x] Phase 83: Stockfish-baseline predicted endgame score (5/5 plans) — completed 2026-05-11 (PR #88)
 
-- [ ] Phase 80: Opening stats: middlegame-entry eval and clock-diff columns (6 plans) — planned
-- [x] Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats (4/4 plans) — completed 2026-05-07
-- [ ] Phase 81: Endgame entry eval — twin-tile decomposition in Endgame Overall Performance (5 plans) — planned
-- [ ] Phase 82: LLM prompt awareness of Endgame Start vs End metrics (4 plans) — planned
-- [ ] Phase 83: Stockfish-baseline predicted endgame score (5 plans) — planned
-
-### Phase 80: Opening stats: middlegame-entry eval and clock-diff columns
-
-**Goal:** Extend the Openings → Stats subtab tables (bookmarked openings + most-played openings) with three new columns that consume the Phase 79 middlegame-entry Stockfish evals: (1) **Avg eval at middlegame entry ± std**, oriented from the user's POV (positive = user better, regardless of color); (2) **Eval significance** via a one-sample t-test of mean eval vs 0, surfaced with low/medium/high confidence buckets analogous to the opening insights cards; (3) **Avg clock diff at middlegame entry**, analogous to the existing "Avg clock diff" column in *Time Pressure at Endgame Entry*. Together these answer "does this opening leave me better off in position and on the clock when the real fight starts?" Both tables (bookmarked + most-played) get the same new columns; both desktop and mobile layouts updated.
-**Requirements**: TBD (defined during /gsd-spec-phase 80 or /gsd-discuss-phase 80)
-**Depends on:** v1.15 shipped (Phase 79 — needs `phase` SmallInteger column populated and middlegame-entry positions Stockfish-evaluated on benchmark + prod)
-**Plans:** 6 plans
-**Context:** Sources opening-stats data from positions where `phase = 1` AND it is `MIN(ply)` per game (the middlegame-entry row already populated by Phase 79). Eval is signed user-perspective via the existing color-flip helper used by endgame conv/recov queries. T-test confidence reuses the **10-game minimum threshold** from opening insights (matches `compute_confidence_bucket` in `app/services/opening_insights/`). Avg clock diff at middlegame entry mirrors the SQL pattern from "Avg clock diff at endgame entry" in `app/repositories/endgame_repository.py` — read user clock and opponent clock at the middlegame-entry row, average the diff. Source brainstorm: `.planning/notes/phase-aware-analytics-ideas.md` (Active focus section).
-
-Plans:
-**Wave 1**
-- [x] 80-01-PLAN.md — Backend: eval_confidence helper + extend OpeningWDL schema (Wave 1)
-- [x] 80-03-PLAN.md — Frontend: extend MiniBulletChart with CI whisker (Wave 1)
-- [x] 80-04-PLAN.md — Frontend: openingStatsZones constants + hide ChessBoard on Stats subtab (Wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 80-02-PLAN.md — Backend: query_opening_mg_metrics_batch + service wiring (Wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 80-05-PLAN.md — Frontend: MostPlayedOpeningsTable new columns + mobile second-line + ConfidencePill + clockFormat extracts (Wave 3)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-- [x] 80-06-PLAN.md — Smoke / regression matrix + CHANGELOG + human UI checkpoint (Wave 4)
-
-### Phase 80.1: Include transpositions in Move Explorer and Opening Insights stats
-
-**Goal:** Make WDL/score on the Openings → Moves rows and on Opening Insights findings reflect the *resulting position* including transpositions, not just games that played the exact candidate move from the exact entry. Today, clicking a row showing 57% in the moves list lands on a position summary showing 61% because the position is reached via other move orders too — the row's WDL ignored those games. The fix: the row's `game_count` column stays as games-that-actually-played-this-move (already explained by the existing transposition tooltip — `MoveExplorer.tsx:359-365` — "Position reached in N total games (M via other move orders)"), but `wins/draws/losses/win_pct/draw_pct/loss_pct/score/confidence/p_value` are recomputed over all games visiting `result_hash`. Same shift on `OpeningInsightFinding`: classification (weakness vs. strength), Wilson confidence, ranking, and displayed bar all switch to resulting-position WDL. The `n>=10` surfacing gate stays on the move-played count so we only flag positions the user reached via the called-out move meaningfully often.
-**Requirements:** TBD (defined during /gsd-spec-phase 80.1 or /gsd-discuss-phase 80.1)
-**Depends on:** Independent of Phase 80 plans; touches `app/repositories/openings_repository.py` (`query_next_moves`, `query_transposition_counts`, `query_opening_transitions`) and the corresponding services / FE wording.
-**Plans:** 4 plans
-**Context:** openingtree.com includes transpositions; lichess excludes them. The 57%→61% mismatch on click is the loud UX bug. Implementation sketch:
-- **Moves list:** extend `query_transposition_counts` (or add a sibling) to also return W/D/L per `result_hash` in a single batch query. In `get_next_moves`, keep `game_count` from `query_next_moves` but recompute every WDL-derived field from the new transposition-inclusive numbers, denominator = transposition count.
-- **Insights:** harder. `query_opening_transitions` aggregates per `(entry_hash, candidate_san)` over move-played games — need a second pass / sub-CTE that joins `game_positions` on `resulting_full_hash` to compute resulting-position W/D/L per candidate row. Classification (`_classify_row`), `_wilson_bounds`, ranking, and the HAVING/effect-size gate all switch to resulting-position score. Surfacing gate (`OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE`) stays on move-played count. Consider adding `n_position_reached` field to `OpeningInsightFinding` for honest disclosure on the card.
-- **Frontend:** transposition tooltip wording on the moves list already does the right work — no change needed. `OpeningFindingCard` score-badge tooltip should clarify "Score across all games reaching this position, via any move order."
-- **Risks:** every test asserting WDL/score numbers in `test_opening_insights_*` and `test_openings_service_*` needs updating; expect significant test churn. The Phase 75 score thresholds (`SCORE_PIVOT` ± `MAJOR_EFFECT`/`MINOR_EFFECT`) were calibrated against move-played distributions — resulting-position scores may cluster tighter (closer to user's overall average), shifting finding volumes. Sanity-check against prod-DB queries during execute-phase.
-
-Plans:
-**Wave 1**
-- [x] 80.1-01-PLAN.md — Repository: query_transposition_wdl + query_resulting_position_wdl siblings + Wave 0 transposition fixtures (Wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 80.1-02-PLAN.md — Move Explorer service: get_next_moves WDL field swap + canonical convergence test (Wave 2)
-- [x] 80.1-03-PLAN.md — Opening Insights service: compute_insights SimpleNamespace adapter + transposition-divergence tests (Wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 80.1-04-PLAN.md — Smoke / regression matrix + prod-DB sanity check (D-09) + CHANGELOG entry (Wave 3)
-
-### Phase 81: Endgame Start vs End — twin-tile section above the WDL table
-
-**Goal:** Add a new **Endgame Start vs End** section to the Endgame Overall Performance area of the Endgames page, positioned **above** the existing "Games with vs without Endgame" WDL table. The section renders two tiles via the existing `MiniBulletChart`: *"where you start"* (avg eval at endgame entry, in pawns, sig-tested against 0) + *"what you do with it"* (**absolute endgame score**, sig-tested against 50% — the equal-footing break-even line). Both tiles: p<0.05, three-state color (sig positive → green / sig negative → red / not sig → neutral). Phase 81 is **purely additive**: the existing WDL table (incl. the Score Gap column) and the "Endgame vs Non-Endgame Score over Time" chart remain unchanged. Concept-explainer accordion gains paragraphs for both new tested metrics. Visual presentation, sub-header copy, mobile ordering, axis ranges, and final section heading wording are deferred to /gsd-discuss-phase 81.
-**Requirements**: TBD (defined during /gsd-spec-phase 81 or /gsd-discuss-phase 81)
-**Depends on:** v1.15 shipped (Phase 79 — needs endgame-entry `eval_cp`/`eval_mate` populated on benchmark + prod). Independent of Phase 80 (different page, different subset of positions).
-**Plans:** 5 plans
-**Context:** Design swap from earlier draft (2026-05-09 exploration): the second tile shows **absolute endgame score vs 50%**, not the endgame-vs-non-endgame Score Gap. Reason: a player with exceptional pre-endgame play can have a large negative Score Gap while their endgame score is still well above 50% — coloring that red ("squanders advantage") is misleading. Against rating-matched opponents (and tightenable via the opponent-strength filter), 50% is a clean, honest null with a textbook one-sample test; deviation is endgame-specific signal. Score Gap stays in the WDL table (descriptive, untested) where it bridges into the existing time-series chart. Backend reuses the existing `first_endgame` ply walk in `app/repositories/endgame_repository.py` (same SQL path conv/parity/recov use). `EndgamePerformanceResponse` gains: `entry_eval_mean_pawns: float`, `entry_eval_n: int` (mate excluded, `eval_cp NOT NULL`), `entry_eval_p_value: float | None` (Wald z), and `endgame_score_p_value: float | None` (Wilson score test). Frontend reuses `MiniBulletChart`; new component is the section container + sig-test color logic. Population baseline for entry eval: ~0 cp under equal-footing (per benchmark DB 2026-05-03), per-game SD ≈ 418 cp ⇒ sig test reliably catches users systematically entering at ≳+150 cp on a few-hundred-game corpus; UI copy phrases the null as "we can't tell," not "no advantage." Decision NOT to pair entry eval with clock-diff in this section: cross-user analysis showed the "paid for it with time" trade-off only holds for bullet/blitz (r ≈ −0.4), vanishes for rapid/classical (r ≈ 0). Original design: `.planning/notes/endgame-entry-eval-tile-design.md` — note: that doc still reflects the Score-Gap-as-second-tile framing and the WDL-table-restructure plan; both are now obsolete and will be reconciled during /gsd-discuss-phase 81. Population reference data: `.claude/skills/benchmarks/SKILL.md` §2 + `reports/benchmarks-2026-05-03.md`.
-
-Plans:
-**Wave 1**
-- [x] 81-01-PLAN.md — Backend: schema + service aggregation + tests (entry-eval Wald-z, score Wilson) (Wave 1)
-- [x] 81-02-PLAN.md — Frontend: types mirror + endgameEntryEvalZones constants/helper (Wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 81-03-PLAN.md — Frontend: EndgameStartVsEndSection component + tests (Wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 81-04-PLAN.md — Frontend: Endgames.tsx integration + 2 accordion paragraphs + page test (Wave 3)
-
-**Wave 4** *(blocked on Wave 3 completion)*
-- [x] 81-05-PLAN.md — Manual UAT checkpoint (visual parity, mobile stacking, popover content, three-state color) (Wave 4)
-
-### Phase 82: LLM prompt awareness of Endgame Start vs End metrics
-
-**Goal:** Wire the two Phase 81 metrics (`entry_eval_mean_pawns` + `endgame_score_p_value` against 50%) through the Endgame Insights LLM pipeline so the narrated Endgame Insights section can mention them alongside Conversion / Parity / Recovery and the score-gap timeline. Phase 81 was purely additive UI; the LLM prompt path was deliberately deferred. Today the user-visible "Endgame Start vs End" tiles are in production but `app/services/insights_service.py` emits no findings for either metric and `app/prompts/endgame_insights.md` has no glossary entry or subsection for them — the LLM can't narrate ~⅓ of the visible Endgame Overall Performance section. This phase closes that gap.
-
-**Requirements:** TBD (defined during /gsd-discuss-phase 82)
-
-**Depends on:** Phase 81 shipped (the Phase 81 schema fields `entry_eval_mean_pawns`, `entry_eval_n`, `entry_eval_p_value`, `endgame_score_p_value` already populated). Independent of Phase 80 / Phase 80.1.
-
-**Plans:** 4 plans (locked during /gsd-discuss-phase 82, see 82-CONTEXT.md decisions D-01..D-25).
-
-Plans:
-**Wave 1**
-- [x] 82-01-PLAN.md — Backend: MetricId / SubsectionId rename + ZoneSpec registration + `_findings_endgame_start_vs_end` emitter + insights_service tests (Wave 1)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-- [x] 82-02-PLAN.md — Prompt: glossary entries + `### Subsection: endgame_start_vs_end` block + mapping-table row + `_PROMPT_VERSION` bump to `endgame_v23` (Wave 2)
-- [x] 82-03-PLAN.md — Frontend: `endgameEntryEvalZones.ts` constants tightened to ±0.5 + tile-color rule amendment via constant change (D-09, D-12, D-14) + component tests (Wave 2)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-- [x] 82-04-PLAN.md — Manual UAT (live LLM run on dev DB; tile-vs-LLM agreement; no Conv/Parity/Recovery regression) + CHANGELOG entry (Wave 3)
-
-**Context:** Sections §0 (Endgame score, per-user) and §3 (EG-entry eval, per-(user, color)) of `reports/benchmarks-2026-05-10.md` provide the population data needed to bake cohort bands into the LLM zone classification. Key benchmark verdicts:
-- **EG-entry eval**: pooled `[p25, p75] = [-0.56, +0.75]` pawns; TC review (max d=0.22), ELO review (max d=0.28) ⇒ **single global zone** suffices; live tile already uses `±0.75` neutral. ELO ramp `-15 → +22 cp` (800 → 2400) is real but small.
-- **Endgame score**: pooled `[p25, p75] = [0.4627, 0.5581]`; TC review (max d=0.27), ELO **keep separate** (max d=0.84, 800 vs 2400). Per-ELO `ENDGAME_SCORE_ZONES` registry justified by separation (mirrors `ENDGAME_SKILL_ZONES`); live shared `SCORE_BULLET_NEUTRAL` constants stay untouched (they also drive the Openings score bullet — different population).
-
-**Decision-log amendment (2026-05-10, /gsd-discuss-phase 82):** the seed-stage `verdict` field on `SubsectionFinding` was REJECTED (D-06). Rationale: significance independent of cohort would license the LLM to narrate small-but-significant findings, which is exactly the over-emphasis Phase 82 wants to avoid. Instead, the cohort band on `entry_eval_pawns` was tightened from IQR ±0.75 to ±0.5 (D-08) so borderline-but-significant cases land in `zone="typical"` and stay silent on both tile and LLM (D-12 / D-14). The user-28 pattern is now correctly under-narrated rather than over-narrated.
-
-**Decision-log amendment (2026-05-10, /gsd-discuss-phase 82):** the tile-color rule amendment ships IN-PHASE (D-13), not as a separate `/gsd-quick`. Reasoning: the LLM finding `zone` and the tile color must agree from day one — shipping the LLM update first leaves users seeing a colored tile with a non-narrating LLM (or vice versa). Per RESEARCH.md / PATTERNS.md, the existing `isConfident(level) && isInColoredZone` gate in `EndgameStartVsEndSection.tsx` already implements `(zone != neutral) AND p < 0.05` once the underlying neutral-band constants tighten to ±0.5 — so the source file requires no logic change beyond the constant update.
-
-Source: `.planning/seeds/SEED-013-llm-prompt-awareness-of-endgame-start-vs-end.md`. Population reference: `reports/benchmarks-2026-05-10.md` §0 + §3.
-
-### Phase 83: Stockfish-baseline predicted endgame score
-
-**Goal:** Add a Stockfish-baseline **predicted score** to the Endgame Overall Performance section so users can read "what a 2300+ player would score from positions like mine" against the achieved endgame score in the same W+0.5D units. Convert each per-game endgame-entry `eval_cp` to an expected score in [0, 1] via the Lichess winning-chances sigmoid (`1 / (1 + e^(-0.00368208 * cp))`); aggregate per-user with a Wilson-style test against 50%; surface as a new bullet chart inside the existing **"Where you start"** tile, juxtaposed with the **"Endgame score"** bullet chart in **"What you do with it"**. The two tiles restructure into a 2×2 grid: eval / WDL on top, score-axis bullets on the bottom so the predicted-vs-achieved gap is directly readable. Mate scores map to 0/1 directly (not via the sigmoid). Framing is **Stockfish baseline / ceiling**, NOT "expected" or "underperformance" — the Lichess curve was fit on 2300+ play and weaker players systematically score below from positive evals (that gap is rating-tilt, not a flaw to flag).
-
-**Requirements:** TBD (defined during /gsd-discuss-phase 83)
-
-**Depends on:** Phase 82 shipped (twin-tile section + LLM prompt awareness in production; share the Phase 82 cohort filter `|eval_cp| < 2000`, sign convention from `_classify_endgame_bucket`, and the Wilson chess-score util).
-
-**Plans:** 5 plans (locked during /gsd-discuss-phase 83 — all in-phase per D-01):
-
-**Wave 1**
-- [ ] 83-01-PLAN.md — eval_utils: Lichess sigmoid + mate→0/1 helpers + unit tests (Wave 1)
-
-**Wave 2** *(blocked on Wave 1)*
-- [ ] 83-02-PLAN.md — Backend plumbing: Wilson refactor in score_confidence + entry_expected_score aggregator + schema fields + tests (Wave 2)
-
-**Wave 3** *(blocked on Wave 2)*
-- [ ] 83-04-PLAN.md — Benchmark calibration: SKILL.md section + reports/benchmarks-2026-05-11.md + ENTRY_EXPECTED_SCORE_ZONES + endgameZones.ts regen (Wave 3)
-
-**Wave 4** *(blocked on Wave 3)*
-- [ ] 83-03-PLAN.md — UI 2×2 restructure: AchievableScorePopover + 2×2 grid + lifted MiniWDLBar + RTL tests (Wave 4, depends on 83-04 for zone helper import)
-- [ ] 83-05-PLAN.md — LLM prompt: MetricId Literal + third SubsectionFinding + glossary + subsection block + _PROMPT_VERSION bump to endgame_v25 (Wave 4)
-
-**Context:** Source: `.planning/seeds/SEED-014-stockfish-baseline-vs-achieved-endgame-score.md` (comprehensive design, edge cases, methodology lessons inherited from Phase 82). Today the two tiles live in different units (centipawns vs W+0.5D score) — the LLM translates one to the other in prose; the UI cannot. This phase closes that gap by adding a second bullet chart in the same units as `endgame_score` so the predicted-vs-achieved gap is visually readable. Complements Conv/Parity/Recovery (which use discrete ±1.0-pawn thresholds and binary outcomes) — sigmoid handles the +0.99 vs +1.01 transition smoothly and uses the full eval magnitude. Sign convention mirrors `_classify_endgame_bucket` in `app/services/endgame_service.py:170-204`; mirror the entry-eval plumbing in `app/repositories/endgame_repository.py:793-841` and `app/services/endgame_service.py:1670-1712`. The new schema field will be `entry_expected_score` (parallel to `entry_eval_mean_pawns`); `endgame_score` key is already taken by Phase 81. NULL eval coverage on prod is not 100% — cohort filter must require `eval_cp IS NOT NULL OR eval_mate IS NOT NULL`. WDL chart in row 1 of "What you do with it" reuses the existing component from "Games with vs without Endgame" — lift and parameterize, do not reimplement.
+See [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md) for full details.
 
 </details>
+
 
 <details>
 <summary>✅ v1.0 Initial Platform (Phases 1-10) — SHIPPED 2024-03-15</summary>
@@ -371,7 +248,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 70-71.1. v1.13 phases | v1.13 | 14/14 | Complete (Phases 72/73/74 descoped) | 2026-04-27 |
 | 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
 | 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
-| 80. Opening stats: middlegame-entry eval and clock-diff columns | v1.16 | 6/6 | Complete   | 2026-05-03 |
+| 80-83. v1.16 phases | v1.16 | 24/24 | Complete | 2026-05-11 |
 
 ## Backlog
 

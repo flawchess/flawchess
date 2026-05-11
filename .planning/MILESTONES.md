@@ -1,5 +1,28 @@
 # Milestones: FlawChess
 
+## v1.16 Stockfish Eval Analyses (Shipped: 2026-05-11)
+
+**Phases completed:** 5 phases (80, 80.1, 81, 82, 83), 24 plans, delivered via PRs #80, #82, #85, #86, #88.
+**Stats:** 267 files changed, +47,752 / -4,427 lines, 118 commits over 7 days (2026-05-05 → 2026-05-11) since v1.15 (commit 64441744 → 46f78231).
+
+**Definition of done:** Downstream consumers of v1.15 Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate` on `game_positions`), plus opportunistic UX fixes that fall in the same area.
+
+**Key accomplishments:**
+
+- **Phase 80** — Opening Stats subtab: avg eval at middlegame entry ± std (user POV) with one-sample t-test confidence pill and CI-whisker MiniBulletChart; later restructured into a two-column card grid (quick task `260506-rtk`) replacing MostPlayedOpeningsTable.
+- **Phase 80.1** — Move Explorer + Opening Insights WDL/score now reflect resulting-position (transposition-inclusive) instead of move-played only. New `query_transposition_wdl` + `query_resulting_position_wdl` repo helpers; `game_count` and the n≥10 surfacing gate stay move-played for honest disclosure.
+- **Phase 81** — Endgame Start vs End twin-tile section above the WDL table: entry-eval (cp, sig-tested vs 0) + endgame score (sig-tested vs 50%), three-state color with Wald-z / Wilson tests, n≥10 gate, "we can't tell" framing for non-significant verdicts.
+- **Phase 82** — LLM prompt pipeline (`endgame_v23` → `endgame_v24`) gains awareness of both Phase 81 metrics: `MetricId` + `SubsectionId` Literal extensions, `ZONE_REGISTRY` entries for `entry_eval_pawns` (band ±0.5 after D-08 tightening) + `endgame_score` (band [0.45, 0.55]); fixed two `_SECTION_LAYOUT` / `_format_zone_bounds` regressions during live UAT.
+- **Phase 83** — Stockfish-baseline predicted endgame score (Lichess sigmoid k=0.00368208) with 2x2 grid restructure of Start vs End; `entry_expected_score` + `_n` / `_p_value` / `_ci_low` / `_ci_high` schema fields; LLM narrates achievable-vs-achieved gap as headline diagnostic (`endgame_v25` → `endgame_v26`). Closes SEED-014.
+
+**Tech debt (carried forward, informational):**
+
+- Phase 80: 8 informational UAT scenarios on UI superseded by two-column card grid (quick task `260506-rtk`).
+- Phases 80.1 + 82: clerical `VALIDATION.md status=draft` / `nyquist_compliant=false` despite passing verification with all required tests in place.
+- Pre-existing: stale `test_min_games_per_candidate_floor_at_10` (Phase 79 raised floor 10→20); project-wide `ruff format` drift on 89 files (not CI-gated).
+
+---
+
 ## v1.15 Eval-Based Endgame Classification (Shipped: 2026-05-03)
 
 **Phases completed:** 2 phases (78, 79), 10 plans, delivered via PR #78 (combined Phase 78 + Phase 79 cutover) plus follow-on PR #79 (`EnginePool` parallelisation).

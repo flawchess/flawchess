@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.16] Stockfish Eval Analyses — 2026-05-11
+
+Downstream consumers of v1.15's Stockfish eval substrate (endgame span-entry + middlegame-entry `eval_cp` / `eval_mate` on `game_positions`). Adds opening-stats eval bullets with t-test confidence, transposition-inclusive Move Explorer + Opening Insights WDL, the Endgame Start vs End twin-tile section with 2×2 grid for Stockfish-baseline achievable score, and LLM narration of all three new metrics. Five phases (80, 80.1, 81, 82, 83) shipped via PRs #80, #82, #85, #86, #88.
+
 ### Added
 
 - **Endgames: Stockfish-baseline achievable score** (Phase 83): the "Endgame Start vs End" section restructures into a 2×2 grid. Tile 1 "Where you start" gains a second row showing each user's mean **achievable score** at endgame entry: the Lichess winning-chances sigmoid applied to the Stockfish eval at the first endgame ply (mate positions map directly to 0 or 1, mate-INCLUDED), aggregated per user, sig-tested against 50% via the same Wilson code path as Tile 2's achieved score. Tile 2 "What you do with it" gains a top-row mini WDL bar; bottom row stays the existing W+0.5D score bullet. The two bottom rows share the same axis (`SCORE_BULLET_CENTER`) and cohort band (`[0.45, 0.55]`, calibrated from `reports/benchmarks-2026-05-11.md` §7), so the **achievable-vs-achieved gap** reads directly across the two tiles — a user can see "the engine baseline predicts 49% from these positions, you scored 52%" at a glance. Backend `EndgamePerformanceResponse` gains five `entry_expected_score*` fields. LLM narrates the new metric from day one (`_PROMPT_VERSION` bumped to `endgame_v25`, new "Achievable score" vocab entry, gap framing). New shared `app/services/eval_utils.py` module (Lichess sigmoid + mate→0/1, no business logic). New `ENTRY_EXPECTED_SCORE_ZONES` registry entry; `entryExpectedScoreZoneColor` codegen'd to `frontend/src/generated/endgameZones.ts`.
@@ -496,7 +500,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.15...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.16...HEAD
+[v1.16]: https://github.com/flawchess/flawchess/compare/v1.15...v1.16
 [v1.15]: https://github.com/flawchess/flawchess/compare/v1.14...v1.15
 [v1.14]: https://github.com/flawchess/flawchess/compare/v1.13...v1.14
 [v1.13]: https://github.com/flawchess/flawchess/compare/v1.12...v1.13

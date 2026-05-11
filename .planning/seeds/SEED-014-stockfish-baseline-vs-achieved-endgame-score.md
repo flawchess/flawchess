@@ -1,13 +1,17 @@
 ---
 id: SEED-014
-status: dormant
+status: closed
 planted: 2026-05-10
+closed: 2026-05-11
+closed_by: Phase 83 (Stockfish-baseline predicted endgame score) — PR #88
 planted_during: /gsd-explore session immediately after Phase 82 (LLM prompt awareness of "Where you start" / "What you do with it") completed
 trigger_when: scoping the next endgame analytics phase, or whenever the next round of Endgame-Insights tile work comes up
 scope: phase (single, ~3 plans) — eval→expected-score conversion + new bullet-chart metric in "Where you start" + (optional) prompt awareness
 ---
 
 # SEED-014: Stockfish-baseline expected score for endgame entries — juxtaposed with achieved score
+
+> **CLOSED 2026-05-11** — Implemented in Phase 83 (PR #88, v1.16). `eval_cp_to_expected_score` (Lichess sigmoid k=0.00368208) + `eval_mate_to_expected_score`, 5 new `EndgamePerformanceResponse` fields (`entry_expected_score` + `_n` / `_p_value` / `_ci_low` / `_ci_high`), 2x2 grid in `EndgameStartVsEndSection`, LLM prompt bumped to `endgame_v26` to narrate the achievable-vs-achieved gap as the headline diagnostic. Follow-up gap-as-first-class-metric work tracked in SEED-015.
 
 ## Why This Matters
 
