@@ -30,6 +30,7 @@ Window = Literal["all_time", "last_3mo"]
 MetricId = Literal[
     "score_gap",
     "entry_eval_pawns",            # Phase 82 D-04: new endgame_start_vs_end Tile 1
+    "entry_expected_score",        # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",               # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
     # Phase 68 (260424-pc6): per-part absolute score metrics emitted by the
     # score_timeline subsection. `score_gap` still carries the signed
@@ -139,13 +140,29 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     # entry_eval_pawns: average Stockfish eval at endgame entry, signed from
     # user's perspective. Phase 82 D-08.
     "entry_eval_pawns": ZoneSpec(
-        # Editorial tightening from benchmark IQR (±0.75) to ±0.50 —
-        # half-a-pawn average swing at endgame entry is narratable. Single
-        # global band justified (TC max d=0.22, ELO max d=0.28 per
-        # benchmarks-2026-05-10.md §3 — both "review", not "keep separate").
-        # Unit: signed pawns.
-        typical_lower=-0.50,
-        typical_upper=0.50,
+        # Pooled benchmark IQR `max(|p25|, |p75|) = 75 cp = 0.75 pawns`
+        # (reports/benchmarks-2026-05-10.md §3, line 281). Single global
+        # band justified (TC max d=0.22, ELO max d=0.28 per the same
+        # §3 — both "review", not "keep separate"). Unit: signed pawns.
+        typical_lower=-0.75,
+        typical_upper=0.75,
+        direction="higher_is_better",
+    ),
+    # entry_expected_score: per-user mean expected score (Lichess winning-
+    # chances sigmoid applied to entry-ply Stockfish eval) over endgame-
+    # reaching games. Phase 83 D-14/D-15/D-17.
+    "entry_expected_score": ZoneSpec(
+        # Pooled benchmark IQR (excl. sparse cell): [0.4629, 0.5536]
+        # (reports/benchmarks-2026-05-11.md §7). Single global band justified —
+        # TC max d=0.218 (bullet vs rapid), ELO max d=0.224 (800 vs 2000),
+        # both "review" (≥ 0.2, < 0.5). Per-ELO stratification deferred.
+        # Band locked to [0.45, 0.55]: round numbers, very close to pooled IQR,
+        # match existing endgame_score band for visual parity with the §0
+        # final-score zone (memory feedback_zone_band_judgement.md — band
+        # alignment with neighbouring tile preferred over symmetric +1pp drift).
+        # Unit: 0–1 scale (NOT percent), centered at 0.5 chess-fairness null.
+        typical_lower=0.45,
+        typical_upper=0.55,
         direction="higher_is_better",
     ),
     "endgame_score": ZoneSpec(

@@ -66,6 +66,13 @@ export interface EndgamePerformanceResponse {
   endgame_score_p_value: number | null;
   entry_eval_ci_low_pawns: number | null;
   entry_eval_ci_high_pawns: number | null;
+  // Phase 83 (D-21): Stockfish-baseline achievable score for "Where you start" tile.
+  // Mate INCLUDED in cohort; NULL evals excluded; |eval_cp| < 2000 clip applied.
+  entry_expected_score: number;
+  entry_expected_score_n: number;
+  entry_expected_score_p_value: number | null;
+  entry_expected_score_ci_low: number | null;
+  entry_expected_score_ci_high: number | null;
 }
 
 /** Single data point in the per-type weekly win-rate time series.

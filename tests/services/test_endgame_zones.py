@@ -105,7 +105,7 @@ class TestSampleQuality:
 class TestNewMetricZones:
     """Boundary tests for Phase 82 D-08/D-10 new ZoneSpec entries.
 
-    entry_eval_pawns: typical = [-0.50, +0.50], higher_is_better.
+    entry_eval_pawns: typical = [-0.75, +0.75], higher_is_better.
     endgame_score: typical = [0.45, 0.55], higher_is_better.
     Both replace old score-timeline no-op entries (D-01/D-02 rename) and
     register the new endgame_start_vs_end subsection metrics (D-03/D-04).
@@ -114,24 +114,24 @@ class TestNewMetricZones:
     # --- entry_eval_pawns boundaries ---
 
     def test_entry_eval_above_band_is_strong(self) -> None:
-        assert assign_zone("entry_eval_pawns", 0.80) == "strong"
+        assert assign_zone("entry_eval_pawns", 1.0) == "strong"
 
     def test_entry_eval_at_upper_boundary_is_strong(self) -> None:
         """Upper boundary is inclusive on the strong side (>= typical_upper)."""
-        assert assign_zone("entry_eval_pawns", 0.50) == "strong"
+        assert assign_zone("entry_eval_pawns", 0.75) == "strong"
 
     def test_entry_eval_inside_band_is_typical(self) -> None:
-        assert assign_zone("entry_eval_pawns", 0.49) == "typical"
+        assert assign_zone("entry_eval_pawns", 0.74) == "typical"
 
     def test_entry_eval_zero_is_typical(self) -> None:
         assert assign_zone("entry_eval_pawns", 0.0) == "typical"
 
     def test_entry_eval_at_lower_boundary_is_typical(self) -> None:
         """Lower boundary is inclusive on the typical side (>= typical_lower)."""
-        assert assign_zone("entry_eval_pawns", -0.50) == "typical"
+        assert assign_zone("entry_eval_pawns", -0.75) == "typical"
 
     def test_entry_eval_below_band_is_weak(self) -> None:
-        assert assign_zone("entry_eval_pawns", -0.80) == "weak"
+        assert assign_zone("entry_eval_pawns", -1.0) == "weak"
 
     def test_entry_eval_nan_is_typical(self) -> None:
         assert assign_zone("entry_eval_pawns", float("nan")) == "typical"
@@ -199,13 +199,19 @@ class TestRegistrySanity:
         Phase 82 (D-01..D-04, D-08, D-10): `endgame_score` / `non_endgame_score`
         are renamed to `endgame_score_timeline` / `non_endgame_score_timeline`
         (no-op [0, 1] band preserved). Two new entries added:
-        `entry_eval_pawns` (±0.50 band) and `endgame_score` (repurposed, [0.45,
+        `entry_eval_pawns` (±0.75 band) and `endgame_score` (repurposed, [0.45,
         0.55] band). See `_format_zone_bounds` in insights_llm.py for the
         matching bounds-suppression guard on timeline metrics.
+
+        Phase 83 (D-14..D-17): `entry_expected_score` ([0.45, 0.55] band)
+        added — Lichess-sigmoid expected score at endgame entry over the user's
+        cohort, surfaced as the "achievable score" row of the new Tile 1 (Plan
+        83-03). Source: reports/benchmarks-2026-05-11.md §7.
         """
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
             "entry_eval_pawns",
+            "entry_expected_score",
             "endgame_score",
             "endgame_score_timeline",
             "non_endgame_score_timeline",

@@ -194,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v24 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v26 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -205,10 +205,61 @@ class TestPromptVersionAndBody:
     - Phase 82 (D-22, D-23, D-24): new glossary entries for entry_eval_pawns and endgame_score,
       renamed glossary entries to endgame_score_timeline / non_endgame_score_timeline,
       new ### Subsection: endgame_start_vs_end block, updated mapping table.
+    - Phase 83 (D-17, D-18, D-20): new glossary entry for entry_expected_score
+      (UI label "Achievable score"), extended endgame_start_vs_end subsection
+      block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
-    def test_prompt_version_is_v24(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v24"
+    def test_prompt_version_is_v26(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v26"
+
+    def test_prompt_changelog_preserves_prior_versions(self) -> None:
+        """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
+        import inspect as _inspect
+
+        src = _inspect.getsource(insights_llm)
+        # Prior version comments must still be present in the changelog string.
+        assert "v24 (260510-ugj)" in src
+        assert "v23 (260510 endgame_start_vs_end)" in src
+        # New v25 changelog block must be present and tagged for entry_expected_score.
+        assert "v25 (260511 entry_expected_score)" in src
+
+    def test_prompt_file_glossary_has_entry_expected_score(self) -> None:
+        """Phase 83 D-17: glossary entry must be present with required framing."""
+        from pathlib import Path
+
+        prompt_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        body = prompt_path.read_text(encoding="utf-8")
+        assert "entry_expected_score" in body
+        assert "Achievable score" in body
+        # D-10 forbidden words must NOT appear in user-facing narration guidance.
+        # "underperformance" is allowed ONLY inside an explicit forbidden-words list.
+        # Every occurrence in the prompt must be preceded on the same line by the
+        # word "Forbidden" (D-10 framing) — narration guidance never uses the term.
+        for line in body.splitlines():
+            if "underperformance" in line.lower():
+                assert "forbidden" in line.lower(), (
+                    f"`underperformance` must only appear in forbidden-words lists. "
+                    f"Offending line: {line!r}"
+                )
+        # Cohort band citation to the Plan 4 benchmark report
+        assert "benchmarks-2026-05-11.md" in body
+        # Lichess sigmoid derivation reference
+        assert "0.00368208" in body
+
+    def test_prompt_file_subsection_has_worked_example_narrations(self) -> None:
+        """Phase 83 D-18: extended subsection block has the worked examples."""
+        from pathlib import Path
+
+        prompt_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        body = prompt_path.read_text(encoding="utf-8")
+        # The two example narrations from CONTEXT.md D-18 must be present verbatim.
+        assert "Stockfish-baseline says positions like yours score 58%" in body
+        assert "Achievable 49%, you scored 52%" in body
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -498,7 +549,7 @@ class TestPromptAssembly:
 
         Also asserts the rendered SCALE for both metrics:
         - entry_eval_pawns is in PAWNS — value 0.46 must render as "+0.46", band as
-          "(typical -0.50 to +0.50)". The prompt glossary (D-22) explicitly says
+          "(typical -0.75 to +0.75)". The prompt glossary (D-22) explicitly says
           "Render as signed one-decimal value with the unit 'pawns' ... Do NOT
           convert to centipawns." Phase 82 initially shipped with the metric
           missing from `_NON_FRACTIONAL_METRICS`, which scaled values by 100×
@@ -549,13 +600,13 @@ class TestPromptAssembly:
             "entry_eval_pawns must render in pawns (e.g. +0.46), not centipawns "
             f"(+46). Prompt slice:\n{prompt}"
         )
-        assert "(typical -0.50 to +0.50)" in prompt, (
-            "entry_eval_pawns zone band must render in pawns (-0.50 to +0.50), "
-            f"not centipawns (-50 to +50). Prompt slice:\n{prompt}"
+        assert "(typical -0.75 to +0.75)" in prompt, (
+            "entry_eval_pawns zone band must render in pawns (-0.75 to +0.75), "
+            f"not centipawns (-75 to +75). Prompt slice:\n{prompt}"
         )
         # Negative invariant: no centipawn rendering of entry_eval_pawns.
         assert "mean=+46" not in prompt
-        assert "(typical -50 to +50)" not in prompt
+        assert "(typical -75 to +75)" not in prompt
 
         # endgame_score scale: integer percentage (0-100). Value 0.58 → +58.
         assert "mean=+58" in prompt
@@ -648,10 +699,10 @@ class TestPromptAssembly:
         from app.services.insights_llm import _format_zone_bounds
 
         result = _format_zone_bounds("entry_eval_pawns", None)
-        assert "-0.50" in result
-        assert "+0.50" in result
+        assert "-0.75" in result
+        assert "+0.75" in result
         # Negative invariant: no centipawn-style render.
-        assert "-50 to" not in result
+        assert "-75 to" not in result
 
     def test_system_prompt_loaded_from_file(self) -> None:
         """_SYSTEM_PROMPT is the markdown file contents + auto-generated zone appendix.
@@ -2109,7 +2160,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v24"
+        assert response.report.prompt_version == "endgame_v26"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2133,7 +2184,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v24"
+        assert log.response_json["prompt_version"] == "endgame_v26"
 
 
 class TestCacheBehavior:

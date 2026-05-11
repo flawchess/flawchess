@@ -23,6 +23,13 @@ import { Cpu } from 'lucide-react';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
+import { AchievableScorePopover } from '@/components/popovers/AchievableScorePopover';
+import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
+import {
+  ENTRY_EXPECTED_SCORE_NEUTRAL_MAX,
+  ENTRY_EXPECTED_SCORE_NEUTRAL_MIN,
+  entryExpectedScoreZoneColor,
+} from '@/generated/endgameZones';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
   ENDGAME_ENTRY_EVAL_CENTER,
@@ -36,9 +43,15 @@ import {
   SCORE_BULLET_NEUTRAL_MAX,
   SCORE_BULLET_NEUTRAL_MIN,
   clampScoreCi,
-  scoreBulletDomain,
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
+
+// Endgame tile half-domain for the W+0.5D bullets. Locally overridden (not
+// SCORE_BULLET_DOMAIN) so the Achievable- and Endgame-score bullets show the
+// neutral band ([0.45, 0.55]) filling ≈1/3 of the axis (0.10 / 0.30), matching
+// the entry-eval bullet on Tile 1. Axis spans 35-65%; CIs past it render with
+// open-ended whiskers. Openings cards keep the wider 25-75% scale.
+const ENDGAME_TILE_SCORE_DOMAIN = 0.15;
 import { wilsonBounds } from '@/lib/scoreConfidence';
 import type { ConfidenceLevel } from '@/lib/scoreConfidence';
 import { isConfident } from '@/lib/significance';
@@ -73,6 +86,24 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
   const evalColor: string | undefined = evalShowZoneFontColor ? evalZoneHex : undefined;
   const showTile1Chart = data.entry_eval_n >= MIN_GAMES_FOR_RELIABLE_STATS;
 
+  // ── Tile 1 row 2 derived values (Phase 83 — achievable score vs 50%) ─────
+  // Sibling triad to the entry-eval row above. Cohort: mate INCLUDED, NULL evals
+  // excluded, |eval_cp| < 2000 clipped; band [0.45, 0.55] is shared with the
+  // §0 endgame_score zone for visual parity (per 83-04 SUMMARY).
+  const achievableLevel = deriveLevel(
+    data.entry_expected_score_p_value,
+    data.entry_expected_score_n,
+  );
+  const achievableZoneHex = entryExpectedScoreZoneColor(data.entry_expected_score);
+  const achievableIsInColoredZone = achievableZoneHex !== ZONE_NEUTRAL;
+  const achievableShowZoneFontColor =
+    isConfident(achievableLevel) && achievableIsInColoredZone;
+  const achievableColor: string | undefined = achievableShowZoneFontColor
+    ? achievableZoneHex
+    : undefined;
+  const showAchievableChart =
+    data.entry_expected_score_n >= MIN_GAMES_FOR_RELIABLE_STATS;
+
   // ── Tile 2 derived values (endgame score vs 50%) ─────────────────────────
   // `score`, the Wilson CI bounds (computed locally), and `endgame_score_p_value`
   // (computed on the backend) are all derived from `endgame_wdl.{wins,draws,losses,total}`.
@@ -102,102 +133,175 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
   return (
     <section data-testid="endgame-start-vs-end-section">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Tile 1 — entry eval, FIRST in DOM for D-17 mobile chronological order */}
+        {/* Tile 1 — "Where you start": top row eval (existing), bottom row
+            achievable score (Phase 83). Stacked via flex flex-col so mobile
+            DOM order matches desktop (D-12). */}
         <div
           className="charcoal-texture rounded-md p-4"
           data-testid="tile-entry-eval"
         >
           <h3 className="text-base font-semibold mb-2">Where you start</h3>
-          {showTile1Chart ? (
-            // grid-cols-1 stacks label-row and chart on mobile; lg+ puts them
-            // side-by-side once each tile is wide enough to fit both.
-            <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
-              <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-                <span className="text-muted-foreground">Endgame entry eval:</span>
-                <span
-                  className="ml-auto font-semibold inline-flex items-center gap-0.5"
-                  style={evalColor ? { color: evalColor } : undefined}
-                  data-testid="entry-eval-value"
-                >
-                  {formatSignedEvalPawns(data.entry_eval_mean_pawns)}
-                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+          <div className="flex flex-col gap-4">
+            {/* Row 1: entry-eval bullet (pawns) */}
+            {showTile1Chart ? (
+              <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+                <span className="flex items-center gap-1 text-sm tabular-nums w-full">
+                  <span className="text-muted-foreground">Endgame entry eval:</span>
+                  <span
+                    className="ml-auto font-semibold inline-flex items-center gap-0.5"
+                    style={evalColor ? { color: evalColor } : undefined}
+                    data-testid="entry-eval-value"
+                  >
+                    {formatSignedEvalPawns(data.entry_eval_mean_pawns)}
+                    <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                  <BulletConfidencePopover
+                    level={evalLevel}
+                    pValue={data.entry_eval_p_value}
+                    gameCount={data.entry_eval_n}
+                    evalMeanPawns={data.entry_eval_mean_pawns}
+                    // Endgame stats are color-agnostic; the popover's `color` prop
+                    // drives the per-color baseline tick. White is a fallback —
+                    // BulletConfidencePopover.tsx:15 union is white | black only,
+                    // so a non-color string would fail tsc.
+                    color="white"
+                    testId="entry-eval-popover-trigger"
+                  />
                 </span>
-                <BulletConfidencePopover
-                  level={evalLevel}
-                  pValue={data.entry_eval_p_value}
-                  gameCount={data.entry_eval_n}
-                  evalMeanPawns={data.entry_eval_mean_pawns}
-                  // Endgame stats are color-agnostic; the popover's `color` prop
-                  // drives the per-color baseline tick. White is a fallback —
-                  // BulletConfidencePopover.tsx:15 union is white | black only,
-                  // so a non-color string would fail tsc.
-                  color="white"
-                  testId="entry-eval-popover-trigger"
-                />
-              </span>
-              <div className="min-w-0 tabular-nums">
-                <MiniBulletChart
-                  value={data.entry_eval_mean_pawns}
-                  center={ENDGAME_ENTRY_EVAL_CENTER}
-                  neutralMin={ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS}
-                  neutralMax={ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS}
-                  domain={ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS}
-                  ciLow={data.entry_eval_ci_low_pawns ?? undefined}
-                  ciHigh={data.entry_eval_ci_high_pawns ?? undefined}
-                  barColor="neutral"
-                  ariaLabel={`Endgame entry eval: ${data.entry_eval_mean_pawns.toFixed(2)} pawns`}
-                />
+                <div className="min-w-0 tabular-nums">
+                  <MiniBulletChart
+                    value={data.entry_eval_mean_pawns}
+                    center={ENDGAME_ENTRY_EVAL_CENTER}
+                    neutralMin={ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS}
+                    neutralMax={ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS}
+                    domain={ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS}
+                    ciLow={data.entry_eval_ci_low_pawns ?? undefined}
+                    ciHigh={data.entry_eval_ci_high_pawns ?? undefined}
+                    barColor="neutral"
+                    ariaLabel={`Endgame entry eval: ${data.entry_eval_mean_pawns.toFixed(2)} pawns`}
+                  />
+                </div>
               </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-4">Not enough data yet</p>
+            )}
+
+            {/* Row 2: achievable score bullet (W+0.5D axis, shared with tile 2 row 2). */}
+            <div data-testid="endgame-achievable-score">
+              {showAchievableChart ? (
+                <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+                  <span className="flex items-center gap-1 text-sm tabular-nums w-full">
+                    <span className="text-muted-foreground">Achievable score:</span>
+                    <span
+                      className="ml-auto font-semibold"
+                      style={achievableColor ? { color: achievableColor } : undefined}
+                      data-testid="achievable-score-value"
+                    >
+                      {`${(data.entry_expected_score * 100).toFixed(0)}%`}
+                    </span>
+                    <AchievableScorePopover
+                      score={data.entry_expected_score}
+                      gameCount={data.entry_expected_score_n}
+                      level={achievableLevel}
+                      pValue={data.entry_expected_score_p_value ?? 1}
+                    />
+                  </span>
+                  <div className="min-w-0 tabular-nums">
+                    {/* MiniBulletChart neutralMin/neutralMax are OFFSETS from center; the
+                        registry stores absolute bounds, so convert by subtracting center
+                        (CR-01 fix: passing absolute bounds collapses the neutral band). */}
+                    <MiniBulletChart
+                      value={data.entry_expected_score}
+                      center={SCORE_BULLET_CENTER}
+                      neutralMin={ENTRY_EXPECTED_SCORE_NEUTRAL_MIN - SCORE_BULLET_CENTER}
+                      neutralMax={ENTRY_EXPECTED_SCORE_NEUTRAL_MAX - SCORE_BULLET_CENTER}
+                      domain={ENDGAME_TILE_SCORE_DOMAIN}
+                      ciLow={
+                        data.entry_expected_score_ci_low != null
+                          ? clampScoreCi(data.entry_expected_score_ci_low)
+                          : undefined
+                      }
+                      ciHigh={
+                        data.entry_expected_score_ci_high != null
+                          ? clampScoreCi(data.entry_expected_score_ci_high)
+                          : undefined
+                      }
+                      barColor="neutral"
+                      ariaLabel={`Achievable score: ${(data.entry_expected_score * 100).toFixed(0)}%`}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4">Not enough data yet</p>
+              )}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4">Not enough data yet</p>
-          )}
+          </div>
         </div>
 
-        {/* Tile 2 — endgame score vs 50% */}
+        {/* Tile 2 — "What you do with it": top row WDL bar (Phase 83 D-13),
+            bottom row endgame score (existing). flex flex-col preserves
+            mobile DOM order top-then-bottom (D-12). */}
         <div
           className="charcoal-texture rounded-md p-4"
           data-testid="tile-endgame-score"
         >
           <h3 className="text-base font-semibold mb-2">What you do with it</h3>
-          {showTile2Chart ? (
-            // grid-cols-1 stacks label-row and chart on mobile; lg+ puts them
-            // side-by-side once each tile is wide enough to fit both.
-            <div className="grid grid-cols-1 lg:grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
-              <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-                <span className="text-muted-foreground">Endgame score:</span>
-                <span
-                  className="ml-auto font-semibold"
-                  style={scoreColor ? { color: scoreColor } : undefined}
-                  data-testid="endgame-score-value"
-                >
-                  {`${(score * 100).toFixed(1)}%`}
+          <div className="flex flex-col gap-4">
+            {/* Row 1: WDL mini bar (D-13) — lifted from the existing
+                Games-with-vs-without-Endgame table below the section. */}
+            <div data-testid="endgame-wdl-bar-row">
+              <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+                <span className="flex items-center gap-1 text-sm tabular-nums w-full">
+                  <span className="text-muted-foreground">Win / Draw / Loss:</span>
                 </span>
-                <ScoreConfidencePopover
-                  level={scoreLevel}
-                  pValue={scorePValueForPopover}
-                  score={score}
-                  gameCount={totalGames}
-                  testId="endgame-score-popover-trigger"
-                />
-              </span>
-              <div className="min-w-0 tabular-nums">
-                <MiniBulletChart
-                  value={score}
-                  center={SCORE_BULLET_CENTER}
-                  neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-                  neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-                  domain={scoreBulletDomain()}
-                  ciLow={clampScoreCi(scoreCiLow)}
-                  ciHigh={clampScoreCi(scoreCiHigh)}
-                  barColor="neutral"
-                  ariaLabel={`Endgame score: ${(score * 100).toFixed(1)}%`}
-                />
+                <div className="min-w-0">
+                  <MiniWDLBar
+                    win_pct={data.endgame_wdl.win_pct}
+                    draw_pct={data.endgame_wdl.draw_pct}
+                    loss_pct={data.endgame_wdl.loss_pct}
+                  />
+                </div>
               </div>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4">Not enough data yet</p>
-          )}
+
+            {/* Row 2: endgame-score bullet (existing). */}
+            {showTile2Chart ? (
+              <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+                <span className="flex items-center gap-1 text-sm tabular-nums w-full">
+                  <span className="text-muted-foreground">Endgame score:</span>
+                  <span
+                    className="ml-auto font-semibold"
+                    style={scoreColor ? { color: scoreColor } : undefined}
+                    data-testid="endgame-score-value"
+                  >
+                    {`${(score * 100).toFixed(0)}%`}
+                  </span>
+                  <ScoreConfidencePopover
+                    level={scoreLevel}
+                    pValue={scorePValueForPopover}
+                    score={score}
+                    gameCount={totalGames}
+                    testId="endgame-score-popover-trigger"
+                  />
+                </span>
+                <div className="min-w-0 tabular-nums">
+                  <MiniBulletChart
+                    value={score}
+                    center={SCORE_BULLET_CENTER}
+                    neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+                    neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+                    domain={ENDGAME_TILE_SCORE_DOMAIN}
+                    ciLow={clampScoreCi(scoreCiLow)}
+                    ciHigh={clampScoreCi(scoreCiHigh)}
+                    barColor="neutral"
+                    ariaLabel={`Endgame score: ${(score * 100).toFixed(0)}%`}
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-4">Not enough data yet</p>
+            )}
+          </div>
         </div>
       </div>
     </section>

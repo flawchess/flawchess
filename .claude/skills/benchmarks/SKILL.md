@@ -418,6 +418,129 @@ The full 5×4 cell table also re-runs the same shape for the sparse `(2400, clas
 
 ---
 
+## Section 7 — Stockfish-baseline expected score at endgame entry (per-user)
+
+**Question:** At endgame entry, what score does Stockfish predict for this player given the position they walked into? Per-user `entry_xs = avg(expected_score)` over endgame-reaching games in the user's selected TC, where `expected_score ∈ [0, 1]` is computed from the entry-ply Stockfish eval via the Lichess winning-chances sigmoid (cp) or direct 0/1 mapping (mate).
+
+**Why a separate section from §0:** §0 measures the **final** EG-only score (where the user actually finishes after playing the endgame). §7 measures the **predicted-from-position** score at endgame entry (what an engine would expect from the position, before the user touches it). The gap between §7's pooled cohort band and the user's `entry_xs` answers "did the user walk into a worse-than-cohort position?" — separate from the "what did they do with it?" signal in §0. Both are needed for the Endgame Start vs End twin-tile section (Phase 81/83).
+
+**Per-user metric:**
+- `expected_score` per game = Lichess winning-chances sigmoid applied to `eval_cp × color_sign` (mate forces 0 or 1), at the first endgame-class ply.
+- `entry_xs` = mean per game in the user's selected TC, restricted to endgame-reaching games (`game_id` in `endgame_game_ids`).
+- Same `≥6 plies with endgame_class IS NOT NULL` gate as §0/§1/§2/§4/§6. The metric is uncentered (no baseline subtract); cohort band is direct.
+
+**Sample floor:** ≥20 endgame-entry games per user per cell (matches §0's per-user floor).
+
+### Currently set in code
+
+| Constant | Live value | File |
+|---|---:|---|
+| `entry_expected_score` ZoneSpec | TBD by Plan 83-04 Task 3 | `app/services/endgame_zones.py` |
+| `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN/MAX` | TBD (generated) | `frontend/src/generated/endgameZones.ts` |
+| `entryExpectedScoreZoneColor()` | TBD (generated) | `frontend/src/generated/endgameZones.ts` |
+
+The cohort band is a **dedicated EG-entry score band** — not shared with `SCORE_BULLET_NEUTRAL_*` (which drives the Openings per-position score bullet on a different population) or with `endgame_score` (which drives the §0 final-score zone). All three populations differ; do not retune one band based on another's data.
+
+### Query
+
+```sql
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+endgame_game_ids AS (
+  SELECT game_id FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+entry_rows AS (
+  -- One row per game: the first endgame-class ply (lowest ply where endgame_class IS NOT NULL).
+  SELECT
+    gp.game_id, gp.eval_cp, gp.eval_mate,
+    ROW_NUMBER() OVER (PARTITION BY gp.game_id ORDER BY gp.ply ASC) AS rn
+  FROM game_positions gp
+  JOIN endgame_game_ids eg ON eg.game_id = gp.game_id
+  WHERE gp.endgame_class IS NOT NULL
+),
+rows AS (
+  SELECT
+    g.user_id,
+    su.rating_bucket AS elo_bucket,
+    su.tc_bucket AS tc,
+    -- Per-game expected_score from the user's perspective:
+    --   mate forces 0 or 1 (sign-flipped for black),
+    --   |cp| < 2000 uses the Lichess winning-chances sigmoid (k=0.00368208),
+    --   |cp| >= 2000 is clamped to NULL (treated as decisive but mate-undeclared — caller can decide).
+    CASE
+      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0
+      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) < 0 THEN 0.0
+      WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < 2000
+           THEN 1.0 / (1.0 + exp(-0.00368208 * (er.eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+      ELSE NULL
+    END AS expected_score
+  FROM games g
+  JOIN selected_users su ON su.user_id = g.user_id
+  JOIN entry_rows er ON er.game_id = g.id AND er.rn = 1
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all sections)")
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+),
+per_user AS (
+  SELECT user_id, elo_bucket, tc,
+    avg(expected_score) AS entry_xs
+  FROM rows
+  GROUP BY user_id, elo_bucket, tc
+  HAVING count(*) FILTER (WHERE expected_score IS NOT NULL) >= 20
+),
+per_user_excl_sparse AS (
+  -- Sparse-cell exclusion mirrors §0–§6 universal handling
+  SELECT * FROM per_user
+  WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
+)
+SELECT
+  elo_bucket, tc,
+  count(*) AS n_users,
+  round(avg(entry_xs)::numeric, 4) AS xs_mean,
+  round(stddev_samp(entry_xs)::numeric, 4) AS xs_sd,
+  round(var_samp(entry_xs)::numeric, 6) AS xs_var,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY entry_xs)::numeric, 4) AS xs_p95
+FROM per_user_excl_sparse
+GROUP BY elo_bucket, tc
+HAVING count(*) >= 10
+ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
+```
+
+The full 5×4 cell table re-runs the same shape for the sparse `(2400, classical)` cell with an `n=2*` footnote (12 completed users overall, most below the 20-game floor). TC marginal, ELO marginal, and pooled overall come from re-aggregating `per_user_excl_sparse` over `tc` only / `elo_bucket` only / no group. `xs_mean` / `xs_var` columns feed Cohen's d per the canonical "Computing Cohen's d in SQL" recipe.
+
+### Output
+
+1. **5×4 cell table** of per-user `entry_xs` (`p25 / p50 / p75 (n_users)`), sparse cell footnoted.
+2. **TC marginal** (4 rows pooled across ELO): `n_users / mean / p25 / p50 / p75`.
+3. **ELO marginal** (5 rows pooled across TC): same columns.
+4. **Pooled overall**: 1 row — feeds the cohort-band recommendation.
+5. **Recommendations:**
+   - **Sanity check on equal-footing filter**: pooled mean should sit within ±1 pp of 0.50 (the chess fairness null). The benchmark's selection layer applies the filter; pre-filter cohorts run +5 pp or more above this baseline.
+   - **Cohort neutral band** = pooled `[xs_p25, xs_p75]`, rounded to 2 decimal places. Asymmetric is OK (the cohort skill edge sits ~+1 pp above 50%).
+   - **Editorial tightening (D-15, memory `feedback_zone_band_judgement.md`)**: if pooled IQR is wide enough that meaningful effects would land in `typical`, tighten inside IQR so the tile actually paints red/green. For this metric pooled IQR is already ~9 pp wide — usually no further tightening is needed (unlike `entry_eval_pawns` where the pawn-unit IQR of ±0.75 was tightened to ±0.50).
+   - **Recommendation routing**: this calibration goes into a new EG-entry score-zone entry in the Python `ZONE_REGISTRY` and a regenerated `endgameZones.ts` (do **not** retune `SCORE_BULLET_NEUTRAL_*` or the §0 `endgame_score` band — different populations).
+6. **Collapse verdict block**: TC d_max + ELO d_max from per-user `entry_xs` distribution, plus a 5×4 heatmap of `xs_p50`. Per the canonical thresholds (< 0.2 collapse / 0.2–0.5 review / ≥ 0.5 keep separate).
+
+---
+
 ## Section 1 — Score gap (endgame vs non-endgame)
 
 **Question:** How does per-user `eg_score − non_eg_score` distribute across the population, and does the distribution shift across (TC × ELO) cells?

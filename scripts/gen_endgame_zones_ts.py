@@ -38,6 +38,10 @@ _OUTPUT = _REPO_ROOT / "frontend" / "src" / "generated" / "endgameZones.ts"
 # FE currently exports them as SCORE_GAP_NEUTRAL_MIN/MAX so the TS mirror does too.
 _SCORE_GAP_SPEC = ZONE_REGISTRY["score_gap"]
 
+# Phase 83 D-16: codegen the entry_expected_score helpers so Plan 3 imports them
+# from frontend/src/generated/endgameZones.ts (CI drift gate enforces parity).
+_ENTRY_XS_SPEC = ZONE_REGISTRY["entry_expected_score"]
+
 
 def _format_bucket_zones(bucket: str) -> str:
     """Emit the three-band array literal for one material bucket.
@@ -86,6 +90,8 @@ def _render() -> str:
         "// Source: app/services/endgame_zones.py\n"
         "// Regenerate with: uv run python scripts/gen_endgame_zones_ts.py\n"
         "\n"
+        'import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from "@/lib/theme";\n'
+        "\n"
         'export type MaterialBucket = "conversion" | "parity" | "recovery";\n'
         "\n"
         "export interface GaugeZone {\n"
@@ -109,6 +115,23 @@ def _render() -> str:
         f"export const NEUTRAL_TIMEOUT_THRESHOLD = {NEUTRAL_TIMEOUT_THRESHOLD};\n"
         f"export const SCORE_GAP_NEUTRAL_MIN = {_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const SCORE_GAP_NEUTRAL_MAX = {_SCORE_GAP_SPEC.typical_upper};\n"
+        "\n"
+        "// Phase 83 D-14/D-17: per-user entry_expected_score cohort band.\n"
+        "// Source: reports/benchmarks-2026-05-11.md §7 (pooled IQR aligned with\n"
+        "// endgame_score band for visual parity with the §0 final-score zone).\n"
+        f"export const ENTRY_EXPECTED_SCORE_NEUTRAL_MIN = {_ENTRY_XS_SPEC.typical_lower};\n"
+        f"export const ENTRY_EXPECTED_SCORE_NEUTRAL_MAX = {_ENTRY_XS_SPEC.typical_upper};\n"
+        "\n"
+        "/**\n"
+        " * Pick the zone color for the EG-entry expected-score bullet relative to the\n"
+        " * cohort neutral band. Pure presentation — gating on confidence happens in the\n"
+        " * consumer (mirrors endgameEntryEvalZoneColor).\n"
+        " */\n"
+        "export function entryExpectedScoreZoneColor(value: number): string {\n"
+        "  if (value >= ENTRY_EXPECTED_SCORE_NEUTRAL_MAX) return ZONE_SUCCESS;\n"
+        "  if (value <= ENTRY_EXPECTED_SCORE_NEUTRAL_MIN) return ZONE_DANGER;\n"
+        "  return ZONE_NEUTRAL;\n"
+        "}\n"
         "\n"
         "// Per-endgame-class typical bands for Conversion and Recovery.\n"
         "// Source: reports/benchmarks-2026-05-01.md (pooled p25/p75 per class).\n"

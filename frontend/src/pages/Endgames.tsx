@@ -386,6 +386,22 @@ export function EndgamesPage() {
                       (positive means you have the better position). Mate scores are excluded.
                     </p>
                     <p>
+                      <strong>Achievable score:</strong> what a 2300+ rated player would score
+                      from your endgame-entry positions. Calculated from your Endgame entry eval
+                      using the{' '}
+                      <a
+                        href="https://lichess.org/page/accuracy"
+                        className="text-primary underline-offset-4 hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Lichess winning chances formula
+                      </a>
+                      . The curve is fitted on 2300+ rapid games, so scoring a little below this
+                      baseline from positive evals is normal at lower ratings. Compare against your
+                      achieved Endgame score to see how well you convert the positions you reach.
+                    </p>
+                    <p>
                       <strong>Endgame score:</strong> your win rate (with draws counted as half)
                       across all games that reach an endgame, tested against 50%, the break-even line
                       you'd expect against rating-matched opponents. Use the Opponent Strength filter

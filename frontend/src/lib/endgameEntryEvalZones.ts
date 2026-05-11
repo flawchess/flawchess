@@ -1,13 +1,15 @@
 /**
- * Phase 82 (D-09 amendment to Phase 81 D-15, RESEARCH §Open Question 1):
- * zone constants for the endgame-entry-eval bullet on the Endgames page.
+ * Zone constants for the endgame-entry-eval bullet on the Endgames page.
  *
- * Values are pawn units, signed user-perspective. The neutral band is ±0.5
- * (Phase 82 D-09), aligned with the backend ZoneSpec (app/services/endgame_zones.py::
- * ZONE_REGISTRY["entry_eval_pawns"]) and the LLM narration threshold. Phase 81
- * used a wider band derived from the benchmark [p25, p75] ≈ [-53.8, +75.3] cp;
- * Phase 82 editorial choice: half-a-pawn average swing at endgame entry is
- * narratable. See feedback_zone_band_judgement.md.
+ * Values are pawn units, signed user-perspective. The neutral band is ±0.75
+ * pawns, derived from the pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`
+ * (reports/benchmarks-2026-05-10.md §3, line 281). Aligned with the backend
+ * ZoneSpec (app/services/endgame_zones.py::ZONE_REGISTRY["entry_eval_pawns"])
+ * and the LLM narration threshold.
+ *
+ * History: Phase 82 D-09 had editorially tightened the band to ±0.50 to
+ * narrate half-pawn swings; reverted to the benchmark-recommended ±0.75 so
+ * the green/red zones track the actual cohort distribution.
  *
  * Why a separate module from openingStatsZones.ts: the MG-entry baseline (±0.30
  * pawns there) is calibrated for the middlegame-entry distribution (per-game
@@ -18,16 +20,18 @@
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 /** EG-entry: lower bound of the neutral zone in pawns (signed user-perspective).
- * Phase 82 (D-09): tightened to align with the backend ZoneSpec and the LLM
- * narration threshold. */
-export const ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.5;
+ * Pooled benchmark IQR ≈ [-0.56, +0.75]; symmetric `max(|p25|, |p75|) = 0.75`. */
+export const ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.75;
 
-/** EG-entry: upper bound of the neutral zone in pawns. Symmetric around 0.
- * Phase 82 (D-09): tightened to align with backend and LLM narration. */
-export const ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = 0.5;
+/** EG-entry: upper bound of the neutral zone in pawns. Symmetric around 0. */
+export const ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = 0.75;
 
-/** EG-entry: bullet-chart half-domain in pawns (D-15). Values beyond clamp; CI whiskers go open-ended. */
-export const ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS = 2.0;
+/** EG-entry: bullet-chart half-domain in pawns. Sized so the neutral band
+ * (width 1.5 pawns) fills ≈1/3 of the axis (1.5 / 4.5), matching the visual
+ * proportion of the Achievable- and Endgame-score bullets on the same page.
+ * Slightly wider than the cohort p05/p95 range (±1.99 pawns); CI whiskers
+ * past ±domain render open-ended. */
+export const ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS = 2.25;
 
 /** Center of the bullet axis (Tile 1 H0 per D-07). */
 export const ENDGAME_ENTRY_EVAL_CENTER = 0;

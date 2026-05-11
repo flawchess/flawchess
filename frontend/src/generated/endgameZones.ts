@@ -2,6 +2,8 @@
 // Source: app/services/endgame_zones.py
 // Regenerate with: uv run python scripts/gen_endgame_zones_ts.py
 
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from "@/lib/theme";
+
 export type MaterialBucket = "conversion" | "parity" | "recovery";
 
 export interface GaugeZone {
@@ -37,6 +39,23 @@ export const NEUTRAL_PCT_THRESHOLD = 5.0;
 export const NEUTRAL_TIMEOUT_THRESHOLD = 5.0;
 export const SCORE_GAP_NEUTRAL_MIN = -0.1;
 export const SCORE_GAP_NEUTRAL_MAX = 0.1;
+
+// Phase 83 D-14/D-17: per-user entry_expected_score cohort band.
+// Source: reports/benchmarks-2026-05-11.md §7 (pooled IQR aligned with
+// endgame_score band for visual parity with the §0 final-score zone).
+export const ENTRY_EXPECTED_SCORE_NEUTRAL_MIN = 0.45;
+export const ENTRY_EXPECTED_SCORE_NEUTRAL_MAX = 0.55;
+
+/**
+ * Pick the zone color for the EG-entry expected-score bullet relative to the
+ * cohort neutral band. Pure presentation — gating on confidence happens in the
+ * consumer (mirrors endgameEntryEvalZoneColor).
+ */
+export function entryExpectedScoreZoneColor(value: number): string {
+  if (value >= ENTRY_EXPECTED_SCORE_NEUTRAL_MAX) return ZONE_SUCCESS;
+  if (value <= ENTRY_EXPECTED_SCORE_NEUTRAL_MIN) return ZONE_DANGER;
+  return ZONE_NEUTRAL;
+}
 
 // Per-endgame-class typical bands for Conversion and Recovery.
 // Source: reports/benchmarks-2026-05-01.md (pooled p25/p75 per class).
