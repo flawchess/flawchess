@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Opening Insights query plan regression for small users.** The `query_opening_transitions` standard-start filter used a correlated `EXISTS` subquery. For users with a few hundred games the planner picked `ix_gp_user_white_hash` for the inner scan (only `user_id` as index cond, row-by-row filter on `ply=0 AND full_hash=STARTING_HASH`), scanning ~25k rows per outer row × ~8k outer rows ≈ 188M shared buffer hits and ~88 s wall time. Heavy users (~20k+ games) coincidentally landed on `ix_gp_user_full_hash_move_san` and ran in ~1 s. Rewriting as an explicit `INNER JOIN` to a subquery pins the planner to the right index for both regimes: ~65 ms on the 499-game test user, equal-or-faster on a 23k-game user (928 ms vs 988 ms warm-cache).
+
 ## [v1.16] Stockfish Eval Analyses — 2026-05-11
 
 Downstream consumers of v1.15's Stockfish eval substrate (endgame span-entry + middlegame-entry `eval_cp` / `eval_mate` on `game_positions`). Adds opening-stats eval bullets with t-test confidence, transposition-inclusive Move Explorer + Opening Insights WDL, the Endgame Start vs End twin-tile section with 2×2 grid for Stockfish-baseline achievable score, and LLM narration of all three new metrics. Five phases (80, 80.1, 81, 82, 83) shipped via PRs #80, #82, #85, #86, #88.

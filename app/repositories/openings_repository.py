@@ -736,16 +736,30 @@ async def query_opening_transitions(
     # min(array_agg(...)) lexicographically picks such a chain. Games missing
     # a ply-0 row entirely (data corruption — should not occur) are also
     # excluded by the EXISTS predicate.
-    gp_root = aliased(GamePosition, name="gp_root")
-    has_standard_start = (
-        select(1)
+    # Pre-filter to games whose ply-0 position is the standard starting position
+    # (excludes chess.com puzzle/themed-event games with [SetUp "1"] PGN tags
+    # whose SAN prefix is unreachable from chess.Board() and would crash the
+    # replay in opening_insights_service._compute_prefix_hashes). Games missing
+    # a ply-0 row entirely (data corruption — should not occur) are also
+    # excluded.
+    #
+    # Implemented as an INNER JOIN to a subquery rather than a correlated
+    # EXISTS: on small users (e.g. 499 games) the EXISTS form caused the
+    # planner to pick ix_gp_user_white_hash for the inner scan (only user_id
+    # filterable, then row-by-row filter on ply=0 + full_hash), scanning ~25k
+    # rows per outer row × 8k outer rows = 188M buffer hits / ~88s. Heavy
+    # users (~20k+ games) happened to dodge the bug because the planner chose
+    # ix_gp_user_full_hash_move_san there. The JOIN form lets the planner push
+    # game_id into ix_gp_user_game_ply for the gp scan in both regimes —
+    # ~65ms on the same 499-game user.
+    standard_start_games_subq = (
+        select(GamePosition.game_id.label("game_id"))
         .where(
-            gp_root.game_id == GamePosition.game_id,
-            gp_root.user_id == GamePosition.user_id,
-            gp_root.ply == 0,
-            gp_root.full_hash == STARTING_POSITION_HASH,
+            GamePosition.user_id == user_id,
+            GamePosition.ply == 0,
+            GamePosition.full_hash == STARTING_POSITION_HASH,
         )
-        .exists()
+        .subquery("standard_start_games")
     )
     transitions_cte = (
         select(
@@ -787,16 +801,15 @@ async def query_opening_transitions(
             )
             .label("entry_san_sequence"),
         )
+        .join(
+            standard_start_games_subq,
+            GamePosition.game_id == standard_start_games_subq.c.game_id,
+        )
         .where(
             GamePosition.user_id == user_id,
             # Need ply 0 for the partition (so its move_san enters entry_san_sequence)
             # and ply MAX_ENTRY_PLY+1 so LEAD has a row to read for entries at MAX_ENTRY_PLY.
             GamePosition.ply.between(0, OPENING_INSIGHTS_MAX_ENTRY_PLY + 1),
-            # Phase 71 hotfix: include only games whose ply-0 position is the
-            # standard starting position (chess.com [SetUp "1"] PGN tags etc.
-            # are excluded) — their SAN prefix is unreachable from chess.Board()
-            # and would crash the replay in opening_insights_service.
-            has_standard_start,
         )
         .cte("transitions")
     )
