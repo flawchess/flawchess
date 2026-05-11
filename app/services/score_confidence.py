@@ -40,6 +40,15 @@ the return signature for callers that historically built Wald CI bounds; the
 score CI itself is now Wilson (see `wilson_bounds`), so SE is informational
 only — it describes the actual variance of the chess score on the data, not
 the test SE used for the p-value.
+
+Phase 83 Plan 2 Task 1: the Wilson math `(p_value, se_null)` is factored into
+the private `_wilson_score_test_vs_half` helper so it can be reused by the
+`compute_score_confidence_from_mean(score, n)` sibling without duplicating
+the math. `compute_confidence_bucket(w, d, losses, n)` continues to accept
+the (W, D, L, N) calling convention and returns the empirical SE; the sibling
+accepts a pre-aggregated float mean and returns SE=0.0 (no W/D/L breakdown is
+available to compute the trinomial variance from). Bucketing thresholds and
+the N>=10 gate are shared.
 """
 
 import math
@@ -82,6 +91,70 @@ def wilson_bounds(p: float, n: int) -> tuple[float, float]:
     lower = max(0.0, min(1.0, center - margin))
     upper = max(0.0, min(1.0, center + margin))
     return lower, upper
+
+
+def _wilson_score_test_vs_half(score: float, n: int) -> tuple[float, float]:
+    """Return (p_value, se_null) for the two-sided Wilson score-test of H0: score == 0.5.
+
+    Pure Wilson math — no bucketing, no N-gate, no edge-case clamp. Callers
+    must gate on `n > 0` themselves; this helper assumes `n >= 1`.
+
+    SE_null is the standard error under H0=0.5: `sqrt(0.5 * 0.5 / n)`, which
+    is positive for any n>=1 so the test is well-defined everywhere.
+    p_value is `erfc(|z| / sqrt(2))` for `z = (score - 0.5) / SE_null`.
+
+    Phase 83 Plan 2 Task 1: single source of Wilson math; both
+    `compute_confidence_bucket` and `compute_score_confidence_from_mean`
+    delegate here so the formula appears exactly once in the codebase.
+    """
+    se_null = math.sqrt(SCORE_PIVOT * (1.0 - SCORE_PIVOT) / n)
+    z = (score - SCORE_PIVOT) / se_null
+    p_value = math.erfc(abs(z) / math.sqrt(2.0))
+    return p_value, se_null
+
+
+def _bucket_from_p_value(
+    p_value: float, n: int
+) -> Literal["low", "medium", "high"]:
+    """Bucket a Wilson p-value into low/medium/high, with the N>=10 sample-size gate."""
+    if n < CONFIDENCE_MIN_N:
+        return "low"
+    if p_value < CONFIDENCE_HIGH_MAX_P:
+        return "high"
+    if p_value < CONFIDENCE_MEDIUM_MAX_P:
+        return "medium"
+    return "low"
+
+
+def compute_score_confidence_from_mean(
+    score: float, n: int
+) -> tuple[Literal["low", "medium", "high"], float, float]:
+    """Return (confidence_bucket, two_sided_p_value, se) for a pre-aggregated (score, n).
+
+    Sibling of `compute_confidence_bucket` accepting a float mean instead of
+    the (W, D, L, N) breakdown. Bucketing and the N>=10 gate are identical;
+    the only behavioural difference is the third tuple element:
+
+      compute_confidence_bucket(w, d, losses, n) -> empirical trinomial SE
+      compute_score_confidence_from_mean(score, n) -> 0.0 (no W/D/L breakdown)
+
+    Returning 0.0 (instead of, say, the Wilson null SE) matches the contract
+    expected by callers of `compute_confidence_bucket` for degenerate rows
+    (all-wins / all-draws / all-losses already return SE=0.0). The third
+    element is informational only — the Wilson p-value carries the test signal.
+
+    Phase 83 Plan 2 Task 1: the new entry_expected_score aggregator in
+    endgame_service is a float mean, not a (W, D, L) triple, so it cannot
+    call `compute_confidence_bucket` directly. This sibling preserves the
+    single Wilson code path while accepting the right input shape.
+
+    n <= 0 returns ("low", 1.0, 0.0) without raising (mirrors the MD-02
+    defensive guard on `compute_confidence_bucket`).
+    """
+    if n <= 0:
+        return "low", 1.0, 0.0
+    p_value, _se_null = _wilson_score_test_vs_half(score, n)
+    return _bucket_from_p_value(p_value, n), p_value, 0.0
 
 
 def compute_confidence_bucket(
@@ -134,13 +207,11 @@ def compute_confidence_bucket(
 
     score = (w + 0.5 * d) / n
 
-    # Wilson score-test: null SE under H0=0.5 is sqrt(0.5*0.5/n) = 0.5/sqrt(n).
-    # Always positive for n>0, so no SE=0 degeneracy. The Wilson test is the
-    # inversion of `wilson_bounds`: rejecting H0 at alpha iff the Wilson 1-alpha
-    # CI excludes 0.5.
-    se_null = math.sqrt(SCORE_PIVOT * (1.0 - SCORE_PIVOT) / n)
-    z = (score - SCORE_PIVOT) / se_null
-    p_value = math.erfc(abs(z) / math.sqrt(2.0))
+    # Phase 83 Plan 2 Task 1: Wilson math factored into `_wilson_score_test_vs_half`
+    # so the formula `(p_value, se_null)` lives in exactly one place. This call
+    # is the inversion of `wilson_bounds` — rejecting H0 at alpha iff the Wilson
+    # 1-alpha CI excludes 0.5.
+    p_value, _se_null = _wilson_score_test_vs_half(score, n)
 
     # Empirical (trinomial) SE of the chess score, returned for backward compat.
     # Not used in the test — informational only. Clamped to 0 for degenerate
@@ -148,15 +219,4 @@ def compute_confidence_bucket(
     empirical_variance = max(0.0, (w + 0.25 * d) / n - score * score)
     se = math.sqrt(empirical_variance / n)
 
-    # Bucket by p-value with an N >= 10 gate. Small samples are forced to "low"
-    # to align with the unreliable-stats UI dim and avoid claiming "high" with
-    # N=1 single-win or "high, p=1.0" with N=10 all-draws.
-    if n < CONFIDENCE_MIN_N:
-        confidence: Literal["low", "medium", "high"] = "low"
-    elif p_value < CONFIDENCE_HIGH_MAX_P:
-        confidence = "high"
-    elif p_value < CONFIDENCE_MEDIUM_MAX_P:
-        confidence = "medium"
-    else:
-        confidence = "low"
-    return confidence, p_value, se
+    return _bucket_from_p_value(p_value, n), p_value, se

@@ -64,8 +64,16 @@ from app.schemas.endgames import (
     TimePressureChartResponse,
 )
 from app.services.eval_confidence import compute_eval_confidence_bucket
+from app.services.eval_utils import (
+    eval_cp_to_expected_score,
+    eval_mate_to_expected_score,
+)
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
-from app.services.score_confidence import compute_confidence_bucket
+from app.services.score_confidence import (
+    compute_confidence_bucket,
+    compute_score_confidence_from_mean,
+    wilson_bounds,
+)
 
 
 class EndgameClassInt(IntEnum):
@@ -164,6 +172,13 @@ def classify_endgame_class(material_signature: str) -> EndgameClass:
 # 4-ply persistence proxy (REFAC-02). 100 cp == 1.0 pawn — surfaced to the user
 # as "+1.0" / "-1.0" in tooltips and bucket labels.
 EVAL_ADVANTAGE_THRESHOLD = 100
+
+# Phase 83 (D-07): drop |eval_cp| >= 2000 from the entry_expected_score cohort.
+# The Lichess winning-chances sigmoid saturates around +/-800 cp anyway (f(+800) ~
+# 0.95, f(+1500) ~ 0.997), so very large evals add almost-1.0 contributions that
+# overwhelm the mean. Matches Phase 82's "analyzable endgame entry" cohort
+# definition for consistency with the entry_eval bullet (see SEED-014 D-07).
+EVAL_CLIP_MAX_CP = 2000
 
 
 def _classify_endgame_bucket(
@@ -1719,6 +1734,53 @@ def _get_endgame_performance_from_rows(
         p_score_raw if endgame_wdl.total >= 10 else None
     )
 
+    # Phase 83 Plan 2 (D-04..D-07, D-21): Stockfish-baseline expected score
+    # sibling aggregator over the same bucket_rows cursor. Per-game expected
+    # score via Lichess sigmoid for eval_cp / 0-or-1 for eval_mate. Mate is
+    # INCLUDED here (D-06 — inverts the entry_eval cohort, which drops mate);
+    # |eval_cp| >= EVAL_CLIP_MAX_CP rows are dropped (D-07).
+    ex_sum = 0.0
+    ex_n = 0
+    for row in bucket_rows:
+        if row.eval_mate is not None:  # ty: ignore[unresolved-attribute]
+            # D-06: mate INCLUDED. Routed through the 0/1 helper, not the sigmoid.
+            ex_sum += eval_mate_to_expected_score(
+                row.eval_mate,  # ty: ignore[unresolved-attribute]
+                row.user_color,  # ty: ignore[unresolved-attribute]
+            )
+            ex_n += 1
+        elif row.eval_cp is not None:  # ty: ignore[unresolved-attribute]
+            if abs(row.eval_cp) >= EVAL_CLIP_MAX_CP:  # ty: ignore[unresolved-attribute]
+                continue  # D-07 clip — sigmoid saturates anyway
+            ex_sum += eval_cp_to_expected_score(
+                row.eval_cp,  # ty: ignore[unresolved-attribute]
+                row.user_color,  # ty: ignore[unresolved-attribute]
+            )
+            ex_n += 1
+        # else: both NULL -> skip per D-06 cohort filter
+
+    entry_expected_score = ex_sum / ex_n if ex_n > 0 else 0.0
+    # Wilson sig test vs 50% via the (score, n) sibling helper. Single Wilson
+    # code path with compute_confidence_bucket (memory feedback_wilson_chess_score.md).
+    _conf_x, p_ex_raw, _se_ex = compute_score_confidence_from_mean(
+        entry_expected_score, ex_n
+    )
+    # Same n >= 10 wire-format gate as entry_eval_p_value / endgame_score_p_value.
+    entry_expected_score_p_value: float | None = (
+        p_ex_raw if ex_n >= 10 else None
+    )
+    entry_expected_score_ci_low: float | None
+    entry_expected_score_ci_high: float | None
+    if ex_n >= 2:
+        ci_low, ci_high = wilson_bounds(entry_expected_score, ex_n)
+        entry_expected_score_ci_low = ci_low
+        entry_expected_score_ci_high = ci_high
+    else:
+        # n < 2 -> Wilson bounds defensive guard returns (0, 1) which is not
+        # narratable. Gate to None to match the entry_eval CI convention.
+        entry_expected_score_ci_low = None
+        entry_expected_score_ci_high = None
+
     return EndgamePerformanceResponse(
         endgame_wdl=endgame_wdl,
         non_endgame_wdl=non_endgame_wdl,
@@ -1729,6 +1791,11 @@ def _get_endgame_performance_from_rows(
         endgame_score_p_value=endgame_score_p_value,
         entry_eval_ci_low_pawns=entry_eval_ci_low_pawns,
         entry_eval_ci_high_pawns=entry_eval_ci_high_pawns,
+        entry_expected_score=entry_expected_score,
+        entry_expected_score_n=ex_n,
+        entry_expected_score_p_value=entry_expected_score_p_value,
+        entry_expected_score_ci_low=entry_expected_score_ci_low,
+        entry_expected_score_ci_high=entry_expected_score_ci_high,
     )
 
 

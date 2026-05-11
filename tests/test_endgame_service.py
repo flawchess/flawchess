@@ -3986,3 +3986,212 @@ class TestEntryEvalAggregation:
         )
         assert resp_one.entry_eval_ci_low_pawns is None
         assert resp_one.entry_eval_ci_high_pawns is None
+
+
+class TestEntryExpectedScore(TestEntryEvalAggregation):
+    """Phase 83 Plan 2 (D-04..D-07, D-21, D-22) — entry_expected_score aggregator
+    inside `_get_endgame_performance_from_rows`.
+
+    Reuses the `_bucket` / `_wdl_rows` fixtures from TestEntryEvalAggregation via
+    subclassing so we get the same fake-row shape.
+
+    Cohort divergence from entry_eval (D-06): mate games are INCLUDED in the
+    expected-score cohort (mate-for-user -> 1.0, mate-against -> 0.0) but
+    excluded from entry_eval_mean_pawns. Asserts on this inversion explicitly.
+
+    Cohort clip (D-07): |eval_cp| >= 2000 rows are DROPPED — the sigmoid
+    saturates around +/-800 cp anyway and the clip matches Phase 82's
+    "analyzable endgame entry" definition.
+    """
+
+    def test_entry_expected_score_empty_defaults(self) -> None:
+        """No bucket_rows -> entry_expected_score = 0.0, n = 0, p_value/CI = None."""
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=[],
+            non_endgame_rows=[],
+            bucket_rows=[],
+        )
+        assert resp.entry_expected_score == 0.0
+        assert resp.entry_expected_score_n == 0
+        assert resp.entry_expected_score_p_value is None
+        assert resp.entry_expected_score_ci_low is None
+        assert resp.entry_expected_score_ci_high is None
+
+    def test_entry_expected_score_centered_when_eval_zero(self) -> None:
+        """10 rows at eval_cp=0 -> sigmoid -> 0.5; p_value ~ 1.0 (no evidence)."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=5, draws=0, losses=5),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 10
+        assert resp.entry_expected_score == pytest.approx(0.5, abs=1e-9)
+        assert resp.entry_expected_score_p_value is not None
+        assert resp.entry_expected_score_p_value == pytest.approx(1.0, abs=1e-9)
+
+    def test_entry_expected_score_n_nine_p_value_gated(self) -> None:
+        """n=9 -> score computed, but p_value gated to None (n < 10 reliability gate)."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(9)]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=5, draws=0, losses=4),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 9
+        assert resp.entry_expected_score == pytest.approx(0.5, abs=1e-9)
+        assert resp.entry_expected_score_p_value is None
+
+    def test_entry_expected_score_sign_flip_black(self) -> None:
+        """10 rows at eval_cp=+200 with user_color=black -> sigmoid sign-flip ->
+        expected score < 0.5 (specifically the (1 - white-perspective) mirror)."""
+        bucket_rows = [
+            self._bucket(game_id=i, user_color="black", eval_cp=200) for i in range(10)
+        ]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 10
+        assert resp.entry_expected_score < 0.5
+        # 1 / (1 + exp(0.00368208 * 200)) ~ 0.3239
+        assert resp.entry_expected_score == pytest.approx(0.3239, abs=1e-3)
+
+    def test_entry_expected_score_mate_INCLUDED(self) -> None:
+        """D-06 inversion vs entry_eval: mate row contributes 1.0 (for user)
+        or 0.0 (against user) to expected-score cohort, while entry_eval drops it.
+
+        With 10 cp-rows (eval_cp=0 -> 0.5 each) + 1 mate-for-user row (-> 1.0):
+          entry_eval_n      == 10       (mate dropped)
+          entry_expected_n  == 11       (mate INCLUDED)
+          entry_expected_score = (10 * 0.5 + 1.0) / 11 ~ 0.5454
+        """
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        bucket_rows.append(
+            self._bucket(game_id=11, eval_cp=None, eval_mate=5, user_color="white")
+        )
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_eval_n == 10  # mate dropped (Phase 81 cohort unchanged)
+        assert resp.entry_expected_score_n == 11  # mate INCLUDED (D-06)
+        assert resp.entry_expected_score_n > resp.entry_eval_n
+        # (10 * 0.5 + 1.0) / 11 = 6.0 / 11 ~ 0.5454...
+        assert resp.entry_expected_score == pytest.approx(6.0 / 11.0, abs=1e-9)
+
+    def test_entry_expected_score_mate_against_user_is_zero(self) -> None:
+        """Mate-against-user (eval_mate=-5 for white-user) contributes 0.0."""
+        # Single mate-against-user row -> score = 0.0
+        bucket_rows = [
+            self._bucket(
+                game_id=1, eval_cp=None, eval_mate=-5, user_color="white"
+            )
+        ]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=0, draws=0, losses=1),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 1
+        assert resp.entry_expected_score == 0.0
+
+    def test_entry_expected_score_eval_cp_clip(self) -> None:
+        """|eval_cp| >= 2000 rows are dropped (D-07). 9 normal rows + 1 clipped
+        row -> n = 9."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=100) for i in range(9)]
+        bucket_rows.append(self._bucket(game_id=10, eval_cp=2500))
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=9, draws=0, losses=1),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 9  # clipped row dropped
+
+    def test_entry_expected_score_eval_cp_clip_boundary(self) -> None:
+        """|eval_cp| == 2000 is the clip boundary — also dropped (>=, not >)."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        bucket_rows.append(self._bucket(game_id=11, eval_cp=2000))
+        bucket_rows.append(self._bucket(game_id=12, eval_cp=-2000))
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=5, draws=0, losses=5),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 10  # both boundary rows dropped
+
+    def test_entry_expected_score_null_eval_dropped(self) -> None:
+        """Row with both eval_cp and eval_mate None is dropped from the cohort."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        bucket_rows.append(self._bucket(game_id=11, eval_cp=None, eval_mate=None))
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=5, draws=0, losses=6),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 10
+
+    def test_entry_expected_score_ci_bounds_set_when_n_ge_two(self) -> None:
+        """n >= 2 -> both CI bounds are floats in [0, 1]; n < 2 -> None."""
+        # n=10 above-baseline (eval_cp=200 white) -> score > 0.5, CI brackets it
+        bucket_rows = [self._bucket(game_id=i, eval_cp=200) for i in range(10)]
+        resp_ok = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=6, draws=0, losses=4),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp_ok.entry_expected_score_ci_low is not None
+        assert resp_ok.entry_expected_score_ci_high is not None
+        assert 0.0 <= resp_ok.entry_expected_score_ci_low <= 1.0
+        assert 0.0 <= resp_ok.entry_expected_score_ci_high <= 1.0
+        assert (
+            resp_ok.entry_expected_score_ci_low <= resp_ok.entry_expected_score
+        )
+        assert (
+            resp_ok.entry_expected_score_ci_high >= resp_ok.entry_expected_score
+        )
+
+        # n=1 -> CI bounds are None (Wilson bounds defensive guard returns
+        # (0, 1) which is not meaningful for narration)
+        resp_one = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=1, draws=0, losses=0),
+            non_endgame_rows=[],
+            bucket_rows=[self._bucket(game_id=1, eval_cp=200)],
+        )
+        assert resp_one.entry_expected_score_ci_low is None
+        assert resp_one.entry_expected_score_ci_high is None
+
+    def test_entry_expected_score_p_value_significant_when_strong(self) -> None:
+        """Strong evidence (10 rows at eval_cp=+800 white-user, score ~ 0.95)
+        -> p_value < 0.05."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=800) for i in range(10)]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 10
+        assert resp.entry_expected_score > 0.9
+        assert resp.entry_expected_score_p_value is not None
+        assert resp.entry_expected_score_p_value < 0.05
+
+    def test_entry_eval_unchanged_by_phase_83(self) -> None:
+        """Sanity: Phase 81's entry_eval_n is byte-for-byte preserved when
+        the cohort contains a mix of cp / mate / clipped / null rows."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=100) for i in range(8)]
+        bucket_rows.append(self._bucket(game_id=9, eval_cp=None, eval_mate=5))
+        bucket_rows.append(self._bucket(game_id=10, eval_cp=2500))
+        bucket_rows.append(self._bucket(game_id=11, eval_cp=None, eval_mate=None))
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=8, draws=0, losses=3),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        # Phase 81 cohort: mate excluded, NULL excluded, no |eval_cp| clip.
+        # 8 normal + 0 mate + 1 large-cp (Phase 81 didn't clip) + 0 null = 9.
+        assert resp.entry_eval_n == 9
+        # Phase 83 cohort: mate INCLUDED, NULL excluded, |eval_cp| >= 2000 clipped.
+        # 8 normal + 1 mate + 0 clipped + 0 null = 9.
+        assert resp.entry_expected_score_n == 9
