@@ -191,9 +191,14 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                       style={achievableColor ? { color: achievableColor } : undefined}
                       data-testid="achievable-score-value"
                     >
-                      {`${(data.entry_expected_score * 100).toFixed(1)}%`}
+                      {`${(data.entry_expected_score * 100).toFixed(0)}%`}
                     </span>
-                    <AchievableScorePopover />
+                    <AchievableScorePopover
+                      score={data.entry_expected_score}
+                      gameCount={data.entry_expected_score_n}
+                      level={achievableLevel}
+                      pValue={data.entry_expected_score_p_value ?? 1}
+                    />
                   </span>
                   <div className="min-w-0 tabular-nums">
                     {/* MiniBulletChart neutralMin/neutralMax are OFFSETS from center; the
@@ -216,7 +221,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                           : undefined
                       }
                       barColor="neutral"
-                      ariaLabel={`Achievable score: ${(data.entry_expected_score * 100).toFixed(1)}%`}
+                      ariaLabel={`Achievable score: ${(data.entry_expected_score * 100).toFixed(0)}%`}
                     />
                   </div>
                 </div>
@@ -263,7 +268,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                     style={scoreColor ? { color: scoreColor } : undefined}
                     data-testid="endgame-score-value"
                   >
-                    {`${(score * 100).toFixed(1)}%`}
+                    {`${(score * 100).toFixed(0)}%`}
                   </span>
                   <ScoreConfidencePopover
                     level={scoreLevel}
@@ -283,7 +288,7 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                     ciLow={clampScoreCi(scoreCiLow)}
                     ciHigh={clampScoreCi(scoreCiHigh)}
                     barColor="neutral"
-                    ariaLabel={`Endgame score: ${(score * 100).toFixed(1)}%`}
+                    ariaLabel={`Endgame score: ${(score * 100).toFixed(0)}%`}
                   />
                 </div>
               </div>

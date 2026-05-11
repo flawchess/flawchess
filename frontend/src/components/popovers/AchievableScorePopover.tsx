@@ -3,7 +3,44 @@ import { Popover as PopoverPrimitive } from 'radix-ui';
 import { HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+type ConfidenceLevel = 'low' | 'medium' | 'high';
+
+const CONFIDENCE_LABEL: Record<ConfidenceLevel, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
+
+// Mirrors WdlConfidenceTooltip's zone boundaries (arrowColor.ts): scores in
+// (0.45, 0.55) are neutral; >=0.55 is a strength, <=0.45 a weakness.
+const NEUTRAL_LOWER = 0.45;
+const NEUTRAL_UPPER = 0.55;
+
+type Verdict = 'strength' | 'weakness' | 'difference';
+
+function pickVerdict(score: number): Verdict {
+  if (score >= NEUTRAL_UPPER) return 'strength';
+  if (score <= NEUTRAL_LOWER) return 'weakness';
+  return 'difference';
+}
+
+function headline(level: ConfidenceLevel, score: number): string {
+  if (level === 'low') return 'Inconclusive.';
+  const verdict = pickVerdict(score);
+  const lead = level === 'high' ? 'Likely' : 'Possibly';
+  if (verdict === 'difference') return `${lead} a real difference from the 50% baseline.`;
+  return `${lead} a real ${verdict}.`;
+}
+
 interface AchievableScorePopoverProps {
+  /** Achievable score as a fraction in [0, 1]. */
+  score: number;
+  /** Sample size (number of endgame-entry positions). */
+  gameCount: number;
+  /** Wilson confidence bucket derived from the backend p-value. */
+  level: ConfidenceLevel;
+  /** Raw p-value from the backend (Wilson score test vs 50%). */
+  pValue: number;
   /** Default: "popover-trigger-achievable-score". Override only if multiple
    *  instances must coexist (none today). */
   testId?: string;
@@ -14,16 +51,19 @@ interface AchievableScorePopoverProps {
 
 // Phase 83 (D-09, D-10): hover/tap-activated popover that explains the
 // "Achievable score" bullet next to the entry-eval bullet on tile 1 of
-// EndgameStartVsEndSection. Thin wrapper around radix Popover, mirrors
-// ScoreConfidencePopover hover handling. Body copy is hard-coded D-10
-// verbatim — no bodyCopy prop (RESEARCH Open Question 1). See D-10 in
-// 83-CONTEXT.md for the list of disallowed framings; the lint test at
-// __tests__/AchievableScorePopover.test.tsx pins the contract.
+// EndgameStartVsEndSection. Mirrors WdlConfidenceTooltip's stats-first
+// layout, with a shortened Lichess-formula context paragraph appended.
+// The D-10 forbidden-framing contract is pinned by
+// __tests__/AchievableScorePopover.test.tsx.
 export function AchievableScorePopover({
+  score,
+  gameCount,
+  level,
+  pValue,
   testId = 'popover-trigger-achievable-score',
   ariaLabel = 'What is Achievable score?',
   triggerClassName,
-}: AchievableScorePopoverProps = {}) {
+}: AchievableScorePopoverProps) {
   const [open, setOpen] = React.useState(false);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -35,6 +75,10 @@ export function AchievableScorePopover({
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
     setOpen(false);
   };
+
+  const scorePct = (score * 100).toFixed(1);
+  const diffPct = Math.abs(score * 100 - 50).toFixed(1);
+  const direction = score >= 0.5 ? 'above' : 'below';
 
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
@@ -70,16 +114,31 @@ export function AchievableScorePopover({
             'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
           )}
         >
-          <div className="space-y-2">
+          <div className="text-left space-y-1">
             <p>
-              This is what a 2300+ rated player would score from your endgame-entry
-              positions. The score is calculated from your Endgame entry eval,
-              using the Lichess winning chances formula.
+              {diffPct === '0.0' ? (
+                <>
+                  <strong>{scorePct}% achievable score</strong> over {gameCount} games, at the 50% baseline.
+                </>
+              ) : (
+                <>
+                  <strong>{scorePct}% achievable score</strong> over {gameCount} games, {diffPct}% {direction} the 50% baseline.
+                </>
+              )}
             </p>
             <p>
-              The Lichess curve is fitted on 2300+ rapid games, so scoring a little below this
-              baseline from positive evals is normal at lower ratings. Compare this
-              against your achieved Endgame score in the other tile.
+              <strong>{headline(level, score)}</strong> {CONFIDENCE_LABEL[level]} confidence
+              (p = {pValue.toFixed(3)}).
+            </p>
+            <p>
+              What a 2300+ rated player would score from your endgame-entry positions,
+              via the Lichess winning chances formula. Compare against your achieved
+              Endgame score in the other tile.
+            </p>
+            <p className="opacity-70 italic">
+              Score: wins + ½ draws.<br />
+              Test: two-sided Wilson score test vs 50%.<br />
+              Confidence interval: Wilson 95% (whiskers).
             </p>
           </div>
         </PopoverPrimitive.Content>

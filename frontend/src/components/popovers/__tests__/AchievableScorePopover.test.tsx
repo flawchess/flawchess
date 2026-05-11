@@ -39,26 +39,33 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const baseProps = {
+  score: 0.62,
+  gameCount: 50,
+  level: 'high' as const,
+  pValue: 0.001,
+};
+
 describe('AchievableScorePopover', () => {
   it('renders trigger with default data-testid', () => {
-    render(<AchievableScorePopover />);
+    render(<AchievableScorePopover {...baseProps} />);
     expect(screen.getByTestId('popover-trigger-achievable-score')).toBeTruthy();
   });
 
   it('trigger carries aria-label for screen readers', () => {
-    render(<AchievableScorePopover />);
+    render(<AchievableScorePopover {...baseProps} />);
     const trigger = screen.getByTestId('popover-trigger-achievable-score');
     expect(trigger.getAttribute('aria-label')).toBeTruthy();
     expect(trigger.getAttribute('aria-label')).toMatch(/achievable score/i);
   });
 
   it('accepts custom testId prop', () => {
-    render(<AchievableScorePopover testId="custom-trigger" />);
+    render(<AchievableScorePopover {...baseProps} testId="custom-trigger" />);
     expect(screen.getByTestId('custom-trigger')).toBeTruthy();
   });
 
   it('opens on click and shows D-10 body copy containing "2300+"', async () => {
-    render(<AchievableScorePopover />);
+    render(<AchievableScorePopover {...baseProps} />);
     const trigger = screen.getByTestId('popover-trigger-achievable-score');
     fireEvent.click(trigger);
     await waitFor(() => {
@@ -68,7 +75,7 @@ describe('AchievableScorePopover', () => {
   });
 
   it('body copy does NOT contain the forbidden word "underperformance" (D-10)', async () => {
-    render(<AchievableScorePopover />);
+    render(<AchievableScorePopover {...baseProps} />);
     const trigger = screen.getByTestId('popover-trigger-achievable-score');
     fireEvent.click(trigger);
     await waitFor(() => {
@@ -79,12 +86,23 @@ describe('AchievableScorePopover', () => {
     expect(document.body.textContent).not.toMatch(/below your potential/i);
   });
 
-  it('body copy mentions the Lichess sigmoid and the achieved-score comparison', async () => {
-    render(<AchievableScorePopover />);
+  it('body copy mentions the Lichess formula and the achieved-score comparison', async () => {
+    render(<AchievableScorePopover {...baseProps} />);
     fireEvent.click(screen.getByTestId('popover-trigger-achievable-score'));
     await waitFor(() => {
       expect(document.body.textContent).toMatch(/Lichess/i);
     });
     expect(document.body.textContent).toMatch(/Compare.*against your achieved Endgame score/i);
+  });
+
+  it('renders WdlConfidenceTooltip-style stats line with rounded percentages', async () => {
+    render(<AchievableScorePopover {...baseProps} />);
+    fireEvent.click(screen.getByTestId('popover-trigger-achievable-score'));
+    await waitFor(() => {
+      expect(document.body.textContent).toMatch(/62\.0% achievable score/);
+    });
+    expect(document.body.textContent).toMatch(/over 50 games/);
+    expect(document.body.textContent).toMatch(/12\.0% above the 50% baseline/);
+    expect(document.body.textContent).toMatch(/p = 0\.001/);
   });
 });
