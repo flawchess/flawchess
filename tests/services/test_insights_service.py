@@ -727,6 +727,8 @@ class TestFindingsEndgameStartVsEnd:
         wins: int = 25,
         draws: int = 10,
         losses: int = 15,
+        entry_expected_score: float = 0.50,
+        entry_expected_score_n: int = 50,
     ) -> Any:
         """Build a minimal EndgameOverviewResponse for endgame_start_vs_end tests."""
         from app.schemas.endgames import (
@@ -739,6 +741,8 @@ class TestFindingsEndgameStartVsEnd:
         perf = EndgamePerformanceResponse.model_construct(
             entry_eval_mean_pawns=entry_eval_mean_pawns,
             entry_eval_n=entry_eval_n,
+            entry_expected_score=entry_expected_score,
+            entry_expected_score_n=entry_expected_score_n,
             endgame_wdl=EndgameWDLSummary(
                 wins=wins,
                 draws=draws,
@@ -933,7 +937,7 @@ class TestFindingsEndgameStartVsEnd:
         assert findings[0].is_headline_eligible is True
 
     def test_subsection_and_window_propagate(self) -> None:
-        """Both findings carry correct subsection_id and window."""
+        """All findings carry correct subsection_id and window."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
         response = self._make_overview()
@@ -943,3 +947,178 @@ class TestFindingsEndgameStartVsEnd:
             assert f.subsection_id == "endgame_start_vs_end"
             assert f.window == "last_3mo"
             assert f.parent_subsection_id is None
+
+    # ------------------------------------------------------------------
+    # Phase 83 D-17 / D-19: third finding for entry_expected_score.
+    # ------------------------------------------------------------------
+
+    def test_three_findings_returned_in_canonical_order(self) -> None:
+        """Phase 83 D-19: emitter returns THREE findings in deterministic order."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_eval_mean_pawns=0.30,
+            entry_eval_n=50,
+            wins=25, draws=10, losses=15,
+            entry_expected_score=0.58,
+            entry_expected_score_n=50,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert len(findings) == 3
+        assert [f.metric for f in findings] == [
+            "entry_eval_pawns",
+            "endgame_score",
+            "entry_expected_score",
+        ]
+
+    def test_third_finding_emitted_when_n_at_or_above_10(self) -> None:
+        """entry_expected_score_n >= 10 -> tile3 populated with the correct shape."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_expected_score=0.58,
+            entry_expected_score_n=50,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        tile3 = findings[2]
+        assert tile3.metric == "entry_expected_score"
+        assert tile3.value == pytest.approx(0.58)
+        assert tile3.zone in {"weak", "typical", "strong"}
+        assert tile3.dimension is None
+        assert tile3.trend == "n_a"
+        assert tile3.sample_size == 50
+        assert tile3.weekly_points_in_window == 0
+        assert tile3.parent_subsection_id is None
+        assert tile3.subsection_id == "endgame_start_vs_end"
+        assert tile3.is_headline_eligible is True
+
+    def test_third_finding_empty_when_n_below_10(self) -> None:
+        """entry_expected_score_n < 10 -> tile3 is empty (thin, NaN value, not headline-eligible)."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_expected_score=0.62,
+            entry_expected_score_n=9,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        tile3 = findings[2]
+        assert tile3.metric == "entry_expected_score"
+        assert math.isnan(tile3.value)
+        assert tile3.zone == "typical"
+        assert tile3.sample_quality == "thin"
+        assert tile3.is_headline_eligible is False
+        assert tile3.sample_size == 0
+        assert tile3.dimension is None
+
+    def test_third_finding_zone_strong_above_band(self) -> None:
+        """entry_expected_score=0.60 (above typical_upper=0.55) -> zone='strong'."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_expected_score=0.60,
+            entry_expected_score_n=50,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[2].zone == "strong"
+
+    def test_third_finding_zone_weak_below_band(self) -> None:
+        """entry_expected_score=0.40 (below typical_lower=0.45) -> zone='weak'."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_expected_score=0.40,
+            entry_expected_score_n=50,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[2].zone == "weak"
+
+    def test_third_finding_zone_typical_inside_band(self) -> None:
+        """entry_expected_score=0.50 (inside [0.45, 0.55]) -> zone='typical'."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_expected_score=0.50,
+            entry_expected_score_n=50,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[2].zone == "typical"
+
+    def test_third_finding_has_no_verdict_field(self) -> None:
+        """Phase 82 D-06 / Phase 83 D-19: SubsectionFinding has NO `verdict` field.
+
+        Guards against a future regression that re-adds a sig-test signal —
+        per memory `feedback_llm_significance_signal.md`, the LLM narrates
+        strictly by zone, never by p-value or sig-test outcome.
+        """
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_expected_score=0.58,
+            entry_expected_score_n=50,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        tile3 = findings[2]
+        assert not hasattr(tile3, "verdict")
+        # Also assert the serialized payload does not include a `verdict` key.
+        assert "verdict" not in tile3.model_dump()
+
+    def test_third_finding_boundary_n_eq_10_populated(self) -> None:
+        """Phase 83 D-19: boundary case n=10 must NOT be empty (strict `<` gate)."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_expected_score=0.58,
+            entry_expected_score_n=10,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        tile3 = findings[2]
+        assert tile3.metric == "entry_expected_score"
+        assert tile3.sample_size == 10
+        assert tile3.sample_quality == "adequate"
+        assert tile3.is_headline_eligible is True
+
+    def test_third_finding_independent_gate_from_other_tiles(self) -> None:
+        """Phase 83 D-19: tile3 gate is independent of tile1 (eval) and tile2 (score) gates.
+
+        Tile1 and tile2 may be populated while tile3 is empty when only the
+        expected-score backfill has not yet completed on this user's games.
+        """
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_eval_mean_pawns=0.30, entry_eval_n=50,
+            wins=25, draws=10, losses=15,  # total=50 > 10
+            entry_expected_score=0.58, entry_expected_score_n=5,  # thin
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].sample_quality != "thin"  # tile1 populated
+        assert findings[1].sample_quality != "thin"  # tile2 populated
+        assert findings[2].sample_quality == "thin"  # tile3 thin
+
+    def test_existing_tile1_and_tile2_unchanged_by_third_finding(self) -> None:
+        """Phase 83: adding tile3 must not regress the existing tile1/tile2 emitter shape."""
+        from app.services.insights_service import _findings_endgame_start_vs_end
+
+        response = self._make_overview(
+            entry_eval_mean_pawns=0.30,
+            entry_eval_n=50,
+            wins=25, draws=10, losses=15,
+        )
+        findings = _findings_endgame_start_vs_end(response, "all_time")
+
+        assert findings[0].metric == "entry_eval_pawns"
+        assert findings[0].value == pytest.approx(0.30)
+        assert findings[0].sample_size == 50
+        assert findings[1].metric == "endgame_score"
+        # score = (25 + 0.5*10) / 50 = 0.60
+        assert findings[1].value == pytest.approx(0.60)
+        assert findings[1].sample_size == 50
