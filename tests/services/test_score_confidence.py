@@ -23,7 +23,10 @@ import math
 
 import pytest
 
-from app.services.score_confidence import compute_confidence_bucket
+from app.services.score_confidence import (
+    compute_confidence_bucket,
+    compute_score_confidence_from_mean,
+)
 
 
 # --- N < 10 gate ---------------------------------------------------------
@@ -161,3 +164,91 @@ def test_se_positive_for_mixed_outcomes() -> None:
     """SE strictly positive whenever the row contains a mix of W/D/L outcomes."""
     _confidence, _p, se = compute_confidence_bucket(w=20, d=0, losses=30, n=50)
     assert se > 0.0
+
+
+# --- Backward-compat regression after Wilson-math refactor ----------------
+# Phase 83 Plan 2 Task 1: `_wilson_score_test_vs_half` is factored out as a
+# private helper. `compute_confidence_bucket` is refactored to delegate to it,
+# but its public signature and per-input output must be byte-for-byte
+# preserved. Pin a single golden tuple so the refactor is detectable.
+
+
+def test_compute_confidence_bucket_golden_after_refactor() -> None:
+    """Pinned regression: (w=70, d=10, losses=20, n=100) yields the same triple
+    as the pre-refactor Wilson implementation. If this changes, callers that
+    persist or compare the tuple (e.g. opening_insights cache) will diverge."""
+    confidence, p_value, se = compute_confidence_bucket(w=70, d=10, losses=20, n=100)
+    assert confidence == "high"
+    # score = (70 + 5) / 100 = 0.75; z = (0.75 - 0.5) / sqrt(0.25 / 100) = 5.0
+    # two-sided p = erfc(5 / sqrt(2)) ~ 5.7e-7
+    assert p_value == pytest.approx(5.733031e-7, rel=1e-5)
+    # empirical variance = (70 + 0.25*10) / 100 - 0.75**2 = 0.725 - 0.5625 = 0.1625
+    # se = sqrt(0.1625 / 100) ~ 0.040311
+    assert se == pytest.approx(math.sqrt(0.1625 / 100), abs=1e-9)
+
+
+# --- compute_score_confidence_from_mean (Phase 83 Plan 2 Task 1) ----------
+# Sibling helper that accepts a float mean instead of (w, d, losses, n).
+# Bucketing/gating must match `compute_confidence_bucket` exactly when given
+# equivalent inputs (i.e. when (w + 0.5 * d) / n == score).
+
+
+class TestComputeScoreConfidenceFromMean:
+    """compute_score_confidence_from_mean(score, n) — Wilson sig test vs 0.5
+    for a float mean. Same gates and thresholds as compute_confidence_bucket;
+    single source of Wilson math via the new private helper."""
+
+    def test_n_zero_returns_low_one_zero(self) -> None:
+        """n <= 0 returns ("low", 1.0, 0.0) without raising."""
+        confidence, p_value, se = compute_score_confidence_from_mean(score=0.7, n=0)
+        assert confidence == "low"
+        assert p_value == 1.0
+        assert se == 0.0
+
+    def test_n_below_gate_returns_low_with_real_p_value(self) -> None:
+        """n=5 has real Wilson p-value (z = (score-0.5)/sqrt(0.25/5)), but the
+        N>=10 sample-size gate forces confidence to "low" regardless."""
+        confidence, p_value, _se = compute_score_confidence_from_mean(score=0.9, n=5)
+        assert confidence == "low"
+        # z = 0.4 / sqrt(0.05) = 1.7889; p = erfc(z / sqrt(2)) ~ 0.0736 — strong-ish
+        # evidence but n < 10 gate fires.
+        assert 0.0 < p_value < 1.0
+
+    def test_centered_mean_returns_low_p_one(self) -> None:
+        """score == 0.5 -> z = 0 -> two-sided p = 1.0 -> low (no evidence)."""
+        confidence, p_value, _se = compute_score_confidence_from_mean(score=0.5, n=100)
+        assert confidence == "low"
+        assert p_value == pytest.approx(1.0, abs=1e-9)
+
+    def test_strong_evidence_returns_high(self) -> None:
+        """score=0.7, n=200 -> z = 0.2 / sqrt(0.25/200) = 5.657, p < 0.01 -> high."""
+        confidence, p_value, _se = compute_score_confidence_from_mean(score=0.7, n=200)
+        assert confidence == "high"
+        assert p_value < 0.01
+
+    def test_medium_evidence_returns_medium(self) -> None:
+        """score=0.425, n=200 -> z = -2.121, p ~ 0.0339 -> medium (0.01 <= p < 0.05)."""
+        confidence, p_value, _se = compute_score_confidence_from_mean(
+            score=0.425, n=200
+        )
+        assert confidence == "medium"
+        assert 0.01 <= p_value < 0.05
+
+    def test_matches_compute_confidence_bucket_for_equivalent_inputs(self) -> None:
+        """For (w + 0.5 * d) / n == score and the same n, the two helpers must
+        return identical (confidence, p_value) pairs. SE differs by design
+        (compute_confidence_bucket returns *empirical* SE; the from-mean variant
+        has no W/D/L breakdown so SE is reported as 0.0 — see helper docstring)."""
+        # 70 wins, 10 draws, 20 losses, n=100 -> score = 0.75
+        bucket = compute_confidence_bucket(w=70, d=10, losses=20, n=100)
+        from_mean = compute_score_confidence_from_mean(score=0.75, n=100)
+        assert bucket[0] == from_mean[0]  # confidence
+        assert bucket[1] == pytest.approx(from_mean[1], abs=1e-12)  # p_value
+
+    def test_white_black_symmetry(self) -> None:
+        """f(0.7, n) confidence/p == f(0.3, n) confidence/p — two-sided test is
+        symmetric around 0.5."""
+        up = compute_score_confidence_from_mean(score=0.7, n=200)
+        down = compute_score_confidence_from_mean(score=0.3, n=200)
+        assert up[0] == down[0]
+        assert up[1] == pytest.approx(down[1], abs=1e-12)
