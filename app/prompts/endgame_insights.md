@@ -259,12 +259,15 @@ When `[weakest-type]` is emitted, lead the section with the named type (use `sco
 
 ### Subsection: endgame_start_vs_end
 
-Two summary findings under section_id `overall`. Read them as a **setup → execution** pair:
+Three summary findings under section_id `overall`. Read them together as a **setup → execution + baseline** triad:
 
-- `entry_eval_pawns` = **where the user starts the endgame** (average position going in).
-- `endgame_score` = **what the user does with it** (overall score once the endgame starts).
+- `entry_eval_pawns` = **where the user starts the endgame** (average position going in, signed pawns).
+- `endgame_score` = **what the user does with it** (overall score once the endgame starts, 0–100%).
+- `entry_expected_score` = **what a 2300+ baseline would score from those same starting positions** (Stockfish-baseline achievable score via the Lichess winning-chances sigmoid, 0–100%).
 
-Together they answer: "given the positions this user reaches endgames from, are they converting / squandering / defending appropriately?"
+The first two are the original setup → execution pair. The third adds a same-axis baseline so the **achievable-vs-achieved gap** (`entry_expected_score` minus `endgame_score`) becomes a direct read: how much of the score the user actually captured from the positions they reached.
+
+Together the three answer: "given the positions this user reaches endgames from, are they converting / squandering / defending appropriately, and how does their score compare to the engine baseline for those same positions?"
 
 **Example narration patterns:**
 - `entry_eval_pawns` strong + `endgame_score` strong → "consistently enters endgames with an edge and capitalises on it"
@@ -284,6 +287,22 @@ When `entry_eval_pawns` is strong (or typical) but `endgame_score` is weak, look
 **Both thin → omit from narration.** If both findings have `sample_quality="thin"`, skip this subsection entirely — there is no endgame data in this window.
 
 **Single-tile case (one of the two `[summary]` blocks missing).** If only one of the two findings is rendered (the other is omitted because its `n < 10` gate failed — typically Stockfish backfill is incomplete, so `entry_eval_pawns` is missing while `endgame_score` is populated), narrate the populated tile on its own. Do NOT invoke the setup→execution pairing, do NOT speculate about the missing side ("we don't know yet whether they enter ahead or behind"), and do NOT fabricate a story to satisfy the four 2×2 patterns above. Treat the present tile as a standalone observation.
+
+**Achievable-vs-achieved gap (Phase 83 D-18).** When `entry_expected_score` and `endgame_score` are both populated, the gap between them is the **headline diagnostic** for the subsection whenever at least one of the two lies in a colored zone. Both values share the same 0–100% W+0.5D axis, so the comparison is direct.
+
+- Use `entry_eval_pawns` as the **explanatory unit** for the gap. Signed pawns are more intuitive than a 0-1 score, and pawn-edge and expected-score carry the same information (the sigmoid is monotone). When narrating "X% below the baseline", attribute the gap to the entry edge ("entering at +0.4 pawns") rather than restating the percentage in different units.
+- Two worked example narrations:
+  - "Stockfish-baseline says positions like yours score 58%, but you scored 47% — about 11 points below the engine ceiling, mostly explained by entering at +0.4 pawns" (positive gap, achievable above achieved)
+  - "Achievable 49%, you scored 52% — defended slightly better than the engine baseline from these positions" (negative gap, achieved above achievable)
+- For **sub-2300 users** the gap is rating-tilt by default. Describe it as "X points below the engine ceiling for positions like these", not as a personal failing. Forbidden words: "underperformance", "fall short", "below your potential", "shortfall", "leaving points on the table", and any synonym that frames the gap as a flaw.
+
+**Headline ordering when all three findings fire (Claude's Discretion).**
+
+- **Lead with the gap** (achievable vs achieved) when the gap is the dominant signal: at least one of `entry_expected_score` / `endgame_score` is in a colored zone AND the gap is the larger story than the entry edge alone.
+- **Lead with `entry_eval_pawns`** when the entry edge itself is the dominant signal: `entry_eval_pawns` is in a colored zone AND the achievable-vs-achieved gap is small or both score tiles read typical.
+- **Both eval and score typical, gap typical-vs-typical:** treat the subsection as background context, do not feature it as a headline.
+
+**Single-tile case (third finding missing).** If `entry_expected_score` is the missing tile (its `n < 10` gate failed because eval backfill is incomplete for this window), narrate the original setup → execution pair as before. Do NOT speculate about the achievable baseline or invent a gap. If `entry_expected_score` is the only populated tile (both `entry_eval_pawns` and `endgame_score` thin), skip the subsection.
 
 ## Endgame statistics concepts
 
@@ -332,6 +351,13 @@ Interpret each metric using the definitions below. These match the user-facing i
   - The tile on the UI uses a Wilson test vs 50%. The LLM does NOT receive the sig-test outcome — narrate strictly from `zone` + `sample_quality` + `[near edge]` for borderline.
   - This metric counts ALL endgame-reaching games in the filtered window — it is NOT conditional on eval bucket (Conversion / Parity / Recovery are the eval-conditional metrics). An "idle-combo" scoping caveat applies: the filter may mix time-controls / platforms with different skill levels.
   - Emitted in subsection `endgame_start_vs_end`, `dimension=None`. NOT the same as `endgame_score_timeline` (the rolling-window timeline variant formerly named `endgame_score` in v22 and earlier).
+
+- **entry_expected_score** (UI label: "Achievable score"): per-user mean Stockfish-baseline expected score from endgame-entry positions, on the 0–100% W+0.5D scale. Derivation: the Lichess winning-chances sigmoid `1 / (1 + exp(-0.00368208 * cp))` applied to signed user-perspective `eval_cp`; mate positions map directly to 0 or 1 (mate-for-user = 1.0; mate-against-user = 0.0). Mate positions ARE included in this cohort (unlike `entry_eval_pawns`). Higher is better.
+  - Scale: whole-number percentage in `[0, 100]` (e.g. `58` = "58%"). Attach `%` when narrating (e.g. `mean=58` → "58%").
+  - Cohort typical band: **45–55%** (pooled benchmark-calibrated band; see reports/benchmarks-2026-05-11.md Section 5. Width matches `endgame_score` for visual parity across the two bottom-row tiles, so the achievable-vs-achieved gap reads on the same axis.).
+  - The tile on the UI uses a Wilson test vs 50%. The LLM does NOT receive the sig-test outcome, narrate strictly from `zone` + `sample_quality` + `[near edge]`. Do not mention p-values.
+  - Framing: this is what a **2300+ rated player** would score from your endgame-entry positions. The Lichess winning-chances curve is fitted on 2300+ rapid games, so scoring below this baseline from positive evals is **normal at lower ratings and is not a flaw**. For sub-2300 users the gap is rating-tilt by default, narrate it descriptively (e.g. "about X points below the engine ceiling for positions like these"). Forbidden framing (do NOT use these words or any synonym): "underperformance", "fall short", "below your potential", "shortfall", "leaving points on the table". Describe the gap, do not editorialise it as a personal failing.
+  - Emitted in subsection `endgame_start_vs_end`, `dimension=None`.
 
 - **conversion_win_pct** (UI label: "Conversion (Win)"): user's **Win %** in the Conversion eval bucket — games where the user entered the endgame with a Stockfish evaluation of ≥ +1.0. Only wins count; draws do NOT count as half.
   - Scale: whole-number percentage in `[0, 100]`.

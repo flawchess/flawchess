@@ -234,10 +234,16 @@ class TestPromptVersionAndBody:
         body = prompt_path.read_text(encoding="utf-8")
         assert "entry_expected_score" in body
         assert "Achievable score" in body
-        # D-10 forbidden words must NOT appear in user-facing narration guidance
-        # (the word may appear ONLY inside the forbidden-words list itself).
-        # Count of "underperformance" occurrences must be at most 1 (the forbidden-words list mention).
-        assert body.lower().count("underperformance") <= 1
+        # D-10 forbidden words must NOT appear in user-facing narration guidance.
+        # "underperformance" is allowed ONLY inside an explicit forbidden-words list.
+        # Every occurrence in the prompt must be preceded on the same line by the
+        # word "Forbidden" (D-10 framing) — narration guidance never uses the term.
+        for line in body.splitlines():
+            if "underperformance" in line.lower():
+                assert "forbidden" in line.lower(), (
+                    f"`underperformance` must only appear in forbidden-words lists. "
+                    f"Offending line: {line!r}"
+                )
         # Cohort band citation to the Plan 4 benchmark report
         assert "benchmarks-2026-05-11.md" in body
         # Lichess sigmoid derivation reference
