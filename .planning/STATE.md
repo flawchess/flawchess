@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.16
 milestone_name: Stockfish Eval Analyses
-status: "Phase 82 shipped — PR #86"
-last_updated: "2026-05-10T19:41:33.141Z"
-last_activity: 2026-05-10
+status: executing
+last_updated: "2026-05-11T17:00:51.525Z"
+last_activity: 2026-05-11 -- Phase 83 execution started
 progress:
   total_phases: 4
   completed_phases: 4
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 82
-Plan: Not started
-Status: Phase 82 shipped — PR #86
-Last activity: 2026-05-10
+Phase: 83 (stockfish-baseline-predicted-endgame-score) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 83
+Last activity: 2026-05-11 -- Phase 83 execution started
 
 ## Project Reference
 
