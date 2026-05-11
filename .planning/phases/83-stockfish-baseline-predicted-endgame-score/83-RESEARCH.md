@@ -855,32 +855,32 @@ Option 2 is cleaner — no churn in the existing popover; localizes the D-10 wor
 
 All Assumptions Log entries are LOW-risk and are flagged for sanity-check during Plan 1 + Plan 2 review, not as blockers.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`ScoreConfidencePopover` body-copy override mechanism**
    - What we know: D-10 requires "Expected for sub-2300 play to fall below" framing; existing popover shows generic Wilson-test copy.
    - What's unclear: New optional `bodyCopy` prop vs. a thin wrapper component.
-   - Recommendation: Wrapper component `AchievableScorePopover`. Localizes D-10 wording; zero risk to the existing tile-2 popover.
+   - RESOLVED: Wrapper component `AchievableScorePopover` (Plan 03 Task 2). Localizes D-10 wording; zero risk to the existing tile-2 popover.
 
 2. **Should the popover surface `n` divergence vs entry-eval cohort?**
    - What we know: D-06 says mate INCLUDED in the achievable-score cohort. Phase 81 D-07 says mate EXCLUDED in entry-eval. So `entry_expected_score_n >= entry_eval_n`.
    - What's unclear: Will users notice and worry about the count divergence between the two bullets in the same tile?
-   - Recommendation: Add one line in the popover ("Based on N games, including mate") to defuse the question. The planner can include this in Plan 3 task list and validate in Plan 3 UAT.
+   - RESOLVED: Add one line in the popover ("Based on N games, including mate") to defuse the question. Encoded in Plan 03 Task 2 popover body copy.
 
 3. **Mobile-collapse popover wording**
    - What we know: D-10 popover copy includes "on the right" — geographically wrong on mobile.
    - What's unclear: Is "Compare against your achieved Endgame score nearby" acceptable, or should we go viewport-aware?
-   - Recommendation: Use "below" — both desktop and mobile have the "achieved" bullet below the "achievable" bullet (because Tile 2 is below Tile 1 on mobile; and on desktop the bottom-row achieved bullet is below the top-row achievable bullet within Tile 1's stack — no wait, they're in DIFFERENT tiles on desktop, side-by-side at the bottom row). Reword to "Compare against your achieved Endgame score in the other tile" — works on both.
+   - RESOLVED: Reword to "Compare against your achieved Endgame score in the other tile" — works on both desktop and mobile. Encoded verbatim in Plan 03 D-10 body copy.
 
 4. **Plan 4 cohort filter for benchmark expected-score**
    - What we know: Canonical CTE uses `lichess_username` join, `status='completed'`, equal-footing. Filters: `eval_cp NOT NULL OR eval_mate NOT NULL`, `|eval_cp| < 2000`.
    - What's unclear: Should Plan 4 use the same `is_endgame` game filter as Phase 82 §3 (only games reaching `ENDGAME_PLY_THRESHOLD`)? Yes — that's the same population the tile aggregates from.
-   - Recommendation: Mirror Phase 82 §3 SQL exactly; just replace the eval-mean computation with the sigmoid + mate→0/1 conversion. Document in the new SKILL.md section as "Section X — Stockfish-baseline expected score at endgame entry".
+   - RESOLVED: Mirror Phase 82 §3 SQL exactly; just replace the eval-mean computation with the sigmoid + mate→0/1 conversion. Document in the new SKILL.md section as "Section X — Stockfish-baseline expected score at endgame entry". Encoded in Plan 04 Task 1.
 
 5. **Plan 4 zone band — pooled IQR vs editorial tightening**
    - What we know: Phase 82 D-08 editorially tightened entry-eval from ±0.75 to ±0.50.
    - What's unclear: What's the expected per-(user, color) p25/p75 for `entry_expected_score`? Without running the benchmark, hard to predict — but the sigmoid is steep around 0 cp, so a ±10 cp baseline shift maps to roughly ±0.04 score points. Sigmoid of pooled p25/p75 of ±55 cp eval (from `reports/benchmarks-2026-05-10.md` §3) ≈ `[0.450, 0.550]`. The cohort band will probably land right around the live `[0.45, 0.55]` `endgame_score` band — confirm with actual benchmark run.
-   - Recommendation: Plan 4 task includes "compute pooled p25/p75 of `entry_expected_score`; recommend band; if IQR is narrower than ±0.05, tighten editorially so meaningful patterns surface (memory `feedback_zone_band_judgement.md`)."
+   - RESOLVED: Plan 4 Task 2 is a `checkpoint:human-verify` for the band approval. Plan 04 includes "compute pooled p25/p75 of `entry_expected_score`; recommend band; if IQR is narrower than ±0.05, tighten editorially so meaningful patterns surface (memory `feedback_zone_band_judgement.md`)."
 
 ## Validation Architecture
 
