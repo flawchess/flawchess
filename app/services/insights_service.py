@@ -444,14 +444,22 @@ def _findings_endgame_start_vs_end(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """endgame_start_vs_end -> TWO findings (entry_eval_pawns, endgame_score).
+    """endgame_start_vs_end -> THREE findings (entry_eval_pawns, endgame_score, entry_expected_score).
 
     Phase 82 (D-16): wire Phase 81 entry_eval_mean_pawns and endgame
-    Score-vs-50% into the LLM payload. Both are single-aggregate, no
+    Score-vs-50% into the LLM payload. All findings are single-aggregate, no
     series, no dimension (D-19, D-20). Empty-window convention:
-    entry_eval_n < 10 OR endgame_wdl.total < 10 -> _empty_finding for
-    the affected tile (gated independently per D-17).
+    entry_eval_n < 10 OR endgame_wdl.total < 10 OR
+    entry_expected_score_n < 10 -> _empty_finding for the affected tile
+    (gated independently per Phase 82 D-17 / Phase 83 D-19).
     is_headline_eligible = sample_quality != "thin" (D-18).
+
+    Phase 83 (D-17 / D-19): adds a third finding for entry_expected_score
+    (Stockfish-baseline achievable score via Lichess sigmoid). The LLM
+    narrates the achievable-vs-achieved gap as the headline diagnostic with
+    entry_eval_pawns as the explanatory unit (D-18). No `verdict` field —
+    the LLM narrates strictly by zone (Phase 82 D-06; memory
+    feedback_llm_significance_signal.md).
     """
     perf = response.performance
 
@@ -499,7 +507,29 @@ def _findings_endgame_start_vs_end(
             dimension=None,
         )
 
-    return [tile1, tile2]
+    # Tile 3 — achievable score (Phase 83 D-19: gate on entry_expected_score_n >= 10)
+    n_ex = perf.entry_expected_score_n
+    if n_ex < 10:
+        tile3 = _empty_finding("endgame_start_vs_end", window, "entry_expected_score")
+    else:
+        ex = perf.entry_expected_score
+        ex_quality = sample_quality("endgame_start_vs_end", n_ex)
+        tile3 = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window=window,
+            metric="entry_expected_score",
+            value=ex,
+            zone=assign_zone("entry_expected_score", ex),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=n_ex,
+            sample_quality=ex_quality,
+            is_headline_eligible=ex_quality != "thin",
+            dimension=None,
+        )
+
+    return [tile1, tile2, tile3]
 
 
 def _findings_score_timeline(

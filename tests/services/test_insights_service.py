@@ -760,8 +760,8 @@ class TestFindingsEndgameStartVsEnd:
         )
         return EndgameOverviewResponse.model_construct(performance=perf)
 
-    def test_populated_both_tiles_returns_two_findings(self) -> None:
-        """Both gates pass -> exactly 2 findings with correct metric ids."""
+    def test_populated_both_tiles_returns_three_findings(self) -> None:
+        """All three gates pass -> exactly 3 findings with correct metric ids."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
         response = self._make_overview(
@@ -773,9 +773,11 @@ class TestFindingsEndgameStartVsEnd:
         )
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
-        assert len(findings) == 2
+        # Phase 83 D-19: third finding (entry_expected_score) emitted alongside.
+        assert len(findings) == 3
         assert findings[0].metric == "entry_eval_pawns"
         assert findings[1].metric == "endgame_score"
+        assert findings[2].metric == "entry_expected_score"
 
     def test_empty_tile1_when_n_eval_lt_10(self) -> None:
         """entry_eval_n < 10 -> tile1 is empty (thin, not headline eligible)."""
@@ -784,7 +786,8 @@ class TestFindingsEndgameStartVsEnd:
         response = self._make_overview(entry_eval_n=5, wins=25, draws=10, losses=15)
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
-        assert len(findings) == 2
+        # Phase 83: 3 findings emitted; tile3 stays populated via default helper kwargs.
+        assert len(findings) == 3
         assert findings[0].sample_quality == "thin"
         assert findings[0].is_headline_eligible is False
         # tile2 is still populated
@@ -797,19 +800,21 @@ class TestFindingsEndgameStartVsEnd:
         response = self._make_overview(entry_eval_n=50, wins=3, draws=1, losses=1)
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
-        assert len(findings) == 2
+        # Phase 83: 3 findings emitted; tile3 stays populated via default helper kwargs.
+        assert len(findings) == 3
         assert findings[1].sample_quality == "thin"
         assert findings[1].is_headline_eligible is False
         assert findings[0].sample_quality != "thin"
 
     def test_empty_both_when_both_lt_10(self) -> None:
-        """Both gates fail -> both findings are empty."""
+        """Both pre-existing gates fail -> tile1 and tile2 are empty."""
         from app.services.insights_service import _findings_endgame_start_vs_end
 
         response = self._make_overview(entry_eval_n=5, wins=2, draws=1, losses=2)
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
-        assert len(findings) == 2
+        # Phase 83: 3 findings emitted; tile3 stays populated via default helper kwargs.
+        assert len(findings) == 3
         assert findings[0].sample_quality == "thin"
         assert findings[1].sample_quality == "thin"
 
