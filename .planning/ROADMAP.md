@@ -19,8 +19,25 @@
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
 - ✅ **v1.15 Eval-Based Endgame Classification** — Phases 78, 79 (shipped 2026-05-03; VAL-01 / PHASE-VAL-01 rescinded) — see [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md)
 - ✅ **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82, 83 (shipped 2026-05-11) — see [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md)
+- 🚧 **v1.17 Endgame Stats Card Redesign** — Phases 84-88 (opened 2026-05-12) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 
 ## Phases
+
+<details open>
+<summary>🚧 v1.17 Endgame Stats Card Redesign (Phases 84-88) — IN PROGRESS (opened 2026-05-12)</summary>
+
+Replaces three table-driven sections on the Endgames page with the established WDL + ScoreBullet card pattern. Two-bullet doctrine (cohort + peer) preserves the self-calibrating opponent signal on Conv/Parity/Recov + Section 3 per-type cards. Frontend-only refactor; no backend or benchmark changes.
+
+- [ ] Phase 84: Data plumbing — per-type cohort p50 + mirror-rate audit (TBD plans) — planned
+- [ ] Phase 85: Section 1 — Games with vs without Endgame cards (TBD plans) — planned
+- [ ] Phase 86: Section 2 — Endgame Metrics 4-card layout (TBD plans) — planned
+- [ ] Phase 87: Section 3 — Per-type Endgame Type Breakdown cards (TBD plans) — planned
+- [ ] Phase 88: Polish — popovers, gating decisions, automation rules, 375px parity (TBD plans) — planned
+
+See [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md) for full phase details, success criteria, and requirement traceability.
+
+</details>
+
 
 <details>
 <summary>✅ v1.16 Stockfish Eval Analyses (Phases 80, 80.1, 81, 82, 83) — SHIPPED 2026-05-11</summary>
@@ -249,6 +266,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
 | 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
 | 80-83. v1.16 phases | v1.16 | 24/24 | Complete | 2026-05-11 |
+| 84-88. v1.17 phases | v1.17 | 0/TBD | In progress | — |
 
 ## Backlog
 

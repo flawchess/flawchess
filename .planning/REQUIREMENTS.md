@@ -84,16 +84,45 @@ Frontend-only milestone, but two payload/codegen items need confirmation.
 
 ## Traceability
 
-Empty — populated by gsd-roadmapper during phase mapping.
+Populated by gsd-roadmapper 2026-05-12.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated during roadmap creation) | | |
+| SEC1-01 | Phase 85 | Pending |
+| SEC1-02 | Phase 85 | Pending |
+| SEC1-03 | Phase 85 | Pending |
+| SEC1-04 | Phase 85 | Pending |
+| SEC1-05 | Phase 85 | Pending |
+| SEC1-06 | Phase 85 | Pending |
+| SEC1-07 | Phase 85 | Pending |
+| SEC2-01 | Phase 86 | Pending |
+| SEC2-02 | Phase 86 | Pending |
+| SEC2-03 | Phase 86 | Pending |
+| SEC2-04 | Phase 86 | Pending |
+| SEC2-05 | Phase 86 | Pending |
+| SEC2-06 | Phase 86 | Pending |
+| SEC2-07 | Phase 86 | Pending |
+| SEC2-08 | Phase 86 | Pending |
+| SEC2-09 | Phase 86 | Pending |
+| SEC2-10 | Phase 86 | Pending |
+| SEC3-01 | Phase 87 | Pending |
+| SEC3-02 | Phase 87 | Pending |
+| SEC3-03 | Phase 87 | Pending |
+| SEC3-04 | Phase 87 | Pending |
+| SEC3-05 | Phase 87 | Pending |
+| SEC3-06 | Phase 87 | Pending |
+| SEC3-07 | Phase 87 | Pending |
+| DATA-01 | Phase 84 | Pending |
+| DATA-02 | Phase 84 | Pending |
+| POLISH-01 | Phase 88 | Pending |
+| POLISH-02 | Phase 88 | Pending |
+| POLISH-03 | Phase 88 | Pending |
+| POLISH-04 | Phase 88 | Pending |
 
 **Coverage:**
 - v1 requirements: 30 total
-- Mapped to phases: 0
-- Unmapped: 30 (pending roadmap)
+- Mapped to phases: 30
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-12*

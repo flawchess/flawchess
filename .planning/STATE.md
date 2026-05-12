@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: planning
-last_updated: "2026-05-12T20:06:59.511Z"
+last_updated: "2026-05-12T22:30:00.000Z"
 last_activity: 2026-05-12
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,16 +17,16 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 84 (Data plumbing — per-type cohort p50 + mirror-rate audit) — not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-12 — Milestone v1.17 started
+Status: Roadmap complete, awaiting plan-phase
+Last activity: 2026-05-12 — v1.17 roadmap created (5 phases 84-88, 30 / 30 v1 requirements mapped)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-02 for v1.15 open)
-Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report (now score-based with low/medium/high confidence calibration).
-Current focus: v1.15 cutover landing — combined Phase 78 + Phase 79 PR #78 awaits CI green + bin/deploy.sh + post-deploy UI smoke. After deploy, every game_positions row carries a `phase` SmallInteger (0=opening, 1=middlegame, 2=endgame) and the middlegame entry + endgame span-entry rows carry Stockfish eval at depth 15. v1.16 (Stockfish Eval Analyses) opens immediately after — first phase is Phase 80 (opening-stats columns: avg eval at middlegame entry ± std, t-test confidence, avg clock diff). SEED-002 / SEED-006 / SEED-010 remain orthogonal (gated on full benchmark ingest, not on v1.15).
+See: .planning/PROJECT.md (updated 2026-05-12 for v1.17 open)
+Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
+Current focus: v1.17 Endgame Stats Card Redesign opens. Frontend-only refactor replacing three table-driven sections on the Endgames page (`EndgamePerformanceSection`, `EndgameScoreGapSection`, grouped `EndgameWDLChart`) with the established WDL + ScoreBullet card pattern from `EndgameStartVsEndSection.tsx` / `OpeningStatsCard.tsx`. Two-bullet doctrine (cohort vs population p50 + peer `You − Opp` vs 0) preserves the self-calibrating opponent signal on Conv/Parity/Recov + Section 3 per-type cards. 5 phases (84-88), 30 / 30 v1 requirements mapped. Phase 84 is the only non-pure-frontend phase — codegen extension to surface per-type cohort p50 on `PER_CLASS_GAUGE_ZONES` plus a mirror-rate audit on `/api/endgames/overview` (DATA-02 likely already-exposed, DATA-01 is the real codegen work). No backend stats / new statistical methods / benchmark refresh.
 
 ## Milestone Progress
 
