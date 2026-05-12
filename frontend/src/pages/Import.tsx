@@ -23,6 +23,7 @@ import { apiClient } from '@/api/client';
 
 
 const GAME_COUNT_REFRESH_INTERVAL_MS = 5000;
+const MIN_GAMES_FOR_RELIABLE_STATS = 1000;
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -328,6 +329,16 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             ))}
           </div>
         </div>
+      )}
+
+      {profile && (profile.chess_com_last_sync_at || profile.lichess_last_sync_at) &&
+        (profile.chess_com_game_count + profile.lichess_game_count) < MIN_GAMES_FOR_RELIABLE_STATS && (
+          <Alert variant="info" data-testid="import-low-game-count-info">
+            <p>
+              Many features and statistics are useful with fewer than {MIN_GAMES_FOR_RELIABLE_STATS.toLocaleString()} games, but they
+              become more reliable, complete, and interesting the more games they are based on. A few gaps here and there are expected.
+            </p>
+          </Alert>
       )}
 
       {/* Info box: sync behavior and opponent scouting explanation */}
