@@ -50,7 +50,7 @@ interface ImportPageProps {
   onJobDismissed: (jobId: string) => void;
 }
 
-function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jobId: string) => void }) {
+function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string; onDismiss: (jobId: string) => void; platformFilter?: 'chess.com' | 'lichess' }) {
   const { data } = useImportPolling(jobId);
   const queryClient = useQueryClient();
 
@@ -69,6 +69,7 @@ function ImportProgressBar({ jobId, onDismiss }: { jobId: string; onDismiss: (jo
   }, [isActive, queryClient]);
 
   if (!data) return null;
+  if (platformFilter && data.platform !== platformFilter) return null;
 
   const canDismiss = isDone || isError;
 
@@ -273,6 +274,9 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             {chessComError && (
               <p className="text-sm text-destructive" data-testid="import-error-chess-com">{chessComError}</p>
             )}
+            {activeJobIds.map((id) => (
+              <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="chess.com" />
+            ))}
           </div>
 
           {/* lichess platform row */}
@@ -319,6 +323,9 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
             {lichessError && (
               <p className="text-sm text-destructive" data-testid="import-error-lichess">{lichessError}</p>
             )}
+            {activeJobIds.map((id) => (
+              <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="lichess" />
+            ))}
           </div>
         </div>
       )}
@@ -338,15 +345,6 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
           <strong className="text-foreground">Opponent Scouting:</strong> delete your games, import the opponent's games to analyze their openings, then delete and re-import your own games.
         </p>
       </div>
-
-      {/* Inline import progress bars */}
-      {activeJobIds.length > 0 && (
-        <section data-testid="import-progress-section" className="space-y-3">
-          {activeJobIds.map((id) => (
-            <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} />
-          ))}
-        </section>
-      )}
 
       {/* Delete All Games */}
       <div data-testid="import-data-management">
