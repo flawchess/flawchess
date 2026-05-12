@@ -1127,3 +1127,118 @@ class TestFindingsEndgameStartVsEnd:
         # score = (25 + 0.5*10) / 50 = 0.60
         assert findings[1].value == pytest.approx(0.60)
         assert findings[1].sample_size == 50
+
+
+# ---------------------------------------------------------------------------
+# TestComputePlayerProfile — v27 Fix B sparse-history fallback.
+# ---------------------------------------------------------------------------
+
+
+class TestComputePlayerProfile:
+    """Tests for `compute_player_profile`, including v27 Fix B sparse fallback.
+
+    See `.planning/debug/llm-prompt-missing-sections.md`.
+    """
+
+    @staticmethod
+    def _combo(
+        platform: str,
+        time_control: str,
+        n_points: int,
+        *,
+        start_date: str = "2026-03-01",
+    ) -> Any:
+        """Build a synthetic EndgameEloTimelineCombo with `n_points` weekly buckets."""
+        import datetime as _dt
+
+        from app.schemas.endgames import (
+            EndgameEloTimelineCombo,
+            EndgameEloTimelinePoint,
+        )
+
+        first = _dt.date.fromisoformat(start_date)
+        points = [
+            EndgameEloTimelinePoint(
+                date=(first + _dt.timedelta(weeks=i)).isoformat(),
+                endgame_elo=1400 + i,
+                actual_elo=1350 + i,
+                endgame_games_in_window=50,
+                per_week_endgame_games=10,
+            )
+            for i in range(n_points)
+        ]
+        return EndgameEloTimelineCombo(
+            combo_key=f"{platform.replace('.', '_')}_{time_control}",
+            platform=cast(Any, platform),
+            time_control=cast(Any, time_control),
+            points=points,
+        )
+
+    def test_returns_none_when_no_combo_has_any_points(self) -> None:
+        from app.services.insights_service import compute_player_profile
+
+        assert compute_player_profile([]) is None
+
+    def test_full_quality_when_at_least_one_combo_clears_floor(self) -> None:
+        """Both combos with >= 20 weekly points produce quality='full' entries."""
+        from app.services.insights_service import (
+            _PLAYER_PROFILE_MIN_POINTS,
+            compute_player_profile,
+        )
+
+        combos = [
+            self._combo("chess.com", "blitz", n_points=_PLAYER_PROFILE_MIN_POINTS + 5),
+            self._combo("chess.com", "rapid", n_points=_PLAYER_PROFILE_MIN_POINTS + 1),
+        ]
+        result = compute_player_profile(combos)
+        assert result is not None
+        assert len(result) == 2
+        assert all(e.quality == "full" for e in result)
+
+    def test_full_entries_keep_subfloor_combos_out(self) -> None:
+        """When at least one combo qualifies for full, sub-floor combos are dropped."""
+        from app.services.insights_service import (
+            _PLAYER_PROFILE_MIN_POINTS,
+            compute_player_profile,
+        )
+
+        combos = [
+            self._combo("chess.com", "blitz", n_points=_PLAYER_PROFILE_MIN_POINTS + 5),
+            self._combo("chess.com", "rapid", n_points=3),  # below floor
+        ]
+        result = compute_player_profile(combos)
+        assert result is not None
+        # Only the full-quality blitz combo is emitted; rapid is silently skipped
+        # because at least one combo cleared the floor (full mode).
+        assert len(result) == 1
+        assert result[0].time_control == "blitz"
+        assert result[0].quality == "full"
+
+    def test_sparse_fallback_when_no_combo_clears_floor(self) -> None:
+        """v27 Fix B: when ALL combos are below the full floor, emit them all as sparse.
+
+        This is the user-49 / user-89 case from the debug session — short-history
+        users with only 5-9 weekly buckets per combo. Without this fallback the
+        `## Player profile` block vanishes and the LLM hallucinates the schema-
+        mandated `player_profile` output field from non-existent anchor data.
+        """
+        from app.services.insights_service import compute_player_profile
+
+        combos = [
+            self._combo("chess.com", "bullet", n_points=7),
+            self._combo("chess.com", "blitz", n_points=5),
+        ]
+        result = compute_player_profile(combos)
+
+        assert result is not None
+        assert len(result) == 2
+        assert all(e.quality == "sparse" for e in result)
+        # Sort order is games desc — bullet (7 pts × 10 games = 70) before blitz (50).
+        assert result[0].time_control == "bullet"
+        assert result[0].all_time_buckets == 7
+        assert result[1].time_control == "blitz"
+        assert result[1].all_time_buckets == 5
+        # current_elo is the most recent bucket's actual_elo (1350 + 7 - 1 = 1356
+        # for bullet; 1350 + 5 - 1 = 1354 for blitz).
+        assert result[0].current_elo == 1356
+        assert result[1].current_elo == 1354

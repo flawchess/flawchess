@@ -276,6 +276,17 @@ class PlayerProfileEntry(BaseModel):
     stale_last_bucket: str | None = None  # YYYY-MM
     stale_months: int | None = None
 
+    # `full` means the combo cleared `_PLAYER_PROFILE_MIN_POINTS` weekly
+    # buckets; `sparse` means it has at least one weekly bucket but fewer
+    # than that floor. Sparse entries are emitted as a fallback for new /
+    # short-history users so the `## Player profile` block (and the LLM's
+    # mandated `player_profile` output field) always has a real anchor;
+    # without it the LLM hallucinates a profile from thin air. The renderer
+    # uses this field to suppress trend / std on sparse blocks and to swap
+    # the `[anchor-combo ...]` tag for a `sparse-history` variant that tells
+    # the LLM not to claim trajectory or learning-arc framing.
+    quality: Literal["full", "sparse"] = "full"
+
 
 class TimePoint(BaseModel):
     """One point on a resampled timeseries attached to a timeline SubsectionFinding.

@@ -58,12 +58,12 @@ from app.services.endgame_zones import (
     ZONE_REGISTRY,
     ZoneSpec,
 )
-from app.services.insights_service import compute_findings
+from app.services.insights_service import SPARSE_COMBO_FLOOR, compute_findings
 
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v26"  # v26 (260511 entry_eval_pawns band): reverted the EG-entry-eval neutral band from ±0.50 back to ±0.75 pawns (pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`, reports/benchmarks-2026-05-10.md §3). Frontend tile, backend ZoneSpec, and LLM glossary kept in lockstep. v25 (260511 entry_expected_score): wire Stockfish-baseline achievable score (Lichess sigmoid) into the endgame_start_vs_end subsection alongside entry_eval_pawns and endgame_score. New ENTRY_EXPECTED_SCORE_ZONES from reports/benchmarks-2026-05-11.md. LLM narrates the achievable-vs-achieved gap as the headline diagnostic with entry_eval_pawns as the explanatory unit. v24 (260510-ugj): tightened last_3mo narration anchors — quoting any last_3mo value now requires an explicit "last 3 months" framing, and the within-noise legal-frames list no longer endorses vague "currently sitting at X%" / "over the recent window" forms that confused users by naming numbers absent from the dashboard. Stale-series rule strengthened: stale window numbers (mean, n, trend, std) must not appear in the narrative at all — past-tense qualitative reference only. v23 (260510 endgame_start_vs_end): wire Phase 81 entry-eval and endgame-score metrics into the LLM payload via a new `endgame_start_vs_end` subsection under section_id `overall`. Renamed score_timeline `endgame_score` → `endgame_score_timeline` and `non_endgame_score` → `non_endgame_score_timeline` to free the clean `endgame_score` name for the new subsection. Tile color rule amended from sig-only to `zone × p<0.05` (Phase 81 D-09 amendment). EG-entry-eval neutral band tightened from ±0.75 to ±0.50 for both tile and LLM. v22 (260503 eval-proxy cutover): rewrote the Conversion / Parity / Recovery glossary entries and the bucket descriptions in the metric glossary to reflect the Stockfish eval at endgame entry replacing the old material_imbalance + 4-ply persistence proxy. Conversion now means "entered with eval ≥ +1.0", Recovery "entered with eval ≤ -1.0", Parity "entered with eval between -1.0 and +1.0". Display threshold expressed as a signed one-decimal pawn value ("+1.0" / "-1.0") to match the rest of the page's eval rendering. v21 (260501-s0u pass2 polish): score_pct_diff in the type WDL chart is now derived from rounded score_pct − opp_score_pct (avoids 1pp mismatch e.g. 47 − 53 = -6 vs the unrounded -6.8 → -7). Raised SAMPLE_QUALITY_BANDS thin_max from 10 to 20 for per-type subsections (results_by_endgame_type, conversion_recovery_by_type) so 10-19 sequences no longer label as `adequate`. v20 (260501-s0u pass2 type_breakdown cleanup): restored the per-type WDL chart at `### Chart: results_by_endgame_type_wdl` (endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff). The v18 conv/recov delta table was redundant with the conversion_recovery_by_type [summary] blocks (same per-type conv_pct / recov_pct + per-class typical bands) and got dropped. Reordered type_breakdown to chart wdl → results_by_endgame_type → conversion_recovery_by_type so the LLM reads aggregate WDL, then per-type win_rate, then per-type Conv/Recov detail. _format_zone_bounds and the zone classifier (insights_service._findings_conversion_recovery_by_type) now dispatch via PER_CLASS_GAUGE_ZONES when a finding carries `endgame_class` for conversion_win_pct / recovery_save_pct, so per-class [summary] zone labels and inline `(typical LO to UP)` match the table-side per-class baselines. v19 (260501-s0u terminology pass): standardize on "endgame type" instead of "endgame class" in LLM-facing strings — column header is now `endgame_type`, caption and prompt prose use "per-type" / "type-specific" / "type baseline" framing. v18 (260501-s0u benchmark calibration v2): drop per-class win_rate framing in favor of per-class delta-from-baseline. Conversion / Recovery are now narrated against class-specific typical bands sourced from PER_CLASS_GAUGE_ZONES (reports/benchmarks-2026-05-01.md). Per-class user prompt payload replaced win_pct/score_pct rows with conv_pct, recov_pct, class baseline midpoints, and signed deltas. type_win_rate_timeline subsection deprecated — no longer rendered on the UI. v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
+_PROMPT_VERSION = "endgame_v27"  # v27 (260512 sparse-history rescue): three layered fixes for short-history users (< ~20 weekly buckets per (platform, time_control) combo) that previously produced incomplete prompts and hallucinated `player_profile` output. **A**: `all_time_series_pairs` in `_assemble_user_prompt` now registers a pair only when the post-A4/C2/C6 retained series has ≥1 point, so an all_time series that C2-trims to empty no longer suppresses its last_3mo `[series]` twin (restores score_timeline / clock_diff_timeline / endgame_elo_timeline raw points for users whose entire history fits inside the last 90 days). **B**: `compute_player_profile` now emits `quality="sparse"` entries for combos with ≥1 weekly bucket but < _PLAYER_PROFILE_MIN_POINTS=20 when NO combo clears the full floor — the renderer suppresses `trend=` / `std=` on sparse blocks and swaps the [anchor-combo] tag for a `sparse-history` variant that forbids learning-arc / trajectory framing; new prompt section "Sparse-history profile" tells the LLM how to narrate from sparse blocks (current/min/max only, no trajectory claims, ~2-3 sentence player_profile). Replaces the prior hallucination failure mode where the schema-mandated `player_profile` field was fabricated from non-existent anchor data. **C**: `### Subsection: endgame_elo_timeline` now renders a sentinel `[no qualifying combo — every (platform, time_control) combo has fewer than SPARSE_COMBO_FLOOR weekly buckets; no Endgame ELO trajectory available yet]` line when no combo clears `SPARSE_COMBO_FLOOR=10`, instead of vanishing from the prompt entirely. See `.planning/debug/llm-prompt-missing-sections.md`. v26 (260511 entry_eval_pawns band): reverted the EG-entry-eval neutral band from ±0.50 back to ±0.75 pawns (pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`, reports/benchmarks-2026-05-10.md §3). Frontend tile, backend ZoneSpec, and LLM glossary kept in lockstep. v25 (260511 entry_expected_score): wire Stockfish-baseline achievable score (Lichess sigmoid) into the endgame_start_vs_end subsection alongside entry_eval_pawns and endgame_score. New ENTRY_EXPECTED_SCORE_ZONES from reports/benchmarks-2026-05-11.md. LLM narrates the achievable-vs-achieved gap as the headline diagnostic with entry_eval_pawns as the explanatory unit. v24 (260510-ugj): tightened last_3mo narration anchors — quoting any last_3mo value now requires an explicit "last 3 months" framing, and the within-noise legal-frames list no longer endorses vague "currently sitting at X%" / "over the recent window" forms that confused users by naming numbers absent from the dashboard. Stale-series rule strengthened: stale window numbers (mean, n, trend, std) must not appear in the narrative at all — past-tense qualitative reference only. v23 (260510 endgame_start_vs_end): wire Phase 81 entry-eval and endgame-score metrics into the LLM payload via a new `endgame_start_vs_end` subsection under section_id `overall`. Renamed score_timeline `endgame_score` → `endgame_score_timeline` and `non_endgame_score` → `non_endgame_score_timeline` to free the clean `endgame_score` name for the new subsection. Tile color rule amended from sig-only to `zone × p<0.05` (Phase 81 D-09 amendment). EG-entry-eval neutral band tightened from ±0.75 to ±0.50 for both tile and LLM. v22 (260503 eval-proxy cutover): rewrote the Conversion / Parity / Recovery glossary entries and the bucket descriptions in the metric glossary to reflect the Stockfish eval at endgame entry replacing the old material_imbalance + 4-ply persistence proxy. Conversion now means "entered with eval ≥ +1.0", Recovery "entered with eval ≤ -1.0", Parity "entered with eval between -1.0 and +1.0". Display threshold expressed as a signed one-decimal pawn value ("+1.0" / "-1.0") to match the rest of the page's eval rendering. v21 (260501-s0u pass2 polish): score_pct_diff in the type WDL chart is now derived from rounded score_pct − opp_score_pct (avoids 1pp mismatch e.g. 47 − 53 = -6 vs the unrounded -6.8 → -7). Raised SAMPLE_QUALITY_BANDS thin_max from 10 to 20 for per-type subsections (results_by_endgame_type, conversion_recovery_by_type) so 10-19 sequences no longer label as `adequate`. v20 (260501-s0u pass2 type_breakdown cleanup): restored the per-type WDL chart at `### Chart: results_by_endgame_type_wdl` (endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff). The v18 conv/recov delta table was redundant with the conversion_recovery_by_type [summary] blocks (same per-type conv_pct / recov_pct + per-class typical bands) and got dropped. Reordered type_breakdown to chart wdl → results_by_endgame_type → conversion_recovery_by_type so the LLM reads aggregate WDL, then per-type win_rate, then per-type Conv/Recov detail. _format_zone_bounds and the zone classifier (insights_service._findings_conversion_recovery_by_type) now dispatch via PER_CLASS_GAUGE_ZONES when a finding carries `endgame_class` for conversion_win_pct / recovery_save_pct, so per-class [summary] zone labels and inline `(typical LO to UP)` match the table-side per-class baselines. v19 (260501-s0u terminology pass): standardize on "endgame type" instead of "endgame class" in LLM-facing strings — column header is now `endgame_type`, caption and prompt prose use "per-type" / "type-specific" / "type baseline" framing. v18 (260501-s0u benchmark calibration v2): drop per-class win_rate framing in favor of per-class delta-from-baseline. Conversion / Recovery are now narrated against class-specific typical bands sourced from PER_CLASS_GAUGE_ZONES (reports/benchmarks-2026-05-01.md). Per-class user prompt payload replaced win_pct/score_pct rows with conv_pct, recov_pct, class baseline midpoints, and signed deltas. type_win_rate_timeline subsection deprecated — no longer rendered on the UI. v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -432,10 +432,20 @@ def _format_player_profile_block(
     last_3mo line with mean / n / buckets / trend / std (or `no data` when
     the combo has no calendar-recent activity). Combos are already sorted by
     game count desc upstream in compute_player_profile.
+
+    Sparse-history (Fix B): when every entry carries `quality="sparse"`
+    (short-history user — no combo cleared the full-quality bucket floor),
+    the [anchor-combo] tag is swapped for a `sparse-history` variant and
+    each entry's trend / std fields are suppressed (those signals are
+    unreliable below ~20 weekly buckets). The renderer still emits real
+    current / min / max / mean / n / buckets so the LLM has a concrete
+    Elo anchor for the `player_profile` output field instead of having to
+    invent one.
     """
     if not profile:
         return []
     lines: list[str] = ["## Player profile"]
+    all_sparse = all(e.quality == "sparse" for e in profile)
     # v12: emit an [anchor-combo] tag pointing at the most-played live combo
     # (no stale marker). When every combo is stale, emit `all-stale` so the
     # LLM frames the whole profile in past tense instead of fabricating a
@@ -444,13 +454,20 @@ def _format_player_profile_block(
         (e for e in profile if e.stale_last_bucket is None),
         None,
     )
-    if anchor is not None:
+    if all_sparse:
+        lines.append(
+            "[anchor-combo] sparse-history — narrate cautiously; only current Elo and "
+            "basic range are reliable; do NOT claim trend, learning arc, or trajectory; "
+            "use plain present-tense framing like \"you play at ~<rating>\""
+        )
+    elif anchor is not None:
         lines.append(
             f"[anchor-combo platform={anchor.platform}, time_control={anchor.time_control}]"
         )
     else:
         lines.append("[anchor-combo] all-stale — narrate in past tense")
     for entry in profile:
+        is_sparse = entry.quality == "sparse"
         header = (
             f"[summary actual_elo | platform={entry.platform}, time_control={entry.time_control}]"
         )
@@ -464,9 +481,12 @@ def _format_player_profile_block(
             f"n={entry.all_time_n}",
             f"buckets={entry.all_time_buckets} (weekly)",
             f"window={entry.window_days}d",
-            f"trend={entry.all_time_trend}",
-            f"std={entry.all_time_std}",
         ]
+        if not is_sparse:
+            at_parts.append(f"trend={entry.all_time_trend}")
+            at_parts.append(f"std={entry.all_time_std}")
+        else:
+            at_parts.append("quality=sparse")
         if entry.stale_last_bucket and entry.stale_months is not None:
             at_parts.append(f"stale: last {entry.stale_last_bucket} ({entry.stale_months} mo ago)")
         lines.append("  all_time: " + ", ".join(at_parts))
@@ -479,10 +499,12 @@ def _format_player_profile_block(
                 f"n={entry.last_3mo_n}",
                 f"buckets={entry.last_3mo_buckets} (weekly)",
             ]
-            if entry.last_3mo_trend is not None:
+            if not is_sparse and entry.last_3mo_trend is not None:
                 lm_parts.append(f"trend={entry.last_3mo_trend}")
-            if entry.last_3mo_std is not None:
+            if not is_sparse and entry.last_3mo_std is not None:
                 lm_parts.append(f"std={entry.last_3mo_std}")
+            if is_sparse:
+                lm_parts.append("quality=sparse")
             lines.append("  last_3mo: " + ", ".join(lm_parts))
     lines.append("")
     return lines
@@ -1643,13 +1665,26 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     last_3mo_pairs: set[tuple[str, str]] = {
         (f.metric, f.subsection_id) for f in visible if f.window == "last_3mo"
     }
-    all_time_series_pairs: set[tuple[str, str]] = {
-        (f.metric, f.subsection_id)
-        for f in visible
-        if f.window == "all_time" and f.series is not None
-    }
     today = datetime.date.today()
     all_time_cutoff = (today - datetime.timedelta(days=_ALL_TIME_CUTOFF_DAYS)).isoformat()
+    # Register a (metric, subsection) pair in all_time_series_pairs ONLY when
+    # the all_time series still has retained points after the A4/C2/C6 filter
+    # chain. For short-history users whose entire history fits inside the
+    # 90-day C2 cutoff, the all_time series filters to empty — without this
+    # gate the empty pair would silently suppress the last_3mo [series] block
+    # below (C5) so the LLM would see [summary] lines pointing at no series
+    # data. See `.planning/debug/llm-prompt-missing-sections.md` (Fix A).
+    all_time_series_pairs: set[tuple[str, str]] = set()
+    for f in visible:
+        if f.window != "all_time" or f.series is None:
+            continue
+        retained = _retained_series_for_summary(
+            f,
+            last_3mo_pairs=last_3mo_pairs,
+            all_time_cutoff=all_time_cutoff,
+        )
+        if retained:
+            all_time_series_pairs.add((f.metric, f.subsection_id))
 
     newest_date = _newest_bucket_date(visible)
     stale_markers: dict[int, str] = {}
@@ -1701,6 +1736,24 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
             else:  # subsection
                 members = groups.get(block_id)
                 if not members:
+                    # Fix C: keep the `endgame_elo_timeline` header visible
+                    # even when every (platform, time_control) combo is
+                    # sparse (< SPARSE_COMBO_FLOOR weekly buckets). Without
+                    # this the whole subsection vanishes for short-history
+                    # users, and the LLM has no signal that the Endgame ELO
+                    # chart exists. See `.planning/debug/llm-prompt-missing-sections.md`.
+                    if block_id == "endgame_elo_timeline":
+                        section_body.extend(
+                            [
+                                "### Subsection: endgame_elo_timeline",
+                                (
+                                    f"[no qualifying combo — every (platform, time_control) "
+                                    f"combo has fewer than {SPARSE_COMBO_FLOOR} weekly buckets; "
+                                    "no Endgame ELO trajectory available yet]"
+                                ),
+                                "",
+                            ]
+                        )
                     continue
                 section_body.extend(
                     _render_subsection_block(
