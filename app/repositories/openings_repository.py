@@ -8,6 +8,7 @@ from typing import Any, Literal
 import chess
 import chess.polyglot
 from sqlalchemy import Float, and_, case, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import array as pg_array
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -717,8 +718,8 @@ async def query_opening_transitions(
     Returns one Row per surviving (entry_hash, move_san) pair with attrs:
         entry_hash: int        (gp.full_hash, never NULL in output)
         move_san: str          (candidate move SAN, never NULL)
-        sample_game_id: int    (MIN(gp.game_id) per group — for prefix lookup)
-        sample_ply: int        (MIN(gp.ply) per group — for prefix lookup)
+        sample_pair: list[int] (paired [ply, game_id] from one real row in the group;
+                                see comment on sample_pair below — for prefix lookup)
         n: int                 (count of distinct games)
         w: int, d: int, l: int (filtered counts)
         last_played_at: datetime | None
@@ -755,11 +756,17 @@ async def query_opening_transitions(
         select(
             GamePosition.full_hash.label("entry_hash"),
             GamePosition.move_san.label("move_san"),
-            # Sample (game_id, ply) used by query_transition_prefixes to batch-resolve
-            # the SAN prefix that reached this entry position. MIN() is deterministic:
-            # all games with the same (entry_hash, move_san) share the same prefix path.
-            func.min(GamePosition.game_id).label("sample_game_id"),
-            func.min(GamePosition.ply).label("sample_ply"),
+            # Sample [ply, game_id] from one real row in the group, used by
+            # query_transition_prefixes to resolve the SAN prefix that reached this
+            # entry position. Paired into a single ARRAY[] aggregate so MIN() picks
+            # the (ply, game_id) of one actual row — independent MIN(game_id) and
+            # MIN(ply) would de-correlate under transposition (same entry_hash
+            # reached at different plies in different games via different move
+            # orders), producing a (game_id, ply) sample that doesn't refer to any
+            # real row. PG ARRAY MIN is lexicographic, so the smallest array IS
+            # one of the input arrays. Sorted (ply, game_id) so smaller ply wins
+            # the tiebreak — gives the shallowest reachable prefix.
+            func.min(pg_array([GamePosition.ply, GamePosition.game_id])).label("sample_pair"),
             n_games.label("n"),
             wins.label("w"),
             draws.label("d"),

@@ -447,11 +447,14 @@ class _TransitionRow:
     """Typed wrapper for one transition, combining SQL-level and Python-derived attrs.
 
     SQL-level attrs (from query_opening_transitions):
-        entry_hash, move_san, sample_game_id, sample_ply, n, w, d, l, last_played_at
+        entry_hash, move_san, sample_pair=[ply, game_id], n, w, d, l, last_played_at
 
     Python-derived attrs (added by _wrap_transition_row):
         entry_san_sequence  — SAN prefix from start to entry position (plies 0..ply-1)
         resulting_full_hash — Zobrist hash after replaying entry_san_sequence + move_san
+
+    sample_game_id / sample_ply are unpacked from sample_pair and stored on the
+    wrapper for downstream prefix lookup + Sentry context.
     """
 
     entry_hash: int
@@ -479,8 +482,11 @@ def _wrap_transition_row(
     "Let's Play!" game — ~176 of 344k prod ply-0 rows). The drop is recorded to
     Sentry once per occurrence so we can monitor the rate without crashing the endpoint.
     """
-    sample_game_id = int(raw_row.sample_game_id)
-    sample_ply = int(raw_row.sample_ply)
+    # sample_pair is ARRAY[ply, game_id] from one real row in the group (paired
+    # aggregate — independent MIN(ply)/MIN(game_id) would de-correlate under
+    # transposition). asyncpg returns it as a 2-element list.
+    sample_ply = int(raw_row.sample_pair[0])
+    sample_game_id = int(raw_row.sample_pair[1])
     entry_san_sequence = prefixes.get((sample_game_id, sample_ply), [])
 
     try:
@@ -584,7 +590,9 @@ async def _collect_attribution_hashes(
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
         )
-        samples = [(int(r.sample_game_id), int(r.sample_ply)) for r in raw_rows]
+        # Unpack ARRAY[ply, game_id] into (game_id, ply) — sample_pair is paired
+        # so each (game_id, ply) refers to a real row in the SQL group.
+        samples = [(int(r.sample_pair[1]), int(r.sample_pair[0])) for r in raw_rows]
         prefixes = await query_transition_prefixes(session, user_id, samples)
         wrapped: list[_TransitionRow] = []
         for r in raw_rows:

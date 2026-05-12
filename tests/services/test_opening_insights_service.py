@@ -57,11 +57,12 @@ def _make_row(
 ) -> SimpleNamespace:
     """Construct a synthetic repository Row compatible with compute_insights.
 
-    Includes sample_game_id and sample_ply (added for flat-query refactor)
-    so the _run_compute helper can build a fake prefixes dict for wrapping.
-    The _wrap_transition_row step is bypassed in tests via a patch that
-    directly constructs _TransitionRow from the mock row's existing attrs,
-    preserving synthetic hash values (entry_hash=100, resulting_full_hash=200).
+    Includes sample_pair=[ply, game_id] (paired aggregate from the flat-query
+    refactor — the SQL emits a single ARRAY[ply, game_id] so that the sample
+    refers to one real row in the group, fixing the transposition bug where
+    independent MIN(game_id) and MIN(ply) de-correlated). Also exposes
+    sample_game_id / sample_ply as flat attrs so the test-only `_fake_wrap`
+    can build a _TransitionRow without going through the real replay logic.
     """
     if entry_san_sequence is None:
         entry_san_sequence = ["e4", "c5", "Nf3"]
@@ -79,6 +80,9 @@ def _make_row(
         # WDL lookup misses; the fixture default of None mirrors a row whose
         # contributing games all have NULL played_at (rare but valid).
         last_played_at=last_played_at,
+        # sample_pair is what production code reads from raw rows; flat
+        # sample_game_id / sample_ply are kept for the test-only _fake_wrap stub.
+        sample_pair=[sample_ply, sample_game_id],
         sample_game_id=sample_game_id,
         sample_ply=sample_ply,
     )
@@ -1652,11 +1656,11 @@ def test_row_wrapping_drops_unreachable_san_and_captures_to_sentry() -> None:
     from app.services.opening_insights_service import _wrap_transition_row
 
     # Synthetic raw row with an unreachable SAN prefix ("Kd9" is illegal).
+    # sample_pair=[ply, game_id] is the paired aggregate emitted by the flat query.
     raw_row = SimpleNamespace(
         entry_hash=88001,
         move_san="e4",
-        sample_game_id=42,
-        sample_ply=1,
+        sample_pair=[1, 42],
         n=20,
         w=4,
         d=4,

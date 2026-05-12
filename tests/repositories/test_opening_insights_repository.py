@@ -855,13 +855,15 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
 
 
 @pytest.mark.asyncio
-async def test_query_returns_sample_game_id_and_ply(db_session: AsyncSession) -> None:
-    """Flat query shape: row carries sample_game_id and sample_ply for Python-side
+async def test_query_returns_sample_pair(db_session: AsyncSession) -> None:
+    """Flat query shape: row carries sample_pair=ARRAY[ply, game_id] for Python-side
     prefix resolution. resulting_full_hash is no longer returned by the SQL — it is
     derived in the service layer via query_transition_prefixes + board replay.
 
     Seeds 20 games with an entry at ply=3. Verifies that the returned row exposes
-    sample_game_id (MIN game_id across the group) and sample_ply=3.
+    sample_pair where ply==3 and game_id is one of the seeded games. The pair must
+    come from a single real row in the group (see test_sample_pair_correlated_under_transposition
+    for the regression case that motivates the paired aggregate).
     """
     user_id = 10
     H_ENTRY = 120003
@@ -894,11 +896,124 @@ async def test_query_returns_sample_game_id_and_ply(db_session: AsyncSession) ->
     target = [r for r in rows if r.entry_hash == H_ENTRY]
     assert len(target) == 1
     row = target[0]
-    # sample_game_id = MIN(game_id) across the group, sample_ply = 3
-    assert row.sample_game_id == min(seeded_game_ids), (
-        "sample_game_id must be MIN(game_id) across seeded games"
+    # sample_pair = MIN(ARRAY[ply, game_id]); since every contributing row has
+    # ply=3 here, the array MIN reduces to the (3, MIN(game_id)) row.
+    sample_ply, sample_game_id = row.sample_pair
+    assert sample_ply == 3, f"Expected sample_ply=3, got {sample_ply}"
+    assert sample_game_id == min(seeded_game_ids), (
+        "sample_game_id must be MIN(game_id) across seeded games when all share ply=3"
     )
-    assert row.sample_ply == 3, f"Expected sample_ply=3, got {row.sample_ply}"
+
+
+@pytest.mark.asyncio
+async def test_sample_pair_correlated_under_transposition(
+    db_session: AsyncSession,
+) -> None:
+    """Regression: sample_pair must come from one real row in the group.
+
+    The same entry position (Zobrist hash) can be reached at different plies in
+    different games via transposition — polyglot hashes ignore half-move clock,
+    so e.g. inserting "Nf3 Nf6 Ng1 Ng8" before "e4 e5" returns to the same hash
+    at a deeper ply. If the SQL emits independent MIN(game_id) + MIN(ply) the
+    aggregates de-correlate and the sample (game_id, ply) may not refer to any
+    real row, silently breaking the prefix replay in _wrap_transition_row.
+
+    This test seeds the deeper-ply games FIRST so they receive smaller game_ids
+    (which would dominate independent MIN(game_id)), then asserts that the paired
+    ARRAY[ply, game_id] aggregate returns a (game_id, ply) pair that maps back
+    to a real row — i.e. the chosen game_id actually has the entry at that ply.
+    """
+    user_id = 10
+    H_ENTRY = 800003
+    CANDIDATE = "Nc3"
+
+    # Deep batch: 10 games with the entry at ply=6 (transposed roundabout).
+    # Seeded FIRST → smaller game_ids → would win independent MIN(game_id).
+    deep_game_ids: list[int] = []
+    for _ in range(10):
+        gid = await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="0-1",  # loss for white (drives score below 0.45 → passes HAVING)
+            user_color="white",
+            positions=[
+                (0, 800100, "Nf3"),
+                (1, 800101, "Nf6"),
+                (2, 800102, "Ng1"),
+                (3, 800103, "Ng8"),
+                (4, 800104, "e4"),
+                (5, 800105, "e5"),
+                (6, H_ENTRY, CANDIDATE),  # entry at ply=6
+                (7, 800107, None),
+            ],
+        )
+        deep_game_ids.append(gid)
+
+    # Shallow batch: 10 games with the entry at ply=2 (direct path).
+    # Seeded SECOND → larger game_ids.
+    shallow_game_ids: list[int] = []
+    for _ in range(10):
+        gid = await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="0-1",
+            user_color="white",
+            positions=[
+                (0, 900000, "e4"),
+                (1, 900001, "e5"),
+                (2, H_ENTRY, CANDIDATE),  # entry at ply=2
+                (3, 900003, None),
+            ],
+        )
+        shallow_game_ids.append(gid)
+
+    # Invariant the broken impl needs in order to trip: deep games' game_ids
+    # are strictly smaller than shallow games' game_ids.
+    assert max(deep_game_ids) < min(shallow_game_ids), (
+        "Test setup invariant: deep games must be seeded before shallow games "
+        "so independent MIN(game_id) would land on a deep game."
+    )
+
+    rows = await query_opening_transitions(
+        db_session,
+        user_id=user_id,
+        color="white",
+        **_default_call_args("white"),
+    )
+
+    target = [r for r in rows if r.entry_hash == H_ENTRY and r.move_san == CANDIDATE]
+    assert len(target) == 1, (
+        f"Expected exactly one grouped row for (H_ENTRY, {CANDIDATE}), got {len(target)}"
+    )
+    row = target[0]
+
+    sample_ply, sample_game_id = row.sample_pair
+
+    # Paired ARRAY MIN is lexicographic: smallest ply wins, with game_id as
+    # tiebreak. ply=2 (shallow) is smaller than ply=6 (deep), so the sample
+    # must come from a SHALLOW game.
+    assert sample_ply == 2, (
+        f"sample_ply must be the smallest ply in the group (2 from shallow). "
+        f"Got {sample_ply}."
+    )
+    # Critical assertion: sample_game_id must belong to a shallow game so that
+    # game's ply=2 row IS the entry position. Under the bug (independent MINs),
+    # this would land in deep_game_ids.
+    assert sample_game_id in shallow_game_ids, (
+        f"sample_game_id must come from the same row as sample_ply. Got "
+        f"sample_game_id={sample_game_id}. If it is in deep_game_ids={deep_game_ids}, "
+        f"the two MIN aggregates de-correlated (transposition bug)."
+    )
+
+    # End-to-end check: the prefix helper resolves to a sequence whose final
+    # board state IS the entry hash — i.e. the sample is consistent.
+    prefixes = await query_transition_prefixes(
+        db_session, user_id, [(sample_game_id, sample_ply)]
+    )
+    assert prefixes[(sample_game_id, sample_ply)] == ["e4", "e5"], (
+        f"Prefix for sample (game_id={sample_game_id}, ply=2) must be the "
+        f"shallow game's first two moves; got {prefixes[(sample_game_id, sample_ply)]!r}"
+    )
 
 
 @pytest.mark.asyncio
@@ -1101,6 +1216,7 @@ def test_query_compiles_to_flat_aggregation() -> None:
     """
     from sqlalchemy import Float, and_, cast, func, or_, select
     from sqlalchemy.dialects import postgresql
+    from sqlalchemy.dialects.postgresql import array as pg_array
 
     from app.models.game import Game
     from app.models.game_position import GamePosition
@@ -1134,8 +1250,7 @@ def test_query_compiles_to_flat_aggregation() -> None:
         select(
             GamePosition.full_hash.label("entry_hash"),
             GamePosition.move_san.label("move_san"),
-            func.min(GamePosition.game_id).label("sample_game_id"),
-            func.min(GamePosition.ply).label("sample_ply"),
+            func.min(pg_array([GamePosition.ply, GamePosition.game_id])).label("sample_pair"),
             n_games.label("n"),
             wins.label("w"),
             draws.label("d"),
@@ -1273,10 +1388,12 @@ async def test_query_handles_custom_fen_ply0_gracefully(db_session: AsyncSession
         f"Got {len(target)} matching rows."
     )
     row = target[0]
-    # sample_game_id and sample_ply are present so the service can call
+    # sample_pair=[ply, game_id] is present so the service can call
     # query_transition_prefixes and attempt board replay.
-    assert row.sample_game_id is not None
-    assert row.sample_ply == 3
+    assert row.sample_pair is not None
+    sample_ply, sample_game_id = row.sample_pair
+    assert sample_ply == 3
+    assert sample_game_id is not None
 
 
 # ---------------------------------------------------------------------------
