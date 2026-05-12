@@ -335,7 +335,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
         (profile.chess_com_game_count + profile.lichess_game_count) < MIN_GAMES_FOR_RELIABLE_STATS && (
           <Alert variant="info" data-testid="import-low-game-count-info">
             <p>
-              Many features and statistics are useful with fewer than {MIN_GAMES_FOR_RELIABLE_STATS.toLocaleString()} games, but they
+              <strong className="text-foreground">Low game count:</strong> Many features and statistics are useful with fewer than {MIN_GAMES_FOR_RELIABLE_STATS.toLocaleString()} games, but they
               become more reliable, complete, and interesting the more games they are based on. With fewer games imported, expect a few gaps in the data.
             </p>
           </Alert>
