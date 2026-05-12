@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Info, Lightbulb, AlertTriangle, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Info, AlertTriangle, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -10,7 +10,6 @@ const alertVariants = cva(
     variants: {
       variant: {
         info: 'border-border bg-muted/50 text-muted-foreground',
-        tip: 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400',
         warning: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
         error: 'border-destructive/30 bg-destructive/10 text-destructive',
         success: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
@@ -24,7 +23,6 @@ const alertVariants = cva(
 
 const VARIANT_ICONS = {
   info: Info,
-  tip: Lightbulb,
   warning: AlertTriangle,
   error: AlertCircle,
   success: CheckCircle2,
