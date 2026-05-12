@@ -470,135 +470,6 @@ async def query_next_moves(
     return list(rows.all())
 
 
-async def query_transposition_counts(
-    session: AsyncSession,
-    user_id: int,
-    result_hash_list: list[int],
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
-    color: str | None,
-    opponent_gap_min: int | None = None,
-    opponent_gap_max: int | None = None,
-) -> dict[int, int]:
-    """Return the total distinct games reaching each result_hash under the same filters.
-
-    For each full_hash in result_hash_list, counts distinct game_ids that have
-    a game_positions row with that full_hash (via any move order / transposition).
-    Respects all filter parameters for consistent filtering with query_next_moves.
-
-    Returns: {result_hash: transposition_count}
-    Missing hashes (no games reached them under filters) are omitted from dict.
-    """
-    if not result_hash_list:
-        return {}
-
-    stmt = (
-        select(
-            GamePosition.full_hash.label("result_hash"),
-            func.count(GamePosition.game_id.distinct()).label("transposition_count"),
-        )
-        .join(Game, Game.id == GamePosition.game_id)
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.full_hash.in_(result_hash_list),
-        )
-        .group_by(GamePosition.full_hash)
-    )
-
-    stmt = apply_game_filters(
-        stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
-        color,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-    )
-
-    rows = await session.execute(stmt)
-    return {row.result_hash: row.transposition_count for row in rows}
-
-
-async def query_transposition_wdl(
-    session: AsyncSession,
-    user_id: int,
-    result_hash_list: list[int],
-    time_control: Sequence[str] | None,
-    platform: Sequence[str] | None,
-    rated: bool | None,
-    opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
-    color: str | None,
-    opponent_gap_min: int | None = None,
-    opponent_gap_max: int | None = None,
-) -> dict[int, tuple[int, int, int]]:
-    """Return {result_hash: (wins, draws, losses)} for resulting-position WDL.
-
-    Phase 80.1 D-02: Move Explorer rows show resulting-position WDL.
-    Sibling of query_transposition_counts; counts distinct games per result_hash
-    bucketed into W/D/L from the user's perspective using the same case
-    expressions as query_next_moves. Filters MUST be identical to
-    query_next_moves for consistency.
-
-    Missing hashes (no games match under filters) are omitted from the dict.
-    """
-    if not result_hash_list:
-        return {}
-
-    win_case = case(
-        (
-            ((Game.result == "1-0") & (Game.user_color == "white"))
-            | ((Game.result == "0-1") & (Game.user_color == "black")),
-            Game.id,
-        ),
-        else_=None,
-    )
-    draw_case = case((Game.result == "1/2-1/2", Game.id), else_=None)
-    loss_case = case(
-        (
-            ((Game.result == "1-0") & (Game.user_color == "black"))
-            | ((Game.result == "0-1") & (Game.user_color == "white")),
-            Game.id,
-        ),
-        else_=None,
-    )
-
-    stmt = (
-        select(
-            GamePosition.full_hash.label("result_hash"),
-            func.count(win_case.distinct()).label("wins"),
-            func.count(draw_case.distinct()).label("draws"),
-            func.count(loss_case.distinct()).label("losses"),
-        )
-        .join(Game, Game.id == GamePosition.game_id)
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.full_hash.in_(result_hash_list),
-        )
-        .group_by(GamePosition.full_hash)
-    )
-
-    stmt = apply_game_filters(
-        stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
-        color,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-    )
-
-    rows = await session.execute(stmt)
-    return {row.result_hash: (row.wins, row.draws, row.losses) for row in rows}
-
-
 async def query_resulting_position_wdl(
     session: AsyncSession,
     user_id: int,
@@ -615,7 +486,8 @@ async def query_resulting_position_wdl(
     """Return {resulting_full_hash: (wins, draws, losses)} for Opening Insights.
 
     Phase 80.1 D-06: Opening Insights findings show resulting-position WDL.
-    Same SQL shape as query_transposition_wdl but the parameter is named
+    Same SQL shape as historic query_transposition_wdl (deleted; see quick
+    task 260512-p5p) but the parameter is named
     `hash_list` to reflect the call-site semantics (list of
     `resulting_full_hash` values from query_opening_transitions).
 
