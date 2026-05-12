@@ -331,17 +331,14 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
         </div>
       )}
 
-      {profile && (profile.chess_com_last_sync_at || profile.lichess_last_sync_at) &&
-        (profile.chess_com_game_count + profile.lichess_game_count) < MIN_GAMES_FOR_RELIABLE_STATS && (
-          <Alert variant="info" data-testid="import-low-game-count-info">
-            <p>
-              <strong className="text-foreground">Low game count:</strong> Many features and statistics are useful with fewer than {MIN_GAMES_FOR_RELIABLE_STATS.toLocaleString()} games, but they
-              become more reliable, complete, and interesting the more games they are based on. With fewer games imported, expect a few gaps in the data.
-            </p>
-          </Alert>
-      )}
-
       <Alert variant="info" data-testid="import-info">
+        {profile && (profile.chess_com_last_sync_at || profile.lichess_last_sync_at) &&
+          (profile.chess_com_game_count + profile.lichess_game_count) < MIN_GAMES_FOR_RELIABLE_STATS && (
+            <p data-testid="import-low-game-count-info">
+              <strong className="text-foreground">Low game count:</strong> Many features and statistics are useful with fewer than {MIN_GAMES_FOR_RELIABLE_STATS.toLocaleString()} games, but they
+              become more reliable, complete, and interesting with more games.
+            </p>
+        )}
         <p>
           <strong className="text-foreground">First Sync:</strong> imports all your games. Later syncs only fetch new games since the last import.
         </p>
