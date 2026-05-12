@@ -233,7 +233,9 @@ class TestOpeningPhaseEntryMetrics:
         full_hash = 10_007
         # 2 games with continuous eval, 1 game with mate
         for cp in [50, 100]:
-            await _make_game_with_phase_entries(db_session, full_hash=full_hash, mg_eval_cp=cp)
+            await _make_game_with_phase_entries(
+                db_session, full_hash=full_hash, mg_eval_cp=cp
+            )
         # mate game: eval_cp=NULL, eval_mate=3
         await _make_game_with_phase_entries(
             db_session,
@@ -279,63 +281,36 @@ class TestOpeningPhaseEntryMetrics:
 
     @pytest.mark.asyncio
     async def test_partition_invariant_phase_entry_total(self, db_session: AsyncSession) -> None:
-        """Invariant: eval_n + mate_n + null_eval_n + outlier_n == phase_entry_row_count.
-
-        Asserts the partition invariant across two distinct hashes with mixed
-        eval states. Load-bearing for quick task 260512-p5p / Task 3: after the
-        CTE→subquery refactor, the four eval-state buckets must continue to
-        partition the phase-entry rows exactly (no double-counting, no row
-        skipping under planner inlining).
-        """
-        full_hash_a = 10_010
-        full_hash_b = 10_011
-        # Hash A — 5 MG-entry rows: 2 continuous in-domain, 1 mate, 1 null_eval, 1 outlier.
-        await _make_game_with_phase_entries(db_session, full_hash=full_hash_a, mg_eval_cp=50)
-        await _make_game_with_phase_entries(db_session, full_hash=full_hash_a, mg_eval_cp=100)
+        """Invariant: eval_n + mate_n + null_eval_n + outlier_n == phase_entry_row_count."""
+        full_hash = 10_010
+        # MG: 2 normal, 1 mate, 1 null_eval (cp=NULL, mate=NULL), 1 outlier
+        await _make_game_with_phase_entries(db_session, full_hash=full_hash, mg_eval_cp=50)
+        await _make_game_with_phase_entries(db_session, full_hash=full_hash, mg_eval_cp=100)
         await _make_game_with_phase_entries(
-            db_session, full_hash=full_hash_a, mg_eval_cp=None, mg_eval_mate=3
+            db_session, full_hash=full_hash, mg_eval_cp=None, mg_eval_mate=3
         )
         await _make_game_with_phase_entries(
-            db_session, full_hash=full_hash_a, mg_eval_cp=None, mg_eval_mate=None
+            db_session, full_hash=full_hash, mg_eval_cp=None, mg_eval_mate=None
         )
-        await _make_game_with_phase_entries(db_session, full_hash=full_hash_a, mg_eval_cp=2500)
-
-        # Hash B — 3 MG-entry rows: 1 continuous in-domain, 1 mate, 1 outlier.
-        # Different bucket distribution so a partition bug in one hash can't
-        # mask a partition bug in the other.
-        await _make_game_with_phase_entries(db_session, full_hash=full_hash_b, mg_eval_cp=-75)
-        await _make_game_with_phase_entries(
-            db_session, full_hash=full_hash_b, mg_eval_cp=None, mg_eval_mate=-5
-        )
-        await _make_game_with_phase_entries(db_session, full_hash=full_hash_b, mg_eval_cp=-3000)
+        await _make_game_with_phase_entries(db_session, full_hash=full_hash, mg_eval_cp=2500)
 
         result = await query_opening_phase_entry_metrics_batch(
-            db_session, _USER_PHASE_ENTRY, [full_hash_a, full_hash_b]
+            db_session, _USER_PHASE_ENTRY, [full_hash]
         )
 
-        assert full_hash_a in result
-        m_a = result[full_hash_a]
-        assert m_a.eval_n_mg + m_a.mate_n_mg + m_a.null_eval_n_mg + m_a.outlier_n_mg == 5
-        # Bucket breakdown for hash A — hand-computed.
-        assert m_a.eval_n_mg == 2
-        assert m_a.mate_n_mg == 1
-        assert m_a.null_eval_n_mg == 1
-        assert m_a.outlier_n_mg == 1
-
-        assert full_hash_b in result
-        m_b = result[full_hash_b]
-        assert m_b.eval_n_mg + m_b.mate_n_mg + m_b.null_eval_n_mg + m_b.outlier_n_mg == 3
-        assert m_b.eval_n_mg == 1
-        assert m_b.mate_n_mg == 1
-        assert m_b.null_eval_n_mg == 0
-        assert m_b.outlier_n_mg == 1
+        assert full_hash in result
+        m = result[full_hash]
+        # 5 MG-entry rows total
+        assert m.eval_n_mg + m.mate_n_mg + m.null_eval_n_mg + m.outlier_n_mg == 5
 
     @pytest.mark.asyncio
     async def test_filter_consistency_wdl_vs_phase_entry(self, db_session: AsyncSession) -> None:
         """eval_n_mg <= wdl.total for all openings."""
         full_hash = 10_012
         for cp in [30, 60, 90, 120, 150]:
-            await _make_game_with_phase_entries(db_session, full_hash=full_hash, mg_eval_cp=cp)
+            await _make_game_with_phase_entries(
+                db_session, full_hash=full_hash, mg_eval_cp=cp
+            )
 
         wdl_result = await query_position_wdl_batch(
             db_session,

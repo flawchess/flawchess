@@ -7,7 +7,7 @@ requires: []
 provides:
   - "Single query_resulting_position_wdl for resulting-position WDL (transposition_counts/wdl helpers removed)"
   - "Flat single-SELECT query_position_wdl_batch (no dedup subquery)"
-  - "CTE-free query_opening_phase_entry_metrics_batch (plain subquery dedup)"
+  - "REVERTED: CTE-free query_opening_phase_entry_metrics_batch — see Task 3 below"
 affects:
   - app/repositories/openings_repository.py
   - app/repositories/stats_repository.py
@@ -27,7 +27,7 @@ decisions:
   - "Behavior-preserving structural refactor only; no schema/API surface changes."
   - "Derive trans_counts inline from wins+draws+losses to eliminate the extra DB round trip in get_next_moves."
   - "Mirror PR #90 (commit 3fe670fe) shape: COUNT(DISTINCT game_id) FILTER (...) at aggregate level beats wrapping a DISTINCT dedup subquery."
-  - "Use .subquery() over .cte() so the PG 18 planner can inline freely (CTEs are optimization fences when inlining is inhibited by predicates)."
+  - "REVERSED: dropping the CTE in query_opening_phase_entry_metrics_batch (Task 3) measured 18-45% slower on prod across all user sizes. The dedup_subq is referenced twice, so a plain subquery is emitted as two independent inline derived tables that PG does not CSE — doubling the heavy DISTINCT-ON. CTE auto-materialization (PG 12+) is exactly what's wanted here."
 metrics:
   duration: ~20m
   completed: 2026-05-12
@@ -56,24 +56,33 @@ Three behavior-preserving SQL simplifications landed as three atomic refactor co
 - `total` is derived in Python as `wins + draws + losses` rather than executing a fourth `COUNT(DISTINCT)` aggregate; equivalent because every game has exactly one result.
 - Filter parity preserved via `apply_game_filters` with identical kwargs; signature unchanged.
 
-## Task 3 - Drop CTE from query_opening_phase_entry_metrics_batch
+## Task 3 - Drop CTE from query_opening_phase_entry_metrics_batch — REVERTED
 
-**Commit:** `1c51e188 refactor(stats): drop CTE from query_opening_phase_entry_metrics_batch`
+**Original commit:** `1c51e188 refactor(stats): drop CTE from query_opening_phase_entry_metrics_batch`
+**Reverted in PR #93 after prod EXPLAIN ANALYZE.**
 
-- Single structural change: `dedup_select.cte("dedup")` → `dedup_select.subquery("dedup")`. The `.c` interface is identical so the downstream `phase_entry_subq` and `agg_select` references work unchanged.
-- The six aggregates, sign convention (`case((Game.user_color == "white", 1), else_=-1) * eval_cp`), four eval-state predicates (`has_continuous_in_domain_eval`, `has_mate`, `has_null_eval`, `has_outlier_eval`), and `EVAL_OUTLIER_TRIM_CP = 2000` constant are preserved verbatim.
-- Docstring updated to remove the obsolete "materialized as a CTE" rationale.
+The original rationale (PG 18 CTEs as optimization fences) was wrong for this query. `dedup_subq` is referenced twice — once in `phase_entry_subq.WHERE game_id IN (...)` and once in `agg_select.select_from(...)`. SQLAlchemy emits each reference as an independent inline derived table, and Postgres does not CSE identical subquery bodies. The CTE form auto-materializes (PG 12+ behavior when CTE has >1 reference) and reuses the materialized tuples cheaply — exactly what the deleted comment said.
 
-**Why this matters:** PG 18 inlines CTEs only when referenced once AND side-effect-free AND not marked MATERIALIZED, and even then inlining can be inhibited by complex predicates. A plain subquery has no such restrictions, giving the planner maximum flexibility (same lesson as PR #90).
+**Prod measurements** (25-hash batch, prod DB via `bin/prod_db_tunnel.sh`, median of 3 runs after warm-up):
+
+| User | Games | CTE (old) | subquery (new) | Slowdown |
+|---|---:|---:|---:|---:|
+| 45 | 38,953 | 1298 ms | 1527 ms | +18% |
+| 13 | 21,835 | 963 ms | 1166 ms | +21% |
+| 84 | 718 | 43 ms | 51 ms | +17% |
+| 33 | 445 | 32 ms | 39 ms | +22% |
+| 43 | 229 | 28 ms | 41 ms | +45% |
+
+EXPLAIN buffer counts confirm the cause: SUBQUERY scans `shared hit=590k` vs CTE `shared hit=294k` for user 45 — almost exactly 2× due to the doubled DISTINCT-ON evaluation. CTE wins across the entire user range and shows lower variance on light users (user 43: 27-30ms stable vs 30-57ms with subquery).
+
+The deleted comment was load-bearing. Restored with a stronger warning citing these measurements and a `DO NOT replace with .subquery()` directive so the choice doesn't get re-questioned. PR #90's precedent (where dropping a dedup wrapper improved plans) does not generalize — that query referenced its dedup once; this one references twice.
 
 ## Guardrail Tests Added
 
 Two new structural-shape guardrails compile a representative statement and assert the absence of pathological structures. Both follow PR #90's precedent (`test_query_compiles_to_flat_aggregation`):
 
 1. **`test_query_position_wdl_batch_compiles_flat`** (in `tests/repositories/test_opening_insights_repository.py`) — asserts no `WITH `, no `SELECT DISTINCT`, no `FROM (SELECT` in the compiled SQL.
-2. **`test_query_phase_entry_metrics_compiles_without_cte`** (same file) — asserts no `WITH ` in the compiled SQL.
-
-The partition-invariant test `test_partition_invariant_phase_entry_total` was augmented to cover two distinct hashes with mixed bucket distributions (5 rows in hash A, 3 rows in hash B), with per-bucket counts hand-computed so a partition bug surfaces as a specific failed assertion rather than only as a sum mismatch.
+2. ~~`test_query_phase_entry_metrics_compiles_without_cte`~~ — removed when Task 3 was reverted; the query intentionally uses a CTE.
 
 ## Deviations from Plan
 
@@ -95,15 +104,14 @@ The partition-invariant test `test_partition_invariant_phase_entry_total` was au
 - [x] `uv run ty check app/ tests/` zero errors.
 - [x] Targeted suites pass after each task: 130 tests (Task 1), 152 tests (Task 2), 200 tests (Task 3).
 - [x] Full suite green: 1388 passed, 6 skipped (pre-existing).
-- [x] `grep -n "\.cte(" app/repositories/stats_repository.py` returns no matches.
 - [x] `grep -rn "query_transposition_counts\|query_transposition_wdl" app/ tests/` returns only comment/docstring/test-name occurrences, no symbol references.
-- [ ] **Post-deploy:** Tunnel into prod with `bin/prod_db_tunnel.sh` and `EXPLAIN ANALYZE query_opening_phase_entry_metrics_batch` for user 84 on a representative hash batch; confirm the plan stays in the same zone as `query_opening_transitions` after PR #90. (Higher-risk task — CTE removal could surprise the planner on heavy users; PR #90 demonstrated the inverse case where dropping the CTE *improved* plan stability, but verifying on production data closes the loop.)
+- [x] **Prod EXPLAIN ANALYZE on 5 users (45, 13, 84, 33, 43)** — Task 3 measured slower across all sizes (+17% to +45%). Reverted.
 
 ## Self-Check: PASSED
 
 - File `app/repositories/openings_repository.py` exists, transposition helpers removed.
-- File `app/repositories/stats_repository.py` exists, no `.cte(` in `query_opening_phase_entry_metrics_batch`.
+- File `app/repositories/stats_repository.py` exists, `query_opening_phase_entry_metrics_batch` uses `.cte("dedup")` (restored after prod measurement, see Task 3).
 - File `app/services/openings_service.py` exists, single resulting-position WDL call in `get_next_moves`.
 - Commit `77dfdb86` exists on `worktree-agent-a3917997428703476`.
 - Commit `830ec0b2` exists on `worktree-agent-a3917997428703476`.
-- Commit `1c51e188` exists on `worktree-agent-a3917997428703476`.
+- Commit `1c51e188` reverted in PR #93.
