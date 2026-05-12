@@ -1628,3 +1628,72 @@ class TestComputeInsightsTranspositionWdl:
         finding = response.white_strengths[0]
         assert finding.n_games == 25
         assert finding.n_games >= MIN_GAMES_PER_CANDIDATE  # validator gate
+
+
+# ---------------------------------------------------------------------------
+# Custom-FEN drop path (flat-query refactor)
+# ---------------------------------------------------------------------------
+
+
+def test_row_wrapping_drops_unreachable_san_and_captures_to_sentry() -> None:
+    """_wrap_transition_row returns None and captures to Sentry when board replay
+    fails due to an unreachable SAN (custom-FEN survivor).
+
+    Uses an entry_san_sequence containing "Kd9" — an illegal square coordinate —
+    to trigger chess.IllegalMoveError on the first SAN replay step. Verifies:
+    - The function returns None (row dropped).
+    - sentry_sdk.capture_exception was called exactly once.
+    - sentry_sdk.set_tag was called with ("source", "opening_insights").
+    - sentry_sdk.set_context was called with a dict containing the required keys.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from app.services.opening_insights_service import _wrap_transition_row
+
+    # Synthetic raw row with an unreachable SAN prefix ("Kd9" is illegal).
+    raw_row = SimpleNamespace(
+        entry_hash=88001,
+        move_san="e4",
+        sample_game_id=42,
+        sample_ply=1,
+        n=20,
+        w=4,
+        d=4,
+        l=12,
+        last_played_at=None,
+    )
+    # The prefix lookup resolves ply=1 to ["Kd9"] — an illegal SAN from start.
+    prefixes: dict[tuple[int, int], list[str]] = {(42, 1): ["Kd9"]}
+
+    mock_capture = MagicMock()
+    mock_set_tag = MagicMock()
+    mock_set_context = MagicMock()
+
+    with (
+        patch("app.services.opening_insights_service.sentry_sdk.capture_exception", mock_capture),
+        patch("app.services.opening_insights_service.sentry_sdk.set_tag", mock_set_tag),
+        patch("app.services.opening_insights_service.sentry_sdk.set_context", mock_set_context),
+    ):
+        result = _wrap_transition_row(raw_row, prefixes)
+
+    # Row must be dropped (None returned)
+    assert result is None, f"Expected None for unreachable SAN, got {result!r}"
+
+    # Sentry must be notified exactly once
+    assert mock_capture.call_count == 1, (
+        f"capture_exception must be called once, got {mock_capture.call_count}"
+    )
+
+    # source tag must be set
+    mock_set_tag.assert_called_once_with("source", "opening_insights")
+
+    # set_context must include the required diagnostic keys
+    context_calls = mock_set_context.call_args_list
+    assert len(context_calls) == 1
+    context_name, context_dict = context_calls[0].args
+    assert context_name == "opening_insights_drop"
+    assert "entry_hash" in context_dict
+    assert "move_san" in context_dict
+    assert "sample_game_id" in context_dict
+    assert "sample_ply" in context_dict
