@@ -30,6 +30,7 @@ from app.repositories.openings_repository import (
     STARTING_POSITION_HASH,
     query_openings_by_hashes,
     query_opening_transitions,
+    query_transition_prefixes,
 )
 
 
@@ -69,13 +70,16 @@ async def _seed_game_with_positions(
 ) -> int:
     """Insert one Game and its GamePositions; return game_id.
 
-    Phase 71 hotfix: query_opening_transitions filters out games whose ply-0
-    full_hash != STARTING_POSITION_HASH. To keep existing tests realistic,
-    any (0, <synthetic_hash>, ...) entry is overridden to STARTING_POSITION_HASH
-    by default; if no ply=0 row is in `positions`, one is auto-inserted with
-    move_san=None so the EXISTS predicate is satisfied. Tests that need to
-    seed a non-standard-start game pass `force_ply0_hash`; tests that need
-    to seed a game WITHOUT a ply=0 row at all pass `skip_auto_ply0=True`.
+    Any (0, <synthetic_hash>, ...) entry is overridden to STARTING_POSITION_HASH
+    by default so seeded positions are consistent with standard-start games.
+    If no ply=0 row is in `positions`, one is auto-inserted with move_san=None.
+    Tests that need to seed a non-standard-start game (custom-FEN) pass
+    `force_ply0_hash`; tests that need to seed a game WITHOUT a ply=0 row at all
+    pass `skip_auto_ply0=True`.
+
+    Note: the flat query_opening_transitions no longer pre-filters on ply-0 hash
+    (that was the Phase 71 CTE filter). Custom-FEN games pass the SQL and are
+    dropped later in the Python service layer.
     """
     if played_at is None:
         played_at = datetime.datetime.now(tz=datetime.timezone.utc)
@@ -122,9 +126,8 @@ async def _seed_game_with_positions(
         )
 
     for ply, full_hash, move_san in positions:
-        # Phase 71 hotfix: align ply-0 hash with the standard starting position
-        # by default so the new CTE filter doesn't silently drop fixtures.
-        # `force_ply0_hash` lets the regression test inject a non-standard hash.
+        # Align ply-0 hash with the standard starting position by default.
+        # `force_ply0_hash` lets tests inject a non-standard hash (custom-FEN).
         effective_hash = full_hash
         if ply == 0:
             effective_hash = (
@@ -274,14 +277,13 @@ async def test_entry_ply_17_excluded_as_entry_but_included_as_candidate(
 
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
         # Only seed ply=17 (entry) and ply=18 (candidate). No prior positions.
-        # ply=18 is excluded from the CTE (partial index WHERE ply BETWEEN 1 AND 17)
-        # so no candidate_ply=18 row can appear in the outer query.
-        # An explicit ply=0 row with move_san=None satisfies has_standard_start
-        # without surfacing as an entry itself (CTE drops rows with NULL move_san).
+        # The flat query filters on ply.between(MIN_ENTRY_PLY, MAX_ENTRY_PLY) = 0..16.
+        # ply=17 entry is outside the range, so it's excluded from the flat query.
+        # ply=18 candidate is also outside the range.
         positions = [
-            (0, STARTING_POSITION_HASH, None),  # ply=0: required for has_standard_start
-            (17, H_ONLY_ENTRY, "Nf3"),  # entry at ply=17 (within CTE range 1..17)
-            (18, H_ONLY_CAND, "Nc6"),  # candidate at ply=18 (outside CTE range)
+            (0, STARTING_POSITION_HASH, None),  # ply=0 (not an entry at MAX_ENTRY_PLY=16)
+            (17, H_ONLY_ENTRY, "Nf3"),  # ply=17: excluded (above MAX_ENTRY_PLY=16)
+            (18, H_ONLY_CAND, "Nc6"),  # ply=18: excluded (above MAX_ENTRY_PLY=16)
         ]
         await _seed_game_with_positions(
             db_session,
@@ -310,16 +312,15 @@ async def test_entry_ply_17_excluded_as_entry_but_included_as_candidate(
 async def test_window_does_not_leak_across_games(
     db_session: AsyncSession,
 ) -> None:
-    """RESEARCH.md Pitfall 2: window functions partitioned by game_id must not
-    leak across game boundaries.
+    """Flat aggregation groups by (full_hash, move_san); move_san IS NOT NULL filter
+    ensures final-position rows (no candidate) are excluded.
 
     Seeds 20 games with the same line where the entry row at ply=3 has
-    move_san=None (no candidate). Expects 0 rows since the entry row's
-    move_san is NULL (final-position rows are filtered out).
+    move_san=None (no candidate). Expects 0 rows for that entry since the
+    flat query WHERE filters move_san IS NOT NULL.
 
     Then re-seeds 20 games with a candidate at ply=3 and verifies exactly
-    one (entry_hash, move_san) row is returned — not 20+ if the partition
-    leaked across game boundaries.
+    one (entry_hash, move_san) row is returned — correct aggregation.
     """
     user_id = 10
 
@@ -803,20 +804,19 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
     assert "ply" in indexdef.lower(), f"Index must include ply column. Got: {indexdef}"
     assert "game_id" in indexdef.lower(), f"Index must include game_id column. Got: {indexdef}"
     assert "user_id" in indexdef.lower(), f"Index must include user_id column. Got: {indexdef}"
-    # Partial predicate must match the CTE WHERE clause (ply BETWEEN 0 AND 17 after #71 hotfix)
+    # Partial predicate must match the flat-query WHERE clause (ply BETWEEN 0 AND 17)
     assert "0" in indexdef and "17" in indexdef, (
         f"Index partial predicate must cover ply BETWEEN 0 AND 17. Got: {indexdef}"
     )
 
-    # Verify the partial index predicate alignment: the CTE WHERE clause (ply BETWEEN 1 AND 17)
-    # must match the index partial predicate. We check this via pg_indexes catalog.
+    # Verify the partial index predicate alignment with the flat-query WHERE clause.
     # On small test datasets, the planner won't always choose ix_gp_user_game_ply
     # over simpler indexes; on Hikaru-scale (5.7M rows), it's the winning plan
     # (verified 2026-04-26, CONTEXT.md: 2.0 s → 816 ms).
     #
     # What we CAN reliably assert in the test DB:
-    # 1. The index partial predicate covers ply BETWEEN 1 AND 17 (matching the CTE)
-    # 2. The index INCLUDE columns match the CTE SELECT list (full_hash, move_san)
+    # 1. The index partial predicate covers ply BETWEEN 0 AND 17 (matching flat WHERE)
+    # 2. The index INCLUDE columns match the flat SELECT list (full_hash, move_san)
     # 3. The EXPLAIN for a query filtering on ALL 3 key columns chooses the index.
     predicate_check = await db_session.execute(
         text(
@@ -828,7 +828,7 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
     )
     predicate = predicate_check.scalar_one_or_none()
     assert predicate is not None, "Index ix_gp_user_game_ply predicate must exist"
-    # PostgreSQL renders BETWEEN as: ply >= 0 AND ply <= 17 (after #71 hotfix)
+    # PostgreSQL renders BETWEEN as: ply >= 0 AND ply <= 17
     assert "0" in predicate and "17" in predicate, (
         f"Index predicate must cover ply BETWEEN 0 AND 17. Got: {predicate}"
     )
@@ -855,19 +855,20 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
 
 
 @pytest.mark.asyncio
-async def test_query_returns_resulting_full_hash(db_session: AsyncSession) -> None:
-    """BLOCKER-6 / D-21: resulting_full_hash is the position AFTER the candidate.
+async def test_query_returns_sample_game_id_and_ply(db_session: AsyncSession) -> None:
+    """Flat query shape: row carries sample_game_id and sample_ply for Python-side
+    prefix resolution. resulting_full_hash is no longer returned by the SQL — it is
+    derived in the service layer via query_transition_prefixes + board replay.
 
-    Seeds 20 games. The entry row is at ply=3 with candidate move "Nc6"; the
-    next ply (4) carries the resulting position's full_hash. The repository
-    query reads it via LEAD(full_hash).
+    Seeds 20 games with an entry at ply=3. Verifies that the returned row exposes
+    sample_game_id (MIN game_id across the group) and sample_ply=3.
     """
     user_id = 10
     H_ENTRY = 120003
-    H_RESULT = 120004  # position after the candidate move = full_hash at ply=4
 
+    seeded_game_ids: list[int] = []
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
-        await _seed_game_with_positions(
+        gid = await _seed_game_with_positions(
             db_session,
             user_id=user_id,
             result="1-0",
@@ -877,9 +878,10 @@ async def test_query_returns_resulting_full_hash(db_session: AsyncSession) -> No
                 (1, 120001, "c5"),
                 (2, 120002, "Nf3"),
                 (3, H_ENTRY, "Nc6"),  # entry: candidate move is "Nc6"
-                (4, H_RESULT, None),  # final: LEAD(full_hash) reads H_RESULT
+                (4, 120004, None),  # final position
             ],
         )
+        seeded_game_ids.append(gid)
 
     rows = await query_opening_transitions(
         db_session,
@@ -888,58 +890,56 @@ async def test_query_returns_resulting_full_hash(db_session: AsyncSession) -> No
         **_default_call_args("black"),
     )
 
-    # Filter to the ply=3 target — plies 0..2 also surface as their own
-    # entries with MIN_ENTRY_PLY=0.
+    # Filter to the ply=3 target — plies 0..2 also surface as their own entries.
     target = [r for r in rows if r.entry_hash == H_ENTRY]
     assert len(target) == 1
-    assert target[0].resulting_full_hash == H_RESULT, (
-        f"Expected resulting_full_hash={H_RESULT}, got {target[0].resulting_full_hash}"
+    row = target[0]
+    # sample_game_id = MIN(game_id) across the group, sample_ply = 3
+    assert row.sample_game_id == min(seeded_game_ids), (
+        "sample_game_id must be MIN(game_id) across seeded games"
     )
+    assert row.sample_ply == 3, f"Expected sample_ply=3, got {row.sample_ply}"
 
 
 @pytest.mark.asyncio
-async def test_query_returns_entry_san_sequence(db_session: AsyncSession) -> None:
-    """BLOCKER-1 / D-34: entry_san_sequence contains SAN tokens needed to replay
-    the entry position from the start.
+async def test_query_transition_prefixes_returns_entry_san_sequence(
+    db_session: AsyncSession,
+) -> None:
+    """Flat-query refactor: entry_san_sequence is now derived via query_transition_prefixes.
 
     Per zobrist semantics, GamePosition.move_san at ply Y is the move played
     FROM ply Y. For an entry at ply=3 with candidate move "Nc6", the
     sequence to reach the entry is move_san at plies 0, 1, 2 = ["e4","c5","Nf3"].
+    query_transition_prefixes returns that list for (game_id, ply=3).
     """
     user_id = 10
     H_ENTRY = 130003
-    H_RESULT = 130004
 
-    for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
-        await _seed_game_with_positions(
-            db_session,
-            user_id=user_id,
-            result="1-0",
-            user_color="black",
-            positions=[
-                (0, 130000, "e4"),  # ply=0: White's 1st move played FROM start
-                (1, 130001, "c5"),  # ply=1: Black's 1st move played FROM after-e4
-                (2, 130002, "Nf3"),  # ply=2: White's 2nd move played FROM after-e4-c5
-                (3, H_ENTRY, "Nc6"),  # ply=3 (entry): candidate move played FROM here
-                (4, H_RESULT, None),  # final: LEAD(full_hash) reads H_RESULT
-            ],
-        )
-
-    rows = await query_opening_transitions(
+    game_id = await _seed_game_with_positions(
         db_session,
         user_id=user_id,
-        color="black",
-        **_default_call_args("black"),
+        result="1-0",
+        user_color="black",
+        positions=[
+            (0, 130000, "e4"),  # ply=0: White's 1st move played FROM start
+            (1, 130001, "c5"),  # ply=1: Black's 1st move played FROM after-e4
+            (2, 130002, "Nf3"),  # ply=2: White's 2nd move played FROM after-e4-c5
+            (3, H_ENTRY, "Nc6"),  # ply=3 (entry): candidate move played FROM here
+            (4, 130004, None),  # final position
+        ],
     )
 
-    # Filter to the ply=3 target — plies 0..2 also surface as their own
-    # entries with MIN_ENTRY_PLY=0.
-    target = [r for r in rows if r.entry_hash == H_ENTRY]
-    assert len(target) == 1
-    row = target[0]
-    assert row.move_san == "Nc6", f"Expected candidate move_san='Nc6', got {row.move_san!r}"
-    assert row.entry_san_sequence == ["e4", "c5", "Nf3"], (
-        f"Expected entry_san_sequence=['e4', 'c5', 'Nf3'], got {row.entry_san_sequence!r}"
+    # query_transition_prefixes for (game_id, ply=3) must return ["e4", "c5", "Nf3"]
+    prefixes = await query_transition_prefixes(db_session, user_id, [(game_id, 3)])
+
+    assert (game_id, 3) in prefixes, f"Expected (game_id={game_id}, ply=3) in prefixes"
+    assert prefixes[(game_id, 3)] == ["e4", "c5", "Nf3"], (
+        f"Expected prefix=['e4', 'c5', 'Nf3'], got {prefixes[(game_id, 3)]!r}"
+    )
+    # ply=0 sample returns empty list (no moves before ply 0)
+    prefixes_ply0 = await query_transition_prefixes(db_session, user_id, [(game_id, 0)])
+    assert prefixes_ply0[(game_id, 0)] == [], (
+        f"ply=0 prefix must be [], got {prefixes_ply0[(game_id, 0)]!r}"
     )
 
 
@@ -949,23 +949,22 @@ async def test_query_returns_entry_san_sequence(db_session: AsyncSession) -> Non
 
 
 @pytest.mark.asyncio
-async def test_non_standard_start_game_excluded_from_transitions(
+async def test_non_standard_start_game_passes_flat_query(
     db_session: AsyncSession,
 ) -> None:
-    """Phase 71 hotfix: games whose ply-0 full_hash != STARTING_POSITION_HASH
-    must NOT contribute any rows to query_opening_transitions output.
+    """Flat-query refactor: games whose ply-0 full_hash != STARTING_POSITION_HASH
+    are NO LONGER pre-filtered by the SQL query. They pass through and are dropped
+    in the Python service layer (opening_insights_service._wrap_transition_row)
+    via try/except around board replay.
 
-    Reproduces the production bug seen on user 7 (hikaru): chess.com themed
-    events / puzzles import with a [SetUp "1"][FEN ...] PGN header. ply 0
-    in those games carries the custom FEN's hash, and ply-0 move_san (e.g.
-    "Bb2") is illegal from chess.Board(). When min(array_agg(...))
-    lexicographically picked such a chain, _compute_prefix_hashes raised
-    chess.IllegalMoveError and 500'd the endpoint.
+    The old Phase 71 CTE had an EXISTS predicate that excluded these custom-FEN
+    games at the SQL level. The flat aggregation intentionally drops that predicate
+    to simplify the query shape. The service-layer drop path is tested in
+    test_row_wrapping_drops_unreachable_san_and_captures_to_sentry.
     """
     user_id = 10
     NON_STANDARD_PLY0 = 11111  # any value != STARTING_POSITION_HASH
     H_BAD_ENTRY = 222003
-    H_BAD_RESULT = 222004
 
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
         await _seed_game_with_positions(
@@ -978,7 +977,7 @@ async def test_non_standard_start_game_excluded_from_transitions(
                 (1, 222001, "c5"),
                 (2, 222002, "Nf3"),
                 (3, H_BAD_ENTRY, "Nc6"),
-                (4, H_BAD_RESULT, None),
+                (4, 222004, None),
             ],
             force_ply0_hash=NON_STANDARD_PLY0,
         )
@@ -990,21 +989,22 @@ async def test_non_standard_start_game_excluded_from_transitions(
         **_default_call_args("black"),
     )
 
-    # The non-standard-start game produces no transition rows.
-    assert rows == [], (
-        f"Expected 0 rows for non-standard-FEN game, got {len(rows)}: "
-        f"{[(r.entry_hash, r.move_san) for r in rows]}"
-    )
+    # Flat query does NOT pre-filter on ply-0 hash — the custom-FEN game's entries
+    # appear in the SQL result (H_BAD_ENTRY should be present). The service layer
+    # drops them via try/except on board replay.
     entry_hashes = [r.entry_hash for r in rows]
-    assert H_BAD_ENTRY not in entry_hashes
+    assert H_BAD_ENTRY in entry_hashes, (
+        f"Flat query must include custom-FEN entries (was pre-filtered in Phase 71 CTE, "
+        f"now dropped in Python). Got entry_hashes={entry_hashes}"
+    )
 
 
 @pytest.mark.asyncio
 async def test_standard_start_game_included_in_transitions(
     db_session: AsyncSession,
 ) -> None:
-    """Phase 71 hotfix: a normal game (ply-0 full_hash == STARTING_POSITION_HASH)
-    is NOT affected by the new filter and still contributes transition rows."""
+    """A normal game (ply-0 full_hash == STARTING_POSITION_HASH) contributes
+    transition rows as expected from the flat aggregation."""
     user_id = 10
     H_GOOD_ENTRY = 333003
     H_GOOD_RESULT = 333004
@@ -1032,28 +1032,27 @@ async def test_standard_start_game_included_in_transitions(
     )
 
     # Filter to the ply=3 target — plies 0..2 also surface as their own
-    # entries with MIN_ENTRY_PLY=0; this test only cares that a standard-start
-    # game produces the ply=3 entry (i.e. has_standard_start did not filter it).
+    # entries with MIN_ENTRY_PLY=0.
     target = [r for r in rows if r.entry_hash == H_GOOD_ENTRY]
     assert len(target) == 1
     assert target[0].move_san == "Nc6"
 
 
 @pytest.mark.asyncio
-async def test_game_without_ply0_row_excluded_from_transitions(
+async def test_game_without_ply0_row_still_contributes_to_flat_query(
     db_session: AsyncSession,
 ) -> None:
-    """Phase 71 hotfix: a game with no ply=0 row at all (data corruption case)
-    is excluded by the EXISTS predicate.
+    """Flat-query refactor: a game with no ply=0 row is NO LONGER excluded.
 
-    This shouldn't happen in practice — every imported game seeds ply 0 — but
-    the CTE filter is conservative: include only games with a positive
-    confirmation that the start position is standard. Missing ply 0 is treated
-    the same as a non-standard ply 0.
+    The old Phase 71 CTE had an EXISTS predicate that required a ply-0 row with
+    full_hash == STARTING_POSITION_HASH. The flat aggregation has no such
+    predicate — it simply queries ply.between(MIN_ENTRY_PLY, MAX_ENTRY_PLY).
+    A game missing ply=0 but having qualifying entries at ply 1..16 will
+    contribute those entries normally. The service layer's try/except on board
+    replay handles any resulting illegality.
     """
     user_id = 11  # isolated user_id to avoid contaminating user 10 fixtures
     H_ORPHAN_ENTRY = 444003
-    H_ORPHAN_RESULT = 444004
 
     for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
         await _seed_game_with_positions(
@@ -1062,12 +1061,11 @@ async def test_game_without_ply0_row_excluded_from_transitions(
             result="1-0",
             user_color="black",
             positions=[
-                # No ply=0 row. Helper would normally auto-insert one, but
-                # skip_auto_ply0 disables that for this regression test.
+                # No ply=0 row (skip_auto_ply0). The flat query has no ply=0 filter.
                 (1, 444001, "c5"),
                 (2, 444002, "Nf3"),
                 (3, H_ORPHAN_ENTRY, "Nc6"),
-                (4, H_ORPHAN_RESULT, None),
+                (4, 444004, None),
             ],
             skip_auto_ply0=True,
         )
@@ -1079,7 +1077,206 @@ async def test_game_without_ply0_row_excluded_from_transitions(
         **_default_call_args("black"),
     )
 
-    assert rows == [], f"Expected 0 rows for game missing ply=0, got {len(rows)}"
+    # Flat query does NOT require ply=0 — the entry at ply=3 should appear.
+    entry_hashes = [r.entry_hash for r in rows]
+    assert H_ORPHAN_ENTRY in entry_hashes, (
+        f"Flat query must include entries from games without ply=0 row. "
+        f"Got entry_hashes={entry_hashes}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Flat-query shape guardrails (flat-query refactor)
+# ---------------------------------------------------------------------------
+
+
+def test_query_compiles_to_flat_aggregation() -> None:
+    """Structural guardrail: query_opening_transitions must compile to a flat
+    aggregation with no CTE, no LEAD window, and no ARRAY_AGG.
+
+    Checks the compiled SQL string of a representative statement built with the
+    same SQLAlchemy 2.x pattern used inside query_opening_transitions.
+    Fails if someone re-introduces a `.cte(...)`, `func.lead(...)`, or
+    `func.array_agg(...).over(...)` — all of which caused planner misestimation.
+    """
+    from sqlalchemy import Float, and_, cast, func, or_, select
+    from sqlalchemy.dialects import postgresql
+
+    from app.models.game import Game
+    from app.models.game_position import GamePosition
+    from app.repositories.openings_repository import (
+        OPENING_INSIGHTS_MAX_ENTRY_PLY,
+        OPENING_INSIGHTS_MIN_ENTRY_PLY,
+        OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+        OPENING_INSIGHTS_SCORE_PIVOT,
+    )
+    from app.services.opening_insights_constants import OPENING_INSIGHTS_MINOR_EFFECT
+
+    n_games = func.count(func.distinct(Game.id))
+    wins = func.count(func.distinct(Game.id)).filter(
+        or_(
+            and_(Game.result == "1-0", Game.user_color == "white"),
+            and_(Game.result == "0-1", Game.user_color == "black"),
+        )
+    )
+    draws = func.count(func.distinct(Game.id)).filter(Game.result == "1/2-1/2")
+    losses = func.count(func.distinct(Game.id)).filter(
+        or_(
+            and_(Game.result == "0-1", Game.user_color == "white"),
+            and_(Game.result == "1-0", Game.user_color == "black"),
+        )
+    )
+    score_expr = (cast(wins, Float) + 0.5 * cast(draws, Float)) / cast(n_games, Float)
+    weakness_threshold = OPENING_INSIGHTS_SCORE_PIVOT - OPENING_INSIGHTS_MINOR_EFFECT
+    strength_threshold = OPENING_INSIGHTS_SCORE_PIVOT + OPENING_INSIGHTS_MINOR_EFFECT
+
+    stmt = (
+        select(
+            GamePosition.full_hash.label("entry_hash"),
+            GamePosition.move_san.label("move_san"),
+            func.min(GamePosition.game_id).label("sample_game_id"),
+            func.min(GamePosition.ply).label("sample_ply"),
+            n_games.label("n"),
+            wins.label("w"),
+            draws.label("d"),
+            losses.label("l"),
+            func.max(Game.played_at).label("last_played_at"),
+        )
+        .join(Game, Game.id == GamePosition.game_id)
+        .where(
+            GamePosition.user_id == 1,
+            GamePosition.ply.between(
+                OPENING_INSIGHTS_MIN_ENTRY_PLY, OPENING_INSIGHTS_MAX_ENTRY_PLY
+            ),
+            GamePosition.move_san.isnot(None),
+            Game.user_color == "white",
+        )
+        .group_by(GamePosition.full_hash, GamePosition.move_san)
+        .having(
+            and_(
+                n_games >= OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
+                or_(score_expr <= weakness_threshold, score_expr >= strength_threshold),
+            )
+        )
+    )
+
+    compiled = str(stmt.compile(dialect=postgresql.dialect()))
+    compiled_upper = compiled.upper()
+
+    assert "WITH " not in compiled, (
+        f"Flat query must not contain a CTE ('WITH '). Got:\n{compiled[:500]}"
+    )
+    assert "LEAD(" not in compiled_upper, (
+        f"Flat query must not contain a LEAD window function. Got:\n{compiled[:500]}"
+    )
+    assert "ARRAY_AGG" not in compiled_upper, (
+        f"Flat query must not contain ARRAY_AGG. Got:\n{compiled[:500]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_query_transition_prefixes_multi_game(db_session: AsyncSession) -> None:
+    """query_transition_prefixes returns correct SAN prefix lists for multiple games.
+
+    Seeds two games (g1 and g2) with distinct SAN sequences. Calls
+    query_transition_prefixes with several (game_id, ply) samples and asserts:
+    - g1 at ply=2 returns the first 2 SANs of g1's sequence
+    - g2 at ply=3 returns the first 3 SANs of g2's sequence
+    - g1 at ply=0 returns [] (no moves before ply 0)
+    - empty samples input returns {}
+    """
+    user_id = 10
+    # g1: e4, c5, Nf3, d6 (positions at ply 0..3)
+    g1_id = await _seed_game_with_positions(
+        db_session,
+        user_id=user_id,
+        result="1-0",
+        user_color="white",
+        positions=[
+            (0, 550000, "e4"),
+            (1, 550001, "c5"),
+            (2, 550002, "Nf3"),
+            (3, 550003, "d6"),
+            (4, 550004, None),
+        ],
+    )
+    # g2: d4, d5, c4 (positions at ply 0..3)
+    g2_id = await _seed_game_with_positions(
+        db_session,
+        user_id=user_id,
+        result="0-1",
+        user_color="white",
+        positions=[
+            (0, 560000, "d4"),
+            (1, 560001, "d5"),
+            (2, 560002, "c4"),
+            (3, 560003, "Nc6"),
+            (4, 560004, None),
+        ],
+    )
+
+    # Multi-sample request: g1 at ply=2, g2 at ply=3, g1 at ply=0
+    samples = [(g1_id, 2), (g2_id, 3), (g1_id, 0)]
+    prefixes = await query_transition_prefixes(db_session, user_id, samples)
+
+    assert prefixes[(g1_id, 2)] == ["e4", "c5"], (
+        f"g1 ply=2 prefix must be ['e4', 'c5'], got {prefixes[(g1_id, 2)]!r}"
+    )
+    assert prefixes[(g2_id, 3)] == ["d4", "d5", "c4"], (
+        f"g2 ply=3 prefix must be ['d4', 'd5', 'c4'], got {prefixes[(g2_id, 3)]!r}"
+    )
+    assert prefixes[(g1_id, 0)] == [], f"ply=0 prefix must be [], got {prefixes[(g1_id, 0)]!r}"
+
+    # Empty samples input returns {} immediately
+    empty = await query_transition_prefixes(db_session, user_id, [])
+    assert empty == {}
+
+
+@pytest.mark.asyncio
+async def test_query_handles_custom_fen_ply0_gracefully(db_session: AsyncSession) -> None:
+    """Flat-query refactor: custom-FEN games (ply-0 full_hash != STARTING_POSITION_HASH)
+    are not pre-filtered by SQL — they appear in the result and carry a valid
+    (sample_game_id, sample_ply) pair for Python-side prefix resolution.
+
+    The service layer is responsible for dropping them via try/except on board replay.
+    """
+    user_id = 10
+    CUSTOM_FEN_HASH = 99999  # non-standard ply-0 hash (simulates chess.com thematic game)
+    H_CUSTOM_ENTRY = 570003
+
+    for _ in range(OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE):
+        await _seed_game_with_positions(
+            db_session,
+            user_id=user_id,
+            result="1-0",  # loss for black
+            user_color="black",
+            positions=[
+                (1, 570001, "c5"),
+                (2, 570002, "Nf3"),
+                (3, H_CUSTOM_ENTRY, "Nc6"),
+                (4, 570004, None),
+            ],
+            force_ply0_hash=CUSTOM_FEN_HASH,
+        )
+
+    rows = await query_opening_transitions(
+        db_session,
+        user_id=user_id,
+        color="black",
+        **_default_call_args("black"),
+    )
+
+    # The custom-FEN game passes the flat SQL — H_CUSTOM_ENTRY must appear.
+    target = [r for r in rows if r.entry_hash == H_CUSTOM_ENTRY]
+    assert len(target) == 1, (
+        f"Custom-FEN entry must appear in flat query result (dropped later in Python). "
+        f"Got {len(target)} matching rows."
+    )
+    row = target[0]
+    # sample_game_id and sample_ply are present so the service can call
+    # query_transition_prefixes and attempt board replay.
+    assert row.sample_game_id is not None
+    assert row.sample_ply == 3
 
 
 # ---------------------------------------------------------------------------

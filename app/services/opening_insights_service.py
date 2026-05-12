@@ -22,7 +22,6 @@ from typing import Any, Literal
 import chess
 import chess.polyglot
 import sentry_sdk
-from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.opening import Opening
@@ -30,6 +29,7 @@ from app.repositories.openings_repository import (
     query_opening_transitions,
     query_openings_by_hashes,
     query_resulting_position_wdl,  # Phase 80.1 D-03: resulting-position WDL
+    query_transition_prefixes,
 )
 from app.repositories.stats_repository import (
     OpeningPhaseEntryMetrics,
@@ -151,6 +151,16 @@ def _apply_display_name_parity(
     return name
 
 
+def _signed_full_hash(board: chess.Board) -> int:
+    """Return the signed int64 Zobrist hash for the current board position.
+
+    Identical conversion to STARTING_POSITION_HASH in openings_repository and
+    _compute_prefix_hashes: ctypes.c_int64 wraps the unsigned 64-bit polyglot
+    hash to match the signed BIGINT stored on GamePosition.full_hash.
+    """
+    return ctypes.c_int64(chess.polyglot.zobrist_hash(board)).value
+
+
 def _compute_prefix_hashes(san_sequence: list[str]) -> list[int]:
     """Return the full_hash for every proper prefix (deepest first).
 
@@ -163,7 +173,7 @@ def _compute_prefix_hashes(san_sequence: list[str]) -> list[int]:
     hashes: list[int] = []
     for san in san_sequence:
         board.push_san(san)
-        hashes.append(ctypes.c_int64(chess.polyglot.zobrist_hash(board)).value)
+        hashes.append(_signed_full_hash(board))
     # Drop the LAST entry (full sequence == the entry position itself, which
     # was already covered by direct attribution). Deepest parent first.
     return list(reversed(hashes[:-1]))
@@ -433,13 +443,91 @@ def _apply_eval_metrics_to_finding(
 
 
 @dataclass(slots=True)
+class _TransitionRow:
+    """Typed wrapper for one transition, combining SQL-level and Python-derived attrs.
+
+    SQL-level attrs (from query_opening_transitions):
+        entry_hash, move_san, sample_game_id, sample_ply, n, w, d, l, last_played_at
+
+    Python-derived attrs (added by _wrap_transition_row):
+        entry_san_sequence  — SAN prefix from start to entry position (plies 0..ply-1)
+        resulting_full_hash — Zobrist hash after replaying entry_san_sequence + move_san
+    """
+
+    entry_hash: int
+    move_san: str
+    sample_game_id: int
+    sample_ply: int
+    n: int
+    w: int
+    d: int
+    l: int  # noqa: E741 — 'l' matches SQL label and fixture convention throughout
+    last_played_at: datetime.datetime | None
+    entry_san_sequence: list[str]
+    resulting_full_hash: int
+
+
+def _wrap_transition_row(
+    raw_row: Any,
+    prefixes: dict[tuple[int, int], list[str]],
+) -> _TransitionRow | None:
+    """Wrap a raw SQL row from query_opening_transitions into a typed _TransitionRow.
+
+    Derives entry_san_sequence from the prefixes dict and resulting_full_hash by
+    replaying the SAN sequence on a fresh chess.Board. Returns None when replay
+    fails (custom-FEN survivor from a chess.com thematic tournament or custom-position
+    "Let's Play!" game — ~176 of 344k prod ply-0 rows). The drop is recorded to
+    Sentry once per occurrence so we can monitor the rate without crashing the endpoint.
+    """
+    sample_game_id = int(raw_row.sample_game_id)
+    sample_ply = int(raw_row.sample_ply)
+    entry_san_sequence = prefixes.get((sample_game_id, sample_ply), [])
+
+    try:
+        board = chess.Board()
+        for san in entry_san_sequence:
+            board.push_san(san)
+        board.push_san(raw_row.move_san)
+        resulting_full_hash = _signed_full_hash(board)
+    except (chess.IllegalMoveError, chess.InvalidMoveError, ValueError, AssertionError) as exc:
+        # Custom-FEN survivor: SAN prefix is unreachable from chess.Board().
+        # Drop this row silently and capture to Sentry for monitoring.
+        sentry_sdk.set_context(
+            "opening_insights_drop",
+            {
+                "entry_hash": int(raw_row.entry_hash),
+                "move_san": raw_row.move_san,
+                "sample_game_id": sample_game_id,
+                "sample_ply": sample_ply,
+            },
+        )
+        sentry_sdk.set_tag("source", "opening_insights")
+        sentry_sdk.capture_exception(exc)
+        return None
+
+    return _TransitionRow(
+        entry_hash=int(raw_row.entry_hash),
+        move_san=raw_row.move_san,
+        sample_game_id=sample_game_id,
+        sample_ply=sample_ply,
+        n=int(raw_row.n),
+        w=int(raw_row.w),
+        d=int(raw_row.d),
+        l=int(raw_row.l),
+        last_played_at=raw_row.last_played_at,
+        entry_san_sequence=entry_san_sequence,
+        resulting_full_hash=resulting_full_hash,
+    )
+
+
+@dataclass(slots=True)
 class _AttributionContext:
     """Pass-1 attribution context: per-color transition rows + direct openings lookup.
 
     Carried between _collect_attribution_hashes and _fetch_position_wdl_per_color.
     """
 
-    rows_by_color: dict[str, list[Row[Any]]] = field(default_factory=dict)
+    rows_by_color: dict[str, list[_TransitionRow]] = field(default_factory=dict)
     openings_by_hash: dict[int, Opening] = field(default_factory=dict)
 
 
@@ -452,7 +540,7 @@ class _PipelineContext:
     a single context parameter rather than 4+ positional arguments.
     """
 
-    rows_by_color: dict[str, list[Row[Any]]]
+    rows_by_color: dict[str, list[_TransitionRow]]
     openings_by_hash: dict[int, Opening]
     parents_by_hash: dict[int, Opening]
     pos_wdl_by_color: dict[
@@ -468,18 +556,23 @@ async def _collect_attribution_hashes(
     cutoff: datetime.datetime | None,
     colors_to_query: Sequence[Literal["white", "black"]],
 ) -> _AttributionContext:
-    """Stage 1: query transitions per color and resolve direct opening attribution.
+    """Stage 1: query transitions per color, derive Python attrs, resolve direct opening attribution.
 
     Runs query_opening_transitions sequentially per color (CLAUDE.md AsyncSession
-    rule) and looks up the union of entry hashes — plus resulting_full_hash for
-    ply=0 entries (empty SAN sequence) so the ply=0 attribution fallback in
-    `_attribute_finding` can name them by the resulting position
+    rule), then calls query_transition_prefixes once per color to batch-resolve
+    SAN prefixes, wraps raw Rows into _TransitionRow (deriving entry_san_sequence
+    and resulting_full_hash in Python), and looks up the union of entry hashes —
+    plus resulting_full_hash for ply=0 entries so the ply=0 attribution fallback
+    in `_attribute_finding` can name them by the resulting position
     (e.g. "1.e4" → "King's Pawn Opening").
+
+    Rows where SAN replay fails (custom-FEN survivors) are dropped and Sentry-captured
+    once per occurrence in _wrap_transition_row.
     """
-    rows_by_color: dict[str, list[Row[Any]]] = {}
+    wrapped_by_color: dict[str, list[_TransitionRow]] = {}
     # CLAUDE.md §Critical Constraints: AsyncSession not safe for asyncio.gather.
     for color in colors_to_query:
-        rows_by_color[color] = await query_opening_transitions(
+        raw_rows = await query_opening_transitions(
             session=session,
             user_id=user_id,
             color=color,
@@ -491,20 +584,28 @@ async def _collect_attribution_hashes(
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
         )
+        samples = [(int(r.sample_game_id), int(r.sample_ply)) for r in raw_rows]
+        prefixes = await query_transition_prefixes(session, user_id, samples)
+        wrapped: list[_TransitionRow] = []
+        for r in raw_rows:
+            row = _wrap_transition_row(r, prefixes)
+            if row is not None:
+                wrapped.append(row)
+        wrapped_by_color[color] = wrapped
 
     # Pass 1: direct attribution for all entry hashes. Also include
     # resulting_full_hash for ply=0 entries (empty SAN sequence) so the
     # ply=0 attribution fallback in `_attribute_finding` can name them
     # by the resulting position (e.g. "1.e4" → "King's Pawn Opening").
     direct_entry_hashes_set: set[int] = set()
-    for rows in rows_by_color.values():
+    for rows in wrapped_by_color.values():
         for r in rows:
-            direct_entry_hashes_set.add(int(r.entry_hash))
-            if not (r.entry_san_sequence or []):
-                direct_entry_hashes_set.add(int(r.resulting_full_hash))
+            direct_entry_hashes_set.add(r.entry_hash)
+            if not r.entry_san_sequence:
+                direct_entry_hashes_set.add(r.resulting_full_hash)
     openings_by_hash = await query_openings_by_hashes(session, list(direct_entry_hashes_set))
 
-    return _AttributionContext(rows_by_color=rows_by_color, openings_by_hash=openings_by_hash)
+    return _AttributionContext(rows_by_color=wrapped_by_color, openings_by_hash=openings_by_hash)
 
 
 async def _fetch_position_wdl_per_color(
@@ -534,13 +635,10 @@ async def _fetch_position_wdl_per_color(
     unmatched_parent_hashes: set[int] = set()
     for rows in rows_by_color.values():
         for r in rows:
-            if int(r.entry_hash) not in openings_by_hash:
-                # With MIN_ENTRY_PLY=0, ply=0 entries have a NULL SAN
-                # sequence (no preceding moves) — coerce to [] so the
-                # prefix walk no-ops instead of crashing.
-                unmatched_parent_hashes.update(
-                    _compute_prefix_hashes(list(r.entry_san_sequence or []))
-                )
+            if r.entry_hash not in openings_by_hash:
+                # entry_san_sequence is already a list[str] on _TransitionRow
+                # (ply=0 entries legitimately have an empty list).
+                unmatched_parent_hashes.update(_compute_prefix_hashes(r.entry_san_sequence))
     parents_by_hash = await query_openings_by_hashes(session, list(unmatched_parent_hashes))
 
     # Phase 80.1 D-03/D-05: aggregate W/D/L per resulting_full_hash across
@@ -555,7 +653,7 @@ async def _fetch_position_wdl_per_color(
     ] = {}
     for color in colors_to_query:
         color_resulting_hashes: list[int] = list(
-            {int(r.resulting_full_hash) for r in rows_by_color[color]}
+            {r.resulting_full_hash for r in rows_by_color[color]}
         )
         if not color_resulting_hashes:
             pos_wdl_by_color[color] = {}
@@ -583,13 +681,13 @@ async def _fetch_position_wdl_per_color(
 
 
 def _row_to_finding(
-    row: Any,
+    row: _TransitionRow,
     color_literal: Literal["white", "black"],
     pos_wdl_for_color: dict[int, tuple[int, int, int, datetime.datetime | None]],
     openings_by_hash: dict[int, Opening],
     parents_by_hash: dict[int, Opening],
 ) -> tuple[OpeningInsightFinding, int, float] | None:
-    """Convert one transition row into a (finding, ply_count, se) tuple, or None.
+    """Convert one _TransitionRow into a (finding, ply_count, se) tuple, or None.
 
     Returns None when the row is neutral (classify miss) or when attribution
     fails at every depth (D-34 drop). Mirrors the inner-loop body of the
@@ -599,8 +697,8 @@ def _row_to_finding(
     # compute_confidence_bucket / wilson_bounds / OpeningInsightFinding
     # the resulting-position W/D/L via a SimpleNamespace adapter so
     # those helpers stay byte-identical. Non-WDL fields (move_san,
-    # entry_*, resulting_full_hash) continue to come from `row`.
-    pos = pos_wdl_for_color.get(int(row.resulting_full_hash))
+    # entry_*, resulting_full_hash) come from the typed _TransitionRow.
+    pos = pos_wdl_for_color.get(row.resulting_full_hash)
     if pos is None:
         # Filter mismatch defensive fallback (RESEARCH.md Pitfall 4).
         # Should not fire when query_resulting_position_wdl filters
@@ -633,27 +731,23 @@ def _row_to_finding(
         return None
     opening_name, opening_eco, display_name = attribution
 
-    # BLOCKER-1 / D-25: entry_fen reconstructed by replaying the
-    # actual SAN sequence the user played up to the entry. With
-    # MIN_ENTRY_PLY=0, ply=0 entries legitimately replay zero
-    # moves and yield the starting FEN — coerce NULL→[] so
-    # _replay_san_sequence sees an empty list instead of None.
-    entry_fen = _replay_san_sequence(list(row.entry_san_sequence or []))
+    # BLOCKER-1 / D-25: entry_fen reconstructed by replaying the SAN sequence.
+    # entry_san_sequence is already a list[str] on _TransitionRow; no None coercion needed.
+    # ply=0 entries have [] and legitimately replay zero moves → starting FEN.
+    entry_fen = _replay_san_sequence(row.entry_san_sequence)
 
     # Carry the matched Opening.ply_count alongside for D-24
     # deeper-entry-wins dedupe; use 0 for parent-only matches
     # (parent-matched entries have lower specificity than direct matches).
     # ply=0 entries attribute via resulting_full_hash, so mirror
     # that lookup here to avoid under-counting their depth.
-    matched_opening = openings_by_hash.get(int(row.entry_hash))
-    if matched_opening is None and not (row.entry_san_sequence or []):
-        matched_opening = openings_by_hash.get(int(row.resulting_full_hash))
+    matched_opening = openings_by_hash.get(row.entry_hash)
+    if matched_opening is None and not row.entry_san_sequence:
+        matched_opening = openings_by_hash.get(row.resulting_full_hash)
     opening_ply_count = matched_opening.ply_count if matched_opening else 0
 
     score = _compute_score(pos_row)
-    confidence, p_value, se = compute_confidence_bucket(
-        pos_row.w, pos_row.d, pos_row.l, pos_row.n
-    )
+    confidence, p_value, se = compute_confidence_bucket(pos_row.w, pos_row.d, pos_row.l, pos_row.n)
     ci_low, ci_high = wilson_bounds(score, pos_row.n)
 
     finding = OpeningInsightFinding(
@@ -664,13 +758,12 @@ def _row_to_finding(
         opening_eco=opening_eco,
         display_name=display_name,
         entry_fen=entry_fen,
-        entry_san_sequence=list(
-            row.entry_san_sequence or []
-        ),  # Phase 71 (D-13): SAN sequence start→entry; empty for entry_ply=0 (no preceding moves)
+        # Phase 71 (D-13): SAN sequence start→entry; empty for entry_ply=0 (no preceding moves).
+        entry_san_sequence=row.entry_san_sequence,
         # BLOCKER-5 / Pitfall 1: stringify 64-bit ints at the API boundary.
-        entry_full_hash=str(int(row.entry_hash)),
+        entry_full_hash=str(row.entry_hash),
         candidate_move_san=row.move_san,
-        resulting_full_hash=str(int(row.resulting_full_hash)),
+        resulting_full_hash=str(row.resulting_full_hash),
         n_games=pos_row.n,
         wins=pos_row.w,
         draws=pos_row.d,
