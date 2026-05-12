@@ -993,8 +993,7 @@ async def test_sample_pair_correlated_under_transposition(
     # tiebreak. ply=2 (shallow) is smaller than ply=6 (deep), so the sample
     # must come from a SHALLOW game.
     assert sample_ply == 2, (
-        f"sample_ply must be the smallest ply in the group (2 from shallow). "
-        f"Got {sample_ply}."
+        f"sample_ply must be the smallest ply in the group (2 from shallow). Got {sample_ply}."
     )
     # Critical assertion: sample_game_id must belong to a shallow game so that
     # game's ply=2 row IS the entry position. Under the bug (independent MINs),
@@ -1007,9 +1006,7 @@ async def test_sample_pair_correlated_under_transposition(
 
     # End-to-end check: the prefix helper resolves to a sequence whose final
     # board state IS the entry hash — i.e. the sample is consistent.
-    prefixes = await query_transition_prefixes(
-        db_session, user_id, [(sample_game_id, sample_ply)]
-    )
+    prefixes = await query_transition_prefixes(db_session, user_id, [(sample_game_id, sample_ply)])
     assert prefixes[(sample_game_id, sample_ply)] == ["e4", "e5"], (
         f"Prefix for sample (game_id={sample_game_id}, ply=2) must be the "
         f"shallow game's first two moves; got {prefixes[(sample_game_id, sample_ply)]!r}"
@@ -1286,6 +1283,68 @@ def test_query_compiles_to_flat_aggregation() -> None:
     )
     assert "ARRAY_AGG" not in compiled_upper, (
         f"Flat query must not contain ARRAY_AGG. Got:\n{compiled[:500]}"
+    )
+
+
+def test_query_position_wdl_batch_compiles_flat() -> None:
+    """Structural guardrail: query_position_wdl_batch must compile to a flat
+    single-SELECT GROUP BY (no SELECT DISTINCT subquery, no wrapping
+    FROM (SELECT ...) shape).
+
+    Mirrors the precedent set by PR #90 / query_opening_transitions:
+    COUNT(DISTINCT game_id) FILTER (...) at aggregate level beats wrapping
+    a DISTINCT dedup subquery for planner stability on PG 18.
+
+    Reconstructs the expected statement shape locally rather than importing
+    private helpers, so the guardrail remains decoupled from internal refactors
+    of stats_repository.
+    """
+    from sqlalchemy import and_, func, or_, select
+    from sqlalchemy.dialects import postgresql
+
+    from app.models.game import Game
+    from app.models.game_position import GamePosition
+
+    win_cond = or_(
+        and_(Game.result == "1-0", Game.user_color == "white"),
+        and_(Game.result == "0-1", Game.user_color == "black"),
+    )
+    draw_cond = Game.result == "1/2-1/2"
+    loss_cond = or_(
+        and_(Game.result == "0-1", Game.user_color == "white"),
+        and_(Game.result == "1-0", Game.user_color == "black"),
+    )
+    distinct_game_count = func.count(func.distinct(Game.id))
+
+    stmt = (
+        select(
+            GamePosition.full_hash,
+            distinct_game_count.filter(win_cond).label("wins"),
+            distinct_game_count.filter(draw_cond).label("draws"),
+            distinct_game_count.filter(loss_cond).label("losses"),
+            func.max(Game.played_at).label("last_played_at"),
+        )
+        .join(Game, GamePosition.game_id == Game.id)
+        .where(
+            GamePosition.user_id == 1,
+            GamePosition.full_hash.in_([1, 2, 3]),
+        )
+        .group_by(GamePosition.full_hash)
+    )
+
+    compiled = str(stmt.compile(dialect=postgresql.dialect()))
+    compiled_upper = compiled.upper()
+
+    assert "WITH " not in compiled, (
+        f"Flat query must not contain a CTE ('WITH '). Got:\n{compiled[:500]}"
+    )
+    assert "SELECT DISTINCT" not in compiled_upper, (
+        f"Flat query must not contain a SELECT DISTINCT dedup. Got:\n{compiled[:500]}"
+    )
+    # No outer wrapper around a subquery — the FROM clause should reference
+    # game_positions directly (joined to games), not "FROM (SELECT ...".
+    assert "FROM (SELECT" not in compiled_upper, (
+        f"Flat query must not wrap a subquery in the FROM clause. Got:\n{compiled[:500]}"
     )
 
 

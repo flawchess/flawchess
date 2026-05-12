@@ -396,37 +396,52 @@ async def query_position_wdl_batch(
 ) -> dict[int, PositionWDL]:
     """Return {full_hash: PositionWDL} for games passing through each position.
 
-    Uses DISTINCT game_id per hash to avoid double-counting games where the
-    same position appears at multiple plies. WDL computed SQL-side using the
-    same conditions as query_top_openings_sql_wdl.
+    Flat single-SELECT aggregation: COUNT(DISTINCT game_id) FILTER (...) handles
+    transposition dedup (a game's same hash at multiple plies counts once) at
+    aggregate level, so no dedup subquery is needed. Mirrors PR #90's
+    query_opening_transitions shape, which proved consistently more
+    plan-stable on PG 18 than wrapping a DISTINCT subquery.
+
+    WDL conditions match query_top_openings_sql_wdl. ``total`` is computed
+    in Python as ``wins + draws + losses`` (every game has exactly one result,
+    so this equals COUNT(DISTINCT game_id) without a fourth aggregate).
     """
     if not hashes:
         return {}
 
-    # Deduplicate game_id per hash first (subquery), then aggregate WDL.
-    # `played_at` is carried through the dedup so the outer query can compute
-    # MAX(played_at) per full_hash for the "Last played: <relative>" tooltip
-    # line — at most one row per (full_hash, game_id) so the MAX matches the
-    # set of games that contribute to the WDL counts.
-    dedup = (
+    win_cond = or_(
+        and_(Game.result == "1-0", Game.user_color == "white"),
+        and_(Game.result == "0-1", Game.user_color == "black"),
+    )
+    draw_cond = Game.result == "1/2-1/2"
+    loss_cond = or_(
+        and_(Game.result == "0-1", Game.user_color == "white"),
+        and_(Game.result == "1-0", Game.user_color == "black"),
+    )
+
+    distinct_game_count = func.count(func.distinct(Game.id))
+
+    stmt = (
         select(
             GamePosition.full_hash,
-            Game.id.label("game_id"),
-            Game.result,
-            Game.user_color,
-            Game.played_at,
+            distinct_game_count.filter(win_cond).label("wins"),
+            distinct_game_count.filter(draw_cond).label("draws"),
+            distinct_game_count.filter(loss_cond).label("losses"),
+            func.max(Game.played_at).label("last_played_at"),
         )
         .join(Game, GamePosition.game_id == Game.id)
         .where(
             GamePosition.user_id == user_id,
             GamePosition.full_hash.in_(hashes),
         )
-        .distinct(GamePosition.full_hash, Game.id)
+        .group_by(GamePosition.full_hash)
     )
+
     if color is not None:
-        dedup = dedup.where(Game.user_color == color)
-    dedup = apply_game_filters(
-        dedup,
+        stmt = stmt.where(Game.user_color == color)
+
+    stmt = apply_game_filters(
+        stmt,
         time_control,
         platform,
         rated,
@@ -435,35 +450,15 @@ async def query_position_wdl_batch(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    dedup = dedup.subquery()
-
-    stmt = select(
-        dedup.c.full_hash,
-        func.count().label("total"),
-        func.count()
-        .filter(
-            or_(
-                and_(dedup.c.result == "1-0", dedup.c.user_color == "white"),
-                and_(dedup.c.result == "0-1", dedup.c.user_color == "black"),
-            )
-        )
-        .label("wins"),
-        func.count().filter(dedup.c.result == "1/2-1/2").label("draws"),
-        func.count()
-        .filter(
-            or_(
-                and_(dedup.c.result == "0-1", dedup.c.user_color == "white"),
-                and_(dedup.c.result == "1-0", dedup.c.user_color == "black"),
-            )
-        )
-        .label("losses"),
-        func.max(dedup.c.played_at).label("last_played_at"),
-    ).group_by(dedup.c.full_hash)
 
     result = await session.execute(stmt)
     return {
         row[0]: PositionWDL(
-            total=row[1], wins=row[2], draws=row[3], losses=row[4], last_played_at=row[5]
+            total=row[1] + row[2] + row[3],
+            wins=row[1],
+            draws=row[2],
+            losses=row[3],
+            last_played_at=row[4],
         )
         for row in result.fetchall()
     }
