@@ -23,6 +23,7 @@ import { apiClient } from '@/api/client';
 
 
 const GAME_COUNT_REFRESH_INTERVAL_MS = 5000;
+const MIN_GAMES_FOR_RELIABLE_STATS = 1000;
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -330,21 +331,24 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
         </div>
       )}
 
-      {/* Info box: sync behavior and opponent scouting explanation */}
-      <div
-        data-testid="import-info"
-        className="charcoal-texture rounded-md px-4 py-3 text-sm text-muted-foreground space-y-2"
-      >
+      {profile && (profile.chess_com_last_sync_at || profile.lichess_last_sync_at) &&
+        (profile.chess_com_game_count + profile.lichess_game_count) < MIN_GAMES_FOR_RELIABLE_STATS && (
+          <Alert variant="info" data-testid="import-low-game-count-info">
+            <p>
+              <strong className="text-foreground">Low game count:</strong> Many features and statistics are useful with fewer than {MIN_GAMES_FOR_RELIABLE_STATS.toLocaleString()} games, but they
+              become more reliable, complete, and interesting the more games they are based on. With fewer games imported, expect a few gaps in the data.
+            </p>
+          </Alert>
+      )}
+
+      <Alert variant="info" data-testid="import-info">
         <p>
           <strong className="text-foreground">First Sync:</strong> imports all your games. Later syncs only fetch new games since the last import.
         </p>
         <p>
-          <strong className="text-foreground">Slow Import:</strong> due to partial stockfish game analysis, imports take a while. But it's worth the wait.
+          <strong className="text-foreground">Slow Import:</strong> due to partial stockfish game analysis, imports take a while.
         </p>
-        <p>
-          <strong className="text-foreground">Opponent Scouting:</strong> delete your games, import the opponent's games to analyze their openings, then delete and re-import your own games.
-        </p>
-      </div>
+      </Alert>
 
       {/* Delete All Games */}
       <div data-testid="import-data-management">
