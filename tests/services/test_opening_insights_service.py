@@ -29,6 +29,7 @@ from app.services.opening_insights_constants import (
 from app.services.opening_insights_service import (
     WEAKNESS_CAP_PER_COLOR,
     STRENGTH_CAP_PER_COLOR,
+    _TransitionRow,
     _classify_row,
     _rank_section,
     compute_insights,
@@ -51,8 +52,17 @@ def _make_row(
     d: int = 4,
     losses: int = 12,
     last_played_at: datetime.datetime | None = None,
+    sample_game_id: int = 1,
+    sample_ply: int = 3,
 ) -> SimpleNamespace:
-    """Construct a synthetic repository Row compatible with compute_insights."""
+    """Construct a synthetic repository Row compatible with compute_insights.
+
+    Includes sample_game_id and sample_ply (added for flat-query refactor)
+    so the _run_compute helper can build a fake prefixes dict for wrapping.
+    The _wrap_transition_row step is bypassed in tests via a patch that
+    directly constructs _TransitionRow from the mock row's existing attrs,
+    preserving synthetic hash values (entry_hash=100, resulting_full_hash=200).
+    """
     if entry_san_sequence is None:
         entry_san_sequence = ["e4", "c5", "Nf3"]
     return SimpleNamespace(
@@ -69,6 +79,8 @@ def _make_row(
         # WDL lookup misses; the fixture default of None mirrors a row whose
         # contributing games all have NULL played_at (rare but valid).
         last_played_at=last_played_at,
+        sample_game_id=sample_game_id,
+        sample_ply=sample_ply,
     )
 
 
@@ -95,6 +107,30 @@ def _default_request(**kwargs: Any) -> OpeningInsightsRequest:
     return OpeningInsightsRequest(**defaults)
 
 
+def _fake_wrap(raw_row: Any, prefixes: Any) -> _TransitionRow:
+    """Test-only stub: convert a mock SimpleNamespace row to _TransitionRow.
+
+    Preserves synthetic hash values (entry_hash=100, resulting_full_hash=200)
+    so existing test assertions stay unchanged. Bypasses the SAN replay that
+    _wrap_transition_row normally uses to derive resulting_full_hash — the
+    actual chess-board replay logic is tested separately in
+    test_row_wrapping_drops_unreachable_san_and_captures_to_sentry.
+    """
+    return _TransitionRow(
+        entry_hash=int(raw_row.entry_hash),
+        move_san=raw_row.move_san,
+        sample_game_id=int(getattr(raw_row, "sample_game_id", 1)),
+        sample_ply=int(getattr(raw_row, "sample_ply", 0)),
+        n=int(raw_row.n),
+        w=int(raw_row.w),
+        d=int(raw_row.d),
+        l=int(raw_row.l),
+        last_played_at=raw_row.last_played_at,
+        entry_san_sequence=list(raw_row.entry_san_sequence or []),
+        resulting_full_hash=int(raw_row.resulting_full_hash),
+    )
+
+
 async def _run_compute(
     rows: list[SimpleNamespace],
     openings_by_hash: dict[int, Opening] | None = None,
@@ -119,6 +155,10 @@ async def _run_compute(
 
     Quick task 260508-r61: pos_wdl tuples are now 4-element to carry
     last_played_at through to the OpeningInsightFinding.last_played_at field.
+
+    Flat-query refactor: also patches query_transition_prefixes (new helper) and
+    _wrap_transition_row so tests bypass the SAN-replay derivation of
+    resulting_full_hash and keep their synthetic hash values (100/200).
     """
     if openings_by_hash is None:
         openings_by_hash = {100: _make_opening()}
@@ -128,8 +168,7 @@ async def _run_compute(
         # from row.w/d/l/n produce the same expected score under the new
         # aggregation because pos == row by default.
         pos_wdl = {
-            int(row.resulting_full_hash): (row.w, row.d, row.l, row.last_played_at)
-            for row in rows
+            int(row.resulting_full_hash): (row.w, row.d, row.l, row.last_played_at) for row in rows
         }
 
     with (
@@ -137,6 +176,14 @@ async def _run_compute(
             "app.services.opening_insights_service.query_opening_transitions",
             new_callable=AsyncMock,
         ) as mock_transitions,
+        patch(
+            "app.services.opening_insights_service.query_transition_prefixes",
+            new_callable=AsyncMock,
+        ) as mock_prefixes,
+        patch(
+            "app.services.opening_insights_service._wrap_transition_row",
+            side_effect=_fake_wrap,
+        ),
         patch(
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
@@ -151,6 +198,7 @@ async def _run_compute(
         ) as mock_pos_wdl,
     ):
         mock_transitions.return_value = rows
+        mock_prefixes.return_value = {}  # bypassed by _wrap_transition_row patch
         mock_attribution.return_value = openings_by_hash
         mock_eval.return_value = {}  # no MG-entry metrics (existing tests unaffected)
         mock_pos_wdl.return_value = pos_wdl
@@ -385,6 +433,14 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
             new_callable=AsyncMock,
         ) as mock_transitions,
         patch(
+            "app.services.opening_insights_service.query_transition_prefixes",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "app.services.opening_insights_service._wrap_transition_row",
+            side_effect=_fake_wrap,
+        ),
+        patch(
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
         ) as mock_attribution,
@@ -405,7 +461,11 @@ async def test_continuation_dedupe_collapses_chain_across_sections() -> None:
         mock_attribution.return_value = {100: opening_a, 200: opening_b, 300: opening_c}
         mock_eval.return_value = {}
         # Phase 80.1: pos WDL == move-played WDL across all three rows.
-        mock_pos_wdl.return_value = {200: (4, 4, 12, None), 400: (4, 4, 12, None), 300: (4, 4, 12, None)}
+        mock_pos_wdl.return_value = {
+            200: (4, 4, 12, None),
+            400: (4, 4, 12, None),
+            300: (4, 4, 12, None),
+        }
 
         response = await compute_insights(
             session=AsyncMock(),
@@ -556,6 +616,14 @@ async def test_attribution_lineage_walk_to_parent_hash() -> None:
             "app.services.opening_insights_service.query_opening_transitions",
             new_callable=AsyncMock,
         ) as mock_transitions,
+        patch(
+            "app.services.opening_insights_service.query_transition_prefixes",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "app.services.opening_insights_service._wrap_transition_row",
+            side_effect=_fake_wrap,
+        ),
         patch(
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
@@ -1161,6 +1229,14 @@ async def test_compute_insights_eval_fields_populated_when_metrics_present() -> 
             new_callable=AsyncMock,
         ) as mock_transitions,
         patch(
+            "app.services.opening_insights_service.query_transition_prefixes",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "app.services.opening_insights_service._wrap_transition_row",
+            side_effect=_fake_wrap,
+        ),
+        patch(
             "app.services.opening_insights_service.query_openings_by_hashes",
             new_callable=AsyncMock,
         ) as mock_attribution,
@@ -1414,6 +1490,14 @@ class TestComputeInsightsTranspositionWdl:
                 new_callable=AsyncMock,
             ) as mock_transitions,
             patch(
+                "app.services.opening_insights_service.query_transition_prefixes",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.services.opening_insights_service._wrap_transition_row",
+                side_effect=_fake_wrap,
+            ),
+            patch(
                 "app.services.opening_insights_service.query_openings_by_hashes",
                 new_callable=AsyncMock,
             ) as mock_attribution,
@@ -1470,6 +1554,14 @@ class TestComputeInsightsTranspositionWdl:
                 "app.services.opening_insights_service.query_opening_transitions",
                 new_callable=AsyncMock,
             ) as mock_transitions,
+            patch(
+                "app.services.opening_insights_service.query_transition_prefixes",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.services.opening_insights_service._wrap_transition_row",
+                side_effect=_fake_wrap,
+            ),
             patch(
                 "app.services.opening_insights_service.query_openings_by_hashes",
                 new_callable=AsyncMock,
