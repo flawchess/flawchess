@@ -1348,6 +1348,80 @@ def test_query_position_wdl_batch_compiles_flat() -> None:
     )
 
 
+def test_query_phase_entry_metrics_compiles_without_cte() -> None:
+    """Structural guardrail: query_opening_phase_entry_metrics_batch must
+    compile without a CTE (no 'WITH ' in the compiled SQL).
+
+    PG planners respect CTEs as optimization fences (PG12+ default INLINE is
+    only applied when the CTE is referenced once AND is side-effect free AND
+    not marked MATERIALIZED — and even then planner inlining can be inhibited
+    by complex predicates). Plain subqueries are always inlined freely, so
+    dropping ``.cte('dedup')`` in favor of ``.subquery('dedup')`` gives the
+    planner more flexibility on PG 18.
+
+    Reconstructs the representative shape locally rather than importing
+    private helpers, mirroring the precedent set by PR #90's
+    test_query_compiles_to_flat_aggregation.
+    """
+    from sqlalchemy import and_, case, func, select
+    from sqlalchemy.dialects import postgresql
+
+    from app.models.game import Game
+    from app.models.game_position import GamePosition
+
+    dedup_subq = (
+        select(
+            GamePosition.full_hash.label("full_hash"),
+            Game.id.label("game_id"),
+            Game.user_color.label("user_color"),
+        )
+        .join(Game, GamePosition.game_id == Game.id)
+        .where(
+            GamePosition.user_id == 1,
+            GamePosition.full_hash.in_([1, 2, 3]),
+        )
+        .distinct(GamePosition.full_hash, Game.id)
+    ).subquery("dedup")
+
+    phase_entry_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            GamePosition.eval_cp.label("eval_cp"),
+            GamePosition.eval_mate.label("eval_mate"),
+        )
+        .where(
+            GamePosition.phase == 1,
+            GamePosition.game_id.in_(select(dedup_subq.c.game_id)),
+        )
+        .distinct(GamePosition.game_id)
+        .order_by(GamePosition.game_id, GamePosition.ply)
+    ).subquery("phase_entry")
+
+    sign_expr = case((dedup_subq.c.user_color == "white", 1), else_=-1)
+    user_eval_expr = sign_expr * phase_entry_subq.c.eval_cp
+    has_continuous = and_(
+        phase_entry_subq.c.eval_cp.isnot(None),
+        phase_entry_subq.c.eval_mate.is_(None),
+        func.abs(phase_entry_subq.c.eval_cp) < 2000,
+    )
+
+    stmt = (
+        select(
+            dedup_subq.c.full_hash,
+            func.sum(user_eval_expr).filter(has_continuous).label("eval_sum_mg"),
+            func.count().filter(has_continuous).label("eval_n_mg"),
+        )
+        .select_from(dedup_subq)
+        .join(phase_entry_subq, phase_entry_subq.c.game_id == dedup_subq.c.game_id)
+        .group_by(dedup_subq.c.full_hash)
+    )
+
+    compiled = str(stmt.compile(dialect=postgresql.dialect()))
+    assert "WITH " not in compiled, (
+        f"Phase-entry metrics query must not contain a CTE ('WITH '). Got:\n{compiled[:500]}"
+    )
+
+
 @pytest.mark.asyncio
 async def test_query_transition_prefixes_multi_game(db_session: AsyncSession) -> None:
     """query_transition_prefixes returns correct SAN prefix lists for multiple games.

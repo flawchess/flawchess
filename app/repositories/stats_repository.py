@@ -512,10 +512,11 @@ async def query_opening_phase_entry_metrics_batch(
     }
     hash_col = hash_col_map[hash_column]
 
-    # Step 1: Dedup (hash, game_id) for the opening filter, materialized as a CTE so
-    # Postgres only evaluates the user_id+hash scan once even though we reference it
-    # from the phase_entry derivation below. (Inlined subquery references caused the
-    # planner to recompute the heavy DISTINCT-ON twice.)
+    # Step 1: Dedup (hash, game_id) for the opening filter as a plain subquery.
+    # Was historically materialized as a CTE; quick task 260512-p5p (Task 3)
+    # dropped to a plain subquery so the PG 18 planner can inline freely
+    # (CTEs act as optimization fences when inlining is inhibited by complex
+    # predicates). Mirrors the precedent from PR #90 / query_opening_transitions.
     dedup_select = (
         select(
             hash_col.label("full_hash"),
@@ -541,7 +542,7 @@ async def query_opening_phase_entry_metrics_batch(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    dedup_subq = dedup_select.cte("dedup")
+    dedup_subq = dedup_select.subquery("dedup")
 
     # Step 2: Per-game phase-entry ROW (not just ply) via DISTINCT ON.
     # Inlines eval_cp / eval_mate into the phase_entry subquery so the heavy
