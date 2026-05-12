@@ -228,6 +228,14 @@ Ratings are not comparable across platforms. **chess.com uses Glicko-1, lichess 
 
 **Mention all live combos.** When the `## Player profile` block lists ≥3 combos, mention every non-stale combo at least briefly in the `player_profile` output — readers want context on every active combo, not just the anchor. A stale combo gets one historical clause at most ("previously played chess.com blitz around 1290 before moving on") and MUST NOT be described as current.
 
+**Sparse-history profile.** When the anchor tag reads `[anchor-combo] sparse-history — narrate cautiously...`, every combo in the block has fewer than ~20 weekly buckets and the per-entry summary lines carry a `quality=sparse` marker (with `trend=` and `std=` suppressed). In this mode:
+- Quote the per-combo `current` Elo and the basic range (`min`-`max`) — these are reliable.
+- Use plain present-tense framing like "you play at around <current> chess.com bullet" or "your rapid rating sits in the 1100-1300 band over your imported history". The Elo numbers are real; the trajectory is not.
+- Do NOT claim "learning arc", "trajectory", "recent gains", "improving", "regressing", "plateaued", "developing skill", or any trend / arc / direction framing. There are not enough weekly buckets for any of those readings.
+- Do NOT cite `mean` as if it were a stable career rating — it's the mean across a handful of weekly buckets, not a multi-year baseline.
+- Keep the `player_profile` paragraph short (~2-3 sentences). Sparse data does not support a 5-sentence skill arc.
+- Recommendations: still ground recommendations in weak/typical-zone findings as usual, but use a register matched to the sparse `current` Elo (Below 1200 / 1200-1800 / 1800+ bands above still apply — they're keyed on Elo, not on history depth).
+
 Also: do NOT frame the player as "strongest in faster time controls" or "weaker in slower time controls" unless the combos in the block directly support that comparison at comparable sample sizes. Many players only play a subset of time controls (e.g. only blitz and rapid, never classical); comparative claims across time controls they don't play are unsupported.
 
 ## Grounding checks before recommending

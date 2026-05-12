@@ -255,11 +255,20 @@ def compute_player_profile(
     """Produce per-combo Elo context for the LLM prompt.
 
     Uses the already-fetched `endgame_elo_timeline.combos` — no extra DB
-    work. Each qualifying combo (>= _PLAYER_PROFILE_MIN_POINTS weekly points)
-    yields one entry with current Elo, historical range, window length, and
-    paired all_time / last_3mo window stats (mean, n, buckets, trend, std).
-    Combos are sorted by total game count desc so the LLM sees the
-    most-played combo first (the default anchor for tone).
+    work. Each combo with >= _PLAYER_PROFILE_MIN_POINTS weekly points yields
+    a `quality="full"` entry with paired all_time / last_3mo window stats
+    (mean, n, buckets, trend, std). Combos are sorted by total game count
+    desc so the LLM sees the most-played combo first (the default anchor
+    for tone).
+
+    Sparse-fallback (Fix B): when NO combo clears the full-quality floor,
+    every combo with >= 1 weekly point is emitted as a `quality="sparse"`
+    entry instead. Sparse entries carry the same field shape but the
+    renderer suppresses trend/std and swaps the [anchor-combo] tag for a
+    `sparse-history` variant — the goal is to keep the LLM anchored to
+    real Elo numbers rather than letting it hallucinate the whole
+    `player_profile` output field. See
+    `.planning/debug/llm-prompt-missing-sections.md`.
 
     When a combo has no weekly points in the calendar-last-90d window, the
     last_3mo fields stay None and the prompt emits "last_3mo : no data".
@@ -267,16 +276,22 @@ def compute_player_profile(
     `stale_last_bucket` / `stale_months` are populated so the summary line
     carries a STALE marker.
 
-    Returns None when no combo qualifies — the caller renders no
-    `## Player profile` block in the prompt.
+    Returns None only when no combo has any weekly points at all (the user
+    has imported games but somehow has zero endgame_elo timeline rows).
     """
     today = datetime.date.today()
     cutoff_last_3mo = today - datetime.timedelta(days=_PLAYER_PROFILE_LAST_3MO_DAYS)
 
+    sparse_mode = not any(
+        len(c.points) >= _PLAYER_PROFILE_MIN_POINTS for c in combos
+    )
+    min_points = 1 if sparse_mode else _PLAYER_PROFILE_MIN_POINTS
+    quality: Literal["full", "sparse"] = "sparse" if sparse_mode else "full"
+
     entries: list[PlayerProfileEntry] = []
     for combo in combos:
         points = combo.points
-        if len(points) < _PLAYER_PROFILE_MIN_POINTS:
+        if len(points) < min_points:
             continue
         # Sort by date ASC (the endgame service already returns ASC, but be
         # defensive — trend math depends on chronological order).
@@ -354,6 +369,7 @@ def compute_player_profile(
                 last_3mo_std=last_3mo_std,
                 stale_last_bucket=stale_last_bucket,
                 stale_months=stale_months,
+                quality=quality,
             )
         )
     if not entries:

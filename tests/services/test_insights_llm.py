@@ -194,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v26 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v27 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -210,8 +210,8 @@ class TestPromptVersionAndBody:
       block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
-    def test_prompt_version_is_v26(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v26"
+    def test_prompt_version_is_v27(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v27"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -2042,6 +2042,197 @@ class TestV6Enrichments:
 
 
 # ---------------------------------------------------------------------------
+# TestSparseHistoryFixes — v27 fixes A/B/C for short-history users.
+# See `.planning/debug/llm-prompt-missing-sections.md`.
+# ---------------------------------------------------------------------------
+
+
+class TestSparseHistoryFixes:
+    """Regression tests for the v27 sparse-history rescue (Fixes A, B, C)."""
+
+    def test_fix_a_all_time_c2_trimmed_to_empty_does_not_suppress_last_3mo_series(
+        self,
+    ) -> None:
+        """Fix A: when the all_time series filters to empty (every point inside
+        the C2 cutoff window), the last_3mo `[series ...]` block MUST still render.
+
+        Before Fix A, `all_time_series_pairs` was keyed on raw `f.series is not None`
+        so the pair entered the set even when the post-C2 retained list was empty.
+        That made the C5 gate suppress the last_3mo series block too — the LLM
+        saw [summary] lines pointing at no series data.
+        """
+        filters = _sample_filter_context()
+        today = datetime.date.today()
+        # All all_time points fall inside the last 90 days → C2 trims to empty.
+        recent_buckets = [
+            (today - datetime.timedelta(days=days)).isoformat()
+            for days in (60, 45, 30, 15)
+        ]
+        all_time_finding = SubsectionFinding(
+            subsection_id="score_timeline",
+            parent_subsection_id=None,
+            window="all_time",
+            metric="endgame_score_timeline",
+            value=0.55,
+            zone="typical",
+            trend="stable",
+            weekly_points_in_window=4,
+            sample_size=40,
+            sample_quality="adequate",
+            is_headline_eligible=False,
+            dimension=None,
+            series=[
+                TimePoint(bucket_start=bs, value=0.55, n=10) for bs in recent_buckets
+            ],
+        )
+        last_3mo_finding = SubsectionFinding(
+            subsection_id="score_timeline",
+            parent_subsection_id=None,
+            window="last_3mo",
+            metric="endgame_score_timeline",
+            value=0.55,
+            zone="typical",
+            trend="stable",
+            weekly_points_in_window=4,
+            sample_size=40,
+            sample_quality="adequate",
+            is_headline_eligible=False,
+            dimension=None,
+            series=[
+                TimePoint(bucket_start=bs, value=0.55, n=10) for bs in recent_buckets
+            ],
+        )
+        tab = _fake_findings(filters, findings=[all_time_finding, last_3mo_finding])
+        prompt = _assemble_user_prompt(tab)
+
+        # The last_3mo series header MUST appear — proves C5 did not suppress it.
+        assert "[series endgame_score_timeline, last_3mo, weekly]" in prompt
+        # And at least one of the bucket dates must render below it.
+        assert any(bs in prompt for bs in recent_buckets)
+
+    def test_fix_b_sparse_player_profile_renders_sparse_anchor_tag(self) -> None:
+        """Fix B: when every PlayerProfileEntry carries quality='sparse', the
+        anchor tag swaps for `[anchor-combo] sparse-history — narrate cautiously...`
+        and per-entry blocks suppress `trend=` / `std=`.
+
+        This is what prevents the LLM from hallucinating a player_profile from
+        non-existent anchor data (the failure mode from llm_logs.id=73 in dev).
+        """
+        from app.schemas.insights import PlayerProfileEntry
+
+        filters = _sample_filter_context()
+        sparse_entry = PlayerProfileEntry(
+            platform="chess.com",
+            time_control="bullet",
+            games=361,
+            current_elo=1380,
+            min_elo=1290,
+            max_elo=1410,
+            window_days=54,
+            all_time_mean=1355,
+            all_time_n=361,
+            all_time_buckets=7,
+            all_time_trend="flat",  # value present but renderer must suppress it
+            all_time_std=35,
+            last_3mo_mean=1370,
+            last_3mo_n=361,
+            last_3mo_buckets=7,
+            last_3mo_trend=None,
+            last_3mo_std=20,
+            quality="sparse",
+        )
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=filters,
+            findings=[],
+            player_profile=[sparse_entry],
+            findings_hash="c" * 64,
+        )
+        prompt = _assemble_user_prompt(tab)
+
+        assert "## Player profile" in prompt
+        assert "[anchor-combo] sparse-history" in prompt
+        # The full-history anchor tag must NOT appear (only sparse-history).
+        assert "[anchor-combo platform=" not in prompt
+        # all_time line must carry `quality=sparse` and MUST NOT carry trend / std.
+        lines = prompt.splitlines()
+        bullet_idx = lines.index(
+            "[summary actual_elo | platform=chess.com, time_control=bullet]"
+        )
+        at_line = lines[bullet_idx + 1]
+        lm_line = lines[bullet_idx + 2]
+        assert "quality=sparse" in at_line
+        assert "trend=" not in at_line
+        assert "std=" not in at_line
+        assert "quality=sparse" in lm_line
+        assert "trend=" not in lm_line
+        assert "std=" not in lm_line
+
+    def test_fix_b_full_player_profile_keeps_original_anchor_tag(self) -> None:
+        """Fix B regression: a non-sparse profile must still render the
+        live-anchor tag with the platform/time_control fields and full
+        trend/std on each entry. Sparse rendering only kicks in when EVERY
+        entry has quality='sparse'."""
+        from app.schemas.insights import PlayerProfileEntry
+
+        filters = _sample_filter_context()
+        full_entry = PlayerProfileEntry(
+            platform="lichess",
+            time_control="rapid",
+            games=450,
+            current_elo=1782,
+            min_elo=1655,
+            max_elo=1839,
+            window_days=161,
+            all_time_mean=1750,
+            all_time_n=450,
+            all_time_buckets=23,
+            all_time_trend="flat",
+            all_time_std=45,
+            last_3mo_mean=1775,
+            last_3mo_n=210,
+            last_3mo_buckets=12,
+            last_3mo_trend="flat",
+            last_3mo_std=30,
+            quality="full",
+        )
+        tab = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=filters,
+            findings=[],
+            player_profile=[full_entry],
+            findings_hash="d" * 64,
+        )
+        prompt = _assemble_user_prompt(tab)
+
+        assert "[anchor-combo platform=lichess, time_control=rapid]" in prompt
+        assert "sparse-history" not in prompt
+        assert "trend=flat" in prompt
+        assert "std=45" in prompt
+        assert "quality=sparse" not in prompt
+
+    def test_fix_c_endgame_elo_timeline_sentinel_when_no_findings(self) -> None:
+        """Fix C: even when every (platform, time_control) combo is below
+        SPARSE_COMBO_FLOOR (so `_findings_endgame_elo_timeline` emits zero
+        findings), the `### Subsection: endgame_elo_timeline` header MUST
+        still render with a sentinel `[no qualifying combo ...]` line.
+
+        Before Fix C the entire subsection vanished from `## Section: metrics_elo`,
+        which left the LLM with no signal that the chart exists.
+        """
+        from app.services.insights_service import SPARSE_COMBO_FLOOR
+
+        filters = _sample_filter_context()
+        # Empty findings list → no endgame_elo_timeline finding emitted.
+        tab = _fake_findings(filters, findings=[])
+        prompt = _assemble_user_prompt(tab)
+
+        assert "### Subsection: endgame_elo_timeline" in prompt
+        assert "[no qualifying combo" in prompt
+        assert str(SPARSE_COMBO_FLOOR) in prompt
+
+
+# ---------------------------------------------------------------------------
 # TestHappyPath
 # ---------------------------------------------------------------------------
 
@@ -2160,7 +2351,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v26"
+        assert response.report.prompt_version == "endgame_v27"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2184,7 +2375,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v26"
+        assert log.response_json["prompt_version"] == "endgame_v27"
 
 
 class TestCacheBehavior:
