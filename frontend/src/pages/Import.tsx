@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as Sentry from '@sentry/react';
-import { X, DoorOpen } from 'lucide-react';
+import { X, DoorOpen, Info } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import {
@@ -333,7 +333,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
 
       {profile && (profile.chess_com_last_sync_at || profile.lichess_last_sync_at) &&
         (profile.chess_com_game_count + profile.lichess_game_count) < MIN_GAMES_FOR_RELIABLE_STATS && (
-          <Alert variant="tip" data-testid="import-low-game-count-info">
+          <Alert variant="tip" icon={Info} data-testid="import-low-game-count-info">
             <p>
               Many features and statistics are useful with fewer than {MIN_GAMES_FOR_RELIABLE_STATS.toLocaleString()} games, but they
               become more reliable, complete, and interesting the more games they are based on. With fewer games imported, expect a few gaps in the data.
@@ -351,9 +351,6 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
         </p>
         <p>
           <strong className="text-foreground">Slow Import:</strong> due to partial stockfish game analysis, imports take a while. But it's worth the wait.
-        </p>
-        <p>
-          <strong className="text-foreground">Opponent Scouting:</strong> delete your games, import the opponent's games to analyze their openings, then delete and re-import your own games.
         </p>
       </div>
 
