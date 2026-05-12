@@ -8,6 +8,7 @@ from typing import Any, Literal
 import chess
 import chess.polyglot
 from sqlalchemy import Float, and_, case, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import array as pg_array
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -35,15 +36,21 @@ HASH_COLUMN_MAP = {
     "full": GamePosition.full_hash,
 }
 
-# Phase 71 hotfix (#71): opening insights replays entry_san_sequence from
-# chess.Board(); games imported with a non-standard starting FEN
-# (e.g. chess.com themed events / puzzles whose PGN carries [SetUp "1"][FEN ...])
-# store a SAN prefix that is unreachable from the initial position and would
-# 500 the endpoint when min(array_agg(...)) lexicographically picks such a
-# chain over a legal one. We filter those games out of the CTE by checking
-# the ply-0 full_hash against the standard initial-position Zobrist hash.
-# Signed int64 conversion mirrors GamePosition.full_hash storage (see
-# opening_insights_service._compute_prefix_hashes line 129).
+# query_opening_transitions is now a flat aggregation (no CTE, no window functions,
+# no standard-start subquery). See PR #89 + Alembic migration e925558020b9 (extended
+# statistics) for the belt-and-suspenders planner hint that preceded this refactor.
+#
+# Custom-FEN ply-0 games: ~176 of 344,013 prod ply-0 rows (0.05%) come from
+# chess.com thematic tournaments and chess.com custom-position "Let's Play!" games
+# that carry [SetUp "1"][FEN ...] PGN headers. These are NOT puzzles, NOT themed
+# events, and NOT chess variants — variants are already filtered at import in
+# app/services/normalization.py. The flat query no longer pre-filters them; instead,
+# the Python try/except in opening_insights_service._wrap_transition_row drops the
+# rare survivors gracefully (one Sentry capture per drop, never a 500).
+#
+# STARTING_POSITION_HASH is no longer used by the production query path after this
+# refactor but is retained here for potential future callers (e.g. custom tooling
+# that needs to check whether a game starts from the standard position).
 STARTING_POSITION_HASH: int = ctypes.c_int64(chess.polyglot.zobrist_hash(chess.Board())).value
 
 
@@ -695,126 +702,34 @@ async def query_opening_transitions(
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
-    """Aggregate (entry_hash, candidate_san) transitions for one user & color.
+    """Flat aggregation of (entry_hash, candidate_san) transitions for one user & color.
 
-    Single CTE with a LAG window function derives entry_hash from the prior
-    ply within each game. The outer query joins to games, applies user
-    filters, groups by (entry_hash, candidate_san), and HAVING-filters to
-    n>=10 candidates whose chess score (W + 0.5·D)/N is at most 0.45
-    (weaknesses) or at least 0.55 (strengths). Phase 75 D-08; replaces the
-    Phase 70 win_rate/loss_rate gate.
+    Single SELECT-GROUP-BY-HAVING: no CTE, no window functions, no subquery JOIN.
+    Eliminates the structural complexity that caused planner misestimation (see
+    PR #89 debug session). Alembic migration e925558020b9 (extended statistics)
+    remains as belt-and-suspenders.
+
+    Custom-FEN games (chess.com thematic tournaments and custom-position "Let's
+    Play!" games with [SetUp "1"][FEN ...] PGN headers — ~176 of 344k prod
+    ply-0 rows, 0.05%) are NOT pre-filtered here. They pass the SQL but are
+    dropped in the Python service layer (opening_insights_service._wrap_transition_row)
+    via try/except around _replay_san_sequence.
 
     Returns one Row per surviving (entry_hash, move_san) pair with attrs:
-        entry_hash: int        (BIGINT in PG, never NULL in output)
-        move_san: str          (the candidate move SAN, never NULL)
-        resulting_full_hash: int  (candidate position's full_hash, for D-21 dedupe)
-        entry_san_sequence: list[str]  (SAN tokens from start up to entry position,
-                                        candidate move excluded; for D-34 FEN replay)
+        entry_hash: int        (gp.full_hash, never NULL in output)
+        move_san: str          (candidate move SAN, never NULL)
+        sample_pair: list[int] (paired [ply, game_id] from one real row in the group;
+                                see comment on sample_pair below — for prefix lookup)
         n: int                 (count of distinct games)
         w: int, d: int, l: int (filtered counts)
+        last_played_at: datetime | None
 
-    Returns [] when the user has no qualifying transitions. Uses
-    PostgreSQL ix_gp_user_game_ply for an index-only scan (Heap Fetches: 0).
-    See CONTEXT.md D-30, D-31, D-32, D-33 and RESEARCH.md Pattern 2.
+    entry_san_sequence and resulting_full_hash are derived in the Python service
+    layer via query_transition_prefixes + _replay_san_sequence + _signed_full_hash.
+
+    Returns [] when the user has no qualifying transitions.
     """
-    # Phase 71 hotfix (#71): the entry position IS the current row's position.
-    # GamePosition.move_san at ply X is "the move played FROM ply X to ply X+1"
-    # (see app/services/zobrist.py and the GamePosition.move_san model docstring).
-    # That means at row ply X, current row's full_hash IS the entry hash, current
-    # row's move_san IS the candidate move played from entry, and the resulting
-    # position's hash is at ply X+1 (LEAD). The original Phase 70 query used LAG
-    # for entry_hash (one ply too shallow) — internally consistent against the
-    # synthetic test factories but mis-aligned against real game_positions data.
-    # That bug surfaced as `chess.IllegalMoveError` during Phase 71 UAT because
-    # entry_san_sequence then started one move late and replay failed.
-    #
-    # Phase 71 hotfix (this commit): include only games whose ply-0 position
-    # IS the standard starting position. Games imported from chess.com themed
-    # events / puzzles carry [SetUp "1"][FEN ...] PGN headers and store a SAN
-    # prefix that is unreachable from chess.Board(); this would crash the
-    # replay in opening_insights_service._compute_prefix_hashes when
-    # min(array_agg(...)) lexicographically picks such a chain. Games missing
-    # a ply-0 row entirely (data corruption — should not occur) are also
-    # excluded by the EXISTS predicate.
-    # Pre-filter to games whose ply-0 position is the standard starting position
-    # (excludes chess.com puzzle/themed-event games with [SetUp "1"] PGN tags
-    # whose SAN prefix is unreachable from chess.Board() and would crash the
-    # replay in opening_insights_service._compute_prefix_hashes). Games missing
-    # a ply-0 row entirely (data corruption — should not occur) are also
-    # excluded.
-    #
-    # Implemented as an INNER JOIN to a subquery rather than a correlated
-    # EXISTS: on small users (e.g. 499 games) the EXISTS form caused the
-    # planner to pick ix_gp_user_white_hash for the inner scan (only user_id
-    # filterable, then row-by-row filter on ply=0 + full_hash), scanning ~25k
-    # rows per outer row × 8k outer rows = 188M buffer hits / ~88s. Heavy
-    # users (~20k+ games) happened to dodge the bug because the planner chose
-    # ix_gp_user_full_hash_move_san there. The JOIN form lets the planner push
-    # game_id into ix_gp_user_game_ply for the gp scan in both regimes —
-    # ~65ms on the same 499-game user.
-    standard_start_games_subq = (
-        select(GamePosition.game_id.label("game_id"))
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.ply == 0,
-            GamePosition.full_hash == STARTING_POSITION_HASH,
-        )
-        .subquery("standard_start_games")
-    )
-    transitions_cte = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            GamePosition.ply.label("ply"),
-            GamePosition.move_san.label("move_san"),  # candidate move played from entry
-            GamePosition.full_hash.label(
-                "entry_hash"
-            ),  # entry position hash IS the current row's hash
-            func.lead(GamePosition.full_hash)
-            .over(
-                partition_by=GamePosition.game_id,
-                order_by=GamePosition.ply,
-            )
-            .label("resulting_full_hash"),  # position after the candidate move (LEAD by one ply)
-            # Per BLOCKER-1 / D-25 / D-34: the SAN tokens needed to replay the
-            # entry position from the start of the game. At an entry row at
-            # ply X, entry_san_sequence must contain the X moves played at
-            # plies 0..X-1 (move_san at ply Y is the move played FROM ply Y).
-            #
-            # The CTE WHERE clause includes ply 0 — without it, the move played
-            # from the start position (always White's first move) is missing
-            # from the partition and `_replay_san_sequence` fails with
-            # chess.IllegalMoveError on every finding.
-            #
-            # ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING covers all moves
-            # up to (but not including) the current row — i.e. plies 0..X-1.
-            # rows=(None, -1) maps to that boundary in SQLAlchemy.
-            #
-            # FILTER (WHERE move_san IS NOT NULL) guards against NULL entries
-            # from corrupted imports: board.push_san(None) raises TypeError
-            # (not InvalidMoveError), which would propagate as a 500.
-            func.array_agg(GamePosition.move_san)
-            .filter(GamePosition.move_san.isnot(None))
-            .over(
-                partition_by=GamePosition.game_id,
-                order_by=GamePosition.ply,
-                rows=(None, -1),
-            )
-            .label("entry_san_sequence"),
-        )
-        .join(
-            standard_start_games_subq,
-            GamePosition.game_id == standard_start_games_subq.c.game_id,
-        )
-        .where(
-            GamePosition.user_id == user_id,
-            # Need ply 0 for the partition (so its move_san enters entry_san_sequence)
-            # and ply MAX_ENTRY_PLY+1 so LEAD has a row to read for entries at MAX_ENTRY_PLY.
-            GamePosition.ply.between(0, OPENING_INSIGHTS_MAX_ENTRY_PLY + 1),
-        )
-        .cte("transitions")
-    )
-
-    # Win/Loss/Draw conditions copied from stats_repository.query_top_openings_sql_wdl:240-248.
+    # Win/Loss/Draw conditions (same as stats_repository.query_top_openings_sql_wdl).
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
         and_(Game.result == "0-1", Game.user_color == "black"),
@@ -831,54 +746,44 @@ async def query_opening_transitions(
     losses = func.count(func.distinct(Game.id)).filter(loss_cond)
 
     # Phase 75 D-08: score-based effect-size gate. score = (W + 0.5·D) / N.
-    # Minor-effect threshold (0.05) drives the SQL gate; major findings
-    # (effect >= 0.10, OPENING_INSIGHTS_MAJOR_EFFECT) are a post-filter
-    # assertion in Python (_classify_row). Symmetric on both sides → the OR
-    # keeps the gate simple. n_games >= 10 (was 20 in Phase 70).
+    # Minor-effect threshold drives the SQL gate; major findings are a post-filter
+    # in Python (_classify_row). Symmetric on both sides → OR keeps the gate simple.
     score_expr = (cast(wins, Float) + 0.5 * cast(draws, Float)) / cast(n_games, Float)
     weakness_threshold = OPENING_INSIGHTS_SCORE_PIVOT - OPENING_INSIGHTS_MINOR_EFFECT  # 0.45
     strength_threshold = OPENING_INSIGHTS_SCORE_PIVOT + OPENING_INSIGHTS_MINOR_EFFECT  # 0.55
 
     stmt = (
         select(
-            transitions_cte.c.entry_hash.label("entry_hash"),
-            transitions_cte.c.move_san.label("move_san"),
-            # BLOCKER-6: pass through the candidate's full_hash for dedupe (D-21).
-            # All games with the same (entry_hash, move_san) lead to the same resulting
-            # position, so min() is a safe deterministic aggregate.
-            func.min(transitions_cte.c.resulting_full_hash).label("resulting_full_hash"),
-            # BLOCKER-1 / D-34: pass through the entry SAN sequence so the service
-            # can both reconstruct entry_fen via python-chess replay AND walk the
-            # parent-hash lineage when direct attribution misses. Aggregated at
-            # GROUP BY level via min() — identical sequences across game instances
-            # of the same (entry_hash, move_san) all share the same prefix.
-            func.min(transitions_cte.c.entry_san_sequence).label("entry_san_sequence"),
+            GamePosition.full_hash.label("entry_hash"),
+            GamePosition.move_san.label("move_san"),
+            # Sample [ply, game_id] from one real row in the group, used by
+            # query_transition_prefixes to resolve the SAN prefix that reached this
+            # entry position. Paired into a single ARRAY[] aggregate so MIN() picks
+            # the (ply, game_id) of one actual row — independent MIN(game_id) and
+            # MIN(ply) would de-correlate under transposition (same entry_hash
+            # reached at different plies in different games via different move
+            # orders), producing a (game_id, ply) sample that doesn't refer to any
+            # real row. PG ARRAY MIN is lexicographic, so the smallest array IS
+            # one of the input arrays. Sorted (ply, game_id) so smaller ply wins
+            # the tiebreak — gives the shallowest reachable prefix.
+            func.min(pg_array([GamePosition.ply, GamePosition.game_id])).label("sample_pair"),
             n_games.label("n"),
             wins.label("w"),
             draws.label("d"),
             losses.label("l"),
-            # MAX(played_at) across all games visiting this (entry_hash, move_san)
-            # surfaces the "Last played: <relative>" line in the score-confidence
-            # tooltip on Opening Insights cards.
             func.max(Game.played_at).label("last_played_at"),
         )
-        .select_from(transitions_cte)
-        .join(Game, Game.id == transitions_cte.c.game_id)
+        .join(Game, Game.id == GamePosition.game_id)
         .where(
-            Game.user_id == user_id,
-            Game.user_color == color,  # explicit per-color filter (RESEARCH.md anti-pattern note)
-            transitions_cte.c.move_san.is_not(
-                None
-            ),  # drops final-position rows (no candidate to count)
-            transitions_cte.c.resulting_full_hash.is_not(
-                None
-            ),  # drops final-position rows where LEAD is NULL
-            transitions_cte.c.ply.between(
-                OPENING_INSIGHTS_MIN_ENTRY_PLY,  # entry ply 0..16 (current row IS entry)
+            GamePosition.user_id == user_id,
+            GamePosition.ply.between(
+                OPENING_INSIGHTS_MIN_ENTRY_PLY,
                 OPENING_INSIGHTS_MAX_ENTRY_PLY,
             ),
+            GamePosition.move_san.isnot(None),
+            Game.user_color == color,  # explicit per-color filter
         )
-        .group_by(transitions_cte.c.entry_hash, transitions_cte.c.move_san)
+        .group_by(GamePosition.full_hash, GamePosition.move_san)
         .having(
             and_(
                 n_games >= OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
@@ -889,7 +794,6 @@ async def query_opening_transitions(
             )
         )
     )
-    # Embed shared filter helpers AFTER the join so user_color overlap doesn't double-filter.
     # color=None passed to apply_game_filters because per-color is already explicit above.
     stmt = apply_game_filters(
         stmt,
@@ -905,6 +809,64 @@ async def query_opening_transitions(
 
     result = await session.execute(stmt)
     return list(result.all())
+
+
+async def query_transition_prefixes(
+    session: AsyncSession,
+    user_id: int,
+    samples: Sequence[tuple[int, int]],
+) -> dict[tuple[int, int], list[str]]:
+    """Batch-resolve SAN prefixes for a set of (sample_game_id, sample_ply) pairs.
+
+    Returns {(game_id, ply): [san_0, san_1, ..., san_{ply-1}]} — the sequence of
+    move_san values played BEFORE the entry position at the given ply. For ply=0
+    samples the list is always [] (no preceding moves). Empty input returns {} immediately.
+
+    Used by opening_insights_service._collect_attribution_hashes to reconstruct
+    entry_san_sequence in Python after query_opening_transitions dropped the window
+    function that previously computed it in SQL.
+    """
+    if not samples:
+        return {}
+
+    distinct_game_ids = list({gid for gid, _ in samples})
+    max_ply = max(ply for _, ply in samples)
+
+    # Fetch all move_san rows for the relevant games up to max_ply in one query.
+    # ORDER BY (game_id, ply) ensures move_san values are appended in play order.
+    stmt = (
+        select(
+            GamePosition.game_id,
+            GamePosition.ply,
+            GamePosition.move_san,
+        )
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.game_id.in_(distinct_game_ids),
+            GamePosition.ply < max_ply,
+            GamePosition.move_san.isnot(None),
+        )
+        .order_by(GamePosition.game_id, GamePosition.ply)
+    )
+    db_rows = await session.execute(stmt)
+
+    # Bucket (ply, move_san) by game_id so each sample can be sliced to its own depth.
+    by_game: dict[int, list[tuple[int, str]]] = {}
+    for row in db_rows:
+        by_game.setdefault(row.game_id, []).append((row.ply, row.move_san))
+
+    # For each (sample_game_id, sample_ply), return the prefix covering plies 0..ply-1.
+    # ply=0 samples always get [] since there are no moves before ply 0.
+    result: dict[tuple[int, int], list[str]] = {}
+    for game_id, ply in samples:
+        if ply == 0:
+            result[(game_id, ply)] = []
+            continue
+        game_rows = by_game.get(game_id, [])
+        # Keep only moves played strictly before the entry ply, in ply order.
+        result[(game_id, ply)] = [san for row_ply, san in game_rows if row_ply < ply]
+
+    return result
 
 
 async def query_openings_by_hashes(
