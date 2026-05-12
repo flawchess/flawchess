@@ -134,9 +134,29 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - ✓ LLM endgame-insights prompt awareness of Start vs End metrics — `MetricId` + `SubsectionId` Literal extensions, `ZONE_REGISTRY` entries for `entry_eval_pawns` (band ±0.5 after D-08 tightening) + `endgame_score` (band [0.45, 0.55]); prompt version `endgame_v23` → `endgame_v24` — v1.16 Phase 82
 - ✓ Stockfish-baseline predicted endgame score — `eval_cp_to_expected_score` (Lichess sigmoid k=0.00368208) + `eval_mate_to_expected_score`; 5 new `EndgamePerformanceResponse` fields (`entry_expected_score`, `_n`, `_p_value`, `_ci_low`, `_ci_high`); 2x2 grid restructure of Start vs End (Where you start + What you do with it × Stockfish baseline + your achieved); LLM prompt `endgame_v25` → `endgame_v26` narrates achievable-vs-achieved gap as headline diagnostic. Closes SEED-014 — v1.16 Phase 83
 
-### Active (next milestone — TBD)
+### Active (v1.17 — Endgame Stats Card Redesign)
 
-(Defined during `/gsd-new-milestone`.)
+**Goal:** Replace three table-driven sections on the Endgames page with the established WDL + ScoreBullet card pattern from `EndgameStartVsEndSection.tsx` / `OpeningStatsCard.tsx`, so gauge and bullet tell one coherent population-relative story while a second peer bullet preserves the self-calibrating "vs your actual opponents" signal.
+
+**Target features (source: `.planning/notes/endgame-stats-card-redesign.md`):**
+
+- Section 1 — Games with vs without Endgame: two side-by-side cards (No / Yes) each with WDL bar + Score row + cohort score bullet vs 50%, plus a full-width Score Gap footer bullet (Yes − No vs 0). Replaces `EndgamePerformanceSection`.
+- Section 2 — Endgame Metrics: 4 cards (Conversion, Parity, Recovery, Skill). Conv/Parity/Recov share an identical layout: gauge → percent → WDL → cohort bullet vs p50 → peer bullet (`You − Opp` vs 0). Skill card has no WDL bar and no peer bullet. Replaces `EndgameScoreGapSection` table + 4-gauge strip.
+- Section 3 — Endgame Type Breakdown: 5 per-type cards (rook, minor_piece, pawn, queen, mixed). Each card has side-by-side Conv + Recov gauges, WDL bar, Conv cohort + peer bullets, Recov cohort + peer bullets, and a Games link. Removes grouped `EndgameWDLChart`; extends `EndgameConvRecovChart` into full cards.
+
+**Key design properties:**
+
+- **Two-bullet doctrine on Conv/Parity/Recov + Section 3 per-type cards:** cohort bullet vs global p50 (population frame, Wilson sig) + peer bullet vs 0 on `You − Opp` (filter-responsive self-calibrating frame, Wald-z sig). Reuses existing `MIRROR_BUCKET` / `MIN_OPPONENT_BASELINE_GAMES` mirror logic.
+- **Accepted property of the cohort frame:** p50 anchors from `reports/benchmarks-2026-05-10.md` §171-177 are pooled across all rating × TC cells. Verdict is rating-tier signal mixed with within-tier skill. Document in popover; cell-specific cohort baselines deferred. Peer bullet partially compensates with a tier-independent read.
+- **Parity peer bullet is statistically redundant** with its cohort bullet at p50 = 0.500 (kept for v1.17 layout uniformity; revisit after build).
+- **Mobile-density fallback on Section 3:** if real-device testing reveals scroll bloat, peer bullets are the first to drop on Section 3.
+
+**Out of scope for v1.17:**
+
+- Backend changes — all stats (Conv/Parity/Recov rates, cohort bands, WDL aggregates, score-gap, per-type, mirror-bucket rates) already exist on the response schema.
+- New statistical methods — reuses existing Wilson CI / p-value / `scoreConfidence` / `wilsonBounds` / `computeScoreConfidence` infra.
+- Benchmark refresh — uses the existing 2026-05-10 percentile table.
+- Cell-specific (rating × TC) cohort baselines — deferred to a future benchmarks pass.
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -343,6 +363,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-11 after v1.16 milestone — Stockfish Eval Analyses shipped (PRs #80, #82, #85, #86, #88). 5 phases (80, 80.1, 81, 82, 83), 24 plans, 118 commits in 7 days. SEED-014 closed by Phase 83; SEED-015 (predicted-vs-achieved gap as first-class metric) remains dormant.*
+*Last updated: 2026-05-12 — v1.17 (Endgame Stats Card Redesign) opened. Frontend-only refactor replacing 3 table-driven sections on the Endgames page with the WDL+ScoreBullet card pattern; two-bullet doctrine (cohort + peer) preserves the self-calibrating opponent signal as a second bullet on Conv/Parity/Recov + Section 3 per-type cards. No backend or benchmark changes.*
+
+*Previous: 2026-05-11 after v1.16 milestone — Stockfish Eval Analyses shipped (PRs #80, #82, #85, #86, #88). 5 phases (80, 80.1, 81, 82, 83), 24 plans, 118 commits in 7 days. SEED-014 closed by Phase 83; SEED-015 (predicted-vs-achieved gap as first-class metric) remains dormant.*
 
 *Previous: 2026-05-09 — Phase 81 (Endgame Start vs End twin-tile section) complete. UAT against user 28 surfaced D-22 amendment switching entry-eval source from per-class entry_rows to game-level bucket_rows, eliminating a ~5-game under-count and locking the n + mate + null + total invariant by construction.*
