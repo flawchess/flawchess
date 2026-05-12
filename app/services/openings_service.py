@@ -18,9 +18,8 @@ from app.repositories.openings_repository import (
     HASH_COLUMN_MAP,
     query_matching_games,
     query_next_moves,
+    query_resulting_position_wdl,  # Phase 80.1 D-02 — resulting-position WDL
     query_time_series,
-    query_transposition_counts,
-    query_transposition_wdl,  # Phase 80.1 D-02 — resulting-position WDL
     query_wdl_counts,
 )
 from app.repositories.stats_repository import query_opening_phase_entry_metrics_batch
@@ -460,7 +459,8 @@ async def get_next_moves(
     1. Compute optional recency cutoff datetime.
     2. Compute position_stats via query_wdl_counts with full_hash.
     3. Query aggregated next moves (move_san, result_hash, W/D/L counts).
-    4. Batch-query transposition counts for all result hashes.
+    4. Batch-query resulting-position WDL for all result hashes; derive
+       trans_counts inline from wins+draws+losses (one round trip).
     5. Compute result_fen for each result_hash via PGN replay.
     6. Build NextMoveEntry list and apply sort_by ordering.
     7. Return NextMovesResponse.
@@ -505,30 +505,17 @@ async def get_next_moves(
     if not move_rows:
         return NextMovesResponse(position_stats=position_stats, moves=[])
 
-    # --- Transposition counts (batch) ---
-    result_hashes = list({row.result_hash for row in move_rows})
-    trans_counts = await query_transposition_counts(
-        session=session,
-        user_id=user_id,
-        result_hash_list=result_hashes,
-        time_control=request.time_control,
-        platform=request.platform,
-        rated=request.rated,
-        opponent_type=request.opponent_type,
-        recency_cutoff=cutoff,
-        color=request.color,
-        opponent_gap_min=request.opponent_gap_min,
-        opponent_gap_max=request.opponent_gap_max,
-    )
-
     # --- Resulting-position WDL (batch) — Phase 80.1 D-02 ---
-    # Sequential await (NOT asyncio.gather): AsyncSession is not concurrency-safe
-    # per CLAUDE.md. Filter parameters mirror query_transposition_counts above
-    # exactly to preserve filter parity (Pitfall 1 from RESEARCH.md).
-    pos_wdl = await query_transposition_wdl(
+    # Single round trip returns {result_hash: (wins, draws, losses, last_played_at)}.
+    # trans_counts (the move-tab "Transposition count" popover, position-total games
+    # reaching result_hash via any move order) is derived inline from wins+draws+losses
+    # since every game has exactly one result. Filter parameters mirror
+    # query_next_moves exactly to preserve filter parity (Pitfall 1 from RESEARCH.md).
+    result_hashes = list({row.result_hash for row in move_rows})
+    pos_wdl = await query_resulting_position_wdl(
         session=session,
         user_id=user_id,
-        result_hash_list=result_hashes,
+        hash_list=result_hashes,
         time_control=request.time_control,
         platform=request.platform,
         rated=request.rated,
@@ -538,6 +525,7 @@ async def get_next_moves(
         opponent_gap_min=request.opponent_gap_min,
         opponent_gap_max=request.opponent_gap_max,
     )
+    trans_counts: dict[int, int] = {h: w + d + lo for h, (w, d, lo, _last) in pos_wdl.items()}
 
     # --- Result FENs via PGN replay ---
     result_fens = await _fetch_result_fens(session, user_id, result_hashes)
@@ -554,16 +542,16 @@ async def get_next_moves(
         pos = pos_wdl.get(row.result_hash)
         if pos is None:
             # Filter mismatch defensive fallback (Pitfall 4 from RESEARCH.md).
-            # Should not occur if query_transposition_wdl applies identical
+            # Should not occur if query_resulting_position_wdl applies identical
             # filters to query_next_moves; logged so it surfaces in dev/prod.
             logger.warning(
-                "query_transposition_wdl missing result_hash=%s; falling back to move-played WDL",
+                "query_resulting_position_wdl missing result_hash=%s; falling back to move-played WDL",
                 row.result_hash,
             )
             w, d, lo = row.wins, row.draws, row.losses
             pos_total = gc
         else:
-            w, d, lo = pos
+            w, d, lo, _last = pos
             pos_total = w + d + lo
 
         wp = round(w / pos_total * 100, 1) if pos_total > 0 else 0.0

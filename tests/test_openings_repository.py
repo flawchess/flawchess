@@ -14,7 +14,8 @@ Coverage:
 - Pagination (offset, limit, total count)
 - MEXP-04: query_next_moves returns per-move W/D/L aggregation
 - MEXP-05: transposition dedup (same game at multiple plies counted once per move)
-- MEXP-10: query_transposition_counts returns batch {hash: count}
+- MEXP-10: batch transposition counts (derived from query_resulting_position_wdl
+  since quick task 260512-p5p collapsed the trio into one query)
 """
 
 import datetime
@@ -972,15 +973,20 @@ TC_RESULT_HASH = 600
 
 
 class TestTranspositionCounts:
-    """MEXP-10: query_transposition_counts returns batch {result_hash: count}."""
+    """MEXP-10: transposition counts derived from query_resulting_position_wdl.
+
+    Post quick task 260512-p5p (Task 1): query_transposition_counts was deleted
+    in favor of deriving total = w + d + lo from query_resulting_position_wdl.
+    These tests preserve the batch-count coverage on the surviving query.
+    """
 
     @pytest.mark.asyncio
     async def test_batch_transposition_count(self, db_session: AsyncSession) -> None:
         """2 games both reach result_hash=600 (via different source positions).
 
-        query_transposition_counts([600]) must return {600: 2}.
+        Deriving total from query_resulting_position_wdl must return 2.
         """
-        from app.repositories.openings_repository import query_transposition_counts
+        from app.repositories.openings_repository import query_resulting_position_wdl
 
         # Game A: plays e4 from source_hash=100 → result_hash=600
         game_a, _ = await _seed_game(db_session, full_hash=100, move_san="e4")
@@ -1009,10 +1015,10 @@ class TestTranspositionCounts:
         await _add_position(db_session, game_b.id, 1, ply=1, full_hash=150, move_san="c4")
         await _add_position(db_session, game_b.id, 1, ply=2, full_hash=TC_RESULT_HASH)
 
-        counts = await query_transposition_counts(
+        wdl = await query_resulting_position_wdl(
             db_session,
             user_id=1,
-            result_hash_list=[TC_RESULT_HASH],
+            hash_list=[TC_RESULT_HASH],
             time_control=None,
             platform=None,
             rated=None,
@@ -1021,18 +1027,19 @@ class TestTranspositionCounts:
             color=None,
         )
 
-        assert TC_RESULT_HASH in counts
-        assert counts[TC_RESULT_HASH] == 2, f"Expected 2, got {counts[TC_RESULT_HASH]}"
+        assert TC_RESULT_HASH in wdl
+        w, d, lo, _last = wdl[TC_RESULT_HASH]
+        assert w + d + lo == 2, f"Expected 2, got {w + d + lo}"
 
     @pytest.mark.asyncio
     async def test_empty_hash_list(self, db_session: AsyncSession) -> None:
-        """Empty result_hash_list returns empty dict."""
-        from app.repositories.openings_repository import query_transposition_counts
+        """Empty hash_list returns empty dict."""
+        from app.repositories.openings_repository import query_resulting_position_wdl
 
-        counts = await query_transposition_counts(
+        wdl = await query_resulting_position_wdl(
             db_session,
             user_id=1,
-            result_hash_list=[],
+            hash_list=[],
             time_control=None,
             platform=None,
             rated=None,
@@ -1041,7 +1048,7 @@ class TestTranspositionCounts:
             color=None,
         )
 
-        assert counts == {}
+        assert wdl == {}
 
 
 # ---------------------------------------------------------------------------
@@ -1347,12 +1354,12 @@ async def _seed_path_to_result_hash(
 
 
 class TestQueryTranspositionWdl:
-    """Phase 80.1 D-02: query_transposition_wdl returns {result_hash: (W, D, L)}.
+    """Phase 80.1 D-02: resulting-position WDL via query_resulting_position_wdl.
 
-    The function powers the Move Explorer row's W/D/L denominator switch from
-    move-played to resulting-position. Convergence (two move orders ending at
-    the same hash) is the signal case — a fixture without a genuine second
-    path tests existing behavior, not transposition inclusion.
+    Post quick task 260512-p5p (Task 1): query_transposition_wdl was deleted
+    after query_resulting_position_wdl converged on the same SQL shape with
+    one extra column (last_played_at). These tests preserve coverage by
+    targeting the surviving function and slicing the 4-tuple to compare W/D/L.
     """
 
     @pytest.mark.asyncio
@@ -1363,10 +1370,9 @@ class TestQueryTranspositionWdl:
 
         Game A plays e4 from SOURCE_HASH → RESULT_HASH (win, white).
         Game B plays d4 from OTHER_SOURCE_HASH → RESULT_HASH (loss, white) via
-        a different move order.
-        query_transposition_wdl returns combined WDL across both games.
+        a different move order. Combined WDL across both games.
         """
-        from app.repositories.openings_repository import query_transposition_wdl
+        from app.repositories.openings_repository import query_resulting_position_wdl
 
         # Game A: e4 from SOURCE_HASH → RESULT_HASH, win for white
         await _seed_path_to_result_hash(
@@ -1389,10 +1395,10 @@ class TestQueryTranspositionWdl:
             result_hash=TWDL_RESULT_HASH,
         )
 
-        wdl = await query_transposition_wdl(
+        wdl = await query_resulting_position_wdl(
             db_session,
             user_id=1,
-            result_hash_list=[TWDL_RESULT_HASH],
+            hash_list=[TWDL_RESULT_HASH],
             time_control=None,
             platform=None,
             rated=None,
@@ -1402,12 +1408,12 @@ class TestQueryTranspositionWdl:
         )
 
         # 2 distinct games visit the resulting position: 1 win + 1 loss.
-        assert wdl == {TWDL_RESULT_HASH: (1, 0, 1)}
+        assert wdl[TWDL_RESULT_HASH][:3] == (1, 0, 1)
 
     @pytest.mark.asyncio
     async def test_query_transposition_wdl_single_order(self, db_session: AsyncSession) -> None:
         """Single game visiting RESULT_HASH; pos WDL == move-played WDL."""
-        from app.repositories.openings_repository import query_transposition_wdl
+        from app.repositories.openings_repository import query_resulting_position_wdl
 
         await _seed_path_to_result_hash(
             db_session,
@@ -1419,10 +1425,10 @@ class TestQueryTranspositionWdl:
             result_hash=TWDL_RESULT_HASH,
         )
 
-        wdl = await query_transposition_wdl(
+        wdl = await query_resulting_position_wdl(
             db_session,
             user_id=1,
-            result_hash_list=[TWDL_RESULT_HASH],
+            hash_list=[TWDL_RESULT_HASH],
             time_control=None,
             platform=None,
             rated=None,
@@ -1431,7 +1437,7 @@ class TestQueryTranspositionWdl:
             color="white",
         )
 
-        assert wdl == {TWDL_RESULT_HASH: (1, 0, 0)}
+        assert wdl[TWDL_RESULT_HASH][:3] == (1, 0, 0)
 
     @pytest.mark.asyncio
     async def test_query_transposition_wdl_filter_parity_drops_games(
@@ -1443,7 +1449,7 @@ class TestQueryTranspositionWdl:
         Filter time_control=["rapid"] → only the rapid win remains; without
         the filter, both games contribute.
         """
-        from app.repositories.openings_repository import query_transposition_wdl
+        from app.repositories.openings_repository import query_resulting_position_wdl
 
         # Game A: rapid (time_control_seconds=600 → bucket="rapid"), win
         await _seed_path_to_result_hash(
@@ -1469,10 +1475,10 @@ class TestQueryTranspositionWdl:
         )
 
         # No filter → both games count
-        wdl_all = await query_transposition_wdl(
+        wdl_all = await query_resulting_position_wdl(
             db_session,
             user_id=1,
-            result_hash_list=[TWDL_RESULT_HASH],
+            hash_list=[TWDL_RESULT_HASH],
             time_control=None,
             platform=None,
             rated=None,
@@ -1480,13 +1486,13 @@ class TestQueryTranspositionWdl:
             recency_cutoff=None,
             color="white",
         )
-        assert wdl_all == {TWDL_RESULT_HASH: (1, 0, 1)}
+        assert wdl_all[TWDL_RESULT_HASH][:3] == (1, 0, 1)
 
         # Filter rapid only → blitz loss is dropped
-        wdl_rapid = await query_transposition_wdl(
+        wdl_rapid = await query_resulting_position_wdl(
             db_session,
             user_id=1,
-            result_hash_list=[TWDL_RESULT_HASH],
+            hash_list=[TWDL_RESULT_HASH],
             time_control=["rapid"],
             platform=None,
             rated=None,
@@ -1494,13 +1500,13 @@ class TestQueryTranspositionWdl:
             recency_cutoff=None,
             color="white",
         )
-        assert wdl_rapid == {TWDL_RESULT_HASH: (1, 0, 0)}
+        assert wdl_rapid[TWDL_RESULT_HASH][:3] == (1, 0, 0)
 
         # Filter blitz only → rapid win is dropped (symmetric)
-        wdl_blitz = await query_transposition_wdl(
+        wdl_blitz = await query_resulting_position_wdl(
             db_session,
             user_id=1,
-            result_hash_list=[TWDL_RESULT_HASH],
+            hash_list=[TWDL_RESULT_HASH],
             time_control=["blitz"],
             platform=None,
             rated=None,
@@ -1508,17 +1514,17 @@ class TestQueryTranspositionWdl:
             recency_cutoff=None,
             color="white",
         )
-        assert wdl_blitz == {TWDL_RESULT_HASH: (0, 0, 1)}
+        assert wdl_blitz[TWDL_RESULT_HASH][:3] == (0, 0, 1)
 
     @pytest.mark.asyncio
     async def test_query_transposition_wdl_empty_list(self, db_session: AsyncSession) -> None:
-        """Empty result_hash_list returns {} immediately (no DB round trip)."""
-        from app.repositories.openings_repository import query_transposition_wdl
+        """Empty hash_list returns {} immediately (no DB round trip)."""
+        from app.repositories.openings_repository import query_resulting_position_wdl
 
-        wdl = await query_transposition_wdl(
+        wdl = await query_resulting_position_wdl(
             db_session,
             user_id=1,
-            result_hash_list=[],
+            hash_list=[],
             time_control=None,
             platform=None,
             rated=None,
@@ -1531,7 +1537,7 @@ class TestQueryTranspositionWdl:
     @pytest.mark.asyncio
     async def test_query_transposition_wdl_unknown_hash(self, db_session: AsyncSession) -> None:
         """Hash not present in any game is omitted from the dict (NOT (0,0,0))."""
-        from app.repositories.openings_repository import query_transposition_wdl
+        from app.repositories.openings_repository import query_resulting_position_wdl
 
         # Seed one unrelated game so the DB is non-empty
         await _seed_path_to_result_hash(
@@ -1544,10 +1550,10 @@ class TestQueryTranspositionWdl:
             result_hash=TWDL_RESULT_HASH,
         )
 
-        wdl = await query_transposition_wdl(
+        wdl = await query_resulting_position_wdl(
             db_session,
             user_id=1,
-            result_hash_list=[TWDL_UNUSED_HASH],
+            hash_list=[TWDL_UNUSED_HASH],
             time_control=None,
             platform=None,
             rated=None,
