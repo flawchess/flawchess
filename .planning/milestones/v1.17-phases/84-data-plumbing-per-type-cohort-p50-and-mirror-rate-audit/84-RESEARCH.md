@@ -607,21 +607,24 @@ Not a research-driven phase. The implementation pattern is established by Phase 
 | A3 | The 4 new fields use 0-100 scale for `_pct` (matching existing `conversion_pct` / `recovery_pct`), not 0.0-1.0 | Example 4 | If Phase 87 consumers expect 0.0-1.0 like `MaterialRow.score`, there's a unit mismatch. The decision is forced by the existing fields on the same dataclass — keeping uniform scale within `ConversionRecoveryStats` is the safest call. Plan-phase should confirm. |
 | A4 | `ScoreGapTimelinePoint`, `MaterialRow`, and other `ScoreGapMaterialResponse` consumers are untouched by this phase | Architectural map | If Section 3 frontend in Phase 87 needs `MaterialRow`-style fields (e.g. parity opponent) for the per-type card, that's a Phase 87 schema additive change, not a Phase 84 regression. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **2dp vs 4dp p50 formatting** — What precision should `_format_per_class_gauge_zones()` emit for p50 values?
    - What we know: D-03 allows either; the existing IQR emission uses raw Python float repr (e.g. `0.65`, `0.2` for `0.20`).
    - What's unclear: Whether the planner wants byte-stable 2dp (`f"{val:.2f}"`) or default repr that strips trailing zeros.
    - Recommendation: **2dp via `f"{val:.2f}"`** for visual consistency with the published benchmarks table and to avoid the inconsistency described in Pitfall 6. Verify the existing IQR emission style is unchanged (don't accidentally reformat lines that already exist).
+   - **RESOLVED:** 2dp via `f"{val:.2f}"` for byte-stable emission. Rationale: matches IQR band granularity (also 2dp), avoids trailing-zero-strip drift (Pitfall 6), and the ≤0.005 precision loss is well below any user-visible threshold for the bullet centre tick.
 
 2. **Test placement for codegen output** — Should there be an integration test that runs `gen_endgame_zones_ts.py` and parses the result?
    - What we know: CI runs the codegen + `git diff --exit-code`. That's effectively an integration test.
    - What's unclear: Whether unit-level Python tests should reach into the emitted TS or just verify `PerClassBands.p50` is populated.
    - Recommendation: **Keep Python tests at the dataclass level only** (Example 6). The CI drift guard covers TS output; duplicating that in unit tests reads as belt-and-suspenders and increases test maintenance.
+   - **RESOLVED:** Dataclass-level Python tests in `tests/services/test_endgame_zones.py::TestPerClassP50` only. Rationale: CI drift guard (`gen_endgame_zones_ts.py + git diff --exit-code`) already covers the TS emission. Duplicating the assertion in TS would create two-source-of-truth drift risk.
 
 3. **Rounding strategy on `_pct` opponent fields** — The existing `conversion_pct` / `recovery_pct` use `round(x, 1)` for 1dp percent values. Should the new opponent fields match?
    - What we know: Lines 346 and 354 in `endgame_service.py` use `round(..., 1)`. Phase 60's `MaterialRow.score` is full-precision float.
    - Recommendation: **Match the existing `round(..., 1)` style** (1dp percentage on `_pct` fields) for consistency within the same dataclass. Example 4 reflects this.
+   - **RESOLVED:** `round(..., 1)` matching the existing convention at `app/services/endgame_service.py:346, 354` on `conversion_pct` / `recovery_pct`. Rationale: same scale, same precision, same display convention. Tests use `pytest.approx(..., abs=0.1)`.
 
 ## Environment Availability
 
