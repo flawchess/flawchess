@@ -5,16 +5,19 @@
  * start" tile). See 85-CONTEXT.md §"Redesign Decision (Post-Execution,
  * 2026-05-13)" for the rationale.
  *
- * Layout (3-column grid on lg+, stacked on mobile):
+ * Layout: 3-column card grid on lg+, stacked on mobile.
  *   Card 1 | Card 2 | Card 3
  *   "Games without Endgame" | "At Endgame Entry" | "Games with Endgame"
  *
- * Cards 1 and 3 carry a top-right badge "NN.N% (count) <swords>" showing each
- * card's share of total games — matches the games-count + Swords pattern used
- * across the app (e.g. WDLChartRow).
- *
  * Endgame Score Gap sits in column 2 on desktop (via lg:col-start-2 on the
  * 4th grid child), naturally stacked at the bottom on mobile after Card 3.
+ *
+ * Inside-card layout is single-column at every breakpoint (label-above-chart)
+ * so the WDL bar / bullet charts use the full card width on desktop too.
+ *
+ * Cards 1 and 3 carry the share-of-games badge "NN.N% (count) <swords>"
+ * inline with the "Win / Draw / Loss" label (right-aligned). Matches the
+ * games-count + Swords pattern used across the app (e.g. WDLChartRow).
  *
  * No section-root h3 or section-level InfoPopover — the question line under
  * the page-level h2 carries the framing.
@@ -135,25 +138,21 @@ function EndgameCard({
 
   return (
     <div className="charcoal-texture rounded-md p-4" data-testid={tileTestId}>
-      <div className="flex items-baseline justify-between gap-2 mb-2">
-        <h3 className="text-base font-semibold">{title}</h3>
-        {total > 0 && (
-          <span
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums whitespace-nowrap"
-            data-testid={gamesCountTestId}
-          >
-            <span>
-              {sharePct} ({gamesCountFormatted})
-            </span>
-            <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-          </span>
-        )}
-      </div>
+      <h3 className="text-base font-semibold mb-2">{title}</h3>
       <div className="flex flex-col gap-4">
         {showWdl ? (
-          <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
-            <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-              <span className="text-muted-foreground">Win / Draw / Loss:</span>
+          <div className="flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-sm tabular-nums w-full">
+              <span className="text-muted-foreground">Win / Draw / Loss</span>
+              <span
+                className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums whitespace-nowrap"
+                data-testid={gamesCountTestId}
+              >
+                <span>
+                  {sharePct} ({gamesCountFormatted})
+                </span>
+                <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+              </span>
             </span>
             <div className="min-w-0">
               <MiniWDLBar
@@ -168,7 +167,7 @@ function EndgameCard({
         )}
 
         {showScoreRow ? (
-          <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+          <div className="flex flex-col gap-2">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Score:</span>
               <span
@@ -252,7 +251,7 @@ function EntryCard({ data }: EntryCardProps) {
       <div className="flex flex-col gap-4">
         {/* Row 1: entry-eval bullet (pawns) */}
         {showEntryEvalChart ? (
-          <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+          <div className="flex flex-col gap-2">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Endgame entry eval:</span>
               <span
@@ -298,7 +297,7 @@ function EntryCard({ data }: EntryCardProps) {
         {/* Row 2: achievable score bullet (CR-01: OFFSET-form neutralMin/neutralMax). */}
         <div data-testid="endgame-achievable-score">
           {showAchievableChart ? (
-            <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+            <div className="flex flex-col gap-2">
               <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                 <span className="text-muted-foreground">Achievable score:</span>
                 <span
@@ -380,8 +379,11 @@ export function EndgameOverallPerformanceSection({
         Do you perform better or worse when games reach an endgame?
       </p>
 
-      {/* 3-column card grid. DOM order: Card 1, Card 2, Card 3, ScoreGap.
-          On desktop ScoreGap is lifted to column 2 via lg:col-start-2. */}
+      {/* 3-column card grid on lg+, stacked on mobile. DOM order: Card 1,
+          Card 2, Card 3, ScoreGap. On desktop ScoreGap is lifted to column 2
+          via lg:col-start-2. Inside-card layout is single-column at every
+          breakpoint (label-above-chart) so the WDL/bullet charts get the
+          full card width regardless of viewport. */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2">
         {/* Card 1: Games without Endgame (left on desktop) */}
         <EndgameCard
@@ -419,7 +421,7 @@ export function EndgameOverallPerformanceSection({
           data-testid="endgame-score-gap"
         >
           <h3 className="text-base font-semibold mb-2">Endgame Score Gap</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+          <div className="flex flex-col gap-2">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Difference:</span>
               <span
