@@ -150,6 +150,9 @@ class EndgamePerformanceResponse(BaseModel):
     endgame_score_p_value: float | None = None
     """Wilson score-test two-sided p-value of endgame_wdl score vs 50%. None when endgame_wdl.total < 10."""
 
+    non_endgame_score_p_value: float | None = None
+    """Wilson score-test two-sided p-value of non_endgame_wdl score vs 50%. None when non_endgame_wdl.total < 10."""
+
     entry_eval_ci_low_pawns: float | None = None
     """Lower bound of 95% Wald-z CI on entry_eval_mean_pawns (signed, in pawns). None when entry_eval_n < 2."""
 

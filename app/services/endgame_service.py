@@ -1759,6 +1759,17 @@ def _get_endgame_performance_from_rows(
     )
     endgame_score_p_value: float | None = p_score_raw if endgame_wdl.total >= 10 else None
 
+    # Mirror of endgame_score_p_value for the Section 1 "Games without Endgame" card (Phase 85 D-01).
+    _conf_ns, p_non_score_raw, _se_ns = compute_confidence_bucket(
+        non_endgame_wdl.wins,
+        non_endgame_wdl.draws,
+        non_endgame_wdl.losses,
+        non_endgame_wdl.total,
+    )
+    non_endgame_score_p_value: float | None = (
+        p_non_score_raw if non_endgame_wdl.total >= 10 else None
+    )
+
     # Phase 83 Plan 2 (D-04..D-07, D-21): Stockfish-baseline expected score
     # sibling aggregator over the same bucket_rows cursor. Per-game expected
     # score via Lichess sigmoid for eval_cp / 0-or-1 for eval_mate. Mate is
@@ -1810,6 +1821,7 @@ def _get_endgame_performance_from_rows(
         entry_eval_n=eval_n,
         entry_eval_p_value=entry_eval_p_value,
         endgame_score_p_value=endgame_score_p_value,
+        non_endgame_score_p_value=non_endgame_score_p_value,
         entry_eval_ci_low_pawns=entry_eval_ci_low_pawns,
         entry_eval_ci_high_pawns=entry_eval_ci_high_pawns,
         entry_expected_score=entry_expected_score,
