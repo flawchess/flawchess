@@ -29,7 +29,7 @@ vi.mock('recharts', async () => {
 import {
   EndgameScoreOverTimeChart,
   SCORE_BAND_CLASS,
-} from '../EndgamePerformanceSection';
+} from '../EndgameScoreOverTimeChart';
 import {
   SCORE_TIMELINE_FILL_ABOVE,
   SCORE_TIMELINE_FILL_BELOW,
@@ -161,7 +161,7 @@ describe('EndgameScoreOverTimeChart', () => {
   it('renders container and title', () => {
     render(<EndgameScoreOverTimeChart timeline={ENDGAME_LEADS_FIXTURE} window={100} />);
     expect(screen.getByTestId('endgame-score-timeline-chart')).toBeTruthy();
-    expect(screen.getByText('Endgame vs Non-Endgame Score over Time')).toBeTruthy();
+    expect(screen.getByText('Endgame Score Gap over Time')).toBeTruthy();
   });
 
   it('renders a single shaded band layer and gradient carries both colors for mixed-sign fixture', () => {

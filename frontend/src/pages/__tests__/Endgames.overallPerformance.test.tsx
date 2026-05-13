@@ -1,18 +1,22 @@
 // @vitest-environment jsdom
 /**
- * Phase 81 Plan 04 — page-level integration tests for the Endgames page after
- * `EndgameStartVsEndSection` is wired in.
+ * Phase 85 Plan 05 — page-level integration tests for the Endgames page after
+ * `EndgameOverallPerformanceSection` (the 3-card composite) is wired in.
  *
- * Strategy: full-page render of `<EndgamesPage />` is heavy (15+ hooks), so
- * we mock the data hooks with a complete `EndgameOverviewResponse` fixture
- * and stub out the chart sub-components that don't participate in the
- * assertions of this plan (Conv/Recov, Score Gap, Clock Pressure, Time
- * Pressure, ELO timeline, WDL chart, GameCardList, Insights block).
+ * Replaces Endgames.startVsEnd.test.tsx (Phase 81 Plan 04), which tested the
+ * former two-section layout (EndgameStartVsEndSection + EndgameGamesWithWithoutSection).
+ * The new composite section collapses both legacy sections into one mount,
+ * gated on `scoreGapData && showPerfSection`.
  *
- * The two components the test cares about, `EndgameStartVsEndSection` and
- * `EndgamePerformanceSection` (incl. `EndgameScoreOverTimeChart`), render
- * for real so DOM-order, accordion paragraph order, and D-21 negative-scope
- * testid presence can all be asserted directly against the rendered tree.
+ * Strategy: full-page render of <EndgamesPage /> is heavy (15+ hooks), so
+ * we mock the data hooks with a complete EndgameOverviewResponse fixture
+ * and stub out chart sub-components that don't participate in the assertions
+ * (Conv/Recov, Score Gap, Clock Pressure, Time Pressure, ELO timeline,
+ * WDL chart, GameCardList, Insights block).
+ *
+ * EndgameOverallPerformanceSection and EndgameScoreOverTimeChart render for
+ * real so DOM-order, accordion paragraph order, and negative-scope testid
+ * presence can all be asserted directly against the rendered tree.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -77,10 +81,7 @@ vi.mock('@/components/insights/EndgameInsightsBlock', () => ({
   EndgameInsightsBlock: () => <div data-testid="mock-endgame-insights-block" />,
 }));
 
-// ── Mock data hooks. The Endgames page consumes useEndgameOverview,
-// useEndgameGames, useCachedEndgameInsights, useEndgameInsights, useActiveJobs,
-// and useFilterStore. Each returns a stable fixture; tests that need to
-// override a field use buildOverview(...).
+// ── Mock data hooks.
 const overviewState: { data: EndgameOverviewResponse | null } = { data: null };
 
 vi.mock('@/hooks/useEndgames', () => ({
@@ -110,8 +111,7 @@ vi.mock('@/hooks/useImport', () => ({
   useActiveJobs: () => ({ data: [], isLoading: false, isError: false }),
 }));
 
-// jsdom shims required by the existing component (matchMedia for radix popovers,
-// ResizeObserver for recharts, scrollTo for category-select handler).
+// jsdom shims required by the existing component.
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
@@ -175,6 +175,7 @@ function buildPerf(
     entry_eval_n: 50,
     entry_eval_p_value: 0.001,
     endgame_score_p_value: 0.001,
+    non_endgame_score_p_value: 0.001,
     entry_eval_ci_low_pawns: 0.1,
     entry_eval_ci_high_pawns: 0.7,
     // Phase 83: in-band default; tests targeting the achievable bullet override.
@@ -269,54 +270,48 @@ function renderPage() {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
-describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
-  it('renders EndgameStartVsEndSection before EndgamePerformanceSection (D-01)', () => {
+describe('Endgames page — Phase 85 Plan 05 single composite section', () => {
+  it('renders EndgameOverallPerformanceSection mount(s) but no legacy section testids', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
-    const startVsEnd = container.querySelector(
-      '[data-testid="endgame-start-vs-end-section"]',
+    // At least one composite section renders (desktop + mobile layouts each
+    // render statisticsContent, so jsdom sees 2 mounts; that is expected).
+    const sections = container.querySelectorAll(
+      '[data-testid="endgame-overall-performance-section"]',
     );
-    const perfSection = container.querySelector(
-      '[data-testid="endgame-performance-section"]',
-    );
-    expect(startVsEnd).not.toBeNull();
-    expect(perfSection).not.toBeNull();
-    // DOCUMENT_POSITION_FOLLOWING = 4: startVsEnd is followed by perfSection.
-    const followingMask =
-      startVsEnd!.compareDocumentPosition(perfSection!) &
-      Node.DOCUMENT_POSITION_FOLLOWING;
-    expect(followingMask).toBeTruthy();
+    expect(sections.length).toBeGreaterThanOrEqual(1);
+    // Legacy section testids must be absent.
+    expect(
+      container.querySelector('[data-testid="endgame-start-vs-end-section"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="endgame-games-with-without-section"]'),
+    ).toBeNull();
   });
 
-  it('does NOT render the start-vs-end section when no endgame games (showPerfSection false)', () => {
+  it('does NOT render the composite section when no endgame games (showPerfSection false)', () => {
     overviewState.data = buildOverview({
       performance: { endgame_wdl: buildWdl(0, 0, 0) },
     });
     const { container } = renderPage();
     expect(
-      container.querySelector('[data-testid="endgame-start-vs-end-section"]'),
+      container.querySelector('[data-testid="endgame-overall-performance-section"]'),
     ).toBeNull();
   });
 
-  it('contains both new accordion paragraphs ("Endgame entry eval" + "Endgame score") (D-13)', () => {
+  it('contains both accordion paragraphs ("Endgame entry eval" + "Endgame score") (D-13)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
-    // Open the first accordion trigger (radix collapses content when closed,
-    // so the new paragraphs need to be expanded to be in the DOM tree).
+    // Open the first accordion trigger (radix collapses content when closed).
     openConceptsAccordion(container);
-    // Both paragraph leads appear; getAllByText accepts multiple hits because
-    // both desktop and mobile layouts mount the same TabsContent in jsdom,
-    // and the inline tile labels share text with the accordion explainers.
     expect(screen.getAllByText(/Endgame entry eval:/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Endgame score:/).length).toBeGreaterThan(0);
   });
 
-  it('places the 2 new accordion paragraphs AFTER Recovery and BEFORE the rating-changes caveat (D-14)', () => {
+  it('places the 2 accordion paragraphs AFTER Recovery and BEFORE the rating-changes caveat (D-14)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
     openConceptsAccordion(container);
-    // Scope to the FIRST accordion item — radix mounts an open
-    // AccordionContent with role="region"; query inside it.
     const accordionItem = container.querySelector(
       '[data-testid="endgame-concepts-trigger"]',
     );
@@ -327,9 +322,7 @@ describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
     const text = paragraphs.map((p) => p.textContent ?? '');
     const recoveryIdx = text.findIndex((t) => /Recovery:/.test(t));
     const entryEvalIdx = text.findIndex((t) => /Endgame entry eval:/.test(t));
-    const endgameScoreIdx = text.findIndex((t) =>
-      /Endgame score:/.test(t),
-    );
+    const endgameScoreIdx = text.findIndex((t) => /Endgame score:/.test(t));
     const ratingChangesIdx = text.findIndex((t) =>
       /usually reflect your performance against opponents at your rating/.test(t),
     );
@@ -339,40 +332,46 @@ describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
     expect(ratingChangesIdx).toBeGreaterThan(endgameScoreIdx);
   });
 
-  it('preserves existing WDL table, Score Gap, and timeline chart (D-21 negative scope)', () => {
+  it('preserves the new Section 1 cards, Score Gap, and timeline chart (D-21 negative scope)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
-    // perf-wdl-table (desktop) OR perf-wdl-cards (mobile); both render in
-    // jsdom because we don't simulate a viewport. Either is acceptable.
+    // The 3-card composite section includes all three card tiles and the score gap.
     expect(
-      container.querySelector('[data-testid="perf-wdl-table"]') ||
-        container.querySelector('[data-testid="perf-wdl-cards"]'),
+      container.querySelector('[data-testid="tile-games-without-endgame"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-testid="score-gap-difference"]') ||
-        container.querySelector('[data-testid="score-gap-difference-mobile"]'),
+      container.querySelector('[data-testid="tile-at-endgame-entry"]'),
     ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="tile-games-with-endgame"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="endgame-score-differences"]'),
+    ).not.toBeNull();
+    // Timeline chart still renders.
     expect(
       container.querySelector('[data-testid="endgame-score-timeline-chart"]'),
     ).not.toBeNull();
+    // Negative scope: old card testids are gone.
+    expect(
+      container.querySelector('[data-testid="endgame-start-vs-end-section"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="endgame-games-with-without-section"]'),
+    ).toBeNull();
   });
 
-  it('references the Opponent Strength filter as plain text in the new accordion paragraphs (D-13)', () => {
+  it('references the Opponent Strength filter as plain text in the accordion paragraphs (D-13)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
     openConceptsAccordion(container);
-    // The phrase appears in both the new D-13 paragraph and the existing
-    // rating-changes caveat. getAllByText accepts multiple matches; we just
-    // need at least one.
     expect(screen.getAllByText(/Opponent Strength filter/).length).toBeGreaterThan(0);
   });
 });
 
 /**
  * Click the first concepts-accordion trigger so radix mounts its
- * AccordionContent into the DOM. The page renders the accordion in both the
- * desktop sidebar and the mobile drawer layouts; opening either one is
- * enough to expose the paragraph text to query selectors.
+ * AccordionContent into the DOM.
  */
 function openConceptsAccordion(container: HTMLElement): void {
   const trigger = container.querySelector(

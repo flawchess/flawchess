@@ -18,8 +18,8 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection, EndgameScoreOverTimeChart } from '@/components/charts/EndgamePerformanceSection';
-import { EndgameStartVsEndSection } from '@/components/charts/EndgameStartVsEndSection';
+import { EndgameOverallPerformanceSection } from '@/components/charts/EndgameOverallPerformanceSection';
+import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
 import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
@@ -408,6 +408,15 @@ export function EndgamesPage() {
                       to tighten the test against equal-rated opponents specifically.
                     </p>
                     <p>
+                      <strong>Endgame Score Gap:</strong> the score difference between games that reach an endgame (Endgame score) vs. games that end before (Non-Endgame score). Positive means endgames are your strength; negative
+                      means you perform worse once games reach an endgame.
+                    </p>
+                    <p>
+                      <strong>Endgame Score Loss:</strong> your Endgame score minus the Achievable score
+                      from your endgame-entry positions. Negative means you converted your endgame entry positions
+                      worse than a 2300+ rated rapid player would on average.
+                    </p>
+                    <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating
                       level. As your rating changes, you face stronger or weaker opponents, so trends may not
                       directly indicate improvement or stagnation in absolute terms. If you often play against
@@ -417,10 +426,9 @@ export function EndgamesPage() {
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
-              <EndgameStartVsEndSection data={perfData} />
-              <div className="charcoal-texture rounded-md p-4">
-                <EndgamePerformanceSection data={perfData} scoreGap={scoreGapData} />
-              </div>
+              {scoreGapData && (
+                <EndgameOverallPerformanceSection data={perfData} scoreGap={scoreGapData} />
+              )}
               {scoreGapData && scoreGapData.timeline.length > 0 && (
                 <div className="charcoal-texture rounded-md p-4">
                   <EndgameScoreOverTimeChart
