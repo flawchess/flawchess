@@ -29,7 +29,7 @@ vi.mock('recharts', async () => {
 import {
   EndgameScoreOverTimeChart,
   SCORE_BAND_CLASS,
-} from '../EndgamePerformanceSection';
+} from '../EndgameScoreOverTimeChart';
 import {
   SCORE_TIMELINE_FILL_ABOVE,
   SCORE_TIMELINE_FILL_BELOW,
