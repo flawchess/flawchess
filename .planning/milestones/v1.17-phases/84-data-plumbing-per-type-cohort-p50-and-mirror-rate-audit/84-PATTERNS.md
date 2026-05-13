@@ -1,154 +1,34 @@
-# Phase 84: Data plumbing — per-type cohort p50 + mirror-rate audit — Pattern Map
+# Phase 84: Data plumbing — mirror-rate audit - Pattern Map
 
-**Mapped:** 2026-05-12
-**Files analyzed:** 7 (5 modified, 2 created)
-**Analogs found:** 7 / 7 (every modified file extends or directly mirrors an in-repo pattern from Phase 60 / 63 / 82 / 83)
+**Mapped:** 2026-05-12 (regenerated post-pivot; supersedes prior DATA-01 codegen mapping)
+**Files analyzed:** 4 (2 modified source, 1 modified tests, 1 created audit prose)
+**Analogs found:** 4 / 4 (every target mirrors an in-repo pattern; no greenfield)
+
+**Pivot note.** The prior `84-PATTERNS.md` (now overwritten) covered DATA-01 codegen targets (`app/services/endgame_zones.py`, `scripts/gen_endgame_zones_ts.py`, `frontend/src/generated/endgameZones.ts`, `tests/services/test_endgame_zones.py`). DATA-01 was dropped 2026-05-12 by the single-bullet doctrine (see `.planning/notes/v1.17-single-bullet-doctrine.md`); those files are **out of scope** for Phase 84 and intentionally absent from the classification table below.
 
 ## File Classification
 
-| File | New/Modified | Role | Data Flow | Closest Analog | Match Quality |
-|---|---|---|---|---|---|
-| `app/services/endgame_zones.py` | modified | dataclass extension + constant table | static module-level lookup | self (existing `PerClassBands` dataclass, lines 320-339) | exact (extend existing dataclass + table) |
-| `scripts/gen_endgame_zones_ts.py` | modified | codegen emitter | string formatting / file write | self (`_format_per_class_gauge_zones`, lines 67-78) | exact (extend existing emitter clause) |
-| `frontend/src/generated/endgameZones.ts` | regenerated | generated TS output | build artifact | self (lines 65-72) | exact (regenerated, not hand-edited) |
-| `app/schemas/endgames.py` | modified | Pydantic v2 response schema | wire I/O | `MaterialRow.opponent_score` / `opponent_games` (lines 215-237) | exact (Phase 60 already-shipped pattern; Section 3 mirrors Section 2) |
-| `app/services/endgame_service.py` | modified | service-layer accumulator | aggregation / transform | `_compute_score_gap_material` mirror-bucket block (lines 824-855) | exact (per-class adaptation of Phase 60 same-game-symmetry pattern) |
-| `tests/services/test_endgame_zones.py` | modified (append) | unit test class | assertion / sanity | `TestRegistrySanity` (lines 192-240) | role-match (registry/dataclass sanity tests) |
-| `tests/test_endgame_service.py` | modified (append) | unit test class | assertion / fixture-driven | `TestScoreGapMaterialOpponentBaseline` (lines 1381-1474) | exact (per-class adaptation of Section 2 mirror-identity tests) |
-| `84-01-SUMMARY.md` (or similar) | created | inline audit doc | documentation | Phase 83 D-16 ENTRY_EXPECTED_SCORE summary doc | role-match (deferred — planner produces) |
+| New/Modified File | Action | Role | Data Flow | Closest Analog | Match Quality |
+|-------------------|--------|------|-----------|----------------|---------------|
+| `app/schemas/endgames.py` | modify | schema (Pydantic v2 response model) | response-shape | `MaterialRow` (same file, lines 215-237) | exact (same file, same pattern family) |
+| `app/services/endgame_service.py` | modify | service (aggregation / business logic) | transform (in-memory mirror identity) | `_compute_score_gap_material` mirror block (same file, lines 824-855) | exact (same file, sibling function, same identity scaled per-class) |
+| `tests/test_endgame_service.py` | modify | test (unit) | request-response (function under test) | `TestScoreGapMaterialOpponentBaseline` (same file, lines 1381-1474) for assertions; `TestAggregateEndgameStats` (same file, lines 181-211) for row-construction convention | exact (both templates live in target file) |
+| `…/84-data-plumbing-…/SUMMARY.md` § Section 2 audit | create | doc (prose audit deliverable) | static text | n/a — the audit content is locked by CONTEXT D-01/D-02; closest format reference is any prior phase SUMMARY § that cites file:line evidence | n/a (prose; no code analog) |
 
 ## Pattern Assignments
 
-### `app/services/endgame_zones.py` (dataclass extension, static lookup)
+### `app/schemas/endgames.py` (schema, response-shape)
 
-**Analog:** self — extend existing `PerClassBands` dataclass + `PER_CLASS_GAUGE_ZONES` table
+**Analog:** `MaterialRow` in the same file (lines 215-237). Section 3's four new fields on `ConversionRecoveryStats` deliberately copy the `MaterialRow.opponent_score: float | None` + `MaterialRow.opponent_games: int` pair shape so Section 2 and Section 3 carry one wire convention across the `/api/endgames/overview` response.
 
-**Source-of-truth context (lines 310-339):**
-```python
-# PER_CLASS_GAUGE_ZONES — per-endgame-class typical bands for Conversion and
-# Recovery. Source: reports/benchmarks-2026-05-01.md (260501-s0u benchmark
-# calibration v2), pooled p25/p75 per class. Codegen'd to frontend via
-# scripts/gen_endgame_zones_ts.py.
-@dataclass(frozen=True)
-class PerClassBands:
-    """Typical [lower, upper] bands for Conversion and Recovery for one endgame type."""
+**Existing `ConversionRecoveryStats` to extend** (lines 19-42):
 
-    conversion: tuple[float, float]
-    recovery: tuple[float, float]
-
-
-PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
-    "rook": PerClassBands(conversion=(0.65, 0.75), recovery=(0.26, 0.36)),
-    "minor_piece": PerClassBands(conversion=(0.63, 0.73), recovery=(0.31, 0.41)),
-    "pawn": PerClassBands(conversion=(0.67, 0.79), recovery=(0.23, 0.34)),
-    "queen": PerClassBands(conversion=(0.73, 0.83), recovery=(0.20, 0.30)),
-    "mixed": PerClassBands(conversion=(0.65, 0.75), recovery=(0.28, 0.38)),
-    "pawnless": PerClassBands(conversion=(0.70, 0.80), recovery=(0.21, 0.31)),
-}
-```
-
-**Extension pattern (D-01 + D-03 + D-04):**
-- Add one field `p50: tuple[float, float]` to the frozen dataclass — keep field order `(conversion, recovery, p50)` so the dataclass docstring + table layout reads top-down.
-- Populate every existing `PerClassBands(...)` row with a `p50=(c, r)` kwarg using the 6 values from D-03 (2dp rounded per Open Question 1 recommendation).
-- Comment near the table must read: `"pooled per-class typical centre, source: §6 mean (≈ per-user p50)"` per D-04 wording.
-
-**Type-safety pattern (existing, do not change):**
-- `Mapping[EndgameClass, PerClassBands]` annotation stays correct after the value type expands.
-- `EndgameClass = Literal[...]` imported from `app.schemas.endgames` — keep this.
-
-**Downstream consumers (do NOT touch):**
-- `per_class_zone_spec()` (lines 390-403) reads `bands.conversion` / `bands.recovery` only; safe.
-- `assign_per_class_zone()` (lines 406-420) delegates to `per_class_zone_spec()`; safe.
-
----
-
-### `scripts/gen_endgame_zones_ts.py` (codegen emitter)
-
-**Analog:** self — extend `_format_per_class_gauge_zones()` (lines 67-78)
-
-**Current emitter:**
-```python
-def _format_per_class_gauge_zones() -> str:
-    """Emit the PER_CLASS_GAUGE_ZONES object literal.
-
-    Each class entry has { conversion: [lower, upper], recovery: [lower, upper] }.
-    Consumers wrap with colorizeGaugeZones() on the FE side, same as FIXED_GAUGE_ZONES.
-    """
-    lines: list[str] = []
-    for cls, bands in PER_CLASS_GAUGE_ZONES.items():
-        c_lo, c_hi = bands.conversion
-        r_lo, r_hi = bands.recovery
-        lines.append(f"  {cls}: {{ conversion: [{c_lo}, {c_hi}], recovery: [{r_lo}, {r_hi}] }},")
-    return "\n".join(lines) + "\n"
-```
-
-**Extension pattern (D-02):**
-- Unpack `p50_c, p50_r = bands.p50` alongside the existing IQR tuples.
-- Append `p50: { conversion: <num>, recovery: <num> }` as a **third key on the same line** (Pitfall 2: line-wrapping triggers whitespace-only diff on every class). Use `f"p50: {{ conversion: {p50_c}, recovery: {p50_r} }}"`.
-- Update the docstring to mention the new key.
-- Update the comment above `export const PER_CLASS_GAUGE_ZONES` in `_render()` (lines 136-140) to reference the new `p50` key.
-
-**Floating-point formatting (Pitfall 6):**
-- The existing IQR emission uses raw f-string interpolation of Python floats (`{c_lo}` → `0.65`, `{r_hi}` → `0.3` after trailing-zero stripping). Be consistent: emit p50 values the same way. 2dp Python floats `0.71`, `0.30` will render as `0.71`, `0.3` — that's the existing convention, do not switch to `:.2f` mid-file.
-
-**CI drift guard (existing, do not touch):**
-- `.github/workflows/ci.yml:47-50` runs `uv run python scripts/gen_endgame_zones_ts.py && git diff --exit-code frontend/src/generated/endgameZones.ts`. The regenerated TS file must be committed in the same commit as the Python changes.
-
----
-
-### `frontend/src/generated/endgameZones.ts` (regenerated output)
-
-**Analog:** self — current emitted shape (lines 65-72)
-
-**Current shape:**
-```ts
-export const PER_CLASS_GAUGE_ZONES = {
-  rook: { conversion: [0.65, 0.75], recovery: [0.26, 0.36] },
-  minor_piece: { conversion: [0.63, 0.73], recovery: [0.31, 0.41] },
-  pawn: { conversion: [0.67, 0.79], recovery: [0.23, 0.34] },
-  queen: { conversion: [0.73, 0.83], recovery: [0.2, 0.3] },
-  mixed: { conversion: [0.65, 0.75], recovery: [0.28, 0.38] },
-  pawnless: { conversion: [0.7, 0.8], recovery: [0.21, 0.31] },
-} as const;
-```
-
-**Expected post-regeneration shape (D-02):**
-```ts
-export const PER_CLASS_GAUGE_ZONES = {
-  rook: { conversion: [0.65, 0.75], recovery: [0.26, 0.36], p50: { conversion: 0.71, recovery: 0.3 } },
-  // ... 5 more classes ...
-} as const;
-```
-
-**Rule (Phase 63 D-01):** Do NOT hand-edit. Regenerate by running `uv run python scripts/gen_endgame_zones_ts.py`.
-
----
-
-### `app/schemas/endgames.py` (Pydantic v2 response schema)
-
-**Analog:** `MaterialRow` (same file, lines 215-237) — the already-shipped Phase 60 pattern that Section 3 mirrors
-
-**Pattern excerpt (MaterialRow, lines 226-237):**
-```python
-class MaterialRow(BaseModel):
-    """One row in the eval-stratified WDL table ..."""
-
-    bucket: MaterialBucket
-    label: str
-    games: int
-    win_pct: float  # 0-100
-    draw_pct: float  # 0-100
-    loss_pct: float  # 0-100
-    score: float  # 0.0-1.0, formula: (win_pct + draw_pct/2) / 100
-    # opponent_score: mirror-bucket score (1 - user_score); None when sample < _MIN_OPPONENT_SAMPLE.
-    opponent_score: float | None
-    # opponent_games: opponent's sample size (== swap-bucket game count).
-    opponent_games: int
-```
-
-**Current target dataclass (`ConversionRecoveryStats`, lines 19-42):**
 ```python
 class ConversionRecoveryStats(BaseModel):
+    """Inline conversion/recovery stats for one endgame category (D-06, D-08, D-09).
+    ...
+    """
+
     conversion_pct: float
     conversion_games: int
     conversion_wins: int
@@ -162,31 +42,35 @@ class ConversionRecoveryStats(BaseModel):
     recovery_draws: int
 ```
 
-**Extension pattern (D-07):**
-- Append 4 fields **at the end** of `ConversionRecoveryStats` (Pitfall 1 — none of the existing fields have defaults, but the new ones must not appear before required fields if defaults are introduced):
-  ```python
-  # Phase 84 (DATA-02): per-type opponent baselines via same-game symmetry,
-  # mirroring MaterialRow.opponent_score / opponent_games (Phase 60).
-  # opponent_*_pct gates on the MIRROR sample (not the field's own bucket):
-  #   opponent_conversion_pct gates on recovery_games >= _MIN_OPPONENT_SAMPLE
-  #   opponent_recovery_pct   gates on conversion_games >= _MIN_OPPONENT_SAMPLE
-  opponent_conversion_pct: float | None
-  opponent_conversion_games: int
-  opponent_recovery_pct: float | None
-  opponent_recovery_games: int
-  ```
-- Match `MaterialRow`'s nullability convention exactly: `_pct` fields are `float | None`, `_games` are always `int` (never `None`; use `0` for empty samples — see Pitfall "Treating `opponent_games` as `int | None`" in RESEARCH.md).
-- Comment style mirrors `MaterialRow` inline comments (one-line `# field: meaning`).
+**Pattern to copy from `MaterialRow`** (lines 234-237):
 
-**Update docstring** on `ConversionRecoveryStats` to mention the new opponent fields and reference Phase 84.
+```python
+# opponent_score: mirror-bucket score (1 - user_score); None when sample < _MIN_OPPONENT_SAMPLE.
+opponent_score: float | None
+# opponent_games: opponent's sample size (== swap-bucket game count).
+opponent_games: int
+```
+
+**Extension (per CONTEXT D-03):** append four required fields after `recovery_draws`. No defaults (consistent with sibling fields — none of the existing fields default). Update the docstring to add a "Phase 84:" paragraph referencing the mirror identity per `EndgameClass`. Field types match the Phase 60 convention exactly: `float | None` for the `_pct`, plain `int` for the `_games`.
+
+```python
+# Phase 84: opponent baseline via same-game mirror identity (D-03, D-04).
+opponent_conversion_pct: float | None  # None when recovery_games < _MIN_OPPONENT_SAMPLE
+opponent_conversion_games: int          # == recovery_games (mirror sample, possibly 0)
+opponent_recovery_pct: float | None    # None when conversion_games < _MIN_OPPONENT_SAMPLE
+opponent_recovery_games: int            # == conversion_games (mirror sample, possibly 0)
+```
+
+**Comment-at-fix-site rule (CLAUDE.md).** The two `_pct` fields are gated on the **mirror** bucket size, not the own bucket size — that asymmetry is non-obvious and is the most likely pitfall (RESEARCH Pitfall 2). The inline comment must spell out the gating bucket explicitly so future readers don't guess.
 
 ---
 
-### `app/services/endgame_service.py` (service accumulator wiring)
+### `app/services/endgame_service.py` (service, transform)
 
-**Analog:** `_compute_score_gap_material` mirror-bucket block (same file, lines 824-855) — the Section 2 template
+**Analog:** `_compute_score_gap_material` mirror-bucket block at lines 824-855 in the same file (the Phase 60 in-repo template). Phase 84 scales the same identity per-`EndgameClass` instead of per-`MaterialBucket`.
 
-**Pattern excerpt (Section 2, lines 824-855):**
+**Source-of-truth excerpt (Phase 60 template)** (lines 824-855):
+
 ```python
 # Phase 60: opponent baseline via same-game symmetry. The opponent's
 # score in any game set is 1 - user_score (arithmetic identity from
@@ -211,6 +95,8 @@ for bucket_key in ("conversion", "parity", "recovery"):
     material_rows.append(
         MaterialRow(
             bucket=b2,
+            label=_MATERIAL_BUCKET_LABELS[b2],
+            games=bucket_games[b2],
             ...
             opponent_score=opponent_score,
             opponent_games=swap_games,
@@ -218,226 +104,171 @@ for bucket_key in ("conversion", "parity", "recovery"):
     )
 ```
 
-**Insertion site (existing `_aggregate_endgame_stats`, lines 322-388):**
-The accumulator already computes `conversion_games / wins / draws / losses` and `recovery_games / wins / draws / saves` per `endgame_class`. The mirror-identity wiring goes between line 355 (after `recovery_pct = ...`) and line 357 (`conversion_stats = ConversionRecoveryStats(...)`).
+**Wiring site (per CONTEXT D-06):** between line 355 (after `recovery_pct = …`) and line 357 (`conversion_stats = ConversionRecoveryStats(…)`) inside the `for endgame_class in wdl:` loop (loop opens at line 324, the per-class numerator/denominator block runs through line 355). No new accumulator key, no new DB query — `conversion_games`, `conversion_wins`, `conversion_draws`, `conversion_losses`, `recovery_games`, `recovery_wins`, `recovery_draws` are already local at line 355.
 
-**Adaptation pattern (per-class scope, Pitfall 3 + Pitfall 4):**
+**Extension pattern (per CONTEXT D-04, D-05, D-07):**
+
 ```python
-# Phase 84 (DATA-02): per-type opponent baseline via same-game symmetry,
-# scoped to one EndgameClass. Mirrors Phase 60's score-gap material wiring
-# (lines 824-855). Conv is win-rate, Recov is save-rate — formulas are
-# asymmetric (see Pitfall 3 in RESEARCH.md). _MIN_OPPONENT_SAMPLE = 10
-# (line 233) gates on the MIRROR sample (Pitfall 4).
-opp_conv_losses_equiv = recovery_games - recovery_wins - recovery_draws
+# Phase 84: opponent baselines via same-game mirror identity, scoped per
+# EndgameClass (D-04). Conv = win-rate, Recov = save-rate — the two
+# formulas are asymmetric (Conv: wins only in numerator; Recov: wins +
+# draws). Gating reuses _MIN_OPPONENT_SAMPLE on the *mirror* bucket size
+# (Phase 60 pattern, see _compute_score_gap_material lines 824-855).
+opponent_conversion_pct: float | None
 if recovery_games >= _MIN_OPPONENT_SAMPLE:
-    opp_conv_pct: float | None = round(opp_conv_losses_equiv / recovery_games * 100, 1)
+    recovery_losses = recovery_games - recovery_wins - recovery_draws
+    opponent_conversion_pct = round(recovery_losses / recovery_games * 100, 1)
 else:
-    opp_conv_pct = None
+    opponent_conversion_pct = None
+opponent_conversion_games = recovery_games
 
-opp_recov_saves_equiv = conversion_losses + conversion_draws
+opponent_recovery_pct: float | None
 if conversion_games >= _MIN_OPPONENT_SAMPLE:
-    opp_recov_pct: float | None = round(opp_recov_saves_equiv / conversion_games * 100, 1)
+    opponent_recovery_pct = round(
+        (conversion_losses + conversion_draws) / conversion_games * 100, 1
+    )
 else:
-    opp_recov_pct = None
-
-conversion_stats = ConversionRecoveryStats(
-    ... existing 10 kwargs ...
-    opponent_conversion_pct=opp_conv_pct,
-    opponent_conversion_games=recovery_games,   # mirror sample (always int, never None)
-    opponent_recovery_pct=opp_recov_pct,
-    opponent_recovery_games=conversion_games,   # mirror sample
-)
+    opponent_recovery_pct = None
+opponent_recovery_games = conversion_games
 ```
 
-**Conventions enforced (CLAUDE.md):**
-- `round(x, 1)` matches the existing `conversion_pct` / `recovery_pct` style (lines 346, 354). Do NOT switch to 0.0-1.0; Open Question 3 recommends matching 1dp percent.
-- No new constants — reuse `_MIN_OPPONENT_SAMPLE` from line 233.
-- No `# type: ignore`; use `# ty: ignore[rule-name]` only if absolutely required.
-- Do not invent a context dataclass for the 4 derived values (CLAUDE.md "Don't invent context dataclasses").
+**Constructor extension (lines 357-368):** the existing `ConversionRecoveryStats(…)` call already passes ten kwargs; append four more (D-03 ordering — append after `recovery_draws`). All four kwargs are required by the schema (no defaults).
+
+**Key divergences from the Phase 60 template (deliberate):**
+
+| Aspect | Phase 60 (lines 824-855) | Phase 84 (new wiring) |
+|--------|--------------------------|-----------------------|
+| Scoping | per `MaterialBucket` | per `EndgameClass` (loop iteration already open) |
+| Mirror map | explicit `swap: dict[MaterialBucket, MaterialBucket]` literal | inline arithmetic — only two mirror identities (conv↔recov within one class), a dict would be over-engineering (RESEARCH "Anti-Patterns" §1; also CLAUDE.md "Don't invent context dataclasses…") |
+| Scale | 0.0-1.0 score-style (`opponent_score`) | 0.0-100.0 percent-style with `round(x, 1)` to match local `conversion_pct` / `recovery_pct` convention at lines 346, 354 (CONTEXT D-07) |
+| Numerator | symmetric `1.0 - bucket_score[swap_bucket]` | asymmetric: Conv = `recovery_losses / recovery_games`, Recov = `(conversion_losses + conversion_draws) / conversion_games` (CONTEXT D-04 — Conv is a win-rate, Recov is a save-rate) |
+| Threshold | `_MIN_OPPONENT_SAMPLE = 10` (line 233) | **same constant reused** (CONTEXT D-05 — do not introduce a parallel `PER_CLASS_OPPONENT_SAMPLE_MIN`) |
+| `_games` typing | `int` (always emits `swap_games`, possibly `0`) | `int` (always emits `recovery_games` / `conversion_games`, possibly `0`) |
+| ty narrowing | explicit `opponent_score: float | None` annotation at first assignment (line 840) | same explicit annotation on `opponent_conversion_pct` / `opponent_recovery_pct` locals (RESEARCH Pitfall 7) |
 
 ---
 
-### `tests/services/test_endgame_zones.py` (append `TestPerClassP50`)
+### `tests/test_endgame_service.py` (test, unit)
 
-**Analog:** `TestRegistrySanity` (same file, lines 192-240) — registry shape tests
+**Primary analog (assertions / cases):** `TestScoreGapMaterialOpponentBaseline` at lines 1381-1474. Provides the canonical case-set: symmetric 60/40 mirror, empty mirror bucket, below-threshold (9 games), at-threshold (10 games).
 
-**Pattern excerpt (registry sanity style):**
-```python
-class TestRegistrySanity:
-    """Sanity checks on registry shape and constants."""
+**Secondary analog (row construction):** `TestAggregateEndgameStats` at lines 181-211 — uses **bare tuples** `(game_id, endgame_class_int, result, user_color, eval_cp, eval_mate)` to feed `_aggregate_endgame_stats`. The `_FakeRow` helper at line 1391 is scoped to `_compute_score_gap_material` tests and is **not** the natural fit here.
 
-    def test_all_scalar_metrics_have_entries(self) -> None:
-        ...
-        assert set(ZONE_REGISTRY.keys()) == {
-            "score_gap",
-            ...
-        }
+**Source-of-truth excerpt (Section 2 mirror template, `test_opponent_baseline_symmetric_60_40`, lines 1405-1432):**
 
-    def test_bucketed_recovery_matches_benchmark(self) -> None:
-        """260503: recovery typical band tightened ..."""
-        for bucket in ("conversion", "parity", "recovery"):
-            spec = BUCKETED_ZONE_REGISTRY["recovery_save_pct"][bucket]
-            assert spec.typical_lower == 0.24
-            ...
-```
-
-**Import block (existing, top of file, lines 6-13):**
-```python
-from app.services.endgame_zones import (
-    BUCKETED_ZONE_REGISTRY,
-    NEUTRAL_TIMEOUT_THRESHOLD,
-    ZONE_REGISTRY,
-    assign_bucketed_zone,
-    assign_zone,
-    sample_quality,
-)
-```
-
-**Extension pattern (append a new class):**
-- New class `TestPerClassP50` at the end of the file.
-- Import `PER_CLASS_GAUGE_ZONES` (add to the existing import block at lines 6-13 to keep imports tidy).
-- 3-5 test methods covering: presence of `p50` on every class, value match against the published benchmark (per-class with `pytest.approx(..., abs=0.005)`), and the soft IQR-contains-p50 sanity check (skip pawnless per D-05).
-- Follow the `def test_xxx(self) -> None:` annotation style (matches existing `TestRegistrySanity` methods at lines 195, 225).
-
----
-
-### `tests/test_endgame_service.py` (append per-type opponent tests to `TestAggregateEndgameStats`)
-
-**Analog:** `TestScoreGapMaterialOpponentBaseline` (same file, lines 1381-1474) — the Section 2 mirror-identity test pattern
-
-**Pattern excerpt (Section 2 mirror-identity test, lines 1405-1432):**
 ```python
 def test_opponent_baseline_symmetric_60_40(self):
     """User Conv 60% over 100 games and User Recov 40% over 100 games:
-    Conv row's opponent_score == 1 - 0.40 = 0.60 (mirror of Recov), ..."""
+    Conv row's opponent_score == 1 - 0.40 = 0.60 (mirror of Recov),
+    Recov row's opponent_score == 1 - 0.60 = 0.40 (mirror of Conv)."""
     conv_rows = [self._conversion_row(i, "1-0") for i in range(60)] + [
         self._conversion_row(i + 60, "0-1") for i in range(40)
     ]
     rec_rows = [self._recovery_row(i + 100, "1-0") for i in range(40)] + [
         self._recovery_row(i + 140, "0-1") for i in range(60)
     ]
-    entry_rows = conv_rows + rec_rows
-    endgame_wdl = self._make_wdl(100, 0, 100)
-    non_endgame_wdl = self._make_wdl(0, 0, 0)
-    result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-    conv = result.material_rows[0]
-    rec = result.material_rows[2]
+    ...
     assert conv.opponent_score == pytest.approx(0.60, abs=1e-9)
     assert conv.opponent_games == 100
-    ...
 ```
 
-**Boundary tests (lines 1446-1474):**
-- `test_opponent_baseline_below_threshold_9_games`: swap-bucket sample = 9, expect `opponent_score is None`, `opponent_games == 9`.
-- `test_opponent_baseline_at_threshold_10_games`: swap-bucket sample = 10, expect non-None.
+**Source-of-truth excerpt (row-construction convention for `_aggregate_endgame_stats`, lines 197-211):**
 
-**Row shape convention (lines 184-188 of `TestAggregateEndgameStats`):**
-```
-(game_id, endgame_class_int, result, user_color, eval_cp, eval_mate)
-where endgame_class_int is 1=rook, 2=minor_piece, ...
+```python
+rows = [
+    (1, 1, "1-0", "white", 100, None),       # rook conversion win
+    (2, 3, "1-0", "white", 50, None),        # pawn conversion win
+    (3, 3, "1-0", "white", 0, None),         # pawn parity win
+    (4, 3, "0-1", "white", -100, None),      # pawn recovery loss
+]
+result = _aggregate_endgame_stats(rows)
 ```
 
-**Adaptation pattern (append to `TestAggregateEndgameStats`, around line 360):**
-- Construct rows directly as tuples (matching the existing `_aggregate_endgame_stats` test style at lines 199-205, 216-219, 231-234) — do NOT replicate the `_FakeRow` dataclass helper used in `TestScoreGapMaterialOpponentBaseline`. The aggregate tests use bare tuples.
-- Use `_aggregate_endgame_stats(rows)` not `_compute_score_gap_material(...)`.
-- Pick the row by class: `rook = next(c for c in result if c.endgame_class == "rook")`.
-- Assert on `rook.conversion.opponent_conversion_pct` / `opponent_conversion_games` / `opponent_recovery_pct` / `opponent_recovery_games`.
-- Required test cases (RESEARCH.md "Phase Requirements → Test Map"):
-  1. `test_per_type_opponent_conversion_pct_mirror_identity` — symmetric 60/40 case, verify both opp_conv_pct and opp_recov_pct.
-  2. `test_per_type_opponent_pct_none_below_threshold` — 100 conv + 9 recov: opp_conv_pct is None, opp_conv_games == 9; opp_recov_pct populated, opp_recov_games == 100.
-  3. `test_per_type_opponent_pct_at_threshold_10` — boundary case at exactly 10 mirror games.
-  4. `test_per_type_opponent_zero_sample` — both conv_games == 0 and recov_games == 0 case: no DivByZero, fields stay sane.
-- Use `pytest.approx(value, abs=0.1)` for 1dp percentage tolerance (matches existing `round(..., 1)` precision).
+**Extension pattern (per CONTEXT D-04, D-05, D-07, D-11 + Claude's discretion on placement):**
+
+Append a new test class to `TestAggregateEndgameStats` (recommended seam, RESEARCH Open Question 1) — co-located with the function under test, using the bare-tuple row convention already established at lines 197-211. Do **not** import or reuse `_FakeRow`; bare tuples suffice and match the existing convention for `_aggregate_endgame_stats`.
+
+Test cases (each maps to a DATA-02 validation requirement in `84-RESEARCH.md` Validation Architecture):
+
+1. **`test_per_type_opponent_baseline_symmetric_60_40`** — User Conv 60% (6W/0D/4L over 10 games, eval `+150`) and User Recov save-rate 40% (2W/2D/6L over 10 games, eval `-150`) in `rook` class → `opponent_conversion_pct == 60.0` (= `(10 - 2 - 2) / 10 * 100`), `opponent_recovery_pct == 40.0` (= `(4 + 0) / 10 * 100`). **Asserts the formula asymmetry** (RESEARCH Pitfall 1).
+2. **`test_per_type_opponent_baseline_below_threshold`** — mirror bucket has 9 games → `_pct is None`, `_games == 9`. **Asserts the `< 10` gate**.
+3. **`test_per_type_opponent_baseline_at_threshold`** — mirror bucket has exactly 10 games → `_pct` is non-None, `_games == 10`. **Asserts the `>=` boundary** (CONTEXT D-05).
+4. **`test_per_type_opponent_baseline_zero_sample`** — mirror bucket has 0 games → `_pct is None`, `_games == 0`, no `ZeroDivisionError`. **Asserts the gating-is-the-guard property** (RESEARCH Pitfall 6).
+5. **`test_per_type_opponent_baseline_schema_shape`** — construct stats with non-trivial data; assert `isinstance(stats.opponent_conversion_pct, float)`, `isinstance(stats.opponent_conversion_games, int)`, `stats.opponent_recovery_pct is None or isinstance(stats.opponent_recovery_pct, float)`, `isinstance(stats.opponent_recovery_games, int)`. **Asserts the `_games: int` convention** (RESEARCH Pitfall 3) and that the new fields exist (regression guard against a future stale-schema mistake).
+
+Class seam: a sub-class `class TestPerTypeOpponentBaseline(TestAggregateEndgameStats):` is fine, or append methods directly to `TestAggregateEndgameStats`. Planner picks; both stay inside the existing test class hierarchy and reuse the bare-tuple convention.
 
 ---
 
-### `84-01-SUMMARY.md` (audit doc, D-10)
+### Phase SUMMARY.md § "Section 2 audit" (doc, static text)
 
-**Analog:** Phase 83's plan-summary doc (in `.planning/milestones/v1.16-phases/83-*/`) — same milestone-track structure
+**Analog:** no in-repo code analog (this is prose). Closest format reference is the audit-style sections that prior phases include in their SUMMARY.md citing file:line evidence (e.g. cross-references in `.planning/milestones/v1.10-phases/60-*/` for the original Phase 60 mirror-bucket wiring).
 
-**Content pattern (planner produces):**
-- Section 2 audit (already-wired):
-  - Cite Phase 60 commit/phase reference.
-  - List file:line refs: `app/services/endgame_service.py:824-855`, `app/schemas/endgames.py:215-237`, `frontend/src/components/charts/EndgameScoreGapSection.tsx:111-145`.
-  - Confirm: no backend work needed for Section 2.
-- Section 3 fields added:
-  - Enumerate the 4 new `ConversionRecoveryStats` fields.
-  - Document mirror identities (from D-07 and Pitfall 3).
-  - Note threshold reuse: `_MIN_OPPONENT_SAMPLE = 10` (gates on mirror sample, not own sample).
-- Cross-reference: Phase 87 will consume these fields for per-type peer bullets.
-- Note threshold-constant duality: backend `_MIN_OPPONENT_SAMPLE` vs frontend `MIN_OPPONENT_BASELINE_GAMES` (RESEARCH.md "Project Constraints" final bullet).
+**Required content** (per CONTEXT D-02):
 
----
+1. **What's already wired** — bullet list of the components Phase 86 needs, each with file:line citation:
+   - `MaterialRow.opponent_score: float | None` + `MaterialRow.opponent_games: int` — `app/schemas/endgames.py:215-237`.
+   - `ScoreGapMaterialResponse.material_rows` carries the three-row table on `/api/endgames/overview` — `app/schemas/endgames.py:279-305`.
+   - `EndgameOverviewResponse` composes the response — `app/schemas/endgames.py:475-491`.
+   - Phase 60 wiring in `_compute_score_gap_material` — `app/services/endgame_service.py:824-855`.
+   - Frontend consumer pattern (`MIRROR_BUCKET` map + `opponentRate()` helper) — `frontend/src/components/charts/EndgameScoreGapSection.tsx:111-145`.
+2. **How Phase 86 derives `Opp Skill`** — one paragraph: Skill is a composite, so `Opp Skill` is computed client-side using the same composite formula as `Your Skill`, fed by `MaterialRow[conversion].opponent_score` (`opp_conv`) and `MaterialRow[recovery].opponent_score` (`opp_recov`) already on the wire. No new payload field for Skill.
+3. **Threshold gating** — explicit note that `_MIN_OPPONENT_SAMPLE = 10` (`app/services/endgame_service.py:233`) is the single threshold across Section 2 and Section 3.
+4. **Cross-reference** — Phase 60 introduced the mirror-bucket pattern; Phase 84 extends it per-class for Section 3.
+
+**Length target:** ~15 lines in SUMMARY.md (CONTEXT D-11 — if it balloons past ~30 lines, planner may split into a second plan; otherwise it lives inline alongside the schema/service/test plan).
 
 ## Shared Patterns
 
-### Pattern A: Python-authoritative + TS codegen + CI drift guard (Phase 63 D-01)
-
-**Source:** `app/services/endgame_zones.py` + `scripts/gen_endgame_zones_ts.py` + `.github/workflows/ci.yml:47-50`
-
-**Apply to:** Any new zone band, threshold, or per-class constant. In this phase, the new `p50` field on `PerClassBands`.
-
-**Rule:**
-1. Define the constant in Python (`endgame_zones.py`).
-2. Extend the emitter (`gen_endgame_zones_ts.py`) to write it into the TS mirror.
-3. Run the emitter locally; commit both Python + regenerated `endgameZones.ts` in one commit.
-4. CI runs the emitter again with `git diff --exit-code` — drift fails the build.
-
-**Anti-pattern:** Hand-editing `frontend/src/generated/endgameZones.ts`. The file header literally says `// AUTO-GENERATED — do not edit by hand.`
-
-### Pattern B: Same-game mirror-bucket symmetry (Phase 60)
+### Pattern A: Same-game mirror-bucket symmetry (Phase 60)
 
 **Source:** `app/services/endgame_service.py:824-855`
+**Identity:** Within one scope, `opp_wins(in user bucket X) = user_losses(in user bucket X)`. Cross-bucket: user's conversion games are by definition opponent's recovery games (and vice versa) — opponent entered with the opposite eval sign.
+**Gating rule:** `_MIN_OPPONENT_SAMPLE = 10` applies to the **mirror bucket's** game count, **not** the field's own bucket. The "sample" backing an opponent baseline is the mirror bucket because that's where the analogous games physically came from. Restated for Phase 84:
+- `opponent_conversion_pct` is `None` when `recovery_games < 10`.
+- `opponent_recovery_pct` is `None` when `conversion_games < 10`.
+**Apply to:** the service wiring in `_aggregate_endgame_stats` (the one new block) and to every test case that exercises the boundary.
 
-**Apply to:** Any per-bucket or per-class peer baseline derived from the user's own games. In this phase, the per-class opponent fields on `ConversionRecoveryStats`.
+### Pattern B: Pydantic v2 schema field ordering on `ConversionRecoveryStats`
 
-**Identity:** opp_wins(in user's bucket X) = user_losses(in user's bucket X); opp_draws = user_draws. Cross-bucket: user "conversion" games are by definition opponent "recovery" games. Scoping to one `EndgameClass` keeps the identity exact.
+**Source convention:** `ConversionRecoveryStats` (`app/schemas/endgames.py:19-42`) and `MaterialRow` (`app/schemas/endgames.py:215-237`) both lack defaults — every field is required.
+**Rule:** the four new fields are appended after `recovery_draws` (CONTEXT D-03 — keep the four contiguous; do not interleave with the existing conv/recov groups). No defaults. All constructor call sites must pass them; there is exactly one constructor site in the codebase, `endgame_service.py:357-368`, and Phase 84 modifies it. No other producer constructs `ConversionRecoveryStats` (verified — the only inbound construction is in `_aggregate_endgame_stats`).
+**Apply to:** the schema edit and the single constructor extension.
 
-**Threshold:** `_MIN_OPPONENT_SAMPLE = 10` (`endgame_service.py:233`). Gate the `_pct` field on the **mirror** sample size, not the field's own bucket size. `_games` companion field is always `int` (== mirror sample size, possibly 0).
+### Pattern C: `EndgameClass` Literal typing (CLAUDE.md type-safety rule)
 
-**Anti-pattern:** Computing opponent rates on the frontend from the user's WDL fields — duplicates the math and creates two drift-prone code paths (D-08 trade-off; D-07 resolves by surfacing on the wire).
+**Source:** `app/schemas/endgames.py:15` — `EndgameClass = Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"]`.
+**Rule:** every dict keyed by class uses `dict[EndgameClass, …]`, every function parameter that takes a class uses `EndgameClass`, no bare `str`. The new mirror identity operates inside the existing `for endgame_class in wdl:` loop (line 324), where `endgame_class: EndgameClass` is already in scope — no new typing surface is introduced for the wiring itself. Tests assert on `category.endgame_class == "rook"` (literal string), which is type-compatible.
+**Apply to:** every new local that is per-class (none introduced in this phase — the new locals are scalars).
 
-### Pattern C: Pydantic v2 schema field ordering (Pitfall 1)
+### Pattern D: `round(x, 1)` percent convention in `_aggregate_endgame_stats`
 
-**Source:** `MaterialRow` (lines 215-237) and `ConversionRecoveryStats` (lines 19-42) both lack defaults — all fields required.
+**Source:** existing `conversion_pct = round(conversion_wins / conversion_games * 100, 1) if conversion_games > 0 else 0.0` at `endgame_service.py:345-347` and `recovery_pct = round(recovery_saves / recovery_games * 100, 1) if recovery_games > 0 else 0.0` at `endgame_service.py:353-355`.
+**Rule:** stay on 0.0-100.0 scale with one decimal for every `_pct` field on `ConversionRecoveryStats`. Do not switch to a 0.0-1.0 score-style scale mid-method (CONTEXT D-07). The Phase 60 template uses 0.0-1.0 because `MaterialRow.score` is score-style; `ConversionRecoveryStats` is percent-style — different schemas, different local conventions. The "guard" via `> 0` that the existing fields use is unnecessary for the new fields because the `>= _MIN_OPPONENT_SAMPLE` gate is strictly tighter (10 > 0); the gate IS the divide-by-zero guard (RESEARCH Pitfall 6).
+**Apply to:** the two new `_pct` computations in the service wiring.
 
-**Apply to:** `ConversionRecoveryStats` extension.
+### Pattern E (cross-cutting): Comment-at-fix-site for non-obvious gating
 
-**Rule:** Append new fields at the END of the model. Service-layer constructors must pass all new fields explicitly (matches the existing `ConversionRecoveryStats(...)` call at `endgame_service.py:357-368`).
-
-### Pattern D: `EndgameClass` Literal typing (CLAUDE.md type-safety)
-
-**Source:** `app/schemas/endgames.py:15` — `EndgameClass = Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"]`
-
-**Apply to:** All new accumulator keys, schema field types, dict annotations.
-
-**Rule:** Never bare `str`. Use `EndgameClass` (backend) or `EndgameClassKey` (frontend). The `Mapping[EndgameClass, PerClassBands]` annotation on `PER_CLASS_GAUGE_ZONES` is the canonical example.
-
-### Pattern E: Sentry capture for unexpected DB shapes (CLAUDE.md Sentry rules)
-
-**Source:** `app/services/endgame_service.py:287-292`
-```python
-sentry_sdk.set_context("invalid_endgame_class", {"class_int": endgame_class_int})
-sentry_sdk.set_tag("source", "endgame_aggregate")
-sentry_sdk.capture_exception(ValueError("Unknown endgame_class integer from DB"))
-```
-
-**Apply to:** No new sites in this phase — the new mirror-identity arithmetic is pure (no DB / no external IO / no exceptional paths). Do not add new captures.
+**Source:** CLAUDE.md "Comment bug fixes" + the existing Phase 60 comment block at `endgame_service.py:824-829`.
+**Rule:** the non-obvious decisions in Phase 84 — (1) gating on the mirror bucket size, not the own bucket size; (2) Conv-vs-Recov formula asymmetry; (3) percent-not-score scale — must each be flagged inline. One block-comment above the new wiring suffices (matching the existing Phase 60 comment style); the schema doc-comment above each `opponent_*_pct` field also spells out the gating-bucket asymmetry.
+**Apply to:** the service wiring block and the schema field comments.
 
 ## No Analog Found
 
-None. Every modified/created file in this phase extends or directly mirrors an in-repo pattern from Phase 60, 63, 82, or 83. The audit doc (`84-01-SUMMARY.md`) is the only "create-from-scratch" artifact, and its analog is the Phase 83 plan-summary doc structure used across all v1.16/v1.17 phases.
+| File | Reason |
+|------|--------|
+| (none) | Every code change in this phase has an in-repo template. The SUMMARY.md audit prose has no code analog by nature (it is documentation), but its content is fully specified by CONTEXT D-01/D-02 and the file:line references listed in the canonical refs section of `84-CONTEXT.md`. |
 
 ## Metadata
 
 **Analog search scope:**
-- `app/services/endgame_zones.py` (full file)
-- `app/services/endgame_service.py` (lines 220-388, 800-865 — accumulator + Section 2 mirror block)
-- `app/schemas/endgames.py` (lines 1-80, 200-260 — `ConversionRecoveryStats` + `MaterialRow`)
-- `scripts/gen_endgame_zones_ts.py` (full file)
-- `frontend/src/generated/endgameZones.ts` (full file)
-- `tests/services/test_endgame_zones.py` (lines 1-241 — full existing file)
-- `tests/test_endgame_service.py` (lines 181-360, 1380-1474 — aggregate-stats + Section 2 opponent baseline classes)
+- `app/schemas/endgames.py` (full file scanned; targets at lines 1-70, 200-310)
+- `app/services/endgame_service.py` (targets at lines 225-385, 815-865)
+- `tests/test_endgame_service.py` (targets at lines 175-225, 1375-1480)
+- `frontend/src/components/charts/EndgameScoreGapSection.tsx` — referenced only as a downstream-consumer fingerprint for the audit prose; not directly modified
 
-**Files scanned:** 7
+**Files scanned (read):** 4
+
 **Pattern extraction date:** 2026-05-12
+
+**Supersedes:** prior `84-PATTERNS.md` covering DATA-01 codegen targets (`app/services/endgame_zones.py`, `scripts/gen_endgame_zones_ts.py`, `frontend/src/generated/endgameZones.ts`, `tests/services/test_endgame_zones.py`) — those targets are out of scope for Phase 84 post-pivot. See `.planning/notes/v1.17-single-bullet-doctrine.md`.

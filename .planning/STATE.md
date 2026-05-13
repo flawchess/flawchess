@@ -2,25 +2,24 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: planning
-last_updated: "2026-05-12T22:30:00.000Z"
-last_activity: 2026-05-12
+status: executing
+last_updated: "2026-05-13T05:20:02.617Z"
+last_activity: 2026-05-13 -- Phase 84 execution started
 progress:
-  total_phases: 5
+  total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 84 (Data plumbing — per-type cohort p50 + mirror-rate audit) — not started
-Plan: —
-Status: Roadmap complete, awaiting plan-phase
-Last activity: 2026-05-12 — v1.17 roadmap created (5 phases 84-88, 30 / 30 v1 requirements mapped)
+Phase: 84 (data-plumbing-per-type-cohort-p50-and-mirror-rate-audit) — EXECUTING
+Plan: 1 of 1
+Status: Executing Phase 84
+Last activity: 2026-05-13 -- Phase 84 execution started
 
 ## Project Reference
 
