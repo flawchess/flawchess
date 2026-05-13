@@ -50,8 +50,9 @@ interface AchievableScorePopoverProps {
 }
 
 // Phase 83 (D-09, D-10): hover/tap-activated popover that explains the
-// "Achievable score" bullet next to the entry-eval bullet on tile 1 of
-// EndgameStartVsEndSection. Mirrors WdlConfidenceTooltip's stats-first
+// "Achievable score" bullet next to the entry-eval bullet in Card 2 of
+// EndgameOverallPerformanceSection (formerly EndgameStartVsEndSection tile 1,
+// redesigned in Phase 85). Mirrors WdlConfidenceTooltip's stats-first
 // layout, with a shortened Lichess-formula context paragraph appended.
 // The D-10 forbidden-framing contract is pinned by
 // __tests__/AchievableScorePopover.test.tsx.
