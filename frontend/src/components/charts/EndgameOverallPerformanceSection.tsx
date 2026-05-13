@@ -679,28 +679,16 @@ export function EndgameOverallPerformanceSection({
   const withoutScorePct = `${Math.round(withoutScore * 100)}%`;
   const withScorePct = `${Math.round(withScore * 100)}%`;
 
-  // Gap coloring mirrors the cards' Score row: zone color iff both operands
-  // are significant AND the gap is outside the neutral (blue) zone; else
-  // inherit (white). Gap "significance" is bounded by the weaker of the two
-  // operand levels — if either side is inconclusive, the gap is too.
-  // Replaces the prior zone-only behavior (D-04) per user request to unify
-  // the coloring logic across all numbers in this section.
-  function weakestLevel(a: ConfidenceLevel, b: ConfidenceLevel): ConfidenceLevel {
-    if (a === 'low' || b === 'low') return 'low';
-    if (a === 'medium' || b === 'medium') return 'medium';
-    return 'high';
+  // Score Gap / Score Loss result is always tinted by zone (red / blue / green),
+  // never default-white. Significance gating applies to the operand (score)
+  // values via operandColor, but the difference itself reads as a zone signal
+  // regardless of confidence so the user always sees where they land.
+  function gapZoneColor(value: number): string {
+    if (value < SCORE_GAP_NEUTRAL_MIN) return ZONE_DANGER;
+    if (value >= SCORE_GAP_NEUTRAL_MAX) return ZONE_SUCCESS;
+    return ZONE_NEUTRAL;
   }
-  function gapZoneColor(
-    value: number,
-    level: ConfidenceLevel,
-  ): string | undefined {
-    const inNeutralZone =
-      value >= SCORE_GAP_NEUTRAL_MIN && value < SCORE_GAP_NEUTRAL_MAX;
-    if (!isConfident(level) || inNeutralZone) return undefined;
-    return value >= SCORE_GAP_NEUTRAL_MAX ? ZONE_SUCCESS : ZONE_DANGER;
-  }
-  const gapLevel = weakestLevel(withoutLevel, withLevel);
-  const gapColor = gapZoneColor(scoreGap.score_difference, gapLevel);
+  const gapColor = gapZoneColor(scoreGap.score_difference);
 
   // Endgame Score Loss: how much the actual endgame score fell short of
   // (or exceeded) the achievable score expected from the entry eval.
@@ -718,8 +706,7 @@ export function EndgameOverallPerformanceSection({
     (lossPositive ? '+' : '') + `${Math.round(lossValue * 100)}%`;
   const showLossMath =
     data.endgame_wdl.total > 0 && data.entry_expected_score_n > 0;
-  const lossLevel = weakestLevel(withLevel, achievableLevel);
-  const lossColor = gapZoneColor(lossValue, lossLevel);
+  const lossColor = gapZoneColor(lossValue);
 
   const gridRef = useRef<HTMLDivElement>(null);
 
