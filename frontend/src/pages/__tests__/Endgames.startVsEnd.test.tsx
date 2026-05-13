@@ -10,9 +10,10 @@
  * Pressure, ELO timeline, WDL chart, GameCardList, Insights block).
  *
  * The two components the test cares about, `EndgameStartVsEndSection` and
- * `EndgamePerformanceSection` (incl. `EndgameScoreOverTimeChart`), render
- * for real so DOM-order, accordion paragraph order, and D-21 negative-scope
- * testid presence can all be asserted directly against the rendered tree.
+ * `EndgameGamesWithWithoutSection` (incl. `EndgameScoreOverTimeChart`),
+ * render for real so DOM-order, accordion paragraph order, and D-21
+ * negative-scope testid presence can all be asserted directly against the
+ * rendered tree.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -175,6 +176,7 @@ function buildPerf(
     entry_eval_n: 50,
     entry_eval_p_value: 0.001,
     endgame_score_p_value: 0.001,
+    non_endgame_score_p_value: 0.001,
     entry_eval_ci_low_pawns: 0.1,
     entry_eval_ci_high_pawns: 0.7,
     // Phase 83: in-band default; tests targeting the achievable bullet override.
@@ -270,14 +272,14 @@ function renderPage() {
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
-  it('renders EndgameStartVsEndSection before EndgamePerformanceSection (D-01)', () => {
+  it('renders EndgameStartVsEndSection before EndgameGamesWithWithoutSection (D-01)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
     const startVsEnd = container.querySelector(
       '[data-testid="endgame-start-vs-end-section"]',
     );
     const perfSection = container.querySelector(
-      '[data-testid="endgame-performance-section"]',
+      '[data-testid="endgame-games-with-without-section"]',
     );
     expect(startVsEnd).not.toBeNull();
     expect(perfSection).not.toBeNull();
@@ -339,18 +341,20 @@ describe('Endgames page — Phase 81 Plan 04 wire-up', () => {
     expect(ratingChangesIdx).toBeGreaterThan(endgameScoreIdx);
   });
 
-  it('preserves existing WDL table, Score Gap, and timeline chart (D-21 negative scope)', () => {
+  it('preserves the new Section 1 cards, Score Gap footer, and timeline chart (D-21 negative scope)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
-    // perf-wdl-table (desktop) OR perf-wdl-cards (mobile); both render in
-    // jsdom because we don't simulate a viewport. Either is acceptable.
+    // Plan 85-04 replaced the legacy perf-wdl-table / perf-wdl-cards markup
+    // with two side-by-side EndgameCard tiles plus a full-width Score Gap
+    // footer; verify both card tiles and the footer render.
     expect(
-      container.querySelector('[data-testid="perf-wdl-table"]') ||
-        container.querySelector('[data-testid="perf-wdl-cards"]'),
+      container.querySelector('[data-testid="tile-games-without-endgame"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-testid="score-gap-difference"]') ||
-        container.querySelector('[data-testid="score-gap-difference-mobile"]'),
+      container.querySelector('[data-testid="tile-games-with-endgame"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="score-gap-difference"]'),
     ).not.toBeNull();
     expect(
       container.querySelector('[data-testid="endgame-score-timeline-chart"]'),
