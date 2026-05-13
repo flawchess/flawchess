@@ -144,13 +144,13 @@ describe('EndgameOverallPerformanceSection', () => {
       <EndgameOverallPerformanceSection data={makeData()} scoreGap={makeScoreGap()} />,
     );
     expect(screen.getByTestId('endgame-overall-performance-section')).toBeTruthy();
-    expect(screen.getByTestId('tile-games-ending-middlegame')).toBeTruthy();
+    expect(screen.getByTestId('tile-games-without-endgame')).toBeTruthy();
     expect(screen.getByTestId('tile-at-endgame-entry')).toBeTruthy();
-    expect(screen.getByTestId('tile-endgame-results')).toBeTruthy();
+    expect(screen.getByTestId('tile-games-with-endgame')).toBeTruthy();
     expect(screen.getByTestId('endgame-score-gap')).toBeTruthy();
-    expect(screen.getByText('Games ending in Middlegame')).toBeTruthy();
+    expect(screen.getByText('Games without Endgame')).toBeTruthy();
     expect(screen.getByText('At Endgame Entry')).toBeTruthy();
-    expect(screen.getByText('Endgame results')).toBeTruthy();
+    expect(screen.getByText('Games with Endgame')).toBeTruthy();
     expect(screen.getByText('Endgame Score Gap')).toBeTruthy();
     expect(screen.getByText(/Do you perform better or worse when games reach an endgame/)).toBeTruthy();
   });
@@ -162,12 +162,57 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(screen.queryByText('Games with vs without Endgame')).toBeNull();
     expect(screen.queryByTestId('endgame-games-with-without-section')).toBeNull();
     expect(screen.queryByTestId('endgame-start-vs-end-section')).toBeNull();
-    expect(screen.queryByTestId('tile-games-without-endgame')).toBeNull();
-    expect(screen.queryByTestId('tile-games-with-endgame')).toBeNull();
     expect(screen.queryByTestId('tile-entry-eval')).toBeNull();
     expect(screen.queryByTestId('tile-endgame-score')).toBeNull();
     expect(screen.queryByTestId('score-gap-footer')).toBeNull();
     expect(screen.queryByTestId('perf-section-info')).toBeNull();
+  });
+
+  // ── Top-right games-count badge ──────────────────────────────────────────
+
+  it('renders games-share badge top-right of Card 1 and Card 3 with NN.N% (count) + Swords icon', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData({
+          // Card 1: 2,961 games; Card 3: 2,100 games → shares 58.5% / 41.5%
+          non_endgame_wdl: buildWdl(1480, 0, 1481, 2961),
+          endgame_wdl: buildWdl(1050, 0, 1050, 2100),
+        })}
+        scoreGap={makeScoreGap()}
+      />,
+    );
+    const badge1 = within(screen.getByTestId('tile-games-without-endgame')).getByTestId(
+      'games-count-no',
+    );
+    const badge3 = within(screen.getByTestId('tile-games-with-endgame')).getByTestId(
+      'games-count-yes',
+    );
+    expect(badge1.textContent).toContain('58.5%');
+    expect(badge1.textContent).toContain('2,961');
+    expect(badge3.textContent).toContain('41.5%');
+    expect(badge3.textContent).toContain('2,100');
+  });
+
+  it('hides the games-count badge when a card has zero games', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData({
+          non_endgame_wdl: buildWdl(0, 0, 0, 0),
+          endgame_wdl: buildWdl(10, 0, 10, 20),
+        })}
+        scoreGap={makeScoreGap()}
+      />,
+    );
+    expect(
+      within(screen.getByTestId('tile-games-without-endgame')).queryByTestId(
+        'games-count-no',
+      ),
+    ).toBeNull();
+    expect(
+      within(screen.getByTestId('tile-games-with-endgame')).queryByTestId(
+        'games-count-yes',
+      ),
+    ).toBeTruthy();
   });
 
   // ── Score math ───────────────────────────────────────────────────────────
@@ -186,8 +231,8 @@ describe('EndgameOverallPerformanceSection', () => {
         scoreGap={makeScoreGap()}
       />,
     );
-    const card1 = within(screen.getByTestId('tile-games-ending-middlegame'));
-    const card3 = within(screen.getByTestId('tile-endgame-results'));
+    const card1 = within(screen.getByTestId('tile-games-without-endgame'));
+    const card3 = within(screen.getByTestId('tile-games-with-endgame'));
     expect(card1.getByTestId('score-value-no').textContent).toBe('100%');
     expect(card3.getByTestId('score-value-yes').textContent).toBe('50%');
   });
@@ -224,11 +269,11 @@ describe('EndgameOverallPerformanceSection', () => {
         scoreGap={makeScoreGap()}
       />,
     );
-    const card1 = within(screen.getByTestId('tile-games-ending-middlegame'));
+    const card1 = within(screen.getByTestId('tile-games-without-endgame'));
     expect(card1.getByText(/Not enough data yet/i)).toBeTruthy();
     expect(card1.queryByTestId('score-value-no')).toBeNull();
     // Card 3 unaffected
-    const card3 = within(screen.getByTestId('tile-endgame-results'));
+    const card3 = within(screen.getByTestId('tile-games-with-endgame'));
     expect(card3.queryByTestId('score-value-yes')).toBeTruthy();
   });
 
@@ -247,7 +292,7 @@ describe('EndgameOverallPerformanceSection', () => {
           scoreGap={makeScoreGap()}
         />,
       );
-      const valueSpan = within(screen.getByTestId('tile-endgame-results')).getByTestId(
+      const valueSpan = within(screen.getByTestId('tile-games-with-endgame')).getByTestId(
         'score-value-yes',
       );
       expect(valueSpan.style.color).toBe('');
@@ -267,7 +312,7 @@ describe('EndgameOverallPerformanceSection', () => {
           scoreGap={makeScoreGap()}
         />,
       );
-      const card3 = within(screen.getByTestId('tile-endgame-results'));
+      const card3 = within(screen.getByTestId('tile-games-with-endgame'));
       // Score row hidden; value testid absent.
       expect(card3.queryByTestId('score-value-yes')).toBeNull();
       // Empty-state copy rendered in its place.
@@ -288,7 +333,7 @@ describe('EndgameOverallPerformanceSection', () => {
           scoreGap={makeScoreGap()}
         />,
       );
-      const valueSpan = within(screen.getByTestId('tile-endgame-results')).getByTestId(
+      const valueSpan = within(screen.getByTestId('tile-games-with-endgame')).getByTestId(
         'score-value-yes',
       );
       expect(normalizeColor(valueSpan.style.color)).toBe(normalizeColor(ZONE_SUCCESS));

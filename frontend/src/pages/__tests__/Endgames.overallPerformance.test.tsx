@@ -337,13 +337,13 @@ describe('Endgames page — Phase 85 Plan 05 single composite section', () => {
     const { container } = renderPage();
     // The 3-card composite section includes all three card tiles and the score gap.
     expect(
-      container.querySelector('[data-testid="tile-games-ending-middlegame"]'),
+      container.querySelector('[data-testid="tile-games-without-endgame"]'),
     ).not.toBeNull();
     expect(
       container.querySelector('[data-testid="tile-at-endgame-entry"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-testid="tile-endgame-results"]'),
+      container.querySelector('[data-testid="tile-games-with-endgame"]'),
     ).not.toBeNull();
     expect(
       container.querySelector('[data-testid="endgame-score-gap"]'),

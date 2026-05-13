@@ -7,7 +7,11 @@
  *
  * Layout (3-column grid on lg+, stacked on mobile):
  *   Card 1 | Card 2 | Card 3
- *   "Games ending in Middlegame" | "At Endgame Entry" | "Endgame results"
+ *   "Games without Endgame" | "At Endgame Entry" | "Games with Endgame"
+ *
+ * Cards 1 and 3 carry a top-right badge "NN.N% (count) <swords>" showing each
+ * card's share of total games — matches the games-count + Swords pattern used
+ * across the app (e.g. WDLChartRow).
  *
  * Endgame Score Gap sits in column 2 on desktop (via lg:col-start-2 on the
  * 4th grid child), naturally stacked at the bottom on mobile after Card 3.
@@ -25,7 +29,7 @@
  * Score Gap font color is zone-only (no sig test) per D-04.
  */
 
-import { Cpu } from 'lucide-react';
+import { Cpu, Swords } from 'lucide-react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
@@ -98,8 +102,10 @@ interface EndgameCardProps {
   scoreValueTestId: string;
   scorePopoverTestId: string;
   popoverAriaLabel: string;
+  gamesCountTestId: string;
   wdl: EndgameWDLSummary;
   pValue: number | null;
+  gamesShare: number;
 }
 
 function EndgameCard({
@@ -108,8 +114,10 @@ function EndgameCard({
   scoreValueTestId,
   scorePopoverTestId,
   popoverAriaLabel,
+  gamesCountTestId,
   wdl,
   pValue,
+  gamesShare,
 }: EndgameCardProps) {
   const total = wdl.total;
   const score = total > 0 ? (wdl.wins + 0.5 * wdl.draws) / total : 0;
@@ -122,13 +130,28 @@ function EndgameCard({
   const showWdl = total > 0;
   const showScoreRow = total >= MIN_GAMES_FOR_RELIABLE_STATS;
   const scorePct = `${Math.round(score * 100)}%`;
+  const sharePct = `${(gamesShare * 100).toFixed(1)}%`;
+  const gamesCountFormatted = total.toLocaleString();
 
   return (
     <div className="charcoal-texture rounded-md p-4" data-testid={tileTestId}>
-      <h3 className="text-base font-semibold mb-2">{title}</h3>
+      <div className="flex items-baseline justify-between gap-2 mb-2">
+        <h3 className="text-base font-semibold">{title}</h3>
+        {total > 0 && (
+          <span
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums whitespace-nowrap"
+            data-testid={gamesCountTestId}
+          >
+            <span>
+              {sharePct} ({gamesCountFormatted})
+            </span>
+            <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+        )}
+      </div>
       <div className="flex flex-col gap-4">
         {showWdl ? (
-          <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Win / Draw / Loss:</span>
             </span>
@@ -145,7 +168,7 @@ function EndgameCard({
         )}
 
         {showScoreRow ? (
-          <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Score:</span>
               <span
@@ -229,7 +252,7 @@ function EntryCard({ data }: EntryCardProps) {
       <div className="flex flex-col gap-4">
         {/* Row 1: entry-eval bullet (pawns) */}
         {showEntryEvalChart ? (
-          <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Endgame entry eval:</span>
               <span
@@ -275,7 +298,7 @@ function EntryCard({ data }: EntryCardProps) {
         {/* Row 2: achievable score bullet (CR-01: OFFSET-form neutralMin/neutralMax). */}
         <div data-testid="endgame-achievable-score">
           {showAchievableChart ? (
-            <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+            <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
               <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                 <span className="text-muted-foreground">Achievable score:</span>
                 <span
@@ -346,6 +369,11 @@ export function EndgameOverallPerformanceSection({
         ? ZONE_NEUTRAL
         : ZONE_DANGER;
 
+  // Share of total games per card (Card 1 = without endgame, Card 3 = with endgame).
+  const totalGames = data.non_endgame_wdl.total + data.endgame_wdl.total;
+  const withoutShare = totalGames > 0 ? data.non_endgame_wdl.total / totalGames : 0;
+  const withShare = totalGames > 0 ? data.endgame_wdl.total / totalGames : 0;
+
   return (
     <section data-testid="endgame-overall-performance-section">
       <p className="text-sm text-muted-foreground">
@@ -355,29 +383,33 @@ export function EndgameOverallPerformanceSection({
       {/* 3-column card grid. DOM order: Card 1, Card 2, Card 3, ScoreGap.
           On desktop ScoreGap is lifted to column 2 via lg:col-start-2. */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2">
-        {/* Card 1: Games ending in Middlegame (left on desktop) */}
+        {/* Card 1: Games without Endgame (left on desktop) */}
         <EndgameCard
-          title="Games ending in Middlegame"
-          tileTestId="tile-games-ending-middlegame"
+          title="Games without Endgame"
+          tileTestId="tile-games-without-endgame"
           scoreValueTestId="score-value-no"
           scorePopoverTestId="score-info-no"
-          popoverAriaLabel="Games ending in Middlegame score info"
+          popoverAriaLabel="Games without Endgame score info"
+          gamesCountTestId="games-count-no"
           wdl={data.non_endgame_wdl}
           pValue={data.non_endgame_score_p_value}
+          gamesShare={withoutShare}
         />
 
         {/* Card 2: At Endgame Entry (center on desktop — no WDL bar) */}
         <EntryCard data={data} />
 
-        {/* Card 3: Endgame results (right on desktop) */}
+        {/* Card 3: Games with Endgame (right on desktop) */}
         <EndgameCard
-          title="Endgame results"
-          tileTestId="tile-endgame-results"
+          title="Games with Endgame"
+          tileTestId="tile-games-with-endgame"
           scoreValueTestId="score-value-yes"
           scorePopoverTestId="score-info-yes"
-          popoverAriaLabel="Endgame results score info"
+          popoverAriaLabel="Games with Endgame score info"
+          gamesCountTestId="games-count-yes"
           wdl={data.endgame_wdl}
           pValue={data.endgame_score_p_value}
+          gamesShare={withShare}
         />
 
         {/* Endgame Score Gap: lg:col-start-2 places it under Card 2 on desktop.
@@ -387,7 +419,7 @@ export function EndgameOverallPerformanceSection({
           data-testid="endgame-score-gap"
         >
           <h3 className="text-base font-semibold mb-2">Endgame Score Gap</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-[14rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Difference:</span>
               <span
