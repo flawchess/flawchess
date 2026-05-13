@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- **Endgame "Overall Performance" section redesigned as 3-card composite (Phase 85).** Replaces the legacy `EndgamePerformanceSection` table and the "Start vs End" twin-tile layout with three cards: "Games ending in Middlegame" (WDL + score), "At Endgame Entry" (entry eval + Stockfish achievable score, no WDL), and "Endgame results" (WDL + score). The Endgame Score Gap tile sits under Card 2 on desktop and stacks at the bottom on mobile. Card scores use sig-gated tinting (Wilson confidence on n>=10 cohorts) and per-row info popovers explain Endgame Score Gap and Score Loss. Backend exposes `non_endgame_score_p_value` alongside the existing endgame p-value for symmetric gating.
+
 ### Fixed
 
 - **Opening Insights query plan regression for small users.** The `query_opening_transitions` standard-start filter used a correlated `EXISTS` subquery. For users with a few hundred games the planner picked `ix_gp_user_white_hash` for the inner scan (only `user_id` as index cond, row-by-row filter on `ply=0 AND full_hash=STARTING_HASH`), scanning ~25k rows per outer row × ~8k outer rows ≈ 188M shared buffer hits and ~88 s wall time. Heavy users (~20k+ games) coincidentally landed on `ix_gp_user_full_hash_move_san` and ran in ~1 s. Rewriting as an explicit `INNER JOIN` to a subquery pins the planner to the right index for both regimes: ~65 ms on the 499-game test user, equal-or-faster on a 23k-game user (928 ms vs 988 ms warm-cache).
