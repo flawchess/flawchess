@@ -227,6 +227,7 @@ def _classify_endgame_bucket(
         return "recovery"
     return "parity"
 
+
 # Phase 60: minimum opponent sample size required to display the opponent
 # baseline in the Conversion/Even/Recovery bullet chart. Matches the WDL-bar
 # mute threshold used elsewhere (e.g. Opening Explorer moves list).
@@ -354,6 +355,28 @@ def _aggregate_endgame_stats(
             round(recovery_saves / recovery_games * 100, 1) if recovery_games > 0 else 0.0
         )
 
+        # Phase 84: per-class opponent baseline via same-game mirror identity.
+        # Conv is a win-rate, Recov is a save-rate, so the two mirror formulas
+        # are asymmetric. Reuses _MIN_OPPONENT_SAMPLE (line 233), gated on the
+        # MIRROR bucket size (not the own bucket). Phase 60 introduced the
+        # pattern for Section 2 at _compute_score_gap_material (~line 824).
+        opponent_conversion_pct: float | None
+        if recovery_games >= _MIN_OPPONENT_SAMPLE:
+            recovery_losses = recovery_games - recovery_wins - recovery_draws
+            opponent_conversion_pct = round(recovery_losses / recovery_games * 100, 1)
+        else:
+            opponent_conversion_pct = None
+        opponent_conversion_games = recovery_games
+
+        opponent_recovery_pct: float | None
+        if conversion_games >= _MIN_OPPONENT_SAMPLE:
+            opponent_recovery_pct = round(
+                (conversion_losses + conversion_draws) / conversion_games * 100, 1
+            )
+        else:
+            opponent_recovery_pct = None
+        opponent_recovery_games = conversion_games
+
         conversion_stats = ConversionRecoveryStats(
             conversion_pct=conversion_pct,
             conversion_games=conversion_games,
@@ -365,6 +388,10 @@ def _aggregate_endgame_stats(
             recovery_saves=recovery_saves,
             recovery_wins=recovery_wins,
             recovery_draws=recovery_draws,
+            opponent_conversion_pct=opponent_conversion_pct,
+            opponent_conversion_games=opponent_conversion_games,
+            opponent_recovery_pct=opponent_recovery_pct,
+            opponent_recovery_games=opponent_recovery_games,
         )
 
         # _ENDGAME_CATEGORY_LABELS is exhaustive for all EndgameClass values — direct lookup.
@@ -1730,9 +1757,7 @@ def _get_endgame_performance_from_rows(
     _conf_s, p_score_raw, _se = compute_confidence_bucket(
         endgame_wdl.wins, endgame_wdl.draws, endgame_wdl.losses, endgame_wdl.total
     )
-    endgame_score_p_value: float | None = (
-        p_score_raw if endgame_wdl.total >= 10 else None
-    )
+    endgame_score_p_value: float | None = p_score_raw if endgame_wdl.total >= 10 else None
 
     # Phase 83 Plan 2 (D-04..D-07, D-21): Stockfish-baseline expected score
     # sibling aggregator over the same bucket_rows cursor. Per-game expected
@@ -1762,13 +1787,9 @@ def _get_endgame_performance_from_rows(
     entry_expected_score = ex_sum / ex_n if ex_n > 0 else 0.0
     # Wilson sig test vs 50% via the (score, n) sibling helper. Single Wilson
     # code path with compute_confidence_bucket (memory feedback_wilson_chess_score.md).
-    _conf_x, p_ex_raw, _se_ex = compute_score_confidence_from_mean(
-        entry_expected_score, ex_n
-    )
+    _conf_x, p_ex_raw, _se_ex = compute_score_confidence_from_mean(entry_expected_score, ex_n)
     # Same n >= 10 wire-format gate as entry_eval_p_value / endgame_score_p_value.
-    entry_expected_score_p_value: float | None = (
-        p_ex_raw if ex_n >= 10 else None
-    )
+    entry_expected_score_p_value: float | None = p_ex_raw if ex_n >= 10 else None
     entry_expected_score_ci_low: float | None
     entry_expected_score_ci_high: float | None
     if ex_n >= 2:

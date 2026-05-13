@@ -315,9 +315,7 @@ class TestPromptVersionAndBody:
         """Phase 82 (D-23): new ### Subsection: endgame_start_vs_end block is present."""
         from pathlib import Path
 
-        body_path = (
-            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
-        )
+        body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
         with open(body_path) as f:
             body = f.read()
         assert "### Subsection: endgame_start_vs_end" in body
@@ -328,9 +326,7 @@ class TestPromptVersionAndBody:
         """Phase 82 (D-22): entry_eval_pawns glossary entry is present."""
         from pathlib import Path
 
-        body_path = (
-            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
-        )
+        body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
         with open(body_path) as f:
             body = f.read()
         # Entry must appear under the glossary header as a bold heading
@@ -340,9 +336,7 @@ class TestPromptVersionAndBody:
         """Phase 82 (D-22): glossary entries renamed to _timeline variants."""
         from pathlib import Path
 
-        body_path = (
-            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
-        )
+        body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
         with open(body_path) as f:
             body = f.read()
         assert "**endgame_score_timeline**" in body
@@ -352,15 +346,17 @@ class TestPromptVersionAndBody:
         """Phase 82 (D-24): endgame_start_vs_end row present in mapping table under overall."""
         from pathlib import Path
 
-        body_path = (
-            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
-        )
+        body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
         with open(body_path) as f:
             body = f.read()
         found = False
         for line in body.splitlines():
             stripped = line.strip()
-            if stripped.startswith("| endgame_start_vs_end") and stripped.endswith("|") and "overall" in stripped:
+            if (
+                stripped.startswith("| endgame_start_vs_end")
+                and stripped.endswith("|")
+                and "overall" in stripped
+            ):
                 found = True
                 break
         assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
@@ -1061,17 +1057,29 @@ class TestPromptAssembly:
         def _conv(
             conv_pct: float, recov_pct: float, n_conv: int = 40, n_recov: int = 20
         ) -> ConversionRecoveryStats:
+            conv_wins = int(n_conv * conv_pct / 100)
+            conv_losses = n_conv - conv_wins
+            recov_wins = int(n_recov * recov_pct / 100 * 0.6)
+            recov_draws = int(n_recov * recov_pct / 100 * 0.4)
+            recov_losses = n_recov - recov_wins - recov_draws
+            # Phase 84 mirror-identity opponent baselines (gated on mirror bucket >= 10).
+            opp_conv = round(recov_losses / n_recov * 100, 1) if n_recov >= 10 else None
+            opp_recov = round((conv_losses + 0) / n_conv * 100, 1) if n_conv >= 10 else None
             return ConversionRecoveryStats(
                 conversion_pct=conv_pct,
                 conversion_games=n_conv,
-                conversion_wins=int(n_conv * conv_pct / 100),
+                conversion_wins=conv_wins,
                 conversion_draws=0,
-                conversion_losses=n_conv - int(n_conv * conv_pct / 100),
+                conversion_losses=conv_losses,
                 recovery_pct=recov_pct,
                 recovery_games=n_recov,
                 recovery_saves=int(n_recov * recov_pct / 100),
-                recovery_wins=int(n_recov * recov_pct / 100 * 0.6),
-                recovery_draws=int(n_recov * recov_pct / 100 * 0.4),
+                recovery_wins=recov_wins,
+                recovery_draws=recov_draws,
+                opponent_conversion_pct=opp_conv,
+                opponent_conversion_games=n_recov,
+                opponent_recovery_pct=opp_recov,
+                opponent_recovery_games=n_conv,
             )
 
         categories = [
@@ -1196,6 +1204,11 @@ class TestPromptAssembly:
             recovery_saves=6,
             recovery_wins=4,
             recovery_draws=2,
+            # Phase 84 mirror-identity opponent baselines.
+            opponent_conversion_pct=70.0,  # recovery_losses(14)/recovery_games(20)*100
+            opponent_conversion_games=20,
+            opponent_recovery_pct=33.3,  # (conversion_losses(10)+conversion_draws(0))/conversion_games(30)*100
+            opponent_recovery_games=30,
         )
         # Pawnless: zero sequences — kept for test intent (filtered anyway by the
         # pawnless endgame_class guard).
@@ -2065,8 +2078,7 @@ class TestSparseHistoryFixes:
         today = datetime.date.today()
         # All all_time points fall inside the last 90 days → C2 trims to empty.
         recent_buckets = [
-            (today - datetime.timedelta(days=days)).isoformat()
-            for days in (60, 45, 30, 15)
+            (today - datetime.timedelta(days=days)).isoformat() for days in (60, 45, 30, 15)
         ]
         all_time_finding = SubsectionFinding(
             subsection_id="score_timeline",
@@ -2081,9 +2093,7 @@ class TestSparseHistoryFixes:
             sample_quality="adequate",
             is_headline_eligible=False,
             dimension=None,
-            series=[
-                TimePoint(bucket_start=bs, value=0.55, n=10) for bs in recent_buckets
-            ],
+            series=[TimePoint(bucket_start=bs, value=0.55, n=10) for bs in recent_buckets],
         )
         last_3mo_finding = SubsectionFinding(
             subsection_id="score_timeline",
@@ -2098,9 +2108,7 @@ class TestSparseHistoryFixes:
             sample_quality="adequate",
             is_headline_eligible=False,
             dimension=None,
-            series=[
-                TimePoint(bucket_start=bs, value=0.55, n=10) for bs in recent_buckets
-            ],
+            series=[TimePoint(bucket_start=bs, value=0.55, n=10) for bs in recent_buckets],
         )
         tab = _fake_findings(filters, findings=[all_time_finding, last_3mo_finding])
         prompt = _assemble_user_prompt(tab)
@@ -2156,9 +2164,7 @@ class TestSparseHistoryFixes:
         assert "[anchor-combo platform=" not in prompt
         # all_time line must carry `quality=sparse` and MUST NOT carry trend / std.
         lines = prompt.splitlines()
-        bullet_idx = lines.index(
-            "[summary actual_elo | platform=chess.com, time_control=bullet]"
-        )
+        bullet_idx = lines.index("[summary actual_elo | platform=chess.com, time_control=bullet]")
         at_line = lines[bullet_idx + 1]
         lm_line = lines[bullet_idx + 2]
         assert "quality=sparse" in at_line

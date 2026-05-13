@@ -363,7 +363,9 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-12 — v1.17 (Endgame Stats Card Redesign) opened. Frontend-only refactor replacing 3 table-driven sections on the Endgames page with the WDL+ScoreBullet card pattern; two-bullet doctrine (cohort + peer) preserves the self-calibrating opponent signal as a second bullet on Conv/Parity/Recov + Section 3 per-type cards. No backend or benchmark changes.*
+*Last updated: 2026-05-13 — Phase 84 (Data plumbing — mirror-rate audit) complete. DATA-02 shipped via plan 84-01: `ConversionRecoveryStats` extended with 4 `opponent_*` fields populated by same-game mirror identity in `_aggregate_endgame_stats`, gated on `_MIN_OPPONENT_SAMPLE`. Section 2 wiring audited and confirmed already present. Pivot during v1.17 exploration replaced the two-bullet doctrine (cohort + peer) with a single peer bullet on Conv/Parity/Recov + Section 3 — rating-tier confound made the cohort/p50 frame near-redundant with ELO. v1.17 remaining: 4 phases (85, 86, 87, 88).*
+
+*Previous: 2026-05-12 — v1.17 (Endgame Stats Card Redesign) opened. Frontend-only refactor (with Phase 84 as the lone backend touch) replacing 3 table-driven sections on the Endgames page with the WDL+ScoreBullet card pattern.*
 
 *Previous: 2026-05-11 after v1.16 milestone — Stockfish Eval Analyses shipped (PRs #80, #82, #85, #86, #88). 5 phases (80, 80.1, 81, 82, 83), 24 plans, 118 commits in 7 days. SEED-014 closed by Phase 83; SEED-015 (predicted-vs-achieved gap as first-class metric) remains dormant.*
 

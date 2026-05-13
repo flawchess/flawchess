@@ -401,6 +401,11 @@ def _make_conv_stats() -> ConversionRecoveryStats:
         recovery_saves=8,
         recovery_wins=5,
         recovery_draws=3,
+        # Phase 84 fields — not exercised by these series tests; mirror identity values.
+        opponent_conversion_pct=60.0,  # recovery_losses(12)/recovery_games(20)*100
+        opponent_conversion_games=20,
+        opponent_recovery_pct=40.0,  # (conversion_losses(6)+conversion_draws(2))/conversion_games(20)*100
+        opponent_recovery_games=20,
     )
 
 
