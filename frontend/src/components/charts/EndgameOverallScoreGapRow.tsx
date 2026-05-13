@@ -10,6 +10,8 @@
  * they land (D-04).
  */
 
+import type { ReactNode } from 'react';
+
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import {
   SCORE_GAP_NEUTRAL_MAX,
@@ -31,6 +33,9 @@ interface ScoreGapRowProps {
   mathTestId: string;
   valueTestId: string;
   ariaLabel: string;
+  /** Optional info popover trigger rendered at the end of the row (after the
+   *  result value). Use InfoPopover from @/components/ui/info-popover. */
+  tooltip?: ReactNode;
 }
 
 export function ScoreGapRow({
@@ -46,6 +51,7 @@ export function ScoreGapRow({
   mathTestId,
   valueTestId,
   ariaLabel,
+  tooltip,
 }: ScoreGapRowProps) {
   return (
     <div className="flex flex-col gap-2">
@@ -84,6 +90,7 @@ export function ScoreGapRow({
             {formatted}
           </span>
         )}
+        {tooltip}
       </span>
       <div className="min-w-0 tabular-nums">
         <MiniBulletChart

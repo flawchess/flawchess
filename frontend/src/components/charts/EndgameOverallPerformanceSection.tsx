@@ -24,6 +24,7 @@
 
 import { useRef } from 'react';
 
+import { InfoPopover } from '@/components/ui/info-popover';
 import {
   SCORE_GAP_NEUTRAL_MAX,
   SCORE_GAP_NEUTRAL_MIN,
@@ -150,7 +151,7 @@ export function EndgameOverallPerformanceSection({
         {/* Card 1: Games without Endgame (left on desktop) */}
         <EndgameCard
           title="Games without Endgame"
-          scoreLabel="Score:"
+          scoreLabel="Non-Endgame Score:"
           tileTestId="tile-games-without-endgame"
           scoreValueTestId="score-value-no"
           scorePopoverTestId="score-info-no"
@@ -199,6 +200,18 @@ export function EndgameOverallPerformanceSection({
               mathTestId="endgame-score-gap-math"
               valueTestId="endgame-score-gap-value"
               ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
+              tooltip={
+                <InfoPopover
+                  ariaLabel="What is Endgame Score Gap?"
+                  testId="endgame-score-gap-info"
+                >
+                  <p>
+                    The score difference between games that reach an endgame (Endgame score) vs. games that end before (Non-Endgame score). Positive means endgames are
+                    your strength; negative means you perform worse once
+                    games reach an endgame.
+                  </p>
+                </InfoPopover>
+              }
             />
             <ScoreGapRow
               label="Endgame Score Loss:"
@@ -213,6 +226,19 @@ export function EndgameOverallPerformanceSection({
               mathTestId="endgame-score-loss-math"
               valueTestId="endgame-score-loss-value"
               ariaLabel={`Endgame score loss: ${lossFormatted}`}
+              tooltip={
+                <InfoPopover
+                  ariaLabel="What is Endgame Score Loss?"
+                  testId="endgame-score-loss-info"
+                >
+                  <p>
+                    Your Endgame score minus the Achievable score from your
+                    endgame-entry positions. Negative means you converted
+                    your endgame entry positions worse than a 2300+ rated
+                    rapid player would on average.
+                  </p>
+                </InfoPopover>
+              }
             />
           </div>
         </div>

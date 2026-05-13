@@ -408,7 +408,7 @@ export function EndgamesPage() {
                       to tighten the test against equal-rated opponents specifically.
                     </p>
                     <p>
-                      <strong>Endgame Score Gap:</strong> the score difference between games that reach an endgame vs. games that end before. Positive means endgames are your strength; negative
+                      <strong>Endgame Score Gap:</strong> the score difference between games that reach an endgame (Endgame score) vs. games that end before (Non-Endgame score). Positive means endgames are your strength; negative
                       means you perform worse once games reach an endgame.
                     </p>
                     <p>
