@@ -18,7 +18,7 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection } from '@/components/charts/EndgamePerformanceSection';
+import { EndgameGamesWithWithoutSection } from '@/components/charts/EndgameGamesWithWithoutSection';
 import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
 import { EndgameStartVsEndSection } from '@/components/charts/EndgameStartVsEndSection';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
@@ -419,9 +419,9 @@ export function EndgamesPage() {
                 </AccordionItem>
               </Accordion>
               <EndgameStartVsEndSection data={perfData} />
-              <div className="charcoal-texture rounded-md p-4">
-                <EndgamePerformanceSection data={perfData} scoreGap={scoreGapData} />
-              </div>
+              {scoreGapData && (
+                <EndgameGamesWithWithoutSection data={perfData} scoreGap={scoreGapData} />
+              )}
               {scoreGapData && scoreGapData.timeline.length > 0 && (
                 <div className="charcoal-texture rounded-md p-4">
                   <EndgameScoreOverTimeChart
