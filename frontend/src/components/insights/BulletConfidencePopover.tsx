@@ -17,6 +17,9 @@ interface BulletConfidencePopoverProps {
   ariaLabel?: string;
   /** Extra classes for the trigger span (e.g. positioning). */
   triggerClassName?: string;
+  /** Forwarded to EvalConfidenceTooltip; pass false when the bullet chart has
+   * no per-color baseline tick (e.g. endgame entry eval). */
+  showBaselineTick?: boolean;
 }
 
 // Hover- and tap-activated popover for the MG-entry bullet chart confidence
@@ -31,6 +34,7 @@ export function BulletConfidencePopover({
   testId,
   ariaLabel = 'Show eval confidence details',
   triggerClassName,
+  showBaselineTick,
 }: BulletConfidencePopoverProps) {
   const [open, setOpen] = React.useState(false);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,6 +88,7 @@ export function BulletConfidencePopover({
             gameCount={gameCount ?? 0}
             evalMeanPawns={evalMeanPawns ?? 0}
             color={color}
+            showBaselineTick={showBaselineTick}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

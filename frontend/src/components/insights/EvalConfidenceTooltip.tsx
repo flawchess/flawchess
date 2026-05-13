@@ -43,6 +43,9 @@ interface EvalConfidenceTooltipProps {
   evalMeanPawns: number;
   /** User's color for this row — drives which per-color baseline tick is shown. */
   color: 'white' | 'black';
+  /** Whether the bullet chart renders a per-color baseline tick. When false
+   * (endgame entry eval is color-agnostic), the tick legend line is hidden. */
+  showBaselineTick?: boolean;
 }
 
 /**
@@ -62,21 +65,25 @@ export function EvalConfidenceTooltip({
   gameCount,
   evalMeanPawns,
   color,
+  showBaselineTick = true,
 }: EvalConfidenceTooltipProps): ReactNode {
   const baselinePawns =
     color === 'white' ? EVAL_BASELINE_PAWNS_WHITE : EVAL_BASELINE_PAWNS_BLACK;
   return (
     <div className="text-left space-y-1">
       <p>
-        <strong>{fmtSigned(evalMeanPawns)} pawns</strong> over {gameCount} games (average Stockfish eval at the
-        end of your openings which include this position).
+        <strong>{fmtSigned(evalMeanPawns)} pawns</strong> over {gameCount} games (average Stockfish eval at the <em>end</em> of your openings which include this position).
       </p>
       <p>
         <strong>{headline(level, evalMeanPawns)}</strong> {CONFIDENCE_LABEL[level]} confidence
         (p = {pValue.toFixed(3)}).
       </p>
       <p className="opacity-70 italic">
-        Dashed tick: typical eval for {color} ({fmtSigned(baselinePawns)} pawns).<br />
+        {showBaselineTick && (
+          <>
+            Dashed tick: typical eval for {color} ({fmtSigned(baselinePawns)} pawns).<br />
+          </>
+        )}
         Test: two-sided Wald z vs 0 pawns.<br />
         Confidence interval: Wald 95% (whiskers).
       </p>

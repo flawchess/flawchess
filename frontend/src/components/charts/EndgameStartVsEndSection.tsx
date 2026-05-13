@@ -160,11 +160,12 @@ export function EndgameStartVsEndSection({ data }: EndgameStartVsEndSectionProps
                     pValue={data.entry_eval_p_value}
                     gameCount={data.entry_eval_n}
                     evalMeanPawns={data.entry_eval_mean_pawns}
-                    // Endgame stats are color-agnostic; the popover's `color` prop
-                    // drives the per-color baseline tick. White is a fallback —
-                    // BulletConfidencePopover.tsx:15 union is white | black only,
-                    // so a non-color string would fail tsc.
+                    // Endgame stats are color-agnostic — no baseline tick is
+                    // rendered, so suppress its legend line in the tooltip.
+                    // `color` is a required-prop fallback; with showBaselineTick
+                    // false it is not surfaced to the user.
                     color="white"
+                    showBaselineTick={false}
                     testId="entry-eval-popover-trigger"
                   />
                 </span>
