@@ -149,9 +149,11 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(screen.getByTestId('tile-games-with-endgame')).toBeTruthy();
     expect(screen.getByTestId('endgame-score-gap')).toBeTruthy();
     expect(screen.getByText('Games without Endgame')).toBeTruthy();
-    expect(screen.getByText('At Endgame Entry')).toBeTruthy();
+    expect(screen.getByText('Eval at Endgame Entry')).toBeTruthy();
     expect(screen.getByText('Games with Endgame')).toBeTruthy();
-    expect(screen.getByText('Endgame Score Gap')).toBeTruthy();
+    expect(screen.getByText('Endgame Score Differences')).toBeTruthy();
+    expect(screen.getByText('Endgame Score Gap:')).toBeTruthy();
+    expect(screen.getByText('Endgame Score Loss:')).toBeTruthy();
     expect(screen.getByText(/Do you perform better or worse when games reach an endgame/)).toBeTruthy();
   });
 

@@ -19,7 +19,7 @@
  * inline with the "Win / Draw / Loss" label (right-aligned). Matches the
  * games-count + Swords pattern used across the app (e.g. WDLChartRow).
  *
- * No section-root h3 or section-level InfoPopover — the question line under
+ * No section-root h3 or section-level popover — the question line under
  * the page-level h2 carries the framing.
  *
  * CR-01 preserved: achievable-score MiniBulletChart uses OFFSET-form
@@ -33,12 +33,13 @@
  */
 
 import { Cpu, Swords } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
+import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { AchievableScorePopover } from '@/components/popovers/AchievableScorePopover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
-import { InfoPopover } from '@/components/ui/info-popover';
 import {
   ENTRY_EXPECTED_SCORE_NEUTRAL_MAX,
   ENTRY_EXPECTED_SCORE_NEUTRAL_MIN,
@@ -101,6 +102,7 @@ function deriveLevel(p: number | null, n: number): ConfidenceLevel {
 
 interface EndgameCardProps {
   title: string;
+  scoreLabel: string;
   tileTestId: string;
   scoreValueTestId: string;
   scorePopoverTestId: string;
@@ -113,6 +115,7 @@ interface EndgameCardProps {
 
 function EndgameCard({
   title,
+  scoreLabel,
   tileTestId,
   scoreValueTestId,
   scorePopoverTestId,
@@ -169,7 +172,7 @@ function EndgameCard({
         {showScoreRow ? (
           <div className="flex flex-col gap-2">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-              <span className="text-muted-foreground">Score:</span>
+              <span className="text-muted-foreground">{scoreLabel}</span>
               <span
                 className="font-semibold"
                 style={scoreColor ? { color: scoreColor } : undefined}
@@ -177,19 +180,14 @@ function EndgameCard({
               >
                 {scorePct}
               </span>
-              <InfoPopover
-                ariaLabel={popoverAriaLabel}
+              <ScoreConfidencePopover
+                level={level}
+                pValue={pValue ?? 1}
+                score={score}
+                gameCount={total}
                 testId={scorePopoverTestId}
-                side="top"
-              >
-                <p>
-                  This score&apos;s neutral anchor sits at 50% by construction.
-                  At 50% your wins balance your losses (after counting draws as
-                  half-points). Unlike the rating-tier-conditioned p50 used in
-                  other sections, this anchor is not a population statistic and
-                  does not shift with your rating or time control.
-                </p>
-              </InfoPopover>
+                ariaLabel={popoverAriaLabel}
+              />
             </span>
             <div className="min-w-0 tabular-nums">
               <MiniBulletChart
@@ -247,7 +245,10 @@ function EntryCard({ data }: EntryCardProps) {
 
   return (
     <div className="charcoal-texture rounded-md p-4" data-testid="tile-at-endgame-entry">
-      <h3 className="text-base font-semibold mb-2">At Endgame Entry</h3>
+      <h3 className="text-base font-semibold mb-2 inline-flex items-center gap-1">
+        <Cpu className="h-4 w-4" aria-hidden="true" />
+        Eval at Endgame Entry
+      </h3>
       <div className="flex flex-col gap-4">
         {/* Row 1: entry-eval bullet (pawns) */}
         {showEntryEvalChart ? (
@@ -348,6 +349,279 @@ function EntryCard({ data }: EntryCardProps) {
   );
 }
 
+// ── Score Gap row (label + signed math + bullet chart) ────────────────────
+//
+// Used for both the Endgame Score Gap (with − without) and Endgame Score
+// Loss (with − achievable) rows in the Score Gaps card. Both share the same
+// bullet-chart settings (center=0, neutral band from SCORE_GAP_NEUTRAL_MIN /
+// MAX, domain=SCORE_GAP_DOMAIN) and the same coloring rule (operand zone
+// color only when significant + outside neutral; result colored only when
+// both operands are significant + result outside neutral; else inherit).
+
+interface ScoreGapRowProps {
+  label: string;
+  value: number;
+  formatted: string;
+  operand1Pct: string;
+  operand1Color: string | undefined;
+  operand2Pct: string;
+  operand2Color: string | undefined;
+  resultColor: string | undefined;
+  showMath: boolean;
+  mathTestId: string;
+  valueTestId: string;
+  ariaLabel: string;
+}
+
+function ScoreGapRow({
+  label,
+  value,
+  formatted,
+  operand1Pct,
+  operand1Color,
+  operand2Pct,
+  operand2Color,
+  resultColor,
+  showMath,
+  mathTestId,
+  valueTestId,
+  ariaLabel,
+}: ScoreGapRowProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="flex items-center gap-1 text-sm tabular-nums w-full">
+        <span className="text-muted-foreground">{label}</span>
+        {showMath ? (
+          <span className="tabular-nums" data-testid={mathTestId}>
+            <span
+              className="font-semibold"
+              style={operand1Color ? { color: operand1Color } : undefined}
+            >
+              {operand1Pct}
+            </span>
+            {' − '}
+            <span
+              className="font-semibold"
+              style={operand2Color ? { color: operand2Color } : undefined}
+            >
+              {operand2Pct}
+            </span>
+            {' = '}
+            <span
+              className="font-semibold"
+              style={resultColor ? { color: resultColor } : undefined}
+              data-testid={valueTestId}
+            >
+              {formatted}
+            </span>
+          </span>
+        ) : (
+          <span
+            className="font-semibold"
+            style={resultColor ? { color: resultColor } : undefined}
+            data-testid={valueTestId}
+          >
+            {formatted}
+          </span>
+        )}
+      </span>
+      <div className="min-w-0 tabular-nums">
+        <MiniBulletChart
+          value={value}
+          center={0}
+          neutralMin={SCORE_GAP_NEUTRAL_MIN}
+          neutralMax={SCORE_GAP_NEUTRAL_MAX}
+          domain={SCORE_GAP_DOMAIN}
+          barColor="neutral"
+          ariaLabel={ariaLabel}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── Connector arrows (desktop only) ───────────────────────────────────────
+//
+// Three arrows rendered as charcoal-textured div segments:
+//   Card 1 bottom-center → drops down → turns right → Score Gap left-center
+//   Card 3 bottom-center → drops down → turns left  → Score Gap right-center
+//   Card 2 bottom-center → drops straight down      → Score Gap top-center
+// Positions are measured from the live DOM (card heights vary with content)
+// and recomputed on resize. Hidden on mobile via the stacked-layout check
+// below and `hidden lg:block` on the wrapper.
+
+// Line thickness matches the MiniWDLBar / MiniBulletChart row height
+// (Tailwind h-5 = 20px) so the connectors visually weigh the same as the
+// charts they tie together.
+const ARROW_BAR_PX = 20;
+const ARROW_HEAD_LEN_PX = 26; // protrusion past the trunk end
+const ARROW_HEAD_HALF_HEIGHT_PX = 22; // flare past the trunk center on each side
+
+interface ArrowGeom {
+  c1x: number;
+  c1Bottom: number;
+  c2x: number;
+  c2Bottom: number;
+  c3x: number;
+  c3Bottom: number;
+  sgLeftEdge: number;
+  sgRightEdge: number;
+  sgTop: number;
+  sgMidY: number;
+}
+
+function ConnectorArrows({
+  containerRef,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [geom, setGeom] = useState<ArrowGeom | null>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    function compute() {
+      if (!container) return;
+      const c1 = container.querySelector<HTMLElement>(
+        '[data-testid="tile-games-without-endgame"]',
+      );
+      const c2 = container.querySelector<HTMLElement>(
+        '[data-testid="tile-at-endgame-entry"]',
+      );
+      const c3 = container.querySelector<HTMLElement>(
+        '[data-testid="tile-games-with-endgame"]',
+      );
+      const sg = container.querySelector<HTMLElement>(
+        '[data-testid="endgame-score-gap"]',
+      );
+      if (!c1 || !c2 || !c3 || !sg) {
+        setGeom(null);
+        return;
+      }
+      const wr = container.getBoundingClientRect();
+      const c1r = c1.getBoundingClientRect();
+      const c2r = c2.getBoundingClientRect();
+      const c3r = c3.getBoundingClientRect();
+      const sgr = sg.getBoundingClientRect();
+
+      // Mobile (stacked single-column): score gap card's left edge aligns
+      // with Card 1's left edge. Bail to avoid drawing arrows that don't
+      // visually make sense in the stacked layout.
+      if (sgr.left <= c1r.left + 2) {
+        setGeom(null);
+        return;
+      }
+
+      setGeom({
+        c1x: c1r.left + c1r.width / 2 - wr.left,
+        c1Bottom: c1r.bottom - wr.top,
+        c2x: c2r.left + c2r.width / 2 - wr.left,
+        c2Bottom: c2r.bottom - wr.top,
+        c3x: c3r.left + c3r.width / 2 - wr.left,
+        c3Bottom: c3r.bottom - wr.top,
+        sgLeftEdge: sgr.left - wr.left,
+        sgRightEdge: sgr.right - wr.left,
+        sgTop: sgr.top - wr.top,
+        sgMidY: sgr.top + sgr.height / 2 - wr.top,
+      });
+    }
+
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [containerRef]);
+
+  if (!geom) return null;
+
+  const HALF_BAR = ARROW_BAR_PX / 2;
+  const HEAD = ARROW_HEAD_LEN_PX;
+  const HALF_HEAD_H = ARROW_HEAD_HALF_HEIGHT_PX;
+
+  // Arrow 1: Card 1 → Score Gap left edge (arrowhead points right)
+  // Vertical drops from Card 1 bottom to the horizontal trunk's bottom edge
+  // (sgMidY + HALF_BAR), covering the corner block with a single rectangle.
+  const a1V = {
+    left: geom.c1x - HALF_BAR,
+    top: geom.c1Bottom,
+    width: ARROW_BAR_PX,
+    height: geom.sgMidY + HALF_BAR - geom.c1Bottom,
+  };
+  // Horizontal trunk starts at the vertical's left edge and ends where the
+  // arrowhead begins.
+  const a1H = {
+    left: geom.c1x - HALF_BAR,
+    top: geom.sgMidY - HALF_BAR,
+    width: geom.sgLeftEdge - HEAD - (geom.c1x - HALF_BAR),
+    height: ARROW_BAR_PX,
+  };
+  const a1Head = {
+    left: geom.sgLeftEdge - HEAD,
+    top: geom.sgMidY - HALF_HEAD_H,
+    width: HEAD,
+    height: HALF_HEAD_H * 2,
+    clipPath: 'polygon(0 0, 100% 50%, 0 100%)',
+  };
+
+  // Arrow 2: Card 3 → Score Gap right edge (arrowhead points left)
+  const a2V = {
+    left: geom.c3x - HALF_BAR,
+    top: geom.c3Bottom,
+    width: ARROW_BAR_PX,
+    height: geom.sgMidY + HALF_BAR - geom.c3Bottom,
+  };
+  const a2H = {
+    left: geom.sgRightEdge + HEAD,
+    top: geom.sgMidY - HALF_BAR,
+    width: geom.c3x + HALF_BAR - (geom.sgRightEdge + HEAD),
+    height: ARROW_BAR_PX,
+  };
+  const a2Head = {
+    left: geom.sgRightEdge,
+    top: geom.sgMidY - HALF_HEAD_H,
+    width: HEAD,
+    height: HALF_HEAD_H * 2,
+    clipPath: 'polygon(100% 0, 0 50%, 100% 100%)',
+  };
+
+  // Arrow 3: Card 2 → Score Gaps top edge (arrowhead points down)
+  const a3V = {
+    left: geom.c2x - HALF_BAR,
+    top: geom.c2Bottom,
+    width: ARROW_BAR_PX,
+    height: geom.sgTop - HEAD - geom.c2Bottom,
+  };
+  const a3Head = {
+    left: geom.c2x - HALF_HEAD_H,
+    top: geom.sgTop - HEAD,
+    width: HALF_HEAD_H * 2,
+    height: HEAD,
+    clipPath: 'polygon(0 0, 100% 0, 50% 100%)',
+  };
+
+  // `!absolute` overrides .charcoal-texture's `position: relative`. The class
+  // already sets `overflow: hidden`, so clip-path on the arrowhead also clips
+  // the noise pseudo-element to the triangle shape.
+  const segmentClass = 'charcoal-texture !absolute';
+
+  return (
+    <div
+      className="absolute inset-0 hidden lg:block pointer-events-none"
+      aria-hidden="true"
+    >
+      <div className={segmentClass} style={a1V} />
+      <div className={segmentClass} style={a1H} />
+      <div className={segmentClass} style={a1Head} />
+      <div className={segmentClass} style={a2V} />
+      <div className={segmentClass} style={a2H} />
+      <div className={segmentClass} style={a2Head} />
+      <div className={segmentClass} style={a3V} />
+      <div className={segmentClass} style={a3Head} />
+    </div>
+  );
+}
+
 // ── Main export ────────────────────────────────────────────────────────────
 
 export function EndgameOverallPerformanceSection({
@@ -357,21 +631,97 @@ export function EndgameOverallPerformanceSection({
   data: EndgamePerformanceResponse;
   scoreGap: ScoreGapMaterialResponse;
 }) {
-  // Score Gap: zone-only font color (no sig gating per D-04).
   const gapPositive = scoreGap.score_difference >= 0;
   const gapFormatted =
     (gapPositive ? '+' : '') + `${Math.round(scoreGap.score_difference * 100)}%`;
-  const gapColor =
-    scoreGap.score_difference >= SCORE_GAP_NEUTRAL_MAX
-      ? ZONE_SUCCESS
-      : scoreGap.score_difference >= SCORE_GAP_NEUTRAL_MIN
-        ? ZONE_NEUTRAL
-        : ZONE_DANGER;
 
   // Share of total games per card (Card 1 = without endgame, Card 3 = with endgame).
   const totalGames = data.non_endgame_wdl.total + data.endgame_wdl.total;
   const withoutShare = totalGames > 0 ? data.non_endgame_wdl.total / totalGames : 0;
   const withShare = totalGames > 0 ? data.endgame_wdl.total / totalGames : 0;
+
+  // Per-card scores for the Score Gap math expression. Operand coloring
+  // mirrors the per-card Score row: zone color only when the score is
+  // significant AND outside the neutral (blue) zone; otherwise inherit
+  // (white). Math order is `<with> − <without> = <gap>` to match the
+  // API's `score_difference = endgame - non_endgame` sign convention
+  // (positive = endgame better) and the bullet chart's zone meanings.
+  const withoutScore =
+    data.non_endgame_wdl.total > 0
+      ? (data.non_endgame_wdl.wins + 0.5 * data.non_endgame_wdl.draws) /
+        data.non_endgame_wdl.total
+      : 0;
+  const withScore =
+    data.endgame_wdl.total > 0
+      ? (data.endgame_wdl.wins + 0.5 * data.endgame_wdl.draws) /
+        data.endgame_wdl.total
+      : 0;
+  const withoutLevel = deriveLevel(
+    data.non_endgame_score_p_value,
+    data.non_endgame_wdl.total,
+  );
+  const withLevel = deriveLevel(
+    data.endgame_score_p_value,
+    data.endgame_wdl.total,
+  );
+  function operandColor(
+    score: number,
+    level: ConfidenceLevel,
+  ): string | undefined {
+    const zoneHex = scoreZoneColor(score);
+    const inColoredZone = zoneHex !== ZONE_NEUTRAL;
+    return isConfident(level) && inColoredZone ? zoneHex : undefined;
+  }
+  const withoutScoreColor = operandColor(withoutScore, withoutLevel);
+  const withScoreColor = operandColor(withScore, withLevel);
+  const showGapMath =
+    data.non_endgame_wdl.total > 0 && data.endgame_wdl.total > 0;
+  const withoutScorePct = `${Math.round(withoutScore * 100)}%`;
+  const withScorePct = `${Math.round(withScore * 100)}%`;
+
+  // Gap coloring mirrors the cards' Score row: zone color iff both operands
+  // are significant AND the gap is outside the neutral (blue) zone; else
+  // inherit (white). Gap "significance" is bounded by the weaker of the two
+  // operand levels — if either side is inconclusive, the gap is too.
+  // Replaces the prior zone-only behavior (D-04) per user request to unify
+  // the coloring logic across all numbers in this section.
+  function weakestLevel(a: ConfidenceLevel, b: ConfidenceLevel): ConfidenceLevel {
+    if (a === 'low' || b === 'low') return 'low';
+    if (a === 'medium' || b === 'medium') return 'medium';
+    return 'high';
+  }
+  function gapZoneColor(
+    value: number,
+    level: ConfidenceLevel,
+  ): string | undefined {
+    const inNeutralZone =
+      value >= SCORE_GAP_NEUTRAL_MIN && value < SCORE_GAP_NEUTRAL_MAX;
+    if (!isConfident(level) || inNeutralZone) return undefined;
+    return value >= SCORE_GAP_NEUTRAL_MAX ? ZONE_SUCCESS : ZONE_DANGER;
+  }
+  const gapLevel = weakestLevel(withoutLevel, withLevel);
+  const gapColor = gapZoneColor(scoreGap.score_difference, gapLevel);
+
+  // Endgame Score Loss: how much the actual endgame score fell short of
+  // (or exceeded) the achievable score expected from the entry eval.
+  // Same math format, colors, and bullet settings as the Score Gap.
+  const achievableScore = data.entry_expected_score;
+  const achievableLevel = deriveLevel(
+    data.entry_expected_score_p_value,
+    data.entry_expected_score_n,
+  );
+  const achievableScoreColor = operandColor(achievableScore, achievableLevel);
+  const achievableScorePct = `${Math.round(achievableScore * 100)}%`;
+  const lossValue = withScore - achievableScore;
+  const lossPositive = lossValue >= 0;
+  const lossFormatted =
+    (lossPositive ? '+' : '') + `${Math.round(lossValue * 100)}%`;
+  const showLossMath =
+    data.endgame_wdl.total > 0 && data.entry_expected_score_n > 0;
+  const lossLevel = weakestLevel(withLevel, achievableLevel);
+  const lossColor = gapZoneColor(lossValue, lossLevel);
+
+  const gridRef = useRef<HTMLDivElement>(null);
 
   return (
     <section data-testid="endgame-overall-performance-section">
@@ -383,11 +733,16 @@ export function EndgameOverallPerformanceSection({
           Card 2, Card 3, ScoreGap. On desktop ScoreGap is lifted to column 2
           via lg:col-start-2. Inside-card layout is single-column at every
           breakpoint (label-above-chart) so the WDL/bullet charts get the
-          full card width regardless of viewport. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2">
+          full card width regardless of viewport. `relative` anchors the
+          ConnectorArrows SVG overlay (desktop only). */}
+      <div
+        ref={gridRef}
+        className="relative grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2"
+      >
         {/* Card 1: Games without Endgame (left on desktop) */}
         <EndgameCard
           title="Games without Endgame"
+          scoreLabel="Score:"
           tileTestId="tile-games-without-endgame"
           scoreValueTestId="score-value-no"
           scorePopoverTestId="score-info-no"
@@ -404,6 +759,7 @@ export function EndgameOverallPerformanceSection({
         {/* Card 3: Games with Endgame (right on desktop) */}
         <EndgameCard
           title="Games with Endgame"
+          scoreLabel="Endgame Score:"
           tileTestId="tile-games-with-endgame"
           scoreValueTestId="score-value-yes"
           scorePopoverTestId="score-info-yes"
@@ -417,34 +773,43 @@ export function EndgameOverallPerformanceSection({
         {/* Endgame Score Gap: lg:col-start-2 places it under Card 2 on desktop.
             On mobile (single column) it falls naturally after Card 3. */}
         <div
-          className="charcoal-texture rounded-md p-4 lg:col-start-2"
+          className="charcoal-texture rounded-md p-4 lg:col-start-2 lg:mt-8"
           data-testid="endgame-score-gap"
         >
-          <h3 className="text-base font-semibold mb-2">Endgame Score Gap</h3>
-          <div className="flex flex-col gap-2">
-            <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-              <span className="text-muted-foreground">Difference:</span>
-              <span
-                className="font-semibold"
-                style={{ color: gapColor }}
-                data-testid="score-gap-difference"
-              >
-                {gapFormatted}
-              </span>
-            </span>
-            <div className="min-w-0 tabular-nums">
-              <MiniBulletChart
-                value={scoreGap.score_difference}
-                center={0}
-                neutralMin={SCORE_GAP_NEUTRAL_MIN}
-                neutralMax={SCORE_GAP_NEUTRAL_MAX}
-                domain={SCORE_GAP_DOMAIN}
-                barColor="neutral"
-                ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
-              />
-            </div>
+          <h3 className="text-base font-semibold mb-2">Endgame Score Differences</h3>
+          <div className="flex flex-col gap-4">
+            <ScoreGapRow
+              label="Endgame Score Gap:"
+              value={scoreGap.score_difference}
+              formatted={gapFormatted}
+              operand1Pct={withScorePct}
+              operand1Color={withScoreColor}
+              operand2Pct={withoutScorePct}
+              operand2Color={withoutScoreColor}
+              resultColor={gapColor}
+              showMath={showGapMath}
+              mathTestId="score-gap-math"
+              valueTestId="score-gap-difference"
+              ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
+            />
+            <ScoreGapRow
+              label="Endgame Score Loss:"
+              value={lossValue}
+              formatted={lossFormatted}
+              operand1Pct={withScorePct}
+              operand1Color={withScoreColor}
+              operand2Pct={achievableScorePct}
+              operand2Color={achievableScoreColor}
+              resultColor={lossColor}
+              showMath={showLossMath}
+              mathTestId="endgame-score-loss-math"
+              valueTestId="endgame-score-loss-value"
+              ariaLabel={`Endgame score loss: ${lossFormatted}`}
+            />
           </div>
         </div>
+
+        <ConnectorArrows containerRef={gridRef} />
       </div>
     </section>
   );

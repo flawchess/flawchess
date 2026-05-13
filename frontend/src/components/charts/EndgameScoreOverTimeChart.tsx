@@ -180,7 +180,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
       <div className="mb-3">
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
-            Endgame vs Non-Endgame Score over Time
+            Endgame Score Gap over Time
             <InfoPopover
               ariaLabel="Endgame vs non-endgame score timeline info"
               testId="score-timeline-info"
