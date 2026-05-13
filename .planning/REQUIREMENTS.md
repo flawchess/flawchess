@@ -50,7 +50,7 @@ Replaces the section's `EndgameWDLChart` (grouped horizontal-bar overview) and e
 
 Frontend-only milestone, with one payload audit.
 
-- [ ] **DATA-02**: Mirror-bucket peer rates (`opponentRate` for Conv / Parity / Recov / Skill components in Section 2 and per-type Conv / Recov in Section 3) are exposed on the `/api/endgames/overview` response payload (audit existing schema; extend only if not already present). Skill card's derived `Opp Skill` is computed frontend-side from `opp_conv` + `opp_recov`, so no new payload field is required for it.
+- [x] **DATA-02**: Mirror-bucket peer rates (`opponentRate` for Conv / Parity / Recov / Skill components in Section 2 and per-type Conv / Recov in Section 3) are exposed on the `/api/endgames/overview` response payload (audit existing schema; extend only if not already present). Skill card's derived `Opp Skill` is computed frontend-side from `opp_conv` + `opp_recov`, so no new payload field is required for it.
 
 ### Polish & Calibration (POLISH)
 
@@ -107,7 +107,7 @@ Populated by gsd-roadmapper 2026-05-12.
 | SEC3-05 | Phase 87 | Pending |
 | SEC3-06 | Phase 87 | Pending |
 | SEC3-07 | Phase 87 | Pending |
-| DATA-02 | Phase 84 | Pending |
+| DATA-02 | Phase 84 | Complete |
 | POLISH-01 | Phase 88 | Pending |
 | POLISH-02 | Phase 88 | Pending |
 | POLISH-03 | Phase 88 | Pending |

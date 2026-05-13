@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: executing
-last_updated: "2026-05-13T05:20:02.617Z"
-last_activity: 2026-05-13 -- Phase 84 execution started
+last_updated: "2026-05-13T05:40:00.000Z"
+last_activity: 2026-05-13 -- Phase 84 verified passed (1/1 plans complete)
 progress:
   total_phases: 0
   completed_phases: 0
@@ -16,10 +16,10 @@ progress:
 
 ## Current Position
 
-Phase: 84 (data-plumbing-per-type-cohort-p50-and-mirror-rate-audit) — EXECUTING
-Plan: 1 of 1
-Status: Executing Phase 84
-Last activity: 2026-05-13 -- Phase 84 execution started
+Phase: 85 (Section 1 — Games with vs without Endgame cards) — NEXT
+Plan: not started
+Status: Phase 84 complete (verified passed) — ready for Phase 85 discuss/plan
+Last activity: 2026-05-13 -- Phase 84 verified passed (1/1 plans complete)
 
 ## Project Reference
 
