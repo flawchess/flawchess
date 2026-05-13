@@ -64,6 +64,7 @@ export interface EndgamePerformanceResponse {
   entry_eval_n: number;
   entry_eval_p_value: number | null;
   endgame_score_p_value: number | null;
+  non_endgame_score_p_value: number | null;
   entry_eval_ci_low_pawns: number | null;
   entry_eval_ci_high_pawns: number | null;
   // Phase 83 (D-21): Stockfish-baseline achievable score for "Where you start" tile.
