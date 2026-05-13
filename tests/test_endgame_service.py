@@ -4104,6 +4104,31 @@ class TestEntryEvalAggregation:
         assert isinstance(resp_ok.endgame_score_p_value, float)
         assert 0.0 <= resp_ok.endgame_score_p_value <= 1.0
 
+    def test_non_endgame_score_p_value_gated_below_n_ten(self) -> None:
+        """non_endgame_wdl.total < 10 -> non_endgame_score_p_value is None; >= 10 -> float.
+
+        Mirror of test_endgame_score_p_value_gated_below_n_ten for the Section 1
+        'Games without Endgame' card (Phase 85 D-01). Kept independent of endgame_rows
+        so a future refactor that splits the two p-values still passes.
+        """
+        # Below gate
+        resp_low = _get_endgame_performance_from_rows(
+            endgame_rows=[],
+            non_endgame_rows=self._wdl_rows(wins=3, draws=2, losses=1),  # total=6
+            bucket_rows=[],
+        )
+        assert resp_low.non_endgame_score_p_value is None
+
+        # At/above gate
+        resp_ok = _get_endgame_performance_from_rows(
+            endgame_rows=[],
+            non_endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),  # total=10
+            bucket_rows=[],
+        )
+        assert resp_ok.non_endgame_score_p_value is not None
+        assert isinstance(resp_ok.non_endgame_score_p_value, float)
+        assert 0.0 <= resp_ok.non_endgame_score_p_value <= 1.0
+
     def test_ci_bounds_set_when_n_ge_two(self) -> None:
         """When n >= 2, both CI bounds are floats; below n=2 they are None."""
         # n=10 -> CI bounds set
