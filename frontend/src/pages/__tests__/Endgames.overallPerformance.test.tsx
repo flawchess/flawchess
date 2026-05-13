@@ -346,7 +346,7 @@ describe('Endgames page — Phase 85 Plan 05 single composite section', () => {
       container.querySelector('[data-testid="tile-games-with-endgame"]'),
     ).not.toBeNull();
     expect(
-      container.querySelector('[data-testid="endgame-score-gap"]'),
+      container.querySelector('[data-testid="endgame-score-differences"]'),
     ).not.toBeNull();
     // Timeline chart still renders.
     expect(

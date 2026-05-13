@@ -139,7 +139,7 @@ function makeScoreGap(
 describe('EndgameOverallPerformanceSection', () => {
   // ── Section structure ────────────────────────────────────────────────────
 
-  it('renders the section container, all 3 card testids, score-gap, question line, and card titles', () => {
+  it('renders the section container, all 3 card testids, score-differences card, question line, and card titles', () => {
     render(
       <EndgameOverallPerformanceSection data={makeData()} scoreGap={makeScoreGap()} />,
     );
@@ -147,7 +147,7 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(screen.getByTestId('tile-games-without-endgame')).toBeTruthy();
     expect(screen.getByTestId('tile-at-endgame-entry')).toBeTruthy();
     expect(screen.getByTestId('tile-games-with-endgame')).toBeTruthy();
-    expect(screen.getByTestId('endgame-score-gap')).toBeTruthy();
+    expect(screen.getByTestId('endgame-score-differences')).toBeTruthy();
     expect(screen.getByText('Games without Endgame')).toBeTruthy();
     expect(screen.getByText('Eval at Endgame Entry')).toBeTruthy();
     expect(screen.getByText('Games with Endgame')).toBeTruthy();
@@ -246,7 +246,7 @@ describe('EndgameOverallPerformanceSection', () => {
         scoreGap={makeScoreGap({ score_difference: 0.07 })}
       />,
     );
-    expect(screen.getByTestId('score-gap-difference').textContent).toBe('+7%');
+    expect(screen.getByTestId('endgame-score-gap-value').textContent).toBe('+7%');
 
     rerender(
       <EndgameOverallPerformanceSection
@@ -254,7 +254,36 @@ describe('EndgameOverallPerformanceSection', () => {
         scoreGap={makeScoreGap({ score_difference: -0.12 })}
       />,
     );
-    expect(screen.getByTestId('score-gap-difference').textContent).toBe('-12%');
+    expect(screen.getByTestId('endgame-score-gap-value').textContent).toBe('-12%');
+  });
+
+  it('score loss shows signed (endgame score − achievable score) with explicit + or - prefix', () => {
+    // endgame_wdl = 6W/0D/4L → endgame score = 60%.
+    // entry_expected_score = 0.50 → loss = +10%.
+    const { rerender } = render(
+      <EndgameOverallPerformanceSection
+        data={makeData({
+          endgame_wdl: buildWdl(6, 0, 4),
+          entry_expected_score: 0.50,
+          entry_expected_score_n: 50,
+        })}
+        scoreGap={makeScoreGap()}
+      />,
+    );
+    expect(screen.getByTestId('endgame-score-loss-value').textContent).toBe('+10%');
+
+    // Same endgame_wdl, achievable bumped to 0.75 → loss = -15%.
+    rerender(
+      <EndgameOverallPerformanceSection
+        data={makeData({
+          endgame_wdl: buildWdl(6, 0, 4),
+          entry_expected_score: 0.75,
+          entry_expected_score_n: 50,
+        })}
+        scoreGap={makeScoreGap()}
+      />,
+    );
+    expect(screen.getByTestId('endgame-score-loss-value').textContent).toBe('-15%');
   });
 
   // ── Empty state ──────────────────────────────────────────────────────────
