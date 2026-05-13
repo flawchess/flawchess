@@ -133,19 +133,29 @@ class TestClassifyEndgameBucket:
 
     def test_white_positive_cp_above_threshold_is_conversion(self):
         """White user with eval_cp=150 (above +100 threshold) is conversion."""
-        assert _classify_endgame_bucket(eval_cp=150, eval_mate=None, user_color="white") == "conversion"
+        assert (
+            _classify_endgame_bucket(eval_cp=150, eval_mate=None, user_color="white")
+            == "conversion"
+        )
 
     def test_black_user_with_white_negative_cp_is_conversion(self):
         """Black user with white-perspective eval_cp=-300 (black is +300) is conversion."""
-        assert _classify_endgame_bucket(eval_cp=-300, eval_mate=None, user_color="black") == "conversion"
+        assert (
+            _classify_endgame_bucket(eval_cp=-300, eval_mate=None, user_color="black")
+            == "conversion"
+        )
 
     def test_user_mate_for_white_is_conversion(self):
         """White user with eval_mate=3 (white mates in 3) is conversion."""
-        assert _classify_endgame_bucket(eval_cp=None, eval_mate=3, user_color="white") == "conversion"
+        assert (
+            _classify_endgame_bucket(eval_cp=None, eval_mate=3, user_color="white") == "conversion"
+        )
 
     def test_user_being_mated_is_recovery(self):
         """White user with eval_mate=-3 (white is being mated) is recovery."""
-        assert _classify_endgame_bucket(eval_cp=None, eval_mate=-3, user_color="white") == "recovery"
+        assert (
+            _classify_endgame_bucket(eval_cp=None, eval_mate=-3, user_color="white") == "recovery"
+        )
 
     def test_below_threshold_is_parity(self):
         """White user with eval_cp=50 (below +100 threshold) is parity."""
@@ -153,15 +163,22 @@ class TestClassifyEndgameBucket:
 
     def test_null_eval_is_parity(self):
         """NULL eval (engine error / not yet backfilled) defaults to parity."""
-        assert _classify_endgame_bucket(eval_cp=None, eval_mate=None, user_color="white") == "parity"
+        assert (
+            _classify_endgame_bucket(eval_cp=None, eval_mate=None, user_color="white") == "parity"
+        )
 
     def test_white_negative_cp_is_recovery(self):
         """White user with eval_cp=-200 (below -100 threshold) is recovery."""
-        assert _classify_endgame_bucket(eval_cp=-200, eval_mate=None, user_color="white") == "recovery"
+        assert (
+            _classify_endgame_bucket(eval_cp=-200, eval_mate=None, user_color="white") == "recovery"
+        )
 
     def test_threshold_boundary_inclusive_at_100(self):
         """eval_cp == +100 (exactly at threshold) is conversion (>= 100)."""
-        assert _classify_endgame_bucket(eval_cp=100, eval_mate=None, user_color="white") == "conversion"
+        assert (
+            _classify_endgame_bucket(eval_cp=100, eval_mate=None, user_color="white")
+            == "conversion"
+        )
 
     def test_threshold_boundary_exclusive_at_99(self):
         """eval_cp == +99 (just below threshold) is parity (< 100)."""
@@ -170,7 +187,9 @@ class TestClassifyEndgameBucket:
     def test_black_user_mate_for_black_is_conversion(self):
         """Black user with eval_mate=-2 (black mates in 2 from white POV) is conversion."""
         # eval_mate=-2 means white is being mated; from black's perspective this is a win
-        assert _classify_endgame_bucket(eval_cp=None, eval_mate=-2, user_color="black") == "conversion"
+        assert (
+            _classify_endgame_bucket(eval_cp=None, eval_mate=-2, user_color="black") == "conversion"
+        )
 
     def test_black_user_being_mated_is_recovery(self):
         """Black user with eval_mate=5 (white mates in 5 from white POV) is recovery."""
@@ -230,7 +249,14 @@ class TestAggregateEndgameStats:
         rows = [
             (1, 1, "1-0", "white", 500, None),  # rook, up 500cp, won → converted
             (2, 1, "0-1", "white", 350, None),  # rook, up 350cp, lost → failed conversion
-            (3, 1, "1/2-1/2", "white", 100, None),  # rook, up 100cp (threshold), draw → draw conversion
+            (
+                3,
+                1,
+                "1/2-1/2",
+                "white",
+                100,
+                None,
+            ),  # rook, up 100cp (threshold), draw → draw conversion
             (4, 1, "1-0", "white", -400, None),  # rook, down, won → not a conversion game
         ]
         result = _aggregate_endgame_stats(rows)
@@ -247,7 +273,14 @@ class TestAggregateEndgameStats:
         rows = [
             (1, 1, "1-0", "white", -400, None),  # rook, down 400cp, won → recovery win
             (2, 1, "1/2-1/2", "white", -500, None),  # rook, down 500cp, draw → recovery draw
-            (3, 1, "0-1", "white", -100, None),  # rook, down 100cp (threshold), lost → not recovered
+            (
+                3,
+                1,
+                "0-1",
+                "white",
+                -100,
+                None,
+            ),  # rook, down 100cp (threshold), lost → not recovered
         ]
         result = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -354,6 +387,116 @@ class TestAggregateEndgameStats:
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.conversion_games == 0
         assert rook.conversion.recovery_games == 0
+
+    # --- Phase 84: per-type opponent baseline via same-game mirror identity ---
+
+    def test_per_type_opponent_baseline_symmetric_60_40(self):
+        """Rook conv 6W/0D/4L (60%) + recov 2W/2D/6L (40% save-rate).
+
+        Mirror identities:
+        - opp_conv == 60.0 == recov_losses(6) / recov_games(10) * 100
+        - opp_recov == 40.0 == (conv_losses(4) + conv_draws(0)) / conv_games(10) * 100
+        """
+        rows = []
+        game_id = 0
+        # 10 conversion rows (eval +150, white): 6 wins, 4 losses, 0 draws.
+        for _ in range(6):
+            game_id += 1
+            rows.append((game_id, 1, "1-0", "white", 150, None))
+        for _ in range(4):
+            game_id += 1
+            rows.append((game_id, 1, "0-1", "white", 150, None))
+        # 10 recovery rows (eval -150, white): 2 wins, 2 draws, 6 losses.
+        for _ in range(2):
+            game_id += 1
+            rows.append((game_id, 1, "1-0", "white", -150, None))
+        for _ in range(2):
+            game_id += 1
+            rows.append((game_id, 1, "1/2-1/2", "white", -150, None))
+        for _ in range(6):
+            game_id += 1
+            rows.append((game_id, 1, "0-1", "white", -150, None))
+
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.conversion.conversion_games == 10
+        assert rook.conversion.recovery_games == 10
+        assert rook.conversion.opponent_conversion_pct == pytest.approx(60.0, abs=0.05)
+        assert rook.conversion.opponent_conversion_games == 10
+        assert rook.conversion.opponent_recovery_pct == pytest.approx(40.0, abs=0.05)
+        assert rook.conversion.opponent_recovery_games == 10
+
+    def test_per_type_opponent_baseline_below_threshold(self):
+        """Mirror bucket size below _MIN_OPPONENT_SAMPLE (10) returns None pct, raw games count."""
+        rows = []
+        game_id = 0
+        # 9 conversion rows (all losses).
+        for _ in range(9):
+            game_id += 1
+            rows.append((game_id, 1, "0-1", "white", 200, None))
+        # 9 recovery rows (all losses).
+        for _ in range(9):
+            game_id += 1
+            rows.append((game_id, 1, "0-1", "white", -200, None))
+
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        # opponent_conversion_pct gates on recovery_games (= 9 < 10) → None.
+        assert rook.conversion.opponent_conversion_pct is None
+        assert rook.conversion.opponent_conversion_games == 9
+        # opponent_recovery_pct gates on conversion_games (= 9 < 10) → None.
+        assert rook.conversion.opponent_recovery_pct is None
+        assert rook.conversion.opponent_recovery_games == 9
+
+    def test_per_type_opponent_baseline_at_threshold_10(self):
+        """Mirror bucket size at exactly 10 → pct is non-None (threshold boundary check)."""
+        rows = []
+        game_id = 0
+        for _ in range(10):
+            game_id += 1
+            rows.append((game_id, 1, "1-0", "white", 200, None))
+        for _ in range(10):
+            game_id += 1
+            rows.append((game_id, 1, "0-1", "white", -200, None))
+
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.conversion.opponent_conversion_pct is not None
+        assert rook.conversion.opponent_conversion_games == 10
+        assert rook.conversion.opponent_recovery_pct is not None
+        assert rook.conversion.opponent_recovery_games == 10
+
+    def test_per_type_opponent_baseline_zero_sample(self):
+        """Zero-sample mirror buckets emit None pct + 0 games and raise no ZeroDivisionError."""
+        # Parity-only rows: eval in (-100, +100) → neither conversion nor recovery bucket.
+        rows = [
+            (1, 1, "1-0", "white", 0, None),
+            (2, 1, "0-1", "white", 50, None),
+            (3, 1, "1/2-1/2", "white", -50, None),
+        ]
+        # Must not raise.
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.conversion.conversion_games == 0
+        assert rook.conversion.recovery_games == 0
+        assert rook.conversion.opponent_conversion_pct is None
+        assert rook.conversion.opponent_recovery_pct is None
+        assert rook.conversion.opponent_conversion_games == 0
+        assert rook.conversion.opponent_recovery_games == 0
+
+    def test_per_type_opponent_baseline_schema_shape(self):
+        """ConversionRecoveryStats exposes the four new fields as REQUIRED."""
+        from app.schemas.endgames import ConversionRecoveryStats
+
+        fields = ConversionRecoveryStats.model_fields
+        for name in (
+            "opponent_conversion_pct",
+            "opponent_conversion_games",
+            "opponent_recovery_pct",
+            "opponent_recovery_games",
+        ):
+            assert name in fields, f"missing field: {name}"
+            assert fields[name].is_required(), f"field {name} must be required"
 
 
 class TestGetEndgameStatsSmoke:
@@ -2694,9 +2837,9 @@ class TestComputeScoreGapTimeline:
         assert series[1].non_endgame_score == pytest.approx(0.5)
         # Identity invariant: score_difference == endgame_score - non_endgame_score
         for point in series:
-            assert abs(
-                (point.endgame_score - point.non_endgame_score) - point.score_difference
-            ) < 1e-9
+            assert (
+                abs((point.endgame_score - point.non_endgame_score) - point.score_difference) < 1e-9
+            )
 
     def test_rolling_window_caps_at_window_size(self):
         """window=10: week 2's diff reflects only week-2 games per side."""
@@ -2943,8 +3086,8 @@ class TestEndgameSkillFromBucketRows:
                 "white",
                 1500,
                 1500,
-                0,      # eval_cp = 0 (parity)
-                None,   # eval_mate
+                0,  # eval_cp = 0 (parity)
+                None,  # eval_mate
                 "1-0",
             ),
             _elo_bucket_row(
@@ -2994,8 +3137,8 @@ class TestEndgameSkillFromBucketRows:
                 "white",
                 1500,
                 1500,
-                200,    # eval_cp = +200 (conversion)
-                None,   # eval_mate
+                200,  # eval_cp = +200 (conversion)
+                None,  # eval_mate
                 "1-0",
             ),
             _elo_bucket_row(
@@ -3066,7 +3209,7 @@ class TestEndgameSkillFromBucketRows:
                 "white",
                 1500,
                 1500,
-                200,    # eval_cp = +200 (conversion)
+                200,  # eval_cp = +200 (conversion)
                 None,
                 "1-0",
             ),
@@ -3088,7 +3231,7 @@ class TestEndgameSkillFromBucketRows:
                 "white",
                 1500,
                 1500,
-                0,      # eval_cp = 0 (parity)
+                0,  # eval_cp = 0 (parity)
                 None,
                 "1-0",
             ),
@@ -3910,9 +4053,7 @@ class TestEntryEvalAggregation:
 
     def test_sign_flip_for_black_users(self) -> None:
         """Black user with raw eval_cp=200 -> mean_pawns=-2.0 (user-perspective sign flip)."""
-        bucket_rows = [
-            self._bucket(game_id=i, user_color="black", eval_cp=200) for i in range(10)
-        ]
+        bucket_rows = [self._bucket(game_id=i, user_color="black", eval_cp=200) for i in range(10)]
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
             non_endgame_rows=[],
@@ -4045,9 +4186,7 @@ class TestEntryExpectedScore(TestEntryEvalAggregation):
     def test_entry_expected_score_sign_flip_black(self) -> None:
         """10 rows at eval_cp=+200 with user_color=black -> sigmoid sign-flip ->
         expected score < 0.5 (specifically the (1 - white-perspective) mirror)."""
-        bucket_rows = [
-            self._bucket(game_id=i, user_color="black", eval_cp=200) for i in range(10)
-        ]
+        bucket_rows = [self._bucket(game_id=i, user_color="black", eval_cp=200) for i in range(10)]
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
             non_endgame_rows=[],
@@ -4068,9 +4207,7 @@ class TestEntryExpectedScore(TestEntryEvalAggregation):
           entry_expected_score = (10 * 0.5 + 1.0) / 11 ~ 0.5454
         """
         bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
-        bucket_rows.append(
-            self._bucket(game_id=11, eval_cp=None, eval_mate=5, user_color="white")
-        )
+        bucket_rows.append(self._bucket(game_id=11, eval_cp=None, eval_mate=5, user_color="white"))
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=10, draws=0, losses=0),
             non_endgame_rows=[],
@@ -4085,11 +4222,7 @@ class TestEntryExpectedScore(TestEntryEvalAggregation):
     def test_entry_expected_score_mate_against_user_is_zero(self) -> None:
         """Mate-against-user (eval_mate=-5 for white-user) contributes 0.0."""
         # Single mate-against-user row -> score = 0.0
-        bucket_rows = [
-            self._bucket(
-                game_id=1, eval_cp=None, eval_mate=-5, user_color="white"
-            )
-        ]
+        bucket_rows = [self._bucket(game_id=1, eval_cp=None, eval_mate=-5, user_color="white")]
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows(wins=0, draws=0, losses=1),
             non_endgame_rows=[],
@@ -4146,12 +4279,8 @@ class TestEntryExpectedScore(TestEntryEvalAggregation):
         assert resp_ok.entry_expected_score_ci_high is not None
         assert 0.0 <= resp_ok.entry_expected_score_ci_low <= 1.0
         assert 0.0 <= resp_ok.entry_expected_score_ci_high <= 1.0
-        assert (
-            resp_ok.entry_expected_score_ci_low <= resp_ok.entry_expected_score
-        )
-        assert (
-            resp_ok.entry_expected_score_ci_high >= resp_ok.entry_expected_score
-        )
+        assert resp_ok.entry_expected_score_ci_low <= resp_ok.entry_expected_score
+        assert resp_ok.entry_expected_score_ci_high >= resp_ok.entry_expected_score
 
         # n=1 -> CI bounds are None (Wilson bounds defensive guard returns
         # (0, 1) which is not meaningful for narration)
