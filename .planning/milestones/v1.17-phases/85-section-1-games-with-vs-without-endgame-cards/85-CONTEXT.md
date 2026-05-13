@@ -166,3 +166,68 @@ Scope:
 
 *Phase: 85-section-1-games-with-vs-without-endgame-cards*
 *Context gathered: 2026-05-13*
+
+---
+
+## Redesign Decision (Post-Execution, 2026-05-13)
+
+Plans 85-01 through 85-04 landed the original two-card `EndgameGamesWithWithoutSection`. Before merging the phase branch, a `/gsd-explore` session reworked the design into a 3-stage layout that *absorbs* the existing `EndgameStartVsEndSection`. This overrides the "Section-level merging" entry under [Deferred Ideas](#deferred) above — it is now in v1.17 scope, on this phase.
+
+### Final Layout
+
+| Slot | Decision |
+|---|---|
+| Section heading | **None.** Question only, sits directly under the existing page-level "Endgame Overall Performance" h2 in `Endgames.tsx`. |
+| Section question | `Do you perform better or worse when games reach an endgame?` (kept verbatim from the original tagline) |
+| Layout | `grid-cols-1 lg:grid-cols-3 gap-4` — 3 columns on lg+, stacked on mobile |
+| Card 1 | `Games ending in Middlegame` — WDL bar + Score row with bullet (anchored 0.5, ±0.15, sig-gated). Data: `non_endgame_wdl`, `non_endgame_score_p_value` (from Plan 85-01). |
+| Card 2 | `At Endgame Entry` — **two rows**: `Endgame entry eval` (pawns, anchored 0, ±2 pawns, with Cpu icon) and `Achievable score` (%, anchored 0.5, ±0.15, sig-gated). **No WDL row** (checkpoint metric — single-ply snapshot). Data: existing `entry_eval_*` and `entry_expected_score*` fields already wired in the legacy "Where you start" tile. |
+| Card 3 | `Endgame results` — WDL bar + Score row with bullet (anchored 0.5, ±0.15, sig-gated). Data: `endgame_wdl`, `endgame_score_p_value`. |
+| Score Gap | Label: **`Endgame Score Gap`**. Bullet anchored at 0, `SCORE_GAP_NEUTRAL_MIN/MAX`, `SCORE_GAP_DOMAIN`. Placement: **under Card 2 on desktop** (column 2 of the same grid, below the card), **stacked at the bottom on mobile** (after Card 3). Value: `scoreGap.score_difference` (existing). Font color: legacy zone rule (no sig gating). |
+
+### Conceptual Framing
+
+- Cards 1 and 3 are **aggregate** metrics over different *cohorts* — games that ended in middlegame vs games that reached endgame. They share the visual treatment (WDL bar + score bullet) so the cohort comparison is direct.
+- Card 2 is a **checkpoint** metric — a single-ply snapshot at the moment of middlegame→endgame transition, for the endgame-reaching cohort only. No WDL row (there is no W/D/L at a single ply). The eval row gives engine ground truth; the Achievable score row converts that to the same %, 0.5-anchored axis as Cards 1 and 3.
+- Row reads left-to-right as: *score without endgame | expected score at endgame entry | realized score with endgame*.
+- The Score Gap sits under Card 2 because Card 2 is the *branching moment*, and the gap is the *realized cost/benefit of branching*. Achievable-vs-Actual (Card 2 achievable% vs Card 3 score%) is implicit but visible to the eye — a built-in "did you convert what the engine said you should" signal without adding a second delta widget.
+
+### Renames
+
+- File `EndgameGamesWithWithoutSection.tsx` → **rename candidate**: `EndgameOverallPerformanceSection.tsx` (better reflects the absorbed scope; mirrors the page-level "Endgame Overall Performance" heading). Planner picks final name.
+- Per-card `data-testid` prefixes:
+  - `tile-games-ending-middlegame` (Card 1, formerly `tile-games-without-endgame`)
+  - `tile-at-endgame-entry` (Card 2, formerly `tile-entry-eval` in `EndgameStartVsEndSection`)
+  - `tile-endgame-results` (Card 3, formerly `tile-games-with-endgame`)
+  - `endgame-score-gap` (formerly `score-gap-difference`)
+  - Existing per-row testids (`achievable-score-value`, `entry-eval-value`, etc.) carry over verbatim from the absorbed tile.
+
+### Deletions and Absorptions
+
+- **Absorb** both rows of `EndgameStartVsEndSection`'s "Where you start" tile → Card 2 (eval row + achievable row, both intact including popovers).
+- **Delete** `EndgameStartVsEndSection`'s "What you do with it" tile entirely — its visualization is a duplicate of Card 3 (both render `endgame_wdl` + endgame score on the same anchored bullet).
+- **Delete** `EndgameStartVsEndSection.tsx` entirely (nothing useful remains after the two tiles above are moved/deleted).
+- **Delete** the per-card section h3 `Games with vs without Endgame` and the section-level `InfoPopover` block currently in `EndgameGamesWithWithoutSection` — the question alone sits under the page-level h2.
+- Update `Endgames.tsx` to remove the mount of `<EndgameStartVsEndSection>` and update the existing `<EndgameGamesWithWithoutSection ...>` mount (or its renamed successor) to no longer render the old section above it.
+
+### Verbatim Examples (Locked)
+
+- **Card 1 title:** `Games ending in Middlegame`
+- **Card 2 title:** `At Endgame Entry`
+- **Card 3 title:** `Endgame results`
+- **Score Gap label:** `Endgame Score Gap`
+- **Section question text:** `Do you perform better or worse when games reach an endgame?`
+
+### Test Surface Updates Required
+
+- `EndgameGamesWithWithoutSection.test.tsx` — update for new layout, three tiles, new testids, score gap placement under Card 2.
+- `__tests__/Endgames.startVsEnd.test.tsx` — rename / update for the new composite section (the `startVsEnd` filename is stale; consider `Endgames.overallPerformance.test.tsx`).
+- Drop any test asserting the legacy section h3 `Games with vs without Endgame`.
+- Drop any test asserting the `<EndgameStartVsEndSection>` mount or its testids.
+
+### Out of Scope (Stays Deferred)
+
+- Paired-test sig gating on the Endgame Score Gap (still D-04 zone-color-only).
+- Per-card peer baseline.
+- Achievable-vs-Actual as a separate widget (the implicit visual comparison is enough for v1.17).
+
