@@ -187,10 +187,8 @@ describe('EndgameOverallPerformanceSection', () => {
     const badge3 = within(screen.getByTestId('tile-games-with-endgame')).getByTestId(
       'games-count-yes',
     );
-    expect(badge1.textContent).toContain('58.5%');
-    expect(badge1.textContent).toContain('2,961');
-    expect(badge3.textContent).toContain('41.5%');
-    expect(badge3.textContent).toContain('2,100');
+    expect(badge1.textContent).toContain('Games: 58.5% (2,961)');
+    expect(badge3.textContent).toContain('Games: 41.5% (2,100)');
   });
 
   it('hides the games-count badge when a card has zero games', () => {

@@ -149,7 +149,7 @@ function EndgameCard({
                 data-testid={gamesCountTestId}
               >
                 <span>
-                  {sharePct} ({gamesCountFormatted})
+                  Games: {sharePct} ({gamesCountFormatted})
                 </span>
                 <Swords className="h-3.5 w-3.5" aria-hidden="true" />
               </span>
@@ -171,7 +171,7 @@ function EndgameCard({
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Score:</span>
               <span
-                className="ml-auto font-semibold"
+                className="font-semibold"
                 style={scoreColor ? { color: scoreColor } : undefined}
                 data-testid={scoreValueTestId}
               >
@@ -255,7 +255,7 @@ function EntryCard({ data }: EntryCardProps) {
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Endgame entry eval:</span>
               <span
-                className="ml-auto font-semibold inline-flex items-center gap-0.5"
+                className="font-semibold inline-flex items-center gap-0.5"
                 style={evalColor ? { color: evalColor } : undefined}
                 data-testid="entry-eval-value"
               >
@@ -301,7 +301,7 @@ function EntryCard({ data }: EntryCardProps) {
               <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                 <span className="text-muted-foreground">Achievable score:</span>
                 <span
-                  className="ml-auto font-semibold"
+                  className="font-semibold"
                   style={achievableColor ? { color: achievableColor } : undefined}
                   data-testid="achievable-score-value"
                 >
@@ -425,7 +425,7 @@ export function EndgameOverallPerformanceSection({
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Difference:</span>
               <span
-                className="ml-auto font-semibold"
+                className="font-semibold"
                 style={{ color: gapColor }}
                 data-testid="score-gap-difference"
               >
