@@ -27,6 +27,13 @@ class ConversionRecoveryStats(BaseModel):
     Conversion: win rate when user entered this endgame type with eval advantage.
     Recovery: draw+win rate when user entered this endgame type with eval deficit.
     Both are computed per endgame type (D-11), not per game phase.
+
+    Phase 84: opponent baselines via same-game mirror identity, scoped per
+    endgame class. opponent_conversion = opponent's win rate when opponent
+    entered with eval advantage (derived from user_recovery_*);
+    opponent_recovery = opponent's save rate when opponent entered with eval
+    deficit (derived from user_conversion_*). Gated on _MIN_OPPONENT_SAMPLE
+    against the mirror bucket size.
     """
 
     conversion_pct: float  # win rate when user entered with eval >= +1.0 (0-100), per D-08
@@ -40,6 +47,16 @@ class ConversionRecoveryStats(BaseModel):
     recovery_saves: int  # draws+wins among those games (kept for backward compat)
     recovery_wins: int  # wins among those games
     recovery_draws: int  # draws among those games
+
+    # Phase 84: per-class opponent baselines via same-game mirror identity.
+    opponent_conversion_pct: float | None
+    """None when recovery_games < _MIN_OPPONENT_SAMPLE; else opponent's win-rate when opponent entered with eval advantage (Phase 84, mirror identity)."""
+    opponent_conversion_games: int
+    """== recovery_games (mirror sample size, always int, possibly 0)."""
+    opponent_recovery_pct: float | None
+    """None when conversion_games < _MIN_OPPONENT_SAMPLE; else opponent's save-rate when opponent entered with eval deficit."""
+    opponent_recovery_games: int
+    """== conversion_games (mirror sample size, always int, possibly 0)."""
 
 
 class EndgameCategoryStats(BaseModel):
