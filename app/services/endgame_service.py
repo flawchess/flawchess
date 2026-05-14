@@ -619,6 +619,16 @@ _MATERIAL_BUCKET_LABELS: dict[MaterialBucket, str] = {
     "recovery": "Recovery (\u2264 \u22121.0)",
 }
 
+# Phase 85.1 WR-03: maps the Literal outcomes returned by derive_user_result
+# to chess scores. Lifted to module scope so the dict isn't reallocated per
+# request, and typed with Literal keys so a future caller indexing with an
+# arbitrary string is caught by ty at edit time rather than KeyError at runtime.
+_ACTUAL_SCORE_BY_OUTCOME: dict[Literal["win", "draw", "loss"], float] = {
+    "win": 1.0,
+    "draw": 0.5,
+    "loss": 0.0,
+}
+
 
 def _compute_score_gap_timeline(
     endgame_rows: Sequence[Row[Any] | tuple[Any, ...]],
@@ -1825,7 +1835,7 @@ def _get_endgame_performance_from_rows(
     # row we capture the per-game expected score (avoiding a second sigmoid eval),
     # compute actual_score_i from derive_user_result, and append
     # d_i = actual_score_i - expected_score_i. d_n == ex_n by construction.
-    _ACTUAL_SCORE_BY_OUTCOME: dict[str, float] = {"win": 1.0, "draw": 0.5, "loss": 0.0}
+    # _ACTUAL_SCORE_BY_OUTCOME defined at module scope (WR-03).
     ex_sum = 0.0
     ex_n = 0
     diffs: list[float] = []
