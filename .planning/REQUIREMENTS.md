@@ -20,6 +20,10 @@ Replaces the `EndgamePerformanceSection` table on the Endgames page.
 - [ ] **SEC1-05**: Card score row includes an `InfoPopover` explaining that 0.50 is the balanced-WDL natural anchor (not a population statistic, so no rating-tier confound applies).
 - [ ] **SEC1-06**: Significance gating follows the `EndgameStartVsEndSection` convention — font color painted only when `n ≥ MIN_GAMES_FOR_RELIABLE_STATS` AND `p < 0.05` AND value outside neutral band.
 - [ ] **SEC1-07**: The legacy `EndgamePerformanceSection` table component is removed.
+- [ ] **SEC1-08**: Endgame Score Gap (Endgame Score − Non-Endgame Score) reports a two-sided p-value vs 0 from an independent two-sample z-test on the chess-score difference, using the trinomial empirical variance per side (`(W + 0.25·D)/N − score²`). Gated to None when either cohort has `n < MIN_GAMES_FOR_RELIABLE_STATS`.
+- [ ] **SEC1-09**: Endgame Score Gap reports a 95% CI on the difference using `SE = sqrt(var_eg/n_eg + var_ne/n_ne)` (Wald-on-difference). Gated to None when either `n < 2`.
+- [ ] **SEC1-10**: Achievable Score Gap (Endgame Score − Achievable Score) is computed and tested server-side from per-game pairs. The aggregator accumulates `(actual_score_i, expected_score_i)` over the same `bucket_rows` cursor that already feeds `entry_expected_score`; reports a paired one-sample two-sided z-test on `d_i = actual_i − expected_i` (H0: `mean(d) = 0`) with `SE = sqrt(var(d_i)/n)`, plus a 95% CI on `mean(d)`. P-value gated to None when `ex_n < MIN_GAMES_FOR_RELIABLE_STATS`; CI gated to None when `ex_n < 2`. The current frontend derivation in `EndgameOverallPerformanceSection.tsx` is removed in favor of the server-computed value.
+- [ ] **SEC1-11**: Both `ScoreGapRow` rows in the "Endgame Score Differences" card render 95% CI whiskers around the bullet, mirroring the Score-row CI treatment from SEC1-03. Whether the new significance signal tightens the gap font color (reopens Phase 85 D-04 zone-only coloring) is decided in plan-phase and recorded in the decision log; default position is informational-only via the existing `InfoPopover`.
 
 ### Section 2 — Endgame Metrics (SEC2)
 
@@ -92,6 +96,10 @@ Populated by gsd-roadmapper 2026-05-12.
 | SEC1-05 | Phase 85 | Pending |
 | SEC1-06 | Phase 85 | Pending |
 | SEC1-07 | Phase 85 | Pending |
+| SEC1-08 | Phase 85.1 | Pending |
+| SEC1-09 | Phase 85.1 | Pending |
+| SEC1-10 | Phase 85.1 | Pending |
+| SEC1-11 | Phase 85.1 | Pending |
 | SEC2-01 | Phase 86 | Pending |
 | SEC2-02 | Phase 86 | Pending |
 | SEC2-03 | Phase 86 | Pending |
@@ -114,8 +122,8 @@ Populated by gsd-roadmapper 2026-05-12.
 | POLISH-04 | Phase 88 | Pending |
 
 **Coverage:**
-- v1 requirements: 27 total (30 → 27 after 2026-05-12 single-bullet doctrine pivot; SEC2-05, SEC3-03, DATA-01 dropped — see `.planning/notes/v1.17-single-bullet-doctrine.md`)
-- Mapped to phases: 27
+- v1 requirements: 31 total (30 → 27 after 2026-05-12 single-bullet doctrine pivot; SEC2-05, SEC3-03, DATA-01 dropped — see `.planning/notes/v1.17-single-bullet-doctrine.md`. +4 on 2026-05-14 with SEC1-08..11 for Phase 85.1 score-difference hypothesis tests + CIs.)
+- Mapped to phases: 31
 - Unmapped: 0
 
 ---

@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: "Phase 85 shipped — PR #96"
-last_updated: "2026-05-13T21:53:48.081Z"
-last_activity: 2026-05-13
+status: executing
+last_updated: "2026-05-14T09:23:13.515Z"
+last_activity: 2026-05-14 -- Phase 85.1 execution started
 progress:
   total_phases: 0
   completed_phases: 0
@@ -16,10 +16,10 @@ progress:
 
 ## Current Position
 
-Phase: 85 (section-1-games-with-vs-without-endgame-cards) — EXECUTING
+Phase: 85.1 (hypothesis-tests-and-cis-for-endgame-score-differences) — EXECUTING
 Plan: 1 of 4
-Status: Phase 85 shipped — PR #96
-Last activity: 2026-05-13
+Status: Executing Phase 85.1
+Last activity: 2026-05-14 -- Phase 85.1 execution started
 
 ## Project Reference
 
