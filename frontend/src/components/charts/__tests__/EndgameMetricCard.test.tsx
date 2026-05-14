@@ -108,6 +108,7 @@ describe('EndgameMetricCard — structural render', () => {
         sharePct={45.5}
         metricName="Conversion"
         metricExplanation="Test explanation"
+        titleTooltip="Test tooltip"
         tileTestId="tile-conversion"
       />,
     );
@@ -125,6 +126,7 @@ describe('EndgameMetricCard — structural render', () => {
         sharePct={45.5}
         metricName="Conversion"
         metricExplanation="Test explanation"
+        titleTooltip="Test tooltip"
         tileTestId="tile-conversion"
       />,
     );
@@ -141,6 +143,7 @@ describe('EndgameMetricCard — structural render', () => {
         sharePct={30}
         metricName="Parity"
         metricExplanation="Test explanation"
+        titleTooltip="Test tooltip"
         tileTestId="tile-parity"
       />,
     );
@@ -158,6 +161,7 @@ describe('EndgameMetricCard — sig-gated diff color', () => {
         sharePct={45.5}
         metricName="Conversion"
         metricExplanation="Test explanation"
+        titleTooltip="Test tooltip"
         tileTestId="tile-conversion"
       />,
     );
@@ -174,6 +178,7 @@ describe('EndgameMetricCard — sig-gated diff color', () => {
         sharePct={45.5}
         metricName="Conversion"
         metricExplanation="Test explanation"
+        titleTooltip="Test tooltip"
         tileTestId="tile-conversion"
       />,
     );
@@ -192,6 +197,7 @@ describe('EndgameMetricCard — empty state', () => {
         sharePct={0}
         metricName="Conversion"
         metricExplanation="Test explanation"
+        titleTooltip="Test tooltip"
         tileTestId="tile-conversion"
       />,
     );
@@ -212,6 +218,7 @@ describe('EndgameMetricCard — missing-opponent state', () => {
         sharePct={45.5}
         metricName="Conversion"
         metricExplanation="Test explanation"
+        titleTooltip="Test tooltip"
         tileTestId="tile-conversion"
       />,
     );

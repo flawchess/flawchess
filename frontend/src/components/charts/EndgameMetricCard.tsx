@@ -19,6 +19,7 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { isConfident } from '@/lib/significance';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import {
@@ -55,6 +56,8 @@ interface EndgameMetricCardProps {
    * from this via template literals: `${tileTestId}-diff`, `${tileTestId}-muted`,
    * `${tileTestId}-info`. */
   tileTestId: string;
+  /** Content rendered inside the InfoPopover next to the card's h3 title. */
+  titleTooltip: ReactNode;
 }
 
 export function EndgameMetricCard({
@@ -65,6 +68,7 @@ export function EndgameMetricCard({
   metricName,
   metricExplanation,
   tileTestId,
+  titleTooltip,
 }: EndgameMetricCardProps) {
   const userR = userRate(row);
   const oppR = opponentRate(row, mirror);
@@ -91,8 +95,15 @@ export function EndgameMetricCard({
 
   return (
     <div className="charcoal-texture rounded-md p-4" data-testid={tileTestId}>
-      <h3 className="text-base font-semibold mb-2">
+      <h3 className="text-base font-semibold mb-2 inline-flex items-center gap-1">
         {BUCKET_DISPLAY_LABELS_WITH_METRIC[bucket]}
+        <InfoPopover
+          ariaLabel={`${BUCKET_DISPLAY_LABELS_WITH_METRIC[bucket]} info`}
+          testId={`${tileTestId}-title-info`}
+          side="top"
+        >
+          {titleTooltip}
+        </InfoPopover>
       </h3>
       <div className="flex flex-col gap-4">
         {/* Gauge row — opacity-50 when no games per D-17. */}

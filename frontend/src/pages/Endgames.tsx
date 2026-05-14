@@ -349,6 +349,21 @@ export function EndgamesPage() {
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground space-y-2">
                     <p>
+                      <strong>Color Zones and FlawChess Benchmark:</strong> the blue band on each gauge and chart marks the typical range,
+                      defined by the middle 50% of players (interquartile range). Values inside the blue zone are typical, while red and green zones flag below- and
+                      above-average performance. Zone bounds are calibrated from the latest {' '}
+                      <a
+                        href="https://github.com/flawchess/flawchess/blob/main/reports/benchmarks-latest.md"
+                        className="text-primary underline-offset-4 hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        FlawChess Benchmark
+                      </a>
+                      , which provides metric distributions from a stratified sample of Lichess players across rating
+                      and time control buckets.
+                    </p>
+                    <p>
                       <strong>Endgame Phase:</strong> positions where the total count of major and minor pieces
                       (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
                       counted. This follows the Lichess definition. A game is only counted as having an Endgame
@@ -417,21 +432,6 @@ export function EndgamesPage() {
                       converted them worse.
                     </p>
                     <p>
-                      <strong>Color Zones:</strong> the blue band on each gauge and chart marks the typical range,
-                      defined by the middle 50% of players (interquartile range). Values inside the blue zone are typical, while red and green zones flag below- and
-                      above-average performance. Zone bounds are calibrated from the latest {' '}
-                      <a
-                        href="https://github.com/flawchess/flawchess/blob/main/reports/benchmarks-latest.md"
-                        className="text-primary underline-offset-4 hover:underline"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        FlawChess benchmark
-                      </a>
-                      , which is computed from a stratified sample of Lichess players across rating
-                      and time control buckets.
-                    </p>
-                    <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating
                       level. As your rating changes, you face stronger or weaker opponents, so trends may not
                       directly indicate improvement or stagnation in absolute terms. If you often play against
@@ -456,51 +456,7 @@ export function EndgamesPage() {
               {scoreGapData && (
                 <>
                   <h2 className="text-lg font-semibold text-foreground mt-2">
-                    <span className="inline-flex items-center gap-1">
-                      Endgame Metrics and ELO
-                      <InfoPopover
-                        ariaLabel="Endgame Metrics and ELO info"
-                        testId="endgame-metrics-and-elo-info"
-                        side="top"
-                      >
-                        <div className="space-y-2">
-                          <p>
-                            Games are split by the Stockfish evaluation at the
-                            endgame-entry: <strong>Conversion</strong> (you ahead,
-                            eval ≥ +1.0), <strong>Parity</strong> (roughly balanced,
-                            eval between −1.0 and +1.0), or <strong>Recovery</strong>
-                            {' '}(you behind, eval ≤ −1.0).
-                          </p>
-                          <ul className="list-disc pl-5 space-y-1">
-                            <li>
-                              <strong>Conversion</strong>: only wins count
-                            </li>
-                            <li>
-                              <strong>Parity</strong>: draws count as half
-                            </li>
-                            <li>
-                              <strong>Recovery</strong>: draws count as a save
-                            </li>
-                            <li>
-                              <strong>Endgame Skill</strong>: averages the three rates
-                              above
-                            </li>
-                          </ul>
-                          <p>
-                            The <strong>gauges</strong> plot that rate against a fixed
-                            skill-cohort target band (blue = typical, red = below,
-                            green = above). Bands are calibrated from FlawChess data
-                            and don't shift with filters, giving you a stable target
-                            you can chase as you improve.
-                          </p>
-                          <p>
-                            The <strong>Endgame ELO timeline</strong> below uses the
-                            same Endgame Skill to adjust your rating by your
-                            per-week endgame performance.
-                          </p>
-                        </div>
-                      </InfoPopover>
-                    </span>
+                    Endgame Metrics and ELO
                   </h2>
                   <EndgameMetricsSection data={scoreGapData} />
                   <div

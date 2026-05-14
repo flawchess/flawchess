@@ -18,7 +18,7 @@
  * "Endgame Metrics and ELO" trigger in `Endgames.tsx` (D-11).
  */
 
-import { useRef } from 'react';
+import { useRef, type ReactNode } from 'react';
 
 import { MIRROR_BUCKET } from '@/lib/endgameMetrics';
 import type {
@@ -59,6 +59,48 @@ const TILE_TESTIDS: Record<MaterialBucket, string> = {
   conversion: 'tile-conversion',
   parity: 'tile-parity',
   recovery: 'tile-recovery',
+};
+
+// Title-tooltip content per bucket. Lives next to the card title and explains
+// the bucket's eval window, scoring rule, and gauge band semantics. The
+// "Endgame Skill" composite + ELO timeline note live in EndgameSkillCard.
+const GAUGE_BAND_BLURB = (
+  <p>
+    The <strong>gauge</strong> plots your rate against a fixed
+    target band (blue = typical, red = below, green = above). Bands are
+    calibrated from FlawChess Benchmark data and don't shift with filters,
+    giving you a stable target you can chase as you improve.
+  </p>
+);
+
+const TITLE_TOOLTIPS: Record<MaterialBucket, ReactNode> = {
+  conversion: (
+    <div className="space-y-2">
+      <p>
+        Your <strong>win rate</strong> (only wins count) when you entered the
+        endgame with a Stockfish eval ≥ +1.0 (you ahead).
+      </p>
+      {GAUGE_BAND_BLURB}
+    </div>
+  ),
+  parity: (
+    <div className="space-y-2">
+      <p>
+        Your <strong>chess score</strong> (wins + ½ draws) when you entered the
+        endgame with an eval between −1.0 and +1.0 (roughly balanced).
+      </p>
+      {GAUGE_BAND_BLURB}
+    </div>
+  ),
+  recovery: (
+    <div className="space-y-2">
+      <p>
+        Your <strong>save rate</strong> (wins + draws count) when you entered
+        the endgame with an eval ≤ −1.0 (you behind).
+      </p>
+      {GAUGE_BAND_BLURB}
+    </div>
+  ),
 };
 
 /** Synthesize a zero-row for buckets missing from the response. Lets
@@ -120,6 +162,7 @@ export function EndgameMetricsSection({ data }: { data: ScoreGapMaterialResponse
               metricName={METRIC_NAMES[bucket]}
               metricExplanation={METRIC_EXPLANATIONS[bucket]}
               tileTestId={TILE_TESTIDS[bucket]}
+              titleTooltip={TITLE_TOOLTIPS[bucket]}
             />
           );
         })}

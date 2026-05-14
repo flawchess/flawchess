@@ -18,6 +18,7 @@ import type { CSSProperties } from 'react';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
+import { InfoPopover } from '@/components/ui/info-popover';
 import { isConfident } from '@/lib/significance';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import {
@@ -81,7 +82,33 @@ export function EndgameSkillCard({
 
   return (
     <div className="charcoal-texture rounded-md p-4" data-testid={tileTestId}>
-      <h3 className="text-base font-semibold mb-2">Endgame Skill</h3>
+      <h3 className="text-base font-semibold mb-2 inline-flex items-center gap-1">
+        Endgame Skill
+        <InfoPopover
+          ariaLabel="Endgame Skill info"
+          testId={`${tileTestId}-title-info`}
+          side="top"
+        >
+          <div className="space-y-2">
+            <p>
+              The average of your Conversion, Parity, and Recovery rates — a
+              one-number summary of overall endgame proficiency against
+              the actual opponents you played.
+            </p>
+            <p>
+              The <strong>gauge</strong> plots it against a fixed
+              band (blue = typical, red = below, green = above). Bands
+              are calibrated from FlawChess Benchmark data and don't shift with filters,
+              giving you a stable target you can chase as you improve.
+            </p>
+            <p>
+              The <strong>Endgame ELO timeline</strong> below uses the same
+              Endgame Skill to adjust your rating by your per-week endgame
+              performance.
+            </p>
+          </div>
+        </InfoPopover>
+      </h3>
       <div className="flex flex-col gap-4">
         {/* Gauge row — opacity-50 when skill is null per D-17. */}
         <div className={`flex justify-center${hasSkill ? '' : ' opacity-50'}`}>
