@@ -24,7 +24,7 @@
 
 import { useRef } from 'react';
 
-import { InfoPopover } from '@/components/ui/info-popover';
+import { ScoreGapPopover } from '@/components/popovers/ScoreGapPopover';
 import {
   SCORE_GAP_NEUTRAL_MAX,
   SCORE_GAP_NEUTRAL_MIN,
@@ -39,6 +39,7 @@ import { EndgameCard } from './EndgameOverallCard';
 import { ConnectorArrows } from './EndgameOverallConnectorArrows';
 import { EntryCard } from './EndgameOverallEntryCard';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
+import { deriveLevel } from './EndgameOverallShared';
 
 // Endgame Score Gap / Achievable Score Gap result is always tinted by zone (red / blue / green),
 // never default-white. The difference reads as a zone signal regardless of
@@ -77,6 +78,22 @@ export function EndgameOverallPerformanceSection({
   const achievableGapFormatted =
     (achievableGapPositive ? '+' : '') + `${Math.round(achievableGapValue * 100)}%`;
   const achievableGapColor = gapZoneColor(achievableGapValue);
+
+  // Sample sizes for the two paired/two-sample tests powering the gap popovers.
+  // Achievable Score Gap: paired-diff over endgame games with non-null entry
+  // eval (d_n == entry_expected_score_n by construction, see endgame_service.py).
+  // Endgame Score Gap: two-sample over both cohorts combined.
+  const achievableGapN = data.entry_expected_score_n;
+  const endgameGapN = data.endgame_wdl.total + data.non_endgame_wdl.total;
+
+  const achievableGapLevel = deriveLevel(
+    data.achievable_score_gap_p_value,
+    achievableGapN,
+  );
+  const endgameGapLevel = deriveLevel(
+    scoreGap.score_difference_p_value,
+    endgameGapN,
+  );
 
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -145,18 +162,31 @@ export function EndgameOverallPerformanceSection({
               ciLow={data.achievable_score_gap_ci_low ?? undefined}
               ciHigh={data.achievable_score_gap_ci_high ?? undefined}
               tooltip={
-                <InfoPopover
-                  ariaLabel="What is Achievable Score Gap?"
+                <ScoreGapPopover
+                  label="Achievable Score Gap"
+                  value={achievableGapValue}
+                  gameCount={achievableGapN}
+                  level={achievableGapLevel}
+                  pValue={data.achievable_score_gap_p_value}
                   testId="achievable-score-gap-info"
-                >
-                  <p>
-                    <strong>Achievable Score Gap: </strong>Your average per-game score minus the achievable score
-                    from each endgame-entry position. Positive means you
-                    converted your endgame entry positions better than a
-                    2300+ rated rapid player would on average; negative
-                    means you converted them worse.
-                  </p>
-                </InfoPopover>
+                  ariaLabel="What is Achievable Score Gap?"
+                  description={
+                    <>
+                      Your average per-game score minus the achievable score
+                      from each endgame-entry position. Positive means you
+                      converted your endgame entry positions better than a
+                      2300+ rated rapid player would on average; negative
+                      means you converted them worse.
+                    </>
+                  }
+                  footer={
+                    <>
+                      Score: wins + ½ draws.<br />
+                      Test: paired one-sample z-test on per-game (actual − expected) diffs vs 0.<br />
+                      Confidence interval: 95% normal-approx on the paired diffs.
+                    </>
+                  }
+                />
               }
             />
             <ScoreGapRow
@@ -170,16 +200,31 @@ export function EndgameOverallPerformanceSection({
               ciLow={scoreGap.score_difference_ci_low ?? undefined}
               ciHigh={scoreGap.score_difference_ci_high ?? undefined}
               tooltip={
-                <InfoPopover
-                  ariaLabel="What is Endgame Score Gap?"
+                <ScoreGapPopover
+                  label="Endgame Score Gap"
+                  value={scoreGap.score_difference}
+                  gameCount={endgameGapN}
+                  level={endgameGapLevel}
+                  pValue={scoreGap.score_difference_p_value}
                   testId="endgame-score-gap-info"
-                >
-                  <p>
-                    <strong>Endgame Score Gap: </strong>The score difference between games that reach an endgame (Endgame Score) vs. games that end before (Non-Endgame Score). Positive means endgames are
-                    your strength; negative means you perform worse once
-                    games reach an endgame.
-                  </p>
-                </InfoPopover>
+                  ariaLabel="What is Endgame Score Gap?"
+                  description={
+                    <>
+                      The score difference between games that reach an endgame
+                      (Endgame Score) vs. games that end before (Non-Endgame
+                      Score). Positive means endgames are your strength;
+                      negative means you perform worse once games reach an
+                      endgame.
+                    </>
+                  }
+                  footer={
+                    <>
+                      Score: wins + ½ draws.<br />
+                      Test: two-sample z-test on (Endgame Score − Non-Endgame Score) vs 0.<br />
+                      Confidence interval: 95% normal-approx on the score difference.
+                    </>
+                  }
+                />
               }
             />
           </div>
