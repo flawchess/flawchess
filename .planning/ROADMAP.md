@@ -31,7 +31,7 @@ Replaces three table-driven sections on the Endgames page with the established W
 - [ ] Phase 84: Data plumbing — per-type cohort p50 + mirror-rate audit (3 plans) — planned
 - [ ] Phase 85: Section 1 — Games with vs without Endgame cards (5 plans; replan-in-place 2026-05-13 added Plan 85-05 for 3-card composite redesign) — planned
 - [ ] Phase 86: Section 2 — Endgame Metrics 4-card layout (5 plans) — planned
-- [ ] Phase 87: Section 3 — Per-type Endgame Type Breakdown cards (TBD plans) — planned
+- [ ] Phase 87: Section 3 — Per-type Endgame Type Breakdown cards (3 plans) — planned
 - [ ] Phase 88: Polish — popovers, gating decisions, automation rules, 375px parity (TBD plans) — planned
 
 See [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md) for full phase details, success criteria, and requirement traceability.
