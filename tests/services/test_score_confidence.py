@@ -25,6 +25,7 @@ import pytest
 
 from app.services.score_confidence import (
     compute_confidence_bucket,
+    compute_paired_difference_test,
     compute_score_confidence_from_mean,
     compute_score_difference_test,
 )
@@ -381,3 +382,113 @@ class TestComputeScoreDifferenceTest:
         )
         assert p is not None
         assert 0.0 <= p <= 1.0
+
+
+# --- compute_paired_difference_test (Phase 85.1 Plan 1 Task 2) ------------
+# Paired one-sample z-test on per-game differences d_i = actual_i - expected_i.
+# Per SEC1-10: mean_d always returned (0.0 when empty); p_value None when
+# len(diffs) < 10 (CONFIDENCE_MIN_N); ci_* None when len(diffs) < 2. H0 is
+# mean_d == 0. Variance uses Bessel correction (n-1 denominator).
+
+
+class TestComputePairedDifferenceTest:
+    """compute_paired_difference_test(diffs) -> (mean_d, p_value, ci_low, ci_high).
+
+    H0: mean(diffs) == 0. p_value gated at n < 10; CI gated at n < 2.
+    Bessel-corrected sample variance: var_d = max(0, (sumsq - n*mean^2) / (n-1)).
+    """
+
+    def test_empty_sequence_returns_zero_mean_all_none(self) -> None:
+        """diffs=[] -> mean=0.0, p/ci all None. Must not raise."""
+        mean_d, p, lo, hi = compute_paired_difference_test([])
+        assert mean_d == 0.0
+        assert p is None
+        assert lo is None
+        assert hi is None
+
+    def test_n_one_returns_mean_but_no_p_no_ci(self) -> None:
+        """diffs=[0.1] (n=1): Bessel correction divides by n-1 which is zero
+        at n=1; the helper must short-circuit rather than divide-by-zero.
+        mean is still computable and returned."""
+        mean_d, p, lo, hi = compute_paired_difference_test([0.1])
+        assert mean_d == pytest.approx(0.1, abs=1e-12)
+        assert p is None
+        assert lo is None
+        assert hi is None
+
+    def test_all_zeros_above_gate_gives_p_one_ci_collapses_to_zero(self) -> None:
+        """diffs=[0.0]*15: SE=0, mean == H0=0 -> p=1.0, CI collapses to [0, 0]."""
+        mean_d, p, lo, hi = compute_paired_difference_test([0.0] * 15)
+        assert mean_d == pytest.approx(0.0, abs=1e-12)
+        assert p == pytest.approx(1.0, abs=1e-9)
+        assert lo == pytest.approx(0.0, abs=1e-9)
+        assert hi == pytest.approx(0.0, abs=1e-9)
+
+    def test_all_equal_nonzero_gives_p_zero_ci_collapses(self) -> None:
+        """diffs=[0.25]*15: SE=0, mean != H0=0 -> p=0.0 (perfectly determined),
+        CI collapses to [0.25, 0.25]."""
+        mean_d, p, lo, hi = compute_paired_difference_test([0.25] * 15)
+        assert mean_d == pytest.approx(0.25, abs=1e-12)
+        assert p == pytest.approx(0.0, abs=1e-9)
+        assert lo == pytest.approx(0.25, abs=1e-9)
+        assert hi == pytest.approx(0.25, abs=1e-9)
+
+    def test_below_p_gate_with_n_at_least_2_returns_ci(self) -> None:
+        """diffs=[+0.1]*9 (n=9, below CONFIDENCE_MIN_N=10 but >=2): p is gated
+        to None, but CI bounds are still returned (CI gate is n<2)."""
+        mean_d, p, lo, hi = compute_paired_difference_test([0.1] * 9)
+        assert mean_d == pytest.approx(0.1, abs=1e-12)
+        assert p is None
+        # All-equal nonzero -> SE=0, CI collapses to mean (still real floats).
+        assert lo == pytest.approx(0.1, abs=1e-9)
+        assert hi == pytest.approx(0.1, abs=1e-9)
+
+    def test_known_mixed_dataset_matches_closed_form(self) -> None:
+        """For diffs = [0.1, -0.1, 0.2, -0.2] * 5 (n=20):
+        sum = 0; mean = 0; sumsq = (0.01 + 0.01 + 0.04 + 0.04) * 5 = 0.5;
+        var_d = (0.5 - 20*0) / 19 = 0.5 / 19;
+        se = sqrt(var_d / 20); ci_half = 1.96 * se;
+        ci_high - ci_low = 2 * ci_half."""
+        diffs = [0.1, -0.1, 0.2, -0.2] * 5
+        n = len(diffs)
+        expected_mean = sum(diffs) / n
+        sumsq = sum(d * d for d in diffs)
+        expected_var = max(0.0, (sumsq - n * expected_mean * expected_mean) / (n - 1))
+        expected_se = math.sqrt(expected_var / n)
+        expected_half_width = 1.96 * expected_se  # 1.96 == CI_Z_95
+
+        mean_d, p, lo, hi = compute_paired_difference_test(diffs)
+        assert mean_d == pytest.approx(expected_mean, abs=1e-12)
+        assert p is not None
+        assert lo is not None and hi is not None
+        assert (hi - lo) / 2.0 == pytest.approx(expected_half_width, rel=1e-9)
+        assert (lo + hi) / 2.0 == pytest.approx(expected_mean, abs=1e-9)
+
+    def test_p_value_in_unit_interval_for_non_degenerate_input(self) -> None:
+        """erfc(|z|/sqrt(2)) is in [0, 1] for any finite z."""
+        diffs = [0.05 * i for i in range(-10, 10)]  # symmetric mean ~ -0.025
+        _mean, p, _lo, _hi = compute_paired_difference_test(diffs)
+        assert p is not None
+        assert 0.0 <= p <= 1.0
+
+    def test_bessel_correction_divides_by_n_minus_one(self) -> None:
+        """Var must use Bessel correction. For diffs = [1.0, -1.0, 1.0, -1.0]*5
+        (n=20), mean=0, sumsq=20. Bessel var = (20 - 0) / 19 = 1.0526...
+        Naive var (/n) would be 1.0. Distinguish by checking the CI half-width."""
+        diffs = [1.0, -1.0, 1.0, -1.0] * 5
+        n = len(diffs)
+        bessel_var = 20.0 / (n - 1)  # 20/19
+        bessel_se = math.sqrt(bessel_var / n)
+        bessel_half_width = 1.96 * bessel_se
+
+        # Naive (/n) would yield a smaller half-width:
+        naive_var = 20.0 / n  # 1.0
+        naive_se = math.sqrt(naive_var / n)
+        naive_half_width = 1.96 * naive_se
+        assert bessel_half_width > naive_half_width  # sanity: they differ
+
+        _mean, _p, lo, hi = compute_paired_difference_test(diffs)
+        assert lo is not None and hi is not None
+        assert (hi - lo) / 2.0 == pytest.approx(bessel_half_width, rel=1e-9)
+        # Explicitly NOT the naive half-width:
+        assert (hi - lo) / 2.0 != pytest.approx(naive_half_width, rel=1e-9)
