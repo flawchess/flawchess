@@ -19,7 +19,7 @@ import {
   FIXED_GAUGE_ZONES as REGISTRY_FIXED_GAUGE_ZONES,
   ENDGAME_SKILL_ZONES as REGISTRY_ENDGAME_SKILL_ZONES,
 } from '@/generated/endgameZones';
-import type { MaterialBucket, MaterialRow } from '@/types/endgames';
+import type { EndgameClass, MaterialBucket, MaterialRow } from '@/types/endgames';
 
 // Short display names — the eval threshold indicator ("≥ +1.0", "≤ −1.0")
 // lives in the section description, freeing column/card space (especially
@@ -131,3 +131,37 @@ export const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
 // per-bucket gauges users are already reading. Typical value lands around
 // 52% on FlawChess data, sitting in the middle of the blue band.
 export const ENDGAME_SKILL_ZONES: GaugeZone[] = colorizeGaugeZones(REGISTRY_ENDGAME_SKILL_ZONES);
+
+// Phase 87 (D-11): One-sentence descriptions per endgame class, surfaced in the
+// per-card title InfoPopover on EndgameTypeCard. Lifted from
+// EndgameWDLChart.tsx:30-37 in Plan 02; `pawnless` omitted because pawnless is
+// hidden via HIDDEN_ENDGAME_CLASSES (Endgames.tsx:53) and never reaches the new
+// section orchestrator.
+export const ENDGAME_TYPE_DESCRIPTIONS: Record<Exclude<EndgameClass, 'pawnless'>, string> = {
+  rook: 'Endgames with rooks as the only non-king, non-pawn pieces. The most common Endgame Type besides Mixed.',
+  minor_piece: 'Endgames with bishops and/or knights as the only non-king, non-pawn pieces.',
+  pawn: 'King and pawn endgames only. No other pieces remain on the board.',
+  queen: 'Endgames where queens are the only non-king, non-pawn pieces.',
+  mixed: 'Endgames with pieces from two or more piece types: rooks, minor pieces (bishops/knights), and queens (e.g. queen + rook, rook + knight).',
+};
+
+// Phase 87 (D-04): Mobile real-device density check in Plan 03 HUMAN-UAT decides
+// the final value. When false, the WDL bar row in EndgameTypeCard is suppressed
+// and the Games deep-link moves to a standalone row under the gauges so the
+// deep-link stays visible (per D-07 fallback rule). Card layout adapts; gauges
+// and peer bullets are never dropped under the fallback.
+export const SHOW_WDL_BAR_IN_TYPE_CARDS: boolean = true;
+
+// Phase 87 (D-16): Hyphenated URL slug + testid suffix per endgame class. Powers
+// /endgames/games?type=... deep-link and `type-card-{slug}` data-testid in
+// EndgameTypeCard / EndgameTypeBreakdownSection. Lifted verbatim from
+// EndgameWDLChart.tsx:21-28; all 6 entries kept for completeness even though
+// pawnless is filtered upstream by HIDDEN_ENDGAME_CLASSES.
+export const ENDGAME_CLASS_TO_SLUG: Record<EndgameClass, string> = {
+  rook: 'rook',
+  minor_piece: 'minor-piece',
+  pawn: 'pawn',
+  queen: 'queen',
+  mixed: 'mixed',
+  pawnless: 'pawnless',
+};
