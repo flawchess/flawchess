@@ -1,11 +1,15 @@
 /**
- * Phase 85 — Desktop-only connector arrows that tie the three cards of the
- * "Endgame Overall Performance" composite section to the Score Differences
- * tile below Card 2.
+ * Desktop-only connector arrows that tie three top cards to one target tile
+ * positioned below the middle card.
  *
- *   Card 1 bottom-center → drops down → turns right → Score Gap left-center
- *   Card 3 bottom-center → drops down → turns left  → Score Gap right-center
- *   Card 2 bottom-center → drops straight down      → Score Gap top-center
+ *   Left card   bottom-center → drops down → turns right → target left-center
+ *   Right card  bottom-center → drops down → turns left  → target right-center
+ *   Middle card bottom-center → drops straight down      → target top-center
+ *
+ * Phase 86 D-09a parameterized the four testids via props so the same
+ * geometry serves both `EndgameOverallPerformanceSection` (Phase 85, three
+ * tiles + score-differences-below-middle) and `EndgameMetricsSection`
+ * (Phase 86, Conv/Parity/Recov + Skill-below-Parity).
  *
  * Positions are measured from the live DOM (card heights vary with content)
  * and recomputed on resize. Hidden on mobile via the stacked-layout check
@@ -34,11 +38,21 @@ interface ArrowGeom {
   sgMidY: number;
 }
 
+interface ConnectorArrowsProps {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  leftCardTestId: string;
+  middleCardTestId: string;
+  rightCardTestId: string;
+  targetTileTestId: string;
+}
+
 export function ConnectorArrows({
   containerRef,
-}: {
-  containerRef: React.RefObject<HTMLDivElement | null>;
-}) {
+  leftCardTestId,
+  middleCardTestId,
+  rightCardTestId,
+  targetTileTestId,
+}: ConnectorArrowsProps) {
   const [geom, setGeom] = useState<ArrowGeom | null>(null);
 
   useEffect(() => {
@@ -48,16 +62,16 @@ export function ConnectorArrows({
     function compute() {
       if (!container) return;
       const c1 = container.querySelector<HTMLElement>(
-        '[data-testid="tile-games-without-endgame"]',
+        `[data-testid="${leftCardTestId}"]`,
       );
       const c2 = container.querySelector<HTMLElement>(
-        '[data-testid="tile-at-endgame-entry"]',
+        `[data-testid="${middleCardTestId}"]`,
       );
       const c3 = container.querySelector<HTMLElement>(
-        '[data-testid="tile-games-with-endgame"]',
+        `[data-testid="${rightCardTestId}"]`,
       );
       const sg = container.querySelector<HTMLElement>(
-        '[data-testid="endgame-score-differences"]',
+        `[data-testid="${targetTileTestId}"]`,
       );
       if (!c1 || !c2 || !c3 || !sg) {
         setGeom(null);
@@ -95,7 +109,7 @@ export function ConnectorArrows({
     const ro = new ResizeObserver(compute);
     ro.observe(container);
     return () => ro.disconnect();
-  }, [containerRef]);
+  }, [containerRef, leftCardTestId, middleCardTestId, rightCardTestId, targetTileTestId]);
 
   if (!geom) return null;
 

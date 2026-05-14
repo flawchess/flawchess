@@ -248,7 +248,13 @@ export function EndgameOverallPerformanceSection({
           </div>
         </div>
 
-        <ConnectorArrows containerRef={gridRef} />
+        <ConnectorArrows
+          containerRef={gridRef}
+          leftCardTestId="tile-games-without-endgame"
+          middleCardTestId="tile-at-endgame-entry"
+          rightCardTestId="tile-games-with-endgame"
+          targetTileTestId="endgame-score-differences"
+        />
       </div>
     </section>
   );
