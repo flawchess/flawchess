@@ -1,8 +1,8 @@
 ---
 phase: 20
 slug: rename-branding
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-21
 ---

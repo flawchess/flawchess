@@ -1,8 +1,8 @@
 ---
 phase: 6
 slug: optimize-ui-for-claude-chrome-extension-testing
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-13
 ---
