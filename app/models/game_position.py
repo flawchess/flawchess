@@ -1,6 +1,7 @@
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Index, SmallInteger, String, text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, SmallInteger, String, text
+from sqlalchemy.dialects.postgresql import REAL
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -25,7 +26,10 @@ class GamePosition(Base):
         # INCLUDE(eval_cp, eval_mate) avoids a 5M+ row seq scan for the entry-ply eval lookup (REFAC-02).
         Index(
             "ix_gp_user_endgame_game",
-            "user_id", "game_id", "endgame_class", "ply",
+            "user_id",
+            "game_id",
+            "endgame_class",
+            "ply",
             postgresql_where=text("endgame_class IS NOT NULL"),
             postgresql_include=["eval_cp", "eval_mate"],
         ),
@@ -44,7 +48,9 @@ class GamePosition(Base):
         # (Hikaru 65k games -> 816 ms).
         Index(
             "ix_gp_user_game_ply",
-            "user_id", "game_id", "ply",
+            "user_id",
+            "game_id",
+            "ply",
             postgresql_where=text("ply BETWEEN 0 AND 17"),
             postgresql_include=["full_hash", "move_san"],
         ),
@@ -57,7 +63,9 @@ class GamePosition(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )  # denormalized for query perf
-    ply: Mapped[int] = mapped_column(SmallInteger, nullable=False)  # half-move number (0 = initial), max ~600
+    ply: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False
+    )  # half-move number (0 = initial), max ~600
 
     # Zobrist hashes — explicit BIGINT for 64-bit values
     full_hash: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -68,8 +76,8 @@ class GamePosition(Base):
     move_san: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     # Clock seconds remaining from %clk PGN annotation; None if not present or final position
-    # Float(24) maps to REAL (4 bytes) instead of DOUBLE PRECISION (8 bytes)
-    clock_seconds: Mapped[float | None] = mapped_column(Float(24), nullable=True)
+    # REAL (4 bytes) instead of DOUBLE PRECISION (8 bytes)
+    clock_seconds: Mapped[float | None] = mapped_column(REAL, nullable=True)
 
     # Position metadata — computed by position_classifier.py, populated during import (Phase 27)
     material_count: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
