@@ -55,11 +55,10 @@ vi.mock('recharts', async () => {
 // ── Mock heavy chart components / hooks that don't participate in the
 // assertions. Everything stubbed here renders a single <div> with a stable
 // testid so we can still detect "the section was rendered" if needed.
-vi.mock('@/components/charts/EndgameWDLChart', () => ({
-  EndgameWDLChart: () => <div data-testid="mock-endgame-wdl-chart" />,
-}));
-vi.mock('@/components/charts/EndgameConvRecovChart', () => ({
-  EndgameConvRecovChart: () => <div data-testid="mock-endgame-conv-recov-chart" />,
+vi.mock('@/components/charts/EndgameTypeBreakdownSection', () => ({
+  EndgameTypeBreakdownSection: () => (
+    <div data-testid="mock-endgame-type-breakdown-section" />
+  ),
 }));
 vi.mock('@/components/charts/EndgameMetricsSection', () => ({
   EndgameMetricsSection: () => <div data-testid="mock-endgame-metrics-section" />,
