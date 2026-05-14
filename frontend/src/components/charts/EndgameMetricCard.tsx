@@ -152,7 +152,7 @@ export function EndgameMetricCard({
                     </span>
                   </span>
                   <span>
-                    <span className="text-muted-foreground">Diff: </span>
+                    <span className="text-muted-foreground">Gap: </span>
                     <span
                       className="font-semibold"
                       style={diffStyle}

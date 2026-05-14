@@ -30,14 +30,15 @@ export const BUCKET_DISPLAY_LABELS: Record<MaterialBucket, string> = {
   recovery: 'Recovery',
 };
 
-// User-facing labels that also name the per-bucket metric, so readers can
-// tell the percent column isn't the generic Score used elsewhere on the
-// page. Used in the gauge strip, desktop table, and mobile cards; aria
-// labels and gauge testIds keep the short form above.
+// User-facing labels that also name the per-bucket metric. Currently identical
+// to BUCKET_DISPLAY_LABELS — the explanatory "(Win)/(Score)/(Save)" suffix was
+// dropped per phase 86 feedback. Kept as a separate export so callers that
+// want the "name the metric" surface keep a stable import site if it diverges
+// again later.
 export const BUCKET_DISPLAY_LABELS_WITH_METRIC: Record<MaterialBucket, string> = {
-  conversion: 'Conversion (Win)',
-  parity: 'Parity (Score)',
-  recovery: 'Recovery (Save)',
+  conversion: 'Conversion',
+  parity: 'Parity',
+  recovery: 'Recovery',
 };
 
 /** Format a 0.0-1.0 rate as an integer percent string, e.g. 0.684 -> "68%". */

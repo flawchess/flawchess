@@ -15,8 +15,6 @@
 
 import type { CSSProperties } from 'react';
 
-import { Swords } from 'lucide-react';
-
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
@@ -80,7 +78,6 @@ export function EndgameSkillCard({
     : undefined;
 
   const gaugeValue = (skill ?? 0) * 100;
-  const gamesCountFormatted = totalGames.toLocaleString();
 
   return (
     <div className="charcoal-texture rounded-md p-4" data-testid={tileTestId}>
@@ -97,19 +94,6 @@ export function EndgameSkillCard({
 
         {hasSkill ? (
           <>
-            {/* Games-count row — Skill spans all buckets, no share. */}
-            <div className="flex flex-col gap-2">
-              <span className="flex items-center gap-2 text-sm tabular-nums w-full">
-                <span
-                  className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums whitespace-nowrap"
-                  data-testid={`${tileTestId}-games-count`}
-                >
-                  <span>Games: {gamesCountFormatted}</span>
-                  <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-                </span>
-              </span>
-            </div>
-
             {/* Peer-bullet row */}
             {hasOpponent ? (
               <div className="flex flex-col gap-2">
@@ -133,7 +117,7 @@ export function EndgameSkillCard({
                     </span>
                   </span>
                   <span>
-                    <span className="text-muted-foreground">Diff: </span>
+                    <span className="text-muted-foreground">Gap: </span>
                     <span
                       className="font-semibold"
                       style={diffStyle}
@@ -144,7 +128,7 @@ export function EndgameSkillCard({
                   </span>
                   <MetricStatPopover
                     name="Endgame Skill"
-                    explanation="A composite of your Conversion, Parity, and Recovery rates compared to the same composite for your opponents in the mirror bucket. One-number summary of overall endgame proficiency."
+                    explanation="A composite of your Conversion, Parity, and Recovery rates compared to the same composite for your opponents against you. One-number summary of overall endgame proficiency."
                     value={(skill as number) - (oppSkill as number)}
                     baseline={0}
                     unit="percent"

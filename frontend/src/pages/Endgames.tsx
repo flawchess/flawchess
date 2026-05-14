@@ -477,13 +477,13 @@ export function EndgamesPage() {
                           </p>
                           <ul className="list-disc pl-5 space-y-1">
                             <li>
-                              <strong>Conversion (Win)</strong>: only wins count
+                              <strong>Conversion</strong>: only wins count
                             </li>
                             <li>
-                              <strong>Parity (Score)</strong>: draws count as half
+                              <strong>Parity</strong>: draws count as half
                             </li>
                             <li>
-                              <strong>Recovery (Save)</strong>: draws count as a save
+                              <strong>Recovery</strong>: draws count as a save
                             </li>
                             <li>
                               <strong>Endgame Skill</strong>: averages the three rates
@@ -503,12 +503,12 @@ export function EndgamesPage() {
                           </p>
                           <p>
                             The per-card <strong>peer bullet</strong> compares your
-                            rate to your actual opponents' rate in the mirror bucket
-                            (for example, your Conversion vs their Conversion in the
-                            games where you faced them, which is your Recovery games,
-                            flipped). This baseline is self-calibrating and shifts
-                            with filters like Opponent Strength. Hidden when the
-                            opponent sample is smaller than 10 games.
+                            rate to your actual opponents' rate in the same situation
+                            against you (for example, your Conversion vs their
+                            Conversion in the games where you faced them — your
+                            Recovery games, flipped). This baseline is self-calibrating
+                            and shifts with filters like Opponent Strength. Hidden
+                            when the opponent sample is smaller than 10 games.
                           </p>
                           <p>
                             The <strong>Endgame ELO timeline</strong> below uses the

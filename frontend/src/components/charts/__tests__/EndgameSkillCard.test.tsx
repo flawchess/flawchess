@@ -3,7 +3,7 @@
  * Phase 86 Plan 04: tests for EndgameSkillCard (composite Skill variant).
  *
  * Covers:
- * - Structural render: gauge + games-count + peer-bullet row present when
+ * - Structural render: gauge + peer-bullet row present when
  *   skill !== null && oppSkill !== null && totalGames >= 10.
  * - No MiniWDLBar (single-ply composite, no W/D/L definable per SEC2-03).
  * - Sig-gated diff color: confident + outside neutral → inline color set;
@@ -55,7 +55,7 @@ function normalizeColor(value: string): string {
 }
 
 describe('EndgameSkillCard — structural render', () => {
-  it('renders container with tileTestId, gauge, games-count, and peer-bullet', () => {
+  it('renders container with tileTestId, gauge, and peer-bullet (no games-count per phase 86 feedback)', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
@@ -69,7 +69,7 @@ describe('EndgameSkillCard — structural render', () => {
     );
     expect(screen.getByTestId('tile-endgame-skill')).not.toBeNull();
     expect(screen.getByTestId('mini-bullet-chart')).not.toBeNull();
-    expect(screen.getByText(/Games: 300/)).not.toBeNull();
+    expect(screen.queryByTestId('tile-endgame-skill-games-count')).toBeNull();
   });
 
   it('does NOT render MiniWDLBar (no W/D/L for the single-ply composite)', () => {

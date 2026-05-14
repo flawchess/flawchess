@@ -38,21 +38,21 @@ const ROW_ONE_BUCKETS: readonly MaterialBucket[] = ['conversion', 'parity', 'rec
 // Per-bucket popover content (D-16, lifted verbatim from CONTEXT).
 const METRIC_EXPLANATIONS: Record<MaterialBucket, string> = {
   conversion:
-    'Your win rate (only wins count) when you entered the endgame with a Stockfish eval ≥ +1.0, compared to your opponents in the mirror bucket.',
+    "Your win rate (only wins count) when you entered the endgame with a Stockfish eval ≥ +1.0, compared to your opponents' Conversion against you.",
   parity:
-    'Your chess score (wins + ½ draws) when you entered the endgame with an eval between −1.0 and +1.0, compared to your opponents in the mirror bucket.',
+    "Your chess score (wins + ½ draws) when you entered the endgame with an eval between −1.0 and +1.0, compared to your opponents' Parity against you.",
   recovery:
-    'Your save rate (wins + draws count) when you entered the endgame with an eval ≤ −1.0, compared to your opponents in the mirror bucket.',
+    "Your save rate (wins + draws count) when you entered the endgame with an eval ≤ −1.0, compared to your opponents' Recovery against you.",
 };
 
 // Popover names describe the BULLET-CHART metric (signed userRate − oppRate
-// difference), distinct from the gauge labels which name the headline rate
+// gap), distinct from the gauge labels which name the headline rate
 // itself (Conversion / Parity / Recovery). The gauge shows your absolute rate;
-// the popover and bullet chart show your gap vs the mirror-bucket opponent.
+// the popover and bullet chart show your gap vs the opponent baseline.
 const METRIC_NAMES: Record<MaterialBucket, string> = {
-  conversion: 'Conversion Difference',
-  parity: 'Parity Difference',
-  recovery: 'Recovery Difference',
+  conversion: 'Conversion Gap',
+  parity: 'Parity Gap',
+  recovery: 'Recovery Gap',
 };
 
 const TILE_TESTIDS: Record<MaterialBucket, string> = {
@@ -125,8 +125,9 @@ export function EndgameMetricsSection({ data }: { data: ScoreGapMaterialResponse
         })}
 
         {/* Endgame Skill: lg:col-start-2 places it under Parity on desktop.
-            On mobile (single column) it falls naturally after Recovery. */}
-        <div className="lg:col-start-2">
+            On mobile (single column) it falls naturally after Recovery.
+            lg:mt-8 matches the spacing above "Endgame Score Differences". */}
+        <div className="lg:col-start-2 lg:mt-8">
           <EndgameSkillCard
             skill={data.skill ?? null}
             oppSkill={data.opp_skill ?? null}

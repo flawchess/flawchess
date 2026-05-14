@@ -144,7 +144,7 @@ describe('EndgameMetricCard — structural render', () => {
         tileTestId="tile-parity"
       />,
     );
-    expect(screen.getByText('Parity (Score)')).not.toBeNull();
+    expect(screen.getByText('Parity')).not.toBeNull();
   });
 });
 

@@ -105,7 +105,7 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="flex flex-col items-center">
-                    <div className="text-sm text-muted-foreground mb-1">Conversion (Win)</div>
+                    <div className="text-sm text-muted-foreground mb-1">Conversion</div>
                     <EndgameGauge
                       value={cat.conversion.conversion_pct}
                       maxValue={100}
@@ -115,7 +115,7 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
                     />
                   </div>
                   <div className="flex flex-col items-center">
-                    <div className="text-sm text-muted-foreground mb-1">Recovery (Save)</div>
+                    <div className="text-sm text-muted-foreground mb-1">Recovery</div>
                     <EndgameGauge
                       value={cat.conversion.recovery_pct}
                       maxValue={100}
