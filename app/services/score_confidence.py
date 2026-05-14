@@ -52,6 +52,7 @@ the N>=10 gate are shared.
 """
 
 import math
+from collections.abc import Sequence
 from typing import Literal
 
 from app.services.opening_insights_constants import (
@@ -238,6 +239,76 @@ def compute_score_difference_test(
         ci_high_out = ci_high
 
     return p_out, ci_low_out, ci_high_out
+
+
+def compute_paired_difference_test(
+    diffs: Sequence[float],
+) -> tuple[float, float | None, float | None, float | None]:
+    """Return (mean_d, p_value, ci_low, ci_high) for the paired one-sample
+    z-test on a pre-computed sequence of per-game differences `d_i`.
+
+    H0: `mean(diffs) == 0`. Typical use is `d_i = actual_score_i - expected_score_i`
+    where actual is the user's WDL outcome (1/0.5/0) and expected is the Lichess
+    sigmoid of the entry eval. The helper is intentionally pure — it sees only
+    the pre-computed diffs, not the (actual, expected) pairs — so it can be
+    unit-tested in isolation.
+
+    Bessel-corrected sample variance (matches eval_confidence.py:113):
+        mean_d = sum(diffs) / n
+        var_d  = max(0.0, (sumsq - n * mean_d ** 2) / (n - 1))    # n >= 2
+        se     = sqrt(var_d / n)
+        z      = mean_d / se
+        p_value = erfc(|z| / sqrt(2))                              # two-sided
+        ci_low  = mean_d - CI_Z_95 * se
+        ci_high = mean_d + CI_Z_95 * se
+
+    n-gates (per SEC1-10):
+      - mean_d is always returned (0.0 when diffs is empty).
+      - p_value is None when `len(diffs) < CONFIDENCE_MIN_N` (=10).
+      - ci_low/ci_high are None when `len(diffs) < 2` (Bessel variance undefined).
+
+    n=1 short-circuit: Bessel correction divides by (n-1) which is zero, so
+    the helper returns `(mean_d, None, None, None)` rather than dividing by
+    zero. p_value is also None at n=1 because n < CONFIDENCE_MIN_N=10.
+
+    Variance-0 trap (se == 0.0): occurs when all diffs are identical. Mirrors
+    the eval_confidence.py:116-119 pattern:
+      - mean_d != 0.0 -> p_value = 0.0 (perfectly determined signal vs H0=0).
+      - mean_d == 0.0 -> p_value = 1.0 (no evidence of a non-zero mean).
+    CI bounds in either case collapse to ci_low == ci_high == mean_d.
+    """
+    n = len(diffs)
+    if n == 0:
+        return 0.0, None, None, None
+
+    mean_d = sum(diffs) / n
+
+    # n == 1: Bessel correction is undefined (n-1 == 0). Return mean only.
+    # p_value is gated to None by the n<10 rule anyway; CI is gated by n<2.
+    if n == 1:
+        return mean_d, None, None, None
+
+    sumsq = sum(d * d for d in diffs)
+    # Bessel-corrected sample variance. `max(0.0, ...)` clamps floating-point
+    # rounding where the raw value is slightly negative despite being
+    # mathematically non-negative (matches eval_confidence.py:113).
+    var_d = max(0.0, (sumsq - n * mean_d * mean_d) / (n - 1))
+    se = math.sqrt(var_d / n)
+
+    if se == 0.0:
+        # All diffs identical. Resolve directly against H0 = 0.
+        p_value: float = 0.0 if mean_d != 0.0 else 1.0
+    else:
+        z = mean_d / se
+        p_value = math.erfc(abs(z) / math.sqrt(2.0))
+
+    ci_half_width = CI_Z_95 * se
+    ci_low: float = mean_d - ci_half_width
+    ci_high: float = mean_d + ci_half_width
+
+    p_out: float | None = p_value if n >= CONFIDENCE_MIN_N else None
+    # CI gate is just n >= 2 (already passed by the early-return n==1 guard).
+    return mean_d, p_out, ci_low, ci_high
 
 
 def compute_confidence_bucket(
