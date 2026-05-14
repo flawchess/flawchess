@@ -57,6 +57,22 @@ User skipped:
 
 **Decisions captured:** D-09 in CONTEXT.md.
 
+### Revision 2026-05-14 — D-09 replaced with Phase 85 layout pattern
+
+User directive: "Apply the same layout as in the Endgame Overall Performance section. Put Conversion, Parity, Recovery in a single row and connect them with connection arrows to the Endgame Skill card which is placed below the parity card."
+
+D-09 rewritten:
+- Grid is now `relative grid grid-cols-1 lg:grid-cols-3 gap-4` (mirrors Phase 85).
+- Conv / Parity / Recov in row 1; Skill at `lg:col-start-2` (under Parity).
+- SVG-overlay connector arrows tie each top card down/in to Skill (desktop only).
+- Mobile stacks Conv → Parity → Recov → Skill in DOM order, arrows hidden.
+
+D-09a added: reuse `EndgameOverallConnectorArrows.tsx` by parameterizing its testid selectors (rename or just add a prop interface). Geometry is identical between Phase 85 (3 cards + Score Gap below middle) and Phase 86 (3 cards + Skill below Parity).
+
+D-09b added: card testids `tile-conversion / tile-parity / tile-recovery / tile-endgame-skill` (replaces the prior `grid-cols-4` testid convention).
+
+The earlier `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` option was rejected — it loses the parent/child visual story between the three bucket metrics and the Skill composite that derives from them.
+
 ---
 
 ## Area 3 — Section header / heading treatment

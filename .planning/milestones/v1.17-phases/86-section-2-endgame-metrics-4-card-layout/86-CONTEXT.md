@@ -72,14 +72,50 @@ SEC2-01..04, SEC2-06..10 cover this phase. The acceptance criteria below derive 
 ### Component file structure (LOCKED)
 
 - **D-07: Sibling-component pattern, mirroring Phase 85.**
-  - `frontend/src/components/charts/EndgameMetricsSection.tsx` — orchestrator. Reads `scoreGap` + (if D-01 plumbs them via `ScoreGapMaterialResponse`) skill fields. Renders the 4-card grid.
-  - `frontend/src/components/charts/EndgameMetricCard.tsx` — shared shell for Conv / Parity / Recov. Props-driven: `{ bucket: MaterialBucket; row: MaterialRow; mirror: MaterialRow | undefined; sharePct: number; metricName: string; metricExplanation: ReactNode }`. Renders gauge + games-count row + WDL bar + peer bullet + `MetricStatPopover`.
-  - `frontend/src/components/charts/EndgameSkillCard.tsx` — Skill variant. Props: `{ skill: number | null; oppSkill: number | null; activeGames: number; pValue: number | null; ciLow: number | null; ciHigh: number | null }`. Gauge + games-count row + peer bullet + `MetricStatPopover`. **No WDL bar** (single-ply composite, no W/D/L definable).
+  - `frontend/src/components/charts/EndgameMetricsSection.tsx` — orchestrator. Reads `scoreGap` + the new skill fields on `ScoreGapMaterialResponse`. Holds the `gridRef` (anchor for connector-arrows SVG overlay), renders Conv/Parity/Recov in row 1, Skill at `lg:col-start-2` in row 2, and mounts `<ConnectorArrowsToTarget>` with the four testids per D-09a.
+  - `frontend/src/components/charts/EndgameMetricCard.tsx` — shared shell for Conv / Parity / Recov. Props-driven: `{ bucket: MaterialBucket; row: MaterialRow; mirror: MaterialRow | undefined; sharePct: number; metricName: string; metricExplanation: ReactNode; tileTestId: string }`. Renders gauge + games-count row + WDL bar + peer bullet + `MetricStatPopover`.
+  - `frontend/src/components/charts/EndgameSkillCard.tsx` — Skill variant. Props: `{ skill: number | null; oppSkill: number | null; activeGames: number; pValue: number | null; ciLow: number | null; ciHigh: number | null; tileTestId: string }`. Gauge + games-count row + peer bullet + `MetricStatPopover`. **No WDL bar** (single-ply composite, no W/D/L definable). `tileTestId = 'tile-endgame-skill'` for the connector-arrows target lookup.
+  - `frontend/src/components/charts/EndgameOverallConnectorArrows.tsx` — renamed / generalized per D-09a to accept testid props. Shared between Phase 85's `EndgameOverallPerformanceSection` and Phase 86's `EndgameMetricsSection`.
 - **D-08: Lift shared helpers to a new `frontend/src/lib/endgameMetrics.ts`** (lifted from `EndgameScoreGapSection.tsx`): `MIRROR_BUCKET`, `userRate`, `opponentRate`, `formatScorePct`, `formatDiffPct`, `BUCKET_DISPLAY_LABELS`, `BUCKET_DISPLAY_LABELS_WITH_METRIC`. Phase 87 will reuse these for per-type cards.
 
-### Card grid layout (LOCKED)
+### Card grid layout (LOCKED — revised 2026-05-14)
 
-- **D-09: `grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4`** — mobile 1-col, tablet 2x2, desktop 4-up. Order: Conv → Parity → Recov → Skill. Card titles wrap at 1024-1100px is acceptable; gauges stay legible.
+- **D-09: Phase 85 layout pattern.** `relative grid grid-cols-1 lg:grid-cols-3 gap-4`. On lg+:
+  - Row 1: **Conversion (col 1)** | **Parity (col 2)** | **Recovery (col 3)**
+  - Row 2: **Endgame Skill** at `lg:col-start-2` (under Parity), columns 1 and 3 empty.
+  - SVG-overlay **connector arrows** (desktop only, `hidden lg:block`) tie each of the three top cards down/in to the Skill card:
+    - Conversion bottom-center → drops → turns right → Skill **left edge** (arrowhead points right).
+    - Recovery bottom-center → drops → turns left → Skill **right edge** (arrowhead points left).
+    - Parity bottom-center → drops straight down → Skill **top edge** (arrowhead points down).
+  - On mobile (single-column stacked): Conv → Parity → Recov → Skill in DOM order, arrows hidden via the mobile-detection bail in `ConnectorArrows.compute()`.
+
+  Rationale: mirrors `EndgameOverallPerformanceSection`'s 3-card + Score-Gap-below-Parity composition. Visually communicates "Skill is the composite of the three above it" without needing copy. Replaces the earlier `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` proposal (rejected — loses the parent/child visual story).
+
+- **D-09a: Connector-arrows component (LOCKED).** Reuse `EndgameOverallConnectorArrows.tsx` by **parameterizing its testid selectors** rather than duplicating the geometry. Three-card-row + one-target-below-middle geometry is identical between Phase 85 and Phase 86. Refactor signature:
+
+  ```ts
+  // Rename file: EndgameOverallConnectorArrows.tsx → ConnectorArrowsToTarget.tsx
+  // (or keep file name, just add the prop interface)
+  interface ConnectorArrowsToTargetProps {
+    containerRef: React.RefObject<HTMLDivElement | null>;
+    leftCardTestId: string;    // c1 (e.g. 'tile-conversion' or 'tile-games-without-endgame')
+    middleCardTestId: string;  // c2
+    rightCardTestId: string;   // c3
+    targetTileTestId: string;  // target below middle (e.g. 'tile-endgame-skill')
+  }
+  ```
+
+  Phase 85's existing call site at `EndgameOverallPerformanceSection.tsx:234` passes the four legacy testids; Phase 86's `EndgameMetricsSection.tsx` passes `'tile-conversion' / 'tile-parity' / 'tile-recovery' / 'tile-endgame-skill'`. Hard-coded constants (`ARROW_BAR_PX`, `ARROW_HEAD_LEN_PX`, `ARROW_HEAD_HALF_HEIGHT_PX`) stay as-is; the mobile-bail check (`sgr.left <= c1r.left + 2`) still works because Skill stacks below Conv on mobile.
+
+  Test surface: update `__tests__` for `EndgameOverallConnectorArrows` to cover both call sites (or rename test file). Planner picks whether to rename the file or keep the Phase 85 name with the new props.
+
+- **D-09b: Card testids** (LOCKED):
+  - Conversion card: `data-testid="tile-conversion"`
+  - Parity card: `data-testid="tile-parity"`
+  - Recovery card: `data-testid="tile-recovery"`
+  - Skill card: `data-testid="tile-endgame-skill"`
+
+  These differ from the legacy `material-row-{bucket}` / `endgame-skill-card` testids — the old testids are deleted with `EndgameScoreGapSection.tsx`. Update any cross-referencing tests.
 
 ### Section header treatment (LOCKED)
 
@@ -139,6 +175,7 @@ SEC2-01..04, SEC2-06..10 cover this phase. The acceptance criteria below derive 
 - `frontend/src/components/charts/EndgameOverallPerformanceSection.tsx` — Phase 85 orchestrator pattern: imports sibling card components, derives per-card values from one response, renders a responsive grid.
 - `frontend/src/components/charts/EndgameOverallCard.tsx` — Phase 85 per-card shell pattern: `charcoal-texture rounded-md p-4` tile, `flex flex-col gap-4` body, games-count row with `Swords` icon, `MetricStatPopover` for sig/CI/explainer.
 - `frontend/src/components/charts/EndgameOverallShared.ts` — `deriveLevel`, `ENDGAME_TILE_SCORE_DOMAIN`. Reuse `deriveLevel` for the peer-bullet diff font-color gate.
+- `frontend/src/components/charts/EndgameOverallConnectorArrows.tsx` — Phase 85 SVG-overlay connector arrows. **Generalize per D-09a** (rename + add testid props) so Phase 86 can reuse the geometry for Conv/Parity/Recov → Skill.
 - `frontend/src/components/popovers/MetricStatPopover.tsx` — popover with name + explanation + value + baseline + gameCount + level + pValue + neutral band + methodology.
 
 ### Legacy to be deleted
@@ -179,6 +216,7 @@ SEC2-01..04, SEC2-06..10 cover this phase. The acceptance criteria below derive 
 - **`EndgameGauge`** — gauge primitive already used by `EndgameScoreGapSection`. No changes needed.
 - **`MetricStatPopover`** — Phase 85's locked popover component. Replaces the section-level `InfoPopover` for per-card sig/CI.
 - **`MIRROR_BUCKET` + `userRate()` + `opponentRate()`** at `EndgameScoreGapSection.tsx:111-146` — verbatim lift to `lib/endgameMetrics.ts`. Phase 87 will reuse for per-type cards.
+- **`EndgameOverallConnectorArrows`** at `frontend/src/components/charts/EndgameOverallConnectorArrows.tsx` — Phase 85's three-cards-row + target-below-middle connector-arrow geometry. Identical layout to Phase 86's Conv/Parity/Recov → Skill; generalize by lifting the four testids to props per D-09a.
 - **`compute_score_difference_test` + `compute_paired_difference_test`** at `app/services/score_confidence.py:161+` — Phase 85.1 helpers. New `compute_skill_diff_test` slots in alongside, sharing the trinomial-variance pattern.
 - **`FIXED_GAUGE_ZONES.{conversion,parity,recovery}` + `ENDGAME_SKILL_ZONES`** at `frontend/src/generated/endgameZones.ts` — gauge bands already calibrated. No regeneration.
 
@@ -203,7 +241,8 @@ SEC2-01..04, SEC2-06..10 cover this phase. The acceptance criteria below derive 
 <specifics>
 ## Specific Ideas
 
-- **Component file names:** `EndgameMetricsSection.tsx`, `EndgameMetricCard.tsx`, `EndgameSkillCard.tsx`.
+- **Component file names:** `EndgameMetricsSection.tsx`, `EndgameMetricCard.tsx`, `EndgameSkillCard.tsx`. Connector arrows live in the existing (renamed) `EndgameOverallConnectorArrows.tsx`, shared with Phase 85.
+- **Grid composition:** `relative grid grid-cols-1 lg:grid-cols-3 gap-4` on the orchestrator; Skill card placed at `lg:col-start-2` so it lands under Parity on desktop and stacks naturally on mobile. `gridRef` anchors the connector-arrows overlay.
 - **Helper module:** `frontend/src/lib/endgameMetrics.ts` for `MIRROR_BUCKET`, `userRate`, `opponentRate`, `formatScorePct`, `formatDiffPct`, label maps, neutral-band/domain constants.
 - **Backend helper:** `compute_skill_diff_test()` in `app/services/score_confidence.py` alongside `compute_score_difference_test` and `compute_paired_difference_test`.
 - **Schema fields** on `ScoreGapMaterialResponse`: `skill`, `opp_skill`, `skill_diff_p_value`, `skill_diff_ci_low`, `skill_diff_ci_high` (all `float | None`).
