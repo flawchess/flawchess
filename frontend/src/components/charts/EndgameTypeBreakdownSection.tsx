@@ -24,9 +24,13 @@ import { EndgameTypeCard } from './EndgameTypeCard';
 
 export interface EndgameTypeBreakdownSectionProps {
   categories: EndgameCategoryStats[];
-  // All filtered games (used as the sharePct denominator). Distinct from the
-  // sum of per-class `cat.total`, which over-counts because a single game
-  // can contribute to multiple Endgame Types.
+  // Total endgame games used as the sharePct denominator. Per REVIEW WR-01
+  // (Phase 87 follow-up) callers pass the count of games that reached an
+  // endgame phase (EndgameStatsResponse.endgame_games), not all filtered
+  // games — so each card's "Games: X%" reads as the share of the user's
+  // endgames, not the share of all their games. A single game can still
+  // contribute to multiple Endgame Types, so the sum across cards can
+  // exceed 100%.
   totalGames: number;
   onCategorySelect: (cls: EndgameClass) => void;
 }
@@ -41,7 +45,10 @@ export function EndgameTypeBreakdownSection({
   );
 
   return (
-    <section data-testid="endgame-type-breakdown-section">
+    <section
+      data-testid="endgame-type-breakdown-section"
+      aria-labelledby="endgame-type-breakdown-heading"
+    >
       <p className="text-sm text-muted-foreground">
         Which Endgame Types do you convert best and defend best, and how does
         each compare to your opponents?

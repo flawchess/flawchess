@@ -1,21 +1,20 @@
 // @vitest-environment jsdom
 /**
- * Phase 87 Plan 02: tests for EndgameTypeCard (Conv + Recov per-class shell).
+ * Phase 87 follow-up — tests for the redesigned EndgameTypeCard (single Score
+ * bullet replacing the dual Conv/Recov peer-diff bullets).
  *
  * Covers:
- * - Full render when all data present (gauges + WDL + Conv + Recov peer bullets
- *   + Games deep-link + title InfoPopover).
- * - Games-link onClick fires onCategorySelect with the endgame_class.
- * - WDL bar gated by SHOW_WDL_BAR_IN_TYPE_CARDS (mocked false → WDL row gone,
- *   Games deep-link still present in standalone row per D-07 fallback).
- * - Sparse opponent per metric (opp_conversion_games < 10) → that metric's
- *   peer bullet replaced with muted text; the other metric's bullet still
- *   renders (D-14).
+ * - Full render when total >= MIN_GAMES_FOR_RELIABLE_STATS (gauges + WDL bar +
+ *   Score bullet + Games deep-link + title InfoPopover).
+ * - Games-link onClick fires onCategorySelect with the endgame_class and the
+ *   href targets /endgames/games?type={slug}.
+ * - Title InfoPopover content matches ENDGAME_TYPE_DESCRIPTIONS[class].
  * - Empty class (total = 0) → empty-class shell with "Not enough data yet" +
- *   opacity-50 gauge row; no peer-bullet rows; no Games link (D-13).
- * - Sparse total class (total = 5 < MIN_GAMES_FOR_RELIABLE_STATS) → n=5 chip +
- *   UNRELIABLE_OPACITY on the body (D-15).
- * - Sig-gated diff color: confident + outside-neutral → inline color set;
+ *   opacity-50 gauge row; no WDL, no Score bullet, no Games link.
+ * - Sparse class (0 < total < MIN_GAMES_FOR_RELIABLE_STATS) → n=total chip,
+ *   UNRELIABLE_OPACITY on the body, Score row hidden, gauges + WDL still
+ *   render.
+ * - Score bullet sig-gating: confident + outside-neutral → inline color;
  *   weak p-value → no inline color.
  */
 
@@ -24,6 +23,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { ENDGAME_TYPE_DESCRIPTIONS } from '@/lib/endgameMetrics';
 import { UNRELIABLE_OPACITY } from '@/lib/theme';
 import type {
   ConversionRecoveryStats,
@@ -64,10 +64,6 @@ const TILE_TESTID = 'type-card-rook';
 function buildConversion(
   overrides?: Partial<ConversionRecoveryStats>,
 ): ConversionRecoveryStats {
-  // Healthy default: 50 conversion games with 35 wins (70%), 50 recovery games
-  // with 25 saves = 15 wins + 10 draws (50% save rate).
-  // Opp from mirror: opp_conv = 1 − recovery_wins/recovery_games = 1 − 0.30 = 0.70
-  // (but we set opp_conv to 0.50 to produce a meaningful +0.20 user Conv gap).
   return {
     conversion_pct: 70,
     conversion_games: 50,
@@ -79,16 +75,6 @@ function buildConversion(
     recovery_saves: 25,
     recovery_wins: 15,
     recovery_draws: 10,
-    opp_conversion_pct: 0.5,
-    opp_recovery_pct: 0.4,
-    opp_conversion_games: 50,
-    opp_recovery_games: 50,
-    conv_diff_p_value: 0.001,
-    conv_diff_ci_low: 0.1,
-    conv_diff_ci_high: 0.3,
-    recov_diff_p_value: 0.001,
-    recov_diff_ci_low: 0.05,
-    recov_diff_ci_high: 0.15,
     ...overrides,
   };
 }
@@ -102,14 +88,15 @@ function buildCategory(
   return {
     endgame_class: 'rook',
     label: 'Rook',
-    wins: 50,
+    wins: 60,
     draws: 20,
-    losses: 30,
+    losses: 20,
     total: 100,
-    win_pct: 50,
+    win_pct: 60,
     draw_pct: 20,
-    loss_pct: 30,
+    loss_pct: 20,
     conversion: buildConversion(convOverrides),
+    score_p_value: 0.001,
     ...rest,
   };
 }
@@ -142,21 +129,17 @@ function renderCard(
 }
 
 describe('EndgameTypeCard — Layout', () => {
-  it('renders full layout when all data present', () => {
+  it('renders gauges, WDL bar, and Score bullet when total >= MIN_GAMES_FOR_RELIABLE_STATS', () => {
     renderCard(buildCategory());
     expect(screen.getByTestId(TILE_TESTID)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-conv-gauge`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-recov-gauge`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-wdl`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-score-row`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-score-value`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-score-bullet`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-score-info`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-games-link`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-conv-you`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-conv-opp`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-conv-diff`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-conv-info`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-recov-you`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-recov-opp`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-recov-diff`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-recov-info`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-title-info`)).not.toBeNull();
   });
 
@@ -175,22 +158,20 @@ describe('EndgameTypeCard — Layout', () => {
     fireEvent.click(link);
     expect(onCategorySelect).toHaveBeenCalledWith('rook');
   });
+
+  it('title InfoPopover content uses ENDGAME_TYPE_DESCRIPTIONS[class]', () => {
+    renderCard(buildCategory());
+    // The InfoPopover renders its content into a portal opened on click;
+    // assert the underlying description string is the one from the map.
+    expect(ENDGAME_TYPE_DESCRIPTIONS.rook.length).toBeGreaterThan(0);
+    const titleInfo = screen.getByTestId(`${TILE_TESTID}-title-info`);
+    // Click the trigger to open the popover and assert its body.
+    fireEvent.click(titleInfo);
+    expect(screen.getByText(ENDGAME_TYPE_DESCRIPTIONS.rook)).not.toBeNull();
+  });
 });
 
-describe('EndgameTypeCard — Sparse states', () => {
-  it('replaces Conv peer-bullet with muted placeholder when opp_conversion_games < 10', () => {
-    renderCard(
-      buildCategory({
-        conversion: { opp_conversion_games: 5, opp_recovery_games: 100 },
-      }),
-    );
-    expect(screen.queryByTestId(`${TILE_TESTID}-conv-diff`)).toBeNull();
-    const muted = screen.getByTestId(`${TILE_TESTID}-conv-muted`);
-    expect(muted.textContent).toMatch(/n\s*[<&lt;]\s*10.*baseline unavailable/i);
-    // Recov bullet still renders.
-    expect(screen.getByTestId(`${TILE_TESTID}-recov-diff`)).not.toBeNull();
-  });
-
+describe('EndgameTypeCard — Empty / sparse states', () => {
   it('renders empty-class shell when total === 0', () => {
     renderCard(
       buildCategory({
@@ -201,6 +182,7 @@ describe('EndgameTypeCard — Sparse states', () => {
         win_pct: 0,
         draw_pct: 0,
         loss_pct: 0,
+        score_p_value: null,
         conversion: {
           conversion_pct: 0,
           conversion_games: 0,
@@ -212,16 +194,6 @@ describe('EndgameTypeCard — Sparse states', () => {
           recovery_saves: 0,
           recovery_wins: 0,
           recovery_draws: 0,
-          opp_conversion_pct: null,
-          opp_recovery_pct: null,
-          opp_conversion_games: 0,
-          opp_recovery_games: 0,
-          conv_diff_p_value: null,
-          conv_diff_ci_low: null,
-          conv_diff_ci_high: null,
-          recov_diff_p_value: null,
-          recov_diff_ci_low: null,
-          recov_diff_ci_high: null,
         },
       }),
     );
@@ -230,12 +202,12 @@ describe('EndgameTypeCard — Sparse states', () => {
     expect(gaugeRow.className).toMatch(/opacity-50/);
     expect(screen.getByText(/Not enough data yet/i)).not.toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-wdl`)).toBeNull();
-    expect(screen.queryByTestId(`${TILE_TESTID}-conv-diff`)).toBeNull();
-    expect(screen.queryByTestId(`${TILE_TESTID}-recov-diff`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-score-row`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-score-bullet`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-games-link`)).toBeNull();
   });
 
-  it('shows n=total chip and unreliable opacity when total < MIN_GAMES_FOR_RELIABLE_STATS', () => {
+  it('shows n=total chip and UNRELIABLE_OPACITY when total < MIN_GAMES_FOR_RELIABLE_STATS, hides Score row', () => {
     renderCard(
       buildCategory({
         wins: 3,
@@ -245,6 +217,7 @@ describe('EndgameTypeCard — Sparse states', () => {
         win_pct: 60,
         draw_pct: 20,
         loss_pct: 20,
+        score_p_value: null,
       }),
     );
     const chip = screen.getByTestId(`${TILE_TESTID}-n-chip`);
@@ -254,52 +227,64 @@ describe('EndgameTypeCard — Sparse states', () => {
     const body = tile.querySelector<HTMLElement>('.flex.flex-col.gap-4');
     expect(body).not.toBeNull();
     expect(body!.style.opacity).toBe(`${UNRELIABLE_OPACITY}`);
-    // Peer-bullets + WDL + gauges still render.
+    // Gauges + WDL still render; Score row hidden below the sample-size gate.
     expect(screen.getByTestId(`${TILE_TESTID}-wdl`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-conv-diff`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-recov-diff`)).not.toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-score-row`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-score-bullet`)).toBeNull();
   });
 });
 
-describe('EndgameTypeCard — Sig-gating', () => {
-  it('applies inline color on Conv diff when confident + outside neutral band', () => {
+describe('EndgameTypeCard — Score bullet sig-gating', () => {
+  it('applies inline color on Score value when p < 0.05 and outside neutral band', () => {
+    // 60W/20D/20L of 100 -> score = 0.70 (outside 0.45-0.55 neutral band).
     renderCard(
       buildCategory({
-        conversion: {
-          conversion_pct: 80,
-          opp_conversion_pct: 0.4,
-          opp_conversion_games: 100,
-          conv_diff_p_value: 0.001,
-          conv_diff_ci_low: 0.3,
-          conv_diff_ci_high: 0.5,
-        },
+        wins: 60,
+        draws: 20,
+        losses: 20,
+        total: 100,
+        score_p_value: 0.0001,
       }),
     );
-    const diffSpan = screen.getByTestId(`${TILE_TESTID}-conv-diff`);
-    expect(diffSpan.style.color).toBeTruthy();
+    const scoreSpan = screen.getByTestId(`${TILE_TESTID}-score-value`);
+    expect(scoreSpan.style.color).toBeTruthy();
   });
 
-  it('does NOT apply inline color on Conv diff when p-value is weak', () => {
+  it('does NOT apply inline color when p_value is null (gated)', () => {
     renderCard(
       buildCategory({
-        conversion: {
-          conversion_pct: 80,
-          opp_conversion_pct: 0.4,
-          opp_conversion_games: 100,
-          conv_diff_p_value: 0.5,
-          conv_diff_ci_low: 0.0,
-          conv_diff_ci_high: 0.6,
-        },
+        wins: 60,
+        draws: 20,
+        losses: 20,
+        total: 100,
+        score_p_value: null,
       }),
     );
-    const diffSpan = screen.getByTestId(`${TILE_TESTID}-conv-diff`);
-    expect(diffSpan.style.color).toBe('');
+    const scoreSpan = screen.getByTestId(`${TILE_TESTID}-score-value`);
+    expect(scoreSpan.style.color).toBeFalsy();
+  });
+
+  it('does NOT apply inline color when score lands inside the neutral band', () => {
+    // 50W/20D/30L of 100 -> score = 0.60? Need a score inside [0.45, 0.55]:
+    // 25W/50D/25L -> score = 0.5 (neutral). p_value strong but neutral zone.
+    renderCard(
+      buildCategory({
+        wins: 25,
+        draws: 50,
+        losses: 25,
+        total: 100,
+        win_pct: 25,
+        draw_pct: 50,
+        loss_pct: 25,
+        score_p_value: 0.0001,
+      }),
+    );
+    const scoreSpan = screen.getByTestId(`${TILE_TESTID}-score-value`);
+    expect(scoreSpan.style.color).toBeFalsy();
   });
 });
 
 describe('EndgameTypeCard — WDL flag gating (mocked false)', () => {
-  // Re-import EndgameTypeCard within a scoped vi.doMock so SHOW_WDL_BAR_IN_TYPE_CARDS
-  // flips to false without affecting other describe blocks.
   it('hides WDL bar but keeps Games deep-link in a standalone row when SHOW_WDL_BAR_IN_TYPE_CARDS is false', async () => {
     vi.resetModules();
     vi.doMock('@/lib/endgameMetrics', async () => {
@@ -308,9 +293,7 @@ describe('EndgameTypeCard — WDL flag gating (mocked false)', () => {
       >('@/lib/endgameMetrics');
       return { ...actual, SHOW_WDL_BAR_IN_TYPE_CARDS: false };
     });
-    const { EndgameTypeCard: MockedCard } = await import(
-      '../EndgameTypeCard'
-    );
+    const { EndgameTypeCard: MockedCard } = await import('../EndgameTypeCard');
     const onCategorySelect = vi.fn();
     render(
       <MemoryRouter>

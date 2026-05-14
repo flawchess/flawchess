@@ -535,7 +535,10 @@ export function EndgamesPage() {
           )}
 
           {/* ── Endgame Type Breakdown ── */}
-          <h2 className="text-lg font-semibold text-foreground mt-2">
+          <h2
+            id="endgame-type-breakdown-heading"
+            className="text-lg font-semibold text-foreground mt-2"
+          >
             <span className="inline-flex items-center gap-1">
               Endgame Type Breakdown
               <InfoPopover
@@ -567,15 +570,14 @@ export function EndgamesPage() {
                     = below, green = above. Zones differ by type because each
                     Endgame Type has its own natural distribution.
                   </p>
-                  {/* Peer-bullet explainer: new per CONTEXT D-12. */}
+                  {/* Score bullet explainer (Phase 87 follow-up redesign). */}
                   <p>
-                    The Conversion and Recovery peer bullets compare your rate
-                    to your opponents' rate in the same Endgame Type (via
-                    mirror-metric symmetry: opponents' Conversion is computed
-                    from your Recovery games for that type, flipped). The
-                    baseline shifts with rating, time control, color, and
-                    opponent-type filters. Hidden when the opponent sample is
-                    smaller than 10 games.
+                    The per-type Score bullet is your chess score (wins + ½
+                    draws) in this Endgame Type, tested against the 50%
+                    baseline. The whiskers show the 95% Wilson confidence
+                    interval; the value is colored only when the test is
+                    significant and the score sits outside the 45-55% neutral
+                    band. Hidden when fewer than 10 games are in this type.
                   </p>
                   {/* Per-type entries: lifted from EndgameWDLChart.tsx:287-291. */}
                   <p><strong>Rook:</strong> {ENDGAME_TYPE_DESCRIPTIONS.rook}</p>
@@ -590,7 +592,7 @@ export function EndgamesPage() {
           <div className="charcoal-texture rounded-md p-4">
             <EndgameTypeBreakdownSection
               categories={statsData.categories}
-              totalGames={statsData.total_games}
+              totalGames={statsData.endgame_games}
               onCategorySelect={handleCategorySelect}
             />
           </div>
