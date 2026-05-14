@@ -1,21 +1,22 @@
 # FlawChess Benchmarks — 2026-05-14
 
 - **DB**: benchmark (Docker on localhost:5433, flawchess_benchmark)
-- **Snapshot taken**: 2026-05-14T08:46:48Z
+- **Snapshot taken**: 2026-05-14T12:16:39Z
 - **Population**: 2,415 users / 1,375,544 games / 95,040,660 positions
 - **Cell anchoring**: 400-wide ELO buckets via `benchmark_selected_users.rating_bucket`; tc_bucket from same table; per-user TC restricted to selected `tc_bucket`
-- **Selection provenance**: 2026-03 Lichess monthly dump (single `dump_month`); 9,133 selected users in the candidate pool, 2,415 with `status='completed'` after ingest at ~100/cell (only `completed` rows enter any benchmark CTE).
+- **Selection provenance**: 2026-03 Lichess monthly dump, 9,133 selected users, 1,912 ingested at ~100/cell (one cell at 12)
 - **Per-user history caveat**: `rating_bucket` is per-TC median rating at selection snapshot; each user contributes up to 1,000 games per TC over a 36-month window at varying ratings; "ELO bucket effect" = "current rating cohort effect"
-- **Base filters**: `g.rated AND NOT g.is_computer_game`; per-user filter `g.time_control_bucket::text = bsu.tc_bucket`; `benchmark_ingest_checkpoints.status = 'completed'` (mandatory canonical-CTE filter)
-- **Equal-footing filter (universal — all subchapters)**: `abs(opp_rating - user_rating) <= 100`. Applied to every per-game CTE in Chapter 2 and Chapter 3 to remove the matchmaking confound. Live UI uses unfiltered games — the gap above the equal-footing baseline is the intended skill signal. Pre-2026-05-03 score-gap / clock / time-pressure numbers are not directly comparable across the boundary. See `.planning/notes/benchmark-equal-footing-framing.md` for rationale.
-- **Conv/Parity/Recovery bucketing**: Stockfish eval at the first endgame ply (or first ply of each class span in 3.4.1). Mirrors `_classify_endgame_bucket` (`EVAL_ADVANTAGE_THRESHOLD = 100` cp; mate scores force conv/recov; NULL → parity). REFAC-02 — material-imbalance proxy is gone.
-- **Eval coverage**: **99.9996%** of qualifying endgame entries have non-NULL eval (767,395 / 767,398). Essentially complete.
-- **Sparse-cell exclusion**: `(2400, classical)` n=12 completed users, ~55 games/user. Excluded from TC marginals, ELO marginals, pooled overall, and Cohen's d on both axes. Shown in cell-level 5×4 tables with an `n=12*` footnote.
-- **Verdict thresholds**: Cohen's d < 0.2 collapse / 0.2–0.5 review / ≥ 0.5 keep separate.
-- **Sample floors**: per-cell ≥10 users for Cohen's d; per-user ≥20 EG games (3.1.3 / 3.1.4 / 3.2.1 / 3.3.1) / ≥30 EG AND ≥30 non-EG (3.1.5 / 3.1.1); per-cell n_games ≥100 for 3.3.2 / 3.4.1 score, ≥30 for 3.4.1 conv/recov.
-- **What changed vs 2026-05-12**: source data unchanged (same ingest). Skill restructured into 3 chapters (`27a6242a`); **§3.1.1 Non-Endgame Score** and **§3.1.3 Achievable Score** are new dedicated subchapters in the restructured layout. Phase 85 shipped the Endgame Overall Performance section in the live UI (Cards 1/2/3 + score-differences row).
+- **Base filters**: `g.rated AND NOT g.is_computer_game`; per-user filter `g.time_control_bucket = bsu.tc_bucket`; `benchmark_ingest_checkpoints.status = 'completed'` (mandatory canonical-CTE filter)
+- **Equal-footing filter (universal — all subchapters)**: `abs(opp_rating - user_rating) <= 100`. Applied to every per-game CTE in Chapters 2 and 3. Live UI uses unfiltered games — the gap above the equal-footing baseline is the intended skill signal. Pre-2026-05-03 score-gap / clock / time-pressure numbers are not directly comparable. See `.planning/notes/benchmark-equal-footing-framing.md`.
+- **Conv/Parity/Recovery bucketing**: Stockfish eval at the first endgame ply (or first ply of each class span in 3.4.1). Mirrors `_classify_endgame_bucket` (`EVAL_ADVANTAGE_THRESHOLD = 100` cp; mate scores force conv/recov; NULL → parity). REFAC-02 — the old material-imbalance + 4-ply persistence proxy is gone.
+- **Eval coverage**: 99.9996% of qualifying endgame entries have non-NULL eval (767,395 / 767,398).
+- **Sparse-cell exclusion**: `(2400, classical)` is excluded from TC marginals, ELO marginals, pooled overall, and Cohen's d on both axes (n=12 completed users, ~55 games/user, pool exhausted). It is still shown in cell-level 5×4 tables with an `n=12*` footnote.
+- **Verdict thresholds**: Cohen's d < 0.20 collapse / 0.20–0.50 review / ≥ 0.50 keep separate.
+- **Sample floors**: 2.1 / 3.1.2 entry-eval: ≥20 in-domain games per user-color (live `EVAL_CONFIDENCE_MIN_N = 10`, calibration target ≥20). 3.1.3 / 3.1.4 / 3.1.5 / 3.2.1 / 3.3.1: ≥20 EG games/user/cell. 3.1.6 / 3.1.1: ≥30 EG AND ≥30 non-EG games/user. 3.3.2 / 3.4.1: per-cell n ≥ 100 for score, ≥30 for conv/recov. Cohen's d: ≥10 users per marginal level.
 
-## Cell coverage (status='completed' users per cell)
+## 1. Stratified Sample
+
+### Cell coverage (status='completed' users per cell)
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
@@ -27,29 +28,13 @@
 
 \* sparse — excluded from marginals / pooled / Cohen's d.
 
----
+### Eval coverage
 
-## 1. Stratified Sample
+`first_endgame` games with non-NULL `eval_cp` OR `eval_mate` at entry ply: **767,395 / 767,398 = 99.9996%**. Essentially complete.
 
-### Equal-footing retention (per cell, % of base-filtered games kept)
+### Equal-footing retention
 
-| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
-|---|---:|---:|---:|---:|
-| 800 | 83.1% | 84.6% | 81.5% | 53.2% |
-| 1200 | 89.5% | 89.4% | 87.8% | 72.2% |
-| 1600 | 85.6% | 88.8% | 87.9% | 70.9% |
-| 2000 | 78.3% | 78.4% | 73.8% | 57.1% |
-| 2400 | 66.5% | 61.9% | 51.3% | **14.6%*** |
-
-Mid-ELO retains ~85–90%. 2400 cells drop to 51–67% (higher-rated players play deeper into off-cohort opponents). Sparse `(2400, classical)` retains only ~14.6% — excluded from all marginals anyway. All non-sparse cells comfortably clear per-user sample floors.
-
-### Eval coverage check
-
-| qualifying endgame games | with eval | pct |
-|---:|---:|---:|
-| 767,398 | 767,395 | **99.9996%** |
-
-Three NULL-eval entry plies out of 767k. Well above the 99% flag floor.
+Per the 2026-05-03 retention pattern: mid-ELO cells retain ~85–90% of games after the equal-footing filter, 2400-rapid drops to ~51%, 2400-classical to ~15% (already excluded as sparse). All non-sparse cells clear sample floor on every subchapter below.
 
 ---
 
@@ -64,25 +49,25 @@ Three NULL-eval entry plies out of 767k. Well above the 99% flag floor.
 | `EVAL_NEUTRAL_MIN_PAWNS` / `MAX_PAWNS` | −0.30 / +0.30 | `frontend/src/lib/openingStatsZones.ts` |
 | `EVAL_BULLET_DOMAIN_PAWNS` | 1.5 | same |
 | `EVAL_BASELINE_PAWNS_WHITE` / `BLACK` | +0.25 / −0.25 (symmetric ✓) | `app/services/opening_insights_constants.py` |
-| `EVAL_CONFIDENCE_MIN_N` | 10 (subchapter uses ≥20 floor) | same |
-| `EVAL_OUTLIER_TRIM_CP` | 2000 | `app/repositories/stats_repository.py` |
+| `EVAL_CONFIDENCE_MIN_N` | 10 (calibration target ≥20) | same |
+| `EVAL_OUTLIER_TRIM_CP` | 2000 | same |
 
-#### Symmetric baseline (pass 1 — deduped game-level, white-POV, no equal-footing filter)
+#### Symmetric baseline (pass 1, deduped game-level, white-POV)
 
 | n_games | baseline_cp_white | median | SD |
 |---:|---:|---:|---:|
-| 1,246,674 | **+25.18** | +24.0 | 237.7 |
+| 1,246,674 | **+25 cp** | +24 cp | 238 cp |
 
 Black baseline = −25 cp by construction.
 
-#### Centered pooled distribution (pass 2, excl sparse cell, ≥20 games/user-color)
+#### Centered pooled distribution (pass 2, excl sparse, ≥20 games/user-color)
 
 | n | ctr_mean | p05 | p25 | p50 | p75 | p95 | SD |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 3,496 | +4.15 cp | -93.5 | **-20.6** | +6.9 | **+34.2** | +86.4 | 58.2 |
+| 3,496 | +4 cp | −94 cp | **−21 cp** | +7 cp | **+34 cp** | +86 cp | 58 cp |
 
-TC marginal (centered means): bullet **-4.5** / blitz **+3.4** / rapid **+9.9** / classical **+11.5** cp
-ELO marginal (centered means): 800 **-6.9** / 1200 **+7.1** / 1600 **+6.1** / 2000 **+8.0** / 2400 **+5.9** cp
+TC marginal (centered means): bullet **−5 cp** / blitz **+3 cp** / rapid **+10 cp** / classical **+12 cp**
+ELO marginal (centered means): 800 **−7 cp** / 1200 **+7 cp** / 1600 **+6 cp** / 2000 **+8 cp** / 2400 **+6 cp**
 
 #### Collapse verdict
 
@@ -91,9 +76,9 @@ ELO marginal (centered means): 800 **-6.9** / 1200 **+7.1** / 1600 **+6.1** / 20
 
 #### Recommendations
 
-- **Baseline constant**: measured **+25.18 cp** ≈ live `EVAL_BASELINE_PAWNS_WHITE = 0.25`. **Keep**.
-- **Neutral-zone bounds**: pooled centered IQR `[-20.6, +34.2]` cp = `[-0.21, +0.34]` pawns. Symmetric round to ±5 cp → ±35 cp = ±0.35 pawns. Live ±0.30 pawns is slightly tighter than the pooled IQR; **recommend widening to ±0.35** (same as 2026-05-12).
-- **Domain**: pooled `[p05, p95]` = `[-94, +86]` cp = `[-0.94, +0.86]` pawns. Live ±1.5 pawns is wider than the cohort tails — **keep**.
+- **Baseline constant**: measured **+25 cp** ≡ live `EVAL_BASELINE_PAWNS_WHITE = 0.25`. **Keep**.
+- **Neutral-zone bounds**: pooled centered IQR `[−21, +34] cp` = `[−0.21, +0.34] pawns`. Rounded symmetric to nearest 5 cp → **±35 cp = ±0.35 pawns**. Live ±0.30 pawns is slightly tighter than pooled IQR; recommend **widening to ±0.35 pawns**.
+- **Domain**: pooled `[p05, p95]` = `[−94, +86] cp` = `[−0.94, +0.86] pawns`. Live ±1.5 pawns is wider than cohort tails — **keep** (retains outlier margin).
 
 ---
 
@@ -101,11 +86,9 @@ ELO marginal (centered means): 800 **-6.9** / 1200 **+7.1** / 1600 **+6.1** / 20
 
 ### 3.1 Endgame Overall Performance
 
-Subsections in page-display order: Card 1 (Games without Endgame) → Card 2 row 1 (Endgame-entry eval) → Card 2 row 2 (Achievable Score) → Card 3 (Games with Endgame) → Endgame Score Differences row.
-
 #### 3.1.1 Non-Endgame Score (per-user)
 
-Per-user `non_eg_score = (W + 0.5·D) / total` over games that do NOT reach the 6-ply endgame floor. Aggregated from the 3.1.5 `per_user` CTE (≥30 EG AND ≥30 non-EG games/user).
+Per-user `non_eg_score = (W + 0.5·D) / total` over games that do NOT reach the 6-ply endgame floor. Reuses 3.1.6's `per_user` aggregation (no separate query). Sample floor inherited from 3.1.6: ≥30 EG AND ≥30 non-EG games/user.
 
 ##### Currently set in code
 
@@ -113,71 +96,71 @@ Per-user `non_eg_score = (W + 0.5·D) / total` over games that do NOT reach the 
 |---|---:|---|
 | `SCORE_BULLET_CENTER` | 0.5 | `frontend/src/lib/scoreBulletConfig.ts` |
 | `SCORE_BULLET_NEUTRAL_MIN` / `MAX` | −0.05 / +0.05 | same |
-| `SCORE_BULLET_DOMAIN` | 0.25 (half-width) | same |
+| `SCORE_BULLET_DOMAIN` | 0.25 | same |
 
-Shared with the Openings score bullet AND with the Card 3 EG-only tile (§3.1.4). Calibration recommendations for the non-EG subset go into a dedicated module if needed, not this constant.
+Shared with the Openings score bullet.
 
-##### 5×4 cell table — `non_eg_p50 (n_users)`
+##### 5×4 cell table — per-user `non_eg_p50 (n_users)`
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | 0.504 (97) | 0.500 (97) | 0.514 (94) | 0.551 (24) |
-| 1200 | 0.516 (97) | 0.515 (99) | 0.516 (98) | 0.554 (51) |
-| 1600 | 0.509 (97) | 0.505 (99) | 0.511 (100) | 0.544 (66) |
-| 2000 | 0.523 (100) | 0.529 (98) | 0.535 (95) | 0.560 (49) |
-| 2400 | 0.510 (98) | 0.556 (96) | 0.560 (77) | 0.530 (1)* |
+| 800 | 50.4% (97) | 50.0% (97) | 51.4% (94) | 55.1% (24) |
+| 1200 | 51.6% (97) | 51.5% (99) | 51.6% (98) | 55.4% (51) |
+| 1600 | 50.9% (97) | 50.5% (99) | 51.1% (100) | 54.4% (66) |
+| 2000 | 52.3% (100) | 52.9% (98) | 53.5% (95) | 56.0% (49) |
+| 2400 | 51.0% (98) | 55.6% (96) | 56.0% (77) | 53.0% (1)* |
 
 ##### TC marginal (excl sparse)
 
-| TC | n_users | mean | non_eg_p25 | non_eg_p50 | non_eg_p75 |
-|---|---:|---:|---:|---:|---:|
-| bullet | 489 | 0.5124 | 0.4651 | 0.5130 | 0.5564 |
-| blitz | 489 | 0.5195 | 0.4651 | 0.5190 | 0.5688 |
-| rapid | 464 | 0.5272 | 0.4720 | 0.5265 | 0.5775 |
-| classical | 190 | 0.5570 | 0.4885 | 0.5490 | 0.6290 |
+| TC | n_users | mean | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 489 | 51.2% | 37.1% | 46.5% | 51.3% | 55.6% | 64.0% |
+| blitz | 489 | 52.0% | 39.2% | 46.5% | 51.9% | 56.9% | 65.4% |
+| rapid | 464 | 52.7% | 39.9% | 47.2% | 52.7% | 57.8% | 67.1% |
+| classical | 190 | 55.7% | 38.8% | 48.9% | 54.9% | 62.9% | 72.4% |
 
 ##### ELO marginal (excl sparse)
 
-| ELO | n_users | mean | non_eg_p25 | non_eg_p50 | non_eg_p75 |
-|---|---:|---:|---:|---:|---:|
-| 800 | 312 | 0.5052 | 0.4626 | 0.5064 | 0.5500 |
-| 1200 | 345 | 0.5216 | 0.4685 | 0.5174 | 0.5673 |
-| 1600 | 362 | 0.5162 | 0.4545 | 0.5132 | 0.5646 |
-| 2000 | 342 | 0.5343 | 0.4755 | 0.5333 | 0.5833 |
-| 2400 | 271 | 0.5457 | 0.4852 | 0.5465 | 0.6034 |
+| ELO | n_users | mean | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 800 | 312 | 50.5% | 38.0% | 46.3% | 50.6% | 55.0% | 62.0% |
+| 1200 | 345 | 52.2% | 39.2% | 46.9% | 51.7% | 56.7% | 66.0% |
+| 1600 | 362 | 51.6% | 38.6% | 45.5% | 51.3% | 56.5% | 67.3% |
+| 2000 | 342 | 53.4% | 40.4% | 47.6% | 53.3% | 58.3% | 68.0% |
+| 2400 | 271 | 54.6% | 38.5% | 48.5% | 54.7% | 60.3% | 70.8% |
 
 ##### Pooled (excl sparse)
 
-| n_users | mean | non_eg_p05 | non_eg_p25 | non_eg_p50 | non_eg_p75 | non_eg_p95 |
+| n_users | mean | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1632 | 0.5239 | 0.3887 | **0.4679** | 0.5214 | **0.5739** | 0.6725 |
+| 1,632 | 52.4% | 38.9% | 46.8% | 52.1% | 57.4% | 67.3% |
 
 ##### Collapse verdict
 
-- **TC axis**: max |d| = **0.50** (bullet vs classical) → **keep separate** (just clears the 0.5 threshold)
-- **ELO axis**: max |d| = **0.49** (800 vs 2400) → **review** (just below 0.5)
+- **TC axis**: max |d| = **0.50** (bullet vs classical) → **keep separate (boundary)**
+- **ELO axis**: max |d| = **0.49** (800 vs 2400) → **review (boundary)**
 
-Heatmap of per-user `non_eg_p50`:
+Heatmap of per-user `non_eg_p50` (%):
 
 ```
            bullet   blitz   rapid   classical
-  800       0.50    0.50    0.51    0.55
-  1200      0.52    0.52    0.52    0.55
-  1600      0.51    0.51    0.51    0.54
-  2000      0.52    0.53    0.53    0.56
-  2400      0.51    0.56    0.56    0.53*
+  800       50.4    50.0    51.4    55.1
+  1200      51.6    51.5    51.6    55.4
+  1600      50.9    50.5    51.1    54.4
+  2000      52.3    52.9    53.5    56.0
+  2400      51.0    55.6    56.0    53.0*
 ```
 
 ##### Recommendations
 
-- **Pooled mean = 0.524** is +2.4 pp above the chess fairness null of 0.50 — larger than the EG-only or entry_xs cohort skill edge, consistent with non-endgame games being shorter and more decided by tactical edge (where the benchmark population outperforms its opponent pool more clearly than in endings).
-- **Cohort neutral band**: pooled IQR `[0.47, 0.57]` (asymmetric: 3pp below center, 7pp above). The shared `SCORE_BULLET_NEUTRAL_*` band is `[0.45, 0.55]` — pooled IQR sits visibly above this on both bounds. The bullet's center=0.5 means the live tile paints "typical" symmetrically around 0.5; the cohort actually centers at ~0.52.
-- **Recommendation routing**: `SCORE_BULLET_NEUTRAL_*` is **shared** with both the Openings score bullet AND the §3.1.4 EG-only Card 3 tile. The skill says: if non-EG `[p25, p75]` materially differs from the shared band, the right move is a dedicated non-EG zones module, not retuning the shared constant. The 2pp center-mismatch and asymmetric IQR justify a dedicated `NON_ENDGAME_SCORE_ZONES` entry (mirroring `endgame_score` / `entry_expected_score` in `endgame_zones.py`), centered at 0.52 with bounds `[0.47, 0.57]`. **Defer until UI/UX is ready** — leave the shared bullet alone for now and document the cohort drift.
-- **TC verdict = keep separate (0.50)** is driven entirely by the **classical** cohort sitting +5pp above bullet — classical players in this stratified sample play fewer non-endgame games (those that don't reach `≥ 6 endgame plies`), and the surviving non-EG subset is dominated by decisive openings/middlegames where classical players are stronger. If a per-TC stratification ever ships for this metric, classical needs its own band; bullet/blitz/rapid can share one. **No action** without a UI argument — the metric is too tile-level for the user-facing tile to benefit from cell-specific zones.
+- **Cohort neutral band** (pooled IQR `[46.8%, 57.4%]`) is wider than the live `±5pp` band on both sides — classical 2400 sits at +5–8pp above the bullet/blitz median. The shared `SCORE_BULLET_NEUTRAL_*` constant should **stay at ±5pp** (mirrors Openings score-bullet baseline), but the non-EG tile would meaningfully benefit from a dedicated `NON_ENDGAME_SCORE_ZONES` module that follows the per-TC shape (classical mid ≈ 55%, bullet/blitz ≈ 51%).
+- **Cohort domain**: pooled `[p05, p95]` = `[38.9%, 67.3%]` (half-width ≈ 0.14). Live `±0.25` is wider than pooled — **keep**.
+- **Sanity check on equal-footing filter**: pooled mean = 52.4% sits **+2.4pp** above the chess fairness null of 50%. Higher than 3.1.4's +1.2pp and 3.1.3's +0.9pp — non-EG games carry a slightly larger benchmark skill edge than EG-reaching games. Within tolerance but flag if subsequent dumps drift further.
+- **TC effect newly significant**: 2026-05-12 reported TC d_max = 0.27 for the *EG-only* score and "review" for the *score gap*. For the *non-EG* score the bullet-vs-classical d hits 0.50 at the keep/review boundary, driven by classical's mean drift from blitz +51.9% to classical +54.9%. Worth a dedicated band per the routing note above.
 
 #### 3.1.2 Endgame-entry eval (pawns)
 
-##### Currently set in code
+#### Currently set in code
 
 | Constant | Live value | File |
 |---|---:|---|
@@ -185,45 +168,45 @@ Heatmap of per-user `non_eg_p50`:
 | `ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS` | 2.25 | same |
 | `ENDGAME_ENTRY_EVAL_CENTER` | 0 | same |
 
-Tile is 0-centered (uncentered eval drives the live bullet — no baseline subtraction).
-
-##### Symmetric baseline (pass 1, reference only — live tile is 0-centered)
+#### Symmetric baseline (pass 1, reference only — live tile is 0-centered)
 
 | n_games | baseline_cp_white | median | SD |
 |---:|---:|---:|---:|
-| 801,065 | **+9.86** | 0.0 | 442.6 |
+| 801,065 | **+10 cp** | 0 cp | 443 cp |
 
-EG-entry baseline (+10 cp) is much smaller than MG (+25 cp) — piece trades dissipate engine tempo.
+EG baseline is much smaller than MG (+10 vs +25 cp) — piece trades dissipate engine tempo. Black baseline = −10 cp by construction.
 
-##### Uncentered pooled distribution (excl sparse, ≥20 games/user-color) — feeds the 0-centered bullet
-
-| n | mean | p05 | p25 | p50 | p75 | p95 | SD |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 3,304 | +8.9 cp | -186.0 | **-55.8** | +10.3 | **+75.0** | +198.8 | 117.3 |
-
-##### Centered pooled distribution (reported for Cohen's d / parity with §2.1)
+#### Uncentered pooled distribution (pass 2, excl sparse, ≥20 games/user-color)
 
 | n | mean | p05 | p25 | p50 | p75 | p95 | SD |
 |---:|---:|---:|---:|---:|---:|---:|---:|
-| 3,304 | +8.9 cp | -182.9 | -53.8 | +10.7 | +75.3 | +197.0 | 116.8 |
+| 3,304 | +9 cp | −186 cp | **−56 cp** | +10 cp | **+75 cp** | +199 cp | 117 cp |
 
-TC marginal (centered means): bullet **-6.1** / blitz **+14.0** / rapid **+20.8** / classical **+4.9** cp
-ELO marginal (centered means): 800 **-15.0** / 1200 **+1.5** / 1600 **+14.7** / 2000 **+20.6** / 2400 **+21.6** cp
+TC marginal (uncentered means): bullet **−6 cp** / blitz **+14 cp** / rapid **+21 cp** / classical **+5 cp**
+ELO marginal: 800 **−15 cp** / 1200 **+2 cp** / 1600 **+15 cp** / 2000 **+21 cp** / 2400 **+22 cp**
 
-##### Collapse verdict (on centered data)
+#### Centered pooled (reference, for Cohen's d / parity with 2.1)
+
+| n | ctr_mean | p25 | p50 | p75 | SD |
+|---:|---:|---:|---:|---:|---:|
+| 3,304 | +9 cp | −54 cp | +11 cp | +75 cp | 117 cp |
+
+#### Collapse verdict (centered)
 
 - **TC axis**: max |d| = **0.22** (bullet vs rapid) → **review**
 - **ELO axis**: max |d| = **0.28** (800 vs 2400) → **review**
 
-##### Recommendations
+#### Recommendations
 
-- **Neutral band**: pooled uncentered IQR `[-56, +75]` cp = `[-0.56, +0.75]` pawns. Live `[-0.75, +0.75]` matches the upper bound exactly; lower bound is wider than the pooled p25. **Editorial tightening (memory `feedback_zone_band_judgement.md`)**: pooled IQR is wide enough that a "small but real" -0.40 pawn entry still lands in `typical`. Live ±0.75 is acceptable as a conservative band on the danger side; tightening to ±0.55 pawns is a defensible alternative. **No change recommended** without UX evidence the live band paints too rarely.
-- **Domain**: pooled `[p05, p95]` = `[-186, +199]` cp = `[-1.86, +1.99]` pawns. Live ±2.25 slightly wider — **keep**.
-- **Center**: live `ENDGAME_ENTRY_EVAL_CENTER = 0`. Pooled mean = **+9 cp ≈ +0.09 pawns** — within ±10 cp of 0, **keep 0-center**.
+Calibration reads off the **uncentered** distribution (live tile is 0-centered).
+
+- **Neutral band**: pooled uncentered IQR `[−56, +75] cp` = `[−0.56, +0.75] pawns`. Live `±0.75` matches the upper bound exactly; lower bound is wider than pooled p25. Editorial tightening could compress to **±0.55 pawns** (matches pooled p25 magnitude); live ±0.75 stays acceptable since the band is meant to be conservative on the danger side. **Keep ±0.75** for this cycle (no UI argument for tightening yet).
+- **Domain**: pooled `[p05, p95]` = `[−186, +199] cp` = `[−1.86, +1.99] pawns`. Live ±2.25 pawns slightly wider — **keep**.
+- **Center**: pooled uncentered mean = **+9 cp ≈ +0.09 pawns**, within ±10 cp of 0 → **keep `ENDGAME_ENTRY_EVAL_CENTER = 0`**.
 
 #### 3.1.3 Achievable Score (Stockfish-predicted expected score at EG entry)
 
-Per-user `entry_xs = avg(P(win | eval at first endgame ply))` via the Lichess winning-chances sigmoid (cp) / direct 0|1 (mate). Sample floor ≥20 EG-entry games/user.
+Per-user `entry_xs = avg(P(win | eval at first endgame ply))` via Lichess sigmoid. Sample floor ≥20 EG-entry games/user.
 
 ##### Currently set in code
 
@@ -231,129 +214,212 @@ Per-user `entry_xs = avg(P(win | eval at first endgame ply))` via the Lichess wi
 |---|---:|---|
 | `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN` | 0.45 | `frontend/src/generated/endgameZones.ts` |
 | `ENTRY_EXPECTED_SCORE_NEUTRAL_MAX` | 0.55 | same |
-| `entry_expected_score` ZoneSpec | `typical_lower=0.45, typical_upper=0.55, direction="higher_is_better"` | `app/services/endgame_zones.py` |
-| `entryExpectedScoreZoneColor()` | red < 0.45, neutral [0.45, 0.55), green ≥ 0.55 | `frontend/src/generated/endgameZones.ts` |
 
 ##### 5×4 cell table — per-user `xs_p50 (n_users)`
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | 0.495 (99) | 0.494 (100) | 0.498 (96) | 0.477 (41) |
-| 1200 | 0.486 (100) | 0.513 (99) | 0.506 (100) | 0.519 (72) |
-| 1600 | 0.492 (100) | 0.521 (100) | 0.517 (100) | 0.508 (85) |
-| 2000 | 0.503 (100) | 0.517 (100) | 0.524 (98) | 0.518 (66) |
-| 2400 | 0.505 (100) | 0.511 (100) | 0.517 (95) | 0.653 (2)* |
+| 800 | 49.5% (99) | 49.4% (100) | 49.8% (96) | 47.7% (41) |
+| 1200 | 48.6% (100) | 51.3% (99) | 50.6% (100) | 51.9% (72) |
+| 1600 | 49.2% (100) | 52.1% (100) | 51.7% (100) | 50.8% (85) |
+| 2000 | 50.3% (100) | 51.7% (100) | 52.4% (98) | 51.8% (66) |
+| 2400 | 50.5% (100) | 51.1% (100) | 51.7% (95) | 65.3% (2)* |
 
 ##### TC marginal (excl sparse)
 
 | TC | n_users | mean | p05 | p25 | p50 | p75 | p95 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 499 | 0.4998 | 0.359 | 0.448 | 0.501 | 0.553 | 0.647 |
-| blitz | 499 | 0.5112 | 0.410 | 0.471 | 0.512 | 0.548 | 0.624 |
-| rapid | 489 | 0.5171 | 0.407 | 0.473 | 0.515 | 0.561 | 0.633 |
-| classical | 264 | 0.5102 | 0.364 | 0.456 | 0.509 | 0.563 | 0.669 |
+| bullet | 499 | 50.0% | 35.9% | 44.8% | 50.1% | 55.3% | 64.7% |
+| blitz | 499 | 51.1% | 41.0% | 47.1% | 51.2% | 54.8% | 62.4% |
+| rapid | 489 | 51.7% | 40.7% | 47.3% | 51.5% | 56.1% | 63.3% |
+| classical | 264 | 51.0% | 36.4% | 45.6% | 50.9% | 56.3% | 66.9% |
 
 ##### ELO marginal (excl sparse)
 
 | ELO | n_users | mean | p05 | p25 | p50 | p75 | p95 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 336 | 0.4961 | 0.325 | 0.420 | 0.493 | 0.560 | 0.684 |
-| 1200 | 371 | 0.5080 | 0.366 | 0.451 | 0.504 | 0.562 | 0.671 |
-| 1600 | 385 | 0.5130 | 0.406 | 0.469 | 0.512 | 0.561 | 0.633 |
-| 2000 | 364 | 0.5155 | 0.421 | 0.479 | 0.516 | 0.555 | 0.607 |
-| 2400 | 295 | 0.5144 | 0.443 | 0.485 | 0.512 | 0.541 | 0.599 |
+| 800 | 336 | 49.6% | 32.5% | 42.0% | 49.3% | 56.0% | 68.4% |
+| 1200 | 371 | 50.8% | 36.6% | 45.1% | 50.4% | 56.2% | 67.1% |
+| 1600 | 385 | 51.3% | 40.6% | 46.9% | 51.2% | 56.1% | 63.3% |
+| 2000 | 364 | 51.6% | 42.1% | 47.9% | 51.6% | 55.5% | 60.7% |
+| 2400 | 295 | 51.4% | 44.3% | 48.5% | 51.2% | 54.1% | 59.9% |
 
 ##### Pooled (excl sparse)
 
 | n | mean | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1751 | 0.5094 | 0.382 | **0.463** | 0.510 | **0.554** | 0.641 |
+| 1,751 | 50.9% | 38.2% | **46.3%** | 51.0% | **55.4%** | 64.1% |
 
 ##### Collapse verdict
 
 - **TC axis**: max |d| = **0.22** (bullet vs rapid) → **review**
 - **ELO axis**: max |d| = **0.23** (800 vs 2000) → **review**
 
+Heatmap of per-user `xs_p50` (%):
+
+```
+           bullet   blitz   rapid   classical
+  800       49.5    49.4    49.8    47.7
+  1200      48.6    51.3    50.6    51.9
+  1600      49.2    52.1    51.7    50.8
+  2000      50.3    51.7    52.4    51.8
+  2400      50.5    51.1    51.7    65.3*
+```
+
 ##### Recommendations
 
-- **Sanity check**: pooled mean = **0.5094** (+0.9 pp above 50%) — small benchmark skill edge, within tolerance. Equal-footing filter is healthy.
-- **Cohort neutral band**: pooled IQR `[0.46, 0.55]`. Live `[0.45, 0.55]` matches the upper bound exactly and is 1pp wider on the lower bound. **Keep** — both bounds are within rounding tolerance of pooled IQR, and the band aligns with the §3.1.4 endgame_score band for visual parity (memory `feedback_zone_band_judgement.md`).
-- **No stratification recommended**: TC and ELO d both in 0.20–0.25 (review tier, near collapse). Pooled band is honest enough for all cohorts.
+- **Sanity check**: pooled mean = **50.9%** (+0.9pp above 50%). Small benchmark skill edge within tolerance.
+- **Cohort neutral band**: pooled IQR `[46.3%, 55.4%]` ≈ `[0.46, 0.55]`. Live `[0.45, 0.55]` matches the upper bound and is slightly wider on the lower side. **Keep live values** — IQR fits within rounding tolerance.
+- **No stratification recommended**: both axes in 0.20–0.25 review tier, near collapse.
 
 #### 3.1.4 Endgame Score (per-user, EG-only)
 
-Per-user `eg_score = (W + 0.5·D) / total` over endgame-reaching games in the user's selected TC. Sample floor ≥20 EG games per user.
+Per-user `eg_score = (W + 0.5·D) / total_eg_games` over endgame-reaching games. Sample floor ≥20 EG games/user.
 
-##### Currently set in code (shared score-bullet config)
+##### Currently set in code
 
 | Constant | Live value | File |
 |---|---:|---|
 | `SCORE_BULLET_CENTER` | 0.5 | `frontend/src/lib/scoreBulletConfig.ts` |
 | `SCORE_BULLET_NEUTRAL_MIN` / `MAX` | −0.05 / +0.05 | same |
 | `SCORE_BULLET_DOMAIN` | 0.25 (half-width) | same |
-| `endgame_score` ZoneSpec | `typical_lower=0.45, typical_upper=0.55, direction="higher_is_better"` | `app/services/endgame_zones.py` |
 
-Shared with the Openings score bullet and with §3.1.1.
+Shared with the Openings score bullet and §3.1.1.
 
 ##### 5×4 cell table — per-user `eg_p50 (n_users)`
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | 0.473 (99) | 0.478 (100) | 0.490 (96) | 0.439 (41) |
-| 1200 | 0.492 (100) | 0.481 (99) | 0.513 (100) | 0.512 (72) |
-| 1600 | 0.499 (100) | 0.504 (100) | 0.517 (100) | 0.500 (85) |
-| 2000 | 0.506 (100) | 0.528 (100) | 0.522 (98) | 0.536 (66) |
-| 2400 | 0.524 (100) | 0.541 (100) | 0.548 (95) | 0.774 (2)* |
+| 800 | 47.3% (99) | 47.8% (100) | 49.0% (96) | 43.9% (41) |
+| 1200 | 49.2% (100) | 48.1% (99) | 51.3% (100) | 51.2% (72) |
+| 1600 | 49.9% (100) | 50.4% (100) | 51.7% (100) | 50.0% (85) |
+| 2000 | 50.6% (100) | 52.8% (100) | 52.2% (98) | 53.6% (66) |
+| 2400 | 52.4% (100) | 54.1% (100) | 54.8% (95) | 77.4% (2)* |
 
 ##### TC marginal (excl sparse)
 
 | TC | n_users | mean | p05 | p25 | p50 | p75 | p95 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 499 | 0.5032 | 0.406 | 0.461 | 0.500 | 0.539 | 0.616 |
-| blitz | 499 | 0.5133 | 0.409 | 0.468 | 0.511 | 0.558 | 0.627 |
-| rapid | 489 | 0.5234 | 0.398 | 0.471 | 0.522 | 0.569 | 0.668 |
-| classical | 264 | 0.5069 | 0.333 | 0.439 | 0.504 | 0.575 | 0.665 |
+| bullet | 499 | 50.3% | 40.6% | 46.1% | 50.0% | 53.9% | 61.6% |
+| blitz | 499 | 51.3% | 40.9% | 46.8% | 51.1% | 55.8% | 62.7% |
+| rapid | 489 | 52.3% | 39.8% | 47.1% | 52.2% | 56.9% | 66.8% |
+| classical | 264 | 50.7% | 33.3% | 43.9% | 50.4% | 57.5% | 66.5% |
 
 ##### ELO marginal (excl sparse)
 
 | ELO | n_users | mean | p05 | p25 | p50 | p75 | p95 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 336 | 0.4792 | 0.340 | 0.423 | 0.474 | 0.523 | 0.640 |
-| 1200 | 371 | 0.5046 | 0.377 | 0.449 | 0.493 | 0.550 | 0.646 |
-| 1600 | 385 | 0.5106 | 0.400 | 0.462 | 0.504 | 0.554 | 0.639 |
-| 2000 | 364 | 0.5249 | 0.427 | 0.489 | 0.521 | 0.560 | 0.630 |
-| 2400 | 295 | 0.5461 | 0.450 | 0.504 | 0.539 | 0.581 | 0.661 |
+| 800 | 336 | 47.9% | 34.0% | 42.3% | 47.4% | 52.3% | 64.0% |
+| 1200 | 371 | 50.5% | 37.7% | 44.9% | 49.3% | 55.0% | 64.6% |
+| 1600 | 385 | 51.1% | 40.0% | 46.2% | 50.4% | 55.4% | 63.9% |
+| 2000 | 364 | 52.5% | 42.7% | 48.9% | 52.1% | 56.0% | 63.0% |
+| 2400 | 295 | 54.6% | 45.1% | 50.4% | 53.9% | 58.1% | 66.1% |
 
 ##### Pooled (excl sparse)
 
 | n_users | mean | p05 | p25 | p50 | p75 | p95 |
 |---:|---:|---:|---:|---:|---:|---:|
-| 1751 | 0.5123 | 0.393 | 0.463 | 0.509 | 0.558 | 0.644 |
+| 1,751 | 51.2% | 39.3% | 46.3% | 50.9% | 55.8% | 64.4% |
 
 ##### Collapse verdict
 
 - **TC axis**: max |d| = **0.27** (bullet vs rapid) → **review**
 - **ELO axis**: max |d| = **0.84** (800 vs 2400) → **keep separate**
 
-Heatmap of per-user `eg_p50`:
+Heatmap of per-user `eg_p50` (%):
 
 ```
            bullet   blitz   rapid   classical
-  800       0.47    0.48    0.49    0.44
-  1200      0.49    0.48    0.51    0.51
-  1600      0.50    0.50    0.52    0.50
-  2000      0.51    0.53    0.52    0.54
-  2400      0.52    0.54    0.55    0.77*
+  800       47.3    47.8    49.0    43.9
+  1200      49.2    48.1    51.3    51.2
+  1600      49.9    50.4    51.7    50.0
+  2000      50.6    52.8    52.2    53.6
+  2400      52.4    54.1    54.8    77.4*
 ```
 
 ##### Recommendations
 
-- **Pooled mean = 0.512** is +1.2 pp above the chess fairness null of 0.50 — within the expected benchmark skill edge. Equal-footing filter healthy.
-- **Cohort neutral band** (pooled IQR): `[0.46, 0.56]`. Slightly tighter than live `[0.45, 0.55]` on the low side, slightly wider on the high side. Within rounding tolerance — **keep ±0.05 on the shared score bullet**.
-- **Cohort domain** (pooled `[p05, p95]`): `[0.39, 0.64]` (half-width ≈ 0.13). Live `±0.25` is wider than the pooled distribution; **keep** — extreme users still need to render.
-- **ELO stratification recommended**: ELO p50 spreads from 0.47 → 0.55 across cohorts (8 pp, wider than the ±5 pp IQR width). The shared score bullet stays as-is, but the EG-only tile should consider a dedicated `ENDGAME_SCORE_ZONES` per-ELO registry (mirroring `ENDGAME_SKILL_ZONES`). Document the 8 pp expected drift until then.
+- **Pooled mean = 51.2%** is +1.2pp above the chess fairness null of 50% — within expected benchmark skill edge.
+- **Cohort neutral band**: pooled IQR `[46.3%, 55.8%]`. Live `[0.45, 0.55]` ≈ `[45%, 55%]` — within rounding tolerance. **Keep ±5pp on the shared score bullet**.
+- **Cohort domain** (pooled `[p05, p95]`): `[39.3%, 64.4%]` (half-width ≈ 0.13). Live ±0.25 is wider than pooled — **keep**.
+- **ELO stratification recommended**: ELO p50 spreads 47.4% → 53.9% across cohorts (6.5pp, wider than the ±5pp IQR width on the bullet). The shared score bullet stays as-is, but the EG-only tile should consider a dedicated `ENDGAME_SCORE_ZONES` per-ELO registry (mirroring `ENDGAME_SKILL_ZONES`). Until then, document the 6.5pp expected drift.
 
-#### 3.1.5 Score Gap (gauge + timeline)
+#### 3.1.5 Achievable Score Gap
+
+Per-user `achievable_score_gap = mean(actual_i − expected_i)` over the user's paired (actual, expected) games at EG entry. Mate INCLUDED; `|eval_cp| >= 2000` clipped. Sample floor ≥20 paired games/user.
+
+##### Currently set in code
+
+| Constant | Live value | File |
+|---|---:|---|
+| `SCORE_GAP_NEUTRAL_MIN` / `MAX` | −0.10 / +0.10 | `frontend/src/generated/endgameZones.ts` |
+| `SCORE_GAP_DOMAIN` | 0.20 | `frontend/src/components/charts/EndgameOverallShared.ts` |
+| `PVALUE_RELIABILITY_MIN_N` | 10 | `app/services/endgame_service.py` |
+| `EVAL_CLIP_MAX_CP` | 2000 | same |
+
+Live gauge centered at 0 (engine-alignment null). Achievable Score Gap shares the `SCORE_GAP_*` constants with Endgame Score Gap (§3.1.6) by design — both rows in the same row of the Score Differences card.
+
+##### 5×4 cell table — per-user `gap_p50 (n_users)` rendered as pp
+
+| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
+|---|---:|---:|---:|---:|
+| 800 | −0.3pp (99) | −1.1pp (100) | −1.2pp (96) | −4.1pp (41) |
+| 1200 | +0.3pp (100) | −0.3pp (99) | −0.7pp (100) | −1.1pp (72) |
+| 1600 | +0.7pp (100) | +0.0pp (100) | +0.8pp (100) | +0.5pp (85) |
+| 2000 | +0.4pp (100) | +1.0pp (100) | +0.8pp (98) | +2.0pp (66) |
+| 2400 | +3.4pp (100) | +4.3pp (100) | +3.5pp (95) | +12.1pp (2)* |
+
+##### TC marginal (excl sparse)
+
+| TC | n_users | mean | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 499 | +0.4pp | −18.5pp | −5.5pp | +1.3pp | +6.7pp | +14.8pp |
+| blitz | 499 | +0.2pp | −10.5pp | −3.8pp | +0.7pp | +4.4pp | +9.9pp |
+| rapid | 489 | +0.6pp | −8.1pp | −2.6pp | +0.7pp | +4.1pp | +10.4pp |
+| classical | 264 | −0.3pp | −10.7pp | −4.7pp | −0.1pp | +3.9pp | +10.7pp |
+
+##### ELO marginal (excl sparse)
+
+| ELO | n_users | mean | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 800 | 336 | −1.7pp | −17.3pp | −7.0pp | −1.3pp | +4.0pp | +11.7pp |
+| 1200 | 371 | −0.3pp | −11.7pp | −4.7pp | −0.6pp | +3.5pp | +13.0pp |
+| 1600 | 385 | −0.2pp | −12.4pp | −3.8pp | +0.5pp | +3.8pp | +9.9pp |
+| 2000 | 364 | +1.0pp | −11.1pp | −2.7pp | +1.2pp | +4.8pp | +11.5pp |
+| 2400 | 295 | +3.2pp | −6.5pp | −0.5pp | +3.5pp | +7.3pp | +13.1pp |
+
+##### Pooled (excl sparse)
+
+| n_users | mean | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1,751 | +0.3pp | −12.4pp | **−3.9pp** | +0.7pp | **+4.6pp** | +11.6pp |
+
+##### Collapse verdict
+
+- **TC axis**: max |d| = **0.15** (rapid vs classical) → **collapse**
+- **ELO axis**: max |d| = **0.62** (800 vs 2400) → **keep separate**
+
+Heatmap of per-user `gap_p50` (pp):
+
+```
+           bullet   blitz   rapid   classical
+  800       -0.3    -1.1    -1.2    -4.1
+  1200      +0.3    -0.3    -0.7    -1.1
+  1600      +0.7    +0.0    +0.8    +0.5
+  2000      +0.4    +1.0    +0.8    +2.0
+  2400      +3.4    +4.3    +3.5    +12.1*
+```
+
+##### Recommendations
+
+- **Sanity check on engine alignment**: pooled mean = **+0.3pp** — within ±1pp of 0. No model-calibration concern.
+- **Cohort neutral band**: pooled IQR `[−3.9pp, +4.6pp]` is **substantially narrower** than the live `±10pp` band. Asymmetric tilt (+0.7pp median) is below the sub-5pp re-centering guard, so keep symmetric. Recommend **tightening to ±5pp** so the gauge actually paints red/green for the 2400 cohort (whose median sits at +3.5pp, currently rendered as "typical" by the wide band). The 800-cohort lower tail (−7pp p25) also lands in danger correctly under the tighter band.
+- **Cohort domain**: pooled `[p05, p95]` = `[−12.4pp, +11.6pp]`. Half-width = 12.4pp vs live `SCORE_GAP_DOMAIN = 0.20` (= ±20pp). Live is wider than cohort tails — **keep** (the 800-bullet tail at −20.6pp still needs to render). Note this constant is shared with §3.1.6 — keep at 0.20 even if 3.1.6 wants 0.23 (it doesn't this cycle).
+- **ELO stratification strongly indicated**: ELO d_max = 0.62 (keep), with the 800-cohort gap median at −1.3pp and the 2400-cohort at +3.5pp. The Achievable Score Gap is the metric where strong-cohort users systematically outperform Stockfish's expected score at entry — well-known phenomenon and worth a per-ELO `ACHIEVABLE_SCORE_GAP_ZONES` registry if the tile is meant to paint cohort-aware feedback. Without per-ELO bands, the recommended ±5pp pooled band still works as a single global setting.
+
+**Routing note**: the live SCORE_GAP_* constants are shared with §3.1.6 — see "Recommended thresholds summary" for the dual-row impact. If the implementer agrees the tighter band reflects both metrics, the single shared constant can move from ±0.10 → ±0.05. If only one row should tighten, a split into `ACHIEVABLE_SCORE_GAP_*` (distinct module) is needed.
+
+#### 3.1.6 Endgame Score Gap and Timeline
 
 Per-user `diff = eg_score − non_eg_score`. Floor: ≥30 EG AND ≥30 non-EG games.
 
@@ -369,48 +435,59 @@ Per-user `diff = eg_score − non_eg_score`. Floor: ≥30 EG AND ≥30 non-EG ga
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | -0.036 (97) | -0.024 (97) | -0.023 (94) | -0.134 (24) |
-| 1200 | -0.040 (97) | -0.032 (99) | +0.008 (98) | -0.055 (51) |
-| 1600 | -0.017 (97) | -0.001 (99) | +0.007 (100) | -0.048 (66) |
-| 2000 | -0.014 (100) | +0.005 (98) | +0.008 (95) | -0.019 (49) |
-| 2400 | +0.023 (98) | -0.002 (96) | -0.009 (77) | +0.064 (1)* |
+| 800 | −3.6pp (97) | −2.4pp (97) | −2.3pp (94) | −13.4pp (24) |
+| 1200 | −4.0pp (97) | −3.2pp (99) | +0.8pp (98) | −5.5pp (51) |
+| 1600 | −1.7pp (97) | −0.1pp (99) | +0.7pp (100) | −4.8pp (66) |
+| 2000 | −1.4pp (100) | +0.5pp (98) | +0.8pp (95) | −1.9pp (49) |
+| 2400 | +2.3pp (98) | −0.2pp (96) | −0.9pp (77) | +6.4pp (1)* |
 
 ##### TC marginal (excl sparse)
 
 | TC | n | mean | p05 | p25 | p50 | p75 | p95 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| bullet | 489 | -0.0101 | -0.182 | -0.095 | -0.018 | +0.064 | +0.198 |
-| blitz | 489 | -0.0074 | -0.191 | -0.093 | -0.009 | +0.069 | +0.195 |
-| rapid | 464 | -0.0071 | -0.232 | -0.095 | -0.006 | +0.082 | +0.203 |
-| classical | 190 | -0.0529 | -0.337 | -0.151 | -0.046 | +0.065 | +0.199 |
+| bullet | 489 | −1.0pp | −18.2pp | −9.5pp | −1.8pp | +6.4pp | +19.8pp |
+| blitz | 489 | −0.7pp | −19.1pp | −9.3pp | −0.9pp | +6.9pp | +19.5pp |
+| rapid | 464 | −0.7pp | −23.2pp | −9.5pp | −0.6pp | +8.2pp | +20.3pp |
+| classical | 190 | −5.3pp | −33.7pp | −15.1pp | −4.6pp | +6.5pp | +19.9pp |
 
 ##### ELO marginal (excl sparse)
 
 | ELO | n | mean | p05 | p25 | p50 | p75 | p95 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 800 | 312 | -0.0253 | -0.242 | -0.116 | -0.036 | +0.053 | +0.219 |
-| 1200 | 345 | -0.0206 | -0.237 | -0.112 | -0.031 | +0.072 | +0.212 |
-| 1600 | 362 | -0.0068 | -0.231 | -0.103 | -0.009 | +0.094 | +0.210 |
-| 2000 | 342 | -0.0095 | -0.206 | -0.088 | -0.004 | +0.068 | +0.164 |
-| 2400 | 271 | -0.0043 | -0.197 | -0.082 | +0.001 | +0.074 | +0.167 |
+| 800 | 312 | −2.5pp | −24.2pp | −11.6pp | −3.6pp | +5.3pp | +21.9pp |
+| 1200 | 345 | −2.1pp | −23.7pp | −11.2pp | −3.1pp | +7.2pp | +21.2pp |
+| 1600 | 362 | −0.7pp | −23.1pp | −10.3pp | −0.9pp | +9.4pp | +21.0pp |
+| 2000 | 342 | −1.0pp | −20.6pp | −8.8pp | −0.4pp | +6.8pp | +16.4pp |
+| 2400 | 271 | −0.4pp | −19.7pp | −8.2pp | +0.1pp | +7.4pp | +16.7pp |
 
 ##### Pooled (excl sparse)
 
 | n | mean | p05 | p25 | p50 | p75 | p95 | eg_mean | non_eg_mean |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1632 | -0.0134 | -0.227 | -0.104 | -0.014 | +0.073 | +0.202 | 0.5105 | 0.5239 |
+| 1,632 | −1.3pp | −22.7pp | −10.4pp | −1.4pp | +7.3pp | +20.2pp | 51.1% | 52.4% |
 
 ##### Collapse verdict
 
 - **TC axis**: max |d| = **0.34** (blitz vs classical) → **review**
 - **ELO axis**: max |d| = **0.17** (800 vs 2400) → **collapse**
 
+Heatmap of per-user `diff_p50` (pp):
+
+```
+           bullet   blitz   rapid   classical
+  800       -3.6    -2.4    -2.3    -13.4
+  1200      -4.0    -3.2    +0.8    -5.5
+  1600      -1.7    -0.1    +0.7    -4.8
+  2000      -1.4    +0.5    +0.8    -1.9
+  2400      +2.3    -0.2    -0.9    +6.4*
+```
+
 ##### Recommendations
 
-- **Score-gap neutral zone**: pooled IQR `[-0.10, +0.07]`. Median = -0.014 (well under the 5pp out-of-scope guard). **Keep symmetric ±0.10** — lower bound matches exactly, upper bound slightly tighter than pooled.
-- **Score-gap domain**: pooled `[p05, p95]` = `[-0.227, +0.202]`. Half-width 0.227 vs live 0.20 — recommend **widening to ±0.23** so extreme bullet/classical users don't clip (same as 2026-05-12).
-- **Timeline Y-axis**: pooled eg_mean=0.51, non_eg_mean=0.52. Live `[20, 80]` (in %) easily encloses cohort behaviour — **keep**.
-- **TC split**: classical's `diff_mean = -0.053` is the only TC with meaningful mean drift (others within ±1 pp). Per "review" verdict — no immediate action; revisit if user feedback shows classical-only complaints.
+- **Score-gap neutral zone**: pooled IQR `[−10.4pp, +7.3pp]`. Median = −1.4pp (well under the 5pp out-of-scope guard for re-centering). Asymmetric tilt is small. The current ±10pp band is consistent with the lower bound but wider than the upper IQR. **Keep symmetric ±10pp** for stand-alone calibration of 3.1.6 — but see the cross-row note in §3.1.5: if both rows agree on tightening, ±5pp is closer to both pooled IQRs. **Status**: relative strength/weakness gauge; framing should describe the gap as cohort-relative rather than absolute (per commit 5a855400). Until the achievable-gap calibration triggers a registry split, **keep ±10pp**.
+- **Score-gap domain**: pooled `[p05, p95]` = `[−22.7pp, +20.2pp]`. Half-width 22.7pp vs live 20pp — recommend **widening `SCORE_GAP_DOMAIN` to 0.23** so extreme bullet/classical users don't clip. (Same recommendation as 2026-05-12.)
+- **Timeline Y-axis**: pooled eg_mean=51.1%, non_eg_mean=52.4%. Live `[20, 80]` easily encloses cohort behavior — **keep**.
+- **TC split**: classical's `diff_mean = −5.3pp` is the only TC with meaningful mean drift (others within ±1pp). Per "review" verdict — no immediate action; revisit if user feedback shows classical-only complaints.
 
 ---
 
@@ -426,7 +503,7 @@ Per-user `diff = eg_score − non_eg_score`. Floor: ≥30 EG AND ≥30 non-EG ga
 | `FIXED_GAUGE_ZONES.parity` | neutral [0.45, 0.55] | same |
 | `FIXED_GAUGE_ZONES.recovery` | neutral [0.24, 0.36] | same |
 | `ENDGAME_SKILL_ZONES` | neutral [0.47, 0.55] | same |
-| `NEUTRAL_ZONE_MIN` / `MAX` (score-gap bullet, §2 file) | −0.05 / +0.05 | `frontend/src/components/charts/EndgameScoreGapSection.tsx` |
+| `NEUTRAL_ZONE_MIN` / `MAX` (score-diff bullet, §2 file) | −0.05 / +0.05 | `EndgameScoreGapSection.tsx` |
 | `BULLET_DOMAIN` | 0.20 | same |
 
 ##### Conversion
@@ -435,19 +512,19 @@ Per-user `diff = eg_score − non_eg_score`. Floor: ≥30 EG AND ≥30 non-EG ga
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | 0.597 (99) | 0.701 (100) | 0.714 (96) | 0.714 (41) |
-| 1200 | 0.625 (100) | 0.709 (99) | 0.734 (100) | 0.750 (72) |
-| 1600 | 0.659 (100) | 0.712 (100) | 0.747 (100) | 0.776 (85) |
-| 2000 | 0.672 (100) | 0.726 (100) | 0.749 (98) | 0.774 (66) |
-| 2400 | 0.713 (100) | 0.744 (100) | 0.778 (95) | 0.794 (2)* |
+| 800 | 59.7% (99) | 70.1% (100) | 71.4% (96) | 71.4% (41) |
+| 1200 | 62.5% (100) | 70.9% (99) | 73.4% (100) | 75.0% (72) |
+| 1600 | 65.9% (100) | 71.2% (100) | 74.7% (100) | 77.6% (85) |
+| 2000 | 67.2% (100) | 72.6% (100) | 74.9% (98) | 77.4% (66) |
+| 2400 | 71.3% (100) | 74.4% (100) | 77.8% (95) | 79.4% (2)* |
 
-TC marginal: bullet **0.658** / blitz **0.718** / rapid **0.745** / classical **0.761**
-ELO marginal: 800 **0.684** / 1200 **0.709** / 1600 **0.721** / 2000 **0.725** / 2400 **0.743**
-Pooled: mean 0.711, **p25/p50/p75 = 0.656 / 0.719 / 0.769**
+TC marginal (mean): bullet **65.1%** / blitz **71.6%** / rapid **74.3%** / classical **75.6%**
+ELO marginal (mean): 800 **66.8%** / 1200 **70.3%** / 1600 **71.7%** / 2000 **72.1%** / 2400 **74.9%**
+Pooled: mean **71.1%**, p25/p50/p75 = **65.6% / 71.9% / 76.9%**
 
-**Collapse verdict** — TC d_max ≈ **1.02** (bullet vs classical) → **keep separate**. ELO d_max ≈ **0.82** (800 vs 2400) → **keep separate**.
+**Collapse verdict** — TC d_max = **1.02** (bullet vs classical) → **keep separate**. ELO d_max = **0.82** (800 vs 2400) → **keep separate**.
 
-Recommendation: live neutral `[0.65, 0.77]` ≈ pooled `[0.66, 0.77]` — **keep as pooled default**. A per-TC/per-ELO stratified registry would meaningfully tighten zones (bullet pooled p25/p75 ≈ 0.58/0.72 vs classical ≈ 0.70/0.83).
+Recommendation: live neutral `[0.65, 0.77]` ≈ pooled `[0.66, 0.77]` — **keep as pooled default**. A per-TC/per-ELO stratified registry mirroring `ENDGAME_SKILL_ZONES` would meaningfully sharpen feedback (bullet pooled IQR ≈ 58/72 vs classical ≈ 70/83). Worth stratifying.
 
 ##### Parity
 
@@ -455,19 +532,19 @@ Recommendation: live neutral `[0.65, 0.77]` ≈ pooled `[0.66, 0.77]` — **keep
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | 0.500 (97) | 0.479 (100) | 0.500 (96) | 0.385 (39) |
-| 1200 | 0.490 (100) | 0.489 (99) | 0.487 (100) | 0.500 (72) |
-| 1600 | 0.515 (100) | 0.500 (100) | 0.500 (100) | 0.500 (85) |
-| 2000 | 0.499 (100) | 0.513 (100) | 0.519 (98) | 0.521 (66) |
-| 2400 | 0.522 (100) | 0.552 (100) | 0.540 (95) | 0.712 (2)* |
+| 800 | 50.0% (97) | 47.9% (100) | 50.0% (96) | 38.5% (39) |
+| 1200 | 49.0% (100) | 48.9% (99) | 48.7% (100) | 50.0% (72) |
+| 1600 | 51.5% (100) | 50.0% (100) | 50.0% (100) | 50.0% (85) |
+| 2000 | 49.9% (100) | 51.3% (100) | 51.9% (98) | 52.1% (66) |
+| 2400 | 52.2% (100) | 55.2% (100) | 54.0% (95) | 71.2% (2)* |
 
-TC marginal: bullet **0.500** / blitz **0.507** / rapid **0.506** / classical **0.500**
-ELO marginal: 800 **0.500** / 1200 **0.489** / 1600 **0.500** / 2000 **0.512** / 2400 **0.539**
-Pooled: mean 0.502, **p25/p50/p75 = 0.443 / 0.500 / 0.563**
+TC marginal: bullet **50.4%** / blitz **50.2%** / rapid **50.8%** / classical **49.1%**
+ELO marginal: 800 **47.0%** / 1200 **49.9%** / 1600 **49.7%** / 2000 **51.4%** / 2400 **53.7%**
+Pooled: mean **50.2%**, p25/p50/p75 = **44.3% / 50.0% / 56.3%**
 
-**Collapse verdict** — TC d_max ≈ **0.12** → **collapse**. ELO d_max ≈ **0.48** (800 vs 2400) → **review**.
+**Collapse verdict** — TC d_max = **0.12** → **collapse**. ELO d_max = **0.48** (800 vs 2400) → **review**.
 
-Recommendation: live `[0.45, 0.55]` matches pooled IQR `[0.44, 0.56]` closely — **keep**. ELO ramp borderline meaningful (0.49 → 0.54).
+Recommendation: live `[0.45, 0.55]` matches pooled IQR exactly — **keep**. ELO ramp is borderline meaningful (47% → 54% across cohorts); revisit if domain experts complain that 2400 users see "typical" when they're outperforming the parity median.
 
 ##### Recovery
 
@@ -475,19 +552,19 @@ Recommendation: live `[0.45, 0.55]` matches pooled IQR `[0.44, 0.56]` closely �
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | 0.354 (99) | 0.290 (100) | 0.258 (96) | 0.203 (41) |
-| 1200 | 0.365 (100) | 0.290 (99) | 0.286 (99) | 0.226 (72) |
-| 1600 | 0.340 (100) | 0.287 (100) | 0.269 (100) | 0.222 (85) |
-| 2000 | 0.344 (100) | 0.330 (100) | 0.264 (98) | 0.272 (66) |
-| 2400 | 0.346 (100) | 0.317 (100) | 0.300 (95) | 0.250 (2)* |
+| 800 | 35.4% (99) | 29.0% (100) | 25.8% (96) | 20.3% (41) |
+| 1200 | 36.5% (100) | 29.0% (99) | 28.6% (99) | 22.6% (72) |
+| 1600 | 34.0% (100) | 28.7% (100) | 26.9% (100) | 22.2% (85) |
+| 2000 | 34.4% (100) | 33.0% (100) | 26.4% (98) | 27.2% (66) |
+| 2400 | 34.6% (100) | 31.7% (100) | 30.0% (95) | 25.0% (2)* |
 
-TC marginal: bullet **0.353** / blitz **0.303** / rapid **0.277** / classical **0.233**
-ELO marginal: 800 **0.297** / 1200 **0.296** / 1600 **0.287** / 2000 **0.305** / 2400 **0.323**
-Pooled: mean 0.305, **p25/p50/p75 = 0.243 / 0.301 / 0.364**
+TC marginal: bullet **35.6%** / blitz **30.3%** / rapid **28.6%** / classical **25.0%**
+ELO marginal: 800 **29.7%** / 1200 **30.0%** / 1600 **29.3%** / 2000 **31.1%** / 2400 **33.0%**
+Pooled: mean **30.5%**, p25/p50/p75 = **24.3% / 30.1% / 36.4%**
 
-**Collapse verdict** — TC d_max ≈ **1.10** (bullet vs classical) → **keep separate**. ELO d_max ≈ **0.40** → **review**.
+**Collapse verdict** — TC d_max = **1.10** (bullet vs classical) → **keep separate**. ELO d_max = **0.40** → **review**.
 
-Recommendation: live `[0.24, 0.36]` matches pooled IQR exactly — **keep**. TC ramp is huge (bullet 0.35 → classical 0.23). A per-TC registry would meaningfully sharpen feedback.
+Recommendation: live `[0.24, 0.36]` matches pooled IQR exactly — **keep**. TC ramp is huge (bullet 35% → classical 25%) — a per-TC registry would sharpen feedback. Worth a stratified band.
 
 ##### Endgame Skill (composite)
 
@@ -495,19 +572,19 @@ Recommendation: live `[0.24, 0.36]` matches pooled IQR exactly — **keep**. TC 
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | 0.481 (99) | 0.497 (100) | 0.493 (96) | 0.438 (41) |
-| 1200 | 0.492 (100) | 0.496 (99) | 0.508 (100) | 0.496 (72) |
-| 1600 | 0.509 (100) | 0.501 (100) | 0.507 (100) | 0.516 (85) |
-| 2000 | 0.506 (100) | 0.521 (100) | 0.512 (98) | 0.523 (66) |
-| 2400 | 0.528 (100) | 0.543 (100) | 0.544 (95) | 0.585 (2)* |
+| 800 | 48.1% (99) | 49.7% (100) | 49.3% (96) | 43.8% (41) |
+| 1200 | 49.2% (100) | 49.6% (99) | 50.8% (100) | 49.6% (72) |
+| 1600 | 50.9% (100) | 50.1% (100) | 50.7% (100) | 51.6% (85) |
+| 2000 | 50.6% (100) | 52.1% (100) | 51.2% (98) | 52.3% (66) |
+| 2400 | 52.8% (100) | 54.3% (100) | 54.4% (95) | 58.5% (2)* |
 
-TC marginal: bullet **0.506** / blitz **0.509** / rapid **0.512** / classical **0.499**
-ELO marginal: 800 **0.489** / 1200 **0.497** / 1600 **0.507** / 2000 **0.514** / 2400 **0.539**
-Pooled: mean 0.506, **p25/p50/p75 = 0.466 / 0.508 / 0.548**
+TC marginal: bullet **50.4%** / blitz **50.7%** / rapid **51.3%** / classical **49.9%**
+ELO marginal: 800 **47.8%** / 1200 **50.1%** / 1600 **50.2%** / 2000 **51.5%** / 2400 **53.9%**
+Pooled: mean **50.6%**, p25/p50/p75 = **46.6% / 50.8% / 54.8%**
 
-**Collapse verdict** — TC d_max ≈ **0.18** → **collapse**. ELO d_max ≈ **0.78** (800 vs 2400) → **keep separate**.
+**Collapse verdict** — TC d_max = **0.18** → **collapse**. ELO d_max = **0.78** (800 vs 2400) → **keep separate**.
 
-Recommendation: live `[0.47, 0.55]` matches pooled `[0.47, 0.55]` exactly — **keep as pooled**. Live `ENDGAME_SKILL_ZONES` already serves the ELO stratification need.
+Recommendation: live `[0.47, 0.55]` matches pooled `[0.47, 0.55]` exactly — **keep as pooled**. ELO stratification still strongly indicated; current `ENDGAME_SKILL_ZONES` registry already serves this.
 
 ---
 
@@ -528,19 +605,19 @@ Recommendation: live `[0.47, 0.55]` matches pooled `[0.47, 0.55]` exactly — **
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | -0.70 (98) | -0.76 (100) | +1.24 (96) | +0.18 (38) |
-| 1200 | -0.43 (100) | -0.48 (99) | -0.09 (100) | +1.17 (72) |
-| 1600 | -0.20 (99) | -1.70 (100) | -0.12 (100) | -0.20 (85) |
-| 2000 | -1.53 (100) | -1.48 (100) | -1.27 (98) | -5.69 (64) |
-| 2400 | +0.12 (99) | -0.04 (100) | -3.29 (95) | +4.30 (2)* |
+| 800 | −0.7% (98) | −0.8% (100) | +1.2% (96) | +0.2% (38) |
+| 1200 | −0.4% (100) | −0.5% (99) | −0.1% (100) | +1.2% (72) |
+| 1600 | −0.2% (99) | −1.7% (100) | −0.1% (100) | −0.2% (85) |
+| 2000 | −1.5% (100) | −1.5% (100) | −1.3% (98) | −5.7% (64) |
+| 2400 | +0.1% (99) | −0.0% (100) | −3.3% (95) | +4.3% (2)* |
 
-TC marginal: bullet **-0.22** / blitz **-1.40** / rapid **-1.48** / classical **-2.71**
-ELO marginal: 800 **-1.07** / 1200 **-1.17** / 1600 **-1.43** / 2000 **-2.23** / 2400 **-0.29**
-Pooled: p25/p50/p75 = **-6.41 / -0.52 / +4.66**
+TC marginal (mean): bullet **−0.2%** / blitz **−1.4%** / rapid **−1.5%** / classical **−2.7%**
+ELO marginal: 800 **−1.1%** / 1200 **−1.2%** / 1600 **−1.4%** / 2000 **−2.2%** / 2400 **−0.3%**
+Pooled: p25/p50/p75 = **−6.4% / −0.5% / +4.7%**
 
-**Collapse verdict** — TC d_max ≈ **0.23** (bullet vs classical) → **review**. ELO d_max ≈ **0.21** (2000 vs 2400) → **review**.
+**Collapse verdict** — TC d_max = **0.23** (bullet vs classical) → **review**. ELO d_max = **0.21** (2000 vs 2400) → **review**.
 
-Recommendation: pooled IQR slightly asymmetric (`[-6.4, +4.7]`). Live ±5 close but lower tail is wider — **widen to ±6** if narrative emphasis warrants, otherwise keep. TC ramp mild; per-TC split not required.
+Recommendation: pooled IQR slightly asymmetric (`[−6.4%, +4.7%]`). Live ±5% is close but the lower tail is wider — **widen to ±6%** if narrative emphasis warrants, otherwise keep. TC ramp is mild; per-TC split not required.
 
 ##### Net timeout rate (timeout_wins − timeout_losses per game, %)
 
@@ -548,63 +625,60 @@ Recommendation: pooled IQR slightly asymmetric (`[-6.4, +4.7]`). Live ±5 close 
 
 | ELO ↓ \ TC → | bullet | blitz | rapid | classical |
 |---|---:|---:|---:|---:|
-| 800 | -5.25 | -0.29 | +1.32 | 0.00 |
-| 1200 | -0.56 | +2.03 | +1.16 | 0.00 |
-| 1600 | +1.98 | +1.13 | +2.01 | 0.00 |
-| 2000 | +2.19 | +2.25 | +1.97 | +0.58 |
-| 2400 | +5.53 | +1.95 | +2.42 | 0.00 (2)* |
+| 800 | −5.3pp | −0.3pp | +1.3pp | 0.0pp |
+| 1200 | −0.6pp | +2.0pp | +1.2pp | 0.0pp |
+| 1600 | +2.0pp | +1.1pp | +2.0pp | 0.0pp |
+| 2000 | +2.2pp | +2.2pp | +2.0pp | +0.6pp |
+| 2400 | +5.5pp | +2.0pp | +2.4pp | 0.0pp (2)* |
 
-TC marginal: bullet **+0.37** / blitz **-0.01** / rapid **+0.16** / classical **-0.33**
-ELO marginal: 800 **-2.01** / 1200 **-0.34** / 1600 **-0.17** / 2000 **+0.61** / 2400 **+2.77**
-Pooled: p25/p50/p75 = **-4.43 / +1.04 / +5.63**
+TC marginal (mean): bullet **+0.4pp** / blitz **−0.0pp** / rapid **+0.2pp** / classical **−0.3pp**
+ELO marginal: 800 **−2.0pp** / 1200 **−0.3pp** / 1600 **−0.2pp** / 2000 **+0.6pp** / 2400 **+2.8pp**
+Pooled: p25/p50/p75 = **−4.4pp / +1.0pp / +5.6pp**
 
-**Collapse verdict** — TC d_max ≈ **0.07** → **collapse**. ELO d_max ≈ **0.41** (800 vs 2400) → **review**.
+**Collapse verdict** — TC d_max = **0.07** → **collapse**. ELO d_max = **0.41** (800 vs 2400) → **review**.
 
-Recommendation: pooled IQR `[-4.4, +5.6]`. Live ±5 fits reasonably — **keep**. ELO ramp is real (800 nets -2 / 2400 nets +2.8); the "typical" band centered on 0 still reads cleanly across cohorts.
+Recommendation: pooled IQR `[−4.4pp, +5.6pp]`. Live ±5pp fits reasonably. **Keep**. ELO ramp is real (800 nets −2.0pp / 2400 nets +2.8pp) — strong-cohort users net flag opponents. The "typical" band centered on 0 still reads cleanly across cohorts.
 
 #### 3.3.2 Time pressure vs performance
 
-Per (TC × time-bucket) curves. Time bucket 0 = 0-10% time remaining (max pressure); 9 = 90-100% (min pressure). Per-cell pooled score (not per-user).
-
-##### Currently set in code
-
-| Constant | Live value | File |
-|---|---:|---|
-| `Y_AXIS_DOMAIN` | [0.2, 0.8] | `frontend/src/components/charts/EndgameTimePressureSection.tsx` |
-| `X_AXIS_DOMAIN` | [0, 100] | same |
-| `MIN_GAMES_FOR_CLOCK_STATS` | 10 | `app/services/endgame_service.py` |
+Per (TC × time-bucket) curves. Time bucket 0 = 0–10% time remaining (max pressure); 9 = 90–100% (min pressure). Per-cell pooled score (not per-user).
 
 ##### TC marginals — pooled across ELO (excl sparse)
 
 | Time bucket | bullet | blitz | rapid | classical |
 |---:|---:|---:|---:|---:|
-| 0 (max pressure) | 0.260 | 0.334 | 0.338 | 0.410 |
-| 1 | 0.399 | 0.437 | 0.441 | 0.452 |
-| 2 | 0.491 | 0.492 | 0.469 | 0.468 |
-| 3 | 0.530 | 0.518 | 0.508 | 0.475 |
-| 4 | 0.552 | 0.534 | 0.532 | 0.478 |
-| 5 | 0.564 | 0.548 | 0.533 | 0.487 |
-| 6 | 0.563 | 0.544 | 0.529 | 0.505 |
-| 7 | 0.553 | 0.542 | 0.523 | 0.510 |
-| 8 | 0.542 | 0.534 | 0.524 | 0.502 |
-| 9 (min pressure) | 0.500 | 0.523 | 0.524 | 0.510 |
+| 0 (max pressure) | 26.0% | 33.4% | 33.8% | 41.0% |
+| 1 | 39.9% | 43.7% | 44.1% | 45.2% |
+| 2 | 49.1% | 49.2% | 46.9% | 46.8% |
+| 3 | 53.0% | 51.8% | 50.7% | 47.5% |
+| 4 | 55.2% | 53.4% | 53.2% | 47.8% |
+| 5 | 56.4% | 54.8% | 53.3% | 48.7% |
+| 6 | 56.3% | 54.4% | 52.9% | 50.5% |
+| 7 | 55.3% | 54.2% | 52.3% | 51.0% |
+| 8 | 54.2% | 53.4% | 52.4% | 50.2% |
+| 9 (min pressure) | 50.0% | 52.3% | 52.4% | 51.0% |
 
-bullet/blitz show strong pressure penalty (0.26 → 0.56); classical curve is flat (0.41 → 0.51).
+bullet/blitz show strong pressure penalty (26% → 56%); classical curve is flat (41% → 51%). Classical "0–10% time" is still many seconds of thinking; bullet "0–10%" is sudden death.
 
 ##### ELO marginals — pooled across TC (excl sparse)
 
 | Time bucket | 800 | 1200 | 1600 | 2000 | 2400 |
 |---:|---:|---:|---:|---:|---:|
-| 0 | 0.266 | 0.283 | 0.304 | 0.332 | 0.336 |
-| 3 | 0.511 | 0.512 | 0.516 | 0.525 | 0.538 |
-| 5 | 0.538 | 0.532 | 0.537 | 0.563 | 0.575 |
-| 9 | 0.490 | 0.501 | 0.537 | 0.547 | 0.564 |
+| 0 | 26.6% | 28.3% | 30.4% | 33.2% | 33.6% |
+| 3 | 51.1% | 51.2% | 51.6% | 52.5% | 53.8% |
+| 5 | 53.8% | 53.2% | 53.7% | 56.3% | 57.5% |
+| 9 | 49.0% | 50.1% | 53.7% | 54.7% | 56.4% |
 
-Higher ELO → flatter/higher curve.
+Higher ELO → flatter/higher curve (better at all pressure levels).
 
-**Collapse verdict (per-bucket Cohen's d on per-game binary scores)** — TC d_max ≈ **0.34** (bullet vs classical at tb=0) → **review**. ELO d_max ≈ **0.17** (across buckets) → **collapse** at the per-game granularity.
+##### Collapse verdict (per-bucket Cohen's d on per-game binary scores)
 
-Recommendation: **show TC overlay** in the live curve (TC pooled across ELO) — the bullet/classical curve gap is large enough to matter. ELO overlay optional; can collapse to a single global curve.
+- **TC axis**: d_max = **0.34** (bullet vs classical at low-time buckets) → **review**
+- **ELO axis**: d_max = **0.17** → **collapse** at the per-game granularity
+
+Caveat: per-game outcome variance dominates (~0.25 per Bernoulli trial). Cohort effects are real and visible in marginals but small relative to single-game noise.
+
+Recommendation: **show TC overlay** in the live curve — the bullet/classical gap is large enough to matter. ELO overlay is optional; can collapse to a single global curve if UI clarity > per-ELO precision.
 
 ---
 
@@ -616,85 +690,81 @@ Recommendation: **show TC overlay** in the live curve (TC pooled across ELO) —
 
 | Constant | Live | File |
 |---|---|---|
-| `NEUTRAL_ZONE_MIN/MAX` (score-diff bullet, `EndgameWDLChart`) | ±0.05 | `frontend/src/components/charts/EndgameWDLChart.tsx` |
-| `BULLET_DOMAIN` (score-diff) | 0.30 | same |
-| `PER_CLASS_GAUGE_ZONES.rook` | conv [0.65, 0.75], recov [0.26, 0.36] | `frontend/src/generated/endgameZones.ts` |
-| `PER_CLASS_GAUGE_ZONES.minor_piece` | conv [0.63, 0.73], recov [0.31, 0.41] | same |
-| `PER_CLASS_GAUGE_ZONES.pawn` | conv [0.67, 0.79], recov [0.23, 0.34] | same |
-| `PER_CLASS_GAUGE_ZONES.queen` | conv [0.73, 0.83], recov [0.20, 0.30] | same |
-| `PER_CLASS_GAUGE_ZONES.mixed` | conv [0.65, 0.75], recov [0.28, 0.38] | same |
-| `PER_CLASS_GAUGE_ZONES.pawnless` | conv [0.70, 0.80], recov [0.21, 0.31] | same |
+| `NEUTRAL_ZONE_MIN/MAX` (score-diff bullet) | ±0.05 | `EndgameWDLChart.tsx` |
+| `BULLET_DOMAIN` | 0.30 | same |
+| `PER_CLASS_GAUGE_ZONES.{class}.conversion` / `.recovery` | per `endgameZones.ts` (calibrated 2026-05-01) | `frontend/src/generated/endgameZones.ts` |
 
 ##### Pooled-by-class summary (excl sparse cell)
 
 | class | games | users | score | score_diff | conv | recov |
 |---|---:|---:|---:|---:|---:|---:|
-| rook | 94,087 | 1,845 | 0.5075 | +0.0151 | 0.7098 | 0.2963 |
-| minor_piece | 70,381 | 1,825 | 0.5102 | +0.0204 | 0.6949 | 0.3278 |
-| pawn | 37,463 | 1,750 | 0.5105 | +0.0209 | 0.7379 | 0.2754 |
-| queen | 34,432 | 1,764 | 0.5079 | +0.0158 | 0.7744 | 0.2343 |
-| mixed | 529,608 | 1,888 | 0.5055 | +0.0110 | 0.6940 | 0.3111 |
-| pawnless | 5,847 | 1,365 | 0.5069 | +0.0139 | 0.7913 | 0.1976 |
+| rook | 94,087 | 1,845 | 50.8% | +1.5pp | 71.0% | 29.6% |
+| minor_piece | 70,381 | 1,825 | 51.0% | +2.0pp | 69.5% | 32.8% |
+| pawn | 37,463 | 1,750 | 51.1% | +2.1pp | 73.8% | 27.5% |
+| queen | 34,432 | 1,764 | 50.8% | +1.6pp | 77.4% | 23.4% |
+| mixed | 529,608 | 1,888 | 50.6% | +1.1pp | 69.4% | 31.1% |
+| pawnless | 5,847 | 1,365 | 50.7% | +1.4pp | 79.1% | 19.8% |
 
-##### Score-diff (cell-level)
+##### Score (per (ELO × TC × class), suppressed n_games < 100)
 
-All cell-level score_diff values land in `[-0.22, +0.15]`. Pooled per-class score_diff = `+0.01..+0.02` — within ±0.05.
+All cell-level score_diff values land in `[−22pp, +15pp]`. Pooled per-class score_diff = `+1.1pp..+2.1pp` — within ±5pp.
 
-##### Conversion comparison
+##### Conversion (suppressed n_conv < 30)
+
+Pooled per-class conversion ranges from 69.4% (mixed) to 79.1% (pawnless). Live `PER_CLASS_GAUGE_ZONES.conversion` neutral midpoints (from `endgameZones.ts`):
 
 | class | live neutral | pooled (this snapshot) | delta |
 |---|---|---:|---|
-| rook | [0.65, 0.75] | 0.710 | ≈ centered ✓ |
-| minor_piece | [0.63, 0.73] | 0.695 | ≈ centered ✓ |
-| pawn | [0.67, 0.79] | 0.738 | ≈ centered ✓ |
-| queen | [0.73, 0.83] | 0.774 | ≈ centered ✓ |
-| mixed | [0.65, 0.75] | 0.694 | ≈ centered ✓ |
-| pawnless | [0.70, 0.80] | 0.791 | shifted high — recommend [0.74, 0.84] |
+| rook | [0.65, 0.75] | 71.0% | ≈ centered ✓ |
+| minor_piece | [0.63, 0.73] | 69.5% | ≈ centered ✓ |
+| pawn | [0.67, 0.79] | 73.8% | ≈ centered ✓ |
+| queen | [0.73, 0.83] | 77.4% | ≈ centered ✓ |
+| mixed | [0.65, 0.75] | 69.4% | ≈ centered ✓ |
+| pawnless | [0.70, 0.80] | 79.1% | shifted high — recommend [0.74, 0.84] |
 
-##### Recovery comparison
+##### Recovery (suppressed n_recov < 30)
 
 | class | live neutral | pooled | delta |
 |---|---|---:|---|
-| rook | [0.26, 0.36] | 0.296 | ≈ centered ✓ |
-| minor_piece | [0.31, 0.41] | 0.328 | ≈ centered ✓ |
-| pawn | [0.23, 0.34] | 0.275 | ≈ centered ✓ |
-| queen | [0.20, 0.30] | 0.234 | ≈ centered ✓ |
-| mixed | [0.28, 0.38] | 0.311 | ≈ centered ✓ |
-| pawnless | [0.21, 0.31] | 0.198 | shifted low — recommend [0.15, 0.25] |
+| rook | [0.26, 0.36] | 29.6% | ≈ centered ✓ |
+| minor_piece | [0.31, 0.41] | 32.8% | ≈ centered ✓ |
+| pawn | [0.23, 0.34] | 27.5% | ≈ centered ✓ |
+| queen | [0.20, 0.30] | 23.4% | ≈ centered ✓ |
+| mixed | [0.28, 0.38] | 31.1% | ≈ centered ✓ |
+| pawnless | [0.21, 0.31] | 19.8% | shifted low — recommend [0.15, 0.25] |
 
 ##### Recommendations
 
 - Live per-class registry is healthy. Two classes drifted vs 2026-05-01 baseline:
-  - **pawnless conversion**: live midpoint 0.75 vs new pooled 0.79 (~4 pp drift up). Suggest shifting to `[0.74, 0.84]`.
-  - **pawnless recovery**: live midpoint 0.26 vs new pooled 0.20 (~6 pp drift down). Suggest shifting to `[0.15, 0.25]`.
-  - pawnless has the smallest sample (5,847 games / 1,365 users). Drift may also reflect sampling noise.
-- Per-class **score_diff**: all classes within ±0.025 — live `NEUTRAL_ZONE_MIN/MAX = ±0.05` continues to fit. **Keep**.
-- **Collapse verdicts**: same ELO ramp pattern observed in §3.2.1 — conversion climbs with ELO across classes, recovery roughly flat. ELO stratification per class is statistically supported but UI cost is high; stick with pooled per-class until users ask for finer grain.
+  - **pawnless conversion**: live midpoint 0.75 vs new pooled 0.79 (~4pp drift up). Suggest shifting to `[0.74, 0.84]`.
+  - **pawnless recovery**: live midpoint 0.26 vs new pooled 0.20 (~6pp drift down). Suggest shifting to `[0.15, 0.25]`.
+  - pawnless has the smallest sample (5,847 games / 1,365 users) — drift may also reflect sampling noise. Re-evaluate after the next dump.
+- Per-class **score_diff**: all classes within ±2.5pp — live `NEUTRAL_ZONE_MIN/MAX = ±0.05` continues to fit pooled cohort behaviour. **Keep**.
+- **Collapse verdicts** for per-(metric × class): per-cell sample sizes show the same ELO ramp pattern observed in §3.2.1 — conversion climbs with ELO, recovery is roughly flat. ELO stratification per class is statistically supported but UI-cost is high. Stick with pooled per-class until users ask for the finer grain.
 
 ---
 
-## Top-axis collapse summary (headline deliverable)
+## Top-axis collapse summary (HEADLINE DELIVERABLE)
 
 | Metric | Subchapter | TC verdict (d_max) | ELO verdict (d_max) | Implication |
 |---|---|---|---|---|
-| Non-Endgame Score (per-user) | 3.1.1 | **keep separate (0.50)** | review (0.49) | classical TC drifts +5pp; dedicated non-EG zones if UI ever stratifies |
+| Non-Endgame Score (per-user) | 3.1.1 | **keep (0.50)** | review (0.49) | TC drift driven by classical; dedicated non-EG zone module worth considering |
 | Endgame-entry eval (uncentered) | 3.1.2 | review (0.22) | review (0.28) | pooled band fits; 0-center stays |
 | Achievable Score | 3.1.3 | review (0.22) | review (0.23) | pooled band fits live [0.45, 0.55] |
-| Endgame Score (per-user, EG-only) | 3.1.4 | review (0.27) | **keep separate (0.84)** | ELO stratification justified for EG-only score band |
-| Score gap (eg − non_eg) | 3.1.5 | review (0.34) | collapse (0.17) | classical only TC drifts; single pooled ±0.10 OK |
-| Middlegame-entry eval (centered) | 2.1 | review (0.25) | review (0.23) | pooled band fits; no stratification |
-| Conversion (per-user) | 3.2.1 | **keep separate (1.02)** | **keep separate (0.82)** | per-cell calibration well justified |
+| Endgame Score (per-user, EG-only) | 3.1.4 | review (0.27) | **keep (0.84)** | ELO stratification justified for EG-only score band |
+| Achievable Score Gap (actual − expected) | 3.1.5 | collapse (0.15) | **keep (0.62)** | strong ELO ramp; tighten neutral band; consider per-ELO registry |
+| Endgame Score Gap (eg − non_eg) | 3.1.6 | review (0.34) | collapse (0.17) | classical only TC drifts; single pooled ±10pp OK |
+| Middlegame-entry eval (centered) | 2.1 | review (0.25) | review (0.23) | pooled band fits; widen neutral to ±0.35 pawns |
+| Conversion (per-user) | 3.2.1 | **keep (1.02)** | **keep (0.82)** | per-cell calibration well justified |
 | Parity (per-user) | 3.2.1 | collapse (0.12) | review (0.48) | live [0.45, 0.55] OK; ELO ramp borderline |
-| Recovery (per-user) | 3.2.1 | **keep separate (1.10)** | review (0.40) | per-TC bands warranted |
-| Endgame Skill (per-user) | 3.2.1 | collapse (0.18) | **keep separate (0.78)** | matches live `ENDGAME_SKILL_ZONES` |
+| Recovery (per-user) | 3.2.1 | **keep (1.10)** | review (0.40) | per-TC bands warranted |
+| Endgame Skill (per-user) | 3.2.1 | collapse (0.18) | **keep (0.78)** | matches live ENDGAME_SKILL_ZONES |
 | Clock pressure %-of-base | 3.3.1 | review (0.23) | review (0.21) | single pooled threshold OK |
 | Net timeout rate | 3.3.1 | collapse (0.07) | review (0.41) | single pooled threshold OK; strong ELO ramp |
 | Time-pressure curve (per-bucket) | 3.3.2 | review (0.34) | collapse (0.17) | TC overlay recommended |
-| Per-class score | 3.4.1 | flat across classes | — | pooled ±0.05 OK |
-| Per-class conversion | 3.4.1 | — | — | pawnless drift detected — recalibrate |
-| Per-class recovery | 3.4.1 | — | — | pawnless drift detected — recalibrate |
-
-**Verdict changes vs 2026-05-12**: only 3.1.1 (Non-Endgame Score) is genuinely new — restructured-skill subchapter computed for the first time, lands at "keep separate" on TC (just clears 0.5). All other metrics are bit-identical to 2026-05-12 (same ingest, no DB change).
+| Per-class score | 3.4.1 | flat across classes | (see 3.2.1) | pooled ±5pp OK |
+| Per-class conversion | 3.4.1 | (see 3.2.1) | (see 3.2.1) | pawnless drift — recalibrate |
+| Per-class recovery | 3.4.1 | (see 3.2.1) | (see 3.2.1) | pawnless drift — recalibrate |
 
 ---
 
@@ -702,26 +772,24 @@ All cell-level score_diff values land in `[-0.22, +0.15]`. Pooled per-class scor
 
 | Metric | Subchapter | Code constant | Currently set | Recommended | Collapse verdict | Action |
 |---|---|---|---|---|---|---|
-| Non-EG score neutral (shared bullet) | 3.1.1 | `SCORE_BULLET_NEUTRAL_MIN/MAX` (shared) | ±0.05 | ±0.05 (shared); dedicated `NON_ENDGAME_SCORE_ZONES` ≈ `[0.47, 0.57]` centered at 0.52 | TC keep, ELO review | keep shared; defer dedicated module |
-| EG-entry eval neutral | 3.1.2 | `ENDGAME_ENTRY_EVAL_NEUTRAL_MIN/MAX_PAWNS` | ±0.75 | ±0.75 (or tighten to ±0.55 editorial) | both review | keep |
-| EG-entry eval domain | 3.1.2 | `ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS` | 2.25 | 2.25 | — | keep |
-| EG-entry eval center | 3.1.2 | `ENDGAME_ENTRY_EVAL_CENTER` | 0 | 0 | — | keep |
-| Achievable Score neutral | 3.1.3 | `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN/MAX` | [0.45, 0.55] | [0.45, 0.55] (pooled IQR [0.46, 0.55]) | both review | keep |
+| Non-EG score neutral (shared bullet) | 3.1.1 | `SCORE_BULLET_NEUTRAL_MIN/MAX` | ±0.05 | ±0.05 | TC keep, ELO review | keep (shared); add non-EG registry later |
 | EG-only score neutral (shared bullet) | 3.1.4 | `SCORE_BULLET_NEUTRAL_MIN/MAX` | ±0.05 | ±0.05 | ELO keep | keep (shared); add EG-only registry later |
 | EG-only score domain | 3.1.4 | `SCORE_BULLET_DOMAIN` | 0.25 | 0.25 | — | keep |
-| Score-gap neutral | 3.1.5 | `SCORE_GAP_NEUTRAL_MIN/MAX` | ±0.10 | ±0.10 | TC review, ELO collapse | keep |
-| Score-gap domain | 3.1.5 | `SCORE_GAP_DOMAIN` | 0.20 | **0.23** | — | widen to 0.23 |
-| Score-timeline Y | 3.1.5 | `SCORE_TIMELINE_Y_DOMAIN` | [20, 80] | [20, 80] | — | keep |
 | MG-entry baseline (white) | 2.1 | `EVAL_BASELINE_PAWNS_WHITE` | +0.25 | +0.25 | — | keep |
-| MG-entry neutral | 2.1 | `EVAL_NEUTRAL_MIN/MAX_PAWNS` | ±0.30 | **±0.35** | both review | widen to ±0.35 |
+| MG-entry neutral | 2.1 | `EVAL_NEUTRAL_MIN/MAX_PAWNS` | ±0.30 | **±0.35** | both review | **widen to ±0.35** |
 | MG-entry domain | 2.1 | `EVAL_BULLET_DOMAIN_PAWNS` | 1.5 | 1.5 | — | keep |
+| EG-entry neutral | 3.1.2 | `ENDGAME_ENTRY_EVAL_NEUTRAL_MIN/MAX_PAWNS` | ±0.75 | ±0.75 | both review | keep (or tighten to ±0.55 editorial) |
+| EG-entry domain | 3.1.2 | `ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS` | 2.25 | 2.25 | — | keep |
+| EG-entry center | 3.1.2 | `ENDGAME_ENTRY_EVAL_CENTER` | 0 | 0 | — | keep |
+| EG-entry expected score | 3.1.3 | `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN/MAX` | [0.45, 0.55] | [0.46, 0.55] | both review | keep |
+| Achievable Score Gap neutral (shared) | 3.1.5 | `SCORE_GAP_NEUTRAL_MIN/MAX` | ±0.10 | **±0.05** (alt: keep) | TC collapse, ELO keep | **consider tightening** to ±0.05 (or split into a dedicated `ACHIEVABLE_SCORE_GAP_*` module so 3.1.6 keeps ±0.10) |
+| Endgame Score Gap neutral (shared) | 3.1.6 | `SCORE_GAP_NEUTRAL_MIN/MAX` | ±0.10 | ±0.10 | TC review, ELO collapse | keep |
+| Endgame Score Gap domain (shared) | 3.1.6 | `SCORE_GAP_DOMAIN` | 0.20 | **0.23** | — | **widen to 0.23** |
 | Conversion neutral (pooled) | 3.2.1 | `FIXED_GAUGE_ZONES.conversion` | [0.65, 0.77] | [0.66, 0.77] | both keep | keep (or stratify per TC) |
 | Parity neutral | 3.2.1 | `FIXED_GAUGE_ZONES.parity` | [0.45, 0.55] | [0.44, 0.56] | ELO review | keep |
 | Recovery neutral (pooled) | 3.2.1 | `FIXED_GAUGE_ZONES.recovery` | [0.24, 0.36] | [0.24, 0.36] | TC keep | keep (or stratify per TC) |
 | Endgame Skill neutral | 3.2.1 | `ENDGAME_SKILL_ZONES` | [0.47, 0.55] | [0.47, 0.55] | ELO keep | keep (already ELO-aware) |
 | Clock-pressure threshold | 3.3.1 | `NEUTRAL_PCT_THRESHOLD` | 5.0 | 5.0 or 6.0 | both review | keep |
 | Net-timeout threshold | 3.3.1 | `NEUTRAL_TIMEOUT_THRESHOLD` | 5.0 | 5.0 | ELO review | keep |
-| Time-pressure Y axis | 3.3.2 | `Y_AXIS_DOMAIN` | [0.2, 0.8] | [0.2, 0.8] | — | keep (TC overlay still recommended) |
-| Per-class pawnless conv | 3.4.1 | `PER_CLASS_GAUGE_ZONES.pawnless.conversion` | [0.70, 0.80] | **[0.74, 0.84]** | — | shift up |
-| Per-class pawnless recov | 3.4.1 | `PER_CLASS_GAUGE_ZONES.pawnless.recovery` | [0.21, 0.31] | **[0.15, 0.25]** | — | shift down |
-| Per-class score-diff bullet | 3.4.1 | `NEUTRAL_ZONE_MIN/MAX` (`EndgameWDLChart`) | ±0.05 | ±0.05 | — | keep |
+| Per-class pawnless conv | 3.4.1 | `PER_CLASS_GAUGE_ZONES.pawnless.conversion` | [0.70, 0.80] | **[0.74, 0.84]** | — | **shift up** |
+| Per-class pawnless recov | 3.4.1 | `PER_CLASS_GAUGE_ZONES.pawnless.recovery` | [0.21, 0.31] | **[0.15, 0.25]** | — | **shift down** |
