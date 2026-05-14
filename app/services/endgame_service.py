@@ -372,9 +372,12 @@ def _aggregate_endgame_stats(
         # are asymmetric. Reuses _MIN_OPPONENT_SAMPLE (line 233), gated on the
         # MIRROR bucket size (not the own bucket). Phase 60 introduced the
         # pattern for Section 2 at _compute_score_gap_material (~line 824).
+        # Phase 87 (D-01): lifted `recovery_losses` out of the conditional below
+        # so it is unconditionally in scope for the per-class peer-diff calls
+        # further down (mirror-flip W↔L on the same class's recovery bucket).
+        recovery_losses = recovery_games - recovery_wins - recovery_draws
         opponent_conversion_pct: float | None
         if recovery_games >= _MIN_OPPONENT_SAMPLE:
-            recovery_losses = recovery_games - recovery_wins - recovery_draws
             opponent_conversion_pct = round(recovery_losses / recovery_games * 100, 1)
         else:
             opponent_conversion_pct = None
@@ -388,6 +391,46 @@ def _aggregate_endgame_stats(
         else:
             opponent_recovery_pct = None
         opponent_recovery_games = conversion_games
+
+        # Phase 87 (SEC3-04 / D-01 / D-02): per-class Conv + Recov peer-bullet sig tests.
+        # Reuses compute_score_difference_test with mirror-flipped W↔L (Conv) and
+        # saves-as-W mapping (Recov) per CONTEXT.md D-01 math. Built-in n-gates handle
+        # sparse-opponent gating (returns None triple when min(user_n, opp_n) < 10 for p,
+        # < 2 for CI). 0-games safety: when either side has games == 0, the helper
+        # returns (None, None, None) — no extra guard needed at the call site.
+        conv_p, conv_ci_low, conv_ci_high = compute_score_difference_test(
+            conversion_wins,
+            conversion_draws,
+            conversion_losses,
+            conversion_games,
+            recovery_losses,
+            recovery_draws,
+            recovery_wins,
+            recovery_games,
+        )
+        recov_p, recov_ci_low, recov_ci_high = compute_score_difference_test(
+            recovery_wins + recovery_draws,
+            0,
+            recovery_losses,
+            recovery_games,
+            conversion_losses + conversion_draws,
+            0,
+            conversion_wins,
+            conversion_games,
+        )
+        # 0-1 scale variants of the Phase 84 mirror-rate fields for Phase 87 wire shape.
+        opp_conversion_pct_new: float | None = (
+            round(recovery_losses / recovery_games, 4)
+            if recovery_games >= _MIN_OPPONENT_SAMPLE
+            else None
+        )
+        opp_recovery_pct_new: float | None = (
+            round((conversion_losses + conversion_draws) / conversion_games, 4)
+            if conversion_games >= _MIN_OPPONENT_SAMPLE
+            else None
+        )
+        opp_conversion_games_new: int = recovery_games
+        opp_recovery_games_new: int = conversion_games
 
         conversion_stats = ConversionRecoveryStats(
             conversion_pct=conversion_pct,
@@ -404,6 +447,16 @@ def _aggregate_endgame_stats(
             opponent_conversion_games=opponent_conversion_games,
             opponent_recovery_pct=opponent_recovery_pct,
             opponent_recovery_games=opponent_recovery_games,
+            opp_conversion_pct=opp_conversion_pct_new,
+            opp_recovery_pct=opp_recovery_pct_new,
+            opp_conversion_games=opp_conversion_games_new,
+            opp_recovery_games=opp_recovery_games_new,
+            conv_diff_p_value=conv_p,
+            conv_diff_ci_low=conv_ci_low,
+            conv_diff_ci_high=conv_ci_high,
+            recov_diff_p_value=recov_p,
+            recov_diff_ci_low=recov_ci_low,
+            recov_diff_ci_high=recov_ci_high,
         )
 
         # _ENDGAME_CATEGORY_LABELS is exhaustive for all EndgameClass values — direct lookup.
