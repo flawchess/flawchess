@@ -114,6 +114,18 @@ describe('MetricStatTooltip — score-vocab headlines', () => {
     expect(container.textContent).toMatch(/Inconclusive\./);
     expect(container.textContent).not.toMatch(/Likely a real /);
   });
+
+  it("qualifies strength/weakness with 'relative' when relative=true", () => {
+    const { container: weak } = render(
+      <MetricStatTooltip {...scoreBase} level="high" value={0.4} relative />,
+    );
+    expect(weak.textContent).toMatch(/Likely a real relative weakness\./);
+    cleanup();
+    const { container: strong } = render(
+      <MetricStatTooltip {...scoreBase} level="high" value={0.62} relative />,
+    );
+    expect(strong.textContent).toMatch(/Likely a real relative strength\./);
+  });
 });
 
 describe('MetricStatTooltip — eval-vocab headlines', () => {

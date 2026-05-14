@@ -83,6 +83,12 @@ export interface MetricStatTooltipProps {
   methodology: ReactNode;
   /** Optional ISO 8601 timestamp; when set, renders a "Last played: …" line. */
   lastPlayedAt?: string | null;
+  /** When true, qualifies score-vocabulary verdicts as "relative strength" /
+   *  "relative weakness". Used by Endgame Score Gap (0% baseline): the gap is
+   *  relative to the player's own non-endgame score, not an absolute win
+   *  rate, so unqualified "strength"/"weakness" overclaims for players whose
+   *  absolute scores are uniformly high or low. */
+  relative?: boolean;
 }
 
 function pickVerdict(
@@ -105,6 +111,7 @@ function headline(
   level: ConfidenceLevel,
   verdict: Verdict,
   baselineLabel: string,
+  relative: boolean,
 ): string {
   if (level === 'low') return 'Inconclusive.';
   const lead = level === 'high' ? 'Likely' : 'Possibly';
@@ -114,7 +121,8 @@ function headline(
   if (verdict === 'deviation') {
     return `${lead} a real deviation from ${baselineLabel}.`;
   }
-  return `${lead} a real ${verdict}.`;
+  const qualifier = relative ? 'relative ' : '';
+  return `${lead} a real ${qualifier}${verdict}.`;
 }
 
 function renderPercentValueLine(
@@ -180,9 +188,10 @@ export function MetricStatTooltip({
   baselineLabel,
   methodology,
   lastPlayedAt,
+  relative = false,
 }: MetricStatTooltipProps): ReactNode {
   const verdict = pickVerdict(vocabulary, value, neutralLower, neutralUpper);
-  const headlineText = headline(level, verdict, baselineLabel);
+  const headlineText = headline(level, verdict, baselineLabel, relative);
   const valueLine =
     unit === 'percent'
       ? renderPercentValueLine(name, value, baseline, baselineLabel, gameCount)

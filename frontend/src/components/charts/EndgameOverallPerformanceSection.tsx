@@ -215,6 +215,7 @@ export function EndgameOverallPerformanceSection({
                   neutralLower={SCORE_GAP_NEUTRAL_MIN}
                   neutralUpper={SCORE_GAP_NEUTRAL_MAX}
                   baselineLabel="0%"
+                  relative
                   methodology={
                     <>
                       Score: wins + ½ draws.<br />
