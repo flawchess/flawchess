@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260320-epc
 plan: 01
 subsystem: frontend/board

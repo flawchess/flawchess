@@ -1,7 +1,7 @@
 ---
 id: 260413-qg0
 title: Apply Openings Stats responsive layout to endgame chart sections
-status: completed
+status: complete
 date: 2026-04-13
 ---
 

@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick
 plan: 260318-pz3
 subsystem: frontend/charts

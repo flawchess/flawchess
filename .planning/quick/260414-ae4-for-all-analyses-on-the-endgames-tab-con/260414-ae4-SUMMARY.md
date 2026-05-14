@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260414-ae4
 plan: 01
 subsystem: endgame-analytics

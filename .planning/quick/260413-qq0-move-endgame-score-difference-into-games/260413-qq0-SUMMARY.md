@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260413-qq0
 plan: 01
 subsystem: frontend/endgames

@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260320-d5b
 plan: 01
 subsystem: statistics-chart

@@ -1,4 +1,5 @@
 ---
+status: complete
 quick_id: 260414-smt
 subsystem: endgames
 tags: [backend, frontend, db-migration, time-pressure, clock-stats]

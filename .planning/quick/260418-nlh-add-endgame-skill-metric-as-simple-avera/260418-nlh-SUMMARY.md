@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: 260418-nlh
 plan: 01
 subsystem: frontend-charts

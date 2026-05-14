@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick
 plan: 260325-qz8
 subsystem: ui, seo

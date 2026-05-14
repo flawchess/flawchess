@@ -2,7 +2,7 @@
 quick_id: 260506-rtk
 type: summary
 mode: quick
-status: completed
+status: complete
 completed: 2026-05-06
 duration_minutes: ~30
 commits:

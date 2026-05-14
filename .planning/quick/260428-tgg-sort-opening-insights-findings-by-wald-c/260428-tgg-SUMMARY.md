@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260428-tgg
 plan: 01
 subsystem: opening-insights

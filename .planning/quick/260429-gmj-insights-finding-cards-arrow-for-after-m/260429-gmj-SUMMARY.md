@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260429-gmj
 plan: 01
 subsystem: frontend/insights
