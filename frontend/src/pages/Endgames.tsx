@@ -418,6 +418,21 @@ export function EndgamesPage() {
                       worse.
                     </p>
                     <p>
+                      <strong>Color Zones:</strong> the blue band on each gauge and chart marks the typical range,
+                      defined by the middle 50% of players (interquartile range) in your rating and time control
+                      bucket. Values inside the blue zone are typical, while red and green zones flag below- and
+                      above-average performance. Zone bounds are calibrated from the{' '}
+                      <a
+                        href="https://github.com/flawchess/flawchess/blob/main/reports/benchmarks-latest.md"
+                        className="text-primary underline-offset-4 hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        latest FlawChess benchmark
+                      </a>
+                      .
+                    </p>
+                    <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating
                       level. As your rating changes, you face stronger or weaker opponents, so trends may not
                       directly indicate improvement or stagnation in absolute terms. If you often play against
