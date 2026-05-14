@@ -8,10 +8,12 @@
  * locally (matches the Tile-2 pattern of the legacy EndgameStartVsEndSection).
  */
 
+import type { ReactNode } from 'react';
+
 import { Swords } from 'lucide-react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
+import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import {
   SCORE_BULLET_CENTER,
@@ -27,6 +29,12 @@ import type { EndgameWDLSummary } from '@/types/endgames';
 
 import { ENDGAME_TILE_SCORE_DOMAIN, deriveLevel } from './EndgameOverallShared';
 
+// Neutral band for score-vs-50% (matches arrowColor.ts / WdlConfidenceTooltip
+// historical bounds). 260514-i3l moved these inline as MetricStatPopover
+// props rather than re-importing from ScoreConfidencePopover/WdlConfidenceTooltip.
+const SCORE_NEUTRAL_LOWER = 0.45;
+const SCORE_NEUTRAL_UPPER = 0.55;
+
 interface EndgameCardProps {
   title: string;
   scoreLabel: string;
@@ -38,6 +46,10 @@ interface EndgameCardProps {
   wdl: EndgameWDLSummary;
   pValue: number | null;
   gamesShare: number;
+  /** Bold metric name shown inside the popover (e.g. "Endgame Score"). */
+  popoverName: string;
+  /** 1-2 sentence inline explanation rendered next to the bold name. */
+  popoverExplanation: ReactNode;
 }
 
 export function EndgameCard({
@@ -51,6 +63,8 @@ export function EndgameCard({
   wdl,
   pValue,
   gamesShare,
+  popoverName,
+  popoverExplanation,
 }: EndgameCardProps) {
   const total = wdl.total;
   const score = total > 0 ? (wdl.wins + 0.5 * wdl.draws) / total : 0;
@@ -107,11 +121,26 @@ export function EndgameCard({
               >
                 {scorePct}
               </span>
-              <ScoreConfidencePopover
-                level={level}
-                pValue={pValue ?? 1}
-                score={score}
+              <MetricStatPopover
+                name={popoverName}
+                explanation={popoverExplanation}
+                value={score}
+                baseline={0.5}
+                unit="percent"
                 gameCount={total}
+                level={level}
+                pValue={pValue}
+                vocabulary="score"
+                neutralLower={SCORE_NEUTRAL_LOWER}
+                neutralUpper={SCORE_NEUTRAL_UPPER}
+                baselineLabel="50%"
+                methodology={
+                  <>
+                    Score: wins + ½ draws.<br />
+                    Test: two-sided Wilson score test vs 50%.<br />
+                    Confidence interval: Wilson 95% (whiskers).
+                  </>
+                }
                 testId={scorePopoverTestId}
                 ariaLabel={popoverAriaLabel}
               />
