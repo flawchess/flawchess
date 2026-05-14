@@ -591,20 +591,26 @@ class TestComputeSkillDiffTest:
     def test_asymmetric_user_above_opp_is_significant(self) -> None:
         """User outperforms opp on every bucket -> skill > opp_skill, p < 0.05,
         ci_low > 0. Uses concrete WDL rows that produce a clean directional
-        signal at n=100 per bucket."""
+        signal at n=100 per bucket.
+
+        Opp-side rates use the W↔L swap identity (opp's W = user's L on the
+        mirror row), NOT `1 - userRate(opp_row)`. For each opp row:
+          - opp_conv_rate (in opp's conv bucket = user's recov bucket)
+              = opp_row.L / opp_row.N
+          - opp_recov_rate (in opp's recov bucket = user's conv bucket)
+              = (opp_row.L + opp_row.D) / opp_row.N
+          - opp_parity_rate                = (opp_row.L + 0.5 * opp_row.D) / opp_row.N
+        """
         user_conv = (70, 0, 30, 100)  # Conv rate 0.70
         user_parity = (60, 20, 20, 100)  # Parity rate 0.70
         user_recov = (60, 20, 20, 100)  # Recov rate 0.80
-        # Mirror rows producing lower user-rates -> higher opp-rates after invert.
-        # Wait: opp_rate = 1 - userRate(opp_row). Lower userRate(opp_row) means
-        # higher opp_rate, which is BAD for user. To make user > opp, we want
-        # the mirror userRate to be HIGH (so 1 - high = low opp_rate).
-        # Conv: user 0.70, opp_rate target 0.50 -> opp_row userRate(conv) = 0.50
-        opp_conv = (50, 0, 50, 100)  # Conv rate 0.50 -> opp_rate = 0.50
-        # Parity: user 0.70, opp_rate target 0.55 -> opp_row parity_rate = 0.45
-        opp_parity = (40, 10, 50, 100)  # Parity rate (40+5)/100 = 0.45 -> opp_rate = 0.55
-        # Recov: user 0.80, opp_rate target 0.60 -> opp_row recov_rate = 0.40
-        opp_recov = (30, 10, 60, 100)  # Recov rate (30+10)/100 = 0.40 -> opp_rate = 0.60
+        # Build mirror rows with concrete target opp rates after the W↔L swap.
+        # Conv: target opp_rate = 0.50 -> opp_row.L/N = 0.50.
+        opp_conv = (50, 0, 50, 100)  # L=50 -> opp_conv_rate = 0.50
+        # Parity: target opp_rate = 0.55 -> (L + 0.5D)/N = 0.55.
+        opp_parity = (40, 10, 50, 100)  # (50 + 5)/100 = 0.55
+        # Recov: target opp_rate = 0.60 -> (L + D)/N = 0.60.
+        opp_recov = (40, 10, 50, 100)  # (50 + 10)/100 = 0.60
         skill, opp_skill, p_value, ci_low, ci_high = compute_skill_diff_test(
             conv_row=user_conv,
             parity_row=user_parity,
@@ -722,12 +728,16 @@ class TestComputeSkillDiffTest:
         against the manually computed headline-rate-formula SE.
         """
         user_conv = (40, 20, 40, 100)  # Conv rate 0.40, win-var 0.24
-        opp_conv = (40, 20, 40, 100)  # symmetric -> opp_rate = 0.60, var 0.24
-        # Parity / Recov: keep simple — also active and symmetric so the
-        # Conv-headline-vs-chess-score distinction is the only thing changing
-        # CI width.
-        user_recov = (60, 20, 20, 100)  # Recov rate 0.80, save-var 0.16
-        opp_recov = (60, 20, 20, 100)  # symmetric, opp_rate 0.20, var 0.16
+        # opp_conv (40,20,40,100): W↔L swap is identity (W==L); new opp_rate
+        # = 40/100 = 0.40, opp_var = 0.40*0.60 = 0.24.
+        opp_conv = (40, 20, 40, 100)
+        # Recov: user (60,20,20,100) -> rate 0.80, var = 0.80*0.20 = 0.16.
+        user_recov = (60, 20, 20, 100)
+        # opp_recov (60,20,20,100) -> swap to (20,20,60,100); new opp_recov_rate
+        # = (20+20)/100 = 0.40; var = 0.40*0.60 = 0.24. (Old `1-X` formula would
+        # have given 0.20 / 0.16 — the W↔L swap is the correct mirror-bucket
+        # identity for asymmetric Conv/Recov rates whenever D > 0.)
+        opp_recov = (60, 20, 20, 100)
         # Use empty parity rows so only Conv + Recov are active (n_active=2,
         # passes the n_active>=2 sig gate).
         empty = (0, 0, 0, 0)
@@ -739,21 +749,19 @@ class TestComputeSkillDiffTest:
             opp_parity_row=empty,
             opp_recov_row=opp_recov,
         )
-        # Both buckets symmetric -> opp side mirrors user side after invert.
-        # Conv: user 0.40, opp 1 - 0.40 = 0.60. Recov: user 0.80, opp 1 - 0.80 = 0.20.
-        # Skill = (0.40 + 0.80) / 2 = 0.60. Opp_skill = (0.60 + 0.20) / 2 = 0.40.
+        # Skill = (0.40 + 0.80) / 2 = 0.60. Opp_skill = (0.40 + 0.40) / 2 = 0.40.
         # Diff = 0.20. n_active = 2; opp Ns are 100 (>= 10) -> sig fields populated.
         assert skill == pytest.approx(0.60, abs=1e-9)
         assert opp_skill == pytest.approx(0.40, abs=1e-9)
         assert p_value is not None
         assert ci_low is not None and ci_high is not None
 
-        # Expected SE under the HEADLINE-RATE formula:
-        # SE_user = sqrt(0.24/100 + 0.16/100) / 2 = sqrt(0.004) / 2
-        # SE_opp = same by symmetry (Var(1-X) = Var(X)).
-        # SE_diff = sqrt(2 * (sqrt(0.004)/2)^2) = sqrt(2 * 0.001) = sqrt(0.002).
+        # Expected SE under the HEADLINE-RATE formula with the W↔L swap on opp:
+        # SE_user = sqrt(0.24/100 + 0.16/100) / 2
+        # SE_opp  = sqrt(0.24/100 + 0.24/100) / 2  (opp_recov var 0.24, not 0.16)
+        # SE_diff = sqrt(SE_user^2 + SE_opp^2)
         expected_se_user = math.sqrt(0.24 / 100 + 0.16 / 100) / 2
-        expected_se_opp = expected_se_user
+        expected_se_opp = math.sqrt(0.24 / 100 + 0.24 / 100) / 2
         expected_se_diff = math.sqrt(expected_se_user**2 + expected_se_opp**2)
         expected_half_width = CI_Z_95 * expected_se_diff
         observed_half_width = (ci_high - ci_low) / 2.0
@@ -764,7 +772,8 @@ class TestComputeSkillDiffTest:
         #   SE_user_wrong = sqrt(0.20/100 + 0.16/100) / 2 = sqrt(0.0036) / 2
         # which is strictly smaller. Distinguish:
         wrong_se_user = math.sqrt(0.20 / 100 + 0.16 / 100) / 2
-        wrong_se_diff = math.sqrt(2 * wrong_se_user**2)
+        wrong_se_opp = math.sqrt(0.20 / 100 + 0.24 / 100) / 2
+        wrong_se_diff = math.sqrt(wrong_se_user**2 + wrong_se_opp**2)
         wrong_half_width = CI_Z_95 * wrong_se_diff
         # The two CI half-widths must NOT be equal — confirms the helper used
         # the headline-rate variance (not the chess-score variance) for Conv.
@@ -834,18 +843,57 @@ class TestComputePerBucketDiffTest:
         assert observed_diff == pytest.approx(0.40, abs=1e-9)
         assert ci_low > 0.20
 
-    def test_recovery_save_rate_vs_one_minus_conv(self) -> None:
-        """Recovery bucket: user_row (50, 30, 20, 100) -> user_rate = 0.80
-        (save rate). opp_row (20, 30, 50, 100) -> userRate = 0.50 -> opp_rate
-        = 0.50. diff = 0.30, n=100 -> p << 0.05."""
+    def test_recovery_uses_w_l_swap_mirror_identity(self) -> None:
+        """Recovery bucket diff with the correct W↔L swap on the mirror row
+        (opp's W = user's L in user's conversion bucket).
+
+        user_row in user's Recov bucket: (50, 30, 20, 100) -> save rate 0.80.
+        opp_row is user's row in user's CONVERSION bucket: (50, 20, 30, 100).
+        Opp's recov rate (in opp's recov bucket = user's conv bucket) =
+        (opp_W + opp_D)/N = (user_L_in_conv + user_D_in_conv)/N =
+        (30 + 20)/100 = 0.50.
+        diff = 0.80 - 0.50 = 0.30; n=100 each -> p << 0.05; ci_low > 0.
+
+        Regression for the Phase 86 close-out CI bug: the old code used
+        `1 - _headline_rate('recov', opp_row)` = 1 - (50+20)/100 = 0.30 for
+        opp_rate, giving diff = 0.50 — different from the frontend's
+        `userRate - opponentRate` (which uses the mirror loss_pct directly),
+        so the CI bar didn't even straddle the displayed diff."""
         p_value, ci_low, ci_high = compute_per_bucket_diff_test(
             "recovery",
             user_row=(50, 30, 20, 100),
-            opp_row=(20, 30, 50, 100),
+            opp_row=(50, 20, 30, 100),
         )
         assert p_value is not None and p_value < 0.05
         assert ci_low is not None and ci_high is not None
+        # CI midpoint = diff = 0.30.
         assert (ci_low + ci_high) / 2.0 == pytest.approx(0.30, abs=1e-9)
+        assert ci_low > 0.0
+
+    def test_conversion_uses_w_l_swap_with_draws_in_mirror(self) -> None:
+        """Conversion-bucket regression for the Phase 86 close-out CI bug.
+
+        When the mirror (Recov) row has D > 0, `1 - userRate(opp_row)`
+        overstates the opponent's conversion rate by attributing opp draws to
+        opp wins. The correct opp_conv_rate is `opp_row.L / opp_row.N`
+        (= user's L in their recov bucket / N, via same-game W↔L swap).
+
+        user_row in user's Conv bucket: (60, 0, 40, 100) -> win rate 0.60.
+        opp_row is user's row in user's RECOV bucket: (40, 20, 40, 100).
+        Opp's conv rate = opp_row.L / N = 40/100 = 0.40.
+        diff = 0.60 - 0.40 = 0.20, NOT 0.
+
+        Under the old (buggy) `1 - 40/100` formula, opp_rate would be 0.60
+        and diff would be 0 — hiding a real 20pp gap."""
+        p_value, ci_low, ci_high = compute_per_bucket_diff_test(
+            "conversion",
+            user_row=(60, 0, 40, 100),
+            opp_row=(40, 20, 40, 100),
+        )
+        assert p_value is not None
+        assert ci_low is not None and ci_high is not None
+        # CI midpoint = diff = 0.20 (NOT 0, which the buggy formula would give).
+        assert (ci_low + ci_high) / 2.0 == pytest.approx(0.20, abs=1e-9)
         assert ci_low > 0.0
 
     def test_sparse_opp_returns_none(self) -> None:

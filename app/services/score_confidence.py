@@ -97,6 +97,39 @@ def _headline_rate(bucket: _BucketName, w: int, d: int, _l: int, n: int) -> floa
     return (w + 0.5 * d) / n
 
 
+def _opp_headline_rate(bucket: _BucketName, w: int, d: int, losses: int, n: int) -> float:
+    """Opponent's headline rate in OPP's mirror bucket, derived from the user's
+    WDL in the user's mirror bucket via same-game symmetry: opp's W = user's L,
+    opp's D = user's D, opp's L = user's W.
+
+    Equivalent to `1 - _headline_rate(opp_row)` ONLY for parity (chess-score is
+    symmetric around 0.5). For Conv/Recov the `1 - X` shortcut is wrong whenever
+    the mirror row has D > 0, because the headline rate counts only wins
+    (or wins+draws), not both halves of the W/D/L distribution. Example:
+    opp_row = (W=40, D=20, L=40) on a Conv bullet:
+      - `1 - 40/100` = 0.60 → wrong (counts opponent's draws as opponent wins)
+      - `_headline_rate('conversion', 40, 20, 40, 100)` (swapped) = 40/100 = 0.40 → correct
+
+    Phase 86 close-out fix.
+    """
+    return _headline_rate(bucket, losses, d, w, n)
+
+
+def _opp_headline_rate_variance(bucket: _BucketName, w: int, d: int, losses: int, n: int) -> float:
+    """Variance of opp's headline rate, paired with `_opp_headline_rate`.
+
+    Computed on the swapped (L, D, W, N) tuple so the variance matches opp's
+    actual headline-rate distribution. For Conv (Bernoulli) the per-trial
+    variance `p (1-p)` is numerically symmetric across W↔L swap, but for Recov
+    the save-rate `(W+D)/N` becomes `(L+D)/N` after swap, and the variance
+    `p (1-p)` is genuinely different whenever D > 0 (it is NOT symmetric
+    around 0.5 in general).
+
+    Phase 86 close-out fix.
+    """
+    return _headline_rate_variance(bucket, losses, d, w, n)
+
+
 def _headline_rate_variance(bucket: _BucketName, w: int, d: int, _l: int, n: int) -> float:
     """Return the bucket-specific variance of the headline rate.
 
@@ -384,14 +417,21 @@ def compute_skill_diff_test(
     peer-bullet sig test on the aggregate Conv/Parity/Recov composite.
 
     Phase 86 SEC2-08 / D-01. The Skill scalar averages the user's three
-    bucket-specific headline rates; the opponent skill averages `1 - userRate`
-    on the user's mirror-bucket rows (same-game symmetry — see legacy
-    `opponentRate()` mirror identity at `EndgameScoreGapSection.tsx:141-146`).
-    The peer-bullet Wald-z test is run on the difference `skill - opp_skill`.
+    bucket-specific headline rates; the opponent skill averages opp's headline
+    rate IN OPP'S MIRROR BUCKET (computed via same-game symmetry — opp's W,D,L
+    = user's L,D,W on the user's mirror row). The peer-bullet Wald-z test is
+    run on the difference `skill - opp_skill`.
 
     The `opp_*_row` arguments are the USER'S rows in the mirror buckets, NOT
-    the opponents' raw W/D/L. The helper inverts via `1 - _headline_rate(opp_row)`
-    internally; do NOT flip W<->L at the call site.
+    the opponents' raw W/D/L. The helper applies the W↔L swap internally via
+    `_opp_headline_rate`; do NOT swap at the call site.
+
+    **Why the swap and not `1 - userRate(opp_row)`:** the legacy `opponentRate()`
+    shortcut works for parity (chess-score symmetric around 0.5) but is wrong
+    for Conv/Recov whenever the mirror row has D > 0, because the headline
+    rate counts only wins (or wins+draws). Using `1 - userRate(opp_row)`
+    incorrectly attributes opponent draws to opponent wins. Same applies to
+    the variance.
 
     **Active bucket definition** (D-01 + Warning #4): a bucket is active when
     BOTH `user_row.N > 0 AND opp_row.N > 0` so the user-side mean and the
@@ -400,7 +440,8 @@ def compute_skill_diff_test(
 
     **Skill composite (always returned when n_active >= 1):**
         skill     = mean(_headline_rate(b, user_row_b)        for b in active)
-        opp_skill = mean(1 - _headline_rate(b, opp_row_b)     for b in active)
+        opp_skill = mean(_opp_headline_rate(b, opp_row_b)     for b in active)
+                  = mean(_headline_rate(b, *swap_W_L(opp_row_b)) for b in active)
 
     **Variance (HEADLINE-RATE per bucket, NOT chess-score on all three):**
     Per Phase 86 plan-checker BLOCKER 2, the per-bucket variance must match
@@ -462,9 +503,9 @@ def compute_skill_diff_test(
     any_opp_sparse = False
     for bucket, user_row, opp_row in active:
         sum_user_rate += _headline_rate(bucket, *user_row)
-        sum_opp_rate += 1.0 - _headline_rate(bucket, *opp_row)
+        sum_opp_rate += _opp_headline_rate(bucket, *opp_row)
         sum_user_var_over_n += _headline_rate_variance(bucket, *user_row) / user_row[3]
-        sum_opp_var_over_n += _headline_rate_variance(bucket, *opp_row) / opp_row[3]
+        sum_opp_var_over_n += _opp_headline_rate_variance(bucket, *opp_row) / opp_row[3]
         if opp_row[3] < CONFIDENCE_MIN_N:
             any_opp_sparse = True
 
@@ -504,15 +545,15 @@ def compute_per_bucket_diff_test(
 
     Phase 86 SEC2-06 / D-05 / D-06. The `opp_row` is the USER'S row in the
     mirror bucket (per `MIRROR_BUCKET = {conversion: 'recovery', recovery:
-    'conversion', parity: 'parity'}` legacy convention); the helper inverts
-    via `1 - _headline_rate(opp_row)` internally — do NOT flip W<->L at the
-    call site.
+    'conversion', parity: 'parity'}` legacy convention). The helper derives
+    opp's headline rate in opp's mirror bucket via same-game W↔L swap (opp's
+    W = user's L on the mirror row); do NOT swap at the call site.
 
     **Math** (Wald-z on a single-bucket headline-rate difference):
         user_rate = _headline_rate(bucket, *user_row)
-        opp_rate  = 1 - _headline_rate(bucket, *opp_row)
+        opp_rate  = _opp_headline_rate(bucket, *opp_row)            # swap W↔L
         var_user  = _headline_rate_variance(bucket, *user_row)
-        var_opp   = _headline_rate_variance(bucket, *opp_row)   # Var(1-X) = Var(X)
+        var_opp   = _opp_headline_rate_variance(bucket, *opp_row)   # swap W↔L
         SE_diff   = sqrt(var_user / user_row.N + var_opp / opp_row.N)
         diff      = user_rate - opp_rate
         z         = diff / SE_diff
@@ -528,8 +569,8 @@ def compute_per_bucket_diff_test(
     **Parity self-mirror** (Phase 86 plan-checker BLOCKER 1): when
     `bucket == "parity"` and `opp_row` IS the same parity row (mirror of parity
     is parity itself), the diff is `2 * user_rate - 1`, NOT identically 0. The
-    headline mirror identity `oppRate = 1 - userRate(opp_row)` distinguishes
-    the user from the opponent in the same cohort. The previously-considered
+    W↔L-swap identity collapses to `1 - userRate` on parity (chess-score is
+    symmetric), so opp_rate = 1 - user_rate. The previously-considered
     "chess-score on two independent cohorts" approach (which this helper does
     NOT use) would have produced diff = 0 for self-mirror, hiding the signal.
 
@@ -554,9 +595,9 @@ def compute_per_bucket_diff_test(
         return None, None, None
 
     user_rate = _headline_rate(bucket, *user_row)
-    opp_rate = 1.0 - _headline_rate(bucket, *opp_row)
+    opp_rate = _opp_headline_rate(bucket, *opp_row)
     var_user = _headline_rate_variance(bucket, *user_row)
-    var_opp = _headline_rate_variance(bucket, *opp_row)
+    var_opp = _opp_headline_rate_variance(bucket, *opp_row)
     se_diff = math.sqrt(var_user / user_row[3] + var_opp / opp_row[3])
     diff = user_rate - opp_rate
 
