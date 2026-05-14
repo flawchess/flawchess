@@ -20,7 +20,7 @@ findings:
   warning: 6
   info: 4
   total: 11
-status: issues_found
+status: fixed
 ---
 
 # Phase 87: Code Review Report
@@ -198,6 +198,54 @@ at module scope and reference it at all four sites. Co-locate in `endgameMetrics
 
 ---
 
+## Fix Log
+
+Post-review redesign on 2026-05-14: user reviewing the new section identified
+that the Conv and Recov peer-bullets on each card always render the same
+magnitude because they are computed from the same mirrored per-class WDL data
+(mirror identity). Both bullets were replaced with a SINGLE chess-score
+bullet per card using the exact pattern from the "Games with Endgame" card
+(`EndgameOverallCard`). Conv and Recov gauges at the top of each card are
+kept. The fix carries through to the backend (the 10 added Phase 87 schema
+fields are reverted; a new `score_p_value` field is added to drive the
+single bullet's sig-gating).
+
+- **CR-01** — `d536b026` + `dec56649`. Obsoleted by design change. The Conv/Recov
+  peer-bullets are removed entirely; the new per-card bullet is a chess-score
+  bullet tested against 50% (Wilson score test), so the displayed metric and
+  the test statistic are the same value by construction.
+- **WR-01** — `31e082d1`. `Endgames.tsx` now passes `statsData.endgame_games`
+  (not `total_games`) to `EndgameTypeBreakdownSection`. Each card's
+  "Games: X%" reads as a share of the user's endgames.
+- **WR-02** — `dec56649`. The `as number` casts on `oppConv`/`oppRecov` were
+  on the now-removed Conv/Recov bullet rows. Removed with the bullets.
+- **WR-03** — `dec56649`. The `as Exclude<EndgameClass, 'pawnless'>` cast in
+  the title `InfoPopover` is gone; the new code uses an explicit
+  `category.endgame_class !== 'pawnless'` guard.
+- **WR-04** — `dec56649`. The dead `!bands` branch is dropped. The
+  empty-class path is now solely `!hasGames`; the type system already
+  guarantees bands presence for the 5 non-pawnless classes.
+- **WR-05** — `31e082d1`. `EndgameTypeBreakdownSection` carries
+  `aria-labelledby="endgame-type-breakdown-heading"`; the parent h2 in
+  `Endgames.tsx` carries that id. The per-card `MiniWDLBar` mount picks up
+  `aria-label="${label} win/draw/loss distribution"` (in `dec56649`).
+- **WR-06** — `dec56649`. The card root now carries `role="group"` and
+  `aria-label="${category.label} endgame breakdown"`.
+- **IN-02** — `dec56649`. Hard-coded `size={130}` extracted to
+  `const PER_TYPE_GAUGE_SIZE = 130` at module scope.
+
+**Still open** (cleanup follow-ups):
+- IN-01 — `formatDiffPct` rounding mismatch. Moot for the per-type card now
+  (no diff label), but the helper still exists for callers outside Phase 87.
+- IN-03 — `pawnless` description map. Not addressed; pawnless remains hidden.
+- IN-04 — fragile `style.color === ''` assertion. The rewritten
+  `EndgameTypeCard.test.tsx` uses `.toBeFalsy()` / `.toBeTruthy()` already
+  (`65e0e2ba`), so the original concern is no longer present in the new test
+  file, but other tests with the same pattern were not audited.
+
+---
+
 _Reviewed: 2026-05-14_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Fix log appended: 2026-05-14_
