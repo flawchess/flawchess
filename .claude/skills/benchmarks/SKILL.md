@@ -1,6 +1,6 @@
 ---
 name: benchmarks
-description: Generate FlawChess endgame population benchmarks from the benchmark DB. Computes per-user distributions for score-gap (endgame vs non-endgame), Conversion/Parity/Recovery rates, composite Endgame Skill, time-pressure stats at endgame entry, time-pressure-vs-performance curves, and per-endgame-class (rook/minor_piece/pawn/queen/mixed/pawnless) score and conv/recov rates. All metrics are bucketed via 400-wide ELO buckets (anchored at 800/1200/1600/2000/2400 from `benchmark_selected_users.rating_bucket`) and the 4 TC buckets (anchored from `benchmark_selected_users.tc_bucket`). For every metric, the skill produces a Cohen's-d-based collapse verdict per axis ({TC, ELO}) that determines whether the metric needs cell-specific zones or collapses to a single global zone. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse zones across TC or ELO, or breaking down stats by endgame class. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "collapse verdict", "Cohen's d", "calibrate thresholds", "endgame type breakdown", "by endgame class", "rook vs minor piece". Writes a timestamped markdown report to reports/benchmarks-YYYY-MM-DD.md.
+description: Generate FlawChess endgame population benchmarks from the benchmark DB. Computes per-user distributions for score-gap (endgame vs non-endgame), Conversion/Parity/Recovery rates, composite Endgame Skill, time-pressure stats at endgame entry, time-pressure-vs-performance curves, and per-endgame-class (rook/minor_piece/pawn/queen/mixed/pawnless) score and conv/recov rates. All metrics are bucketed via 400-wide ELO buckets (anchored at 800/1200/1600/2000/2400 from `benchmark_selected_users.rating_bucket`) and the 4 TC buckets (anchored from `benchmark_selected_users.tc_bucket`). For every metric, the skill produces a Cohen's-d-based collapse verdict per axis ({TC, ELO}) that determines whether the metric needs cell-specific zones or collapses to a single global zone. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse zones across TC or ELO, or breaking down stats by endgame class. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "collapse verdict", "Cohen's d", "calibrate thresholds", "endgame type breakdown", "by endgame class", "rook vs minor piece". Writes the latest markdown report to reports/benchmarks-latest.md, rotating any prior latest file to reports/benchmarks-YYYY-MM-DD.md based on its first-line date.
 ---
 
 # Benchmarks
@@ -1766,7 +1766,7 @@ If 18 verdicts is too noisy, aggregate to one verdict per metric (across-class m
 
 ## Report file layout
 
-Write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). Layout:
+Write to `reports/benchmarks-latest.md`. Before writing, if that file already exists, read the date from its first line (`# FlawChess Benchmarks — YYYY-MM-DD`) and rename it to `reports/benchmarks-YYYY-MM-DD.md`. Don't overwrite an existing dated archive — if `benchmarks-YYYY-MM-DD.md` already exists for that date, leave the archive alone and overwrite `benchmarks-latest.md` in place. Layout:
 
 ```markdown
 # FlawChess Benchmarks — <DATE>
@@ -1851,6 +1851,6 @@ One row per gauge constant. Recommended value comes from the pooled or per-cell 
 
 ## Re-running
 
-If `reports/benchmarks-YYYY-MM-DD.md` exists for today and the user asks for a subchapter subset, replace only those subchapters; preserve header and the two final summary tables. Always rebuild the summary tables from whatever subchapters are present.
+If `reports/benchmarks-latest.md` exists and the user asks for a subchapter subset, replace only those subchapters in place; preserve the header and the two final summary tables. Always rebuild the summary tables from whatever subchapters are present.
 
-If the user asks for a fresh snapshot, write to today's file; never mutate prior dates.
+If the user asks for a fresh snapshot, follow the rotation rule in "Report file layout": archive the current `benchmarks-latest.md` to its dated filename (based on its first-line date), then write the new snapshot to `benchmarks-latest.md`. Never mutate an existing dated archive.
