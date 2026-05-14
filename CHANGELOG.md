@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Endgame Score Differences: hypothesis tests + 95% CI whiskers** (Phase 85.1). The Endgame Score Gap (Endgame Score − Non-Endgame Score) and the Achievable Score Gap (Endgame Score − Achievable Score) now report a two-sided p-value vs 0 and a 95% CI on the difference. CI whiskers render around the bullet on both `ScoreGapRow` rows. Achievable Score Gap is now server-computed from per-game `(actual, expected)` pairs via a paired one-sample z-test (replaces the previous client-side `endgame_score − achievable_score` derivation). Independent n-gates apply per signal: p-value gated to None when `n < 10`; CI gated to None when `n < 2`. Font coloring stays zone-only (Phase 85 D-04 kept) — the CI whiskers carry the new uncertainty signal.
+
 ### Changed
 
 - **Endgame Stats: concept terminology title-cased.** The "Endgame statistics concepts" panel and every reference to the panel's terms across the Endgames Stats page (concept accordion, info popovers, aria-labels, headings, gauge labels, Home page FAQ) now uses title case for the named concepts: Endgame Phase, Endgame Type(s), Endgame Sequence, Endgame Entry Eval, Achievable Score, Endgame Score, Non-Endgame Score. The LLM Insights prompt is updated to match (UI-label table + glossary + prose) and the prompt version bumps `endgame_v27` → `endgame_v28` to invalidate cached reports so newly generated narration uses the capitalized terms.

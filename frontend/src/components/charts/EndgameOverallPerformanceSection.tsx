@@ -156,6 +156,14 @@ export function EndgameOverallPerformanceSection({
                     rapid player would on average; negative means you
                     converted them worse.
                   </p>
+                  <p>
+                    The Achievable Score baseline comes from a Lichess
+                    winning-chances formula calibrated on a broad rating
+                    population. For your specific rating tier the baseline
+                    may run a few percentage points high or low, so a small
+                    negative gap can partly reflect calibration drift
+                    rather than pure underperformance.
+                  </p>
                 </InfoPopover>
               }
             />
