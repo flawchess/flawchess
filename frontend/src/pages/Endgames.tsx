@@ -466,14 +466,10 @@ export function EndgamesPage() {
                         <div className="space-y-2">
                           <p>
                             Games are split by the Stockfish evaluation at the
-                            endgame-entry ply: <strong>Conversion</strong> (you ahead,
+                            endgame-entry: <strong>Conversion</strong> (you ahead,
                             eval ≥ +1.0), <strong>Parity</strong> (roughly balanced,
                             eval between −1.0 and +1.0), or <strong>Recovery</strong>
                             {' '}(you behind, eval ≤ −1.0).
-                          </p>
-                          <p>
-                            Each bucket uses its own rate, shown in the gauge and the
-                            You / Opp / Diff row on each card:
                           </p>
                           <ul className="list-disc pl-5 space-y-1">
                             <li>
@@ -491,10 +487,6 @@ export function EndgamesPage() {
                             </li>
                           </ul>
                           <p>
-                            These rates are not the same as the generic Score used
-                            elsewhere on the page.
-                          </p>
-                          <p>
                             The <strong>gauges</strong> plot that rate against a fixed
                             skill-cohort target band (blue = typical, red = below,
                             green = above). Bands are calibrated from FlawChess data
@@ -502,17 +494,8 @@ export function EndgamesPage() {
                             you can chase as you improve.
                           </p>
                           <p>
-                            The per-card <strong>peer bullet</strong> compares your
-                            rate to your actual opponents' rate in the same situation
-                            against you (for example, your Conversion vs their
-                            Conversion in the games where you faced them — your
-                            Recovery games, flipped). This baseline is self-calibrating
-                            and shifts with filters like Opponent Strength. Hidden
-                            when the opponent sample is smaller than 10 games.
-                          </p>
-                          <p>
                             The <strong>Endgame ELO timeline</strong> below uses the
-                            same Skill composite to adjust your rating by your
+                            same Endgame Skill to adjust your rating by your
                             per-week endgame performance.
                           </p>
                         </div>

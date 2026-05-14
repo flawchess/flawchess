@@ -100,8 +100,8 @@ describe('EndgameSkillCard — structural render', () => {
       />,
     );
     expect(screen.getByText('Endgame Skill')).not.toBeNull();
-    expect(screen.getByText(/Your Skill:/)).not.toBeNull();
-    expect(screen.getByText(/Opp Skill:/)).not.toBeNull();
+    expect(screen.getByText(/You:/)).not.toBeNull();
+    expect(screen.getByText(/Opp:/)).not.toBeNull();
   });
 });
 

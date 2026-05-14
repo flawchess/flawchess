@@ -1,7 +1,7 @@
 /**
  * Phase 86 — Composite "Endgame Skill" card for the 4-card Endgame Metrics
  * layout. Renders gauge (using ENDGAME_SKILL_ZONES) → games-count row →
- * peer-bullet row (`Your Skill / Opp Skill / Diff` text + `MiniBulletChart`
+ * peer-bullet row (`You / Opp / Gap` text + `MiniBulletChart`
  * for the signed `skill − oppSkill` vs 0).
  *
  * Skill is a composite of Conv + Parity + Recov rates over active buckets;
@@ -99,7 +99,7 @@ export function EndgameSkillCard({
               <div className="flex flex-col gap-2">
                 <span className="flex items-center gap-1 text-sm tabular-nums w-full flex-wrap">
                   <span>
-                    <span className="text-muted-foreground">Your Skill: </span>
+                    <span className="text-muted-foreground">You: </span>
                     <span
                       className="font-medium"
                       data-testid={`${tileTestId}-you`}
@@ -108,7 +108,7 @@ export function EndgameSkillCard({
                     </span>
                   </span>
                   <span>
-                    <span className="text-muted-foreground">Opp Skill: </span>
+                    <span className="text-muted-foreground">Opp: </span>
                     <span
                       className="font-medium"
                       data-testid={`${tileTestId}-opp`}
