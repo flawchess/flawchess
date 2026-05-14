@@ -243,9 +243,11 @@ Then for each pair `(a, b)`: `pooled_sd = sqrt(((n_a-1)*var_a + (n_b-1)*var_b) /
 - Heatmap of per-user p50 (5 ELO × 4 TC):
 
            bullet   blitz   rapid   classical
-  800       0.51    0.48    0.49    0.49
-  1200      0.51    0.50    0.50    0.47
+  800      51.0%   48.0%   49.0%   49.0%
+  1200     51.0%   50.0%   50.0%   47.0%
   ...
+
+(Score heatmaps render as percent; eval heatmaps render as integer cp, e.g. `+25 / −10 / +18 / +4`.)
 ```
 
 The heatmap is a 5×4 grid of per-user p50 — visual sanity check for interaction effects that marginals would miss.
@@ -298,7 +300,23 @@ When comparing against pre-2026-05-03 snapshots, note in the report header that 
 
 ### Score-gap re-centering — out of scope
 
-Score-gap gauge currently uses symmetric `±0.10`. **Do not propose re-centering for sub-5pp population median offsets** — round bounds beat data-fitted asymmetry below that threshold. (2026-04-30 design decision.)
+Score-gap gauge currently uses symmetric `±0.10` (i.e. ±10pp). **Do not propose re-centering for sub-5pp population median offsets** — round bounds beat data-fitted asymmetry below that threshold. (2026-04-30 design decision.)
+
+### Display formatting (universal — all report tables and recommendations)
+
+The benchmark SQL is internally consistent — score columns return proportions in `[0, 1]` (e.g. `0.4873`), score-diff columns return signed proportions (e.g. `-0.0231`), eval columns return centipawns with sub-integer precision (e.g. `25.42`). These are **internal units**; the report's *rendered* tables and recommendation prose MUST apply the following display rules:
+
+- **Score values** (per-user `eg_score`, `non_eg_score`, `entry_xs`, per-class score, per-bucket conv/par/recov rates, all percentile columns derived from a score) → render as **percent with one decimal** (e.g. `48.7%`, not `0.487`). Multiply by 100 in post-processing; never edit the SQL just to bake in the unit.
+- **Score gaps / differences** (per-user `eg_score − non_eg_score`, `achievable_score_gap = actual − expected`, per-class `score_diff = 2·score − 1`, etc.) → render in **percentage points with one decimal** (e.g. `−2.3pp`, `+1.0pp`). Use `pp` not `%` so the reader doesn't confuse a 5pp gap with a 5% relative effect.
+- **Cohen's d** → render to **2 decimals** (e.g. `0.42`). Already unit-free.
+- **Eval values** (centipawns at MG entry / EG entry, including baselines, means, SDs, and all percentile columns derived from eval) → render as **integer cp**, signed for delta/diff values (e.g. `+25 cp`, `−418 cp`, `SD = 238 cp`). Round-half-to-even.
+- **Pawn-unit eval bullets** (live constants in `endgameEntryEvalZones.ts` are in pawns) — when comparing to live constants, render both in their native unit: live constant in pawns (e.g. `±0.75 pawns`), measured value in pawns derived from `cp / 100` rounded to 2 decimals (e.g. `±0.42 pawns`). This is the one exception to "evals as integer cp" — keep the pawn unit when comparing to a pawn-unit constant.
+- **Sample sizes (`n`)** → integer, no thousands separators unless ≥ 100,000 (then use commas e.g. `1,250,431`).
+- **Clock-diff %, time-pressure curves, net-timeout rate** → already in percent units in the SQL (multiplied by 100 inside the query). Render with one decimal, append `%` for absolute and `pp` for diffs (e.g. `−1.5%`, `+4.2pp` net timeout).
+
+**Why not bake into SQL.** Scaling `score * 100` inside the SQL changes the variance returned by `var_samp(...)` by a factor of 10,000, which would silently break Cohen's d computations that pass the raw `var_samp` column. Keeping SQL in proportion-units preserves drop-in compatibility with the Cohen's d recipe in "Computing Cohen's d in SQL" (d is unit-invariant under linear scaling — both numerator and `pooled_sd` scale together — but only if the formatter is consistent). Apply formatting at the rendering layer.
+
+**Code constants are quoted in their native unit.** Live constants such as `SCORE_BULLET_NEUTRAL_MIN = -0.05` are literal codebase values — when documenting them in "Currently set in code" tables, quote the literal (`−0.05`). In adjacent narrative prose, the same value can be paraphrased as `−5pp` to match the rendering rule. When recommending a *new* value, use display units (e.g. "widen `SCORE_GAP_DOMAIN` from `0.20` to `0.23` (= ±23pp)") and let the implementer convert back to the native unit during the code edit.
 
 ### Live-threshold grep table
 
@@ -310,7 +328,8 @@ Before running each subchapter, grep the code for the constants the subchapter's
 | 3.1.2 | Endgame-entry eval (pawns, EG-entry "Where you start" tile) | `frontend/src/lib/endgameEntryEvalZones.ts` | `ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.75`, `ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = +0.75`, `ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS = 2.0`, `ENDGAME_ENTRY_EVAL_CENTER = 0`. **EG-entry tile is 0-centered** (null = 0, no baseline subtraction) — unlike the MG-entry tile which centers on the symmetric ±baseline. Calibration recommendations feed `endgameEntryEvalZones.ts` directly from the **uncentered** distribution; do not center against the EG pass-1 baseline when calibrating the EG bullet. |
 | 3.1.3 | Achievable Score (Stockfish-predicted expected score at EG entry) | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts` | `entry_expected_score` ZoneSpec; `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN/MAX`, `entryExpectedScoreZoneColor()` (generated). |
 | 3.1.4 | Endgame score (per-user, EG-only) | `frontend/src/lib/scoreBulletConfig.ts` (shared with Openings score bullet) | `SCORE_BULLET_CENTER = 0.5`, `SCORE_BULLET_NEUTRAL_MIN = -0.05`, `SCORE_BULLET_NEUTRAL_MAX = +0.05`, `SCORE_BULLET_DOMAIN = 0.25`. The score bullet config is shared across surfaces; 3.1.4 calibrates the **endgame-only** subset of users that the "What you do with it" tile reads. |
-| 3.1.5 | Score gap (eg vs non-eg) + timeline | `frontend/src/components/charts/EndgamePerformanceSection.tsx` | `SCORE_GAP_NEUTRAL_MIN/MAX`, `SCORE_GAP_DOMAIN`, `SCORE_TIMELINE_Y_DOMAIN`, any `SCORE_TIMELINE_NEUTRAL_*` constants |
+| 3.1.5 | Achievable Score Gap (per-user `actual − expected`) | `frontend/src/components/charts/EndgamePerformanceSection.tsx` (Endgame Score Differences row) | `ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN/MAX`, `ACHIEVABLE_SCORE_GAP_DOMAIN` (re-grep — names may have evolved with Phase 85.1) |
+| 3.1.6 | Endgame Score Gap and Timeline (per-user `eg − non_eg`) | `frontend/src/components/charts/EndgamePerformanceSection.tsx` | `SCORE_GAP_NEUTRAL_MIN/MAX`, `SCORE_GAP_DOMAIN`, `SCORE_TIMELINE_Y_DOMAIN`, any `SCORE_TIMELINE_NEUTRAL_*` constants |
 | 3.2.1 | Conv / Par / Recov + Endgame Skill | `frontend/src/components/charts/EndgameScoreGapSection.tsx`, `frontend/src/generated/endgameZones.ts` | `FIXED_GAUGE_ZONES`, `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, `ENDGAME_SKILL_ZONES` |
 | 3.3.1 | Clock-diff + net timeout | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD` |
 | 3.3.2 | Time-pressure chart | `app/services/endgame_service.py::_compute_time_pressure_chart`, `EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
@@ -359,7 +378,8 @@ Every query: `g.rated AND NOT g.is_computer_game` PLUS the **equal-footing oppon
 | 3.1.2 EG-entry eval (cell-level) | cell shown if ≥10 users (same as Cohen's d floor) |
 | 3.1.3 Achievable Score (per-user) | ≥20 endgame games per user per cell |
 | 3.1.4 Endgame score (per-user, EG-only) | ≥20 endgame games per user per cell |
-| 3.1.5 score-gap | ≥30 endgame AND ≥30 non-endgame games per user (in their selected TC) |
+| 3.1.5 Achievable Score Gap | ≥20 endgame-entry games per user per cell with a paired (actual, expected) score (mate included, cp clipped at 2000) |
+| 3.1.6 Endgame Score Gap and Timeline | ≥30 endgame AND ≥30 non-endgame games per user (in their selected TC) |
 | 3.2.1 Conv/Par/Recov pooled | cell shown if pooled n ≥ 100 |
 | 3.2.1 Endgame Skill per-user | ≥20 endgame games per user, ≥2 of 3 material buckets non-empty; cell shown if ≥10 users |
 | 3.3.1 clock stats | ≥20 endgame games per user in their cell |
@@ -554,10 +574,10 @@ Maps to the page H2 of the same name. Subsections in the order the gauges/tiles 
 
 **Question:** How does the per-user **absolute** non-endgame score (`(W + 0.5·D) / total` over games that do NOT reach the 6-ply endgame floor) distribute across the population? This calibrates Card 1 ("Games without Endgame") of the Endgame Overall Performance section, which renders a score bullet using the shared `SCORE_BULLET_*` config.
 
-**No new query.** The 3.1.5 Score Gap query already computes `per_user.non_eg_score` for every selected user. Re-aggregate that column without re-running the SQL:
+**No new query.** The 3.1.6 Endgame Score Gap query already computes `per_user.non_eg_score` for every selected user. Re-aggregate that column without re-running the SQL:
 
 ```sql
--- Reuse 3.1.5's per_user CTE and aggregate non_eg_score directly.
+-- Reuse 3.1.6's per_user CTE and aggregate non_eg_score directly.
 SELECT
   count(*) AS n_users,
   round(avg(non_eg_score)::numeric, 4) AS non_eg_mean,
@@ -571,7 +591,7 @@ FROM per_user
 WHERE NOT (elo_bucket = 2400 AND tc = 'classical');
 ```
 
-**Sample floor:** inherits 3.1.5's `≥30 endgame AND ≥30 non-endgame games per user` filter.
+**Sample floor:** inherits 3.1.6's `≥30 endgame AND ≥30 non-endgame games per user` filter.
 
 **Recommendations:**
 
@@ -844,13 +864,13 @@ The full 5×4 cell table re-runs the same shape for the sparse `(2400, classical
 
 **Question:** How does the per-user **absolute** endgame score (`(W + 0.5·D) / total` over endgame-reaching games) distribute across the population, and does it shift across (TC × ELO) cells? This calibrates Card 3 ("Games with Endgame") of the Endgame Overall Performance section, and confirms whether the score bullet's static 0.45–0.55 / 0.25–0.75 axis remains population-honest at the EG-only subset.
 
-**Why a separate subchapter from 3.1.5:** 3.1.5 measures the **differential** `eg_score − non_eg_score` (does the user lose ground in endgames?). 3.1.4 measures the **absolute** EG-only score (where do they actually finish?). The live UI tile reads the absolute number against a fixed 50% null; 3.1.4's pooled distribution and per-cell spread tell us whether a cohort-band overlay is needed (per-ELO or pooled) and where its `[p25, p75]` bounds sit.
+**Why a separate subchapter from 3.1.6:** 3.1.6 measures the **differential** `eg_score − non_eg_score` (does the user lose ground in endgames?). 3.1.4 measures the **absolute** EG-only score (where do they actually finish?). The live UI tile reads the absolute number against a fixed 50% null; 3.1.4's pooled distribution and per-cell spread tell us whether a cohort-band overlay is needed (per-ELO or pooled) and where its `[p25, p75]` bounds sit.
 
 **Per-user metric:**
 - `eg_score = (W + 0.5·D) / total` over the user's endgame-reaching games in their selected TC.
-- "Endgame-reaching" = `game_id` in `endgame_game_ids` (the shared `≥6 plies with endgame_class IS NOT NULL` building block — same gate 3.1.5 / 3.2.1 / 3.3.1 / 3.4.1 use). The metric is the simple per-user score; it is **not** centered on any baseline (the live tile's null is a fixed 50%).
+- "Endgame-reaching" = `game_id` in `endgame_game_ids` (the shared `≥6 plies with endgame_class IS NOT NULL` building block — same gate 3.1.5 / 3.1.6 / 3.2.1 / 3.3.1 / 3.4.1 use). The metric is the simple per-user score; it is **not** centered on any baseline (the live tile's null is a fixed 50%).
 
-**Sample floor:** ≥20 endgame games per user per cell (matches 3.2.1's per-user floor; tighter than 3.1.5's ≥30 because there is no non-endgame slice to also pass a floor on).
+**Sample floor:** ≥20 endgame games per user per cell (matches 3.2.1's per-user floor; tighter than 3.1.6's ≥30 because there is no non-endgame slice to also pass a floor on).
 
 ##### Currently set in code
 
@@ -949,11 +969,143 @@ The full 5×4 cell table also re-runs the same shape for the sparse `(2400, clas
    - **Recommendation routing**: if collapse verdict says "single global zone", calibration goes into a new EG-only score-zone module (do **not** retune the shared `SCORE_BULLET_NEUTRAL_*` — that constant also drives the Openings score bullet, where the population is different).
 6. **Collapse verdict block**: TC d_max + ELO d_max from per-user `eg_score` distribution, plus a 5×4 heatmap of `eg_p50`. Per the canonical thresholds (< 0.2 collapse / 0.2–0.5 review / ≥ 0.5 keep separate).
 
-#### 3.1.5 Score Gap (gauge + timeline)
+#### 3.1.5 Achievable Score Gap
+
+**Question:** How does per-user `achievable_score_gap = mean(actual_score_i − expected_score_i)` (the **paired per-game** gap between what the user achieved and what Stockfish predicted at endgame entry) distribute across the population, and does it shift across (TC × ELO) cells? Calibrates the "Achievable Score Gap" gauge in the "Endgame Score Differences" row of the Endgame Overall Performance section.
+
+**Why a separate subchapter from 3.1.3 and 3.1.6:** 3.1.3 measures the **predicted** score at entry (`entry_xs = avg(expected_score)`). 3.1.4 measures the **achieved** score in endgames (`eg_score`). 3.1.5 (this subchapter) measures their **paired per-game difference** — the gauge in the UI reports a single per-user number, not a difference of two pooled means, so the per-game variance matters for the CI computation. (Mathematically `mean(actual − expected) ≡ mean(actual) − mean(expected)` over the same game set, but the live `compute_paired_difference_test` consumes the per-game `d_i` array directly for its SE; calibrating from `d_i` keeps the benchmark variance comparable to the live CI.) 3.1.6 measures a different population-level gap: `eg_score − non_eg_score` (endgame vs non-endgame games), which has nothing to do with the engine prediction.
+
+**Live-UI provenance:** mirrors `compute_endgame_performance` in `app/services/endgame_service.py:1820–1880` (Phase 85.1 paired-diff accumulator, SEC1-10). The filter for the per-game pair is: `eval_mate IS NOT NULL` (mate INCLUDED, mapped to 0/1 via `eval_mate_to_expected_score`) OR (`eval_cp IS NOT NULL` AND `|eval_cp| < EVAL_CLIP_MAX_CP = 2000`). Both-NULL games are dropped. `actual_score_i ∈ {0.0, 0.5, 1.0}` via `derive_user_result`.
+
+**Per-user metric:**
+- `expected_score_i` per game = Lichess winning-chances sigmoid on user-POV `eval_cp` (mate forces 0/1 in user-POV), at the first endgame-class ply. Same definition as 3.1.3, but with **mate INCLUDED** and `|eval_cp| >= 2000` *clipped* (i.e. those games are excluded from both accumulators identically — see live code).
+- `actual_score_i` per game = 1.0 / 0.5 / 0.0 from `g.result × g.user_color`.
+- `d_i = actual_score_i − expected_score_i`.
+- `achievable_score_gap = mean(d_i)` per user, over their endgame-reaching games in the selected TC.
+
+**Sample floor:** ≥20 paired games per user per cell (matches the live `PVALUE_RELIABILITY_MIN_N = 10` for p-value gating, but doubled here to align with 3.1.3 / 3.1.4 cohort-band floors).
+
+##### Currently set in code
+
+| Constant | Live value | File |
+|---|---:|---|
+| `ACHIEVABLE_SCORE_GAP_*` (gauge zones) | re-grep at run time | `frontend/src/components/charts/EndgamePerformanceSection.tsx` (or a generated module if Phase 85.1 moved it to `endgameZones.ts`) |
+| `PVALUE_RELIABILITY_MIN_N` | 10 | `app/services/endgame_service.py` |
+| `EVAL_CLIP_MAX_CP` | 2000 | `app/services/endgame_service.py` (D-07 clip — same as `EVAL_OUTLIER_TRIM_CP` in MG-entry) |
+
+The Achievable Score Gap gauge is centered at 0 (the "you scored exactly what Stockfish expected" null). Display the live neutral and domain bounds in pp (`±Npp`) when comparing to recommendations.
+
+##### Query
+
+```sql
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+endgame_game_ids AS (
+  SELECT game_id FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+entry_rows AS (
+  -- One row per game: the first endgame-class ply.
+  SELECT
+    gp.game_id, gp.eval_cp, gp.eval_mate,
+    ROW_NUMBER() OVER (PARTITION BY gp.game_id ORDER BY gp.ply ASC) AS rn
+  FROM game_positions gp
+  JOIN endgame_game_ids eg ON eg.game_id = gp.game_id
+  WHERE gp.endgame_class IS NOT NULL
+),
+rows AS (
+  -- Mirror live filter: mate INCLUDED, |eval_cp| < 2000 only, both-NULL skipped.
+  -- d_i = actual_score_i - expected_score_i (paired per-game diff).
+  SELECT
+    g.user_id,
+    su.rating_bucket AS elo_bucket,
+    su.tc_bucket AS tc,
+    -- actual_score_i (user POV)
+    CASE
+      WHEN (g.result = '1-0' AND g.user_color = 'white')
+        OR (g.result = '0-1' AND g.user_color = 'black') THEN 1.0
+      WHEN g.result = '1/2-1/2' THEN 0.5
+      ELSE 0.0
+    END
+    -
+    -- expected_score_i (user POV; mate -> 0/1, cp -> Lichess sigmoid)
+    CASE
+      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0
+      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) < 0 THEN 0.0
+      WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < 2000
+           THEN 1.0 / (1.0 + exp(-0.00368208 * (er.eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+      ELSE NULL  -- both-NULL or cp clip — dropped at the HAVING below
+    END AS d_i
+  FROM games g
+  JOIN selected_users su ON su.user_id = g.user_id
+  JOIN entry_rows er ON er.game_id = g.id AND er.rn = 1
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+),
+per_user AS (
+  SELECT user_id, elo_bucket, tc,
+    count(*) FILTER (WHERE d_i IS NOT NULL) AS n_pairs,
+    avg(d_i) AS achievable_gap,
+    var_samp(d_i) AS d_var_within  -- per-user within-game variance (informational; not used for between-user Cohen's d)
+  FROM rows
+  GROUP BY user_id, elo_bucket, tc
+  HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= 20
+),
+per_user_excl_sparse AS (
+  -- Sparse-cell exclusion mirrors universal handling.
+  SELECT * FROM per_user
+  WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
+)
+SELECT
+  elo_bucket, tc,
+  count(*) AS n_users,
+  round(avg(achievable_gap)::numeric, 4) AS gap_mean,         -- proportion units (rendered as pp)
+  round(stddev_samp(achievable_gap)::numeric, 4) AS gap_sd,
+  round(var_samp(achievable_gap)::numeric, 6) AS gap_var,     -- between-user variance, feeds Cohen's d
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY achievable_gap)::numeric, 4) AS gap_p95
+FROM per_user_excl_sparse
+GROUP BY elo_bucket, tc
+HAVING count(*) >= 10
+ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
+```
+
+The full 5×4 cell table re-runs the same shape for the sparse `(2400, classical)` cell with an `n=N*` footnote. TC marginal, ELO marginal, and pooled overall come from re-aggregating `per_user_excl_sparse` over `tc` only / `elo_bucket` only / no group. `gap_mean` / `gap_var` columns feed Cohen's d per the canonical "Computing Cohen's d in SQL" recipe.
+
+##### Output
+
+1. **5×4 cell table** of per-user `achievable_gap` (`gap_p25 / gap_p50 / gap_p75 (n_users)`), all rendered as **pp** (multiply by 100, one decimal, suffix `pp`). Sparse cell footnoted.
+2. **TC marginal** (4 rows pooled across ELO): `n_users / gap_mean / gap_sd / gap_p25 / gap_p50 / gap_p75` — all gap columns in pp.
+3. **ELO marginal** (5 rows pooled across TC): same columns.
+4. **Pooled overall**: 1 row — feeds the cohort-band recommendation.
+5. **Recommendations:**
+   - **Sanity check on engine alignment**: pooled mean should sit within `±1pp` of 0 (the engine-alignment null). A persistent positive gap means the cohort systematically outperforms the engine prediction at endgame entry, which would point to a model-calibration bug rather than a population effect.
+   - **Cohort neutral band** = pooled `[gap_p25, gap_p75]` rendered in pp, rounded to whole pp. Symmetric `±Npp` only if `|pooled mean| < 1pp`; otherwise asymmetric (the engine-alignment null is at 0, not at the population median).
+   - **Cohort domain bounds** = pooled `[gap_p05, gap_p95]` in pp, rounded to whole pp.
+   - **Editorial tightening (memory `feedback_zone_band_judgement.md`)**: if pooled IQR is wide enough that meaningful effects would land in `typical`, tighten inside IQR so the tile actually paints red/green.
+   - **Recommendation routing**: live constants for this gauge are in `EndgamePerformanceSection.tsx` (or a generated module if Phase 85.1 moved them). Do **not** retune the 3.1.6 `SCORE_GAP_*` constants — that gauge measures a different gap.
+6. **Collapse verdict block**: TC d_max + ELO d_max from per-user `achievable_gap` distribution, plus a 5×4 heatmap of `gap_p50` (rendered as pp). Per the canonical thresholds (< 0.2 collapse / 0.2–0.5 review / ≥ 0.5 keep separate).
+
+#### 3.1.6 Endgame Score Gap and Timeline
 
 **Question:** How does per-user `eg_score − non_eg_score` distribute across the population, and does the distribution shift across (TC × ELO) cells? Calibrates the "Endgame Score Gap" gauge in the "Endgame Score Differences" row of the Endgame Overall Performance section, plus the eg/non-eg timeline overlay.
-
-The "Endgame Score Differences" row also renders an "Achievable Score Gap" gauge — the per-game `(actual_score − expected_score)` differential. Calibration for that gauge can be derived in post-processing from 3.1.3 (`xs_*`) and 3.1.4 (`eg_*`) pooled distributions; the dedicated query is not in the skill today. Add one only if a user asks.
 
 **Per-user metrics:**
 - `eg_score` = avg score in endgame games (within selected TC)
@@ -1036,11 +1188,11 @@ ORDER BY elo_bucket, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapi
 3. **ELO marginal** (5 rows pooled across TC): same columns.
 4. **Pooled overall**: 1 row (used for the score-gap gauge recommendation).
 5. Recommendations:
-   - **Score-gap gauge neutral zone** = pooled `[diff_p25, diff_p75]`. Compare to `SCORE_GAP_NEUTRAL_MIN/MAX`. Use **keep symmetric ±0.10** unless |median| ≥ 5pp (out-of-scope guard).
-   - **Score-gap gauge half-width** = pooled `max(|diff_p05|, |diff_p95|)`. Compare to `SCORE_GAP_DOMAIN`.
-   - **Timeline neutral zone** = intersection of pooled `[eg_p25, eg_p75]` and `[non_eg_p25, non_eg_p75]`. If overlap ≥ 50% of narrower interval, propose `[max(p25s), min(p75s)]` as a single unified band.
-   - **Timeline Y-axis** = `[min(eg_p05, non_eg_p05), max(eg_p95, non_eg_p95)]` padded.
-6. **Collapse verdict block** (per `diff` distribution): `tc_d_max`, `elo_d_max`, 5×4 heatmap of `diff_p50`.
+   - **Score-gap gauge neutral zone** = pooled `[diff_p25, diff_p75]` (rendered as pp). Compare to `SCORE_GAP_NEUTRAL_MIN/MAX` (live constants quoted in native unit, e.g. `−0.10 / +0.10` ≡ `±10pp`). Use **keep symmetric ±10pp** unless `|median| ≥ 5pp` (out-of-scope guard).
+   - **Score-gap gauge half-width** = pooled `max(|diff_p05|, |diff_p95|)` in pp. Compare to `SCORE_GAP_DOMAIN`.
+   - **Timeline neutral zone** = intersection of pooled `[eg_p25, eg_p75]` and `[non_eg_p25, non_eg_p75]` (timeline Y-axis renders as percent). If overlap ≥ 50% of narrower interval, propose `[max(p25s), min(p75s)]` as a single unified band.
+   - **Timeline Y-axis** = `[min(eg_p05, non_eg_p05), max(eg_p95, non_eg_p95)]` padded, rendered as percent.
+6. **Collapse verdict block** (per `diff` distribution): `tc_d_max`, `elo_d_max`, 5×4 heatmap of `diff_p50` (rendered as pp).
 
 ---
 
@@ -1652,7 +1804,8 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). Layout:
 #### 3.1.2 Endgame-entry eval (pawns)
 #### 3.1.3 Achievable Score
 #### 3.1.4 Endgame Score (per-user, EG-only)
-#### 3.1.5 Score Gap (gauge + timeline)
+#### 3.1.5 Achievable Score Gap
+#### 3.1.6 Endgame Score Gap and Timeline
 
 ### 3.2 Endgame Metrics and ELO
 #### 3.2.1 Conversion / Parity / Recovery + Endgame Skill
@@ -1672,7 +1825,8 @@ Write to `reports/benchmarks-YYYY-MM-DD.md` (UTC date). Layout:
 | Endgame-entry eval (pawns) | 3.1.2 | ... | ... | ... |
 | Achievable Score | 3.1.3 | ... | ... | ... |
 | Endgame Score (per-user, EG-only) | 3.1.4 | ... | ... | ... |
-| Score gap (eg − non_eg) | 3.1.5 | ... | ... | ... |
+| Achievable Score Gap (actual − expected) | 3.1.5 | ... | ... | ... |
+| Endgame Score Gap (eg − non_eg) | 3.1.6 | ... | ... | ... |
 | Middlegame-entry eval (per-user median) | 2.1 | ... | ... | ... |
 | Conversion (per-user) | 3.2.1 | ... | ... | ... |
 | Parity (per-user) | 3.2.1 | ... | ... | ... |
