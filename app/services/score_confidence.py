@@ -63,6 +63,69 @@ from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
 
+# --- Phase 86 Plan 1: per-bucket headline-rate helpers --------------------
+# Shared internals consumed by `compute_skill_diff_test` (D-01 / SEC2-08) and
+# `compute_per_bucket_diff_test` (D-05 / D-06 / SEC2-06). The headline rate
+# and its variance differ per bucket — see `EndgameScoreGapSection.tsx:127-131`
+# for the legacy frontend `userRate()` definition that these helpers mirror.
+
+_BucketName = Literal["conversion", "parity", "recovery"]
+# (W, D, L, N) per bucket — passed as a positional tuple to the diff helpers.
+_SkillBucketRow = tuple[int, int, int, int]
+
+
+def _headline_rate(bucket: _BucketName, w: int, d: int, _l: int, n: int) -> float:
+    """Return the bucket's headline rate per the legacy frontend `userRate()`.
+
+    Mirrors `frontend/src/components/charts/EndgameScoreGapSection.tsx:127-131`:
+      - conversion -> W / N (Bernoulli on the win indicator)
+      - recovery   -> (W + D) / N (Bernoulli on the save indicator)
+      - parity     -> (W + 0.5 * D) / N (chess score)
+
+    Caller precondition: `n > 0`. The diff helpers gate on `N > 0` before
+    invocation so this helper does not re-check. The `_l` (losses) parameter
+    is accepted positionally for symmetry with the (W, D, L, N) tuple shape
+    but is not used in any of the headline-rate formulas (L is implicit in N).
+
+    Phase 86 D-01 / D-05 / D-06.
+    """
+    if bucket == "conversion":
+        return w / n
+    if bucket == "recovery":
+        return (w + d) / n
+    # parity
+    return (w + 0.5 * d) / n
+
+
+def _headline_rate_variance(bucket: _BucketName, w: int, d: int, _l: int, n: int) -> float:
+    """Return the bucket-specific variance of the headline rate.
+
+    Critical fix from Phase 86 plan-checker BLOCKER 2: variance depends on the
+    bucket's distribution, NOT a single chess-score formula across all three.
+      - conversion -> p * (1 - p), p = W/N (Bernoulli on win)
+      - recovery   -> p * (1 - p), p = (W+D)/N (Bernoulli on save)
+      - parity     -> max(0, (W + 0.25*D)/N - p^2), p = (W + 0.5*D)/N (trinomial
+                      chess-score variance — only correct for parity, since the
+                      headline rate IS the chess score for parity)
+
+    All three formulas clamp at 0 via `max(0.0, ...)` for floating-point safety
+    (degenerate all-wins / all-losses / all-saves rows hit exactly 0 in
+    closed form; the clamp guards against tiny negative rounding drift).
+
+    Caller precondition: `n > 0`.
+
+    Phase 86 D-01 / D-05 / D-06.
+    """
+    if bucket == "conversion":
+        p_conv = w / n
+        return max(0.0, p_conv * (1.0 - p_conv))
+    if bucket == "recovery":
+        p_recov = (w + d) / n
+        return max(0.0, p_recov * (1.0 - p_recov))
+    # parity (trinomial chess-score variance)
+    p_par = (w + 0.5 * d) / n
+    return max(0.0, (w + 0.25 * d) / n - p_par * p_par)
+
 
 def wilson_bounds(p: float, n: int) -> tuple[float, float]:
     """Return (lower, upper) Wilson 95% score interval bounds, clamped to [0, 1].
@@ -114,9 +177,7 @@ def _wilson_score_test_vs_half(score: float, n: int) -> tuple[float, float]:
     return p_value, se_null
 
 
-def _bucket_from_p_value(
-    p_value: float, n: int
-) -> Literal["low", "medium", "high"]:
+def _bucket_from_p_value(p_value: float, n: int) -> Literal["low", "medium", "high"]:
     """Bucket a Wilson p-value into low/medium/high, with the N>=10 sample-size gate."""
     if n < CONFIDENCE_MIN_N:
         return "low"
@@ -309,6 +370,207 @@ def compute_paired_difference_test(
     p_out: float | None = p_value if n >= CONFIDENCE_MIN_N else None
     # CI gate is just n >= 2 (already passed by the early-return n==1 guard).
     return mean_d, p_out, ci_low, ci_high
+
+
+def compute_skill_diff_test(
+    conv_row: _SkillBucketRow,
+    parity_row: _SkillBucketRow,
+    recov_row: _SkillBucketRow,
+    opp_conv_row: _SkillBucketRow,
+    opp_parity_row: _SkillBucketRow,
+    opp_recov_row: _SkillBucketRow,
+) -> tuple[float | None, float | None, float | None, float | None, float | None]:
+    """Return (skill, opp_skill, p_value, ci_low, ci_high) for the Skill-card
+    peer-bullet sig test on the aggregate Conv/Parity/Recov composite.
+
+    Phase 86 SEC2-08 / D-01. The Skill scalar averages the user's three
+    bucket-specific headline rates; the opponent skill averages `1 - userRate`
+    on the user's mirror-bucket rows (same-game symmetry — see legacy
+    `opponentRate()` mirror identity at `EndgameScoreGapSection.tsx:141-146`).
+    The peer-bullet Wald-z test is run on the difference `skill - opp_skill`.
+
+    The `opp_*_row` arguments are the USER'S rows in the mirror buckets, NOT
+    the opponents' raw W/D/L. The helper inverts via `1 - _headline_rate(opp_row)`
+    internally; do NOT flip W<->L at the call site.
+
+    **Active bucket definition** (D-01 + Warning #4): a bucket is active when
+    BOTH `user_row.N > 0 AND opp_row.N > 0` so the user-side mean and the
+    opp-side mean are over the same index set (avoids asymmetric composite).
+    `n_active = number of active buckets`.
+
+    **Skill composite (always returned when n_active >= 1):**
+        skill     = mean(_headline_rate(b, user_row_b)        for b in active)
+        opp_skill = mean(1 - _headline_rate(b, opp_row_b)     for b in active)
+
+    **Variance (HEADLINE-RATE per bucket, NOT chess-score on all three):**
+    Per Phase 86 plan-checker BLOCKER 2, the per-bucket variance must match
+    the bucket's headline-rate distribution:
+      - Conv  variance: Bernoulli on win  -> `p (1-p)` with `p = W/N`
+      - Recov variance: Bernoulli on save -> `p (1-p)` with `p = (W+D)/N`
+      - Parity variance: trinomial chess-score -> `(W + 0.25*D)/N - p^2` with `p = (W + 0.5*D)/N`
+    Using the trinomial chess-score variance on ALL three (the initial draft of
+    the plan) would have produced wrong p-values for Conv and Recov.
+
+    **SE composition** (mean of independent rates -> 1/n scaling on the sum):
+        SE_user = sqrt(sum(var_user_b / N_user_b for b in active)) / n_active
+        SE_opp  = sqrt(sum(var_opp_b  / N_opp_b  for b in active)) / n_active
+        SE_diff = sqrt(SE_user^2 + SE_opp^2)
+        diff    = skill - opp_skill
+        z       = diff / SE_diff
+        p_value = erfc(|z| / sqrt(2))                                  # two-sided
+        ci_low  = diff - CI_Z_95 * SE_diff
+        ci_high = diff + CI_Z_95 * SE_diff
+
+    **Independence caveat:** Conv and Recov can come from the same game (mirror
+    identity at the bucket boundary), so the three bucket means are not strictly
+    independent. SE may slightly under-estimate true uncertainty; accepted for
+    a v1.17 heuristic composite. The Wilson math on individual bucket bullets
+    (`compute_per_bucket_diff_test`) does not have this caveat.
+
+    **Variance-0 trap** (`SE_diff == 0.0`): mirrors `compute_score_difference_test`:
+      - diff != 0 -> p_value = 0.0 (perfectly determined signal)
+      - diff == 0 -> p_value = 1.0 (no evidence of a difference)
+    CI bounds collapse to ci_low == ci_high == diff.
+
+    **Sig gating** (D-01 + Warning #4):
+      - Skill scalars are returned whenever `n_active >= 1`.
+      - p_value / ci_low / ci_high are None when (`n_active < 2`) OR (any
+        active opp bucket has `opp_row.N < CONFIDENCE_MIN_N` (=10)).
+      - All five fields are None when `n_active == 0`.
+    """
+    rows: tuple[tuple[_BucketName, _SkillBucketRow, _SkillBucketRow], ...] = (
+        ("conversion", conv_row, opp_conv_row),
+        ("parity", parity_row, opp_parity_row),
+        ("recovery", recov_row, opp_recov_row),
+    )
+    # Active buckets: both sides have games on the same bucket. Avoids the
+    # asymmetric-composite trap where `skill` and `opp_skill` would average
+    # over different index sets and the diff would mix in opposite-side noise.
+    active = [
+        (bucket, user_row, opp_row)
+        for bucket, user_row, opp_row in rows
+        if user_row[3] > 0 and opp_row[3] > 0
+    ]
+    n_active = len(active)
+    if n_active == 0:
+        return None, None, None, None, None
+
+    sum_user_rate = 0.0
+    sum_opp_rate = 0.0
+    sum_user_var_over_n = 0.0
+    sum_opp_var_over_n = 0.0
+    any_opp_sparse = False
+    for bucket, user_row, opp_row in active:
+        sum_user_rate += _headline_rate(bucket, *user_row)
+        sum_opp_rate += 1.0 - _headline_rate(bucket, *opp_row)
+        sum_user_var_over_n += _headline_rate_variance(bucket, *user_row) / user_row[3]
+        sum_opp_var_over_n += _headline_rate_variance(bucket, *opp_row) / opp_row[3]
+        if opp_row[3] < CONFIDENCE_MIN_N:
+            any_opp_sparse = True
+
+    skill = sum_user_rate / n_active
+    opp_skill = sum_opp_rate / n_active
+
+    se_user = math.sqrt(sum_user_var_over_n) / n_active
+    se_opp = math.sqrt(sum_opp_var_over_n) / n_active
+    se_diff = math.sqrt(se_user * se_user + se_opp * se_opp)
+    diff = skill - opp_skill
+
+    if se_diff == 0.0:
+        # Variance-0 trap — both sides degenerate on every active bucket.
+        p_value: float = 0.0 if diff != 0.0 else 1.0
+    else:
+        z = diff / se_diff
+        p_value = math.erfc(abs(z) / math.sqrt(2.0))
+
+    ci_half_width = CI_Z_95 * se_diff
+    ci_low: float = diff - ci_half_width
+    ci_high: float = diff + ci_half_width
+
+    # Sig gating: strict opp-side N>=10 on EVERY active bucket (D-01 + Warning #4),
+    # plus the n_active >= 2 floor so the composite has at least two cohorts.
+    if n_active < 2 or any_opp_sparse:
+        return skill, opp_skill, None, None, None
+    return skill, opp_skill, p_value, ci_low, ci_high
+
+
+def compute_per_bucket_diff_test(
+    bucket: _BucketName,
+    user_row: _SkillBucketRow,
+    opp_row: _SkillBucketRow,
+) -> tuple[float | None, float | None, float | None]:
+    """Return (p_value, ci_low, ci_high) for the per-bucket peer-bullet sig test
+    on `userRate - opponentRate` for a single Conv/Parity/Recov bucket.
+
+    Phase 86 SEC2-06 / D-05 / D-06. The `opp_row` is the USER'S row in the
+    mirror bucket (per `MIRROR_BUCKET = {conversion: 'recovery', recovery:
+    'conversion', parity: 'parity'}` legacy convention); the helper inverts
+    via `1 - _headline_rate(opp_row)` internally — do NOT flip W<->L at the
+    call site.
+
+    **Math** (Wald-z on a single-bucket headline-rate difference):
+        user_rate = _headline_rate(bucket, *user_row)
+        opp_rate  = 1 - _headline_rate(bucket, *opp_row)
+        var_user  = _headline_rate_variance(bucket, *user_row)
+        var_opp   = _headline_rate_variance(bucket, *opp_row)   # Var(1-X) = Var(X)
+        SE_diff   = sqrt(var_user / user_row.N + var_opp / opp_row.N)
+        diff      = user_rate - opp_rate
+        z         = diff / SE_diff
+        p_value   = erfc(|z| / sqrt(2))                                # two-sided
+        ci_low    = diff - CI_Z_95 * SE_diff
+        ci_high   = diff + CI_Z_95 * SE_diff
+
+    Variance is the HEADLINE-RATE variance per bucket (Phase 86 plan-checker
+    BLOCKER 2) — see `_headline_rate_variance`. Using a single chess-score
+    formula across all three buckets would produce wrong p-values for Conv
+    and Recov.
+
+    **Parity self-mirror** (Phase 86 plan-checker BLOCKER 1): when
+    `bucket == "parity"` and `opp_row` IS the same parity row (mirror of parity
+    is parity itself), the diff is `2 * user_rate - 1`, NOT identically 0. The
+    headline mirror identity `oppRate = 1 - userRate(opp_row)` distinguishes
+    the user from the opponent in the same cohort. The previously-considered
+    "chess-score on two independent cohorts" approach (which this helper does
+    NOT use) would have produced diff = 0 for self-mirror, hiding the signal.
+
+    **Variance-0 trap** (`SE_diff == 0.0`): mirrors `compute_score_difference_test`:
+      - diff != 0 -> p_value = 0.0
+      - diff == 0 -> p_value = 1.0
+    CI bounds collapse to ci_low == ci_high == diff.
+
+    **Sig gating** (D-05, strict opp-side):
+      - All three return None when `user_row.N <= 0` (no signal possible).
+      - All three return None when `opp_row.N < CONFIDENCE_MIN_N` (=10).
+        NOTE: this is STRICT opp-side gating, not the min-of-both gate used
+        by `compute_score_difference_test`. D-05 explicitly specified the
+        opp-side n>=10 baseline as the floor; user-side N is allowed to be
+        below 10 since the user-side rate is already surfaced on the gauge
+        regardless.
+    """
+    if user_row[3] <= 0:
+        return None, None, None
+    if opp_row[3] < CONFIDENCE_MIN_N:
+        # D-05 strict opp-side gate. Also covers opp_row.N == 0 (no baseline).
+        return None, None, None
+
+    user_rate = _headline_rate(bucket, *user_row)
+    opp_rate = 1.0 - _headline_rate(bucket, *opp_row)
+    var_user = _headline_rate_variance(bucket, *user_row)
+    var_opp = _headline_rate_variance(bucket, *opp_row)
+    se_diff = math.sqrt(var_user / user_row[3] + var_opp / opp_row[3])
+    diff = user_rate - opp_rate
+
+    if se_diff == 0.0:
+        # Variance-0 trap mirrors compute_score_difference_test.
+        p_value: float = 0.0 if diff != 0.0 else 1.0
+    else:
+        z = diff / se_diff
+        p_value = math.erfc(abs(z) / math.sqrt(2.0))
+
+    ci_half_width = CI_Z_95 * se_diff
+    ci_low: float = diff - ci_half_width
+    ci_high: float = diff + ci_half_width
+    return p_value, ci_low, ci_high
 
 
 def compute_confidence_bucket(

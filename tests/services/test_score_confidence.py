@@ -23,11 +23,16 @@ import math
 
 import pytest
 
+from app.services.opening_insights_constants import (
+    OPENING_INSIGHTS_CI_Z_95 as CI_Z_95,
+)
 from app.services.score_confidence import (
     compute_confidence_bucket,
     compute_paired_difference_test,
+    compute_per_bucket_diff_test,
     compute_score_confidence_from_mean,
     compute_score_difference_test,
+    compute_skill_diff_test,
 )
 
 
@@ -230,9 +235,7 @@ class TestComputeScoreConfidenceFromMean:
 
     def test_medium_evidence_returns_medium(self) -> None:
         """score=0.425, n=200 -> z = -2.121, p ~ 0.0339 -> medium (0.01 <= p < 0.05)."""
-        confidence, p_value, _se = compute_score_confidence_from_mean(
-            score=0.425, n=200
-        )
+        confidence, p_value, _se = compute_score_confidence_from_mean(score=0.425, n=200)
         assert confidence == "medium"
         assert 0.01 <= p_value < 0.05
 
@@ -276,16 +279,28 @@ class TestComputeScoreDifferenceTest:
     def test_n_zero_either_side_returns_all_none(self) -> None:
         """n=0 on either cohort gates both p and CI to None without raising."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=0, eg_d=0, eg_l=0, eg_n=0,
-            ne_w=5, ne_d=5, ne_l=5, ne_n=15,
+            eg_w=0,
+            eg_d=0,
+            eg_l=0,
+            eg_n=0,
+            ne_w=5,
+            ne_d=5,
+            ne_l=5,
+            ne_n=15,
         )
         assert p is None
         assert lo is None
         assert hi is None
 
         p2, lo2, hi2 = compute_score_difference_test(
-            eg_w=5, eg_d=5, eg_l=5, eg_n=15,
-            ne_w=0, ne_d=0, ne_l=0, ne_n=0,
+            eg_w=5,
+            eg_d=5,
+            eg_l=5,
+            eg_n=15,
+            ne_w=0,
+            ne_d=0,
+            ne_l=0,
+            ne_n=0,
         )
         assert p2 is None
         assert lo2 is None
@@ -295,8 +310,14 @@ class TestComputeScoreDifferenceTest:
         """eg_n=9 (below CONFIDENCE_MIN_N=10) gates p_value but CI is still
         computed because eg_n >= 2."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=4, eg_d=2, eg_l=3, eg_n=9,
-            ne_w=10, ne_d=5, ne_l=5, ne_n=20,
+            eg_w=4,
+            eg_d=2,
+            eg_l=3,
+            eg_n=9,
+            ne_w=10,
+            ne_d=5,
+            ne_l=5,
+            ne_n=20,
         )
         assert p is None
         assert lo is not None
@@ -306,8 +327,14 @@ class TestComputeScoreDifferenceTest:
     def test_n_one_either_side_gates_ci_only(self) -> None:
         """ne_n=1 gates CI bounds (need n >= 2) and also gates p_value (n < 10)."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=8, eg_d=5, eg_l=2, eg_n=15,
-            ne_w=1, ne_d=0, ne_l=0, ne_n=1,
+            eg_w=8,
+            eg_d=5,
+            eg_l=2,
+            eg_n=15,
+            ne_w=1,
+            ne_d=0,
+            ne_l=0,
+            ne_n=1,
         )
         assert p is None  # ne_n=1 < CONFIDENCE_MIN_N=10
         assert lo is None  # ne_n=1 < 2
@@ -317,8 +344,14 @@ class TestComputeScoreDifferenceTest:
         """Same proportions both sides: score_eg == score_ne -> z=0 -> p=1.0.
         SE_diff > 0 (non-degenerate WDL spread) -> CI brackets 0 symmetrically."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=20, eg_d=10, eg_l=20, eg_n=50,
-            ne_w=20, ne_d=10, ne_l=20, ne_n=50,
+            eg_w=20,
+            eg_d=10,
+            eg_l=20,
+            eg_n=50,
+            ne_w=20,
+            ne_d=10,
+            ne_l=20,
+            ne_n=50,
         )
         assert p == pytest.approx(1.0, abs=1e-9)
         assert lo is not None and hi is not None
@@ -331,8 +364,14 @@ class TestComputeScoreDifferenceTest:
         so SE_diff = 0. score_eg - score_ne = 1.0 -> p_value=0.0 (perfectly
         determined), and CI collapses to ci_low == ci_high == 1.0."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=10, eg_d=0, eg_l=0, eg_n=10,
-            ne_w=0, ne_d=0, ne_l=10, ne_n=10,
+            eg_w=10,
+            eg_d=0,
+            eg_l=0,
+            eg_n=10,
+            ne_w=0,
+            ne_d=0,
+            ne_l=10,
+            ne_n=10,
         )
         assert p == pytest.approx(0.0, abs=1e-9)
         assert lo == pytest.approx(1.0, abs=1e-9)
@@ -343,8 +382,14 @@ class TestComputeScoreDifferenceTest:
         E[X^2] = 0.25*N/N = 0.25, var = 0.25 - 0.25 = 0). score_eg == score_ne
         -> p_value = 1.0. CI half-width = 0."""
         p, lo, hi = compute_score_difference_test(
-            eg_w=0, eg_d=10, eg_l=0, eg_n=10,
-            ne_w=0, ne_d=10, ne_l=0, ne_n=10,
+            eg_w=0,
+            eg_d=10,
+            eg_l=0,
+            eg_n=10,
+            ne_w=0,
+            ne_d=10,
+            ne_l=0,
+            ne_n=10,
         )
         assert p == pytest.approx(1.0, abs=1e-9)
         assert lo == pytest.approx(0.0, abs=1e-9)
@@ -366,8 +411,14 @@ class TestComputeScoreDifferenceTest:
         expected_diff = score_eg - score_ne
 
         p, lo, hi = compute_score_difference_test(
-            eg_w=eg_w, eg_d=eg_d, eg_l=20, eg_n=eg_n,
-            ne_w=ne_w, ne_d=ne_d, ne_l=40, ne_n=ne_n,
+            eg_w=eg_w,
+            eg_d=eg_d,
+            eg_l=20,
+            eg_n=eg_n,
+            ne_w=ne_w,
+            ne_d=ne_d,
+            ne_l=40,
+            ne_n=ne_n,
         )
         assert p is not None
         assert lo is not None and hi is not None
@@ -377,8 +428,14 @@ class TestComputeScoreDifferenceTest:
     def test_p_value_in_unit_interval_for_non_degenerate_input(self) -> None:
         """For any well-defined two-sample z-test, erfc(|z|/sqrt(2)) is in [0, 1]."""
         p, _lo, _hi = compute_score_difference_test(
-            eg_w=70, eg_d=10, eg_l=20, eg_n=100,
-            ne_w=30, ne_d=10, ne_l=60, ne_n=100,
+            eg_w=70,
+            eg_d=10,
+            eg_l=20,
+            eg_n=100,
+            ne_w=30,
+            ne_d=10,
+            ne_l=60,
+            ne_n=100,
         )
         assert p is not None
         assert 0.0 <= p <= 1.0
@@ -492,3 +549,324 @@ class TestComputePairedDifferenceTest:
         assert (hi - lo) / 2.0 == pytest.approx(bessel_half_width, rel=1e-9)
         # Explicitly NOT the naive half-width:
         assert (hi - lo) / 2.0 != pytest.approx(naive_half_width, rel=1e-9)
+
+
+# --- compute_skill_diff_test (Phase 86 Plan 1 Task 2) ---------------------
+# Wald-z on the Skill composite (mean of Conv/Parity/Recov headline rates)
+# vs the opponent's mirror composite. Variance per bucket is the HEADLINE-RATE
+# variance (Conv Bernoulli win, Recov Bernoulli save, Parity trinomial
+# chess-score) — NOT chess-score on all three (Phase 86 plan-checker BLOCKER 2).
+# Mirror identity: opp_rate = 1 - userRate(opp_row), helper inverts internally.
+
+
+class TestComputeSkillDiffTest:
+    """compute_skill_diff_test(conv_row, parity_row, recov_row,
+    opp_conv_row, opp_parity_row, opp_recov_row) -> (skill, opp_skill,
+    p_value, ci_low, ci_high). Active bucket gate: user.N > 0 AND opp.N > 0.
+    Sig fields None when n_active < 2 OR any active opp_row.N < 10."""
+
+    def test_symmetric_50_50_gives_diff_near_zero(self) -> None:
+        """Identical rows both sides (W=L on every bucket): skill ≈ opp_skill,
+        diff ≈ 0, p_value ≈ 1.0, CI brackets 0. Both skills in [0, 1]."""
+        row = (40, 20, 40, 100)
+        skill, opp_skill, p_value, ci_low, ci_high = compute_skill_diff_test(
+            conv_row=row,
+            parity_row=row,
+            recov_row=row,
+            opp_conv_row=row,
+            opp_parity_row=row,
+            opp_recov_row=row,
+        )
+        assert skill is not None and opp_skill is not None
+        assert 0.0 <= skill <= 1.0
+        assert 0.0 <= opp_skill <= 1.0
+        # Conv user_rate = 0.40; opp_rate = 1 - 0.40 = 0.60. Parity user = 0.50,
+        # opp = 0.50. Recov user = 0.60, opp = 0.40. Mean diff = 0.
+        assert skill == pytest.approx(opp_skill, abs=1e-12)
+        assert p_value is not None
+        assert p_value > 0.5
+        assert ci_low is not None and ci_high is not None
+        assert ci_low <= 0.0 <= ci_high
+
+    def test_asymmetric_user_above_opp_is_significant(self) -> None:
+        """User outperforms opp on every bucket -> skill > opp_skill, p < 0.05,
+        ci_low > 0. Uses concrete WDL rows that produce a clean directional
+        signal at n=100 per bucket."""
+        user_conv = (70, 0, 30, 100)  # Conv rate 0.70
+        user_parity = (60, 20, 20, 100)  # Parity rate 0.70
+        user_recov = (60, 20, 20, 100)  # Recov rate 0.80
+        # Mirror rows producing lower user-rates -> higher opp-rates after invert.
+        # Wait: opp_rate = 1 - userRate(opp_row). Lower userRate(opp_row) means
+        # higher opp_rate, which is BAD for user. To make user > opp, we want
+        # the mirror userRate to be HIGH (so 1 - high = low opp_rate).
+        # Conv: user 0.70, opp_rate target 0.50 -> opp_row userRate(conv) = 0.50
+        opp_conv = (50, 0, 50, 100)  # Conv rate 0.50 -> opp_rate = 0.50
+        # Parity: user 0.70, opp_rate target 0.55 -> opp_row parity_rate = 0.45
+        opp_parity = (40, 10, 50, 100)  # Parity rate (40+5)/100 = 0.45 -> opp_rate = 0.55
+        # Recov: user 0.80, opp_rate target 0.60 -> opp_row recov_rate = 0.40
+        opp_recov = (30, 10, 60, 100)  # Recov rate (30+10)/100 = 0.40 -> opp_rate = 0.60
+        skill, opp_skill, p_value, ci_low, ci_high = compute_skill_diff_test(
+            conv_row=user_conv,
+            parity_row=user_parity,
+            recov_row=user_recov,
+            opp_conv_row=opp_conv,
+            opp_parity_row=opp_parity,
+            opp_recov_row=opp_recov,
+        )
+        assert skill is not None and opp_skill is not None
+        # skill = mean(0.70, 0.70, 0.80) = 0.7333...
+        assert skill == pytest.approx((0.70 + 0.70 + 0.80) / 3.0, abs=1e-9)
+        # opp_skill = mean(0.50, 0.55, 0.60) = 0.55
+        assert opp_skill == pytest.approx((0.50 + 0.55 + 0.60) / 3.0, abs=1e-9)
+        assert skill > opp_skill
+        assert p_value is not None and p_value < 0.05
+        assert ci_low is not None and ci_high is not None
+        assert ci_low > 0.0
+
+    def test_one_active_bucket_gates_sig_but_returns_skills(self) -> None:
+        """Only Conv has N > 0 on both sides. Skills are floats (single-bucket
+        mean), but sig fields are all None (n_active < 2)."""
+        conv = (60, 0, 40, 100)
+        empty = (0, 0, 0, 0)
+        skill, opp_skill, p_value, ci_low, ci_high = compute_skill_diff_test(
+            conv_row=conv,
+            parity_row=empty,
+            recov_row=empty,
+            opp_conv_row=(50, 0, 50, 100),
+            opp_parity_row=empty,
+            opp_recov_row=empty,
+        )
+        assert skill is not None and opp_skill is not None
+        # Single-bucket mean = that bucket's rate.
+        assert skill == pytest.approx(0.60, abs=1e-9)
+        assert opp_skill == pytest.approx(0.50, abs=1e-9)  # 1 - 0.50
+        assert p_value is None
+        assert ci_low is None
+        assert ci_high is None
+
+    def test_sparse_opponent_gates_sig_but_returns_skills(self) -> None:
+        """All 3 buckets active on user side (N=100), one opp bucket has N=8
+        (< CONFIDENCE_MIN_N=10). Skills are floats; sig fields None."""
+        user = (50, 0, 50, 100)
+        sparse_opp_conv = (4, 0, 4, 8)  # N=8 < 10
+        normal = (50, 0, 50, 100)
+        skill, opp_skill, p_value, ci_low, ci_high = compute_skill_diff_test(
+            conv_row=user,
+            parity_row=user,
+            recov_row=user,
+            opp_conv_row=sparse_opp_conv,
+            opp_parity_row=normal,
+            opp_recov_row=normal,
+        )
+        assert skill is not None
+        assert opp_skill is not None
+        assert p_value is None
+        assert ci_low is None
+        assert ci_high is None
+
+    def test_zero_active_buckets_returns_all_none(self) -> None:
+        """Every row is (0, 0, 0, 0). No buckets active -> all five fields None."""
+        empty = (0, 0, 0, 0)
+        result = compute_skill_diff_test(
+            conv_row=empty,
+            parity_row=empty,
+            recov_row=empty,
+            opp_conv_row=empty,
+            opp_parity_row=empty,
+            opp_recov_row=empty,
+        )
+        assert result == (None, None, None, None, None)
+
+    def test_variance_zero_trap_gives_p_zero_collapsed_ci(self) -> None:
+        """Variance-0 trap: user all-wins (var=0 on every bucket) + opp_row
+        also all-wins (so opp_rate = 1 - userRate(opp_row) = 1 - 1.0 = 0, var=0).
+        SE_diff = 0; diff = 1.0 != 0 -> p_value = 0.0 (perfectly determined).
+        CI collapses to ci_low == ci_high == 1.0.
+
+        Mirrors the eval_confidence.py:116-119 pattern via
+        compute_score_difference_test.
+        """
+        all_wins = (100, 0, 0, 100)
+        skill, opp_skill, p_value, ci_low, ci_high = compute_skill_diff_test(
+            conv_row=all_wins,
+            parity_row=all_wins,
+            recov_row=all_wins,
+            opp_conv_row=all_wins,
+            opp_parity_row=all_wins,
+            opp_recov_row=all_wins,
+        )
+        assert skill == pytest.approx(1.0, abs=1e-12)
+        assert opp_skill == pytest.approx(0.0, abs=1e-12)
+        assert p_value == pytest.approx(0.0, abs=1e-12)
+        assert ci_low is not None and ci_high is not None
+        assert ci_low == pytest.approx(1.0, abs=1e-12)
+        assert ci_high == pytest.approx(1.0, abs=1e-12)
+
+    def test_skill_diff_uses_per_bucket_headline_variance_not_chess_score_variance(
+        self,
+    ) -> None:
+        """Phase 86 plan-checker BLOCKER 2 regression. Conv variance under the
+        win-rate Bernoulli formula (p*(1-p) with p=W/N) MUST differ from the
+        chess-score variance ((W + 0.25*D)/N − score^2) for the same row.
+
+        Fixture user_conv = (40, 20, 40, 100):
+          - chess-score = (40 + 10) / 100 = 0.50
+          - chess-score-variance = (40 + 5) / 100 − 0.25 = 0.20
+          - headline-rate (win) variance = 0.40 * 0.60 = 0.24
+        These differ by 0.04, which propagates into a measurably different
+        SE_diff and CI half-width.
+
+        Construct a 1-active-bucket-but-not-gated scenario? n_active < 2 gates
+        the sig fields. Use a 2-active-bucket case (Conv + Recov; Parity empty
+        on opp side so only Conv + Recov are active) and pin the CI half-width
+        against the manually computed headline-rate-formula SE.
+        """
+        user_conv = (40, 20, 40, 100)  # Conv rate 0.40, win-var 0.24
+        opp_conv = (40, 20, 40, 100)  # symmetric -> opp_rate = 0.60, var 0.24
+        # Parity / Recov: keep simple — also active and symmetric so the
+        # Conv-headline-vs-chess-score distinction is the only thing changing
+        # CI width.
+        user_recov = (60, 20, 20, 100)  # Recov rate 0.80, save-var 0.16
+        opp_recov = (60, 20, 20, 100)  # symmetric, opp_rate 0.20, var 0.16
+        # Use empty parity rows so only Conv + Recov are active (n_active=2,
+        # passes the n_active>=2 sig gate).
+        empty = (0, 0, 0, 0)
+        skill, opp_skill, p_value, ci_low, ci_high = compute_skill_diff_test(
+            conv_row=user_conv,
+            parity_row=empty,
+            recov_row=user_recov,
+            opp_conv_row=opp_conv,
+            opp_parity_row=empty,
+            opp_recov_row=opp_recov,
+        )
+        # Both buckets symmetric -> opp side mirrors user side after invert.
+        # Conv: user 0.40, opp 1 - 0.40 = 0.60. Recov: user 0.80, opp 1 - 0.80 = 0.20.
+        # Skill = (0.40 + 0.80) / 2 = 0.60. Opp_skill = (0.60 + 0.20) / 2 = 0.40.
+        # Diff = 0.20. n_active = 2; opp Ns are 100 (>= 10) -> sig fields populated.
+        assert skill == pytest.approx(0.60, abs=1e-9)
+        assert opp_skill == pytest.approx(0.40, abs=1e-9)
+        assert p_value is not None
+        assert ci_low is not None and ci_high is not None
+
+        # Expected SE under the HEADLINE-RATE formula:
+        # SE_user = sqrt(0.24/100 + 0.16/100) / 2 = sqrt(0.004) / 2
+        # SE_opp = same by symmetry (Var(1-X) = Var(X)).
+        # SE_diff = sqrt(2 * (sqrt(0.004)/2)^2) = sqrt(2 * 0.001) = sqrt(0.002).
+        expected_se_user = math.sqrt(0.24 / 100 + 0.16 / 100) / 2
+        expected_se_opp = expected_se_user
+        expected_se_diff = math.sqrt(expected_se_user**2 + expected_se_opp**2)
+        expected_half_width = CI_Z_95 * expected_se_diff
+        observed_half_width = (ci_high - ci_low) / 2.0
+        assert observed_half_width == pytest.approx(expected_half_width, rel=1e-9)
+
+        # Sanity: had the implementation used chess-score variance on Conv
+        # (0.20 instead of 0.24), SE_user would have been:
+        #   SE_user_wrong = sqrt(0.20/100 + 0.16/100) / 2 = sqrt(0.0036) / 2
+        # which is strictly smaller. Distinguish:
+        wrong_se_user = math.sqrt(0.20 / 100 + 0.16 / 100) / 2
+        wrong_se_diff = math.sqrt(2 * wrong_se_user**2)
+        wrong_half_width = CI_Z_95 * wrong_se_diff
+        # The two CI half-widths must NOT be equal — confirms the helper used
+        # the headline-rate variance (not the chess-score variance) for Conv.
+        assert observed_half_width != pytest.approx(wrong_half_width, rel=1e-6)
+
+
+# --- compute_per_bucket_diff_test (Phase 86 Plan 1 Task 2) ----------------
+# Wald-z on `userRate - opponentRate` for a single Conv/Parity/Recov bucket.
+# Mirror identity: opp_rate = 1 - userRate(opp_row), inverted internally.
+# Strict opp-side gate at opp_row.N < CONFIDENCE_MIN_N = 10 per D-05.
+
+
+class TestComputePerBucketDiffTest:
+    """compute_per_bucket_diff_test(bucket, user_row, opp_row) ->
+    (p_value, ci_low, ci_high). Strict opp-side N>=10 gate (D-05).
+    Parity self-mirror (opp_row IS the user parity row) MUST produce
+    diff = 2*user_rate - 1, NOT 0 (Phase 86 plan-checker BLOCKER 1)."""
+
+    def test_conversion_symmetric_diff_zero(self) -> None:
+        """User Conv (W=L=10, D=0) vs symmetric opp (W=L=10, D=0):
+        user_rate = 10/20 = 0.5; opp_rate = 1 - 10/20 = 0.5; diff = 0.
+        SE_diff > 0 -> p_value ≈ 1 (z = 0)."""
+        user_row = (10, 0, 10, 20)
+        opp_row = (10, 0, 10, 20)
+        p_value, ci_low, ci_high = compute_per_bucket_diff_test("conversion", user_row, opp_row)
+        assert p_value is not None
+        assert p_value == pytest.approx(1.0, abs=1e-9)
+        assert ci_low is not None and ci_high is not None
+        assert ci_low <= 0.0 <= ci_high
+
+    def test_conversion_asymmetric_significant(self) -> None:
+        """User Conv (70, 0, 30, 100) -> user_rate = 0.70. Opp_row mirror
+        (50, 0, 50, 100) -> userRate(opp) = 0.50 -> opp_rate = 1 - 0.50 = 0.50.
+        diff = 0.20, n=100 each -> p << 0.05."""
+        p_value, ci_low, ci_high = compute_per_bucket_diff_test(
+            "conversion",
+            user_row=(70, 0, 30, 100),
+            opp_row=(50, 0, 50, 100),
+        )
+        assert p_value is not None and p_value < 0.05
+        assert ci_low is not None and ci_high is not None
+        # CI midpoint = diff = 0.20.
+        assert (ci_low + ci_high) / 2.0 == pytest.approx(0.20, abs=1e-9)
+        assert ci_low > 0.0
+
+    def test_parity_self_mirror_produces_nontrivial_diff(self) -> None:
+        """Phase 86 plan-checker BLOCKER 1 regression: parity bucket's mirror
+        is parity itself (MIRROR_BUCKET['parity'] = 'parity'). When opp_row IS
+        the same parity row as user_row, diff = 2*user_rate - 1, NOT 0.
+
+        Concretely: user_row = (60, 20, 20, 100) -> user_rate = 0.70.
+        opp_row = SAME row -> userRate(opp_row) = 0.70 -> opp_rate = 1 - 0.70 = 0.30.
+        diff = 0.40, NOT 0. p_value << 0.001 at n=100.
+
+        Without the headline-rate identity (`oppRate = 1 - userRate(opp_row)`),
+        a naive "chess-score on two independent cohorts" approach would have
+        produced diff = (W+0.5D)/N − (W+0.5D)/N = 0 for self-mirror, hiding
+        the signal entirely.
+        """
+        row = (60, 20, 20, 100)
+        p_value, ci_low, ci_high = compute_per_bucket_diff_test("parity", user_row=row, opp_row=row)
+        assert p_value is not None
+        assert p_value < 0.001
+        assert ci_low is not None and ci_high is not None
+        # Diff is recoverable from CI midpoint = diff.
+        observed_diff = (ci_low + ci_high) / 2.0
+        assert observed_diff == pytest.approx(0.40, abs=1e-9)
+        assert ci_low > 0.20
+
+    def test_recovery_save_rate_vs_one_minus_conv(self) -> None:
+        """Recovery bucket: user_row (50, 30, 20, 100) -> user_rate = 0.80
+        (save rate). opp_row (20, 30, 50, 100) -> userRate = 0.50 -> opp_rate
+        = 0.50. diff = 0.30, n=100 -> p << 0.05."""
+        p_value, ci_low, ci_high = compute_per_bucket_diff_test(
+            "recovery",
+            user_row=(50, 30, 20, 100),
+            opp_row=(20, 30, 50, 100),
+        )
+        assert p_value is not None and p_value < 0.05
+        assert ci_low is not None and ci_high is not None
+        assert (ci_low + ci_high) / 2.0 == pytest.approx(0.30, abs=1e-9)
+        assert ci_low > 0.0
+
+    def test_sparse_opp_returns_none(self) -> None:
+        """D-05 strict opp-side gate: opp_row.N=9 (< CONFIDENCE_MIN_N=10) ->
+        all three fields None, even with user_row.N=100."""
+        p_value, ci_low, ci_high = compute_per_bucket_diff_test(
+            "conversion",
+            user_row=(70, 0, 30, 100),
+            opp_row=(5, 0, 4, 9),
+        )
+        assert p_value is None
+        assert ci_low is None
+        assert ci_high is None
+
+    def test_user_n_zero_returns_none(self) -> None:
+        """No user-side games -> all three None (early-return)."""
+        p_value, ci_low, ci_high = compute_per_bucket_diff_test(
+            "conversion",
+            user_row=(0, 0, 0, 0),
+            opp_row=(50, 0, 50, 100),
+        )
+        assert p_value is None
+        assert ci_low is None
+        assert ci_high is None
