@@ -8,7 +8,6 @@ import {
   MIN_GAMES_FOR_RELIABLE_STATS,
   UNRELIABLE_OPACITY,
   ZONE_DANGER,
-  ZONE_NEUTRAL,
   ZONE_SUCCESS,
 } from '@/lib/theme';
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
@@ -70,9 +69,9 @@ function formatDiffPct(userR: number, oppR: number): string {
   return `${pct >= 0 ? '+' : ''}${pct}%`;
 }
 
-function diffColor(diff: number): string {
+function diffColor(diff: number): string | undefined {
   if (diff >= NEUTRAL_ZONE_MAX) return ZONE_SUCCESS;
-  if (diff >= NEUTRAL_ZONE_MIN) return ZONE_NEUTRAL;
+  if (diff >= NEUTRAL_ZONE_MIN) return undefined;
   return ZONE_DANGER;
 }
 
@@ -147,7 +146,7 @@ function EndgameCategoryRowDesktop({
         {isEmpty ? (
           ''
         ) : (
-          <span className="font-semibold" style={{ color: diffColor(diff) }}>
+          <span className="font-semibold" style={diffColor(diff) ? { color: diffColor(diff) } : undefined}>
             {formatDiffPct(userR, oppR)}
           </span>
         )}
@@ -236,7 +235,7 @@ function EndgameCategoryCardMobile({
               <span className="text-muted-foreground">Gap: </span>
               <span
                 className="font-semibold"
-                style={{ color: diffColor(diff) }}
+                style={diffColor(diff) ? { color: diffColor(diff) } : undefined}
                 data-testid={`endgame-category-card-${cat.slug}-diff`}
               >
                 {formatDiffPct(userR, oppR)}

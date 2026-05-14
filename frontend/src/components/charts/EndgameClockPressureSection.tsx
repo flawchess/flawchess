@@ -170,22 +170,22 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
             row.user_avg_pct !== null && row.opp_avg_pct !== null
               ? row.user_avg_pct - row.opp_avg_pct
               : null;
-          const diffColor =
+          const diffColor: string | undefined =
             pctDiff === null
               ? undefined
               : pctDiff > NEUTRAL_PCT_THRESHOLD
                 ? ZONE_SUCCESS
                 : pctDiff < -NEUTRAL_PCT_THRESHOLD
                   ? ZONE_DANGER
-                  : ZONE_NEUTRAL;
+                  : undefined;
 
           const timeoutRate = row.net_timeout_rate;
-          const timeoutColor =
+          const timeoutColor: string | undefined =
             timeoutRate > NEUTRAL_TIMEOUT_THRESHOLD
               ? ZONE_SUCCESS
               : timeoutRate < -NEUTRAL_TIMEOUT_THRESHOLD
                 ? ZONE_DANGER
-                : ZONE_NEUTRAL;
+                : undefined;
 
           return { row, diffColor, timeoutColor };
         });
@@ -199,22 +199,22 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
           aggregate !== null && aggregate.userAvgPct !== null && aggregate.oppAvgPct !== null
             ? aggregate.userAvgPct - aggregate.oppAvgPct
             : null;
-        const aggregateDiffColor =
+        const aggregateDiffColor: string | undefined =
           aggregatePctDiff === null
             ? undefined
             : aggregatePctDiff > NEUTRAL_PCT_THRESHOLD
               ? ZONE_SUCCESS
               : aggregatePctDiff < -NEUTRAL_PCT_THRESHOLD
                 ? ZONE_DANGER
-                : ZONE_NEUTRAL;
-        const aggregateTimeoutColor =
+                : undefined;
+        const aggregateTimeoutColor: string | undefined =
           aggregate === null
             ? undefined
             : aggregate.netTimeoutRate > NEUTRAL_TIMEOUT_THRESHOLD
               ? ZONE_SUCCESS
               : aggregate.netTimeoutRate < -NEUTRAL_TIMEOUT_THRESHOLD
                 ? ZONE_DANGER
-                : ZONE_NEUTRAL;
+                : undefined;
 
         return (
           <>
@@ -259,7 +259,7 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
                       </td>
                       <td
                         className="py-1.5 pl-2 text-right text-sm tabular-nums"
-                        style={{ color: timeoutColor }}
+                        style={timeoutColor ? { color: timeoutColor } : undefined}
                       >
                         {formatNetTimeoutRate(row.net_timeout_rate)}
                       </td>
@@ -337,7 +337,7 @@ export function EndgameClockPressureSection({ data }: EndgameClockPressureSectio
                   </div>
                   <div className="flex items-baseline justify-between text-sm">
                     <span className="text-muted-foreground">Net timeout rate</span>
-                    <span className="tabular-nums" style={{ color: timeoutColor }}>
+                    <span className="tabular-nums" style={timeoutColor ? { color: timeoutColor } : undefined}>
                       {formatNetTimeoutRate(row.net_timeout_rate)}
                     </span>
                   </div>

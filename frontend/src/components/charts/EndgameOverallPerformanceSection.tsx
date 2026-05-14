@@ -31,7 +31,7 @@ import {
   SCORE_GAP_NEUTRAL_MAX,
   SCORE_GAP_NEUTRAL_MIN,
 } from '@/generated/endgameZones';
-import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type {
   EndgamePerformanceResponse,
   ScoreGapMaterialResponse,
@@ -46,13 +46,13 @@ import { deriveLevel } from './EndgameOverallShared';
 // 260514: Achievable (±5pp) and Endgame (±10pp) Score Gaps now use distinct
 // bands — see reports/benchmarks-latest.md §3.1.5. Helper is parameterized
 // so both call sites share the zone logic but pass their own band.
-// Score-gap result is always tinted by zone (red / blue / green), never
-// default-white — the difference reads as a zone signal regardless of
-// confidence so the user always sees where they land (D-04).
-function gapZoneColor(value: number, neutralMin: number, neutralMax: number): string {
+// Score-gap numbers are tinted red or green only — the neutral band uses the
+// default foreground color to reduce visual noise and keep attention on the
+// outliers.
+function gapZoneColor(value: number, neutralMin: number, neutralMax: number): string | undefined {
   if (value < neutralMin) return ZONE_DANGER;
   if (value >= neutralMax) return ZONE_SUCCESS;
-  return ZONE_NEUTRAL;
+  return undefined;
 }
 
 export function EndgameOverallPerformanceSection({
