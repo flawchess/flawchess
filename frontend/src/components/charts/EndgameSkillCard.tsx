@@ -62,9 +62,12 @@ export function EndgameSkillCard({
   ciHigh,
   tileTestId,
 }: EndgameSkillCardProps) {
+  // Backend invariant (compute_skill_diff_test): skill and oppSkill are both
+  // null (zero active buckets) or both numbers — never one without the other.
+  // So `hasSkill` alone implies `oppSkill !== null`, and we just need the
+  // sample-size floor on top.
   const hasSkill = skill !== null;
-  const hasOpponent =
-    skill !== null && oppSkill !== null && totalGames >= MIN_OPPONENT_BASELINE_GAMES;
+  const hasOpponent = hasSkill && totalGames >= MIN_OPPONENT_BASELINE_GAMES;
 
   const diff = hasOpponent ? (skill as number) - (oppSkill as number) : 0;
 
