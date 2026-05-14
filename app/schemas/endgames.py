@@ -176,6 +176,28 @@ class EndgamePerformanceResponse(BaseModel):
     entry_expected_score_ci_high: float | None = None
     """Upper bound of 95% CI on entry_expected_score. None when entry_expected_score_n < 2."""
 
+    # Phase 85.1 (SEC1-10): paired one-sample z-test of per-game
+    # (actual_score - expected_score) across the same bucket_rows cohort as
+    # entry_expected_score. Server-authoritative — replaces the previous
+    # frontend derivation `endgame_score - entry_expected_score`.
+    # Defaults match the Phase 83 D-11 safe-empty pattern so existing call
+    # sites (older tests) construct the response without explicit args.
+    achievable_score_gap: float = 0.0
+    """Mean over the surviving bucket_rows of (actual_score_i - expected_score_i).
+    Always-present scalar (0.0 when n=0). Same cohort filter as entry_expected_score."""
+
+    achievable_score_gap_p_value: float | None = None
+    """Paired one-sample two-sided z-test p-value of mean diff vs 0.
+    None when surviving n < PVALUE_RELIABILITY_MIN_N (=10)."""
+
+    achievable_score_gap_ci_low: float | None = None
+    """Lower bound of 95% Wald-z CI on achievable_score_gap.
+    None when surviving n < 2 (Bessel variance undefined)."""
+
+    achievable_score_gap_ci_high: float | None = None
+    """Upper bound of 95% Wald-z CI on achievable_score_gap.
+    None when surviving n < 2 (Bessel variance undefined)."""
+
 
 class EndgameTimelinePoint(BaseModel):
     """Single data point in the per-type rolling-window time series, sampled weekly.
@@ -323,6 +345,22 @@ class ScoreGapMaterialResponse(BaseModel):
     material_rows: list[MaterialRow]  # 3 rows: conversion / parity / recovery
     timeline: list[ScoreGapTimelinePoint]
     timeline_window: int
+
+    # Phase 85.1 (SEC1-08, SEC1-09): independent two-sample z-test on the
+    # chess-score difference between endgame and non-endgame cohorts.
+    # p_value is gated to None when min(endgame_wdl.total, non_endgame_wdl.total)
+    # < PVALUE_RELIABILITY_MIN_N (=10); CI bounds are gated when min n < 2.
+    # Defaults are None so existing tests that construct ScoreGapMaterialResponse
+    # without these fields keep working.
+    score_difference_p_value: float | None = None
+    """Two-sided p-value of (endgame_score - non_endgame_score) vs 0.
+    None when min(endgame_wdl.total, non_endgame_wdl.total) < PVALUE_RELIABILITY_MIN_N (=10)."""
+
+    score_difference_ci_low: float | None = None
+    """Lower bound of 95% Wald-z CI on score_difference. None when min(...) < 2."""
+
+    score_difference_ci_high: float | None = None
+    """Upper bound of 95% Wald-z CI on score_difference. None when min(...) < 2."""
 
 
 class ClockStatsRow(BaseModel):

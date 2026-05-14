@@ -180,6 +180,14 @@ EVAL_ADVANTAGE_THRESHOLD = 100
 # definition for consistency with the entry_eval bullet (see SEED-014 D-07).
 EVAL_CLIP_MAX_CP = 2000
 
+# Phase 85.1 (SEC1-08 / IN-01 carry-forward): n-gate threshold below which any
+# p-value is too unstable to surface to the wire. Centralises the previous bare
+# `10` occurrences inside `_get_endgame_performance_from_rows` (4 wire-format
+# gates) and the new sites Phase 85.1 Plan 02 adds for the score-difference and
+# paired-difference tests. CLAUDE.md "No magic numbers" rule — see Phase 85
+# REVIEW IN-01 for the carry-forward.
+PVALUE_RELIABILITY_MIN_N: int = 10
+
 
 def _classify_endgame_bucket(
     eval_cp: int | None,
@@ -1741,7 +1749,7 @@ def _get_endgame_performance_from_rows(
     # Pitfall 5: gate the wire-format p-value to None when below the reliability
     # threshold (D-11). The helper returns 1.0 in that branch; surfacing 1.0 to
     # the API would conflate "no data" with "definitely consistent with H0".
-    entry_eval_p_value: float | None = p_eval_raw if eval_n >= 10 else None
+    entry_eval_p_value: float | None = p_eval_raw if eval_n >= PVALUE_RELIABILITY_MIN_N else None
     entry_eval_mean_pawns = mean_cp / 100.0 if eval_n > 0 else 0.0
     entry_eval_ci_low_pawns: float | None
     entry_eval_ci_high_pawns: float | None
@@ -1757,7 +1765,9 @@ def _get_endgame_performance_from_rows(
     _conf_s, p_score_raw, _se = compute_confidence_bucket(
         endgame_wdl.wins, endgame_wdl.draws, endgame_wdl.losses, endgame_wdl.total
     )
-    endgame_score_p_value: float | None = p_score_raw if endgame_wdl.total >= 10 else None
+    endgame_score_p_value: float | None = (
+        p_score_raw if endgame_wdl.total >= PVALUE_RELIABILITY_MIN_N else None
+    )
 
     # Mirror of endgame_score_p_value for the Section 1 "Games without Endgame" card (Phase 85 D-01).
     _conf_ns, p_non_score_raw, _se_ns = compute_confidence_bucket(
@@ -1767,7 +1777,7 @@ def _get_endgame_performance_from_rows(
         non_endgame_wdl.total,
     )
     non_endgame_score_p_value: float | None = (
-        p_non_score_raw if non_endgame_wdl.total >= 10 else None
+        p_non_score_raw if non_endgame_wdl.total >= PVALUE_RELIABILITY_MIN_N else None
     )
 
     # Phase 83 Plan 2 (D-04..D-07, D-21): Stockfish-baseline expected score
@@ -1799,8 +1809,11 @@ def _get_endgame_performance_from_rows(
     # Wilson sig test vs 50% via the (score, n) sibling helper. Single Wilson
     # code path with compute_confidence_bucket (memory feedback_wilson_chess_score.md).
     _conf_x, p_ex_raw, _se_ex = compute_score_confidence_from_mean(entry_expected_score, ex_n)
-    # Same n >= 10 wire-format gate as entry_eval_p_value / endgame_score_p_value.
-    entry_expected_score_p_value: float | None = p_ex_raw if ex_n >= 10 else None
+    # Same wire-format gate as entry_eval_p_value / endgame_score_p_value
+    # (PVALUE_RELIABILITY_MIN_N, currently 10 — REVIEW IN-01 carry-forward).
+    entry_expected_score_p_value: float | None = (
+        p_ex_raw if ex_n >= PVALUE_RELIABILITY_MIN_N else None
+    )
     entry_expected_score_ci_low: float | None
     entry_expected_score_ci_high: float | None
     if ex_n >= 2:
