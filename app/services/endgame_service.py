@@ -769,8 +769,21 @@ def _compute_score_gap_material(
     Returns:
         ScoreGapMaterialResponse with score gap and 3-row material breakdown.
     """
-    endgame_score = _wdl_to_score(endgame_wdl)
-    non_endgame_score = _wdl_to_score(non_endgame_wdl)
+    # Phase 85.1 WR-01: use raw integer W/D/N counts (not the rounded
+    # win_pct/draw_pct from _build_wdl_summary) so the response field shares a
+    # single source of truth with the CI midpoint computed by
+    # compute_score_difference_test below. _wdl_to_score rounds to 0.1% before
+    # dividing, which could disagree with the CI center by up to ~0.001.
+    endgame_score = (
+        (endgame_wdl.wins + 0.5 * endgame_wdl.draws) / endgame_wdl.total
+        if endgame_wdl.total > 0
+        else 0.0
+    )
+    non_endgame_score = (
+        (non_endgame_wdl.wins + 0.5 * non_endgame_wdl.draws) / non_endgame_wdl.total
+        if non_endgame_wdl.total > 0
+        else 0.0
+    )
     score_difference = endgame_score - non_endgame_score
 
     # Phase 85.1 (SEC1-08 / SEC1-09): independent two-sample z-test on the
