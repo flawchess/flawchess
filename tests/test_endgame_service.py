@@ -4349,3 +4349,61 @@ class TestEntryExpectedScore(TestEntryEvalAggregation):
         # Phase 83 cohort: mate INCLUDED, NULL excluded, |eval_cp| >= 2000 clipped.
         # 8 normal + 1 mate + 0 clipped + 0 null = 9.
         assert resp.entry_expected_score_n == 9
+
+
+class TestPValueReliabilityMinNConstantAndSchemaDefaults:
+    """Phase 85.1 Plan 02 Task 1 — n-gate constant + new schema fields (defaults only).
+
+    Task 1 is a pure scaffolding step: extracts PVALUE_RELIABILITY_MIN_N to replace
+    the four bare `10` occurrences (REVIEW IN-01 carry-forward) and adds the new
+    p-value / CI / mean fields to ScoreGapMaterialResponse + EndgamePerformanceResponse
+    with safe defaults. Wiring of real values is Task 2's job.
+    """
+
+    def test_pvalue_reliability_min_n_constant_exposed(self) -> None:
+        """PVALUE_RELIABILITY_MIN_N is exported from endgame_service and equals 10
+        (matches the previous bare-10 wire-format gate)."""
+        from app.services import endgame_service
+
+        assert hasattr(endgame_service, "PVALUE_RELIABILITY_MIN_N")
+        assert endgame_service.PVALUE_RELIABILITY_MIN_N == 10
+
+    def test_endgame_performance_response_defaults_for_new_fields(self) -> None:
+        """EndgamePerformanceResponse carries the 4 new achievable_* fields with
+        documented defaults (mean=0.0 always-present; p/CI None below gate)."""
+        from app.schemas.endgames import (
+            EndgamePerformanceResponse,
+            EndgameWDLSummary,
+        )
+
+        empty_wdl = EndgameWDLSummary(
+            wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0
+        )
+        resp = EndgamePerformanceResponse(
+            endgame_wdl=empty_wdl,
+            non_endgame_wdl=empty_wdl,
+            endgame_win_rate=0.0,
+        )
+        # Always-present mean (matches the entry_expected_score / entry_eval_mean_pawns pattern).
+        assert resp.achievable_score_gap == 0.0
+        # Gated p/CI default to None (mirror entry_expected_score_p_value / ci_*).
+        assert resp.achievable_score_gap_p_value is None
+        assert resp.achievable_score_gap_ci_low is None
+        assert resp.achievable_score_gap_ci_high is None
+
+    def test_score_gap_material_response_defaults_for_new_fields(self) -> None:
+        """ScoreGapMaterialResponse carries the 3 new score_difference_* fields,
+        all None by default (matches the entry_*_p_value / ci_* convention)."""
+        from app.schemas.endgames import ScoreGapMaterialResponse
+
+        resp = ScoreGapMaterialResponse(
+            endgame_score=0.0,
+            non_endgame_score=0.0,
+            score_difference=0.0,
+            material_rows=[],
+            timeline=[],
+            timeline_window=0,
+        )
+        assert resp.score_difference_p_value is None
+        assert resp.score_difference_ci_low is None
+        assert resp.score_difference_ci_high is None
