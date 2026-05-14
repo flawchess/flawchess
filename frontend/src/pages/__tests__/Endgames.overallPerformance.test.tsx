@@ -61,8 +61,8 @@ vi.mock('@/components/charts/EndgameWDLChart', () => ({
 vi.mock('@/components/charts/EndgameConvRecovChart', () => ({
   EndgameConvRecovChart: () => <div data-testid="mock-endgame-conv-recov-chart" />,
 }));
-vi.mock('@/components/charts/EndgameScoreGapSection', () => ({
-  EndgameScoreGapSection: () => <div data-testid="mock-endgame-score-gap-section" />,
+vi.mock('@/components/charts/EndgameMetricsSection', () => ({
+  EndgameMetricsSection: () => <div data-testid="mock-endgame-metrics-section" />,
 }));
 vi.mock('@/components/charts/EndgameClockPressureSection', () => ({
   EndgameClockPressureSection: () => <div data-testid="mock-endgame-clock-pressure-section" />,

@@ -15,7 +15,8 @@
     "src/components/ui/command.tsx",
     "src/components/ui/popover.tsx",
     "src/components/ui/input-group.tsx",
-    "src/data/trollOpenings.ts"
+    "src/data/trollOpenings.ts",
+    "src/generated/endgameZones.ts"
   ],
   "ignoreBinaries": ["cloudflared"]
 }
