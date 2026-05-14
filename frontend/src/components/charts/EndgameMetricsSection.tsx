@@ -45,10 +45,14 @@ const METRIC_EXPLANATIONS: Record<MaterialBucket, string> = {
     'Your save rate (wins + draws count) when you entered the endgame with an eval ≤ −1.0, compared to your opponents in the mirror bucket. Filter-responsive.',
 };
 
+// Popover names describe the BULLET-CHART metric (signed userRate − oppRate
+// difference), distinct from the gauge labels which name the headline rate
+// itself (Conversion / Parity / Recovery). The gauge shows your absolute rate;
+// the popover and bullet chart show your gap vs the mirror-bucket opponent.
 const METRIC_NAMES: Record<MaterialBucket, string> = {
-  conversion: 'Conversion',
-  parity: 'Parity',
-  recovery: 'Recovery',
+  conversion: 'Conversion Difference',
+  parity: 'Parity Difference',
+  recovery: 'Recovery Difference',
 };
 
 const TILE_TESTIDS: Record<MaterialBucket, string> = {
