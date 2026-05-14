@@ -1,21 +1,18 @@
 /**
  * Phase 85 — Score Gap row (label + result + bullet chart).
  *
- * Used for both the *Endgame Score Gap* (with − without) and *Endgame Score
- * Loss* (with − achievable) rows in the Score Differences card. Both share
- * the same bullet-chart settings (center=0, neutral band from
- * SCORE_GAP_NEUTRAL_MIN/MAX, domain=SCORE_GAP_DOMAIN) and the same coloring
- * rule: the result is colored by zone regardless of confidence so the user
- * always sees where they land (D-04).
+ * Used for both the *Endgame Score Gap* (with − without) and *Achievable Score
+ * Gap* (actual − achievable) rows in the Score Differences card. Both share
+ * the same bullet-chart shell (center=0, domain=SCORE_GAP_DOMAIN) and the
+ * same coloring rule (zone tint regardless of confidence, per D-04), but the
+ * neutral band now differs per row (Achievable ±5pp vs Endgame ±10pp — see
+ * 260514-kei). The band is supplied by the caller via `neutralMin`/`neutralMax`
+ * to keep a single source of truth for which row gets which band.
  */
 
 import type { ReactNode } from 'react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import {
-  SCORE_GAP_NEUTRAL_MAX,
-  SCORE_GAP_NEUTRAL_MIN,
-} from '@/generated/endgameZones';
 
 import { SCORE_GAP_DOMAIN } from './EndgameOverallShared';
 
@@ -26,6 +23,12 @@ interface ScoreGapRowProps {
   resultColor: string | undefined;
   valueTestId: string;
   ariaLabel: string;
+  /** Signed neutral-band lower bound in score-gap units ([−1, +1]).
+   *  Caller-supplied so each row picks its own band (no shared constant). */
+  neutralMin: number;
+  /** Signed neutral-band upper bound in score-gap units ([−1, +1]).
+   *  Caller-supplied so each row picks its own band (no shared constant). */
+  neutralMax: number;
   /** Optional info popover trigger rendered at the end of the row (after the
    *  result value). Use InfoPopover from @/components/ui/info-popover. */
   tooltip?: ReactNode;
@@ -46,6 +49,8 @@ export function ScoreGapRow({
   resultColor,
   valueTestId,
   ariaLabel,
+  neutralMin,
+  neutralMax,
   tooltip,
   valueClassName,
   ciLow,
@@ -68,8 +73,8 @@ export function ScoreGapRow({
         <MiniBulletChart
           value={value}
           center={0}
-          neutralMin={SCORE_GAP_NEUTRAL_MIN}
-          neutralMax={SCORE_GAP_NEUTRAL_MAX}
+          neutralMin={neutralMin}
+          neutralMax={neutralMax}
           domain={SCORE_GAP_DOMAIN}
           barColor="neutral"
           ariaLabel={ariaLabel}

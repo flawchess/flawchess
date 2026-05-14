@@ -26,6 +26,8 @@ import { useRef } from 'react';
 
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import {
+  ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX,
+  ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN,
   SCORE_GAP_NEUTRAL_MAX,
   SCORE_GAP_NEUTRAL_MIN,
 } from '@/generated/endgameZones';
@@ -41,12 +43,15 @@ import { EntryCard } from './EndgameOverallEntryCard';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
 import { deriveLevel } from './EndgameOverallShared';
 
-// Endgame Score Gap / Achievable Score Gap result is always tinted by zone (red / blue / green),
-// never default-white. The difference reads as a zone signal regardless of
-// confidence so the user always sees where they land.
-function gapZoneColor(value: number): string {
-  if (value < SCORE_GAP_NEUTRAL_MIN) return ZONE_DANGER;
-  if (value >= SCORE_GAP_NEUTRAL_MAX) return ZONE_SUCCESS;
+// 260514: Achievable (±5pp) and Endgame (±10pp) Score Gaps now use distinct
+// bands — see reports/benchmarks-latest.md §3.1.5. Helper is parameterized
+// so both call sites share the zone logic but pass their own band.
+// Score-gap result is always tinted by zone (red / blue / green), never
+// default-white — the difference reads as a zone signal regardless of
+// confidence so the user always sees where they land (D-04).
+function gapZoneColor(value: number, neutralMin: number, neutralMax: number): string {
+  if (value < neutralMin) return ZONE_DANGER;
+  if (value >= neutralMax) return ZONE_SUCCESS;
   return ZONE_NEUTRAL;
 }
 
@@ -66,7 +71,11 @@ export function EndgameOverallPerformanceSection({
   const withoutShare = totalGames > 0 ? data.non_endgame_wdl.total / totalGames : 0;
   const withShare = totalGames > 0 ? data.endgame_wdl.total / totalGames : 0;
 
-  const gapColor = gapZoneColor(scoreGap.score_difference);
+  const gapColor = gapZoneColor(
+    scoreGap.score_difference,
+    SCORE_GAP_NEUTRAL_MIN,
+    SCORE_GAP_NEUTRAL_MAX,
+  );
 
   // Achievable Score Gap: how much the actual endgame score fell short of (or
   // exceeded) the achievable score expected from the entry eval.
@@ -77,7 +86,11 @@ export function EndgameOverallPerformanceSection({
   const achievableGapPositive = achievableGapValue >= 0;
   const achievableGapFormatted =
     (achievableGapPositive ? '+' : '') + `${Math.round(achievableGapValue * 100)}%`;
-  const achievableGapColor = gapZoneColor(achievableGapValue);
+  const achievableGapColor = gapZoneColor(
+    achievableGapValue,
+    ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN,
+    ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX,
+  );
 
   // Sample sizes for the two paired/two-sample tests powering the gap popovers.
   // Achievable Score Gap: paired-diff over endgame games with non-null entry
@@ -163,6 +176,8 @@ export function EndgameOverallPerformanceSection({
               resultColor={achievableGapColor}
               valueTestId="achievable-score-gap-value"
               ariaLabel={`Achievable Score Gap: ${achievableGapFormatted}`}
+              neutralMin={ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN}
+              neutralMax={ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX}
               ciLow={data.achievable_score_gap_ci_low ?? undefined}
               ciHigh={data.achievable_score_gap_ci_high ?? undefined}
               tooltip={
@@ -176,8 +191,8 @@ export function EndgameOverallPerformanceSection({
                   level={achievableGapLevel}
                   pValue={data.achievable_score_gap_p_value}
                   vocabulary="score"
-                  neutralLower={SCORE_GAP_NEUTRAL_MIN}
-                  neutralUpper={SCORE_GAP_NEUTRAL_MAX}
+                  neutralLower={ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN}
+                  neutralUpper={ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX}
                   baselineLabel="0%"
                   methodology={
                     <>
@@ -198,6 +213,8 @@ export function EndgameOverallPerformanceSection({
               resultColor={gapColor}
               valueTestId="endgame-score-gap-value"
               ariaLabel={`Endgame Score Gap: ${gapFormatted}`}
+              neutralMin={SCORE_GAP_NEUTRAL_MIN}
+              neutralMax={SCORE_GAP_NEUTRAL_MAX}
               valueClassName="text-lg"
               ciLow={scoreGap.score_difference_ci_low ?? undefined}
               ciHigh={scoreGap.score_difference_ci_high ?? undefined}
