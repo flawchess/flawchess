@@ -412,10 +412,10 @@ export function EndgamesPage() {
                       means you perform worse once games reach an endgame.
                     </p>
                     <p>
-                      <strong>Achievable Score Gap:</strong> your Endgame Score minus the Achievable Score
-                      from your endgame-entry positions. Positive means you converted your endgame entry positions
-                      better than a 2300+ rated rapid player would on average; negative means you converted them
-                      worse.
+                      <strong>Achievable Score Gap:</strong> your average per-game score minus the achievable
+                      score from each endgame-entry position. Positive means you converted your endgame entry
+                      positions better than a 2300+ rated rapid player would on average; negative means you
+                      converted them worse.
                     </p>
                     <p>
                       <strong>Color Zones:</strong> the blue band on each gauge and chart marks the typical range,

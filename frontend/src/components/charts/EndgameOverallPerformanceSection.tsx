@@ -150,11 +150,11 @@ export function EndgameOverallPerformanceSection({
                   testId="achievable-score-gap-info"
                 >
                   <p>
-                    Your Endgame Score minus the Achievable Score from your
-                    endgame-entry positions. Positive means you converted
-                    your endgame entry positions better than a 2300+ rated
-                    rapid player would on average; negative means you
-                    converted them worse.
+                    Your average per-game score minus the achievable score
+                    from each endgame-entry position. Positive means you
+                    converted your endgame entry positions better than a
+                    2300+ rated rapid player would on average; negative
+                    means you converted them worse.
                   </p>
                   <p>
                     The Achievable Score baseline comes from a Lichess
