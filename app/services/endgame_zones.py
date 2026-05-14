@@ -29,6 +29,7 @@ Window = Literal["all_time", "last_3mo"]
 
 MetricId = Literal[
     "score_gap",
+    "achievable_score_gap",        # 260514 split-out — dedicated band so 3.1.5 can tighten without affecting 3.1.6
     "entry_eval_pawns",            # Phase 82 D-04: new endgame_start_vs_end Tile 1
     "entry_expected_score",        # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",               # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
@@ -135,6 +136,19 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     "score_gap": ZoneSpec(
         typical_lower=-0.10,
         typical_upper=0.10,
+        direction="higher_is_better",
+    ),
+    # Achievable Score Gap (Card 3 Achievable row, signed 0.0-1.0 scale).
+    # Source: reports/benchmarks-latest.md §3.1.5 — pooled benchmark IQR
+    # [-3.9pp, +4.6pp] rounds cleanly to ±5pp. Split off from `score_gap`
+    # (260514-kei) because §3.1.6 (Endgame Score Gap) collapsed cleanly at
+    # ±10pp while §3.1.5 needed a tighter band: the 2400-cohort median sits
+    # at +3.5pp and would otherwise stay "typical blue" inside the old
+    # shared ±10pp band. Per-ELO stratification deferred (d=0.62 keep-
+    # separate verdict in the same §3.1.5).
+    "achievable_score_gap": ZoneSpec(
+        typical_lower=-0.05,
+        typical_upper=0.05,
         direction="higher_is_better",
     ),
     # entry_eval_pawns: average Stockfish eval at endgame entry, signed from

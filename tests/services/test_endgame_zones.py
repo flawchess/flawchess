@@ -207,9 +207,15 @@ class TestRegistrySanity:
         added — Lichess-sigmoid expected score at endgame entry over the user's
         cohort, surfaced as the "achievable score" row of the new Tile 1 (Plan
         83-03). Source: reports/benchmarks-2026-05-11.md §7.
+
+        260514-kei: `achievable_score_gap` (±0.05 band) added — dedicated band
+        for the Card 3 Achievable row so it can tighten to ±5pp without
+        affecting the Endgame Score Gap row (which stays on `score_gap` at
+        ±10pp). Source: reports/benchmarks-latest.md §3.1.5.
         """
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
+            "achievable_score_gap",
             "entry_eval_pawns",
             "entry_expected_score",
             "endgame_score",
