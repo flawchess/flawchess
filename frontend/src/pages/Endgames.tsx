@@ -23,7 +23,6 @@ import { EndgameMetricsSection } from '@/components/charts/EndgameMetricsSection
 import { EndgameTypeBreakdownSection } from '@/components/charts/EndgameTypeBreakdownSection';
 import {
   ENDGAME_CLASS_TO_SLUG,
-  ENDGAME_TYPE_DESCRIPTIONS,
   HIDDEN_ENDGAME_CLASSES,
 } from '@/lib/endgameMetrics';
 import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
@@ -547,44 +546,26 @@ export function EndgamesPage() {
                 side="bottom"
               >
                 <div className="space-y-2">
-                  {/* Taxonomy + composition: lifted from EndgameWDLChart.tsx:277-285. */}
                   <p>
                     Shows your win, draw, and loss percentages for each Endgame
-                    Type, along with your Conversion (win rate when entering
-                    with a clear advantage) and Recovery (save rate when
-                    entering with a clear disadvantage) rates per type. A single
-                    game can count toward multiple Endgame Types.
+                    Type, along with your Conversion and Recovery rates.
+                    A single game can count toward multiple Endgame
+                    Types.
                   </p>
-                  {/* Conv + Recov metric definitions: lifted from EndgameConvRecovChart.tsx:38-44. */}
                   <p>
-                    <strong>Conversion</strong>: your win rate in this Endgame
-                    Type when you entered with a Stockfish evaluation of +1.0
-                    or better. <strong>Recovery</strong>: your save rate (wins
-                    + draws) when you entered with a Stockfish evaluation of
-                    −1.0 or worse.
+                    <strong>Conversion</strong>: your win rate in this
+                    Endgame Type when you entered the Endgame Sequence with a Stockfish evaluation
+                    of +1.0 or better. <br/>
+                    <strong>Recovery</strong>: your save
+                    rate (wins + draws) when you entered the Endgame Sequence with a Stockfish
+                    evaluation of −1.0 or worse.
                   </p>
                   {/* Gauge bands explainer: lifted from EndgameConvRecovChart.tsx:45-49. */}
                   <p>
                     Gauge zones are per-type typical bands sourced from pooled
                     FlawChess benchmark data. Blue = typical for that type, red
-                    = below, green = above. Zones differ by type because each
-                    Endgame Type has its own natural distribution.
+                    = below, green = above.
                   </p>
-                  {/* Score bullet explainer (Phase 87 follow-up redesign). */}
-                  <p>
-                    The per-type Score bullet is your chess score (wins + ½
-                    draws) in this Endgame Type, tested against the 50%
-                    baseline. The whiskers show the 95% Wilson confidence
-                    interval; the value is colored only when the test is
-                    significant and the score sits outside the 45-55% neutral
-                    band. Hidden when fewer than 10 games are in this type.
-                  </p>
-                  {/* Per-type entries: lifted from EndgameWDLChart.tsx:287-291. */}
-                  <p><strong>Rook:</strong> {ENDGAME_TYPE_DESCRIPTIONS.rook}</p>
-                  <p><strong>Minor Piece:</strong> {ENDGAME_TYPE_DESCRIPTIONS.minor_piece}</p>
-                  <p><strong>Pawn:</strong> {ENDGAME_TYPE_DESCRIPTIONS.pawn}</p>
-                  <p><strong>Queen:</strong> {ENDGAME_TYPE_DESCRIPTIONS.queen}</p>
-                  <p><strong>Mixed:</strong> {ENDGAME_TYPE_DESCRIPTIONS.mixed}</p>
                 </div>
               </InfoPopover>
             </span>
