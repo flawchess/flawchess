@@ -77,6 +77,12 @@ class EndgameCategoryStats(BaseModel):
     loss_pct: float
     conversion: ConversionRecoveryStats  # Inline, not a separate section (D-10)
 
+    # Phase 87 follow-up: Wilson score-test p-value of this class's WDL vs 50%.
+    # Gated to None when `total < PVALUE_RELIABILITY_MIN_N`. Drives the per-card
+    # Score bullet sig-gating triple (n >= MIN_GAMES_FOR_RELIABLE_STATS AND
+    # isConfident(level) AND outside neutral band) in EndgameTypeCard.
+    score_p_value: float | None = None
+
 
 class EndgameStatsResponse(BaseModel):
     """Response for GET /api/endgames/stats.

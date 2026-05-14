@@ -410,6 +410,16 @@ def _aggregate_endgame_stats(
         # endgame_class is always a valid EndgameClass because _INT_TO_CLASS only contains them.
         label = _ENDGAME_CATEGORY_LABELS[endgame_class]
 
+        # Phase 87 follow-up: per-class Wilson score-test p-value vs 50%.
+        # Drives the per-card Score bullet sig-gating triple. Same wire-format
+        # gate as endgame_score_p_value etc. (PVALUE_RELIABILITY_MIN_N=10).
+        _conf_class, p_score_class_raw, _se_class = compute_confidence_bucket(
+            wins, draws, losses, total
+        )
+        score_p_value: float | None = (
+            p_score_class_raw if total >= PVALUE_RELIABILITY_MIN_N else None
+        )
+
         categories.append(
             EndgameCategoryStats(
                 endgame_class=endgame_class,
@@ -422,6 +432,7 @@ def _aggregate_endgame_stats(
                 draw_pct=draw_pct,
                 loss_pct=loss_pct,
                 conversion=conversion_stats,
+                score_p_value=score_p_value,
             )
         )
 

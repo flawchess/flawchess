@@ -499,6 +499,44 @@ class TestAggregateEndgameStats:
             assert fields[name].is_required(), f"field {name} must be required"
 
 
+class TestPerClassScorePValue:
+    """Phase 87 follow-up: per-class Wilson score-test p_value vs 50%.
+
+    Drives the per-card Score bullet sig-gating triple in EndgameTypeCard,
+    replacing the previous Conv/Recov peer-diff bullets.
+    """
+
+    @staticmethod
+    def _class_rows(class_int: int, wins: int, draws: int, losses: int) -> list[tuple]:
+        """Build parity-bucket rows so they only contribute to WDL (not conv/recov)."""
+        rows: list[tuple] = []
+        for _ in range(wins):
+            rows.append((0, class_int, "1-0", "white", 0, None))
+        for _ in range(draws):
+            rows.append((0, class_int, "1/2-1/2", "white", 0, None))
+        for _ in range(losses):
+            rows.append((0, class_int, "0-1", "white", 0, None))
+        return [(i + 1, r[1], r[2], r[3], r[4], r[5]) for i, r in enumerate(rows)]
+
+    def test_score_p_value_significant_on_strong_class(self):
+        """High-skill synthetic fixture: 30W/5D/5L on rook -> score_p_value < 0.05 and not None."""
+        rows = self._class_rows(1, wins=30, draws=5, losses=5)
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.total == 40
+        assert rook.score_p_value is not None
+        assert rook.score_p_value < 0.05
+
+    def test_score_p_value_gated_below_n_ten(self):
+        """total < PVALUE_RELIABILITY_MIN_N=10 -> score_p_value is None."""
+        # 5 games total — well below the n=10 gate.
+        rows = self._class_rows(1, wins=3, draws=1, losses=1)
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.total == 5
+        assert rook.score_p_value is None
+
+
 class TestGetEndgameStatsSmoke:
     """Smoke tests for service entry points — catch wiring bugs like typos and broken imports."""
 

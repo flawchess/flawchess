@@ -30,6 +30,10 @@ export interface EndgameCategoryStats {
   draw_pct: number;
   loss_pct: number;
   conversion: ConversionRecoveryStats;
+  // Phase 87 follow-up: Wilson score-test p-value of this class's WDL vs 50%.
+  // null when total < PVALUE_RELIABILITY_MIN_N (=10). Drives the per-card
+  // Score bullet sig-gating triple in EndgameTypeCard.
+  score_p_value: number | null;
 }
 
 export interface EndgameStatsResponse {
