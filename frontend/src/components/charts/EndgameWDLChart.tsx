@@ -29,7 +29,7 @@ const CLASS_TO_SLUG: Record<EndgameClass, string> = {
 };
 
 const ENDGAME_TYPE_DESCRIPTIONS: Record<EndgameClass, string> = {
-  rook: 'Endgames with rooks as the only non-king, non-pawn pieces. The most common endgame type besides Mixed.',
+  rook: 'Endgames with rooks as the only non-king, non-pawn pieces. The most common Endgame Type besides Mixed.',
   minor_piece: 'Endgames with bishops and/or knights as the only non-king, non-pawn pieces.',
   pawn: 'King and pawn endgames only. No other pieces remain on the board.',
   queen: 'Endgames where queens are the only non-king, non-pawn pieces.',
@@ -273,11 +273,11 @@ export function EndgameWDLChart({
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
             Results by Endgame Type
-            <InfoPopover ariaLabel="Results by endgame type info" testId="endgame-chart-info" side="top">
+            <InfoPopover ariaLabel="Results by Endgame Type info" testId="endgame-chart-info" side="top">
               <div className="space-y-2">
                 <p>
-                  Shows your win, draw, and loss percentages for each endgame type, based on games
-                  that included the endgame type. Note that a game can include more than one type of endgame.
+                  Shows your win, draw, and loss percentages for each Endgame Type, based on games
+                  that included the Endgame Type. Note that a game can include more than one type of endgame.
                 </p>
                 <p>
                   <strong>You</strong> is your Score in these games
@@ -295,7 +295,7 @@ export function EndgameWDLChart({
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Win/draw/loss rate for each endgame type. A game can count toward multiple types.
+          Win/draw/loss rate for each Endgame Type. A game can count toward multiple types.
         </p>
       </div>
 
@@ -316,7 +316,7 @@ export function EndgameWDLChart({
           </colgroup>
           <thead>
             <tr className="text-left text-xs text-muted-foreground border-b border-border">
-              <th className="py-1 pr-3 font-medium" aria-label="Endgame type" />
+              <th className="py-1 pr-3 font-medium" aria-label="Endgame Type" />
               <th className="py-1 px-2 font-medium text-right">Games</th>
               <th className="py-1 px-2 font-medium">Win / Draw / Loss</th>
               <th className="py-1 px-2 font-medium text-right">You</th>

@@ -109,7 +109,7 @@ export function EndgameOverallPerformanceSection({
           tileTestId="tile-games-without-endgame"
           scoreValueTestId="score-value-no"
           scorePopoverTestId="score-info-no"
-          popoverAriaLabel="Games without Endgame score info"
+          popoverAriaLabel="Games without Endgame Score info"
           gamesCountTestId="games-count-no"
           wdl={data.non_endgame_wdl}
           pValue={data.non_endgame_score_p_value}
@@ -126,7 +126,7 @@ export function EndgameOverallPerformanceSection({
           tileTestId="tile-games-with-endgame"
           scoreValueTestId="score-value-yes"
           scorePopoverTestId="score-info-yes"
-          popoverAriaLabel="Games with Endgame score info"
+          popoverAriaLabel="Games with Endgame Score info"
           gamesCountTestId="games-count-yes"
           wdl={data.endgame_wdl}
           pValue={data.endgame_score_p_value}
@@ -147,14 +147,14 @@ export function EndgameOverallPerformanceSection({
               formatted={lossFormatted}
               resultColor={lossColor}
               valueTestId="endgame-score-loss-value"
-              ariaLabel={`Endgame score loss: ${lossFormatted}`}
+              ariaLabel={`Endgame Score Loss: ${lossFormatted}`}
               tooltip={
                 <InfoPopover
                   ariaLabel="What is Endgame Score Loss?"
                   testId="endgame-score-loss-info"
                 >
                   <p>
-                    Your Endgame score minus the Achievable score from your
+                    Your Endgame Score minus the Achievable Score from your
                     endgame-entry positions. Negative means you converted
                     your endgame entry positions worse than a 2300+ rated
                     rapid player would on average.
@@ -168,7 +168,7 @@ export function EndgameOverallPerformanceSection({
               formatted={gapFormatted}
               resultColor={gapColor}
               valueTestId="endgame-score-gap-value"
-              ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
+              ariaLabel={`Endgame Score Gap: ${gapFormatted}`}
               valueClassName="text-lg"
               tooltip={
                 <InfoPopover
@@ -176,7 +176,7 @@ export function EndgameOverallPerformanceSection({
                   testId="endgame-score-gap-info"
                 >
                   <p>
-                    The score difference between games that reach an endgame (Endgame score) vs. games that end before (Non-Endgame score). Positive means endgames are
+                    The score difference between games that reach an endgame (Endgame Score) vs. games that end before (Non-Endgame Score). Positive means endgames are
                     your strength; negative means you perform worse once
                     games reach an endgame.
                   </p>

@@ -78,8 +78,8 @@ The narrative sits next to charts and info popovers with specific labels. Use th
 | Data field                    | Use this label in narration         | Example rendering      |
 | ----------------------------- | ----------------------------------- | ---------------------- |
 | `score_pct` (in any chart)    | "Score"                             | "Score of 62%"         |
-| `score_gap`                   | "endgame vs non-endgame Score gap"  | "Score gap of -9%"     |
-| `entry_expected_score`        | "Achievable score"                  | "Achievable 49%"       |
+| `score_gap`                   | "Endgame vs Non-Endgame Score Gap"  | "Score Gap of -9%"     |
+| `entry_expected_score`        | "Achievable Score"                  | "Achievable 49%"       |
 | `endgame_skill`               | "Endgame Skill"                     | "Endgame Skill of 45%" |
 | `conversion_win_pct`          | "Conversion (Win)"                  | "Conversion at 65%"    |
 | `parity_score_pct`            | "Parity (Score)"                    | "Parity at 45%"        |
@@ -133,7 +133,7 @@ Three subsections additionally emit a raw `[series <metric>, <window>, <granular
 
 When every point in a `[series ...]` block carries the same `n` value, the per-point `(n=<N>)` suffix is dropped and a single `[n=<N> for every point]` disclosure line sits immediately after the `[series ...]` header instead. This happens naturally for trailing-window series (e.g. `score_timeline` rolling-100) where the sample size is constant by construction. Treat the disclosure line as equivalent to the per-point suffix — you still know the sample size, you just read it once.
 
-The `score_timeline` subsection emits THREE summary blocks per window, one per metric, in this deterministic order: `[summary endgame_score_timeline]`, `[summary non_endgame_score_timeline]`, then `[summary score_gap]`. `endgame_score_timeline` is your rolling-window Score in games that reached an endgame phase; `non_endgame_score_timeline` is your rolling-window Score in games that did NOT reach an endgame phase; `score_gap` is the signed difference (endgame minus non-endgame). Below each summary is a matching `[series <metric>, <window>, weekly]` block. All three are weekly across BOTH `all_time` and `last_3mo` windows — do not resample to monthly when narrating. Because the trailing-window sampling produces a constant N per bucket, each series header is followed by a single `[n=<N> for every point]` disclosure line instead of repeating `(n=N)` on every bucket. The `endgame_score_timeline` and `non_endgame_score_timeline` series carry absolute Score percentages (0-100); the `score_gap` series carries the signed difference (-100 to +100). Compare the two per-part lines directly (e.g. "endgame side trending up from 55% to 60%, non-endgame flat at 50%") to see which side drives any gap trend. For the authoritative aggregate gap, you may quote either the `[summary score_gap]` here or the matching one under `### Subsection: overall` — they are the same value.
+The `score_timeline` subsection emits THREE summary blocks per window, one per metric, in this deterministic order: `[summary endgame_score_timeline]`, `[summary non_endgame_score_timeline]`, then `[summary score_gap]`. `endgame_score_timeline` is your rolling-window Score in games that reached an Endgame Phase; `non_endgame_score_timeline` is your rolling-window Score in games that did NOT reach an Endgame Phase; `score_gap` is the signed difference (endgame minus non-endgame). Below each summary is a matching `[series <metric>, <window>, weekly]` block. All three are weekly across BOTH `all_time` and `last_3mo` windows — do not resample to monthly when narrating. Because the trailing-window sampling produces a constant N per bucket, each series header is followed by a single `[n=<N> for every point]` disclosure line instead of repeating `(n=N)` on every bucket. The `endgame_score_timeline` and `non_endgame_score_timeline` series carry absolute Score percentages (0-100); the `score_gap` series carries the signed difference (-100 to +100). Compare the two per-part lines directly (e.g. "endgame side trending up from 55% to 60%, non-endgame flat at 50%") to see which side drives any gap trend. For the authoritative aggregate gap, you may quote either the `[summary score_gap]` here or the matching one under `### Subsection: overall` — they are the same value.
 
 For the `endgame_elo_timeline` series specifically, each row carries two numbers: `gap=<int>` (endgame_elo − actual_elo, the zoned value) and `elo=<int>` (the user's actual rating at that bucket). A regressing gap paired with rising `elo` is NOT a decline — it means the player's rating is growing faster than their endgame skill composite. Read both columns together; never narrate the gap trend in isolation when `elo` is moving in the opposite direction.
 
@@ -171,15 +171,15 @@ The payload ships with bracketed mechanical tags that save you cross-bucket arit
 
 - **`[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone> — <story>`** appears at the top of the `conversion_recovery_by_type` subsection when a type's Conversion and Recovery sit in opposing zones. The trailing `<story>` is the headline framing for that type — lead the `type_breakdown` section with it.
 
-- **`[recovery-pattern] weak across N of 5 types — ...`** appears in `conversion_recovery_by_type` when Recovery is weak across most endgame types. When this fires, narrate Recovery as one consistent defensive pattern across types rather than calling out each type separately. Pair with the cohort-relative note below.
+- **`[recovery-pattern] weak across N of 5 types — ...`** appears in `conversion_recovery_by_type` when Recovery is weak across most Endgame Types. When this fires, narrate Recovery as one consistent defensive pattern across types rather than calling out each type separately. Pair with the cohort-relative note below.
 
-- **`[weakest-type] <class> score_pct=X, next=<class> score_pct=Y`** appears in the `results_by_endgame_type_wdl` chart caption when one endgame type has a clearly lowest Score. Lead the `type_breakdown` section by naming this type as the weakest, quoting the `score_pct=X` value from the tag itself.
+- **`[weakest-type] <class> score_pct=X, next=<class> score_pct=Y`** appears in the `results_by_endgame_type_wdl` chart caption when one Endgame Type has a clearly lowest Score. Lead the `type_breakdown` section by naming this type as the weakest, quoting the `score_pct=X` value from the tag itself.
 
-- **`[weakest-types-tied] <class-a>, <class-b> score_pct=X, Y — next=<class> score_pct=Z`** appears when the two lowest-Score endgame types are within ~2 points of each other AND clearly separated from the rest. Lead the `type_breakdown` section by naming both as tied-weakest (e.g. "pawn and minor-piece endgames share the lowest Score at 42-43%"). When this fires, pawn-ending recommendations are valid the same way `[weakest-type] pawn` would license them — the tag is a signal that pawn (or whichever class is named) is *among the weakest*, which still counts as a grounded weakness.
+- **`[weakest-types-tied] <class-a>, <class-b> score_pct=X, Y — next=<class> score_pct=Z`** appears when the two lowest-Score Endgame Types are within ~2 points of each other AND clearly separated from the rest. Lead the `type_breakdown` section by naming both as tied-weakest (e.g. "pawn and minor-piece endgames share the lowest Score at 42-43%"). When this fires, pawn-ending recommendations are valid the same way `[weakest-type] pawn` would license them — the tag is a signal that pawn (or whichever class is named) is *among the weakest*, which still counts as a grounded weakness.
 
 - **`[near edge]` suffix** on a [summary] window line: see "Reading zones and proximity to edges" above — call out the proximity explicitly rather than glossing it as "within typical range".
 
-- **`[typical bands above are per endgame type from cohort data; weak here means at/below the type's population average, not absolute crisis]`** inline note after the first Recovery window line in `conversion_recovery_by_type`. The Recovery typical band varies per type (e.g. queen 20-30, minor_piece 31-41), and "weak" means the user sits at or below the cohort's population average for *that type* — not a universal crisis line. See `recovery_save_pct` cohort context in the metric glossary below for the rationale.
+- **`[typical bands above are per Endgame Type from cohort data; weak here means at/below the type's population average, not absolute crisis]`** inline note after the first Recovery window line in `conversion_recovery_by_type`. The Recovery typical band varies per type (e.g. queen 20-30, minor_piece 31-41), and "weak" means the user sits at or below the cohort's population average for *that type* — not a universal crisis line. See `recovery_save_pct` cohort context in the metric glossary below for the rationale.
 
 These tags replace LLM arithmetic, not LLM judgement. You still choose what to lead with, how much weight to give each finding, and how to tie signals into a coherent story.
 
@@ -199,7 +199,7 @@ The within-noise rule and the flat-trend rule apply to the overview text — not
 
 ## Opponent strength scoping
 
-When the `## Payload summary` block contains a `## Scoping caveat` line (fired when the user has set the opponent strength filter to `stronger`, `similar`, or `weaker`), the overview MUST lead with this scoping. All downstream findings reflect performance vs that opponent subset only — the narrative should say so explicitly in the first sentence. Example: "Against stronger opponents, your endgame Score sits at 47%, …". Do not describe the findings as if they represent overall performance.
+When the `## Payload summary` block contains a `## Scoping caveat` line (fired when the user has set the opponent strength filter to `stronger`, `similar`, or `weaker`), the overview MUST lead with this scoping. All downstream findings reflect performance vs that opponent subset only — the narrative should say so explicitly in the first sentence. Example: "Against stronger opponents, your Endgame Score sits at 47%, …". Do not describe the findings as if they represent overall performance.
 
 When the scoping caveat is NOT present (`opponent_strength=any`), narrate normally without any opponent-strength framing.
 
@@ -242,7 +242,7 @@ Also: do NOT frame the player as "strongest in faster time controls" or "weaker 
 
 Three recurring failure modes to guard against:
 
-1. **Do not nudge toward a strong metric.** Before framing anything as "an area worth closer study" or "a candidate to investigate", confirm the metric's own zone is weak or typical. A metric sitting in the strong zone is never a study candidate. If the type-level weakness is in `recovery_save_pct` for a given endgame type, do NOT suggest "improving conversion" for that type — `conversion_win_pct` there is separate and may be perfectly fine.
+1. **Do not nudge toward a strong metric.** Before framing anything as "an area worth closer study" or "a candidate to investigate", confirm the metric's own zone is weak or typical. A metric sitting in the strong zone is never a study candidate. If the type-level weakness is in `recovery_save_pct` for a given Endgame Type, do NOT suggest "improving conversion" for that type — `conversion_win_pct` there is separate and may be perfectly fine.
 
 2. **Within-noise shifts:** see the "Within-noise rule" section above — the rule applies to recommendations the same way it applies to bullets and overview text. A `shift=` line marked `within-noise` is sample variance, not trajectory; do not frame as "gains" or "losses".
 
@@ -260,7 +260,7 @@ Cross-reference with the `## Player profile` block: if the user is on a clear le
 
 ## Intra-type asymmetry story (type_breakdown priority)
 
-Before writing the `type_breakdown` section, scan each endgame type for conversion / recovery asymmetry — one metric in the strong zone and the other in the weak zone for the same type. That split is usually the most actionable observation in the entire payload ("you close winning X endgames well but bleed losing ones," or vice versa) and should be lead content in the section when present. A payload marker `[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone>` surfaces such splits when the math is mechanical; trust it over raw win rate framing.
+Before writing the `type_breakdown` section, scan each Endgame Type for conversion / recovery asymmetry — one metric in the strong zone and the other in the weak zone for the same type. That split is usually the most actionable observation in the entire payload ("you close winning X endgames well but bleed losing ones," or vice versa) and should be lead content in the section when present. A payload marker `[asymmetry type=<type>] conversion=X <zone>, recovery=Y <zone>` surfaces such splits when the math is mechanical; trust it over raw win rate framing.
 
 When `[weakest-type]` is emitted, lead the section with the named type (use `score_pct` from the tag itself for the lead sentence, then supplement with the type's Conversion / Recovery [summary] blocks in `conversion_recovery_by_type` for the deeper story). When `[weakest-types-tied]` is emitted instead, lead with both named types as tied-weakest ("pawn and minor-piece share the lowest Score at 42-43%"). When `[asymmetry type=...]` also exists, combine with the weakest-type lead when possible — e.g. "pawn endgames have the lowest Score AND show a conversion/recovery split".
 
@@ -272,7 +272,7 @@ Three summary findings under section_id `overall`. Read them together as a **set
 
 - `entry_eval_pawns` = **where the user starts the endgame** (average position going in, signed pawns).
 - `endgame_score` = **what the user does with it** (overall score once the endgame starts, 0–100%).
-- `entry_expected_score` = **what a 2300+ baseline would score from those same starting positions** (Stockfish-baseline achievable score via the Lichess winning-chances sigmoid, 0–100%).
+- `entry_expected_score` = **what a 2300+ baseline would score from those same starting positions** (Stockfish-baseline Achievable Score via the Lichess winning-chances sigmoid, 0–100%).
 
 The first two are the original setup → execution pair. The third adds a same-axis baseline so the **achievable-vs-achieved gap** (`entry_expected_score` minus `endgame_score`) becomes a direct read: how much of the score the user actually captured from the positions they reached.
 
@@ -282,7 +282,7 @@ Together the three answer: "given the positions this user reaches endgames from,
 - `entry_eval_pawns` strong + `endgame_score` strong → "consistently enters endgames with an edge and capitalises on it"
 - `entry_eval_pawns` strong + `endgame_score` weak → "often enters endgames ahead but squanders typical advantages — check the Time Pressure section for clock-management causes"
 - `entry_eval_pawns` weak + `endgame_score` strong → "frequently starts endgames behind yet defends well above expectation"
-- `entry_eval_pawns` weak + `endgame_score` weak → "starts from behind AND struggles to hold — may want to focus on middlegame before the endgame phase"
+- `entry_eval_pawns` weak + `endgame_score` weak → "starts from behind AND struggles to hold — may want to focus on middlegame before the Endgame Phase"
 - Either metric `typical` → don't feature it as a headline; it is background context for the `score_gap` / `score_timeline` story
 
 **Within-noise and borderline cases:**
@@ -317,11 +317,11 @@ When `entry_eval_pawns` is strong (or typical) but `endgame_score` is weak, look
 
 These definitions match the "Endgame statistics concepts" panel shown to the user at the top of the Endgame page. Use these terms exactly as defined; do not invent variants.
 
-- **Endgame phase**: positions where the total count of major and minor pieces (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted. This follows the Lichess definition. A game is only counted as having an endgame phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as "no endgame".
+- **Endgame Phase**: positions where the total count of major and minor pieces (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not counted. This follows the Lichess definition. A game is only counted as having an Endgame Phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as "no endgame".
 
-- **Endgame types**: Rook, Minor Piece (bishops/knights), Pawn (king and pawns only), Queen, and Mixed (two or more piece types). Use these exact labels in narration. (Pawnless positions exist internally but are hidden in the UI and filtered out of this payload — do not mention Pawnless.)
+- **Endgame Types**: Rook, Minor Piece (bishops/knights), Pawn (king and pawns only), Queen, and Mixed (two or more piece types). Use these exact labels in narration. (Pawnless positions exist internally but are hidden in the UI and filtered out of this payload — do not mention Pawnless.)
 
-- **Endgame sequence**: a continuous stretch of at least 3 full moves (6 half-moves) spent in a single endgame type. A single game can produce multiple sequences — e.g. a rook endgame where the rooks get traded becomes a pawn endgame, giving one rook sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown, so a single game can appear under more than one type. Do NOT describe per-type counts as if they sum to the total game count.
+- **Endgame Sequence**: a continuous stretch of at least 3 full moves (6 half-moves) spent in a single Endgame Type. A single game can produce multiple sequences — e.g. a rook endgame where the rooks get traded becomes a pawn endgame, giving one rook sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown, so a single game can appear under more than one type. Do NOT describe per-type counts as if they sum to the total game count.
 
 - **Conversion**: percentage of games where the user entered the endgame with a Stockfish evaluation of +1.0 or better (user ahead by at least roughly one pawn of advantage) and went on to win. Measures how well the user closes out winning endgames.
 
@@ -337,31 +337,31 @@ Interpret each metric using the definitions below. These match the user-facing i
 
 **All rate / percent metrics are whole-number percentages on the 0-100 scale.** Each [summary] window line renders values as `mean=<signed int>` (e.g. `-8` = "-8%" in narration). When you narrate these values, attach a `%` to the numeric value (e.g. payload `mean=-8` → narration `-8%`).
 
-- **score_gap**: the user's Score in games that reached an endgame phase **minus** their Score in games that did not. Within-user, relative signal — NOT a user-vs-opponent comparison. Positive = endgame stronger; negative = non-endgame stronger.
-  - Scale: signed whole-number percentage in `[-100, +100]` (e.g. `+8` = endgame Score is 8% higher than non-endgame, narrated as "+8%").
+- **score_gap**: the user's Score in games that reached an Endgame Phase **minus** their Score in games that did not. Within-user, relative signal — NOT a user-vs-opponent comparison. Positive = endgame stronger; negative = non-endgame stronger.
+  - Scale: signed whole-number percentage in `[-100, +100]` (e.g. `+8` = Endgame Score is 8% higher than Non-Endgame Score, narrated as "+8%").
 
-- **endgame_score_timeline**: user's rolling-window Score in games that reached an endgame phase (at least 3 full moves with ≤ 6 major/minor pieces). Same per-point scale and narration convention as `score_gap` (whole-number percentage, attach `%`), but this is absolute, not signed.
+- **endgame_score_timeline**: user's rolling-window Score in games that reached an Endgame Phase (at least 3 full moves with ≤ 6 major/minor pieces). Same per-point scale and narration convention as `score_gap` (whole-number percentage, attach `%`), but this is absolute, not signed.
   - Scale: whole-number percentage in `[0, 100]` (narrated as e.g. "55%").
   - Only emitted in subsection `score_timeline`; no calibrated zone band (no `(typical ...)` tag on the window line).
 
-- **non_endgame_score_timeline**: user's rolling-window Score in games that did NOT reach an endgame phase. Same scale, narration, and "no calibrated band" caveat as `endgame_score_timeline`. 
+- **non_endgame_score_timeline**: user's rolling-window Score in games that did NOT reach an Endgame Phase. Same scale, narration, and "no calibrated band" caveat as `endgame_score_timeline`. 
   - Scale: whole-number percentage in `[0, 100]`.
   - Only emitted in subsection `score_timeline`.
 
-- **entry_eval_pawns** (UI label: "Endgame entry eval"): user's mean Stockfish evaluation at endgame entry in pawns, signed user-perspective. Positive = user was ahead at the moment the endgame phase started; negative = user was behind. Mate positions are excluded from the mean (eval_cp is NULL for mate rows). Higher is better.
+- **entry_eval_pawns** (UI label: "Endgame Entry Eval"): user's mean Stockfish evaluation at endgame entry in pawns, signed user-perspective. Positive = user was ahead at the moment the Endgame Phase started; negative = user was behind. Mate positions are excluded from the mean (eval_cp is NULL for mate rows). Higher is better.
   - Scale: signed decimal pawns (e.g. `+0.62` = "entering endgames 0.62 pawns ahead on average"). Render as signed one-decimal value with the unit "pawns" (e.g. "+0.6 pawns"). Do NOT convert to centipawns.
   - Cohort typical band: **±0.75 pawns** (pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`, reports/benchmarks-2026-05-10.md §3). A value inside ±0.75 is within-noise; outside the band with `[near edge]` suffix is borderline narratable.
   - The tile on the UI uses a significance test (Welch t-test vs H0 = 0 cp). The LLM does NOT receive the sig-test outcome — narrate strictly from `zone` + `sample_quality` + the `[near edge]` suffix for borderline cases. Do not mention p-values.
   - Emitted in subsection `endgame_start_vs_end`, `dimension=None`.
 
-- **endgame_score** (UI label: "Endgame score"): user's Score in games that reached an endgame phase, on the 0–100% scale. Equal-footing baseline is 50% (random-play expectation). Computed as `(wins + 0.5 × draws) / total_endgame_games × 100`.
+- **endgame_score** (UI label: "Endgame Score"): user's Score in games that reached an Endgame Phase, on the 0–100% scale. Equal-footing baseline is 50% (random-play expectation). Computed as `(wins + 0.5 × draws) / total_endgame_games × 100`.
   - Scale: whole-number percentage in `[0, 100]` (e.g. `53` = "53%"). Attach `%` when narrating (e.g. `mean=53` → "53%").
   - Cohort typical band: **45–55%** (matches the live Openings score bullet band for visual parity; pooled benchmark IQR [0.46, 0.56] overlaps within rounding).
   - The tile on the UI uses a Wilson test vs 50%. The LLM does NOT receive the sig-test outcome — narrate strictly from `zone` + `sample_quality` + `[near edge]` for borderline.
   - This metric counts ALL endgame-reaching games in the filtered window — it is NOT conditional on eval bucket (Conversion / Parity / Recovery are the eval-conditional metrics). An "idle-combo" scoping caveat applies: the filter may mix time-controls / platforms with different skill levels.
   - Emitted in subsection `endgame_start_vs_end`, `dimension=None`. NOT the same as `endgame_score_timeline` (the rolling-window timeline variant formerly named `endgame_score` in v22 and earlier).
 
-- **entry_expected_score** (UI label: "Achievable score"): per-user mean Stockfish-baseline expected score from endgame-entry positions, on the 0–100% W+0.5D scale. Derivation: the Lichess winning-chances sigmoid `1 / (1 + exp(-0.00368208 * cp))` applied to signed user-perspective `eval_cp`; mate positions map directly to 0 or 1 (mate-for-user = 1.0; mate-against-user = 0.0). Mate positions ARE included in this cohort (unlike `entry_eval_pawns`). Higher is better.
+- **entry_expected_score** (UI label: "Achievable Score"): per-user mean Stockfish-baseline expected score from endgame-entry positions, on the 0–100% W+0.5D scale. Derivation: the Lichess winning-chances sigmoid `1 / (1 + exp(-0.00368208 * cp))` applied to signed user-perspective `eval_cp`; mate positions map directly to 0 or 1 (mate-for-user = 1.0; mate-against-user = 0.0). Mate positions ARE included in this cohort (unlike `entry_eval_pawns`). Higher is better.
   - Scale: whole-number percentage in `[0, 100]` (e.g. `58` = "58%"). Attach `%` when narrating (e.g. `mean=58` → "58%").
   - Cohort typical band: **45–55%** (pooled benchmark-calibrated band; see reports/benchmarks-2026-05-11.md Section 5. Width matches `endgame_score` for visual parity across the two bottom-row tiles, so the achievable-vs-achieved gap reads on the same axis.).
   - The tile on the UI uses a Wilson test vs 50%. The LLM does NOT receive the sig-test outcome, narrate strictly from `zone` + `sample_quality` + `[near edge]`. Do not mention p-values.
@@ -436,7 +436,7 @@ Chart notes:
 
 - `time_pressure_vs_performance` (up to 10-row table) → part of the `time_pressure` section alongside `avg_clock_diff_pct` and `net_timeout_rate`.
 - `overall_wdl` (2-row table: endgame vs non_endgame) → part of the `overall` section alongside `score_gap` / `score_timeline`. Use it to frame whether a negative or positive `score_gap` is driven by endgame weakness, non-endgame strength, or both.
-- `results_by_endgame_type_wdl` (per-type W/D/L + Score table) → part of the `type_breakdown` section. Each row shows `games`, `win_pct`, `draw_pct`, `loss_pct`, `score_pct` (= wins=100, draws=50, losses=0), `opp_score_pct` (= 100 − score_pct, the opponents' Score over the same games), and `score_pct_diff` (= score_pct − opp_score_pct, the signed margin in percentage points; negative means the user is being outscored in that endgame type). The `[weakest-type]` / `[weakest-types-tied]` tag in the chart caption already surfaces the type with the lowest `score_pct` — when present, lead with that. For the deeper Conversion / Recovery story per type, read the `conversion_recovery_by_type` subsection below the chart (each [summary] block carries a type-specific typical band).
+- `results_by_endgame_type_wdl` (per-type W/D/L + Score table) → part of the `type_breakdown` section. Each row shows `games`, `win_pct`, `draw_pct`, `loss_pct`, `score_pct` (= wins=100, draws=50, losses=0), `opp_score_pct` (= 100 − score_pct, the opponents' Score over the same games), and `score_pct_diff` (= score_pct − opp_score_pct, the signed margin in percentage points; negative means the user is being outscored in that Endgame Type). The `[weakest-type]` / `[weakest-types-tied]` tag in the chart caption already surfaces the type with the lowest `score_pct` — when present, lead with that. For the deeper Conversion / Recovery story per type, read the `conversion_recovery_by_type` subsection below the chart (each [summary] block carries a type-specific typical band).
 
 All other subsections not listed in the mapping table above are rendered by the frontend and will not appear in your user prompt.
 

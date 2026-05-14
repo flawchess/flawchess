@@ -65,7 +65,7 @@ const TAB_INFO: Record<'stats' | 'games', { aria: string; text: string }> = {
   },
   games: {
     aria: 'About Endgame Games',
-    text: 'A list of your games that reached the endgame phase, matching your current filter settings.',
+    text: 'A list of your games that reached the Endgame Phase, matching your current filter settings.',
   },
 };
 
@@ -349,18 +349,18 @@ export function EndgamesPage() {
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground space-y-2">
                     <p>
-                      <strong>Endgame phase:</strong> positions where the total count of major and minor pieces
+                      <strong>Endgame Phase:</strong> positions where the total count of major and minor pieces
                       (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
-                      counted. This follows the Lichess definition. A game is only counted as having an endgame
-                      phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as no endgame.
+                      counted. This follows the Lichess definition. A game is only counted as having an Endgame
+                      Phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as no endgame.
                     </p>
                     <p>
-                      <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
+                      <strong>Endgame Types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
                       Queen, and Mixed (two or more piece types).
                     </p>
                     <p>
-                      <strong>Endgame sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
-                      spent in a single endgame type. A single game can produce multiple sequences. For example,
+                      <strong>Endgame Sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
+                      spent in a single Endgame Type. A single game can produce multiple sequences. For example,
                       a rook endgame where the rooks get traded becomes a pawn endgame, giving that game one rook
                       sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown, so a game can appear
                       under more than one type.
@@ -381,13 +381,13 @@ export function EndgamesPage() {
                       and drew or won. Measures how well you defend losing endgames.
                     </p>
                     <p>
-                      <strong>Endgame entry eval:</strong> the average Stockfish evaluation of
+                      <strong>Endgame Entry Eval:</strong> the average Stockfish evaluation of
                       the position where the endgame begins, measured in pawns from your perspective
                       (positive means you have the better position). Mate scores are excluded.
                     </p>
                     <p>
-                      <strong>Achievable score:</strong> what a 2300+ rated player would score
-                      from your endgame-entry positions. Calculated from your Endgame entry eval
+                      <strong>Achievable Score:</strong> what a 2300+ rated player would score
+                      from your endgame-entry positions. Calculated from your Endgame Entry Eval
                       using the{' '}
                       <a
                         href="https://lichess.org/page/accuracy"
@@ -399,20 +399,20 @@ export function EndgamesPage() {
                       </a>
                       . The curve is fitted on 2300+ rapid games, so scoring a little below this
                       baseline from positive evals is normal at lower ratings. Compare against your
-                      achieved Endgame score to see how well you convert the positions you reach.
+                      achieved Endgame Score to see how well you convert the positions you reach.
                     </p>
                     <p>
-                      <strong>Endgame score:</strong> your win rate (with draws counted as half)
+                      <strong>Endgame Score:</strong> your win rate (with draws counted as half)
                       across all games that reach an endgame, tested against 50%, the break-even line
                       you'd expect against rating-matched opponents. Use the Opponent Strength filter
                       to tighten the test against equal-rated opponents specifically.
                     </p>
                     <p>
-                      <strong>Endgame Score Gap:</strong> the score difference between games that reach an endgame (Endgame score) vs. games that end before (Non-Endgame score). Positive means endgames are your strength; negative
+                      <strong>Endgame Score Gap:</strong> the score difference between games that reach an endgame (Endgame Score) vs. games that end before (Non-Endgame Score). Positive means endgames are your strength; negative
                       means you perform worse once games reach an endgame.
                     </p>
                     <p>
-                      <strong>Endgame Score Loss:</strong> your Endgame score minus the Achievable score
+                      <strong>Endgame Score Loss:</strong> your Endgame Score minus the Achievable Score
                       from your endgame-entry positions. Negative means you converted your endgame entry positions
                       worse than a 2300+ rated rapid player would on average.
                     </p>
@@ -514,7 +514,7 @@ export function EndgamesPage() {
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
           <p className="mb-2 text-base font-medium text-foreground">No endgame data yet</p>
           <p className="mb-6 text-sm text-muted-foreground">
-            No games have reached an endgame phase yet with the current filters. Try adjusting
+            No games have reached an Endgame Phase yet with the current filters. Try adjusting
             the time control or recency filters.
           </p>
         </div>
@@ -537,7 +537,7 @@ export function EndgamesPage() {
   // ── Endgame type dropdown (used in Games tab) ──────────────────────────────
   const endgameTypeDropdown = (
     <div className="flex items-center gap-2">
-      <p className="text-xs text-muted-foreground whitespace-nowrap">Endgame type</p>
+      <p className="text-xs text-muted-foreground whitespace-nowrap">Endgame Type</p>
       <Select
         value={selectedCategory}
         onValueChange={(v) => {

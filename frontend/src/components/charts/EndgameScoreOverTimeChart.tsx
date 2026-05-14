@@ -182,17 +182,17 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
           <span className="inline-flex items-center gap-1">
             Endgame Score Gap over Time
             <InfoPopover
-              ariaLabel="Endgame vs non-endgame score timeline info"
+              ariaLabel="Endgame vs Non-Endgame Score timeline info"
               testId="score-timeline-info"
               side="top"
             >
               <p>
-                Your endgame Score and non-endgame Score over the trailing {window} games,
+                Your Endgame Score and Non-Endgame Score over the trailing {window} games,
                 sampled once per week.
               </p>
               <p className="mt-1">
                 The shaded area between the lines is color-coded: green when your
-                endgame Score leads your non-endgame Score, red when it trails.
+                Endgame Score leads your Non-Endgame Score, red when it trails.
               </p>
               <p className="mt-1">
                 Early weeks where either side has fewer than 10 games in the

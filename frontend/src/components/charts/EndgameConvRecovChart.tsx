@@ -35,24 +35,24 @@ export function EndgameConvRecovChart({ categories }: EndgameConvRecovChartProps
             <InfoPopover ariaLabel="Conversion and Recovery info" testId="conv-recov-chart-info" side="top">
               <div className="space-y-2">
                 <p>
-                  <strong>Conversion</strong>: percentage of endgame sequences per type where you
+                  <strong>Conversion</strong>: percentage of Endgame Sequences per type where you
                   entered with a Stockfish evaluation of +1.0 or better and went on to win.
                 </p>
                 <p>
-                  <strong>Recovery</strong>: percentage of endgame sequences per type where you
+                  <strong>Recovery</strong>: percentage of Endgame Sequences per type where you
                   entered with a Stockfish evaluation of -1.0 or worse and went on to draw or win.
                 </p>
                 <p>
                   Gauge zones are per-type typical bands sourced from pooled FlawChess benchmark
                   data. Blue = typical for that type, red = below, green = above. Zones differ by
-                  type because each endgame type has its own natural distribution.
+                  type because each Endgame Type has its own natural distribution.
                 </p>
               </div>
             </InfoPopover>
           </span>
         </h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Which endgame types you convert best and which you defend best, compared to type-specific baselines.
+          Which Endgame Types you convert best and which you defend best, compared to type-specific baselines.
         </p>
       </div>
 

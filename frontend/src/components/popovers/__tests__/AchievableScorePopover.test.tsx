@@ -99,7 +99,7 @@ describe('AchievableScorePopover', () => {
     render(<AchievableScorePopover {...baseProps} />);
     fireEvent.click(screen.getByTestId('popover-trigger-achievable-score'));
     await waitFor(() => {
-      expect(document.body.textContent).toMatch(/62\.0% achievable score/);
+      expect(document.body.textContent).toMatch(/62\.0% Achievable Score/);
     });
     expect(document.body.textContent).toMatch(/over 50 games/);
     expect(document.body.textContent).toMatch(/12\.0% above the 50% baseline/);

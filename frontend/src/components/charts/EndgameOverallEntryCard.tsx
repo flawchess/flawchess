@@ -74,7 +74,7 @@ export function EntryCard({ data }: EntryCardProps) {
         {showEntryEvalChart ? (
           <div className="flex flex-col gap-2">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-              <span className="text-muted-foreground">Endgame entry eval:</span>
+              <span className="text-muted-foreground">Endgame Entry Eval:</span>
               <span
                 className="font-semibold inline-flex items-center gap-0.5"
                 style={evalColor ? { color: evalColor } : undefined}
@@ -107,7 +107,7 @@ export function EntryCard({ data }: EntryCardProps) {
                 ciLow={data.entry_eval_ci_low_pawns ?? undefined}
                 ciHigh={data.entry_eval_ci_high_pawns ?? undefined}
                 barColor="neutral"
-                ariaLabel={`Endgame entry eval: ${data.entry_eval_mean_pawns.toFixed(2)} pawns`}
+                ariaLabel={`Endgame Entry Eval: ${data.entry_eval_mean_pawns.toFixed(2)} pawns`}
               />
             </div>
           </div>
@@ -120,7 +120,7 @@ export function EntryCard({ data }: EntryCardProps) {
           {showAchievableChart ? (
             <div className="flex flex-col gap-2">
               <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-                <span className="text-muted-foreground">Achievable score:</span>
+                <span className="text-muted-foreground">Achievable Score:</span>
                 <span
                   className="font-semibold"
                   style={achievableColor ? { color: achievableColor } : undefined}
@@ -156,7 +156,7 @@ export function EntryCard({ data }: EntryCardProps) {
                       : undefined
                   }
                   barColor="neutral"
-                  ariaLabel={`Achievable score: ${(data.entry_expected_score * 100).toFixed(0)}%`}
+                  ariaLabel={`Achievable Score: ${(data.entry_expected_score * 100).toFixed(0)}%`}
                 />
               </div>
             </div>

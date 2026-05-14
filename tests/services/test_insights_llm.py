@@ -194,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v27 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v28 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -210,8 +210,8 @@ class TestPromptVersionAndBody:
       block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
-    def test_prompt_version_is_v27(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v27"
+    def test_prompt_version_is_v28(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v28"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -233,7 +233,7 @@ class TestPromptVersionAndBody:
         )
         body = prompt_path.read_text(encoding="utf-8")
         assert "entry_expected_score" in body
-        assert "Achievable score" in body
+        assert "Achievable Score" in body
         # D-10 forbidden words must NOT appear in user-facing narration guidance.
         # "underperformance" is allowed ONLY inside an explicit forbidden-words list.
         # Every occurrence in the prompt must be preceded on the same line by the
@@ -2357,7 +2357,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v27"
+        assert response.report.prompt_version == "endgame_v28"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2381,7 +2381,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v27"
+        assert log.response_json["prompt_version"] == "endgame_v28"
 
 
 class TestCacheBehavior:

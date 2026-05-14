@@ -62,7 +62,7 @@ export function AchievableScorePopover({
   level,
   pValue,
   testId = 'popover-trigger-achievable-score',
-  ariaLabel = 'What is Achievable score?',
+  ariaLabel = 'What is Achievable Score?',
   triggerClassName,
 }: AchievableScorePopoverProps) {
   const [open, setOpen] = React.useState(false);
@@ -119,11 +119,11 @@ export function AchievableScorePopover({
             <p>
               {diffPct === '0.0' ? (
                 <>
-                  <strong>{scorePct}% achievable score</strong> over {gameCount} games, at the 50% baseline.
+                  <strong>{scorePct}% Achievable Score</strong> over {gameCount} games, at the 50% baseline.
                 </>
               ) : (
                 <>
-                  <strong>{scorePct}% achievable score</strong> over {gameCount} games, {diffPct}% {direction} the 50% baseline.
+                  <strong>{scorePct}% Achievable Score</strong> over {gameCount} games, {diffPct}% {direction} the 50% baseline.
                 </>
               )}
             </p>
@@ -134,7 +134,7 @@ export function AchievableScorePopover({
             <p>
               What a 2300+ rated player would score from your endgame-entry positions,
               via the Lichess winning chances formula. Compare against your achieved
-              Endgame score in the other tile.
+              Endgame Score in the other tile.
             </p>
             <p className="opacity-70 italic">
               Score: wins + ½ draws.<br />
