@@ -140,8 +140,8 @@ export function AchievableScorePopover({
             </p>
             <p>
               What a 2300+ rated player would score from your endgame-entry positions,
-              via the Lichess winning chances formula. Compare against your achieved
-              Endgame Score in the other tile.
+              via the Lichess winning chances formula. Compare against your
+              Endgame Score.
             </p>
             <p className="opacity-70 italic">
               Score: wins + ½ draws.<br />

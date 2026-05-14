@@ -150,19 +150,11 @@ export function EndgameOverallPerformanceSection({
                   testId="achievable-score-gap-info"
                 >
                   <p>
-                    Your average per-game score minus the achievable score
+                    <strong>Achievable Score Gap: </strong>Your average per-game score minus the achievable score
                     from each endgame-entry position. Positive means you
                     converted your endgame entry positions better than a
                     2300+ rated rapid player would on average; negative
                     means you converted them worse.
-                  </p>
-                  <p>
-                    The Achievable Score baseline comes from a Lichess
-                    winning-chances formula calibrated on a broad rating
-                    population. For your specific rating tier the baseline
-                    may run a few percentage points high or low, so a small
-                    negative gap can partly reflect calibration drift
-                    rather than pure underperformance.
                   </p>
                 </InfoPopover>
               }
@@ -183,7 +175,7 @@ export function EndgameOverallPerformanceSection({
                   testId="endgame-score-gap-info"
                 >
                   <p>
-                    The score difference between games that reach an endgame (Endgame Score) vs. games that end before (Non-Endgame Score). Positive means endgames are
+                    <strong>Endgame Score Gap: </strong>The score difference between games that reach an endgame (Endgame Score) vs. games that end before (Non-Endgame Score). Positive means endgames are
                     your strength; negative means you perform worse once
                     games reach an endgame.
                   </p>
