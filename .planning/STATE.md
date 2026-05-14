@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: Phase 86 context gathered
-last_updated: "2026-05-14T11:00:00.000Z"
-last_activity: 2026-05-14 — Phase 86 context gathered (Section 2 Endgame Metrics 4-card layout); ready for plan-phase
+status: executing
+last_updated: "2026-05-14T13:29:44.584Z"
+last_activity: 2026-05-14 -- Phase 86 planning complete
 progress:
   total_phases: 0
   completed_phases: 0
@@ -18,8 +18,8 @@ progress:
 
 Phase: 86 (section-2-endgame-metrics-4-card-layout) — CONTEXT GATHERED (ready for /gsd-plan-phase 86)
 Plan: 0 of TBD
-Status: Phase 86 context gathered
-Last activity: 2026-05-14 — Completed quick task 260514-kei: tighten Achievable Score Gap neutral band to ±5pp by adding a dedicated `achievable_score_gap` entry to `ZONE_REGISTRY` (and `MetricId` Literal alias) in `app/services/endgame_zones.py`, regenerating `frontend/src/generated/endgameZones.ts` with two new exports `ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN/MAX = -0.05 / 0.05` alongside the unchanged `SCORE_GAP_NEUTRAL_MIN/MAX = -0.1 / 0.1`, and parameterizing `ScoreGapRow` with required `neutralMin/neutralMax` props plus a parameterized `gapZoneColor(value, neutralMin, neutralMax)` helper so the Achievable Score Gap row uses the new ±5pp band while the Endgame Score Gap row keeps ±10pp. Justification (per `reports/benchmarks-latest.md §3.1.5`): pooled benchmark IQR for `achievable_score_gap` is `[−3.9pp, +4.6pp]`, so ±5pp is a clean rounded fit; the collapse verdict flags a strong ELO ramp (d=0.62 keep-separate), so per-ELO stratification is deferred but a single global ±5pp is a defensible interim. The 3.1.6 Endgame Score Gap verdict is collapse OK at ±10pp, which is why the constants had to split. `MetricStatPopover` `neutralLower/neutralUpper` props wired per-row to match. Gates: `uv run ty check` clean, `uv run pytest` 1457/1457 (6 skipped), `npm test` 375/375, `npm run lint` clean, `npm run knip` clean, `npm run build` clean. Codegen drift gate clean. Commits `951043ea` (registry + codegen) + `5c303fc8` (frontend wiring) + `7878e782` (worktree merge). Previously: 2026-05-14 — Phase 86 context gathered (Section 2 Endgame Metrics 4-card layout); ready for plan-phase
+Status: Ready to execute
+Last activity: 2026-05-14 -- Phase 86 planning complete
 Prior: Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
