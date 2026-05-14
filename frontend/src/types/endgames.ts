@@ -17,32 +17,6 @@ export interface ConversionRecoveryStats {
   recovery_saves: number;    // wins + draws (backward compat)
   recovery_wins: number;
   recovery_draws: number;
-  // Phase 87 (SEC3-04 / D-01): opp win-rate on the same-class recovery bucket
-  // (mirror-flipped); 0-1 scale; null when recovery_games < 10 (helper p-gate).
-  opp_conversion_pct: number | null;
-  // Phase 87 (SEC3-04 / D-01): opp save-rate on the same-class conversion bucket
-  // (saves-as-W mapping); 0-1 scale; null when conversion_games < 10.
-  opp_recovery_pct: number | null;
-  // Phase 87 (SEC3-04 / D-01): opp sample size for the Conv peer diff (== recovery_games).
-  opp_conversion_games: number;
-  // Phase 87 (SEC3-04 / D-01): opp sample size for the Recov peer diff (== conversion_games).
-  opp_recovery_games: number;
-  // Phase 87 (SEC3-04 / D-01): Wald-z p on per-class (userConv − oppConv);
-  // null when min(conversion_games, recovery_games) < 10 (CONFIDENCE_MIN_N).
-  conv_diff_p_value: number | null;
-  // Phase 87 (SEC3-04 / D-01): lower bound of 95% CI on per-class Conv diff;
-  // null when min(conversion_games, recovery_games) < 2.
-  conv_diff_ci_low: number | null;
-  // Phase 87 (SEC3-04 / D-01): upper bound of 95% CI on per-class Conv diff.
-  conv_diff_ci_high: number | null;
-  // Phase 87 (SEC3-04 / D-01): Wald-z p on per-class (userRecov − oppRecov)
-  // via saves-as-W mapping; null when min(conversion_games, recovery_games) < 10.
-  recov_diff_p_value: number | null;
-  // Phase 87 (SEC3-04 / D-01): lower bound of 95% CI on per-class Recov diff;
-  // null when min(conversion_games, recovery_games) < 2.
-  recov_diff_ci_low: number | null;
-  // Phase 87 (SEC3-04 / D-01): upper bound of 95% CI on per-class Recov diff.
-  recov_diff_ci_high: number | null;
 }
 
 export interface EndgameCategoryStats {

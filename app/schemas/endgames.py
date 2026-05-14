@@ -58,33 +58,6 @@ class ConversionRecoveryStats(BaseModel):
     opponent_recovery_games: int
     """== conversion_games (mirror sample size, always int, possibly 0)."""
 
-    # Phase 87 (SEC3-04 / D-01): per-class Conv + Recov peer-bullet sig wrap.
-    # Parallel to the Phase 84 opponent_* fields above but on the 0-1 scale
-    # (matches Phase 86 wire convention; consumed directly by MiniBulletChart
-    # and MetricStatPopover in the new EndgameTypeCard). The Phase 84 0-100
-    # opponent_* fields are preserved for backward compat with the legacy
-    # EndgameConvRecovChart until Plan 03 deletes it.
-    opp_conversion_pct: float | None = None
-    """Phase 87 (SEC3-04 / D-01): opponent's win-rate on the same-class recovery bucket (mirror-flipped). 0-1 scale. None when recovery_games < _MIN_OPPONENT_SAMPLE."""
-    opp_recovery_pct: float | None = None
-    """Phase 87 (SEC3-04 / D-01): opponent's save-rate on the same-class conversion bucket (saves-as-W mapping). 0-1 scale. None when conversion_games < _MIN_OPPONENT_SAMPLE."""
-    opp_conversion_games: int = 0
-    """Phase 87 (SEC3-04 / D-01): opp sample size for the Conv peer diff (== recovery_games per mirror identity)."""
-    opp_recovery_games: int = 0
-    """Phase 87 (SEC3-04 / D-01): opp sample size for the Recov peer diff (== conversion_games per mirror identity)."""
-    conv_diff_p_value: float | None = None
-    """Phase 87 (SEC3-04 / D-01): Wald-z p-value on per-class (userConv − oppConv). None when min(conversion_games, recovery_games) < CONFIDENCE_MIN_N (=10) per compute_score_difference_test's gate."""
-    conv_diff_ci_low: float | None = None
-    """Phase 87 (SEC3-04 / D-01): lower bound of 95% Wald-z CI on the per-class Conv diff. None when min(conversion_games, recovery_games) < 2."""
-    conv_diff_ci_high: float | None = None
-    """Phase 87 (SEC3-04 / D-01): upper bound of 95% Wald-z CI on the per-class Conv diff. None when min(conversion_games, recovery_games) < 2."""
-    recov_diff_p_value: float | None = None
-    """Phase 87 (SEC3-04 / D-01): Wald-z p-value on per-class (userRecov − oppRecov) using saves-as-W mapping. None when min(conversion_games, recovery_games) < CONFIDENCE_MIN_N (=10)."""
-    recov_diff_ci_low: float | None = None
-    """Phase 87 (SEC3-04 / D-01): lower bound of 95% Wald-z CI on the per-class Recov diff. None when min(conversion_games, recovery_games) < 2."""
-    recov_diff_ci_high: float | None = None
-    """Phase 87 (SEC3-04 / D-01): upper bound of 95% Wald-z CI on the per-class Recov diff. None when min(conversion_games, recovery_games) < 2."""
-
 
 class EndgameCategoryStats(BaseModel):
     """W/D/L + inline conversion/recovery for one endgame category (D-06, D-10).
