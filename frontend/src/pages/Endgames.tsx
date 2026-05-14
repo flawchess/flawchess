@@ -589,13 +589,11 @@ export function EndgamesPage() {
               </InfoPopover>
             </span>
           </h2>
-          <div className="charcoal-texture rounded-md p-4">
-            <EndgameTypeBreakdownSection
-              categories={statsData.categories}
-              totalGames={statsData.endgame_games}
-              onCategorySelect={handleCategorySelect}
-            />
-          </div>
+          <EndgameTypeBreakdownSection
+            categories={statsData.categories}
+            totalGames={statsData.endgame_games}
+            onCategorySelect={handleCategorySelect}
+          />
           <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
         </>
       ) : overviewError ? (
