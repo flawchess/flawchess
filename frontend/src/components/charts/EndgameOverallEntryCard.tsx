@@ -132,7 +132,7 @@ export function EntryCard({ data }: EntryCardProps) {
                   score={data.entry_expected_score}
                   gameCount={data.entry_expected_score_n}
                   level={achievableLevel}
-                  pValue={data.entry_expected_score_p_value ?? 1}
+                  pValue={data.entry_expected_score_p_value}
                 />
               </span>
               <div className="min-w-0 tabular-nums">

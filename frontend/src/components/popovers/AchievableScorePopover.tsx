@@ -2,8 +2,9 @@ import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-type ConfidenceLevel = 'low' | 'medium' | 'high';
+// Phase 85.1 Plan 03 (IN-02): import the canonical ConfidenceLevel type from
+// scoreConfidence instead of re-declaring it locally.
+import type { ConfidenceLevel } from '@/lib/scoreConfidence';
 
 const CONFIDENCE_LABEL: Record<ConfidenceLevel, string> = {
   low: 'Low',
@@ -39,8 +40,11 @@ interface AchievableScorePopoverProps {
   gameCount: number;
   /** Wilson confidence bucket derived from the backend p-value. */
   level: ConfidenceLevel;
-  /** Raw p-value from the backend (Wilson score test vs 50%). */
-  pValue: number;
+  /** Raw p-value from the backend (Wilson score test vs 50%). Null when
+   *  the bucket-row sample size is below the reliability gate
+   *  (PVALUE_RELIABILITY_MIN_N = 10) — the "(p = …)" segment is omitted in
+   *  that case. */
+  pValue: number | null;
   /** Default: "popover-trigger-achievable-score". Override only if multiple
    *  instances must coexist (none today). */
   testId?: string;
@@ -128,8 +132,11 @@ export function AchievableScorePopover({
               )}
             </p>
             <p>
+              {/* pValue is null when bucket-row sample size is below the
+                  reliability gate (PVALUE_RELIABILITY_MIN_N = 10). Omit the
+                  "(p = …)" segment in that case so the prose stays clean. */}
               <strong>{headline(level, score)}</strong> {CONFIDENCE_LABEL[level]} confidence
-              (p = {pValue.toFixed(3)}).
+              {pValue !== null ? ` (p = ${pValue.toFixed(3)})` : ''}.
             </p>
             <p>
               What a 2300+ rated player would score from your endgame-entry positions,
