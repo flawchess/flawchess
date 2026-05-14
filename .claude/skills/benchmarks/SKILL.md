@@ -333,7 +333,7 @@ Before running each subchapter, grep the code for the constants the subchapter's
 | 3.2.1 | Conv / Par / Recov + Endgame Skill | `frontend/src/components/charts/EndgameScoreGapSection.tsx`, `frontend/src/generated/endgameZones.ts` | `FIXED_GAUGE_ZONES`, `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, `ENDGAME_SKILL_ZONES` |
 | 3.3.1 | Clock-diff + net timeout | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD` |
 | 3.3.2 | Time-pressure chart | `app/services/endgame_service.py::_compute_time_pressure_chart`, `EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
-| 3.4.1 | Per-class score-diff + conv/recov | `frontend/src/components/charts/EndgameWDLChart.tsx`, `EndgameConvRecovChart.tsx` | `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`; conv/recov chart has no per-class zones today |
+| 3.4.1 | Per-class chess-score bullet + conv/recov gauges | `frontend/src/components/charts/EndgameTypeCard.tsx`, `EndgameTypeBreakdownSection.tsx`, `frontend/src/generated/endgameZones.ts`, `frontend/src/lib/scoreBulletConfig.ts` | Score bullet uses GLOBAL `SCORE_BULLET_NEUTRAL_MIN/MAX` (0.45/0.55) + `SCORE_BULLET_CENTER` (no per-class zones yet — see 3.4.1 recommendations); gauges use per-class IQR-derived `PER_CLASS_GAUGE_ZONES.{class}.{conversion,recovery}` |
 
 Use the Grep tool, not bash. Record literal values.
 
@@ -1749,16 +1749,91 @@ ORDER BY elo_bucket,
          endgame_class_int;
 ```
 
+##### Per-user per-class score distribution (for Score bullet neutral-zone calibration)
+
+In addition to the cell-level query above, run a second pass that computes per-user-per-class chess-score and reports the IQR per class. This calibrates the per-class neutral zones for the per-card Score bullet redesigned in Phase 87 (single chess-score bullet replacing the legacy Conv+Recov peer bullets — `EndgameTypeCard.tsx` reference). Without per-class IQR the bullets fall back to the global `SCORE_BULLET_NEUTRAL_MIN/MAX = 0.45/0.55` from `scoreBulletConfig.ts`, which the 3.4.1 pooled-by-class data already shows is approximately right (all classes within ±0.5pp of 50%) — but the IQR tells us whether the global band is also the right width per class.
+
+```sql
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+class_span AS (
+  SELECT game_id, endgame_class, min(ply) AS entry_ply
+  FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id, endgame_class
+  HAVING count(*) >= 6
+),
+per_user_class AS (
+  SELECT
+    g.user_id,
+    su.rating_bucket AS elo_bucket,
+    su.tc_bucket AS tc,
+    cs.endgame_class AS endgame_class_int,
+    count(*) AS n_games,
+    avg(
+      CASE
+        WHEN (g.result='1-0' AND g.user_color='white')
+          OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+        WHEN g.result='1/2-1/2' THEN 0.5
+        ELSE 0.0
+      END
+    ) AS user_class_score
+  FROM games g
+  JOIN selected_users su ON su.user_id = g.user_id
+  JOIN class_span cs ON cs.game_id = g.id
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+  GROUP BY g.user_id, su.rating_bucket, su.tc_bucket, cs.endgame_class
+  HAVING count(*) >= 10        -- min 10 games per user per class
+)
+SELECT
+  CASE endgame_class_int
+    WHEN 1 THEN 'rook'
+    WHEN 2 THEN 'minor_piece'
+    WHEN 3 THEN 'pawn'
+    WHEN 4 THEN 'queen'
+    WHEN 5 THEN 'mixed'
+    WHEN 6 THEN 'pawnless'
+  END AS endgame_class,
+  count(*) AS n_users,
+  round(avg(user_class_score)::numeric, 4) AS mean_score,
+  round(percentile_cont(0.10) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p10,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p75,
+  round(percentile_cont(0.90) WITHIN GROUP (ORDER BY user_class_score)::numeric, 4) AS p90
+FROM per_user_class
+GROUP BY endgame_class_int
+ORDER BY endgame_class_int;
+```
+
 ##### Output
 
 For each of the three metrics (score / conversion / recovery):
 
 1. **One sub-table per endgame class** (6 sub-tables): rows = ELO bucket (5), columns = TC (4). Cell = `metric (n)`. Suppress per sample-floor (n_games < 100 for score; n_conv < 30 for conv; n_recov < 30 for recov).
-2. **Pooled-by-class summary** (collapses ELO and TC): one row per class with pooled `score / score_diff / conversion / recovery` and sample sizes. This is the row most likely to drive UI decisions.
-3. **Recommendations**:
-   - **Per-class score-diff neutral zone** (`NEUTRAL_ZONE_MIN/MAX` in `EndgameWDLChart.tsx`, currently `±0.05`): keep if pooled per-class score_diff fits within ±0.05.
-   - **Per-class conv/recov neutral zones** (currently none in `EndgameConvRecovChart.tsx`): if pooled per-class spread > 5pp, propose initial bands per class as `pooled_rate ± 5pp`. Otherwise recommend keeping pooled-only display.
-4. **Collapse verdict per (metric × class)**: 6 classes × 3 metrics = 18 verdicts. For each metric × class, run Cohen's d across {TC, ELO} marginals on the per-cell pooled rate (n ≥ 30 cell-floor). This is rate-level rather than per-user because per-user-per-class would be too sparse at the current sample size.
+2. **Pooled-by-class summary** (collapses ELO and TC): one row per class with pooled `score / score_diff / conversion / recovery` and sample sizes.
+3. **Per-class chess-score IQR table** (new — from the per-user query above): columns `endgame_class | n_users | mean | p10 | p25 | p50 | p75 | p90`. This is the row most likely to drive the Score-bullet neutral-zone calibration in `EndgameTypeCard.tsx`.
+4. **Recommendations**:
+   - **Per-class Score-bullet neutral zone** (currently global `SCORE_BULLET_NEUTRAL_MIN/MAX = 0.45/0.55` in `frontend/src/lib/scoreBulletConfig.ts`, applied to every per-class card):
+     - Compare per-class p25 / p75 against the global `[0.45, 0.55]` band.
+     - If a class's `[p25, p75]` shifts the midpoint by > 1pp from 0.50 OR widens / narrows by > 2pp, propose a per-class override. Suggested per-class shape mirrors `PER_CLASS_GAUGE_ZONES`: a new `PER_CLASS_SCORE_BULLET_ZONES: Record<EndgameClass, { neutralMin: number; neutralMax: number }>` in `endgame_zones.py`, codegen'd to TS via `scripts/gen_endgame_zones_ts.py`, consumed in `EndgameTypeCard.tsx` via a lookup analogous to `PER_CLASS_GAUGE_ZONES[class]`.
+     - If all classes stay within `[0.495, 0.505]` midpoint and `± 1pp` width vs the global band, keep the global band and document the verdict.
+   - **Per-class score-diff neutral zone** (legacy `NEUTRAL_ZONE_MIN/MAX = ±0.05` in the now-deleted `EndgameWDLChart.tsx`): DEPRECATED after Phase 87 — the score-diff bullet was removed in the redesign and replaced with an absolute chess-score bullet vs the 50% baseline. Score-diff zone is no longer used by any live UI surface.
+   - **Per-class conv/recov gauge zones** (`PER_CLASS_GAUGE_ZONES` in `endgame_zones.py`): already per-class as of 2026-05-01. Compare current values against fresh pooled rates — recommend a delta only when the pooled rate drifts more than ~3pp from the live midpoint.
+5. **Collapse verdict per (metric × class)**: 6 classes × 3 metrics = 18 verdicts. For each metric × class, run Cohen's d across {TC, ELO} marginals on the per-cell pooled rate (n ≥ 30 cell-floor). This is rate-level rather than per-user because per-user-per-class would be too sparse at the current sample size.
 
 If 18 verdicts is too noisy, aggregate to one verdict per metric (across-class max d) plus per-class footnote when an outlier class fails the metric-level verdict.
 
