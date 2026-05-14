@@ -25,7 +25,9 @@ import pytest
 
 from app.services.score_confidence import (
     compute_confidence_bucket,
+    compute_paired_difference_test,
     compute_score_confidence_from_mean,
+    compute_score_difference_test,
 )
 
 
@@ -252,3 +254,241 @@ class TestComputeScoreConfidenceFromMean:
         down = compute_score_confidence_from_mean(score=0.3, n=200)
         assert up[0] == down[0]
         assert up[1] == pytest.approx(down[1], abs=1e-12)
+
+
+# --- compute_score_difference_test (Phase 85.1 Plan 1 Task 1) -------------
+# Independent two-sample z-test on chess-score difference between two WDL
+# cohorts. Per SEC1-08/09: p_value gated to None when min(eg_n, ne_n) < 10
+# (CONFIDENCE_MIN_N); CI bounds gated to None when min(eg_n, ne_n) < 2.
+# Wald-on-difference (not Wilson) because the difference of two independent
+# proportions does not reduce to a single-proportion problem. Variance-0
+# trap follows the eval_confidence.py:116-119 pattern verbatim.
+
+
+class TestComputeScoreDifferenceTest:
+    """compute_score_difference_test(eg_w, eg_d, eg_l, eg_n, ne_w, ne_d, ne_l, ne_n)
+    -> (p_value, ci_low, ci_high). Independent gates on p (n>=10) and CI (n>=2)."""
+
+    # CONFIDENCE_MIN_N is 10; the bare 10/9 numbers below are gate boundaries.
+    # Per existing test-file convention (see lines 35-39) we don't import the
+    # constant — we assert against the literal value the test was written for.
+
+    def test_n_zero_either_side_returns_all_none(self) -> None:
+        """n=0 on either cohort gates both p and CI to None without raising."""
+        p, lo, hi = compute_score_difference_test(
+            eg_w=0, eg_d=0, eg_l=0, eg_n=0,
+            ne_w=5, ne_d=5, ne_l=5, ne_n=15,
+        )
+        assert p is None
+        assert lo is None
+        assert hi is None
+
+        p2, lo2, hi2 = compute_score_difference_test(
+            eg_w=5, eg_d=5, eg_l=5, eg_n=15,
+            ne_w=0, ne_d=0, ne_l=0, ne_n=0,
+        )
+        assert p2 is None
+        assert lo2 is None
+        assert hi2 is None
+
+    def test_below_p_gate_returns_p_none_with_ci_present(self) -> None:
+        """eg_n=9 (below CONFIDENCE_MIN_N=10) gates p_value but CI is still
+        computed because eg_n >= 2."""
+        p, lo, hi = compute_score_difference_test(
+            eg_w=4, eg_d=2, eg_l=3, eg_n=9,
+            ne_w=10, ne_d=5, ne_l=5, ne_n=20,
+        )
+        assert p is None
+        assert lo is not None
+        assert hi is not None
+        assert lo <= hi
+
+    def test_n_one_either_side_gates_ci_only(self) -> None:
+        """ne_n=1 gates CI bounds (need n >= 2) and also gates p_value (n < 10)."""
+        p, lo, hi = compute_score_difference_test(
+            eg_w=8, eg_d=5, eg_l=2, eg_n=15,
+            ne_w=1, ne_d=0, ne_l=0, ne_n=1,
+        )
+        assert p is None  # ne_n=1 < CONFIDENCE_MIN_N=10
+        assert lo is None  # ne_n=1 < 2
+        assert hi is None
+
+    def test_identical_distributions_both_sides_give_p_one_ci_brackets_zero(self) -> None:
+        """Same proportions both sides: score_eg == score_ne -> z=0 -> p=1.0.
+        SE_diff > 0 (non-degenerate WDL spread) -> CI brackets 0 symmetrically."""
+        p, lo, hi = compute_score_difference_test(
+            eg_w=20, eg_d=10, eg_l=20, eg_n=50,
+            ne_w=20, ne_d=10, ne_l=20, ne_n=50,
+        )
+        assert p == pytest.approx(1.0, abs=1e-9)
+        assert lo is not None and hi is not None
+        # score_eg - score_ne = 0, so CI is symmetric around 0.
+        assert lo == pytest.approx(-hi, abs=1e-9)
+        assert lo < 0.0 < hi
+
+    def test_all_wins_vs_all_losses_collapses_to_point_estimate(self) -> None:
+        """All-wins (10,0,0) vs all-losses (0,0,10): each side's variance is 0,
+        so SE_diff = 0. score_eg - score_ne = 1.0 -> p_value=0.0 (perfectly
+        determined), and CI collapses to ci_low == ci_high == 1.0."""
+        p, lo, hi = compute_score_difference_test(
+            eg_w=10, eg_d=0, eg_l=0, eg_n=10,
+            ne_w=0, ne_d=0, ne_l=10, ne_n=10,
+        )
+        assert p == pytest.approx(0.0, abs=1e-9)
+        assert lo == pytest.approx(1.0, abs=1e-9)
+        assert hi == pytest.approx(1.0, abs=1e-9)
+
+    def test_all_draws_both_sides_gives_p_one_zero_width_ci(self) -> None:
+        """All-draws both sides: variance is 0 in each term (score=0.5,
+        E[X^2] = 0.25*N/N = 0.25, var = 0.25 - 0.25 = 0). score_eg == score_ne
+        -> p_value = 1.0. CI half-width = 0."""
+        p, lo, hi = compute_score_difference_test(
+            eg_w=0, eg_d=10, eg_l=0, eg_n=10,
+            ne_w=0, ne_d=10, ne_l=0, ne_n=10,
+        )
+        assert p == pytest.approx(1.0, abs=1e-9)
+        assert lo == pytest.approx(0.0, abs=1e-9)
+        assert hi == pytest.approx(0.0, abs=1e-9)
+
+    def test_ci_half_width_matches_wald_closed_form(self) -> None:
+        """For known input (eg: w=60,d=20,l=20,n=100; ne: w=40,d=20,l=40,n=100),
+        the CI half-width must equal CI_Z_95 * sqrt(var_eg/eg_n + var_ne/ne_n)
+        where var_i = max(0, (w_i + 0.25*d_i)/n_i - score_i**2)."""
+        eg_w, eg_d, eg_n = 60, 20, 100
+        ne_w, ne_d, ne_n = 40, 20, 100
+        score_eg = (eg_w + 0.5 * eg_d) / eg_n
+        score_ne = (ne_w + 0.5 * ne_d) / ne_n
+        var_eg = max(0.0, (eg_w + 0.25 * eg_d) / eg_n - score_eg * score_eg)
+        var_ne = max(0.0, (ne_w + 0.25 * ne_d) / ne_n - score_ne * score_ne)
+        se_diff = math.sqrt(var_eg / eg_n + var_ne / ne_n)
+        # 1.96 is the constant CI_Z_95 already imported by the implementation.
+        expected_half_width = 1.96 * se_diff
+        expected_diff = score_eg - score_ne
+
+        p, lo, hi = compute_score_difference_test(
+            eg_w=eg_w, eg_d=eg_d, eg_l=20, eg_n=eg_n,
+            ne_w=ne_w, ne_d=ne_d, ne_l=40, ne_n=ne_n,
+        )
+        assert p is not None
+        assert lo is not None and hi is not None
+        assert (hi - lo) / 2.0 == pytest.approx(expected_half_width, rel=1e-9)
+        assert (lo + hi) / 2.0 == pytest.approx(expected_diff, rel=1e-9)
+
+    def test_p_value_in_unit_interval_for_non_degenerate_input(self) -> None:
+        """For any well-defined two-sample z-test, erfc(|z|/sqrt(2)) is in [0, 1]."""
+        p, _lo, _hi = compute_score_difference_test(
+            eg_w=70, eg_d=10, eg_l=20, eg_n=100,
+            ne_w=30, ne_d=10, ne_l=60, ne_n=100,
+        )
+        assert p is not None
+        assert 0.0 <= p <= 1.0
+
+
+# --- compute_paired_difference_test (Phase 85.1 Plan 1 Task 2) ------------
+# Paired one-sample z-test on per-game differences d_i = actual_i - expected_i.
+# Per SEC1-10: mean_d always returned (0.0 when empty); p_value None when
+# len(diffs) < 10 (CONFIDENCE_MIN_N); ci_* None when len(diffs) < 2. H0 is
+# mean_d == 0. Variance uses Bessel correction (n-1 denominator).
+
+
+class TestComputePairedDifferenceTest:
+    """compute_paired_difference_test(diffs) -> (mean_d, p_value, ci_low, ci_high).
+
+    H0: mean(diffs) == 0. p_value gated at n < 10; CI gated at n < 2.
+    Bessel-corrected sample variance: var_d = max(0, (sumsq - n*mean^2) / (n-1)).
+    """
+
+    def test_empty_sequence_returns_zero_mean_all_none(self) -> None:
+        """diffs=[] -> mean=0.0, p/ci all None. Must not raise."""
+        mean_d, p, lo, hi = compute_paired_difference_test([])
+        assert mean_d == 0.0
+        assert p is None
+        assert lo is None
+        assert hi is None
+
+    def test_n_one_returns_mean_but_no_p_no_ci(self) -> None:
+        """diffs=[0.1] (n=1): Bessel correction divides by n-1 which is zero
+        at n=1; the helper must short-circuit rather than divide-by-zero.
+        mean is still computable and returned."""
+        mean_d, p, lo, hi = compute_paired_difference_test([0.1])
+        assert mean_d == pytest.approx(0.1, abs=1e-12)
+        assert p is None
+        assert lo is None
+        assert hi is None
+
+    def test_all_zeros_above_gate_gives_p_one_ci_collapses_to_zero(self) -> None:
+        """diffs=[0.0]*15: SE=0, mean == H0=0 -> p=1.0, CI collapses to [0, 0]."""
+        mean_d, p, lo, hi = compute_paired_difference_test([0.0] * 15)
+        assert mean_d == pytest.approx(0.0, abs=1e-12)
+        assert p == pytest.approx(1.0, abs=1e-9)
+        assert lo == pytest.approx(0.0, abs=1e-9)
+        assert hi == pytest.approx(0.0, abs=1e-9)
+
+    def test_all_equal_nonzero_gives_p_zero_ci_collapses(self) -> None:
+        """diffs=[0.25]*15: SE=0, mean != H0=0 -> p=0.0 (perfectly determined),
+        CI collapses to [0.25, 0.25]."""
+        mean_d, p, lo, hi = compute_paired_difference_test([0.25] * 15)
+        assert mean_d == pytest.approx(0.25, abs=1e-12)
+        assert p == pytest.approx(0.0, abs=1e-9)
+        assert lo == pytest.approx(0.25, abs=1e-9)
+        assert hi == pytest.approx(0.25, abs=1e-9)
+
+    def test_below_p_gate_with_n_at_least_2_returns_ci(self) -> None:
+        """diffs=[+0.1]*9 (n=9, below CONFIDENCE_MIN_N=10 but >=2): p is gated
+        to None, but CI bounds are still returned (CI gate is n<2)."""
+        mean_d, p, lo, hi = compute_paired_difference_test([0.1] * 9)
+        assert mean_d == pytest.approx(0.1, abs=1e-12)
+        assert p is None
+        # All-equal nonzero -> SE=0, CI collapses to mean (still real floats).
+        assert lo == pytest.approx(0.1, abs=1e-9)
+        assert hi == pytest.approx(0.1, abs=1e-9)
+
+    def test_known_mixed_dataset_matches_closed_form(self) -> None:
+        """For diffs = [0.1, -0.1, 0.2, -0.2] * 5 (n=20):
+        sum = 0; mean = 0; sumsq = (0.01 + 0.01 + 0.04 + 0.04) * 5 = 0.5;
+        var_d = (0.5 - 20*0) / 19 = 0.5 / 19;
+        se = sqrt(var_d / 20); ci_half = 1.96 * se;
+        ci_high - ci_low = 2 * ci_half."""
+        diffs = [0.1, -0.1, 0.2, -0.2] * 5
+        n = len(diffs)
+        expected_mean = sum(diffs) / n
+        sumsq = sum(d * d for d in diffs)
+        expected_var = max(0.0, (sumsq - n * expected_mean * expected_mean) / (n - 1))
+        expected_se = math.sqrt(expected_var / n)
+        expected_half_width = 1.96 * expected_se  # 1.96 == CI_Z_95
+
+        mean_d, p, lo, hi = compute_paired_difference_test(diffs)
+        assert mean_d == pytest.approx(expected_mean, abs=1e-12)
+        assert p is not None
+        assert lo is not None and hi is not None
+        assert (hi - lo) / 2.0 == pytest.approx(expected_half_width, rel=1e-9)
+        assert (lo + hi) / 2.0 == pytest.approx(expected_mean, abs=1e-9)
+
+    def test_p_value_in_unit_interval_for_non_degenerate_input(self) -> None:
+        """erfc(|z|/sqrt(2)) is in [0, 1] for any finite z."""
+        diffs = [0.05 * i for i in range(-10, 10)]  # symmetric mean ~ -0.025
+        _mean, p, _lo, _hi = compute_paired_difference_test(diffs)
+        assert p is not None
+        assert 0.0 <= p <= 1.0
+
+    def test_bessel_correction_divides_by_n_minus_one(self) -> None:
+        """Var must use Bessel correction. For diffs = [1.0, -1.0, 1.0, -1.0]*5
+        (n=20), mean=0, sumsq=20. Bessel var = (20 - 0) / 19 = 1.0526...
+        Naive var (/n) would be 1.0. Distinguish by checking the CI half-width."""
+        diffs = [1.0, -1.0, 1.0, -1.0] * 5
+        n = len(diffs)
+        bessel_var = 20.0 / (n - 1)  # 20/19
+        bessel_se = math.sqrt(bessel_var / n)
+        bessel_half_width = 1.96 * bessel_se
+
+        # Naive (/n) would yield a smaller half-width:
+        naive_var = 20.0 / n  # 1.0
+        naive_se = math.sqrt(naive_var / n)
+        naive_half_width = 1.96 * naive_se
+        assert bessel_half_width > naive_half_width  # sanity: they differ
+
+        _mean, _p, lo, hi = compute_paired_difference_test(diffs)
+        assert lo is not None and hi is not None
+        assert (hi - lo) / 2.0 == pytest.approx(bessel_half_width, rel=1e-9)
+        # Explicitly NOT the naive half-width:
+        assert (hi - lo) / 2.0 != pytest.approx(naive_half_width, rel=1e-9)
