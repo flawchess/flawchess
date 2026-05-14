@@ -4623,3 +4623,44 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
         assert resp.score_difference_p_value is None
         assert resp.score_difference_ci_low is None
         assert resp.score_difference_ci_high is None
+
+    def test_score_gap_material_response_defaults_for_phase86_skill_fields(self) -> None:
+        """Phase 86 (SEC2-03 / SEC2-08 / D-01..D-02): ScoreGapMaterialResponse
+        carries the 5 new Skill peer-bullet sig-test fields, all None by default
+        so existing fixtures that construct the response without them keep working."""
+        from app.schemas.endgames import ScoreGapMaterialResponse
+
+        resp = ScoreGapMaterialResponse(
+            endgame_score=0.0,
+            non_endgame_score=0.0,
+            score_difference=0.0,
+            material_rows=[],
+            timeline=[],
+            timeline_window=0,
+        )
+        assert resp.skill is None
+        assert resp.opp_skill is None
+        assert resp.skill_diff_p_value is None
+        assert resp.skill_diff_ci_low is None
+        assert resp.skill_diff_ci_high is None
+
+    def test_material_row_defaults_for_phase86_diff_fields(self) -> None:
+        """Phase 86 (SEC2-06 / D-06): MaterialRow carries the 3 new per-bucket
+        diff fields, all None by default (matches Phase 85.1 score_difference_*
+        additive pattern)."""
+        from app.schemas.endgames import MaterialRow
+
+        row = MaterialRow(
+            bucket="parity",
+            label="Parity",
+            games=0,
+            win_pct=0.0,
+            draw_pct=0.0,
+            loss_pct=0.0,
+            score=0.0,
+            opponent_score=None,
+            opponent_games=0,
+        )
+        assert row.diff_p_value is None
+        assert row.diff_ci_low is None
+        assert row.diff_ci_high is None
