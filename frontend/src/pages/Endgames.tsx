@@ -412,9 +412,10 @@ export function EndgamesPage() {
                       means you perform worse once games reach an endgame.
                     </p>
                     <p>
-                      <strong>Endgame Score Loss:</strong> your Endgame Score minus the Achievable Score
-                      from your endgame-entry positions. Negative means you converted your endgame entry positions
-                      worse than a 2300+ rated rapid player would on average.
+                      <strong>Achievable Score Gap:</strong> your Endgame Score minus the Achievable Score
+                      from your endgame-entry positions. Positive means you converted your endgame entry positions
+                      better than a 2300+ rated rapid player would on average; negative means you converted them
+                      worse.
                     </p>
                     <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating

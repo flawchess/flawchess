@@ -40,7 +40,7 @@ import { ConnectorArrows } from './EndgameOverallConnectorArrows';
 import { EntryCard } from './EndgameOverallEntryCard';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
 
-// Score Gap / Score Loss result is always tinted by zone (red / blue / green),
+// Endgame Score Gap / Achievable Score Gap result is always tinted by zone (red / blue / green),
 // never default-white. The difference reads as a zone signal regardless of
 // confidence so the user always sees where they land.
 function gapZoneColor(value: number): string {
@@ -65,7 +65,7 @@ export function EndgameOverallPerformanceSection({
   const withoutShare = totalGames > 0 ? data.non_endgame_wdl.total / totalGames : 0;
   const withShare = totalGames > 0 ? data.endgame_wdl.total / totalGames : 0;
 
-  // Endgame score used by the Score Loss row. Sign convention:
+  // Endgame score used by the Achievable Score Gap row. Sign convention:
   // score_difference = endgame - non_endgame; positive means endgame is the
   // user's strength.
   const withScore =
@@ -75,14 +75,14 @@ export function EndgameOverallPerformanceSection({
       : 0;
   const gapColor = gapZoneColor(scoreGap.score_difference);
 
-  // Endgame Score Loss: how much the actual endgame score fell short of
+  // Achievable Score Gap: how much the actual endgame score fell short of
   // (or exceeded) the achievable score expected from the entry eval.
   const achievableScore = data.entry_expected_score;
-  const lossValue = withScore - achievableScore;
-  const lossPositive = lossValue >= 0;
-  const lossFormatted =
-    (lossPositive ? '+' : '') + `${Math.round(lossValue * 100)}%`;
-  const lossColor = gapZoneColor(lossValue);
+  const achievableGapValue = withScore - achievableScore;
+  const achievableGapPositive = achievableGapValue >= 0;
+  const achievableGapFormatted =
+    (achievableGapPositive ? '+' : '') + `${Math.round(achievableGapValue * 100)}%`;
+  const achievableGapColor = gapZoneColor(achievableGapValue);
 
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -142,22 +142,23 @@ export function EndgameOverallPerformanceSection({
           <h3 className="text-base font-semibold mb-2">Endgame Score Differences</h3>
           <div className="flex flex-col gap-4">
             <ScoreGapRow
-              label="Endgame Score Loss:"
-              value={lossValue}
-              formatted={lossFormatted}
-              resultColor={lossColor}
-              valueTestId="endgame-score-loss-value"
-              ariaLabel={`Endgame Score Loss: ${lossFormatted}`}
+              label="Achievable Score Gap:"
+              value={achievableGapValue}
+              formatted={achievableGapFormatted}
+              resultColor={achievableGapColor}
+              valueTestId="achievable-score-gap-value"
+              ariaLabel={`Achievable Score Gap: ${achievableGapFormatted}`}
               tooltip={
                 <InfoPopover
-                  ariaLabel="What is Endgame Score Loss?"
-                  testId="endgame-score-loss-info"
+                  ariaLabel="What is Achievable Score Gap?"
+                  testId="achievable-score-gap-info"
                 >
                   <p>
                     Your Endgame Score minus the Achievable Score from your
-                    endgame-entry positions. Negative means you converted
-                    your endgame entry positions worse than a 2300+ rated
-                    rapid player would on average.
+                    endgame-entry positions. Positive means you converted
+                    your endgame entry positions better than a 2300+ rated
+                    rapid player would on average; negative means you
+                    converted them worse.
                   </p>
                 </InfoPopover>
               }

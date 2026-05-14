@@ -153,7 +153,7 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(screen.getByText('Games with Endgame')).toBeTruthy();
     expect(screen.getByText('Endgame Score Differences')).toBeTruthy();
     expect(screen.getByText('Endgame Score Gap:')).toBeTruthy();
-    expect(screen.getByText('Endgame Score Loss:')).toBeTruthy();
+    expect(screen.getByText('Achievable Score Gap:')).toBeTruthy();
     expect(screen.getByText(/Do you perform better or worse when games reach an endgame/)).toBeTruthy();
   });
 
@@ -257,9 +257,9 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(screen.getByTestId('endgame-score-gap-value').textContent).toBe('-12%');
   });
 
-  it('score loss shows signed (endgame score − achievable score) with explicit + or - prefix', () => {
+  it('achievable score gap shows signed (endgame score − achievable score) with explicit + or - prefix', () => {
     // endgame_wdl = 6W/0D/4L → endgame score = 60%.
-    // entry_expected_score = 0.50 → loss = +10%.
+    // entry_expected_score = 0.50 → gap = +10%.
     const { rerender } = render(
       <EndgameOverallPerformanceSection
         data={makeData({
@@ -270,9 +270,9 @@ describe('EndgameOverallPerformanceSection', () => {
         scoreGap={makeScoreGap()}
       />,
     );
-    expect(screen.getByTestId('endgame-score-loss-value').textContent).toBe('+10%');
+    expect(screen.getByTestId('achievable-score-gap-value').textContent).toBe('+10%');
 
-    // Same endgame_wdl, achievable bumped to 0.75 → loss = -15%.
+    // Same endgame_wdl, achievable bumped to 0.75 → gap = -15%.
     rerender(
       <EndgameOverallPerformanceSection
         data={makeData({
@@ -283,7 +283,7 @@ describe('EndgameOverallPerformanceSection', () => {
         scoreGap={makeScoreGap()}
       />,
     );
-    expect(screen.getByTestId('endgame-score-loss-value').textContent).toBe('-15%');
+    expect(screen.getByTestId('achievable-score-gap-value').textContent).toBe('-15%');
   });
 
   // ── Empty state ──────────────────────────────────────────────────────────
