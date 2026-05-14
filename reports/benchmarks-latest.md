@@ -690,9 +690,11 @@ Recommendation: **show TC overlay** in the live curve — the bullet/classical g
 
 | Constant | Live | File |
 |---|---|---|
-| `NEUTRAL_ZONE_MIN/MAX` (score-diff bullet) | ±0.05 | `EndgameWDLChart.tsx` |
-| `BULLET_DOMAIN` | 0.30 | same |
+| `SCORE_BULLET_CENTER` | `0.5` | `frontend/src/lib/scoreBulletConfig.ts` |
+| `SCORE_BULLET_NEUTRAL_MIN` / `MAX` (per-card Score bullet, global) | `−0.05` / `+0.05` | same |
+| `SCORE_BULLET_DOMAIN` | `0.25` | same |
 | `PER_CLASS_GAUGE_ZONES.{class}.conversion` / `.recovery` | per `endgameZones.ts` (calibrated 2026-05-01) | `frontend/src/generated/endgameZones.ts` |
+| `NEUTRAL_ZONE_MIN/MAX` (legacy score-diff bullet) | DEPRECATED in Phase 87 | n/a (`EndgameWDLChart.tsx` removed) |
 
 ##### Pooled-by-class summary (excl sparse cell)
 
@@ -704,6 +706,24 @@ Recommendation: **show TC overlay** in the live curve — the bullet/classical g
 | queen | 34,432 | 1,764 | 50.8% | +1.6pp | 77.4% | 23.4% |
 | mixed | 529,608 | 1,888 | 50.6% | +1.1pp | 69.4% | 31.1% |
 | pawnless | 5,847 | 1,365 | 50.7% | +1.4pp | 79.1% | 19.8% |
+
+##### Per-user per-class chess-score IQR (Phase 87 Score-bullet calibration)
+
+Per-user chess-score (`(W + 0.5·D) / total`) over each (user × class) pair with ≥10 games. Sparse `(2400, classical)` cell excluded. This is the row that drives the per-card Score bullet's neutral-zone calibration in `EndgameTypeCard.tsx`.
+
+| class | n_users | mean | p10 | p25 | p50 | p75 | p90 | IQR width |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| rook | 1,533 | 50.4% | 37.5% | 43.9% | 50.0% | 57.1% | 63.5% | 13.2pp |
+| minor_piece | 1,417 | 50.5% | 35.7% | 43.3% | 50.8% | 57.8% | 65.0% | 14.5pp |
+| pawn | 1,149 | 50.2% | 34.4% | 42.1% | 50.0% | 58.9% | 66.7% | 16.8pp |
+| queen | 1,149 | 51.7% | 32.1% | 41.1% | 52.4% | 62.5% | 70.6% | 21.4pp |
+| mixed | 1,815 | 51.4% | 41.9% | 46.2% | 50.9% | 56.1% | 61.7% | 9.9pp |
+| pawnless | 119 | 43.6% | 25.0% | 30.3% | 40.0% | 54.8% | 68.2% | 24.5pp |
+
+Notable shape:
+- **mixed** is the tightest distribution (9.9pp IQR) — close to the global ±5pp band.
+- **queen** sits ~1.8pp above 50% and runs wide (21.4pp) — high-variance class where small samples per user dominate.
+- **pawnless** is the most distorted: midpoint pulled down to ~42.5% (n_users only 119, since most users don't accumulate ≥10 pawnless games). Treat as suggestive, not actionable.
 
 ##### Score (per (ELO × TC × class), suppressed n_games < 100)
 
@@ -735,12 +755,35 @@ Pooled per-class conversion ranges from 69.4% (mixed) to 79.1% (pawnless). Live 
 
 ##### Recommendations
 
-- Live per-class registry is healthy. Two classes drifted vs 2026-05-01 baseline:
-  - **pawnless conversion**: live midpoint 0.75 vs new pooled 0.79 (~4pp drift up). Suggest shifting to `[0.74, 0.84]`.
-  - **pawnless recovery**: live midpoint 0.26 vs new pooled 0.20 (~6pp drift down). Suggest shifting to `[0.15, 0.25]`.
-  - pawnless has the smallest sample (5,847 games / 1,365 users) — drift may also reflect sampling noise. Re-evaluate after the next dump.
-- Per-class **score_diff**: all classes within ±2.5pp — live `NEUTRAL_ZONE_MIN/MAX = ±0.05` continues to fit pooled cohort behaviour. **Keep**.
-- **Collapse verdicts** for per-(metric × class): per-cell sample sizes show the same ELO ramp pattern observed in §3.2.1 — conversion climbs with ELO, recovery is roughly flat. ELO stratification per class is statistically supported but UI-cost is high. Stick with pooled per-class until users ask for the finer grain.
+**Per-card Score bullet (Phase 87 — global vs per-class):**
+
+Skill rule: propose a per-class override if a class's `[p25, p75]` shifts the midpoint by > 1pp from 0.50 OR widens / narrows by > 2pp vs the global `[0.45, 0.55]` band.
+
+| class | midpoint vs 0.50 | width vs 10pp | proposal |
+|---|---:|---:|---|
+| rook | +0.5pp | +3.2pp wider | per-class `[0.44, 0.57]` |
+| minor_piece | +0.6pp | +4.5pp wider | per-class `[0.43, 0.58]` |
+| pawn | +0.5pp | +6.8pp wider | per-class `[0.42, 0.59]` |
+| queen | **+1.8pp** | +11.4pp wider | per-class `[0.41, 0.63]` |
+| mixed | +1.1pp | −0.1pp ≈ | per-class `[0.46, 0.56]` (borderline; could keep global) |
+| pawnless | **−7.5pp** | +14.5pp wider | n=119 only — defer, sample too small |
+
+By the rule, every class except (borderline) mixed warrants an override. The practical signal: **per-class IQRs are systematically wider than the global ±5pp band**, because a user's per-class score samples fewer games than their overall EG score. If we keep the global band, almost every user's per-class Score bullet will paint as "outside neutral" on at least one class — bad UX.
+
+Two routes:
+1. **Add a `PER_CLASS_SCORE_BULLET_ZONES` registry** in `app/services/endgame_zones.py` (codegen'd to `endgameZones.ts`), consumed in `EndgameTypeCard.tsx` via a lookup analogous to `PER_CLASS_GAUGE_ZONES[class]`. Use the proposals above; defer pawnless until n_users ≥ ~500 (next dump).
+2. **Widen the global band to ±7-8pp** to reduce over-painting without per-class infrastructure. Cheaper but less precise — queen and pawnless still mis-painted.
+
+Editorial tightening (memory `feedback_zone_band_judgement.md`): the recommended per-class bands above use raw `[p25, p75]`. If a meaningful effect (e.g. a class where you score 5pp below cohort) needs to paint red/green, tighten inside IQR — but the live IQR widths are already wider than meaningful effects, so raw IQR is the appropriate ceiling here, not the floor.
+
+**Per-class conv/recov gauges:** Live per-class registry is healthy. Two classes drifted vs 2026-05-01 baseline:
+- **pawnless conversion**: live midpoint 0.75 vs new pooled 0.79 (~4pp drift up). Suggest shifting to `[0.74, 0.84]`.
+- **pawnless recovery**: live midpoint 0.26 vs new pooled 0.20 (~6pp drift down). Suggest shifting to `[0.15, 0.25]`.
+- pawnless has the smallest sample (5,847 games / 1,365 users) — drift may also reflect sampling noise. Re-evaluate after the next dump.
+
+**Per-class score_diff:** legacy score-diff bullet was removed in Phase 87 (replaced by the absolute chess-score bullet). The `NEUTRAL_ZONE_MIN/MAX = ±0.05` constant in `EndgameWDLChart.tsx` is deprecated — no live UI surface consumes it.
+
+**Collapse verdicts** for per-(metric × class): per-cell sample sizes show the same ELO ramp pattern observed in §3.2.1 — conversion climbs with ELO, recovery is roughly flat. ELO stratification per class is statistically supported but UI-cost is high. Stick with pooled per-class until users ask for the finer grain.
 
 ---
 
@@ -762,7 +805,8 @@ Pooled per-class conversion ranges from 69.4% (mixed) to 79.1% (pawnless). Live 
 | Clock pressure %-of-base | 3.3.1 | review (0.23) | review (0.21) | single pooled threshold OK |
 | Net timeout rate | 3.3.1 | collapse (0.07) | review (0.41) | single pooled threshold OK; strong ELO ramp |
 | Time-pressure curve (per-bucket) | 3.3.2 | review (0.34) | collapse (0.17) | TC overlay recommended |
-| Per-class score | 3.4.1 | flat across classes | (see 3.2.1) | pooled ±5pp OK |
+| Per-class score (pooled, by-class) | 3.4.1 | flat across classes | (see 3.2.1) | pooled ±5pp OK |
+| Per-class chess-score IQR (per-user) | 3.4.1 | n/a | n/a | global ±5pp band too narrow — add `PER_CLASS_SCORE_BULLET_ZONES` |
 | Per-class conversion | 3.4.1 | (see 3.2.1) | (see 3.2.1) | pawnless drift — recalibrate |
 | Per-class recovery | 3.4.1 | (see 3.2.1) | (see 3.2.1) | pawnless drift — recalibrate |
 
@@ -793,3 +837,9 @@ Pooled per-class conversion ranges from 69.4% (mixed) to 79.1% (pawnless). Live 
 | Net-timeout threshold | 3.3.1 | `NEUTRAL_TIMEOUT_THRESHOLD` | 5.0 | 5.0 | ELO review | keep |
 | Per-class pawnless conv | 3.4.1 | `PER_CLASS_GAUGE_ZONES.pawnless.conversion` | [0.70, 0.80] | **[0.74, 0.84]** | — | **shift up** |
 | Per-class pawnless recov | 3.4.1 | `PER_CLASS_GAUGE_ZONES.pawnless.recovery` | [0.21, 0.31] | **[0.15, 0.25]** | — | **shift down** |
+| Per-class Score bullet (rook) | 3.4.1 | `SCORE_BULLET_NEUTRAL_MIN/MAX` (global) | ±0.05 (= [0.45, 0.55]) | **[0.44, 0.57]** | width +3.2pp wider | **add `PER_CLASS_SCORE_BULLET_ZONES`** registry |
+| Per-class Score bullet (minor_piece) | 3.4.1 | same | ±0.05 | **[0.43, 0.58]** | width +4.5pp wider | same registry |
+| Per-class Score bullet (pawn) | 3.4.1 | same | ±0.05 | **[0.42, 0.59]** | width +6.8pp wider | same registry |
+| Per-class Score bullet (queen) | 3.4.1 | same | ±0.05 | **[0.41, 0.63]** | midpoint +1.8pp, width +11.4pp | same registry |
+| Per-class Score bullet (mixed) | 3.4.1 | same | ±0.05 | [0.46, 0.56] (≈ global) | borderline | keep global or include in registry |
+| Per-class Score bullet (pawnless) | 3.4.1 | same | ±0.05 | defer (n_users=119) | n too small | re-evaluate next dump |
