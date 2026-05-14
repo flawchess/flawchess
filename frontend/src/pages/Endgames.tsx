@@ -419,16 +419,15 @@ export function EndgamesPage() {
                     </p>
                     <p>
                       <strong>Color Zones:</strong> the blue band on each gauge and chart marks the typical range,
-                      defined by the middle 50% of players (interquartile range) in your rating and time control
-                      bucket. Values inside the blue zone are typical, while red and green zones flag below- and
-                      above-average performance. Zone bounds are calibrated from the{' '}
+                      defined by the middle 50% of players (interquartile range). Values inside the blue zone are typical, while red and green zones flag below- and
+                      above-average performance. Zone bounds are calibrated from the latest {' '}
                       <a
                         href="https://github.com/flawchess/flawchess/blob/main/reports/benchmarks-latest.md"
                         className="text-primary underline-offset-4 hover:underline"
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        latest FlawChess benchmark
+                        FlawChess benchmark
                       </a>
                       , which is computed from a stratified sample of Lichess players across rating
                       and time control buckets.
