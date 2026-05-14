@@ -86,9 +86,7 @@ _SMALL_SQUARE = 0x0303
 # 49 overlapping 2x2 regions: list of (mask, y) where y is the 1-based rank of
 # the bottom-left corner of the region (1..7). Used by _compute_mixedness.
 _MIXEDNESS_REGIONS: list[tuple[int, int]] = [
-    (_SMALL_SQUARE << (x_idx + 8 * y_idx), y_idx + 1)
-    for y_idx in range(7)
-    for x_idx in range(7)
+    (_SMALL_SQUARE << (x_idx + 8 * y_idx), y_idx + 1) for y_idx in range(7) for x_idx in range(7)
 ]
 
 

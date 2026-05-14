@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure test user IDs exist in the users table (FK constraint)."""
     from tests.conftest import ensure_test_user
+
     for uid in [1, 2, 42, 55]:
         await ensure_test_user(db_session, uid)
 
@@ -45,6 +46,7 @@ class TestBulkInsertGames:
 
     async def test_insert_three_games_returns_three_ids(self, db_session):
         from app.repositories.game_repository import bulk_insert_games
+
         rows = [
             self._make_game_row(f"game-{uuid.uuid4().hex}"),
             self._make_game_row(f"game-{uuid.uuid4().hex}"),
@@ -56,6 +58,7 @@ class TestBulkInsertGames:
 
     async def test_duplicate_game_skipped(self, db_session):
         from app.repositories.game_repository import bulk_insert_games
+
         game_id = f"game-{uuid.uuid4().hex}"
         row = self._make_game_row(game_id)
 
@@ -69,6 +72,7 @@ class TestBulkInsertGames:
 
     async def test_mixed_new_and_duplicate(self, db_session):
         from app.repositories.game_repository import bulk_insert_games
+
         existing_game_id = f"game-{uuid.uuid4().hex}"
         new_game_id = f"game-{uuid.uuid4().hex}"
 
@@ -86,11 +90,13 @@ class TestBulkInsertGames:
 
     async def test_empty_list_returns_empty(self, db_session):
         from app.repositories.game_repository import bulk_insert_games
+
         ids = await bulk_insert_games(db_session, [])
         assert ids == []
 
     async def test_returned_ids_are_valid_integers(self, db_session):
         from app.repositories.game_repository import bulk_insert_games
+
         row = self._make_game_row(f"game-{uuid.uuid4().hex}")
         ids = await bulk_insert_games(db_session, [row])
         assert len(ids) == 1
@@ -98,14 +104,19 @@ class TestBulkInsertGames:
 
     async def test_different_users_can_import_same_game(self, db_session):
         from app.repositories.game_repository import bulk_insert_games
+
         platform_game_id = "shared-game-123"
 
         # User 1 inserts the game
-        ids_user1 = await bulk_insert_games(db_session, [self._make_game_row(platform_game_id, user_id=1)])
+        ids_user1 = await bulk_insert_games(
+            db_session, [self._make_game_row(platform_game_id, user_id=1)]
+        )
         assert len(ids_user1) == 1, "User 1 should have their game inserted"
 
         # User 2 inserts the same platform_game_id — should NOT be blocked by user 1's row
-        ids_user2 = await bulk_insert_games(db_session, [self._make_game_row(platform_game_id, user_id=2)])
+        ids_user2 = await bulk_insert_games(
+            db_session, [self._make_game_row(platform_game_id, user_id=2)]
+        )
         assert len(ids_user2) == 1, "User 2 should also get their own copy of the game"
 
         # Both IDs should be distinct
@@ -113,14 +124,19 @@ class TestBulkInsertGames:
 
     async def test_same_user_duplicate_still_skipped(self, db_session):
         from app.repositories.game_repository import bulk_insert_games
+
         platform_game_id = "dup-game-456"
 
         # First insert for user 1
-        ids_first = await bulk_insert_games(db_session, [self._make_game_row(platform_game_id, user_id=1)])
+        ids_first = await bulk_insert_games(
+            db_session, [self._make_game_row(platform_game_id, user_id=1)]
+        )
         assert len(ids_first) == 1
 
         # Second insert of the same game for the same user — should be skipped
-        ids_second = await bulk_insert_games(db_session, [self._make_game_row(platform_game_id, user_id=1)])
+        ids_second = await bulk_insert_games(
+            db_session, [self._make_game_row(platform_game_id, user_id=1)]
+        )
         assert len(ids_second) == 0, "Same user importing same game twice should be deduplicated"
 
 
@@ -151,6 +167,7 @@ class TestBulkInsertPositions:
 
     async def test_insert_positions(self, db_session):
         from app.repositories.game_repository import bulk_insert_games, bulk_insert_positions
+
         # First insert a game to get a game_id
         row = self._make_game_row(f"lich-{uuid.uuid4().hex}")
         [game_id] = await bulk_insert_games(db_session, [row])
@@ -219,9 +236,7 @@ class TestBulkInsertPositions:
         await bulk_insert_positions(db_session, position_rows)
 
         result = await db_session.execute(
-            select(GamePosition)
-            .where(GamePosition.game_id == game_id)
-            .order_by(GamePosition.ply)
+            select(GamePosition).where(GamePosition.game_id == game_id).order_by(GamePosition.ply)
         )
         rows = result.scalars().all()
         assert len(rows) == 3
@@ -231,6 +246,7 @@ class TestBulkInsertPositions:
 
     async def test_insert_empty_positions(self, db_session):
         from app.repositories.game_repository import bulk_insert_positions
+
         # Should not raise for empty list
         await bulk_insert_positions(db_session, [])
 
@@ -240,6 +256,7 @@ class TestImportJobRepository:
 
     async def test_create_and_get_import_job(self, db_session):
         from app.repositories.import_job_repository import create_import_job, get_import_job
+
         job_id = str(uuid.uuid4())
         job = await create_import_job(
             db_session,
@@ -262,6 +279,7 @@ class TestImportJobRepository:
 
     async def test_get_nonexistent_job_returns_none(self, db_session):
         from app.repositories.import_job_repository import get_import_job
+
         result = await get_import_job(db_session, "nonexistent-id")
         assert result is None
 
@@ -271,9 +289,11 @@ class TestImportJobRepository:
             get_import_job,
             update_import_job,
         )
+
         job_id = str(uuid.uuid4())
-        await create_import_job(db_session, job_id=job_id, user_id=1,
-                                platform="lichess", username="testuser")
+        await create_import_job(
+            db_session, job_id=job_id, user_id=1, platform="lichess", username="testuser"
+        )
 
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         await update_import_job(
@@ -298,31 +318,45 @@ class TestImportJobRepository:
             get_latest_for_user_platform,
             update_import_job,
         )
+
         user_id = 42  # Use distinct user_id to avoid cross-test interference
         now = datetime.datetime.now(tz=datetime.timezone.utc)
 
         # Create two completed jobs
         job_id_1 = str(uuid.uuid4())
         job_id_2 = str(uuid.uuid4())
-        await create_import_job(db_session, job_id=job_id_1, user_id=user_id,
-                                platform="lichess", username="myuser")
-        await create_import_job(db_session, job_id=job_id_2, user_id=user_id,
-                                platform="lichess", username="myuser")
+        await create_import_job(
+            db_session, job_id=job_id_1, user_id=user_id, platform="lichess", username="myuser"
+        )
+        await create_import_job(
+            db_session, job_id=job_id_2, user_id=user_id, platform="lichess", username="myuser"
+        )
 
         earlier = now - datetime.timedelta(hours=1)
-        await update_import_job(db_session, job_id=job_id_1, status="completed",
-                                 completed_at=earlier, last_synced_at=earlier)
-        await update_import_job(db_session, job_id=job_id_2, status="completed",
-                                 completed_at=now, last_synced_at=now)
+        await update_import_job(
+            db_session,
+            job_id=job_id_1,
+            status="completed",
+            completed_at=earlier,
+            last_synced_at=earlier,
+        )
+        await update_import_job(
+            db_session, job_id=job_id_2, status="completed", completed_at=now, last_synced_at=now
+        )
 
         # Should return the most recent completed job
-        latest = await get_latest_for_user_platform(db_session, user_id=user_id, platform="lichess", username="myuser")
+        latest = await get_latest_for_user_platform(
+            db_session, user_id=user_id, platform="lichess", username="myuser"
+        )
         assert latest is not None
         assert latest.id == job_id_2
 
     async def test_get_latest_returns_none_if_no_jobs(self, db_session):
         from app.repositories.import_job_repository import get_latest_for_user_platform
-        result = await get_latest_for_user_platform(db_session, user_id=99999, platform="chess.com", username="nobody")
+
+        result = await get_latest_for_user_platform(
+            db_session, user_id=99999, platform="chess.com", username="nobody"
+        )
         assert result is None
 
     async def test_get_latest_returns_none_for_different_platform(self, db_session):
@@ -331,14 +365,19 @@ class TestImportJobRepository:
             get_latest_for_user_platform,
             update_import_job,
         )
+
         user_id = 55
         job_id = str(uuid.uuid4())
         now = datetime.datetime.now(tz=datetime.timezone.utc)
-        await create_import_job(db_session, job_id=job_id, user_id=user_id,
-                                platform="lichess", username="myuser")
-        await update_import_job(db_session, job_id=job_id, status="completed",
-                                 completed_at=now, last_synced_at=now)
+        await create_import_job(
+            db_session, job_id=job_id, user_id=user_id, platform="lichess", username="myuser"
+        )
+        await update_import_job(
+            db_session, job_id=job_id, status="completed", completed_at=now, last_synced_at=now
+        )
 
         # Query for chess.com should return None (only lichess job exists)
-        result = await get_latest_for_user_platform(db_session, user_id=user_id, platform="chess.com", username="myuser")
+        result = await get_latest_for_user_platform(
+            db_session, user_id=user_id, platform="chess.com", username="myuser"
+        )
         assert result is None

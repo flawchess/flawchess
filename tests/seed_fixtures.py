@@ -391,9 +391,7 @@ async def _seed_portfolio(user_id: int) -> None:
                     user_ec, opp_ec = clocks_spec
                     clock_series = [
                         float(v)
-                        for v in _clock_series_for_span(
-                            span_start_ply, color, user_ec, opp_ec
-                        )
+                        for v in _clock_series_for_span(span_start_ply, color, user_ec, opp_ec)
                     ]
 
                 for offset in range(ENDGAME_PLY_THRESHOLD):

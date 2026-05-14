@@ -37,7 +37,9 @@ async def bulk_insert_games(session: AsyncSession, game_rows: list[dict]) -> lis
 
 async def count_games_for_user(session: AsyncSession, user_id: int) -> int:
     """Return total number of games imported by the given user."""
-    result = await session.execute(select(func.count()).select_from(Game).where(Game.user_id == user_id))
+    result = await session.execute(
+        select(func.count()).select_from(Game).where(Game.user_id == user_id)
+    )
     return result.scalar_one()
 
 
@@ -61,7 +63,8 @@ async def delete_all_games_for_user(session: AsyncSession, user_id: int) -> int:
 async def count_games_by_platform(session: AsyncSession, user_id: int) -> dict[str, int]:
     """Return game counts grouped by platform for the given user."""
     result = await session.execute(
-        select(Game.platform, func.count()).select_from(Game)
+        select(Game.platform, func.count())
+        .select_from(Game)
         .where(Game.user_id == user_id)
         .group_by(Game.platform)
     )

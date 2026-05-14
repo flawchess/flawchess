@@ -26,7 +26,14 @@ from app.schemas.auth import (
     GuestRefreshResponse,
 )
 from app.services import guest_service
-from app.users import UserManager, auth_backend, current_active_user, fastapi_users, get_user_manager, google_oauth_client
+from app.users import (
+    UserManager,
+    auth_backend,
+    current_active_user,
+    fastapi_users,
+    get_user_manager,
+    google_oauth_client,
+)
 
 router = APIRouter()
 
@@ -65,9 +72,7 @@ _OAUTH_PROMOTE_STATE_AUDIENCE = "fastapi-users:oauth-promote-state"
 @router.get("/auth/google/available", tags=["auth"], response_model=GoogleOAuthAvailableResponse)
 async def google_oauth_available() -> GoogleOAuthAvailableResponse:
     """Return whether Google OAuth is configured on this server."""
-    available = bool(
-        settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET
-    )
+    available = bool(settings.GOOGLE_OAUTH_CLIENT_ID and settings.GOOGLE_OAUTH_CLIENT_SECRET)
     return GoogleOAuthAvailableResponse(available=available)
 
 
@@ -215,7 +220,9 @@ async def google_callback(
 # -- Guest session endpoints ------------------------------------------------
 
 
-@router.post("/auth/guest/create", tags=["auth"], response_model=GuestCreateResponse, status_code=201)
+@router.post(
+    "/auth/guest/create", tags=["auth"], response_model=GuestCreateResponse, status_code=201
+)
 async def create_guest(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -245,7 +252,9 @@ async def refresh_guest_token(
     return GuestRefreshResponse(access_token=token, token_type="bearer")
 
 
-@router.get("/auth/google/authorize-promote", tags=["auth"], response_model=GoogleOAuthAuthorizeResponse)
+@router.get(
+    "/auth/google/authorize-promote", tags=["auth"], response_model=GoogleOAuthAuthorizeResponse
+)
 async def google_authorize_promote(
     response: Response,
     user: Annotated[User, Depends(current_active_user)],

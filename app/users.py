@@ -145,9 +145,7 @@ class ImpersonationJWTStrategy(JWTStrategy[User, int]):
             "admin_id": admin.id,
             "is_impersonation": True,
         }
-        return generate_jwt(
-            data, self.encode_key, self.lifetime_seconds, algorithm=self.algorithm
-        )
+        return generate_jwt(data, self.encode_key, self.lifetime_seconds, algorithm=self.algorithm)
 
     async def read_token(
         self,

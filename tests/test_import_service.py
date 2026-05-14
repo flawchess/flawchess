@@ -28,22 +28,42 @@ def _make_mock_processing_result(
     if plies is None:
         plies = [
             {
-                "ply": 0, "white_hash": 1, "black_hash": 2, "full_hash": 3,
-                "move_san": "e4", "clock_seconds": None,
-                "eval_cp": None, "eval_mate": None,
-                "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                "material_imbalance": 0, "has_opposite_color_bishops": False,
-                "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                "endgame_class": None, "phase": 0,
+                "ply": 0,
+                "white_hash": 1,
+                "black_hash": 2,
+                "full_hash": 3,
+                "move_san": "e4",
+                "clock_seconds": None,
+                "eval_cp": None,
+                "eval_mate": None,
+                "material_count": 7800,
+                "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                "material_imbalance": 0,
+                "has_opposite_color_bishops": False,
+                "piece_count": 14,
+                "backrank_sparse": False,
+                "mixedness": 0,
+                "endgame_class": None,
+                "phase": 0,
             },
             {
-                "ply": 1, "white_hash": 4, "black_hash": 5, "full_hash": 6,
-                "move_san": None, "clock_seconds": None,
-                "eval_cp": None, "eval_mate": None,
-                "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                "material_imbalance": 0, "has_opposite_color_bishops": False,
-                "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                "endgame_class": None, "phase": 0,
+                "ply": 1,
+                "white_hash": 4,
+                "black_hash": 5,
+                "full_hash": 6,
+                "move_san": None,
+                "clock_seconds": None,
+                "eval_cp": None,
+                "eval_mate": None,
+                "material_count": 7800,
+                "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                "material_imbalance": 0,
+                "has_opposite_color_bishops": False,
+                "piece_count": 14,
+                "backrank_sparse": False,
+                "mixedness": 0,
+                "endgame_class": None,
+                "phase": 0,
             },
         ]
     return {"plies": plies, "result_fen": result_fen, "move_count": move_count}
@@ -228,9 +248,7 @@ class TestRunImport:
         mock_maker = _mock_session_maker(mock_session)
 
         with (
-            patch(
-                "app.services.import_service.async_session_maker", mock_maker
-            ),
+            patch("app.services.import_service.async_session_maker", mock_maker),
             patch(
                 "app.services.import_service.import_job_repository.get_latest_for_user_platform",
                 new=AsyncMock(return_value=None),
@@ -495,31 +513,61 @@ class TestRunImport:
         three_ply_result = _make_mock_processing_result(
             plies=[
                 {
-                    "ply": 0, "white_hash": 100, "black_hash": 200, "full_hash": 300,
-                    "move_san": "e4", "clock_seconds": None,
-                    "eval_cp": None, "eval_mate": None,
-                    "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                    "material_imbalance": 0, "has_opposite_color_bishops": False,
-                    "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                    "endgame_class": None, "phase": 0,
+                    "ply": 0,
+                    "white_hash": 100,
+                    "black_hash": 200,
+                    "full_hash": 300,
+                    "move_san": "e4",
+                    "clock_seconds": None,
+                    "eval_cp": None,
+                    "eval_mate": None,
+                    "material_count": 7800,
+                    "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                    "material_imbalance": 0,
+                    "has_opposite_color_bishops": False,
+                    "piece_count": 14,
+                    "backrank_sparse": False,
+                    "mixedness": 0,
+                    "endgame_class": None,
+                    "phase": 0,
                 },
                 {
-                    "ply": 1, "white_hash": 400, "black_hash": 500, "full_hash": 600,
-                    "move_san": "e5", "clock_seconds": None,
-                    "eval_cp": None, "eval_mate": None,
-                    "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                    "material_imbalance": 0, "has_opposite_color_bishops": False,
-                    "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                    "endgame_class": None, "phase": 0,
+                    "ply": 1,
+                    "white_hash": 400,
+                    "black_hash": 500,
+                    "full_hash": 600,
+                    "move_san": "e5",
+                    "clock_seconds": None,
+                    "eval_cp": None,
+                    "eval_mate": None,
+                    "material_count": 7800,
+                    "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                    "material_imbalance": 0,
+                    "has_opposite_color_bishops": False,
+                    "piece_count": 14,
+                    "backrank_sparse": False,
+                    "mixedness": 0,
+                    "endgame_class": None,
+                    "phase": 0,
                 },
                 {
-                    "ply": 2, "white_hash": 700, "black_hash": 800, "full_hash": 900,
-                    "move_san": None, "clock_seconds": None,
-                    "eval_cp": None, "eval_mate": None,
-                    "material_count": 7800, "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                    "material_imbalance": 0, "has_opposite_color_bishops": False,
-                    "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                    "endgame_class": None, "phase": 0,
+                    "ply": 2,
+                    "white_hash": 700,
+                    "black_hash": 800,
+                    "full_hash": 900,
+                    "move_san": None,
+                    "clock_seconds": None,
+                    "eval_cp": None,
+                    "eval_mate": None,
+                    "material_count": 7800,
+                    "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                    "material_imbalance": 0,
+                    "has_opposite_color_bishops": False,
+                    "piece_count": 14,
+                    "backrank_sparse": False,
+                    "mixedness": 0,
+                    "endgame_class": None,
+                    "phase": 0,
                 },
             ],
             move_count=1,
@@ -682,7 +730,8 @@ class TestRunImport:
         # Verify session.execute was called with a bulk UPDATE for move_count (D-04)
         execute_calls = mock_session.execute.call_args_list
         update_calls = [
-            call for call in execute_calls
+            call
+            for call in execute_calls
             if hasattr(call.args[0], "is_update") and call.args[0].is_update
         ]
         assert len(update_calls) >= 1, "Expected at least one UPDATE call for move_count"
@@ -961,7 +1010,9 @@ class TestRunImport:
             f"Expected COMPLETED, got {job.status} — PGN processing failure must not fail the import"
         )
         # No position rows inserted for the failed game — bulk_insert_positions not called
-        assert len(captured_positions) == 0, "No position rows should be inserted when process_game_pgn fails"
+        assert len(captured_positions) == 0, (
+            "No position rows should be inserted when process_game_pgn fails"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -989,9 +1040,9 @@ class TestEvalExtraction:
                 evals.append((w.score(mate_score=None), w.mate()))
             else:
                 evals.append((None, None))
-        assert evals[0] == (18, None)   # 1.e4: 0.18 pawns = 18 centipawns
-        assert evals[1] == (17, None)   # 1...e5: 0.17 pawns = 17 centipawns
-        assert evals[2] == (None, 3)    # 2.Nf3: mate in 3 for white
+        assert evals[0] == (18, None)  # 1.e4: 0.18 pawns = 18 centipawns
+        assert evals[1] == (17, None)  # 1...e5: 0.17 pawns = 17 centipawns
+        assert evals[2] == (None, 3)  # 2.Nf3: mate in 3 for white
 
     def test_pgn_without_evals(self):
         """PGN without %eval annotations returns all None."""
@@ -1086,7 +1137,7 @@ class TestEvalExtraction:
             results.append({"eval_cp": eval_cp, "eval_mate": eval_mate})
 
         # ply 0 (starting position): no node, gets (None, None)
-        assert results[0] == {"eval_cp": 18, "eval_mate": None}   # node 0: after e4
+        assert results[0] == {"eval_cp": 18, "eval_mate": None}  # node 0: after e4
         assert results[1] == {"eval_cp": -17, "eval_mate": None}  # node 1: after e5
         assert results[2] == {"eval_cp": None, "eval_mate": None}  # final position
 

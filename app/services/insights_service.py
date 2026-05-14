@@ -282,9 +282,7 @@ def compute_player_profile(
     today = datetime.date.today()
     cutoff_last_3mo = today - datetime.timedelta(days=_PLAYER_PROFILE_LAST_3MO_DAYS)
 
-    sparse_mode = not any(
-        len(c.points) >= _PLAYER_PROFILE_MIN_POINTS for c in combos
-    )
+    sparse_mode = not any(len(c.points) >= _PLAYER_PROFILE_MIN_POINTS for c in combos)
     min_points = 1 if sparse_mode else _PLAYER_PROFILE_MIN_POINTS
     quality: Literal["full", "sparse"] = "sparse" if sparse_mode else "full"
 
@@ -1141,9 +1139,7 @@ def _findings_conversion_recovery_by_type(
                     window=window,
                     metric="conversion_win_pct",
                     value=conv_value,
-                    zone=assign_per_class_zone(
-                        "conversion_win_pct", cat.endgame_class, conv_value
-                    ),
+                    zone=assign_per_class_zone("conversion_win_pct", cat.endgame_class, conv_value),
                     trend="n_a",
                     weekly_points_in_window=0,
                     sample_size=conv_games,
@@ -1179,9 +1175,7 @@ def _findings_conversion_recovery_by_type(
                     window=window,
                     metric="recovery_save_pct",
                     value=recov_value,
-                    zone=assign_per_class_zone(
-                        "recovery_save_pct", cat.endgame_class, recov_value
-                    ),
+                    zone=assign_per_class_zone("recovery_save_pct", cat.endgame_class, recov_value),
                     trend="n_a",
                     weekly_points_in_window=0,
                     sample_size=recov_games,

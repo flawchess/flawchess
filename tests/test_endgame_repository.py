@@ -670,7 +670,9 @@ class TestQueryEndgameBucketRows:
         assert eval_mate is None
 
     @pytest.mark.asyncio
-    async def test_eval_projects_white_perspective_no_sign_flip(self, db_session: AsyncSession) -> None:
+    async def test_eval_projects_white_perspective_no_sign_flip(
+        self, db_session: AsyncSession
+    ) -> None:
         """eval_cp and eval_mate are projected raw (white-perspective); service layer applies color flip."""
         game = await _seed_game(db_session, result="0-1", user_color="black")
         entry_ply = 30

@@ -734,12 +734,8 @@ class TestCachedEndpoint:
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
         valid_report = _sample_report()
 
-        cache_written_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-            hours=2
-        )
-        import_completed_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-            hours=1
-        )
+        cache_written_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=2)
+        import_completed_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
 
         async with session_maker() as session:
             await _seed(

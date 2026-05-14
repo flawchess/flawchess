@@ -458,7 +458,7 @@ def _format_player_profile_block(
         lines.append(
             "[anchor-combo] sparse-history — narrate cautiously; only current Elo and "
             "basic range are reliable; do NOT claim trend, learning arc, or trajectory; "
-            "use plain present-tense framing like \"you play at ~<rating>\""
+            'use plain present-tense framing like "you play at ~<rating>"'
         )
     elif anchor is not None:
         lines.append(

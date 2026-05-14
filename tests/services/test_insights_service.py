@@ -183,7 +183,6 @@ class TestComputeTrend:
         assert default == TREND_MIN_WEEKLY_POINTS
 
 
-
 # ---------------------------------------------------------------------------
 # TestComputeHash — FIND-05 hash format + stability + discrimination.
 # ---------------------------------------------------------------------------
@@ -214,9 +213,7 @@ class TestComputeHash:
         import datetime
 
         a = self._base_findings()
-        b = a.model_copy(
-            update={"as_of": datetime.datetime(2099, 1, 1, tzinfo=datetime.UTC)}
-        )
+        b = a.model_copy(update={"as_of": datetime.datetime(2099, 1, 1, tzinfo=datetime.UTC)})
         assert _compute_hash(a) == _compute_hash(b)
 
     def test_hash_excludes_findings_hash_itself(self) -> None:
@@ -331,7 +328,10 @@ class TestEmptyFinding:
         """Dimension passes through for per-combo / per-bucket empty findings."""
         dim = {"platform": "chess.com", "time_control": "blitz"}
         f = _empty_finding(
-            "endgame_elo_timeline", "all_time", "endgame_elo_gap", dimension=dim,
+            "endgame_elo_timeline",
+            "all_time",
+            "endgame_elo_gap",
+            dimension=dim,
         )
         assert f.dimension == dim
 
@@ -381,7 +381,9 @@ class TestComputeFindingsLayering:
         ) as mocked:
             try:
                 await compute_findings(
-                    FilterContext(), session=AsyncMock(), user_id=1,
+                    FilterContext(),
+                    session=AsyncMock(),
+                    user_id=1,
                 )
             except Exception:
                 # compute_findings may fail downstream because model_construct
@@ -401,7 +403,9 @@ class TestComputeFindingsLayering:
         ) as mocked:
             try:
                 await compute_findings(
-                    FilterContext(), session=AsyncMock(), user_id=1,
+                    FilterContext(),
+                    session=AsyncMock(),
+                    user_id=1,
                 )
             except Exception:
                 pass
@@ -419,7 +423,9 @@ class TestComputeFindingsLayering:
         ) as mocked:
             try:
                 await compute_findings(
-                    FilterContext(), session=AsyncMock(), user_id=1,
+                    FilterContext(),
+                    session=AsyncMock(),
+                    user_id=1,
                 )
             except Exception:
                 pass
@@ -589,7 +595,9 @@ class TestFindingsEndgameMetrics:
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
-            self._make_material_row("conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73),
+            self._make_material_row(
+                "conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73
+            ),
             self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
             self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
         ]
@@ -603,9 +611,7 @@ class TestFindingsEndgameMetrics:
 
         # Remaining three: one per bucket, metric matches the bucket.
         by_bucket: dict[str, str] = {
-            f.dimension["bucket"]: f.metric
-            for f in findings[1:]
-            if f.dimension is not None
+            f.dimension["bucket"]: f.metric for f in findings[1:] if f.dimension is not None
         }
         assert by_bucket == {
             "conversion": "conversion_win_pct",
@@ -623,7 +629,9 @@ class TestFindingsEndgameMetrics:
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
-            self._make_material_row("conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73),
+            self._make_material_row(
+                "conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73
+            ),
             self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
             self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
         ]
@@ -662,12 +670,16 @@ class TestFindingsEndgameMetrics:
         assert sorted(buckets_seen) == ["conversion", "parity", "recovery"]
 
         # Empty-bucket findings carry the matching metric with NaN value.
-        conv = next(f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "conversion")
+        conv = next(
+            f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "conversion"
+        )
         assert conv.metric == "conversion_win_pct"
         assert math.isnan(conv.value)
         assert conv.sample_size == 0
 
-        recov = next(f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "recovery")
+        recov = next(
+            f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "recovery"
+        )
         assert recov.metric == "recovery_save_pct"
         assert math.isnan(recov.value)
 
@@ -676,12 +688,16 @@ class TestFindingsEndgameMetrics:
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
-            self._make_material_row("conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73),
+            self._make_material_row(
+                "conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73
+            ),
         ]
         response = self._make_overview_with_material_rows(rows)
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        conv = next(f for f in findings if f.dimension and f.dimension.get("bucket") == "conversion")
+        conv = next(
+            f for f in findings if f.dimension and f.dimension.get("bucket") == "conversion"
+        )
         assert conv.value == pytest.approx(0.68)
 
     def test_parity_value_is_score(self) -> None:
@@ -753,8 +769,13 @@ class TestFindingsEndgameStartVsEnd:
                 loss_pct=losses / total * 100 if total else 0.0,
             ),
             non_endgame_wdl=EndgameWDLSummary(
-                wins=0, draws=0, losses=0, total=0,
-                win_pct=0.0, draw_pct=0.0, loss_pct=0.0,
+                wins=0,
+                draws=0,
+                losses=0,
+                total=0,
+                win_pct=0.0,
+                draw_pct=0.0,
+                loss_pct=0.0,
             ),
             endgame_win_rate=wins / total * 100 if total else 0.0,
         )
@@ -830,7 +851,9 @@ class TestFindingsEndgameStartVsEnd:
         response = self._make_overview(
             entry_eval_mean_pawns=0.30,
             entry_eval_n=10,
-            wins=25, draws=10, losses=15,
+            wins=25,
+            draws=10,
+            losses=15,
         )
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
@@ -845,7 +868,9 @@ class TestFindingsEndgameStartVsEnd:
 
         response = self._make_overview(
             entry_eval_n=50,
-            wins=5, draws=2, losses=3,  # total=10
+            wins=5,
+            draws=2,
+            losses=3,  # total=10
         )
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
@@ -964,7 +989,9 @@ class TestFindingsEndgameStartVsEnd:
         response = self._make_overview(
             entry_eval_mean_pawns=0.30,
             entry_eval_n=50,
-            wins=25, draws=10, losses=15,
+            wins=25,
+            draws=10,
+            losses=15,
             entry_expected_score=0.58,
             entry_expected_score_n=50,
         )
@@ -1099,9 +1126,13 @@ class TestFindingsEndgameStartVsEnd:
         from app.services.insights_service import _findings_endgame_start_vs_end
 
         response = self._make_overview(
-            entry_eval_mean_pawns=0.30, entry_eval_n=50,
-            wins=25, draws=10, losses=15,  # total=50 > 10
-            entry_expected_score=0.58, entry_expected_score_n=5,  # thin
+            entry_eval_mean_pawns=0.30,
+            entry_eval_n=50,
+            wins=25,
+            draws=10,
+            losses=15,  # total=50 > 10
+            entry_expected_score=0.58,
+            entry_expected_score_n=5,  # thin
         )
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
@@ -1116,7 +1147,9 @@ class TestFindingsEndgameStartVsEnd:
         response = self._make_overview(
             entry_eval_mean_pawns=0.30,
             entry_eval_n=50,
-            wins=25, draws=10, losses=15,
+            wins=25,
+            draws=10,
+            losses=15,
         )
         findings = _findings_endgame_start_vs_end(response, "all_time")
 

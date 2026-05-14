@@ -71,12 +71,7 @@ class LastActivityMiddleware:
         # wired the writes, and phase 62 adds the impersonation skip here.
         # Now safe to UPDATE the same User row — the route handler's
         # transaction has already committed and released its row lock.
-        if (
-            status_code is None
-            or status_code >= 400
-            or user_id is None
-            or is_impersonation
-        ):
+        if status_code is None or status_code >= 400 or user_id is None or is_impersonation:
             return
 
         try:
@@ -88,9 +83,7 @@ class LastActivityMiddleware:
             # Single UPDATE, no SELECT — the DB does the work
             async with async_session_maker() as session:
                 await session.execute(
-                    sa_update(User)
-                    .where(User.id == user_id)
-                    .values(last_activity=now)
+                    sa_update(User).where(User.id == user_id).values(last_activity=now)
                 )
                 await session.commit()
             _last_updated[user_id] = now

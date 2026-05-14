@@ -79,22 +79,24 @@ async def _insert_game_with_null_positions(db_session, pgn: str = _FOOLS_MATE_PG
     # Build position rows with NULL metadata (as they would be before backfill)
     hash_tuples, _result_fen = hashes_for_game(pgn)
     position_rows = []
-    for (ply, white_hash, black_hash, full_hash, move_san, clock_seconds) in hash_tuples:
-        position_rows.append({
-            "game_id": game_id,
-            "user_id": 1,
-            "ply": ply,
-            "full_hash": full_hash,
-            "white_hash": white_hash,
-            "black_hash": black_hash,
-            "move_san": move_san,
-            "clock_seconds": clock_seconds,
-            # Metadata columns intentionally NULL (pre-backfill state)
-            "material_count": None,
-            "material_signature": None,
-            "material_imbalance": None,
-            "has_opposite_color_bishops": None,
-        })
+    for ply, white_hash, black_hash, full_hash, move_san, clock_seconds in hash_tuples:
+        position_rows.append(
+            {
+                "game_id": game_id,
+                "user_id": 1,
+                "ply": ply,
+                "full_hash": full_hash,
+                "white_hash": white_hash,
+                "black_hash": black_hash,
+                "move_san": move_san,
+                "clock_seconds": clock_seconds,
+                # Metadata columns intentionally NULL (pre-backfill state)
+                "material_count": None,
+                "material_signature": None,
+                "material_imbalance": None,
+                "has_opposite_color_bishops": None,
+            }
+        )
     await bulk_insert_positions(db_session, position_rows)
     await db_session.flush()
     return game_id
@@ -157,7 +159,8 @@ class TestBackfillGame:
 
         # Check every field from PositionClassification that exists on the model
         classification_fields = [
-            field for field in PositionClassification.__dataclass_fields__
+            field
+            for field in PositionClassification.__dataclass_fields__
             if hasattr(GamePosition, field)
         ]
         for pos in positions:
@@ -176,7 +179,9 @@ class TestBackfillGame:
         await db_session.flush()
 
         # After first run, game should no longer appear as unprocessed
-        unprocessed = await get_unprocessed_game_ids(db_session, batch_size=100, exclude_ids=set(), user_id=None)
+        unprocessed = await get_unprocessed_game_ids(
+            db_session, batch_size=100, exclude_ids=set(), user_id=None
+        )
         assert game_id not in unprocessed, (
             "game_id should not appear in unprocessed list after backfill"
         )
@@ -207,8 +212,7 @@ class TestBackfillGame:
         await backfill_game(db_session, game_id, _FOOLS_MATE_PGN)
 
         result = await db_session.execute(
-            select(GamePosition)
-            .where(GamePosition.game_id == game_id, GamePosition.ply == 0)
+            select(GamePosition).where(GamePosition.game_id == game_id, GamePosition.ply == 0)
         )
         ply0 = result.scalar_one()
         assert ply0.material_count == 7800, (
@@ -226,7 +230,9 @@ class TestGetUnprocessedGameIds:
 
         game_id = await _insert_game_with_null_positions(db_session)
 
-        result = await get_unprocessed_game_ids(db_session, batch_size=100, exclude_ids=set(), user_id=None)
+        result = await get_unprocessed_game_ids(
+            db_session, batch_size=100, exclude_ids=set(), user_id=None
+        )
         assert game_id in result
 
     @pytest.mark.asyncio
@@ -238,7 +244,9 @@ class TestGetUnprocessedGameIds:
         for _ in range(3):
             await _insert_game_with_null_positions(db_session)
 
-        result = await get_unprocessed_game_ids(db_session, batch_size=2, exclude_ids=set(), user_id=None)
+        result = await get_unprocessed_game_ids(
+            db_session, batch_size=2, exclude_ids=set(), user_id=None
+        )
         assert len(result) <= 2
 
     @pytest.mark.asyncio

@@ -485,9 +485,7 @@ class TestCallbackPromote:
                 "guest_user_id": guest_user_id,
                 "aud": _OAUTH_STATE_AUDIENCE,  # regular OAuth state audience, not promote
             }
-            wrong_state = generate_jwt(
-                wrong_state_data, settings.SECRET_KEY, lifetime_seconds=600
-            )
+            wrong_state = generate_jwt(wrong_state_data, settings.SECRET_KEY, lifetime_seconds=600)
 
             resp = await client.get(
                 "/api/auth/google/callback-promote",

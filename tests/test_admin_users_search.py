@@ -26,19 +26,13 @@ def unique_email(prefix: str = "search") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}@example.com"
 
 
-async def register(
-    client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD
-) -> int:
-    resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": password}
-    )
+async def register(client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD) -> int:
+    resp = await client.post("/api/auth/register", json={"email": email, "password": password})
     assert resp.status_code in (200, 201), f"register failed: {resp.status_code} {resp.text}"
     return int(resp.json()["id"])
 
 
-async def login(
-    client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD
-) -> str:
+async def login(client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD) -> str:
     resp = await client.post(
         "/api/auth/jwt/login",
         data={"username": email, "password": password},
@@ -68,15 +62,11 @@ async def set_user_fields(test_engine, user_id: int, **values) -> None:
     """UPDATE arbitrary columns on the users row (chess_com_username, lichess_username, etc.)."""
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
-        await session.execute(
-            sa_update(User).where(User.id == user_id).values(**values)
-        )
+        await session.execute(sa_update(User).where(User.id == user_id).values(**values))
         await session.commit()
 
 
-async def make_superuser(
-    client: httpx.AsyncClient, test_engine
-) -> tuple[int, str]:
+async def make_superuser(client: httpx.AsyncClient, test_engine) -> tuple[int, str]:
     """Register + promote + re-login a superuser. Returns (id, token)."""
     email = unique_email("admin")
     user_id = await register(client, email)
@@ -160,9 +150,7 @@ async def test_search_by_chess_com_username(test_engine):
         target_id = await register(client, unique_email("ccom"))
         # Pick a username unique enough not to collide with other test rows.
         unique_suffix = uuid.uuid4().hex[:8]
-        await set_user_fields(
-            test_engine, target_id, chess_com_username=f"MagnusC_{unique_suffix}"
-        )
+        await set_user_fields(test_engine, target_id, chess_com_username=f"MagnusC_{unique_suffix}")
 
         # Lowercase query should still match (ILIKE).
         resp = await client.get(

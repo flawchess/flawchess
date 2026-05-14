@@ -38,9 +38,7 @@ async def update_profile(session: AsyncSession, user_id: int, data: dict) -> Use
     # Filter out keys with None values — only update explicitly provided fields
     updates = {k: v for k, v in data.items() if v is not None}
     if updates:
-        await session.execute(
-            update(User).where(User.id == user_id).values(**updates)
-        )
+        await session.execute(update(User).where(User.id == user_id).values(**updates))
         await session.flush()
     return await get_profile(session, user_id)
 
@@ -71,7 +69,5 @@ async def update_platform_username(
         logger.warning("update_platform_username: unknown platform %r, skipping", platform)
         return
 
-    await session.execute(
-        update(User).where(User.id == user_id).values(**column_values)
-    )
+    await session.execute(update(User).where(User.id == user_id).values(**column_values))
     await session.flush()

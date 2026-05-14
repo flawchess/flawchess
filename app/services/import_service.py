@@ -538,9 +538,7 @@ async def _flush_batch(
     # Stage 5: bulk UPDATE move_count and result_fen via CASE expressions (D-04).
     if rows_result.move_counts:
         # Filter None result_fens — let NULL remain as default for those games.
-        fen_case_map = {
-            gid: fen for gid, fen in rows_result.result_fens.items() if fen is not None
-        }
+        fen_case_map = {gid: fen for gid, fen in rows_result.result_fens.items() if fen is not None}
         values_dict: dict[str, Any] = {
             "move_count": case(rows_result.move_counts, value=Game.id),
         }

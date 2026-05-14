@@ -57,9 +57,7 @@ async def _get_impersonation_context(
 async def get_profile(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-    impersonation: Annotated[
-        ImpersonationContext | None, Depends(_get_impersonation_context)
-    ],
+    impersonation: Annotated[ImpersonationContext | None, Depends(_get_impersonation_context)],
 ) -> UserProfileResponse:
     """Return the authenticated user's platform usernames and game counts.
 

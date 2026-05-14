@@ -69,6 +69,7 @@ class TestPgnToFenPlyHashes:
     def test_hashes_match_import_pipeline(self) -> None:
         """full_hash from seed must match what hashes_for_game produces during import."""
         from app.services.zobrist import hashes_for_game
+
         pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5"
         _fen, _ply, _wh, _bh, seed_full_hash = pgn_to_fen_ply_hashes(pgn)
         # hashes_for_game returns list of (ply, wh, bh, fh, move, clock) tuples

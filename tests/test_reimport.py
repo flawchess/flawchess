@@ -290,9 +290,7 @@ class TestReimportFlow:
         assert count_before == 1
 
         # Run re-import with a mocked run_import (we don't want to hit the real API)
-        with patch(
-            "scripts.reimport_games.run_import", new_callable=AsyncMock
-        ) as mock_run_import:
+        with patch("scripts.reimport_games.run_import", new_callable=AsyncMock) as mock_run_import:
             # Mock get_job to return a completed job state
             from app.services.import_service import JobState, JobStatus
 
@@ -304,9 +302,7 @@ class TestReimportFlow:
                 status=JobStatus.COMPLETED,
                 games_imported=5,
             )
-            with patch(
-                "scripts.reimport_games.get_job", return_value=mock_job_state
-            ):
+            with patch("scripts.reimport_games.get_job", return_value=mock_job_state):
                 success, games_imported = await reimport_user(db_session, user_id)
 
         assert success is True

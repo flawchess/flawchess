@@ -29,10 +29,10 @@ Window = Literal["all_time", "last_3mo"]
 
 MetricId = Literal[
     "score_gap",
-    "achievable_score_gap",        # 260514 split-out — dedicated band so 3.1.5 can tighten without affecting 3.1.6
-    "entry_eval_pawns",            # Phase 82 D-04: new endgame_start_vs_end Tile 1
-    "entry_expected_score",        # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
-    "endgame_score",               # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
+    "achievable_score_gap",  # 260514 split-out — dedicated band so 3.1.5 can tighten without affecting 3.1.6
+    "entry_eval_pawns",  # Phase 82 D-04: new endgame_start_vs_end Tile 1
+    "entry_expected_score",  # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
+    "endgame_score",  # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
     # Phase 68 (260424-pc6): per-part absolute score metrics emitted by the
     # score_timeline subsection. `score_gap` still carries the signed
     # aggregate; `endgame_score_timeline` / `non_endgame_score_timeline` carry
@@ -42,7 +42,7 @@ MetricId = Literal[
     # callers render them as "typical" (see assign_zone NaN/unregistered
     # handling). Phase 82 D-01/D-02: renamed from "endgame_score" /
     # "non_endgame_score" to free the clean slot for the new subsection.
-    "endgame_score_timeline",      # Phase 82 D-01: renamed from "endgame_score" (score_timeline subsection)
+    "endgame_score_timeline",  # Phase 82 D-01: renamed from "endgame_score" (score_timeline subsection)
     "non_endgame_score_timeline",  # Phase 82 D-02: renamed from "non_endgame_score"
     "endgame_skill",
     "conversion_win_pct",

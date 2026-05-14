@@ -233,9 +233,7 @@ class TestOpeningPhaseEntryMetrics:
         full_hash = 10_007
         # 2 games with continuous eval, 1 game with mate
         for cp in [50, 100]:
-            await _make_game_with_phase_entries(
-                db_session, full_hash=full_hash, mg_eval_cp=cp
-            )
+            await _make_game_with_phase_entries(db_session, full_hash=full_hash, mg_eval_cp=cp)
         # mate game: eval_cp=NULL, eval_mate=3
         await _make_game_with_phase_entries(
             db_session,
@@ -308,9 +306,7 @@ class TestOpeningPhaseEntryMetrics:
         """eval_n_mg <= wdl.total for all openings."""
         full_hash = 10_012
         for cp in [30, 60, 90, 120, 150]:
-            await _make_game_with_phase_entries(
-                db_session, full_hash=full_hash, mg_eval_cp=cp
-            )
+            await _make_game_with_phase_entries(db_session, full_hash=full_hash, mg_eval_cp=cp)
 
         wdl_result = await query_position_wdl_batch(
             db_session,

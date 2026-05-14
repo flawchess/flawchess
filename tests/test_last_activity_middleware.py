@@ -83,6 +83,7 @@ class TestExtractUserId:
     @pytest.mark.asyncio
     async def test_valid_token_returns_user_id(self):
         """A real JWT written by the app strategy decodes to an integer user_id."""
+
         # Create a mock user object with just the fields needed for write_token
         class _MockUser:
             id = 42
@@ -126,11 +127,10 @@ class TestLastActivityIntegration:
 
         # Verify last_activity was set in DB
         from sqlalchemy.ext.asyncio import async_sessionmaker as _maker
+
         session_maker = _maker(test_engine, expire_on_commit=False)
         async with session_maker() as session:
-            result = await session.execute(
-                select(User.last_activity).where(User.id == user_id)
-            )
+            result = await session.execute(select(User.last_activity).where(User.id == user_id))
             last_activity = result.scalar_one_or_none()
 
         assert last_activity is not None
@@ -151,11 +151,10 @@ class TestLastActivityIntegration:
 
         # Read the initial last_activity
         from sqlalchemy.ext.asyncio import async_sessionmaker as _maker
+
         session_maker = _maker(test_engine, expire_on_commit=False)
         async with session_maker() as session:
-            result = await session.execute(
-                select(User.last_activity).where(User.id == user_id)
-            )
+            result = await session.execute(select(User.last_activity).where(User.id == user_id))
             first_activity = result.scalar_one_or_none()
         assert first_activity is not None
 
@@ -166,9 +165,7 @@ class TestLastActivityIntegration:
             await client.get("/api/users/me/profile", headers={"Authorization": f"Bearer {token}"})
 
         async with session_maker() as session:
-            result = await session.execute(
-                select(User.last_activity).where(User.id == user_id)
-            )
+            result = await session.execute(select(User.last_activity).where(User.id == user_id))
             second_activity = result.scalar_one_or_none()
 
         # Timestamps should be identical (throttled — no update)
@@ -193,6 +190,7 @@ class TestLastActivityIntegration:
 
         # Manually backdate last_activity by 2 hours
         from sqlalchemy.ext.asyncio import async_sessionmaker as _maker
+
         session_maker = _maker(test_engine, expire_on_commit=False)
         stale_time = datetime.now(timezone.utc) - timedelta(hours=2)
         async with session_maker() as session:
@@ -212,9 +210,7 @@ class TestLastActivityIntegration:
 
         # last_activity should now be newer than stale_time
         async with session_maker() as session:
-            result = await session.execute(
-                select(User.last_activity).where(User.id == user_id)
-            )
+            result = await session.execute(select(User.last_activity).where(User.id == user_id))
             updated_activity = result.scalar_one_or_none()
 
         assert updated_activity is not None
@@ -271,15 +267,11 @@ class TestImpersonationSkip:
     async def _get_last_activity(test_engine, user_id: int):
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
         async with session_maker() as session:
-            result = await session.execute(
-                select(User.last_activity).where(User.id == user_id)
-            )
+            result = await session.execute(select(User.last_activity).where(User.id == user_id))
             return result.scalar_one_or_none()
 
     @classmethod
-    async def _impersonate(
-        cls, client: httpx.AsyncClient, admin_token: str, target_id: int
-    ) -> str:
+    async def _impersonate(cls, client: httpx.AsyncClient, admin_token: str, target_id: int) -> str:
         """Issue and return an impersonation JWT by calling /admin/impersonate."""
         resp = await client.post(
             f"/api/admin/impersonate/{target_id}",
