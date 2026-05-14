@@ -435,7 +435,7 @@ describe('EndgameOverallPerformanceSection', () => {
       <EndgameOverallPerformanceSection data={makeData()} scoreGap={makeScoreGap()} />,
     );
     expect(
-      within(screen.getByTestId('tile-at-endgame-entry')).queryByText('Win / Draw / Loss'),
+      within(screen.getByTestId('tile-at-endgame-entry')).queryByText('Win/Draw/Loss'),
     ).toBeNull();
   });
 });

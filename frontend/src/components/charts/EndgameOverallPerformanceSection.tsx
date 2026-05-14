@@ -29,9 +29,6 @@ import {
   SCORE_GAP_NEUTRAL_MAX,
   SCORE_GAP_NEUTRAL_MIN,
 } from '@/generated/endgameZones';
-import { scoreZoneColor } from '@/lib/scoreBulletConfig';
-import type { ConfidenceLevel } from '@/lib/scoreConfidence';
-import { isConfident } from '@/lib/significance';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import type {
   EndgamePerformanceResponse,
@@ -42,28 +39,14 @@ import { EndgameCard } from './EndgameOverallCard';
 import { ConnectorArrows } from './EndgameOverallConnectorArrows';
 import { EntryCard } from './EndgameOverallEntryCard';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
-import { deriveLevel } from './EndgameOverallShared';
 
 // Score Gap / Score Loss result is always tinted by zone (red / blue / green),
-// never default-white. Significance gating applies to the operand (score)
-// values via operandColor, but the difference itself reads as a zone signal
-// regardless of confidence so the user always sees where they land.
+// never default-white. The difference reads as a zone signal regardless of
+// confidence so the user always sees where they land.
 function gapZoneColor(value: number): string {
   if (value < SCORE_GAP_NEUTRAL_MIN) return ZONE_DANGER;
   if (value >= SCORE_GAP_NEUTRAL_MAX) return ZONE_SUCCESS;
   return ZONE_NEUTRAL;
-}
-
-// Operand coloring mirrors the per-card Score row: zone color only when the
-// score is significant AND outside the neutral (blue) zone; otherwise inherit
-// (white).
-function operandColor(
-  score: number,
-  level: ConfidenceLevel,
-): string | undefined {
-  const zoneHex = scoreZoneColor(score);
-  const inColoredZone = zoneHex !== ZONE_NEUTRAL;
-  return isConfident(level) && inColoredZone ? zoneHex : undefined;
 }
 
 export function EndgameOverallPerformanceSection({
@@ -82,52 +65,23 @@ export function EndgameOverallPerformanceSection({
   const withoutShare = totalGames > 0 ? data.non_endgame_wdl.total / totalGames : 0;
   const withShare = totalGames > 0 ? data.endgame_wdl.total / totalGames : 0;
 
-  // Per-card scores for the Score Gap math expression. Math order is
-  // `<with> − <without> = <gap>` to match the API's
-  // `score_difference = endgame - non_endgame` sign convention
-  // (positive = endgame better) and the bullet chart's zone meanings.
-  const withoutScore =
-    data.non_endgame_wdl.total > 0
-      ? (data.non_endgame_wdl.wins + 0.5 * data.non_endgame_wdl.draws) /
-        data.non_endgame_wdl.total
-      : 0;
+  // Endgame score used by the Score Loss row. Sign convention:
+  // score_difference = endgame - non_endgame; positive means endgame is the
+  // user's strength.
   const withScore =
     data.endgame_wdl.total > 0
       ? (data.endgame_wdl.wins + 0.5 * data.endgame_wdl.draws) /
         data.endgame_wdl.total
       : 0;
-  const withoutLevel = deriveLevel(
-    data.non_endgame_score_p_value,
-    data.non_endgame_wdl.total,
-  );
-  const withLevel = deriveLevel(
-    data.endgame_score_p_value,
-    data.endgame_wdl.total,
-  );
-  const withoutScoreColor = operandColor(withoutScore, withoutLevel);
-  const withScoreColor = operandColor(withScore, withLevel);
-  const showGapMath =
-    data.non_endgame_wdl.total > 0 && data.endgame_wdl.total > 0;
-  const withoutScorePct = `${Math.round(withoutScore * 100)}%`;
-  const withScorePct = `${Math.round(withScore * 100)}%`;
   const gapColor = gapZoneColor(scoreGap.score_difference);
 
   // Endgame Score Loss: how much the actual endgame score fell short of
   // (or exceeded) the achievable score expected from the entry eval.
-  // Same math format, colors, and bullet settings as the Score Gap.
   const achievableScore = data.entry_expected_score;
-  const achievableLevel = deriveLevel(
-    data.entry_expected_score_p_value,
-    data.entry_expected_score_n,
-  );
-  const achievableScoreColor = operandColor(achievableScore, achievableLevel);
-  const achievableScorePct = `${Math.round(achievableScore * 100)}%`;
   const lossValue = withScore - achievableScore;
   const lossPositive = lossValue >= 0;
   const lossFormatted =
     (lossPositive ? '+' : '') + `${Math.round(lossValue * 100)}%`;
-  const showLossMath =
-    data.endgame_wdl.total > 0 && data.entry_expected_score_n > 0;
   const lossColor = gapZoneColor(lossValue);
 
   const gridRef = useRef<HTMLDivElement>(null);
@@ -188,42 +142,10 @@ export function EndgameOverallPerformanceSection({
           <h3 className="text-base font-semibold mb-2">Endgame Score Differences</h3>
           <div className="flex flex-col gap-4">
             <ScoreGapRow
-              label="Endgame Score Gap:"
-              value={scoreGap.score_difference}
-              formatted={gapFormatted}
-              operand1Pct={withScorePct}
-              operand1Color={withScoreColor}
-              operand2Pct={withoutScorePct}
-              operand2Color={withoutScoreColor}
-              resultColor={gapColor}
-              showMath={showGapMath}
-              mathTestId="endgame-score-gap-math"
-              valueTestId="endgame-score-gap-value"
-              ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
-              tooltip={
-                <InfoPopover
-                  ariaLabel="What is Endgame Score Gap?"
-                  testId="endgame-score-gap-info"
-                >
-                  <p>
-                    The score difference between games that reach an endgame (Endgame score) vs. games that end before (Non-Endgame score). Positive means endgames are
-                    your strength; negative means you perform worse once
-                    games reach an endgame.
-                  </p>
-                </InfoPopover>
-              }
-            />
-            <ScoreGapRow
               label="Endgame Score Loss:"
               value={lossValue}
               formatted={lossFormatted}
-              operand1Pct={withScorePct}
-              operand1Color={withScoreColor}
-              operand2Pct={achievableScorePct}
-              operand2Color={achievableScoreColor}
               resultColor={lossColor}
-              showMath={showLossMath}
-              mathTestId="endgame-score-loss-math"
               valueTestId="endgame-score-loss-value"
               ariaLabel={`Endgame score loss: ${lossFormatted}`}
               tooltip={
@@ -236,6 +158,27 @@ export function EndgameOverallPerformanceSection({
                     endgame-entry positions. Negative means you converted
                     your endgame entry positions worse than a 2300+ rated
                     rapid player would on average.
+                  </p>
+                </InfoPopover>
+              }
+            />
+            <ScoreGapRow
+              label="Endgame Score Gap:"
+              value={scoreGap.score_difference}
+              formatted={gapFormatted}
+              resultColor={gapColor}
+              valueTestId="endgame-score-gap-value"
+              ariaLabel={`Endgame vs non-endgame score gap: ${gapFormatted}`}
+              valueClassName="text-lg"
+              tooltip={
+                <InfoPopover
+                  ariaLabel="What is Endgame Score Gap?"
+                  testId="endgame-score-gap-info"
+                >
+                  <p>
+                    The score difference between games that reach an endgame (Endgame score) vs. games that end before (Non-Endgame score). Positive means endgames are
+                    your strength; negative means you perform worse once
+                    games reach an endgame.
                   </p>
                 </InfoPopover>
               }
