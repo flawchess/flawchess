@@ -92,7 +92,7 @@ describe('AchievableScorePopover', () => {
     await waitFor(() => {
       expect(document.body.textContent).toMatch(/Lichess/i);
     });
-    expect(document.body.textContent).toMatch(/Compare.*against your achieved Endgame score/i);
+    expect(document.body.textContent).toMatch(/Compare.*against your Endgame Score/i);
   });
 
   it('renders WdlConfidenceTooltip-style stats line with rounded percentages', async () => {
