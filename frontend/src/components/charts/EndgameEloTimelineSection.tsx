@@ -185,7 +185,7 @@ export function EndgameEloTimelineSection({
           <strong>Endgame ELO</strong> is your Actual ELO shifted by how much your
           Endgame Skill exceeds (or falls short of) the 50% neutral mark. We compute it as
           <em> actual_elo + 400 &middot; log10(skill / (1 &minus; skill))</em>,
-          where skill is the composite of Conversion, Parity, and Recovery
+          where skill is the average of Conversion, Parity, and Recovery
           over your trailing 100 endgame games.
         </p>
         <p>

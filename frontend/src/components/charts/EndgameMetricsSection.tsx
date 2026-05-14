@@ -77,8 +77,8 @@ const TITLE_TOOLTIPS: Record<MaterialBucket, ReactNode> = {
   conversion: (
     <div className="space-y-2">
       <p>
-        Your <strong>win rate</strong> (only wins count) when you entered the
-        endgame with a Stockfish eval ≥ +1.0 (you ahead).
+        <strong>Conversion:</strong> your win rate (only wins count) when you
+        entered the endgame with a Stockfish eval ≥ +1.0 (you ahead).
       </p>
       {GAUGE_BAND_BLURB}
     </div>
@@ -86,8 +86,9 @@ const TITLE_TOOLTIPS: Record<MaterialBucket, ReactNode> = {
   parity: (
     <div className="space-y-2">
       <p>
-        Your <strong>chess score</strong> (wins + ½ draws) when you entered the
-        endgame with an eval between −1.0 and +1.0 (roughly balanced).
+        <strong>Parity:</strong> your chess score (wins + ½ draws) when you
+        entered the endgame with an eval between −1.0 and +1.0 (roughly
+        balanced).
       </p>
       {GAUGE_BAND_BLURB}
     </div>
@@ -95,8 +96,8 @@ const TITLE_TOOLTIPS: Record<MaterialBucket, ReactNode> = {
   recovery: (
     <div className="space-y-2">
       <p>
-        Your <strong>save rate</strong> (wins + draws count) when you entered
-        the endgame with an eval ≤ −1.0 (you behind).
+        <strong>Recovery:</strong> your save rate (wins + draws count) when you
+        entered the endgame with an eval ≤ −1.0 (you behind).
       </p>
       {GAUGE_BAND_BLURB}
     </div>

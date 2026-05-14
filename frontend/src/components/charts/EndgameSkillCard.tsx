@@ -4,7 +4,7 @@
  * peer-bullet row (`You / Opp / Gap` text + `MiniBulletChart`
  * for the signed `skill − oppSkill` vs 0).
  *
- * Skill is a composite of Conv + Parity + Recov rates over active buckets;
+ * Skill is the average of Conv + Parity + Recov rates over active buckets;
  * the backend produces `data.skill` and `data.opp_skill` per Phase 86 D-01..D-04.
  * No WDL bar — the single-ply composite has no W/D/L definable per SEC2-03.
  *
@@ -91,9 +91,9 @@ export function EndgameSkillCard({
         >
           <div className="space-y-2">
             <p>
-              The average of your Conversion, Parity, and Recovery rates — a
-              one-number summary of overall endgame proficiency against
-              the actual opponents you played.
+              <strong>Endgame Skill:</strong> the average of your Conversion,
+              Parity, and Recovery rates. A one-number summary of overall
+              endgame proficiency against the actual opponents you played.
             </p>
             <p>
               The <strong>gauge</strong> plots it against a fixed
@@ -154,8 +154,8 @@ export function EndgameSkillCard({
                     </span>
                   </span>
                   <MetricStatPopover
-                    name="Endgame Skill"
-                    explanation="A composite of your Conversion, Parity, and Recovery rates compared to the same composite for your opponents against you. One-number summary of overall endgame proficiency."
+                    name="Endgame Skill Gap"
+                    explanation="The average of your Conversion, Parity, and Recovery rates compared to the same average for your opponents against you. One-number summary of overall endgame proficiency."
                     value={(skill as number) - (oppSkill as number)}
                     baseline={0}
                     unit="percent"
@@ -175,7 +175,7 @@ export function EndgameSkillCard({
                       </>
                     }
                     testId={`${tileTestId}-info`}
-                    ariaLabel="What is Endgame Skill?"
+                    ariaLabel="What is Endgame Skill Gap?"
                   />
                 </span>
                 <div className="min-w-0 tabular-nums">

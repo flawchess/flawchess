@@ -200,7 +200,7 @@ export function MetricStatTooltip({
   return (
     <div className="text-left space-y-1">
       <p>
-        <strong>{name}.</strong> {explanation}
+        <strong>{name}:</strong> {explanation}
       </p>
       <p>{valueLine}</p>
       <p>
