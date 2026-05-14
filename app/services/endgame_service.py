@@ -742,6 +742,209 @@ def _compute_score_gap_timeline(
     ]
 
 
+def _aggregate_bucket_counts(
+    entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> tuple[
+    dict[MaterialBucket, int],
+    dict[MaterialBucket, int],
+    dict[MaterialBucket, int],
+    dict[MaterialBucket, int],
+]:
+    """Group endgame entry rows by game and tally WDL per bucket.
+
+    Per-game bucket selection priority (Phase 59 / REFAC-02):
+      1) any row satisfying CONVERSION (eval >= +1.0, user perspective)
+      2) else any row satisfying RECOVERY (eval <= -1.0)
+      3) else fall back to the row with the LOWEST endgame_class_int (deterministic);
+         bucket as "parity".
+
+    Conversion-over-recovery tiebreak (1 > 2): when a game has BOTH, bucket as
+    "conversion". Reaching a winning position is the earlier causal event in the
+    game. Inverting would double-penalize conversion failures. Do NOT change
+    without updating tests/test_endgame_service.py::TestScoreGapMaterialInvariant.
+
+    NULL eval rows route to "parity" via _classify_endgame_bucket so they fall
+    through to priority 3, preserving sum(material_rows.games) == endgame_wdl.total.
+
+    Returns: (bucket_wins, bucket_draws, bucket_losses, bucket_games) — each a
+    dict keyed by MaterialBucket.
+    """
+    bucket_wins: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
+    bucket_draws: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
+    bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
+    bucket_games: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
+
+    # rows carry labeled columns in prod (see query_endgame_bucket_rows /
+    # query_endgame_entry_rows) and a matching NamedTuple stand-in in tests,
+    # so attribute access is valid in both cases.
+    rows_by_game: dict[int, list[Row[Any]]] = defaultdict(list)
+    for row in entry_rows:
+        rows_by_game[row.game_id].append(row)  # ty: ignore[unresolved-attribute, invalid-argument-type] — labeled Row / NamedTuple row
+
+    for _, game_rows in rows_by_game.items():
+        chosen_row: Row[Any] | None = None
+        chosen_bucket: MaterialBucket = "parity"
+
+        for r in game_rows:
+            if _classify_endgame_bucket(r.eval_cp, r.eval_mate, r.user_color) == "conversion":
+                chosen_row = r
+                chosen_bucket = "conversion"
+                break
+
+        if chosen_row is None:
+            for r in game_rows:
+                if _classify_endgame_bucket(r.eval_cp, r.eval_mate, r.user_color) == "recovery":
+                    chosen_row = r
+                    chosen_bucket = "recovery"
+                    break
+
+        if chosen_row is None:
+            chosen_row = min(game_rows, key=lambda r: r.endgame_class)
+            chosen_bucket = "parity"
+
+        outcome = derive_user_result(chosen_row.result, chosen_row.user_color)
+        bucket_games[chosen_bucket] += 1
+        if outcome == "win":
+            bucket_wins[chosen_bucket] += 1
+        elif outcome == "draw":
+            bucket_draws[chosen_bucket] += 1
+        else:
+            bucket_losses[chosen_bucket] += 1
+
+    return bucket_wins, bucket_draws, bucket_losses, bucket_games
+
+
+def _compute_skill_wire(
+    bucket_wins: dict[MaterialBucket, int],
+    bucket_draws: dict[MaterialBucket, int],
+    bucket_losses: dict[MaterialBucket, int],
+    bucket_games: dict[MaterialBucket, int],
+) -> tuple[float | None, float | None, float | None, float | None, float | None]:
+    """Wire compute_skill_diff_test for the aggregate Skill peer-bullet test.
+
+    The opp_*_row arguments are the USER's rows in the mirror bucket per the
+    swap dict (conversion <-> recovery, parity <-> parity); compute_skill_diff_test
+    applies the W<->L swap internally to derive opp's headline rate.
+    """
+    conv_row = (
+        bucket_wins["conversion"],
+        bucket_draws["conversion"],
+        bucket_losses["conversion"],
+        bucket_games["conversion"],
+    )
+    parity_row = (
+        bucket_wins["parity"],
+        bucket_draws["parity"],
+        bucket_losses["parity"],
+        bucket_games["parity"],
+    )
+    recov_row = (
+        bucket_wins["recovery"],
+        bucket_draws["recovery"],
+        bucket_losses["recovery"],
+        bucket_games["recovery"],
+    )
+    return compute_skill_diff_test(
+        conv_row,
+        parity_row,
+        recov_row,
+        opp_conv_row=recov_row,
+        opp_parity_row=parity_row,
+        opp_recov_row=conv_row,
+    )
+
+
+def _bucket_pcts_and_scores(
+    bucket_wins: dict[MaterialBucket, int],
+    bucket_draws: dict[MaterialBucket, int],
+    bucket_losses: dict[MaterialBucket, int],
+    bucket_games: dict[MaterialBucket, int],
+) -> tuple[dict[MaterialBucket, float], dict[MaterialBucket, tuple[float, float, float]]]:
+    """First pass over the bucket counts -> per-bucket chess-score and (win_pct,
+    draw_pct, loss_pct) needed for the MaterialRow construction loop."""
+    bucket_score: dict[MaterialBucket, float] = {"conversion": 0.0, "parity": 0.0, "recovery": 0.0}
+    bucket_pct: dict[MaterialBucket, tuple[float, float, float]] = {}
+    for bucket_key in ("conversion", "parity", "recovery"):
+        b: MaterialBucket = bucket_key
+        games = bucket_games[b]
+        if games > 0:
+            win_pct = round(bucket_wins[b] / games * 100, 1)
+            draw_pct = round(bucket_draws[b] / games * 100, 1)
+            loss_pct = round(bucket_losses[b] / games * 100, 1)
+            bucket_score[b] = (win_pct + draw_pct / 2) / 100
+        else:
+            win_pct = draw_pct = loss_pct = 0.0
+            bucket_score[b] = 0.0
+        bucket_pct[b] = (win_pct, draw_pct, loss_pct)
+    return bucket_score, bucket_pct
+
+
+# Mirror-bucket map: opponent's score in user's bucket B is recoverable from
+# user's score in mirror[B] via same-game symmetry (Phase 60).
+_MIRROR_BUCKET: dict[MaterialBucket, MaterialBucket] = {
+    "conversion": "recovery",
+    "parity": "parity",
+    "recovery": "conversion",
+}
+
+
+def _build_material_rows(
+    bucket_wins: dict[MaterialBucket, int],
+    bucket_draws: dict[MaterialBucket, int],
+    bucket_losses: dict[MaterialBucket, int],
+    bucket_games: dict[MaterialBucket, int],
+    bucket_score: dict[MaterialBucket, float],
+    bucket_pct: dict[MaterialBucket, tuple[float, float, float]],
+) -> list[MaterialRow]:
+    """Build the 3 MaterialRow records (conv/parity/recov) with opponent_score
+    (mirror identity, gated at _MIN_OPPONENT_SAMPLE) and per-bucket peer-bullet
+    sig fields (compute_per_bucket_diff_test). The opp_row passed to the sig
+    helper is the USER's row in the mirror bucket; the helper applies the
+    W<->L swap internally."""
+    material_rows: list[MaterialRow] = []
+    for bucket_key in ("conversion", "parity", "recovery"):
+        b2: MaterialBucket = bucket_key
+        swap_bucket = _MIRROR_BUCKET[b2]
+        swap_games = bucket_games[swap_bucket]
+        if swap_games >= _MIN_OPPONENT_SAMPLE:
+            opponent_score: float | None = 1.0 - bucket_score[swap_bucket]
+        else:
+            opponent_score = None
+        win_pct, draw_pct, loss_pct = bucket_pct[b2]
+        user_row_b2 = (
+            bucket_wins[b2],
+            bucket_draws[b2],
+            bucket_losses[b2],
+            bucket_games[b2],
+        )
+        opp_row_b2 = (
+            bucket_wins[swap_bucket],
+            bucket_draws[swap_bucket],
+            bucket_losses[swap_bucket],
+            bucket_games[swap_bucket],
+        )
+        diff_p, diff_ci_low_v, diff_ci_high_v = compute_per_bucket_diff_test(
+            b2, user_row_b2, opp_row_b2
+        )
+        material_rows.append(
+            MaterialRow(
+                bucket=b2,
+                label=_MATERIAL_BUCKET_LABELS[b2],
+                games=bucket_games[b2],
+                win_pct=win_pct,
+                draw_pct=draw_pct,
+                loss_pct=loss_pct,
+                score=bucket_score[b2],
+                opponent_score=opponent_score,
+                opponent_games=swap_games,
+                diff_p_value=diff_p,
+                diff_ci_low=diff_ci_low_v,
+                diff_ci_high=diff_ci_high_v,
+            )
+        )
+    return material_rows
+
+
 def _compute_score_gap_material(
     endgame_wdl: EndgameWDLSummary,
     non_endgame_wdl: EndgameWDLSummary,
@@ -813,183 +1016,19 @@ def _compute_score_gap_material(
         non_endgame_wdl.total,
     )
 
-    bucket_wins: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
-    bucket_draws: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
-    bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
-    bucket_games: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
-
-    # Phase 59 / REFAC-02: group rows by game_id, then pick one span per game.
-    # Priority within a game's rows:
-    #   1) any row satisfying CONVERSION (_classify_endgame_bucket returns "conversion")
-    #   2) else any row satisfying RECOVERY (_classify_endgame_bucket returns "recovery")
-    #   3) else fall back to the row with the LOWEST endgame_class_int for determinism; bucket as "parity".
-    #
-    # Conversion-over-recovery tiebreak (priority 1 > priority 2): when a game has BOTH a
-    # conversion-qualifying span AND a recovery-qualifying span, we bucket as "conversion".
-    # Rationale: reaching a winning position is the earlier causal event in the game — the
-    # user first had an advantage, then (possibly after trades) a disadvantage. Inverting this
-    # would systematically double-penalize conversion failures. Do NOT change this without
-    # updating the invariant test (see tests/test_endgame_service.py::TestScoreGapMaterialInvariant).
-    #
-    # NULL eval rows cannot satisfy priorities 1 or 2 (they route to "parity" via
-    # _classify_endgame_bucket), so they fall through to priority 3. This preserves the
-    # invariant sum(material_rows.games) == endgame_wdl.total (same as Phase 53 fix).
-
-    # rows carry labeled columns in prod (see query_endgame_bucket_rows /
-    # query_endgame_entry_rows) and a matching NamedTuple stand-in in tests,
-    # so attribute access is valid in both cases even though the declared
-    # parameter type unions in plain tuple for backward-compat.
-    rows_by_game: dict[int, list[Row[Any]]] = defaultdict(list)
-    for row in entry_rows:
-        rows_by_game[row.game_id].append(row)  # ty: ignore[unresolved-attribute, invalid-argument-type] — labeled Row / NamedTuple row
-
-    for game_id, game_rows in rows_by_game.items():
-        chosen_row: Row[Any] | None = None
-        chosen_bucket: MaterialBucket = "parity"
-
-        # Pass 1: look for a CONVERSION-qualifying span.
-        for r in game_rows:
-            if _classify_endgame_bucket(r.eval_cp, r.eval_mate, r.user_color) == "conversion":
-                chosen_row = r
-                chosen_bucket = "conversion"
-                break
-
-        # Pass 2: look for a RECOVERY-qualifying span (only if no conversion match).
-        if chosen_row is None:
-            for r in game_rows:
-                if _classify_endgame_bucket(r.eval_cp, r.eval_mate, r.user_color) == "recovery":
-                    chosen_row = r
-                    chosen_bucket = "recovery"
-                    break
-
-        # Pass 3: fallback to "parity". Pick the row with the lowest endgame_class_int for
-        # deterministic output regardless of SQL row order.
-        if chosen_row is None:
-            chosen_row = min(game_rows, key=lambda r: r.endgame_class)
-            chosen_bucket = "parity"
-
-        result_str: str = chosen_row.result
-        user_color: str = chosen_row.user_color
-        outcome = derive_user_result(result_str, user_color)
-
-        bucket_games[chosen_bucket] += 1
-        if outcome == "win":
-            bucket_wins[chosen_bucket] += 1
-        elif outcome == "draw":
-            bucket_draws[chosen_bucket] += 1
-        else:
-            bucket_losses[chosen_bucket] += 1
+    bucket_wins, bucket_draws, bucket_losses, bucket_games = _aggregate_bucket_counts(entry_rows)
 
     # Phase 86 (D-01 / SEC2-08 / SEC2-06): aggregate Skill peer-bullet sig test.
-    # compute_skill_diff_test consumes per-bucket W/D/L/N from the user-side
-    # accumulators. The opp_*_row arguments are the USER's rows in the mirror
-    # bucket (per swap dict / legacy opponentRate identity); the helper inverts
-    # via `1 − userRate(opp_row)` internally — DO NOT flip W↔L at the call site.
-    conv_row = (
-        bucket_wins["conversion"],
-        bucket_draws["conversion"],
-        bucket_losses["conversion"],
-        bucket_games["conversion"],
-    )
-    parity_row = (
-        bucket_wins["parity"],
-        bucket_draws["parity"],
-        bucket_losses["parity"],
-        bucket_games["parity"],
-    )
-    recov_row = (
-        bucket_wins["recovery"],
-        bucket_draws["recovery"],
-        bucket_losses["recovery"],
-        bucket_games["recovery"],
-    )
-    # Mirror identity: swap['conversion'] = 'recovery', swap['parity'] = 'parity',
-    # swap['recovery'] = 'conversion'. The helper inverts to opp rate internally.
-    opp_conv_row = recov_row
-    opp_parity_row = parity_row
-    opp_recov_row = conv_row
-
-    skill, opp_skill, skill_p, skill_ci_low, skill_ci_high = compute_skill_diff_test(
-        conv_row,
-        parity_row,
-        recov_row,
-        opp_conv_row,
-        opp_parity_row,
-        opp_recov_row,
+    skill, opp_skill, skill_p, skill_ci_low, skill_ci_high = _compute_skill_wire(
+        bucket_wins, bucket_draws, bucket_losses, bucket_games
     )
 
-    # First pass: compute per-bucket user score (needed before opponent lookup).
-    bucket_score: dict[MaterialBucket, float] = {"conversion": 0.0, "parity": 0.0, "recovery": 0.0}
-    bucket_pct: dict[
-        MaterialBucket, tuple[float, float, float]
-    ] = {}  # (win_pct, draw_pct, loss_pct)
-    for bucket_key in ("conversion", "parity", "recovery"):
-        b: MaterialBucket = bucket_key
-        games = bucket_games[b]
-        if games > 0:
-            win_pct = round(bucket_wins[b] / games * 100, 1)
-            draw_pct = round(bucket_draws[b] / games * 100, 1)
-            loss_pct = round(bucket_losses[b] / games * 100, 1)
-            bucket_score[b] = (win_pct + draw_pct / 2) / 100
-        else:
-            win_pct = draw_pct = loss_pct = 0.0
-            bucket_score[b] = 0.0
-        bucket_pct[b] = (win_pct, draw_pct, loss_pct)
-
-    # Phase 60: opponent baseline via same-game symmetry. The opponent's
-    # score in any game set is 1 - user_score (arithmetic identity from
-    # user_wins + draws/2 + opp_wins + draws/2 = games). Mirror buckets:
-    # user Conversion <-> opponent Recovery, Even <-> Even.
-    swap: dict[MaterialBucket, MaterialBucket] = {
-        "conversion": "recovery",
-        "parity": "parity",
-        "recovery": "conversion",
-    }
-
-    material_rows: list[MaterialRow] = []
-    for bucket_key in ("conversion", "parity", "recovery"):
-        b2: MaterialBucket = bucket_key
-        swap_bucket = swap[b2]
-        swap_games = bucket_games[swap_bucket]
-        if swap_games >= _MIN_OPPONENT_SAMPLE:
-            opponent_score: float | None = 1.0 - bucket_score[swap_bucket]
-        else:
-            opponent_score = None
-        win_pct, draw_pct, loss_pct = bucket_pct[b2]
-        # Phase 86 (D-05 / D-06 / SEC2-06): per-bucket peer-bullet sig test.
-        # Reuses bucket_wins/draws/losses/games accumulators already populated above.
-        # opp_row is the USER's mirror-bucket row; helper inverts to opp rate.
-        user_row_b2 = (
-            bucket_wins[b2],
-            bucket_draws[b2],
-            bucket_losses[b2],
-            bucket_games[b2],
-        )
-        opp_row_b2 = (
-            bucket_wins[swap_bucket],
-            bucket_draws[swap_bucket],
-            bucket_losses[swap_bucket],
-            bucket_games[swap_bucket],
-        )
-        diff_p, diff_ci_low_v, diff_ci_high_v = compute_per_bucket_diff_test(
-            b2, user_row_b2, opp_row_b2
-        )
-        material_rows.append(
-            MaterialRow(
-                bucket=b2,
-                label=_MATERIAL_BUCKET_LABELS[b2],
-                games=bucket_games[b2],
-                win_pct=win_pct,
-                draw_pct=draw_pct,
-                loss_pct=loss_pct,
-                score=bucket_score[b2],
-                opponent_score=opponent_score,
-                opponent_games=swap_games,
-                diff_p_value=diff_p,
-                diff_ci_low=diff_ci_low_v,
-                diff_ci_high=diff_ci_high_v,
-            )
-        )
+    bucket_score, bucket_pct = _bucket_pcts_and_scores(
+        bucket_wins, bucket_draws, bucket_losses, bucket_games
+    )
+    material_rows = _build_material_rows(
+        bucket_wins, bucket_draws, bucket_losses, bucket_games, bucket_score, bucket_pct
+    )
 
     return ScoreGapMaterialResponse(
         endgame_score=endgame_score,
