@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams, Navigate, Link } from 'react-router-dom';
 import { SlidersHorizontal, X, BarChart2Icon, SwordsIcon, HelpCircle, Lightbulb } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
@@ -17,12 +17,15 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
-import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
 import { EndgameOverallPerformanceSection } from '@/components/charts/EndgameOverallPerformanceSection';
 import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
-import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameMetricsSection } from '@/components/charts/EndgameMetricsSection';
-import { HIDDEN_ENDGAME_CLASSES } from '@/lib/endgameMetrics';
+import { EndgameTypeBreakdownSection } from '@/components/charts/EndgameTypeBreakdownSection';
+import {
+  ENDGAME_CLASS_TO_SLUG,
+  ENDGAME_TYPE_DESCRIPTIONS,
+  HIDDEN_ENDGAME_CLASSES,
+} from '@/lib/endgameMetrics';
 import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
 import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
@@ -58,6 +61,15 @@ const VISIBLE_ENDGAME_CLASS_ENTRIES = (
 
 const DEFAULT_ENDGAME_CLASS: EndgameClass = 'mixed';
 
+// Phase 87 (D-08, SEC3-02): inverse of ENDGAME_CLASS_TO_SLUG so the
+// /endgames/games?type=<slug> deep-link can pre-seed the selected category on
+// page load (shareable URLs, browser back/forward). Built once at module scope.
+const SLUG_TO_ENDGAME_CLASS: Record<string, EndgameClass> = Object.fromEntries(
+  (Object.entries(ENDGAME_CLASS_TO_SLUG) as [EndgameClass, string][]).map(
+    ([cls, slug]) => [slug, cls],
+  ),
+);
+
 const TAB_INFO: Record<'stats' | 'games', { aria: string; text: string }> = {
   stats: {
     aria: 'About Endgame Stats',
@@ -72,6 +84,7 @@ const TAB_INFO: Record<'stats' | 'games', { aria: string; text: string }> = {
 export function EndgamesPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const needsRedirect =
     location.pathname === '/endgames' || location.pathname === '/endgames/';
@@ -316,6 +329,24 @@ export function EndgamesPage() {
     window.scrollTo(0, 0);
   }, []);
 
+  // Phase 87 (D-08, SEC3-02): `?type=<slug>` URL hydration so shareable
+  // deep-links into /endgames/games?type=rook pre-seed the type filter on page
+  // load and on subsequent SPA navigations. Unknown / malformed slugs are
+  // ignored (T-87-07 mitigation: validate against SLUG_TO_ENDGAME_CLASS).
+  useEffect(() => {
+    const slug = searchParams.get('type');
+    if (!slug) return;
+    const parsed = SLUG_TO_ENDGAME_CLASS[slug];
+    if (parsed && parsed !== selectedCategory) {
+      setSelectedCategory(parsed);
+      setGamesOffset(0);
+    }
+    // selectedCategory intentionally omitted from deps: this effect only
+    // *seeds* state from URL on mount + URL change; user-driven category
+    // selection through handleCategorySelect should not retrigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // ── Stats tab content ──────────────────────────────────────────────────────
 
   // Summary line + collapsible explaining endgame concepts and metric limitations
@@ -504,18 +535,65 @@ export function EndgamesPage() {
           )}
 
           {/* ── Endgame Type Breakdown ── */}
-          <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Type Breakdown</h2>
+          <h2 className="text-lg font-semibold text-foreground mt-2">
+            <span className="inline-flex items-center gap-1">
+              Endgame Type Breakdown
+              <InfoPopover
+                ariaLabel="Endgame Type Breakdown info"
+                testId="endgame-type-breakdown-info"
+                side="bottom"
+              >
+                <div className="space-y-2">
+                  {/* Taxonomy + composition: lifted from EndgameWDLChart.tsx:277-285. */}
+                  <p>
+                    Shows your win, draw, and loss percentages for each Endgame
+                    Type, along with your Conversion (win rate when entering
+                    with a clear advantage) and Recovery (save rate when
+                    entering with a clear disadvantage) rates per type. A single
+                    game can count toward multiple Endgame Types.
+                  </p>
+                  {/* Conv + Recov metric definitions: lifted from EndgameConvRecovChart.tsx:38-44. */}
+                  <p>
+                    <strong>Conversion</strong>: your win rate in this Endgame
+                    Type when you entered with a Stockfish evaluation of +1.0
+                    or better. <strong>Recovery</strong>: your save rate (wins
+                    + draws) when you entered with a Stockfish evaluation of
+                    −1.0 or worse.
+                  </p>
+                  {/* Gauge bands explainer: lifted from EndgameConvRecovChart.tsx:45-49. */}
+                  <p>
+                    Gauge zones are per-type typical bands sourced from pooled
+                    FlawChess benchmark data. Blue = typical for that type, red
+                    = below, green = above. Zones differ by type because each
+                    Endgame Type has its own natural distribution.
+                  </p>
+                  {/* Peer-bullet explainer: new per CONTEXT D-12. */}
+                  <p>
+                    The Conversion and Recovery peer bullets compare your rate
+                    to your opponents' rate in the same Endgame Type (via
+                    mirror-metric symmetry: opponents' Conversion is computed
+                    from your Recovery games for that type, flipped). The
+                    baseline shifts with rating, time control, color, and
+                    opponent-type filters. Hidden when the opponent sample is
+                    smaller than 10 games.
+                  </p>
+                  {/* Per-type entries: lifted from EndgameWDLChart.tsx:287-291. */}
+                  <p><strong>Rook:</strong> {ENDGAME_TYPE_DESCRIPTIONS.rook}</p>
+                  <p><strong>Minor Piece:</strong> {ENDGAME_TYPE_DESCRIPTIONS.minor_piece}</p>
+                  <p><strong>Pawn:</strong> {ENDGAME_TYPE_DESCRIPTIONS.pawn}</p>
+                  <p><strong>Queen:</strong> {ENDGAME_TYPE_DESCRIPTIONS.queen}</p>
+                  <p><strong>Mixed:</strong> {ENDGAME_TYPE_DESCRIPTIONS.mixed}</p>
+                </div>
+              </InfoPopover>
+            </span>
+          </h2>
           <div className="charcoal-texture rounded-md p-4">
-            <EndgameWDLChart
+            <EndgameTypeBreakdownSection
               categories={statsData.categories}
+              totalGames={statsData.total_games}
               onCategorySelect={handleCategorySelect}
             />
           </div>
-          {statsData.categories.length > 0 && (
-            <div className="charcoal-texture rounded-md p-4">
-              <EndgameConvRecovChart categories={statsData.categories} />
-            </div>
-          )}
           <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
         </>
       ) : overviewError ? (
