@@ -38,11 +38,11 @@ const ROW_ONE_BUCKETS: readonly MaterialBucket[] = ['conversion', 'parity', 'rec
 // Per-bucket popover content (D-16, lifted verbatim from CONTEXT).
 const METRIC_EXPLANATIONS: Record<MaterialBucket, string> = {
   conversion:
-    'Your win rate (only wins count) when you entered the endgame with a Stockfish eval ≥ +1.0, compared to your opponents in the mirror bucket. Filter-responsive.',
+    'Your win rate (only wins count) when you entered the endgame with a Stockfish eval ≥ +1.0, compared to your opponents in the mirror bucket.',
   parity:
-    'Your chess score (wins + ½ draws) when you entered the endgame with an eval between −1.0 and +1.0, compared to your opponents in the mirror bucket. Filter-responsive.',
+    'Your chess score (wins + ½ draws) when you entered the endgame with an eval between −1.0 and +1.0, compared to your opponents in the mirror bucket.',
   recovery:
-    'Your save rate (wins + draws count) when you entered the endgame with an eval ≤ −1.0, compared to your opponents in the mirror bucket. Filter-responsive.',
+    'Your save rate (wins + draws count) when you entered the endgame with an eval ≤ −1.0, compared to your opponents in the mirror bucket.',
 };
 
 // Popover names describe the BULLET-CHART metric (signed userRate − oppRate
