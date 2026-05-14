@@ -403,8 +403,7 @@ export function EndgamesPage() {
                     </p>
                     <p>
                       <strong>Endgame Score:</strong> your win rate (with draws counted as half)
-                      across all games that reach an endgame, tested against 50%, the break-even line
-                      you'd expect against rating-matched opponents. Use the Opponent Strength filter
+                      across all games that reach an endgame, tested against 50%, the baseline against rating-matched opponents. Use the Opponent Strength filter
                       to tighten the test against equal-rated opponents specifically.
                     </p>
                     <p>
