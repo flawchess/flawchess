@@ -38,6 +38,11 @@ _OUTPUT = _REPO_ROOT / "frontend" / "src" / "generated" / "endgameZones.ts"
 # FE currently exports them as SCORE_GAP_NEUTRAL_MIN/MAX so the TS mirror does too.
 _SCORE_GAP_SPEC = ZONE_REGISTRY["score_gap"]
 
+# 260514-kei: Achievable Score Gap gets a dedicated band (±5pp) so Card 3's
+# Achievable row can tighten without affecting the Endgame Score Gap row
+# (which stays at ±10pp). Mirrors the SCORE_GAP_NEUTRAL_* export pattern.
+_ACHIEVABLE_SCORE_GAP_SPEC = ZONE_REGISTRY["achievable_score_gap"]
+
 # Phase 83 D-16: codegen the entry_expected_score helpers so Plan 3 imports them
 # from frontend/src/generated/endgameZones.ts (CI drift gate enforces parity).
 _ENTRY_XS_SPEC = ZONE_REGISTRY["entry_expected_score"]
@@ -115,6 +120,8 @@ def _render() -> str:
         f"export const NEUTRAL_TIMEOUT_THRESHOLD = {NEUTRAL_TIMEOUT_THRESHOLD};\n"
         f"export const SCORE_GAP_NEUTRAL_MIN = {_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const SCORE_GAP_NEUTRAL_MAX = {_SCORE_GAP_SPEC.typical_upper};\n"
+        f"export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN = {_ACHIEVABLE_SCORE_GAP_SPEC.typical_lower};\n"
+        f"export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX = {_ACHIEVABLE_SCORE_GAP_SPEC.typical_upper};\n"
         "\n"
         "// Phase 83 D-14/D-17: per-user entry_expected_score cohort band.\n"
         "// Source: reports/benchmarks-2026-05-11.md §7 (pooled IQR aligned with\n"

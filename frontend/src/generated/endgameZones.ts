@@ -39,6 +39,8 @@ export const NEUTRAL_PCT_THRESHOLD = 5.0;
 export const NEUTRAL_TIMEOUT_THRESHOLD = 5.0;
 export const SCORE_GAP_NEUTRAL_MIN = -0.1;
 export const SCORE_GAP_NEUTRAL_MAX = 0.1;
+export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN = -0.05;
+export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX = 0.05;
 
 // Phase 83 D-14/D-17: per-user entry_expected_score cohort band.
 // Source: reports/benchmarks-2026-05-11.md §7 (pooled IQR aligned with
