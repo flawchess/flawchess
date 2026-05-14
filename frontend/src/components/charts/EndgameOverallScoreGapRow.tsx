@@ -31,6 +31,12 @@ interface ScoreGapRowProps {
   tooltip?: ReactNode;
   /** Optional extra classes for the result percent number (font size etc.). */
   valueClassName?: string;
+  /** 95% CI lower bound in domain units (signed). Renders whisker when both
+   *  ciLow + ciHigh are defined. Mirrors MiniBulletChart's CI contract. */
+  ciLow?: number;
+  /** 95% CI upper bound in domain units (signed). Renders whisker when both
+   *  ciLow + ciHigh are defined. Mirrors MiniBulletChart's CI contract. */
+  ciHigh?: number;
 }
 
 export function ScoreGapRow({
@@ -42,6 +48,8 @@ export function ScoreGapRow({
   ariaLabel,
   tooltip,
   valueClassName,
+  ciLow,
+  ciHigh,
 }: ScoreGapRowProps) {
   return (
     <div className="flex flex-col gap-2">
@@ -65,6 +73,8 @@ export function ScoreGapRow({
           domain={SCORE_GAP_DOMAIN}
           barColor="neutral"
           ariaLabel={ariaLabel}
+          ciLow={ciLow}
+          ciHigh={ciHigh}
         />
       </div>
     </div>

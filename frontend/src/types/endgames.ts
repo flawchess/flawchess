@@ -74,6 +74,13 @@ export interface EndgamePerformanceResponse {
   entry_expected_score_p_value: number | null;
   entry_expected_score_ci_low: number | null;
   entry_expected_score_ci_high: number | null;
+  // Phase 85.1 (SEC1-10): server-side achievable score gap + paired z-test.
+  // Always-present scalar (0.0 when n=0); p / CI gated to null when n is below
+  // the reliability gate (PVALUE_RELIABILITY_MIN_N=10 for p, 2 for CI).
+  achievable_score_gap: number;
+  achievable_score_gap_p_value: number | null;
+  achievable_score_gap_ci_low: number | null;
+  achievable_score_gap_ci_high: number | null;
 }
 
 /** Single data point in the per-type weekly win-rate time series.
@@ -147,6 +154,13 @@ export interface ScoreGapMaterialResponse {
   material_rows: MaterialRow[];
   timeline: ScoreGapTimelinePoint[];
   timeline_window: number;
+  // Phase 85.1 (SEC1-08, SEC1-09): independent two-sample z-test on
+  // (endgame_score - non_endgame_score). p_value is gated to null when
+  // min(endgame_wdl.total, non_endgame_wdl.total) < PVALUE_RELIABILITY_MIN_N
+  // (=10); CI bounds are gated when min n < 2.
+  score_difference_p_value: number | null;
+  score_difference_ci_low: number | null;
+  score_difference_ci_high: number | null;
 }
 
 export interface ClockStatsRow {
