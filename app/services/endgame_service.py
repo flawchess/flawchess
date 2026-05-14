@@ -71,7 +71,9 @@ from app.services.eval_utils import (
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
 from app.services.score_confidence import (
     compute_confidence_bucket,
+    compute_paired_difference_test,
     compute_score_confidence_from_mean,
+    compute_score_difference_test,
     wilson_bounds,
 )
 
@@ -179,6 +181,14 @@ EVAL_ADVANTAGE_THRESHOLD = 100
 # overwhelm the mean. Matches Phase 82's "analyzable endgame entry" cohort
 # definition for consistency with the entry_eval bullet (see SEED-014 D-07).
 EVAL_CLIP_MAX_CP = 2000
+
+# Phase 85.1 (SEC1-08 / IN-01 carry-forward): n-gate threshold below which any
+# p-value is too unstable to surface to the wire. Centralises the previous bare
+# `10` occurrences inside `_get_endgame_performance_from_rows` (4 wire-format
+# gates) and the new sites Phase 85.1 Plan 02 adds for the score-difference and
+# paired-difference tests. CLAUDE.md "No magic numbers" rule — see Phase 85
+# REVIEW IN-01 for the carry-forward.
+PVALUE_RELIABILITY_MIN_N: int = 10
 
 
 def _classify_endgame_bucket(
@@ -763,6 +773,21 @@ def _compute_score_gap_material(
     non_endgame_score = _wdl_to_score(non_endgame_wdl)
     score_difference = endgame_score - non_endgame_score
 
+    # Phase 85.1 (SEC1-08 / SEC1-09): independent two-sample z-test on the
+    # chess-score difference. Helper gates p_value at min(eg, ne) >=
+    # PVALUE_RELIABILITY_MIN_N=10 and CI bounds at min(eg, ne) >= 2;
+    # SE_diff=0 trap resolves the degenerate-both-sides case to {0.0, 1.0}.
+    score_diff_p, score_diff_ci_low, score_diff_ci_high = compute_score_difference_test(
+        endgame_wdl.wins,
+        endgame_wdl.draws,
+        endgame_wdl.losses,
+        endgame_wdl.total,
+        non_endgame_wdl.wins,
+        non_endgame_wdl.draws,
+        non_endgame_wdl.losses,
+        non_endgame_wdl.total,
+    )
+
     bucket_wins: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
     bucket_draws: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
     bucket_losses: dict[MaterialBucket, int] = {"conversion": 0, "parity": 0, "recovery": 0}
@@ -889,6 +914,9 @@ def _compute_score_gap_material(
         material_rows=material_rows,
         timeline=timeline if timeline is not None else [],
         timeline_window=timeline_window,
+        score_difference_p_value=score_diff_p,
+        score_difference_ci_low=score_diff_ci_low,
+        score_difference_ci_high=score_diff_ci_high,
     )
 
 
@@ -1741,7 +1769,7 @@ def _get_endgame_performance_from_rows(
     # Pitfall 5: gate the wire-format p-value to None when below the reliability
     # threshold (D-11). The helper returns 1.0 in that branch; surfacing 1.0 to
     # the API would conflate "no data" with "definitely consistent with H0".
-    entry_eval_p_value: float | None = p_eval_raw if eval_n >= 10 else None
+    entry_eval_p_value: float | None = p_eval_raw if eval_n >= PVALUE_RELIABILITY_MIN_N else None
     entry_eval_mean_pawns = mean_cp / 100.0 if eval_n > 0 else 0.0
     entry_eval_ci_low_pawns: float | None
     entry_eval_ci_high_pawns: float | None
@@ -1757,7 +1785,9 @@ def _get_endgame_performance_from_rows(
     _conf_s, p_score_raw, _se = compute_confidence_bucket(
         endgame_wdl.wins, endgame_wdl.draws, endgame_wdl.losses, endgame_wdl.total
     )
-    endgame_score_p_value: float | None = p_score_raw if endgame_wdl.total >= 10 else None
+    endgame_score_p_value: float | None = (
+        p_score_raw if endgame_wdl.total >= PVALUE_RELIABILITY_MIN_N else None
+    )
 
     # Mirror of endgame_score_p_value for the Section 1 "Games without Endgame" card (Phase 85 D-01).
     _conf_ns, p_non_score_raw, _se_ns = compute_confidence_bucket(
@@ -1767,7 +1797,7 @@ def _get_endgame_performance_from_rows(
         non_endgame_wdl.total,
     )
     non_endgame_score_p_value: float | None = (
-        p_non_score_raw if non_endgame_wdl.total >= 10 else None
+        p_non_score_raw if non_endgame_wdl.total >= PVALUE_RELIABILITY_MIN_N else None
     )
 
     # Phase 83 Plan 2 (D-04..D-07, D-21): Stockfish-baseline expected score
@@ -1775,32 +1805,61 @@ def _get_endgame_performance_from_rows(
     # score via Lichess sigmoid for eval_cp / 0-or-1 for eval_mate. Mate is
     # INCLUDED here (D-06 — inverts the entry_eval cohort, which drops mate);
     # |eval_cp| >= EVAL_CLIP_MAX_CP rows are dropped (D-07).
+    #
+    # Phase 85.1 Plan 02 (SEC1-10): merge a paired-difference accumulator into
+    # the SAME loop so the filter logic is shared by construction (mate INCLUDED,
+    # |eval_cp| >= EVAL_CLIP_MAX_CP clipped, both-NULL skipped). For each surviving
+    # row we capture the per-game expected score (avoiding a second sigmoid eval),
+    # compute actual_score_i from derive_user_result, and append
+    # d_i = actual_score_i - expected_score_i. d_n == ex_n by construction.
+    _ACTUAL_SCORE_BY_OUTCOME: dict[str, float] = {"win": 1.0, "draw": 0.5, "loss": 0.0}
     ex_sum = 0.0
     ex_n = 0
+    diffs: list[float] = []
     for row in bucket_rows:
         if row.eval_mate is not None:  # ty: ignore[unresolved-attribute]
             # D-06: mate INCLUDED. Routed through the 0/1 helper, not the sigmoid.
-            ex_sum += eval_mate_to_expected_score(
+            expected_score_i = eval_mate_to_expected_score(
                 row.eval_mate,  # ty: ignore[unresolved-attribute]
                 row.user_color,  # ty: ignore[unresolved-attribute]
             )
-            ex_n += 1
         elif row.eval_cp is not None:  # ty: ignore[unresolved-attribute]
             if abs(row.eval_cp) >= EVAL_CLIP_MAX_CP:  # ty: ignore[unresolved-attribute]
                 continue  # D-07 clip — sigmoid saturates anyway
-            ex_sum += eval_cp_to_expected_score(
+            expected_score_i = eval_cp_to_expected_score(
                 row.eval_cp,  # ty: ignore[unresolved-attribute]
                 row.user_color,  # ty: ignore[unresolved-attribute]
             )
-            ex_n += 1
-        # else: both NULL -> skip per D-06 cohort filter
+        else:
+            continue  # both NULL — skip per D-06 cohort filter
+        ex_sum += expected_score_i
+        ex_n += 1
+        # Phase 85.1 paired-diff accumulator (SEC1-10).
+        outcome = derive_user_result(
+            row.result,  # ty: ignore[unresolved-attribute]
+            row.user_color,  # ty: ignore[unresolved-attribute]
+        )
+        actual_score_i = _ACTUAL_SCORE_BY_OUTCOME[outcome]
+        diffs.append(actual_score_i - expected_score_i)
 
     entry_expected_score = ex_sum / ex_n if ex_n > 0 else 0.0
+
+    # Phase 85.1 (SEC1-10): paired one-sample z-test on per-game
+    # (actual - expected) diffs. Helper gates p_value at n >=
+    # PVALUE_RELIABILITY_MIN_N=10 and CI bounds at n >= 2; SE=0 trap resolves
+    # the all-identical-diffs case to {0.0, 1.0}.
+    # d_n == ex_n by construction (same filter applied to both accumulators).
+    achievable_score_gap, achievable_p, achievable_ci_low, achievable_ci_high = (
+        compute_paired_difference_test(diffs)
+    )
     # Wilson sig test vs 50% via the (score, n) sibling helper. Single Wilson
     # code path with compute_confidence_bucket (memory feedback_wilson_chess_score.md).
     _conf_x, p_ex_raw, _se_ex = compute_score_confidence_from_mean(entry_expected_score, ex_n)
-    # Same n >= 10 wire-format gate as entry_eval_p_value / endgame_score_p_value.
-    entry_expected_score_p_value: float | None = p_ex_raw if ex_n >= 10 else None
+    # Same wire-format gate as entry_eval_p_value / endgame_score_p_value
+    # (PVALUE_RELIABILITY_MIN_N, currently 10 — REVIEW IN-01 carry-forward).
+    entry_expected_score_p_value: float | None = (
+        p_ex_raw if ex_n >= PVALUE_RELIABILITY_MIN_N else None
+    )
     entry_expected_score_ci_low: float | None
     entry_expected_score_ci_high: float | None
     if ex_n >= 2:
@@ -1829,6 +1888,10 @@ def _get_endgame_performance_from_rows(
         entry_expected_score_p_value=entry_expected_score_p_value,
         entry_expected_score_ci_low=entry_expected_score_ci_low,
         entry_expected_score_ci_high=entry_expected_score_ci_high,
+        achievable_score_gap=achievable_score_gap,
+        achievable_score_gap_p_value=achievable_p,
+        achievable_score_gap_ci_low=achievable_ci_low,
+        achievable_score_gap_ci_high=achievable_ci_high,
     )
 
 

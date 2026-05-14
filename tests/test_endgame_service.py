@@ -4349,3 +4349,277 @@ class TestEntryExpectedScore(TestEntryEvalAggregation):
         # Phase 83 cohort: mate INCLUDED, NULL excluded, |eval_cp| >= 2000 clipped.
         # 8 normal + 1 mate + 0 clipped + 0 null = 9.
         assert resp.entry_expected_score_n == 9
+
+
+class TestScoreGapMaterialScoreDifferenceTest(TestScoreGapMaterial):
+    """Phase 85.1 Plan 02 Task 2 — score_difference_p_value / ci_low / ci_high
+    on ScoreGapMaterialResponse via compute_score_difference_test.
+
+    Reuses _make_wdl / _make_wdl_pct from TestScoreGapMaterial.
+    Mirrors the n-gate pattern of test_endgame_score_p_value_gated_below_n_ten
+    on TestEntryEvalAggregation, but for the *two-sample* test on the score
+    difference between endgame and non-endgame cohorts.
+    """
+
+    def test_score_difference_p_value_below_gate_either_side(self) -> None:
+        """min(endgame_wdl.total, non_endgame_wdl.total) < PVALUE_RELIABILITY_MIN_N
+        -> score_difference_p_value is None on either side."""
+        # endgame side below gate
+        resp_eg_low = _compute_score_gap_material(
+            endgame_wdl=self._make_wdl(3, 2, 1),  # total=6 < 10
+            non_endgame_wdl=self._make_wdl(10, 0, 0),  # total=10
+            entry_rows=[],
+        )
+        assert resp_eg_low.score_difference_p_value is None
+
+        # non-endgame side below gate
+        resp_ne_low = _compute_score_gap_material(
+            endgame_wdl=self._make_wdl(10, 0, 0),  # total=10
+            non_endgame_wdl=self._make_wdl(3, 2, 1),  # total=6 < 10
+            entry_rows=[],
+        )
+        assert resp_ne_low.score_difference_p_value is None
+
+    def test_score_difference_p_value_at_gate_both_sides(self) -> None:
+        """min(eg, ne) >= PVALUE_RELIABILITY_MIN_N -> float in [0, 1]."""
+        resp = _compute_score_gap_material(
+            endgame_wdl=self._make_wdl(6, 0, 4),  # total=10, score=0.6
+            non_endgame_wdl=self._make_wdl(5, 0, 5),  # total=10, score=0.5
+            entry_rows=[],
+        )
+        assert resp.score_difference_p_value is not None
+        assert isinstance(resp.score_difference_p_value, float)
+        assert 0.0 <= resp.score_difference_p_value <= 1.0
+
+    def test_score_difference_se_zero_short_circuit(self) -> None:
+        """All-wins endgame + all-losses non-endgame (both n>=10) -> SE_diff=0,
+        scores differ -> p_value=0.0 (perfectly determined signal)."""
+        resp = _compute_score_gap_material(
+            endgame_wdl=self._make_wdl(10, 0, 0),  # score=1.0, var=0
+            non_endgame_wdl=self._make_wdl(0, 0, 10),  # score=0.0, var=0
+            entry_rows=[],
+        )
+        assert resp.score_difference_p_value == 0.0
+
+    def test_score_difference_ci_below_gate(self) -> None:
+        """min(eg, ne) < 2 -> ci_low / ci_high are None."""
+        resp = _compute_score_gap_material(
+            endgame_wdl=self._make_wdl(1, 0, 0),  # n=1
+            non_endgame_wdl=self._make_wdl(10, 0, 0),  # n=10
+            entry_rows=[],
+        )
+        assert resp.score_difference_ci_low is None
+        assert resp.score_difference_ci_high is None
+
+    def test_score_difference_ci_at_gate_both_sides(self) -> None:
+        """min(eg, ne) >= 2 -> ci_low <= score_difference <= ci_high."""
+        resp = _compute_score_gap_material(
+            endgame_wdl=self._make_wdl(6, 0, 4),  # score=0.6
+            non_endgame_wdl=self._make_wdl(4, 0, 6),  # score=0.4
+            entry_rows=[],
+        )
+        assert resp.score_difference_ci_low is not None
+        assert resp.score_difference_ci_high is not None
+        assert resp.score_difference_ci_low <= resp.score_difference
+        assert resp.score_difference_ci_high >= resp.score_difference
+
+
+class TestAchievableScoreGap(TestEntryEvalAggregation):
+    """Phase 85.1 Plan 02 Task 2 — achievable_score_gap + p_value + ci_*
+    on EndgamePerformanceResponse via compute_paired_difference_test.
+
+    Reuses _bucket / _wdl_rows from TestEntryEvalAggregation. The paired-diff
+    accumulator is merged into the existing ex_sum/ex_n loop, so it must
+    apply the SAME filter (mate INCLUDED, NULL eval dropped, |eval_cp| >= 2000
+    clipped). The d_n == ex_n invariant follows by construction.
+    """
+
+    def test_achievable_score_gap_empty_defaults(self) -> None:
+        """Empty bucket_rows -> mean 0.0, p/CI None."""
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=[],
+            non_endgame_rows=[],
+            bucket_rows=[],
+        )
+        assert resp.achievable_score_gap == 0.0
+        assert resp.achievable_score_gap_p_value is None
+        assert resp.achievable_score_gap_ci_low is None
+        assert resp.achievable_score_gap_ci_high is None
+
+    def test_achievable_score_gap_n_nine_p_value_gated(self) -> None:
+        """n=9 surviving rows -> mean is float, p_value is None
+        (n < PVALUE_RELIABILITY_MIN_N), CI bounds are floats (n >= 2)."""
+        # 9 white-user wins at eval_cp=0 (sigmoid -> 0.5; actual=1.0, diff=0.5)
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(9)]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=9, draws=0, losses=0),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 9
+        # Mean: actual=1.0, expected=0.5 -> diff=0.5 each, mean=0.5.
+        assert resp.achievable_score_gap == pytest.approx(0.5, abs=1e-9)
+        # p_value gated (n < 10).
+        assert resp.achievable_score_gap_p_value is None
+        # CI bounds defined (n >= 2 — all diffs identical so CI collapses to mean).
+        assert resp.achievable_score_gap_ci_low == pytest.approx(0.5, abs=1e-9)
+        assert resp.achievable_score_gap_ci_high == pytest.approx(0.5, abs=1e-9)
+
+    def test_achievable_score_gap_n_one_ci_none(self) -> None:
+        """n=1 surviving row -> CI bounds None (Bessel variance undefined),
+        p_value None (n < 10), mean still computed."""
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=1, draws=0, losses=0),
+            non_endgame_rows=[],
+            bucket_rows=[self._bucket(game_id=1, eval_cp=0)],
+        )
+        assert resp.entry_expected_score_n == 1
+        # Mean still computed: actual=1.0, expected=0.5 -> diff=0.5.
+        assert resp.achievable_score_gap == pytest.approx(0.5, abs=1e-9)
+        assert resp.achievable_score_gap_p_value is None
+        assert resp.achievable_score_gap_ci_low is None
+        assert resp.achievable_score_gap_ci_high is None
+
+    def test_achievable_score_gap_all_zero_diffs_collapses(self) -> None:
+        """n=10 with d_i=0 for all (actual=expected) -> SE=0, p_value=1.0,
+        CI collapses to mean_d=0."""
+        # Each row: white user, eval_cp=0 -> expected=0.5; draw -> actual=0.5; diff=0.
+        bucket_rows = [self._bucket(game_id=i, result="1/2-1/2", eval_cp=0) for i in range(10)]
+        # WDL must reflect the same 10 draws so the function's invariants hold.
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=0, draws=10, losses=0),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 10
+        assert resp.achievable_score_gap == pytest.approx(0.0, abs=1e-9)
+        # SE=0 variance-0 trap with mean==0 -> p_value=1.0.
+        assert resp.achievable_score_gap_p_value == pytest.approx(1.0, abs=1e-9)
+        # CI half-width collapses to 0 (SE=0).
+        assert resp.achievable_score_gap_ci_low == pytest.approx(0.0, abs=1e-9)
+        assert resp.achievable_score_gap_ci_high == pytest.approx(0.0, abs=1e-9)
+
+    def test_achievable_score_gap_known_mean_at_n_ten(self) -> None:
+        """Hand-computed: 10 white-user games, all eval_cp=0 (expected=0.5),
+        5 wins (actual=1.0) + 5 losses (actual=0.0) -> diffs alternate +0.5 / -0.5
+        -> mean=0.0, p_value high (no signal), CI brackets 0."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        # First 5 rows are wins; remaining 5 are losses. Match WDL rows.
+        for i in range(5, 10):
+            bucket_rows[i] = self._bucket(game_id=i, eval_cp=0, result="0-1")
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=5, draws=0, losses=5),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 10
+        # Diffs: 5 * (+0.5) + 5 * (-0.5) = 0 -> mean = 0.
+        assert resp.achievable_score_gap == pytest.approx(0.0, abs=1e-9)
+        # Mean is exactly 0 against H0=0 -> p_value=1.0.
+        assert resp.achievable_score_gap_p_value is not None
+        assert resp.achievable_score_gap_p_value == pytest.approx(1.0, abs=1e-9)
+        # CI bounds defined and bracket the mean (0).
+        assert resp.achievable_score_gap_ci_low is not None
+        assert resp.achievable_score_gap_ci_high is not None
+        assert resp.achievable_score_gap_ci_low <= 0.0 <= resp.achievable_score_gap_ci_high
+
+    def test_achievable_score_gap_d_n_equals_ex_n_invariant(self) -> None:
+        """The paired-diff accumulator filter must match ex_n filter exactly:
+        mate INCLUDED, NULL dropped, |eval_cp| >= 2000 clipped. So a mixed
+        cohort with all three exclusions still yields d_n == ex_n."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(8)]
+        bucket_rows.append(self._bucket(game_id=9, eval_cp=None, eval_mate=5))  # mate INCLUDED
+        bucket_rows.append(self._bucket(game_id=10, eval_cp=2500))  # clipped
+        bucket_rows.append(self._bucket(game_id=11, eval_cp=None, eval_mate=None))  # NULL dropped
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=8, draws=0, losses=3),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        # 8 normal + 1 mate (included) - 1 clipped - 1 null = 9.
+        assert resp.entry_expected_score_n == 9
+        # achievable_score_gap mean must be defined (not 0.0 default) -- check
+        # that paired-diff loop ran on the same 9 rows.
+        # 8 wins at eval_cp=0: actual=1.0 expected=0.5 -> diff=0.5 each (sum=4.0)
+        # 1 mate-for-white-user (eval_mate=5, result="1-0"): actual=1.0 expected=1.0 -> diff=0
+        # Total sum = 4.0, mean = 4.0 / 9 ~ 0.4444
+        assert resp.achievable_score_gap == pytest.approx(4.0 / 9.0, abs=1e-9)
+
+    def test_achievable_score_gap_ci_brackets_mean_when_n_ge_two(self) -> None:
+        """n >= 2 with non-zero variance -> CI brackets mean strictly."""
+        # 5 wins at eval_cp=0 (diff=+0.5) + 5 losses at eval_cp=0 (diff=-0.5)
+        # but skewed to give a non-zero mean.
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(7)]  # wins -> diff=+0.5
+        for i in range(7, 10):
+            bucket_rows.append(self._bucket(game_id=i, eval_cp=0, result="0-1"))  # losses -> diff=-0.5
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows(wins=7, draws=0, losses=3),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 10
+        # Mean: (7 * 0.5 + 3 * -0.5) / 10 = (3.5 - 1.5) / 10 = 0.2.
+        assert resp.achievable_score_gap == pytest.approx(0.2, abs=1e-9)
+        assert resp.achievable_score_gap_ci_low is not None
+        assert resp.achievable_score_gap_ci_high is not None
+        # Variance non-zero so CI is a strict bracket.
+        assert resp.achievable_score_gap_ci_low < resp.achievable_score_gap
+        assert resp.achievable_score_gap_ci_high > resp.achievable_score_gap
+
+
+class TestPValueReliabilityMinNConstantAndSchemaDefaults:
+    """Phase 85.1 Plan 02 Task 1 — n-gate constant + new schema fields (defaults only).
+
+    Task 1 is a pure scaffolding step: extracts PVALUE_RELIABILITY_MIN_N to replace
+    the four bare `10` occurrences (REVIEW IN-01 carry-forward) and adds the new
+    p-value / CI / mean fields to ScoreGapMaterialResponse + EndgamePerformanceResponse
+    with safe defaults. Wiring of real values is Task 2's job.
+    """
+
+    def test_pvalue_reliability_min_n_constant_exposed(self) -> None:
+        """PVALUE_RELIABILITY_MIN_N is exported from endgame_service and equals 10
+        (matches the previous bare-10 wire-format gate)."""
+        from app.services import endgame_service
+
+        assert hasattr(endgame_service, "PVALUE_RELIABILITY_MIN_N")
+        assert endgame_service.PVALUE_RELIABILITY_MIN_N == 10
+
+    def test_endgame_performance_response_defaults_for_new_fields(self) -> None:
+        """EndgamePerformanceResponse carries the 4 new achievable_* fields with
+        documented defaults (mean=0.0 always-present; p/CI None below gate)."""
+        from app.schemas.endgames import (
+            EndgamePerformanceResponse,
+            EndgameWDLSummary,
+        )
+
+        empty_wdl = EndgameWDLSummary(
+            wins=0, draws=0, losses=0, total=0, win_pct=0.0, draw_pct=0.0, loss_pct=0.0
+        )
+        resp = EndgamePerformanceResponse(
+            endgame_wdl=empty_wdl,
+            non_endgame_wdl=empty_wdl,
+            endgame_win_rate=0.0,
+        )
+        # Always-present mean (matches the entry_expected_score / entry_eval_mean_pawns pattern).
+        assert resp.achievable_score_gap == 0.0
+        # Gated p/CI default to None (mirror entry_expected_score_p_value / ci_*).
+        assert resp.achievable_score_gap_p_value is None
+        assert resp.achievable_score_gap_ci_low is None
+        assert resp.achievable_score_gap_ci_high is None
+
+    def test_score_gap_material_response_defaults_for_new_fields(self) -> None:
+        """ScoreGapMaterialResponse carries the 3 new score_difference_* fields,
+        all None by default (matches the entry_*_p_value / ci_* convention)."""
+        from app.schemas.endgames import ScoreGapMaterialResponse
+
+        resp = ScoreGapMaterialResponse(
+            endgame_score=0.0,
+            non_endgame_score=0.0,
+            score_difference=0.0,
+            material_rows=[],
+            timeline=[],
+            timeline_window=0,
+        )
+        assert resp.score_difference_p_value is None
+        assert resp.score_difference_ci_low is None
+        assert resp.score_difference_ci_high is None
