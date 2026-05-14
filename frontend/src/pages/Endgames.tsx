@@ -22,6 +22,7 @@ import { EndgameOverallPerformanceSection } from '@/components/charts/EndgameOve
 import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
 import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
 import { EndgameMetricsSection } from '@/components/charts/EndgameMetricsSection';
+import { HIDDEN_ENDGAME_CLASSES } from '@/lib/endgameMetrics';
 import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
 import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
@@ -46,11 +47,10 @@ const ENDGAME_CLASS_LABELS: Record<EndgameClass, string> = {
   pawnless: 'Pawnless',
 };
 
-// Pawnless endgames are rare (~0.5% of positions, ~0.7% of qualifying game spans
-// in prod) and sample sizes per user are almost always too small to be meaningful.
-// Hide from the Endgames tab UI; classification remains in the DB so it can be
-// re-enabled without a reimport.
-const HIDDEN_ENDGAME_CLASSES: ReadonlySet<EndgameClass> = new Set(['pawnless']);
+// HIDDEN_ENDGAME_CLASSES lifted to @/lib/endgameMetrics in Phase 87 Plan 03 so
+// EndgameTypeBreakdownSection and this page share one source of truth (pawnless
+// is hidden everywhere). Classification stays in the DB so re-enabling does
+// not require a reimport.
 
 const VISIBLE_ENDGAME_CLASS_ENTRIES = (
   Object.entries(ENDGAME_CLASS_LABELS) as [EndgameClass, string][]

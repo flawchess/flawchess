@@ -165,3 +165,11 @@ export const ENDGAME_CLASS_TO_SLUG: Record<EndgameClass, string> = {
   mixed: 'mixed',
   pawnless: 'pawnless',
 };
+
+// Phase 87 (Plan 03 D-03): Pawnless endgames are rare (~0.5% of positions in
+// prod) and per-user sample sizes are usually too small to be meaningful. Hidden
+// from the Endgames tab UI and from EndgameTypeBreakdownSection. Classification
+// stays in the DB so the class can be re-enabled without a reimport. Lifted
+// from Endgames.tsx:53 so the orchestrator and the page share one source of
+// truth.
+export const HIDDEN_ENDGAME_CLASSES: ReadonlySet<EndgameClass> = new Set(['pawnless']);
