@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: executing
-last_updated: "2026-05-14T13:29:44.584Z"
-last_activity: 2026-05-14 -- Phase 86 planning complete
+status: Phase 86 shipped — direct-push to main (no PR), commits 38, tip 64aac6eb
+last_updated: "2026-05-14T17:02:36.029Z"
+last_activity: 2026-05-14
 progress:
   total_phases: 0
   completed_phases: 0
@@ -18,8 +18,8 @@ progress:
 
 Phase: 86 (section-2-endgame-metrics-4-card-layout) — CONTEXT GATHERED (ready for /gsd-plan-phase 86)
 Plan: 0 of TBD
-Status: Ready to execute
-Last activity: 2026-05-14 -- Phase 86 planning complete
+Status: Phase 86 shipped — direct-push to main (no PR), commits 38, tip 64aac6eb
+Last activity: 2026-05-14
 Prior: Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
