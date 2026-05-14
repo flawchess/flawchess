@@ -1,24 +1,25 @@
 /**
- * Phase 87 — Per-class card shell for the 5-card Endgame Type Breakdown section.
- * Mirrors the Phase 86 EndgameMetricCard pattern with two metrics per card (Conv
- * + Recov gauges + peer bullets), a Games deep-link instead of a static games-
- * count span, and the per-card title InfoPopover from D-11. v1.17 single-bullet
- * doctrine per peer bullet.
+ * Phase 87 follow-up — Per-class card shell for the 5-card Endgame Type
+ * Breakdown section. Replaces the original Conv + Recov peer-diff bullet rows
+ * (which always rendered the same magnitude because of the same-game mirror
+ * identity) with a SINGLE chess-score bullet using the same pattern as the
+ * "Games with Endgame" card (see EndgameOverallCard / EndgameCard). The two
+ * per-class gauges (Conversion, Recovery) at the top of each card are kept.
  *
- * Sig-gating triple applied per metric: `isConfident(deriveLevel(p, n)) ∧
- * outside-neutral-band ∧ hasOpponent` paints the diff-percent inline color
- * (ZONE_DANGER below NEUTRAL_ZONE_MIN, ZONE_SUCCESS at/above NEUTRAL_ZONE_MAX).
- * Gauges always-colored, WDL bar untinted (POLISH-02 deferred to Phase 88).
+ * Card structure (top-to-bottom):
+ *   1. Title + per-card title InfoPopover + optional n={total} chip.
+ *   2. Side-by-side Conv + Recov gauges (unchanged).
+ *   3. WDL bar row with the Games deep-link.
+ *   4. Score bullet (W + 0.5*D / N) sig-gated against 50%.
  *
  * Empty / sparse handling (CONTEXT D-13 / D-14 / D-15):
- * - total === 0: gauge row opacity-50, "Not enough data yet" placeholder.
- * - opp sparse on a metric: replace THAT peer-bullet row with "n < N,
- *   baseline unavailable" muted text. Gauges + WDL still render.
+ * - total === 0: gauge row opacity-50, "Not enough data yet" placeholder, no
+ *   WDL / Score row, no Games link.
  * - 0 < total < MIN_GAMES_FOR_RELIABLE_STATS: body wrapper gets UNRELIABLE_OPACITY,
- *   `n={total}` chip appears next to the title (full opacity).
+ *   `n={total}` chip appears next to the title (full opacity). Score row hidden.
  */
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties } from 'react';
 
 import { Link } from 'react-router-dom';
 import { Swords } from 'lucide-react';
@@ -29,49 +30,38 @@ import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
+import { PER_CLASS_GAUGE_ZONES } from '@/generated/endgameZones';
 import {
-  PER_CLASS_GAUGE_ZONES,
-  type EndgameClassKey,
-} from '@/generated/endgameZones';
+  SCORE_BULLET_CENTER,
+  SCORE_BULLET_NEUTRAL_MAX,
+  SCORE_BULLET_NEUTRAL_MIN,
+  clampScoreCi,
+  scoreZoneColor,
+} from '@/lib/scoreBulletConfig';
+import { wilsonBounds } from '@/lib/scoreConfidence';
 import { isConfident } from '@/lib/significance';
 import {
   MIN_GAMES_FOR_RELIABLE_STATS,
   UNRELIABLE_OPACITY,
-  ZONE_DANGER,
-  ZONE_SUCCESS,
+  ZONE_NEUTRAL,
   colorizeGaugeZones,
 } from '@/lib/theme';
 import {
-  BULLET_DOMAIN,
   ENDGAME_CLASS_TO_SLUG,
   ENDGAME_TYPE_DESCRIPTIONS,
-  MIN_OPPONENT_BASELINE_GAMES,
-  NEUTRAL_ZONE_MAX,
-  NEUTRAL_ZONE_MIN,
   SHOW_WDL_BAR_IN_TYPE_CARDS,
-  formatDiffPct,
-  formatScorePct,
 } from '@/lib/endgameMetrics';
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
 
-import { deriveLevel } from './EndgameOverallShared';
+import { ENDGAME_TILE_SCORE_DOMAIN, deriveLevel } from './EndgameOverallShared';
 
-// Locked D-10 copy (Conv + Recov peer-bullet popover bodies).
-const CONV_EXPLANATION =
-  "Your win rate among games where you entered this Endgame Type with a Stockfish eval ≥ +1.0, compared to your opponents' win rate in the same situation across the same Endgame Type. Filter-responsive: baseline shifts with rating x TC x color x opponent-type filters.";
+// Per-card gauge size — extracted per REVIEW IN-02 (was hard-coded 4 times).
+const PER_TYPE_GAUGE_SIZE = 130;
 
-const RECOV_EXPLANATION =
-  "Your save rate (wins + draws count) among games where you entered this Endgame Type with a Stockfish eval ≤ −1.0, compared to your opponents' save rate in the same situation across the same Endgame Type. Filter-responsive.";
-
-const METHODOLOGY_BLOCK: ReactNode = (
-  <>
-    Score: per-bucket headline rate (Conv = wins, Recov = wins + draws).
-    <br />
-    Test: Wald-z on the signed difference vs 0.
-    <br />
-    Confidence interval: 95% normal-approx on the diff.
-  </>
-);
+// Score-vs-50% neutral band, mirrors EndgameOverallCard (260514-i3l). Kept inline
+// rather than re-importing because the bounds are the same one-line constants.
+const SCORE_NEUTRAL_LOWER = 0.45;
+const SCORE_NEUTRAL_UPPER = 0.55;
 
 export interface EndgameTypeCardProps {
   category: EndgameCategoryStats;
@@ -94,59 +84,34 @@ export function EndgameTypeCard({
     ? { opacity: UNRELIABLE_OPACITY }
     : undefined;
 
-  // 0-1 scale values for peer-bullet displays. Gauges still consume the
-  // 0-100 conversion_pct / recovery_pct directly via maxValue=100.
-  const userConv = category.conversion.conversion_pct / 100;
-  const oppConv = category.conversion.opp_conversion_pct;
-  const userRecov = category.conversion.recovery_pct / 100;
-  const oppRecov = category.conversion.opp_recovery_pct;
+  // Score derivation mirrors EndgameOverallCard:70-79. n=0 short-circuits to 0
+  // so the call is well-defined; the score row is hidden below the sample-size
+  // gate so this only ever renders for total >= MIN_GAMES_FOR_RELIABLE_STATS.
+  const total = category.total;
+  const score = total > 0 ? (category.wins + 0.5 * category.draws) / total : 0;
+  const level = deriveLevel(category.score_p_value, total);
+  const zoneHex = scoreZoneColor(score);
+  const isInColoredZone = zoneHex !== ZONE_NEUTRAL;
+  const scoreShowZoneFontColor = isConfident(level) && isInColoredZone;
+  const scoreColor: string | undefined = scoreShowZoneFontColor ? zoneHex : undefined;
+  const [ciLow, ciHigh] = wilsonBounds(score, total);
+  const showScoreRow = total >= MIN_GAMES_FOR_RELIABLE_STATS;
+  const scorePct = `${Math.round(score * 100)}%`;
 
-  const hasConvOpponent =
-    oppConv !== null &&
-    category.conversion.opp_conversion_games >= MIN_OPPONENT_BASELINE_GAMES;
-  const hasRecovOpponent =
-    oppRecov !== null &&
-    category.conversion.opp_recovery_games >= MIN_OPPONENT_BASELINE_GAMES;
-
-  const convDiff = hasConvOpponent ? userConv - (oppConv as number) : 0;
-  const recovDiff = hasRecovOpponent ? userRecov - (oppRecov as number) : 0;
-
-  // Sig-gating triple per peer bullet (CONTEXT D-09). The helper's
-  // deriveLevel(p, n) returns 'low' when n < MIN_GAMES_FOR_RELIABLE_STATS or
-  // p == null, so hasConvOpponent / hasRecovOpponent already cover the
-  // sample-size floor; the extra `hasXxxOpponent` guard below is defensive.
-  const convLevel = deriveLevel(
-    category.conversion.conv_diff_p_value,
-    category.conversion.opp_conversion_games,
-  );
-  const convOutsideNeutral =
-    convDiff < NEUTRAL_ZONE_MIN || convDiff >= NEUTRAL_ZONE_MAX;
-  const convPaint =
-    hasConvOpponent && isConfident(convLevel) && convOutsideNeutral;
-  const convDiffStyle: CSSProperties | undefined = convPaint
-    ? { color: convDiff < NEUTRAL_ZONE_MIN ? ZONE_DANGER : ZONE_SUCCESS }
-    : undefined;
-
-  const recovLevel = deriveLevel(
-    category.conversion.recov_diff_p_value,
-    category.conversion.opp_recovery_games,
-  );
-  const recovOutsideNeutral =
-    recovDiff < NEUTRAL_ZONE_MIN || recovDiff >= NEUTRAL_ZONE_MAX;
-  const recovPaint =
-    hasRecovOpponent && isConfident(recovLevel) && recovOutsideNeutral;
-  const recovDiffStyle: CSSProperties | undefined = recovPaint
-    ? { color: recovDiff < NEUTRAL_ZONE_MIN ? ZONE_DANGER : ZONE_SUCCESS }
-    : undefined;
-
-  // Gauge zones (per-class p25/p75 from PER_CLASS_GAUGE_ZONES). The Record
-  // access is safe for all 6 known EndgameClass values; the defensive `!bands`
-  // branch below should never trigger in production (pawnless is filtered
-  // upstream via HIDDEN_ENDGAME_CLASSES at Endgames.tsx:53). We satisfy
-  // noUncheckedIndexedAccess by treating a missing entry as "no data" and
-  // rendering the empty-class shell.
-  const classKey = category.endgame_class as EndgameClassKey;
-  const bands = PER_CLASS_GAUGE_ZONES[classKey];
+  // Per-class gauge zones (p25/p75 bands from the generated registry). With
+  // `pawnless` filtered upstream and the union of registry keys covering the
+  // remaining 5 classes, the explicit guard documents the contract instead of
+  // relying on a runtime fallback (REVIEW WR-04).
+  const bands =
+    category.endgame_class !== 'pawnless'
+      ? PER_CLASS_GAUGE_ZONES[category.endgame_class]
+      : undefined;
+  // REVIEW WR-03: pawnless guard surfaces missing descriptions during dev
+  // rather than silently emitting an empty popover via a `?? ''` fallback.
+  const typeDescription =
+    category.endgame_class !== 'pawnless'
+      ? ENDGAME_TYPE_DESCRIPTIONS[category.endgame_class]
+      : '';
 
   const sharePctFormatted = sharePct.toFixed(1);
   const gamesCountFormatted = category.total.toLocaleString();
@@ -159,9 +124,7 @@ export function EndgameTypeCard({
         testId={`${tileTestId}-title-info`}
         side="top"
       >
-        {ENDGAME_TYPE_DESCRIPTIONS[
-          category.endgame_class as Exclude<EndgameClass, 'pawnless'>
-        ] ?? ''}
+        {typeDescription}
       </InfoPopover>
       {isUnreliable && (
         <span
@@ -174,12 +137,17 @@ export function EndgameTypeCard({
     </h3>
   );
 
-  // Empty-class shell (no games at all, or unknown class with no bands).
-  if (!hasGames || !bands) {
+  // Empty-class shell (no games at all). REVIEW WR-04: dropped the redundant
+  // !bands branch — bands existence is guaranteed for the 5 non-pawnless
+  // classes via the generated registry, so the `!hasGames` path is the only
+  // empty case.
+  if (!hasGames) {
     return (
       <div
         className="charcoal-texture rounded-md p-4"
         data-testid={tileTestId}
+        role="group"
+        aria-label={`${category.label} endgame breakdown`}
       >
         {titleRow}
         <div className="flex flex-col gap-4">
@@ -198,10 +166,8 @@ export function EndgameTypeCard({
                 value={0}
                 maxValue={100}
                 label="Conversion"
-                zones={colorizeGaugeZones([
-                  { from: 0, to: 1.0 },
-                ])}
-                size={130}
+                zones={colorizeGaugeZones([{ from: 0, to: 1.0 }])}
+                size={PER_TYPE_GAUGE_SIZE}
               />
             </div>
             <div
@@ -213,10 +179,8 @@ export function EndgameTypeCard({
                 value={0}
                 maxValue={100}
                 label="Recovery"
-                zones={colorizeGaugeZones([
-                  { from: 0, to: 1.0 },
-                ])}
-                size={130}
+                zones={colorizeGaugeZones([{ from: 0, to: 1.0 }])}
+                size={PER_TYPE_GAUGE_SIZE}
               />
             </div>
           </div>
@@ -228,8 +192,10 @@ export function EndgameTypeCard({
     );
   }
 
-  const [convLower, convUpper] = bands.conversion;
-  const [recovLower, recovUpper] = bands.recovery;
+  // bands is non-undefined here: hasGames implies a non-pawnless class with a
+  // registry entry (HIDDEN_ENDGAME_CLASSES filters pawnless upstream).
+  const [convLower, convUpper] = bands!.conversion;
+  const [recovLower, recovUpper] = bands!.recovery;
   const convZones = colorizeGaugeZones([
     { from: 0, to: convLower },
     { from: convLower, to: convUpper },
@@ -259,13 +225,17 @@ export function EndgameTypeCard({
   );
 
   return (
-    <div className="charcoal-texture rounded-md p-4" data-testid={tileTestId}>
+    <div
+      className="charcoal-texture rounded-md p-4"
+      data-testid={tileTestId}
+      role="group"
+      aria-label={`${category.label} endgame breakdown`}
+    >
       {titleRow}
       <div className="flex flex-col gap-4" style={bodyStyle}>
-        {/* Gauge row (Conv | Recov side-by-side). Per CONTEXT D-13, gauges
-            stay rendered with opacity-50 when no games; here we already
-            short-circuited the empty-class shell above, so this branch is
-            always full opacity. */}
+        {/* Gauge row (Conv | Recov side-by-side). Gauges are always rendered
+            with full opacity here; the empty-class shell above handles
+            total === 0. */}
         <div
           className="grid grid-cols-2 gap-2"
           data-testid={`${tileTestId}-gauges`}
@@ -280,7 +250,7 @@ export function EndgameTypeCard({
               maxValue={100}
               label="Conversion"
               zones={convZones}
-              size={130}
+              size={PER_TYPE_GAUGE_SIZE}
             />
           </div>
           <div
@@ -293,7 +263,7 @@ export function EndgameTypeCard({
               maxValue={100}
               label="Recovery"
               zones={recovZones}
-              size={130}
+              size={PER_TYPE_GAUGE_SIZE}
             />
           </div>
         </div>
@@ -307,6 +277,7 @@ export function EndgameTypeCard({
             <div
               className="min-w-0"
               data-testid={`${tileTestId}-wdl`}
+              aria-label={`${category.label} win/draw/loss distribution`}
             >
               <MiniWDLBar
                 win_pct={category.win_pct}
@@ -319,156 +290,63 @@ export function EndgameTypeCard({
           <div className="flex w-full">{gamesLink}</div>
         )}
 
-        {/* Conv peer-bullet row */}
-        {hasConvOpponent ? (
+        {/* Single Score bullet replacing the Conv+Recov peer-diff bullets.
+            Mirrors EndgameOverallCard:113-160. */}
+        {showScoreRow && (
           <div
             className="flex flex-col gap-2"
-            data-testid={`${tileTestId}-conv-row`}
+            data-testid={`${tileTestId}-score-row`}
           >
-            <span className="flex items-center gap-1 text-sm tabular-nums w-full flex-wrap">
-              <span>
-                <span className="text-muted-foreground">Conversion, You: </span>
-                <span
-                  className="font-medium"
-                  data-testid={`${tileTestId}-conv-you`}
-                >
-                  {formatScorePct(userConv)}
-                </span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">Opp: </span>
-                <span
-                  className="font-medium"
-                  data-testid={`${tileTestId}-conv-opp`}
-                >
-                  {formatScorePct(oppConv as number)}
-                </span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">Gap: </span>
-                <span
-                  className="font-semibold"
-                  style={convDiffStyle}
-                  data-testid={`${tileTestId}-conv-diff`}
-                >
-                  {formatDiffPct(userConv, oppConv as number)}
-                </span>
+            <span className="flex items-center gap-1 text-sm tabular-nums w-full">
+              <span className="text-muted-foreground">{category.label} Endgame Score:</span>
+              <span
+                className="font-semibold"
+                style={scoreColor ? { color: scoreColor } : undefined}
+                data-testid={`${tileTestId}-score-value`}
+              >
+                {scorePct}
               </span>
               <MetricStatPopover
-                name="Conversion"
-                explanation={CONV_EXPLANATION}
-                value={convDiff}
-                baseline={0}
+                name={`${category.label} Endgame Score`}
+                explanation={`Your win rate (draws counted as half) across ${category.label} endgames, tested against the 50% baseline.`}
+                value={score}
+                baseline={0.5}
                 unit="percent"
-                gameCount={category.conversion.opp_conversion_games}
-                level={convLevel}
-                pValue={category.conversion.conv_diff_p_value}
+                gameCount={total}
+                level={level}
+                pValue={category.score_p_value}
                 vocabulary="score"
-                neutralLower={NEUTRAL_ZONE_MIN}
-                neutralUpper={NEUTRAL_ZONE_MAX}
-                baselineLabel="0%"
-                relative
-                methodology={METHODOLOGY_BLOCK}
-                testId={`${tileTestId}-conv-info`}
-                ariaLabel="What is Conversion?"
+                neutralLower={SCORE_NEUTRAL_LOWER}
+                neutralUpper={SCORE_NEUTRAL_UPPER}
+                baselineLabel="50%"
+                methodology={
+                  <>
+                    Score: wins + ½ draws.<br />
+                    Test: two-sided Wilson score test vs 50%.<br />
+                    Confidence interval: Wilson 95% (whiskers).
+                  </>
+                }
+                testId={`${tileTestId}-score-info`}
+                ariaLabel={`What is ${category.label} Endgame Score?`}
               />
             </span>
-            <div className="min-w-0 tabular-nums">
+            <div
+              className="min-w-0 tabular-nums"
+              data-testid={`${tileTestId}-score-bullet`}
+            >
               <MiniBulletChart
-                value={convDiff}
-                neutralMin={NEUTRAL_ZONE_MIN}
-                neutralMax={NEUTRAL_ZONE_MAX}
-                domain={BULLET_DOMAIN}
-                ciLow={category.conversion.conv_diff_ci_low ?? undefined}
-                ciHigh={category.conversion.conv_diff_ci_high ?? undefined}
+                value={score}
+                center={SCORE_BULLET_CENTER}
+                neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+                neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+                domain={ENDGAME_TILE_SCORE_DOMAIN}
+                ciLow={clampScoreCi(ciLow)}
+                ciHigh={clampScoreCi(ciHigh)}
                 barColor="neutral"
-                ariaLabel={`Conversion: ${formatDiffPct(userConv, oppConv as number)} vs opponents`}
+                ariaLabel={`${category.label} endgame score ${scorePct}`}
               />
             </div>
           </div>
-        ) : (
-          <span
-            className="text-sm text-muted-foreground"
-            data-testid={`${tileTestId}-conv-muted`}
-          >
-            Conversion, n &lt; {MIN_OPPONENT_BASELINE_GAMES}, baseline unavailable
-          </span>
-        )}
-
-        {/* Recov peer-bullet row */}
-        {hasRecovOpponent ? (
-          <div
-            className="flex flex-col gap-2"
-            data-testid={`${tileTestId}-recov-row`}
-          >
-            <span className="flex items-center gap-1 text-sm tabular-nums w-full flex-wrap">
-              <span>
-                <span className="text-muted-foreground">Recovery, You: </span>
-                <span
-                  className="font-medium"
-                  data-testid={`${tileTestId}-recov-you`}
-                >
-                  {formatScorePct(userRecov)}
-                </span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">Opp: </span>
-                <span
-                  className="font-medium"
-                  data-testid={`${tileTestId}-recov-opp`}
-                >
-                  {formatScorePct(oppRecov as number)}
-                </span>
-              </span>
-              <span>
-                <span className="text-muted-foreground">Gap: </span>
-                <span
-                  className="font-semibold"
-                  style={recovDiffStyle}
-                  data-testid={`${tileTestId}-recov-diff`}
-                >
-                  {formatDiffPct(userRecov, oppRecov as number)}
-                </span>
-              </span>
-              <MetricStatPopover
-                name="Recovery"
-                explanation={RECOV_EXPLANATION}
-                value={recovDiff}
-                baseline={0}
-                unit="percent"
-                gameCount={category.conversion.opp_recovery_games}
-                level={recovLevel}
-                pValue={category.conversion.recov_diff_p_value}
-                vocabulary="score"
-                neutralLower={NEUTRAL_ZONE_MIN}
-                neutralUpper={NEUTRAL_ZONE_MAX}
-                baselineLabel="0%"
-                relative
-                methodology={METHODOLOGY_BLOCK}
-                testId={`${tileTestId}-recov-info`}
-                ariaLabel="What is Recovery?"
-              />
-            </span>
-            <div className="min-w-0 tabular-nums">
-              <MiniBulletChart
-                value={recovDiff}
-                neutralMin={NEUTRAL_ZONE_MIN}
-                neutralMax={NEUTRAL_ZONE_MAX}
-                domain={BULLET_DOMAIN}
-                ciLow={category.conversion.recov_diff_ci_low ?? undefined}
-                ciHigh={category.conversion.recov_diff_ci_high ?? undefined}
-                barColor="neutral"
-                ariaLabel={`Recovery: ${formatDiffPct(userRecov, oppRecov as number)} vs opponents`}
-              />
-            </div>
-          </div>
-        ) : (
-          <span
-            className="text-sm text-muted-foreground"
-            data-testid={`${tileTestId}-recov-muted`}
-          >
-            Recovery, n &lt; {MIN_OPPONENT_BASELINE_GAMES}, baseline unavailable
-          </span>
         )}
       </div>
     </div>
