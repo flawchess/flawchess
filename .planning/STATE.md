@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: executing
-last_updated: "2026-05-14T09:23:13.515Z"
-last_activity: 2026-05-14 -- Phase 85.1 execution started
+status: Phase 85.1 shipped to main (direct push)
+last_updated: "2026-05-14T10:38:04.178Z"
+last_activity: 2026-05-14 — Phase 85.1 shipped to main (direct push, no PR — origin/main already contained the phase commits)
 progress:
   total_phases: 0
   completed_phases: 0
@@ -18,8 +18,8 @@ progress:
 
 Phase: 85.1 (hypothesis-tests-and-cis-for-endgame-score-differences) — EXECUTING
 Plan: 1 of 4
-Status: Executing Phase 85.1
-Last activity: 2026-05-14 -- Phase 85.1 execution started
+Status: Phase 85.1 shipped to main (direct push)
+Last activity: 2026-05-14 — Phase 85.1 shipped to main (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
 
