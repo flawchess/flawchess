@@ -157,6 +157,89 @@ def compute_score_confidence_from_mean(
     return _bucket_from_p_value(p_value, n), p_value, 0.0
 
 
+def compute_score_difference_test(
+    eg_w: int,
+    eg_d: int,
+    eg_l: int,
+    eg_n: int,
+    ne_w: int,
+    ne_d: int,
+    ne_l: int,
+    ne_n: int,
+) -> tuple[float | None, float | None, float | None]:
+    """Return (p_value, ci_low, ci_high) for the independent two-sample z-test
+    on the chess-score difference between two WDL cohorts.
+
+    H0: `score_eg - score_ne == 0`, where `score_i = (w_i + 0.5 * d_i) / n_i`.
+
+    SE of the difference uses the *empirical* trinomial variance per side:
+        var_i = max(0.0, (w_i + 0.25 * d_i) / n_i - score_i ** 2)
+        SE_diff = sqrt(var_eg / eg_n + var_ne / ne_n)
+        z = (score_eg - score_ne) / SE_diff
+        p_value = erfc(|z| / sqrt(2))                       # two-sided
+
+    Wald-on-difference (not Wilson) because the difference of two independent
+    proportions does not reduce to a single-proportion problem; the normal
+    approximation is adequate at `min(eg_n, ne_n) >= CONFIDENCE_MIN_N=10`.
+
+    95% CI (also Wald):
+        ci_low  = (score_eg - score_ne) - CI_Z_95 * SE_diff
+        ci_high = (score_eg - score_ne) + CI_Z_95 * SE_diff
+
+    Independent n-gates (per SEC1-08/09):
+      - p_value is None when `min(eg_n, ne_n) < CONFIDENCE_MIN_N` (=10).
+      - ci_low/ci_high are None when `min(eg_n, ne_n) < 2` (variance ill-defined).
+      - All three are None simultaneously when either n == 0.
+
+    Variance-0 trap (SE_diff == 0.0): occurs when both sides are degenerate
+    (e.g. all-wins vs all-losses, or all-draws both sides). The z-statistic
+    is undefined; we short-circuit per the eval_confidence.py:116-119 pattern:
+      - score_eg != score_ne -> p_value = 0.0 (perfectly determined signal).
+      - score_eg == score_ne -> p_value = 1.0 (no evidence of a difference).
+    CI half-width collapses to 0 in either case (point estimate, no spread).
+    """
+    # n=0 on either side: no sample, no signal, no spread.
+    if eg_n <= 0 or ne_n <= 0:
+        return None, None, None
+
+    min_n = min(eg_n, ne_n)
+
+    score_eg = (eg_w + 0.5 * eg_d) / eg_n
+    score_ne = (ne_w + 0.5 * ne_d) / ne_n
+    # Empirical trinomial variance per side, clamped at 0.0 (floating-point safety
+    # — at all-wins or all-losses the raw value is exactly 0; at all-draws likewise).
+    var_eg = max(0.0, (eg_w + 0.25 * eg_d) / eg_n - score_eg * score_eg)
+    var_ne = max(0.0, (ne_w + 0.25 * ne_d) / ne_n - score_ne * score_ne)
+    se_diff = math.sqrt(var_eg / eg_n + var_ne / ne_n)
+    diff = score_eg - score_ne
+
+    if se_diff == 0.0:
+        # Variance-0 trap (eval_confidence.py:116-119 pattern). Both sides
+        # are degenerate (no spread in either cohort). The z-statistic would
+        # be 0/0 — instead resolve the test by direct comparison of the means.
+        p_value: float = 0.0 if diff != 0.0 else 1.0
+    else:
+        z = diff / se_diff
+        # Two-sided p-value: erfc(|z| / sqrt(2)) is in [0, 1] for any finite z.
+        p_value = math.erfc(abs(z) / math.sqrt(2.0))
+
+    ci_half_width = CI_Z_95 * se_diff
+    ci_low: float = diff - ci_half_width
+    ci_high: float = diff + ci_half_width
+
+    # Independent gates per SEC1-08/09. p_value gate is the strictest (n >= 10);
+    # CI gate (n >= 2) is wider so a sub-gate cohort can still report a CI.
+    p_out: float | None = p_value if min_n >= CONFIDENCE_MIN_N else None
+    if min_n < 2:
+        ci_low_out: float | None = None
+        ci_high_out: float | None = None
+    else:
+        ci_low_out = ci_low
+        ci_high_out = ci_high
+
+    return p_out, ci_low_out, ci_high_out
+
+
 def compute_confidence_bucket(
     w: int, d: int, losses: int, n: int
 ) -> tuple[Literal["low", "medium", "high"], float, float]:
