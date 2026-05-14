@@ -24,7 +24,7 @@
 
 import { useRef } from 'react';
 
-import { ScoreGapPopover } from '@/components/popovers/ScoreGapPopover';
+import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import {
   SCORE_GAP_NEUTRAL_MAX,
   SCORE_GAP_NEUTRAL_MIN,
@@ -125,6 +125,8 @@ export function EndgameOverallPerformanceSection({
           wdl={data.non_endgame_wdl}
           pValue={data.non_endgame_score_p_value}
           gamesShare={withoutShare}
+          popoverName="Non-Endgame Score"
+          popoverExplanation="Your win rate (draws counted as half) across games that did not reach an endgame, tested against the 50% break-even line."
         />
 
         {/* Card 2: At Endgame Entry (center on desktop — no WDL bar) */}
@@ -142,6 +144,8 @@ export function EndgameOverallPerformanceSection({
           wdl={data.endgame_wdl}
           pValue={data.endgame_score_p_value}
           gamesShare={withShare}
+          popoverName="Endgame Score"
+          popoverExplanation="Your win rate (draws counted as half) across games that reached an endgame, tested against the 50% break-even line."
         />
 
         {/* Endgame Score Differences: lg:col-start-2 places it under Card 2 on desktop.
@@ -162,30 +166,28 @@ export function EndgameOverallPerformanceSection({
               ciLow={data.achievable_score_gap_ci_low ?? undefined}
               ciHigh={data.achievable_score_gap_ci_high ?? undefined}
               tooltip={
-                <ScoreGapPopover
-                  label="Achievable Score Gap"
+                <MetricStatPopover
+                  name="Achievable Score Gap"
+                  explanation="Your average per-game endgame score minus the achievable score from each entry position. Positive means you outperformed the 2300+ baseline; negative means you underperformed."
                   value={achievableGapValue}
+                  baseline={0}
+                  unit="percent"
                   gameCount={achievableGapN}
                   level={achievableGapLevel}
                   pValue={data.achievable_score_gap_p_value}
-                  testId="achievable-score-gap-info"
-                  ariaLabel="What is Achievable Score Gap?"
-                  description={
-                    <>
-                      Your average per-game score minus the achievable score
-                      from each endgame-entry position. Positive means you
-                      converted your endgame entry positions better than a
-                      2300+ rated rapid player would on average; negative
-                      means you converted them worse.
-                    </>
-                  }
-                  footer={
+                  vocabulary="score"
+                  neutralLower={SCORE_GAP_NEUTRAL_MIN}
+                  neutralUpper={SCORE_GAP_NEUTRAL_MAX}
+                  baselineLabel="0%"
+                  methodology={
                     <>
                       Score: wins + ½ draws.<br />
                       Test: paired one-sample z-test on per-game (actual − expected) diffs vs 0.<br />
                       Confidence interval: 95% normal-approx on the paired diffs.
                     </>
                   }
+                  testId="achievable-score-gap-info"
+                  ariaLabel="What is Achievable Score Gap?"
                 />
               }
             />
@@ -200,30 +202,28 @@ export function EndgameOverallPerformanceSection({
               ciLow={scoreGap.score_difference_ci_low ?? undefined}
               ciHigh={scoreGap.score_difference_ci_high ?? undefined}
               tooltip={
-                <ScoreGapPopover
-                  label="Endgame Score Gap"
+                <MetricStatPopover
+                  name="Endgame Score Gap"
+                  explanation="Score difference between games that reach an endgame and games that end before. Positive means endgames are your strength; negative means you perform worse once games reach an endgame."
                   value={scoreGap.score_difference}
+                  baseline={0}
+                  unit="percent"
                   gameCount={endgameGapN}
                   level={endgameGapLevel}
                   pValue={scoreGap.score_difference_p_value}
-                  testId="endgame-score-gap-info"
-                  ariaLabel="What is Endgame Score Gap?"
-                  description={
-                    <>
-                      The score difference between games that reach an endgame
-                      (Endgame Score) vs. games that end before (Non-Endgame
-                      Score). Positive means endgames are your strength;
-                      negative means you perform worse once games reach an
-                      endgame.
-                    </>
-                  }
-                  footer={
+                  vocabulary="score"
+                  neutralLower={SCORE_GAP_NEUTRAL_MIN}
+                  neutralUpper={SCORE_GAP_NEUTRAL_MAX}
+                  baselineLabel="0%"
+                  methodology={
                     <>
                       Score: wins + ½ draws.<br />
                       Test: two-sample z-test on (Endgame Score − Non-Endgame Score) vs 0.<br />
                       Confidence interval: 95% normal-approx on the score difference.
                     </>
                   }
+                  testId="endgame-score-gap-info"
+                  ariaLabel="What is Endgame Score Gap?"
                 />
               }
             />

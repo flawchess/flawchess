@@ -13,8 +13,7 @@
 import { Cpu } from 'lucide-react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
-import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
-import { AchievableScorePopover } from '@/components/popovers/AchievableScorePopover';
+import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import {
   ENTRY_EXPECTED_SCORE_NEUTRAL_MAX,
   ENTRY_EXPECTED_SCORE_NEUTRAL_MIN,
@@ -34,6 +33,11 @@ import { MIN_GAMES_FOR_RELIABLE_STATS, ZONE_NEUTRAL } from '@/lib/theme';
 import type { EndgamePerformanceResponse } from '@/types/endgames';
 
 import { ENDGAME_TILE_SCORE_DOMAIN, deriveLevel } from './EndgameOverallShared';
+
+// Neutral band for score-vs-50% (Achievable Score). See EndgameOverallCard.tsx
+// for rationale; matches arrowColor.ts / WdlConfidenceTooltip bounds.
+const SCORE_NEUTRAL_LOWER = 0.45;
+const SCORE_NEUTRAL_UPPER = 0.55;
 
 interface EntryCardProps {
   data: EndgamePerformanceResponse;
@@ -83,18 +87,27 @@ export function EntryCard({ data }: EntryCardProps) {
                 {formatSignedEvalPawns(data.entry_eval_mean_pawns)}
                 <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
               </span>
-              <BulletConfidencePopover
+              <MetricStatPopover
+                name="Endgame Entry Eval"
+                explanation="The average Stockfish eval (in pawns, from your perspective) at the position where the endgame begins. Positive means you reached the endgame with the better position."
+                value={data.entry_eval_mean_pawns}
+                baseline={0}
+                unit="pawns"
+                gameCount={data.entry_eval_n}
                 level={evalLevel}
                 pValue={data.entry_eval_p_value}
-                gameCount={data.entry_eval_n}
-                evalMeanPawns={data.entry_eval_mean_pawns}
-                // Endgame stats are color-agnostic — no baseline tick is
-                // rendered, so suppress its legend line in the tooltip.
-                // `color` is a required-prop fallback; with showBaselineTick
-                // false it is not surfaced to the user.
-                color="white"
-                showBaselineTick={false}
+                vocabulary="eval"
+                neutralLower={ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS}
+                neutralUpper={ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS}
+                baselineLabel="0 pawns"
+                methodology={
+                  <>
+                    Test: two-sided Wald z vs 0 pawns.<br />
+                    Confidence interval: Wald 95% (whiskers).
+                  </>
+                }
                 testId="entry-eval-popover-trigger"
+                ariaLabel="Show eval confidence details"
               />
             </span>
             <div className="min-w-0 tabular-nums">
@@ -128,11 +141,28 @@ export function EntryCard({ data }: EntryCardProps) {
                 >
                   {`${(data.entry_expected_score * 100).toFixed(0)}%`}
                 </span>
-                <AchievableScorePopover
-                  score={data.entry_expected_score}
+                <MetricStatPopover
+                  name="Achievable Score"
+                  explanation="What a 2300+ rated player would score from your endgame-entry positions, via the Lichess winning chances formula. Compare against your Endgame Score."
+                  value={data.entry_expected_score}
+                  baseline={0.5}
+                  unit="percent"
                   gameCount={data.entry_expected_score_n}
                   level={achievableLevel}
                   pValue={data.entry_expected_score_p_value}
+                  vocabulary="score"
+                  neutralLower={SCORE_NEUTRAL_LOWER}
+                  neutralUpper={SCORE_NEUTRAL_UPPER}
+                  baselineLabel="50%"
+                  methodology={
+                    <>
+                      Score: wins + ½ draws.<br />
+                      Test: two-sided Wilson score test vs 50%.<br />
+                      Confidence interval: Wilson 95% (whiskers).
+                    </>
+                  }
+                  testId="popover-trigger-achievable-score"
+                  ariaLabel="What is Achievable Score?"
                 />
               </span>
               <div className="min-w-0 tabular-nums">
