@@ -26,17 +26,23 @@ import type {
 } from '@/types/endgames';
 
 // Spy on MiniBulletChart so we do not render recharts internals under jsdom;
-// keeps the test focused on prop-driven behavior.
+// keeps the test focused on prop-driven behavior. Surface ciLow / ciHigh as
+// data-attrs so per-row assertions can verify CI prop threading (SEC1-11).
 vi.mock('@/components/charts/MiniBulletChart', () => ({
-  MiniBulletChart: vi.fn(
-    (props: Record<string, unknown>) => (
+  MiniBulletChart: vi.fn((props: Record<string, unknown>) => {
+    const dataAttrs: Record<string, string> = {};
+    if (props.ciLow !== undefined) dataAttrs['data-ci-low'] = String(props.ciLow);
+    if (props.ciHigh !== undefined) dataAttrs['data-ci-high'] = String(props.ciHigh);
+    return (
       <div
         data-testid="mock-mini-bullet"
         data-domain={String(props.domain)}
         data-center={String(props.center)}
+        data-aria-label={String(props.ariaLabel)}
+        {...dataAttrs}
       />
-    ),
-  ),
+    );
+  }),
 }));
 
 // jsdom ships without matchMedia / ResizeObserver; the InfoPopover nested
@@ -118,6 +124,10 @@ function makeData(
     entry_expected_score_p_value: null,
     entry_expected_score_ci_low: null,
     entry_expected_score_ci_high: null,
+    achievable_score_gap: 0,
+    achievable_score_gap_p_value: null,
+    achievable_score_gap_ci_low: null,
+    achievable_score_gap_ci_high: null,
     ...overrides,
   };
 }
@@ -132,6 +142,9 @@ function makeScoreGap(
     material_rows: [],
     timeline: [],
     timeline_window: 100,
+    score_difference_p_value: null,
+    score_difference_ci_low: null,
+    score_difference_ci_high: null,
     ...overrides,
   };
 }
@@ -257,33 +270,112 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(screen.getByTestId('endgame-score-gap-value').textContent).toBe('-12%');
   });
 
-  it('achievable score gap shows signed (endgame score − achievable score) with explicit + or - prefix', () => {
-    // endgame_wdl = 6W/0D/4L → endgame score = 60%.
-    // entry_expected_score = 0.50 → gap = +10%.
+  it('achievable score gap shows signed data.achievable_score_gap with explicit + or - prefix (server-sourced; SEC1-10)', () => {
+    // Fixture proves the migration: server-sourced gap (0.10) deliberately
+    // diverges from the legacy frontend derivation (withScore - achievable_score
+    // = 0.60 - 0.50 = 0.10 here is incidental; use a non-matching fixture to
+    // demonstrate the component reads from achievable_score_gap directly).
     const { rerender } = render(
       <EndgameOverallPerformanceSection
         data={makeData({
-          endgame_wdl: buildWdl(6, 0, 4),
+          endgame_wdl: buildWdl(6, 0, 4), // legacy "withScore" = 0.60
           entry_expected_score: 0.50,
           entry_expected_score_n: 50,
+          // Server-computed achievable_score_gap intentionally differs from
+          // the (withScore - entry_expected_score) = +10% the old code returned.
+          achievable_score_gap: 0.07,
         })}
         scoreGap={makeScoreGap()}
       />,
     );
-    expect(screen.getByTestId('achievable-score-gap-value').textContent).toBe('+10%');
+    expect(screen.getByTestId('achievable-score-gap-value').textContent).toBe('+7%');
 
-    // Same endgame_wdl, achievable bumped to 0.75 → gap = -15%.
+    // Negative case: server-computed -15% gap with arbitrary endgame_wdl /
+    // entry_expected_score that would have computed differently under the
+    // legacy derivation.
     rerender(
       <EndgameOverallPerformanceSection
         data={makeData({
           endgame_wdl: buildWdl(6, 0, 4),
           entry_expected_score: 0.75,
           entry_expected_score_n: 50,
+          achievable_score_gap: -0.15,
         })}
         scoreGap={makeScoreGap()}
       />,
     );
     expect(screen.getByTestId('achievable-score-gap-value').textContent).toBe('-15%');
+  });
+
+  // ── CI prop threading on both ScoreGapRow rows (SEC1-11) ────────────────
+
+  it('forwards achievable_score_gap_ci_low/high into the Achievable Score Gap bullet', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData({
+          achievable_score_gap: 0.04,
+          achievable_score_gap_ci_low: -0.02,
+          achievable_score_gap_ci_high: 0.10,
+        })}
+        scoreGap={makeScoreGap()}
+      />,
+    );
+    // The mock surfaces ciLow / ciHigh as data-attrs and tags the aria-label
+    // so we can locate the achievable bullet specifically.
+    const bullets = screen.getAllByTestId('mock-mini-bullet');
+    const achievableBullet = bullets.find((b) =>
+      (b.getAttribute('data-aria-label') ?? '').startsWith('Achievable Score Gap'),
+    );
+    expect(achievableBullet).toBeTruthy();
+    expect(achievableBullet?.getAttribute('data-ci-low')).toBe('-0.02');
+    expect(achievableBullet?.getAttribute('data-ci-high')).toBe('0.1');
+  });
+
+  it('forwards score_difference_ci_low/high into the Endgame Score Gap bullet', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData()}
+        scoreGap={makeScoreGap({
+          score_difference: 0.05,
+          score_difference_ci_low: -0.01,
+          score_difference_ci_high: 0.12,
+        })}
+      />,
+    );
+    const bullets = screen.getAllByTestId('mock-mini-bullet');
+    const endgameBullet = bullets.find((b) =>
+      (b.getAttribute('data-aria-label') ?? '').startsWith('Endgame Score Gap'),
+    );
+    expect(endgameBullet).toBeTruthy();
+    expect(endgameBullet?.getAttribute('data-ci-low')).toBe('-0.01');
+    expect(endgameBullet?.getAttribute('data-ci-high')).toBe('0.12');
+  });
+
+  it('omits CI attrs when backend fields are null (?? undefined coercion)', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData({
+          achievable_score_gap: 0,
+          achievable_score_gap_ci_low: null,
+          achievable_score_gap_ci_high: null,
+        })}
+        scoreGap={makeScoreGap({
+          score_difference_ci_low: null,
+          score_difference_ci_high: null,
+        })}
+      />,
+    );
+    const bullets = screen.getAllByTestId('mock-mini-bullet');
+    const achievableBullet = bullets.find((b) =>
+      (b.getAttribute('data-aria-label') ?? '').startsWith('Achievable Score Gap'),
+    );
+    const endgameBullet = bullets.find((b) =>
+      (b.getAttribute('data-aria-label') ?? '').startsWith('Endgame Score Gap'),
+    );
+    expect(achievableBullet?.getAttribute('data-ci-low')).toBeNull();
+    expect(achievableBullet?.getAttribute('data-ci-high')).toBeNull();
+    expect(endgameBullet?.getAttribute('data-ci-low')).toBeNull();
+    expect(endgameBullet?.getAttribute('data-ci-high')).toBeNull();
   });
 
   // ── Empty state ──────────────────────────────────────────────────────────

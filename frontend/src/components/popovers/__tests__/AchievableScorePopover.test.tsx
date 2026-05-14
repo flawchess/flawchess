@@ -105,4 +105,20 @@ describe('AchievableScorePopover', () => {
     expect(document.body.textContent).toMatch(/12\.0% above the 50% baseline/);
     expect(document.body.textContent).toMatch(/p = 0\.001/);
   });
+
+  // Phase 85.1 Plan 03 (WR-04): pValue is `number | null`. When null, the
+  // "(p = X.XXX)" segment is omitted; the confidence line stays grammatical.
+  it('does not render the (p = …) segment when pValue is null (WR-04)', async () => {
+    render(<AchievableScorePopover {...baseProps} pValue={null} />);
+    fireEvent.click(screen.getByTestId('popover-trigger-achievable-score'));
+    await waitFor(() => {
+      // Headline still renders.
+      expect(document.body.textContent).toMatch(/confidence/i);
+    });
+    // No literal "p = " substring leaks into the rendered prose.
+    expect(document.body.textContent).not.toMatch(/p = /);
+    // And no "null" or "NaN" leaked into the popover body.
+    expect(document.body.textContent).not.toMatch(/null/i);
+    expect(document.body.textContent).not.toMatch(/NaN/);
+  });
 });

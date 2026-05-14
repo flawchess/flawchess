@@ -65,20 +65,14 @@ export function EndgameOverallPerformanceSection({
   const withoutShare = totalGames > 0 ? data.non_endgame_wdl.total / totalGames : 0;
   const withShare = totalGames > 0 ? data.endgame_wdl.total / totalGames : 0;
 
-  // Endgame score used by the Achievable Score Gap row. Sign convention:
-  // score_difference = endgame - non_endgame; positive means endgame is the
-  // user's strength.
-  const withScore =
-    data.endgame_wdl.total > 0
-      ? (data.endgame_wdl.wins + 0.5 * data.endgame_wdl.draws) /
-        data.endgame_wdl.total
-      : 0;
   const gapColor = gapZoneColor(scoreGap.score_difference);
 
-  // Achievable Score Gap: how much the actual endgame score fell short of
-  // (or exceeded) the achievable score expected from the entry eval.
-  const achievableScore = data.entry_expected_score;
-  const achievableGapValue = withScore - achievableScore;
+  // Achievable Score Gap: how much the actual endgame score fell short of (or
+  // exceeded) the achievable score expected from the entry eval.
+  // achievable_score_gap is computed server-side per SEC1-10 (paired z-test on
+  // per-game actual - expected pairs). Phase 85.1 Plan 03 retired the previous
+  // frontend derivation `withScore - entry_expected_score`.
+  const achievableGapValue = data.achievable_score_gap;
   const achievableGapPositive = achievableGapValue >= 0;
   const achievableGapFormatted =
     (achievableGapPositive ? '+' : '') + `${Math.round(achievableGapValue * 100)}%`;
@@ -148,6 +142,8 @@ export function EndgameOverallPerformanceSection({
               resultColor={achievableGapColor}
               valueTestId="achievable-score-gap-value"
               ariaLabel={`Achievable Score Gap: ${achievableGapFormatted}`}
+              ciLow={data.achievable_score_gap_ci_low ?? undefined}
+              ciHigh={data.achievable_score_gap_ci_high ?? undefined}
               tooltip={
                 <InfoPopover
                   ariaLabel="What is Achievable Score Gap?"
@@ -171,6 +167,8 @@ export function EndgameOverallPerformanceSection({
               valueTestId="endgame-score-gap-value"
               ariaLabel={`Endgame Score Gap: ${gapFormatted}`}
               valueClassName="text-lg"
+              ciLow={scoreGap.score_difference_ci_low ?? undefined}
+              ciHigh={scoreGap.score_difference_ci_high ?? undefined}
               tooltip={
                 <InfoPopover
                   ariaLabel="What is Endgame Score Gap?"
