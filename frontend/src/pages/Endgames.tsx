@@ -430,7 +430,8 @@ export function EndgamesPage() {
                       >
                         latest FlawChess benchmark
                       </a>
-                      .
+                      , which is computed from a stratified sample of Lichess players across rating
+                      and time control buckets.
                     </p>
                     <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating
