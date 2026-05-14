@@ -519,9 +519,7 @@ export function EndgamesPage() {
                       </InfoPopover>
                     </span>
                   </h2>
-                  <div className="charcoal-texture rounded-md p-4">
-                    <EndgameMetricsSection data={scoreGapData} />
-                  </div>
+                  <EndgameMetricsSection data={scoreGapData} />
                   <div
                     className="charcoal-texture rounded-md p-4"
                     data-testid="endgame-elo-timeline-section"
