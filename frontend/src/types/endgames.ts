@@ -124,6 +124,11 @@ export interface MaterialRow {
   opponent_score: number | null;
   // Phase 60: opponent's sample size (== swap-bucket game count)
   opponent_games: number;
+  // Phase 86 (SEC2-06 / D-06): Wald-z on userRate - opponentRate per bucket;
+  // null when opp_row.N < 10 (D-05 strict-opp-gate) or user-side games == 0.
+  diff_p_value: number | null;
+  diff_ci_low: number | null;
+  diff_ci_high: number | null;
 }
 
 /** Single point in the score-gap rolling-window time series.
@@ -161,6 +166,15 @@ export interface ScoreGapMaterialResponse {
   score_difference_p_value: number | null;
   score_difference_ci_low: number | null;
   score_difference_ci_high: number | null;
+  // Phase 86 (SEC2-03 / SEC2-08 / D-01..D-02): Skill composite + peer-bullet sig test.
+  // Skill scalars are null only when 0 active buckets (active = both user_N>0 AND opp_N>0);
+  // sig fields null when n_active < 2 OR any active opp component has opp_row.N < 10
+  // (D-05 strict-opp-gate). Mirrors backend `compute_skill_diff_test`.
+  skill: number | null;
+  opp_skill: number | null;
+  skill_diff_p_value: number | null;
+  skill_diff_ci_low: number | null;
+  skill_diff_ci_high: number | null;
 }
 
 export interface ClockStatsRow {

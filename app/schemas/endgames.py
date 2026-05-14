@@ -277,6 +277,13 @@ class MaterialRow(BaseModel):
     opponent_score: float | None
     # opponent_games: opponent's sample size (== swap-bucket game count).
     opponent_games: int
+    # Phase 86 (SEC2-06 / D-06): Wald-z p-value on userRate − opponentRate for this bucket.
+    # None when opp_row.N < MIN_OPPONENT_BASELINE_GAMES (=10, D-05 strict-opp-gate) or user-side games == 0.
+    diff_p_value: float | None = None
+    # Phase 86 (SEC2-06 / D-06): lower bound of 95% Wald-z CI on the per-bucket diff; same gating as diff_p_value.
+    diff_ci_low: float | None = None
+    # Phase 86 (SEC2-06 / D-06): upper bound of 95% Wald-z CI on the per-bucket diff; same gating as diff_p_value.
+    diff_ci_high: float | None = None
 
 
 class ScoreGapTimelinePoint(BaseModel):
@@ -361,6 +368,24 @@ class ScoreGapMaterialResponse(BaseModel):
 
     score_difference_ci_high: float | None = None
     """Upper bound of 95% Wald-z CI on score_difference. None when min(...) < 2."""
+
+    # Phase 86 (SEC2-03 / SEC2-08 / D-01..D-02): Skill composite peer-bullet sig test.
+    # Skill scalars are None only when 0 active buckets (where active = both user_N>0 AND opp_N>0);
+    # sig fields None when n_active < 2 OR any active opp component has opp_row.N < 10 (D-05 strict-opp-gate).
+    skill: float | None = None
+    """User's Skill composite: mean of per-bucket headline rates across active buckets. None when n_active == 0."""
+
+    opp_skill: float | None = None
+    """Opponent Skill composite: mean of `1 − userRate(mirror_row)` across active buckets. None when n_active == 0."""
+
+    skill_diff_p_value: float | None = None
+    """Two-sided Wald-z p-value on (skill − opp_skill). None when n_active < 2 or any active opp component has opp_row.N < 10."""
+
+    skill_diff_ci_low: float | None = None
+    """Lower bound of 95% Wald-z CI on (skill − opp_skill). Same gating as skill_diff_p_value."""
+
+    skill_diff_ci_high: float | None = None
+    """Upper bound of 95% Wald-z CI on (skill − opp_skill). Same gating as skill_diff_p_value."""
 
 
 class ClockStatsRow(BaseModel):
