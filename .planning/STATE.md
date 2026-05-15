@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: Phase 87.2 inserted to backport Phase 87.1 ΔES Score Gap bullet to Section 2 cards (Conv/Parity/Recov + Endgame Skill), retiring the mathematically-degenerate rate-based mirror-bucket peer-diff Gap
-last_updated: "2026-05-15T17:36:50.824Z"
+last_updated: "2026-05-15T18:06:54.667Z"
 last_activity: 2026-05-15
 progress:
   total_phases: 0
