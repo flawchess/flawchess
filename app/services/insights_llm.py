@@ -57,6 +57,8 @@ from app.services.endgame_zones import (
     PER_CLASS_GAUGE_ZONES,
     ZONE_REGISTRY,
     ZoneSpec,
+    assign_zone,
+    sample_quality,
 )
 from app.services.insights_service import SPARSE_COMBO_FLOOR, compute_findings
 
@@ -692,6 +694,64 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     lines.extend(rows)
     lines.append("")
     return lines
+
+
+# Phase 87.1 (SEED-016 D-10): per-class Score Gap block. Field name uses internal
+# "type_achievable_score_gap" for grep-ability with achievable_score_gap (Phase 85.1).
+# User-facing narration: "Score Gap" (per card row); "Endgame Type Score Gap"
+# when introducing. No p_value / verdict per memory feedback_llm_significance_signal.md.
+def _synthesize_endgame_type_achievable_score_gap_findings(
+    findings: EndgameTabFindings,
+) -> list[SubsectionFinding]:
+    """Build per-class SubsectionFinding for the new per-span Score Gap metric.
+
+    Reads the Phase 87.1 Plan 02 per-category fields
+    (`type_achievable_score_gap_mean` / `_n`) off
+    `findings.type_categories` and emits one finding per non-pawnless class
+    with a populated mean. Findings join `conversion_recovery_by_type` so the
+    rendered prompt groups the Score Gap row next to Conv/Recov per class.
+
+    Zone is dispatched via `assign_zone("endgame_type_achievable_score_gap", mean)`
+    — currently both `ZONE_REGISTRY` and
+    `PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap` hold the same ±5%
+    placeholder, so a single global lookup matches the per-class inline band
+    `_format_zone_bounds` renders below. Future §3.4.2 benchmark recalibration
+    that diverges per class will need to switch this to a per-class dispatch.
+
+    Categories with `mean is None` or `n == 0` are skipped (no finding emitted).
+    Pawnless is dropped to match the UI filter (the visible-finding filter in
+    `_assemble_user_prompt` would drop it anyway, but skipping here is cheaper).
+    """
+    out: list[SubsectionFinding] = []
+    if not findings.type_categories:
+        return out
+    for cat in findings.type_categories:
+        if cat.endgame_class == "pawnless":
+            continue
+        mean = cat.type_achievable_score_gap_mean
+        n = cat.type_achievable_score_gap_n or 0
+        if mean is None or n == 0:
+            continue
+        zone = assign_zone("endgame_type_achievable_score_gap", mean)
+        quality = sample_quality("conversion_recovery_by_type", n)
+        dim: dict[str, str] = {"endgame_class": cat.endgame_class}
+        out.append(
+            SubsectionFinding(
+                subsection_id="conversion_recovery_by_type",
+                parent_subsection_id=None,
+                window="all_time",
+                metric="endgame_type_achievable_score_gap",
+                value=mean,
+                zone=zone,
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=n,
+                sample_quality=quality,
+                is_headline_eligible=quality != "thin",
+                dimension=dim,
+            )
+        )
+    return out
 
 
 # -- Batch 2 enrichments (v6): mechanical signals precomputed for the LLM --
@@ -1654,13 +1714,23 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
         "results_by_endgame_type_wdl": type_wdl_block,
     }
 
+    # Phase 87.1 (SEED-016 D-10): synthesize per-class Score Gap findings from
+    # the Plan 02 schema fields on findings.type_categories. The metric is wired
+    # into the prompt-renderer pipeline alongside the existing Conv/Recov
+    # findings under `conversion_recovery_by_type`. Kept inside `insights_llm`
+    # (not `insights_service`) to keep the surface change isolated to the
+    # prompt layer for v29; can migrate to `insights_service._findings_*`
+    # later if other tabs need the same data shape.
+    synthetic_gap_findings = _synthesize_endgame_type_achievable_score_gap_findings(findings)
+    raw_findings: list[SubsectionFinding] = list(findings.findings) + synthetic_gap_findings
+
     # A5 + A2: drop hidden subsections, NaN values, and thin empty findings.
     # v6: also drop any finding dimensioned on endgame_class=pawnless — the UI
     # hides pawnless rows (ENDGAME_CLASS_LABELS, Endgames.tsx) so the LLM must
     # not narrate a type the user cannot see.
     visible: list[SubsectionFinding] = [
         f
-        for f in findings.findings
+        for f in raw_findings
         if f.subsection_id not in _SKIPPED_SUBSECTIONS
         and not math.isnan(f.value)
         and not (f.sample_size == 0 and f.sample_quality == "thin")
