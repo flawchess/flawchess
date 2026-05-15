@@ -1,11 +1,12 @@
 ---
 id: SEED-016
-status: dormant
+status: scheduled
 planted: 2026-05-15
+scheduled_into: Phase 87.1 in v1.17 (INSERTED 2026-05-15) — see `.planning/milestones/v1.17-ROADMAP.md`
 planted_during: /gsd-explore session on tightening per-endgame-type performance measurement (the conversation that motivated this seed lives in chat; key design points distilled below)
-trigger_when: next endgame-analytics tightening pass — likely after SEED-015 (predicted-vs-achieved gap) ships, OR when users report that Conversion/Recovery feels too coarse on small per-type cohorts ("I drew a +1 rook endgame, why is my rook Conversion still 80%?")
-scope: phase (single, ~2-3 plans) — backend metric + repo query + per-type display alongside Conversion/Recovery + LLM payload + benchmark calibration of zones
-depends_on: existing Stockfish eval backfill (Phase 81/82 — eval_cp / eval_mate at span-entry plies already populated), existing Lichess sigmoid utility (`app/services/eval_utils.py`)
+trigger_when: SCHEDULED — Phase 87.1 follows Phase 87 (per-type card layout). May still be deferred to v1.18 if scope-creep concerns dominate at plan-phase.
+scope: phase (single, ~5-7 plans) — backend metric + repo query + per-type display alongside Conversion/Recovery + LLM payload + benchmark calibration of zones
+depends_on: existing Stockfish eval backfill (Phase 81/82 — eval_cp / eval_mate at span-entry plies already populated), existing Lichess sigmoid utility (`app/services/eval_utils.py`), Phase 87 (per-type card layout)
 related: [[SEED-015-predicted-vs-achieved-endgame-gap-as-first-class-metric]] (game-level analog of this idea), [[lichess-sigmoid-endgame-calibration]] (known caveat with the chosen sigmoid)
 ---
 
