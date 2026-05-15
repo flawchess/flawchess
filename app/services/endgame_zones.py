@@ -30,6 +30,10 @@ Window = Literal["all_time", "last_3mo"]
 MetricId = Literal[
     "score_gap",
     "achievable_score_gap",  # 260514 split-out — dedicated band so 3.1.5 can tighten without affecting 3.1.6
+    # Phase 87.1 (SEED-016 D-02): per-span, per-type version of achievable_score_gap.
+    # User-facing label is "Endgame Type Score Gap" (concepts) / "Score Gap" (card row).
+    # Internal name retains "achievable" to mark the math-family with achievable_score_gap (Phase 85.1).
+    "endgame_type_achievable_score_gap",
     "entry_eval_pawns",  # Phase 82 D-04: new endgame_start_vs_end Tile 1
     "entry_expected_score",  # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",  # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
@@ -67,6 +71,10 @@ SubsectionId = Literal[
     "conversion_recovery_by_type",
 ]
 
+# Phase 87.1 (SEED-016): `endgame_type_achievable_score_gap` is intentionally NOT
+# added to BucketedMetricId — it is per-class only (via PER_CLASS_GAUGE_ZONES),
+# not per-(class × material-axis). If benchmark §3.4.2 later requires per-rating-
+# bucket bands, add it then in a follow-up.
 BucketedMetricId = Literal[
     "conversion_win_pct",
     "parity_score_pct",
@@ -147,6 +155,15 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     # shared ±10pp band. Per-ELO stratification deferred (d=0.62 keep-
     # separate verdict in the same §3.1.5).
     "achievable_score_gap": ZoneSpec(
+        typical_lower=-0.05,
+        typical_upper=0.05,
+        direction="higher_is_better",
+    ),
+    # Phase 87.1 (SEED-016 D-04): per-span, per-type version. Placeholder band
+    # ±5pp matches the global achievable_score_gap until §3.4.2 benchmark
+    # calibration produces per-class values. Update after running the
+    # benchmarks skill §3.4.2 query.
+    "endgame_type_achievable_score_gap": ZoneSpec(
         typical_lower=-0.05,
         typical_upper=0.05,
         direction="higher_is_better",
@@ -333,23 +350,53 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
 
 @dataclass(frozen=True)
 class PerClassBands:
-    """Typical [lower, upper] bands for Conversion and Recovery for one endgame type."""
+    """Typical [lower, upper] bands for Conversion, Recovery, and Score Gap for one endgame type."""
 
     conversion: tuple[float, float]
     recovery: tuple[float, float]
+    achievable_score_gap: tuple[float, float]  # Phase 87.1 — SEED-016 D-04
 
 
 # 260503 shifts (reports/benchmarks-2026-05-03.md): rook recovery (0.28→0.26,
 # 0.38→0.36) and pawn recovery (0.26→0.23, 0.36→0.34) — both pooled means sat
 # below the previous lower bound. Pawn conversion upper bound nudged 0.77→0.79
 # (pooled mean 0.738).
+#
+# Phase 87.1 (SEED-016 D-04): every class gains a placeholder
+# achievable_score_gap=(-0.05, 0.05) mirroring the global
+# ZONE_REGISTRY["endgame_type_achievable_score_gap"] band. Update per class
+# after running the benchmarks skill §3.4.2 calibration query.
 PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
-    "rook": PerClassBands(conversion=(0.65, 0.75), recovery=(0.26, 0.36)),
-    "minor_piece": PerClassBands(conversion=(0.63, 0.73), recovery=(0.31, 0.41)),
-    "pawn": PerClassBands(conversion=(0.67, 0.79), recovery=(0.23, 0.34)),
-    "queen": PerClassBands(conversion=(0.73, 0.83), recovery=(0.20, 0.30)),
-    "mixed": PerClassBands(conversion=(0.65, 0.75), recovery=(0.28, 0.38)),
-    "pawnless": PerClassBands(conversion=(0.70, 0.80), recovery=(0.21, 0.31)),
+    "rook": PerClassBands(
+        conversion=(0.65, 0.75),
+        recovery=(0.26, 0.36),
+        achievable_score_gap=(-0.05, 0.05),  # Phase 87.1 placeholder — update after §3.4.2
+    ),
+    "minor_piece": PerClassBands(
+        conversion=(0.63, 0.73),
+        recovery=(0.31, 0.41),
+        achievable_score_gap=(-0.05, 0.05),  # Phase 87.1 placeholder — update after §3.4.2
+    ),
+    "pawn": PerClassBands(
+        conversion=(0.67, 0.79),
+        recovery=(0.23, 0.34),
+        achievable_score_gap=(-0.05, 0.05),  # Phase 87.1 placeholder — update after §3.4.2
+    ),
+    "queen": PerClassBands(
+        conversion=(0.73, 0.83),
+        recovery=(0.20, 0.30),
+        achievable_score_gap=(-0.05, 0.05),  # Phase 87.1 placeholder — update after §3.4.2
+    ),
+    "mixed": PerClassBands(
+        conversion=(0.65, 0.75),
+        recovery=(0.28, 0.38),
+        achievable_score_gap=(-0.05, 0.05),  # Phase 87.1 placeholder — update after §3.4.2
+    ),
+    "pawnless": PerClassBands(
+        conversion=(0.70, 0.80),
+        recovery=(0.21, 0.31),
+        achievable_score_gap=(-0.05, 0.05),  # Phase 87.1 placeholder — update after §3.4.2
+    ),
 }
 
 
