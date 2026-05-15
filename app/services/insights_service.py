@@ -788,6 +788,44 @@ def _findings_endgame_metrics(
             )
         )
 
+    # Phase 87.2 (D-09 — ADDITIVE per RESEARCH §LLM Payload Critical Drift):
+    # Four new ΔES Score Gap findings alongside the existing rate findings above.
+    # Wire shape per finding: (mean, n, zone, neutral_band). No p_value / verdict —
+    # band IS the significance signal (memory feedback_llm_significance_signal.md).
+    _SECTION2_BUCKETS: list[tuple[str, MetricId]] = [
+        ("conv", "section2_score_gap_conv"),
+        ("parity", "section2_score_gap_parity"),
+        ("recov", "section2_score_gap_recov"),
+        ("skill", "section2_score_gap_skill"),
+    ]
+    for bucket_id, metric_id in _SECTION2_BUCKETS:
+        # Dynamic attribute access: section2_score_gap_{bucket_id}_{mean,n} are
+        # defined on ScoreGapMaterialResponse in endgames.py (Plan 02 fields).
+        mean_raw: float | None = getattr(
+            response.score_gap_material, f"section2_score_gap_{bucket_id}_mean"
+        )
+        n_raw_or_none: int | None = getattr(
+            response.score_gap_material, f"section2_score_gap_{bucket_id}_n"
+        )
+        n_raw = n_raw_or_none if n_raw_or_none is not None else 0
+        value_for_payload = mean_raw if mean_raw is not None else float("nan")
+        findings.append(
+            SubsectionFinding(
+                subsection_id="endgame_metrics",
+                parent_subsection_id=None,
+                window=window,
+                metric=metric_id,
+                value=value_for_payload,
+                zone=assign_zone(metric_id, value_for_payload),
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=n_raw,
+                sample_quality=sample_quality("endgame_metrics", n_raw),
+                is_headline_eligible=(n_raw >= 10 and mean_raw is not None),
+                dimension=None,
+            )
+        )
+
     return findings
 
 
