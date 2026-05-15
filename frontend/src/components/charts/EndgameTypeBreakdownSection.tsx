@@ -50,8 +50,7 @@ export function EndgameTypeBreakdownSection({
       aria-labelledby="endgame-type-breakdown-heading"
     >
       <p className="text-sm text-muted-foreground">
-        Which Endgame Types do you convert best and defend best, and how does
-        each compare to your opponents?
+        Which Endgame Types did you convert or defend poorly against your opponents?
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
         {visibleCategories.map((cat) => {

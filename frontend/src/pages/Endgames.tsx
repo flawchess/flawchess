@@ -549,8 +549,8 @@ export function EndgamesPage() {
                   <p>
                     Shows your win, draw, and loss percentages for each Endgame
                     Type, along with your Conversion and Recovery rates.
-                    A single game can count toward multiple Endgame
-                    Types.
+                    A single game can include several Endgame Sequences, which are
+                    continuous spans of at least 3 full moves (6 half-moves) spent in a single Endgame Type.
                   </p>
                   <p>
                     <strong>Conversion</strong>: your win rate in this

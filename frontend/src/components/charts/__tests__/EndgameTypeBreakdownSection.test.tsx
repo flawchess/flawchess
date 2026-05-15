@@ -167,7 +167,7 @@ describe('EndgameTypeBreakdownSection — Layout', () => {
     renderSection(buildAllSixCategories());
     expect(
       screen.getByText(
-        /Which Endgame Types do you convert best and defend best/i,
+        /Which Endgame Types did you convert or defend poorly/i,
       ),
     ).not.toBeNull();
   });
@@ -222,7 +222,7 @@ describe('EndgameTypeBreakdownSection — Empty state', () => {
     expect(screen.getByTestId('endgame-type-breakdown-section')).not.toBeNull();
     expect(
       screen.getByText(
-        /Which Endgame Types do you convert best and defend best/i,
+        /Which Endgame Types did you convert or defend poorly/i,
       ),
     ).not.toBeNull();
     expect(screen.queryAllByTestId(TOP_LEVEL_CARD_RE).length).toBe(0);

@@ -302,7 +302,7 @@ describe('MetricStatTooltip — name + explanation paragraph', () => {
         value={0.62}
       />,
     );
-    expect(container.textContent).toMatch(/Achievable Score\. Custom explanation here\./);
+    expect(container.textContent).toMatch(/Achievable Score: Custom explanation here\./);
   });
 });
 
