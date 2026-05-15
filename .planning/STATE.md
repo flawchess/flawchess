@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: Plan 02 shipped; Plan 01 (benchmarks/codegen) ready for Wave 1; Plans 03+04 unblocked once Wave 1 merges
-last_updated: "2026-05-15T12:05:19.262Z"
+status: verifying
+last_updated: "2026-05-15T14:30:00.000Z"
 last_activity: 2026-05-15
 progress:
   total_phases: 0
@@ -16,9 +16,9 @@ progress:
 
 ## Current Position
 
-Phase: 87.1 (Per-span ΔES metric for endgame types) — EXECUTING
-Plan: 2 of 4 — Plan 02 COMPLETE (Wave 1 backend math+repo+service+schema)
-Status: Plan 02 shipped; Plan 01 (benchmarks/codegen) ready for Wave 1; Plans 03+04 unblocked once Wave 1 merges
+Phase: 87.1 (Per-span ΔES metric for endgame types) — READY FOR VERIFICATION
+Plan: 4 of 4 — ALL PLANS COMPLETE (01 zones+codegen, 02 backend math+repo+service+schema, 03 frontend ScoreGapRow on per-type cards, 04 LLM payload + v29 bump + dual-label glossary)
+Status: Phase complete — ready for verification + HUMAN-UAT sign-off
 Last activity: 2026-05-15
 Prior: Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
