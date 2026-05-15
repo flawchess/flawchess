@@ -2,24 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: verifying
-last_updated: "2026-05-15T14:30:00.000Z"
-last_activity: 2026-05-15
+status: completed
+last_updated: "2026-05-15T12:25:03.117Z"
+last_activity: 2026-05-15 -- Phase 87.1 marked complete
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 87.1 (Per-span ΔES metric for endgame types) — READY FOR VERIFICATION
+Phase: 87.1 — COMPLETE
 Plan: 4 of 4 — ALL PLANS COMPLETE (01 zones+codegen, 02 backend math+repo+service+schema, 03 frontend ScoreGapRow on per-type cards, 04 LLM payload + v29 bump + dual-label glossary)
-Status: Phase complete — ready for verification + HUMAN-UAT sign-off
-Last activity: 2026-05-15
+Status: Phase 87.1 complete
+Last activity: 2026-05-15 -- Phase 87.1 marked complete
 Prior: Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference

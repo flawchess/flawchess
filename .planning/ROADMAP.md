@@ -32,7 +32,7 @@ Started as a frontend refactor of three table-driven sections on the Endgames pa
 - [ ] Phase 85: Section 1 — Games with vs without Endgame cards (5 plans; replan-in-place 2026-05-13 added Plan 85-05 for 3-card composite redesign) — planned
 - [ ] Phase 86: Section 2 — Endgame Metrics 4-card layout (5 plans) — planned
 - [ ] Phase 87: Section 3 — Per-type Endgame Type Breakdown cards (3 plans) — planned
-- [ ] Phase 87.1: Per-span ΔES metric for endgame types (4 plans; INSERTED 2026-05-15 from SEED-016) — planned
+- [x] Phase 87.1: Per-span ΔES metric for endgame types (4/4 plans) — completed 2026-05-15 (verification: human_needed — 4 UAT items)
 - [ ] Phase 88: Time Pressure stats rework with hypothesis tests + CIs (TBD plans; INSERTED 2026-05-14) — planned
 - [ ] Phase 89: Polish — popovers, gating decisions, automation rules, 375px parity (TBD plans) — planned
 
