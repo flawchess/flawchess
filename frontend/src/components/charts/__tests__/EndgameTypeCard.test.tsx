@@ -97,6 +97,12 @@ function buildCategory(
     loss_pct: 20,
     conversion: buildConversion(convOverrides),
     score_p_value: 0.001,
+    // Phase 87.1: per-span Score Gap defaults. Tests override these.
+    type_achievable_score_gap_mean: 0.08,
+    type_achievable_score_gap_n: 80,
+    type_achievable_score_gap_p_value: 0.0001,
+    type_achievable_score_gap_ci_low: 0.04,
+    type_achievable_score_gap_ci_high: 0.12,
     ...rest,
   };
 }
@@ -183,6 +189,11 @@ describe('EndgameTypeCard — Empty / sparse states', () => {
         draw_pct: 0,
         loss_pct: 0,
         score_p_value: null,
+        type_achievable_score_gap_mean: null,
+        type_achievable_score_gap_n: 0,
+        type_achievable_score_gap_p_value: null,
+        type_achievable_score_gap_ci_low: null,
+        type_achievable_score_gap_ci_high: null,
         conversion: {
           conversion_pct: 0,
           conversion_games: 0,
@@ -205,6 +216,8 @@ describe('EndgameTypeCard — Empty / sparse states', () => {
     expect(screen.queryByTestId(`${TILE_TESTID}-score-row`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-bullet`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-games-link`)).toBeNull();
+    // Phase 87.1: ScoreGapRow hidden when type_achievable_score_gap_n === 0.
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-bullet`)).toBeNull();
   });
 
   it('shows n=total chip and UNRELIABLE_OPACITY when total < MIN_GAMES_FOR_RELIABLE_STATS, hides Score row', () => {
@@ -281,6 +294,101 @@ describe('EndgameTypeCard — Score bullet sig-gating', () => {
     );
     const scoreSpan = screen.getByTestId(`${TILE_TESTID}-score-value`);
     expect(scoreSpan.style.color).toBeFalsy();
+  });
+});
+
+describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
+  it('renders the ScoreGapRow row with testid sub-elements when n > 0', () => {
+    renderCard(buildCategory());
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-bullet`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-value`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-info`)).not.toBeNull();
+  });
+
+  it('hides the ScoreGapRow row when type_achievable_score_gap_n === 0', () => {
+    renderCard(
+      buildCategory({
+        type_achievable_score_gap_mean: null,
+        type_achievable_score_gap_n: 0,
+        type_achievable_score_gap_p_value: null,
+        type_achievable_score_gap_ci_low: null,
+        type_achievable_score_gap_ci_high: null,
+      }),
+    );
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-bullet`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-value`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-info`)).toBeNull();
+  });
+
+  it('positions the ScoreGapRow between the gauge row and the WDL bar', () => {
+    renderCard(buildCategory());
+    const tile = screen.getByTestId(TILE_TESTID);
+    const gauges = screen.getByTestId(`${TILE_TESTID}-gauges`);
+    const asgBullet = screen.getByTestId(`${TILE_TESTID}-asg-bullet`);
+    const wdl = screen.getByTestId(`${TILE_TESTID}-wdl`);
+    // All three must share the same body container.
+    const body = tile.querySelector('.flex.flex-col.gap-4');
+    expect(body).not.toBeNull();
+    expect(gauges.parentElement).toBe(body);
+    expect(asgBullet.parentElement).toBe(body);
+    // DOM ordering: gauges -> asg row -> wdl block.
+    const children = Array.from(body!.children);
+    const gaugesIdx = children.indexOf(gauges);
+    const asgIdx = children.indexOf(asgBullet);
+    // The WDL bar lives inside a wrapper div that is a direct child of body.
+    const wdlWrapper = children.find((c) => c.contains(wdl)) as HTMLElement;
+    const wdlIdx = children.indexOf(wdlWrapper);
+    expect(gaugesIdx).toBeGreaterThanOrEqual(0);
+    expect(asgIdx).toBeGreaterThan(gaugesIdx);
+    expect(wdlIdx).toBeGreaterThan(asgIdx);
+  });
+
+  it('tints positive out-of-band gap green (ZONE_SUCCESS)', async () => {
+    const { ZONE_SUCCESS } = await import('@/lib/theme');
+    renderCard(
+      buildCategory({
+        type_achievable_score_gap_mean: 0.08,
+        type_achievable_score_gap_n: 80,
+      }),
+    );
+    const valueSpan = screen.getByTestId(`${TILE_TESTID}-asg-value`);
+    expect(valueSpan.style.color.toLowerCase()).toBe(ZONE_SUCCESS.toLowerCase());
+    expect(valueSpan.textContent).toBe('+8%');
+  });
+
+  it('tints negative out-of-band gap red (ZONE_DANGER)', async () => {
+    const { ZONE_DANGER } = await import('@/lib/theme');
+    renderCard(
+      buildCategory({
+        type_achievable_score_gap_mean: -0.09,
+        type_achievable_score_gap_n: 80,
+      }),
+    );
+    const valueSpan = screen.getByTestId(`${TILE_TESTID}-asg-value`);
+    expect(valueSpan.style.color.toLowerCase()).toBe(ZONE_DANGER.toLowerCase());
+    expect(valueSpan.textContent).toBe('-9%');
+  });
+
+  it('does not tint when gap is inside the neutral band', () => {
+    renderCard(
+      buildCategory({
+        type_achievable_score_gap_mean: 0.02,
+        type_achievable_score_gap_n: 80,
+      }),
+    );
+    const valueSpan = screen.getByTestId(`${TILE_TESTID}-asg-value`);
+    expect(valueSpan.style.color).toBeFalsy();
+    expect(valueSpan.textContent).toBe('+2%');
+  });
+
+  it('popover explanation contains the sigmoid-bias caveat one-liner', () => {
+    renderCard(buildCategory());
+    const trigger = screen.getByTestId(`${TILE_TESTID}-asg-info`);
+    fireEvent.mouseEnter(trigger);
+    // The hover-open is delayed 100ms; open imperatively via click as a fallback.
+    fireEvent.click(trigger);
+    const matches = screen.queryAllByText(/Lichess sigmoid under-weights/i);
+    expect(matches.length).toBeGreaterThan(0);
   });
 });
 
