@@ -22,6 +22,7 @@
  * Score Gap font color is zone-only (no sig test) per D-04.
  */
 
+import { Cpu } from 'lucide-react';
 import { useRef } from 'react';
 
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
@@ -170,7 +171,12 @@ export function EndgameOverallPerformanceSection({
           <h3 className="text-base font-semibold mb-2">Endgame Score Differences</h3>
           <div className="flex flex-col gap-4">
             <ScoreGapRow
-              label="Achievable Score Gap:"
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                  Achievable Score Gap:
+                </span>
+              }
               value={achievableGapValue}
               formatted={achievableGapFormatted}
               resultColor={achievableGapColor}
@@ -207,7 +213,12 @@ export function EndgameOverallPerformanceSection({
               }
             />
             <ScoreGapRow
-              label="Endgame Score Gap:"
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                  Endgame Score Gap:
+                </span>
+              }
               value={scoreGap.score_difference}
               formatted={gapFormatted}
               resultColor={gapColor}
