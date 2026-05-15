@@ -139,9 +139,9 @@ export function AchievableScorePopover({
               {pValue !== null ? ` (p = ${pValue.toFixed(3)})` : ''}.
             </p>
             <p>
-              What a 2300+ rated player would score from your endgame-entry positions,
-              via the Lichess winning chances formula. Compare against your
-              Endgame Score.
+              What a 2300+ rated player would score from your endgame-entry positions
+              against a peer of similar rating, via the Lichess expected-score formula.
+              Compare against your Endgame Score.
             </p>
             <p className="opacity-70 italic">
               Score: wins + ½ draws.<br />

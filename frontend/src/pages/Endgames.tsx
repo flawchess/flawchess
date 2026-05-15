@@ -432,7 +432,8 @@ export function EndgamesPage() {
                     </p>
                     <p>
                       <strong>Achievable Score:</strong> what a 2300+ rated player would score
-                      from your endgame-entry positions. Calculated from your Endgame Entry Eval
+                      from your endgame-entry positions against a peer of similar rating.
+                      Calculated from your Endgame Entry Eval
                       using the{' '}
                       <a
                         href="https://lichess.org/page/accuracy"
@@ -440,7 +441,7 @@ export function EndgamesPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        Lichess winning chances formula
+                        Lichess expected-score formula
                       </a>
                       . The curve is fitted on 2300+ rapid games, so scoring a little below this
                       baseline from positive evals is normal at lower ratings. Compare against your

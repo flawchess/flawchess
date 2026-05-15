@@ -194,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v29 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v30 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -210,8 +210,8 @@ class TestPromptVersionAndBody:
       block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
-    def test_prompt_version_is_v29(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v29"
+    def test_prompt_version_is_v30(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v30"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -361,13 +361,16 @@ class TestPromptVersionAndBody:
                 break
         assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
 
-    def test_prompt_version_bumped_to_v29_for_phase_87_1(self) -> None:
-        """Phase 87.1 Plan 04: bump from v28 -> v29 to invalidate cached LLM reports.
+    def test_prompt_version_bumped_to_v30(self) -> None:
+        """Latest bump v29 -> v30 (Achievable Score precision pass): tightened the
+        Achievable Score framing to "against a peer of similar rating" and renamed
+        the sigmoid from "winning-chances" to "expected-score" throughout the prompt.
+        Cache-busts prior reports so users get the corrected terminology.
 
-        The bump is required so users get reports that reference the new per-class
-        Score Gap metric (endgame_type_achievable_score_gap) added to the LLM payload.
+        Prior Phase 87.1 bump (v28 -> v29) added the per-class endgame_type_achievable_score_gap
+        payload field; that historical bump is preserved in the changelog comment.
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v29"
+        assert insights_llm._PROMPT_VERSION == "endgame_v30"
         # Changelog comment must mention the new metric AND the dual-label rule
         # AND the sigmoid-bias caveat (per CONTEXT.md D-10).
         import inspect as _inspect
@@ -2622,7 +2625,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v29"
+        assert response.report.prompt_version == "endgame_v30"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2646,7 +2649,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v29"
+        assert log.response_json["prompt_version"] == "endgame_v30"
 
 
 class TestCacheBehavior:

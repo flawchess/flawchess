@@ -143,7 +143,7 @@ export function EntryCard({ data }: EntryCardProps) {
                 </span>
                 <MetricStatPopover
                   name="Achievable Score"
-                  explanation="What a 2300+ rated player would score from your endgame-entry positions, via the Lichess winning chances formula. Compare against your Endgame Score."
+                  explanation="What a 2300+ rated player would score from your endgame-entry positions against a peer of similar rating, via the Lichess expected-score formula. Compare against your Endgame Score."
                   value={data.entry_expected_score}
                   baseline={0.5}
                   unit="percent"
