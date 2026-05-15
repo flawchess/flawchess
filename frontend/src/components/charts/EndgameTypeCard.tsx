@@ -64,7 +64,11 @@ import {
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
 
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
-import { ENDGAME_TILE_SCORE_DOMAIN, deriveLevel } from './EndgameOverallShared';
+import {
+  ENDGAME_TILE_SCORE_DOMAIN,
+  ENDGAME_TYPE_SCORE_GAP_DOMAIN,
+  deriveLevel,
+} from './EndgameOverallShared';
 
 // Per-card gauge size — extracted per REVIEW IN-02 (was hard-coded 4 times).
 const PER_TYPE_GAUGE_SIZE = 130;
@@ -400,6 +404,7 @@ export function EndgameTypeCard({
               ariaLabel={`${category.label} Score Gap: ${gapFormatted}`}
               neutralMin={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
               neutralMax={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
+              domain={ENDGAME_TYPE_SCORE_GAP_DOMAIN}
               ciLow={category.type_achievable_score_gap_ci_low ?? undefined}
               ciHigh={category.type_achievable_score_gap_ci_high ?? undefined}
               tooltip={
