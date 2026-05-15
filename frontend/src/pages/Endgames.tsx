@@ -557,7 +557,7 @@ export function EndgamesPage() {
                     Endgame Type with a Stockfish evaluation of +1.0 or better. <br/>
                     <strong>Recovery</strong>: your save
                     rate (wins + draws) in games where you entered an Endgame Sequence of this
-                    Endgame Type Stockfish evaluation of −1.0 or worse.
+                    Endgame Type with a Stockfish evaluation of −1.0 or worse.
                   </p>
                   {/* Gauge bands explainer: lifted from EndgameConvRecovChart.tsx:45-49. */}
                   <p>
