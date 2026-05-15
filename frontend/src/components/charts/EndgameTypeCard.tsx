@@ -405,7 +405,7 @@ export function EndgameTypeCard({
               tooltip={
                 <MetricStatPopover
                   name="Score Gap"
-                  explanation={`Average per-span gap between your ${category.label} outcomes and the Stockfish baseline at span entry. Positive = you outperformed expectation; negative = you gave back score. The per-span, per-type cousin of the page-level Achievable Score Gap. Caveat: the Lichess sigmoid under-weights endgame eval, so rely on zone bands over raw magnitude.`}
+                  explanation={`Each ${category.label} Endgame Sequence has a start eval and an end eval — or the actual game result, for the final sequence in a game. Both get converted to expected scores via the Lichess expected-score formula. The Score Gap is the average of (end − start) across all your ${category.label} sequences: positive = you outperformed expectation, negative = you gave back score. Caveat: the Lichess expected-score formula under-weights endgame eval, so rely on the zone bands over raw magnitude.`}
                   value={gapMean ?? 0}
                   baseline={0}
                   unit="percent"

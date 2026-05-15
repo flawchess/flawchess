@@ -394,7 +394,7 @@ describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
     fireEvent.mouseEnter(trigger);
     // The hover-open is delayed 100ms; open imperatively via click as a fallback.
     fireEvent.click(trigger);
-    const matches = screen.queryAllByText(/Lichess sigmoid under-weights/i);
+    const matches = screen.queryAllByText(/Lichess expected-score formula under-weights/i);
     expect(matches.length).toBeGreaterThan(0);
   });
 });
