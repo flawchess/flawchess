@@ -332,6 +332,7 @@ def _compute_span_gap(
 
     return exit_score - es_entry
 
+
 # Rolling window size for the score-difference timeline chart (quick-260417-o2l).
 # Mirrors the 100-game window used by the clock-diff timeline.
 SCORE_GAP_TIMELINE_WINDOW = 100

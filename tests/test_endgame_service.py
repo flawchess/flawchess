@@ -852,9 +852,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
         rows = [
             self._gap_row(1, 1, "1-0", "white", 100, None),
             self._gap_row(2, 1, "1/2-1/2", "white", -200, None),
-            self._gap_row(
-                3, 1, "1-0", "white", 0, None, next_entry_eval_cp=300
-            ),
+            self._gap_row(3, 1, "1-0", "white", 0, None, next_entry_eval_cp=300),
         ]
         expected_gaps = [
             1.0 - eval_cp_to_expected_score(100, "white"),

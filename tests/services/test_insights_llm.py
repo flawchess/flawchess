@@ -421,10 +421,7 @@ class TestPromptVersionAndBody:
                         or "incorrect" in line.lower()
                         or "do not use" in line.lower()
                         or "do NOT use" in line
-                    ), (
-                        f"{token!r} appears outside a forbidden-words list. "
-                        f"Offending line: {line!r}"
-                    )
+                    ), f"{token!r} appears outside a forbidden-words list. Offending line: {line!r}"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -490,10 +487,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
         prompt = _assemble_user_prompt(tab)
 
         # Summary header includes the metric AND the per-class dim key.
-        assert (
-            "[summary endgame_type_achievable_score_gap | endgame_class=rook]"
-            in prompt
-        )
+        assert "[summary endgame_type_achievable_score_gap | endgame_class=rook]" in prompt
         # Window line carries the scaled mean (0.07 -> +7 on the 0-100 scale).
         assert "mean=+7" in prompt
         # Sample size surfaces.
@@ -524,10 +518,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
         tab = _fake_findings(filters, findings=[gap])
         prompt = _assemble_user_prompt(tab)
 
-        assert (
-            "[summary endgame_type_achievable_score_gap | endgame_class=queen]"
-            in prompt
-        )
+        assert "[summary endgame_type_achievable_score_gap | endgame_class=queen]" in prompt
         # Mean is rendered (signed integer, scale=100): -0.02 -> -2.
         assert "mean=-2" in prompt
         # Sample size present.
@@ -563,9 +554,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
         in_block = False
         block_lines: list[str] = []
         for ln in lines:
-            if ln.startswith(
-                "[summary endgame_type_achievable_score_gap"
-            ):
+            if ln.startswith("[summary endgame_type_achievable_score_gap"):
                 in_block = True
                 block_lines.append(ln)
                 continue
