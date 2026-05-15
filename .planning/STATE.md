@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: "Phase 87.1 shipped — PR #97"
-last_updated: "2026-05-15T16:32:32.533Z"
+status: Phase 87.2 inserted to backport Phase 87.1 ΔES Score Gap bullet to Section 2 cards (Conv/Parity/Recov + Endgame Skill), retiring the mathematically-degenerate rate-based mirror-bucket peer-diff Gap
+last_updated: "2026-05-15T17:36:50.824Z"
 last_activity: 2026-05-15
 progress:
   total_phases: 0
@@ -16,11 +16,11 @@ progress:
 
 ## Current Position
 
-Phase: 87.1 — COMPLETE
-Plan: 4 of 4 — ALL PLANS COMPLETE (01 zones+codegen, 02 backend math+repo+service+schema, 03 frontend ScoreGapRow on per-type cards, 04 LLM payload + v29 bump + dual-label glossary)
-Status: Phase 87.1 shipped — PR #97
+Phase: 87.2 — INSERTED 2026-05-15, not planned yet
+Plan: 0 of TBD — awaiting `/gsd-discuss-phase 87.2` → `/gsd-plan-phase 87.2`
+Status: Phase 87.2 inserted to backport Phase 87.1 ΔES Score Gap bullet to Section 2 cards (Conv/Parity/Recov + Endgame Skill), retiring the mathematically-degenerate rate-based mirror-bucket peer-diff Gap
 Last activity: 2026-05-15
-Prior: Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
+Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
 
@@ -108,6 +108,7 @@ Carried forward from v1.11 close (still relevant):
 - 2026-05-03: Phase 80 moved out of v1.15 into a new milestone **v1.16 Stockfish Eval Analyses** (planned, multi-phase). Rationale: keep v1.15 focused on the eval-based endgame classification cutover (78+79 backfill+deploy), and bundle downstream consumers of the new Stockfish evals (endgame span-entry + middlegame-entry `eval_cp`/`eval_mate`) into a dedicated milestone so v1.15 can ship as soon as the cutover is verified. v1.16 entry criterion: v1.15 shipped (Phase 79 backfill landed on prod). Phase 80 is the first slot; further phases will be added from `.planning/notes/phase-aware-analytics-ideas.md` and other brainstorms.
 - 2026-05-03: v1.15 cutover (Phases 78 + 79) — combined operator cutover ran rounds 1 (dev DB smoke, user 28), 2 (benchmark DB full backfill — phase column UPDATE pass + endgame span-entry eval pass + middlegame entry eval pass; PHASE-INV-01 = 0), 3 (prod DB full backfill via SSH tunnel; PHASE-INV-01 = 0). Draft PR #78 opened against main (40+ commits, +7093 / −2176, 54 files). PHASE-VAL-01 / VAL-01 rescinded as moot — proxy removed in Phase 78 REFAC, so the proxy-vs-Stockfish agreement metric is undefined; `/conv-recov-validation` Skill deleted from `~/.claude/skills/`. PHASE-VAL-02 (operational sanity that backfill populated rows correctly) satisfied by PHASE-INV-01 = 0. Remaining: bin/deploy.sh on the merge, post-deploy UI smoke (VAL-02 / VAL-03) on 3-5 representative test users.
 - 2026-05-03: B-1 ordering deviation — prod backfill (Round 3) ran before the combined PR + bin/deploy.sh, against the 79-04-PLAN sequence. Operator confirmed "already handled, no action" via /gsd-progress dispatcher. Mitigation specifics (paused traffic / delta backfill / minimal window) not documented in 79-04-SUMMARY (TBD on milestone retro).
+- Phase 87.2 inserted after Phase 87.1: Section 2 — replace rate-based peer-diff Gap with eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (URGENT)
 
 ### Pending Todos
 
