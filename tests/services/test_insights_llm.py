@@ -3409,3 +3409,277 @@ class TestHideOverview:
         assert log is not None
         assert log.response_json is not None
         assert log.response_json.get("overview") == full_overview
+
+
+# ---------------------------------------------------------------------------
+# TestSection2ScoreGapFindings — Phase 87.2 Plan 04
+# ---------------------------------------------------------------------------
+
+
+class TestSection2ScoreGapFindings:
+    """Phase 87.2: 4 new ΔES Score Gap findings emitted by _findings_endgame_metrics.
+
+    D-09 (RESEARCH-corrected ADDITIVE): the 4 new section2_score_gap_{conv,parity,recov,skill}
+    findings are emitted ALONGSIDE the existing rate findings, not replacing them.
+
+    Wire shape: (mean, n, zone, neutral_band). No p_value / verdict per memory
+    feedback_llm_significance_signal.md — band IS the significance signal.
+    """
+
+    def _make_material_row(
+        self,
+        bucket: str,
+        games: int = 10,
+        win_pct: float = 50.0,
+        draw_pct: float = 20.0,
+        score: float = 0.60,
+    ) -> "Any":
+        from typing import cast
+
+        from app.schemas.endgames import MaterialRow
+
+        return MaterialRow(
+            bucket=cast("Any", bucket),
+            label=bucket.capitalize(),
+            games=games,
+            win_pct=win_pct,
+            draw_pct=draw_pct,
+            loss_pct=100.0 - win_pct - draw_pct,
+            score=score,
+        )
+
+    def _make_overview(
+        self,
+        *,
+        conv_mean: "float | None" = 0.08,
+        conv_n: "int | None" = 15,
+        parity_mean: "float | None" = -0.02,
+        parity_n: "int | None" = 15,
+        recov_mean: "float | None" = 0.04,
+        recov_n: "int | None" = 15,
+        skill_mean: "float | None" = 0.033,
+        skill_n: "int | None" = 15,
+    ) -> "Any":
+        from app.schemas.endgames import EndgameOverviewResponse, ScoreGapMaterialResponse
+
+        material_rows = [
+            self._make_material_row("conversion", games=conv_n or 0),
+            self._make_material_row("parity", games=parity_n or 0),
+            self._make_material_row("recovery", games=recov_n or 0),
+        ]
+        score_gap_material = ScoreGapMaterialResponse(
+            endgame_score=0.5,
+            non_endgame_score=0.5,
+            score_difference=0.0,
+            material_rows=material_rows,
+            timeline=[],
+            timeline_window=50,
+            section2_score_gap_conv_mean=conv_mean,
+            section2_score_gap_conv_n=conv_n,
+            section2_score_gap_parity_mean=parity_mean,
+            section2_score_gap_parity_n=parity_n,
+            section2_score_gap_recov_mean=recov_mean,
+            section2_score_gap_recov_n=recov_n,
+            section2_score_gap_skill_mean=skill_mean,
+            section2_score_gap_skill_n=skill_n,
+        )
+        return EndgameOverviewResponse.model_construct(
+            score_gap_material=score_gap_material,
+        )
+
+    def test_section2_score_gap_findings_full_cohort(self) -> None:
+        """Full cohort (each bucket n >= 10): 4 new ΔES findings emitted.
+
+        Asserts: 4 new findings with correct metric_ids; value matches per-bucket mean;
+        zone is dispatched via assign_zone; sample_size matches per-bucket n;
+        is_headline_eligible True; existing rate findings also present (ADDITIVE, not swap).
+        """
+        import math
+
+        from app.services.insights_service import _findings_endgame_metrics
+
+        response = self._make_overview(
+            conv_mean=0.08,
+            conv_n=15,
+            parity_mean=-0.02,
+            parity_n=15,
+            recov_mean=0.04,
+            recov_n=15,
+            skill_mean=0.033,
+            skill_n=15,
+        )
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        delta_es_findings = [
+            f
+            for f in findings
+            if f.metric
+            in {
+                "section2_score_gap_conv",
+                "section2_score_gap_parity",
+                "section2_score_gap_recov",
+                "section2_score_gap_skill",
+            }
+        ]
+        assert len(delta_es_findings) == 4, (
+            f"Expected 4 ΔES findings, got {len(delta_es_findings)}: {[f.metric for f in delta_es_findings]}"
+        )
+
+        by_metric = {f.metric: f for f in delta_es_findings}
+
+        # Correct values from means.
+        assert by_metric["section2_score_gap_conv"].value == pytest.approx(0.08)
+        assert by_metric["section2_score_gap_parity"].value == pytest.approx(-0.02)
+        assert by_metric["section2_score_gap_recov"].value == pytest.approx(0.04)
+        assert by_metric["section2_score_gap_skill"].value == pytest.approx(0.033)
+
+        # Sample sizes match per-bucket n.
+        assert by_metric["section2_score_gap_conv"].sample_size == 15
+        assert by_metric["section2_score_gap_parity"].sample_size == 15
+
+        # Zone dispatched (not None).
+        for f in delta_es_findings:
+            assert f.zone in {"weak", "typical", "strong"}, (
+                f"zone {f.zone!r} not in expected set for {f.metric}"
+            )
+            assert not math.isnan(f.value)
+
+        # is_headline_eligible True (n >= 10 and mean is not None).
+        for f in delta_es_findings:
+            assert f.is_headline_eligible is True, f"{f.metric}: expected is_headline_eligible=True"
+
+        # dimension is None (no bucket discriminator — metric_id encodes the bucket).
+        for f in delta_es_findings:
+            assert f.dimension is None, f"{f.metric}: dimension should be None"
+
+    def test_section2_score_gap_findings_sparse_cohort(self) -> None:
+        """Sparse cohort (each bucket n < 10): 4 findings emitted, is_headline_eligible False."""
+        from app.services.insights_service import _findings_endgame_metrics
+
+        response = self._make_overview(
+            conv_mean=0.05,
+            conv_n=5,
+            parity_mean=0.01,
+            parity_n=5,
+            recov_mean=-0.03,
+            recov_n=5,
+            skill_mean=0.01,
+            skill_n=5,
+        )
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        delta_es_findings = [
+            f
+            for f in findings
+            if f.metric
+            in {
+                "section2_score_gap_conv",
+                "section2_score_gap_parity",
+                "section2_score_gap_recov",
+                "section2_score_gap_skill",
+            }
+        ]
+        assert len(delta_es_findings) == 4
+
+        for f in delta_es_findings:
+            assert f.is_headline_eligible is False, (
+                f"{f.metric}: expected is_headline_eligible=False for sparse cohort (n<10)"
+            )
+            assert f.sample_size == 5
+            # zone still dispatched even for sparse cohort.
+            assert f.zone in {"weak", "typical", "strong"}
+
+    def test_section2_score_gap_findings_empty_cohort(self) -> None:
+        """Empty cohort (each bucket mean=None, n=0): 4 findings with value=NaN, is_headline_eligible=False."""
+        import math
+
+        from app.services.insights_service import _findings_endgame_metrics
+
+        response = self._make_overview(
+            conv_mean=None,
+            conv_n=0,
+            parity_mean=None,
+            parity_n=0,
+            recov_mean=None,
+            recov_n=0,
+            skill_mean=None,
+            skill_n=0,
+        )
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        delta_es_findings = [
+            f
+            for f in findings
+            if f.metric
+            in {
+                "section2_score_gap_conv",
+                "section2_score_gap_parity",
+                "section2_score_gap_recov",
+                "section2_score_gap_skill",
+            }
+        ]
+        assert len(delta_es_findings) == 4
+
+        for f in delta_es_findings:
+            assert math.isnan(f.value), (
+                f"{f.metric}: expected value=NaN for empty cohort"
+            )
+            assert f.is_headline_eligible is False, (
+                f"{f.metric}: expected is_headline_eligible=False for empty cohort"
+            )
+            assert f.sample_size == 0
+            # assign_zone(metric_id, NaN) must return a zone (not raise).
+            assert f.zone in {"weak", "typical", "strong"}
+
+    def test_section2_score_gap_findings_skill_metric_present(self) -> None:
+        """Skill metric specifically is emitted (equal-weighted aggregate, not per-bucket cohort)."""
+        from app.services.insights_service import _findings_endgame_metrics
+
+        response = self._make_overview(
+            skill_mean=0.033,
+            skill_n=30,
+        )
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        skill_findings = [f for f in findings if f.metric == "section2_score_gap_skill"]
+        assert len(skill_findings) == 1
+        skill = skill_findings[0]
+        assert skill.value == pytest.approx(0.033)
+        assert skill.sample_size == 30
+        assert skill.is_headline_eligible is True
+
+    def test_existing_rate_findings_preserved(self) -> None:
+        """D-09 ADDITIVE: existing rate findings must survive alongside new ΔES findings.
+
+        The 4 original rate findings (endgame_skill, conversion_win_pct, parity_score_pct,
+        recovery_save_pct) are preserved; total finding count grows by 4, not replaced.
+        """
+        from app.services.insights_service import _findings_endgame_metrics
+
+        response = self._make_overview(
+            conv_mean=0.08,
+            conv_n=15,
+            parity_mean=-0.02,
+            parity_n=15,
+            recov_mean=0.04,
+            recov_n=15,
+            skill_mean=0.033,
+            skill_n=15,
+        )
+        findings = _findings_endgame_metrics(response, window="all_time")
+
+        metric_ids = {f.metric for f in findings}
+        # Original rate findings preserved.
+        assert "endgame_skill" in metric_ids, "endgame_skill finding missing (rate finding must be preserved)"
+        assert "conversion_win_pct" in metric_ids, "conversion_win_pct finding missing"
+        assert "parity_score_pct" in metric_ids, "parity_score_pct finding missing"
+        assert "recovery_save_pct" in metric_ids, "recovery_save_pct finding missing"
+        # New ΔES findings present.
+        assert "section2_score_gap_conv" in metric_ids
+        assert "section2_score_gap_parity" in metric_ids
+        assert "section2_score_gap_recov" in metric_ids
+        assert "section2_score_gap_skill" in metric_ids
+        # Total: 1 endgame_skill + 3 rate + 4 ΔES = 8.
+        assert len(findings) == 8, (
+            f"Expected 8 findings (1 skill + 3 rate + 4 ΔES), got {len(findings)}"
+        )
