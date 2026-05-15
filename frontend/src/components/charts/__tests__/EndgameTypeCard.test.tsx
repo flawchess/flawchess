@@ -320,27 +320,28 @@ describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
     expect(screen.queryByTestId(`${TILE_TESTID}-asg-info`)).toBeNull();
   });
 
-  it('positions the ScoreGapRow between the gauge row and the WDL bar', () => {
+  it('positions the ScoreGapRow as the last row in the card', () => {
     renderCard(buildCategory());
     const tile = screen.getByTestId(TILE_TESTID);
     const gauges = screen.getByTestId(`${TILE_TESTID}-gauges`);
     const asgBullet = screen.getByTestId(`${TILE_TESTID}-asg-bullet`);
     const wdl = screen.getByTestId(`${TILE_TESTID}-wdl`);
-    // All three must share the same body container.
+    const scoreRow = screen.getByTestId(`${TILE_TESTID}-score-row`);
     const body = tile.querySelector('.flex.flex-col.gap-4');
     expect(body).not.toBeNull();
     expect(gauges.parentElement).toBe(body);
     expect(asgBullet.parentElement).toBe(body);
-    // DOM ordering: gauges -> asg row -> wdl block.
+    // DOM ordering: gauges -> wdl block -> score row -> asg row (Score Gap last).
     const children = Array.from(body!.children);
     const gaugesIdx = children.indexOf(gauges);
-    const asgIdx = children.indexOf(asgBullet);
-    // The WDL bar lives inside a wrapper div that is a direct child of body.
     const wdlWrapper = children.find((c) => c.contains(wdl)) as HTMLElement;
     const wdlIdx = children.indexOf(wdlWrapper);
+    const scoreIdx = children.indexOf(scoreRow);
+    const asgIdx = children.indexOf(asgBullet);
     expect(gaugesIdx).toBeGreaterThanOrEqual(0);
-    expect(asgIdx).toBeGreaterThan(gaugesIdx);
-    expect(wdlIdx).toBeGreaterThan(asgIdx);
+    expect(wdlIdx).toBeGreaterThan(gaugesIdx);
+    expect(scoreIdx).toBeGreaterThan(wdlIdx);
+    expect(asgIdx).toBeGreaterThan(scoreIdx);
   });
 
   it('tints positive out-of-band gap green (ZONE_SUCCESS)', async () => {

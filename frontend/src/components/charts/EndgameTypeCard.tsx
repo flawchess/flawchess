@@ -11,6 +11,7 @@
  *   2. Side-by-side Conv + Recov gauges (unchanged).
  *   3. WDL bar row with the Games deep-link.
  *   4. Score bullet (W + 0.5*D / N) sig-gated against 50%.
+ *   5. Per-span Score Gap bullet (eval-based, Cpu-iconed) — Phase 87.1.
  *
  * Empty / sparse handling (CONTEXT D-13 / D-14 / D-15):
  * - total === 0: gauge row opacity-50, "Not enough data yet" placeholder, no
@@ -22,7 +23,7 @@
 import type { CSSProperties } from 'react';
 
 import { Link } from 'react-router-dom';
-import { Swords } from 'lucide-react';
+import { Cpu, Swords } from 'lucide-react';
 
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
@@ -298,53 +299,6 @@ export function EndgameTypeCard({
           </div>
         </div>
 
-        {/* Phase 87.1 (SEED-016 D-08): per-span Score Gap bullet row.
-            Positioned between the Conv|Recov gauge row and the WDL bar per D-01.
-            Hidden at n=0 (same opacity-50 gate doctrine as the score row).
-            Card row label is "Score Gap" (short form per D-02); card title
-            ("Rook Endgames" etc.) supplies the disambiguating type context. */}
-        {showGapRow && (
-          <div data-testid={`${tileTestId}-asg-bullet`}>
-            <ScoreGapRow
-              label="Score Gap:"
-              value={gapMean ?? 0}
-              formatted={gapFormatted}
-              resultColor={gapColor}
-              valueTestId={`${tileTestId}-asg-value`}
-              ariaLabel={`${category.label} Score Gap: ${gapFormatted}`}
-              neutralMin={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
-              neutralMax={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
-              ciLow={category.type_achievable_score_gap_ci_low ?? undefined}
-              ciHigh={category.type_achievable_score_gap_ci_high ?? undefined}
-              tooltip={
-                <MetricStatPopover
-                  name="Score Gap"
-                  explanation={`Your average per-span Score Gap for ${category.label} games, how much your mid-span and end-of-span outcomes outperformed (or fell short of) the Stockfish baseline you started each ${category.label} span from. Positive = you converted advantages and salvaged disadvantages above expectation. Negative = you gave back expected score during these spans. Computed per span (one per game × endgame type) and averaged; terminal spans use the game result, transitory spans use the next span's entry eval. This is the per-span, per-type version of the page-level Achievable Score Gap. Note: the Lichess sigmoid under-weights endgame eval advantages, so absolute values are scale-compressed; rely on the zone bands, not the raw magnitude.`}
-                  value={gapMean ?? 0}
-                  baseline={0}
-                  unit="percent"
-                  gameCount={gapN}
-                  level={gapLevel}
-                  pValue={category.type_achievable_score_gap_p_value}
-                  vocabulary="score"
-                  neutralLower={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
-                  neutralUpper={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
-                  baselineLabel="0%"
-                  methodology={
-                    <>
-                      Score: wins + ½ draws (game result for terminal spans).<br />
-                      Test: paired one-sample z-test on per-span (exit − entry expected) diffs vs 0.<br />
-                      Confidence interval: 95% normal-approx on the paired diffs.
-                    </>
-                  }
-                  testId={`${tileTestId}-asg-info`}
-                  ariaLabel={`What is ${category.label} Score Gap?`}
-                />
-              }
-            />
-          </div>
-        )}
-
         {SHOW_WDL_BAR_IN_TYPE_CARDS ? (
           <div className="flex flex-col gap-2">
             <span className="flex items-center gap-2 text-sm tabular-nums w-full">
@@ -423,6 +377,57 @@ export function EndgameTypeCard({
                 ariaLabel={`${category.label} endgame score ${scorePct}`}
               />
             </div>
+          </div>
+        )}
+
+        {/* Phase 87.1 (SEED-016 D-08): per-span Score Gap bullet row.
+            Positioned last in the card; Cpu icon flags this as eval-based.
+            Card row label is "Score Gap" (short form per D-02); card title
+            ("Rook Endgames" etc.) supplies the disambiguating type context. */}
+        {showGapRow && (
+          <div data-testid={`${tileTestId}-asg-bullet`}>
+            <ScoreGapRow
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                  Score Gap:
+                </span>
+              }
+              value={gapMean ?? 0}
+              formatted={gapFormatted}
+              resultColor={gapColor}
+              valueTestId={`${tileTestId}-asg-value`}
+              ariaLabel={`${category.label} Score Gap: ${gapFormatted}`}
+              neutralMin={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
+              neutralMax={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
+              ciLow={category.type_achievable_score_gap_ci_low ?? undefined}
+              ciHigh={category.type_achievable_score_gap_ci_high ?? undefined}
+              tooltip={
+                <MetricStatPopover
+                  name="Score Gap"
+                  explanation={`Average per-span gap between your ${category.label} outcomes and the Stockfish baseline at span entry. Positive = you outperformed expectation; negative = you gave back score. The per-span, per-type cousin of the page-level Achievable Score Gap. Caveat: the Lichess sigmoid under-weights endgame eval, so rely on zone bands over raw magnitude.`}
+                  value={gapMean ?? 0}
+                  baseline={0}
+                  unit="percent"
+                  gameCount={gapN}
+                  level={gapLevel}
+                  pValue={category.type_achievable_score_gap_p_value}
+                  vocabulary="score"
+                  neutralLower={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
+                  neutralUpper={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
+                  baselineLabel="0%"
+                  methodology={
+                    <>
+                      Score: wins + ½ draws (game result for terminal spans).<br />
+                      Test: paired one-sample z-test on per-span (exit − entry expected) diffs vs 0.<br />
+                      Confidence interval: 95% normal-approx on the paired diffs.
+                    </>
+                  }
+                  testId={`${tileTestId}-asg-info`}
+                  ariaLabel={`What is ${category.label} Score Gap?`}
+                />
+              }
+            />
           </div>
         )}
       </div>

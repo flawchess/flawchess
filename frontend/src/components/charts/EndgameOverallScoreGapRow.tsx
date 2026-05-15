@@ -17,7 +17,7 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { SCORE_GAP_DOMAIN } from './EndgameOverallShared';
 
 interface ScoreGapRowProps {
-  label: string;
+  label: ReactNode;
   value: number;
   formatted: string;
   resultColor: string | undefined;
