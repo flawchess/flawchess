@@ -1,7 +1,7 @@
-# FlawChess Benchmarks — 2026-05-15
+# FlawChess Benchmarks — 2026-05-14
 
 - **DB**: benchmark (Docker on localhost:5433, flawchess_benchmark)
-- **Snapshot taken**: 2026-05-15 (§3.4.4 calibrated this run; §2.1–§3.4.3 numerics inherited from the 2026-05-14 snapshot — DB unchanged: identical population, no methodology changes for those subchapters)
+- **Snapshot taken**: 2026-05-14T12:16:39Z (§3.4.2 re-run 2026-05-15, DB unchanged)
 - **Population**: 2,415 users / 1,375,544 games / 95,040,660 positions
 - **Cell anchoring**: 400-wide ELO buckets via `benchmark_selected_users.rating_bucket`; tc_bucket from same table; per-user TC restricted to selected `tc_bucket`
 - **Selection provenance**: 2026-03 Lichess monthly dump, 9,133 selected users, 1,912 ingested at ~100/cell (one cell at 12)
@@ -352,12 +352,12 @@ Per-user `achievable_score_gap = mean(actual_i − expected_i)` over the user's 
 
 | Constant | Live value | File |
 |---|---:|---|
-| `ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN` / `MAX` | **−0.05 / +0.05** (split from `SCORE_GAP_*` post-2026-05-14 per the recommendation below) | `frontend/src/generated/endgameZones.ts` |
+| `SCORE_GAP_NEUTRAL_MIN` / `MAX` | −0.10 / +0.10 | `frontend/src/generated/endgameZones.ts` |
 | `SCORE_GAP_DOMAIN` | 0.20 | `frontend/src/components/charts/EndgameOverallShared.ts` |
 | `PVALUE_RELIABILITY_MIN_N` | 10 | `app/services/endgame_service.py` |
 | `EVAL_CLIP_MAX_CP` | 2000 | same |
 
-Live gauge centered at 0 (engine-alignment null). The Phase 85.1 row shared the wider `SCORE_GAP_*` constants with §3.1.6 by design; the 2026-05-14 calibration recommended a dedicated tighter band, and the constant has since been split into `ACHIEVABLE_SCORE_GAP_*` (±0.05) so §3.1.5 can tighten without affecting §3.1.6 (which keeps ±0.10).
+Live gauge centered at 0 (engine-alignment null). Achievable Score Gap shares the `SCORE_GAP_*` constants with Endgame Score Gap (§3.1.6) by design — both rows in the same row of the Score Differences card.
 
 ##### 5×4 cell table — per-user `gap_p50 (n_users)` rendered as pp
 
@@ -413,11 +413,11 @@ Heatmap of per-user `gap_p50` (pp):
 ##### Recommendations
 
 - **Sanity check on engine alignment**: pooled mean = **+0.3pp** — within ±1pp of 0. No model-calibration concern.
-- **Cohort neutral band**: pooled IQR `[−3.9pp, +4.6pp]` matches the live `±5pp` band closely. Asymmetric tilt (+0.7pp median) is below the sub-5pp re-centering guard, so symmetric is correct. **Keep ±0.05** — the band already paints red/green for the 2400 cohort (median +3.5pp lands just inside upper-typical).
-- **Cohort domain**: pooled `[p05, p95]` = `[−12.4pp, +11.6pp]`. Half-width = 12.4pp vs live `SCORE_GAP_DOMAIN = 0.20` (= ±20pp; still shared with §3.1.6). Live is wider than cohort tails — **keep** (the 800-bullet tail at −20.6pp still needs to render).
-- **ELO stratification strongly indicated**: ELO d_max = 0.62 (keep), with the 800-cohort gap median at −1.3pp and the 2400-cohort at +3.5pp. The Achievable Score Gap is the metric where strong-cohort users systematically outperform Stockfish's expected score at entry — well-known phenomenon and worth a per-ELO `ACHIEVABLE_SCORE_GAP_ZONES` registry if the tile is meant to paint cohort-aware feedback. Until then, the pooled ±5pp band is in production.
+- **Cohort neutral band**: pooled IQR `[−3.9pp, +4.6pp]` is **substantially narrower** than the live `±10pp` band. Asymmetric tilt (+0.7pp median) is below the sub-5pp re-centering guard, so keep symmetric. Recommend **tightening to ±5pp** so the gauge actually paints red/green for the 2400 cohort (whose median sits at +3.5pp, currently rendered as "typical" by the wide band). The 800-cohort lower tail (−7pp p25) also lands in danger correctly under the tighter band.
+- **Cohort domain**: pooled `[p05, p95]` = `[−12.4pp, +11.6pp]`. Half-width = 12.4pp vs live `SCORE_GAP_DOMAIN = 0.20` (= ±20pp). Live is wider than cohort tails — **keep** (the 800-bullet tail at −20.6pp still needs to render). Note this constant is shared with §3.1.6 — keep at 0.20 even if 3.1.6 wants 0.23 (it doesn't this cycle).
+- **ELO stratification strongly indicated**: ELO d_max = 0.62 (keep), with the 800-cohort gap median at −1.3pp and the 2400-cohort at +3.5pp. The Achievable Score Gap is the metric where strong-cohort users systematically outperform Stockfish's expected score at entry — well-known phenomenon and worth a per-ELO `ACHIEVABLE_SCORE_GAP_ZONES` registry if the tile is meant to paint cohort-aware feedback. Without per-ELO bands, the recommended ±5pp pooled band still works as a single global setting.
 
-**Routing note (historical — resolved)**: pre-2026-05-15 this row shared `SCORE_GAP_*` with §3.1.6. The 2026-05-14 calibration recommended a tighter band for 3.1.5 specifically; the implementer chose the split path (option (b) from that note) and `ACHIEVABLE_SCORE_GAP_*` is now a dedicated constant at ±0.05. §3.1.6 retains its own `SCORE_GAP_*` at ±0.10. No further routing decision needed.
+**Routing note**: the live SCORE_GAP_* constants are shared with §3.1.6 — see "Recommended thresholds summary" for the dual-row impact. If the implementer agrees the tighter band reflects both metrics, the single shared constant can move from ±0.10 → ±0.05. If only one row should tighten, a split into `ACHIEVABLE_SCORE_GAP_*` (distinct module) is needed.
 
 #### 3.1.6 Endgame Score Gap and Timeline
 
@@ -1033,112 +1033,6 @@ The 2026-05-15 verdict on the `EndgameTypeCard.tsx` chart inventory is **Keep al
 - The verdict is a chart-inventory recommendation, not a code-constant calibration — no `endgame_zones.py` / `scoreBulletConfig.ts` value should change as a direct result of this subchapter. (The per-class IQRs *do* feed §3.4.1 and §3.4.2 calibration tables.)
 - Comparison vs the 2026-05-15 fixed-zone run: under fixed `±0.05` bands queen's strong-disagreement was 10.5%; under IQR bands it drops to 6.5%, because queen's IQR score band (~20pp) is much wider than ±5pp and absorbs more cohort variance into the neutral zone. Pearson r and sign-agreement are unchanged (band-independent). The headline verdict is unchanged across both regimes.
 
-#### 3.4.4 Per-bucket ΔES Score Gap (Section 2 — Phase 87.2)
-
-Calibrated 2026-05-15. Per-user per-bucket `mean_gap = mean(exit_score − ES_entry)` partitioned by entry-eval bucket (conversion / parity / recovery) via `_classify_endgame_bucket(eval_cp, eval_mate, user_color)`. Same gap formula as §3.4.2 (Lichess winning-chances sigmoid; transitory span uses `LEAD()` over next span eval, terminal span uses game result). Equal-footing filter applied. Sparse cell `(2400, classical)` excluded from marginals / pooled / Cohen's d.
-
-Sample floor per bucket: ≥20 qualifying spans per user per bucket per cell. Skill aggregate uses the looser ≥10-spans-per-bucket floor (matches live `CONFIDENCE_MIN_N`), then equal-weights the active buckets per user; a user is included in Skill if ≥2 buckets clear the floor.
-
-##### Currently set in code (Plan 01 placeholders — to be overwritten by this calibration)
-
-| Constant | Live (placeholder) | File |
-|---|---|---|
-| `ZONE_REGISTRY["section2_score_gap_conv"]` | `(−0.05, +0.05)` | `app/services/endgame_zones.py` |
-| `ZONE_REGISTRY["section2_score_gap_parity"]` | `(−0.05, +0.05)` | same |
-| `ZONE_REGISTRY["section2_score_gap_recov"]` | `(−0.05, +0.05)` | same |
-| `ZONE_REGISTRY["section2_score_gap_skill"]` | `(−0.05, +0.05)` | same |
-| Generated TS counterparts | mirror Python | `frontend/src/generated/endgameZones.ts` (codegen via `scripts/gen_endgame_zones_ts.py`) |
-
-##### Pooled-by-bucket distribution (excl sparse cell, ≥20 spans/user/bucket)
-
-| bucket | n_users | pooled_mean | pooled_sd | p05 | p25 | p50 | p75 | p95 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| conversion | 1,657 | **−6.2pp** | 0.094 | −24.5pp | **−10.8pp** | −4.7pp | **+0.2pp** | +6.5pp |
-| parity | 1,508 | **+0.1pp** | 0.061 | −9.6pp | **−3.5pp** | +0.4pp | **+3.7pp** | +9.6pp |
-| recovery | 1,609 | **+6.4pp** | 0.076 | −4.2pp | **+1.0pp** | +5.6pp | **+10.7pp** | +19.6pp |
-| **skill (≥2 active buckets)** | 1,731 | **+0.0pp** | 0.049 | −8.4pp | **−2.7pp** | +0.3pp | **+3.0pp** | +7.3pp |
-
-The asymmetry predicted in the SKILL is **confirmed**: conversion mean ≈ **−6pp** (sigmoid ceiling near 1.0 → ES_entry close to 0.6 with limited upside, exit_score usually lower than entry); recovery mean ≈ **+6pp** (sigmoid floor near 0.0 → ES_entry close to 0.4 with limited downside, exit_score usually higher than entry); parity ≈ **0pp** (symmetric near 0.5). Skill (equal-weighted mean) collapses the asymmetry as expected (pooled mean ≈ 0).
-
-##### Per-cell 5×4 — `mean (n_users)`, sparse `(2400, classical)` excluded from marginals
-
-**conversion** (cell mean):
-
-| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
-|---|---:|---:|---:|---:|
-| 800 | −21.6pp (96) | −11.2pp (96) | −9.5pp (92) | −11.5pp (21) |
-| 1200 | −16.5pp (99) | −7.2pp (99) | −4.9pp (98) | −5.1pp (61) |
-| 1600 | −12.7pp (97) | −5.0pp (100) | −1.8pp (100) | −0.4pp (72) |
-| 2000 | −9.7pp (100) | −1.6pp (100) | +0.4pp (96) | +3.6pp (51) |
-| 2400 | −5.3pp (100) | +1.7pp (97) | +3.6pp (82) | — * |
-
-**parity**:
-
-| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
-|---|---:|---:|---:|---:|
-| 800 | −0.8pp (69) | −1.8pp (75) | −0.8pp (64) | — |
-| 1200 | −0.5pp (93) | −0.9pp (98) | −0.8pp (90) | −1.4pp (31) |
-| 1600 | −0.6pp (97) | −1.3pp (99) | +0.3pp (95) | −1.3pp (61) |
-| 2000 | −0.4pp (99) | +1.1pp (99) | +1.1pp (94) | +1.5pp (54) |
-| 2400 | +1.3pp (99) | +2.7pp (97) | +3.1pp (90) | — * |
-
-**recovery**:
-
-| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
-|---|---:|---:|---:|---:|
-| 800 | +17.9pp (96) | +8.5pp (96) | +6.8pp (91) | +5.3pp (23) |
-| 1200 | +15.5pp (100) | +5.5pp (97) | +4.8pp (94) | +2.7pp (52) |
-| 1600 | +11.7pp (98) | +4.5pp (99) | +2.1pp (97) | +0.4pp (67) |
-| 2000 | +10.7pp (100) | +3.9pp (96) | +0.4pp (93) | −2.6pp (42) |
-| 2400 | +8.1pp (98) | +3.1pp (96) | +0.6pp (74) | — * |
-
-Two strong gradients are visible. Going **bullet → classical**, conversion and recovery both compress toward 0 — i.e. at slower time controls the gap between actual outcome and engine prediction shrinks (more time = closer to engine play). Going **800 → 2400**, conversion rises toward 0 (stronger players convert closer to engine expectation) while recovery falls toward 0 (stronger players don't recover as much above engine expectation). Parity has a milder ELO gradient (−1pp → +3pp).
-
-##### Marginals and Cohen's d (per bucket, both axes)
-
-**TC marginals** (excl sparse cell):
-
-| bucket | bullet | blitz | rapid | classical | TC d_max | TC verdict |
-|---|---:|---:|---:|---:|---:|---|
-| conversion | −13.1pp | −4.6pp | −2.6pp | −2.0pp | **1.18** (bullet vs classical) | **keep separate** |
-| parity | −0.2pp | +0.0pp | +0.6pp | −0.5pp | 0.18 (rapid vs classical) | **collapse** |
-| recovery | +12.8pp | +5.1pp | +3.0pp | +1.0pp | **1.63** (bullet vs classical) | **keep separate** |
-| skill | −0.1pp | +0.1pp | +0.3pp | −0.5pp | 0.09 (rapid vs classical) | **collapse** |
-
-**ELO marginals** (excl sparse cell):
-
-| bucket | 800 | 1200 | 1600 | 2000 | 2400 | ELO d_max | ELO verdict |
-|---|---:|---:|---:|---:|---:|---:|---|
-| conversion | −14.0pp | −8.8pp | −5.3pp | −2.6pp | −0.3pp | **1.62** (800 vs 2400) | **keep separate** |
-| parity | −1.3pp | −0.8pp | −0.7pp | +0.8pp | +2.3pp | **0.57** (800 vs 2400) | **keep separate** |
-| recovery | +10.7pp | +7.8pp | +5.1pp | +4.1pp | +4.3pp | **0.85** (800 vs 2000) | **keep separate** |
-| skill | −1.9pp | −0.6pp | −0.2pp | +0.8pp | +2.3pp | **0.81** (800 vs 2400) | **keep separate** |
-
-##### Verdict implications
-
-- **Conversion & recovery**: both axes "keep separate". Pooled bands are the right calibration target *at this MetricId scalar*, but per-cell numerics span ~25pp on each axis. A future per-(TC × ELO) stratification of these two MetricIds would materially sharpen the live UI; deferred for this phase (the registry stays scalar).
-- **Parity**: TC collapses, ELO keeps separate at 0.57 — small but real ramp from −1.3pp (800) to +2.3pp (2400). Scalar pooled band suffices for now.
-- **Skill**: TC collapses (d=0.09), ELO keeps separate (d=0.81). Equal-weighted averaging cancels the sigmoid asymmetry but leaves the ELO skill ramp intact. Scalar band is fine for this phase; per-ELO stratification deferred along with conv/recov.
-
-##### Recommended bands (calibrated, this run)
-
-Pooled IQR rounded to nearest 1pp; bands are asymmetric where the sigmoid bias dictates.
-
-| bucket | pooled [p25, p75] | Recommended `ZONE_REGISTRY["section2_score_gap_<bucket>"]` | Placeholder | Action |
-|---|---|---|---|---|
-| conversion | [−10.8pp, +0.2pp] | **`(−0.11, 0.00)`** | `(−0.05, +0.05)` | **shift band down, widen** — Stockfish-conversion null is ~−5pp, not 0 |
-| parity | [−3.5pp, +3.7pp] | **`(−0.04, +0.04)`** | `(−0.05, +0.05)` | tighten slightly — symmetric, near 0 |
-| recovery | [+1.0pp, +10.7pp] | **`(+0.01, +0.11)`** | `(−0.05, +0.05)` | **shift band up, widen** — Stockfish-recovery null is ~+6pp, not 0 |
-| skill | [−2.7pp, +3.0pp] | **`(−0.03, +0.03)`** | `(−0.05, +0.05)` | tighten — symmetric, near 0 |
-
-The conversion and recovery bands are intentionally **off-zero** — the population null is asymmetric by construction (a typical player converting a winning position scores ~5pp below their entry ES because of the sigmoid ceiling; recovering from a losing one scores ~6pp above for the symmetric reason). Anchoring those bands at 0 would mis-paint every typical user as "green on recovery, red on conversion" — exactly the false signal Phase 87.2 is designed to avoid.
-
-Per memory `feedback_zone_band_judgement.md`: bands above use raw [p25, p75] rounded — no editorial tightening applied. Per `feedback_llm_significance_signal.md`: no separate sig-test signal proposed for the LLM payload; the calibrated cohort band carries the signal.
-
-##### Implementation note (out of scope for this report)
-
-To put the calibrated bands in production: update the four ZoneSpec tuples in `app/services/endgame_zones.py`, run `uv run python scripts/gen_endgame_zones_ts.py`, commit both the Python source and the regenerated `frontend/src/generated/endgameZones.ts`. CI's drift gate will fail if either is committed without the other. This calibration replaces the Plan 01 placeholder `(−0.05, +0.05)` tuples shipped on the current branch.
-
 ---
 
 ## Top-axis collapse summary (HEADLINE DELIVERABLE)
@@ -1149,7 +1043,7 @@ To put the calibrated bands in production: update the four ZoneSpec tuples in `a
 | Endgame-entry eval (uncentered) | 3.1.2 | review (0.22) | review (0.28) | pooled band fits; 0-center stays |
 | Achievable Score | 3.1.3 | review (0.22) | review (0.23) | pooled band fits live [0.45, 0.55] |
 | Endgame Score (per-user, EG-only) | 3.1.4 | review (0.27) | **keep (0.84)** | ELO stratification justified for EG-only score band |
-| Achievable Score Gap (actual − expected) | 3.1.5 | collapse (0.15) | **keep (0.62)** | dedicated `ACHIEVABLE_SCORE_GAP_*` at ±0.05 in production; per-ELO registry deferred |
+| Achievable Score Gap (actual − expected) | 3.1.5 | collapse (0.15) | **keep (0.62)** | strong ELO ramp; tighten neutral band; consider per-ELO registry |
 | Endgame Score Gap (eg − non_eg) | 3.1.6 | review (0.34) | collapse (0.17) | classical only TC drifts; single pooled ±10pp OK |
 | Middlegame-entry eval (centered) | 2.1 | review (0.25) | review (0.23) | pooled band fits; widen neutral to ±0.35 pawns |
 | Conversion (per-user) | 3.2.1 | **keep (1.02)** | **keep (0.82)** | per-cell calibration well justified |
@@ -1168,10 +1062,6 @@ To put the calibrated bands in production: update the four ZoneSpec tuples in `a
 | Per-class per-span Score Gap (pawn) | 3.4.2 | review (0.29) | review (0.24) | per-class (−0.04, +0.05) |
 | Per-class per-span Score Gap (queen) | 3.4.2 | review (0.49) | review (0.39) | per-class (−0.05, +0.05) |
 | Per-class per-span Score Gap (mixed) | 3.4.2 | collapse (0.15) | **keep (0.57)** | per-class (−0.03, +0.04); per-ELO deferred |
-| Per-bucket Score Gap — Conversion (Section 2) | 3.4.4 | **keep (1.18)** | **keep (1.62)** | scalar pooled band off-zero `(−0.11, 0.00)`; per-(TC×ELO) stratification deferred |
-| Per-bucket Score Gap — Parity (Section 2) | 3.4.4 | collapse (0.18) | **keep (0.57)** | scalar pooled `(−0.04, +0.04)`; mild ELO ramp |
-| Per-bucket Score Gap — Recovery (Section 2) | 3.4.4 | **keep (1.63)** | **keep (0.85)** | scalar pooled band off-zero `(+0.01, +0.11)`; per-(TC×ELO) stratification deferred |
-| Per-bucket Score Gap — Skill (Section 2) | 3.4.4 | collapse (0.09) | **keep (0.81)** | scalar pooled `(−0.03, +0.03)`; ELO ramp preserved through equal-weighting |
 
 ---
 
@@ -1189,7 +1079,7 @@ To put the calibrated bands in production: update the four ZoneSpec tuples in `a
 | EG-entry domain | 3.1.2 | `ENDGAME_ENTRY_EVAL_DOMAIN_PAWNS` | 2.25 | 2.25 | — | keep |
 | EG-entry center | 3.1.2 | `ENDGAME_ENTRY_EVAL_CENTER` | 0 | 0 | — | keep |
 | EG-entry expected score | 3.1.3 | `ENTRY_EXPECTED_SCORE_NEUTRAL_MIN/MAX` | [0.45, 0.55] | [0.46, 0.55] | both review | keep |
-| Achievable Score Gap neutral (dedicated) | 3.1.5 | `ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN/MAX` | ±0.05 (split from `SCORE_GAP_*` post-2026-05-14) | ±0.05 | TC collapse, ELO keep | **keep** — split + tightening already applied |
+| Achievable Score Gap neutral (shared) | 3.1.5 | `SCORE_GAP_NEUTRAL_MIN/MAX` | ±0.10 | **±0.05** (alt: keep) | TC collapse, ELO keep | **consider tightening** to ±0.05 (or split into a dedicated `ACHIEVABLE_SCORE_GAP_*` module so 3.1.6 keeps ±0.10) |
 | Endgame Score Gap neutral (shared) | 3.1.6 | `SCORE_GAP_NEUTRAL_MIN/MAX` | ±0.10 | ±0.10 | TC review, ELO collapse | keep |
 | Endgame Score Gap domain (shared) | 3.1.6 | `SCORE_GAP_DOMAIN` | 0.20 | **0.23** | — | **widen to 0.23** |
 | Conversion neutral (pooled) | 3.2.1 | `FIXED_GAUGE_ZONES.conversion` | [0.65, 0.77] | [0.66, 0.77] | both keep | keep (or stratify per TC) |
@@ -1214,7 +1104,3 @@ To put the calibrated bands in production: update the four ZoneSpec tuples in `a
 | Per-class Score bullet (mixed) | 3.4.1 | same | ±0.05 | [0.46, 0.56] (≈ global) | borderline | keep global or include in registry |
 | Per-class Score bullet (pawnless) | 3.4.1 | same | ±0.05 | defer (n_users=119) | n too small | re-evaluate next dump |
 | EndgameTypeCard chart inventory (Score / Score Gap / WDL / Conv+Recov) | 3.4.3 | n/a (layout) | 5 signals per card | 5 signals per card | r=0.48 pooled, all classes <0.60 (IQR-zone rubric) | **Keep all three** bullets + gauges + WDL bar (non-redundant under self-derived IQR bands) |
-| Section 2 Score Gap — Conversion | 3.4.4 | `ZONE_REGISTRY["section2_score_gap_conv"]` | `(−0.05, +0.05)` placeholder | **`(−0.11, 0.00)`** | TC keep (1.18), ELO keep (1.62) | **apply** (off-zero band — sigmoid bias) |
-| Section 2 Score Gap — Parity | 3.4.4 | `ZONE_REGISTRY["section2_score_gap_parity"]` | `(−0.05, +0.05)` placeholder | **`(−0.04, +0.04)`** | TC collapse, ELO keep | **apply** (tighten — symmetric, near 0) |
-| Section 2 Score Gap — Recovery | 3.4.4 | `ZONE_REGISTRY["section2_score_gap_recov"]` | `(−0.05, +0.05)` placeholder | **`(+0.01, +0.11)`** | TC keep (1.63), ELO keep (0.85) | **apply** (off-zero band — sigmoid bias) |
-| Section 2 Score Gap — Skill | 3.4.4 | `ZONE_REGISTRY["section2_score_gap_skill"]` | `(−0.05, +0.05)` placeholder | **`(−0.03, +0.03)`** | TC collapse, ELO keep (0.81) | **apply** (tighten — symmetric, near 0) |
