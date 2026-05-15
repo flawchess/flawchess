@@ -44,8 +44,8 @@ export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX = 0.05;
 // Phase 87.1 (SEED-016 D-04): per-span, per-type Score Gap neutral band.
 // User-facing label: "Endgame Type Score Gap" (concepts) / "Score Gap" (card row).
 // Internal registry key is `endgame_type_achievable_score_gap` for math-family grep.
-export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN = -0.05;
-export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX = 0.05;
+export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN = -0.04;
+export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX = 0.04;
 
 // Phase 83 D-14/D-17: per-user entry_expected_score cohort band.
 // Source: reports/benchmarks-2026-05-11.md §7 (pooled IQR aligned with
@@ -73,12 +73,12 @@ export function entryExpectedScoreZoneColor(value: number): string {
 // Wrap with colorizeGaugeZones() before passing to EndgameGauge (same
 // pattern as FIXED_GAUGE_ZONES in EndgameScoreGapSection).
 export const PER_CLASS_GAUGE_ZONES = {
-  rook: { conversion: [0.65, 0.75], recovery: [0.26, 0.36], achievable_score_gap: [-0.05, 0.05] },
-  minor_piece: { conversion: [0.63, 0.73], recovery: [0.31, 0.41], achievable_score_gap: [-0.05, 0.05] },
-  pawn: { conversion: [0.67, 0.79], recovery: [0.23, 0.34], achievable_score_gap: [-0.05, 0.05] },
+  rook: { conversion: [0.65, 0.75], recovery: [0.26, 0.36], achievable_score_gap: [-0.05, 0.04] },
+  minor_piece: { conversion: [0.63, 0.73], recovery: [0.31, 0.41], achievable_score_gap: [-0.04, 0.06] },
+  pawn: { conversion: [0.67, 0.79], recovery: [0.23, 0.34], achievable_score_gap: [-0.04, 0.05] },
   queen: { conversion: [0.73, 0.83], recovery: [0.2, 0.3], achievable_score_gap: [-0.05, 0.05] },
-  mixed: { conversion: [0.65, 0.75], recovery: [0.28, 0.38], achievable_score_gap: [-0.05, 0.05] },
-  pawnless: { conversion: [0.7, 0.8], recovery: [0.21, 0.31], achievable_score_gap: [-0.05, 0.05] },
+  mixed: { conversion: [0.65, 0.75], recovery: [0.28, 0.38], achievable_score_gap: [-0.03, 0.04] },
+  pawnless: { conversion: [0.7, 0.8], recovery: [0.21, 0.31], achievable_score_gap: [-0.04, 0.04] },
 } as const;
 
 export type EndgameClassKey = keyof typeof PER_CLASS_GAUGE_ZONES;
