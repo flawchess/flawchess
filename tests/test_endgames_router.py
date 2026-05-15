@@ -282,16 +282,16 @@ class TestOverviewScoreGapMaterial:
         assert len(sgm["material_rows"]) == 3
         buckets = [row["bucket"] for row in sgm["material_rows"]]
         assert buckets == ["conversion", "parity", "recovery"]
-        # Phase 60: each row carries opponent baseline fields
+        # Phase 87.2 (D-05): opponent_score and opponent_games deleted from MaterialRow.
+        # Verify the per-bucket ΔES Score Gap fields exist on the response instead.
         for row in sgm["material_rows"]:
-            assert "opponent_score" in row
-            assert "opponent_games" in row
-            assert isinstance(row["opponent_games"], int)
-            assert row["opponent_games"] >= 0
-            assert row["opponent_score"] is None or (
-                isinstance(row["opponent_score"], (int, float))
-                and 0.0 <= row["opponent_score"] <= 1.0
-            )
+            assert "opponent_score" not in row
+            assert "opponent_games" not in row
+        # Phase 87.2 (D-06): 20 new section2_score_gap_* fields on the response.
+        assert "section2_score_gap_conv_mean" in sgm
+        assert "section2_score_gap_parity_mean" in sgm
+        assert "section2_score_gap_recov_mean" in sgm
+        assert "section2_score_gap_skill_mean" in sgm
 
 
 class TestOverviewStartVsEndFields:
