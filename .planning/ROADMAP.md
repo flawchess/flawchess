@@ -33,7 +33,7 @@ Started as a frontend refactor of three table-driven sections on the Endgames pa
 - [ ] Phase 86: Section 2 — Endgame Metrics 4-card layout (5 plans) — planned
 - [ ] Phase 87: Section 3 — Per-type Endgame Type Breakdown cards (3 plans) — planned
 - [x] Phase 87.1: Per-span ΔES metric for endgame types (4/4 plans) — completed 2026-05-15 (verification: human_needed — 4 UAT items)
-- [ ] Phase 87.2: Section 2 — eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (TBD plans; INSERTED 2026-05-15) — planned
+- [ ] Phase 87.2: Section 2 — eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (4 plans; INSERTED 2026-05-15) — planned
 - [ ] Phase 88: Time Pressure stats rework with hypothesis tests + CIs (TBD plans; INSERTED 2026-05-14) — planned
 - [ ] Phase 89: Polish — popovers, gating decisions, automation rules, 375px parity (TBD plans) — planned
 
