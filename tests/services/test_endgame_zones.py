@@ -218,6 +218,11 @@ class TestRegistrySanity:
         achievable_score_gap, surfaced on every EndgameTypeCard "Score Gap"
         row (Plan 03) and through the LLM type_breakdown payload (Plan 04).
         Bands calibrate from benchmarks SKILL.md §3.4.2.
+
+        Phase 87.2 (SEC2-ΔES-03): `section2_score_gap_{conv,parity,recov,skill}`
+        (placeholder ±0.05 bands) added — per-bucket ΔES Score Gap metrics
+        powering the four Section 2 cards. Bands calibrate from benchmarks
+        SKILL.md §3.4.4.
         """
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
@@ -233,6 +238,10 @@ class TestRegistrySanity:
             "net_timeout_rate",
             "endgame_elo_gap",
             "win_rate",
+            "section2_score_gap_conv",
+            "section2_score_gap_parity",
+            "section2_score_gap_recov",
+            "section2_score_gap_skill",
         }
 
     def test_net_timeout_rate_uses_threshold_constant(self) -> None:
