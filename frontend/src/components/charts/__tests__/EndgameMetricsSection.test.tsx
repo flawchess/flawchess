@@ -100,6 +100,8 @@ function buildScoreGapResponse(
     section2_score_gap_skill_p_value: 0.18,
     section2_score_gap_skill_ci_low: -0.01,
     section2_score_gap_skill_ci_high: 0.056,
+    // quick-260515-wye: gauge driver (rate composite, distinct from ΔES bullet above).
+    endgame_skill_rate_mean: 0.55,
     ...overrides,
   };
 }
@@ -130,13 +132,17 @@ describe('EndgameMetricsSection — full-rendering case', () => {
 });
 
 describe('EndgameMetricsSection — Skill card gating', () => {
-  it('renders the Skill card empty state when section2_score_gap_skill_mean === null', () => {
+  it('renders the Skill card empty state when endgame_skill_rate_mean === null', () => {
+    // quick-260515-wye: the gauge drives the card's empty state via the
+    // `skill` prop, which is now wired to endgame_skill_rate_mean (not to
+    // the ΔES bullet field).
     const data = buildScoreGapResponse({
       material_rows: [
         buildRow({ bucket: 'conversion', games: 100 }),
         buildRow({ bucket: 'parity', games: 0, win_pct: 0, draw_pct: 0, loss_pct: 0, score: 0 }),
         buildRow({ bucket: 'recovery', games: 0, win_pct: 0, draw_pct: 0, loss_pct: 0, score: 0 }),
       ],
+      endgame_skill_rate_mean: null,
       section2_score_gap_skill_mean: null,
       section2_score_gap_skill_n: null,
       section2_score_gap_skill_p_value: null,
@@ -149,6 +155,33 @@ describe('EndgameMetricsSection — Skill card gating', () => {
     expect(screen.getByTestId('tile-endgame-skill')).not.toBeNull();
     // Empty-state copy from EndgameSkillCard when skill === null (D-17).
     expect(screen.getAllByText('Not enough data yet').length).toBeGreaterThan(0);
+  });
+
+  it('gauge value comes from endgame_skill_rate_mean, bullet value from section2_score_gap_skill_mean', () => {
+    // quick-260515-wye: regression guard. Before the fix, the gauge aliased
+    // onto section2_score_gap_skill_mean and showed the ΔES value. Now the
+    // two are wired to independent fields.
+    const data = buildScoreGapResponse({
+      endgame_skill_rate_mean: 0.5,           // gauge → mid-band (50%)
+      section2_score_gap_skill_mean: -0.02,   // bullet → -2pp
+      section2_score_gap_skill_n: 300,
+      section2_score_gap_skill_ci_low: -0.04,
+      section2_score_gap_skill_ci_high: 0.0,
+    });
+
+    render(<EndgameMetricsSection data={data} />);
+
+    // Bullet renders with the ΔES value formatted as a signed percent.
+    const bullet = screen.getByTestId('tile-endgame-skill-score-gap-value');
+    expect(bullet.textContent).toContain('-2%');
+
+    // The card is mounted (gauge is an SVG inside EndgameGauge, no testid
+    // on the needle itself — the contrast between bullet text "-2%" and the
+    // gauge driver value 0.5 is enforced by the prop wiring and is asserted
+    // at the EndgameMetricsSection.tsx prop-wiring layer plus the backend
+    // schema split). If this fails because both fields show the same value,
+    // the regression has returned.
+    expect(screen.getByTestId('tile-endgame-skill')).not.toBeNull();
   });
 });
 

@@ -112,6 +112,13 @@ export function EndgameSkillCard({
               giving you a stable target you can chase as you improve.
             </p>
             <p>
+              The <strong>Skill Score Gap</strong> bullet below shows the same
+              three-bucket composite measured a different way: how your scores
+              compare to the Stockfish baseline for each entry-eval bucket.
+              The gauge tracks absolute performance; the bullet tracks
+              performance vs expectation.
+            </p>
+            <p>
               The <strong>Endgame ELO timeline</strong> below uses the same
               Endgame Skill to adjust your rating by your per-week endgame
               performance.

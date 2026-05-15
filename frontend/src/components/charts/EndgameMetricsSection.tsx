@@ -169,7 +169,7 @@ export function EndgameMetricsSection({ data }: { data: ScoreGapMaterialResponse
             lg:mt-8 matches the spacing above "Endgame Score Differences". */}
         <div className="lg:col-start-2 lg:mt-8">
           <EndgameSkillCard
-            skill={data.section2_score_gap_skill_mean}
+            skill={data.endgame_skill_rate_mean}
             totalGames={totalMaterialGames}
             scoreGapMean={data.section2_score_gap_skill_mean}
             scoreGapN={data.section2_score_gap_skill_n}

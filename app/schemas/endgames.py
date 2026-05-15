@@ -425,6 +425,16 @@ class ScoreGapMaterialResponse(BaseModel):
     section2_score_gap_skill_ci_low: float | None = None
     section2_score_gap_skill_ci_high: float | None = None
 
+    # quick-260515-wye: rate-based Endgame Skill composite for the gauge.
+    # Equal-weighted mean of (Conv chess-score, Parity chess-score, Recov
+    # chess-score) over active buckets (bucket_games >= CONFIDENCE_MIN_N).
+    # Distinct from section2_score_gap_skill_mean (the ΔES bullet value above);
+    # the gauge plots the absolute rate composite while the bullet plots the
+    # eval-baseline delta. Phase 87.2 D-05 dropped the old `skill` field
+    # alongside the peer-diff family — this field restores the gauge driver.
+    # None when zero buckets clear the floor.
+    endgame_skill_rate_mean: float | None = None
+
 
 class ClockStatsRow(BaseModel):
     """One row in the Clock Stats table — one per time control (Phase 54).

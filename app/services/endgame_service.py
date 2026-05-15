@@ -1248,6 +1248,21 @@ def _compute_score_gap_material(
 
     skill_mean, skill_n, skill_p, skill_ci_lo, skill_ci_hi = _compute_skill_score_gap(per_bucket)
 
+    # quick-260515-wye: rate-based Endgame Skill composite for the gauge.
+    # Equal-weighted mean of chess-scores over active buckets (n >= floor).
+    # Restores the gauge driver dropped by Phase 87.2 D-05; the ΔES skill
+    # mean above drives the bullet, not the gauge.
+    active_rate_buckets: list[MaterialBucket] = [
+        b
+        for b in ("conversion", "parity", "recovery")
+        if bucket_games[b] >= CONFIDENCE_MIN_N
+    ]
+    endgame_skill_rate_mean: float | None = (
+        sum(bucket_score[b] for b in active_rate_buckets) / len(active_rate_buckets)
+        if active_rate_buckets
+        else None
+    )
+
     return ScoreGapMaterialResponse(
         endgame_score=endgame_score,
         non_endgame_score=non_endgame_score,
@@ -1279,6 +1294,7 @@ def _compute_score_gap_material(
         section2_score_gap_skill_p_value=skill_p,
         section2_score_gap_skill_ci_low=skill_ci_lo,
         section2_score_gap_skill_ci_high=skill_ci_hi,
+        endgame_skill_rate_mean=endgame_skill_rate_mean,
     )
 
 

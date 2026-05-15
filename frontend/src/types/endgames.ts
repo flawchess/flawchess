@@ -209,6 +209,13 @@ export interface ScoreGapMaterialResponse {
   section2_score_gap_skill_p_value: number | null;
   section2_score_gap_skill_ci_low: number | null;
   section2_score_gap_skill_ci_high: number | null;
+
+  // quick-260515-wye: rate-based Endgame Skill composite for the gauge.
+  // Equal-weighted mean of (conv, parity, recov) chess-scores over buckets
+  // with games >= CONFIDENCE_MIN_N. Distinct from section2_score_gap_skill_mean
+  // (the ΔES bullet). The gauge plots this absolute rate composite; the
+  // bullet plots the eval-baseline delta.
+  endgame_skill_rate_mean: number | null;
 }
 
 export interface ClockStatsRow {

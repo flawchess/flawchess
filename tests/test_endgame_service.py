@@ -5468,3 +5468,96 @@ class TestPhase872PerBucketDeltaES:
         assert result.section2_score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
         assert result.section2_score_gap_conv_mean is not None
         assert result.section2_score_gap_conv_mean > 0  # sign check
+
+
+class TestEndgameSkillRateMean(TestScoreGapMaterial):
+    """quick-260515-wye: rate-based Endgame Skill composite for the gauge.
+
+    Equal-weighted mean of (conv, parity, recov) chess-scores over buckets
+    with games >= CONFIDENCE_MIN_N. Distinct from section2_score_gap_skill_mean
+    (the ΔES bullet) — the gauge plots this absolute rate composite, the
+    bullet plots the eval-baseline delta. They must populate to different
+    numbers from the same input.
+    """
+
+    def _row(self, game_id: int, result: str, eval_cp: int) -> _FakeRow:
+        return _FakeRow(game_id, 1, result, "white", eval_cp, None)
+
+    def test_three_active_buckets_returns_equal_weighted_mean(self) -> None:
+        # 10 conv wins (score 1.0), 10 parity draws (score 0.5),
+        # 10 recov losses (score 0.0) → composite = (1.0 + 0.5 + 0.0) / 3 = 0.5.
+        rows: list[_FakeRow] = []
+        for i in range(10):
+            rows.append(self._row(i + 1, "1-0", 200))   # conversion / win
+        for i in range(10):
+            rows.append(self._row(i + 11, "1/2-1/2", 0))  # parity / draw
+        for i in range(10):
+            rows.append(self._row(i + 21, "0-1", -200))   # recovery / loss
+        endgame_wdl = self._make_wdl(10, 10, 10)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows)
+        assert result.endgame_skill_rate_mean == pytest.approx(0.5, abs=1e-9)
+
+    def test_two_active_buckets_drops_sparse_bucket(self) -> None:
+        # 10 conv wins, 10 parity draws, 0 recov games → denominator = 2,
+        # composite = (1.0 + 0.5) / 2 = 0.75. The recov bucket below the
+        # CONFIDENCE_MIN_N floor is dropped from the average.
+        rows: list[_FakeRow] = []
+        for i in range(10):
+            rows.append(self._row(i + 1, "1-0", 200))
+        for i in range(10):
+            rows.append(self._row(i + 11, "1/2-1/2", 0))
+        endgame_wdl = self._make_wdl(10, 10, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows)
+        assert result.endgame_skill_rate_mean == pytest.approx(0.75, abs=1e-9)
+
+    def test_all_buckets_below_floor_returns_none(self) -> None:
+        # 5 games in each bucket — all below CONFIDENCE_MIN_N (=10). None.
+        rows: list[_FakeRow] = []
+        for i in range(5):
+            rows.append(self._row(i + 1, "1-0", 200))
+        for i in range(5):
+            rows.append(self._row(i + 6, "1/2-1/2", 0))
+        for i in range(5):
+            rows.append(self._row(i + 11, "0-1", -200))
+        endgame_wdl = self._make_wdl(5, 5, 5)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows)
+        assert result.endgame_skill_rate_mean is None
+
+    def test_empty_rows_returns_none(self) -> None:
+        endgame_wdl = self._make_wdl(0, 0, 0)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.endgame_skill_rate_mean is None
+
+    def test_distinct_from_section2_score_gap_skill_mean(self) -> None:
+        """Regression guard: the gauge value and the bullet value must come
+        from independent computations. Same fixture, different numbers.
+
+        Setup: 10 conv wins (rate 1.0) + 10 parity draws (rate 0.5) +
+        10 recov losses (rate 0.0); ΔES gaps zero everywhere.
+        endgame_skill_rate_mean = 0.5 (rate composite).
+        section2_score_gap_skill_mean = 0.0 (ΔES composite).
+        """
+        rows: list[_FakeRow] = []
+        for i in range(10):
+            rows.append(self._row(i + 1, "1-0", 200))
+        for i in range(10):
+            rows.append(self._row(i + 11, "1/2-1/2", 0))
+        for i in range(10):
+            rows.append(self._row(i + 21, "0-1", -200))
+        endgame_wdl = self._make_wdl(10, 10, 10)
+        non_endgame_wdl = self._make_wdl(0, 0, 0)
+        gaps_by_bucket = {
+            "conversion": [0.0] * 10,
+            "parity": [0.0] * 10,
+            "recovery": [0.0] * 10,
+        }
+        result = _compute_score_gap_material(
+            endgame_wdl, non_endgame_wdl, rows, gaps_by_bucket=gaps_by_bucket
+        )
+        assert result.endgame_skill_rate_mean == pytest.approx(0.5, abs=1e-9)
+        assert result.section2_score_gap_skill_mean == pytest.approx(0.0, abs=1e-9)
+        assert result.endgame_skill_rate_mean != result.section2_score_gap_skill_mean
