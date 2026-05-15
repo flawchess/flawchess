@@ -553,12 +553,11 @@ export function EndgamesPage() {
                     continuous spans of at least 3 full moves (6 half-moves) spent in a single Endgame Type.
                   </p>
                   <p>
-                    <strong>Conversion</strong>: your win rate in this
-                    Endgame Type when you entered the Endgame Sequence with a Stockfish evaluation
-                    of +1.0 or better. <br/>
+                    <strong>Conversion</strong>: your win rate in games where you entered an Endgame Sequence of this
+                    Endgame Type with a Stockfish evaluation of +1.0 or better. <br/>
                     <strong>Recovery</strong>: your save
-                    rate (wins + draws) when you entered the Endgame Sequence with a Stockfish
-                    evaluation of −1.0 or worse.
+                    rate (wins + draws) in games where you entered an Endgame Sequence of this
+                    Endgame Type Stockfish evaluation of −1.0 or worse.
                   </p>
                   {/* Gauge bands explainer: lifted from EndgameConvRecovChart.tsx:45-49. */}
                   <p>
