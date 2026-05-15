@@ -352,7 +352,11 @@ describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
       }),
     );
     const valueSpan = screen.getByTestId(`${TILE_TESTID}-asg-value`);
-    expect(valueSpan.style.color.toLowerCase()).toBe(ZONE_SUCCESS.toLowerCase());
+    // jsdom normalizes oklch() numeric literals (e.g. 0.50 -> 0.5). Normalize
+    // both sides by collapsing trailing zeros in decimal fractions before compare.
+    const normalize = (s: string): string =>
+      s.toLowerCase().replace(/(\d+\.\d*?)0+(?=\D|$)/g, '$1').replace(/(\d+)\.(?=\D)/g, '$1');
+    expect(normalize(valueSpan.style.color)).toBe(normalize(ZONE_SUCCESS));
     expect(valueSpan.textContent).toBe('+8%');
   });
 
@@ -365,7 +369,9 @@ describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
       }),
     );
     const valueSpan = screen.getByTestId(`${TILE_TESTID}-asg-value`);
-    expect(valueSpan.style.color.toLowerCase()).toBe(ZONE_DANGER.toLowerCase());
+    const normalize = (s: string): string =>
+      s.toLowerCase().replace(/(\d+\.\d*?)0+(?=\D|$)/g, '$1').replace(/(\d+)\.(?=\D)/g, '$1');
+    expect(normalize(valueSpan.style.color)).toBe(normalize(ZONE_DANGER));
     expect(valueSpan.textContent).toBe('-9%');
   });
 
