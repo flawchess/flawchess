@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: executing
-last_updated: "2026-05-14T20:00:00.000Z"
-last_activity: 2026-05-14 -- Phase 87 shipped to main (direct push, no PR — origin/main already contained the phase commits at ship time)
+last_updated: "2026-05-15T11:37:07.654Z"
+last_activity: 2026-05-15 -- Phase 87.1 execution started
 progress:
   total_phases: 0
   completed_phases: 0
@@ -16,10 +16,10 @@ progress:
 
 ## Current Position
 
-Phase: 87 (Section 3 — Per-type Endgame Type Breakdown Cards) — SHIPPED
-Plan: 3 of 3 (complete)
-Status: Phase 87 shipped to main. HUMAN-UAT items (real-device 375px density check + popover/URL hydration visual confirmation) deferred per `87-HUMAN-UAT.md`.
-Last activity: 2026-05-14 -- Phase 87 shipped to main (direct push, no PR — origin/main already contained the phase commits at ship time; feature branch and origin/main were identical, GitHub compare returned `status: identical, ahead_by: 0`). Feature branch `gsd/phase-87-section-3-per-type-endgame-type-breakdown-cards` deleted local + remote.
+Phase: 87.1 (Per-span ΔES metric for endgame types) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 87.1
+Last activity: 2026-05-15 -- Phase 87.1 execution started
 Prior: Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
