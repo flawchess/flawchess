@@ -44,11 +44,11 @@ import { deriveLevel } from './EndgameOverallShared';
 // No em-dashes per CLAUDE.md style guide.
 const POPOVER_COPY: Record<MaterialBucket, string> = {
   conversion:
-    'Average per-span Score Gap on endgame spans you entered ahead by >= 1 pawn. Positive = you converted advantages above the Stockfish baseline; negative = you bled away expected score on winning entries. Positive = above the Stockfish baseline; negative = below. Note: the Lichess expected-score sigmoid under-weights endgame eval; rely on the zone bands, not the raw magnitude.',
+    'Average per-span Score Gap on endgame spans you entered ahead by >= 1 pawn. Positive = you converted advantages above the Stockfish baseline; negative = you bled away expected score on winning entries. Positive = above the Stockfish baseline; negative = below.',
   parity:
-    'Average per-span Score Gap on endgame spans you entered roughly balanced (eval within +/-1 pawn). Positive = you outperformed the baseline from balanced; negative = you underperformed. Positive = above the Stockfish baseline; negative = below. Note: the Lichess expected-score sigmoid under-weights endgame eval; rely on the zone bands, not the raw magnitude.',
+    'Average per-span Score Gap on endgame spans you entered roughly balanced (eval within +/-1 pawn). Positive = you outperformed the baseline from balanced; negative = you underperformed. Positive = above the Stockfish baseline; negative = below.',
   recovery:
-    'Average per-span Score Gap on endgame spans you entered behind by >= 1 pawn. Positive = you salvaged disadvantages above the Stockfish baseline; negative = the position deteriorated further than expected. Positive = above the Stockfish baseline; negative = below. Note: the Lichess expected-score sigmoid under-weights endgame eval; rely on the zone bands, not the raw magnitude.',
+    'Average per-span Score Gap on endgame spans you entered behind by >= 1 pawn. Positive = you salvaged disadvantages above the Stockfish baseline; negative = the position deteriorated further than expected. Positive = above the Stockfish baseline; negative = below.',
 };
 
 interface EndgameMetricCardProps {

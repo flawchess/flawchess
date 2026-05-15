@@ -38,7 +38,7 @@ import { deriveLevel } from './EndgameOverallShared';
 // No "vs opponents" framing (D-08 rule: Stockfish-baseline anchor).
 // No em-dashes per CLAUDE.md style guide.
 const SKILL_POPOVER_COPY =
-  'Equal-weighted average of the three per-bucket Score Gaps above (Conversion + Parity + Recovery, each contributing equally). One-number summary of overall endgame performance vs Stockfish expectations, independent of which entry-eval bucket your endgames cluster in. Positive = above the Stockfish baseline; negative = below. Note: the Lichess expected-score sigmoid under-weights endgame eval; rely on the zone bands, not the raw magnitude.';
+  'Equal-weighted average of the three per-bucket Score Gaps above (Conversion + Parity + Recovery, each contributing equally). One-number summary of overall endgame performance vs Stockfish expectations, independent of which entry-eval bucket your endgames cluster in. Positive = above the Stockfish baseline; negative = below.';
 
 interface EndgameSkillCardProps {
   /** Composite skill rate (mean of active per-bucket rates). Null when fewer
