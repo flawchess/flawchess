@@ -31,6 +31,7 @@ from app.services.endgame_service import (
     _compute_rolling_series,
     _compute_score_gap_material,
     _compute_score_gap_timeline,
+    _compute_span_gap,
     _compute_time_pressure_chart,
     _compute_weekly_rolling_series,
     _endgame_elo_from_skill,
@@ -535,6 +536,371 @@ class TestPerClassScorePValue:
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.total == 5
         assert rook.score_p_value is None
+
+
+class TestComputeSpanGap:
+    """Phase 87.1 (SEED-016 D-07): per-span gap helper unit tests.
+
+    Verifies the math contract:
+      gap_span = exit_score - ES_sigmoid(entry_eval, user_color)
+    Positive = user outperformed Stockfish baseline.
+    """
+
+    def test_null_entry_eval_returns_none(self):
+        """Both entry eval fields NULL → span excluded from cohort (D-07)."""
+        gap = _compute_span_gap(
+            entry_eval_cp=None,
+            entry_eval_mate=None,
+            next_entry_eval_cp=50,
+            next_entry_eval_mate=None,
+            result="1-0",
+            user_color="white",
+        )
+        assert gap is None
+
+    def test_pure_transitory_span_white(self):
+        """Transitory span: exit = ES_sigmoid(next_entry_eval). Hand-computed reference."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        entry_cp = 0  # ES_entry ~ 0.5 white perspective
+        next_cp = 400  # large white advantage
+        es_entry = eval_cp_to_expected_score(entry_cp, "white")
+        exit_score = eval_cp_to_expected_score(next_cp, "white")
+        expected_gap = exit_score - es_entry  # ~ +0.4 (positive — outperformed)
+
+        gap = _compute_span_gap(
+            entry_eval_cp=entry_cp,
+            entry_eval_mate=None,
+            next_entry_eval_cp=next_cp,
+            next_entry_eval_mate=None,
+            result="1-0",
+            user_color="white",
+        )
+        assert gap is not None
+        assert gap == pytest.approx(expected_gap, abs=1e-9)
+        # Sign convention: positive = outperformed.
+        assert gap > 0
+
+    def test_pure_terminal_span_win(self):
+        """Terminal span (both next-evals NULL): exit_score = game-result score (1.0 for win)."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        entry_cp = 0
+        es_entry = eval_cp_to_expected_score(entry_cp, "white")
+        # Terminal win → exit_score = 1.0, gap = 1.0 - 0.5 ≈ +0.5.
+        gap = _compute_span_gap(
+            entry_eval_cp=entry_cp,
+            entry_eval_mate=None,
+            next_entry_eval_cp=None,
+            next_entry_eval_mate=None,
+            result="1-0",
+            user_color="white",
+        )
+        assert gap is not None
+        assert gap == pytest.approx(1.0 - es_entry, abs=1e-9)
+
+    def test_pure_terminal_span_draw(self):
+        """Terminal draw → exit_score = 0.5 regardless of user_color."""
+        gap = _compute_span_gap(
+            entry_eval_cp=0,
+            entry_eval_mate=None,
+            next_entry_eval_cp=None,
+            next_entry_eval_mate=None,
+            result="1/2-1/2",
+            user_color="black",
+        )
+        assert gap is not None
+        # ES_entry at cp=0 from black perspective is 0.5 — gap ≈ 0.
+        assert gap == pytest.approx(0.0, abs=1e-9)
+
+    def test_pure_terminal_span_loss(self):
+        """Terminal loss → exit_score = 0.0, gap = -ES_entry (negative — gave back score)."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        entry_cp = 300  # white user up
+        es_entry = eval_cp_to_expected_score(entry_cp, "white")  # ~ 0.75
+        gap = _compute_span_gap(
+            entry_eval_cp=entry_cp,
+            entry_eval_mate=None,
+            next_entry_eval_cp=None,
+            next_entry_eval_mate=None,
+            result="0-1",  # white lost
+            user_color="white",
+        )
+        assert gap is not None
+        # Expected gap = 0.0 - es_entry (negative).
+        assert gap == pytest.approx(-es_entry, abs=1e-9)
+        assert gap < 0  # underperformed
+
+    def test_mate_at_entry_uses_mate_helper(self):
+        """entry_eval_mate non-NULL → uses eval_mate_to_expected_score (saturates to 1.0/0.0)."""
+        # White has forced mate → ES_entry = 1.0 (saturated). Terminal win → exit = 1.0.
+        # Gap = 0.0 (already winning, converted as expected).
+        gap = _compute_span_gap(
+            entry_eval_cp=None,
+            entry_eval_mate=5,  # mate in 5, positive = white wins
+            next_entry_eval_cp=None,
+            next_entry_eval_mate=None,
+            result="1-0",
+            user_color="white",
+        )
+        assert gap is not None
+        assert gap == pytest.approx(0.0, abs=1e-9)
+
+    def test_mate_at_next_entry_uses_mate_helper(self):
+        """Transitory span where next-span eval is mate → uses eval_mate_to_expected_score."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        entry_cp = 0  # parity at entry
+        es_entry = eval_cp_to_expected_score(entry_cp, "white")
+        # Transitory: next eval is mate for white → exit = 1.0.
+        gap = _compute_span_gap(
+            entry_eval_cp=entry_cp,
+            entry_eval_mate=None,
+            next_entry_eval_cp=None,
+            next_entry_eval_mate=3,  # mate in 3 for white
+            result="1-0",
+            user_color="white",
+        )
+        assert gap is not None
+        assert gap == pytest.approx(1.0 - es_entry, abs=1e-9)
+        assert gap > 0
+
+    def test_mate_takes_precedence_over_cp_at_entry(self):
+        """When entry_eval_mate is non-None, it is used even if entry_eval_cp is also set."""
+        # Mate-in-2 for white (saturates ES_entry to 1.0) even if cp=50 would say ~0.55.
+        # Terminal win → exit=1.0 → gap=0.
+        gap = _compute_span_gap(
+            entry_eval_cp=50,
+            entry_eval_mate=2,
+            next_entry_eval_cp=None,
+            next_entry_eval_mate=None,
+            result="1-0",
+            user_color="white",
+        )
+        assert gap is not None
+        assert gap == pytest.approx(0.0, abs=1e-9)
+
+    def test_sign_convention_positive_equals_outperformed(self):
+        """Anchor test: ES_entry ≈ 0.4 (slight disadvantage), exit ≈ 0.7 → gap ≈ +0.3 NOT −0.3."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        # cp values picked so ES_entry < 0.5 < exit_score from white perspective.
+        entry_cp = -110  # white slightly worse
+        next_cp = 230  # white better at next span entry
+        es_entry = eval_cp_to_expected_score(entry_cp, "white")
+        exit_score = eval_cp_to_expected_score(next_cp, "white")
+        assert es_entry < 0.5
+        assert exit_score > 0.5
+
+        gap = _compute_span_gap(
+            entry_eval_cp=entry_cp,
+            entry_eval_mate=None,
+            next_entry_eval_cp=next_cp,
+            next_entry_eval_mate=None,
+            result="1-0",
+            user_color="white",
+        )
+        assert gap is not None
+        # Positive — user outperformed. The plan's acceptance criterion: a
+        # synthetic span where ES_entry ~ 0.4 and exit ~ 0.7 yields gap ~ +0.3.
+        assert gap > 0
+        assert gap == pytest.approx(exit_score - es_entry, abs=1e-9)
+
+
+class TestAggregateEndgameStatsTypeScoreGap:
+    """Phase 87.1 (SEED-016 D-05): integration coverage on the per-class gap fields.
+
+    Builds 8-tuple rows (full prod shape) and asserts the 5 new
+    type_achievable_score_gap_* fields are populated according to the helper's
+    n-gates and the math contract.
+    """
+
+    @staticmethod
+    def _gap_row(
+        game_id: int,
+        endgame_class_int: int,
+        result: str,
+        user_color: str,
+        eval_cp: int | None,
+        eval_mate: int | None,
+        next_entry_eval_cp: int | None = None,
+        next_entry_eval_mate: int | None = None,
+    ) -> tuple[Any, ...]:
+        """Build an 8-tuple row matching the post-Phase-87.1 repo shape."""
+        return (
+            game_id,
+            endgame_class_int,
+            result,
+            user_color,
+            eval_cp,
+            eval_mate,
+            next_entry_eval_cp,
+            next_entry_eval_mate,
+        )
+
+    def test_legacy_6_tuple_rows_still_aggregate(self):
+        """6-tuple legacy test fixtures continue to aggregate WDL — gap fields gracefully
+        report n=0 / mean=None (no next-span data so all spans look terminal, no NULL-eval).
+
+        Regression guard: confirms the loop-body branch absorbing 6-tuples.
+        """
+        rows = [
+            (1, 1, "1-0", "white", 0, None),  # rook, parity entry
+            (2, 1, "0-1", "white", 0, None),
+        ]
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        # Aggregation still works.
+        assert rook.total == 2
+        # Gap fields are populated (terminal-span path: exit_score from game
+        # result, ES_entry from cp=0 ≈ 0.5).
+        assert rook.type_achievable_score_gap_n == 2
+        assert rook.type_achievable_score_gap_mean is not None
+        # n < CONFIDENCE_MIN_N=10 → p-value gated to None.
+        assert rook.type_achievable_score_gap_p_value is None
+        # n >= 2 → CI populated.
+        assert rook.type_achievable_score_gap_ci_low is not None
+        assert rook.type_achievable_score_gap_ci_high is not None
+
+    def test_all_five_fields_present_on_category(self):
+        """The 5 new fields are populated on EndgameCategoryStats per class."""
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 0, None, next_entry_eval_cp=400),
+        ]
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert hasattr(rook, "type_achievable_score_gap_mean")
+        assert hasattr(rook, "type_achievable_score_gap_n")
+        assert hasattr(rook, "type_achievable_score_gap_p_value")
+        assert hasattr(rook, "type_achievable_score_gap_ci_low")
+        assert hasattr(rook, "type_achievable_score_gap_ci_high")
+        # n=1 → mean populated, p/CI all None.
+        assert rook.type_achievable_score_gap_n == 1
+        assert rook.type_achievable_score_gap_mean is not None
+        assert rook.type_achievable_score_gap_p_value is None
+        assert rook.type_achievable_score_gap_ci_low is None
+        assert rook.type_achievable_score_gap_ci_high is None
+
+    def test_n_zero_when_all_spans_have_null_eval(self):
+        """All spans have NULL entry eval → n_gap = 0; mean/p/CI all None."""
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", None, None, next_entry_eval_cp=100),
+            self._gap_row(2, 1, "0-1", "white", None, None),
+        ]
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.total == 2  # WDL still counts
+        assert rook.type_achievable_score_gap_n == 0
+        assert rook.type_achievable_score_gap_mean is None
+        assert rook.type_achievable_score_gap_p_value is None
+        assert rook.type_achievable_score_gap_ci_low is None
+        assert rook.type_achievable_score_gap_ci_high is None
+
+    def test_null_eval_spans_excluded_but_others_counted(self):
+        """Mixed cohort: 2 spans with NULL entry eval, 3 with real eval → n_gap == 3."""
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 0, None),  # terminal, real eval
+            self._gap_row(2, 1, "1/2-1/2", "white", 100, None),  # terminal, real eval
+            self._gap_row(3, 1, "0-1", "white", -50, None),  # terminal, real eval
+            self._gap_row(4, 1, "1-0", "white", None, None),  # NULL eval — excluded
+            self._gap_row(5, 1, "0-1", "white", None, None),  # NULL eval — excluded
+        ]
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.total == 5  # WDL counts all 5
+        assert rook.type_achievable_score_gap_n == 3  # only non-NULL-eval spans
+
+    def test_p_value_gated_below_n_ten(self):
+        """n < CONFIDENCE_MIN_N=10 → p_value is None even though mean and CI are populated."""
+        rows = [self._gap_row(i + 1, 1, "1-0", "white", 0, None) for i in range(5)]
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.type_achievable_score_gap_n == 5
+        assert rook.type_achievable_score_gap_mean is not None
+        # Sub-gate cohort: p_value None, but CI populated (n >= 2).
+        assert rook.type_achievable_score_gap_p_value is None
+        assert rook.type_achievable_score_gap_ci_low is not None
+        assert rook.type_achievable_score_gap_ci_high is not None
+
+    def test_p_value_populated_at_n_ten(self):
+        """n >= CONFIDENCE_MIN_N=10 → p_value populated; CI populated; mean populated."""
+        # 10 spans of mixed outcomes for varied gap values (non-zero variance so se != 0).
+        rows = []
+        for i in range(5):
+            rows.append(self._gap_row(i + 1, 1, "1-0", "white", 50 + 10 * i, None))
+        for i in range(5):
+            rows.append(self._gap_row(i + 6, 1, "0-1", "white", -50 - 10 * i, None))
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.type_achievable_score_gap_n == 10
+        assert rook.type_achievable_score_gap_mean is not None
+        assert rook.type_achievable_score_gap_p_value is not None
+        assert rook.type_achievable_score_gap_ci_low is not None
+        assert rook.type_achievable_score_gap_ci_high is not None
+
+    def test_hand_computed_reference_matches_to_1e_minus_6(self):
+        """3-game fixture: mean of per-span gaps matches hand-computed reference."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        # Game 1, rook span only: terminal, entry cp=100, result=win.
+        # gap1 = 1.0 - ES(100, white)
+        # Game 2, rook span only: terminal, entry cp=-200, result=draw.
+        # gap2 = 0.5 - ES(-200, white)
+        # Game 3, rook span only: transitory followed by terminal next-span eval=300.
+        # gap3 = ES(300, white) - ES(0, white)
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),
+            self._gap_row(2, 1, "1/2-1/2", "white", -200, None),
+            self._gap_row(
+                3, 1, "1-0", "white", 0, None, next_entry_eval_cp=300
+            ),
+        ]
+        expected_gaps = [
+            1.0 - eval_cp_to_expected_score(100, "white"),
+            0.5 - eval_cp_to_expected_score(-200, "white"),
+            eval_cp_to_expected_score(300, "white") - eval_cp_to_expected_score(0, "white"),
+        ]
+        expected_mean = sum(expected_gaps) / 3
+
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.type_achievable_score_gap_n == 3
+        assert rook.type_achievable_score_gap_mean is not None
+        assert rook.type_achievable_score_gap_mean == pytest.approx(expected_mean, abs=1e-6)
+
+    def test_per_class_independent_accumulation(self):
+        """Two classes accumulate gap vectors independently."""
+        rows = [
+            # Rook: 2 spans, one transitory + one terminal-win.
+            self._gap_row(1, 1, "1-0", "white", 0, None, next_entry_eval_cp=200),
+            self._gap_row(2, 1, "1-0", "white", 50, None),
+            # Queen: 1 span, terminal-loss.
+            self._gap_row(3, 4, "0-1", "white", 100, None),
+        ]
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        queen = next(c for c in result if c.endgame_class == "queen")
+        assert rook.type_achievable_score_gap_n == 2
+        assert queen.type_achievable_score_gap_n == 1
+        # Queen lost from white-up position → gap is negative (gave back score).
+        assert queen.type_achievable_score_gap_mean is not None
+        assert queen.type_achievable_score_gap_mean < 0
+
+    def test_mate_at_endpoint_handled_via_helper(self):
+        """Mate at next-span entry uses the mate helper (saturates to 1.0)."""
+        # Terminal mate-in-N at next-span entry → exit_score = 1.0 (saturated).
+        rows = [
+            self._gap_row(
+                1, 1, "1-0", "white", 0, None, next_entry_eval_cp=None, next_entry_eval_mate=4
+            ),
+        ]
+        result = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.type_achievable_score_gap_n == 1
+        assert rook.type_achievable_score_gap_mean is not None
+        # ES_entry at cp=0 ≈ 0.5; exit_score (mate for white) = 1.0; gap ≈ +0.5.
+        assert rook.type_achievable_score_gap_mean == pytest.approx(0.5, abs=1e-9)
 
 
 class TestGetEndgameStatsSmoke:

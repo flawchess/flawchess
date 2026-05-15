@@ -83,6 +83,26 @@ class EndgameCategoryStats(BaseModel):
     # isConfident(level) AND outside neutral band) in EndgameTypeCard.
     score_p_value: float | None = None
 
+    # Phase 87.1 (SEED-016, D-05): per-span mean Score Gap for this endgame type.
+    # gap_span = exit_score - ES_sigmoid(entry_eval, user_color); positive = user
+    # outperformed the Stockfish baseline across spans of this type. Populated via
+    # compute_paired_difference_test in app/services/score_confidence.py (same
+    # helper Phase 85.1 uses for the page-level Achievable Score Gap).
+    # User-facing label is "Score Gap" (card row) / "Endgame Type Score Gap"
+    # (concepts). Internal name retains "achievable" to mark the math-family with
+    # achievable_score_gap (Phase 85.1) — see Phase 87.1 CONTEXT D-02 for the
+    # dual-label rationale. n-gates follow compute_paired_difference_test:
+    #   n == 0       -> mean = 0.0 (None here), p/CI all None
+    #   n == 1       -> mean populated, p/CI all None
+    #   n >= 2       -> ci_low/ci_high populated
+    #   n >= CONFIDENCE_MIN_N (=10) -> p_value populated
+    # Defaults are None for backward compat with existing constructor call sites.
+    type_achievable_score_gap_mean: float | None = None
+    type_achievable_score_gap_n: int | None = None
+    type_achievable_score_gap_p_value: float | None = None
+    type_achievable_score_gap_ci_low: float | None = None
+    type_achievable_score_gap_ci_high: float | None = None
+
 
 class EndgameStatsResponse(BaseModel):
     """Response for GET /api/endgames/stats.

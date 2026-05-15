@@ -245,6 +245,93 @@ def _classify_endgame_bucket(
 # mute threshold used elsewhere (e.g. Opening Explorer moves list).
 _MIN_OPPONENT_SAMPLE = 10
 
+
+# Phase 87.1 (SEED-016 D-07): map game result + user_color to a chess score for
+# terminal-span exit_score. Named constant per CLAUDE.md "no magic numbers";
+# keyed on the outcome returned by derive_user_result (Literal["win","draw","loss"])
+# so the dict is exhaustive against the type system.
+_GAME_RESULT_TO_SCORE: dict[Literal["win", "draw", "loss"], float] = {
+    "win": 1.0,
+    "draw": 0.5,
+    "loss": 0.0,
+}
+
+
+def _compute_span_gap(
+    entry_eval_cp: int | None,
+    entry_eval_mate: int | None,
+    next_entry_eval_cp: int | None,
+    next_entry_eval_mate: int | None,
+    result: str,
+    user_color: str,
+) -> float | None:
+    """Return per-span gap `exit_score - ES_entry`, or None if entry eval unavailable.
+
+    Phase 87.1 (SEED-016 D-07). Sign convention: positive = user outperformed
+    the Stockfish baseline (recovered eval, decisive conversions); negative =
+    user gave back expected score. Matches the page-level Achievable Score Gap
+    direction (`higher_is_better`) so the per-type ScoreGapRow reads identically
+    to the page-level row on the same visual axis.
+
+    Args:
+        entry_eval_cp:       white-perspective cp at the span's first ply.
+        entry_eval_mate:     white-perspective mate-in-N at the span's first ply.
+        next_entry_eval_cp:  the NEXT span's first-ply cp (from LEAD()); NULL
+                             marks a terminal span.
+        next_entry_eval_mate: the NEXT span's first-ply mate-in-N; NULL for
+                             terminal spans.
+        result:              raw Game.result string ("1-0" / "0-1" / "1/2-1/2").
+        user_color:          "white" | "black".
+
+    Returns:
+        gap_span = exit_score - ES_entry, computed as:
+          - ES_entry  = lichess sigmoid over (eval_cp, eval_mate, user_color).
+          - exit_score:
+            * Transitory span (next_entry_eval_cp OR next_entry_eval_mate
+              non-NULL): ES_sigmoid(next_entry_eval, user_color).
+            * Terminal span (both next_entry_eval_* NULL): game-result score
+              via _GAME_RESULT_TO_SCORE[derive_user_result(result, user_color)].
+        Returns None when both entry_eval_cp and entry_eval_mate are NULL —
+        the span is excluded from the per-class cohort (D-07: skip NULL-eval).
+
+    Mate handling reuses eval_mate_to_expected_score (mate-in-N saturates to
+    0.0 / 1.0 from the user's perspective). No new sigmoid math.
+    """
+    # D-07: skip spans where the entry eval is unknown. The eval-backfill
+    # coverage on >=6-ply spans is effectively 100% in prod, so this is a
+    # theoretical edge case — but the gate is total and safe.
+    if entry_eval_cp is None and entry_eval_mate is None:
+        return None
+
+    # Entry expected score. Mate takes precedence over cp (a forced mate is a
+    # terminal evaluation that the sigmoid would mis-compress to a finite value).
+    if entry_eval_mate is not None:
+        es_entry = eval_mate_to_expected_score(entry_eval_mate, user_color)  # ty: ignore[invalid-argument-type]
+    else:
+        # entry_eval_cp is non-None here (the early-return above guards the
+        # both-NULL case).
+        es_entry = eval_cp_to_expected_score(
+            entry_eval_cp,  # ty: ignore[invalid-argument-type]
+            user_color,  # ty: ignore[invalid-argument-type]
+        )
+
+    # Exit score: transitory if any next-span eval is populated, else terminal.
+    is_transitory = next_entry_eval_cp is not None or next_entry_eval_mate is not None
+    if is_transitory:
+        if next_entry_eval_mate is not None:
+            exit_score = eval_mate_to_expected_score(next_entry_eval_mate, user_color)  # ty: ignore[invalid-argument-type]
+        else:
+            exit_score = eval_cp_to_expected_score(
+                next_entry_eval_cp,  # ty: ignore[invalid-argument-type]
+                user_color,  # ty: ignore[invalid-argument-type]
+            )
+    else:
+        # Terminal span: use the game-result score from the user's perspective.
+        outcome = derive_user_result(result, user_color)
+        exit_score = _GAME_RESULT_TO_SCORE[outcome]
+
+    return exit_score - es_entry
+
 # Rolling window size for the score-difference timeline chart (quick-260417-o2l).
 # Mirrors the 100-game window used by the clock-diff timeline.
 SCORE_GAP_TIMELINE_WINDOW = 100
@@ -282,15 +369,47 @@ def _aggregate_endgame_stats(
     recov: dict[EndgameClass, dict[str, int]] = defaultdict(
         lambda: {"games": 0, "wins": 0, "draws": 0}
     )
+    # Phase 87.1 (SEED-016 D-07): per-class per-span gap accumulator.
+    # gap_span = exit_score - ES_entry; positive = outperformed Stockfish baseline.
+    # compute_paired_difference_test (from score_confidence.py, same helper as
+    # Phase 85.1 SEC1-10 for the page-level Achievable Score Gap) is invoked
+    # below in the per-class builder loop.
+    gaps_by_class: dict[EndgameClass, list[float]] = defaultdict(list)
 
-    for (
-        _game_id,
-        endgame_class_int,
-        result,
-        user_color,
-        eval_cp,
-        eval_mate,
-    ) in rows:
+    for row in rows:
+        # Phase 87.1: rows are 8-column SA Rows in prod (Phase 87.1 repo
+        # extension) and 6-tuple test fixtures in legacy unit tests. Tuples
+        # are padded with NULL next-eval; Rows expose the same columns by
+        # attribute. Positional unpacking absorbs both shapes through the
+        # branch below.
+        if isinstance(row, tuple):
+            if len(row) == 6:
+                _game_id, endgame_class_int, result, user_color, eval_cp, eval_mate = row
+                next_entry_eval_cp: int | None = None
+                next_entry_eval_mate: int | None = None
+            else:
+                # 8-tuple: full new row shape, also valid via positional unpack.
+                (
+                    _game_id,
+                    endgame_class_int,
+                    result,
+                    user_color,
+                    eval_cp,
+                    eval_mate,
+                    next_entry_eval_cp,
+                    next_entry_eval_mate,
+                ) = row
+        else:
+            # SA Row object — attribute access. The repository labels the LEAD
+            # columns next_entry_eval_cp / next_entry_eval_mate.
+            _game_id = row.game_id
+            endgame_class_int = row.endgame_class
+            result = row.result
+            user_color = row.user_color
+            eval_cp = row.eval_cp
+            eval_mate = row.eval_mate
+            next_entry_eval_cp = row.next_entry_eval_cp
+            next_entry_eval_mate = row.next_entry_eval_mate
         endgame_class = _INT_TO_CLASS.get(endgame_class_int)
         if endgame_class is None:
             # Unexpected class integer from DB — surface to Sentry and skip the
@@ -331,6 +450,23 @@ def _aggregate_endgame_stats(
                 recov[endgame_class]["wins"] += 1
             elif outcome == "draw":
                 recov[endgame_class]["draws"] += 1
+
+        # Phase 87.1 (SEED-016 D-03/D-05/D-07): accumulate per-span gap for the
+        # paired one-sample z-test against H0: mean = 0. compute_paired_difference_test
+        # from app/services/score_confidence.py is the same helper Phase 85.1
+        # SEC1-10 uses for the page-level Achievable Score Gap. Sign convention:
+        # gap = exit_score - ES_entry, positive = user outperformed Stockfish.
+        # NULL-eval spans return None and are excluded from the cohort (D-07).
+        gap = _compute_span_gap(
+            entry_eval_cp=eval_cp,
+            entry_eval_mate=eval_mate,
+            next_entry_eval_cp=next_entry_eval_cp,
+            next_entry_eval_mate=next_entry_eval_mate,
+            result=result,
+            user_color=user_color,
+        )
+        if gap is not None:
+            gaps_by_class[endgame_class].append(gap)
 
     # Build EndgameCategoryStats objects
     categories: list[EndgameCategoryStats] = []
@@ -420,6 +556,27 @@ def _aggregate_endgame_stats(
             p_score_class_raw if total >= PVALUE_RELIABILITY_MIN_N else None
         )
 
+        # Phase 87.1 (SEED-016 D-03/D-05/D-07): per-class mean per-span gap with
+        # paired one-sample z-test via compute_paired_difference_test. n-gates
+        # are owned by the helper:
+        #   n == 0 -> (0.0, None, None, None) — surface mean as None for wire.
+        #   n == 1 -> (mean, None, None, None) — p/CI gated.
+        #   n >= 2 -> ci_low/ci_high populated.
+        #   n >= CONFIDENCE_MIN_N (=10) -> p_value populated.
+        # Sign: exit_score - ES_entry (positive = outperformed Stockfish baseline).
+        type_gaps = gaps_by_class[endgame_class]
+        type_gap_n = len(type_gaps)
+        (
+            type_gap_mean_raw,
+            type_gap_p,
+            type_gap_ci_low,
+            type_gap_ci_high,
+        ) = compute_paired_difference_test(type_gaps)
+        # When n == 0 compute_paired_difference_test returns mean=0.0. Surface
+        # None on the wire so the frontend hides the row (D-08 n==0 gate),
+        # matching how the cohort-empty case reads.
+        type_gap_mean: float | None = type_gap_mean_raw if type_gap_n > 0 else None
+
         categories.append(
             EndgameCategoryStats(
                 endgame_class=endgame_class,
@@ -433,6 +590,13 @@ def _aggregate_endgame_stats(
                 loss_pct=loss_pct,
                 conversion=conversion_stats,
                 score_p_value=score_p_value,
+                # Phase 87.1 (SEED-016 D-05): per-class Score Gap fields. See
+                # _compute_span_gap + compute_paired_difference_test above.
+                type_achievable_score_gap_mean=type_gap_mean,
+                type_achievable_score_gap_n=type_gap_n,
+                type_achievable_score_gap_p_value=type_gap_p,
+                type_achievable_score_gap_ci_low=type_gap_ci_low,
+                type_achievable_score_gap_ci_high=type_gap_ci_high,
             )
         )
 
