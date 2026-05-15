@@ -15,6 +15,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 
 import type {
+  EndgameWDLSummary,
   MaterialRow,
   ScoreGapMaterialResponse,
 } from '@/types/endgames';
@@ -47,6 +48,18 @@ afterEach(() => {
 });
 
 import { EndgameMetricsSection } from '../EndgameMetricsSection';
+
+// Quick task 260516-1h5: the Skill card consumes a games-with-endgame WDL
+// summary; provide a default fixture so existing tests keep working.
+const DEFAULT_ENDGAME_WDL: EndgameWDLSummary = {
+  wins: 165,
+  draws: 60,
+  losses: 75,
+  total: 300,
+  win_pct: 55,
+  draw_pct: 20,
+  loss_pct: 25,
+};
 
 function buildRow(overrides?: Partial<MaterialRow>): MaterialRow {
   // Phase 87.2: opponent_score, opponent_games, diff_p_value, diff_ci_low, diff_ci_high
@@ -108,7 +121,7 @@ function buildScoreGapResponse(
 
 describe('EndgameMetricsSection — full-rendering case', () => {
   it('renders all 4 card testids with the sub-question line', () => {
-    render(<EndgameMetricsSection data={buildScoreGapResponse()} />);
+    render(<EndgameMetricsSection data={buildScoreGapResponse()} endgameWdl={DEFAULT_ENDGAME_WDL} />);
 
     expect(screen.getByTestId('endgame-metrics-section')).not.toBeNull();
     expect(screen.getByTestId('tile-conversion')).not.toBeNull();
@@ -123,7 +136,7 @@ describe('EndgameMetricsSection — full-rendering case', () => {
   });
 
   it('renders ScoreGapRow bullets in all 4 cards when scoreGapN > 0', () => {
-    render(<EndgameMetricsSection data={buildScoreGapResponse()} />);
+    render(<EndgameMetricsSection data={buildScoreGapResponse()} endgameWdl={DEFAULT_ENDGAME_WDL} />);
     expect(screen.getByTestId('tile-conversion-score-gap-bullet')).not.toBeNull();
     expect(screen.getByTestId('tile-parity-score-gap-bullet')).not.toBeNull();
     expect(screen.getByTestId('tile-recovery-score-gap-bullet')).not.toBeNull();
@@ -150,7 +163,7 @@ describe('EndgameMetricsSection — Skill card gating', () => {
       section2_score_gap_skill_ci_high: null,
     });
 
-    render(<EndgameMetricsSection data={data} />);
+    render(<EndgameMetricsSection data={data} endgameWdl={DEFAULT_ENDGAME_WDL} />);
 
     expect(screen.getByTestId('tile-endgame-skill')).not.toBeNull();
     // Empty-state copy from EndgameSkillCard when skill === null (D-17).
@@ -169,7 +182,7 @@ describe('EndgameMetricsSection — Skill card gating', () => {
       section2_score_gap_skill_ci_high: 0.0,
     });
 
-    render(<EndgameMetricsSection data={data} />);
+    render(<EndgameMetricsSection data={data} endgameWdl={DEFAULT_ENDGAME_WDL} />);
 
     // Bullet renders with the ΔES value formatted as a signed percent.
     const bullet = screen.getByTestId('tile-endgame-skill-score-gap-value');
@@ -187,7 +200,7 @@ describe('EndgameMetricsSection — Skill card gating', () => {
 
 describe('EndgameMetricsSection — card DOM ordering', () => {
   it('renders cards in DOM order: Conversion -> Parity -> Recovery -> Skill', () => {
-    render(<EndgameMetricsSection data={buildScoreGapResponse()} />);
+    render(<EndgameMetricsSection data={buildScoreGapResponse()} endgameWdl={DEFAULT_ENDGAME_WDL} />);
 
     const conv = screen.getByTestId('tile-conversion');
     const parity = screen.getByTestId('tile-parity');
