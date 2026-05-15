@@ -21,7 +21,6 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import {
   ENDGAME_SKILL_ZONES,
-  formatScorePct,
 } from '@/lib/endgameMetrics';
 // Neutral band for the Skill Delta-ES Score Gap bullet (D-02 / Plan 01).
 import {

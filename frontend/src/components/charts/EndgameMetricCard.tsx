@@ -24,7 +24,6 @@ import {
   BUCKET_DISPLAY_LABELS,
   BUCKET_DISPLAY_LABELS_WITH_METRIC,
   FIXED_GAUGE_ZONES,
-  formatScorePct,
 } from '@/lib/endgameMetrics';
 // Per-bucket neutral bands for the Section 2 Delta-ES Score Gap bullet (D-02 / Plan 01).
 import {
