@@ -13,7 +13,7 @@
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
 
-import { Swords } from 'lucide-react';
+import { Cpu, Swords } from 'lucide-react';
 
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
@@ -184,7 +184,12 @@ export function EndgameMetricCard({
             {showGapRow && (
               <div data-testid={`${tileTestId}-score-gap-bullet`}>
                 <ScoreGapRow
-                  label={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap:`}
+                  label={
+                    <span className="inline-flex items-center gap-1">
+                      <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                      {`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap:`}
+                    </span>
+                  }
                   value={gapMean ?? 0}
                   formatted={gapFormatted}
                   resultColor={gapColor}

@@ -15,6 +15,8 @@
  * Per D-08: no "vs opponents" framing. Zone-only tint (Phase 85.1 D-04 inherited).
  */
 
+import { Cpu } from 'lucide-react';
+
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -151,7 +153,12 @@ export function EndgameSkillCard({
             {showGapRow && (
               <div data-testid={`${tileTestId}-score-gap-bullet`}>
                 <ScoreGapRow
-                  label={'Skill Score Gap:'}
+                  label={
+                    <span className="inline-flex items-center gap-1">
+                      <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                      Skill Score Gap:
+                    </span>
+                  }
                   value={gapMean ?? 0}
                   formatted={gapFormatted}
                   resultColor={gapColor}
