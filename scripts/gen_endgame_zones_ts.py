@@ -11,6 +11,9 @@ stays Python-only (backend-only usage in endgame_service.py).
 Usage (local dev):
     uv run python scripts/gen_endgame_zones_ts.py
 
+Usage (drift check — exits 1 if generated output differs from the committed file):
+    uv run python scripts/gen_endgame_zones_ts.py --check
+
 Usage (CI drift check):
     uv run python scripts/gen_endgame_zones_ts.py
     git diff --exit-code frontend/src/generated/endgameZones.ts
@@ -52,6 +55,14 @@ _ENDGAME_TYPE_SCORE_GAP_SPEC = ZONE_REGISTRY["endgame_type_achievable_score_gap"
 # Phase 83 D-16: codegen the entry_expected_score helpers so Plan 3 imports them
 # from frontend/src/generated/endgameZones.ts (CI drift gate enforces parity).
 _ENTRY_XS_SPEC = ZONE_REGISTRY["entry_expected_score"]
+
+# Phase 87.2 (D-02): per-bucket Section 2 ΔES Score Gap neutral bands.
+# Each bucket gets its own ZoneSpec from ZONE_REGISTRY; placeholder ±5pp bands
+# until /benchmarks §3.4.4 Cohen's-d calibration updates them.
+_SECTION2_SCORE_GAP_CONV_SPEC = ZONE_REGISTRY["section2_score_gap_conv"]
+_SECTION2_SCORE_GAP_PARITY_SPEC = ZONE_REGISTRY["section2_score_gap_parity"]
+_SECTION2_SCORE_GAP_RECOV_SPEC = ZONE_REGISTRY["section2_score_gap_recov"]
+_SECTION2_SCORE_GAP_SKILL_SPEC = ZONE_REGISTRY["section2_score_gap_skill"]
 
 
 def _format_bucket_zones(bucket: str) -> str:
@@ -138,6 +149,15 @@ def _render() -> str:
         "// Internal registry key is `endgame_type_achievable_score_gap` for math-family grep.\n"
         f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_upper};\n"
+        "// Phase 87.2 (D-02): per-bucket Section 2 ΔES Score Gap neutral bands.\n"
+        f"export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_CONV_SPEC.typical_lower};\n"
+        f"export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_CONV_SPEC.typical_upper};\n"
+        f"export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_PARITY_SPEC.typical_lower};\n"
+        f"export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_PARITY_SPEC.typical_upper};\n"
+        f"export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_RECOV_SPEC.typical_lower};\n"
+        f"export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_RECOV_SPEC.typical_upper};\n"
+        f"export const SECTION2_SCORE_GAP_SKILL_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_SKILL_SPEC.typical_lower};\n"
+        f"export const SECTION2_SCORE_GAP_SKILL_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_SKILL_SPEC.typical_upper};\n"
         "\n"
         "// Phase 83 D-14/D-17: per-user entry_expected_score cohort band.\n"
         "// Source: reports/benchmarks-2026-05-11.md §7 (pooled IQR aligned with\n"
@@ -173,9 +193,25 @@ def _render() -> str:
 
 
 def main() -> None:
-    _OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    _OUTPUT.write_text(_render(), encoding="utf-8")
-    print(f"Wrote {_OUTPUT.relative_to(_REPO_ROOT)}")
+    check_mode = "--check" in sys.argv
+    content = _render()
+    if check_mode:
+        if not _OUTPUT.exists():
+            print(f"DRIFT: {_OUTPUT.relative_to(_REPO_ROOT)} does not exist.", file=sys.stderr)
+            sys.exit(1)
+        existing = _OUTPUT.read_text(encoding="utf-8")
+        if existing != content:
+            print(
+                f"DRIFT: {_OUTPUT.relative_to(_REPO_ROOT)} is out of date. "
+                "Run `uv run python scripts/gen_endgame_zones_ts.py` to regenerate.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"OK: {_OUTPUT.relative_to(_REPO_ROOT)} is up to date.")
+    else:
+        _OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+        _OUTPUT.write_text(content, encoding="utf-8")
+        print(f"Wrote {_OUTPUT.relative_to(_REPO_ROOT)}")
 
 
 if __name__ == "__main__":
