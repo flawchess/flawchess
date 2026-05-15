@@ -5271,3 +5271,109 @@ class TestSkillDiffTestWireFields(TestScoreGapMaterial):
         assert resp.skill_diff_p_value is None
         assert resp.skill_diff_ci_low is None
         assert resp.skill_diff_ci_high is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 87.2 (SEC2-ΔES-02): schema migration tests (Task 1 RED gate)
+# ---------------------------------------------------------------------------
+
+
+class TestPhase872SchemaFields:
+    """Phase 87.2 (SEC2-ΔES-02): 20 new section2_score_gap_* fields on
+    ScoreGapMaterialResponse; 5 deletions on MaterialRow (opponent_score,
+    opponent_games, diff_p_value, diff_ci_low, diff_ci_high); 5 deletions
+    on ScoreGapMaterialResponse (skill, opp_skill, skill_diff_p_value,
+    skill_diff_ci_low, skill_diff_ci_high).
+
+    These tests MUST pass after the schema migration in Task 1."""
+
+    def test_score_gap_material_response_has_20_new_fields_with_none_defaults(self) -> None:
+        """ScoreGapMaterialResponse(without any 87.2 kwargs) defaults all 20
+        new section2_score_gap_* fields to None (backward compat)."""
+        from app.schemas.endgames import ScoreGapMaterialResponse
+
+        resp = ScoreGapMaterialResponse(
+            endgame_score=0.0,
+            non_endgame_score=0.0,
+            score_difference=0.0,
+            material_rows=[],
+            timeline=[],
+            timeline_window=0,
+        )
+        # 4 buckets × 5 fields = 20 fields
+        for bucket in ("conv", "parity", "recov", "skill"):
+            assert getattr(resp, f"section2_score_gap_{bucket}_mean") is None
+            assert getattr(resp, f"section2_score_gap_{bucket}_n") is None
+            assert getattr(resp, f"section2_score_gap_{bucket}_p_value") is None
+            assert getattr(resp, f"section2_score_gap_{bucket}_ci_low") is None
+            assert getattr(resp, f"section2_score_gap_{bucket}_ci_high") is None
+
+    def test_score_gap_material_response_new_fields_round_trip(self) -> None:
+        """Setting section2_score_gap_conv_mean=0.05 and _conv_n=42 round-trips
+        through model_dump() and model_validate()."""
+        from app.schemas.endgames import ScoreGapMaterialResponse
+
+        resp = ScoreGapMaterialResponse(
+            endgame_score=0.6,
+            non_endgame_score=0.5,
+            score_difference=0.1,
+            material_rows=[],
+            timeline=[],
+            timeline_window=100,
+            section2_score_gap_conv_mean=0.05,
+            section2_score_gap_conv_n=42,
+            section2_score_gap_conv_p_value=0.03,
+            section2_score_gap_conv_ci_low=0.01,
+            section2_score_gap_conv_ci_high=0.09,
+        )
+        dumped = resp.model_dump()
+        assert dumped["section2_score_gap_conv_mean"] == pytest.approx(0.05)
+        assert dumped["section2_score_gap_conv_n"] == 42
+        assert dumped["section2_score_gap_conv_p_value"] == pytest.approx(0.03)
+        assert dumped["section2_score_gap_conv_ci_low"] == pytest.approx(0.01)
+        assert dumped["section2_score_gap_conv_ci_high"] == pytest.approx(0.09)
+        # Round-trip
+        resp2 = ScoreGapMaterialResponse.model_validate(dumped)
+        assert resp2.section2_score_gap_conv_mean == pytest.approx(0.05)
+        assert resp2.section2_score_gap_conv_n == 42
+
+    def test_material_row_does_not_have_opponent_score_field(self) -> None:
+        """After Phase 87.2 migration, MaterialRow no longer has opponent_score
+        or opponent_games fields. Constructing without them succeeds."""
+        from app.schemas.endgames import MaterialRow
+
+        row = MaterialRow(
+            bucket="parity",
+            label="Parity",
+            games=10,
+            win_pct=40.0,
+            draw_pct=20.0,
+            loss_pct=40.0,
+            score=0.5,
+        )
+        # The field must not exist
+        assert not hasattr(row, "opponent_score")
+        assert not hasattr(row, "opponent_games")
+        assert not hasattr(row, "diff_p_value")
+        assert not hasattr(row, "diff_ci_low")
+        assert not hasattr(row, "diff_ci_high")
+
+    def test_score_gap_material_response_does_not_have_old_skill_fields(self) -> None:
+        """After Phase 87.2 migration, ScoreGapMaterialResponse no longer has
+        skill, opp_skill, skill_diff_p_value, skill_diff_ci_low,
+        skill_diff_ci_high. They must not appear on the response."""
+        from app.schemas.endgames import ScoreGapMaterialResponse
+
+        resp = ScoreGapMaterialResponse(
+            endgame_score=0.0,
+            non_endgame_score=0.0,
+            score_difference=0.0,
+            material_rows=[],
+            timeline=[],
+            timeline_window=0,
+        )
+        assert not hasattr(resp, "skill")
+        assert not hasattr(resp, "opp_skill")
+        assert not hasattr(resp, "skill_diff_p_value")
+        assert not hasattr(resp, "skill_diff_ci_low")
+        assert not hasattr(resp, "skill_diff_ci_high")
