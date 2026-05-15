@@ -209,7 +209,7 @@ class TestAggregateEndgameStats:
 
     def test_empty_input_returns_empty(self):
         """Empty row list produces empty output list."""
-        result = _aggregate_endgame_stats([])
+        result, _ = _aggregate_endgame_stats([])
         assert result == []
 
     def test_sorted_by_total_descending(self):
@@ -223,7 +223,7 @@ class TestAggregateEndgameStats:
             (3, 3, "1-0", "white", 0, None),
             (4, 3, "0-1", "white", -100, None),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         # Pawn category has 3 games, rook has 1 — pawn should come first
         assert len(result) >= 2
         # Verify sorting is descending by total
@@ -237,7 +237,7 @@ class TestAggregateEndgameStats:
             (2, 1, "1/2-1/2", "white", 0, None),  # rook draw
             (3, 1, "0-1", "white", 0, None),  # rook loss
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.wins == 1
         assert rook.draws == 1
@@ -260,7 +260,7 @@ class TestAggregateEndgameStats:
             ),  # rook, up 100cp (threshold), draw → draw conversion
             (4, 1, "1-0", "white", -400, None),  # rook, down, won → not a conversion game
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         # 3 games with eval >= 100cp: 1 win, 1 draw, 1 loss → 33.3% conversion
         assert rook.conversion.conversion_games == 3
@@ -283,7 +283,7 @@ class TestAggregateEndgameStats:
                 None,
             ),  # rook, down 100cp (threshold), lost → not recovered
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         # 3 games with eval <= -100cp, 2 saves (win + draw) → 66.7%
         assert rook.conversion.recovery_games == 3
@@ -297,7 +297,7 @@ class TestAggregateEndgameStats:
         rows = [
             (1, 1, "1-0", "white", 100, None),  # rook, endgame_class_int=1
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         # Verify flat structure: conversion/recovery are inline properties, not nested by phase
         assert hasattr(rook, "conversion")
@@ -313,7 +313,7 @@ class TestAggregateEndgameStats:
             (2, 1, "0-1", "white", 0, None),  # rook loss
             (3, 4, "1-0", "white", 0, None),  # queen win (endgame_class_int=4)
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         queen = next(c for c in result if c.endgame_class == "queen")
         assert rook.total == 2
@@ -328,7 +328,7 @@ class TestAggregateEndgameStats:
             (1, 1, "1-0", "white", -100, None),  # rook, down, won → recovery only
             (2, 1, "0-1", "white", 0, None),  # rook, equal, lost → neither
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.conversion_games == 0
         assert rook.conversion.conversion_pct == 0.0
@@ -339,7 +339,7 @@ class TestAggregateEndgameStats:
             (1, 1, "1-0", "white", 200, None),  # rook, up, won → conversion only
             (2, 1, "0-1", "white", 0, None),  # rook, equal, lost → neither
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.recovery_games == 0
         assert rook.conversion.recovery_pct == 0.0
@@ -353,7 +353,7 @@ class TestAggregateEndgameStats:
             # Another game in rook only
             (2, 1, "0-1", "white", 0, None),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         pawn = next(c for c in result if c.endgame_class == "pawn")
         # Rook class: 2 rows (game 1 + game 2), pawn class: 1 row (game 1)
@@ -372,7 +372,7 @@ class TestAggregateEndgameStats:
             (1, 1, "1-0", "white", 50, None),
             (2, 1, "1-0", "white", 150, None),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         # Only game 2 qualifies for conversion
         assert rook.conversion.conversion_games == 1
@@ -384,7 +384,7 @@ class TestAggregateEndgameStats:
             (1, 1, "1-0", "white", None, None),
             (2, 1, "0-1", "white", None, None),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.conversion_games == 0
         assert rook.conversion.recovery_games == 0
@@ -418,7 +418,7 @@ class TestAggregateEndgameStats:
             game_id += 1
             rows.append((game_id, 1, "0-1", "white", -150, None))
 
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.conversion_games == 10
         assert rook.conversion.recovery_games == 10
@@ -440,7 +440,7 @@ class TestAggregateEndgameStats:
             game_id += 1
             rows.append((game_id, 1, "0-1", "white", -200, None))
 
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         # opponent_conversion_pct gates on recovery_games (= 9 < 10) → None.
         assert rook.conversion.opponent_conversion_pct is None
@@ -460,7 +460,7 @@ class TestAggregateEndgameStats:
             game_id += 1
             rows.append((game_id, 1, "0-1", "white", -200, None))
 
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.opponent_conversion_pct is not None
         assert rook.conversion.opponent_conversion_games == 10
@@ -476,7 +476,7 @@ class TestAggregateEndgameStats:
             (3, 1, "1/2-1/2", "white", -50, None),
         ]
         # Must not raise.
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.conversion.conversion_games == 0
         assert rook.conversion.recovery_games == 0
@@ -522,7 +522,7 @@ class TestPerClassScorePValue:
     def test_score_p_value_significant_on_strong_class(self):
         """High-skill synthetic fixture: 30W/5D/5L on rook -> score_p_value < 0.05 and not None."""
         rows = self._class_rows(1, wins=30, draws=5, losses=5)
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.total == 40
         assert rook.score_p_value is not None
@@ -532,7 +532,7 @@ class TestPerClassScorePValue:
         """total < PVALUE_RELIABILITY_MIN_N=10 -> score_p_value is None."""
         # 5 games total — well below the n=10 gate.
         rows = self._class_rows(1, wins=3, draws=1, losses=1)
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.total == 5
         assert rook.score_p_value is None
@@ -749,7 +749,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
             (1, 1, "1-0", "white", 0, None),  # rook, parity entry
             (2, 1, "0-1", "white", 0, None),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         # Aggregation still works.
         assert rook.total == 2
@@ -768,7 +768,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
         rows = [
             self._gap_row(1, 1, "1-0", "white", 0, None, next_entry_eval_cp=400),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert hasattr(rook, "type_achievable_score_gap_mean")
         assert hasattr(rook, "type_achievable_score_gap_n")
@@ -788,7 +788,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
             self._gap_row(1, 1, "1-0", "white", None, None, next_entry_eval_cp=100),
             self._gap_row(2, 1, "0-1", "white", None, None),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.total == 2  # WDL still counts
         assert rook.type_achievable_score_gap_n == 0
@@ -806,7 +806,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
             self._gap_row(4, 1, "1-0", "white", None, None),  # NULL eval — excluded
             self._gap_row(5, 1, "0-1", "white", None, None),  # NULL eval — excluded
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.total == 5  # WDL counts all 5
         assert rook.type_achievable_score_gap_n == 3  # only non-NULL-eval spans
@@ -814,7 +814,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
     def test_p_value_gated_below_n_ten(self):
         """n < CONFIDENCE_MIN_N=10 → p_value is None even though mean and CI are populated."""
         rows = [self._gap_row(i + 1, 1, "1-0", "white", 0, None) for i in range(5)]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.type_achievable_score_gap_n == 5
         assert rook.type_achievable_score_gap_mean is not None
@@ -831,7 +831,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
             rows.append(self._gap_row(i + 1, 1, "1-0", "white", 50 + 10 * i, None))
         for i in range(5):
             rows.append(self._gap_row(i + 6, 1, "0-1", "white", -50 - 10 * i, None))
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.type_achievable_score_gap_n == 10
         assert rook.type_achievable_score_gap_mean is not None
@@ -861,7 +861,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
         ]
         expected_mean = sum(expected_gaps) / 3
 
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.type_achievable_score_gap_n == 3
         assert rook.type_achievable_score_gap_mean is not None
@@ -876,7 +876,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
             # Queen: 1 span, terminal-loss.
             self._gap_row(3, 4, "0-1", "white", 100, None),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         queen = next(c for c in result if c.endgame_class == "queen")
         assert rook.type_achievable_score_gap_n == 2
@@ -893,7 +893,7 @@ class TestAggregateEndgameStatsTypeScoreGap:
                 1, 1, "1-0", "white", 0, None, next_entry_eval_cp=None, next_entry_eval_mate=4
             ),
         ]
-        result = _aggregate_endgame_stats(rows)
+        result, _ = _aggregate_endgame_stats(rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.type_achievable_score_gap_n == 1
         assert rook.type_achievable_score_gap_mean is not None
@@ -5199,13 +5199,14 @@ class TestPhase872PerBucketDeltaES:
         )
 
     def test_aggregate_endgame_stats_returns_tuple(self) -> None:
-        """Phase 87.2: _aggregate_endgame_stats now returns a tuple
-        (categories, gaps_by_bucket) rather than just a list of categories."""
+        """Phase 87.2: _aggregate_endgame_stats now returns a 2-tuple
+        (categories, gaps_by_bucket) rather than just a list of categories.
+        The returned value can be unpacked: categories, gaps_by_bucket = ..."""
         rows: list[tuple[Any, ...]] = []
-        result = _aggregate_endgame_stats(rows)
-        # Must be a 2-tuple, not a list.
-        assert isinstance(result, tuple), "Expected tuple, got list"
-        assert len(result) == 2
+        categories, gaps_by_bucket = _aggregate_endgame_stats(rows)
+        # categories is a list of EndgameCategoryStats; gaps_by_bucket is a dict.
+        assert isinstance(categories, list)
+        assert isinstance(gaps_by_bucket, dict)
 
     def test_gaps_by_bucket_partition_three_buckets(self) -> None:
         """3 spans in 3 distinct buckets → one gap value per bucket cohort.
@@ -5295,9 +5296,10 @@ class TestPhase872PerBucketDeltaES:
         # with a controlled next_entry eval so we know the gap exactly.
         # Terminal span: eval_cp=200 (Conv) white win → gap = 1.0 - ES(200cp).
         # All 15 identical → zero variance → ci_low == ci_high == mean.
-        rows = [
-            self._gap_row(i + 1, 1, "1-0", "white", 200, None) for i in range(n)
-        ]
+        # entry_rows for _compute_score_gap_material must be _FakeRow (NamedTuple)
+        # because _aggregate_bucket_counts uses .game_id attribute access.
+        # gaps_by_bucket is pre-built separately with controlled gap values.
+        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(n)]
         wdl = self._make_wdl(n, 0, 0)
         empty = self._make_wdl(0, 0, 0)
         gaps_by_bucket = {"conversion": [0.1] * n, "parity": [], "recovery": []}
@@ -5445,7 +5447,9 @@ class TestPhase872PerBucketDeltaES:
         assert result.section2_score_gap_skill_ci_low == pytest.approx(expected_ci_lo, abs=1e-6)
         assert result.section2_score_gap_skill_ci_high == pytest.approx(expected_ci_hi, abs=1e-6)
         # Symmetric CI: midpoint == mean.
-        mid = (result.section2_score_gap_skill_ci_low + result.section2_score_gap_skill_ci_high) / 2.0  # type: ignore[operator]
+        assert result.section2_score_gap_skill_ci_low is not None
+        assert result.section2_score_gap_skill_ci_high is not None
+        mid = (result.section2_score_gap_skill_ci_low + result.section2_score_gap_skill_ci_high) / 2.0
         assert mid == pytest.approx(expected_mean, abs=1e-6)
 
     def test_sign_convention_positive_means_above_stockfish(self) -> None:
@@ -5462,4 +5466,5 @@ class TestPhase872PerBucketDeltaES:
         result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
         # n=1 → mean populated, p/CI gated (per compute_paired_difference_test contract).
         assert result.section2_score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
+        assert result.section2_score_gap_conv_mean is not None
         assert result.section2_score_gap_conv_mean > 0  # sign check
