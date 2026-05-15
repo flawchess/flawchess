@@ -21,6 +21,7 @@
 import { useRef, type ReactNode } from 'react';
 
 import type {
+  EndgameWDLSummary,
   MaterialBucket,
   MaterialRow,
   ScoreGapMaterialResponse,
@@ -96,7 +97,14 @@ function buildZeroRow(bucket: MaterialBucket): MaterialRow {
   };
 }
 
-export function EndgameMetricsSection({ data }: { data: ScoreGapMaterialResponse }) {
+interface EndgameMetricsSectionProps {
+  data: ScoreGapMaterialResponse;
+  /** Games-with-Endgame WDL summary forwarded to the Skill card so it can
+   * render the same games-count + MiniWDLBar layout as the bucket cards. */
+  endgameWdl: EndgameWDLSummary;
+}
+
+export function EndgameMetricsSection({ data, endgameWdl }: EndgameMetricsSectionProps) {
   const gridRef = useRef<HTMLDivElement>(null);
 
   const totalMaterialGames = data.material_rows.reduce((sum, r) => sum + r.games, 0);
@@ -170,7 +178,7 @@ export function EndgameMetricsSection({ data }: { data: ScoreGapMaterialResponse
         <div className="lg:col-start-2 lg:mt-8">
           <EndgameSkillCard
             skill={data.endgame_skill_rate_mean}
-            totalGames={totalMaterialGames}
+            endgameWdl={endgameWdl}
             scoreGapMean={data.section2_score_gap_skill_mean}
             scoreGapN={data.section2_score_gap_skill_n}
             scoreGapPValue={data.section2_score_gap_skill_p_value}

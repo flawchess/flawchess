@@ -1,12 +1,16 @@
 /**
  * Phase 86 — Composite "Endgame Skill" card for the 4-card Endgame Metrics
- * layout. Renders gauge (using ENDGAME_SKILL_ZONES) -> games-count row ->
- * Skill Delta-ES Score Gap bullet (ScoreGapRow vs 0).
+ * layout. Renders gauge (using ENDGAME_SKILL_ZONES) -> games-count row +
+ * Games-with-Endgame MiniWDLBar -> Skill Delta-ES Score Gap bullet
+ * (ScoreGapRow vs 0).
  *
  * Skill is the equal-weighted mean of Conv + Parity + Recov Score Gaps over
  * active buckets; the backend produces section2_score_gap_skill_* per Phase
- * 87.2 D-01. No WDL bar -- the single-ply composite has no W/D/L definable
- * per SEC2-03.
+ * 87.2 D-01.
+ *
+ * Quick task 260516-1h5: Replaced the plain `Games: N` text with the same
+ * games-count + MiniWDLBar layout used by the Conv/Parity/Recov cards, driven
+ * by `perfData.endgame_wdl` (Games with Endgame).
  *
  * Phase 87.2 refactor: replaced the rate-based peer-bullet (You/Opp/Gap +
  * MiniBulletChart vs mirror-bucket opponent) with a ScoreGapRow anchored on
@@ -15,10 +19,11 @@
  * Per D-08: no "vs opponents" framing. Zone-only tint (Phase 85.1 D-04 inherited).
  */
 
-import { Cpu } from 'lucide-react';
+import { Cpu, Swords } from 'lucide-react';
 
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
+import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import {
@@ -29,6 +34,7 @@ import {
   SECTION2_SCORE_GAP_SKILL_NEUTRAL_MIN,
   SECTION2_SCORE_GAP_SKILL_NEUTRAL_MAX,
 } from '@/generated/endgameZones';
+import type { EndgameWDLSummary } from '@/types/endgames';
 
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
 import { deriveLevel } from './EndgameOverallShared';
@@ -44,8 +50,9 @@ interface EndgameSkillCardProps {
   /** Composite skill rate (mean of active per-bucket rates). Null when fewer
    * than 2 buckets are active. Used only for the gauge display. */
   skill: number | null;
-  /** Total games across all material buckets. Used for the games-count row. */
-  totalGames: number;
+  /** Games-with-Endgame WDL summary (`perfData.endgame_wdl`). Drives the
+   * games-count row and the MiniWDLBar inside the Skill card. */
+  endgameWdl: EndgameWDLSummary;
   /** Phase 87.2: 5 eval-baseline Delta-ES Score Gap fields from
    * ScoreGapMaterialResponse.section2_score_gap_skill_*. */
   scoreGapMean: number | null;
@@ -59,7 +66,7 @@ interface EndgameSkillCardProps {
 
 export function EndgameSkillCard({
   skill,
-  totalGames,
+  endgameWdl,
   scoreGapMean,
   scoreGapN,
   scoreGapPValue,
@@ -89,7 +96,8 @@ export function EndgameSkillCard({
   const gapLevel = deriveLevel(scoreGapPValue ?? null, gapN);
 
   const gaugeValue = (skill ?? 0) * 100;
-  const gamesCountFormatted = totalGames.toLocaleString();
+  const gamesCountFormatted = endgameWdl.total.toLocaleString();
+  const showWdlBlock = endgameWdl.total > 0;
 
   return (
     <div className="charcoal-texture rounded-md p-4" data-testid={tileTestId}>
@@ -140,13 +148,28 @@ export function EndgameSkillCard({
 
         {hasSkill ? (
           <>
-            {/* Games-count row */}
-            <span
-              className="text-sm text-muted-foreground tabular-nums"
-              data-testid={`${tileTestId}-games-count`}
-            >
-              Games: {gamesCountFormatted}
-            </span>
+            {/* Mirror of the games-count row in EndgameMetricCard.tsx. */}
+            {showWdlBlock && (
+              <div className="flex flex-col gap-2">
+                <span className="flex items-center gap-2 text-sm tabular-nums w-full">
+                  <span className="text-muted-foreground">Win/Draw/Loss</span>
+                  <span
+                    className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums whitespace-nowrap"
+                    data-testid={`${tileTestId}-games-count`}
+                  >
+                    <span>Games: {gamesCountFormatted}</span>
+                    <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                </span>
+                <div className="min-w-0">
+                  <MiniWDLBar
+                    win_pct={endgameWdl.win_pct}
+                    draw_pct={endgameWdl.draw_pct}
+                    loss_pct={endgameWdl.loss_pct}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Phase 87.2: Skill Delta-ES Score Gap bullet (replaces peer-bullet row).
                 Shows when gapN > 0; hidden when no span data yet. */}

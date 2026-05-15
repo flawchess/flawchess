@@ -2,10 +2,16 @@
 /**
  * Phase 87.2 Plan 03: tests for EndgameSkillCard (composite Skill variant).
  *
+ * Quick task 260516-1h5: the card now surfaces a Games-with-Endgame
+ * MiniWDLBar driven by `endgameWdl` (perfData.endgame_wdl), so the test
+ * fixtures pass an `EndgameWDLSummary` and the MiniWDLBar / games-count
+ * assertions check the new block.
+ *
  * Covers:
  * - Structural render: gauge + ScoreGapRow bullet present when
  *   skill !== null && scoreGapN > 0.
- * - No MiniWDLBar (single-ply composite, no W/D/L definable per SEC2-03).
+ * - MiniWDLBar + games-count row visible when endgameWdl.total > 0; hidden
+ *   when endgameWdl.total === 0.
  * - ScoreGapRow absent when scoreGapN === 0.
  * - Sign convention: zone-only tint (Phase 85.1 D-04 inherited).
  *   positive gapMean >= neutralMax -> ZONE_SUCCESS;
@@ -24,6 +30,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import type { EndgameWDLSummary } from '@/types/endgames';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -70,12 +77,32 @@ const DEFAULT_SKILL_GAP_PROPS = {
   scoreGapCiHigh: 0.15,
 };
 
+const DEFAULT_ENDGAME_WDL: EndgameWDLSummary = {
+  wins: 50,
+  draws: 30,
+  losses: 20,
+  total: 100,
+  win_pct: 50,
+  draw_pct: 30,
+  loss_pct: 20,
+};
+
+const EMPTY_ENDGAME_WDL: EndgameWDLSummary = {
+  wins: 0,
+  draws: 0,
+  losses: 0,
+  total: 0,
+  win_pct: 0,
+  draw_pct: 0,
+  loss_pct: 0,
+};
+
 describe('EndgameSkillCard — structural render', () => {
   it('renders container with tileTestId, gauge, and ScoreGapRow bullet', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         {...DEFAULT_SKILL_GAP_PROPS}
       />,
@@ -86,15 +113,30 @@ describe('EndgameSkillCard — structural render', () => {
     expect(screen.getByTestId('tile-endgame-skill-score-gap-info')).not.toBeNull();
   });
 
-  it('does NOT render MiniWDLBar (no W/D/L for the single-ply composite)', () => {
+  it('renders MiniWDLBar and "Games: 100" in the games-count row when endgameWdl.total > 0', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         {...DEFAULT_SKILL_GAP_PROPS}
       />,
     );
+    const gamesCount = screen.getByTestId('tile-endgame-skill-games-count');
+    expect(gamesCount.textContent).toContain('Games: 100');
+    expect(screen.getByTestId('mini-wdl-bar')).not.toBeNull();
+  });
+
+  it('hides the games-count row and MiniWDLBar when endgameWdl.total === 0', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={EMPTY_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        {...DEFAULT_SKILL_GAP_PROPS}
+      />,
+    );
+    expect(screen.queryByTestId('tile-endgame-skill-games-count')).toBeNull();
     expect(screen.queryByTestId('mini-wdl-bar')).toBeNull();
   });
 
@@ -102,7 +144,7 @@ describe('EndgameSkillCard — structural render', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         {...DEFAULT_SKILL_GAP_PROPS}
       />,
@@ -114,7 +156,7 @@ describe('EndgameSkillCard — structural render', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         {...DEFAULT_SKILL_GAP_PROPS}
       />,
@@ -128,7 +170,7 @@ describe('EndgameSkillCard — structural render', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         scoreGapMean={null}
         scoreGapN={0}
@@ -145,7 +187,7 @@ describe('EndgameSkillCard — structural render', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         scoreGapMean={0.05}   // exactly +5%
         scoreGapN={100}
@@ -164,7 +206,7 @@ describe('EndgameSkillCard — sign convention (zone-only tint, no sig-gate)', (
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         scoreGapMean={0.10}   // above SECTION2_SCORE_GAP_SKILL_NEUTRAL_MAX (0.05)
         scoreGapN={300}
@@ -181,7 +223,7 @@ describe('EndgameSkillCard — sign convention (zone-only tint, no sig-gate)', (
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         scoreGapMean={-0.10}  // below SECTION2_SCORE_GAP_SKILL_NEUTRAL_MIN (-0.05)
         scoreGapN={300}
@@ -198,7 +240,7 @@ describe('EndgameSkillCard — sign convention (zone-only tint, no sig-gate)', (
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         scoreGapMean={0.02}   // inside [-0.05, 0.05] neutral band
         scoreGapN={300}
@@ -217,7 +259,7 @@ describe('EndgameSkillCard — popover content (D-07 / D-08)', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         {...DEFAULT_SKILL_GAP_PROPS}
       />,
@@ -230,7 +272,7 @@ describe('EndgameSkillCard — popover content (D-07 / D-08)', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         {...DEFAULT_SKILL_GAP_PROPS}
       />,
@@ -246,7 +288,7 @@ describe('EndgameSkillCard — CI whisker props', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         scoreGapMean={0.10}
         scoreGapN={300}
@@ -262,7 +304,7 @@ describe('EndgameSkillCard — CI whisker props', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        totalGames={300}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         scoreGapMean={0.10}
         scoreGapN={1}
@@ -281,7 +323,7 @@ describe('EndgameSkillCard — empty state', () => {
     render(
       <EndgameSkillCard
         skill={null}
-        totalGames={0}
+        endgameWdl={EMPTY_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
         scoreGapMean={null}
         scoreGapN={0}

@@ -484,12 +484,12 @@ export function EndgamesPage() {
                 </div>
               )}
               <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
-              {scoreGapData && (
+              {scoreGapData && perfData && (
                 <>
                   <h2 className="text-lg font-semibold text-foreground mt-2">
                     Endgame Metrics and ELO
                   </h2>
-                  <EndgameMetricsSection data={scoreGapData} />
+                  <EndgameMetricsSection data={scoreGapData} endgameWdl={perfData.endgame_wdl} />
                   <div
                     className="charcoal-texture rounded-md p-4"
                     data-testid="endgame-elo-timeline-section"
