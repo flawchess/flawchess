@@ -1924,13 +1924,18 @@ class TestScoreGapMaterialInvariant(TestScoreGapMaterial):
 
 
 class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
-    """Phase 60: opponent baseline via same-game symmetry.
+    """Phase 60 opponent-baseline tests deleted in Phase 87.2 (D-05).
 
-    Per CONTEXT decision #1, opponent_score on a user-perspective row is
-    `1 - user_score[swap_bucket]` where swap = {conversion: recovery,
-    even: even, recovery: conversion}. Below the 10-game threshold on the
-    swap bucket, opponent_score is None but opponent_games still reports
-    the actual swap-bucket count.
+    The mirror-bucket rate-diff peer-bullet (opponent_score, opponent_games,
+    diff_p_value, diff_ci_low, diff_ci_high on MaterialRow) was removed because
+    the Wald-z test was mathematically degenerate: Conv-Gap == Recov-Gap by
+    symmetry, and Parity-Gap is an affine transformation of the gauge.
+    Replaced by the eval-baseline Delta-ES Score Gap family on
+    ScoreGapMaterialResponse (section2_score_gap_* — Phase 87.2 D-06).
+
+    Retained as a class to avoid renumbering downstream test IDs; its bucket-
+    classification + score logic is preserved in TestScoreGapMaterial and
+    TestScoreGapMaterialInvariant.
     """
 
     @staticmethod
@@ -1943,24 +1948,17 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
         # eval_cp <= -100 -> recovery
         return _FakeRow(game_id, 1, result, "white", -150, None)
 
-    @staticmethod
-    def _even_row(game_id: int, result: str) -> _FakeRow:
-        return _FakeRow(game_id, 1, result, "white", 0, None)
-
-    def test_opponent_baseline_symmetric_60_40(self):
-        """User Conv 60% over 100 games and User Recov 40% over 100 games:
-        Conv row's opponent_score == 1 - 0.40 = 0.60 (mirror of Recov),
-        Recov row's opponent_score == 1 - 0.60 = 0.40 (mirror of Conv)."""
-        # Conversion: 100 games, score 0.60 -> 60 wins, 0 draws, 40 losses
+    def test_material_row_scores_still_correct_after_field_deletion(self) -> None:
+        """Sanity check: bucket scores + WDL counts still correct after the
+        deletion of the 5 opponent/diff fields (Phase 87.2 D-05)."""
         conv_rows = [self._conversion_row(i, "1-0") for i in range(60)] + [
             self._conversion_row(i + 60, "0-1") for i in range(40)
         ]
-        # Recovery: 100 games, score 0.40 -> 40 wins, 0 draws, 60 losses
         rec_rows = [self._recovery_row(i + 100, "1-0") for i in range(40)] + [
             self._recovery_row(i + 140, "0-1") for i in range(60)
         ]
         entry_rows = conv_rows + rec_rows
-        endgame_wdl = self._make_wdl(100, 0, 100)  # 60+40 wins, 40+60 losses
+        endgame_wdl = self._make_wdl(100, 0, 100)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
         conv = result.material_rows[0]
@@ -1968,84 +1966,13 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
         assert conv.bucket == "conversion"
         assert conv.games == 100
         assert conv.score == pytest.approx(0.60, abs=1e-9)
-        assert conv.opponent_score == pytest.approx(0.60, abs=1e-9)  # 1 - rec.score (1 - 0.40)
-        assert conv.opponent_games == 100
         assert rec.bucket == "recovery"
         assert rec.games == 100
         assert rec.score == pytest.approx(0.40, abs=1e-9)
-        assert rec.opponent_score == pytest.approx(0.40, abs=1e-9)  # 1 - conv.score (1 - 0.60)
-        assert rec.opponent_games == 100
-
-    def test_opponent_baseline_empty_swap_bucket(self):
-        """User Conversion has games, user Recovery has zero -> Conversion
-        row's opponent_score is None, opponent_games == 0."""
-        entry_rows = [self._conversion_row(1, "1-0")]
-        endgame_wdl = self._make_wdl(1, 0, 0)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        conv = result.material_rows[0]
-        assert conv.games == 1
-        assert conv.opponent_score is None
-        assert conv.opponent_games == 0
-
-    def test_opponent_baseline_below_threshold_9_games(self):
-        """Swap bucket has 9 games (< 10) -> opponent_score is None,
-        opponent_games == 9."""
-        conv_rows = [self._conversion_row(1, "1-0")]
-        # 9 recovery games -> swap bucket count for Conversion row is 9
-        rec_rows = [self._recovery_row(i + 2, "0-1") for i in range(9)]
-        entry_rows = conv_rows + rec_rows
-        endgame_wdl = self._make_wdl(1, 0, 9)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        conv = result.material_rows[0]
-        assert conv.opponent_score is None
-        assert conv.opponent_games == 9
-
-    def test_opponent_baseline_at_threshold_10_games(self):
-        """Swap bucket has exactly 10 games (>= 10) -> opponent_score is
-        computed (non-None), opponent_games == 10."""
-        conv_rows = [self._conversion_row(1, "1-0")]
-        rec_rows = [self._recovery_row(i + 2, "0-1") for i in range(10)]
-        entry_rows = conv_rows + rec_rows
-        endgame_wdl = self._make_wdl(1, 0, 10)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        conv = result.material_rows[0]
-        assert conv.opponent_score is not None
-        assert conv.opponent_score == pytest.approx(
-            1.0 - 0.0, abs=1e-9
-        )  # rec score is 0.0 (10 losses)
-        assert conv.opponent_games == 10
-
-    def test_opponent_baseline_even_self_mirror(self):
-        """Even bucket mirrors itself: opponent_score == 1 - even.score
-        with opponent_games == even.games. Threshold still applies."""
-        # 10 even games, 50% score
-        entry_rows = [self._even_row(i, "1-0") for i in range(5)] + [
-            self._even_row(i + 5, "0-1") for i in range(5)
-        ]
-        endgame_wdl = self._make_wdl(5, 0, 5)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        even = result.material_rows[1]
-        assert even.bucket == "parity"
-        assert even.games == 10
-        assert even.score == pytest.approx(0.5, abs=1e-9)
-        assert even.opponent_score == pytest.approx(0.5, abs=1e-9)
-        assert even.opponent_games == 10
-
-    def test_opponent_baseline_even_below_threshold(self):
-        """Even bucket with < 10 games -> opponent_score is None even though
-        it mirrors itself."""
-        entry_rows = [self._even_row(1, "1-0")]
-        endgame_wdl = self._make_wdl(1, 0, 0)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-        even = result.material_rows[1]
-        assert even.games == 1
-        assert even.opponent_score is None
-        assert even.opponent_games == 1
+        # Deleted fields must not exist on the row
+        assert not hasattr(conv, "opponent_score")
+        assert not hasattr(conv, "opponent_games")
+        assert not hasattr(conv, "diff_p_value")
 
 
 # ---------------------------------------------------------------------------
@@ -5028,10 +4955,10 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
         assert resp.score_difference_ci_low is None
         assert resp.score_difference_ci_high is None
 
-    def test_score_gap_material_response_defaults_for_phase86_skill_fields(self) -> None:
-        """Phase 86 (SEC2-03 / SEC2-08 / D-01..D-02): ScoreGapMaterialResponse
-        carries the 5 new Skill peer-bullet sig-test fields, all None by default
-        so existing fixtures that construct the response without them keep working."""
+    def test_score_gap_material_response_defaults_for_phase872_score_gap_fields(self) -> None:
+        """Phase 87.2 (SEC2-ΔES-02 / D-06): ScoreGapMaterialResponse carries 20 new
+        section2_score_gap_* fields (4 buckets x 5 fields), all None by default.
+        The deleted Phase 86 fields (skill, opp_skill, skill_diff_*) are gone."""
         from app.schemas.endgames import ScoreGapMaterialResponse
 
         resp = ScoreGapMaterialResponse(
@@ -5042,16 +4969,22 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
             timeline=[],
             timeline_window=0,
         )
-        assert resp.skill is None
-        assert resp.opp_skill is None
-        assert resp.skill_diff_p_value is None
-        assert resp.skill_diff_ci_low is None
-        assert resp.skill_diff_ci_high is None
+        # New fields all default to None
+        for bucket in ("conv", "parity", "recov", "skill"):
+            assert getattr(resp, f"section2_score_gap_{bucket}_mean") is None
+            assert getattr(resp, f"section2_score_gap_{bucket}_n") is None
+            assert getattr(resp, f"section2_score_gap_{bucket}_p_value") is None
+            assert getattr(resp, f"section2_score_gap_{bucket}_ci_low") is None
+            assert getattr(resp, f"section2_score_gap_{bucket}_ci_high") is None
+        # Deleted Phase 86 fields must not exist
+        assert not hasattr(resp, "skill")
+        assert not hasattr(resp, "opp_skill")
+        assert not hasattr(resp, "skill_diff_p_value")
 
-    def test_material_row_defaults_for_phase86_diff_fields(self) -> None:
-        """Phase 86 (SEC2-06 / D-06): MaterialRow carries the 3 new per-bucket
-        diff fields, all None by default (matches Phase 85.1 score_difference_*
-        additive pattern)."""
+    def test_material_row_construction_without_deleted_fields(self) -> None:
+        """Phase 87.2 (D-05): MaterialRow no longer has opponent_score,
+        opponent_games, diff_p_value, diff_ci_low, diff_ci_high.
+        Constructing without those kwargs succeeds."""
         from app.schemas.endgames import MaterialRow
 
         row = MaterialRow(
@@ -5062,215 +4995,48 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
             draw_pct=0.0,
             loss_pct=0.0,
             score=0.0,
-            opponent_score=None,
-            opponent_games=0,
         )
-        assert row.diff_p_value is None
-        assert row.diff_ci_low is None
-        assert row.diff_ci_high is None
+        # Deleted fields must not exist
+        assert not hasattr(row, "opponent_score")
+        assert not hasattr(row, "opponent_games")
+        assert not hasattr(row, "diff_p_value")
+        assert not hasattr(row, "diff_ci_low")
+        assert not hasattr(row, "diff_ci_high")
 
 
 class TestSkillDiffTestWireFields(TestScoreGapMaterial):
-    """Phase 86 Plan 02 Task 3 — end-to-end coverage of the 5 Skill + 3 per-MaterialRow
-    diff fields wired through `_compute_score_gap_material` via the Plan 01 helpers
-    (compute_skill_diff_test, compute_per_bucket_diff_test).
+    """Phase 86 Plan 02 Task 3 tests replaced in Phase 87.2 (D-05).
 
-    Reuses _make_wdl from TestScoreGapMaterial. Synthetic `entry_rows` build the
-    bucket accumulators directly; the test focuses on the new wire fields, not on
-    bucket classification (already covered by TestScoreGapMaterial).
+    The 5 Skill + 3 per-MaterialRow rate-diff fields (compute_skill_diff_test,
+    compute_per_bucket_diff_test) were deleted as part of the mirror-bucket
+    plumbing retirement. The per-bucket Delta-ES Score Gap wiring tests live in
+    TestPhase872PerBucketMath (Task 2) instead.
+
+    Class retained to avoid renumbering downstream test IDs.
     """
 
-    def _conv_row(self, game_id: int) -> _FakeRow:
-        """White-user conversion-bucket win (eval_cp=+200)."""
-        return _FakeRow(game_id, 1, "1-0", "white", 200, None)
-
-    def _conv_loss_row(self, game_id: int) -> _FakeRow:
-        """White-user conversion-bucket loss (eval_cp=+200, but lost anyway)."""
-        return _FakeRow(game_id, 1, "0-1", "white", 200, None)
-
-    def _parity_row(self, game_id: int) -> _FakeRow:
-        """White-user parity-bucket draw (eval_cp=0)."""
-        return _FakeRow(game_id, 1, "1/2-1/2", "white", 0, None)
-
-    def _parity_win_row(self, game_id: int) -> _FakeRow:
-        """White-user parity-bucket win (eval_cp=0, won anyway)."""
-        return _FakeRow(game_id, 1, "1-0", "white", 0, None)
-
-    def _recov_row(self, game_id: int) -> _FakeRow:
-        """White-user recovery-bucket loss (eval_cp=-200, expected loss)."""
-        return _FakeRow(game_id, 1, "0-1", "white", -200, None)
-
-    def _recov_save_row(self, game_id: int) -> _FakeRow:
-        """White-user recovery-bucket draw (eval_cp=-200, saved)."""
-        return _FakeRow(game_id, 1, "1/2-1/2", "white", -200, None)
-
-    def test_score_gap_material_carries_skill_and_per_bucket_diff_fields(self) -> None:
-        """Fully-populated fixture (3 active buckets, opp_N >= 10 everywhere) — all
-        5 Skill fields + 3 per-row diff fields are present and in valid ranges."""
-        # 30 conversion games: 20 wins, 10 losses -> win_rate = 0.667
-        # 30 parity games:     15 wins, 15 draws  -> chess-score (W + 0.5D)/N
-        # 30 recovery games:   5 wins, 10 draws, 15 losses -> save_rate = 0.5
+    def test_material_rows_have_no_diff_fields_after_phase872(self) -> None:
+        """Sanity check: _compute_score_gap_material returns MaterialRows without
+        the deleted diff_p_value / diff_ci_low / diff_ci_high fields (Phase 87.2 D-05)."""
         gid = 0
         entry_rows: list[_FakeRow] = []
-        for _ in range(20):
-            gid += 1
-            entry_rows.append(self._conv_row(gid))
-        for _ in range(10):
-            gid += 1
-            entry_rows.append(self._conv_loss_row(gid))
-        for _ in range(15):
-            gid += 1
-            entry_rows.append(self._parity_win_row(gid))
-        for _ in range(15):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "1/2-1/2", "white", 0, None))
-        for _ in range(5):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "1-0", "white", -200, None))
-        for _ in range(10):
-            gid += 1
-            entry_rows.append(self._recov_save_row(gid))
-        for _ in range(15):
-            gid += 1
-            entry_rows.append(self._recov_row(gid))
+        for i in range(30):
+            entry_rows.append(_FakeRow(i + 1, 1, "1-0", "white", 200, None))
+        for i in range(30):
+            entry_rows.append(_FakeRow(i + 31, 1, "1/2-1/2", "white", 0, None))
+        for i in range(30):
+            entry_rows.append(_FakeRow(i + 61, 1, "0-1", "white", -200, None))
 
-        # WDL must reflect totals: 25 wins (20 conv + 15 parity + 5 recov-as-win was 5? wait recheck) ...
-        # Just compute from entry_rows:
-        # conv:    20W / 0D / 10L (W=20, D=0, L=10)
-        # parity:  15W / 15D / 0L  (W=15, D=15, L=0)
-        # recovery: 5W / 10D / 15L (W=5, D=10, L=15)
-        # Total: 40W / 25D / 25L over 90 games.
-        endgame_wdl = self._make_wdl(40, 25, 25)
+        endgame_wdl = self._make_wdl(30, 30, 30)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
-
         resp = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
 
-        # Skill scalars present and bounded [0, 1]
-        assert resp.skill is not None
-        assert isinstance(resp.skill, float)
-        assert 0.0 <= resp.skill <= 1.0
-        assert resp.opp_skill is not None
-        assert isinstance(resp.opp_skill, float)
-        assert 0.0 <= resp.opp_skill <= 1.0
-
-        # Sig fields present (all 3 buckets active, all opp_N == 30 >= 10)
-        assert resp.skill_diff_p_value is not None
-        assert isinstance(resp.skill_diff_p_value, float)
-        assert 0.0 <= resp.skill_diff_p_value <= 1.0
-        assert resp.skill_diff_ci_low is not None
-        assert resp.skill_diff_ci_high is not None
-        assert isinstance(resp.skill_diff_ci_low, float)
-        assert isinstance(resp.skill_diff_ci_high, float)
-        diff = resp.skill - resp.opp_skill
-        assert resp.skill_diff_ci_low <= diff <= resp.skill_diff_ci_high
-
-        # Per-row diff fields present on every MaterialRow
         for row in resp.material_rows:
-            assert row.diff_p_value is not None, f"bucket={row.bucket}"
-            assert isinstance(row.diff_p_value, float)
-            assert 0.0 <= row.diff_p_value <= 1.0
-            assert row.diff_ci_low is not None
-            assert row.diff_ci_high is not None
-            assert isinstance(row.diff_ci_low, float)
-            assert isinstance(row.diff_ci_high, float)
-
-    def test_score_gap_material_skill_gated_below_two_active_buckets(self) -> None:
-        """Only parity bucket has games (parity self-mirror). n_active=1 < 2 →
-        skill_diff_p_value gated to None; skill scalars still returned (n_active >= 1)."""
-        # 20 parity-only games: mix of wins / draws / losses.
-        gid = 0
-        entry_rows: list[_FakeRow] = []
-        for _ in range(10):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "1-0", "white", 0, None))
-        for _ in range(5):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "1/2-1/2", "white", 0, None))
-        for _ in range(5):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "0-1", "white", 0, None))
-
-        endgame_wdl = self._make_wdl(10, 5, 5)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-
-        resp = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-
-        # Skill scalars present (parity-self-mirror means n_active = 1)
-        assert resp.skill is not None
-        assert resp.opp_skill is not None
-        # Sig fields gated (n_active < 2)
-        assert resp.skill_diff_p_value is None
-        assert resp.skill_diff_ci_low is None
-        assert resp.skill_diff_ci_high is None
-
-        # Per-row check: conversion + recovery rows have games == 0 →
-        # compute_per_bucket_diff_test early-returns (user_row.N <= 0) → None.
-        # parity row has user_N=20, opp_row=parity (self), opp_N=20 ≥ 10 → fields present.
-        rows_by_bucket = {row.bucket: row for row in resp.material_rows}
-        assert rows_by_bucket["conversion"].diff_p_value is None
-        assert rows_by_bucket["recovery"].diff_p_value is None
-        assert rows_by_bucket["parity"].diff_p_value is not None
-        assert isinstance(rows_by_bucket["parity"].diff_p_value, float)
-
-    def test_score_gap_material_skill_gated_below_opponent_baseline(self) -> None:
-        """All 3 buckets active on user side but conv has only 8 games (< 10).
-        Per swap dict:
-          - Conv row: opp_row = recov (80) ≥ 10 → user N=8 is fine, opp gate passes → fields PRESENT.
-          - Recov row: opp_row = conv (8) < 10 → fields gated to None (strict opp gate, D-05).
-          - Parity row: opp_row = parity (80) ≥ 10 → fields present.
-        Skill helper: any active opp component has N < 10 (recov bucket's opp_row is conv N=8) →
-        skill_diff_p_value gated to None. Skill scalars still present (all 3 active)."""
-        gid = 0
-        entry_rows: list[_FakeRow] = []
-        # 8 conversion games — all wins
-        for _ in range(8):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "1-0", "white", 200, None))
-        # 80 parity games — 40W/20D/20L
-        for _ in range(40):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "1-0", "white", 0, None))
-        for _ in range(20):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "1/2-1/2", "white", 0, None))
-        for _ in range(20):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "0-1", "white", 0, None))
-        # 80 recovery games — 20W/20D/40L
-        for _ in range(20):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "1-0", "white", -200, None))
-        for _ in range(20):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "1/2-1/2", "white", -200, None))
-        for _ in range(40):
-            gid += 1
-            entry_rows.append(_FakeRow(gid, 1, "0-1", "white", -200, None))
-
-        # Totals: 8+40+20 = 68 wins; 20+20 = 40 draws; 20+40 = 60 losses
-        endgame_wdl = self._make_wdl(68, 40, 60)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-
-        resp = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, entry_rows)
-
-        rows_by_bucket = {row.bucket: row for row in resp.material_rows}
-        # Asymmetric strict-opp-gate behavior (D-05): conv row passes because its
-        # opp_row (= recov, N=80) is well-sampled, even though user-side N=8 < 10.
-        assert rows_by_bucket["conversion"].diff_p_value is not None
-        # Recov row: opp_row = conv (N=8) < 10 → gated to None.
-        assert rows_by_bucket["recovery"].diff_p_value is None
-        assert rows_by_bucket["recovery"].diff_ci_low is None
-        assert rows_by_bucket["recovery"].diff_ci_high is None
-        # Parity row: self-mirror, opp_N=80 → present.
-        assert rows_by_bucket["parity"].diff_p_value is not None
-
-        # Skill scalars present (all 3 buckets active)
-        assert resp.skill is not None
-        assert resp.opp_skill is not None
-        # Sig fields gated: any opp component < 10 (recov bucket's opp_row is conv, N=8) → None
-        assert resp.skill_diff_p_value is None
-        assert resp.skill_diff_ci_low is None
-        assert resp.skill_diff_ci_high is None
+            assert not hasattr(row, "diff_p_value"), f"bucket={row.bucket}"
+            assert not hasattr(row, "diff_ci_low")
+            assert not hasattr(row, "diff_ci_high")
+            assert not hasattr(row, "opponent_score")
+            assert not hasattr(row, "opponent_games")
 
 
 # ---------------------------------------------------------------------------

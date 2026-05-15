@@ -72,10 +72,8 @@ from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_re
 from app.services.score_confidence import (
     compute_confidence_bucket,
     compute_paired_difference_test,
-    compute_per_bucket_diff_test,
     compute_score_confidence_from_mean,
     compute_score_difference_test,
-    compute_skill_diff_test,
     wilson_bounds,
 )
 
@@ -990,46 +988,6 @@ def _aggregate_bucket_counts(
     return bucket_wins, bucket_draws, bucket_losses, bucket_games
 
 
-def _compute_skill_wire(
-    bucket_wins: dict[MaterialBucket, int],
-    bucket_draws: dict[MaterialBucket, int],
-    bucket_losses: dict[MaterialBucket, int],
-    bucket_games: dict[MaterialBucket, int],
-) -> tuple[float | None, float | None, float | None, float | None, float | None]:
-    """Wire compute_skill_diff_test for the aggregate Skill peer-bullet test.
-
-    The opp_*_row arguments are the USER's rows in the mirror bucket per the
-    swap dict (conversion <-> recovery, parity <-> parity); compute_skill_diff_test
-    applies the W<->L swap internally to derive opp's headline rate.
-    """
-    conv_row = (
-        bucket_wins["conversion"],
-        bucket_draws["conversion"],
-        bucket_losses["conversion"],
-        bucket_games["conversion"],
-    )
-    parity_row = (
-        bucket_wins["parity"],
-        bucket_draws["parity"],
-        bucket_losses["parity"],
-        bucket_games["parity"],
-    )
-    recov_row = (
-        bucket_wins["recovery"],
-        bucket_draws["recovery"],
-        bucket_losses["recovery"],
-        bucket_games["recovery"],
-    )
-    return compute_skill_diff_test(
-        conv_row,
-        parity_row,
-        recov_row,
-        opp_conv_row=recov_row,
-        opp_parity_row=parity_row,
-        opp_recov_row=conv_row,
-    )
-
-
 def _bucket_pcts_and_scores(
     bucket_wins: dict[MaterialBucket, int],
     bucket_draws: dict[MaterialBucket, int],
@@ -1055,13 +1013,9 @@ def _bucket_pcts_and_scores(
     return bucket_score, bucket_pct
 
 
-# Mirror-bucket map: opponent's score in user's bucket B is recoverable from
-# user's score in mirror[B] via same-game symmetry (Phase 60).
-_MIRROR_BUCKET: dict[MaterialBucket, MaterialBucket] = {
-    "conversion": "recovery",
-    "parity": "parity",
-    "recovery": "conversion",
-}
+# Phase 87.2 (D-05): _MIRROR_BUCKET and opponent_score / diff_* fields deleted.
+# The peer-bullet WDL sig-test approach (Phase 60/86) is replaced by the
+# per-bucket ΔES Score Gap metric (Phase 87.2).
 
 
 def _build_material_rows(
@@ -1072,36 +1026,13 @@ def _build_material_rows(
     bucket_score: dict[MaterialBucket, float],
     bucket_pct: dict[MaterialBucket, tuple[float, float, float]],
 ) -> list[MaterialRow]:
-    """Build the 3 MaterialRow records (conv/parity/recov) with opponent_score
-    (mirror identity, gated at _MIN_OPPONENT_SAMPLE) and per-bucket peer-bullet
-    sig fields (compute_per_bucket_diff_test). The opp_row passed to the sig
-    helper is the USER's row in the mirror bucket; the helper applies the
-    W<->L swap internally."""
+    """Build the 3 MaterialRow records (conversion/parity/recovery) with WDL
+    percentages and chess score per bucket. Opponent-score mirror fields and
+    per-bucket peer-bullet sig fields were deleted in Phase 87.2 (D-05)."""
     material_rows: list[MaterialRow] = []
     for bucket_key in ("conversion", "parity", "recovery"):
         b2: MaterialBucket = bucket_key
-        swap_bucket = _MIRROR_BUCKET[b2]
-        swap_games = bucket_games[swap_bucket]
-        if swap_games >= _MIN_OPPONENT_SAMPLE:
-            opponent_score: float | None = 1.0 - bucket_score[swap_bucket]
-        else:
-            opponent_score = None
         win_pct, draw_pct, loss_pct = bucket_pct[b2]
-        user_row_b2 = (
-            bucket_wins[b2],
-            bucket_draws[b2],
-            bucket_losses[b2],
-            bucket_games[b2],
-        )
-        opp_row_b2 = (
-            bucket_wins[swap_bucket],
-            bucket_draws[swap_bucket],
-            bucket_losses[swap_bucket],
-            bucket_games[swap_bucket],
-        )
-        diff_p, diff_ci_low_v, diff_ci_high_v = compute_per_bucket_diff_test(
-            b2, user_row_b2, opp_row_b2
-        )
         material_rows.append(
             MaterialRow(
                 bucket=b2,
@@ -1111,11 +1042,6 @@ def _build_material_rows(
                 draw_pct=draw_pct,
                 loss_pct=loss_pct,
                 score=bucket_score[b2],
-                opponent_score=opponent_score,
-                opponent_games=swap_games,
-                diff_p_value=diff_p,
-                diff_ci_low=diff_ci_low_v,
-                diff_ci_high=diff_ci_high_v,
             )
         )
     return material_rows
@@ -1194,11 +1120,6 @@ def _compute_score_gap_material(
 
     bucket_wins, bucket_draws, bucket_losses, bucket_games = _aggregate_bucket_counts(entry_rows)
 
-    # Phase 86 (D-01 / SEC2-08 / SEC2-06): aggregate Skill peer-bullet sig test.
-    skill, opp_skill, skill_p, skill_ci_low, skill_ci_high = _compute_skill_wire(
-        bucket_wins, bucket_draws, bucket_losses, bucket_games
-    )
-
     bucket_score, bucket_pct = _bucket_pcts_and_scores(
         bucket_wins, bucket_draws, bucket_losses, bucket_games
     )
@@ -1216,11 +1137,6 @@ def _compute_score_gap_material(
         score_difference_p_value=score_diff_p,
         score_difference_ci_low=score_diff_ci_low,
         score_difference_ci_high=score_diff_ci_high,
-        skill=skill,
-        opp_skill=opp_skill,
-        skill_diff_p_value=skill_p,
-        skill_diff_ci_low=skill_ci_low,
-        skill_diff_ci_high=skill_ci_high,
     )
 
 
