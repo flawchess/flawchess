@@ -188,28 +188,38 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         direction="higher_is_better",
     ),
     # Phase 87.2 (D-02): per-bucket bands for Section 2 ΔES Score Gap cards.
-    # Placeholder ±5pp bands mirror the achievable_score_gap family starting
-    # point and the Phase 87.1 endgame_type_achievable_score_gap initial value.
-    # Calibration via /benchmarks §3.4.4 Cohen's-d collapse verdict (documented
-    # in this same plan) will replace these with real per-bucket values.
+    # Calibrated 2026-05-15 from reports/benchmarks-latest.md §3.4.4 — pooled
+    # per-user mean span gap per entry-eval bucket, sparse cell (2400,
+    # classical) excluded, equal-footing filter applied, pooled [p25, p75]
+    # rounded to nearest 1pp.
+    #
+    # Bands are intentionally OFF-ZERO for conversion and recovery because the
+    # Lichess winning-chances sigmoid drives an asymmetric population null:
+    # converting a winning position scores ~5pp BELOW entry ES (ceiling near
+    # 1.0); recovering from a losing one scores ~6pp ABOVE (floor near 0.0).
+    # Anchoring at 0 would mis-paint every typical user as "red on conv, green
+    # on recov". The chart keeps 0 (or 50%) as the engine-neutral anchor; the
+    # band is drawn offset where the calibration says it sits. The
+    # MiniBulletChart asymmetric rendering contract is locked in by tests
+    # added in quick task 260516-0ax.
     "section2_score_gap_conv": ZoneSpec(
-        typical_lower=-0.05,
-        typical_upper=0.05,
+        typical_lower=-0.11,
+        typical_upper=0.00,
         direction="higher_is_better",
     ),
     "section2_score_gap_parity": ZoneSpec(
-        typical_lower=-0.05,
-        typical_upper=0.05,
+        typical_lower=-0.04,
+        typical_upper=0.04,
         direction="higher_is_better",
     ),
     "section2_score_gap_recov": ZoneSpec(
-        typical_lower=-0.05,
-        typical_upper=0.05,
+        typical_lower=0.01,
+        typical_upper=0.11,
         direction="higher_is_better",
     ),
     "section2_score_gap_skill": ZoneSpec(
-        typical_lower=-0.05,
-        typical_upper=0.05,
+        typical_lower=-0.03,
+        typical_upper=0.03,
         direction="higher_is_better",
     ),
     # entry_eval_pawns: average Stockfish eval at endgame entry, signed from
