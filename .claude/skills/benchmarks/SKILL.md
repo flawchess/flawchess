@@ -334,6 +334,7 @@ Before running each subchapter, grep the code for the constants the subchapter's
 | 3.3.1 | Clock-diff + net timeout | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD` |
 | 3.3.2 | Time-pressure chart | `app/services/endgame_service.py::_compute_time_pressure_chart`, `EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
 | 3.4.1 | Per-class chess-score bullet + conv/recov gauges | `frontend/src/components/charts/EndgameTypeCard.tsx`, `EndgameTypeBreakdownSection.tsx`, `frontend/src/generated/endgameZones.ts`, `frontend/src/lib/scoreBulletConfig.ts` | Score bullet uses GLOBAL `SCORE_BULLET_NEUTRAL_MIN/MAX` (0.45/0.55) + `SCORE_BULLET_CENTER` (no per-class zones yet — see 3.4.1 recommendations); gauges use per-class IQR-derived `PER_CLASS_GAUGE_ZONES.{class}.{conversion,recovery}` |
+| 3.4.2 | Per-span Score Gap by endgame type (per-type card "Score Gap" bullet — Phase 87.1) | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts`; consumed by `frontend/src/components/charts/EndgameTypeCard.tsx` (Plan 03) | `endgame_type_achievable_score_gap` ZoneSpec; `ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN/MAX`; `PER_CLASS_GAUGE_ZONES.{class}.achievable_score_gap`. Placeholder bands `(-0.05, 0.05)` shipped in Phase 87.1 Plan 01; calibrate per this subchapter then update both registry entries and regenerate. |
 
 Use the Grep tool, not bash. Record literal values.
 
@@ -1837,6 +1838,171 @@ For each of the three metrics (score / conversion / recovery):
 
 If 18 verdicts is too noisy, aggregate to one verdict per metric (across-class max d) plus per-class footnote when an outlier class fails the metric-level verdict.
 
+#### 3.4.2 Per-span Score Gap by Endgame Type (Phase 87.1 SEED-016)
+
+**Question:** How does `per_span_achievable_score_gap_by_class = mean(gap_span)` distribute per user per endgame class, and does it shift across (TC × ELO) cells? Calibrates `PER_CLASS_GAUGE_ZONES[cls].achievable_score_gap` bands and the global `ZONE_REGISTRY["endgame_type_achievable_score_gap"]` ZoneSpec.
+
+**User-facing terminology** (per CONTEXT.md D-02, amended 2026-05-15):
+- Concepts / glossary label: **"Endgame Type Score Gap"** (full qualifier — disambiguates from page-level "Endgame Score Gap" and "Achievable Score Gap").
+- Card row label: **"Score Gap"** (short form — card title supplies endgame type context).
+- Internal identifier (code, registry, schema fields, this calibration metric): `endgame_type_achievable_score_gap` / `per_span_achievable_score_gap_by_class`. Preserves grep with the page-level `achievable_score_gap` math family (Phase 85.1).
+
+**Per-user metric (per class):**
+- One row per qualifying span: `(game_id, endgame_class)` with ≥6 plies (same gate as 3.4.1).
+- `ES_entry = eval_cp_to_expected_score(entry_eval_cp, user_color)` (Lichess winning-chances sigmoid; `_signed_pawns_from_mate` saturates mate scores). Computed from the span's first ply.
+- `exit_score`:
+  - **Transitory span** (followed by another span in the same game): `ES_sigmoid(next_entry_eval_cp, user_color)` via `LEAD()` window over `(game_id ORDER BY span_min_ply ASC)`.
+  - **Terminal span** (last span in the game): game result mapped via `user_color` → `{win: 1.0, draw: 0.5, loss: 0.0}`.
+- `gap_span = exit_score − ES_entry` (sign convention per CONTEXT D-07: positive = user outperformed the Stockfish baseline across this span).
+- Spans with both `entry_eval_cp IS NULL AND entry_eval_mate IS NULL` are excluded from the cohort (non-issue in practice — ≥6-ply prod eval coverage is ~100%).
+- `per_span_achievable_score_gap_by_class = mean(gap_span)` per user per class.
+
+**Sample floor:** ≥20 qualifying spans per user per class per cell (mirrors the §3.1.5 game floor; per-class cohorts are smaller, so the floor matches the per-class Conv/Recov n_games gate).
+
+**Cohen's-d collapse verdict per axis (TC, ELO):** same 3-level pattern as §3.1.5 — `d < 0.2` collapse, `0.2 ≤ d < 0.5` review, `d ≥ 0.5` keep separate.
+
+**Decision rule for updating zone bands** (per CONTEXT D-04):
+- If both axes collapse on a given class: set `PER_CLASS_GAUGE_ZONES[cls].achievable_score_gap` to the pooled [p25, p75] for that class. The 6 per-class entries may end up identical or near-identical; that is fine.
+- If both axes collapse across **all 6 classes** and the pooled-by-class bands are near-identical (midpoint within ±1pp, width within ±2pp): keep only the global `ZONE_REGISTRY["endgame_type_achievable_score_gap"]` ZoneSpec and set every `PER_CLASS_GAUGE_ZONES[cls].achievable_score_gap` to the same global band.
+- If "keep separate" on ELO for any class: stratify per class (per-class bands diverge); this matches the editorial precedent from §3.1.5 (`feedback_zone_band_judgement.md` — tighten the band if small effects are meaningful).
+- Per memory `feedback_llm_significance_signal.md`: do not add a separate sig-test signal to the LLM payload (Plan 04). Tighten the cohort band instead.
+
+**Output instructions:**
+1. Update `PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap` in `app/services/endgame_zones.py` per the per-class calibrated band (or set all 6 entries to the same pooled band if collapse verdict justifies).
+2. Optionally update `ZONE_REGISTRY["endgame_type_achievable_score_gap"]` (the global default surfaced to the LLM payload via `assign_zone`).
+3. Run `uv run python scripts/gen_endgame_zones_ts.py` to regenerate `frontend/src/generated/endgameZones.ts`. CI gates drift via `git diff --exit-code` on the generated file.
+4. Add the per-class IQR table and collapse verdict to `reports/benchmarks-latest.md` under a new §3.4.2 block; archive the previous report per the "Report file layout" rotation rule below.
+
+##### Query
+
+Equal-footing opponent filter (`abs(opp_rating - user_rating) <= 100`) preserved per memory `feedback_260503-fef` (universal as of 2026-05-03).
+
+```sql
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+spans AS (
+  -- One row per (game_id, endgame_class) span ≥6 plies, with entry eval at first ply.
+  -- Matches the ≥6-ply gate from 3.4.1 / `query_endgame_entry_rows`.
+  SELECT
+    gp.game_id,
+    gp.endgame_class,
+    (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
+    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,
+    min(gp.ply) AS span_min_ply
+  FROM game_positions gp
+  JOIN games g          ON g.id = gp.game_id
+  JOIN selected_users su ON su.user_id = g.user_id
+  WHERE gp.endgame_class IS NOT NULL
+    AND g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+  GROUP BY gp.game_id, gp.endgame_class
+  HAVING count(gp.ply) >= 6
+),
+spans_with_next AS (
+  -- LEAD() over (game_id ORDER BY span_min_ply) gives the next span's entry eval.
+  -- NULL on the terminal span of each game; the gap_rows CTE falls back to game result.
+  SELECT
+    s.*,
+    lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,
+    lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate
+  FROM spans s
+),
+gap_rows AS (
+  -- Compute gap_span = exit_score - ES_entry per CONTEXT D-07.
+  -- Uses the Lichess winning-chances sigmoid: 1 / (1 + exp(-0.00368208 * cp_signed)).
+  SELECT
+    g.user_id, su.rating_bucket, su.tc_bucket,
+    swn.endgame_class,
+    (
+      -- exit_score: transitory uses sigmoid on next-span entry eval; terminal uses game result.
+      CASE
+        WHEN next_eval_mate IS NOT NULL
+          THEN CASE WHEN (next_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
+        WHEN next_eval_cp IS NOT NULL
+          THEN 1.0 / (1.0 + exp(-0.00368208 * (next_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE
+          CASE
+            WHEN (g.result='1-0' AND g.user_color='white')
+              OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+            WHEN g.result='1/2-1/2' THEN 0.5
+            ELSE 0.0
+          END
+      END
+    )
+    -
+    (
+      -- ES_entry: sigmoid on the span's entry eval (mate scores saturate to 0/1).
+      CASE
+        WHEN swn.entry_eval_mate IS NOT NULL
+          THEN CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
+        WHEN swn.entry_eval_cp IS NOT NULL
+          THEN 1.0 / (1.0 + exp(-0.00368208 * (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE NULL
+      END
+    ) AS gap_span
+  FROM spans_with_next swn
+  JOIN games g          ON g.id = swn.game_id
+  JOIN selected_users su ON su.user_id = g.user_id
+  WHERE swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL
+),
+per_user_class AS (
+  SELECT
+    user_id, rating_bucket, tc_bucket, endgame_class,
+    avg(gap_span)   AS mean_gap,
+    count(*)        AS n_spans
+  FROM gap_rows
+  WHERE gap_span IS NOT NULL
+  GROUP BY user_id, rating_bucket, tc_bucket, endgame_class
+  HAVING count(*) >= 20         -- §3.4.2 sample floor: ≥20 qualifying spans per user per class per cell
+)
+SELECT
+  rating_bucket, tc_bucket,
+  CASE endgame_class
+    WHEN 1 THEN 'rook'
+    WHEN 2 THEN 'minor_piece'
+    WHEN 3 THEN 'pawn'
+    WHEN 4 THEN 'queen'
+    WHEN 5 THEN 'mixed'
+    WHEN 6 THEN 'pawnless'
+  END AS endgame_class,
+  count(*) AS users,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p75,
+  round(avg(mean_gap)::numeric, 4)     AS mean_x,
+  round(var_samp(mean_gap)::numeric, 6) AS var_x
+FROM per_user_class
+GROUP BY rating_bucket, tc_bucket, endgame_class
+ORDER BY endgame_class, rating_bucket, tc_bucket;
+```
+
+##### Output
+
+For each class (6 sub-tables; `pawnless` is hidden in the UI per `HIDDEN_ENDGAME_CLASSES` but the bench output keeps it for completeness):
+
+1. **5×4 cell table** (rows = ELO bucket, columns = TC). Cell = `p50 (n_users)`. Suppress where `n_users < 20`. Sparse-cell exclusion `(2400, classical)` applies per the universal report-header rule.
+2. **Pooled-by-class IQR row**: `endgame_class | n_users | mean | p25 | p50 | p75`. Drives the per-class band proposal.
+3. **Cohen's-d collapse verdicts**: per class × {TC, ELO}, computed against the per-cell pooled `mean_gap`. 6 × 2 = 12 verdicts; aggregate to one verdict per axis (across-class max d) when reporting.
+4. **Per-class band proposal**: `PER_CLASS_GAUGE_ZONES[cls].achievable_score_gap = (p25, p75)`. Compare against the placeholder `(-0.05, 0.05)` shipped in this plan (Phase 87.1 Plan 01) — recommend a delta only when |p25 - placeholder_lower| > 0.5pp or |p75 - placeholder_upper| > 0.5pp.
+5. **Global band proposal**: pooled-across-classes [p25, p75] for `ZONE_REGISTRY["endgame_type_achievable_score_gap"]`. If all 6 classes collapse together, recommend setting this band and identical per-class entries.
+
+**Calibration caveat (mandatory in popover copy and prompt-version bump, but recorded here for the methodology audit):** The Lichess winning-chances sigmoid under-weights endgame eval advantages (~`feedback`: `lichess-sigmoid-endgame-calibration.md`). Per-class IQR-derived zones absorb the bias so zone placement is calibrated even though absolute gap magnitudes are scale-compressed.
+
+**Scope note:** Running the benchmark query is OUT OF SCOPE for the Phase 87.1 Plan 01 ROADMAP gate — this subchapter documents the method so a future calibration run can produce real per-class bands. The placeholder bands from `endgame_zones.py` remain in effect until then.
+
 ---
 
 ## Report file layout
@@ -1891,6 +2057,7 @@ Write to `reports/benchmarks-latest.md`. Before writing, if that file already ex
 
 ### 3.4 Endgame Type Breakdown
 #### 3.4.1 Per-class score / conversion / recovery
+#### 3.4.2 Per-span Score Gap by Endgame Type
 
 ## Top-axis collapse summary (HEADLINE DELIVERABLE)
 
@@ -1913,6 +2080,7 @@ Write to `reports/benchmarks-latest.md`. Before writing, if that file already ex
 | Per-class score | 3.4.1 | ... | ... | ... |
 | Per-class conversion | 3.4.1 | ... | ... | ... |
 | Per-class recovery | 3.4.1 | ... | ... | ... |
+| Per-class per-span Score Gap | 3.4.2 | ... | ... | ... |
 
 Every cell states `max |d|` and a verdict. Drives Phase 73 zone calibration in SEED-006.
 
