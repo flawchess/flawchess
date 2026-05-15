@@ -589,7 +589,8 @@ class TestFindingsEndgameMetrics:
         )
 
     def test_emits_exactly_one_finding_per_non_empty_bucket(self) -> None:
-        """3 non-zero MaterialRows -> 1 endgame_skill + 3 bucket findings = 4 total."""
+        """3 non-zero MaterialRows -> 1 endgame_skill + 3 bucket rate findings +
+        4 section2_score_gap findings (Phase 87.2 D-09, always emitted) = 8 total."""
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
@@ -602,20 +603,37 @@ class TestFindingsEndgameMetrics:
         response = self._make_overview_with_material_rows(rows)
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        assert len(findings) == 4
+        assert len(findings) == 8
         # First is endgame_skill (aggregate, no dimension).
         assert findings[0].metric == "endgame_skill"
         assert findings[0].dimension is None
 
-        # Remaining three: one per bucket, metric matches the bucket.
+        # Three rate bucket findings: one per bucket, metric matches the bucket.
+        rate_findings = [
+            f for f in findings
+            if f.dimension is not None and f.metric in {
+                "conversion_win_pct", "parity_score_pct", "recovery_save_pct"
+            }
+        ]
         by_bucket: dict[str, str] = {
-            f.dimension["bucket"]: f.metric for f in findings[1:] if f.dimension is not None
+            f.dimension["bucket"]: f.metric for f in rate_findings if f.dimension is not None
         }
         assert by_bucket == {
             "conversion": "conversion_win_pct",
             "parity": "parity_score_pct",
             "recovery": "recovery_save_pct",
         }
+
+        # Four section2_score_gap_* findings (Phase 87.2 D-09).
+        section2_metrics = sorted(
+            f.metric for f in findings if f.metric.startswith("section2_score_gap_")
+        )
+        assert section2_metrics == [
+            "section2_score_gap_conv",
+            "section2_score_gap_parity",
+            "section2_score_gap_recov",
+            "section2_score_gap_skill",
+        ]
 
     def test_no_cross_bucket_fan_out(self) -> None:
         """No finding has (bucket=conversion, metric=parity_score_pct) or similar.
@@ -648,7 +666,11 @@ class TestFindingsEndgameMetrics:
                 assert f.metric == "recovery_save_pct"
 
     def test_empty_bucket_emits_one_empty_finding(self) -> None:
-        """A MaterialRow with games=0 emits ONE empty finding for the matching metric."""
+        """A MaterialRow with games=0 emits ONE empty finding for the matching metric.
+
+        Phase 87.2 (D-09): 4 section2_score_gap_* findings are always emitted alongside
+        the rate findings, so the bucket-only assertions filter on dimension presence.
+        """
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
@@ -659,10 +681,18 @@ class TestFindingsEndgameMetrics:
         response = self._make_overview_with_material_rows(rows)
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        # 1 endgame_skill + 3 bucket findings (2 empty + 1 normal).
-        assert len(findings) == 4
+        # 1 endgame_skill + 3 rate bucket findings (2 empty + 1 normal) +
+        # 4 section2_score_gap_* findings (D-09).
+        assert len(findings) == 8
 
-        bucket_findings = [f for f in findings if f.dimension is not None]
+        # Rate bucket findings only — filter by metric, not by dimension, because
+        # section2_score_gap_* findings have dimension=None.
+        bucket_findings = [
+            f for f in findings
+            if f.dimension is not None and f.metric in {
+                "conversion_win_pct", "parity_score_pct", "recovery_save_pct"
+            }
+        ]
         # Each bucket appears exactly once.
         buckets_seen = [f.dimension["bucket"] for f in bucket_findings if f.dimension]
         assert sorted(buckets_seen) == ["conversion", "parity", "recovery"]
