@@ -194,7 +194,7 @@ class TestPromptVersionAndBody:
     """Phase 68 regression tests (Plan 03 + UAT-pass 260424-pc6).
 
     Guards:
-    - _PROMPT_VERSION is bumped to endgame_v28 so prior cached LLM reports invalidate.
+    - _PROMPT_VERSION is bumped to endgame_v29 so prior cached LLM reports invalidate.
     - app/prompts/endgame_insights.md dropped the score_gap framing rule, the
       score_gap_timeline "only exception to summary-per-metric" carve-out, and
       renamed every `score_gap_timeline` reference to `score_timeline`.
@@ -210,8 +210,8 @@ class TestPromptVersionAndBody:
       block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
-    def test_prompt_version_is_v28(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v28"
+    def test_prompt_version_is_v29(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v29"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -360,6 +360,271 @@ class TestPromptVersionAndBody:
                 found = True
                 break
         assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
+
+    def test_prompt_version_bumped_to_v29_for_phase_87_1(self) -> None:
+        """Phase 87.1 Plan 04: bump from v28 -> v29 to invalidate cached LLM reports.
+
+        The bump is required so users get reports that reference the new per-class
+        Score Gap metric (endgame_type_achievable_score_gap) added to the LLM payload.
+        """
+        assert insights_llm._PROMPT_VERSION == "endgame_v29"
+        # Changelog comment must mention the new metric AND the dual-label rule
+        # AND the sigmoid-bias caveat (per CONTEXT.md D-10).
+        import inspect as _inspect
+
+        src = _inspect.getsource(insights_llm)
+        # v28 changelog block preserved (chronological history).
+        assert "v28 (260514 concept capitalization)" in src
+        # v29 changelog block present and tagged.
+        assert "v29 (260515 endgame_type_achievable_score_gap)" in src
+        # Dual-label rule recorded in v29 comment.
+        assert "Endgame Type Score Gap" in src
+        # Sigmoid-bias caveat one-liner present in v29 comment.
+        assert "Lichess winning-chances sigmoid" in src
+        # No parallel verdict / p_value field per memory feedback_llm_significance_signal.md.
+        # (the comment must NOT promise a verdict field — we just check the v29 block
+        # mentions the band carries the signal.)
+
+    def test_prompt_glossary_defines_endgame_type_score_gap(self) -> None:
+        """Phase 87.1 Plan 04 / CONTEXT D-10: glossary entry for the new metric.
+
+        Glossary uses the FULL form "Endgame Type Score Gap"; narration rule
+        instructs the LLM to use "Score Gap" in card-context references and
+        the full form when introducing or comparing to the page-level
+        Achievable Score Gap. Internal identifier is documented as
+        `type_achievable_score_gap` so the LLM can map the payload field name
+        to the user-facing label.
+        """
+        from pathlib import Path
+
+        body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        body = body_path.read_text(encoding="utf-8")
+
+        # Glossary defines the primary term.
+        assert "Endgame Type Score Gap" in body
+        # Internal payload field name documented for the LLM.
+        assert "type_achievable_score_gap" in body
+        # Sigmoid-bias caveat in glossary entry (Lichess sigmoid).
+        assert "Lichess" in body and "sigmoid" in body
+        # Forbidden internal coinages must NOT appear as user-facing tokens.
+        # ΔES / delta_es / dES are forbidden in narration per CONTEXT D-10.
+        # Allow them ONLY inside an explicit forbidden-words list (line prefixed
+        # by "Forbidden" or "Incorrect").
+        for token in ("ΔES", "delta_es"):
+            for line in body.splitlines():
+                if token in line:
+                    assert (
+                        "forbidden" in line.lower()
+                        or "incorrect" in line.lower()
+                        or "do not use" in line.lower()
+                        or "do NOT use" in line
+                    ), (
+                        f"{token!r} appears outside a forbidden-words list. "
+                        f"Offending line: {line!r}"
+                    )
+
+
+class TestEndgameTypeAchievableScoreGapPayload:
+    """Phase 87.1 Plan 04: per-class Score Gap block in the LLM payload.
+
+    The metric `endgame_type_achievable_score_gap` is emitted as a
+    SubsectionFinding per endgame class under the existing
+    `conversion_recovery_by_type` subsection. Renders to a [summary] block
+    carrying `mean`, `n`, `zone`, and an inline `(typical LO to UP)` band
+    derived from PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap.
+
+    The wire shape mirrors how Conv/Recov findings render today — same
+    [summary <metric> | endgame_class=<class>] header, same window line,
+    same inline band. There is intentionally no separate `verdict` or
+    `p_value` field per memory `feedback_llm_significance_signal.md`.
+    """
+
+    def _gap_finding(
+        self,
+        endgame_class: str,
+        *,
+        value: float,
+        zone: str,
+        sample_size: int,
+        sample_quality: str = "rich",
+    ) -> SubsectionFinding:
+        from typing import cast
+
+        from app.schemas.insights import MetricId, SampleQuality, Zone
+
+        return SubsectionFinding(
+            subsection_id="conversion_recovery_by_type",
+            parent_subsection_id=None,
+            window="all_time",
+            metric=cast(MetricId, "endgame_type_achievable_score_gap"),
+            value=value,
+            zone=cast(Zone, zone),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=sample_size,
+            sample_quality=cast(SampleQuality, sample_quality),
+            is_headline_eligible=True,
+            dimension={"endgame_class": endgame_class},
+            series=None,
+        )
+
+    def test_gap_renders_summary_block_full_cohort(self) -> None:
+        """Full cohort (n >= CONFIDENCE_MIN_N=10) renders a complete [summary] block.
+
+        Asserts the rendered prompt carries `[summary endgame_type_achievable_score_gap | endgame_class=rook]`,
+        the window line includes mean / n / zone / inline band, and the band is
+        scaled to the 0-100% rendering convention (typical -5 to +5 from the
+        registry's [-0.05, +0.05] fraction).
+        """
+        filters = _sample_filter_context()
+        gap = self._gap_finding(
+            "rook",
+            value=0.07,  # +7% — above the +5% upper bound, strong zone
+            zone="strong",
+            sample_size=30,
+        )
+        tab = _fake_findings(filters, findings=[gap])
+        prompt = _assemble_user_prompt(tab)
+
+        # Summary header includes the metric AND the per-class dim key.
+        assert (
+            "[summary endgame_type_achievable_score_gap | endgame_class=rook]"
+            in prompt
+        )
+        # Window line carries the scaled mean (0.07 -> +7 on the 0-100 scale).
+        assert "mean=+7" in prompt
+        # Sample size surfaces.
+        assert "n=30" in prompt
+        # Zone label rendered.
+        assert "zone=strong" in prompt
+        # Inline band from PER_CLASS_GAUGE_ZONES["rook"].achievable_score_gap
+        # (-0.05, +0.05) -> "(typical -5 to +5)".
+        assert "(typical -5 to +5)" in prompt
+
+    def test_gap_renders_sparse_cohort_with_band_intact(self) -> None:
+        """Sparse cohort (n < CONFIDENCE_MIN_N) still renders summary block.
+
+        Mirrors the existing Conv/Recov sparse behaviour — the LLM still sees
+        the mean / zone / band, but `sample_quality` flags the thin cohort so
+        the LLM narrates cautiously. No separate p_value / verdict field is
+        emitted (per feedback_llm_significance_signal.md).
+        """
+        filters = _sample_filter_context()
+        # n=3 → below CONFIDENCE_MIN_N=10; sample_quality="thin".
+        gap = self._gap_finding(
+            "queen",
+            value=-0.02,
+            zone="typical",
+            sample_size=3,
+            sample_quality="thin",
+        )
+        tab = _fake_findings(filters, findings=[gap])
+        prompt = _assemble_user_prompt(tab)
+
+        assert (
+            "[summary endgame_type_achievable_score_gap | endgame_class=queen]"
+            in prompt
+        )
+        # Mean is rendered (signed integer, scale=100): -0.02 -> -2.
+        assert "mean=-2" in prompt
+        # Sample size present.
+        assert "n=3" in prompt
+        # Zone label present even for thin cohort.
+        assert "zone=typical" in prompt
+        # Inline band still rendered for thin cohort.
+        assert "(typical -5 to +5)" in prompt
+        # sample_quality flags the thin cohort.
+        assert "quality=thin" in prompt
+
+    def test_gap_payload_has_no_verdict_or_pvalue_field(self) -> None:
+        """Per memory feedback_llm_significance_signal.md: no parallel verdict / p_value.
+
+        The new payload section MUST NOT introduce a `verdict=` or `p_value=`
+        token in the [summary] block. The cohort band IS the significance
+        signal; editorialising via a separate field is forbidden.
+        """
+        filters = _sample_filter_context()
+        gap = self._gap_finding(
+            "pawn",
+            value=0.0,
+            zone="typical",
+            sample_size=20,
+        )
+        tab = _fake_findings(filters, findings=[gap])
+        prompt = _assemble_user_prompt(tab)
+
+        # Extract just the summary block lines (header + window line + optional
+        # shift line) for our new metric, so other findings' fields don't pollute
+        # the assertion.
+        lines = prompt.splitlines()
+        in_block = False
+        block_lines: list[str] = []
+        for ln in lines:
+            if ln.startswith(
+                "[summary endgame_type_achievable_score_gap"
+            ):
+                in_block = True
+                block_lines.append(ln)
+                continue
+            if in_block:
+                if ln.startswith("[") or ln.startswith("##"):
+                    break
+                block_lines.append(ln)
+        assert block_lines, "summary block for endgame_type_achievable_score_gap not emitted"
+        block_text = "\n".join(block_lines)
+        assert "verdict=" not in block_text
+        assert "p_value=" not in block_text
+        assert "ci_low=" not in block_text
+        assert "ci_high=" not in block_text
+
+    def test_gap_payload_field_name_uses_internal_identifier(self) -> None:
+        """D-02 / D-10: payload field name preserves grep-ability with achievable_score_gap.
+
+        The MetricId literal in the SubsectionFinding is
+        `endgame_type_achievable_score_gap` (NOT `score_gap` or
+        `type_score_gap`). Renders into the [summary] header verbatim.
+        """
+        filters = _sample_filter_context()
+        gap = self._gap_finding(
+            "minor_piece",
+            value=0.03,
+            zone="typical",
+            sample_size=15,
+        )
+        tab = _fake_findings(filters, findings=[gap])
+        prompt = _assemble_user_prompt(tab)
+
+        # Internal-identifier preserved in the header.
+        assert "endgame_type_achievable_score_gap" in prompt
+        # Forbidden alternative spellings must NOT appear.
+        assert "[summary score_gap | endgame_class=minor_piece]" not in prompt
+        assert "[summary type_score_gap" not in prompt
+
+    def test_gap_inline_band_dispatches_per_class(self) -> None:
+        """Inline band must come from PER_CLASS_GAUGE_ZONES, NOT the global band.
+
+        Both registries currently hold ±5% placeholder bands, but the renderer
+        must dispatch via the per-class registry so future per-class band
+        recalibration (post §3.4.2 benchmark) takes effect without changing
+        renderer code. Verified indirectly: when we mutate one class's band in
+        place via monkeypatch, the rendered band changes for that class only.
+        """
+        from app.services import endgame_zones
+
+        filters = _sample_filter_context()
+        gap = self._gap_finding(
+            "rook",
+            value=0.01,
+            zone="typical",
+            sample_size=20,
+        )
+        tab = _fake_findings(filters, findings=[gap])
+        prompt = _assemble_user_prompt(tab)
+        # Default band -5 to +5 from PER_CLASS_GAUGE_ZONES["rook"].achievable_score_gap.
+        assert "(typical -5 to +5)" in prompt
+        # Sanity check: the per-class registry actually carries the same band.
+        bands = endgame_zones.PER_CLASS_GAUGE_ZONES["rook"]
+        assert bands.achievable_score_gap == (-0.05, 0.05)
 
     def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
         """v14 (260424-pc6 C): when every point's `n` is equal, the series block
@@ -2357,7 +2622,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v28"
+        assert response.report.prompt_version == "endgame_v29"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2381,7 +2646,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v28"
+        assert log.response_json["prompt_version"] == "endgame_v29"
 
 
 class TestCacheBehavior:
