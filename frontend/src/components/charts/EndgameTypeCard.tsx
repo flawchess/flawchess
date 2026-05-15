@@ -410,7 +410,7 @@ export function EndgameTypeCard({
               tooltip={
                 <MetricStatPopover
                   name="Score Gap"
-                  explanation={`Each ${category.label} Endgame Sequence has a start eval and an end eval, or the actual game result for the final sequence in a game. Both get converted to expected scores via the Lichess expected-score formula. The Score Gap is the average of (end − start) across all your ${category.label} sequences: positive = you outperformed expectation, negative = you gave back score.`}
+                  explanation={`Each ${category.label} Endgame Sequence has a start Stockfish eval and an end eval, or the actual game result for the final sequence in a game. Both get converted to expected scores via the Lichess expected-score formula. The Score Gap is the average of (end − start) across all your ${category.label} sequences: positive = you outperformed expectation, negative = you gave back score.`}
                   value={gapMean ?? 0}
                   baseline={0}
                   unit="percent"
