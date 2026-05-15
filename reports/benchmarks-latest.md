@@ -588,6 +588,114 @@ Recommendation: live `[0.47, 0.55]` matches pooled `[0.47, 0.55]` exactly — **
 
 ---
 
+#### 3.2.2 Per-bucket ΔES Score Gap (Section 2 — Phase 87.2)
+
+Calibrated 2026-05-15. Per-user per-bucket `mean_gap = mean(exit_score − ES_entry)` partitioned by entry-eval bucket (conversion / parity / recovery) via `_classify_endgame_bucket(eval_cp, eval_mate, user_color)`. Same gap formula as §3.4.2 (Lichess winning-chances sigmoid; transitory span uses `LEAD()` over next span eval, terminal span uses game result). Equal-footing filter applied. Sparse cell `(2400, classical)` excluded from marginals / pooled / Cohen's d.
+
+Sample floor per bucket: ≥20 qualifying spans per user per bucket per cell. Skill aggregate uses the looser ≥10-spans-per-bucket floor (matches live `CONFIDENCE_MIN_N`), then equal-weights the active buckets per user; a user is included in Skill if ≥2 buckets clear the floor.
+
+##### Currently set in code (Plan 01 placeholders — to be overwritten by this calibration)
+
+| Constant | Live (placeholder) | File |
+|---|---|---|
+| `ZONE_REGISTRY["section2_score_gap_conv"]` | `(−0.05, +0.05)` | `app/services/endgame_zones.py` |
+| `ZONE_REGISTRY["section2_score_gap_parity"]` | `(−0.05, +0.05)` | same |
+| `ZONE_REGISTRY["section2_score_gap_recov"]` | `(−0.05, +0.05)` | same |
+| `ZONE_REGISTRY["section2_score_gap_skill"]` | `(−0.05, +0.05)` | same |
+| Generated TS counterparts | mirror Python | `frontend/src/generated/endgameZones.ts` (codegen via `scripts/gen_endgame_zones_ts.py`) |
+
+##### Pooled-by-bucket distribution (excl sparse cell, ≥20 spans/user/bucket)
+
+| bucket | n_users | pooled_mean | pooled_sd | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| conversion | 1,657 | **−6.2pp** | 0.094 | −24.5pp | **−10.8pp** | −4.7pp | **+0.2pp** | +6.5pp |
+| parity | 1,508 | **+0.1pp** | 0.061 | −9.6pp | **−3.5pp** | +0.4pp | **+3.7pp** | +9.6pp |
+| recovery | 1,609 | **+6.4pp** | 0.076 | −4.2pp | **+1.0pp** | +5.6pp | **+10.7pp** | +19.6pp |
+| **skill (≥2 active buckets)** | 1,731 | **+0.0pp** | 0.049 | −8.4pp | **−2.7pp** | +0.3pp | **+3.0pp** | +7.3pp |
+
+The asymmetry predicted in the SKILL is **confirmed**: conversion mean ≈ **−6pp** (sigmoid ceiling near 1.0 → ES_entry close to 0.6 with limited upside, exit_score usually lower than entry); recovery mean ≈ **+6pp** (sigmoid floor near 0.0 → ES_entry close to 0.4 with limited downside, exit_score usually higher than entry); parity ≈ **0pp** (symmetric near 0.5). Skill (equal-weighted mean) collapses the asymmetry as expected (pooled mean ≈ 0).
+
+##### Per-cell 5×4 — `mean (n_users)`, sparse `(2400, classical)` excluded from marginals
+
+**conversion** (cell mean):
+
+| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
+|---|---:|---:|---:|---:|
+| 800 | −21.6pp (96) | −11.2pp (96) | −9.5pp (92) | −11.5pp (21) |
+| 1200 | −16.5pp (99) | −7.2pp (99) | −4.9pp (98) | −5.1pp (61) |
+| 1600 | −12.7pp (97) | −5.0pp (100) | −1.8pp (100) | −0.4pp (72) |
+| 2000 | −9.7pp (100) | −1.6pp (100) | +0.4pp (96) | +3.6pp (51) |
+| 2400 | −5.3pp (100) | +1.7pp (97) | +3.6pp (82) | — * |
+
+**parity**:
+
+| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
+|---|---:|---:|---:|---:|
+| 800 | −0.8pp (69) | −1.8pp (75) | −0.8pp (64) | — |
+| 1200 | −0.5pp (93) | −0.9pp (98) | −0.8pp (90) | −1.4pp (31) |
+| 1600 | −0.6pp (97) | −1.3pp (99) | +0.3pp (95) | −1.3pp (61) |
+| 2000 | −0.4pp (99) | +1.1pp (99) | +1.1pp (94) | +1.5pp (54) |
+| 2400 | +1.3pp (99) | +2.7pp (97) | +3.1pp (90) | — * |
+
+**recovery**:
+
+| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
+|---|---:|---:|---:|---:|
+| 800 | +17.9pp (96) | +8.5pp (96) | +6.8pp (91) | +5.3pp (23) |
+| 1200 | +15.5pp (100) | +5.5pp (97) | +4.8pp (94) | +2.7pp (52) |
+| 1600 | +11.7pp (98) | +4.5pp (99) | +2.1pp (97) | +0.4pp (67) |
+| 2000 | +10.7pp (100) | +3.9pp (96) | +0.4pp (93) | −2.6pp (42) |
+| 2400 | +8.1pp (98) | +3.1pp (96) | +0.6pp (74) | — * |
+
+Two strong gradients are visible. Going **bullet → classical**, conversion and recovery both compress toward 0 — i.e. at slower time controls the gap between actual outcome and engine prediction shrinks (more time = closer to engine play). Going **800 → 2400**, conversion rises toward 0 (stronger players convert closer to engine expectation) while recovery falls toward 0 (stronger players don't recover as much above engine expectation). Parity has a milder ELO gradient (−1pp → +3pp).
+
+##### Marginals and Cohen's d (per bucket, both axes)
+
+**TC marginals** (excl sparse cell):
+
+| bucket | bullet | blitz | rapid | classical | TC d_max | TC verdict |
+|---|---:|---:|---:|---:|---:|---|
+| conversion | −13.1pp | −4.6pp | −2.6pp | −2.0pp | **1.18** (bullet vs classical) | **keep separate** |
+| parity | −0.2pp | +0.0pp | +0.6pp | −0.5pp | 0.18 (rapid vs classical) | **collapse** |
+| recovery | +12.8pp | +5.1pp | +3.0pp | +1.0pp | **1.63** (bullet vs classical) | **keep separate** |
+| skill | −0.1pp | +0.1pp | +0.3pp | −0.5pp | 0.09 (rapid vs classical) | **collapse** |
+
+**ELO marginals** (excl sparse cell):
+
+| bucket | 800 | 1200 | 1600 | 2000 | 2400 | ELO d_max | ELO verdict |
+|---|---:|---:|---:|---:|---:|---:|---|
+| conversion | −14.0pp | −8.8pp | −5.3pp | −2.6pp | −0.3pp | **1.62** (800 vs 2400) | **keep separate** |
+| parity | −1.3pp | −0.8pp | −0.7pp | +0.8pp | +2.3pp | **0.57** (800 vs 2400) | **keep separate** |
+| recovery | +10.7pp | +7.8pp | +5.1pp | +4.1pp | +4.3pp | **0.85** (800 vs 2000) | **keep separate** |
+| skill | −1.9pp | −0.6pp | −0.2pp | +0.8pp | +2.3pp | **0.81** (800 vs 2400) | **keep separate** |
+
+##### Verdict implications
+
+- **Conversion & recovery**: both axes "keep separate". Pooled bands are the right calibration target *at this MetricId scalar*, but per-cell numerics span ~25pp on each axis. A future per-(TC × ELO) stratification of these two MetricIds would materially sharpen the live UI; deferred for this phase (the registry stays scalar).
+- **Parity**: TC collapses, ELO keeps separate at 0.57 — small but real ramp from −1.3pp (800) to +2.3pp (2400). Scalar pooled band suffices for now.
+- **Skill**: TC collapses (d=0.09), ELO keeps separate (d=0.81). Equal-weighted averaging cancels the sigmoid asymmetry but leaves the ELO skill ramp intact. Scalar band is fine for this phase; per-ELO stratification deferred along with conv/recov.
+
+##### Recommended bands (calibrated, this run)
+
+Pooled IQR rounded to nearest 1pp; bands are asymmetric where the sigmoid bias dictates.
+
+| bucket | pooled [p25, p75] | Recommended `ZONE_REGISTRY["section2_score_gap_<bucket>"]` | Placeholder | Action |
+|---|---|---|---|---|
+| conversion | [−10.8pp, +0.2pp] | **`(−0.11, 0.00)`** | `(−0.05, +0.05)` | **shift band down, widen** — Stockfish-conversion null is ~−5pp, not 0 |
+| parity | [−3.5pp, +3.7pp] | **`(−0.04, +0.04)`** | `(−0.05, +0.05)` | tighten slightly — symmetric, near 0 |
+| recovery | [+1.0pp, +10.7pp] | **`(+0.01, +0.11)`** | `(−0.05, +0.05)` | **shift band up, widen** — Stockfish-recovery null is ~+6pp, not 0 |
+| skill | [−2.7pp, +3.0pp] | **`(−0.03, +0.03)`** | `(−0.05, +0.05)` | tighten — symmetric, near 0 |
+
+The conversion and recovery bands are intentionally **off-zero** — the population null is asymmetric by construction (a typical player converting a winning position scores ~5pp below their entry ES because of the sigmoid ceiling; recovering from a losing one scores ~6pp above for the symmetric reason). Anchoring those bands at 0 would mis-paint every typical user as "green on recovery, red on conversion" — exactly the false signal Phase 87.2 is designed to avoid.
+
+Per memory `feedback_zone_band_judgement.md`: bands above use raw [p25, p75] rounded — no editorial tightening applied. Per `feedback_llm_significance_signal.md`: no separate sig-test signal proposed for the LLM payload; the calibrated cohort band carries the signal.
+
+##### Implementation note (out of scope for this report)
+
+To put the calibrated bands in production: update the four ZoneSpec tuples in `app/services/endgame_zones.py`, run `uv run python scripts/gen_endgame_zones_ts.py`, commit both the Python source and the regenerated `frontend/src/generated/endgameZones.ts`. CI's drift gate will fail if either is committed without the other. This calibration replaces the Plan 01 placeholder `(−0.05, +0.05)` tuples shipped on the current branch.
+
+---
+
 ### 3.3 Time Pressure
 
 #### 3.3.1 Clock pressure at endgame entry
@@ -1032,112 +1140,6 @@ The 2026-05-15 verdict on the `EndgameTypeCard.tsx` chart inventory is **Keep al
 - The score bullet currently uses the global ±0.05 band, which is significantly narrower than the per-class IQRs measured here (queen IQR ~20pp vs 10pp global). §3.4.1 already recommends `PER_CLASS_SCORE_BULLET_ZONES`; the IQRs in this table feed directly into that proposal.
 - The verdict is a chart-inventory recommendation, not a code-constant calibration — no `endgame_zones.py` / `scoreBulletConfig.ts` value should change as a direct result of this subchapter. (The per-class IQRs *do* feed §3.4.1 and §3.4.2 calibration tables.)
 - Comparison vs the 2026-05-15 fixed-zone run: under fixed `±0.05` bands queen's strong-disagreement was 10.5%; under IQR bands it drops to 6.5%, because queen's IQR score band (~20pp) is much wider than ±5pp and absorbs more cohort variance into the neutral zone. Pearson r and sign-agreement are unchanged (band-independent). The headline verdict is unchanged across both regimes.
-
-#### 3.4.4 Per-bucket ΔES Score Gap (Section 2 — Phase 87.2)
-
-Calibrated 2026-05-15. Per-user per-bucket `mean_gap = mean(exit_score − ES_entry)` partitioned by entry-eval bucket (conversion / parity / recovery) via `_classify_endgame_bucket(eval_cp, eval_mate, user_color)`. Same gap formula as §3.4.2 (Lichess winning-chances sigmoid; transitory span uses `LEAD()` over next span eval, terminal span uses game result). Equal-footing filter applied. Sparse cell `(2400, classical)` excluded from marginals / pooled / Cohen's d.
-
-Sample floor per bucket: ≥20 qualifying spans per user per bucket per cell. Skill aggregate uses the looser ≥10-spans-per-bucket floor (matches live `CONFIDENCE_MIN_N`), then equal-weights the active buckets per user; a user is included in Skill if ≥2 buckets clear the floor.
-
-##### Currently set in code (Plan 01 placeholders — to be overwritten by this calibration)
-
-| Constant | Live (placeholder) | File |
-|---|---|---|
-| `ZONE_REGISTRY["section2_score_gap_conv"]` | `(−0.05, +0.05)` | `app/services/endgame_zones.py` |
-| `ZONE_REGISTRY["section2_score_gap_parity"]` | `(−0.05, +0.05)` | same |
-| `ZONE_REGISTRY["section2_score_gap_recov"]` | `(−0.05, +0.05)` | same |
-| `ZONE_REGISTRY["section2_score_gap_skill"]` | `(−0.05, +0.05)` | same |
-| Generated TS counterparts | mirror Python | `frontend/src/generated/endgameZones.ts` (codegen via `scripts/gen_endgame_zones_ts.py`) |
-
-##### Pooled-by-bucket distribution (excl sparse cell, ≥20 spans/user/bucket)
-
-| bucket | n_users | pooled_mean | pooled_sd | p05 | p25 | p50 | p75 | p95 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| conversion | 1,657 | **−6.2pp** | 0.094 | −24.5pp | **−10.8pp** | −4.7pp | **+0.2pp** | +6.5pp |
-| parity | 1,508 | **+0.1pp** | 0.061 | −9.6pp | **−3.5pp** | +0.4pp | **+3.7pp** | +9.6pp |
-| recovery | 1,609 | **+6.4pp** | 0.076 | −4.2pp | **+1.0pp** | +5.6pp | **+10.7pp** | +19.6pp |
-| **skill (≥2 active buckets)** | 1,731 | **+0.0pp** | 0.049 | −8.4pp | **−2.7pp** | +0.3pp | **+3.0pp** | +7.3pp |
-
-The asymmetry predicted in the SKILL is **confirmed**: conversion mean ≈ **−6pp** (sigmoid ceiling near 1.0 → ES_entry close to 0.6 with limited upside, exit_score usually lower than entry); recovery mean ≈ **+6pp** (sigmoid floor near 0.0 → ES_entry close to 0.4 with limited downside, exit_score usually higher than entry); parity ≈ **0pp** (symmetric near 0.5). Skill (equal-weighted mean) collapses the asymmetry as expected (pooled mean ≈ 0).
-
-##### Per-cell 5×4 — `mean (n_users)`, sparse `(2400, classical)` excluded from marginals
-
-**conversion** (cell mean):
-
-| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
-|---|---:|---:|---:|---:|
-| 800 | −21.6pp (96) | −11.2pp (96) | −9.5pp (92) | −11.5pp (21) |
-| 1200 | −16.5pp (99) | −7.2pp (99) | −4.9pp (98) | −5.1pp (61) |
-| 1600 | −12.7pp (97) | −5.0pp (100) | −1.8pp (100) | −0.4pp (72) |
-| 2000 | −9.7pp (100) | −1.6pp (100) | +0.4pp (96) | +3.6pp (51) |
-| 2400 | −5.3pp (100) | +1.7pp (97) | +3.6pp (82) | — * |
-
-**parity**:
-
-| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
-|---|---:|---:|---:|---:|
-| 800 | −0.8pp (69) | −1.8pp (75) | −0.8pp (64) | — |
-| 1200 | −0.5pp (93) | −0.9pp (98) | −0.8pp (90) | −1.4pp (31) |
-| 1600 | −0.6pp (97) | −1.3pp (99) | +0.3pp (95) | −1.3pp (61) |
-| 2000 | −0.4pp (99) | +1.1pp (99) | +1.1pp (94) | +1.5pp (54) |
-| 2400 | +1.3pp (99) | +2.7pp (97) | +3.1pp (90) | — * |
-
-**recovery**:
-
-| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
-|---|---:|---:|---:|---:|
-| 800 | +17.9pp (96) | +8.5pp (96) | +6.8pp (91) | +5.3pp (23) |
-| 1200 | +15.5pp (100) | +5.5pp (97) | +4.8pp (94) | +2.7pp (52) |
-| 1600 | +11.7pp (98) | +4.5pp (99) | +2.1pp (97) | +0.4pp (67) |
-| 2000 | +10.7pp (100) | +3.9pp (96) | +0.4pp (93) | −2.6pp (42) |
-| 2400 | +8.1pp (98) | +3.1pp (96) | +0.6pp (74) | — * |
-
-Two strong gradients are visible. Going **bullet → classical**, conversion and recovery both compress toward 0 — i.e. at slower time controls the gap between actual outcome and engine prediction shrinks (more time = closer to engine play). Going **800 → 2400**, conversion rises toward 0 (stronger players convert closer to engine expectation) while recovery falls toward 0 (stronger players don't recover as much above engine expectation). Parity has a milder ELO gradient (−1pp → +3pp).
-
-##### Marginals and Cohen's d (per bucket, both axes)
-
-**TC marginals** (excl sparse cell):
-
-| bucket | bullet | blitz | rapid | classical | TC d_max | TC verdict |
-|---|---:|---:|---:|---:|---:|---|
-| conversion | −13.1pp | −4.6pp | −2.6pp | −2.0pp | **1.18** (bullet vs classical) | **keep separate** |
-| parity | −0.2pp | +0.0pp | +0.6pp | −0.5pp | 0.18 (rapid vs classical) | **collapse** |
-| recovery | +12.8pp | +5.1pp | +3.0pp | +1.0pp | **1.63** (bullet vs classical) | **keep separate** |
-| skill | −0.1pp | +0.1pp | +0.3pp | −0.5pp | 0.09 (rapid vs classical) | **collapse** |
-
-**ELO marginals** (excl sparse cell):
-
-| bucket | 800 | 1200 | 1600 | 2000 | 2400 | ELO d_max | ELO verdict |
-|---|---:|---:|---:|---:|---:|---:|---|
-| conversion | −14.0pp | −8.8pp | −5.3pp | −2.6pp | −0.3pp | **1.62** (800 vs 2400) | **keep separate** |
-| parity | −1.3pp | −0.8pp | −0.7pp | +0.8pp | +2.3pp | **0.57** (800 vs 2400) | **keep separate** |
-| recovery | +10.7pp | +7.8pp | +5.1pp | +4.1pp | +4.3pp | **0.85** (800 vs 2000) | **keep separate** |
-| skill | −1.9pp | −0.6pp | −0.2pp | +0.8pp | +2.3pp | **0.81** (800 vs 2400) | **keep separate** |
-
-##### Verdict implications
-
-- **Conversion & recovery**: both axes "keep separate". Pooled bands are the right calibration target *at this MetricId scalar*, but per-cell numerics span ~25pp on each axis. A future per-(TC × ELO) stratification of these two MetricIds would materially sharpen the live UI; deferred for this phase (the registry stays scalar).
-- **Parity**: TC collapses, ELO keeps separate at 0.57 — small but real ramp from −1.3pp (800) to +2.3pp (2400). Scalar pooled band suffices for now.
-- **Skill**: TC collapses (d=0.09), ELO keeps separate (d=0.81). Equal-weighted averaging cancels the sigmoid asymmetry but leaves the ELO skill ramp intact. Scalar band is fine for this phase; per-ELO stratification deferred along with conv/recov.
-
-##### Recommended bands (calibrated, this run)
-
-Pooled IQR rounded to nearest 1pp; bands are asymmetric where the sigmoid bias dictates.
-
-| bucket | pooled [p25, p75] | Recommended `ZONE_REGISTRY["section2_score_gap_<bucket>"]` | Placeholder | Action |
-|---|---|---|---|---|
-| conversion | [−10.8pp, +0.2pp] | **`(−0.11, 0.00)`** | `(−0.05, +0.05)` | **shift band down, widen** — Stockfish-conversion null is ~−5pp, not 0 |
-| parity | [−3.5pp, +3.7pp] | **`(−0.04, +0.04)`** | `(−0.05, +0.05)` | tighten slightly — symmetric, near 0 |
-| recovery | [+1.0pp, +10.7pp] | **`(+0.01, +0.11)`** | `(−0.05, +0.05)` | **shift band up, widen** — Stockfish-recovery null is ~+6pp, not 0 |
-| skill | [−2.7pp, +3.0pp] | **`(−0.03, +0.03)`** | `(−0.05, +0.05)` | tighten — symmetric, near 0 |
-
-The conversion and recovery bands are intentionally **off-zero** — the population null is asymmetric by construction (a typical player converting a winning position scores ~5pp below their entry ES because of the sigmoid ceiling; recovering from a losing one scores ~6pp above for the symmetric reason). Anchoring those bands at 0 would mis-paint every typical user as "green on recovery, red on conversion" — exactly the false signal Phase 87.2 is designed to avoid.
-
-Per memory `feedback_zone_band_judgement.md`: bands above use raw [p25, p75] rounded — no editorial tightening applied. Per `feedback_llm_significance_signal.md`: no separate sig-test signal proposed for the LLM payload; the calibrated cohort band carries the signal.
-
-##### Implementation note (out of scope for this report)
-
-To put the calibrated bands in production: update the four ZoneSpec tuples in `app/services/endgame_zones.py`, run `uv run python scripts/gen_endgame_zones_ts.py`, commit both the Python source and the regenerated `frontend/src/generated/endgameZones.ts`. CI's drift gate will fail if either is committed without the other. This calibration replaces the Plan 01 placeholder `(−0.05, +0.05)` tuples shipped on the current branch.
 
 ---
 
