@@ -34,6 +34,14 @@ export interface EndgameCategoryStats {
   // null when total < PVALUE_RELIABILITY_MIN_N (=10). Drives the per-card
   // Score bullet sig-gating triple in EndgameTypeCard.
   score_p_value: number | null;
+  // Phase 87.1 (SEED-016, D-05): per-span mean Score Gap for this endgame type.
+  // User-facing label: "Score Gap" (card row) / "Endgame Type Score Gap" (concepts).
+  // Internal name retains "achievable" to preserve grep-ability with Phase 85.1.
+  type_achievable_score_gap_mean: number | null;
+  type_achievable_score_gap_n: number | null;
+  type_achievable_score_gap_p_value: number | null;
+  type_achievable_score_gap_ci_low: number | null;
+  type_achievable_score_gap_ci_high: number | null;
 }
 
 export interface EndgameStatsResponse {

@@ -26,12 +26,13 @@
 <details open>
 <summary>🚧 v1.17 Endgame Stats Card Redesign (Phases 84-89) — IN PROGRESS (opened 2026-05-12)</summary>
 
-Replaces three table-driven sections on the Endgames page with the established WDL + ScoreBullet card pattern. Two-bullet doctrine (cohort + peer) preserves the self-calibrating opponent signal on Conv/Parity/Recov + Section 3 per-type cards. Frontend-only refactor; no backend or benchmark changes.
+Started as a frontend refactor of three table-driven sections on the Endgames page (WDL + ScoreBullet card pattern). Scope has since expanded to a full statistical-rigor pass: Phase 85.1 adds hypothesis tests + CIs on the Endgame Score Differences card with new backend math helpers; Phase 88 reworks Time Pressure with new /benchmarks metrics, new backend service code, and CI-gated bullet stacks; Phase 87.1 (INSERTED 2026-05-15) adds a new per-endgame-type performance metric (per-span ΔES) spanning backend, /benchmarks, frontend, and LLM payload. Single-bullet doctrine (peer bullet only on Conv/Parity/Recov + Section 3 per-type cards) preserved across all phases.
 
 - [ ] Phase 84: Data plumbing — per-type cohort p50 + mirror-rate audit (3 plans) — planned
 - [ ] Phase 85: Section 1 — Games with vs without Endgame cards (5 plans; replan-in-place 2026-05-13 added Plan 85-05 for 3-card composite redesign) — planned
 - [ ] Phase 86: Section 2 — Endgame Metrics 4-card layout (5 plans) — planned
 - [ ] Phase 87: Section 3 — Per-type Endgame Type Breakdown cards (3 plans) — planned
+- [x] Phase 87.1: Per-span ΔES metric for endgame types (4/4 plans) — completed 2026-05-15 (verification: human_needed — 4 UAT items)
 - [ ] Phase 88: Time Pressure stats rework with hypothesis tests + CIs (TBD plans; INSERTED 2026-05-14) — planned
 - [ ] Phase 89: Polish — popovers, gating decisions, automation rules, 375px parity (TBD plans) — planned
 

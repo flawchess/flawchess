@@ -201,16 +201,13 @@ class TestQueryEndgameEntryRows:
         )
         # Should return exactly one row for this (game, rook) span
         assert len(rows) == 1
-        (
-            game_id,
-            endgame_class,
-            result,
-            user_color,
-            eval_cp,
-            eval_mate,
-        ) = rows[0]
-        assert game_id == game.id
-        assert endgame_class == 1  # rook
+        row = rows[0]
+        # Phase 87.1: row has 8 columns; access by attribute for clarity.
+        assert row.game_id == game.id
+        assert row.endgame_class == 1  # rook
+        # Terminal span (only one span in game) — next-eval columns are NULL.
+        assert row.next_entry_eval_cp is None
+        assert row.next_entry_eval_mate is None
 
     @pytest.mark.asyncio
     async def test_ply_threshold_filters_short_spans(self, db_session: AsyncSession) -> None:
@@ -299,18 +296,14 @@ class TestQueryEndgameEntryRows:
             recency_cutoff=None,
         )
         assert len(rows) == 1
-        (
-            _game_id,
-            _endgame_class,
-            _result,
-            user_color,
-            eval_cp,
-            eval_mate,
-        ) = rows[0]
+        row = rows[0]
         # eval_cp is white-perspective at entry ply (ply=20); no sign flip in SQL
-        assert user_color == "white"
-        assert eval_cp == 200  # from first ply of span
-        assert eval_mate is None
+        assert row.user_color == "white"
+        assert row.eval_cp == 200  # from first ply of span
+        assert row.eval_mate is None
+        # Phase 87.1: single-span game → terminal → next-eval NULL.
+        assert row.next_entry_eval_cp is None
+        assert row.next_entry_eval_mate is None
 
     @pytest.mark.asyncio
     async def test_time_control_filter(self, db_session: AsyncSession) -> None:
@@ -363,6 +356,180 @@ class TestQueryEndgameEntryRows:
         game_ids = [r[0] for r in rows]
         assert lichess_game.id in game_ids
         assert chesscom_game.id not in game_ids
+
+
+class TestQueryEndgameEntryRowsNextSpanEval:
+    """Phase 87.1 (SEED-016 D-06): LEAD-based next-span entry eval columns.
+
+    Verifies the 8-column row shape produced by `query_endgame_entry_rows` with
+    the LEAD() window function appended over (game_id, span_min_ply ASC).
+    """
+
+    @pytest.mark.asyncio
+    async def test_next_entry_eval_columns_accessible(self, db_session: AsyncSession) -> None:
+        """Returned rows expose next_entry_eval_cp and next_entry_eval_mate by attribute."""
+        game = await _seed_game(db_session)
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session,
+                game=game,
+                ply=ply,
+                material_signature="KR_KR",
+                endgame_class=1,
+                eval_cp=50,
+            )
+
+        rows = await query_endgame_entry_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+        assert len(rows) == 1
+        row = rows[0]
+        # Attributes must exist (LEAD columns aliased into the SELECT).
+        assert hasattr(row, "next_entry_eval_cp")
+        assert hasattr(row, "next_entry_eval_mate")
+
+    @pytest.mark.asyncio
+    async def test_lead_orders_spans_by_span_min_ply(self, db_session: AsyncSession) -> None:
+        """For a game with 2 spans, first row's next_entry_eval_cp == second row's eval_cp."""
+        # Game with two distinct endgame_class spans, each above the threshold,
+        # ordered by ply: rook span starts at ply=20, pawn span starts at ply=40.
+        # LEAD() over (game_id, span_min_ply ASC) must lift the pawn span's eval
+        # onto the rook row (rook is earlier).
+        game = await _seed_game(db_session, user_color="white")
+        # Rook span: 6 positions, entry eval at ply=20 is 150.
+        await _seed_game_position(
+            db_session,
+            game=game,
+            ply=20,
+            material_signature="KR_KR",
+            endgame_class=1,
+            eval_cp=150,
+        )
+        for ply in range(21, 26):
+            await _seed_game_position(
+                db_session,
+                game=game,
+                ply=ply,
+                material_signature="KR_KR",
+                endgame_class=1,
+                eval_cp=200,
+            )
+        # Pawn span: 6 positions, entry eval at ply=40 is -75.
+        await _seed_game_position(
+            db_session,
+            game=game,
+            ply=40,
+            material_signature="KPP_KP",
+            endgame_class=3,
+            eval_cp=-75,
+        )
+        for ply in range(41, 46):
+            await _seed_game_position(
+                db_session,
+                game=game,
+                ply=ply,
+                material_signature="KPP_KP",
+                endgame_class=3,
+                eval_cp=-100,
+            )
+
+        rows = await query_endgame_entry_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+        assert len(rows) == 2
+
+        # Order rows by endgame_class (rook=1, pawn=3) for deterministic assertions.
+        by_class = {r.endgame_class: r for r in rows}
+        rook_row = by_class[1]
+        pawn_row = by_class[3]
+
+        # Rook span is earlier (min_ply=20) → next_entry_eval_cp lifts the pawn
+        # span's entry eval (-75).
+        assert rook_row.eval_cp == 150
+        assert rook_row.next_entry_eval_cp == -75
+        assert rook_row.next_entry_eval_mate is None
+
+        # Pawn span is later (min_ply=40) — terminal in this game → NULL next-eval.
+        assert pawn_row.eval_cp == -75
+        assert pawn_row.next_entry_eval_cp is None
+        assert pawn_row.next_entry_eval_mate is None
+
+    @pytest.mark.asyncio
+    async def test_terminal_span_next_eval_is_null(self, db_session: AsyncSession) -> None:
+        """A game with a single span gets NULL next_entry_eval_cp / next_entry_eval_mate."""
+        game = await _seed_game(db_session, user_color="black")
+        for ply in range(10, 10 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session,
+                game=game,
+                ply=ply,
+                material_signature="KQ_KQ",
+                endgame_class=4,  # queen
+                eval_cp=50,
+            )
+
+        rows = await query_endgame_entry_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.endgame_class == 4
+        assert row.next_entry_eval_cp is None
+        assert row.next_entry_eval_mate is None
+
+    @pytest.mark.asyncio
+    async def test_legacy_attribute_access_unaffected(self, db_session: AsyncSession) -> None:
+        """Existing 6-column attribute access (game_id, endgame_class, result, user_color,
+        eval_cp, eval_mate) still works after the row shape grew to 8 columns.
+
+        Guards Phase 87 / Conv/Recov callers from row-shape regression.
+        """
+        game = await _seed_game(db_session, user_color="white", result="1-0")
+        for ply in range(30, 30 + ENDGAME_PLY_THRESHOLD):
+            await _seed_game_position(
+                db_session,
+                game=game,
+                ply=ply,
+                material_signature="KR_KR",
+                endgame_class=1,
+                eval_cp=120,
+            )
+
+        rows = await query_endgame_entry_rows(
+            db_session,
+            user_id=99999,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="both",
+            recency_cutoff=None,
+        )
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.game_id == game.id
+        assert row.endgame_class == 1
+        assert row.result == "1-0"
+        assert row.user_color == "white"
+        assert row.eval_cp == 120
+        assert row.eval_mate is None
 
 
 # ---------------------------------------------------------------------------

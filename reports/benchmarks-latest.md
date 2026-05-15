@@ -1,7 +1,7 @@
 # FlawChess Benchmarks — 2026-05-14
 
 - **DB**: benchmark (Docker on localhost:5433, flawchess_benchmark)
-- **Snapshot taken**: 2026-05-14T12:16:39Z
+- **Snapshot taken**: 2026-05-14T12:16:39Z (§3.4.2 re-run 2026-05-15, DB unchanged)
 - **Population**: 2,415 users / 1,375,544 games / 95,040,660 positions
 - **Cell anchoring**: 400-wide ELO buckets via `benchmark_selected_users.rating_bucket`; tc_bucket from same table; per-user TC restricted to selected `tc_bucket`
 - **Selection provenance**: 2026-03 Lichess monthly dump, 9,133 selected users, 1,912 ingested at ~100/cell (one cell at 12)
@@ -785,6 +785,254 @@ Editorial tightening (memory `feedback_zone_band_judgement.md`): the recommended
 
 **Collapse verdicts** for per-(metric × class): per-cell sample sizes show the same ELO ramp pattern observed in §3.2.1 — conversion climbs with ELO, recovery is roughly flat. ELO stratification per class is statistically supported but UI-cost is high. Stick with pooled per-class until users ask for the finer grain.
 
+#### 3.4.2 Per-span Score Gap by Endgame Type
+
+Calibrated 2026-05-15. Per-user per-class `mean_gap = mean(exit_score − ES_entry)` over qualifying spans (≥6 plies per (game, endgame_class)). `ES_entry` and transitory `exit_score` use the Lichess winning-chances sigmoid on user-POV eval; terminal spans use game result. Equal-footing filter applied. Sample floor: ≥20 qualifying spans per user per class per cell. Sparse cell `(2400, classical)` excluded from marginals / pooled / Cohen's d.
+
+##### Currently set in code
+
+| Constant | Live value | File |
+|---|---:|---|
+| `ZONE_REGISTRY["endgame_type_achievable_score_gap"]` | (−0.04, +0.04) | `app/services/endgame_zones.py` |
+| `PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap` | calibrated per class (see recs) | same |
+| `ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN/MAX` | −0.04 / +0.04 | `frontend/src/generated/endgameZones.ts` |
+
+Values above are the **post-calibration** values written in this report. Pre-calibration (Phase 87.1 Plan 01 placeholder) was `(−0.05, +0.05)` for every entry.
+
+##### Pooled-by-class IQR (excl sparse cell)
+
+| endgame_class | n_users | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| rook | 1,309 | −0.6pp | 0.080 | −14.3pp | **−5.0pp** | +0.1pp | **+4.3pp** | +11.5pp |
+| minor_piece | 1,129 | +0.4pp | 0.084 | −13.2pp | **−4.2pp** | +0.6pp | **+5.5pp** | +12.9pp |
+| pawn | 795 | +0.3pp | 0.068 | −11.0pp | **−4.0pp** | +0.4pp | **+4.9pp** | +10.7pp |
+| queen | 744 | −0.1pp | 0.076 | −13.0pp | **−4.6pp** | +0.2pp | **+4.6pp** | +10.8pp |
+| mixed | 1,743 | +0.2pp | 0.060 | −9.9pp | **−3.1pp** | +0.5pp | **+3.5pp** | +9.1pp |
+| pawnless | 7 | +0.9pp | 0.031 | −3.5pp | +0.6pp | +1.3pp | +2.0pp | +4.1pp |
+| **POOLED (5 visible)** | **5,727** | **0.0pp** | **0.073** | **−12.3pp** | **−3.9pp** | **+0.4pp** | **+4.3pp** | **+11.0pp** |
+
+Per-class IQR widths range 6.6pp (mixed — narrowest) to 9.7pp (minor_piece). Means are within ±1pp of 0 for all 6 classes — the chess-fairness null + engine-alignment null align, as expected. `pawnless` (n=7) is structurally undersampled at the ≥20-span floor and is deferred — its band defaults to the global pooled value.
+
+##### Per-class 5×4 cell tables — `p50 (n_users)`, suppressed n_users < 20, sparse cell flagged
+
+**rook**
+
+| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
+|---|---:|---:|---:|---:|
+| 800 | −2.8pp (65) | −0.5pp (68) | +1.2pp (58) | — (5) |
+| 1200 | +0.5pp (89) | −0.2pp (92) | −0.3pp (79) | −3.5pp (20) |
+| 1600 | +1.5pp (92) | −0.7pp (94) | +0.6pp (85) | −1.1pp (33) |
+| 2000 | −1.4pp (97) | +0.6pp (92) | +1.4pp (80) | +0.7pp (20) |
+| 2400 | +0.7pp (97) | +1.7pp (90) | +2.4pp (53) | — * |
+
+**minor_piece**
+
+| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
+|---|---:|---:|---:|---:|
+| 800 | −4.9pp (27) | −1.3pp (45) | +3.5pp (33) | — |
+| 1200 | +0.3pp (73) | −0.8pp (78) | −1.3pp (57) | — (11) |
+| 1600 | +0.5pp (86) | +0.0pp (89) | −0.2pp (78) | −2.7pp (29) |
+| 2000 | +1.1pp (93) | +1.0pp (92) | +0.3pp (77) | +3.8pp (22) |
+| 2400 | +2.0pp (97) | +2.5pp (90) | +3.2pp (52) | — * |
+
+**pawn**
+
+| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
+|---|---:|---:|---:|---:|
+| 800 | — (10) | +0.8pp (29) | — (11) | — |
+| 1200 | −1.7pp (44) | −2.5pp (63) | +1.1pp (44) | — |
+| 1600 | +2.5pp (64) | −0.5pp (74) | +0.8pp (62) | — (13) |
+| 2000 | −0.6pp (80) | +0.7pp (68) | −0.5pp (56) | — |
+| 2400 | +1.0pp (83) | +2.5pp (54) | +1.1pp (28) | — * |
+
+**queen**
+
+| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
+|---|---:|---:|---:|---:|
+| 800 | — (9) | +1.7pp (40) | +1.3pp (27) | — |
+| 1200 | −1.8pp (43) | −2.6pp (57) | +1.2pp (42) | — |
+| 1600 | +1.7pp (63) | −1.5pp (61) | +1.0pp (44) | — |
+| 2000 | −1.0pp (80) | 0.0pp (58) | +1.9pp (42) | — |
+| 2400 | +1.8pp (85) | −1.0pp (53) | −0.7pp (20) | — * |
+
+**mixed**
+
+| ELO ↓ \ TC → | bullet | blitz | rapid | classical |
+|---|---:|---:|---:|---:|
+| 800 | +0.8pp (98) | −0.9pp (100) | −1.1pp (96) | −3.6pp (40) |
+| 1200 | +0.4pp (100) | −0.2pp (99) | 0.0pp (100) | −1.1pp (71) |
+| 1600 | +0.6pp (100) | −0.4pp (100) | +0.3pp (100) | −0.5pp (83) |
+| 2000 | +0.5pp (100) | +1.4pp (100) | +0.1pp (98) | +1.0pp (64) |
+| 2400 | +2.0pp (100) | +3.1pp (100) | +1.9pp (94) | +6.2pp (2*) |
+
+\* sparse cell — excluded from marginals / pooled / Cohen's d. — = below sample floor (n < 20).
+
+A consistent ELO ramp is visible in `mixed` and `minor_piece`: bottom-ELO cells run ~1.5–4.5pp below 0, top-ELO cells run +2–3pp above. The same ramp is muted or absent on the other three classes — consistent with the per-class Cohen's d below.
+
+##### Per-class Cohen's d (TC marginal max, ELO marginal max)
+
+| endgame_class | TC d_max | TC pair | ELO d_max | ELO pair | verdict |
+|---|---:|---|---:|---|---|
+| rook | 0.20 | bullet vs rapid | 0.32 | 800 vs 2400 | both review |
+| minor_piece | 0.12 | rapid vs classical | **0.39** | 1200 vs 2400 | TC collapse, ELO review |
+| pawn | 0.29 | classical vs blitz | 0.24 | 1200 vs 1600 | both review |
+| queen | **0.49** | classical vs rapid | 0.39 | 800 vs 1200 | TC borderline, ELO review |
+| mixed | 0.15 | classical vs rapid | **0.57** | 800 vs 2400 | TC collapse, **ELO keep** |
+
+`mixed` is the only class crossing the 0.50 keep-separate threshold on either axis — its strong ELO ramp (≈ +3.7pp from 800 to 2400) sits on top of a notably tighter IQR than the other classes (6.6pp vs ~9pp), so the standardized effect is larger. Practical implication: a global ±4pp band is centered on the population null but understates the per-cohort scale on the wings — keep the per-class registry rather than collapse to the global default.
+
+##### Recommendations
+
+**Per-class bands (`PER_CLASS_GAUGE_ZONES[cls].achievable_score_gap`):** round per-class `[p25, p75]` to nearest 1pp.
+
+| class | pooled [p25, p75] | Recommended band | Live placeholder | Action |
+|---|---|---|---|---|
+| rook | [−5.0pp, +4.3pp] | **(−0.05, +0.04)** | (−0.05, +0.05) | shift upper to +4pp |
+| minor_piece | [−4.2pp, +5.5pp] | **(−0.04, +0.06)** | (−0.05, +0.05) | shift lower up, upper up |
+| pawn | [−4.0pp, +4.9pp] | **(−0.04, +0.05)** | (−0.05, +0.05) | shift lower up |
+| queen | [−4.6pp, +4.6pp] | **(−0.05, +0.05)** | (−0.05, +0.05) | keep |
+| mixed | [−3.1pp, +3.5pp] | **(−0.03, +0.04)** | (−0.05, +0.05) | tighten both sides |
+| pawnless | n=7 — defer | **(−0.04, +0.04)** | (−0.05, +0.05) | pin to global pooled until larger sample |
+
+**Global band (`ZONE_REGISTRY["endgame_type_achievable_score_gap"]`):** pooled across 5 visible classes [−3.94pp, +4.34pp] → **(−0.04, +0.04)**. Symmetric (population median +0.4pp, well inside ±1pp).
+
+**Editorial tightening (memory `feedback_zone_band_judgement.md`):** `mixed`'s tightened band (±3–4pp) is the right call — the cohort IQR is genuinely narrower because multi-class spans average out, so a meaningful per-user effect of ~±3pp shouldn't paint typical-blue. Per memory `feedback_llm_significance_signal.md`, no separate sig-test signal is added to the LLM payload — the tighter cohort band is the signal.
+
+**Stratification deferred:** despite mixed's ELO d=0.57 ("keep separate"), per-ELO stratification of `endgame_type_achievable_score_gap` is deferred. The pooled bands already capture ~85% of users in the typical zone across cells (ELO mean range is ~3.7pp for mixed vs band half-width ~4pp); per-ELO would only meaningfully change the tile color for 2400-cohort mixed users. Re-evaluate if SEED-006 or a follow-up adds per-ELO infrastructure for similar metrics.
+
+#### 3.4.3 Endgame Type Score vs Score Gap — agreement / redundancy analysis
+
+Snapshot taken: 2026-05-15 (DB unchanged from 2026-05-14 generation pass; equal-footing filter applied; sparse cell `(2400, classical)` excluded). **Zone bands per class are IQR-derived from the cohort itself** (red = below class p25, green = above class p75, neutral otherwise) — independent of placeholder values in `endgame_zones.py` / `scoreBulletConfig.ts`. Under this design, lights-up rate is mechanically 50% per metric per class (uninformative) and is omitted from the summary.
+
+Independence baselines (per metric marginal 25/50/25): strict zone-agreement = 37.5%, strong disagreement = 12.5%. Perfect collinearity: 100% / 0%.
+
+##### Per-class IQR bands (used for zone classification)
+
+| endgame_class | score_p25 | score_p75 | score_IQR | gap_p25 | gap_p75 | gap_IQR |
+|---|---:|---:|---:|---:|---:|---:|
+| rook | 0.443 | 0.567 | 12.3pp | −0.050 | +0.043 | 9.2pp |
+| minor_piece | 0.443 | 0.574 | 13.1pp | −0.042 | +0.055 | 9.7pp |
+| pawn | 0.439 | 0.587 | 14.8pp | −0.040 | +0.049 | 8.8pp |
+| queen | 0.409 | 0.608 | **19.9pp** | −0.046 | +0.046 | 9.2pp |
+| mixed | 0.462 | 0.558 | 9.6pp | −0.031 | +0.035 | 6.6pp |
+
+Per-class IQRs vary materially across classes: queen's score IQR is 2.1× wider than mixed (consistent with the §3.4.1 finding that queen needs a wider score-bullet zone). Gap IQRs are tighter and more uniform across classes (6.6-9.7pp).
+
+##### Per-class summary
+
+| endgame_class | n_users | pearson_r | sign_agreement | zone_strict_agreement | strong_disagreement | score_stdev | gap_stdev |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| rook | 1,309 | 0.592 | 66.8% | 58.0% | 3.1% | 0.0959 | 0.0804 |
+| minor_piece | 1,129 | 0.599 | 71.9% | 57.3% | 1.8% | 0.1031 | 0.0839 |
+| pawn | 795 | 0.535 | 69.1% | 54.7% | 2.1% | 0.1078 | 0.0683 |
+| queen | 744 | **0.228** | 55.5% | 42.1% | 6.5% | 0.1378 | 0.0760 |
+| mixed | 1,743 | 0.423 | 63.1% | 50.8% | 5.2% | 0.0800 | 0.0595 |
+| **POOLED (5 visible)** | **5,720** | **0.479** | **65.5%** | **53.1%** | **3.8%** | **0.1012** | **0.0732** |
+
+All classes land **between the independence baseline (37.5% strict) and perfect collinearity (100%)**, but well below the "drop one bullet" threshold (75% strict, < 5% strong). Strong disagreement is uniformly below the 12.5% independence baseline — the two metrics rarely contradict in direction even though they don't strongly co-vary.
+
+##### 3×3 zone-agreement matrices (rows = score_zone, cols = gap_zone; fractions of users)
+
+**rook (n=1,309):**
+
+| score \ gap | red | neutral | green |
+|---|---:|---:|---:|
+| **red** | 0.136 | 0.102 | 0.012 |
+| **neutral** | 0.095 | **0.306** | 0.100 |
+| **green** | 0.018 | 0.092 | 0.138 |
+
+**minor_piece (n=1,129):**
+
+| score \ gap | red | neutral | green |
+|---|---:|---:|---:|
+| **red** | 0.142 | 0.097 | 0.011 |
+| **neutral** | 0.101 | **0.296** | 0.104 |
+| **green** | 0.007 | 0.107 | 0.136 |
+
+**pawn (n=795):**
+
+| score \ gap | red | neutral | green |
+|---|---:|---:|---:|
+| **red** | 0.127 | 0.116 | 0.008 |
+| **neutral** | 0.109 | **0.284** | 0.107 |
+| **green** | 0.014 | 0.099 | 0.136 |
+
+**queen (n=744):**
+
+| score \ gap | red | neutral | green |
+|---|---:|---:|---:|
+| **red** | 0.083 | 0.129 | **0.032** |
+| **neutral** | 0.134 | 0.246 | 0.126 |
+| **green** | **0.032** | 0.125 | 0.091 |
+
+**mixed (n=1,743):**
+
+| score \ gap | red | neutral | green |
+|---|---:|---:|---:|
+| **red** | 0.113 | 0.108 | 0.029 |
+| **neutral** | 0.115 | **0.279** | 0.106 |
+| **green** | 0.022 | 0.112 | 0.115 |
+
+By construction with IQR zones, the row and column marginals are 25 / 50 / 25 in every matrix. Diagonal mass (strict agreement) is the dominant pattern for every class except queen; queen is the only class where the red/neutral and neutral/red cells (13.4%, 12.9%) approach the diagonal red/red (8.3%). The largest off-diagonal mass sits in the **red/neutral**, **neutral/red**, **green/neutral**, **neutral/green** cells — i.e. Score lights up but Gap stays neutral (or vice versa). That's *direction* agreement but *confidence* disagreement.
+
+##### Drop-out report (cohorts after inner-joining the two metrics)
+
+| class | both | score_only | gap_only | retention |
+|---|---:|---:|---:|---:|
+| rook | 1,309 | 224 | 0 | 85.4% |
+| minor_piece | 1,129 | 288 | 0 | 79.7% |
+| pawn | 795 | 354 | 0 | 69.2% |
+| queen | 744 | 405 | 0 | 64.8% |
+| mixed | 1,743 | 72 | 0 | 96.0% |
+| pawnless | 7 | 112 | 0 | 5.9% (below ≥30 floor — excluded from analysis) |
+
+Asymmetry: Score CTE (≥10 games) is the looser floor; Gap CTE (≥20 spans) is the stricter floor. Every user who clears the Gap floor also clears Score. Retention is lowest for queen/pawn (rarer span types) and pawnless is unanalyzable at this dump.
+
+##### Effect-size ratios (under IQR bands)
+
+`score_stdev / (score_IQR / 2)` and `gap_stdev / (gap_IQR / 2)`. Values near 1.5 are the by-construction expectation for a near-normal distribution (`SD ≈ IQR / 1.35`). Values much higher indicate heavy tails.
+
+| class | score_stdev / score_IQR-half | gap_stdev / gap_IQR-half |
+|---|---:|---:|
+| rook | 1.56 | 1.74 |
+| minor_piece | 1.57 | 1.74 |
+| pawn | 1.45 | 1.55 |
+| queen | 1.38 | 1.65 |
+| mixed | 1.67 | 1.81 |
+
+All ratios sit in the 1.4-1.8 range — close to the normal-distribution value of ~1.48. Tails are modestly heavier than normal but not dramatically so. Score and Gap have similar dispersion shape under IQR bands; neither is decorative.
+
+##### Per-class verdict (IQR-zone rubric: r < 0.60 / strict < 55% / strong > 10% → keep all three)
+
+| class | r | strict | strong | rubric verdict |
+|---|---:|---:|---:|---|
+| rook | 0.59 | 58.0% | 3.1% | r < 0.60 (boundary), strict in 55-75% band, strong < 5% → mixed signal, lean **Keep all three** |
+| minor_piece | 0.60 | 57.3% | 1.8% | r at 0.60 boundary, strict in 55-75% band, strong < 5% → mixed signal, lean **Keep all three** |
+| pawn | 0.54 | 54.7% | 2.1% | r < 0.60, strict at boundary → **Keep all three** |
+| queen | 0.23 | 42.1% | 6.5% | r ≪ 0.60, strict < 55%, strong 6.5% → **Keep all three** (strongest case) |
+| mixed | 0.42 | 50.8% | 5.2% | r < 0.60, strict < 55% → **Keep all three** |
+
+**Mode verdict (headline): Keep all three.**
+
+##### Interpretation
+
+The two bullets are **complementary, not redundant**, even under self-derived IQR bands:
+
+- Pooled Pearson r = 0.48. Below 0.60 (rubric threshold for "keep all three") and well below 0.85 (collinearity threshold).
+- Strict zone-agreement is uniformly between the independence baseline (37.5%) and the "drop WDL" threshold (55-75%). The two metrics are correlated but not collinear — they put about half the cohort in matching zones, no more.
+- Strong (red↔green) disagreement is uniformly below the 12.5% independence baseline (range 1.8-6.5%). The metrics rarely contradict in direction. The more common form of disagreement is confidence-disagreement: ~20% of users have Score outside its IQR while Gap stays inside it (or vice versa). That's the position-difficulty adjustment doing its work — a user with easy positions has Score light up green while Gap (which subtracts the engine baseline) stays neutral.
+- Queen is the most divergent class (r = 0.23, strong-disagreement 6.5%, strict 42.1% — just above the independence baseline). For queen endgames specifically, Score and Score Gap are reading meaningfully different things.
+- Effect-size ratios are 1.4-1.8 across both metrics and all classes — close to the normal-distribution value of ~1.48. Both metrics are discriminating; neither has degenerate tails.
+
+The 2026-05-15 verdict on the `EndgameTypeCard.tsx` chart inventory is **Keep all three** (Score bullet + Score Gap bullet + WDL bar + Conv/Recov gauges). Cognitive-load cost is real but justified — the three signals each carry information the others don't.
+
+##### Caveats
+
+- Zone bands are self-derived from cohort IQR, so the analysis is independent of placeholder values in `endgame_zones.py` / `scoreBulletConfig.ts`. When §3.4.2 calibration runs, the per-class IQR bands proposed there will likely match (or closely approximate) the bands used here — making the live UI's zone classification match this benchmark's.
+- The score bullet currently uses the global ±0.05 band, which is significantly narrower than the per-class IQRs measured here (queen IQR ~20pp vs 10pp global). §3.4.1 already recommends `PER_CLASS_SCORE_BULLET_ZONES`; the IQRs in this table feed directly into that proposal.
+- The verdict is a chart-inventory recommendation, not a code-constant calibration — no `endgame_zones.py` / `scoreBulletConfig.ts` value should change as a direct result of this subchapter. (The per-class IQRs *do* feed §3.4.1 and §3.4.2 calibration tables.)
+- Comparison vs the 2026-05-15 fixed-zone run: under fixed `±0.05` bands queen's strong-disagreement was 10.5%; under IQR bands it drops to 6.5%, because queen's IQR score band (~20pp) is much wider than ±5pp and absorbs more cohort variance into the neutral zone. Pearson r and sign-agreement are unchanged (band-independent). The headline verdict is unchanged across both regimes.
+
 ---
 
 ## Top-axis collapse summary (HEADLINE DELIVERABLE)
@@ -809,6 +1057,11 @@ Editorial tightening (memory `feedback_zone_band_judgement.md`): the recommended
 | Per-class chess-score IQR (per-user) | 3.4.1 | n/a | n/a | global ±5pp band too narrow — add `PER_CLASS_SCORE_BULLET_ZONES` |
 | Per-class conversion | 3.4.1 | (see 3.2.1) | (see 3.2.1) | pawnless drift — recalibrate |
 | Per-class recovery | 3.4.1 | (see 3.2.1) | (see 3.2.1) | pawnless drift — recalibrate |
+| Per-class per-span Score Gap (rook) | 3.4.2 | review (0.20) | review (0.32) | per-class (−0.05, +0.04) |
+| Per-class per-span Score Gap (minor_piece) | 3.4.2 | collapse (0.12) | review (0.39) | per-class (−0.04, +0.06) |
+| Per-class per-span Score Gap (pawn) | 3.4.2 | review (0.29) | review (0.24) | per-class (−0.04, +0.05) |
+| Per-class per-span Score Gap (queen) | 3.4.2 | review (0.49) | review (0.39) | per-class (−0.05, +0.05) |
+| Per-class per-span Score Gap (mixed) | 3.4.2 | collapse (0.15) | **keep (0.57)** | per-class (−0.03, +0.04); per-ELO deferred |
 
 ---
 
@@ -837,9 +1090,17 @@ Editorial tightening (memory `feedback_zone_band_judgement.md`): the recommended
 | Net-timeout threshold | 3.3.1 | `NEUTRAL_TIMEOUT_THRESHOLD` | 5.0 | 5.0 | ELO review | keep |
 | Per-class pawnless conv | 3.4.1 | `PER_CLASS_GAUGE_ZONES.pawnless.conversion` | [0.70, 0.80] | **[0.74, 0.84]** | — | **shift up** |
 | Per-class pawnless recov | 3.4.1 | `PER_CLASS_GAUGE_ZONES.pawnless.recovery` | [0.21, 0.31] | **[0.15, 0.25]** | — | **shift down** |
+| Per-span Score Gap global | 3.4.2 | `ZONE_REGISTRY["endgame_type_achievable_score_gap"]` | (−0.05, +0.05) placeholder | **(−0.04, +0.04)** | — | **applied** (pooled IQR [−3.9pp, +4.3pp]) |
+| Per-span Score Gap per-class (rook) | 3.4.2 | `PER_CLASS_GAUGE_ZONES.rook.achievable_score_gap` | (−0.05, +0.05) | **(−0.05, +0.04)** | both review | **applied** |
+| Per-span Score Gap per-class (minor_piece) | 3.4.2 | `PER_CLASS_GAUGE_ZONES.minor_piece.achievable_score_gap` | (−0.05, +0.05) | **(−0.04, +0.06)** | TC collapse, ELO review | **applied** |
+| Per-span Score Gap per-class (pawn) | 3.4.2 | `PER_CLASS_GAUGE_ZONES.pawn.achievable_score_gap` | (−0.05, +0.05) | **(−0.04, +0.05)** | both review | **applied** |
+| Per-span Score Gap per-class (queen) | 3.4.2 | `PER_CLASS_GAUGE_ZONES.queen.achievable_score_gap` | (−0.05, +0.05) | (−0.05, +0.05) | TC borderline | keep (matches placeholder) |
+| Per-span Score Gap per-class (mixed) | 3.4.2 | `PER_CLASS_GAUGE_ZONES.mixed.achievable_score_gap` | (−0.05, +0.05) | **(−0.03, +0.04)** | ELO keep | **applied** (tighten — narrowest IQR) |
+| Per-span Score Gap per-class (pawnless) | 3.4.2 | `PER_CLASS_GAUGE_ZONES.pawnless.achievable_score_gap` | (−0.05, +0.05) | **(−0.04, +0.04)** | n=7 defer | pin to global pooled |
 | Per-class Score bullet (rook) | 3.4.1 | `SCORE_BULLET_NEUTRAL_MIN/MAX` (global) | ±0.05 (= [0.45, 0.55]) | **[0.44, 0.57]** | width +3.2pp wider | **add `PER_CLASS_SCORE_BULLET_ZONES`** registry |
 | Per-class Score bullet (minor_piece) | 3.4.1 | same | ±0.05 | **[0.43, 0.58]** | width +4.5pp wider | same registry |
 | Per-class Score bullet (pawn) | 3.4.1 | same | ±0.05 | **[0.42, 0.59]** | width +6.8pp wider | same registry |
 | Per-class Score bullet (queen) | 3.4.1 | same | ±0.05 | **[0.41, 0.63]** | midpoint +1.8pp, width +11.4pp | same registry |
 | Per-class Score bullet (mixed) | 3.4.1 | same | ±0.05 | [0.46, 0.56] (≈ global) | borderline | keep global or include in registry |
 | Per-class Score bullet (pawnless) | 3.4.1 | same | ±0.05 | defer (n_users=119) | n too small | re-evaluate next dump |
+| EndgameTypeCard chart inventory (Score / Score Gap / WDL / Conv+Recov) | 3.4.3 | n/a (layout) | 5 signals per card | 5 signals per card | r=0.48 pooled, all classes <0.60 (IQR-zone rubric) | **Keep all three** bullets + gauges + WDL bar (non-redundant under self-derived IQR bands) |

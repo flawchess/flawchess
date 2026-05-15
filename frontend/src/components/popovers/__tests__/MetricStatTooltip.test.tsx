@@ -81,7 +81,7 @@ const evalBase = {
 // the Task 2 call site will pass via MetricStatPopover. Inline copy is OK
 // (the plan body explicitly allows it).
 const ACHIEVABLE_SCORE_EXPLANATION =
-  'What a 2300+ rated player would score from your endgame-entry positions, via the Lichess winning chances formula. Compare against your Endgame Score.';
+  'What a 2300+ rated player would score from your endgame-entry positions against a peer of similar rating, via the Lichess expected-score formula. Compare against your Endgame Score.';
 
 describe('MetricStatTooltip — score-vocab headlines', () => {
   it("renders 'Likely a real strength.' for high-confidence value above neutral", () => {

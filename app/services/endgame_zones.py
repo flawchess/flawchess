@@ -30,6 +30,10 @@ Window = Literal["all_time", "last_3mo"]
 MetricId = Literal[
     "score_gap",
     "achievable_score_gap",  # 260514 split-out — dedicated band so 3.1.5 can tighten without affecting 3.1.6
+    # Phase 87.1 (SEED-016 D-02): per-span, per-type version of achievable_score_gap.
+    # User-facing label is "Endgame Type Score Gap" (concepts) / "Score Gap" (card row).
+    # Internal name retains "achievable" to mark the math-family with achievable_score_gap (Phase 85.1).
+    "endgame_type_achievable_score_gap",
     "entry_eval_pawns",  # Phase 82 D-04: new endgame_start_vs_end Tile 1
     "entry_expected_score",  # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",  # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
@@ -67,6 +71,10 @@ SubsectionId = Literal[
     "conversion_recovery_by_type",
 ]
 
+# Phase 87.1 (SEED-016): `endgame_type_achievable_score_gap` is intentionally NOT
+# added to BucketedMetricId — it is per-class only (via PER_CLASS_GAUGE_ZONES),
+# not per-(class × material-axis). If benchmark §3.4.2 later requires per-rating-
+# bucket bands, add it then in a follow-up.
 BucketedMetricId = Literal[
     "conversion_win_pct",
     "parity_score_pct",
@@ -149,6 +157,17 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     "achievable_score_gap": ZoneSpec(
         typical_lower=-0.05,
         typical_upper=0.05,
+        direction="higher_is_better",
+    ),
+    # Phase 87.1 (SEED-016 D-04): per-span, per-type version. Calibrated
+    # 260515 from §3.4.2 (reports/benchmarks-latest.md): pooled-across-classes
+    # IQR (n=5,727 users, sparse cell excluded) = [-3.94pp, +4.34pp], rounded
+    # to symmetric ±0.04. Per-class bands (PER_CLASS_GAUGE_ZONES below)
+    # diverge by enough (width spread 6.6pp mixed -> 9.7pp minor_piece) to
+    # warrant per-class overrides on top of this global default.
+    "endgame_type_achievable_score_gap": ZoneSpec(
+        typical_lower=-0.04,
+        typical_upper=0.04,
         direction="higher_is_better",
     ),
     # entry_eval_pawns: average Stockfish eval at endgame entry, signed from
@@ -333,23 +352,62 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
 
 @dataclass(frozen=True)
 class PerClassBands:
-    """Typical [lower, upper] bands for Conversion and Recovery for one endgame type."""
+    """Typical [lower, upper] bands for Conversion, Recovery, and Score Gap for one endgame type."""
 
     conversion: tuple[float, float]
     recovery: tuple[float, float]
+    achievable_score_gap: tuple[float, float]  # Phase 87.1 — SEED-016 D-04
 
 
 # 260503 shifts (reports/benchmarks-2026-05-03.md): rook recovery (0.28→0.26,
 # 0.38→0.36) and pawn recovery (0.26→0.23, 0.36→0.34) — both pooled means sat
 # below the previous lower bound. Pawn conversion upper bound nudged 0.77→0.79
 # (pooled mean 0.738).
+#
+# Phase 87.1 (SEED-016 D-04): achievable_score_gap calibrated 260515 from
+# reports/benchmarks-latest.md §3.4.2 — pooled per-user mean span gap per
+# class, sparse cell (2400, classical) excluded, equal-footing filter applied.
+# Per-class [p25, p75] rounded to nearest 1pp. Pawnless deferred (n=7 users —
+# floor not met) and pinned to the global pooled band as a defensible default.
 PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
-    "rook": PerClassBands(conversion=(0.65, 0.75), recovery=(0.26, 0.36)),
-    "minor_piece": PerClassBands(conversion=(0.63, 0.73), recovery=(0.31, 0.41)),
-    "pawn": PerClassBands(conversion=(0.67, 0.79), recovery=(0.23, 0.34)),
-    "queen": PerClassBands(conversion=(0.73, 0.83), recovery=(0.20, 0.30)),
-    "mixed": PerClassBands(conversion=(0.65, 0.75), recovery=(0.28, 0.38)),
-    "pawnless": PerClassBands(conversion=(0.70, 0.80), recovery=(0.21, 0.31)),
+    "rook": PerClassBands(
+        conversion=(0.65, 0.75),
+        recovery=(0.26, 0.36),
+        # n=1,309 — pooled IQR [-4.97pp, +4.27pp]; TC d=0.20, ELO d=0.32 (both review).
+        achievable_score_gap=(-0.05, 0.04),
+    ),
+    "minor_piece": PerClassBands(
+        conversion=(0.63, 0.73),
+        recovery=(0.31, 0.41),
+        # n=1,129 — pooled IQR [-4.21pp, +5.53pp]; TC d=0.12 (collapse), ELO d=0.39 (review).
+        achievable_score_gap=(-0.04, 0.06),
+    ),
+    "pawn": PerClassBands(
+        conversion=(0.67, 0.79),
+        recovery=(0.23, 0.34),
+        # n=795 — pooled IQR [-3.98pp, +4.85pp]; TC d=0.29, ELO d=0.24 (both review).
+        achievable_score_gap=(-0.04, 0.05),
+    ),
+    "queen": PerClassBands(
+        conversion=(0.73, 0.83),
+        recovery=(0.20, 0.30),
+        # n=744 — pooled IQR [-4.63pp, +4.60pp]; TC d=0.49 (review/borderline keep), ELO d=0.39.
+        achievable_score_gap=(-0.05, 0.05),
+    ),
+    "mixed": PerClassBands(
+        conversion=(0.65, 0.75),
+        recovery=(0.28, 0.38),
+        # n=1,743 — pooled IQR [-3.05pp, +3.53pp]; TC d=0.15 (collapse), ELO d=0.57 (keep).
+        # Tightest IQR of the 5 visible classes — multi-class spans average out.
+        achievable_score_gap=(-0.03, 0.04),
+    ),
+    "pawnless": PerClassBands(
+        conversion=(0.70, 0.80),
+        recovery=(0.21, 0.31),
+        # n=7 users at ≥20-span floor — defer per-class calibration. Pinned to the
+        # global pooled band until a larger sample emerges.
+        achievable_score_gap=(-0.04, 0.04),
+    ),
 }
 
 

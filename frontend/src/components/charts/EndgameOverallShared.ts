@@ -16,6 +16,11 @@ export const ENDGAME_TILE_SCORE_DOMAIN = 0.15;
 // covers the observed range without making typical values look tiny.
 export const SCORE_GAP_DOMAIN = 0.20;
 
+// Per-class Score Gap (Endgame Type Breakdown) half-domain. Sized so the
+// neutral band (±0.04, width 0.08) fills 1/3 of the axis — matching the
+// Endgame Score bullet above it (band 0.10 / axis 0.30 = 1/3).
+export const ENDGAME_TYPE_SCORE_GAP_DOMAIN = 0.12;
+
 // Confidence-bucket thresholds (mirrors scoreConfidence.computeScoreConfidence).
 const CONFIDENCE_HIGH_MAX_P = 0.01;
 const CONFIDENCE_MEDIUM_MAX_P = 0.05;

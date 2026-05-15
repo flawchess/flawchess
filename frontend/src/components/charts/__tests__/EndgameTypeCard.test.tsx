@@ -97,6 +97,12 @@ function buildCategory(
     loss_pct: 20,
     conversion: buildConversion(convOverrides),
     score_p_value: 0.001,
+    // Phase 87.1: per-span Score Gap defaults. Tests override these.
+    type_achievable_score_gap_mean: 0.08,
+    type_achievable_score_gap_n: 80,
+    type_achievable_score_gap_p_value: 0.0001,
+    type_achievable_score_gap_ci_low: 0.04,
+    type_achievable_score_gap_ci_high: 0.12,
     ...rest,
   };
 }
@@ -183,6 +189,11 @@ describe('EndgameTypeCard — Empty / sparse states', () => {
         draw_pct: 0,
         loss_pct: 0,
         score_p_value: null,
+        type_achievable_score_gap_mean: null,
+        type_achievable_score_gap_n: 0,
+        type_achievable_score_gap_p_value: null,
+        type_achievable_score_gap_ci_low: null,
+        type_achievable_score_gap_ci_high: null,
         conversion: {
           conversion_pct: 0,
           conversion_games: 0,
@@ -205,6 +216,8 @@ describe('EndgameTypeCard — Empty / sparse states', () => {
     expect(screen.queryByTestId(`${TILE_TESTID}-score-row`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-bullet`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-games-link`)).toBeNull();
+    // Phase 87.1: ScoreGapRow hidden when type_achievable_score_gap_n === 0.
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-bullet`)).toBeNull();
   });
 
   it('shows n=total chip and UNRELIABLE_OPACITY when total < MIN_GAMES_FOR_RELIABLE_STATS, hides Score row', () => {
@@ -282,6 +295,99 @@ describe('EndgameTypeCard — Score bullet sig-gating', () => {
     const scoreSpan = screen.getByTestId(`${TILE_TESTID}-score-value`);
     expect(scoreSpan.style.color).toBeFalsy();
   });
+});
+
+describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
+  it('renders the ScoreGapRow row with testid sub-elements when n > 0', () => {
+    renderCard(buildCategory());
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-bullet`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-value`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-info`)).not.toBeNull();
+  });
+
+  it('hides the ScoreGapRow row when type_achievable_score_gap_n === 0', () => {
+    renderCard(
+      buildCategory({
+        type_achievable_score_gap_mean: null,
+        type_achievable_score_gap_n: 0,
+        type_achievable_score_gap_p_value: null,
+        type_achievable_score_gap_ci_low: null,
+        type_achievable_score_gap_ci_high: null,
+      }),
+    );
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-bullet`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-value`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-info`)).toBeNull();
+  });
+
+  it('positions the ScoreGapRow as the last row in the card', () => {
+    renderCard(buildCategory());
+    const tile = screen.getByTestId(TILE_TESTID);
+    const gauges = screen.getByTestId(`${TILE_TESTID}-gauges`);
+    const asgBullet = screen.getByTestId(`${TILE_TESTID}-asg-bullet`);
+    const wdl = screen.getByTestId(`${TILE_TESTID}-wdl`);
+    const scoreRow = screen.getByTestId(`${TILE_TESTID}-score-row`);
+    const body = tile.querySelector('.flex.flex-col.gap-4');
+    expect(body).not.toBeNull();
+    expect(gauges.parentElement).toBe(body);
+    expect(asgBullet.parentElement).toBe(body);
+    // DOM ordering: gauges -> wdl block -> score row -> asg row (Score Gap last).
+    const children = Array.from(body!.children);
+    const gaugesIdx = children.indexOf(gauges);
+    const wdlWrapper = children.find((c) => c.contains(wdl)) as HTMLElement;
+    const wdlIdx = children.indexOf(wdlWrapper);
+    const scoreIdx = children.indexOf(scoreRow);
+    const asgIdx = children.indexOf(asgBullet);
+    expect(gaugesIdx).toBeGreaterThanOrEqual(0);
+    expect(wdlIdx).toBeGreaterThan(gaugesIdx);
+    expect(scoreIdx).toBeGreaterThan(wdlIdx);
+    expect(asgIdx).toBeGreaterThan(scoreIdx);
+  });
+
+  it('tints positive out-of-band gap green (ZONE_SUCCESS)', async () => {
+    const { ZONE_SUCCESS } = await import('@/lib/theme');
+    renderCard(
+      buildCategory({
+        type_achievable_score_gap_mean: 0.08,
+        type_achievable_score_gap_n: 80,
+      }),
+    );
+    const valueSpan = screen.getByTestId(`${TILE_TESTID}-asg-value`);
+    // jsdom normalizes oklch() numeric literals (e.g. 0.50 -> 0.5). Normalize
+    // both sides by collapsing trailing zeros in decimal fractions before compare.
+    const normalize = (s: string): string =>
+      s.toLowerCase().replace(/(\d+\.\d*?)0+(?=\D|$)/g, '$1').replace(/(\d+)\.(?=\D)/g, '$1');
+    expect(normalize(valueSpan.style.color)).toBe(normalize(ZONE_SUCCESS));
+    expect(valueSpan.textContent).toBe('+8%');
+  });
+
+  it('tints negative out-of-band gap red (ZONE_DANGER)', async () => {
+    const { ZONE_DANGER } = await import('@/lib/theme');
+    renderCard(
+      buildCategory({
+        type_achievable_score_gap_mean: -0.09,
+        type_achievable_score_gap_n: 80,
+      }),
+    );
+    const valueSpan = screen.getByTestId(`${TILE_TESTID}-asg-value`);
+    const normalize = (s: string): string =>
+      s.toLowerCase().replace(/(\d+\.\d*?)0+(?=\D|$)/g, '$1').replace(/(\d+)\.(?=\D)/g, '$1');
+    expect(normalize(valueSpan.style.color)).toBe(normalize(ZONE_DANGER));
+    expect(valueSpan.textContent).toBe('-9%');
+  });
+
+  it('does not tint when gap is inside the neutral band', () => {
+    renderCard(
+      buildCategory({
+        type_achievable_score_gap_mean: 0.02,
+        type_achievable_score_gap_n: 80,
+      }),
+    );
+    const valueSpan = screen.getByTestId(`${TILE_TESTID}-asg-value`);
+    expect(valueSpan.style.color).toBeFalsy();
+    expect(valueSpan.textContent).toBe('+2%');
+  });
+
 });
 
 describe('EndgameTypeCard — WDL flag gating (mocked false)', () => {

@@ -11,6 +11,7 @@
  *   2. Side-by-side Conv + Recov gauges (unchanged).
  *   3. WDL bar row with the Games deep-link.
  *   4. Score bullet (W + 0.5*D / N) sig-gated against 50%.
+ *   5. Per-span Score Gap bullet (eval-based, Cpu-iconed) — Phase 87.1.
  *
  * Empty / sparse handling (CONTEXT D-13 / D-14 / D-15):
  * - total === 0: gauge row opacity-50, "Not enough data yet" placeholder, no
@@ -22,7 +23,7 @@
 import type { CSSProperties } from 'react';
 
 import { Link } from 'react-router-dom';
-import { Swords } from 'lucide-react';
+import { Cpu, Swords } from 'lucide-react';
 
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
@@ -30,7 +31,14 @@ import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
-import { PER_CLASS_GAUGE_ZONES } from '@/generated/endgameZones';
+// Frontend constant names use the user-facing "ENDGAME_TYPE_SCORE_GAP" form;
+// internal identifier is `endgame_type_achievable_score_gap` (see
+// app/services/endgame_zones.py). Dual-label scheme per CONTEXT D-02.
+import {
+  ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX,
+  ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN,
+  PER_CLASS_GAUGE_ZONES,
+} from '@/generated/endgameZones';
 import {
   SCORE_BULLET_CENTER,
   SCORE_BULLET_NEUTRAL_MAX,
@@ -43,7 +51,9 @@ import { isConfident } from '@/lib/significance';
 import {
   MIN_GAMES_FOR_RELIABLE_STATS,
   UNRELIABLE_OPACITY,
+  ZONE_DANGER,
   ZONE_NEUTRAL,
+  ZONE_SUCCESS,
   colorizeGaugeZones,
 } from '@/lib/theme';
 import {
@@ -53,7 +63,12 @@ import {
 } from '@/lib/endgameMetrics';
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
 
-import { ENDGAME_TILE_SCORE_DOMAIN, deriveLevel } from './EndgameOverallShared';
+import { ScoreGapRow } from './EndgameOverallScoreGapRow';
+import {
+  ENDGAME_TILE_SCORE_DOMAIN,
+  ENDGAME_TYPE_SCORE_GAP_DOMAIN,
+  deriveLevel,
+} from './EndgameOverallShared';
 
 // Per-card gauge size — extracted per REVIEW IN-02 (was hard-coded 4 times).
 const PER_TYPE_GAUGE_SIZE = 130;
@@ -97,6 +112,26 @@ export function EndgameTypeCard({
   const [ciLow, ciHigh] = wilsonBounds(score, total);
   const showScoreRow = total >= MIN_GAMES_FOR_RELIABLE_STATS;
   const scorePct = `${Math.round(score * 100)}%`;
+
+  // Phase 87.1 (SEED-016 D-08): per-span Score Gap derivation.
+  // gapZoneColor mirrors EndgameOverallPerformanceSection — zone-only tint
+  // (Phase 85.1 D-04), no sig-gate on the row's font color. Hidden at n=0.
+  const gapMean = category.type_achievable_score_gap_mean;
+  const gapN = category.type_achievable_score_gap_n ?? 0;
+  const showGapRow = gapN > 0;
+  const gapFormatted =
+    gapMean != null
+      ? (gapMean >= 0 ? '+' : '') + `${Math.round(gapMean * 100)}%`
+      : '—';
+  const gapColor: string | undefined =
+    gapMean != null
+      ? gapMean < ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN
+        ? ZONE_DANGER
+        : gapMean >= ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX
+          ? ZONE_SUCCESS
+          : undefined
+      : undefined;
+  const gapLevel = deriveLevel(category.type_achievable_score_gap_p_value, gapN);
 
   // Per-class gauge zones (p25/p75 bands from the generated registry). With
   // `pawnless` filtered upstream and the union of registry keys covering the
@@ -346,6 +381,58 @@ export function EndgameTypeCard({
                 ariaLabel={`${category.label} endgame score ${scorePct}`}
               />
             </div>
+          </div>
+        )}
+
+        {/* Phase 87.1 (SEED-016 D-08): per-span Score Gap bullet row.
+            Positioned last in the card; Cpu icon flags this as eval-based.
+            Card row label is "Score Gap" (short form per D-02); card title
+            ("Rook Endgames" etc.) supplies the disambiguating type context. */}
+        {showGapRow && (
+          <div data-testid={`${tileTestId}-asg-bullet`}>
+            <ScoreGapRow
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                  Score Gap:
+                </span>
+              }
+              value={gapMean ?? 0}
+              formatted={gapFormatted}
+              resultColor={gapColor}
+              valueTestId={`${tileTestId}-asg-value`}
+              ariaLabel={`${category.label} Score Gap: ${gapFormatted}`}
+              neutralMin={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
+              neutralMax={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
+              domain={ENDGAME_TYPE_SCORE_GAP_DOMAIN}
+              ciLow={category.type_achievable_score_gap_ci_low ?? undefined}
+              ciHigh={category.type_achievable_score_gap_ci_high ?? undefined}
+              tooltip={
+                <MetricStatPopover
+                  name="Score Gap"
+                  explanation={`Each ${category.label} Endgame Sequence has a start eval and an end eval, or the actual game result for the final sequence in a game. Both get converted to expected scores via the Lichess expected-score formula. The Score Gap is the average of (end − start) across all your ${category.label} sequences: positive = you outperformed expectation, negative = you gave back score.`}
+                  value={gapMean ?? 0}
+                  baseline={0}
+                  unit="percent"
+                  gameCount={gapN}
+                  level={gapLevel}
+                  pValue={category.type_achievable_score_gap_p_value}
+                  vocabulary="score"
+                  neutralLower={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
+                  neutralUpper={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
+                  baselineLabel="0%"
+                  methodology={
+                    <>
+                      Score: wins + ½ draws (game result for terminal spans).<br />
+                      Test: paired one-sample z-test on per-span (exit − entry expected) diffs vs 0.<br />
+                      Confidence interval: 95% normal-approx on the paired diffs.
+                    </>
+                  }
+                  testId={`${tileTestId}-asg-info`}
+                  ariaLabel={`What is ${category.label} Score Gap?`}
+                />
+              }
+            />
           </div>
         )}
       </div>

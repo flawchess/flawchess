@@ -57,13 +57,15 @@ from app.services.endgame_zones import (
     PER_CLASS_GAUGE_ZONES,
     ZONE_REGISTRY,
     ZoneSpec,
+    assign_zone,
+    sample_quality,
 )
 from app.services.insights_service import SPARSE_COMBO_FLOOR, compute_findings
 
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v28"  # v28 (260514 concept capitalization): Endgame Phase / Endgame Type / Endgame Sequence / Endgame Entry Eval / Achievable Score / Endgame Score / Non-Endgame Score are now title-cased everywhere in prompt prose and UI labels to match the user-facing Stats page. Cache-busted to ensure newly generated reports match the capitalized UI terminology. v27 (260512 sparse-history rescue): three layered fixes for short-history users (< ~20 weekly buckets per (platform, time_control) combo) that previously produced incomplete prompts and hallucinated `player_profile` output. **A**: `all_time_series_pairs` in `_assemble_user_prompt` now registers a pair only when the post-A4/C2/C6 retained series has ≥1 point, so an all_time series that C2-trims to empty no longer suppresses its last_3mo `[series]` twin (restores score_timeline / clock_diff_timeline / endgame_elo_timeline raw points for users whose entire history fits inside the last 90 days). **B**: `compute_player_profile` now emits `quality="sparse"` entries for combos with ≥1 weekly bucket but < _PLAYER_PROFILE_MIN_POINTS=20 when NO combo clears the full floor — the renderer suppresses `trend=` / `std=` on sparse blocks and swaps the [anchor-combo] tag for a `sparse-history` variant that forbids learning-arc / trajectory framing; new prompt section "Sparse-history profile" tells the LLM how to narrate from sparse blocks (current/min/max only, no trajectory claims, ~2-3 sentence player_profile). Replaces the prior hallucination failure mode where the schema-mandated `player_profile` field was fabricated from non-existent anchor data. **C**: `### Subsection: endgame_elo_timeline` now renders a sentinel `[no qualifying combo — every (platform, time_control) combo has fewer than SPARSE_COMBO_FLOOR weekly buckets; no Endgame ELO trajectory available yet]` line when no combo clears `SPARSE_COMBO_FLOOR=10`, instead of vanishing from the prompt entirely. See `.planning/debug/llm-prompt-missing-sections.md`. v26 (260511 entry_eval_pawns band): reverted the EG-entry-eval neutral band from ±0.50 back to ±0.75 pawns (pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`, reports/benchmarks-2026-05-10.md §3). Frontend tile, backend ZoneSpec, and LLM glossary kept in lockstep. v25 (260511 entry_expected_score): wire Stockfish-baseline achievable score (Lichess sigmoid) into the endgame_start_vs_end subsection alongside entry_eval_pawns and endgame_score. New ENTRY_EXPECTED_SCORE_ZONES from reports/benchmarks-2026-05-11.md. LLM narrates the achievable-vs-achieved gap as the headline diagnostic with entry_eval_pawns as the explanatory unit. v24 (260510-ugj): tightened last_3mo narration anchors — quoting any last_3mo value now requires an explicit "last 3 months" framing, and the within-noise legal-frames list no longer endorses vague "currently sitting at X%" / "over the recent window" forms that confused users by naming numbers absent from the dashboard. Stale-series rule strengthened: stale window numbers (mean, n, trend, std) must not appear in the narrative at all — past-tense qualitative reference only. v23 (260510 endgame_start_vs_end): wire Phase 81 entry-eval and endgame-score metrics into the LLM payload via a new `endgame_start_vs_end` subsection under section_id `overall`. Renamed score_timeline `endgame_score` → `endgame_score_timeline` and `non_endgame_score` → `non_endgame_score_timeline` to free the clean `endgame_score` name for the new subsection. Tile color rule amended from sig-only to `zone × p<0.05` (Phase 81 D-09 amendment). EG-entry-eval neutral band tightened from ±0.75 to ±0.50 for both tile and LLM. v22 (260503 eval-proxy cutover): rewrote the Conversion / Parity / Recovery glossary entries and the bucket descriptions in the metric glossary to reflect the Stockfish eval at endgame entry replacing the old material_imbalance + 4-ply persistence proxy. Conversion now means "entered with eval ≥ +1.0", Recovery "entered with eval ≤ -1.0", Parity "entered with eval between -1.0 and +1.0". Display threshold expressed as a signed one-decimal pawn value ("+1.0" / "-1.0") to match the rest of the page's eval rendering. v21 (260501-s0u pass2 polish): score_pct_diff in the type WDL chart is now derived from rounded score_pct − opp_score_pct (avoids 1pp mismatch e.g. 47 − 53 = -6 vs the unrounded -6.8 → -7). Raised SAMPLE_QUALITY_BANDS thin_max from 10 to 20 for per-type subsections (results_by_endgame_type, conversion_recovery_by_type) so 10-19 sequences no longer label as `adequate`. v20 (260501-s0u pass2 type_breakdown cleanup): restored the per-type WDL chart at `### Chart: results_by_endgame_type_wdl` (endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff). The v18 conv/recov delta table was redundant with the conversion_recovery_by_type [summary] blocks (same per-type conv_pct / recov_pct + per-class typical bands) and got dropped. Reordered type_breakdown to chart wdl → results_by_endgame_type → conversion_recovery_by_type so the LLM reads aggregate WDL, then per-type win_rate, then per-type Conv/Recov detail. _format_zone_bounds and the zone classifier (insights_service._findings_conversion_recovery_by_type) now dispatch via PER_CLASS_GAUGE_ZONES when a finding carries `endgame_class` for conversion_win_pct / recovery_save_pct, so per-class [summary] zone labels and inline `(typical LO to UP)` match the table-side per-class baselines. v19 (260501-s0u terminology pass): standardize on "endgame type" instead of "endgame class" in LLM-facing strings — column header is now `endgame_type`, caption and prompt prose use "per-type" / "type-specific" / "type baseline" framing. v18 (260501-s0u benchmark calibration v2): drop per-class win_rate framing in favor of per-class delta-from-baseline. Conversion / Recovery are now narrated against class-specific typical bands sourced from PER_CLASS_GAUGE_ZONES (reports/benchmarks-2026-05-01.md). Per-class user prompt payload replaced win_pct/score_pct rows with conv_pct, recov_pct, class baseline midpoints, and signed deltas. type_win_rate_timeline subsection deprecated — no longer rendered on the UI. v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
+_PROMPT_VERSION = "endgame_v30"  # v30 (260515 Achievable Score precision pass): tightened the Achievable Score definition to specify the implicit opponent — "what a 2300+ rated player would score from your endgame-entry positions **against a peer of similar rating**". The Lichess sigmoid was fit on 2300+ rapid game outcomes (peer-vs-peer), so the baseline is the score a 2300+ player would post against another 2300+ player, not against an arbitrary opponent. Also corrected the sigmoid's name throughout the prompt from "Lichess winning-chances sigmoid" → "Lichess expected-score sigmoid": the formula was fit by `scipy.optimize.curve_fit` against {-1, 0, +1} game outcomes (lichess-org/lila#11148), which is mathematically equivalent to fitting expected score on [0, 1] — `Win% = 100 × expected_score`, not `100 × P(win)` (e.g. at cp=0 the curve returns 50%, which is correct as expected score by symmetry but wildly wrong as win probability since draws dominate at 2300+ balanced positions). Both fixes are user-facing prose only; payload shape, zone bands, and the underlying coefficient (-0.00368208) are unchanged. Frontend concepts + popovers were updated in lockstep. v29 (260515 endgame_type_achievable_score_gap): Phase 87.1 adds a per-class per-span Score Gap metric to the LLM payload alongside the existing Conv/Recov findings under `conversion_recovery_by_type`. Payload field name is the internal identifier `endgame_type_achievable_score_gap` (preserves grep-ability with the page-level Phase 85.1 `achievable_score_gap` metric); the glossary in `endgame_insights.md` defines the primary user-facing label as "Endgame Type Score Gap" and instructs the LLM to use the short form "Score Gap" in narrative references inside a per-type card context (matching the card row label users see). No parallel `verdict` / `p_value` field is emitted in the payload — the cohort band IS the significance signal (per memory `feedback_llm_significance_signal.md`); tighten the band via §3.4.2 benchmark calibration rather than editorialising in the prompt. Sigmoid-bias caveat: the metric uses the Lichess winning-chances sigmoid which under-weights endgame eval; zones are percentile-calibrated from benchmark data so the bias does not affect zone placement — see `.planning/notes/lichess-sigmoid-endgame-calibration.md`. v28 (260514 concept capitalization): Endgame Phase / Endgame Type / Endgame Sequence / Endgame Entry Eval / Achievable Score / Endgame Score / Non-Endgame Score are now title-cased everywhere in prompt prose and UI labels to match the user-facing Stats page. Cache-busted to ensure newly generated reports match the capitalized UI terminology. v27 (260512 sparse-history rescue): three layered fixes for short-history users (< ~20 weekly buckets per (platform, time_control) combo) that previously produced incomplete prompts and hallucinated `player_profile` output. **A**: `all_time_series_pairs` in `_assemble_user_prompt` now registers a pair only when the post-A4/C2/C6 retained series has ≥1 point, so an all_time series that C2-trims to empty no longer suppresses its last_3mo `[series]` twin (restores score_timeline / clock_diff_timeline / endgame_elo_timeline raw points for users whose entire history fits inside the last 90 days). **B**: `compute_player_profile` now emits `quality="sparse"` entries for combos with ≥1 weekly bucket but < _PLAYER_PROFILE_MIN_POINTS=20 when NO combo clears the full floor — the renderer suppresses `trend=` / `std=` on sparse blocks and swaps the [anchor-combo] tag for a `sparse-history` variant that forbids learning-arc / trajectory framing; new prompt section "Sparse-history profile" tells the LLM how to narrate from sparse blocks (current/min/max only, no trajectory claims, ~2-3 sentence player_profile). Replaces the prior hallucination failure mode where the schema-mandated `player_profile` field was fabricated from non-existent anchor data. **C**: `### Subsection: endgame_elo_timeline` now renders a sentinel `[no qualifying combo — every (platform, time_control) combo has fewer than SPARSE_COMBO_FLOOR weekly buckets; no Endgame ELO trajectory available yet]` line when no combo clears `SPARSE_COMBO_FLOOR=10`, instead of vanishing from the prompt entirely. See `.planning/debug/llm-prompt-missing-sections.md`. v26 (260511 entry_eval_pawns band): reverted the EG-entry-eval neutral band from ±0.50 back to ±0.75 pawns (pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`, reports/benchmarks-2026-05-10.md §3). Frontend tile, backend ZoneSpec, and LLM glossary kept in lockstep. v25 (260511 entry_expected_score): wire Stockfish-baseline achievable score (Lichess sigmoid) into the endgame_start_vs_end subsection alongside entry_eval_pawns and endgame_score. New ENTRY_EXPECTED_SCORE_ZONES from reports/benchmarks-2026-05-11.md. LLM narrates the achievable-vs-achieved gap as the headline diagnostic with entry_eval_pawns as the explanatory unit. v24 (260510-ugj): tightened last_3mo narration anchors — quoting any last_3mo value now requires an explicit "last 3 months" framing, and the within-noise legal-frames list no longer endorses vague "currently sitting at X%" / "over the recent window" forms that confused users by naming numbers absent from the dashboard. Stale-series rule strengthened: stale window numbers (mean, n, trend, std) must not appear in the narrative at all — past-tense qualitative reference only. v23 (260510 endgame_start_vs_end): wire Phase 81 entry-eval and endgame-score metrics into the LLM payload via a new `endgame_start_vs_end` subsection under section_id `overall`. Renamed score_timeline `endgame_score` → `endgame_score_timeline` and `non_endgame_score` → `non_endgame_score_timeline` to free the clean `endgame_score` name for the new subsection. Tile color rule amended from sig-only to `zone × p<0.05` (Phase 81 D-09 amendment). EG-entry-eval neutral band tightened from ±0.75 to ±0.50 for both tile and LLM. v22 (260503 eval-proxy cutover): rewrote the Conversion / Parity / Recovery glossary entries and the bucket descriptions in the metric glossary to reflect the Stockfish eval at endgame entry replacing the old material_imbalance + 4-ply persistence proxy. Conversion now means "entered with eval ≥ +1.0", Recovery "entered with eval ≤ -1.0", Parity "entered with eval between -1.0 and +1.0". Display threshold expressed as a signed one-decimal pawn value ("+1.0" / "-1.0") to match the rest of the page's eval rendering. v21 (260501-s0u pass2 polish): score_pct_diff in the type WDL chart is now derived from rounded score_pct − opp_score_pct (avoids 1pp mismatch e.g. 47 − 53 = -6 vs the unrounded -6.8 → -7). Raised SAMPLE_QUALITY_BANDS thin_max from 10 to 20 for per-type subsections (results_by_endgame_type, conversion_recovery_by_type) so 10-19 sequences no longer label as `adequate`. v20 (260501-s0u pass2 type_breakdown cleanup): restored the per-type WDL chart at `### Chart: results_by_endgame_type_wdl` (endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff). The v18 conv/recov delta table was redundant with the conversion_recovery_by_type [summary] blocks (same per-type conv_pct / recov_pct + per-class typical bands) and got dropped. Reordered type_breakdown to chart wdl → results_by_endgame_type → conversion_recovery_by_type so the LLM reads aggregate WDL, then per-type win_rate, then per-type Conv/Recov detail. _format_zone_bounds and the zone classifier (insights_service._findings_conversion_recovery_by_type) now dispatch via PER_CLASS_GAUGE_ZONES when a finding carries `endgame_class` for conversion_win_pct / recovery_save_pct, so per-class [summary] zone labels and inline `(typical LO to UP)` match the table-side per-class baselines. v19 (260501-s0u terminology pass): standardize on "endgame type" instead of "endgame class" in LLM-facing strings — column header is now `endgame_type`, caption and prompt prose use "per-type" / "type-specific" / "type baseline" framing. v18 (260501-s0u benchmark calibration v2): drop per-class win_rate framing in favor of per-class delta-from-baseline. Conversion / Recovery are now narrated against class-specific typical bands sourced from PER_CLASS_GAUGE_ZONES (reports/benchmarks-2026-05-01.md). Per-class user prompt payload replaced win_pct/score_pct rows with conv_pct, recov_pct, class baseline midpoints, and signed deltas. type_win_rate_timeline subsection deprecated — no longer rendered on the UI. v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -385,6 +387,19 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
         bands = PER_CLASS_GAUGE_ZONES[cast("EndgameClass", endgame_class)]
         lo_hi = bands.conversion if metric_id == "conversion_win_pct" else bands.recovery
         spec = ZoneSpec(lo_hi[0], lo_hi[1], "higher_is_better")
+    elif (
+        # Phase 87.1 (SEED-016 D-10): per-class Score Gap band dispatch.
+        # Currently both PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap and
+        # the global ZONE_REGISTRY entry hold the same ±5% placeholder, but
+        # routing through the per-class registry now means future §3.4.2
+        # benchmark recalibration takes effect without touching renderer code.
+        metric_id == "endgame_type_achievable_score_gap"
+        and endgame_class is not None
+        and endgame_class in PER_CLASS_GAUGE_ZONES
+    ):
+        bands = PER_CLASS_GAUGE_ZONES[cast("EndgameClass", endgame_class)]
+        lo_hi = bands.achievable_score_gap
+        spec = ZoneSpec(lo_hi[0], lo_hi[1], "higher_is_better")
     elif metric_id in bucketed and bucket is not None:
         spec = bucketed[metric_id].get(bucket)
     elif metric_id in scalar:
@@ -679,6 +694,64 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     lines.extend(rows)
     lines.append("")
     return lines
+
+
+# Phase 87.1 (SEED-016 D-10): per-class Score Gap block. Field name uses internal
+# "type_achievable_score_gap" for grep-ability with achievable_score_gap (Phase 85.1).
+# User-facing narration: "Score Gap" (per card row); "Endgame Type Score Gap"
+# when introducing. No p_value / verdict per memory feedback_llm_significance_signal.md.
+def _synthesize_endgame_type_achievable_score_gap_findings(
+    findings: EndgameTabFindings,
+) -> list[SubsectionFinding]:
+    """Build per-class SubsectionFinding for the new per-span Score Gap metric.
+
+    Reads the Phase 87.1 Plan 02 per-category fields
+    (`type_achievable_score_gap_mean` / `_n`) off
+    `findings.type_categories` and emits one finding per non-pawnless class
+    with a populated mean. Findings join `conversion_recovery_by_type` so the
+    rendered prompt groups the Score Gap row next to Conv/Recov per class.
+
+    Zone is dispatched via `assign_zone("endgame_type_achievable_score_gap", mean)`
+    — currently both `ZONE_REGISTRY` and
+    `PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap` hold the same ±5%
+    placeholder, so a single global lookup matches the per-class inline band
+    `_format_zone_bounds` renders below. Future §3.4.2 benchmark recalibration
+    that diverges per class will need to switch this to a per-class dispatch.
+
+    Categories with `mean is None` or `n == 0` are skipped (no finding emitted).
+    Pawnless is dropped to match the UI filter (the visible-finding filter in
+    `_assemble_user_prompt` would drop it anyway, but skipping here is cheaper).
+    """
+    out: list[SubsectionFinding] = []
+    if not findings.type_categories:
+        return out
+    for cat in findings.type_categories:
+        if cat.endgame_class == "pawnless":
+            continue
+        mean = cat.type_achievable_score_gap_mean
+        n = cat.type_achievable_score_gap_n or 0
+        if mean is None or n == 0:
+            continue
+        zone = assign_zone("endgame_type_achievable_score_gap", mean)
+        quality = sample_quality("conversion_recovery_by_type", n)
+        dim: dict[str, str] = {"endgame_class": cat.endgame_class}
+        out.append(
+            SubsectionFinding(
+                subsection_id="conversion_recovery_by_type",
+                parent_subsection_id=None,
+                window="all_time",
+                metric="endgame_type_achievable_score_gap",
+                value=mean,
+                zone=zone,
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=n,
+                sample_quality=quality,
+                is_headline_eligible=quality != "thin",
+                dimension=dim,
+            )
+        )
+    return out
 
 
 # -- Batch 2 enrichments (v6): mechanical signals precomputed for the LLM --
@@ -1641,13 +1714,23 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
         "results_by_endgame_type_wdl": type_wdl_block,
     }
 
+    # Phase 87.1 (SEED-016 D-10): synthesize per-class Score Gap findings from
+    # the Plan 02 schema fields on findings.type_categories. The metric is wired
+    # into the prompt-renderer pipeline alongside the existing Conv/Recov
+    # findings under `conversion_recovery_by_type`. Kept inside `insights_llm`
+    # (not `insights_service`) to keep the surface change isolated to the
+    # prompt layer for v29; can migrate to `insights_service._findings_*`
+    # later if other tabs need the same data shape.
+    synthetic_gap_findings = _synthesize_endgame_type_achievable_score_gap_findings(findings)
+    raw_findings: list[SubsectionFinding] = list(findings.findings) + synthetic_gap_findings
+
     # A5 + A2: drop hidden subsections, NaN values, and thin empty findings.
     # v6: also drop any finding dimensioned on endgame_class=pawnless — the UI
     # hides pawnless rows (ENDGAME_CLASS_LABELS, Endgames.tsx) so the LLM must
     # not narrate a type the user cannot see.
     visible: list[SubsectionFinding] = [
         f
-        for f in findings.findings
+        for f in raw_findings
         if f.subsection_id not in _SKIPPED_SUBSECTIONS
         and not math.isnan(f.value)
         and not (f.sample_size == 0 and f.sample_quality == "thin")

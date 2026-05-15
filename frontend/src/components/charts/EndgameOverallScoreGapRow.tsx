@@ -17,7 +17,7 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { SCORE_GAP_DOMAIN } from './EndgameOverallShared';
 
 interface ScoreGapRowProps {
-  label: string;
+  label: ReactNode;
   value: number;
   formatted: string;
   resultColor: string | undefined;
@@ -40,6 +40,10 @@ interface ScoreGapRowProps {
   /** 95% CI upper bound in domain units (signed). Renders whisker when both
    *  ciLow + ciHigh are defined. Mirrors MiniBulletChart's CI contract. */
   ciHigh?: number;
+  /** Optional bullet half-domain override. Defaults to SCORE_GAP_DOMAIN.
+   *  Per-class cards pass ENDGAME_TYPE_SCORE_GAP_DOMAIN so the neutral band
+   *  fills the same fraction of the axis as the Endgame Score bullet above. */
+  domain?: number;
 }
 
 export function ScoreGapRow({
@@ -55,6 +59,7 @@ export function ScoreGapRow({
   valueClassName,
   ciLow,
   ciHigh,
+  domain = SCORE_GAP_DOMAIN,
 }: ScoreGapRowProps) {
   return (
     <div className="flex flex-col gap-2">
@@ -75,7 +80,7 @@ export function ScoreGapRow({
           center={0}
           neutralMin={neutralMin}
           neutralMax={neutralMax}
-          domain={SCORE_GAP_DOMAIN}
+          domain={domain}
           barColor="neutral"
           ariaLabel={ariaLabel}
           ciLow={ciLow}

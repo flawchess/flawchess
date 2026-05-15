@@ -154,13 +154,23 @@ async def query_endgame_entry_rows(
     plies in each class. Per REFAC-02: eval_cp/eval_mate at the FIRST position of each class span
     determines conversion/recovery classification via _classify_endgame_bucket in the service layer.
 
-    Returns rows of: (game_id, endgame_class, result, user_color, eval_cp, eval_mate)
+    Returns rows of:
+        (game_id, endgame_class, result, user_color,
+         eval_cp, eval_mate, next_entry_eval_cp, next_entry_eval_mate)
     where endgame_class is an integer (1-6, see EndgameClassInt).
 
     eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply.
     NO sign flip in SQL — the service layer's _classify_endgame_bucket applies the
     user-color flip. NULL eval (engine error / not yet backfilled) is handled by the
     service layer as parity.
+
+    Phase 87.1 (SEED-016 D-06): next_entry_eval_cp / next_entry_eval_mate are the
+    span-entry eval of the NEXT span in the same game (ordered by span_min_ply ASC),
+    computed via LEAD() window over (game_id, span_min_ply). For the LAST span in a
+    game (terminal span), both fields are NULL — the service layer falls back to
+    `(result, user_color)` for the exit score. The min(ply) used for ordering is
+    computed during the existing GROUP BY at no extra scan cost, since ply is the
+    sort key of the ix_gp_user_endgame_game index covering this query.
 
     NO color filter is applied per D-02 — stats cover both white and black games.
     """
@@ -187,6 +197,11 @@ async def query_endgame_entry_rows(
             GamePosition.endgame_class.label("endgame_class"),
             entry_eval_cp_agg.label("entry_eval_cp"),
             entry_eval_mate_agg.label("entry_eval_mate"),
+            # Phase 87.1 (SEED-016 D-06): span_min_ply orders spans within a game
+            # so the LEAD() window can look up the NEXT span's entry eval. Computed
+            # during the existing GROUP BY at zero extra scan cost (ply is already
+            # the sort key of ix_gp_user_endgame_game).
+            func.min(GamePosition.ply).label("span_min_ply"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -197,20 +212,50 @@ async def query_endgame_entry_rows(
         .subquery("span")
     )
 
-    # Main query: join Game -> span_subq (no second subquery needed).
+    # Phase 87.1 (SEED-016 D-06): wrap span_subq with a LEAD() window so each span
+    # row also carries the entry eval of the NEXT span in the same game (ordered by
+    # span_min_ply ASC). Terminal spans (the last per game) get NULL on both new
+    # columns — the service layer treats that as "use game result as exit score".
+    # The window runs on the per-span result set (~ <=6 rows per game), so cost is
+    # O(spans_per_game) and adds no extra scan over game_positions.
+    span_with_next = select(
+        span_subq.c.game_id,
+        span_subq.c.endgame_class,
+        span_subq.c.entry_eval_cp,
+        span_subq.c.entry_eval_mate,
+        span_subq.c.span_min_ply,
+        func.lead(span_subq.c.entry_eval_cp)
+        .over(
+            partition_by=span_subq.c.game_id,
+            order_by=span_subq.c.span_min_ply.asc(),
+        )
+        .label("next_entry_eval_cp"),
+        func.lead(span_subq.c.entry_eval_mate)
+        .over(
+            partition_by=span_subq.c.game_id,
+            order_by=span_subq.c.span_min_ply.asc(),
+        )
+        .label("next_entry_eval_mate"),
+    ).subquery("span_with_next")
+
+    # Main query: join Game -> span_with_next (no second subquery needed).
     # eval_cp and eval_mate are projected raw (white-perspective, no SQL color flip).
     # The service layer's _classify_endgame_bucket(eval_cp, eval_mate, user_color)
     # applies the sign flip at read time (REFAC-02).
     stmt = (
         select(
             Game.id.label("game_id"),
-            span_subq.c.endgame_class,
+            span_with_next.c.endgame_class,
             Game.result,
             Game.user_color,
-            span_subq.c.entry_eval_cp.label("eval_cp"),
-            span_subq.c.entry_eval_mate.label("eval_mate"),
+            span_with_next.c.entry_eval_cp.label("eval_cp"),
+            span_with_next.c.entry_eval_mate.label("eval_mate"),
+            # Phase 87.1 (SEED-016 D-06): next-span entry eval per game.
+            # NULL for terminal spans — handled in service layer.
+            span_with_next.c.next_entry_eval_cp.label("next_entry_eval_cp"),
+            span_with_next.c.next_entry_eval_mate.label("next_entry_eval_mate"),
         )
-        .join(span_subq, Game.id == span_subq.c.game_id)
+        .join(span_with_next, Game.id == span_with_next.c.game_id)
         .where(Game.user_id == user_id)
     )
 
