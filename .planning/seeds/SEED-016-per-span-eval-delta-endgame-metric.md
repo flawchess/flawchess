@@ -76,9 +76,27 @@ See [[lichess-sigmoid-endgame-calibration]] for the full discussion. Short versi
 ## Open Details
 
 - **Sub-threshold spans.** `ENDGAME_PLY_THRESHOLD = 6`. Spans shorter than 6 plies aren't surfaced as classifiable spans today. Stockfish evals exist for every position (eval is per-position, not per-span), so we could trivially lower the threshold for ΔES purposes if we wanted to capture short spans. Probably leave the threshold alone for V1 to keep the cohort definition consistent across metrics.
-- **NULL evals.** If `entry_eval` or `next_entry_eval` is NULL (engine error, not yet backfilled), exclude the span from the ΔES cohort. The Conversion/Recovery code routes NULLs to "parity"; ΔES has no equivalent fallback bucket.
+- **Span definition: codebase vs strict contiguous-run.** The existing `query_endgame_entry_rows` groups by `(game_id, endgame_class)`, collapsing all positions of the same class within a game into one logical span — even if the player exited the class and re-entered it later. A stricter "endgame sequence" definition (contiguous runs of the same `endgame_class`, computed via `ply - ROW_NUMBER() OVER (PARTITION BY game_id, user_id, endgame_class ORDER BY ply)` gaps-and-islands) yields ~5% more sequences (see eval-coverage check below). For ΔES this matters: under the strict definition, two consecutive sequences in the same game could share an `endgame_class`, making "next sequence entry eval" ambiguous as a performance signal (the player exited and re-entered the same type). V1 decision deferred — recommend defaulting to the codebase span definition for consistency with Conversion/Recovery, but flag at plan time.
+- **NULL evals.** If `entry_eval` or `next_entry_eval` is NULL (engine error, not yet backfilled), exclude the span from the ΔES cohort. The Conversion/Recovery code routes NULLs to "parity"; ΔES has no equivalent fallback bucket. **In practice this is a non-issue** (see coverage check below).
 - **Mate scores.** A mate score at either endpoint sigmoids to a saturated value via `eval_utils._signed_pawns_from_mate`-style handling. Use the existing convention (1_000_000 cp magnitude for sign-only) and let the sigmoid clamp.
 - **Per-span vs per-move normalisation.** Considered and rejected for V1 (decision: keep per-span ΔES, simpler interpretation, matches game-level `entry_expected_score`). Revisit if zones look misleading on very short or very long spans.
+
+## Eval Coverage Check (prod DB, 2026-05-15)
+
+Confirmed eval availability is not a blocker. Snapshot of `game_positions` in prod:
+
+| Definition | Length | Total sequences | With entry eval | Without | % covered |
+|---|---|---:|---:|---:|---:|
+| Codebase span (game × endgame_class collapsed) | ≥6 plies | 337,350 | 337,345 | 5 | 100.0% |
+| | <6 plies | 69,348 | 66,507 | 2,841 | 95.9% |
+| Strict contiguous run (gaps-and-islands) | ≥6 plies | 353,065 | 353,060 | 5 | 100.0% |
+| | <6 plies | 89,676 | 86,199 | 3,477 | 96.1% |
+
+Takeaways:
+
+- **≥6-ply cohort is effectively 100% covered** under either definition (5 missing entries out of ~340k–350k; rounding noise from engine errors that didn't backfill).
+- **Sub-6-ply sequences are also well-covered (~96%)**, so lowering `ENDGAME_PLY_THRESHOLD` for ΔES is feasible if desired.
+- **Strict contiguous-run definition yields ~5% more spans** (~16k more ≥6-ply, ~20k more <6-ply). Whether to adopt it for ΔES is the open design call above.
 
 ## V1 Scope Sketch (when this trigger fires)
 
