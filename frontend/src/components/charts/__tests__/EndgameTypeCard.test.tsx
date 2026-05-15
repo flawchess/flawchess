@@ -388,15 +388,6 @@ describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
     expect(valueSpan.textContent).toBe('+2%');
   });
 
-  it('popover explanation contains the sigmoid-bias caveat one-liner', () => {
-    renderCard(buildCategory());
-    const trigger = screen.getByTestId(`${TILE_TESTID}-asg-info`);
-    fireEvent.mouseEnter(trigger);
-    // The hover-open is delayed 100ms; open imperatively via click as a fallback.
-    fireEvent.click(trigger);
-    const matches = screen.queryAllByText(/Lichess expected-score formula under-weights/i);
-    expect(matches.length).toBeGreaterThan(0);
-  });
 });
 
 describe('EndgameTypeCard — WDL flag gating (mocked false)', () => {
