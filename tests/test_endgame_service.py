@@ -5143,3 +5143,323 @@ class TestPhase872SchemaFields:
         assert not hasattr(resp, "skill_diff_p_value")
         assert not hasattr(resp, "skill_diff_ci_low")
         assert not hasattr(resp, "skill_diff_ci_high")
+
+
+class TestPhase872PerBucketDeltaES:
+    """Phase 87.2 (D-01/D-06/SEC2-ΔES-07): per-bucket ΔES Score Gap math.
+
+    Tests cover gaps_by_bucket accumulation in _aggregate_endgame_stats (span-grain,
+    per-bucket), and the per-bucket paired-z + equal-weighted Skill aggregator wired
+    through _compute_score_gap_material.
+
+    Helper fixtures use 8-tuple rows: (game_id, endgame_class_int, result,
+    user_color, eval_cp, eval_mate, next_entry_eval_cp, next_entry_eval_mate).
+    """
+
+    @staticmethod
+    def _gap_row(
+        game_id: int,
+        endgame_class_int: int,
+        result: str,
+        user_color: str,
+        eval_cp: int | None,
+        eval_mate: int | None,
+        next_entry_eval_cp: int | None = None,
+        next_entry_eval_mate: int | None = None,
+    ) -> tuple[Any, ...]:
+        """Build an 8-tuple row matching the post-Phase-87.1 repo shape."""
+        return (
+            game_id,
+            endgame_class_int,
+            result,
+            user_color,
+            eval_cp,
+            eval_mate,
+            next_entry_eval_cp,
+            next_entry_eval_mate,
+        )
+
+    @staticmethod
+    def _make_wdl(wins: int, draws: int, losses: int) -> "EndgameWDLSummary":
+        total = wins + draws + losses
+        if total > 0:
+            win_pct = round(wins / total * 100, 1)
+            draw_pct = round(draws / total * 100, 1)
+            loss_pct = round(losses / total * 100, 1)
+        else:
+            win_pct = draw_pct = loss_pct = 0.0
+        return EndgameWDLSummary(
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            total=total,
+            win_pct=win_pct,
+            draw_pct=draw_pct,
+            loss_pct=loss_pct,
+        )
+
+    def test_aggregate_endgame_stats_returns_tuple(self) -> None:
+        """Phase 87.2: _aggregate_endgame_stats now returns a tuple
+        (categories, gaps_by_bucket) rather than just a list of categories."""
+        rows: list[tuple[Any, ...]] = []
+        result = _aggregate_endgame_stats(rows)
+        # Must be a 2-tuple, not a list.
+        assert isinstance(result, tuple), "Expected tuple, got list"
+        assert len(result) == 2
+
+    def test_gaps_by_bucket_partition_three_buckets(self) -> None:
+        """3 spans in 3 distinct buckets → one gap value per bucket cohort.
+
+        Conv: eval_cp=+200 (above threshold), Parity: eval_cp=0, Recov: eval_cp=-200.
+        All terminal spans (next_entry_eval_* = None) so exit_score = game result.
+        """
+        rows = [
+            # Conv bucket: eval_cp=200 white, wins => gap = exit_score - ES_entry > 0
+            self._gap_row(1, 1, "1-0", "white", 200, None),
+            # Parity bucket: eval_cp=0 white => ES_entry ≈ 0.5
+            self._gap_row(2, 1, "1-0", "white", 0, None),
+            # Recov bucket: eval_cp=-200 white => user at disadvantage
+            self._gap_row(3, 1, "0-1", "white", -200, None),
+        ]
+        categories, gaps_by_bucket = _aggregate_endgame_stats(rows)
+        # Each bucket gets exactly one span's gap.
+        assert len(gaps_by_bucket.get("conversion", [])) == 1
+        assert len(gaps_by_bucket.get("parity", [])) == 1
+        assert len(gaps_by_bucket.get("recovery", [])) == 1
+
+    def test_gaps_by_bucket_span_grain_not_game_grain(self) -> None:
+        """A single game_id with spans in two different buckets contributes one
+        span-gap to each bucket (NOT deduplicated to one game). This is per-span
+        grain, unlike _aggregate_bucket_counts which dedupes per game."""
+        rows = [
+            # Same game_id=1, one Conv span and one Recov span (different endgame classes).
+            self._gap_row(1, 1, "1-0", "white", 200, None),   # Conv span (rook class)
+            self._gap_row(1, 3, "1-0", "white", -200, None),  # Recov span (pawn class)
+        ]
+        categories, gaps_by_bucket = _aggregate_endgame_stats(rows)
+        # Per-span attribution: game_id=1 contributes to BOTH cohorts.
+        assert len(gaps_by_bucket.get("conversion", [])) == 1
+        assert len(gaps_by_bucket.get("recovery", [])) == 1
+
+    def test_gaps_by_bucket_null_eval_excluded(self) -> None:
+        """Spans with both eval_cp=None and eval_mate=None are excluded from
+        gaps_by_bucket because _compute_span_gap returns None for NULL-eval spans."""
+        rows = [
+            # NULL eval — no gap computed.
+            self._gap_row(1, 1, "1-0", "white", None, None),
+            # Real eval — gap computed and goes into parity bucket.
+            self._gap_row(2, 1, "1-0", "white", 0, None),
+        ]
+        categories, gaps_by_bucket = _aggregate_endgame_stats(rows)
+        # Only the real-eval span contributes a gap.
+        total_gaps = sum(len(v) for v in gaps_by_bucket.values())
+        assert total_gaps == 1
+
+    def test_phase_87_1_outputs_unaffected_by_gaps_by_bucket(self) -> None:
+        """Adding gaps_by_bucket does not perturb the per-class
+        type_achievable_score_gap_* aggregation from Phase 87.1."""
+        rows = [
+            self._gap_row(i + 1, 1, "1-0", "white", 0, None) for i in range(10)
+        ]
+        categories, gaps_by_bucket = _aggregate_endgame_stats(rows)
+        rook = next(c for c in categories if c.endgame_class == "rook")
+        # Phase 87.1 per-class gap fields must still be populated correctly.
+        assert rook.type_achievable_score_gap_n == 10
+        assert rook.type_achievable_score_gap_mean is not None
+        assert rook.type_achievable_score_gap_p_value is not None  # n >= 10
+
+    def test_per_bucket_full_cohort_paired_z(self) -> None:
+        """15 Conv-bucket spans all with gap=+0.1 (zero variance).
+
+        section2_score_gap_conv_mean = 0.1, n=15, p_value populated (n>=10),
+        ci_low == ci_high == 0.1 (zero-variance collapse per helper contract).
+        """
+        import math as _math
+
+        from app.services.score_confidence import CONFIDENCE_MIN_N
+
+        n = 15
+        assert n >= CONFIDENCE_MIN_N  # self-check for fixture sanity
+
+        # 15 Conv-bucket terminal spans: eval_cp=200 white, result=win.
+        # gap = 1.0 - ES_sigmoid(200) ≈ 1.0 - 0.726 ≈ 0.274 (exact value unimportant here).
+        # Use a transitory span shape for exact gap control instead.
+        # Transitory: entry eval_cp=0 white, next_entry_eval_cp=0 white.
+        # gap = ES_sigmoid(0) - ES_sigmoid(0) = 0, not useful.
+        # Use terminal spans with a controlled entry eval so gap is predictable.
+        # With eval_cp=0 (ES_entry=0.5) and result=1-0 (exit_score=1.0):
+        #   gap = 1.0 - 0.5 = 0.5 for each span (since sigmoid(0) = 0.5 exactly).
+        # But these go into parity bucket (eval_cp=0 is below 100 cp threshold).
+        # For Conv bucket with consistent gap, use eval_cp=0 on the boundary won't work.
+        # Use approach: build gaps_by_bucket directly by injecting 15 conv spans
+        # with a controlled next_entry eval so we know the gap exactly.
+        # Terminal span: eval_cp=200 (Conv) white win → gap = 1.0 - ES(200cp).
+        # All 15 identical → zero variance → ci_low == ci_high == mean.
+        rows = [
+            self._gap_row(i + 1, 1, "1-0", "white", 200, None) for i in range(n)
+        ]
+        wdl = self._make_wdl(n, 0, 0)
+        empty = self._make_wdl(0, 0, 0)
+        gaps_by_bucket = {"conversion": [0.1] * n, "parity": [], "recovery": []}
+        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
+        assert result.section2_score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
+        assert result.section2_score_gap_conv_n == n
+        assert result.section2_score_gap_conv_p_value is not None  # n >= 10
+        # Zero-variance collapse: ci_low == ci_high == mean.
+        assert result.section2_score_gap_conv_ci_low is not None
+        assert result.section2_score_gap_conv_ci_high is not None
+        assert result.section2_score_gap_conv_ci_low == pytest.approx(0.1, abs=1e-9)
+        assert result.section2_score_gap_conv_ci_high == pytest.approx(0.1, abs=1e-9)
+
+    def test_per_bucket_zero_cohort_returns_none_mean(self) -> None:
+        """Bucket with n=0 returns section2_score_gap_*_mean=None (not 0.0).
+
+        The helper compute_paired_difference_test returns (0.0, None, None, None)
+        for empty input. The service must gate this to None on the wire to prevent
+        polluting the frontend with a misleading 0.0.
+        """
+        wdl = self._make_wdl(5, 0, 0)
+        empty = self._make_wdl(0, 0, 0)
+        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]
+        # Only Conv bucket has data; parity and recovery are empty.
+        gaps_by_bucket = {"conversion": [0.1] * 5, "parity": [], "recovery": []}
+        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
+        assert result.section2_score_gap_parity_mean is None
+        assert result.section2_score_gap_parity_n == 0
+        assert result.section2_score_gap_recov_mean is None
+        assert result.section2_score_gap_recov_n == 0
+
+    def test_skill_equal_weighted_mean_three_active_buckets(self) -> None:
+        """Equal-weighted Skill mean over 3 active buckets with n>=CONFIDENCE_MIN_N each.
+
+        means={0.10, 0.05, -0.05}, sizes={12, 15, 20} → skill_mean = (0.10+0.05-0.05)/3.
+        """
+        from app.services.score_confidence import CONFIDENCE_MIN_N
+
+        n_c, n_p, n_r = 12, 15, 20
+        assert min(n_c, n_p, n_r) >= CONFIDENCE_MIN_N
+
+        # Build gap lists to produce the target means when passed to paired-z.
+        # Use constant gap values per bucket to get zero-variance → mean = constant.
+        gaps_c = [0.10] * n_c
+        gaps_p = [0.05] * n_p
+        gaps_r = [-0.05] * n_r
+
+        wdl = self._make_wdl(n_c + n_p + n_r, 0, 0)
+        empty = self._make_wdl(0, 0, 0)
+        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]  # dummy for WDL
+        gaps_by_bucket = {"conversion": gaps_c, "parity": gaps_p, "recovery": gaps_r}
+        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
+        expected_skill = (0.10 + 0.05 + (-0.05)) / 3
+        assert result.section2_score_gap_skill_mean == pytest.approx(expected_skill, abs=1e-6)
+        assert result.section2_score_gap_skill_n == n_c + n_p + n_r
+
+    def test_skill_denominator_drop_below_floor(self) -> None:
+        """Parity bucket n=3 < CONFIDENCE_MIN_N=10 → dropped from Skill denominator.
+
+        Only conv (n=12) and recov (n=20) are active → skill_mean = (m_c + m_r) / 2.
+        """
+        from app.services.score_confidence import CONFIDENCE_MIN_N
+
+        n_c, n_p, n_r = 12, 3, 20
+        assert n_c >= CONFIDENCE_MIN_N
+        assert n_p < CONFIDENCE_MIN_N
+        assert n_r >= CONFIDENCE_MIN_N
+
+        gaps_c = [0.10] * n_c
+        gaps_p = [0.05] * n_p  # too few — dropped from Skill
+        gaps_r = [-0.05] * n_r
+
+        wdl = self._make_wdl(10, 0, 0)
+        empty = self._make_wdl(0, 0, 0)
+        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]
+        gaps_by_bucket = {"conversion": gaps_c, "parity": gaps_p, "recovery": gaps_r}
+        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
+        expected_skill = (0.10 + (-0.05)) / 2
+        assert result.section2_score_gap_skill_mean == pytest.approx(expected_skill, abs=1e-6)
+        assert result.section2_score_gap_skill_n == n_c + n_r
+
+    def test_skill_all_below_floor_returns_none(self) -> None:
+        """All 3 buckets n=5 < CONFIDENCE_MIN_N=10 → skill_mean=None, p=None, n=0."""
+        from app.services.score_confidence import CONFIDENCE_MIN_N
+
+        n = 5
+        assert n < CONFIDENCE_MIN_N
+
+        gaps = [0.1] * n
+        wdl = self._make_wdl(10, 0, 0)
+        empty = self._make_wdl(0, 0, 0)
+        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]
+        gaps_by_bucket = {"conversion": gaps[:], "parity": gaps[:], "recovery": gaps[:]}
+        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
+        assert result.section2_score_gap_skill_mean is None
+        assert result.section2_score_gap_skill_p_value is None
+        assert result.section2_score_gap_skill_n == 0
+
+    def test_skill_ci_propagation_variance_of_sum(self) -> None:
+        """Skill CI uses variance-of-sum / n_active² propagation (Open Q §3 Option A).
+
+        With 3 active buckets each having nonzero variance:
+          SE_b = (ci_high_b - ci_low_b) / (2 * CI_Z_95)
+          SE_skill = sqrt(SE_c² + SE_p² + SE_r²) / n_active
+          ci_low = skill_mean - CI_Z_95 * SE_skill
+          ci_high = skill_mean + CI_Z_95 * SE_skill
+        Assert to 1e-6.
+        """
+        import math as _math
+
+        from app.services.score_confidence import CI_Z_95, CONFIDENCE_MIN_N, compute_paired_difference_test
+
+        # Build buckets with nonzero variance so CI bounds are spread.
+        # Use alternating [0.0, 0.2] to get mean=0.1, se>0.
+        n = 10
+        assert n >= CONFIDENCE_MIN_N
+        gaps_c = [0.0, 0.2] * (n // 2)   # mean 0.1, nonzero se
+        gaps_p = [0.0, 0.1] * (n // 2)   # mean 0.05, nonzero se
+        gaps_r = [-0.2, 0.0] * (n // 2)  # mean -0.1, nonzero se
+
+        # Compute expected values using the same helper.
+        mean_c, _, ci_lo_c, ci_hi_c = compute_paired_difference_test(gaps_c)
+        mean_p, _, ci_lo_p, ci_hi_p = compute_paired_difference_test(gaps_p)
+        mean_r, _, ci_lo_r, ci_hi_r = compute_paired_difference_test(gaps_r)
+
+        assert ci_lo_c is not None and ci_hi_c is not None
+        assert ci_lo_p is not None and ci_hi_p is not None
+        assert ci_lo_r is not None and ci_hi_r is not None
+
+        se_c = (ci_hi_c - ci_lo_c) / (2 * CI_Z_95)
+        se_p = (ci_hi_p - ci_lo_p) / (2 * CI_Z_95)
+        se_r = (ci_hi_r - ci_lo_r) / (2 * CI_Z_95)
+        n_active = 3
+        se_skill = _math.sqrt(se_c**2 + se_p**2 + se_r**2) / n_active
+        expected_mean = (mean_c + mean_p + mean_r) / n_active
+        expected_ci_lo = expected_mean - CI_Z_95 * se_skill
+        expected_ci_hi = expected_mean + CI_Z_95 * se_skill
+
+        wdl = self._make_wdl(10, 0, 0)
+        empty = self._make_wdl(0, 0, 0)
+        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]
+        gaps_by_bucket = {"conversion": gaps_c, "parity": gaps_p, "recovery": gaps_r}
+        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
+        assert result.section2_score_gap_skill_mean == pytest.approx(expected_mean, abs=1e-6)
+        assert result.section2_score_gap_skill_ci_low == pytest.approx(expected_ci_lo, abs=1e-6)
+        assert result.section2_score_gap_skill_ci_high == pytest.approx(expected_ci_hi, abs=1e-6)
+        # Symmetric CI: midpoint == mean.
+        mid = (result.section2_score_gap_skill_ci_low + result.section2_score_gap_skill_ci_high) / 2.0  # type: ignore[operator]
+        assert mid == pytest.approx(expected_mean, abs=1e-6)
+
+    def test_sign_convention_positive_means_above_stockfish(self) -> None:
+        """Positive section2_score_gap_conv_mean means user outperformed Stockfish baseline.
+
+        Fixture: gaps_by_bucket with one conv gap = +0.1
+        (exit_score 0.1 above ES_entry). Mean must be +0.1 (NOT -0.1).
+        """
+        wdl = self._make_wdl(5, 0, 0)
+        empty = self._make_wdl(0, 0, 0)
+        rows = [_FakeRow(1, 1, "1-0", "white", 200, None)]
+        # Positive gap = user exit_score EXCEEDED Stockfish baseline.
+        gaps_by_bucket = {"conversion": [0.1], "parity": [], "recovery": []}
+        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
+        # n=1 → mean populated, p/CI gated (per compute_paired_difference_test contract).
+        assert result.section2_score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
+        assert result.section2_score_gap_conv_mean > 0  # sign check
