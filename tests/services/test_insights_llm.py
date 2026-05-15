@@ -473,8 +473,8 @@ class TestEndgameTypeAchievableScoreGapPayload:
 
         Asserts the rendered prompt carries `[summary endgame_type_achievable_score_gap | endgame_class=rook]`,
         the window line includes mean / n / zone / inline band, and the band is
-        scaled to the 0-100% rendering convention (typical -5 to +5 from the
-        registry's [-0.05, +0.05] fraction).
+        scaled to the 0-100% rendering convention (typical -5 to +4 from the
+        rook calibration in PER_CLASS_GAUGE_ZONES, (-0.05, +0.04) fraction).
         """
         filters = _sample_filter_context()
         gap = self._gap_finding(
@@ -495,8 +495,8 @@ class TestEndgameTypeAchievableScoreGapPayload:
         # Zone label rendered.
         assert "zone=strong" in prompt
         # Inline band from PER_CLASS_GAUGE_ZONES["rook"].achievable_score_gap
-        # (-0.05, +0.05) -> "(typical -5 to +5)".
-        assert "(typical -5 to +5)" in prompt
+        # (-0.05, +0.04) -> "(typical -5 to +4)" after §3.4.2 calibration.
+        assert "(typical -5 to +4)" in prompt
 
     def test_gap_renders_sparse_cohort_with_band_intact(self) -> None:
         """Sparse cohort (n < CONFIDENCE_MIN_N) still renders summary block.
@@ -595,11 +595,11 @@ class TestEndgameTypeAchievableScoreGapPayload:
     def test_gap_inline_band_dispatches_per_class(self) -> None:
         """Inline band must come from PER_CLASS_GAUGE_ZONES, NOT the global band.
 
-        Both registries currently hold ±5% placeholder bands, but the renderer
-        must dispatch via the per-class registry so future per-class band
-        recalibration (post §3.4.2 benchmark) takes effect without changing
-        renderer code. Verified indirectly: when we mutate one class's band in
-        place via monkeypatch, the rendered band changes for that class only.
+        Per-class bands are calibrated from /benchmarks §3.4.2 (commit f48513fa);
+        renderer must dispatch via the per-class registry so each class's band
+        appears verbatim. Sanity check below pins the rook calibration so a
+        future band change forces the test (and the rendered constant) to be
+        updated together.
         """
         from app.services import endgame_zones
 
@@ -612,11 +612,11 @@ class TestEndgameTypeAchievableScoreGapPayload:
         )
         tab = _fake_findings(filters, findings=[gap])
         prompt = _assemble_user_prompt(tab)
-        # Default band -5 to +5 from PER_CLASS_GAUGE_ZONES["rook"].achievable_score_gap.
-        assert "(typical -5 to +5)" in prompt
-        # Sanity check: the per-class registry actually carries the same band.
+        # Calibrated rook band from PER_CLASS_GAUGE_ZONES["rook"].achievable_score_gap.
+        assert "(typical -5 to +4)" in prompt
+        # Sanity check: the per-class registry carries the calibrated band.
         bands = endgame_zones.PER_CLASS_GAUGE_ZONES["rook"]
-        assert bands.achievable_score_gap == (-0.05, 0.05)
+        assert bands.achievable_score_gap == (-0.05, 0.04)
 
     def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
         """v14 (260424-pc6 C): when every point's `n` is equal, the series block
