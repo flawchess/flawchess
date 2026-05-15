@@ -586,8 +586,6 @@ class TestFindingsEndgameMetrics:
             draw_pct=draw_pct,
             loss_pct=100.0 - win_pct - draw_pct,
             score=score,
-            opponent_score=None,
-            opponent_games=0,
         )
 
     def test_emits_exactly_one_finding_per_non_empty_bucket(self) -> None:
