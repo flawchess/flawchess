@@ -31,9 +31,10 @@ to standardize on.
 - Never as a value suffix (that read as a unit symbol and doesn't generalize).
 
 Apply to: Endgame Entry Eval, Achievable Score, Achievable Score Gap,
-Endgame Score Gap, per-type Score Gap.
-Do not apply to: Endgame Score, Conversion, Recovery, Parity (all
-result-based).
+per-type Score Gap.
+Do not apply to: Endgame Score, Endgame Score Gap, Conversion,
+Recovery, Parity (all result-only — Endgame Score Gap is
+Endgame Score − Non-Endgame Score, no eval input).
 
 ## What
 
@@ -45,7 +46,6 @@ result-based).
 
 2. **`EndgameOverallPerformanceSection.tsx`**
    - Add a Cpu prefix to the `Achievable Score Gap` row label.
-   - Add a Cpu prefix to the `Endgame Score Gap` row label.
 
 3. **`EndgameTypeCard.tsx`**
    - No change. Per-type "Score Gap" already follows the rule.

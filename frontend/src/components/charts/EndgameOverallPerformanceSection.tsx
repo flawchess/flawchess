@@ -213,12 +213,7 @@ export function EndgameOverallPerformanceSection({
               }
             />
             <ScoreGapRow
-              label={
-                <span className="inline-flex items-center gap-1">
-                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                  Endgame Score Gap:
-                </span>
-              }
+              label="Endgame Score Gap:"
               value={scoreGap.score_difference}
               formatted={gapFormatted}
               resultColor={gapColor}
