@@ -393,6 +393,39 @@ Interpret each metric using the definitions below. These match the user-facing i
   - **Significance:** No `p_value` / `verdict` field is emitted alongside the [summary] block. The cohort band IS the significance signal. A value inside the typical band is within-noise for that Endgame Type; a value outside the band is the actionable signal. Do NOT mention p-values or significance tests in narration; narrate strictly from `zone` + `sample_quality` + inline band.
   - **Relation to the page-level Achievable Score Gap:** the page-level metric (Phase 85.1) aggregates the per-game gap across the entire endgame cohort. This per-type version aggregates per-span gaps within one Endgame Type. The two can disagree in sign or magnitude (e.g. strong page-level gap with weak rook gap means rook spans drag the overall up despite weak local performance). When narrating both, name them distinctly: "Achievable Score Gap" for the page-level metric, "Endgame Type Score Gap" or "<type> Score Gap" for the per-type metric.
 
+### Section 2 Score Gap family (Phase 87.2)
+
+The four per-card Score Gap metrics on Section 2 (Endgame Metrics) cards each measure
+average per-span expected-score delta restricted to that card's eval-entry bucket.
+
+- **Conversion Score Gap** (`section2_score_gap_conv`): average per-span Score Gap on
+  spans where the user entered the endgame with eval >= +1.0 (user ahead). Positive =
+  user converted advantages above the Stockfish baseline; negative = bled away.
+
+- **Parity Score Gap** (`section2_score_gap_parity`): same metric on spans entered with
+  |eval| <= 1.0 (roughly balanced). Positive = user outperformed baseline from balanced;
+  negative = underperformed.
+
+- **Recovery Score Gap** (`section2_score_gap_recov`): same metric on spans entered with
+  eval <= -1.0 (user behind). Positive = user salvaged disadvantages above expectation;
+  negative = position deteriorated further than expected.
+
+- **Skill Score Gap** (`section2_score_gap_skill`): equal-weighted mean of the three
+  per-bucket Score Gaps above. One-number summary of overall endgame performance vs
+  Stockfish expectations, independent of which entry-eval bucket your endgames cluster
+  in. Buckets with fewer than 10 spans are dropped from the average.
+
+Sign convention (all four): positive = above the Stockfish baseline; negative = below.
+
+Calibration caveat: the metric uses the Lichess expected-score sigmoid which under-weights
+endgame eval; zones are percentile-calibrated from benchmark data so the bias does not
+affect zone placement. Rely on the zone bands, not the raw magnitude.
+
+Dual-label terminology: the glossary uses "Section 2 Score Gap" (umbrella term, full
+qualifier, disambiguates from the page-level "Endgame Score Gap", "Achievable Score Gap",
+and "Endgame Type Score Gap" terms). Card-row labels use the bucket-specific form
+("Conversion Score Gap" etc.) because the card title already implies "Section 2".
+
 - **endgame_skill** (UI label: "Endgame Skill"): arithmetic mean of Conversion (Win), Parity (Score), and Recovery (Save) over the buckets that had games. This is the composite feeding `endgame_elo_gap`.
   - Scale: whole-number percentage in `[0, 100]`. `50` is the neutral mark — below = weaker than the 50/50 cohort, above = stronger. The gauge bands shown to the user are calibrated against population data and do NOT shift with filters.
   - Only emitted in subsection `endgame_metrics` (aggregate, dimension=None).

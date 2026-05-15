@@ -210,8 +210,8 @@ class TestPromptVersionAndBody:
       block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
-    def test_prompt_version_is_v30(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v30"
+    def test_prompt_version_is_v31(self) -> None:
+        assert insights_llm._PROMPT_VERSION == "endgame_v31"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -361,16 +361,14 @@ class TestPromptVersionAndBody:
                 break
         assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
 
-    def test_prompt_version_bumped_to_v30(self) -> None:
-        """Latest bump v29 -> v30 (Achievable Score precision pass): tightened the
-        Achievable Score framing to "against a peer of similar rating" and renamed
-        the sigmoid from "winning-chances" to "expected-score" throughout the prompt.
-        Cache-busts prior reports so users get the corrected terminology.
+    def test_prompt_version_bumped_to_v31(self) -> None:
+        """Latest bump v30 -> v31 (Phase 87.2 Section 2 ΔES Score Gap family): added four
+        new section2_score_gap_* findings alongside existing rate findings in endgame_metrics.
+        Cache-busts prior v30 reports so newly generated narration references the new family.
 
-        Prior Phase 87.1 bump (v28 -> v29) added the per-class endgame_type_achievable_score_gap
-        payload field; that historical bump is preserved in the changelog comment.
+        Prior bumps (v28 -> v29 -> v30) are preserved in the changelog comment.
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v30"
+        assert insights_llm._PROMPT_VERSION == "endgame_v31"
         # Changelog comment must mention the new metric AND the dual-label rule
         # AND the sigmoid-bias caveat (per CONTEXT.md D-10).
         import inspect as _inspect
@@ -380,12 +378,14 @@ class TestPromptVersionAndBody:
         assert "v28 (260514 concept capitalization)" in src
         # v29 changelog block present and tagged.
         assert "v29 (260515 endgame_type_achievable_score_gap)" in src
-        # Dual-label rule recorded in v29 comment.
-        assert "Endgame Type Score Gap" in src
+        # v31 changelog block present and tagged.
+        assert "v31 (260515 Phase 87.2 Section 2 ΔES Score Gap family)" in src
+        # Dual-label rule recorded in v31 comment.
+        assert "Section 2 Score Gap" in src
         # Sigmoid-bias caveat one-liner present in v29 comment.
         assert "Lichess winning-chances sigmoid" in src
         # No parallel verdict / p_value field per memory feedback_llm_significance_signal.md.
-        # (the comment must NOT promise a verdict field — we just check the v29 block
+        # (the comment must NOT promise a verdict field — we just check the v31 block
         # mentions the band carries the signal.)
 
     def test_prompt_glossary_defines_endgame_type_score_gap(self) -> None:
@@ -422,6 +422,34 @@ class TestPromptVersionAndBody:
                         or "do not use" in line.lower()
                         or "do NOT use" in line
                     ), f"{token!r} appears outside a forbidden-words list. Offending line: {line!r}"
+
+    def test_endgame_insights_prompt_carries_section2_glossary(self) -> None:
+        """Phase 87.2 Plan 04: endgame_insights.md contains the Section 2 Score Gap family block.
+
+        Asserts the required glossary strings per PLAN.md Task 2 acceptance criteria.
+        """
+        from pathlib import Path
+
+        body_path = Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        body = body_path.read_text(encoding="utf-8")
+
+        # Umbrella term must be present.
+        assert "Section 2 Score Gap family" in body
+        # Four bucket-specific terms.
+        assert "Conversion Score Gap" in body
+        assert "Parity Score Gap" in body
+        assert "Recovery Score Gap" in body
+        assert "Skill Score Gap" in body
+        # Equal-weighted mean (D-01 documented in glossary).
+        assert "equal-weighted mean" in body
+        # Sigmoid caveat (Lichess expected-score sigmoid).
+        assert "Lichess expected-score sigmoid" in body
+        # Sign convention present.
+        assert "positive = above the Stockfish baseline" in body
+
+    def test_prompt_version_bumped(self) -> None:
+        """Phase 87.2: _PROMPT_VERSION is endgame_v31; v30 active-constant is gone."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v31"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2614,7 +2642,7 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v30"
+        assert response.report.prompt_version == "endgame_v31"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2638,7 +2666,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v30"
+        assert log.response_json["prompt_version"] == "endgame_v31"
 
 
 class TestCacheBehavior:
