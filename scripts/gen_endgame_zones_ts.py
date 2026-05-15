@@ -43,6 +43,12 @@ _SCORE_GAP_SPEC = ZONE_REGISTRY["score_gap"]
 # (which stays at ±10pp). Mirrors the SCORE_GAP_NEUTRAL_* export pattern.
 _ACHIEVABLE_SCORE_GAP_SPEC = ZONE_REGISTRY["achievable_score_gap"]
 
+# Phase 87.1 (SEED-016 D-04): per-span, per-type version of achievable_score_gap.
+# Frontend constant uses the user-facing "Endgame Type Score Gap" label (D-02);
+# the registry key keeps the internal "achievable" math-family name for
+# grep-ability with the page-level metric.
+_ENDGAME_TYPE_SCORE_GAP_SPEC = ZONE_REGISTRY["endgame_type_achievable_score_gap"]
+
 # Phase 83 D-16: codegen the entry_expected_score helpers so Plan 3 imports them
 # from frontend/src/generated/endgameZones.ts (CI drift gate enforces parity).
 _ENTRY_XS_SPEC = ZONE_REGISTRY["entry_expected_score"]
@@ -72,14 +78,19 @@ def _format_bucket_zones(bucket: str) -> str:
 def _format_per_class_gauge_zones() -> str:
     """Emit the PER_CLASS_GAUGE_ZONES object literal.
 
-    Each class entry has { conversion: [lower, upper], recovery: [lower, upper] }.
+    Each class entry has { conversion: [lower, upper], recovery: [lower, upper],
+    achievable_score_gap: [lower, upper] } (Phase 87.1 — SEED-016 D-04).
     Consumers wrap with colorizeGaugeZones() on the FE side, same as FIXED_GAUGE_ZONES.
     """
     lines: list[str] = []
     for cls, bands in PER_CLASS_GAUGE_ZONES.items():
         c_lo, c_hi = bands.conversion
         r_lo, r_hi = bands.recovery
-        lines.append(f"  {cls}: {{ conversion: [{c_lo}, {c_hi}], recovery: [{r_lo}, {r_hi}] }},")
+        g_lo, g_hi = bands.achievable_score_gap  # Phase 87.1 — SEED-016 D-04
+        lines.append(
+            f"  {cls}: {{ conversion: [{c_lo}, {c_hi}], recovery: [{r_lo}, {r_hi}],"
+            f" achievable_score_gap: [{g_lo}, {g_hi}] }},"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -122,6 +133,11 @@ def _render() -> str:
         f"export const SCORE_GAP_NEUTRAL_MAX = {_SCORE_GAP_SPEC.typical_upper};\n"
         f"export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN = {_ACHIEVABLE_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX = {_ACHIEVABLE_SCORE_GAP_SPEC.typical_upper};\n"
+        "// Phase 87.1 (SEED-016 D-04): per-span, per-type Score Gap neutral band.\n"
+        "// User-facing label: \"Endgame Type Score Gap\" (concepts) / \"Score Gap\" (card row).\n"
+        "// Internal registry key is `endgame_type_achievable_score_gap` for math-family grep.\n"
+        f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_lower};\n"
+        f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_upper};\n"
         "\n"
         "// Phase 83 D-14/D-17: per-user entry_expected_score cohort band.\n"
         "// Source: reports/benchmarks-2026-05-11.md §7 (pooled IQR aligned with\n"
@@ -140,9 +156,12 @@ def _render() -> str:
         "  return ZONE_NEUTRAL;\n"
         "}\n"
         "\n"
-        "// Per-endgame-class typical bands for Conversion and Recovery.\n"
+        "// Per-endgame-class typical bands for Conversion, Recovery, and Score Gap.\n"
         "// Source: reports/benchmarks-2026-05-01.md (pooled p25/p75 per class).\n"
-        "// Each entry: { conversion: [lower, upper], recovery: [lower, upper] }.\n"
+        "// Phase 87.1 (SEED-016 D-04): achievable_score_gap added as a placeholder\n"
+        "// mirroring ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN/MAX until §3.4.2 calibration.\n"
+        "// Each entry: { conversion: [lower, upper], recovery: [lower, upper],\n"
+        "// achievable_score_gap: [lower, upper] }.\n"
         "// Wrap with colorizeGaugeZones() before passing to EndgameGauge (same\n"
         "// pattern as FIXED_GAUGE_ZONES in EndgameScoreGapSection).\n"
         "export const PER_CLASS_GAUGE_ZONES = {\n"
