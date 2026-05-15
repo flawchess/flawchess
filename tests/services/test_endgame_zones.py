@@ -212,10 +212,17 @@ class TestRegistrySanity:
         for the Card 3 Achievable row so it can tighten to ±5pp without
         affecting the Endgame Score Gap row (which stays on `score_gap` at
         ±10pp). Source: reports/benchmarks-latest.md §3.1.5.
+
+        Phase 87.1 (SEED-016 D-02/D-04): `endgame_type_achievable_score_gap`
+        (placeholder ±0.05 band) added — per-span, per-type version of
+        achievable_score_gap, surfaced on every EndgameTypeCard "Score Gap"
+        row (Plan 03) and through the LLM type_breakdown payload (Plan 04).
+        Bands calibrate from benchmarks SKILL.md §3.4.2.
         """
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
             "achievable_score_gap",
+            "endgame_type_achievable_score_gap",
             "entry_eval_pawns",
             "entry_expected_score",
             "endgame_score",
