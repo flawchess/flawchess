@@ -171,6 +171,7 @@ Last activity: 2026-05-15 — Completed quick task 260516-0ax: lock in `MiniBull
 | 2026-05-04 | fast | Mute opening row when total games < 20; drop confidence-based muting | ✅ |
 | 2026-05-04 | fast | Score zone color in Moves tab + per-move list; drop severity row tint; bump mobile games-count font size | ✅ |
 | 2026-05-15 | fast | Calibrate Section 2 ΔES Score Gap zones to asymmetric bands per §3.4.4: conv (-0.11, 0.00) / parity (-0.04, +0.04) / recov (+0.01, +0.11) / skill (-0.03, +0.03); regenerate frontend/src/generated/endgameZones.ts; update 2 EndgameMetricCard test fixtures whose values were keyed to the old (-0.05, +0.05) placeholders. Commit 0d11ac2e | ✅ |
+| 2026-05-16 | fast | Standardize Cpu icon on Endgame page eval-derived metric rows: drop from "Eval at Endgame Entry" card title, move Entry Eval icon from value-suffix to label-prefix, add Cpu label prefix to Achievable Score, Achievable Score Gap, Endgame Score Gap (per-type Score Gap from Phase 87.1 already conformed). Commit 816e1463 | ✅ |
 
 ## Operator Next Steps
 
