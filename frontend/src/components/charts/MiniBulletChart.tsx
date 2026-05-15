@@ -8,6 +8,14 @@
  * relative to the user's overall score. The neutral zone is configurable per
  * row so expectations can shift with material context (e.g. when converting
  * material, the neutral band sits higher than when recovering).
+ *
+ * Asymmetric `(neutralMin, neutralMax)` tuples are fully supported — the band
+ * is allowed to sit entirely on one side of `center`. For example
+ * `(-0.11, 0.00)` paints the neutral band to the LEFT of the center tick and
+ * `(+0.01, +0.11)` paints it to the RIGHT. The two props are independent
+ * signed offsets from `center`, not a ±magnitude. See
+ * `MiniBulletChart.test.tsx` (asymmetric-zone block) for the locked-in
+ * contract.
  */
 
 import { BULLET_BAR_NEUTRAL, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
@@ -29,9 +37,16 @@ const ZONE_OPACITY = 0.35;
 interface MiniBulletChartProps {
   /** Signed difference to visualize (e.g. row_score - opponent_score). */
   value: number;
-  /** Lower bound of the neutral zone, expressed as an offset from `center`. Default -0.10. */
+  /** Lower bound of the neutral zone — an independent signed offset from
+   * `center` (NOT a ±magnitude). Can be negative, zero, or positive; together
+   * with `neutralMax` it forms an `(lo, hi)` tuple that may be asymmetric
+   * around `center`. Example: `(-0.11, 0.00)` paints the band entirely to the
+   * left of the center tick. Default `-0.10`. */
   neutralMin?: number;
-  /** Upper bound of the neutral zone, expressed as an offset from `center`. Default 0. */
+  /** Upper bound of the neutral zone — an independent signed offset from
+   * `center`. Can be negative, zero, or positive. Must satisfy
+   * `neutralMax >= neutralMin`. Example: `(+0.01, +0.11)` paints the band
+   * entirely to the right of the center tick. Default `0`. */
   neutralMax?: number;
   /** Bar domain half-width (values beyond ±domain are clamped). Default 0.40. */
   domain?: number;
@@ -97,7 +112,9 @@ export function MiniBulletChart({
   const toPct = (v: number): number => ((v - axisMin) / (2 * domain)) * 100;
   const centerPct = toPct(center);
   // Neutral-band bounds are offsets from `center`; convert to absolute eval space
-  // before clamping to the chart axis.
+  // before clamping to the chart axis. Asymmetric tuples (lo and hi not symmetric
+  // around center, e.g. (-0.11, 0.00) or (+0.01, +0.11)) are supported and
+  // produce an off-center band.
   const absNeutralMin = center + neutralMin;
   const absNeutralMax = center + neutralMax;
   const neutralMinPct = toPct(Math.max(axisMin, absNeutralMin));
