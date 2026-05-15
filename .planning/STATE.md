@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: executing
-last_updated: "2026-05-15T18:53:07.148Z"
-last_activity: 2026-05-15 -- Phase 87.2 planning complete
+last_updated: "2026-05-15T19:08:19.499Z"
+last_activity: 2026-05-15 -- Phase 87.2 execution started
 progress:
   total_phases: 0
   completed_phases: 0
@@ -16,10 +16,10 @@ progress:
 
 ## Current Position
 
-Phase: 87.2 — INSERTED 2026-05-15, not planned yet
-Plan: 0 of TBD — awaiting `/gsd-discuss-phase 87.2` → `/gsd-plan-phase 87.2`
-Status: Ready to execute
-Last activity: 2026-05-15 -- Phase 87.2 planning complete
+Phase: 87.2 (section-2-eval-based-score-gap-bullets) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 87.2
+Last activity: 2026-05-15 -- Phase 87.2 execution started
 Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
