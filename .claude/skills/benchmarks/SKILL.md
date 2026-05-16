@@ -1626,6 +1626,34 @@ For the §3.2.2 block in `reports/benchmarks-latest.md`:
 
 ---
 
+#### 3.2.3 Rate vs. score-gap divergence (Conversion & Recovery cross-cut)
+
+**Derived — no new query.** This subchapter synthesizes the §3.2.1 raw rates against the §3.2.2 ΔES score gaps for the conversion and recovery buckets. Its job is to surface where the two views of the *same* endgame situation disagree about which axis carries the signal, because that disagreement is what decides whether Section 2's conversion/recovery bullets need a stratified registry.
+
+##### What to compute
+
+Reuse the §3.2.1 per-user `conv_p50` / `recov_p50` cell tables and marginals, and the §3.2.2 per-bucket `mean_gap` cell tables and marginals. For conversion and recovery each, build a 2×2 of `{ELO axis, TC axis} × {raw rate, score gap}` reporting the marginal sweep (min→max level) and the Cohen's `d_max` + verdict already computed upstream. No SQL re-run — pull the numbers from the §3.2.1 and §3.2.2 blocks of the same report.
+
+##### What to report in `reports/benchmarks-latest.md` under §3.2.3
+
+1. **Axis-driver table** — for Conversion and Recovery, side by side:
+
+   | metric | ELO sweep (raw rate) | ELO d / verdict | TC sweep (raw rate) | TC d / verdict | ELO sweep (score gap) | ELO d / verdict | TC sweep (score gap) | TC d / verdict |
+
+2. **Divergence callout** — explicitly flag any bucket where the raw-rate verdict and the score-gap verdict disagree on the *same axis* (e.g. raw recovery ELO `review` at d≈0.40 vs. recovery-gap ELO `keep separate` at d≈0.85). Explain the mechanism: the raw rate is flat across that axis because the engine-expected score moves *with* the cohort, so the absolute rate masks a relative-skill signal that the gap (which subtracts ES_entry) exposes.
+
+3. **Mirror-axis note** — state when the two buckets move *opposite* directions on an axis (raw recovery falls bullet→classical while raw conversion rises), and that the score gaps for both compress toward their off-zero null as players strengthen and games slow (closer to engine play).
+
+4. **Implication line** — one sentence per divergent bucket: does the gap's stronger axis signal change the §3.2.2 "registry stays scalar" deferral recommendation, or is the scalar pooled band still defensible for this phase. This is advisory only; the binding band recommendation stays in §3.2.2.
+
+##### Snapshot — 2026-05-16 dump (carry forward, refresh each run)
+
+- **Conversion**: raw rate driven by *both* axes same direction (ELO 66.8%→74.9% d=0.82 keep; TC 65.1%→75.6% d=1.02 keep). Score gap also both axes, both compressing toward the −6pp sigmoid null (ELO −14.0pp→−0.3pp d=1.62; TC −13.1pp→−2.0pp d=1.18). **No divergence** — rate and gap agree conversion is a two-axis metric.
+- **Recovery**: raw rate is a **TC-only** story (ELO 29.7%→33.0% ~flat d=0.40 review; TC 35.6%→25.0% d=1.10 keep), and runs *opposite* to conversion on TC (more time → less recovery, because the opponent also converts cleanly). The score gap **re-exposes the ELO signal** (ELO +10.7pp→+4.3pp d=0.85 keep; TC +12.8pp→+1.0pp d=1.63 keep). **Divergence on the ELO axis**: weak players over-perform the engine far more when recovering (+10.7pp) than strong players (+4.3pp); the flat raw rate hides this because engine expectation rises with the cohort.
+- **Implication**: the recovery-gap ELO `keep separate` (d=0.85) is the strongest argument against §3.2.2's scalar-registry deferral. Recommendation unchanged for this phase (scalar pooled band ships), but flag recovery as the first candidate if/when per-(TC×ELO) stratification of the Section 2 buckets is revisited.
+
+---
+
 ### 3.3 Time Pressure
 
 Maps to the page H2 of the same name. Hosts `EndgameClockPressureSection` + `ClockDiffTimelineChart` + `EndgameTimePressureSection`.
@@ -2525,6 +2553,7 @@ Write to `reports/benchmarks-latest.md`. Before writing, if that file already ex
 ### 3.2 Endgame Metrics and ELO
 #### 3.2.1 Conversion / Parity / Recovery + Endgame Skill
 #### 3.2.2 Per-bucket ΔES Score Gap (Section 2 — Phase 87.2)
+#### 3.2.3 Rate vs. score-gap divergence (Conversion & Recovery cross-cut)
 
 ### 3.3 Time Pressure
 #### 3.3.1 Clock pressure at endgame entry
