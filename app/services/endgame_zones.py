@@ -64,8 +64,9 @@ MetricId = Literal[
     "recovery_save_pct",
     "avg_clock_diff_pct",
     "net_timeout_rate",
-    # Phase 87.4 D-06: renamed from "endgame_elo_gap" alongside Conversion ELO Timeline.
-    "conversion_elo_gap",
+    # Phase 87.5 D-06: restored from "conversion_elo_gap" — Endgame ELO Timeline
+    # is now derived additively from Endgame Score Gap, not from Conv ΔES.
+    "endgame_elo_gap",
     "win_rate",
 ]
 
@@ -74,8 +75,8 @@ SubsectionId = Literal[
     "endgame_start_vs_end",  # Phase 82 D-05
     "score_timeline",
     "endgame_metrics",
-    # Phase 87.4 D-06: renamed from "endgame_elo_timeline".
-    "conversion_elo_timeline",
+    # Phase 87.5 D-06: restored from "conversion_elo_timeline".
+    "endgame_elo_timeline",
     "time_pressure_at_entry",
     "clock_diff_timeline",
     "time_pressure_vs_performance",
@@ -135,11 +136,11 @@ TREND_MIN_WEEKLY_POINTS: int = 20
 # Placeholder value — Plan 04 may tune against the SEED-001 fixture.
 TREND_MIN_SLOPE_VOL_RATIO: float = 0.5
 
-# Max |conversion_elo - actual_elo| that counts as not-notable (D-09 flag 4).
+# Max |endgame_elo - actual_elo| that counts as not-notable (D-09 flag 4).
 # Values above this threshold across any (platform, time_control) combo fire
-# the `notable_conversion_elo_divergence` cross-section flag. Renamed in
-# Phase 87.4 (D-06) alongside the Conversion ELO Timeline rename.
-NOTABLE_CONVERSION_ELO_DIVERGENCE_THRESHOLD: int = 100
+# the `notable_endgame_elo_divergence` cross-section flag. Renamed in
+# Phase 87.5 (D-06) alongside the Endgame ELO Timeline additive-K rewire.
+NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD: int = 100
 
 # Neutral band for clock-diff percentage of base time (mirrors the inline
 # frontend constant in EndgameClockPressureSection.tsx line 18). Used by the
@@ -306,12 +307,13 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=NEUTRAL_TIMEOUT_THRESHOLD,
         direction="higher_is_better",
     ),
-    # Conversion ELO gap (conversion_elo - actual_elo, signed Elo).
-    # Typical band = ±100 Elo, matches NOTABLE_CONVERSION_ELO_DIVERGENCE_THRESHOLD.
+    # Endgame ELO gap (endgame_elo - actual_elo, signed Elo).
+    # Typical band = ±100 Elo, matches NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD.
     # Per-combo fan-out happens at the finding level, not here — the registry
     # entry is the band used for each individual (platform, tc) finding.
-    # Phase 87.4 D-06: renamed from "endgame_elo_gap".
-    "conversion_elo_gap": ZoneSpec(
+    # Phase 87.5 D-06: restored from "conversion_elo_gap" — the additive-K
+    # formula (endgame_elo = actual_elo + K · eg_score_gap) drives the gap.
+    "endgame_elo_gap": ZoneSpec(
         typical_lower=-100.0,
         typical_upper=100.0,
         direction="higher_is_better",
@@ -375,7 +377,7 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "endgame_start_vs_end": (10, 50),
     "score_timeline": (10, 52),
     "endgame_metrics": (30, 100),
-    "conversion_elo_timeline": (10, 40),  # Phase 87.4 D-06: renamed from "endgame_elo_timeline".
+    "endgame_elo_timeline": (10, 40),  # Phase 87.5 D-06: restored from "conversion_elo_timeline".
     "time_pressure_at_entry": (10, 50),
     "clock_diff_timeline": (10, 52),
     "time_pressure_vs_performance": (30, 100),
