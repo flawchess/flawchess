@@ -2,18 +2,20 @@
 created: 2026-05-16T00:00:00.000Z
 title: Center the Conversion Score Gap bullet on its blue-zone midpoint (display-only)
 area: frontend / endgame charts
-priority: medium
+priority: high
+status: in-scope for Phase 87.4
 files:
   - frontend/src/components/charts/EndgameScoreGapSection.tsx
   - frontend/src/generated/endgameZones.ts
   - app/services/endgame_zones.py
 related_notes:
+  - .planning/notes/endgame-skill-dropped-conversion-elo.md
   - .planning/notes/endgame-skill-recovery-confound.md
 ---
 
 # Center the Conversion Score Gap bullet on its blue-zone midpoint
 
-**Independent of the Endgame Skill composite redesign — shippable on its own.**
+**Promoted to in-scope for Phase 87.4 (2026-05-16).** With Endgame Skill dropped and Conv ΔES Score Gap structurally promoted to the **spine** of the Endgame metrics section (it now feeds the Conversion ELO Timeline via an affine recenter — see `.planning/notes/endgame-skill-dropped-conversion-elo.md`), getting the Conv ΔES display axis right is no longer optional polish. Phase 87.4 plan-phase must wire this in alongside the timeline rewire.
 
 ## Problem
 
