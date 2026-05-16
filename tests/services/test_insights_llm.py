@@ -3712,3 +3712,46 @@ class TestSection2ScoreGapFindings:
         assert len(findings) == 6, (
             f"Expected 6 findings (3 rate + 3 ΔES), got {len(findings)}"
         )
+
+
+class TestPhase874PromptVersion:
+    """Phase 87.4 Plan 03: _PROMPT_VERSION bumped to endgame_v32 with the
+    Skill-removal / Conversion-ELO-rename / display-centering changelog blob
+    prepended at the FRONT of the inline append-only comment.
+    """
+
+    def test_prompt_version_is_v32(self) -> None:
+        """SC#6: _PROMPT_VERSION reads endgame_v32 after the Phase 87.4 bump."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v32"
+
+    def test_non_fractional_metrics_renamed(self) -> None:
+        """D-06: _NON_FRACTIONAL_METRICS swaps endgame_elo_gap → conversion_elo_gap."""
+        assert "conversion_elo_gap" in insights_llm._NON_FRACTIONAL_METRICS, (
+            "conversion_elo_gap must be registered as non-fractional (Elo points)"
+        )
+        assert "endgame_elo_gap" not in insights_llm._NON_FRACTIONAL_METRICS, (
+            "legacy endgame_elo_gap must not survive in _NON_FRACTIONAL_METRICS"
+        )
+
+    def test_no_endgame_skill_payload_field(self) -> None:
+        """D-05 (Plan 03 scope): the LLM payload module source contains no
+        Skill-keyed quoted string literals after Phase 87.4. Plan 01 already
+        removed the upstream Skill data via insights_service; this regression
+        guard catches re-introducing a hardcoded reference here.
+        """
+        import inspect as _inspect
+
+        src = _inspect.getsource(insights_llm)
+        # Quoted-string literal guard: bare comment / changelog narration uses
+        # the unquoted identifier, which is intentional context for future
+        # readers and must NOT trip this assertion.
+        assert '"endgame_skill"' not in src, (
+            "quoted-string 'endgame_skill' literal still present in insights_llm.py"
+        )
+        assert '"section2_score_gap_skill"' not in src, (
+            "quoted-string 'section2_score_gap_skill' literal still present"
+        )
+        assert '"endgame_skill_rate_mean"' not in src, (
+            "quoted-string 'endgame_skill_rate_mean' literal still present"
+        )
+
