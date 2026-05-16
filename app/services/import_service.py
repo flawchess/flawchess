@@ -62,11 +62,17 @@ def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
 
 
 # Number of games per DB insert batch. Each game produces ~80 position rows,
-# so batch_size=28 means ~2,240 position rows per INSERT (split into 2 chunks
-# of 1,700 and 540 by bulk_insert_positions). Increased from 10 to 28 for
-# fewer DB commits per import (D-05). Memory: ~1.8MB per batch — safe for
-# production 7.6GB + 2GB swap server.
-_BATCH_SIZE = 28
+# so batch_size=12 means ~960 position rows per INSERT.
+#
+# Bug fix (2026-05-16, FLAWCHESS-56 / FLAWCHESS-3Q): reduced from 28 back to 12.
+# The old comment claimed "~1.8MB per batch — safe" but that only counted the
+# position rows; it ignored the per-batch Stockfish eval pass added in Phase
+# 41.1, which runs STOCKFISH_POOL_SIZE engines concurrently over the batch.
+# At batch_size=28 with prod's 4-engine pool this drove a Postgres OOM-kill
+# mid-import. Keep this low until the orphan-reaper / atomic-import-guard
+# follow-up phase lands. The dominant memory cost is the engine pass, not the
+# INSERT, so batch size is the cheapest lever.
+_BATCH_SIZE = 12
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
 
 

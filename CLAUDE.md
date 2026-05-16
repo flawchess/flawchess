@@ -161,7 +161,8 @@ ssh flawchess "cd /opt/flawchess && docker compose ps"
 # View backend logs
 ssh flawchess "cd /opt/flawchess && docker compose logs --tail=50 backend"
 
-# Deploy (always use this — runs CI tests before deploying)
+# Deploy (always use this — runs CI tests, then deploys the `production` branch)
+# Promote a release first: PR main → production, then:
 bin/deploy.sh
 
 # Restart backend only
@@ -175,6 +176,7 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 - Stack: PostgreSQL 18 + FastAPI/Uvicorn + Caddy 2.11.2
 - Hetzner Cloud, 4 vCPUs, 7.6 GB RAM + 2 GB swap (`/swapfile`), 75 GB NVMe (upgraded 2026-04-01, disk unchanged — can downgrade)
 - Swap added 2026-03-22 after PostgreSQL was OOM-killed during a large game import. Import batch size was also reduced from 50 to 10 games (see `_BATCH_SIZE` in `import_service.py`).
+- **OOM recurrence 2026-05-16 (FLAWCHESS-56 / FLAWCHESS-3Q)**: Phase 41.1 had raised `_BATCH_SIZE` back to 28 and added a per-batch Stockfish eval pass; with prod `STOCKFISH_POOL_SIZE=4` this re-triggered a Postgres OOM-kill during a (concurrent, duplicate) import for user 94. Hotfix: `_BATCH_SIZE` → 12, `_HASH_MB` → 32, prod swap raised above 2 GB, `STOCKFISH_POOL_SIZE` lowered. Deferred to a GSD phase: resilient failure-state recording (retry on DB-recovery), scheduled orphan-job reaper (current `cleanup_orphaned_jobs()` only runs at backend startup, so a Postgres-only restart leaves jobs stuck `in_progress`), and an atomic duplicate-import guard.
 - Hetzner Cloud Firewall configured with inbound TCP 22/80/443 + ICMP from any
 - Alembic migrations run automatically on backend container startup via `deploy/entrypoint.sh`
 - `.env` on server at `/opt/flawchess/.env` — never commit production secrets
@@ -182,8 +184,18 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 
 ## Version Control
 
-- **`main`** is the production branch. Pushes to main do NOT auto-deploy — deployment is manual via `workflow_dispatch` in GitHub Actions or SSH.
-- Always create a pull request before merging a feature or phase branch into main. Squash and merge the pull request into main only when approved or requested by the user.
+This project uses **GitLab Flow** (adopted 2026-05-16): `main` is the integration trunk, a long-lived `production` branch is exactly what is deployed.
+
+- **`main`** — integration trunk. All GSD phases/features branch off `main` and merge back into `main` via PR (squash-merge only when the user approves). `main` may contain unreleased, unshipped milestone work. Pushing to `main` never deploys.
+- **`production`** — tracks the exact commit running in prod. Never commit directly to it; it only ever receives merges from `main` (releases) or from `hotfix/*` branches (urgent prod fixes). `bin/deploy.sh` deploys the `production` branch, not `main`.
+- **Release promotion**: at a milestone boundary (or any approved release point), open a PR `main → production`, then run `bin/deploy.sh`.
+- **Hotfix flow** (urgent prod fix without shipping unreleased `main`):
+  1. `git checkout -b hotfix/<slug> production`
+  2. Apply the minimal fix, PR into `production`, merge when approved.
+  3. `bin/deploy.sh` (deploys `production`).
+  4. Forward-port: merge `production` back into `main` (or cherry-pick the fix) so the fix isn't lost at the next release. Expect conflicts when `main` has diverged — resolve in favour of the prod-safe value.
+- **First deploy after adopting GitLab Flow**: the server checkout was on `main`. The deploy workflow now does `git checkout production` + `git reset --hard origin/production`, so the switch is automatic on the next `bin/deploy.sh`. No manual server step needed unless the server working tree is dirty (the deploy aborts on a dirty tree by design).
+- Always create a pull request before merging into `main` or `production`. Squash and merge only when approved or requested by the user.
 
 ## Changelog & Releases
 
