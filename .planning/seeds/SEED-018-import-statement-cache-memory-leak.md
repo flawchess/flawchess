@@ -67,6 +67,16 @@ One prepared statement reused across all batches → leak gone, and a throughput
 
 **Medium.** The primary fix is one function (`_flush_batch` Stage 5) but correctness-sensitive (the `result_fen` split) and needs a regression test → **not `/gsd-fast`**; borderline `/gsd-quick` for the primary rewrite alone *if* the `result_fen` split is explicit and tested, but the production-incident history argues for a proper planned phase (`/gsd-plan-phase`). The defense-in-depth session-recycle is phase-sized, not quick. Plan as one phase with two plans (primary fix + regression guard; optional session-recycle as a third).
 
+## Carried Forward From SEED-017 (closed 2026-05-16)
+
+SEED-017 was closed because its **OOM-causation premise was disproven** (it claimed a concurrent/duplicate import was required and the duplicate-guard was "load-bearing" — see Why This Matters). Two of its three parts are **leak-independent, still-valid defects** and are retained here so they are not lost:
+
+1. **Scheduled / on-reconnect orphan-job reaper** (still valid). `cleanup_orphaned_jobs()` (`app/services/import_service.py:140`, wired in `app/main.py` lifespan) only runs at **backend startup**. A Postgres-only restart leaves the backend up, so orphaned `in_progress` jobs are never reaped until the next backend restart (on 2026-05-16 the stuck jobs only cleared because we happened to do a *backend* restart). Add a periodic and/or on-DB-reconnect reaper. **Independent of the leak fix; do both.**
+2. **Resilient failure-state recording** (still valid). The `except Exception` handler in `run_import` (~386–410) opens a new session and UPDATEs while the DB may still be in crash recovery → `CannotConnectNowError`; inner try/except only logs, so the job never transitions to `failed`. Add bounded retry with backoff across a DB-recovery window. **Independent of the leak fix; do both.**
+3. **Atomic duplicate-import guard** (DEMOTED — was SEED-017's "top priority" on the disproven premise). The racy `POST /imports` check-then-act is a real correctness/UX bug, but it is **not** recurrence-preventing (a single import OOMs alone). Keep as optional UX/data-hygiene, low priority; do not gate the leak fix on it.
+
+Sentry to resolve after the fix: FLAWCHESS-56 (issue 120262007), FLAWCHESS-3Q (issue 115610288).
+
 ## Breadcrumbs
 
 - `app/services/import_service.py` — `_flush_batch` Stage 5 (literal `case()`+`IN` UPDATE, ~538–551); `run_import` single-session scope (~281); the per-batch commit loop
