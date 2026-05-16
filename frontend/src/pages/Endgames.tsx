@@ -27,7 +27,7 @@ import {
 } from '@/lib/endgameMetrics';
 import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
-import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
+import { ConversionEloTimelineSection } from '@/components/charts/ConversionEloTimelineSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
@@ -284,7 +284,7 @@ export function EndgamesPage() {
   const scoreGapData = overviewData?.score_gap_material;
   const clockPressureData = overviewData?.clock_pressure;
   const timePressureChartData = overviewData?.time_pressure_chart;
-  const eloTimelineData = overviewData?.endgame_elo_timeline;
+  const eloTimelineData = overviewData?.conversion_elo_timeline;
 
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
     selectedCategory,
@@ -489,12 +489,12 @@ export function EndgamesPage() {
                   <h2 className="text-lg font-semibold text-foreground mt-2">
                     Endgame Metrics and ELO
                   </h2>
-                  <EndgameMetricsSection data={scoreGapData} endgameWdl={perfData.endgame_wdl} />
+                  <EndgameMetricsSection data={scoreGapData} />
                   <div
                     className="charcoal-texture rounded-md p-4"
                     data-testid="endgame-elo-timeline-section"
                   >
-                    <EndgameEloTimelineSection
+                    <ConversionEloTimelineSection
                       data={eloTimelineData}
                       isLoading={overviewLoading}
                       isError={overviewError}
