@@ -2,7 +2,7 @@ name: CI
 
 "on":
   pull_request:
-    branches: [main]
+    branches: [main, production]
   workflow_dispatch:
     inputs:
       deploy:
@@ -128,7 +128,7 @@ jobs:
   deploy:
     needs: test
     if: >-
-      github.ref == 'refs/heads/main' &&
+      github.ref == 'refs/heads/production' &&
       github.event_name == 'workflow_dispatch' &&
       inputs.deploy == true
     runs-on: ubuntu-latest
@@ -151,7 +151,13 @@ jobs:
               exit 1
             fi
 
-            git pull origin main
+            # GitLab Flow: prod tracks the `production` branch, never `main`.
+            # checkout handles the one-time switch from the old `main` checkout;
+            # reset --hard guarantees the working tree matches origin/production
+            # exactly (the dirty-tree guard above already aborted on local edits).
+            git fetch origin --prune
+            git checkout production 2>/dev/null || git checkout -b production origin/production
+            git reset --hard origin/production
 
             # Verify the expected commit arrived
             echo "Deployed commit: $(git log --oneline -1)"
