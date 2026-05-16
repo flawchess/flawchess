@@ -141,7 +141,7 @@ def _render() -> str:
         f"export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN = {_ACHIEVABLE_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX = {_ACHIEVABLE_SCORE_GAP_SPEC.typical_upper};\n"
         "// Phase 87.1 (SEED-016 D-04): per-span, per-type Score Gap neutral band.\n"
-        "// User-facing label: \"Endgame Type Score Gap\" (concepts) / \"Score Gap\" (card row).\n"
+        '// User-facing label: "Endgame Type Score Gap" (concepts) / "Score Gap" (card row).\n'
         "// Internal registry key is `endgame_type_achievable_score_gap` for math-family grep.\n"
         f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_upper};\n"

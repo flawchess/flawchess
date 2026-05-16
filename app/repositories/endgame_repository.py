@@ -6,7 +6,7 @@ Functions:
 - query_endgame_performance_rows: endgame and non-endgame game rows for performance comparison
 - query_endgame_timeline_rows: rows for rolling-window time series, overall and per-type
 - query_clock_stats_rows: rows for time pressure at endgame entry (Phase 54)
-- query_endgame_elo_timeline_rows: bucket + all-game rows per-combo for Phase 57 Endgame ELO timeline
+- query_endgame_elo_timeline_rows: bucket + all-game rows per-combo for Phase 57 Conversion ELO timeline (renamed Phase 87.4 D-06; function name kept as-is for internal grep continuity)
 """
 
 import datetime
@@ -797,7 +797,7 @@ async def query_endgame_elo_timeline_rows(
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> tuple[list[Row[Any]], list[Row[Any]]]:
-    """Return (bucket_rows, all_rows) for the Phase 57 Endgame ELO timeline.
+    """Return (bucket_rows, all_rows) for the Phase 57 Conversion ELO timeline (renamed in Phase 87.4 D-06; function name preserved for internal grep continuity).
 
     bucket_rows: one row per ENDGAME game (uniform 6-ply rule via entry_subq HAVING).
         Tuple shape:

@@ -100,7 +100,9 @@ _MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
 # 0-100 percentage scale (v6 shape). Keeping the registry/service layer fractional
 # keeps the frontend gauge codegen unchanged; the scale flip lives at the formatter only.
 _NON_FRACTIONAL_METRICS: frozenset[str] = frozenset(
-    {"endgame_elo_gap", "avg_clock_diff_pct", "net_timeout_rate", "entry_eval_pawns"}
+    # Phase 87.4 (D-06): "endgame_elo_gap" renamed → "conversion_elo_gap" in lockstep
+    # with the MetricId Literal in app/services/endgame_zones.py.
+    {"conversion_elo_gap", "avg_clock_diff_pct", "net_timeout_rate", "entry_eval_pawns"}
 )
 
 # Metrics whose ZONE_REGISTRY entry is a no-op `[0, 1]` placeholder (registered
@@ -340,7 +342,8 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
-        "endgame_elo_timeline",
+        # Phase 87.4 (D-06): renamed from "endgame_elo_timeline".
+        "conversion_elo_timeline",
     }
 )
 
@@ -860,7 +863,8 @@ def _trend_info(
     )
     n_total = sum(pt.n for pt in points)
     noise_cap = (
-        _DELTA_WITHIN_NOISE_ELO if metric_id == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
+        # Phase 87.4 (D-06): renamed from "endgame_elo_gap" in lockstep with MetricId.
+        _DELTA_WITHIN_NOISE_ELO if metric_id == "conversion_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
     )
     within_noise = direction != "flat" and abs(diff) < noise_cap
     return direction, series_mean, series_std, n_total, within_noise
@@ -886,7 +890,7 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
     scale = _scale_for_metric(metric_id)
     lo = spec.typical_lower * scale
     hi = spec.typical_upper * scale
-    if metric_id == "endgame_elo_gap":
+    if metric_id == "conversion_elo_gap":  # Phase 87.4 D-06: renamed from endgame_elo_gap.
         threshold = _PROXIMITY_ELO_THRESHOLD
     elif metric_id == "entry_eval_pawns":
         threshold = _PROXIMITY_PAWN_THRESHOLD
@@ -1066,7 +1070,7 @@ def _within_noise_shift(
     shift: float,
 ) -> bool:
     """Shift is within-noise when it's below the metric cap AND the last_3mo window is much smaller."""
-    if metric == "endgame_elo_gap":
+    if metric == "conversion_elo_gap":  # Phase 87.4 D-06: renamed from endgame_elo_gap.
         noise_cap = _DELTA_WITHIN_NOISE_ELO
     elif metric == "entry_eval_pawns":
         # Phase 82: 0.05 pawns is the within-noise cap for entry_eval_pawns
@@ -1423,7 +1427,7 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
         "metrics_elo",
         [
             ("subsection", "endgame_metrics"),
-            ("subsection", "endgame_elo_timeline"),
+            ("subsection", "conversion_elo_timeline"),  # Phase 87.4 D-06: renamed.
         ],
     ),
     (
@@ -1502,9 +1506,10 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
     header += "]"
     lines = [header]
     series_scale = _scale_for_metric(finding.metric)
-    emit_elo = finding.metric == "endgame_elo_gap"
+    # Phase 87.4 (D-06): renamed metric → "conversion_elo_gap" in lockstep.
+    emit_elo = finding.metric == "conversion_elo_gap"
     # Constant-n suppression (260424-pc6 C): only applies when every point
-    # shares the same `n` AND this is NOT the endgame_elo_gap variant (whose
+    # shares the same `n` AND this is NOT the conversion_elo_gap variant (whose
     # per-point `elo=` field is the reason the full per-point line exists).
     ns = [pt.n for pt in points]
     n_is_constant = bool(ns) and not emit_elo and len(set(ns)) == 1
@@ -1611,10 +1616,11 @@ def _render_subsection_block(
             else None
         )
 
-        # v11: in endgame_elo_timeline, lead each combo with the derived
-        # absolute Endgame ELO summary (the chart's headline value), then
+        # v11: in conversion_elo_timeline, lead each combo with the derived
+        # absolute Conversion ELO summary (the chart's headline value), then
         # the gap summary (which carries the zone interpretation).
-        if subsection_id == "endgame_elo_timeline" and metric == "endgame_elo_gap":
+        # Phase 87.4 (D-06): subsection + metric renamed in lockstep.
+        if subsection_id == "conversion_elo_timeline" and metric == "conversion_elo_gap":
             lines.extend(
                 _render_endgame_elo_summary_block(
                     dim_key=dim_key,
@@ -1819,20 +1825,21 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
             else:  # subsection
                 members = groups.get(block_id)
                 if not members:
-                    # Fix C: keep the `endgame_elo_timeline` header visible
+                    # Fix C: keep the `conversion_elo_timeline` header visible
                     # even when every (platform, time_control) combo is
                     # sparse (< SPARSE_COMBO_FLOOR weekly buckets). Without
                     # this the whole subsection vanishes for short-history
-                    # users, and the LLM has no signal that the Endgame ELO
+                    # users, and the LLM has no signal that the Conversion ELO
                     # chart exists. See `.planning/debug/llm-prompt-missing-sections.md`.
-                    if block_id == "endgame_elo_timeline":
+                    # Phase 87.4 (D-06): block_id renamed from "endgame_elo_timeline".
+                    if block_id == "conversion_elo_timeline":
                         section_body.extend(
                             [
-                                "### Subsection: endgame_elo_timeline",
+                                "### Subsection: conversion_elo_timeline",
                                 (
                                     f"[no qualifying combo — every (platform, time_control) "
                                     f"combo has fewer than {SPARSE_COMBO_FLOOR} weekly buckets; "
-                                    "no Endgame ELO trajectory available yet]"
+                                    "no Conversion ELO trajectory available yet]"
                                 ),
                                 "",
                             ]

@@ -24,10 +24,10 @@ Critical invariants:
 - Two sequential awaits of `get_endgame_overview`, never concurrent gather
   — a single `AsyncSession` is not safe for concurrent coroutines (CLAUDE.md
   §Critical Constraints).
-- Phase 59 removed the aggregate `endgame_skill` field from
-  `EndgamePerformanceResponse`; this service recomputes it from
-  `score_gap_material.material_rows` via `_endgame_skill_from_material_rows`
-  (RESEARCH.md §Pitfall 7).
+- Phase 87.4 (D-05): the aggregate `endgame_skill` concept was retired
+  end-to-end (no composite definition survived scrutiny). The prior
+  `_endgame_skill_from_material_rows` recompute path and its sole
+  endgame_metrics emitter were deleted in the same change.
 - `FilterContext.color` is not forwarded to `get_endgame_overview` (the
   endgame service has no color filter).
 - Non-trivial except blocks call `sentry_sdk.set_context` with structured
@@ -90,7 +90,7 @@ _OPPONENT_TYPE: str = "human"
 # ---------------------------------------------------------------------------
 
 # D-04: min weekly observations per (platform, time_control) combo for the
-# endgame_elo_timeline series. Combos below this floor are silently skipped —
+# conversion_elo_timeline series. Combos below this floor are silently skipped —
 # no SubsectionFinding is emitted for them.
 SPARSE_COMBO_FLOOR: int = 10
 
@@ -101,7 +101,7 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
-        "endgame_elo_timeline",
+        "conversion_elo_timeline",  # Phase 87.4 D-06: renamed from endgame_elo_timeline.
     }
 )
 
@@ -178,7 +178,7 @@ async def compute_findings(
     last_3mo_findings = _compute_subsection_findings(last_3mo_resp, window="last_3mo")
     all_findings = all_time_findings + last_3mo_findings
 
-    player_profile = compute_player_profile(all_time_resp.endgame_elo_timeline.combos)
+    player_profile = compute_player_profile(all_time_resp.conversion_elo_timeline.combos)
 
     findings = EndgameTabFindings(
         as_of=datetime.datetime.now(datetime.UTC),
@@ -254,7 +254,7 @@ def compute_player_profile(
 ) -> list[PlayerProfileEntry] | None:
     """Produce per-combo Elo context for the LLM prompt.
 
-    Uses the already-fetched `endgame_elo_timeline.combos` — no extra DB
+    Uses the already-fetched `conversion_elo_timeline.combos` — no extra DB
     work. Each combo with >= _PLAYER_PROFILE_MIN_POINTS weekly points yields
     a `quality="full"` entry with paired all_time / last_3mo window stats
     (mean, n, buckets, trend, std). Combos are sorted by total game count
@@ -277,7 +277,7 @@ def compute_player_profile(
     carries a STALE marker.
 
     Returns None only when no combo has any weekly points at all (the user
-    has imported games but somehow has zero endgame_elo timeline rows).
+    has imported games but somehow has zero conversion_elo timeline rows).
     """
     today = datetime.date.today()
     cutoff_last_3mo = today - datetime.timedelta(days=_PLAYER_PROFILE_LAST_3MO_DAYS)
@@ -399,7 +399,7 @@ def _compute_subsection_findings(
     findings.extend(_findings_endgame_start_vs_end(response, window))  # Phase 82 D-16
     findings.extend(_findings_score_timeline(response, window))
     findings.extend(_findings_endgame_metrics(response, window))
-    findings.extend(_findings_endgame_elo_timeline(response, window))
+    findings.extend(_findings_conversion_elo_timeline(response, window))
     findings.extend(_findings_time_pressure_at_entry(response, window))
     findings.append(_finding_clock_diff_timeline(response, window))
     findings.append(_finding_time_pressure_vs_performance(response, window))
@@ -693,7 +693,7 @@ def _findings_endgame_metrics(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """endgame_metrics -> 1 endgame_skill + 1 per-bucket matching metric.
+    """endgame_metrics -> 1 finding per bucket (conversion / parity / recovery).
 
     Per CONTEXT.md A1: each bucketed metric is tied to exactly ONE bucket
     (conversion_win_pct -> conversion, parity_score_pct -> parity,
@@ -703,39 +703,20 @@ def _findings_endgame_metrics(
     several categories" from conversion-bucket data. Fix: dispatch on
     `row.bucket` via _BUCKET_TO_METRIC and emit only the matching metric.
 
-    endgame_skill is recomputed from material_rows (Phase 59 removed the
-    aggregate field per RESEARCH.md §Pitfall 7).
+    Phase 87.4 (D-05): the aggregate ``endgame_skill`` finding was dropped
+    end-to-end alongside the Endgame Skill concept retirement.
     """
     rows: list[MaterialRow] = response.score_gap_material.material_rows
-    total_games = sum(r.games for r in rows)
-    quality = sample_quality("endgame_metrics", total_games)
-    is_headline = quality != "thin"
 
     findings: list[SubsectionFinding] = []
 
-    # 1. endgame_skill — recomputed from material_rows because
-    # EndgamePerformanceResponse no longer exposes an aggregate endgame_skill
-    # field (Phase 59 trimmed it; see RESEARCH.md §Pitfall 7). Mirrors the
-    # logic of _endgame_skill_from_bucket_rows in endgame_service.py.
-    skill_value = _endgame_skill_from_material_rows(rows)
-    findings.append(
-        SubsectionFinding(
-            subsection_id="endgame_metrics",
-            parent_subsection_id=None,
-            window=window,
-            metric="endgame_skill",
-            value=skill_value,
-            zone=assign_zone("endgame_skill", skill_value),
-            trend="n_a",
-            weekly_points_in_window=0,
-            sample_size=total_games,
-            sample_quality=quality,
-            is_headline_eligible=is_headline and not math.isnan(skill_value),
-            dimension=None,
-        )
-    )
+    # Phase 87.4 (D-05): the prior endgame_skill aggregate finding emitter was
+    # removed along with _endgame_skill_from_material_rows. The per-bucket
+    # findings below cover the same surface without the composite scalar.
+    # The previous total_games / quality locals fed only that aggregate
+    # finding; per-bucket findings compute their own bucket_quality.
 
-    # 2. One finding per MaterialRow using the bucket's matching metric (A1 fix).
+    # One finding per MaterialRow using the bucket's matching metric (A1 fix).
     # Values follow RESEARCH.md §Subsection Mapping:
     #   conversion bucket -> conversion_win_pct = win_pct / 100
     #   parity bucket     -> parity_score_pct   = score (already 0.0-1.0)
@@ -789,14 +770,15 @@ def _findings_endgame_metrics(
         )
 
     # Phase 87.2 (D-09 — ADDITIVE per RESEARCH §LLM Payload Critical Drift):
-    # Four new ΔES Score Gap findings alongside the existing rate findings above.
+    # ΔES Score Gap findings alongside the existing rate findings above.
     # Wire shape per finding: (mean, n, zone, neutral_band). No p_value / verdict —
     # band IS the significance signal (memory feedback_llm_significance_signal.md).
+    # Phase 87.4 (D-05): the "skill"/"section2_score_gap_skill" tuple was
+    # dropped — Endgame Skill composite retired end-to-end.
     _SECTION2_BUCKETS: list[tuple[str, MetricId]] = [
         ("conv", "section2_score_gap_conv"),
         ("parity", "section2_score_gap_parity"),
         ("recov", "section2_score_gap_recov"),
-        ("skill", "section2_score_gap_skill"),
     ]
     for bucket_id, metric_id in _SECTION2_BUCKETS:
         # Dynamic attribute access: section2_score_gap_{bucket_id}_{mean,n} are
@@ -829,13 +811,13 @@ def _findings_endgame_metrics(
     return findings
 
 
-def _findings_endgame_elo_timeline(
+def _findings_conversion_elo_timeline(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """endgame_elo_timeline -> one finding per (platform, time_control) combo.
+    """conversion_elo_timeline -> one finding per (platform, time_control) combo.
 
-    Value = most recent point's (endgame_elo - actual_elo). Combo identity
+    Value = most recent point's (conversion_elo - actual_elo). Combo identity
     lives in the `dimension` field (D-14). Combos with zero points are
     already dropped by the endgame service, but we defensively skip any
     empty `points` list.
@@ -843,12 +825,16 @@ def _findings_endgame_elo_timeline(
     Phase 65 D-04: combos with fewer than SPARSE_COMBO_FLOOR weekly
     observations are skipped entirely — no SubsectionFinding is emitted.
     The gap-only series is populated via _series_for_endgame_elo_combo.
+
+    Phase 87.4 (D-06): renamed from `_findings_endgame_elo_timeline`. The
+    subsection / metric Literal IDs renamed in lockstep; the formula and
+    emission semantics are unchanged.
     """
-    combos: list[EndgameEloTimelineCombo] = response.endgame_elo_timeline.combos
+    combos: list[EndgameEloTimelineCombo] = response.conversion_elo_timeline.combos
     findings: list[SubsectionFinding] = []
 
     if not combos:
-        findings.append(_empty_finding("endgame_elo_timeline", window, "endgame_elo_gap"))
+        findings.append(_empty_finding("conversion_elo_timeline", window, "conversion_elo_gap"))
         return findings
 
     for combo in combos:
@@ -862,9 +848,9 @@ def _findings_endgame_elo_timeline(
         if not combo.points:
             findings.append(
                 _empty_finding(
-                    "endgame_elo_timeline",
+                    "conversion_elo_timeline",
                     window,
-                    "endgame_elo_gap",
+                    "conversion_elo_gap",
                     dimension=dim,
                 )
             )
@@ -877,17 +863,17 @@ def _findings_endgame_elo_timeline(
             continue
 
         last = combo.points[-1]
-        value = float(last.endgame_elo - last.actual_elo)
+        value = float(last.conversion_elo - last.actual_elo)
         sample_size = len(combo.points)
-        quality = sample_quality("endgame_elo_timeline", sample_size)
+        quality = sample_quality("conversion_elo_timeline", sample_size)
         findings.append(
             SubsectionFinding(
-                subsection_id="endgame_elo_timeline",
+                subsection_id="conversion_elo_timeline",
                 parent_subsection_id=None,
                 window=window,
-                metric="endgame_elo_gap",
+                metric="conversion_elo_gap",
                 value=value,
-                zone=assign_zone("endgame_elo_gap", value),
+                zone=assign_zone("conversion_elo_gap", value),
                 trend="n_a",
                 weekly_points_in_window=0,
                 sample_size=sample_size,
@@ -1281,15 +1267,19 @@ def _series_for_endgame_elo_combo(
 
     Returns None if combo has fewer than SPARSE_COMBO_FLOOR total weekly
     observations in the window (caller skips the subsection finding entirely).
-    Each point carries both `value` (endgame_elo - actual_elo, the zoned gap)
+    Each point carries both `value` (conversion_elo - actual_elo, the zoned gap)
     and `actual_elo` (the user's rating at that bucket) so the LLM prompt can
     render `gap=<v>, elo=<r>` per row and distinguish skill regression from
     rating growth outpacing skill.
+
+    Phase 87.4 (D-06): per-point ``endgame_elo`` field renamed to
+    ``conversion_elo`` on EndgameEloTimelinePoint; function name kept as
+    `_series_for_endgame_elo_combo` (internal-only, no semantic load).
     """
     if len(combo.points) < SPARSE_COMBO_FLOOR:
         return None
     weekly: list[tuple[str, float, int, int]] = [
-        (p.date, float(p.endgame_elo - p.actual_elo), p.per_week_endgame_games, p.actual_elo)
+        (p.date, float(p.conversion_elo - p.actual_elo), p.per_week_endgame_games, p.actual_elo)
         for p in combo.points
     ]
     return _weekly_points_to_time_points_with_elo(weekly, window)
@@ -1299,10 +1289,10 @@ def _weekly_points_to_time_points_with_elo(
     weekly: list[tuple[str, float, int, int]],
     window: Window,
 ) -> list[TimePoint]:
-    """Endgame-elo variant of `_weekly_points_to_time_points` that also
+    """Conversion-elo variant of `_weekly_points_to_time_points` that also
     carries `actual_elo` through. Weighted by game count (same convention as
     the gap value) so the monthly aggregate satisfies the invariant
-    `value ≈ endgame_elo - actual_elo` for the aggregated `actual_elo`.
+    `value ≈ conversion_elo - actual_elo` for the aggregated `actual_elo`.
     """
     if not weekly:
         return []
@@ -1339,34 +1329,9 @@ def _weekly_points_to_time_points_with_elo(
     return points
 
 
-def _endgame_skill_from_material_rows(rows: list[MaterialRow]) -> float:
-    """Arithmetic mean of non-empty bucket-level rates (Phase 59 restored).
-
-    Mirrors the frontend `endgameSkill()` helper and the backend
-    `_endgame_skill_from_bucket_rows` pattern in endgame_service.py, but
-    consumes the already-aggregated MaterialRow values from the response
-    (not raw per-game rows). Per-bucket rate:
-
-      conversion: win_pct / 100
-      parity:     score (already 0.0-1.0)
-      recovery:   (win_pct + draw_pct) / 100
-
-    Returns `float("nan")` when no bucket has any games — the caller maps
-    NaN to `is_headline_eligible=False`.
-    """
-    rates: list[float] = []
-    for r in rows:
-        if r.games <= 0:
-            continue
-        if r.bucket == "conversion":
-            rates.append(r.win_pct / 100.0)
-        elif r.bucket == "parity":
-            rates.append(r.score)
-        else:  # recovery
-            rates.append((r.win_pct + r.draw_pct) / 100.0)
-    if not rates:
-        return float("nan")
-    return sum(rates) / len(rates)
+# Phase 87.4 (D-05): _endgame_skill_from_material_rows deleted alongside the
+# Endgame Skill concept retirement. Its sole caller (_findings_endgame_metrics'
+# aggregate endgame_skill finding emitter) was removed in the same change.
 
 
 def _compute_trend(

@@ -39,7 +39,7 @@ class TestEndgameEloTimelinePoint:
         # ValidationError because `conversion_elo` is required and `endgame_elo`
         # is an unknown extra (strict by default — endgame.py uses BaseModel).
         with pytest.raises(pydantic.ValidationError):
-            EndgameEloTimelinePoint.model_validate(  # ty: ignore[missing-argument]
+            EndgameEloTimelinePoint.model_validate(
                 {
                     "date": "2026-05-10",
                     "endgame_elo": 1500,
