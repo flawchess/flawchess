@@ -203,19 +203,10 @@ export interface ScoreGapMaterialResponse {
   section2_score_gap_recov_ci_low: number | null;
   section2_score_gap_recov_ci_high: number | null;
 
-  // Skill composite (equal-weighted mean of conv + parity + recov over active buckets):
-  section2_score_gap_skill_mean: number | null;
-  section2_score_gap_skill_n: number | null;  // total span count across active buckets
-  section2_score_gap_skill_p_value: number | null;
-  section2_score_gap_skill_ci_low: number | null;
-  section2_score_gap_skill_ci_high: number | null;
-
-  // quick-260515-wye: rate-based Endgame Skill composite for the gauge.
-  // Equal-weighted mean of (conv, parity, recov) chess-scores over buckets
-  // with games >= CONFIDENCE_MIN_N. Distinct from section2_score_gap_skill_mean
-  // (the ΔES bullet). The gauge plots this absolute rate composite; the
-  // bullet plots the eval-baseline delta.
-  endgame_skill_rate_mean: number | null;
+  // Phase 87.4 (D-05): the 6 Skill fields (section2_score_gap_skill_* and
+  // endgame_skill_rate_mean) were hard-deleted alongside EndgameSkillCard.
+  // No composite definition survived scrutiny on all four axes; see
+  // .planning/notes/endgame-skill-dropped-conversion-elo.md.
 }
 
 export interface ClockStatsRow {
@@ -268,15 +259,20 @@ export interface EndgameOverviewResponse {
   score_gap_material: ScoreGapMaterialResponse;  // Phase 53
   clock_pressure: ClockPressureResponse;         // Phase 54
   time_pressure_chart: TimePressureChartResponse; // Phase 55
-  endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57
+  conversion_elo_timeline: ConversionEloTimelineResponse; // Phase 57 (renamed Phase 87.4)
 }
 
-// ── Phase 57: Endgame ELO Timeline ─────────────────────────────────────────
+// ── Phase 87.4: Conversion ELO Timeline (renamed from Endgame ELO Timeline) ──
 
 /** Stable string-literal union of all 8 (platform, time_control) combo keys.
  *  Format: {platform_with_dot_replaced_by_underscore}_{time_control}.
  *  Frontend uses this as the lookup key into ELO_COMBO_COLORS.
- *  Backend populates via EndgameEloTimelineCombo.combo_key. */
+ *  Backend populates via ConversionEloTimelineCombo.combo_key.
+ *
+ *  Phase 87.4 D-06 / RESEARCH §Open Q#3 (Claude's Discretion): kept as
+ *  EloComboKey, not renamed to ConversionEloComboKey — the combo_key encodes
+ *  (platform, time_control) and carries no "endgame" semantic, so the rename
+ *  would add churn without clarifying anything. */
 export type EloComboKey =
   | 'chess_com_bullet'
   | 'chess_com_blitz'
@@ -287,28 +283,33 @@ export type EloComboKey =
   | 'lichess_rapid'
   | 'lichess_classical';
 
-/** One weekly point for a (platform, time_control) combo (Phase 57 ELO-05; revised Phase 57.1).
+/** One weekly point for a (platform, time_control) combo (Phase 57 ELO-05;
+ *  revised Phase 57.1; renamed Phase 87.4 endgame_elo → conversion_elo).
  *  date: Monday of ISO week, YYYY-MM-DD.
- *  endgame_elo: skill-adjusted rating = round(actual_elo + 400 * log10(skill / (1 - skill))).
+ *  conversion_elo: skill-adjusted rating = round(actual_elo + 400 * log10(s / (1 - s))),
+ *    where s = clamp(0.5 + ALPHA * (conv_ΔES − PIVOT), 0.05, 0.95) per the Phase 87.4
+ *    affine recenter (PIVOT = -0.0474, ALPHA = 2.025, CALIBRATION_VERSION =
+ *    "conv_delta_v1_260516"). A typical-cohort player (conv_ΔES = PIVOT) yields s = 0.5
+ *    and Conversion ELO = actual ELO (Phase 57 median-coincide invariant preserved).
  *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
  *  endgame_games_in_window: trailing 100-game window count (drives >=10 floor + tooltip "past N games").
  *  per_week_endgame_games: count of endgame games for THIS specific ISO week (Phase 57.1, drives muted volume bars). */
-export interface EndgameEloTimelinePoint {
+export interface ConversionEloTimelinePoint {
   date: string;
-  endgame_elo: number;
+  conversion_elo: number;
   actual_elo: number;
   endgame_games_in_window: number;
   per_week_endgame_games: number;
 }
 
-export interface EndgameEloTimelineCombo {
+export interface ConversionEloTimelineCombo {
   combo_key: EloComboKey;
   platform: 'chess.com' | 'lichess';
   time_control: 'bullet' | 'blitz' | 'rapid' | 'classical';
-  points: EndgameEloTimelinePoint[];
+  points: ConversionEloTimelinePoint[];
 }
 
-export interface EndgameEloTimelineResponse {
-  combos: EndgameEloTimelineCombo[];
+export interface ConversionEloTimelineResponse {
+  combos: ConversionEloTimelineCombo[];
   timeline_window: number;
 }

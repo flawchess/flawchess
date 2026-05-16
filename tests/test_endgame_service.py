@@ -34,8 +34,7 @@ from app.services.endgame_service import (
     _compute_span_gap,
     _compute_time_pressure_chart,
     _compute_weekly_rolling_series,
-    _endgame_elo_from_skill,
-    _endgame_skill_from_bucket_rows,
+    _conversion_elo_from_skill,
     _extract_entry_clocks,
     _get_endgame_performance_from_rows,
     _wdl_to_score,
@@ -1543,9 +1542,9 @@ class TestGetEndgameOverview:
         assert result.score_gap_material is not None
         assert result.clock_pressure is not None
         assert result.clock_pressure.rows == []
-        assert result.endgame_elo_timeline is not None
-        assert result.endgame_elo_timeline.combos == []
-        assert result.endgame_elo_timeline.timeline_window == 100
+        assert result.conversion_elo_timeline is not None
+        assert result.conversion_elo_timeline.combos == []
+        assert result.conversion_elo_timeline.timeline_window == 100
 
     @pytest.mark.asyncio
     async def test_overview_passes_window_to_timeline(self):
@@ -3305,8 +3304,9 @@ class TestComputeScoreGapTimeline:
 # -----------------------------------------------------------------------------
 
 
-class TestEndgameElo:
-    """Unit tests for the Endgame ELO formula (Phase 57 D-01).
+class TestConversionElo:
+    """Unit tests for the Conversion ELO formula (Phase 57 D-01; renamed
+    in Phase 87.4 D-06 from Endgame ELO — formula unchanged).
 
     Formula: round(avg_opp + 400 * log10(clamp(skill, 0.05, 0.95) /
              (1 - clamp(skill)))).
@@ -3314,13 +3314,13 @@ class TestEndgameElo:
 
     def test_formula_mid_range(self):
         # skill=0.5 -> log10(0.5/0.5) = 0 -> returns round(avg_opp).
-        assert _endgame_elo_from_skill(0.5, 1500.0) == 1500
-        assert _endgame_elo_from_skill(0.5, 1847.0) == 1847
+        assert _conversion_elo_from_skill(0.5, 1500.0) == 1500
+        assert _conversion_elo_from_skill(0.5, 1847.0) == 1847
 
     def test_clamp_boundaries_skill_zero_does_not_raise(self):
         # skill=0.0 -> clamped to 0.05 -> log10(0.05/0.95) ~ -1.279
         # -> 1500 + 400*-1.279 ~ 988
-        result = _endgame_elo_from_skill(0.0, 1500.0)
+        result = _conversion_elo_from_skill(0.0, 1500.0)
         assert isinstance(result, int)
         assert result < 1500
         # Clamp at 0.05 yields approximately -510 Elo delta at the extreme.
@@ -3329,18 +3329,18 @@ class TestEndgameElo:
     def test_clamp_boundaries_skill_one_does_not_raise(self):
         # skill=1.0 -> clamped to 0.95 -> log10(0.95/0.05) ~ +1.279
         # -> 1500 + 400*1.279 ~ 2012
-        result = _endgame_elo_from_skill(1.0, 1500.0)
+        result = _conversion_elo_from_skill(1.0, 1500.0)
         assert isinstance(result, int)
         assert result > 1500
         assert result < 2100  # well below numeric-overflow territory
 
     def test_formula_above_parity_raises_elo(self):
         # skill=0.7 > 0.5 -> Elo above opponent average.
-        assert _endgame_elo_from_skill(0.7, 1500.0) > 1500
+        assert _conversion_elo_from_skill(0.7, 1500.0) > 1500
 
     def test_formula_below_parity_lowers_elo(self):
         # skill=0.3 < 0.5 -> Elo below opponent average.
-        assert _endgame_elo_from_skill(0.3, 1500.0) < 1500
+        assert _conversion_elo_from_skill(0.3, 1500.0) < 1500
 
 
 # Helper for the timeline tests — mirrors the repo output tuple shape.
@@ -3398,197 +3398,30 @@ def _asof_arrays_from_all_rows(all_rows: list[tuple]) -> tuple[list, list[int]]:
     return dates, ratings
 
 
-class TestEndgameSkillFromBucketRows:
-    """Unit tests for _endgame_skill_from_bucket_rows — ported from frontend endgameSkill."""
-
-    def test_empty_rows_returns_none(self):
-        assert _endgame_skill_from_bucket_rows([]) is None
-
-    def test_only_parity_rows_uses_chess_score(self):
-        # 2 wins + 2 draws + 0 losses, all parity (abs eval_cp < 100).
-        # Score = (2*1 + 2*0.5) / 4 = 0.75
-        rows = [
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 1),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                0,  # eval_cp = 0 (parity)
-                None,  # eval_mate
-                "1-0",
-            ),
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 2),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                0,
-                None,
-                "1-0",
-            ),
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 3),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                0,
-                None,
-                "1/2-1/2",
-            ),
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 4),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                0,
-                None,
-                "1/2-1/2",
-            ),
-        ]
-        result = _endgame_skill_from_bucket_rows(rows)
-        assert result == pytest.approx(0.75)
-
-    def test_only_conversion_rows_uses_win_pct(self):
-        # 3 conv wins, 1 conv loss. Conv Win % = 0.75.
-        rows = [
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 1),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,  # eval_cp = +200 (conversion)
-                None,  # eval_mate
-                "1-0",
-            ),
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 2),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            ),
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 3),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            ),
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 4),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "0-1",
-            ),
-        ]
-        result = _endgame_skill_from_bucket_rows(rows)
-        assert result == pytest.approx(0.75)
-
-    def test_null_eval_routes_to_parity(self):
-        # eval_cp=None and eval_mate=None => parity bucket (NULL-handling rule).
-        rows = [
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 1),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                None,  # eval_cp
-                None,  # eval_mate
-                "1-0",
-            ),
-        ]
-        # 1 parity win -> score = 1.0, mean of one bucket = 1.0
-        assert _endgame_skill_from_bucket_rows(rows) == pytest.approx(1.0)
-
-    def test_mixed_buckets_averages_per_bucket_rates(self):
-        # 2 conv: 1 win, 1 loss -> conv rate = 0.5
-        # 2 parity: 2 wins -> parity rate = 1.0
-        # No recovery rows.
-        # Mean of two bucket rates = (0.5 + 1.0) / 2 = 0.75
-        rows = [
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 1),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,  # eval_cp = +200 (conversion)
-                None,
-                "1-0",
-            ),
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 2),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "0-1",
-            ),
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 3),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                0,  # eval_cp = 0 (parity)
-                None,
-                "1-0",
-            ),
-            _elo_bucket_row(
-                datetime.datetime(2026, 1, 4),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                0,
-                None,
-                "1-0",
-            ),
-        ]
-        result = _endgame_skill_from_bucket_rows(rows)
-        assert result == pytest.approx(0.75)
+# Phase 87.4 (D-05): TestEndgameSkillFromBucketRows class deleted alongside
+# _endgame_skill_from_bucket_rows. Endgame Skill concept retired end-to-end.
 
 
-class TestEndgameEloTimeline:
-    """Unit tests for _compute_endgame_elo_weekly_series (Phase 57; revised in Phase 57.1)."""
+class TestConversionEloTimeline:
+    """Unit tests for _compute_endgame_elo_weekly_series — emits Conversion ELO
+    timeline points (Phase 57; revised in Phase 57.1; renamed Phase 87.4 D-06).
+
+    Note (Phase 87.4 D-01): inputs are now drawn from windowed Conv ΔES
+    (conversion-bucket rows only, terminal per-game score gap via Lichess
+    sigmoid on entry-ply eval). Tests that previously fed parity-bucket
+    fixtures (eval_cp=0 / draws) were updated: under the new helper those
+    rows do not contribute (parity is excluded by _windowed_conv_delta_es)
+    so the timeline emits zero points. The tests below use conversion-bucket
+    fixtures (eval_cp > +100, sign-flipped to the user's perspective) to
+    keep the emission path exercised."""
 
     def test_empty_inputs_returns_empty(self):
         assert _compute_endgame_elo_weekly_series([], [], 100, [], []) == []
 
     def test_below_min_games_dropped(self):
-        """Endgame window with 9 games -> no point emitted (D-06 threshold = 10)."""
+        """Endgame window with 9 conv-bucket games -> no point emitted (D-06 threshold = 10)."""
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
+        # Phase 87.4 (D-01): conv-bucket fixture (eval_cp >= +100 from white POV).
         bucket_rows = [
             _elo_bucket_row(
                 monday + datetime.timedelta(hours=i),
@@ -3597,7 +3430,7 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,  # white-perspective eval — conv-bucket for white user.
                 None,
                 "1-0",
             )
@@ -3621,7 +3454,11 @@ class TestEndgameEloTimeline:
         assert result == []
 
     def test_min_games_emits_point(self):
-        """Endgame window with exactly 10 games at parity -> one point, ~1500 Elo."""
+        """Endgame window with 10 conv-bucket wins -> one point. Phase 87.4 D-01:
+        per-game Conv ΔES > PIVOT, so the affine recenter pushes ``s`` above 0.5
+        and conversion_elo lands above the 1500 actual_elo anchor. We assert
+        ordering, not an exact value (the recenter math is unit-tested under
+        TestAffineRecenter)."""
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
         bucket_rows = [
             _elo_bucket_row(
@@ -3631,9 +3468,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,  # +200cp white POV — conv-bucket.
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(10)
         ]
@@ -3655,9 +3492,11 @@ class TestEndgameEloTimeline:
         assert len(result) == 1
         # Dated to ISO-Sunday (end of week 2 = 2026-01-11). Monday was 2026-01-05.
         assert result[0].date == "2026-01-11"
-        # skill=0.5 (all draws => parity score=0.5), asof rating=1500 -> elo == 1500
-        assert result[0].endgame_elo == 1500
+        # 10 wins at +200cp (es_entry ≈ 0.68) → per-game gap ≈ +0.32. Mean is
+        # well above PIVOT (-0.0474), so s clamps near 0.95 and conversion_elo
+        # is the upper-clamp Phase 57 ceiling (~+510 Elo above actual).
         assert result[0].actual_elo == 1500
+        assert result[0].conversion_elo > result[0].actual_elo
         assert result[0].endgame_games_in_window == 10
         # Phase 57.1: new per-week count field.
         assert result[0].per_week_endgame_games == 10
@@ -3665,12 +3504,15 @@ class TestEndgameEloTimeline:
     def test_actual_elo_uses_asof_not_rolling_mean(self):
         """Actual ELO comes from per-combo asof-join (Phase 57.1 D-04), not rolling mean.
 
-        Endgame games at rating 1400, all-games at rating 1800 — asof of the latest
-        all-game returns 1800 (the latest played rating), not the mean. Endgame ELO
-        with skill=0.5 equals actual_elo_at_date exactly (log10(1) == 0).
+        Phase 87.4 (D-06): conversion_elo equals actual_elo iff windowed Conv ΔES
+        equals PIVOT (-0.0474) via _affine_recenter_conv_delta → s = 0.5. The
+        invariant itself is unit-tested under
+        ``TestConversionEloInvariant.test_pivot_pipeline_invariant_actual_elo_preserved``;
+        here we only assert that the asof-join anchor lands on the latest all-game
+        rating (1800, not the rolling mean of 1400/1800).
         """
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        # 10 endgame games at rating 1400 (per-game user_rating in bucket rows
+        # 10 conv-bucket games at rating 1400 (per-game user_rating in bucket rows
         # no longer influences the Elo formula after Phase 57.1).
         bucket_rows = [
             _elo_bucket_row(
@@ -3680,9 +3522,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1400,
                 1400,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(10)
         ]
@@ -3707,10 +3549,9 @@ class TestEndgameEloTimeline:
             asof_ratings,
         )
         assert len(result) == 1
-        # Asof returns the latest all-game's rating: 1800. Endgame ELO with skill=0.5
-        # equals actual_elo_at_date exactly (log10(1) == 0).
+        # Asof returns the latest all-game's rating: 1800 (the asof anchor —
+        # NOT the bucket-row 1400 rating, NOT a rolling mean).
         assert result[0].actual_elo == 1800
-        assert result[0].endgame_elo == 1800
 
     def test_cutoff_str_does_not_starve_window(self):
         """Recency cutoff filters EMITTED points but window pre-fills from earlier games (Pitfall 2)."""
@@ -3728,13 +3569,13 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(10)
         ] + [
-            _elo_bucket_row(wk2, "chess.com", "blitz", "white", 1500, 1500, 0, None, "1/2-1/2"),
+            _elo_bucket_row(wk2, "chess.com", "blitz", "white", 1500, 1500, 200, None, "1-0"),
         ]
         all_rows = [
             _elo_all_row(
@@ -3776,9 +3617,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(150)
         ]
@@ -3827,9 +3668,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(12)
         ] + [
@@ -3840,9 +3681,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             ),
         ]
         # All-games contains the week-1 history at rating 1500 and a week-3 game at
@@ -3887,9 +3728,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(10)
         ]
@@ -3932,8 +3773,15 @@ class TestEndgameEloTimeline:
         assert len(result) == 1
         assert result[0].actual_elo == 1600  # last game on the Sunday wins
 
-    def test_neutral_skill_lines_coincide(self):
-        """skill == 0.5 makes endgame_elo == actual_elo (D-04 zero-delta)."""
+    def test_parity_only_window_emits_no_point(self):
+        """Phase 87.4 (D-01): _windowed_conv_delta_es restricts the input to
+        conversion-bucket rows. A window of pure parity-bucket games (eval ≈ 0)
+        produces no Conv ΔES samples, so the timeline emits zero points.
+
+        The Phase 57 "neutral skill ⇒ Conversion ELO == Actual ELO" invariant
+        moved to ``TestConversionEloInvariant`` (unit test on
+        ``_affine_recenter_conv_delta`` + ``_conversion_elo_from_skill``).
+        """
         monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
         bucket_rows = [
             _elo_bucket_row(
@@ -3943,7 +3791,7 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                0,  # parity bucket — excluded from windowed Conv ΔES.
                 None,
                 "1/2-1/2",
             )
@@ -3968,9 +3816,7 @@ class TestEndgameEloTimeline:
             asof_dates,
             asof_ratings,
         )
-        assert len(result) == 1
-        assert result[0].endgame_elo == result[0].actual_elo
-        assert result[0].actual_elo == 1700
+        assert result == []
 
     def test_per_combo_asof_isolation(self):
         """asof arrays are per-combo: a chess.com rating doesn't bleed into a lichess call.
@@ -3989,9 +3835,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1400,
                 1400,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(10)
         ]
@@ -4036,9 +3882,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(15)
         ] + [
@@ -4049,9 +3895,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(12)
         ]
@@ -4105,9 +3951,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(10)
         ]
@@ -4143,9 +3989,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(10)
         ]
@@ -4208,9 +4054,9 @@ class TestEndgameEloTimeline:
                 "white",
                 1500,
                 1500,
-                0,
+                200,
                 None,
-                "1/2-1/2",
+                "1-0",
             )
             for i in range(10)
         ]
@@ -4256,15 +4102,16 @@ class TestEndgameEloTimeline:
 
 
 # Sanity check: EndgameEloTimelinePoint is actually exported from the schema.
+# Phase 87.4 (D-06): per-point field renamed endgame_elo → conversion_elo.
 def test_endgame_elo_timeline_point_constructs():
     pt = EndgameEloTimelinePoint(
         date="2026-01-05",
-        endgame_elo=1500,
+        conversion_elo=1500,
         actual_elo=1480,
         endgame_games_in_window=42,
         per_week_endgame_games=8,
     )
-    assert pt.endgame_elo == 1500
+    assert pt.conversion_elo == 1500
     assert pt.endgame_games_in_window == 42
     assert pt.per_week_endgame_games == 8
 
@@ -4969,8 +4816,9 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
             timeline=[],
             timeline_window=0,
         )
-        # New fields all default to None
-        for bucket in ("conv", "parity", "recov", "skill"):
+        # New fields all default to None.
+        # Phase 87.4 (D-05): "skill" bucket dropped — composite retired.
+        for bucket in ("conv", "parity", "recov"):
             assert getattr(resp, f"section2_score_gap_{bucket}_mean") is None
             assert getattr(resp, f"section2_score_gap_{bucket}_n") is None
             assert getattr(resp, f"section2_score_gap_{bucket}_p_value") is None
@@ -4980,6 +4828,17 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
         assert not hasattr(resp, "skill")
         assert not hasattr(resp, "opp_skill")
         assert not hasattr(resp, "skill_diff_p_value")
+        # Phase 87.4 (D-05): the section2_score_gap_skill_* family + the
+        # endgame_skill_rate_mean gauge driver were dropped end-to-end.
+        for f in (
+            "section2_score_gap_skill_mean",
+            "section2_score_gap_skill_n",
+            "section2_score_gap_skill_p_value",
+            "section2_score_gap_skill_ci_low",
+            "section2_score_gap_skill_ci_high",
+            "endgame_skill_rate_mean",
+        ):
+            assert not hasattr(resp, f), f"unexpected residual field: {f}"
 
     def test_material_row_construction_without_deleted_fields(self) -> None:
         """Phase 87.2 (D-05): MaterialRow no longer has opponent_score,
@@ -5065,8 +4924,8 @@ class TestPhase872SchemaFields:
             timeline=[],
             timeline_window=0,
         )
-        # 4 buckets x 5 fields = 20 fields
-        for bucket in ("conv", "parity", "recov", "skill"):
+        # 3 buckets x 5 fields = 15 fields (Phase 87.4 D-05: "skill" dropped).
+        for bucket in ("conv", "parity", "recov"):
             assert getattr(resp, f"section2_score_gap_{bucket}_mean") is None
             assert getattr(resp, f"section2_score_gap_{bucket}_n") is None
             assert getattr(resp, f"section2_score_gap_{bucket}_p_value") is None
@@ -5327,132 +5186,10 @@ class TestPhase872PerBucketDeltaES:
         assert result.section2_score_gap_recov_mean is None
         assert result.section2_score_gap_recov_n == 0
 
-    def test_skill_equal_weighted_mean_three_active_buckets(self) -> None:
-        """Equal-weighted Skill mean over 3 active buckets with n>=CONFIDENCE_MIN_N each.
-
-        means={0.10, 0.05, -0.05}, sizes={12, 15, 20} → skill_mean = (0.10+0.05-0.05)/3.
-        """
-        from app.services.score_confidence import CONFIDENCE_MIN_N
-
-        n_c, n_p, n_r = 12, 15, 20
-        assert min(n_c, n_p, n_r) >= CONFIDENCE_MIN_N
-
-        # Build gap lists to produce the target means when passed to paired-z.
-        # Use constant gap values per bucket to get zero-variance → mean = constant.
-        gaps_c = [0.10] * n_c
-        gaps_p = [0.05] * n_p
-        gaps_r = [-0.05] * n_r
-
-        wdl = self._make_wdl(n_c + n_p + n_r, 0, 0)
-        empty = self._make_wdl(0, 0, 0)
-        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]  # dummy for WDL
-        gaps_by_bucket = {"conversion": gaps_c, "parity": gaps_p, "recovery": gaps_r}
-        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
-        expected_skill = (0.10 + 0.05 + (-0.05)) / 3
-        assert result.section2_score_gap_skill_mean == pytest.approx(expected_skill, abs=1e-6)
-        assert result.section2_score_gap_skill_n == n_c + n_p + n_r
-
-    def test_skill_denominator_drop_below_floor(self) -> None:
-        """Parity bucket n=3 < CONFIDENCE_MIN_N=10 → dropped from Skill denominator.
-
-        Only conv (n=12) and recov (n=20) are active → skill_mean = (m_c + m_r) / 2.
-        """
-        from app.services.score_confidence import CONFIDENCE_MIN_N
-
-        n_c, n_p, n_r = 12, 3, 20
-        assert n_c >= CONFIDENCE_MIN_N
-        assert n_p < CONFIDENCE_MIN_N
-        assert n_r >= CONFIDENCE_MIN_N
-
-        gaps_c = [0.10] * n_c
-        gaps_p = [0.05] * n_p  # too few — dropped from Skill
-        gaps_r = [-0.05] * n_r
-
-        wdl = self._make_wdl(10, 0, 0)
-        empty = self._make_wdl(0, 0, 0)
-        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]
-        gaps_by_bucket = {"conversion": gaps_c, "parity": gaps_p, "recovery": gaps_r}
-        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
-        expected_skill = (0.10 + (-0.05)) / 2
-        assert result.section2_score_gap_skill_mean == pytest.approx(expected_skill, abs=1e-6)
-        assert result.section2_score_gap_skill_n == n_c + n_r
-
-    def test_skill_all_below_floor_returns_none(self) -> None:
-        """All 3 buckets n=5 < CONFIDENCE_MIN_N=10 → skill_mean=None, p=None, n=0."""
-        from app.services.score_confidence import CONFIDENCE_MIN_N
-
-        n = 5
-        assert n < CONFIDENCE_MIN_N
-
-        gaps = [0.1] * n
-        wdl = self._make_wdl(10, 0, 0)
-        empty = self._make_wdl(0, 0, 0)
-        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]
-        gaps_by_bucket = {"conversion": gaps[:], "parity": gaps[:], "recovery": gaps[:]}
-        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
-        assert result.section2_score_gap_skill_mean is None
-        assert result.section2_score_gap_skill_p_value is None
-        assert result.section2_score_gap_skill_n == 0
-
-    def test_skill_ci_propagation_variance_of_sum(self) -> None:
-        """Skill CI uses variance-of-sum / n_active² propagation (Open Q §3 Option A).
-
-        With 3 active buckets each having nonzero variance:
-          SE_b = (ci_high_b - ci_low_b) / (2 * CI_Z_95)
-          SE_skill = sqrt(SE_c² + SE_p² + SE_r²) / n_active
-          ci_low = skill_mean - CI_Z_95 * SE_skill
-          ci_high = skill_mean + CI_Z_95 * SE_skill
-        Assert to 1e-6.
-        """
-        import math as _math
-
-        from app.services.score_confidence import (
-            CI_Z_95,
-            CONFIDENCE_MIN_N,
-            compute_paired_difference_test,
-        )
-
-        # Build buckets with nonzero variance so CI bounds are spread.
-        # Use alternating [0.0, 0.2] to get mean=0.1, se>0.
-        n = 10
-        assert n >= CONFIDENCE_MIN_N
-        gaps_c = [0.0, 0.2] * (n // 2)  # mean 0.1, nonzero se
-        gaps_p = [0.0, 0.1] * (n // 2)  # mean 0.05, nonzero se
-        gaps_r = [-0.2, 0.0] * (n // 2)  # mean -0.1, nonzero se
-
-        # Compute expected values using the same helper.
-        mean_c, _, ci_lo_c, ci_hi_c = compute_paired_difference_test(gaps_c)
-        mean_p, _, ci_lo_p, ci_hi_p = compute_paired_difference_test(gaps_p)
-        mean_r, _, ci_lo_r, ci_hi_r = compute_paired_difference_test(gaps_r)
-
-        assert ci_lo_c is not None and ci_hi_c is not None
-        assert ci_lo_p is not None and ci_hi_p is not None
-        assert ci_lo_r is not None and ci_hi_r is not None
-
-        se_c = (ci_hi_c - ci_lo_c) / (2 * CI_Z_95)
-        se_p = (ci_hi_p - ci_lo_p) / (2 * CI_Z_95)
-        se_r = (ci_hi_r - ci_lo_r) / (2 * CI_Z_95)
-        n_active = 3
-        se_skill = _math.sqrt(se_c**2 + se_p**2 + se_r**2) / n_active
-        expected_mean = (mean_c + mean_p + mean_r) / n_active
-        expected_ci_lo = expected_mean - CI_Z_95 * se_skill
-        expected_ci_hi = expected_mean + CI_Z_95 * se_skill
-
-        wdl = self._make_wdl(10, 0, 0)
-        empty = self._make_wdl(0, 0, 0)
-        rows = [_FakeRow(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]
-        gaps_by_bucket = {"conversion": gaps_c, "parity": gaps_p, "recovery": gaps_r}
-        result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
-        assert result.section2_score_gap_skill_mean == pytest.approx(expected_mean, abs=1e-6)
-        assert result.section2_score_gap_skill_ci_low == pytest.approx(expected_ci_lo, abs=1e-6)
-        assert result.section2_score_gap_skill_ci_high == pytest.approx(expected_ci_hi, abs=1e-6)
-        # Symmetric CI: midpoint == mean.
-        assert result.section2_score_gap_skill_ci_low is not None
-        assert result.section2_score_gap_skill_ci_high is not None
-        mid = (
-            result.section2_score_gap_skill_ci_low + result.section2_score_gap_skill_ci_high
-        ) / 2.0
-        assert mid == pytest.approx(expected_mean, abs=1e-6)
+    # Phase 87.4 (D-05): test_skill_equal_weighted_mean_three_active_buckets,
+    # test_skill_denominator_drop_below_floor, test_skill_all_below_floor_returns_none,
+    # and test_skill_ci_propagation_variance_of_sum deleted alongside the
+    # ScoreGapMaterialResponse.section2_score_gap_skill_* field family.
 
     def test_sign_convention_positive_means_above_stockfish(self) -> None:
         """Positive section2_score_gap_conv_mean means user outperformed Stockfish baseline.
@@ -5472,94 +5209,5 @@ class TestPhase872PerBucketDeltaES:
         assert result.section2_score_gap_conv_mean > 0  # sign check
 
 
-class TestEndgameSkillRateMean(TestScoreGapMaterial):
-    """quick-260515-wye: rate-based Endgame Skill composite for the gauge.
-
-    Equal-weighted mean of (conv, parity, recov) chess-scores over buckets
-    with games >= CONFIDENCE_MIN_N. Distinct from section2_score_gap_skill_mean
-    (the ΔES bullet) — the gauge plots this absolute rate composite, the
-    bullet plots the eval-baseline delta. They must populate to different
-    numbers from the same input.
-    """
-
-    def _row(self, game_id: int, result: str, eval_cp: int) -> _FakeRow:
-        return _FakeRow(game_id, 1, result, "white", eval_cp, None)
-
-    def test_three_active_buckets_returns_equal_weighted_mean(self) -> None:
-        # 10 conv wins (score 1.0), 10 parity draws (score 0.5),
-        # 10 recov losses (score 0.0) → composite = (1.0 + 0.5 + 0.0) / 3 = 0.5.
-        rows: list[_FakeRow] = []
-        for i in range(10):
-            rows.append(self._row(i + 1, "1-0", 200))  # conversion / win
-        for i in range(10):
-            rows.append(self._row(i + 11, "1/2-1/2", 0))  # parity / draw
-        for i in range(10):
-            rows.append(self._row(i + 21, "0-1", -200))  # recovery / loss
-        endgame_wdl = self._make_wdl(10, 10, 10)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows)
-        assert result.endgame_skill_rate_mean == pytest.approx(0.5, abs=1e-9)
-
-    def test_two_active_buckets_drops_sparse_bucket(self) -> None:
-        # 10 conv wins, 10 parity draws, 0 recov games → denominator = 2,
-        # composite = (1.0 + 0.5) / 2 = 0.75. The recov bucket below the
-        # CONFIDENCE_MIN_N floor is dropped from the average.
-        rows: list[_FakeRow] = []
-        for i in range(10):
-            rows.append(self._row(i + 1, "1-0", 200))
-        for i in range(10):
-            rows.append(self._row(i + 11, "1/2-1/2", 0))
-        endgame_wdl = self._make_wdl(10, 10, 0)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows)
-        assert result.endgame_skill_rate_mean == pytest.approx(0.75, abs=1e-9)
-
-    def test_all_buckets_below_floor_returns_none(self) -> None:
-        # 5 games in each bucket — all below CONFIDENCE_MIN_N (=10). None.
-        rows: list[_FakeRow] = []
-        for i in range(5):
-            rows.append(self._row(i + 1, "1-0", 200))
-        for i in range(5):
-            rows.append(self._row(i + 6, "1/2-1/2", 0))
-        for i in range(5):
-            rows.append(self._row(i + 11, "0-1", -200))
-        endgame_wdl = self._make_wdl(5, 5, 5)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows)
-        assert result.endgame_skill_rate_mean is None
-
-    def test_empty_rows_returns_none(self) -> None:
-        endgame_wdl = self._make_wdl(0, 0, 0)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
-        assert result.endgame_skill_rate_mean is None
-
-    def test_distinct_from_section2_score_gap_skill_mean(self) -> None:
-        """Regression guard: the gauge value and the bullet value must come
-        from independent computations. Same fixture, different numbers.
-
-        Setup: 10 conv wins (rate 1.0) + 10 parity draws (rate 0.5) +
-        10 recov losses (rate 0.0); ΔES gaps zero everywhere.
-        endgame_skill_rate_mean = 0.5 (rate composite).
-        section2_score_gap_skill_mean = 0.0 (ΔES composite).
-        """
-        rows: list[_FakeRow] = []
-        for i in range(10):
-            rows.append(self._row(i + 1, "1-0", 200))
-        for i in range(10):
-            rows.append(self._row(i + 11, "1/2-1/2", 0))
-        for i in range(10):
-            rows.append(self._row(i + 21, "0-1", -200))
-        endgame_wdl = self._make_wdl(10, 10, 10)
-        non_endgame_wdl = self._make_wdl(0, 0, 0)
-        gaps_by_bucket = {
-            "conversion": [0.0] * 10,
-            "parity": [0.0] * 10,
-            "recovery": [0.0] * 10,
-        }
-        result = _compute_score_gap_material(
-            endgame_wdl, non_endgame_wdl, rows, gaps_by_bucket=gaps_by_bucket
-        )
-        assert result.endgame_skill_rate_mean == pytest.approx(0.5, abs=1e-9)
-        assert result.section2_score_gap_skill_mean == pytest.approx(0.0, abs=1e-9)
-        assert result.endgame_skill_rate_mean != result.section2_score_gap_skill_mean
+# Phase 87.4 (D-05): TestEndgameSkillRateMean class deleted alongside the
+# endgame_skill_rate_mean field on ScoreGapMaterialResponse.

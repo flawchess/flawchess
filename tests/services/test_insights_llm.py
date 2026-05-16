@@ -210,8 +210,9 @@ class TestPromptVersionAndBody:
       block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
-    def test_prompt_version_is_v31(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v31"
+    def test_prompt_version_is_v32(self) -> None:
+        # Phase 87.4 Plan 03 bumped v31 → v32 (Conversion ELO rewire).
+        assert insights_llm._PROMPT_VERSION == "endgame_v32"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -361,16 +362,17 @@ class TestPromptVersionAndBody:
                 break
         assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
 
-    def test_prompt_version_bumped_to_v31(self) -> None:
-        """Latest bump v30 -> v31 (Phase 87.2 Section 2 ΔES Score Gap family): added four
-        new section2_score_gap_* findings alongside existing rate findings in endgame_metrics.
-        Cache-busts prior v30 reports so newly generated narration references the new family.
+    def test_prompt_version_bumped_to_v32(self) -> None:
+        """Latest bump v31 -> v32 (Phase 87.4 Conversion ELO rewire): Endgame Skill
+        concept removed end-to-end, endgame_elo_* renamed to conversion_elo_*,
+        Conv ΔES promoted to primary Section 2 finding. Cache-busts prior v31
+        reports so newly generated narration uses the renamed terminology.
 
-        Prior bumps (v28 -> v29 -> v30) are preserved in the changelog comment.
+        Prior bumps (v28 -> v29 -> v30 -> v31) are preserved in the changelog comment.
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v31"
-        # Changelog comment must mention the new metric AND the dual-label rule
-        # AND the sigmoid-bias caveat (per CONTEXT.md D-10).
+        assert insights_llm._PROMPT_VERSION == "endgame_v32"
+        # Changelog comment must mention the rename AND the Skill removal
+        # AND the affine-recenter framing.
         import inspect as _inspect
 
         src = _inspect.getsource(insights_llm)
@@ -378,15 +380,18 @@ class TestPromptVersionAndBody:
         assert "v28 (260514 concept capitalization)" in src
         # v29 changelog block present and tagged.
         assert "v29 (260515 endgame_type_achievable_score_gap)" in src
-        # v31 changelog block present and tagged.
+        # v31 changelog block preserved.
         assert "v31 (260515 Phase 87.2 Section 2 ΔES Score Gap family)" in src
-        # Dual-label rule recorded in v31 comment.
-        assert "Section 2 Score Gap" in src
-        # Sigmoid-bias caveat one-liner present in v29 comment.
+        # v32 changelog block present and tagged.
+        assert "v32 (260516 Phase 87.4 Conversion ELO rewire)" in src
+        # Skill removal recorded.
+        assert "Endgame Skill concept removed end-to-end" in src
+        # Affine-recenter formula present.
+        assert "affine recenter" in src.lower() or "α·(conv_ΔES" in src
+        # Dual-label terminology rule (v32 promotes Conversion ELO).
+        assert "Conversion ELO" in src
+        # Sigmoid-bias caveat one-liner still present in v29 comment.
         assert "Lichess winning-chances sigmoid" in src
-        # No parallel verdict / p_value field per memory feedback_llm_significance_signal.md.
-        # (the comment must NOT promise a verdict field — we just check the v31 block
-        # mentions the band carries the signal.)
 
     def test_prompt_glossary_defines_endgame_type_score_gap(self) -> None:
         """Phase 87.1 Plan 04 / CONTEXT D-10: glossary entry for the new metric.
@@ -448,8 +453,8 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """Phase 87.2: _PROMPT_VERSION is endgame_v31; v30 active-constant is gone."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v31"
+        """Phase 87.4: _PROMPT_VERSION is endgame_v32; prior v31 active-constant is gone."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v32"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -1934,7 +1939,7 @@ class TestV6Enrichments:
         # v9: Filters: line is no longer emitted at defaults.
         assert "Filters:" not in prompt
 
-    def test_stale_marker_on_old_endgame_elo_gap(self) -> None:
+    def test_stale_marker_on_old_conversion_elo_gap(self) -> None:
         """A combo whose series trails >6mo behind the newest bucket is STALE-tagged."""
         filters = _sample_filter_context()
         old_series = [
@@ -1948,8 +1953,8 @@ class TestV6Enrichments:
         ]
         new_series.sort(key=lambda pt: pt.bucket_start)
         blitz_old = self._finding(
-            subsection_id="endgame_elo_timeline",
-            metric="endgame_elo_gap",
+            subsection_id="conversion_elo_timeline",
+            metric="conversion_elo_gap",
             window="all_time",
             value=60.0,
             dimension={"platform": "chess.com", "time_control": "blitz"},
@@ -1957,8 +1962,8 @@ class TestV6Enrichments:
             sample_size=60,
         )
         rapid_new = self._finding(
-            subsection_id="endgame_elo_timeline",
-            metric="endgame_elo_gap",
+            subsection_id="conversion_elo_timeline",
+            metric="conversion_elo_gap",
             window="all_time",
             value=-42.0,
             dimension={"platform": "chess.com", "time_control": "rapid"},
@@ -1973,12 +1978,12 @@ class TestV6Enrichments:
         blitz_summary_idx = next(
             i
             for i, ln in enumerate(prompt.splitlines())
-            if ln == "[summary endgame_elo_gap | platform=chess.com, time_control=blitz]"
+            if ln == "[summary conversion_elo_gap | platform=chess.com, time_control=blitz]"
         )
         rapid_summary_idx = next(
             i
             for i, ln in enumerate(prompt.splitlines())
-            if ln == "[summary endgame_elo_gap | platform=chess.com, time_control=rapid]"
+            if ln == "[summary conversion_elo_gap | platform=chess.com, time_control=rapid]"
         )
         prompt_lines = prompt.splitlines()
         # The `all_time:` line sits immediately below its [summary] header.
@@ -2123,18 +2128,24 @@ class TestV6Enrichments:
         assert "user cracks under time pressure" in prompt
 
     def test_summary_emitted_for_paired_windows(self) -> None:
-        """Paired all_time + last_3mo scalars fold into one [summary] block with a within-noise shift."""
+        """Paired all_time + last_3mo scalars fold into one [summary] block with a within-noise shift.
+
+        Phase 87.4 (D-05): the original fixture used metric=``endgame_skill``
+        which was retired. Repointed to ``win_rate`` which has the same
+        [0.45, 0.55] zone band shape so the summary / shift / within-noise
+        assertions retain their semantics.
+        """
         filters = _sample_filter_context()
         at = self._finding(
             subsection_id="endgame_metrics",
-            metric="endgame_skill",
+            metric="win_rate",
             window="all_time",
             value=0.45,
             sample_size=2948,
         )
         lm = self._finding(
             subsection_id="endgame_metrics",
-            metric="endgame_skill",
+            metric="win_rate",
             window="last_3mo",
             value=0.49,
             sample_size=195,
@@ -2142,7 +2153,7 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[at, lm])
         prompt = _assemble_user_prompt(tab)
 
-        assert "[summary endgame_skill]" in prompt
+        assert "[summary win_rate]" in prompt
         assert "all_time: mean=+45, n=2948" in prompt
         assert "last_3mo: mean=+49, n=195" in prompt
         # Shift line closes the block with a within-noise flag.
@@ -2232,19 +2243,20 @@ class TestV6Enrichments:
         # The old free-text trajectory must NOT appear anywhere in the prompt.
         assert "over 3 months" not in prompt
 
-    def test_endgame_elo_summary_emitted_before_gap_summary(self) -> None:
-        """v11: `[summary endgame_elo | ...]` precedes `[summary endgame_elo_gap | ...]`.
+    def test_conversion_elo_summary_emitted_before_gap_summary(self) -> None:
+        """v11 (Phase 87.4 D-06 rename): `[summary conversion_elo | ...]`
+        precedes `[summary conversion_elo_gap | ...]`.
 
-        The Endgame ELO Timeline chart's headline value is the absolute
-        skill-adjusted Endgame ELO (dashed line), not the gap. The derived
-        endgame_elo summary is computed from the same retained series points
+        The Conversion ELO Timeline chart's headline value is the absolute
+        skill-adjusted Conversion ELO (dashed line), not the gap. The derived
+        conversion_elo summary is computed from the same retained series points
         as the gap summary (mean = weighted mean of actual_elo + gap), and
         rendered immediately above the gap summary so the LLM cites the
         chart's primary value, not the derived deviation.
         """
         filters = _sample_filter_context()
         # Series of 4 buckets so trend is computed: actual_elo rising 1450 →
-        # 1500, gap holding around -40. Weighted mean endgame_elo per bucket
+        # 1500, gap holding around -40. Weighted mean conversion_elo per bucket
         # = actual_elo + gap.
         series = [
             TimePoint(bucket_start="2025-10-01", value=-40.0, n=10, actual_elo=1450),
@@ -2253,8 +2265,8 @@ class TestV6Enrichments:
             TimePoint(bucket_start="2026-01-01", value=-35.0, n=15, actual_elo=1500),
         ]
         finding = self._finding(
-            subsection_id="endgame_elo_timeline",
-            metric="endgame_elo_gap",
+            subsection_id="conversion_elo_timeline",
+            metric="conversion_elo_gap",
             window="all_time",
             value=-40.0,
             zone="typical",
@@ -2265,29 +2277,29 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[finding])
         prompt = _assemble_user_prompt(tab)
 
-        elo_header = "[summary endgame_elo | platform=chess.com, time_control=rapid]"
-        gap_header = "[summary endgame_elo_gap | platform=chess.com, time_control=rapid]"
+        elo_header = "[summary conversion_elo | platform=chess.com, time_control=rapid]"
+        gap_header = "[summary conversion_elo_gap | platform=chess.com, time_control=rapid]"
         assert elo_header in prompt
         assert gap_header in prompt
         elo_idx = prompt.index(elo_header)
         gap_idx = prompt.index(gap_header)
-        assert elo_idx < gap_idx, "endgame_elo summary must precede endgame_elo_gap summary"
+        assert elo_idx < gap_idx, "conversion_elo summary must precede conversion_elo_gap summary"
 
-        # Weighted mean endgame_elo: (1410*10 + 1425*20 + 1450*15 + 1465*15) / 60
+        # Weighted mean conversion_elo: (1410*10 + 1425*20 + 1450*15 + 1465*15) / 60
         # = (14100 + 28500 + 21750 + 21975) / 60 = 86325 / 60 ≈ 1439.
         elo_block_lines = prompt[elo_idx:].splitlines()
         all_time_line = elo_block_lines[1]
         assert all_time_line.startswith("  all_time: ")
         assert "mean=+1439 Elo" in all_time_line
         assert "buckets=4 (monthly)" in all_time_line
-        # endgame_elo summary has no zone/quality fields (no calibrated band).
+        # conversion_elo summary has no zone/quality fields (no calibrated band).
         assert "zone=" not in all_time_line
         assert "quality=" not in all_time_line
 
-    def test_endgame_elo_summary_skipped_when_actual_elo_missing(self) -> None:
-        """No endgame_elo summary emitted if series points lack actual_elo.
+    def test_conversion_elo_summary_skipped_when_actual_elo_missing(self) -> None:
+        """No conversion_elo summary emitted if series points lack actual_elo.
 
-        Defensive: actual_elo is only populated for endgame_elo_timeline series
+        Defensive: actual_elo is only populated for conversion_elo_timeline series
         upstream. If the upstream pipeline regresses and stops setting it, the
         derived summary should silently fall back to gap-only rather than
         emitting a meaningless block.
@@ -2298,8 +2310,8 @@ class TestV6Enrichments:
             for day in (5, 12, 19, 26)
         ]
         finding = self._finding(
-            subsection_id="endgame_elo_timeline",
-            metric="endgame_elo_gap",
+            subsection_id="conversion_elo_timeline",
+            metric="conversion_elo_gap",
             window="all_time",
             value=-40.0,
             dimension={"platform": "chess.com", "time_control": "rapid"},
@@ -2308,8 +2320,8 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[finding])
         prompt = _assemble_user_prompt(tab)
 
-        assert "[summary endgame_elo |" not in prompt
-        assert "[summary endgame_elo_gap |" in prompt
+        assert "[summary conversion_elo |" not in prompt
+        assert "[summary conversion_elo_gap |" in prompt
 
     def test_payload_summary_includes_all_time_window(self) -> None:
         """v11: payload summary spells out the all-time series window bounds.
@@ -2502,10 +2514,10 @@ class TestSparseHistoryFixes:
         assert "std=45" in prompt
         assert "quality=sparse" not in prompt
 
-    def test_fix_c_endgame_elo_timeline_sentinel_when_no_findings(self) -> None:
+    def test_fix_c_conversion_elo_timeline_sentinel_when_no_findings(self) -> None:
         """Fix C: even when every (platform, time_control) combo is below
-        SPARSE_COMBO_FLOOR (so `_findings_endgame_elo_timeline` emits zero
-        findings), the `### Subsection: endgame_elo_timeline` header MUST
+        SPARSE_COMBO_FLOOR (so `_findings_conversion_elo_timeline` emits zero
+        findings), the `### Subsection: conversion_elo_timeline` header MUST
         still render with a sentinel `[no qualifying combo ...]` line.
 
         Before Fix C the entire subsection vanished from `## Section: metrics_elo`,
@@ -2514,11 +2526,11 @@ class TestSparseHistoryFixes:
         from app.services.insights_service import SPARSE_COMBO_FLOOR
 
         filters = _sample_filter_context()
-        # Empty findings list → no endgame_elo_timeline finding emitted.
+        # Empty findings list → no conversion_elo_timeline finding emitted.
         tab = _fake_findings(filters, findings=[])
         prompt = _assemble_user_prompt(tab)
 
-        assert "### Subsection: endgame_elo_timeline" in prompt
+        assert "### Subsection: conversion_elo_timeline" in prompt
         assert "[no qualifying combo" in prompt
         assert str(SPARSE_COMBO_FLOOR) in prompt
 
@@ -2642,7 +2654,8 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v31"
+        # Phase 87.4: bumped from endgame_v31 to endgame_v32.
+        assert response.report.prompt_version == "endgame_v32"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2666,7 +2679,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v31"
+        assert log.response_json["prompt_version"] == "endgame_v32"
 
 
 class TestCacheBehavior:
@@ -3485,9 +3498,14 @@ class TestSection2ScoreGapFindings:
         parity_n: "int | None" = 15,
         recov_mean: "float | None" = 0.04,
         recov_n: "int | None" = 15,
-        skill_mean: "float | None" = 0.033,
-        skill_n: "int | None" = 15,
+        # Phase 87.4 (D-05): skill_mean / skill_n kwargs retained on the
+        # builder signature for source-compat with the deleted-feature tests
+        # below, but ignored at construction time — the underlying schema
+        # fields were dropped.
+        skill_mean: "float | None" = None,
+        skill_n: "int | None" = None,
     ) -> "Any":
+        del skill_mean, skill_n  # Phase 87.4 D-05: no longer fed into the schema.
         from app.schemas.endgames import EndgameOverviewResponse, ScoreGapMaterialResponse
 
         material_rows = [
@@ -3508,17 +3526,16 @@ class TestSection2ScoreGapFindings:
             section2_score_gap_parity_n=parity_n,
             section2_score_gap_recov_mean=recov_mean,
             section2_score_gap_recov_n=recov_n,
-            section2_score_gap_skill_mean=skill_mean,
-            section2_score_gap_skill_n=skill_n,
         )
         return EndgameOverviewResponse.model_construct(
             score_gap_material=score_gap_material,
         )
 
     def test_section2_score_gap_findings_full_cohort(self) -> None:
-        """Full cohort (each bucket n >= 10): 4 new ΔES findings emitted.
+        """Full cohort (each bucket n >= 10): 3 ΔES findings emitted (Phase 87.4
+        D-05 drops the retired "skill" bucket).
 
-        Asserts: 4 new findings with correct metric_ids; value matches per-bucket mean;
+        Asserts: 3 findings with correct metric_ids; value matches per-bucket mean;
         zone is dispatched via assign_zone; sample_size matches per-bucket n;
         is_headline_eligible True; existing rate findings also present (ADDITIVE, not swap).
         """
@@ -3533,8 +3550,6 @@ class TestSection2ScoreGapFindings:
             parity_n=15,
             recov_mean=0.04,
             recov_n=15,
-            skill_mean=0.033,
-            skill_n=15,
         )
         findings = _findings_endgame_metrics(response, window="all_time")
 
@@ -3546,11 +3561,10 @@ class TestSection2ScoreGapFindings:
                 "section2_score_gap_conv",
                 "section2_score_gap_parity",
                 "section2_score_gap_recov",
-                "section2_score_gap_skill",
             }
         ]
-        assert len(delta_es_findings) == 4, (
-            f"Expected 4 ΔES findings, got {len(delta_es_findings)}: {[f.metric for f in delta_es_findings]}"
+        assert len(delta_es_findings) == 3, (
+            f"Expected 3 ΔES findings, got {len(delta_es_findings)}: {[f.metric for f in delta_es_findings]}"
         )
 
         by_metric = {f.metric: f for f in delta_es_findings}
@@ -3559,7 +3573,6 @@ class TestSection2ScoreGapFindings:
         assert by_metric["section2_score_gap_conv"].value == pytest.approx(0.08)
         assert by_metric["section2_score_gap_parity"].value == pytest.approx(-0.02)
         assert by_metric["section2_score_gap_recov"].value == pytest.approx(0.04)
-        assert by_metric["section2_score_gap_skill"].value == pytest.approx(0.033)
 
         # Sample sizes match per-bucket n.
         assert by_metric["section2_score_gap_conv"].sample_size == 15
@@ -3581,7 +3594,10 @@ class TestSection2ScoreGapFindings:
             assert f.dimension is None, f"{f.metric}: dimension should be None"
 
     def test_section2_score_gap_findings_sparse_cohort(self) -> None:
-        """Sparse cohort (each bucket n < 10): 4 findings emitted, is_headline_eligible False."""
+        """Sparse cohort (each bucket n < 10): 3 findings emitted, is_headline_eligible False.
+
+        Phase 87.4 (D-05): skill bucket retired — expected count drops from 4 to 3.
+        """
         from app.services.insights_service import _findings_endgame_metrics
 
         response = self._make_overview(
@@ -3591,8 +3607,6 @@ class TestSection2ScoreGapFindings:
             parity_n=5,
             recov_mean=-0.03,
             recov_n=5,
-            skill_mean=0.01,
-            skill_n=5,
         )
         findings = _findings_endgame_metrics(response, window="all_time")
 
@@ -3604,10 +3618,9 @@ class TestSection2ScoreGapFindings:
                 "section2_score_gap_conv",
                 "section2_score_gap_parity",
                 "section2_score_gap_recov",
-                "section2_score_gap_skill",
             }
         ]
-        assert len(delta_es_findings) == 4
+        assert len(delta_es_findings) == 3
 
         for f in delta_es_findings:
             assert f.is_headline_eligible is False, (
@@ -3618,7 +3631,10 @@ class TestSection2ScoreGapFindings:
             assert f.zone in {"weak", "typical", "strong"}
 
     def test_section2_score_gap_findings_empty_cohort(self) -> None:
-        """Empty cohort (each bucket mean=None, n=0): 4 findings with value=NaN, is_headline_eligible=False."""
+        """Empty cohort (each bucket mean=None, n=0): 3 findings with value=NaN, is_headline_eligible=False.
+
+        Phase 87.4 (D-05): skill bucket retired.
+        """
         import math
 
         from app.services.insights_service import _findings_endgame_metrics
@@ -3630,8 +3646,6 @@ class TestSection2ScoreGapFindings:
             parity_n=0,
             recov_mean=None,
             recov_n=0,
-            skill_mean=None,
-            skill_n=0,
         )
         findings = _findings_endgame_metrics(response, window="all_time")
 
@@ -3643,10 +3657,9 @@ class TestSection2ScoreGapFindings:
                 "section2_score_gap_conv",
                 "section2_score_gap_parity",
                 "section2_score_gap_recov",
-                "section2_score_gap_skill",
             }
         ]
-        assert len(delta_es_findings) == 4
+        assert len(delta_es_findings) == 3
 
         for f in delta_es_findings:
             assert math.isnan(f.value), f"{f.metric}: expected value=NaN for empty cohort"
@@ -3657,28 +3670,26 @@ class TestSection2ScoreGapFindings:
             # assign_zone(metric_id, NaN) must return a zone (not raise).
             assert f.zone in {"weak", "typical", "strong"}
 
-    def test_section2_score_gap_findings_skill_metric_present(self) -> None:
-        """Skill metric specifically is emitted (equal-weighted aggregate, not per-bucket cohort)."""
+    def test_section2_score_gap_findings_skill_metric_absent(self) -> None:
+        """Phase 87.4 (D-05): the section2_score_gap_skill finding was retired
+        end-to-end. Regression guard against re-emitting it.
+        """
         from app.services.insights_service import _findings_endgame_metrics
 
-        response = self._make_overview(
-            skill_mean=0.033,
-            skill_n=30,
-        )
+        response = self._make_overview()
         findings = _findings_endgame_metrics(response, window="all_time")
 
         skill_findings = [f for f in findings if f.metric == "section2_score_gap_skill"]
-        assert len(skill_findings) == 1
-        skill = skill_findings[0]
-        assert skill.value == pytest.approx(0.033)
-        assert skill.sample_size == 30
-        assert skill.is_headline_eligible is True
+        assert skill_findings == [], (
+            "section2_score_gap_skill must not be emitted post-Phase 87.4 D-05"
+        )
 
     def test_existing_rate_findings_preserved(self) -> None:
-        """D-09 ADDITIVE: existing rate findings must survive alongside new ΔES findings.
+        """D-09 ADDITIVE: per-bucket rate findings survive alongside ΔES findings.
 
-        The 4 original rate findings (endgame_skill, conversion_win_pct, parity_score_pct,
-        recovery_save_pct) are preserved; total finding count grows by 4, not replaced.
+        Phase 87.4 (D-05): the aggregate endgame_skill rate finding was retired
+        end-to-end; only the per-bucket rate findings (conversion_win_pct /
+        parity_score_pct / recovery_save_pct) survive.
         """
         from app.services.insights_service import _findings_endgame_metrics
 
@@ -3689,25 +3700,62 @@ class TestSection2ScoreGapFindings:
             parity_n=15,
             recov_mean=0.04,
             recov_n=15,
-            skill_mean=0.033,
-            skill_n=15,
         )
         findings = _findings_endgame_metrics(response, window="all_time")
 
         metric_ids = {f.metric for f in findings}
-        # Original rate findings preserved.
-        assert "endgame_skill" in metric_ids, (
-            "endgame_skill finding missing (rate finding must be preserved)"
-        )
+        # Phase 87.4 (D-05): aggregate endgame_skill finding retired — must be absent.
+        assert "endgame_skill" not in metric_ids
         assert "conversion_win_pct" in metric_ids, "conversion_win_pct finding missing"
         assert "parity_score_pct" in metric_ids, "parity_score_pct finding missing"
         assert "recovery_save_pct" in metric_ids, "recovery_save_pct finding missing"
-        # New ΔES findings present.
+        # New ΔES findings present (Phase 87.4 D-05: skill bucket retired).
         assert "section2_score_gap_conv" in metric_ids
         assert "section2_score_gap_parity" in metric_ids
         assert "section2_score_gap_recov" in metric_ids
-        assert "section2_score_gap_skill" in metric_ids
-        # Total: 1 endgame_skill + 3 rate + 4 ΔES = 8.
-        assert len(findings) == 8, (
-            f"Expected 8 findings (1 skill + 3 rate + 4 ΔES), got {len(findings)}"
+        assert "section2_score_gap_skill" not in metric_ids
+        # Total: 3 rate + 3 ΔES = 6 (Phase 87.4 D-05 drops aggregate skill +
+        # the section2_score_gap_skill ΔES bucket).
+        assert len(findings) == 6, f"Expected 6 findings (3 rate + 3 ΔES), got {len(findings)}"
+
+
+class TestPhase874PromptVersion:
+    """Phase 87.4 Plan 03: _PROMPT_VERSION bumped to endgame_v32 with the
+    Skill-removal / Conversion-ELO-rename / display-centering changelog blob
+    prepended at the FRONT of the inline append-only comment.
+    """
+
+    def test_prompt_version_is_v32(self) -> None:
+        """SC#6: _PROMPT_VERSION reads endgame_v32 after the Phase 87.4 bump."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v32"
+
+    def test_non_fractional_metrics_renamed(self) -> None:
+        """D-06: _NON_FRACTIONAL_METRICS swaps endgame_elo_gap → conversion_elo_gap."""
+        assert "conversion_elo_gap" in insights_llm._NON_FRACTIONAL_METRICS, (
+            "conversion_elo_gap must be registered as non-fractional (Elo points)"
+        )
+        assert "endgame_elo_gap" not in insights_llm._NON_FRACTIONAL_METRICS, (
+            "legacy endgame_elo_gap must not survive in _NON_FRACTIONAL_METRICS"
+        )
+
+    def test_no_endgame_skill_payload_field(self) -> None:
+        """D-05 (Plan 03 scope): the LLM payload module source contains no
+        Skill-keyed quoted string literals after Phase 87.4. Plan 01 already
+        removed the upstream Skill data via insights_service; this regression
+        guard catches re-introducing a hardcoded reference here.
+        """
+        import inspect as _inspect
+
+        src = _inspect.getsource(insights_llm)
+        # Quoted-string literal guard: bare comment / changelog narration uses
+        # the unquoted identifier, which is intentional context for future
+        # readers and must NOT trip this assertion.
+        assert '"endgame_skill"' not in src, (
+            "quoted-string 'endgame_skill' literal still present in insights_llm.py"
+        )
+        assert '"section2_score_gap_skill"' not in src, (
+            "quoted-string 'section2_score_gap_skill' literal still present"
+        )
+        assert '"endgame_skill_rate_mean"' not in src, (
+            "quoted-string 'endgame_skill_rate_mean' literal still present"
         )

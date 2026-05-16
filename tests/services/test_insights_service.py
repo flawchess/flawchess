@@ -262,8 +262,8 @@ class TestComputeHash:
             update={
                 "findings": [
                     _make_finding(
-                        "endgame_elo_timeline",
-                        "endgame_elo_gap",
+                        "conversion_elo_timeline",
+                        "conversion_elo_gap",
                         50.0,
                         "typical",
                         dimension=dim_ab,
@@ -275,8 +275,8 @@ class TestComputeHash:
             update={
                 "findings": [
                     _make_finding(
-                        "endgame_elo_timeline",
-                        "endgame_elo_gap",
+                        "conversion_elo_timeline",
+                        "conversion_elo_gap",
                         50.0,
                         "typical",
                         dimension=dim_ba,
@@ -328,9 +328,9 @@ class TestEmptyFinding:
         """Dimension passes through for per-combo / per-bucket empty findings."""
         dim = {"platform": "chess.com", "time_control": "blitz"}
         f = _empty_finding(
-            "endgame_elo_timeline",
+            "conversion_elo_timeline",
             "all_time",
-            "endgame_elo_gap",
+            "conversion_elo_gap",
             dimension=dim,
         )
         assert f.dimension == dim
@@ -480,7 +480,7 @@ def _stub_endgame_overview_response() -> EndgameOverviewResponse:
         time_pressure_chart=None,
         performance=None,
         stats=type("StatsStub", (), {"categories": []})(),
-        endgame_elo_timeline=type("EloTimelineStub", (), {"combos": []})(),
+        conversion_elo_timeline=type("EloTimelineStub", (), {"combos": []})(),
     )
 
 
@@ -540,8 +540,10 @@ class TestComputeFindingsReturnContract:
 # TestFindingsEndgameMetrics — 260422-tnb A1: bucket-matched metric emission.
 # Each MaterialRow maps to exactly ONE finding whose metric matches the
 # bucket (conversion -> conversion_win_pct, parity -> parity_score_pct,
-# recovery -> recovery_save_pct). Total emitted: 1 endgame_skill + N
-# bucket-rows = N+1 findings (was: 1 + 3N with the old fan-out).
+# recovery -> recovery_save_pct). Phase 87.4 (D-05): the aggregate
+# ``endgame_skill`` finding was removed end-to-end. Total emitted = N bucket
+# rate findings + 3 section2_score_gap_* findings (Phase 87.2 D-09 minus the
+# retired "skill" bucket).
 # ---------------------------------------------------------------------------
 
 
@@ -589,8 +591,9 @@ class TestFindingsEndgameMetrics:
         )
 
     def test_emits_exactly_one_finding_per_non_empty_bucket(self) -> None:
-        """3 non-zero MaterialRows -> 1 endgame_skill + 3 bucket rate findings +
-        4 section2_score_gap findings (Phase 87.2 D-09, always emitted) = 8 total."""
+        """3 non-zero MaterialRows -> 3 bucket rate findings + 3 section2_score_gap
+        findings (Phase 87.2 D-09 minus the retired Skill bucket per Phase 87.4 D-05)
+        = 6 total. The aggregate ``endgame_skill`` finding was removed in 87.4."""
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
@@ -603,10 +606,9 @@ class TestFindingsEndgameMetrics:
         response = self._make_overview_with_material_rows(rows)
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        assert len(findings) == 8
-        # First is endgame_skill (aggregate, no dimension).
-        assert findings[0].metric == "endgame_skill"
-        assert findings[0].dimension is None
+        assert len(findings) == 6
+        # Phase 87.4 (D-05): no aggregate endgame_skill finding any more.
+        assert not any(f.metric == "endgame_skill" for f in findings)
 
         # Three rate bucket findings: one per bucket, metric matches the bucket.
         rate_findings = [
@@ -624,7 +626,7 @@ class TestFindingsEndgameMetrics:
             "recovery": "recovery_save_pct",
         }
 
-        # Four section2_score_gap_* findings (Phase 87.2 D-09).
+        # Three section2_score_gap_* findings (Phase 87.2 D-09 minus retired skill).
         section2_metrics = sorted(
             f.metric for f in findings if f.metric.startswith("section2_score_gap_")
         )
@@ -632,7 +634,6 @@ class TestFindingsEndgameMetrics:
             "section2_score_gap_conv",
             "section2_score_gap_parity",
             "section2_score_gap_recov",
-            "section2_score_gap_skill",
         ]
 
     def test_no_cross_bucket_fan_out(self) -> None:
@@ -656,7 +657,12 @@ class TestFindingsEndgameMetrics:
 
         for f in findings:
             if f.dimension is None:
-                continue  # endgame_skill has no bucket dim
+                # Phase 87.4 (D-05): section2_score_gap_* findings have no
+                # bucket dim (they live on the response as scalars, not
+                # per-MaterialBucket). The aggregate endgame_skill finding
+                # was retired so the dimension==None branch now covers only
+                # those.
+                continue
             bucket = f.dimension.get("bucket")
             if bucket == "conversion":
                 assert f.metric == "conversion_win_pct"
@@ -681,9 +687,10 @@ class TestFindingsEndgameMetrics:
         response = self._make_overview_with_material_rows(rows)
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        # 1 endgame_skill + 3 rate bucket findings (2 empty + 1 normal) +
-        # 4 section2_score_gap_* findings (D-09).
-        assert len(findings) == 8
+        # Phase 87.4 (D-05): no aggregate endgame_skill finding.
+        # 3 rate bucket findings (2 empty + 1 normal) +
+        # 3 section2_score_gap_* findings (D-09 minus retired skill bucket).
+        assert len(findings) == 6
 
         # Rate bucket findings only — filter by metric, not by dimension, because
         # section2_score_gap_* findings have dimension=None.
@@ -1221,7 +1228,7 @@ class TestComputePlayerProfile:
         points = [
             EndgameEloTimelinePoint(
                 date=(first + _dt.timedelta(weeks=i)).isoformat(),
-                endgame_elo=1400 + i,
+                conversion_elo=1400 + i,
                 actual_elo=1350 + i,
                 endgame_games_in_window=50,
                 per_week_endgame_games=10,

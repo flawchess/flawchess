@@ -1,35 +1,34 @@
 /**
- * Phase 86 — Orchestrator for the 4-card "Endgame Metrics" layout, replacing
- * the legacy `EndgameScoreGapSection` (4-gauge strip + eval-stratified WDL
- * table) per SEC2-10.
+ * Phase 86 — Orchestrator for the "Endgame Metrics" card grid (Conv / Parity /
+ * Recov), replacing the legacy `EndgameScoreGapSection` (4-gauge strip +
+ * eval-stratified WDL table) per SEC2-10.
  *
- * Layout: 3-column card grid on lg+, single-column stacked on mobile.
- *   Row 1: Conversion (col 1) | Parity (col 2) | Recovery (col 3)
- *   Row 2: Endgame Skill at `lg:col-start-2` (under Parity), cols 1+3 empty.
+ * Layout (Phase 87.4): 3-column card grid on lg+, single-column stacked on
+ * mobile. Reading order Conversion → Parity → Recovery. The Endgame Skill
+ * card + ConnectorArrows overlay were hard-deleted in Phase 87.4 (D-05).
  *
- * Cards live in sibling files (`EndgameMetricCard`, `EndgameSkillCard`,
- * `EndgameOverallConnectorArrows`). This file is the orchestrator: it derives
- * per-card props from `ScoreGapMaterialResponse` and mounts the four cards
- * plus the connector-arrows SVG overlay.
+ * Cards live in sibling files (`EndgameMetricCard`). This file is the
+ * orchestrator: it derives per-card props from `ScoreGapMaterialResponse`
+ * and mounts the three cards.
  *
  * Phase 87.2 refactor: MIRROR_BUCKET wiring removed; buildZeroRow updated to
- * drop the deleted MaterialRow fields; new scoreGap* props threaded from
- * response.section2_score_gap_{conv,parity,recov,skill}_* to each card.
- * The section-level "vs opponents" framing is gone per D-08.
+ * drop the deleted MaterialRow fields; scoreGap* props threaded from
+ * response.section2_score_gap_{conv,parity,recov}_* to each card.
+ * Phase 87.4 refactor: EndgameSkillCard + tile-endgame-skill + ConnectorArrows
+ * deleted; endgameWdl prop removed (the deleted Skill card was its sole
+ * consumer); `relative` class dropped from the grid (no positioned children
+ * remain).
  */
 
-import { useRef, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import type {
-  EndgameWDLSummary,
   MaterialBucket,
   MaterialRow,
   ScoreGapMaterialResponse,
 } from '@/types/endgames';
 
-import { ConnectorArrows } from './EndgameOverallConnectorArrows';
 import { EndgameMetricCard } from './EndgameMetricCard';
-import { EndgameSkillCard } from './EndgameSkillCard';
 
 const TILE_TESTIDS: Record<MaterialBucket, string> = {
   conversion: 'tile-conversion',
@@ -99,14 +98,9 @@ function buildZeroRow(bucket: MaterialBucket): MaterialRow {
 
 interface EndgameMetricsSectionProps {
   data: ScoreGapMaterialResponse;
-  /** Games-with-Endgame WDL summary forwarded to the Skill card so it can
-   * render the same games-count + MiniWDLBar layout as the bucket cards. */
-  endgameWdl: EndgameWDLSummary;
 }
 
-export function EndgameMetricsSection({ data, endgameWdl }: EndgameMetricsSectionProps) {
-  const gridRef = useRef<HTMLDivElement>(null);
-
+export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
   const totalMaterialGames = data.material_rows.reduce((sum, r) => sum + r.games, 0);
 
   const rowByBucket: Partial<Record<MaterialBucket, MaterialRow>> = {};
@@ -118,15 +112,11 @@ export function EndgameMetricsSection({ data, endgameWdl }: EndgameMetricsSectio
         Do you outperform the Stockfish baseline at converting, holding, and recovering?
       </p>
 
-      {/* 3-column card grid on lg+, single-column stacked on mobile.
-          DOM order: Conv -> Parity -> Recov -> Skill. On desktop the row-1 cards
-          auto-place across the 3 columns; Skill is lifted to col 2 via
-          lg:col-start-2 so it lands under Parity. `relative` anchors the
-          ConnectorArrows SVG overlay (desktop only). */}
-      <div
-        ref={gridRef}
-        className="relative grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2"
-      >
+      {/* Phase 87.4: 3-column card grid on lg+, single-column stacked on mobile.
+          DOM order: Conv -> Parity -> Recov. The Skill card slot + ConnectorArrows
+          SVG overlay were deleted in Phase 87.4 D-05; the row sits cleanly in a
+          3-col grid with no `relative` positioning needed. */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2">
         {/* Conversion card */}
         <EndgameMetricCard
           key="conversion"
@@ -170,30 +160,6 @@ export function EndgameMetricsSection({ data, endgameWdl }: EndgameMetricsSectio
           scoreGapCiHigh={data.section2_score_gap_recov_ci_high}
           tileTestId={TILE_TESTIDS['recovery']}
           titleTooltip={TITLE_TOOLTIPS['recovery']}
-        />
-
-        {/* Endgame Skill: lg:col-start-2 places it under Parity on desktop.
-            On mobile (single column) it falls naturally after Recovery.
-            lg:mt-8 matches the spacing above "Endgame Score Differences". */}
-        <div className="lg:col-start-2 lg:mt-8">
-          <EndgameSkillCard
-            skill={data.endgame_skill_rate_mean}
-            endgameWdl={endgameWdl}
-            scoreGapMean={data.section2_score_gap_skill_mean}
-            scoreGapN={data.section2_score_gap_skill_n}
-            scoreGapPValue={data.section2_score_gap_skill_p_value}
-            scoreGapCiLow={data.section2_score_gap_skill_ci_low}
-            scoreGapCiHigh={data.section2_score_gap_skill_ci_high}
-            tileTestId="tile-endgame-skill"
-          />
-        </div>
-
-        <ConnectorArrows
-          containerRef={gridRef}
-          leftCardTestId="tile-conversion"
-          middleCardTestId="tile-parity"
-          rightCardTestId="tile-recovery"
-          targetTileTestId="tile-endgame-skill"
         />
       </div>
     </section>

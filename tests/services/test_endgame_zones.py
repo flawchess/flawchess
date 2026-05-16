@@ -17,22 +17,24 @@ class TestAssignZone:
     """Unit tests for assign_zone direction handling and NaN guard."""
 
     def test_higher_is_better_above_upper_is_strong(self) -> None:
-        assert assign_zone("endgame_skill", 0.61) == "strong"
+        # Phase 87.4 (D-05): endgame_skill retired. Test repointed to win_rate
+        # which shares the same [0.45, 0.55] band so the boundary semantics
+        # remain covered. Original assertion: assign_zone("endgame_skill", 0.61).
+        assert assign_zone("win_rate", 0.61) == "strong"
 
     def test_higher_is_better_at_upper_boundary_is_strong(self) -> None:
         """Upper boundary is inclusive on the strong side (>= typical_upper)."""
-        assert assign_zone("endgame_skill", 0.55) == "strong"
+        assert assign_zone("win_rate", 0.55) == "strong"
 
     def test_higher_is_better_in_typical_band_is_typical(self) -> None:
-        assert assign_zone("endgame_skill", 0.50) == "typical"
+        assert assign_zone("win_rate", 0.50) == "typical"
 
     def test_higher_is_better_at_lower_boundary_is_typical(self) -> None:
-        """Lower boundary is inclusive on the typical side (>= typical_lower).
-        260503: lower bound shifted 0.45 -> 0.47 to better center on pooled p25."""
-        assert assign_zone("endgame_skill", 0.47) == "typical"
+        """Lower boundary is inclusive on the typical side (>= typical_lower)."""
+        assert assign_zone("win_rate", 0.45) == "typical"
 
     def test_higher_is_better_below_lower_is_weak(self) -> None:
-        assert assign_zone("endgame_skill", 0.30) == "weak"
+        assert assign_zone("win_rate", 0.30) == "weak"
 
     def test_signed_metric_centered_band(self) -> None:
         """Score Gap uses a centered typical band (-0.10, +0.10)."""
@@ -54,8 +56,10 @@ class TestAssignZone:
     def test_nan_returns_typical(self) -> None:
         """NaN must not raise. Plan 03 findings use is_headline_eligible=False
         to signal missing data, not zone="weak"."""
+        # Phase 87.4 (D-05): endgame_skill retired; win_rate now covers the
+        # higher_is_better NaN guard with the same [0.45, 0.55] band shape.
         assert assign_zone("score_gap", float("nan")) == "typical"
-        assert assign_zone("endgame_skill", float("nan")) == "typical"
+        assert assign_zone("win_rate", float("nan")) == "typical"
         assert assign_zone("net_timeout_rate", float("nan")) == "typical"
 
 
@@ -224,6 +228,8 @@ class TestRegistrySanity:
         powering the four Section 2 cards. Bands calibrate from benchmarks
         SKILL.md §3.4.4.
         """
+        # Phase 87.4 (D-05/D-06): endgame_skill + section2_score_gap_skill
+        # ZoneSpecs removed; endgame_elo_gap renamed → conversion_elo_gap.
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
             "achievable_score_gap",
@@ -233,15 +239,13 @@ class TestRegistrySanity:
             "endgame_score",
             "endgame_score_timeline",
             "non_endgame_score_timeline",
-            "endgame_skill",
             "avg_clock_diff_pct",
             "net_timeout_rate",
-            "endgame_elo_gap",
+            "conversion_elo_gap",
             "win_rate",
             "section2_score_gap_conv",
             "section2_score_gap_parity",
             "section2_score_gap_recov",
-            "section2_score_gap_skill",
         }
 
     def test_net_timeout_rate_uses_threshold_constant(self) -> None:

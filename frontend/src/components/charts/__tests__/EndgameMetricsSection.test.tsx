@@ -1,21 +1,22 @@
 // @vitest-environment jsdom
 /**
  * Phase 86 Plan 05 — integration tests for the EndgameMetricsSection
- * orchestrator. Verifies the 4-card grid layout, sub-question copy, card
- * DOM ordering, and Skill-card gating when the backend returns null sig
- * fields (fewer than 2 active buckets).
+ * orchestrator. Verifies the 3-card grid layout (Phase 87.4), sub-question
+ * copy, card DOM ordering, and display-shift wiring for Conv/Recov bullets.
  *
  * Phase 87.2: updated fixtures to reflect schema changes:
  * - MaterialRow: removed opponent_score, opponent_games, diff_p_value, diff_ci_low, diff_ci_high
  * - ScoreGapMaterialResponse: removed skill, opp_skill, skill_diff_*; added 20 section2_score_gap_* fields
  * - Section copy updated to Stockfish-baseline framing (D-08)
+ * Phase 87.4: EndgameSkillCard / tile-endgame-skill / endgameWdl prop /
+ * ConnectorArrows / 6 skill fields all deleted. Bullets now display-shifted
+ * uniformly via SECTION2_DISPLAY_SHIFT.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 
 import type {
-  EndgameWDLSummary,
   MaterialRow,
   ScoreGapMaterialResponse,
 } from '@/types/endgames';
@@ -49,18 +50,6 @@ afterEach(() => {
 
 import { EndgameMetricsSection } from '../EndgameMetricsSection';
 
-// Quick task 260516-1h5: the Skill card consumes a games-with-endgame WDL
-// summary; provide a default fixture so existing tests keep working.
-const DEFAULT_ENDGAME_WDL: EndgameWDLSummary = {
-  wins: 165,
-  draws: 60,
-  losses: 75,
-  total: 300,
-  win_pct: 55,
-  draw_pct: 20,
-  loss_pct: 25,
-};
-
 function buildRow(overrides?: Partial<MaterialRow>): MaterialRow {
   // Phase 87.2: opponent_score, opponent_games, diff_p_value, diff_ci_low, diff_ci_high
   // deleted from MaterialRow per D-05.
@@ -92,7 +81,8 @@ function buildScoreGapResponse(
     score_difference_p_value: 0.001,
     score_difference_ci_low: 0.02,
     score_difference_ci_high: 0.08,
-    // Phase 87.2: 20 new section2_score_gap_* fields (replaces skill/opp_skill/skill_diff_*)
+    // Phase 87.2: 15 section2_score_gap_* fields (3 buckets × 5). Skill fields
+    // were deleted in Phase 87.4 D-05.
     section2_score_gap_conv_mean: 0.08,
     section2_score_gap_conv_n: 100,
     section2_score_gap_conv_p_value: 0.001,
@@ -108,26 +98,20 @@ function buildScoreGapResponse(
     section2_score_gap_recov_p_value: 0.25,
     section2_score_gap_recov_ci_low: -0.09,
     section2_score_gap_recov_ci_high: 0.01,
-    section2_score_gap_skill_mean: 0.023,
-    section2_score_gap_skill_n: 300,
-    section2_score_gap_skill_p_value: 0.18,
-    section2_score_gap_skill_ci_low: -0.01,
-    section2_score_gap_skill_ci_high: 0.056,
-    // quick-260515-wye: gauge driver (rate composite, distinct from ΔES bullet above).
-    endgame_skill_rate_mean: 0.55,
     ...overrides,
   };
 }
 
-describe('EndgameMetricsSection — full-rendering case', () => {
-  it('renders all 4 card testids with the sub-question line', () => {
-    render(<EndgameMetricsSection data={buildScoreGapResponse()} endgameWdl={DEFAULT_ENDGAME_WDL} />);
+describe('EndgameMetricsSection — full-rendering case (Phase 87.4: 3 cards)', () => {
+  it('renders all 3 card testids with the sub-question line', () => {
+    render(<EndgameMetricsSection data={buildScoreGapResponse()} />);
 
     expect(screen.getByTestId('endgame-metrics-section')).not.toBeNull();
     expect(screen.getByTestId('tile-conversion')).not.toBeNull();
     expect(screen.getByTestId('tile-parity')).not.toBeNull();
     expect(screen.getByTestId('tile-recovery')).not.toBeNull();
-    expect(screen.getByTestId('tile-endgame-skill')).not.toBeNull();
+    // Phase 87.4: tile-endgame-skill no longer exists.
+    expect(screen.queryByTestId('tile-endgame-skill')).toBeNull();
     expect(
       screen.getByText(
         'Do you outperform the Stockfish baseline at converting, holding, and recovering?',
@@ -135,83 +119,77 @@ describe('EndgameMetricsSection — full-rendering case', () => {
     ).not.toBeNull();
   });
 
-  it('renders ScoreGapRow bullets in all 4 cards when scoreGapN > 0', () => {
-    render(<EndgameMetricsSection data={buildScoreGapResponse()} endgameWdl={DEFAULT_ENDGAME_WDL} />);
+  it('renders ScoreGapRow bullets in all 3 cards when scoreGapN > 0', () => {
+    render(<EndgameMetricsSection data={buildScoreGapResponse()} />);
     expect(screen.getByTestId('tile-conversion-score-gap-bullet')).not.toBeNull();
     expect(screen.getByTestId('tile-parity-score-gap-bullet')).not.toBeNull();
     expect(screen.getByTestId('tile-recovery-score-gap-bullet')).not.toBeNull();
-    expect(screen.getByTestId('tile-endgame-skill-score-gap-bullet')).not.toBeNull();
+    // Phase 87.4: tile-endgame-skill-score-gap-bullet is gone.
+    expect(screen.queryByTestId('tile-endgame-skill-score-gap-bullet')).toBeNull();
   });
 });
 
-describe('EndgameMetricsSection — Skill card gating', () => {
-  it('renders the Skill card empty state when endgame_skill_rate_mean === null', () => {
-    // quick-260515-wye: the gauge drives the card's empty state via the
-    // `skill` prop, which is now wired to endgame_skill_rate_mean (not to
-    // the ΔES bullet field).
+describe('EndgameMetricsSection — display-shift wiring (Phase 87.4 D-03/D-04)', () => {
+  it('applies SECTION2_DISPLAY_SHIFT to the Conversion bullet value', () => {
+    // Conv raw = PIVOT (-0.0474) → shifted = -0.0474 + -0.055 = -0.1024 → rounded -10%.
+    // The card renders the shifted value as a signed percent.
     const data = buildScoreGapResponse({
-      material_rows: [
-        buildRow({ bucket: 'conversion', games: 100 }),
-        buildRow({ bucket: 'parity', games: 0, win_pct: 0, draw_pct: 0, loss_pct: 0, score: 0 }),
-        buildRow({ bucket: 'recovery', games: 0, win_pct: 0, draw_pct: 0, loss_pct: 0, score: 0 }),
-      ],
-      endgame_skill_rate_mean: null,
-      section2_score_gap_skill_mean: null,
-      section2_score_gap_skill_n: null,
-      section2_score_gap_skill_p_value: null,
-      section2_score_gap_skill_ci_low: null,
-      section2_score_gap_skill_ci_high: null,
+      section2_score_gap_conv_mean: -0.0474,
+      section2_score_gap_conv_n: 100,
+      section2_score_gap_conv_ci_low: -0.10,
+      section2_score_gap_conv_ci_high: 0.0,
     });
 
-    render(<EndgameMetricsSection data={data} endgameWdl={DEFAULT_ENDGAME_WDL} />);
+    render(<EndgameMetricsSection data={data} />);
 
-    expect(screen.getByTestId('tile-endgame-skill')).not.toBeNull();
-    // Empty-state copy from EndgameSkillCard when skill === null (D-17).
-    expect(screen.getAllByText('Not enough data yet').length).toBeGreaterThan(0);
+    const convBullet = screen.getByTestId('tile-conversion-score-gap-value');
+    // -0.0474 + -0.055 = -0.1024 → rounded to integer percent = -10%.
+    expect(convBullet.textContent).toContain('-10%');
   });
 
-  it('gauge value comes from endgame_skill_rate_mean, bullet value from section2_score_gap_skill_mean', () => {
-    // quick-260515-wye: regression guard. Before the fix, the gauge aliased
-    // onto section2_score_gap_skill_mean and showed the ΔES value. Now the
-    // two are wired to independent fields.
+  it('Parity bullet is unshifted (shift = 0)', () => {
     const data = buildScoreGapResponse({
-      endgame_skill_rate_mean: 0.5,           // gauge → mid-band (50%)
-      section2_score_gap_skill_mean: -0.02,   // bullet → -2pp
-      section2_score_gap_skill_n: 300,
-      section2_score_gap_skill_ci_low: -0.04,
-      section2_score_gap_skill_ci_high: 0.0,
+      section2_score_gap_parity_mean: 0.03,
+      section2_score_gap_parity_n: 100,
+      section2_score_gap_parity_ci_low: -0.02,
+      section2_score_gap_parity_ci_high: 0.08,
     });
 
-    render(<EndgameMetricsSection data={data} endgameWdl={DEFAULT_ENDGAME_WDL} />);
+    render(<EndgameMetricsSection data={data} />);
 
-    // Bullet renders with the ΔES value formatted as a signed percent.
-    const bullet = screen.getByTestId('tile-endgame-skill-score-gap-value');
-    expect(bullet.textContent).toContain('-2%');
+    const parityBullet = screen.getByTestId('tile-parity-score-gap-value');
+    // 0.03 + 0 = +0.03 → +3%.
+    expect(parityBullet.textContent).toContain('+3%');
+  });
 
-    // The card is mounted (gauge is an SVG inside EndgameGauge, no testid
-    // on the needle itself — the contrast between bullet text "-2%" and the
-    // gauge driver value 0.5 is enforced by the prop wiring and is asserted
-    // at the EndgameMetricsSection.tsx prop-wiring layer plus the backend
-    // schema split). If this fails because both fields show the same value,
-    // the regression has returned.
-    expect(screen.getByTestId('tile-endgame-skill')).not.toBeNull();
+  it('Recovery bullet is shifted by +0.06', () => {
+    // Recov raw = -0.04 → shifted = -0.04 + 0.06 = +0.02 → rounded +2%.
+    const data = buildScoreGapResponse({
+      section2_score_gap_recov_mean: -0.04,
+      section2_score_gap_recov_n: 100,
+      section2_score_gap_recov_ci_low: -0.09,
+      section2_score_gap_recov_ci_high: 0.01,
+    });
+
+    render(<EndgameMetricsSection data={data} />);
+
+    const recovBullet = screen.getByTestId('tile-recovery-score-gap-value');
+    expect(recovBullet.textContent).toContain('+2%');
   });
 });
 
 describe('EndgameMetricsSection — card DOM ordering', () => {
-  it('renders cards in DOM order: Conversion -> Parity -> Recovery -> Skill', () => {
-    render(<EndgameMetricsSection data={buildScoreGapResponse()} endgameWdl={DEFAULT_ENDGAME_WDL} />);
+  it('renders cards in DOM order: Conversion -> Parity -> Recovery (no Skill)', () => {
+    render(<EndgameMetricsSection data={buildScoreGapResponse()} />);
 
     const conv = screen.getByTestId('tile-conversion');
     const parity = screen.getByTestId('tile-parity');
     const recov = screen.getByTestId('tile-recovery');
-    const skill = screen.getByTestId('tile-endgame-skill');
 
     // compareDocumentPosition returns DOCUMENT_POSITION_FOLLOWING (4) when
     // the argument follows the receiver in document order.
     const FOLLOWING = Node.DOCUMENT_POSITION_FOLLOWING;
     expect(conv.compareDocumentPosition(parity) & FOLLOWING).toBe(FOLLOWING);
     expect(parity.compareDocumentPosition(recov) & FOLLOWING).toBe(FOLLOWING);
-    expect(recov.compareDocumentPosition(skill) & FOLLOWING).toBe(FOLLOWING);
   });
 });

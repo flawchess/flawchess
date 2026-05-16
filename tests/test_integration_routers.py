@@ -348,12 +348,12 @@ class TestOpeningsNextMovesRouter:
 
 
 # -----------------------------------------------------------------------------
-# TestEndgameEloTimelineRouter — Phase 57 endgame_elo_timeline sub-payload
+# TestEndgameEloTimelineRouter — Phase 57 conversion_elo_timeline sub-payload
 # -----------------------------------------------------------------------------
 
 
 class TestEndgameEloTimelineRouter:
-    """GET /api/endgames/overview -> endgame_elo_timeline sub-payload (Phase 57 ELO-05).
+    """GET /api/endgames/overview -> conversion_elo_timeline sub-payload (Phase 57 ELO-05).
 
     Covers SC-2 (filter responsiveness via platform=chess.com narrowing) and
     SC-3 (cold-start: no qualifying combos yields empty `combos: []`).
@@ -379,7 +379,7 @@ class TestEndgameEloTimelineRouter:
             )
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        elo_timeline = data["endgame_elo_timeline"]
+        elo_timeline = data["conversion_elo_timeline"]
         assert elo_timeline["timeline_window"] == 100
         # Every returned combo must have platform="chess.com" — zero lichess leakage.
         for combo in elo_timeline["combos"]:
@@ -411,7 +411,7 @@ class TestEndgameEloTimelineRouter:
             )
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        elo_timeline = data["endgame_elo_timeline"]
+        elo_timeline = data["conversion_elo_timeline"]
         assert elo_timeline["timeline_window"] == 100
         assert elo_timeline["combos"] == [], (
             f"expected empty combos for cold-start / narrow-recency seed, "
@@ -438,7 +438,7 @@ class TestEndgameEloTimelineRouter:
             )
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        elo_timeline = data["endgame_elo_timeline"]
+        elo_timeline = data["conversion_elo_timeline"]
         for combo in elo_timeline["combos"]:
             for point in combo["points"]:
                 assert "per_week_endgame_games" in point, (
@@ -450,4 +450,4 @@ class TestEndgameEloTimelineRouter:
                 assert point["per_week_endgame_games"] >= 0
                 # Sanity: actual_elo is now an asof rating, must be a positive int.
                 assert isinstance(point["actual_elo"], int) and point["actual_elo"] > 0
-                assert isinstance(point["endgame_elo"], int) and point["endgame_elo"] > 0
+                assert isinstance(point["conversion_elo"], int) and point["conversion_elo"] > 0

@@ -70,8 +70,8 @@ vi.mock('@/components/charts/EndgameClockPressureSection', () => ({
 vi.mock('@/components/charts/EndgameTimePressureSection', () => ({
   EndgameTimePressureSection: () => <div data-testid="mock-endgame-time-pressure-section" />,
 }));
-vi.mock('@/components/charts/EndgameEloTimelineSection', () => ({
-  EndgameEloTimelineSection: () => <div data-testid="mock-endgame-elo-timeline-section" />,
+vi.mock('@/components/charts/ConversionEloTimelineSection', () => ({
+  ConversionEloTimelineSection: () => <div data-testid="mock-conversion-elo-timeline-section" />,
 }));
 vi.mock('@/components/results/GameCardList', () => ({
   GameCardList: () => <div data-testid="mock-game-card-list" />,
@@ -254,7 +254,7 @@ function buildOverview(overrides?: {
       opp_series: [],
       total_endgame_games: 0,
     },
-    endgame_elo_timeline: { combos: [], timeline_window: 100 },
+    conversion_elo_timeline: { combos: [], timeline_window: 100 },
   };
 }
 

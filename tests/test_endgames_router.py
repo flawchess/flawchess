@@ -287,11 +287,12 @@ class TestOverviewScoreGapMaterial:
         for row in sgm["material_rows"]:
             assert "opponent_score" not in row
             assert "opponent_games" not in row
-        # Phase 87.2 (D-06): 20 new section2_score_gap_* fields on the response.
+        # Phase 87.2 (D-06): per-bucket section2_score_gap_* fields on the response.
+        # Phase 87.4 (D-05): section2_score_gap_skill_* dropped alongside Skill retirement.
         assert "section2_score_gap_conv_mean" in sgm
         assert "section2_score_gap_parity_mean" in sgm
         assert "section2_score_gap_recov_mean" in sgm
-        assert "section2_score_gap_skill_mean" in sgm
+        assert "section2_score_gap_skill_mean" not in sgm
 
 
 class TestOverviewStartVsEndFields:

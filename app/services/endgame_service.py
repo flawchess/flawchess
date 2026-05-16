@@ -70,8 +70,6 @@ from app.services.eval_utils import (
 )
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
 from app.services.score_confidence import (
-    CI_Z_95,
-    CONFIDENCE_MIN_N,
     compute_confidence_bucket,
     compute_paired_difference_test,
     compute_score_confidence_from_mean,
@@ -1092,65 +1090,10 @@ def _compute_per_bucket_score_gap(
     return result
 
 
-def _compute_skill_score_gap(
-    per_bucket: dict[
-        MaterialBucket, tuple[float | None, int, float | None, float | None, float | None]
-    ],
-) -> tuple[float | None, int, float | None, float | None, float | None]:
-    """Equal-weighted Skill aggregator over the three per-bucket ΔES results (D-01).
-
-    Active buckets are those with n >= CONFIDENCE_MIN_N. The denominator drops
-    sparse buckets (D-01): Skill = mean(mean_b for active b).
-
-    CI propagation uses variance-of-sum / n_active² (Open Q §3 Option A):
-      SE_b = (ci_high_b - ci_low_b) / (2 * CI_Z_95)
-      SE_skill = sqrt(sum(SE_b²)) / n_active
-      ci_low  = skill_mean - CI_Z_95 * SE_skill
-      ci_high = skill_mean + CI_Z_95 * SE_skill
-
-    Returns (skill_mean, skill_n, skill_p, skill_ci_low, skill_ci_high).
-    skill_mean is None when n_active == 0. p_value is derived from two-sided
-    normal z-test via erfc; None when SE_skill == 0 (degenerate constant signal).
-    """
-    active_buckets: list[MaterialBucket] = []
-    for bucket in ("conversion", "parity", "recovery"):
-        b: MaterialBucket = bucket
-        _, n_b, _, _, _ = per_bucket[b]
-        if n_b >= CONFIDENCE_MIN_N:
-            active_buckets.append(b)
-
-    n_active = len(active_buckets)
-
-    if n_active == 0:
-        return None, 0, None, None, None
-
-    skill_n = sum(per_bucket[b][1] for b in active_buckets)
-    skill_mean = sum(per_bucket[b][0] for b in active_buckets) / n_active  # type: ignore[misc]
-
-    # Recover SE per active bucket from CI bounds (guaranteed populated: n >= 10 >= 2).
-    se_sq_sum = 0.0
-    for b in active_buckets:
-        ci_lo_b = per_bucket[b][3]
-        ci_hi_b = per_bucket[b][4]
-        # ci_lo/ci_hi are None only when n < 2, but CONFIDENCE_MIN_N=10 >= 2,
-        # so active buckets always have both CI bounds. Guard defensively.
-        if ci_lo_b is not None and ci_hi_b is not None:
-            se_b = (ci_hi_b - ci_lo_b) / (2.0 * CI_Z_95)
-            se_sq_sum += se_b * se_b
-
-    se_skill = math.sqrt(se_sq_sum) / n_active
-
-    if se_skill == 0.0:
-        # Degenerate: all active bucket means equal and zero SE. No informative CI.
-        return skill_mean, skill_n, None, None, None
-
-    # Two-sided z-test p-value: 2 * (1 - Phi(|z|)) = erfc(|z| / sqrt(2)).
-    z_skill = abs(skill_mean / se_skill)
-    skill_p: float = math.erfc(z_skill / math.sqrt(2.0))
-    skill_ci_low = skill_mean - CI_Z_95 * se_skill
-    skill_ci_high = skill_mean + CI_Z_95 * se_skill
-
-    return skill_mean, skill_n, skill_p, skill_ci_low, skill_ci_high
+# Phase 87.4 (D-05): _compute_skill_score_gap deleted — the Skill composite
+# scalar (equal-weighted mean of the three per-bucket ΔES results) was retired
+# end-to-end. No surviving caller. See
+# .planning/notes/endgame-skill-dropped-conversion-elo.md.
 
 
 def _compute_score_gap_material(
@@ -1250,20 +1193,10 @@ def _compute_score_gap_material(
     parity_mean, parity_n, parity_p, parity_ci_lo, parity_ci_hi = per_bucket["parity"]
     recov_mean, recov_n, recov_p, recov_ci_lo, recov_ci_hi = per_bucket["recovery"]
 
-    skill_mean, skill_n, skill_p, skill_ci_lo, skill_ci_hi = _compute_skill_score_gap(per_bucket)
-
-    # quick-260515-wye: rate-based Endgame Skill composite for the gauge.
-    # Equal-weighted mean of chess-scores over active buckets (n >= floor).
-    # Restores the gauge driver dropped by Phase 87.2 D-05; the ΔES skill
-    # mean above drives the bullet, not the gauge.
-    active_rate_buckets: list[MaterialBucket] = [
-        b for b in ("conversion", "parity", "recovery") if bucket_games[b] >= CONFIDENCE_MIN_N
-    ]
-    endgame_skill_rate_mean: float | None = (
-        sum(bucket_score[b] for b in active_rate_buckets) / len(active_rate_buckets)
-        if active_rate_buckets
-        else None
-    )
+    # Phase 87.4 (D-05): Skill composite retired. The ΔES Skill scalar
+    # (_compute_skill_score_gap) and the rate-based endgame_skill_rate_mean
+    # gauge driver (quick-260515-wye) were both dropped end-to-end. See
+    # .planning/notes/endgame-skill-dropped-conversion-elo.md.
 
     return ScoreGapMaterialResponse(
         endgame_score=endgame_score,
@@ -1291,12 +1224,9 @@ def _compute_score_gap_material(
         section2_score_gap_recov_p_value=recov_p,
         section2_score_gap_recov_ci_low=recov_ci_lo,
         section2_score_gap_recov_ci_high=recov_ci_hi,
-        section2_score_gap_skill_mean=skill_mean,
-        section2_score_gap_skill_n=skill_n,
-        section2_score_gap_skill_p_value=skill_p,
-        section2_score_gap_skill_ci_low=skill_ci_lo,
-        section2_score_gap_skill_ci_high=skill_ci_hi,
-        endgame_skill_rate_mean=endgame_skill_rate_mean,
+        # Phase 87.4 (D-05): section2_score_gap_skill_* and
+        # endgame_skill_rate_mean kwargs dropped — fields removed from the
+        # Pydantic model in app/schemas/endgames.py.
     )
 
 
@@ -1333,12 +1263,27 @@ CLOCK_PRESSURE_TIMELINE_WINDOW = 100
 # Matches SCORE_GAP_TIMELINE_WINDOW and CLOCK_PRESSURE_TIMELINE_WINDOW per D-05.
 ENDGAME_ELO_TIMELINE_WINDOW = 100
 
-# Clamp bounds for the Endgame ELO formula (Phase 57 D-01). Skill outside this
+# Clamp bounds for the Conversion ELO formula (Phase 57 D-01). Skill outside this
 # range would blow up log10(skill / (1 - skill)); clamping caps contribution at
 # roughly +-510 Elo above/below opponent average, which is well beyond realistic
 # performance-rating territory for any plausible sample size.
 _ENDGAME_ELO_SKILL_CLAMP_LO = 0.05
 _ENDGAME_ELO_SKILL_CLAMP_HI = 0.95
+
+# Phase 87.4 (D-01): affine recenter mapping conv_ΔES → s for Conversion ELO.
+# Frozen — do NOT update without bumping CALIBRATION_VERSION and a deliberate commit.
+# Source: reports/benchmarks-latest.md §3.2.2 (2026-05-16).
+#
+# Calibration rule (RESEARCH.md §α Calibration — pin-upper):
+# The calibrated band of typical players spans conv_ΔES ∈ [-0.108, +0.002] (asymmetric
+# around PIVOT). A single α cannot hit both endpoints exactly; we pin the upper end
+# such that s(+0.002) = 0.60 (the typical-upper boundary). That yields
+# α = (0.60 - 0.5) / (0.002 - PIVOT) = 0.1 / 0.0494 ≈ 2.025. The lower end then maps to
+# s(-0.108) = 0.5 + 2.025 * (-0.108 - PIVOT) ≈ 0.378, slightly tighter than the nominal
+# 0.40 — acceptable because the LLM zone and Phase 57 clamp are robust to ±0.02 on s.
+PIVOT: float = -0.0474  # benchmark conv_ΔES p50
+ALPHA: float = 2.025  # pin-upper calibration (see docstring above)
+CALIBRATION_VERSION: str = "conv_delta_v1_260516"  # bump if PIVOT or ALPHA changes
 
 # Ordered combo list: chess.com first then lichess, per-platform follows
 # _TIME_CONTROL_ORDER. Used for stable response ordering (Phase 57 D-09).
@@ -1347,17 +1292,48 @@ _ENDGAME_ELO_COMBO_ORDER: list[tuple[str, str]] = [
 ]
 
 
-def _endgame_elo_from_skill(skill: float, actual_elo_at_date: float) -> int:
-    """Skill-adjusted rating from skill composite + actual rating anchor (Phase 57.1 D-01).
+def _affine_recenter_conv_delta(conv_delta_es: float) -> float:
+    """Map windowed Conv ΔES Score Gap to ``s`` input for ``_conversion_elo_from_skill``
+    (Phase 87.4 D-01).
 
-    endgame_elo = round(actual_elo_at_date + 400 * log10(s / (1 - s))) where s is skill
-    clamped to [_ENDGAME_ELO_SKILL_CLAMP_LO, _ENDGAME_ELO_SKILL_CLAMP_HI].
+    Formula::
 
-    When skill == 0.5 the log10 term is 0, so endgame_elo == actual_elo_at_date. Both
-    timeline lines coincide at the neutral skill mark. 75 % skill puts endgame_elo
-    roughly +190 Elo above; 25 % skill puts it roughly -190 Elo below. The anchor
-    change (Phase 57.1) replaces the old opponent-average anchor; this is no longer a
-    classical performance metric, it is a skill-adjusted rating.
+        s = clamp(0.5 + ALPHA * (conv_delta_es - PIVOT),
+                  _ENDGAME_ELO_SKILL_CLAMP_LO, _ENDGAME_ELO_SKILL_CLAMP_HI)
+
+    ``PIVOT`` is the benchmark p50 of Conv ΔES (-0.0474), so a typical-skill user
+    (conv_ΔES = PIVOT) yields ``s = 0.5``, preserving the Phase 57 invariant:
+    ``Conversion ELO = actual ELO``. ``ALPHA = 2.025`` follows the pin-upper rule
+    (see module-level constant docstring): the calibrated band [-0.108, +0.002]
+    maps to s ≈ [0.378, 0.600]. See RESEARCH.md §α Calibration.
+
+    This is the sole connection between Phase 87.2 (Conv ΔES Score Gap) and Phase 57
+    (Conversion ELO formula). The formula itself is unchanged — only the input
+    source changes.
+
+    Pure function. Safe at any real input via the unconditional clamp.
+    """
+    s = 0.5 + ALPHA * (conv_delta_es - PIVOT)
+    return max(_ENDGAME_ELO_SKILL_CLAMP_LO, min(_ENDGAME_ELO_SKILL_CLAMP_HI, s))
+
+
+def _conversion_elo_from_skill(skill: float, actual_elo_at_date: float) -> int:
+    """Skill-adjusted rating from a recentered skill scalar + actual rating anchor
+    (Phase 57.1 D-01; renamed from ``_endgame_elo_from_skill`` in Phase 87.4 D-06).
+
+    conversion_elo = round(actual_elo_at_date + 400 * log10(s / (1 - s))) where s is
+    clamped to ``[_ENDGAME_ELO_SKILL_CLAMP_LO, _ENDGAME_ELO_SKILL_CLAMP_HI]``.
+
+    When ``skill == 0.5`` the log10 term is 0, so conversion_elo == actual_elo_at_date.
+    Both timeline lines coincide at the neutral skill mark. 75 % skill puts
+    conversion_elo roughly +190 Elo above; 25 % skill puts it roughly -190 Elo below.
+    The anchor change (Phase 57.1) replaces the old opponent-average anchor; this is
+    no longer a classical performance metric, it is a skill-adjusted rating.
+
+    Phase 87.4 (D-06): the formula identity is unchanged from Phase 57. Only the
+    upstream input source changed — ``s`` now comes from
+    ``_affine_recenter_conv_delta`` (windowed Conv ΔES) instead of the retired
+    rate-based ``_endgame_skill_from_bucket_rows``.
 
     Pure function. Safe for skill=0.0 and skill=1.0 by construction (clamp is applied
     unconditionally before the log10 / division).
@@ -1366,38 +1342,40 @@ def _endgame_elo_from_skill(skill: float, actual_elo_at_date: float) -> int:
     return round(actual_elo_at_date + 400 * math.log10(s / (1 - s)))
 
 
-def _endgame_skill_from_bucket_rows(
+def _windowed_conv_delta_es(
     rows: Sequence[Row[Any] | tuple[Any, ...]],
 ) -> float | None:
-    """Composite Endgame Skill rate from per-game bucket rows.
+    """Mean per-game Conv ΔES across conversion-bucket rows in a trailing window
+    (Phase 87.4 D-01 — replaces ``_endgame_skill_from_bucket_rows``).
 
-    Ports the frontend `endgameSkill()` helper in
-    `frontend/src/components/charts/EndgameScoreGapSection.tsx` (lines 167-177).
-    TODO (Phase 56): deduplicate with the backend endgame_skill() port introduced
-    by Phase 56 when that phase lands.
+    Row tuple shape (matches query_endgame_elo_timeline_rows bucket output)::
 
-    Row tuple shape (matches query_endgame_elo_timeline_rows bucket output):
         (played_at, platform, time_control_bucket, user_color,
-         white_rating, black_rating, eval_cp, eval_mate, result).
+         white_rating, black_rating, eval_cp, eval_mate, result)
 
-    Bucketing (matches _compute_score_gap_material via _classify_endgame_bucket):
-    - conversion: _classify_endgame_bucket returns "conversion" (eval >= +EVAL_ADVANTAGE_THRESHOLD)
-        -> per-row rate = 1 if user won else 0 (Conv Win %)
-    - recovery: _classify_endgame_bucket returns "recovery" (eval <= -EVAL_ADVANTAGE_THRESHOLD)
-        -> per-row rate = 1 if user won or drew else 0 (Recov Save %)
-    - parity: everything else (NULL eval routes here via _classify_endgame_bucket)
-        -> per-row rate = user chess score (1 for win, 0.5 for draw, 0 for loss;
-        Parity Score %)
+    Conv ΔES proxy chosen here (RESEARCH.md §Open Question #1 / Pitfall 3
+    "option (b)"): for each conversion-bucket row (``_classify_endgame_bucket``
+    returns ``"conversion"`` — eval at endgame entry ≥ +EVAL_ADVANTAGE_THRESHOLD
+    after color-flip) we compute
 
-    Returns mean-across-non-empty-buckets of per-bucket mean rates. Returns
-    None when all three buckets are empty (<=0 games total).
+        ``per_game_gap = game_result_score - ES_entry``
+
+    where ``ES_entry`` is the Lichess expected-score sigmoid applied to the
+    entry-ply Stockfish eval (mate scores short-circuit to ±1.0 via
+    ``eval_mate_to_expected_score``). This approximates
+    ``_compute_span_gap`` at the per-game granularity available to this query
+    (the timeline query does not carry next-span eval, so transitory-span
+    accounting is collapsed onto the game's terminal outcome). The mean is
+    over conversion-bucket rows only — parity and recovery rows are excluded
+    so the affine recenter operates on the same quantity surfaced by the
+    Section 2 ``section2_score_gap_conv`` bullet.
+
+    Returns ``None`` when zero conversion-bucket rows are present in the window
+    (mean is undefined). The caller treats ``None`` like the previous Skill
+    helper's ``None`` return — skip emission for this ISO week.
     """
-    conv_count = 0
-    conv_wins = 0
-    recov_count = 0
-    recov_saves = 0  # wins + draws
-    par_count = 0
-    par_score_sum = 0.0
+    gap_sum = 0.0
+    gap_count = 0
 
     for row in rows:
         # Tuple unpacking per Pitfall 5 (avoid ty row-attribute errors).
@@ -1413,32 +1391,30 @@ def _endgame_skill_from_bucket_rows(
             result,
         ) = row
 
-        outcome = derive_user_result(result, user_color)  # "win"/"draw"/"loss"
         bucket = _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+        if bucket != "conversion":
+            continue
 
-        if bucket == "conversion":
-            conv_count += 1
-            if outcome == "win":
-                conv_wins += 1
-        elif bucket == "recovery":
-            recov_count += 1
-            if outcome in ("win", "draw"):
-                recov_saves += 1
+        # Entry expected score from the user's perspective. Mate takes precedence
+        # over cp (forced-mate is a terminal eval the sigmoid would over-compress).
+        if eval_mate is not None:
+            es_entry = eval_mate_to_expected_score(eval_mate, user_color)
+        elif eval_cp is not None:
+            es_entry = eval_cp_to_expected_score(eval_cp, user_color)
         else:
-            par_count += 1
-            par_score_sum += {"win": 1.0, "draw": 0.5, "loss": 0.0}[outcome]
+            # _classify_endgame_bucket returns "conversion" only when eval is
+            # populated and >= +threshold; the both-None case routes to "parity"
+            # and is excluded above. Defensive skip.
+            continue
 
-    rates: list[float] = []
-    if conv_count > 0:
-        rates.append(conv_wins / conv_count)
-    if recov_count > 0:
-        rates.append(recov_saves / recov_count)
-    if par_count > 0:
-        rates.append(par_score_sum / par_count)
+        outcome = derive_user_result(result, user_color)
+        game_result_score = _GAME_RESULT_TO_SCORE[outcome]
+        gap_sum += game_result_score - es_entry
+        gap_count += 1
 
-    if not rates:
+    if gap_count == 0:
         return None
-    return sum(rates) / len(rates)
+    return gap_sum / gap_count
 
 
 def _compute_endgame_elo_weekly_series(
@@ -1522,8 +1498,13 @@ def _compute_endgame_elo_weekly_series(
         if len(endgame_window) < MIN_GAMES_FOR_TIMELINE:
             continue
 
-        skill = _endgame_skill_from_bucket_rows(endgame_window)
-        if skill is None:
+        # Phase 87.4 (D-01): windowed mean of per-row conv ΔES (Lichess sigmoid
+        # on entry-ply eval_cp / eval_mate, conv-bucket rows only). Approximates
+        # _compute_span_gap at the per-game granularity available in this query —
+        # the timeline query does not carry next-span eval. See RESEARCH.md
+        # §Open Question #1 + Pitfall 3.
+        mean_conv_delta = _windowed_conv_delta_es(endgame_window)
+        if mean_conv_delta is None:
             continue
 
         # Compute the ISO-week emission key + monday + asof cutoff (Phase 57.1 D-01/D-02).
@@ -1553,11 +1534,16 @@ def _compute_endgame_elo_weekly_series(
             continue
         actual_elo_at_date = actual_elo_ratings[idx - 1]
 
-        endgame_elo = _endgame_elo_from_skill(skill, float(actual_elo_at_date))
+        # Phase 87.4 (D-01/D-06): affine-recenter the windowed Conv ΔES into the
+        # Phase 57 formula's s ∈ [0.05, 0.95] domain, then apply the unchanged
+        # Phase 57 formula. Dict key renamed endgame_elo → conversion_elo in
+        # lockstep with the Pydantic schema field (Pitfall 2).
+        s = _affine_recenter_conv_delta(mean_conv_delta)
+        conversion_elo = _conversion_elo_from_skill(s, float(actual_elo_at_date))
 
         data_by_week[(iso_year, iso_week)] = {
             "date": sunday.isoformat(),
-            "endgame_elo": endgame_elo,
+            "conversion_elo": conversion_elo,
             "actual_elo": int(actual_elo_at_date),
             "endgame_games_in_window": len(endgame_window),
             "per_week_endgame_games": per_week_count.get((iso_year, iso_week), 0),
@@ -2709,12 +2695,14 @@ async def get_endgame_overview(
     )
     time_pressure_chart = _compute_time_pressure_chart(clock_rows)
 
-    # Phase 57 ELO-05: paired Endgame ELO + Actual ELO timeline per (platform, TC) combo.
-    # Uses its own repo query (query_endgame_elo_timeline_rows) because the row shape
-    # differs from existing queries (adds white_rating/black_rating for Elo math and
-    # requires the all-games stream for the Actual ELO line per D-04). The orchestrator
-    # runs this sequentially — no asyncio.gather on AsyncSession per CLAUDE.md.
-    endgame_elo_timeline = await get_endgame_elo_timeline(
+    # Phase 57 ELO-05 / Phase 87.4 D-06: paired Conversion ELO + Actual ELO
+    # timeline per (platform, TC) combo. Uses its own repo query
+    # (query_endgame_elo_timeline_rows) because the row shape differs from
+    # existing queries (adds white_rating/black_rating for Elo math and
+    # requires the all-games stream for the Actual ELO line per D-04). The
+    # orchestrator runs this sequentially — no asyncio.gather on AsyncSession
+    # per CLAUDE.md.
+    conversion_elo_timeline = await get_endgame_elo_timeline(
         session,
         user_id=user_id,
         time_control=time_control,
@@ -2733,5 +2721,5 @@ async def get_endgame_overview(
         score_gap_material=score_gap_material,
         clock_pressure=clock_pressure,
         time_pressure_chart=time_pressure_chart,
-        endgame_elo_timeline=endgame_elo_timeline,
+        conversion_elo_timeline=conversion_elo_timeline,
     )

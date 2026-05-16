@@ -35,7 +35,7 @@ Started as a frontend refactor of three table-driven sections on the Endgames pa
 - [x] Phase 87.1: Per-span ΔES metric for endgame types (4/4 plans) — completed 2026-05-15 (verification: human_needed — 4 UAT items)
 - [x] Phase 87.2: Section 2 — eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (4 plans; INSERTED 2026-05-15) — completed 2026-05-16 (PR #98)
 - [ ] Phase 87.3: Endgame Skill v2 — Conv+Parity percentile composite (TBD plans; INSERTED 2026-05-16) — **superseded** by Phase 87.4 (percentile design retracted on UAT review)
-- [ ] Phase 87.4: Drop Endgame Skill — rewire timeline as Conversion ELO from Conv ΔES (TBD plans; INSERTED 2026-05-16) — planned
+- [x] Phase 87.4: Drop Endgame Skill — rewire timeline as Conversion ELO from Conv ΔES (3 plans, 2 waves; INSERTED 2026-05-16) — completed 2026-05-16 (verification: 10/10 must-haves passed)
 - [ ] Phase 88: Time Pressure stats rework with hypothesis tests + CIs (TBD plans; INSERTED 2026-05-14) — planned
 - [ ] Phase 89: Polish — popovers, gating decisions, automation rules, 375px parity (TBD plans) — planned
 
