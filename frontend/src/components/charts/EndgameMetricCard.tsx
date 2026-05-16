@@ -24,6 +24,7 @@ import {
   BUCKET_DISPLAY_LABELS,
   BUCKET_DISPLAY_LABELS_WITH_METRIC,
   FIXED_GAUGE_ZONES,
+  SECTION2_DISPLAY_SHIFT,
 } from '@/lib/endgameMetrics';
 // Per-bucket neutral bands for the Section 2 Delta-ES Score Gap bullet (D-02 / Plan 01).
 import {
@@ -96,10 +97,6 @@ export function EndgameMetricCard({
   const gapMean = scoreGapMean;
   const gapN = scoreGapN ?? 0;
   const showGapRow = gapN > 0;
-  const gapFormatted =
-    gapMean != null
-      ? (gapMean >= 0 ? '+' : '') + `${Math.round(gapMean * 100)}%`
-      : '—';
 
   const { section2NeutralMin, section2NeutralMax } = useMemo(
     () => ({
@@ -119,6 +116,23 @@ export function EndgameMetricCard({
     [bucket],
   );
 
+  // Phase 87.4 D-03/D-04: presentation-layer affine that recenters Conv/Recov
+  // bullets on a single visual zero. Conv shifts by -0.055, Parity by 0,
+  // Recov by +0.06 (each = midpoint of the metric's calibrated band). The
+  // displayed value, neutral-band edges, and formatted text are all shifted;
+  // gapColor below stays on RAW values so zone tinting is unaffected.
+  const displayShift = SECTION2_DISPLAY_SHIFT[bucket];
+  const displayedValue = (gapMean ?? 0) + displayShift;
+  const displayedNeutralMin = section2NeutralMin + displayShift;
+  const displayedNeutralMax = section2NeutralMax + displayShift;
+  const gapFormatted =
+    gapMean != null
+      ? (displayedValue >= 0 ? '+' : '') + `${Math.round(displayedValue * 100)}%`
+      : '—';
+
+  // Phase 87.4 D-04: zone color uses raw values; only the rendered value + band
+  // are shifted. Without this carve-out the bullet would tint differently from
+  // the LLM zone semantics (which still reason about raw Conv ΔES space).
   const gapColor: string | undefined =
     gapMean != null
       ? gapMean < section2NeutralMin
@@ -190,28 +204,28 @@ export function EndgameMetricCard({
                       {`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap:`}
                     </span>
                   }
-                  value={gapMean ?? 0}
+                  value={displayedValue}
                   formatted={gapFormatted}
                   resultColor={gapColor}
                   valueTestId={`${tileTestId}-score-gap-value`}
                   ariaLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap: ${gapFormatted}`}
-                  neutralMin={section2NeutralMin}
-                  neutralMax={section2NeutralMax}
-                  ciLow={scoreGapCiLow ?? undefined}
-                  ciHigh={scoreGapCiHigh ?? undefined}
+                  neutralMin={displayedNeutralMin}
+                  neutralMax={displayedNeutralMax}
+                  ciLow={scoreGapCiLow != null ? scoreGapCiLow + displayShift : undefined}
+                  ciHigh={scoreGapCiHigh != null ? scoreGapCiHigh + displayShift : undefined}
                   tooltip={
                     <MetricStatPopover
                       name={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
                       explanation={POPOVER_COPY[bucket]}
-                      value={gapMean ?? 0}
-                      baseline={0}
+                      value={displayedValue}
+                      baseline={displayShift}
                       unit="percent"
                       gameCount={gapN}
                       level={gapLevel}
                       pValue={scoreGapPValue}
                       vocabulary="score"
-                      neutralLower={section2NeutralMin}
-                      neutralUpper={section2NeutralMax}
+                      neutralLower={displayedNeutralMin}
+                      neutralUpper={displayedNeutralMax}
                       baselineLabel="0%"
                       methodology={
                         <>

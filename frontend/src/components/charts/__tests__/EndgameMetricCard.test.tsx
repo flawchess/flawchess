@@ -170,7 +170,28 @@ describe('EndgameMetricCard — structural render', () => {
     expect(screen.queryByTestId('mini-bullet-chart')).toBeNull();
   });
 
-  it('renders formatted value in score-gap-value testid', () => {
+  it('renders formatted value in score-gap-value testid (Phase 87.4 display-shifted)', () => {
+    // Phase 87.4: Conversion bucket shifts by -0.055. Raw +0.10 → displayed
+    // +0.045 → rounded +5%. Use parity (shift=0) for an unshifted +5% baseline.
+    render(
+      <EndgameMetricCard
+        bucket="parity"
+        row={buildRow({ bucket: 'parity', score: 0.55 })}
+        sharePct={30}
+        tileTestId="tile-parity"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.05}  // parity shift = 0, displayed = +5%
+        scoreGapN={50}
+        scoreGapPValue={0.01}
+        scoreGapCiLow={null}
+        scoreGapCiHigh={null}
+      />,
+    );
+    const valueEl = screen.getByTestId('tile-parity-score-gap-value');
+    expect(valueEl.textContent).toBe('+5%');
+  });
+
+  it('Conv bucket: shifts +0.10 raw → displayed +5% (Phase 87.4 D-03)', () => {
     render(
       <EndgameMetricCard
         bucket="conversion"
@@ -178,7 +199,7 @@ describe('EndgameMetricCard — structural render', () => {
         sharePct={45.5}
         tileTestId="tile-conversion"
         titleTooltip="Test tooltip"
-        scoreGapMean={0.05}  // exactly +5%
+        scoreGapMean={0.10}  // conv shift = -0.055; displayed = +0.045 → +5%
         scoreGapN={50}
         scoreGapPValue={0.01}
         scoreGapCiLow={null}
