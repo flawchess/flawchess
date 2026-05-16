@@ -23,9 +23,6 @@ import math
 
 import pytest
 
-from app.services.opening_insights_constants import (
-    OPENING_INSIGHTS_CI_Z_95 as CI_Z_95,
-)
 from app.services.score_confidence import (
     compute_confidence_bucket,
     compute_paired_difference_test,
@@ -547,5 +544,3 @@ class TestComputePairedDifferenceTest:
         assert (hi - lo) / 2.0 == pytest.approx(bessel_half_width, rel=1e-9)
         # Explicitly NOT the naive half-width:
         assert (hi - lo) / 2.0 != pytest.approx(naive_half_width, rel=1e-9)
-
-

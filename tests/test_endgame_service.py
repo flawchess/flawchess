@@ -5018,7 +5018,6 @@ class TestSkillDiffTestWireFields(TestScoreGapMaterial):
     def test_material_rows_have_no_diff_fields_after_phase872(self) -> None:
         """Sanity check: _compute_score_gap_material returns MaterialRows without
         the deleted diff_p_value / diff_ci_low / diff_ci_high fields (Phase 87.2 D-05)."""
-        gid = 0
         entry_rows: list[_FakeRow] = []
         for i in range(30):
             entry_rows.append(_FakeRow(i + 1, 1, "1-0", "white", 200, None))
@@ -5234,7 +5233,7 @@ class TestPhase872PerBucketDeltaES:
         grain, unlike _aggregate_bucket_counts which dedupes per game."""
         rows = [
             # Same game_id=1, one Conv span and one Recov span (different endgame classes).
-            self._gap_row(1, 1, "1-0", "white", 200, None),   # Conv span (rook class)
+            self._gap_row(1, 1, "1-0", "white", 200, None),  # Conv span (rook class)
             self._gap_row(1, 3, "1-0", "white", -200, None),  # Recov span (pawn class)
         ]
         categories, gaps_by_bucket = _aggregate_endgame_stats(rows)
@@ -5259,9 +5258,7 @@ class TestPhase872PerBucketDeltaES:
     def test_phase_87_1_outputs_unaffected_by_gaps_by_bucket(self) -> None:
         """Adding gaps_by_bucket does not perturb the per-class
         type_achievable_score_gap_* aggregation from Phase 87.1."""
-        rows = [
-            self._gap_row(i + 1, 1, "1-0", "white", 0, None) for i in range(10)
-        ]
+        rows = [self._gap_row(i + 1, 1, "1-0", "white", 0, None) for i in range(10)]
         categories, gaps_by_bucket = _aggregate_endgame_stats(rows)
         rook = next(c for c in categories if c.endgame_class == "rook")
         # Phase 87.1 per-class gap fields must still be populated correctly.
@@ -5275,7 +5272,6 @@ class TestPhase872PerBucketDeltaES:
         section2_score_gap_conv_mean = 0.1, n=15, p_value populated (n>=10),
         ci_low == ci_high == 0.1 (zero-variance collapse per helper contract).
         """
-        import math as _math
 
         from app.services.score_confidence import CONFIDENCE_MIN_N
 
@@ -5410,14 +5406,18 @@ class TestPhase872PerBucketDeltaES:
         """
         import math as _math
 
-        from app.services.score_confidence import CI_Z_95, CONFIDENCE_MIN_N, compute_paired_difference_test
+        from app.services.score_confidence import (
+            CI_Z_95,
+            CONFIDENCE_MIN_N,
+            compute_paired_difference_test,
+        )
 
         # Build buckets with nonzero variance so CI bounds are spread.
         # Use alternating [0.0, 0.2] to get mean=0.1, se>0.
         n = 10
         assert n >= CONFIDENCE_MIN_N
-        gaps_c = [0.0, 0.2] * (n // 2)   # mean 0.1, nonzero se
-        gaps_p = [0.0, 0.1] * (n // 2)   # mean 0.05, nonzero se
+        gaps_c = [0.0, 0.2] * (n // 2)  # mean 0.1, nonzero se
+        gaps_p = [0.0, 0.1] * (n // 2)  # mean 0.05, nonzero se
         gaps_r = [-0.2, 0.0] * (n // 2)  # mean -0.1, nonzero se
 
         # Compute expected values using the same helper.
@@ -5449,7 +5449,9 @@ class TestPhase872PerBucketDeltaES:
         # Symmetric CI: midpoint == mean.
         assert result.section2_score_gap_skill_ci_low is not None
         assert result.section2_score_gap_skill_ci_high is not None
-        mid = (result.section2_score_gap_skill_ci_low + result.section2_score_gap_skill_ci_high) / 2.0
+        mid = (
+            result.section2_score_gap_skill_ci_low + result.section2_score_gap_skill_ci_high
+        ) / 2.0
         assert mid == pytest.approx(expected_mean, abs=1e-6)
 
     def test_sign_convention_positive_means_above_stockfish(self) -> None:
@@ -5488,11 +5490,11 @@ class TestEndgameSkillRateMean(TestScoreGapMaterial):
         # 10 recov losses (score 0.0) → composite = (1.0 + 0.5 + 0.0) / 3 = 0.5.
         rows: list[_FakeRow] = []
         for i in range(10):
-            rows.append(self._row(i + 1, "1-0", 200))   # conversion / win
+            rows.append(self._row(i + 1, "1-0", 200))  # conversion / win
         for i in range(10):
             rows.append(self._row(i + 11, "1/2-1/2", 0))  # parity / draw
         for i in range(10):
-            rows.append(self._row(i + 21, "0-1", -200))   # recovery / loss
+            rows.append(self._row(i + 21, "0-1", -200))  # recovery / loss
         endgame_wdl = self._make_wdl(10, 10, 10)
         non_endgame_wdl = self._make_wdl(0, 0, 0)
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, rows)
