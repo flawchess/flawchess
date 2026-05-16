@@ -210,8 +210,9 @@ class TestPromptVersionAndBody:
       block with achievable-vs-achieved gap framing, version bump v24 -> v25.
     """
 
-    def test_prompt_version_is_v31(self) -> None:
-        assert insights_llm._PROMPT_VERSION == "endgame_v31"
+    def test_prompt_version_is_v32(self) -> None:
+        # Phase 87.4 Plan 03 bumped v31 → v32 (Conversion ELO rewire).
+        assert insights_llm._PROMPT_VERSION == "endgame_v32"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -361,16 +362,17 @@ class TestPromptVersionAndBody:
                 break
         assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
 
-    def test_prompt_version_bumped_to_v31(self) -> None:
-        """Latest bump v30 -> v31 (Phase 87.2 Section 2 ΔES Score Gap family): added four
-        new section2_score_gap_* findings alongside existing rate findings in endgame_metrics.
-        Cache-busts prior v30 reports so newly generated narration references the new family.
+    def test_prompt_version_bumped_to_v32(self) -> None:
+        """Latest bump v31 -> v32 (Phase 87.4 Conversion ELO rewire): Endgame Skill
+        concept removed end-to-end, endgame_elo_* renamed to conversion_elo_*,
+        Conv ΔES promoted to primary Section 2 finding. Cache-busts prior v31
+        reports so newly generated narration uses the renamed terminology.
 
-        Prior bumps (v28 -> v29 -> v30) are preserved in the changelog comment.
+        Prior bumps (v28 -> v29 -> v30 -> v31) are preserved in the changelog comment.
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v31"
-        # Changelog comment must mention the new metric AND the dual-label rule
-        # AND the sigmoid-bias caveat (per CONTEXT.md D-10).
+        assert insights_llm._PROMPT_VERSION == "endgame_v32"
+        # Changelog comment must mention the rename AND the Skill removal
+        # AND the affine-recenter framing.
         import inspect as _inspect
 
         src = _inspect.getsource(insights_llm)
@@ -378,15 +380,18 @@ class TestPromptVersionAndBody:
         assert "v28 (260514 concept capitalization)" in src
         # v29 changelog block present and tagged.
         assert "v29 (260515 endgame_type_achievable_score_gap)" in src
-        # v31 changelog block present and tagged.
+        # v31 changelog block preserved.
         assert "v31 (260515 Phase 87.2 Section 2 ΔES Score Gap family)" in src
-        # Dual-label rule recorded in v31 comment.
-        assert "Section 2 Score Gap" in src
-        # Sigmoid-bias caveat one-liner present in v29 comment.
+        # v32 changelog block present and tagged.
+        assert "v32 (260516 Phase 87.4 Conversion ELO rewire)" in src
+        # Skill removal recorded.
+        assert "Endgame Skill concept removed end-to-end" in src
+        # Affine-recenter formula present.
+        assert "affine recenter" in src.lower() or "α·(conv_ΔES" in src
+        # Dual-label terminology rule (v32 promotes Conversion ELO).
+        assert "Conversion ELO" in src
+        # Sigmoid-bias caveat one-liner still present in v29 comment.
         assert "Lichess winning-chances sigmoid" in src
-        # No parallel verdict / p_value field per memory feedback_llm_significance_signal.md.
-        # (the comment must NOT promise a verdict field — we just check the v31 block
-        # mentions the band carries the signal.)
 
     def test_prompt_glossary_defines_endgame_type_score_gap(self) -> None:
         """Phase 87.1 Plan 04 / CONTEXT D-10: glossary entry for the new metric.
@@ -448,8 +453,8 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """Phase 87.2: _PROMPT_VERSION is endgame_v31; v30 active-constant is gone."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v31"
+        """Phase 87.4: _PROMPT_VERSION is endgame_v32; prior v31 active-constant is gone."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v32"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2238,19 +2243,20 @@ class TestV6Enrichments:
         # The old free-text trajectory must NOT appear anywhere in the prompt.
         assert "over 3 months" not in prompt
 
-    def test_endgame_elo_summary_emitted_before_gap_summary(self) -> None:
-        """v11: `[summary endgame_elo | ...]` precedes `[summary conversion_elo_gap | ...]`.
+    def test_conversion_elo_summary_emitted_before_gap_summary(self) -> None:
+        """v11 (Phase 87.4 D-06 rename): `[summary conversion_elo | ...]`
+        precedes `[summary conversion_elo_gap | ...]`.
 
-        The Endgame ELO Timeline chart's headline value is the absolute
-        skill-adjusted Endgame ELO (dashed line), not the gap. The derived
-        endgame_elo summary is computed from the same retained series points
+        The Conversion ELO Timeline chart's headline value is the absolute
+        skill-adjusted Conversion ELO (dashed line), not the gap. The derived
+        conversion_elo summary is computed from the same retained series points
         as the gap summary (mean = weighted mean of actual_elo + gap), and
         rendered immediately above the gap summary so the LLM cites the
         chart's primary value, not the derived deviation.
         """
         filters = _sample_filter_context()
         # Series of 4 buckets so trend is computed: actual_elo rising 1450 →
-        # 1500, gap holding around -40. Weighted mean endgame_elo per bucket
+        # 1500, gap holding around -40. Weighted mean conversion_elo per bucket
         # = actual_elo + gap.
         series = [
             TimePoint(bucket_start="2025-10-01", value=-40.0, n=10, actual_elo=1450),
@@ -2271,27 +2277,29 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[finding])
         prompt = _assemble_user_prompt(tab)
 
-        elo_header = "[summary endgame_elo | platform=chess.com, time_control=rapid]"
+        elo_header = "[summary conversion_elo | platform=chess.com, time_control=rapid]"
         gap_header = "[summary conversion_elo_gap | platform=chess.com, time_control=rapid]"
         assert elo_header in prompt
         assert gap_header in prompt
         elo_idx = prompt.index(elo_header)
         gap_idx = prompt.index(gap_header)
-        assert elo_idx < gap_idx, "endgame_elo summary must precede conversion_elo_gap summary"
+        assert elo_idx < gap_idx, (
+            "conversion_elo summary must precede conversion_elo_gap summary"
+        )
 
-        # Weighted mean endgame_elo: (1410*10 + 1425*20 + 1450*15 + 1465*15) / 60
+        # Weighted mean conversion_elo: (1410*10 + 1425*20 + 1450*15 + 1465*15) / 60
         # = (14100 + 28500 + 21750 + 21975) / 60 = 86325 / 60 ≈ 1439.
         elo_block_lines = prompt[elo_idx:].splitlines()
         all_time_line = elo_block_lines[1]
         assert all_time_line.startswith("  all_time: ")
         assert "mean=+1439 Elo" in all_time_line
         assert "buckets=4 (monthly)" in all_time_line
-        # endgame_elo summary has no zone/quality fields (no calibrated band).
+        # conversion_elo summary has no zone/quality fields (no calibrated band).
         assert "zone=" not in all_time_line
         assert "quality=" not in all_time_line
 
-    def test_endgame_elo_summary_skipped_when_actual_elo_missing(self) -> None:
-        """No endgame_elo summary emitted if series points lack actual_elo.
+    def test_conversion_elo_summary_skipped_when_actual_elo_missing(self) -> None:
+        """No conversion_elo summary emitted if series points lack actual_elo.
 
         Defensive: actual_elo is only populated for conversion_elo_timeline series
         upstream. If the upstream pipeline regresses and stops setting it, the
@@ -2314,7 +2322,7 @@ class TestV6Enrichments:
         tab = _fake_findings(filters, findings=[finding])
         prompt = _assemble_user_prompt(tab)
 
-        assert "[summary endgame_elo |" not in prompt
+        assert "[summary conversion_elo |" not in prompt
         assert "[summary conversion_elo_gap |" in prompt
 
     def test_payload_summary_includes_all_time_window(self) -> None:
@@ -2648,7 +2656,8 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert response.report.prompt_version == "endgame_v31"
+        # Phase 87.4: bumped from endgame_v31 to endgame_v32.
+        assert response.report.prompt_version == "endgame_v32"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2672,7 +2681,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v31"
+        assert log.response_json["prompt_version"] == "endgame_v32"
 
 
 class TestCacheBehavior:
