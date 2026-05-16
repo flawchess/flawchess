@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: planning
-last_updated: "2026-05-16T11:38:22.609Z"
+last_updated: "2026-05-16T14:35:45.214Z"
 last_activity: 2026-05-16
 progress:
   total_phases: 0
