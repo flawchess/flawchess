@@ -3649,9 +3649,7 @@ class TestSection2ScoreGapFindings:
         assert len(delta_es_findings) == 4
 
         for f in delta_es_findings:
-            assert math.isnan(f.value), (
-                f"{f.metric}: expected value=NaN for empty cohort"
-            )
+            assert math.isnan(f.value), f"{f.metric}: expected value=NaN for empty cohort"
             assert f.is_headline_eligible is False, (
                 f"{f.metric}: expected is_headline_eligible=False for empty cohort"
             )
@@ -3698,7 +3696,9 @@ class TestSection2ScoreGapFindings:
 
         metric_ids = {f.metric for f in findings}
         # Original rate findings preserved.
-        assert "endgame_skill" in metric_ids, "endgame_skill finding missing (rate finding must be preserved)"
+        assert "endgame_skill" in metric_ids, (
+            "endgame_skill finding missing (rate finding must be preserved)"
+        )
         assert "conversion_win_pct" in metric_ids, "conversion_win_pct finding missing"
         assert "parity_score_pct" in metric_ids, "parity_score_pct finding missing"
         assert "recovery_save_pct" in metric_ids, "recovery_save_pct finding missing"

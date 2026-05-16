@@ -610,10 +610,10 @@ class TestFindingsEndgameMetrics:
 
         # Three rate bucket findings: one per bucket, metric matches the bucket.
         rate_findings = [
-            f for f in findings
-            if f.dimension is not None and f.metric in {
-                "conversion_win_pct", "parity_score_pct", "recovery_save_pct"
-            }
+            f
+            for f in findings
+            if f.dimension is not None
+            and f.metric in {"conversion_win_pct", "parity_score_pct", "recovery_save_pct"}
         ]
         by_bucket: dict[str, str] = {
             f.dimension["bucket"]: f.metric for f in rate_findings if f.dimension is not None
@@ -688,10 +688,10 @@ class TestFindingsEndgameMetrics:
         # Rate bucket findings only — filter by metric, not by dimension, because
         # section2_score_gap_* findings have dimension=None.
         bucket_findings = [
-            f for f in findings
-            if f.dimension is not None and f.metric in {
-                "conversion_win_pct", "parity_score_pct", "recovery_save_pct"
-            }
+            f
+            for f in findings
+            if f.dimension is not None
+            and f.metric in {"conversion_win_pct", "parity_score_pct", "recovery_save_pct"}
         ]
         # Each bucket appears exactly once.
         buckets_seen = [f.dimension["bucket"] for f in bucket_findings if f.dimension]

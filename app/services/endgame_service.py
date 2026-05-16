@@ -1078,7 +1078,9 @@ def _compute_per_bucket_score_gap(
     Sign convention: positive mean = user's exit_score exceeded Stockfish baseline
     (exit_score - ES_entry > 0 = outperformed). Matches Phase 87.1's per-class sign.
     """
-    result: dict[MaterialBucket, tuple[float | None, int, float | None, float | None, float | None]] = {}
+    result: dict[
+        MaterialBucket, tuple[float | None, int, float | None, float | None, float | None]
+    ] = {}
     for bucket in ("conversion", "parity", "recovery"):
         b: MaterialBucket = bucket
         gaps = gaps_by_bucket.get(b, [])
@@ -1091,7 +1093,9 @@ def _compute_per_bucket_score_gap(
 
 
 def _compute_skill_score_gap(
-    per_bucket: dict[MaterialBucket, tuple[float | None, int, float | None, float | None, float | None]],
+    per_bucket: dict[
+        MaterialBucket, tuple[float | None, int, float | None, float | None, float | None]
+    ],
 ) -> tuple[float | None, int, float | None, float | None, float | None]:
     """Equal-weighted Skill aggregator over the three per-bucket ΔES results (D-01).
 
@@ -1253,9 +1257,7 @@ def _compute_score_gap_material(
     # Restores the gauge driver dropped by Phase 87.2 D-05; the ΔES skill
     # mean above drives the bullet, not the gauge.
     active_rate_buckets: list[MaterialBucket] = [
-        b
-        for b in ("conversion", "parity", "recovery")
-        if bucket_games[b] >= CONFIDENCE_MIN_N
+        b for b in ("conversion", "parity", "recovery") if bucket_games[b] >= CONFIDENCE_MIN_N
     ]
     endgame_skill_rate_mean: float | None = (
         sum(bucket_score[b] for b in active_rate_buckets) / len(active_rate_buckets)
