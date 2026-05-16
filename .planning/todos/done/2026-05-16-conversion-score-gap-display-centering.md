@@ -43,3 +43,14 @@ axis and the LLM zone aligned (per `feedback_zone_band_judgement` memory).
 - Mobile + desktop bullet renderers both (per CLAUDE.md "apply changes to mobile too").
 - This does NOT change `endgame_zones.py` band tuples — it is a presentation-layer
   offset in the chart component, not a recalibration.
+
+## Outcome
+
+Completed in Phase 87.4 (Wave 2 frontend rewire, Plan 02) as part of the
+Conversion ELO rewire. Per CONTEXT.md D-03 the display-only affine shift was
+applied uniformly across Conv (`-0.055`), Parity (`0`), and Recov (`+0.06`)
+bullets — frontend-only per D-04. The Skill bullet referenced in the original
+"Scope notes" became moot when Phase 87.4 dropped the Endgame Skill concept
+end-to-end. Underlying LLM zone bands, gauge thresholds, and zone-color
+cutoffs are unchanged. See `.planning/milestones/v1.17-phases/87.4-drop-endgame-skill-conversion-elo-timeline/02-SUMMARY.md`
+for the frontend implementation details.
