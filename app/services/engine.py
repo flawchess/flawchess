@@ -50,7 +50,12 @@ from app.services.zobrist import EVAL_CP_MAX_ABS, EVAL_MATE_MAX_ABS
 # D-06: env var with sensible default; Docker image sets STOCKFISH_PATH=/usr/local/bin/stockfish
 _STOCKFISH_PATH: str = os.environ.get("STOCKFISH_PATH", "/usr/local/bin/stockfish")
 # D-03: UCI options live ONLY in this module (ENG-03 grep gate)
-_HASH_MB: int = 64
+# Bug fix (2026-05-16, FLAWCHESS-56 / FLAWCHESS-3Q): reduced 64 -> 32. With
+# prod STOCKFISH_POOL_SIZE=4 the pool reserved 4 * 64 = 256MB of hash tables
+# alone, a material contributor to the import-time Postgres OOM-kill. At
+# depth 15 over import-time evals the smaller hash has negligible quality
+# impact (per-position search, not long analysis).
+_HASH_MB: int = 32
 _THREADS: int = 1
 # SPEC constraint: depth 15 fixed, no per-call tuning
 _DEPTH: int = 15
