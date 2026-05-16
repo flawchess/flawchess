@@ -115,6 +115,42 @@ same-direction). Recovery Score Gap stays as a **standalone descriptive tile**
 verdict. Endgame ELO Timeline now tracks the clean 2-way signal. No
 `section2_score_gap_recov` recalibration needed (descriptive band stays).
 
-Next: route the Skill = Conv+Parity composite redefinition + Recovery tile reframe
-+ Endgame ELO Timeline rework to a ROADMAP phase (no longer gated). The Conversion
-display-centering todo remains independent and shippable now.
+## LOCKED SPEC — phase 87.3 (confirmed 2026-05-16)
+
+Definition settled after a full A-vs-B exploration (see git history this date).
+Empirical comparisons run against the benchmark DB (`mcp__flawchess-benchmark-db`):
+
+- **Reference choice:** Lichess 2300+ expected-score sigmoid (`k=0.00368208`) beats a
+  Stockfish-perfect anchor. Evidence: with a perfect-play reference the conversion
+  region is saturated (≈0.95–1.0), so subtracting it removes almost no entry-difficulty
+  variance — ELO Cohen's d ≈ 0.90 for *any* perfect-play instantiation (step or steep
+  sigmoid), vs **d ≈ 1.39** for the Lichess-referenced gap. The gentle Lichess slope is
+  what de-confounds (it stays in the 0.6–0.9 dynamic range over conversion entries).
+- **A2 vs B is a presentation choice, not a signal choice** — both are monotone
+  transforms of the *same* composite gap, so they rank users identically.
+- **Endgame ELO formula is the hard constraint.** `_endgame_elo_from_skill`
+  (`app/services/endgame_service.py:1348`, Phase 57): `endgame_elo =
+  actual_elo + 400·log10(s/(1−s))`, `s` clamped [0.05, 0.95], **s=0.5 ⇒ lines
+  coincide**. This mandates `s ∈ [0,1]`, median 0.5. Percentile rank fits natively;
+  A2 (~0.96-centered) would peg the clamp (+510 Elo) for *every* player and require
+  scrapping the formula. So percentile is **mandatory** for the timeline, not optional.
+
+### Locked definition
+
+1. **Substrate:** per-(user / rolling-window) composite = equal-weighted mean of
+   **Conversion ΔES** and **Parity ΔES**; Lichess 2300+ sigmoid reference;
+   ≥10-span floor per active bucket; **Recovery excluded** from the composite.
+2. **Endgame Skill (gauge + number):** pooled **percentile rank** of that composite
+   vs a **frozen, versioned** benchmark reference distribution; neutral zone
+   centered at **50**.
+3. **Endgame ELO timeline:** unchanged Phase 57 `_endgame_elo_from_skill`, with
+   `s` = that percentile. **Invariant the plan must assert:** `s ∈ [0,1]`,
+   population median = 0.5 (preserves the "typical player ⇒ lines coincide"
+   contract the current rate-based composite satisfies because it pools ≈ 50.6%).
+   Frozen reference ⇒ historical Endgame ELO points never drift.
+4. **Recovery Score Gap:** standalone descriptive tile, explicitly
+   opponent-dependent, NOT in the composite, NOT a skill verdict.
+5. **Independent:** Conversion Score Gap display-centering todo (unchanged,
+   shippable separately).
+
+Next: insert ROADMAP phase 87.3 and run plan-phase against this locked spec.
