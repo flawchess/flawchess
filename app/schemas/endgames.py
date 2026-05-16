@@ -418,22 +418,13 @@ class ScoreGapMaterialResponse(BaseModel):
     section2_score_gap_recov_ci_low: float | None = None
     section2_score_gap_recov_ci_high: float | None = None
 
-    # Skill (equal-weighted mean of the three bucket means; D-01):
-    section2_score_gap_skill_mean: float | None = None
-    section2_score_gap_skill_n: int | None = None  # total span count across active buckets
-    section2_score_gap_skill_p_value: float | None = None
-    section2_score_gap_skill_ci_low: float | None = None
-    section2_score_gap_skill_ci_high: float | None = None
-
-    # quick-260515-wye: rate-based Endgame Skill composite for the gauge.
-    # Equal-weighted mean of (Conv chess-score, Parity chess-score, Recov
-    # chess-score) over active buckets (bucket_games >= CONFIDENCE_MIN_N).
-    # Distinct from section2_score_gap_skill_mean (the ΔES bullet value above);
-    # the gauge plots the absolute rate composite while the bullet plots the
-    # eval-baseline delta. Phase 87.2 D-05 dropped the old `skill` field
-    # alongside the peer-diff family — this field restores the gauge driver.
-    # None when zero buckets clear the floor.
-    endgame_skill_rate_mean: float | None = None
+    # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
+    # section2_score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
+    # the three bucket means) and endgame_skill_rate_mean (rate composite for
+    # the gauge) were deleted. See .planning/notes/endgame-skill-dropped-
+    # conversion-elo.md for rationale (no composite definition survived
+    # scrutiny on cohort de-confounding, individual interpretation, temporal
+    # stability, or the Phase 57 median-coincide invariant).
 
 
 class ClockStatsRow(BaseModel):
@@ -539,23 +530,26 @@ class TimePressureChartResponse(BaseModel):
 
 
 class EndgameEloTimelinePoint(BaseModel):
-    """One weekly point for a (platform, time_control) combo (Phase 57 ELO-05; revised in Phase 57.1).
+    """One weekly point for a (platform, time_control) combo of the Conversion ELO
+    Timeline (Phase 57 ELO-05; Phase 57.1 anchor change; Phase 87.4 D-06 rename).
 
     date: Sunday of the ISO week (end of week), YYYY-MM-DD. Aligned with the asof
         rating moment so a daily rating chart at the same date shows the same value
         (assuming matching filter inputs).
-    endgame_elo: skill-adjusted rating
-        = round(actual_elo_at_date + 400 * log10(clamp(skill) / (1 - clamp))),
+    conversion_elo: skill-adjusted rating (Phase 87.4 D-06 — renamed from
+        ``endgame_elo``; formula is unchanged from Phase 57). Computed as
+        ``round(actual_elo_at_date + 400 * log10(clamp(s) / (1 - clamp)))``
         anchored on the user's actual rating at the point's date (per-combo asof-join
         with forward-fill from the latest game played on or before the ISO-week-end).
-        skill is the endgame-skill composite (Conv Win %, Parity Score %, Recov Save %)
-        over the trailing ENDGAME_ELO_TIMELINE_WINDOW endgame games. When skill == 0.5
-        the formula returns actual_elo_at_date exactly (zero delta at the neutral mark).
+        ``s`` is the affine-recentered windowed Conv ΔES mean per Phase 87.4 D-01:
+        ``s = clamp(0.5 + ALPHA * (conv_ΔES − PIVOT), 0.05, 0.95)``. When the input
+        equals PIVOT (the benchmark p50 of Conv ΔES) ``s = 0.5`` and the log10 term
+        is 0, so ``conversion_elo == actual_elo_at_date`` (Phase 57 invariant).
     actual_elo: the user's rating at this point's date, sourced via the same per-combo
-        asof-join used as the endgame_elo anchor. Both lines share the anchor so the
+        asof-join used as the conversion_elo anchor. Both lines share the anchor so the
         gap between them IS the skill signal.
     endgame_games_in_window: count of endgame games contributing to the trailing-window
-        skill computation. Drives the >=MIN_GAMES_FOR_TIMELINE (10) emission floor and
+        Conv ΔES mean. Drives the >=MIN_GAMES_FOR_TIMELINE (10) emission floor and
         the frontend tooltip's "past N games" copy.
     per_week_endgame_games: count of endgame games for THIS specific ISO week (NOT the
         trailing window). Frontend uses this for the muted volume-bar series so users can
@@ -564,7 +558,7 @@ class EndgameEloTimelinePoint(BaseModel):
     """
 
     date: str
-    endgame_elo: int
+    conversion_elo: int
     actual_elo: int
     endgame_games_in_window: int
     per_week_endgame_games: int
@@ -618,4 +612,4 @@ class EndgameOverviewResponse(BaseModel):
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
     clock_pressure: ClockPressureResponse  # Phase 54: time pressure at endgame entry
     time_pressure_chart: TimePressureChartResponse  # Phase 55: time pressure vs performance chart
-    endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57: paired Endgame ELO + Actual ELO series per (platform, TC)
+    conversion_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.4 D-06: paired Conversion ELO + Actual ELO series per (platform, TC)
