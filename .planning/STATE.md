@@ -3,23 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: executing
-last_updated: "2026-05-16T15:19:25.889Z"
-last_activity: 2026-05-16 -- Phase 87.3 planning complete
-progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+last_updated: "2026-05-16T21:07:49.430Z"
+last_activity: 2026-05-16 -- Phase 87.4 execution started
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 87.3 (endgame-skill-v2-conv-parity-percentile-composite) — INSERTED, not planned
-Plan: 1 of 4
-Status: Ready to execute
-Last activity: 2026-05-16 -- Phase 87.3 planning complete
+Phase: 87.4 (drop-endgame-skill-conversion-elo-timeline) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 87.4
+Last activity: 2026-05-16 -- Phase 87.4 execution started
 Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
