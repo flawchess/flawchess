@@ -1,13 +1,27 @@
 ---
 id: SEED-017
-status: dormant
+status: closed_premise_disproven_superseded_by_SEED-018
 planted: 2026-05-16
+closed: 2026-05-16
 planted_during: v1.17
-trigger_when: next time import pipeline, job lifecycle, or DB-failure handling is in scope — or proactively before the next large-scale import campaign
+closed_during: v1.17 (post-incident investigation, same day)
+trigger_when: (closed — see SEED-018)
 scope: medium
 ---
 
 # SEED-017: Import resilience hardening (post-incident FLAWCHESS-56 / FLAWCHESS-3Q follow-up)
+
+## Closure Note (2026-05-16)
+
+**Closed: core premise disproven, superseded by SEED-018.**
+
+This seed asserted the 2026-05-16 OOM required a **concurrent/duplicate** import and that the atomic duplicate-guard was **"load-bearing"** (its stated top priority). An authorized prod controlled experiment + local `tracemalloc` localization (same day) **disproved this**: the OOM is a single-import, unbounded ~0.48 MB/game memory leak from per-batch unique SQL caching unbounded on the import-lifetime asyncpg connection (`_flush_batch` Stage 5 literal `case()`+`IN`). A single import OOMs prod **on its own**; concurrency was at most a 2× rate amplifier. The duplicate-guard does **not** prevent recurrence. See `.planning/debug/import-job-db-conn-closed.md` (status: diagnosed) and **SEED-018** (the real, implementation-ready fix).
+
+**Nothing is lost by this closure.** The two leak-independent, still-valid defects this seed bundled — the **scheduled/on-reconnect orphan-job reaper** (part 2) and **resilient failure-state recording** (part 3) — have been **carried forward into SEED-018** ("Carried Forward From SEED-017") as retained debt to do alongside the leak fix. The duplicate-guard (part 1) is demoted there to optional UX/data-hygiene.
+
+The original content below is retained verbatim for history. **Do not action it from here — use SEED-018.**
+
+---
 
 ## Why This Matters
 
