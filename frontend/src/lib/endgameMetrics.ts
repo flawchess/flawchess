@@ -17,7 +17,6 @@ import {
 } from '@/lib/theme';
 import {
   FIXED_GAUGE_ZONES as REGISTRY_FIXED_GAUGE_ZONES,
-  ENDGAME_SKILL_ZONES as REGISTRY_ENDGAME_SKILL_ZONES,
 } from '@/generated/endgameZones';
 import type { EndgameClass, MaterialBucket } from '@/types/endgames';
 
@@ -61,11 +60,19 @@ export const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
   recovery: colorizeGaugeZones(REGISTRY_FIXED_GAUGE_ZONES.recovery),
 };
 
-// Zones for the composite Endgame Skill gauge. The blue band mirrors the
-// Parity gauge (45–55%) so the color story stays consistent with the
-// per-bucket gauges users are already reading. Typical value lands around
-// 52% on FlawChess data, sitting in the middle of the blue band.
-export const ENDGAME_SKILL_ZONES: GaugeZone[] = colorizeGaugeZones(REGISTRY_ENDGAME_SKILL_ZONES);
+// Phase 87.4 (D-03 / D-04): presentation-layer affine that recenters the
+// per-bucket Conv / Parity / Recov Score Gap bullets on a single visual zero
+// without mutating the calibrated zone bands. Shift values are the midpoint
+// of each metric's typical band (Conv: [-0.11, 0.00] → -0.055;
+// Parity: [-0.04, +0.04] → 0; Recov: [+0.01, +0.11] → +0.06).
+// gapColor on EndgameMetricCard continues to read raw (unshifted) values so
+// zone tinting is unaffected — only the rendered value + neutral band shift.
+// See .planning/notes/endgame-skill-dropped-conversion-elo.md for rationale.
+export const SECTION2_DISPLAY_SHIFT: Record<MaterialBucket, number> = {
+  conversion: -0.055,
+  parity: 0,
+  recovery: 0.06,
+} as const;
 
 // Phase 87 (D-11): One-sentence descriptions per endgame class, surfaced in the
 // per-card title InfoPopover on EndgameTypeCard. Lifted from
