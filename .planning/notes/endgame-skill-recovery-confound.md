@@ -100,7 +100,21 @@ shippable on its own. Tracked as a separate todo.
 
 ## Status / next
 
-Gated on the validation spike (see
-`.planning/todos/pending/2026-05-16-spike-clamped-recovery-elo-ramp-validation.md`).
-No ROADMAP phase for the re-bucketing + recalibration + timeline rework until the
-spike confirms the clamped-Recovery ELO ramp is non-inverting and pins the lower cut.
+**Spike RESOLVED 2026-05-16 — FAIL.** See
+`reports/spike-clamped-recovery-elo-ramp-2026-05-16.md`. Sweeping the Recovery lower
+bound (−400 / −300 / −250 / −200) only *attenuates* the ELO inversion (d 0.89 → 0.43);
+it never flips sign. Even [−200,−100] (adjacent to positively-ramping Parity) still
+inverts. The confound is **not** a deep-lost-floor artifact removable by clamping —
+result-based terminal ΔES means weak-cohort opponents under-convert at every
+disadvantage level. Clamping also collapses 800-cohort coverage (n 306 → 71).
+
+**Decision (FAIL branch):** the clamp is abandoned. Endgame Skill composite =
+**Conversion + Parity only** (equal-weighted; both honest, opponent-neutral,
+same-direction). Recovery Score Gap stays as a **standalone descriptive tile**
+("comeback"), explicitly opponent-dependent, NOT in the composite and NOT a skill
+verdict. Endgame ELO Timeline now tracks the clean 2-way signal. No
+`section2_score_gap_recov` recalibration needed (descriptive band stays).
+
+Next: route the Skill = Conv+Parity composite redefinition + Recovery tile reframe
++ Endgame ELO Timeline rework to a ROADMAP phase (no longer gated). The Conversion
+display-centering todo remains independent and shippable now.

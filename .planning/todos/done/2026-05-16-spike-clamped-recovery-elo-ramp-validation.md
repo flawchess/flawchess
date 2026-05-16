@@ -60,3 +60,17 @@ buckets are untouched — no need to re-run them.
 Append findings to `reports/benchmarks-latest.md` as a §3.2.4 block (or a scratch
 report), and update `.planning/notes/endgame-skill-recovery-confound.md` Status with
 the verdict + chosen cut. Then (and only then) the redesign can be routed to a phase.
+
+---
+
+## RESOLVED 2026-05-16 — FAIL
+
+Ran the sweep against the benchmark DB. Every cut (−400/−300/−250/−200) still
+**inverts** the ELO ramp; clamping only attenuates d (0.89 → 0.43), never flips sign.
+Plus 800-cohort coverage collapses (n 306 → 71). Full results:
+`reports/spike-clamped-recovery-elo-ramp-2026-05-16.md`.
+
+**FAIL-branch decision applied:** Endgame Skill = Conversion + Parity only; Recovery
+becomes a standalone opponent-dependent descriptive tile (not in composite). No
+`section2_score_gap_recov` recalibration. Note Status updated. The composite redesign
+is no longer gated and can be routed to a ROADMAP phase.
