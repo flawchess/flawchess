@@ -26,14 +26,15 @@
 <details open>
 <summary>🚧 v1.17 Endgame Stats Card Redesign (Phases 84-89) — IN PROGRESS (opened 2026-05-12)</summary>
 
-Started as a frontend refactor of three table-driven sections on the Endgames page (WDL + ScoreBullet card pattern). Scope has since expanded to a full statistical-rigor pass: Phase 85.1 adds hypothesis tests + CIs on the Endgame Score Differences card with new backend math helpers; Phase 88 reworks Time Pressure with new /benchmarks metrics, new backend service code, and CI-gated bullet stacks; Phase 87.1 (INSERTED 2026-05-15) adds a new per-endgame-type performance metric (per-span ΔES) spanning backend, /benchmarks, frontend, and LLM payload; Phase 87.2 (INSERTED 2026-05-15) backports the eval-based ΔES Score Gap bullet pattern to Section 2 (Conv/Parity/Recov + Endgame Skill cards), retiring the rate-based mirror-bucket peer-diff Gap which is mathematically degenerate (Conv-Gap ≡ Recov-Gap by mirror symmetry; Parity-Gap is a deterministic affine of the absolute Parity rate). Single-bullet doctrine (peer bullet only on Conv/Parity/Recov + Section 3 per-type cards) preserved across all phases.
+Started as a frontend refactor of three table-driven sections on the Endgames page (WDL + ScoreBullet card pattern). Scope has since expanded to a full statistical-rigor pass: Phase 85.1 adds hypothesis tests + CIs on the Endgame Score Differences card with new backend math helpers; Phase 88 reworks Time Pressure with new /benchmarks metrics, new backend service code, and CI-gated bullet stacks; Phase 87.1 (INSERTED 2026-05-15) adds a new per-endgame-type performance metric (per-span ΔES) spanning backend, /benchmarks, frontend, and LLM payload; Phase 87.2 (INSERTED 2026-05-15) backports the eval-based ΔES Score Gap bullet pattern to Section 2 (Conv/Parity/Recov + Endgame Skill cards), retiring the rate-based mirror-bucket peer-diff Gap which is mathematically degenerate (Conv-Gap ≡ Recov-Gap by mirror symmetry; Parity-Gap is a deterministic affine of the absolute Parity rate). Phase 87.3 (INSERTED 2026-05-16) redefines Endgame Skill as a percentile of the Conv+Parity ΔES composite (Recovery dropped — opponent-confounded, validated by a benchmark spike), feeding the unchanged Phase 57 Endgame ELO formula. Single-bullet doctrine (peer bullet only on Conv/Parity/Recov + Section 3 per-type cards) preserved across all phases.
 
 - [ ] Phase 84: Data plumbing — per-type cohort p50 + mirror-rate audit (3 plans) — planned
 - [ ] Phase 85: Section 1 — Games with vs without Endgame cards (5 plans; replan-in-place 2026-05-13 added Plan 85-05 for 3-card composite redesign) — planned
 - [ ] Phase 86: Section 2 — Endgame Metrics 4-card layout (5 plans) — planned
 - [ ] Phase 87: Section 3 — Per-type Endgame Type Breakdown cards (3 plans) — planned
 - [x] Phase 87.1: Per-span ΔES metric for endgame types (4/4 plans) — completed 2026-05-15 (verification: human_needed — 4 UAT items)
-- [ ] Phase 87.2: Section 2 — eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (4 plans; INSERTED 2026-05-15) — planned
+- [x] Phase 87.2: Section 2 — eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (4 plans; INSERTED 2026-05-15) — completed 2026-05-16 (PR #98)
+- [ ] Phase 87.3: Endgame Skill v2 — Conv+Parity percentile composite (TBD plans; INSERTED 2026-05-16) — planned
 - [ ] Phase 88: Time Pressure stats rework with hypothesis tests + CIs (TBD plans; INSERTED 2026-05-14) — planned
 - [ ] Phase 89: Polish — popovers, gating decisions, automation rules, 375px parity (TBD plans) — planned
 

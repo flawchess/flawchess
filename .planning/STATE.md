@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: "Phase 87.2 shipped — PR #98"
-last_updated: "2026-05-16T11:20:47.218Z"
+status: planning
+last_updated: "2026-05-16T11:38:22.609Z"
 last_activity: 2026-05-16
 progress:
   total_phases: 0
@@ -16,9 +16,9 @@ progress:
 
 ## Current Position
 
-Phase: 87.2 (section-2-eval-based-score-gap-bullets) — EXECUTING
+Phase: 87.3 (endgame-skill-v2-conv-parity-percentile-composite) — INSERTED, not planned
 Plan: 1 of 4
-Status: Phase 87.2 shipped — PR #98
+Status: Phase 87.3 inserted — ready to plan
 Last activity: 2026-05-16
 Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
@@ -109,6 +109,7 @@ Carried forward from v1.11 close (still relevant):
 - 2026-05-03: v1.15 cutover (Phases 78 + 79) — combined operator cutover ran rounds 1 (dev DB smoke, user 28), 2 (benchmark DB full backfill — phase column UPDATE pass + endgame span-entry eval pass + middlegame entry eval pass; PHASE-INV-01 = 0), 3 (prod DB full backfill via SSH tunnel; PHASE-INV-01 = 0). Draft PR #78 opened against main (40+ commits, +7093 / −2176, 54 files). PHASE-VAL-01 / VAL-01 rescinded as moot — proxy removed in Phase 78 REFAC, so the proxy-vs-Stockfish agreement metric is undefined; `/conv-recov-validation` Skill deleted from `~/.claude/skills/`. PHASE-VAL-02 (operational sanity that backfill populated rows correctly) satisfied by PHASE-INV-01 = 0. Remaining: bin/deploy.sh on the merge, post-deploy UI smoke (VAL-02 / VAL-03) on 3-5 representative test users.
 - 2026-05-03: B-1 ordering deviation — prod backfill (Round 3) ran before the combined PR + bin/deploy.sh, against the 79-04-PLAN sequence. Operator confirmed "already handled, no action" via /gsd-progress dispatcher. Mitigation specifics (paused traffic / delta backfill / minimal window) not documented in 79-04-SUMMARY (TBD on milestone retro).
 - Phase 87.2 inserted after Phase 87.1: Section 2 — replace rate-based peer-diff Gap with eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (URGENT)
+- Phase 87.3 inserted after Phase 87.2: Endgame Skill v2 — Conv+Parity percentile composite (Recovery dropped, opponent-confounded per benchmark spike) (URGENT)
 
 ### Pending Todos
 
