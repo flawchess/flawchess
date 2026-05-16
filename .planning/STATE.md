@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: executing
-last_updated: "2026-05-15T22:15:00.000Z"
-last_activity: 2026-05-15 -- Quick task 260516-0ax (MiniBulletChart asymmetric zones)
+status: "Phase 87.2 shipped — PR #98"
+last_updated: "2026-05-16T11:20:47.218Z"
+last_activity: 2026-05-16
 progress:
   total_phases: 0
   completed_phases: 0
@@ -18,8 +18,8 @@ progress:
 
 Phase: 87.2 (section-2-eval-based-score-gap-bullets) — EXECUTING
 Plan: 1 of 4
-Status: Executing Phase 87.2
-Last activity: 2026-05-15 -- Phase 87.2 execution started
+Status: Phase 87.2 shipped — PR #98
+Last activity: 2026-05-16
 Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
