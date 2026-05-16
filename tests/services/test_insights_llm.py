@@ -2283,9 +2283,7 @@ class TestV6Enrichments:
         assert gap_header in prompt
         elo_idx = prompt.index(elo_header)
         gap_idx = prompt.index(gap_header)
-        assert elo_idx < gap_idx, (
-            "conversion_elo summary must precede conversion_elo_gap summary"
-        )
+        assert elo_idx < gap_idx, "conversion_elo summary must precede conversion_elo_gap summary"
 
         # Weighted mean conversion_elo: (1410*10 + 1425*20 + 1450*15 + 1465*15) / 60
         # = (14100 + 28500 + 21750 + 21975) / 60 = 86325 / 60 ≈ 1439.
@@ -3718,9 +3716,7 @@ class TestSection2ScoreGapFindings:
         assert "section2_score_gap_skill" not in metric_ids
         # Total: 3 rate + 3 ΔES = 6 (Phase 87.4 D-05 drops aggregate skill +
         # the section2_score_gap_skill ΔES bucket).
-        assert len(findings) == 6, (
-            f"Expected 6 findings (3 rate + 3 ΔES), got {len(findings)}"
-        )
+        assert len(findings) == 6, f"Expected 6 findings (3 rate + 3 ΔES), got {len(findings)}"
 
 
 class TestPhase874PromptVersion:
@@ -3763,4 +3759,3 @@ class TestPhase874PromptVersion:
         assert '"endgame_skill_rate_mean"' not in src, (
             "quoted-string 'endgame_skill_rate_mean' literal still present"
         )
-
