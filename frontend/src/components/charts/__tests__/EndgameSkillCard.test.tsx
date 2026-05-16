@@ -1,22 +1,36 @@
 // @vitest-environment jsdom
 /**
- * Phase 86 Plan 04: tests for EndgameSkillCard (composite Skill variant).
+ * Phase 87.2 Plan 03: tests for EndgameSkillCard (composite Skill variant).
+ *
+ * Quick task 260516-1h5: the card now surfaces a Games-with-Endgame
+ * MiniWDLBar driven by `endgameWdl` (perfData.endgame_wdl), so the test
+ * fixtures pass an `EndgameWDLSummary` and the MiniWDLBar / games-count
+ * assertions check the new block.
  *
  * Covers:
- * - Structural render: gauge + peer-bullet row present when
- *   skill !== null && oppSkill !== null && totalGames >= 10.
- * - No MiniWDLBar (single-ply composite, no W/D/L definable per SEC2-03).
- * - Sig-gated diff color: confident + outside neutral → inline color set;
- *   weak → no inline color.
- * - Empty state: skill === null → "Not enough data yet" + opacity-50 gauge;
- *   no peer-bullet, no popover trigger.
+ * - Structural render: gauge + ScoreGapRow bullet present when
+ *   skill !== null && scoreGapN > 0.
+ * - MiniWDLBar + games-count row visible when endgameWdl.total > 0; hidden
+ *   when endgameWdl.total === 0.
+ * - ScoreGapRow absent when scoreGapN === 0.
+ * - Sign convention: zone-only tint (Phase 85.1 D-04 inherited).
+ *   positive gapMean >= neutralMax -> ZONE_SUCCESS;
+ *   negative gapMean < neutralMin -> ZONE_DANGER;
+ *   inside band -> no color.
+ * - testid sub-elements: -score-gap-bullet, -score-gap-value, -score-gap-info.
+ * - Popover name is "Skill Score Gap" (D-07); explanation contains Skill copy
+ *   and sigmoid caveat; no "vs opponents" / "Opp Skill" framing.
+ * - CI whisker props: passed at n >= 2 (non-null); undefined at n < 2.
+ * - Empty state: skill === null -> "Not enough data yet" + opacity-50 gauge;
+ *   no ScoreGapRow, no popover trigger.
  * - tileTestId prop is the container's data-testid.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 
-import { ZONE_SUCCESS } from '@/lib/theme';
+import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import type { EndgameWDLSummary } from '@/types/endgames';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -54,88 +68,253 @@ function normalizeColor(value: string): string {
   });
 }
 
+// Default Score Gap props: positive, outside neutral band, confident.
+const DEFAULT_SKILL_GAP_PROPS = {
+  scoreGapMean: 0.10,   // above SECTION2_SCORE_GAP_SKILL_NEUTRAL_MAX (0.05)
+  scoreGapN: 300,
+  scoreGapPValue: 0.001,
+  scoreGapCiLow: 0.05,
+  scoreGapCiHigh: 0.15,
+};
+
+const DEFAULT_ENDGAME_WDL: EndgameWDLSummary = {
+  wins: 50,
+  draws: 30,
+  losses: 20,
+  total: 100,
+  win_pct: 50,
+  draw_pct: 30,
+  loss_pct: 20,
+};
+
+const EMPTY_ENDGAME_WDL: EndgameWDLSummary = {
+  wins: 0,
+  draws: 0,
+  losses: 0,
+  total: 0,
+  win_pct: 0,
+  draw_pct: 0,
+  loss_pct: 0,
+};
+
 describe('EndgameSkillCard — structural render', () => {
-  it('renders container with tileTestId, gauge, and peer-bullet (no games-count per phase 86 feedback)', () => {
+  it('renders container with tileTestId, gauge, and ScoreGapRow bullet', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        oppSkill={0.45}
-        totalGames={300}
-        pValue={0.001}
-        ciLow={0.05}
-        ciHigh={0.15}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
+        {...DEFAULT_SKILL_GAP_PROPS}
       />,
     );
     expect(screen.getByTestId('tile-endgame-skill')).not.toBeNull();
-    expect(screen.getByTestId('mini-bullet-chart')).not.toBeNull();
-    expect(screen.queryByTestId('tile-endgame-skill-games-count')).toBeNull();
+    expect(screen.getByTestId('tile-endgame-skill-score-gap-bullet')).not.toBeNull();
+    expect(screen.getByTestId('tile-endgame-skill-score-gap-value')).not.toBeNull();
+    expect(screen.getByTestId('tile-endgame-skill-score-gap-info')).not.toBeNull();
   });
 
-  it('does NOT render MiniWDLBar (no W/D/L for the single-ply composite)', () => {
+  it('renders MiniWDLBar and "Games: 100" in the games-count row when endgameWdl.total > 0', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        oppSkill={0.45}
-        totalGames={300}
-        pValue={0.001}
-        ciLow={0.05}
-        ciHigh={0.15}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
+        {...DEFAULT_SKILL_GAP_PROPS}
       />,
     );
+    const gamesCount = screen.getByTestId('tile-endgame-skill-games-count');
+    expect(gamesCount.textContent).toContain('Games: 100');
+    expect(screen.getByTestId('mini-wdl-bar')).not.toBeNull();
+  });
+
+  it('hides the games-count row and MiniWDLBar when endgameWdl.total === 0', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={EMPTY_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        {...DEFAULT_SKILL_GAP_PROPS}
+      />,
+    );
+    expect(screen.queryByTestId('tile-endgame-skill-games-count')).toBeNull();
     expect(screen.queryByTestId('mini-wdl-bar')).toBeNull();
   });
 
-  it('renders "Endgame Skill" title and Your Skill / Opp Skill labels', () => {
+  it('renders "Endgame Skill" title', () => {
     render(
       <EndgameSkillCard
         skill={0.55}
-        oppSkill={0.45}
-        totalGames={300}
-        pValue={0.001}
-        ciLow={0.05}
-        ciHigh={0.15}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
+        {...DEFAULT_SKILL_GAP_PROPS}
       />,
     );
     expect(screen.getByText('Endgame Skill')).not.toBeNull();
-    expect(screen.getByText(/You:/)).not.toBeNull();
-    expect(screen.getByText(/Opp:/)).not.toBeNull();
+  });
+
+  it('renders ScoreGapRow when scoreGapN > 0', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        {...DEFAULT_SKILL_GAP_PROPS}
+      />,
+    );
+    expect(screen.getByTestId('tile-endgame-skill-score-gap-bullet')).not.toBeNull();
+    // ScoreGapRow renders a MiniBulletChart
+    expect(screen.queryByTestId('mini-bullet-chart')).not.toBeNull();
+  });
+
+  it('does NOT render ScoreGapRow when scoreGapN === 0', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        scoreGapMean={null}
+        scoreGapN={0}
+        scoreGapPValue={null}
+        scoreGapCiLow={null}
+        scoreGapCiHigh={null}
+      />,
+    );
+    expect(screen.queryByTestId('tile-endgame-skill-score-gap-bullet')).toBeNull();
+    expect(screen.queryByTestId('mini-bullet-chart')).toBeNull();
+  });
+
+  it('renders formatted value in score-gap-value testid', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        scoreGapMean={0.05}   // exactly +5%
+        scoreGapN={100}
+        scoreGapPValue={0.05}
+        scoreGapCiLow={null}
+        scoreGapCiHigh={null}
+      />,
+    );
+    const valueEl = screen.getByTestId('tile-endgame-skill-score-gap-value');
+    expect(valueEl.textContent).toBe('+5%');
   });
 });
 
-describe('EndgameSkillCard — sig-gated diff color', () => {
-  it('paints diff with ZONE_SUCCESS when confident + outside neutral band', () => {
+describe('EndgameSkillCard — sign convention (zone-only tint, no sig-gate)', () => {
+  it('paints value with ZONE_SUCCESS when gapMean >= neutralMax (positive outside band)', () => {
     render(
       <EndgameSkillCard
-        skill={0.60}
-        oppSkill={0.45}
-        totalGames={300}
-        pValue={0.001}
-        ciLow={0.10}
-        ciHigh={0.20}
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
+        scoreGapMean={0.10}   // above SECTION2_SCORE_GAP_SKILL_NEUTRAL_MAX (0.05)
+        scoreGapN={300}
+        scoreGapPValue={0.5}  // weak p-value: zone-only means color still applied
+        scoreGapCiLow={null}
+        scoreGapCiHigh={null}
       />,
     );
-    const diffSpan = screen.getByTestId('tile-endgame-skill-diff');
-    expect(normalizeColor(diffSpan.style.color)).toBe(normalizeColor(ZONE_SUCCESS));
+    const valueEl = screen.getByTestId('tile-endgame-skill-score-gap-value');
+    expect(normalizeColor(valueEl.style.color)).toBe(normalizeColor(ZONE_SUCCESS));
   });
 
-  it('does NOT paint diff color when weak (high p-value)', () => {
+  it('paints value with ZONE_DANGER when gapMean < neutralMin (negative outside band)', () => {
     render(
       <EndgameSkillCard
-        skill={0.60}
-        oppSkill={0.45}
-        totalGames={300}
-        pValue={0.5}
-        ciLow={0.10}
-        ciHigh={0.20}
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
+        scoreGapMean={-0.10}  // below SECTION2_SCORE_GAP_SKILL_NEUTRAL_MIN (-0.05)
+        scoreGapN={300}
+        scoreGapPValue={0.5}
+        scoreGapCiLow={null}
+        scoreGapCiHigh={null}
       />,
     );
-    const diffSpan = screen.getByTestId('tile-endgame-skill-diff');
-    expect(diffSpan.style.color).toBe('');
+    const valueEl = screen.getByTestId('tile-endgame-skill-score-gap-value');
+    expect(normalizeColor(valueEl.style.color)).toBe(normalizeColor(ZONE_DANGER));
+  });
+
+  it('does NOT paint value color when gapMean is inside neutral band', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        scoreGapMean={0.02}   // inside [-0.05, 0.05] neutral band
+        scoreGapN={300}
+        scoreGapPValue={0.001}
+        scoreGapCiLow={null}
+        scoreGapCiHigh={null}
+      />,
+    );
+    const valueEl = screen.getByTestId('tile-endgame-skill-score-gap-value');
+    expect(valueEl.style.color).toBe('');
+  });
+});
+
+describe('EndgameSkillCard — popover content (D-07 / D-08)', () => {
+  it('popover aria-label is "What is Skill Score Gap?" per D-07', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        {...DEFAULT_SKILL_GAP_PROPS}
+      />,
+    );
+    const infoTrigger = screen.getByTestId('tile-endgame-skill-score-gap-info');
+    expect(infoTrigger.getAttribute('aria-label')).toBe('What is Skill Score Gap?');
+  });
+
+  it('does NOT have "You:" / "Opp:" labels (D-08: no vs opponents framing)', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        {...DEFAULT_SKILL_GAP_PROPS}
+      />,
+    );
+    expect(screen.queryByText(/You:/)).toBeNull();
+    expect(screen.queryByText(/Opp:/)).toBeNull();
+    expect(screen.queryByText(/Opp Skill/)).toBeNull();
+  });
+});
+
+describe('EndgameSkillCard — CI whisker props', () => {
+  it('passes CI props to ScoreGapRow when scoreGapCiLow/CiHigh are non-null', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        scoreGapMean={0.10}
+        scoreGapN={300}
+        scoreGapPValue={0.001}
+        scoreGapCiLow={0.05}
+        scoreGapCiHigh={0.15}
+      />,
+    );
+    expect(screen.getByTestId('mini-bullet-chart')).not.toBeNull();
+  });
+
+  it('passes undefined CI when scoreGapCiLow/CiHigh are null', () => {
+    render(
+      <EndgameSkillCard
+        skill={0.55}
+        endgameWdl={DEFAULT_ENDGAME_WDL}
+        tileTestId="tile-endgame-skill"
+        scoreGapMean={0.10}
+        scoreGapN={1}
+        scoreGapPValue={null}
+        scoreGapCiLow={null}
+        scoreGapCiHigh={null}
+      />,
+    );
+    // ScoreGapRow still renders (gapN > 0), but no CI whiskers
+    expect(screen.getByTestId('tile-endgame-skill-score-gap-bullet')).not.toBeNull();
   });
 });
 
@@ -144,17 +323,19 @@ describe('EndgameSkillCard — empty state', () => {
     render(
       <EndgameSkillCard
         skill={null}
-        oppSkill={null}
-        totalGames={0}
-        pValue={null}
-        ciLow={null}
-        ciHigh={null}
+        endgameWdl={EMPTY_ENDGAME_WDL}
         tileTestId="tile-endgame-skill"
+        scoreGapMean={null}
+        scoreGapN={0}
+        scoreGapPValue={null}
+        scoreGapCiLow={null}
+        scoreGapCiHigh={null}
       />,
     );
     expect(screen.queryByText(/Not enough data yet/)).not.toBeNull();
-    // No peer-bullet, no popover trigger
+    // No ScoreGapRow, no popover trigger
+    expect(screen.queryByTestId('tile-endgame-skill-score-gap-bullet')).toBeNull();
+    expect(screen.queryByTestId('tile-endgame-skill-score-gap-info')).toBeNull();
     expect(screen.queryByTestId('mini-bullet-chart')).toBeNull();
-    expect(screen.queryByTestId('tile-endgame-skill-info')).toBeNull();
   });
 });

@@ -1432,6 +1432,228 @@ The `mean` / `var_samp` columns feed Cohen's d. Pooled rates come from re-aggreg
 
 ---
 
+#### 3.2.2 Per-bucket ΔES Score Gap (Section 2 — Phase 87.2)
+
+**Question:** How does the per-span ΔES Score Gap, partitioned by the **eval-entry bucket** `_classify_endgame_bucket(eval_cp, eval_mate, user_color)` (conversion / parity / recovery), distribute per user per bucket? What is the per-axis (TC × ELO) Cohen's-d collapse verdict per bucket? What bands should land in `ZONE_REGISTRY["section2_score_gap_{conv,parity,recov,skill}"]`?
+
+**User-facing terminology** (per CONTEXT.md D-07):
+- Card row labels: **"Conversion Score Gap"** / **"Parity Score Gap"** / **"Recovery Score Gap"** / **"Skill Score Gap"**.
+- Glossary umbrella: **"Section 2 Score Gap"** (disambiguates from "Endgame Score Gap", "Achievable Score Gap", and "Endgame Type Score Gap").
+- Internal identifiers: `section2_score_gap_{conv,parity,recov,skill}` (snake_case, preserves grep-ability).
+
+**Per-user metric definition (per bucket):**
+- One row per qualifying span: `(game_id, endgame_class, span_min_ply)` with ≥ `ENDGAME_PLY_THRESHOLD` (= 6) plies.
+- **Bucket assignment:** `_classify_endgame_bucket(eval_cp, eval_mate, user_color)` at the span-entry eval. `eval_cp ≥ +100 cp` (user-perspective) → conversion; `eval_cp ≤ −100 cp` → recovery; else parity. Mate scores force conversion (user-favorable mate) or recovery (user-unfavorable mate). NULL eval → parity (non-issue in practice on the benchmark DB; eval coverage is ~100%).
+- **`gap_span`** = `exit_score − ES_entry` per Phase 87.1's `_compute_span_gap` formula (reused verbatim — see §3.4.2 for the full derivation). Sign convention: positive = user outperformed the Stockfish baseline across this span.
+- **`per_user_per_bucket_mean`** = `mean(gap_span)` over all qualifying spans in that bucket for that user.
+- **Skill aggregate (D-01):** equal-weighted mean of the three bucket means: `Skill_ΔES = (mean_conv + mean_parity + mean_recov) / 3`. Buckets with `n < CONFIDENCE_MIN_N` (= 10) are dropped from the average (denominator → 2 or 1). If all three are below the floor, Skill ΔES is null.
+
+**Sample floor:** ≥ 20 qualifying spans per user per bucket per cell (mirrors the §3.4.2 span floor). For the Skill aggregate, require ≥ 10 spans per active bucket before including it in the equal-weighted mean, matching `CONFIDENCE_MIN_N`.
+
+**Cohen's-d collapse verdict per axis (TC, ELO):**
+Apply the same 3-level pattern as §3.4.2: `d < 0.2` collapse, `0.2 ≤ d < 0.5` review, `d ≥ 0.5` keep separate. Compute per bucket (conv, parity, recov, skill) separately — buckets may diverge.
+
+**Sigmoid-bias expectation** (per RESEARCH §/benchmarks Cohen's-d collapse expectation):
+- **Conv bucket** likely skews negative: `ES_entry ≈ 0.6`, limited upside (ceiling at 1.0), so mean gap tends below 0.
+- **Recov bucket** likely skews positive: `ES_entry ≈ 0.4`, limited downside (floor at 0.0), so mean gap tends above 0.
+- **Parity bucket** roughly symmetric: no strong sigmoid asymmetry near 0.5.
+- **Skill** (equal-weighted mean) should partially wash out asymmetry.
+- If observed verdicts match this prediction, divergent per-bucket bands are the right output — do not force a single global band.
+
+**Decision rule for updating zone bands:**
+- If both axes collapse for a bucket: set `ZONE_REGISTRY["section2_score_gap_<bucket>"]` to a single pooled [p25, p75] band.
+- If the ELO axis "keeps separate" for a bucket: decide whether to stratify (this phase keeps the scalar MetricId — per-ELO stratification deferred to a follow-on phase).
+- Per memory `feedback_zone_band_judgement.md`: tighten the band when small effects are meaningful, even if Cohen's d straddles the collapse threshold.
+- Per memory `feedback_llm_significance_signal.md`: do not add a separate sig-test signal to the LLM payload. Tighten the cohort band instead.
+
+**Output instructions:**
+1. Update the 4 placeholder ZoneSpec entries in `app/services/endgame_zones.py` with calibrated `(typical_lower, typical_upper)` tuples for each bucket: `ZONE_REGISTRY["section2_score_gap_conv"]`, `ZONE_REGISTRY["section2_score_gap_parity"]`, `ZONE_REGISTRY["section2_score_gap_recov"]`, `ZONE_REGISTRY["section2_score_gap_skill"]`.
+2. Run `uv run python scripts/gen_endgame_zones_ts.py` and commit the regenerated `frontend/src/generated/endgameZones.ts` (drift gate enforces parity).
+3. Add the per-bucket IQR table and collapse verdict to `reports/benchmarks-latest.md` under a new §3.2.2 block; archive the previous report per the "Report file layout" rotation rule.
+
+**Note:** Actually running the benchmark query is OUT OF SCOPE for the Phase 87.2 Plan 01 ROADMAP gate — this subchapter documents the method so a future calibration session can produce real bands. Placeholder ±5pp bands from Plan 01 Task 1 remain in effect until then; the codegen drift gate from Plan 01 Task 2 ensures any band update flows through to `endgameZones.ts` automatically.
+
+##### Query
+
+Equal-footing opponent filter (`abs(opp_rating - user_rating) <= 100`) preserved per memory `feedback_260503-fef` (universal as of 2026-05-03).
+
+```sql
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+spans AS (
+  -- One row per (game_id, endgame_class) span >= 6 plies, with entry eval at first ply.
+  SELECT
+    gp.game_id,
+    gp.endgame_class,
+    (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
+    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,
+    min(gp.ply) AS span_min_ply
+  FROM game_positions gp
+  JOIN games g           ON g.id = gp.game_id
+  JOIN selected_users su ON su.user_id = g.user_id
+  WHERE gp.endgame_class IS NOT NULL
+    AND g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+  GROUP BY gp.game_id, gp.endgame_class
+  HAVING count(gp.ply) >= 6
+),
+spans_with_next AS (
+  SELECT
+    s.*,
+    lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,
+    lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate
+  FROM spans s
+),
+gap_rows AS (
+  -- gap_span = exit_score - ES_entry. Bucket derived from entry eval per _classify_endgame_bucket.
+  SELECT
+    g.user_id, su.rating_bucket, su.tc_bucket,
+    -- Bucket assignment: mirrors _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+    CASE
+      WHEN swn.entry_eval_mate IS NOT NULL THEN
+        CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
+          THEN 'conversion' ELSE 'recovery' END
+      WHEN swn.entry_eval_cp IS NOT NULL THEN
+        CASE
+          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) >= 100 THEN 'conversion'
+          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) <= -100 THEN 'recovery'
+          ELSE 'parity'
+        END
+      ELSE 'parity'  -- NULL eval -> parity
+    END AS bucket,
+    (
+      CASE
+        WHEN next_eval_mate IS NOT NULL
+          THEN CASE WHEN (next_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
+        WHEN next_eval_cp IS NOT NULL
+          THEN 1.0 / (1.0 + exp(-0.00368208 * (next_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE
+          CASE
+            WHEN (g.result='1-0' AND g.user_color='white')
+              OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+            WHEN g.result='1/2-1/2' THEN 0.5
+            ELSE 0.0
+          END
+      END
+    )
+    -
+    (
+      CASE
+        WHEN swn.entry_eval_mate IS NOT NULL
+          THEN CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0 ELSE 0.0 END
+        WHEN swn.entry_eval_cp IS NOT NULL
+          THEN 1.0 / (1.0 + exp(-0.00368208 * (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE NULL
+      END
+    ) AS gap_span
+  FROM spans_with_next swn
+  JOIN games g           ON g.id = swn.game_id
+  JOIN selected_users su ON su.user_id = g.user_id
+  WHERE swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL
+),
+per_user_bucket AS (
+  SELECT
+    user_id, rating_bucket, tc_bucket, bucket,
+    avg(gap_span)  AS mean_gap,
+    count(*)       AS n_spans
+  FROM gap_rows
+  WHERE gap_span IS NOT NULL
+    AND NOT (rating_bucket = 2400 AND tc_bucket = 'classical')  -- sparse-cell exclusion
+  GROUP BY user_id, rating_bucket, tc_bucket, bucket
+  HAVING count(*) >= 20         -- sample floor: >= 20 qualifying spans per user per bucket
+)
+SELECT
+  bucket,
+  rating_bucket AS elo_bucket,
+  tc_bucket,
+  count(*)                                                          AS n_users,
+  round(avg(mean_gap)::numeric,              4)                    AS mean,
+  round(stddev_samp(mean_gap)::numeric,      4)                    AS sd,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p95
+FROM per_user_bucket
+GROUP BY bucket, rating_bucket, tc_bucket
+ORDER BY bucket, elo_bucket, tc_bucket;
+```
+
+Run a second pass for the pooled-across-cells distribution (sparse-cell exclusion already in CTE):
+
+```sql
+-- Pooled per-bucket (all cells combined, sparse-cell exclusion applied in CTE above).
+SELECT
+  bucket,
+  count(*)                                                          AS n_users,
+  round(avg(mean_gap)::numeric,              4)                    AS pooled_mean,
+  round(stddev_samp(mean_gap)::numeric,      4)                    AS pooled_sd,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_gap)::numeric, 4) AS p75
+FROM per_user_bucket
+GROUP BY bucket
+ORDER BY bucket;
+```
+
+##### Output
+
+For the §3.2.2 block in `reports/benchmarks-latest.md`:
+
+1. **Per-bucket per-cell table** (rows = bucket × elo_bucket × tc_bucket): `n_users | mean | sd | p05 | p25 | p50 | p75 | p95`. Sparse cell `(2400, classical)` shown with footnote if present in cell-level grid but excluded from marginals.
+
+2. **Pooled-by-bucket summary row**: `bucket | n_users | pooled_mean | pooled_sd | p25 | p50 | p75`. This is the primary input for the [p25, p75] neutral band recommendation.
+
+3. **Cohen's-d collapse verdict per axis per bucket** (TC and ELO): compute `d_max = max_group_mean - min_group_mean / sqrt(avg group variances)` across the TC (resp. ELO) levels, per bucket. Apply the 3-level threshold. Report the verdict per bucket in a table: `bucket | TC d_max | TC verdict | ELO d_max | ELO verdict`.
+
+4. **Sigmoid-bias check**: compare the sign and magnitude of `pooled_mean` for conv vs recov. Note whether the expected asymmetry (conv negative, recov positive) is confirmed — if it is, divergent per-bucket bands are the right output.
+
+5. **Recommended `ZONE_REGISTRY` updates**: per-bucket [p25, p75] rounded to nearest 1pp; note whether to keep separate per-bucket or collapse to a global band.
+
+6. **Skill aggregate stats**: for each user with ≥ 2 active buckets (n >= 10 per bucket), compute the equal-weighted mean across active buckets and report pooled mean, sd, p25, p50, p75 for the Skill metric.
+
+---
+
+#### 3.2.3 Rate vs. score-gap divergence (Conversion & Recovery cross-cut)
+
+**Derived — no new query.** This subchapter synthesizes the §3.2.1 raw rates against the §3.2.2 ΔES score gaps for the conversion and recovery buckets. Its job is to surface where the two views of the *same* endgame situation disagree about which axis carries the signal, because that disagreement is what decides whether Section 2's conversion/recovery bullets need a stratified registry.
+
+##### What to compute
+
+Reuse the §3.2.1 per-user `conv_p50` / `recov_p50` cell tables and marginals, and the §3.2.2 per-bucket `mean_gap` cell tables and marginals. For conversion and recovery each, build a 2×2 of `{ELO axis, TC axis} × {raw rate, score gap}` reporting the marginal sweep (min→max level) and the Cohen's `d_max` + verdict already computed upstream. No SQL re-run — pull the numbers from the §3.2.1 and §3.2.2 blocks of the same report.
+
+##### What to report in `reports/benchmarks-latest.md` under §3.2.3
+
+1. **Axis-driver table** — for Conversion and Recovery, side by side:
+
+   | metric | ELO sweep (raw rate) | ELO d / verdict | TC sweep (raw rate) | TC d / verdict | ELO sweep (score gap) | ELO d / verdict | TC sweep (score gap) | TC d / verdict |
+
+2. **Divergence callout** — explicitly flag any bucket where the raw-rate verdict and the score-gap verdict disagree on the *same axis* (e.g. raw recovery ELO `review` at d≈0.40 vs. recovery-gap ELO `keep separate` at d≈0.85). Explain the mechanism: the raw rate is flat across that axis because the engine-expected score moves *with* the cohort, so the absolute rate masks a relative-skill signal that the gap (which subtracts ES_entry) exposes.
+
+3. **Mirror-axis note** — state when the two buckets move *opposite* directions on an axis (raw recovery falls bullet→classical while raw conversion rises), and that the score gaps for both compress toward their off-zero null as players strengthen and games slow (closer to engine play).
+
+4. **Implication line** — one sentence per divergent bucket: does the gap's stronger axis signal change the §3.2.2 "registry stays scalar" deferral recommendation, or is the scalar pooled band still defensible for this phase. This is advisory only; the binding band recommendation stays in §3.2.2.
+
+##### Snapshot — 2026-05-16 dump (carry forward, refresh each run)
+
+- **Conversion**: raw rate driven by *both* axes same direction (ELO 66.8%→74.9% d=0.82 keep; TC 65.1%→75.6% d=1.02 keep). Score gap also both axes, both compressing toward the −6pp sigmoid null (ELO −14.0pp→−0.3pp d=1.62; TC −13.1pp→−2.0pp d=1.18). **No divergence** — rate and gap agree conversion is a two-axis metric.
+- **Recovery**: raw rate is a **TC-only** story (ELO 29.7%→33.0% ~flat d=0.40 review; TC 35.6%→25.0% d=1.10 keep), and runs *opposite* to conversion on TC (more time → less recovery, because the opponent also converts cleanly). The score gap **re-exposes the ELO signal** (ELO +10.7pp→+4.3pp d=0.85 keep; TC +12.8pp→+1.0pp d=1.63 keep). **Divergence on the ELO axis**: weak players over-perform the engine far more when recovering (+10.7pp) than strong players (+4.3pp); the flat raw rate hides this because engine expectation rises with the cohort.
+- **Implication**: the recovery-gap ELO `keep separate` (d=0.85) is the strongest argument against §3.2.2's scalar-registry deferral. Recommendation unchanged for this phase (scalar pooled band ships), but flag recovery as the first candidate if/when per-(TC×ELO) stratification of the Section 2 buckets is revisited.
+
+---
+
 ### 3.3 Time Pressure
 
 Maps to the page H2 of the same name. Hosts `EndgameClockPressureSection` + `ClockDiffTimelineChart` + `EndgameTimePressureSection`.
@@ -2330,6 +2552,8 @@ Write to `reports/benchmarks-latest.md`. Before writing, if that file already ex
 
 ### 3.2 Endgame Metrics and ELO
 #### 3.2.1 Conversion / Parity / Recovery + Endgame Skill
+#### 3.2.2 Per-bucket ΔES Score Gap (Section 2 — Phase 87.2)
+#### 3.2.3 Rate vs. score-gap divergence (Conversion & Recovery cross-cut)
 
 ### 3.3 Time Pressure
 #### 3.3.1 Clock pressure at endgame entry
@@ -2362,6 +2586,10 @@ Write to `reports/benchmarks-latest.md`. Before writing, if that file already ex
 | Per-class conversion | 3.4.1 | ... | ... | ... |
 | Per-class recovery | 3.4.1 | ... | ... | ... |
 | Per-class per-span Score Gap | 3.4.2 | ... | ... | ... |
+| Per-bucket Score Gap — Conversion (Section 2) | 3.2.2 | ... | ... | ... |
+| Per-bucket Score Gap — Parity (Section 2) | 3.2.2 | ... | ... | ... |
+| Per-bucket Score Gap — Recovery (Section 2) | 3.2.2 | ... | ... | ... |
+| Per-bucket Score Gap — Skill (Section 2) | 3.2.2 | ... | ... | ... |
 
 Every cell states `max |d|` and a verdict. Drives Phase 73 zone calibration in SEED-006.
 

@@ -39,6 +39,22 @@ Replaces the `EndgameScoreGapSection` table and its 4-gauge strip with 4 side-by
 - [ ] **SEC2-09**: `InfoPopover` on each peer bullet explains the mirror-bucket interpretation and that the baseline is filter-responsive (shifts with rating × TC × color × opponent-type filters).
 - [ ] **SEC2-10**: The legacy `EndgameScoreGapSection` table and its 4-gauge strip are removed.
 
+### Section 2: eval-based ΔES Score Gap bullets (SEC2-ΔES, Phase 87.2)
+
+Phase 87.2 replaces the rate-based peer-diff bullet on Section 2 cards with a per-bucket
+ΔES Score Gap bullet anchored to the Stockfish baseline. The prior mirror-bucket framing
+was mathematically degenerate: Conv-Gap ≡ Recov-Gap by construction; Parity-Gap = 2·user_parity − 1.
+
+- [ ] **SEC2-ΔES-01**: Each of the 4 Section 2 cards (Conv / Parity / Recov / Skill) renders one ΔES Score Gap bullet centred on 0 with CI whiskers, replacing the prior `You / Opp / Gap` peer-diff row. Reuses `ScoreGapRow` + `MiniBulletChart` (no new chart components).
+- [ ] **SEC2-ΔES-02**: Backend exposes 4 new fields per card (`section2_score_gap_{conv,parity,recov,skill}_{mean,n,p_value,ci_low,ci_high}`) via `compute_paired_difference_test` per bucket. Endgame Skill uses the equal-weighted mean of the three bucket means (D-01), with buckets below `CONFIDENCE_MIN_N` dropped from the average.
+- [ ] **SEC2-ΔES-03**: 4 new zone-band entries in `ZONE_REGISTRY` keyed `section2_score_gap_{conv,parity,recov,skill}` with Cohen's-d collapse verdicts per /benchmarks §3.4.4; codegen regenerates `frontend/src/generated/endgameZones.ts`.
+- [ ] **SEC2-ΔES-04**: Mirror-bucket plumbing retired (D-03 / D-04 / D-05 deletion list): 8 frontend lib symbols + 5 + 5 schema fields + `MIRROR_BUCKET` + `_compute_skill_wire` + `compute_skill_diff_test` + `compute_per_bucket_diff_test` deleted; knip + ty + ruff clean.
+- [ ] **SEC2-ΔES-05**: Each card's `MetricStatPopover` carries bucket-specific copy per D-08 with sign-convention sentence and identical sigmoid-bias caveat one-liner across all 4 popovers; no "vs opponents" framing.
+- [ ] **SEC2-ΔES-06**: LLM payload adds 4 new `section2_score_gap_*` findings to `_findings_endgame_metrics` alongside the existing rate findings (D-09 ADDITIVE); prompt version bumped `endgame_v30` to `endgame_v31` with full changelog entry + dual-label glossary block.
+- [ ] **SEC2-ΔES-07**: Tests cover per-bucket math + Skill equal-weighted invariants (3-component reduction, denominator-drop edge cases, all-empty fallback) + cohort-empty fallback + Vitest snapshots + knip + ty + ruff clean.
+
+Source: `.planning/milestones/v1.17-ROADMAP.md §Phase 87.2 success criteria items 1-7`
+
 ### Section 3 — Endgame Type Breakdown (SEC3)
 
 Replaces the section's `EndgameWDLChart` (grouped horizontal-bar overview) and extends `EndgameConvRecovChart` (per-type gauge-only cards) into full cards.
@@ -116,6 +132,13 @@ Populated by gsd-roadmapper 2026-05-12.
 | SEC3-06 | Phase 87 | Pending |
 | SEC3-07 | Phase 87 | Pending |
 | DATA-02 | Phase 84 | Complete |
+| SEC2-ΔES-01 | Phase 87.2 | Pending |
+| SEC2-ΔES-02 | Phase 87.2 | Pending |
+| SEC2-ΔES-03 | Phase 87.2 | Pending |
+| SEC2-ΔES-04 | Phase 87.2 | Pending |
+| SEC2-ΔES-05 | Phase 87.2 | Pending |
+| SEC2-ΔES-06 | Phase 87.2 | Pending |
+| SEC2-ΔES-07 | Phase 87.2 | Pending |
 | POLISH-01 | Phase 88 | Pending |
 | POLISH-02 | Phase 88 | Pending |
 | POLISH-03 | Phase 88 | Pending |
@@ -123,7 +146,8 @@ Populated by gsd-roadmapper 2026-05-12.
 
 **Coverage:**
 - v1 requirements: 31 total (30 → 27 after 2026-05-12 single-bullet doctrine pivot; SEC2-05, SEC3-03, DATA-01 dropped — see `.planning/notes/v1.17-single-bullet-doctrine.md`. +4 on 2026-05-14 with SEC1-08..11 for Phase 85.1 score-difference hypothesis tests + CIs.)
-- Mapped to phases: 31
+- Phase 87.2 additions: +7 SEC2-ΔES-01..07 (eval-based ΔES Score Gap bullets, sourced from v1.17-ROADMAP.md §Phase 87.2 success criteria).
+- Mapped to phases: 38
 - Unmapped: 0
 
 ---

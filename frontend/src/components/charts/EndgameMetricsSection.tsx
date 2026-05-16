@@ -12,16 +12,16 @@
  * per-card props from `ScoreGapMaterialResponse` and mounts the four cards
  * plus the connector-arrows SVG overlay.
  *
- * v1.17 single-bullet doctrine: each card carries one peer bullet (vs 0) with
- * the mirror-bucket opponent baseline. Section-level h3 / InfoPopover were
- * dropped (D-10); the bucket-taxonomy explainer moves to the page-level h2
- * "Endgame Metrics and ELO" trigger in `Endgames.tsx` (D-11).
+ * Phase 87.2 refactor: MIRROR_BUCKET wiring removed; buildZeroRow updated to
+ * drop the deleted MaterialRow fields; new scoreGap* props threaded from
+ * response.section2_score_gap_{conv,parity,recov,skill}_* to each card.
+ * The section-level "vs opponents" framing is gone per D-08.
  */
 
 import { useRef, type ReactNode } from 'react';
 
-import { MIRROR_BUCKET } from '@/lib/endgameMetrics';
 import type {
+  EndgameWDLSummary,
   MaterialBucket,
   MaterialRow,
   ScoreGapMaterialResponse,
@@ -31,30 +31,6 @@ import { ConnectorArrows } from './EndgameOverallConnectorArrows';
 import { EndgameMetricCard } from './EndgameMetricCard';
 import { EndgameSkillCard } from './EndgameSkillCard';
 
-// Buckets rendered as the row-1 cards, in DOM order. Mobile stacks them in
-// this same order; on lg+ they auto-place across the 3 grid columns.
-const ROW_ONE_BUCKETS: readonly MaterialBucket[] = ['conversion', 'parity', 'recovery'] as const;
-
-// Per-bucket popover content (D-16, lifted verbatim from CONTEXT).
-const METRIC_EXPLANATIONS: Record<MaterialBucket, string> = {
-  conversion:
-    "Your win rate (only wins count) when you entered the endgame with a Stockfish eval ≥ +1.0, compared to your opponents' Conversion against you.",
-  parity:
-    "Your chess score (wins + ½ draws) when you entered the endgame with an eval between −1.0 and +1.0, compared to your opponents' Parity against you.",
-  recovery:
-    "Your save rate (wins + draws count) when you entered the endgame with an eval ≤ −1.0, compared to your opponents' Recovery against you.",
-};
-
-// Popover names describe the BULLET-CHART metric (signed userRate − oppRate
-// gap), distinct from the gauge labels which name the headline rate
-// itself (Conversion / Parity / Recovery). The gauge shows your absolute rate;
-// the popover and bullet chart show your gap vs the opponent baseline.
-const METRIC_NAMES: Record<MaterialBucket, string> = {
-  conversion: 'Conversion Gap',
-  parity: 'Parity Gap',
-  recovery: 'Recovery Gap',
-};
-
 const TILE_TESTIDS: Record<MaterialBucket, string> = {
   conversion: 'tile-conversion',
   parity: 'tile-parity',
@@ -62,8 +38,7 @@ const TILE_TESTIDS: Record<MaterialBucket, string> = {
 };
 
 // Title-tooltip content per bucket. Lives next to the card title and explains
-// the bucket's eval window, scoring rule, and gauge band semantics. The
-// "Endgame Skill" composite + ELO timeline note live in EndgameSkillCard.
+// the bucket's eval window, scoring rule, and gauge band semantics.
 const GAUGE_BAND_BLURB = (
   <p>
     The <strong>gauge</strong> plots your rate against a fixed
@@ -78,7 +53,7 @@ const TITLE_TOOLTIPS: Record<MaterialBucket, ReactNode> = {
     <div className="space-y-2">
       <p>
         <strong>Conversion:</strong> your win rate (only wins count) when you
-        entered the endgame with a Stockfish eval ≥ +1.0 (you ahead).
+        entered the endgame with a Stockfish eval {'>='} +1.0 (you ahead).
       </p>
       {GAUGE_BAND_BLURB}
     </div>
@@ -86,8 +61,8 @@ const TITLE_TOOLTIPS: Record<MaterialBucket, ReactNode> = {
   parity: (
     <div className="space-y-2">
       <p>
-        <strong>Parity:</strong> your chess score (wins + ½ draws) when you
-        entered the endgame with an eval between −1.0 and +1.0 (roughly
+        <strong>Parity:</strong> your chess score (wins + half draws) when you
+        entered the endgame with an eval between -1.0 and +1.0 (roughly
         balanced).
       </p>
       {GAUGE_BAND_BLURB}
@@ -97,7 +72,7 @@ const TITLE_TOOLTIPS: Record<MaterialBucket, ReactNode> = {
     <div className="space-y-2">
       <p>
         <strong>Recovery:</strong> your save rate (wins + draws count) when you
-        entered the endgame with an eval ≤ −1.0 (you behind).
+        entered the endgame with an eval {'<='} -1.0 (you behind).
       </p>
       {GAUGE_BAND_BLURB}
     </div>
@@ -106,8 +81,10 @@ const TITLE_TOOLTIPS: Record<MaterialBucket, ReactNode> = {
 
 /** Synthesize a zero-row for buckets missing from the response. Lets
  * `EndgameMetricCard` render its empty-state branch (gauge at 0% with
- * opacity-50, no WDL bar, no peer-bullet row) cleanly without conditional
- * skipping at the orchestrator level. */
+ * opacity-50, no WDL bar, no ScoreGapRow) cleanly without conditional
+ * skipping at the orchestrator level.
+ * Phase 87.2: opponent_score, opponent_games, diff_p_value, diff_ci_low,
+ * diff_ci_high removed (deleted from MaterialRow per D-05). */
 function buildZeroRow(bucket: MaterialBucket): MaterialRow {
   return {
     bucket,
@@ -117,15 +94,17 @@ function buildZeroRow(bucket: MaterialBucket): MaterialRow {
     draw_pct: 0,
     loss_pct: 0,
     score: 0,
-    opponent_score: null,
-    opponent_games: 0,
-    diff_p_value: null,
-    diff_ci_low: null,
-    diff_ci_high: null,
   };
 }
 
-export function EndgameMetricsSection({ data }: { data: ScoreGapMaterialResponse }) {
+interface EndgameMetricsSectionProps {
+  data: ScoreGapMaterialResponse;
+  /** Games-with-Endgame WDL summary forwarded to the Skill card so it can
+   * render the same games-count + MiniWDLBar layout as the bucket cards. */
+  endgameWdl: EndgameWDLSummary;
+}
+
+export function EndgameMetricsSection({ data, endgameWdl }: EndgameMetricsSectionProps) {
   const gridRef = useRef<HTMLDivElement>(null);
 
   const totalMaterialGames = data.material_rows.reduce((sum, r) => sum + r.games, 0);
@@ -136,11 +115,11 @@ export function EndgameMetricsSection({ data }: { data: ScoreGapMaterialResponse
   return (
     <section data-testid="endgame-metrics-section">
       <p className="text-sm text-muted-foreground">
-        Do you outperform your opponents at converting, holding, and recovering?
+        Do you outperform the Stockfish baseline at converting, holding, and recovering?
       </p>
 
       {/* 3-column card grid on lg+, single-column stacked on mobile.
-          DOM order: Conv → Parity → Recov → Skill. On desktop the row-1 cards
+          DOM order: Conv -> Parity -> Recov -> Skill. On desktop the row-1 cards
           auto-place across the 3 columns; Skill is lifted to col 2 via
           lg:col-start-2 so it lands under Parity. `relative` anchors the
           ConnectorArrows SVG overlay (desktop only). */}
@@ -148,37 +127,63 @@ export function EndgameMetricsSection({ data }: { data: ScoreGapMaterialResponse
         ref={gridRef}
         className="relative grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2"
       >
-        {ROW_ONE_BUCKETS.map((bucket) => {
-          const row = rowByBucket[bucket] ?? buildZeroRow(bucket);
-          const mirror = rowByBucket[MIRROR_BUCKET[bucket]];
-          const sharePct =
-            totalMaterialGames > 0 ? (row.games / totalMaterialGames) * 100 : 0;
-          return (
-            <EndgameMetricCard
-              key={bucket}
-              bucket={bucket}
-              row={row}
-              mirror={mirror}
-              sharePct={sharePct}
-              metricName={METRIC_NAMES[bucket]}
-              metricExplanation={METRIC_EXPLANATIONS[bucket]}
-              tileTestId={TILE_TESTIDS[bucket]}
-              titleTooltip={TITLE_TOOLTIPS[bucket]}
-            />
-          );
-        })}
+        {/* Conversion card */}
+        <EndgameMetricCard
+          key="conversion"
+          bucket="conversion"
+          row={rowByBucket['conversion'] ?? buildZeroRow('conversion')}
+          sharePct={totalMaterialGames > 0 ? ((rowByBucket['conversion']?.games ?? 0) / totalMaterialGames) * 100 : 0}
+          scoreGapMean={data.section2_score_gap_conv_mean}
+          scoreGapN={data.section2_score_gap_conv_n}
+          scoreGapPValue={data.section2_score_gap_conv_p_value}
+          scoreGapCiLow={data.section2_score_gap_conv_ci_low}
+          scoreGapCiHigh={data.section2_score_gap_conv_ci_high}
+          tileTestId={TILE_TESTIDS['conversion']}
+          titleTooltip={TITLE_TOOLTIPS['conversion']}
+        />
+
+        {/* Parity card */}
+        <EndgameMetricCard
+          key="parity"
+          bucket="parity"
+          row={rowByBucket['parity'] ?? buildZeroRow('parity')}
+          sharePct={totalMaterialGames > 0 ? ((rowByBucket['parity']?.games ?? 0) / totalMaterialGames) * 100 : 0}
+          scoreGapMean={data.section2_score_gap_parity_mean}
+          scoreGapN={data.section2_score_gap_parity_n}
+          scoreGapPValue={data.section2_score_gap_parity_p_value}
+          scoreGapCiLow={data.section2_score_gap_parity_ci_low}
+          scoreGapCiHigh={data.section2_score_gap_parity_ci_high}
+          tileTestId={TILE_TESTIDS['parity']}
+          titleTooltip={TITLE_TOOLTIPS['parity']}
+        />
+
+        {/* Recovery card */}
+        <EndgameMetricCard
+          key="recovery"
+          bucket="recovery"
+          row={rowByBucket['recovery'] ?? buildZeroRow('recovery')}
+          sharePct={totalMaterialGames > 0 ? ((rowByBucket['recovery']?.games ?? 0) / totalMaterialGames) * 100 : 0}
+          scoreGapMean={data.section2_score_gap_recov_mean}
+          scoreGapN={data.section2_score_gap_recov_n}
+          scoreGapPValue={data.section2_score_gap_recov_p_value}
+          scoreGapCiLow={data.section2_score_gap_recov_ci_low}
+          scoreGapCiHigh={data.section2_score_gap_recov_ci_high}
+          tileTestId={TILE_TESTIDS['recovery']}
+          titleTooltip={TITLE_TOOLTIPS['recovery']}
+        />
 
         {/* Endgame Skill: lg:col-start-2 places it under Parity on desktop.
             On mobile (single column) it falls naturally after Recovery.
             lg:mt-8 matches the spacing above "Endgame Score Differences". */}
         <div className="lg:col-start-2 lg:mt-8">
           <EndgameSkillCard
-            skill={data.skill ?? null}
-            oppSkill={data.opp_skill ?? null}
-            totalGames={totalMaterialGames}
-            pValue={data.skill_diff_p_value ?? null}
-            ciLow={data.skill_diff_ci_low ?? null}
-            ciHigh={data.skill_diff_ci_high ?? null}
+            skill={data.endgame_skill_rate_mean}
+            endgameWdl={endgameWdl}
+            scoreGapMean={data.section2_score_gap_skill_mean}
+            scoreGapN={data.section2_score_gap_skill_n}
+            scoreGapPValue={data.section2_score_gap_skill_p_value}
+            scoreGapCiLow={data.section2_score_gap_skill_ci_low}
+            scoreGapCiHigh={data.section2_score_gap_skill_ci_high}
             tileTestId="tile-endgame-skill"
           />
         </div>

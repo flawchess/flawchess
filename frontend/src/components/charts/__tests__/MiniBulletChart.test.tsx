@@ -8,6 +8,7 @@ afterEach(() => {
   cleanup();
 });
 import { MiniBulletChart } from '../MiniBulletChart';
+import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 describe('MiniBulletChart — backward compatibility', () => {
   it('renders unchanged when ciLow and ciHigh are omitted', () => {
@@ -358,5 +359,128 @@ describe('MiniBulletChart — center prop (260504-my2)', () => {
       'div.absolute.top-0.bottom-0.w-px.bg-foreground\\/50',
     ) as HTMLElement | null;
     expect(leftPercent(refLine)).toBeCloseTo(50, 3);
+  });
+});
+
+describe('MiniBulletChart — asymmetric neutral zone (260516-0ax)', () => {
+  /**
+   * Locks in that `neutralMin` and `neutralMax` are independent signed offsets
+   * from `center`. Asymmetric tuples like (-0.11, 0.00) or (+0.01, +0.11) must
+   * paint the colored band offset from the center tick — no symmetrization,
+   * no averaging, no magnitude collapse along the path from props to render.
+   *
+   * Used by Section 2 ΔES Score Gap zones (per benchmarks-latest.md §3.4.4)
+   * where Conversion sits below 0 and Recovery sits above 0.
+   */
+
+  // Width parsing helper — tolerates floating-point format drift across
+  // platforms (e.g. '36.25%' vs '36.2500000000001%') while keeping the
+  // expectations on the exact percentages computed in PLAN.md.
+  function widthPct(el: Element | null): number | null {
+    if (!el) return null;
+    const s = (el as HTMLElement).style.width;
+    if (!s) return null;
+    const n = Number.parseFloat(s.replace('%', ''));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // Browsers normalize numeric components in inline `style.backgroundColor`
+  // (e.g. JSDOM rewrites '0.50' to '0.5'). Collapse all numbers to fixed
+  // decimals on both sides so the comparison is invariant to that drift.
+  function normalizeOklch(s: string | undefined): string {
+    if (!s) return '';
+    return s.replace(/[\d]+\.?[\d]*/g, (m) => Number.parseFloat(m).toString());
+  }
+
+  function zoneDivs(container: Element): readonly Element[] {
+    const chart = container.querySelector('[data-testid="mini-bullet-chart"]');
+    if (!chart) return [];
+    // The zone band container is the first ".absolute.inset-0.flex" child of
+    // the chart root (the three zone-color divs are its direct children).
+    const zoneRow = chart.querySelector(':scope > div.absolute.inset-0.flex');
+    if (!zoneRow) return [];
+    return Array.from(zoneRow.children);
+  }
+
+  it('left-skewed band (-0.11, 0.00) — band sits entirely to the LEFT of center', () => {
+    // axisMin=-0.40, axisMax=+0.40
+    // toPct(-0.11) = ((-0.11 + 0.40) / 0.80) * 100 = 36.25%
+    // toPct(0)     = ((0    + 0.40) / 0.80) * 100 = 50.00%
+    // -> DANGER=36.25%, NEUTRAL=13.75%, SUCCESS=50%
+    const { container } = render(
+      <MiniBulletChart value={0} neutralMin={-0.11} neutralMax={0} center={0} domain={0.40} />,
+    );
+    const [danger, neutral, success] = zoneDivs(container);
+    expect(widthPct(danger ?? null)).toBeCloseTo(36.25, 4);
+    expect(widthPct(neutral ?? null)).toBeCloseTo(13.75, 4);
+    expect(widthPct(success ?? null)).toBeCloseTo(50, 4);
+  });
+
+  it('right-skewed band (+0.01, +0.11) — band sits entirely to the RIGHT of center', () => {
+    // toPct(0.01) = ((0.01 + 0.40) / 0.80) * 100 = 51.25%
+    // toPct(0.11) = ((0.11 + 0.40) / 0.80) * 100 = 63.75%
+    // -> DANGER=51.25%, NEUTRAL=12.5%, SUCCESS=36.25%
+    const { container } = render(
+      <MiniBulletChart value={0} neutralMin={0.01} neutralMax={0.11} center={0} domain={0.40} />,
+    );
+    const [danger, neutral, success] = zoneDivs(container);
+    expect(widthPct(danger ?? null)).toBeCloseTo(51.25, 4);
+    expect(widthPct(neutral ?? null)).toBeCloseTo(12.5, 4);
+    expect(widthPct(success ?? null)).toBeCloseTo(36.25, 4);
+  });
+
+  it('symmetric band (-0.05, +0.05) — band centered on 0 (regression control)', () => {
+    // toPct(-0.05) = ((-0.05 + 0.40) / 0.80) * 100 = 43.75%
+    // toPct(+0.05) = ((+0.05 + 0.40) / 0.80) * 100 = 56.25%
+    // -> DANGER=43.75%, NEUTRAL=12.5%, SUCCESS=43.75%
+    const { container } = render(
+      <MiniBulletChart value={0} neutralMin={-0.05} neutralMax={0.05} center={0} domain={0.40} />,
+    );
+    const [danger, neutral, success] = zoneDivs(container);
+    expect(widthPct(danger ?? null)).toBeCloseTo(43.75, 4);
+    expect(widthPct(neutral ?? null)).toBeCloseTo(12.5, 4);
+    expect(widthPct(success ?? null)).toBeCloseTo(43.75, 4);
+  });
+
+  it('zone color follows asymmetric bounds (lo=-0.11, hi=0.00, center=0)', () => {
+    // With (lo, hi) = (-0.11, 0.00) and center=0:
+    //   absNeutralMin = -0.11, absNeutralMax = 0.00
+    //   value < -0.11        -> DANGER
+    //   -0.11 <= value < 0   -> NEUTRAL
+    //   value >= 0           -> SUCCESS
+
+    // value = -0.20 -> DANGER
+    const { container: cDanger } = render(
+      <MiniBulletChart value={-0.20} neutralMin={-0.11} neutralMax={0} center={0} domain={0.40} />,
+    );
+    const barDanger = cDanger.querySelector(
+      '[data-testid="mini-bullet-value-bar"]',
+    ) as HTMLElement | null;
+    expect(barDanger).not.toBeNull();
+    expect(normalizeOklch(barDanger?.style.backgroundColor)).toBe(normalizeOklch(ZONE_DANGER));
+
+    cleanup();
+
+    // value = -0.05 -> NEUTRAL (lies inside the off-center band)
+    const { container: cNeutral } = render(
+      <MiniBulletChart value={-0.05} neutralMin={-0.11} neutralMax={0} center={0} domain={0.40} />,
+    );
+    const barNeutral = cNeutral.querySelector(
+      '[data-testid="mini-bullet-value-bar"]',
+    ) as HTMLElement | null;
+    expect(barNeutral).not.toBeNull();
+    expect(normalizeOklch(barNeutral?.style.backgroundColor)).toBe(normalizeOklch(ZONE_NEUTRAL));
+
+    cleanup();
+
+    // value = +0.05 -> SUCCESS (above absNeutralMax = 0)
+    const { container: cSuccess } = render(
+      <MiniBulletChart value={0.05} neutralMin={-0.11} neutralMax={0} center={0} domain={0.40} />,
+    );
+    const barSuccess = cSuccess.querySelector(
+      '[data-testid="mini-bullet-value-bar"]',
+    ) as HTMLElement | null;
+    expect(barSuccess).not.toBeNull();
+    expect(normalizeOklch(barSuccess?.style.backgroundColor)).toBe(normalizeOklch(ZONE_SUCCESS));
   });
 });

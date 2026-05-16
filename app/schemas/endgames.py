@@ -293,23 +293,16 @@ class MaterialRow(BaseModel):
     """
 
     bucket: MaterialBucket
-    label: str  # "Conversion (\u2265 +1.0)" | "Parity" | "Recovery (\u2264 \u22121.0)"
+    label: str  # "Conversion (>= +1.0)" | "Parity" | "Recovery (<= -1.0)"
     games: int
     win_pct: float  # 0-100
     draw_pct: float  # 0-100
     loss_pct: float  # 0-100
     score: float  # 0.0-1.0, formula: (win_pct + draw_pct/2) / 100
-    # opponent_score: mirror-bucket score (1 - user_score); None when sample < _MIN_OPPONENT_SAMPLE.
-    opponent_score: float | None
-    # opponent_games: opponent's sample size (== swap-bucket game count).
-    opponent_games: int
-    # Phase 86 (SEC2-06 / D-06): Wald-z p-value on userRate − opponentRate for this bucket.
-    # None when opp_row.N < MIN_OPPONENT_BASELINE_GAMES (=10, D-05 strict-opp-gate) or user-side games == 0.
-    diff_p_value: float | None = None
-    # Phase 86 (SEC2-06 / D-06): lower bound of 95% Wald-z CI on the per-bucket diff; same gating as diff_p_value.
-    diff_ci_low: float | None = None
-    # Phase 86 (SEC2-06 / D-06): upper bound of 95% Wald-z CI on the per-bucket diff; same gating as diff_p_value.
-    diff_ci_high: float | None = None
+    # Phase 87.2 (D-05): opponent_score, opponent_games, diff_p_value, diff_ci_low,
+    # diff_ci_high deleted. The mirror-bucket Wald-z peer-bullet was mathematically
+    # degenerate (Conv-Gap == Recov-Gap by symmetry; Parity-Gap affine of gauge).
+    # Replaced by the eval-baseline Delta-ES Score Gap fields on ScoreGapMaterialResponse.
 
 
 class ScoreGapTimelinePoint(BaseModel):
@@ -362,9 +355,13 @@ class ScoreGapMaterialResponse(BaseModel):
         +1.0 / <= -1.0). Field name kept as `material_rows` for wire-format
         compatibility; the underlying signal is engine eval, not material.
 
-    Phase 60: each MaterialRow carries an opponent_score (1 - user_score[swap_bucket])
-    and opponent_games. overall_score was removed; it was only consumed by the old
-    global-average baseline display.
+    Phase 87.2 (D-05/D-06): the 5 mirror-bucket rate-diff fields (skill, opp_skill,
+    skill_diff_p_value, skill_diff_ci_low, skill_diff_ci_high on this response;
+    opponent_score, opponent_games, diff_p_value, diff_ci_low, diff_ci_high on
+    MaterialRow) have been deleted and replaced by the 20 eval-baseline Delta-ES
+    Score Gap fields below (section2_score_gap_{conv,parity,recov,skill}_{mean,n,
+    p_value,ci_low,ci_high}). The rate-based peer-bullet was mathematically
+    degenerate; see Phase 87.2 CONTEXT D-05.
 
     quick-260417-o2l: `timeline` is a weekly rolling-window series of the score
     difference between endgame and non-endgame games. Each side keeps its own
@@ -395,23 +392,48 @@ class ScoreGapMaterialResponse(BaseModel):
     score_difference_ci_high: float | None = None
     """Upper bound of 95% Wald-z CI on score_difference. None when min(...) < 2."""
 
-    # Phase 86 (SEC2-03 / SEC2-08 / D-01..D-02): Skill composite peer-bullet sig test.
-    # Skill scalars are None only when 0 active buckets (where active = both user_N>0 AND opp_N>0);
-    # sig fields None when n_active < 2 OR any active opp component has opp_row.N < 10 (D-05 strict-opp-gate).
-    skill: float | None = None
-    """User's Skill composite: mean of per-bucket headline rates across active buckets. None when n_active == 0."""
+    # Phase 87.2 (D-06): per-bucket Score Gap fields on the Section 2 response.
+    # Flat shape mirrors Phase 87.1's type_achievable_score_gap_* on EndgameCategoryStats.
+    # D-01: positive = user outperformed Stockfish baseline; negative = below.
+    # Defaults are None for backward compat with existing constructor call sites.
 
-    opp_skill: float | None = None
-    """Opponent Skill composite: mean of `1 − userRate(mirror_row)` across active buckets. None when n_active == 0."""
+    # Conversion bucket (eval_entry >= +1.0 pawn, user perspective):
+    section2_score_gap_conv_mean: float | None = None
+    section2_score_gap_conv_n: int | None = None
+    section2_score_gap_conv_p_value: float | None = None
+    section2_score_gap_conv_ci_low: float | None = None
+    section2_score_gap_conv_ci_high: float | None = None
 
-    skill_diff_p_value: float | None = None
-    """Two-sided Wald-z p-value on (skill − opp_skill). None when n_active < 2 or any active opp component has opp_row.N < 10."""
+    # Parity bucket (|eval_entry| <= 1.0 pawn):
+    section2_score_gap_parity_mean: float | None = None
+    section2_score_gap_parity_n: int | None = None
+    section2_score_gap_parity_p_value: float | None = None
+    section2_score_gap_parity_ci_low: float | None = None
+    section2_score_gap_parity_ci_high: float | None = None
 
-    skill_diff_ci_low: float | None = None
-    """Lower bound of 95% Wald-z CI on (skill − opp_skill). Same gating as skill_diff_p_value."""
+    # Recovery bucket (eval_entry <= -1.0 pawn):
+    section2_score_gap_recov_mean: float | None = None
+    section2_score_gap_recov_n: int | None = None
+    section2_score_gap_recov_p_value: float | None = None
+    section2_score_gap_recov_ci_low: float | None = None
+    section2_score_gap_recov_ci_high: float | None = None
 
-    skill_diff_ci_high: float | None = None
-    """Upper bound of 95% Wald-z CI on (skill − opp_skill). Same gating as skill_diff_p_value."""
+    # Skill (equal-weighted mean of the three bucket means; D-01):
+    section2_score_gap_skill_mean: float | None = None
+    section2_score_gap_skill_n: int | None = None  # total span count across active buckets
+    section2_score_gap_skill_p_value: float | None = None
+    section2_score_gap_skill_ci_low: float | None = None
+    section2_score_gap_skill_ci_high: float | None = None
+
+    # quick-260515-wye: rate-based Endgame Skill composite for the gauge.
+    # Equal-weighted mean of (Conv chess-score, Parity chess-score, Recov
+    # chess-score) over active buckets (bucket_games >= CONFIDENCE_MIN_N).
+    # Distinct from section2_score_gap_skill_mean (the ΔES bullet value above);
+    # the gauge plots the absolute rate composite while the bullet plots the
+    # eval-baseline delta. Phase 87.2 D-05 dropped the old `skill` field
+    # alongside the peer-diff family — this field restores the gauge driver.
+    # None when zero buckets clear the floor.
+    endgame_skill_rate_mean: float | None = None
 
 
 class ClockStatsRow(BaseModel):

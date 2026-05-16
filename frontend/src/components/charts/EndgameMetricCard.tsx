@@ -1,60 +1,72 @@
 /**
  * Phase 86 — Shared shell for the Conversion / Parity / Recovery cards of the
- * "Endgame Metrics" 4-card layout. Renders gauge → games-count row → WDL bar →
- * peer-bullet row (`You / Opp / Diff` text + `MiniBulletChart` for the signed
- * `userRate − opponentRate` vs 0).
+ * "Endgame Metrics" 4-card layout. Renders gauge -> games-count row -> WDL bar ->
+ * per-bucket eval-based Delta-ES Score Gap bullet (ScoreGapRow).
  *
- * v1.17 single-bullet doctrine: per-card peer bullet vs 0 with the sig-gating
- * triple (`isConfident(deriveLevel(p, n)) ∧ outside-neutral-band ∧
- * n >= MIN_OPPONENT_BASELINE_GAMES`) applied to the diff-percent font color
- * only. Gauges stay always-colored; WDL bar stays untinted. (POLISH-01 /
- * POLISH-02 deferred to Phase 88.)
+ * Phase 87.2 refactor: replaced the rate-based peer-bullet row (You / Opp / Gap
+ * text + MiniBulletChart vs mirror-bucket opponent) with a per-bucket ScoreGapRow
+ * anchored on the Stockfish baseline (vs 0). The mirror-bucket `mirror` prop and
+ * all D-03 lib symbols are deleted. Per D-08: no "vs opponents" framing anywhere.
+ * Zone-only tint on the ScoreGapRow value (Phase 85.1 D-04 inherited).
  */
 
-import type { CSSProperties, ReactNode } from 'react';
+import { useMemo } from 'react';
+import type { ReactNode } from 'react';
 
-import { Swords } from 'lucide-react';
+import { Cpu, Swords } from 'lucide-react';
 
-import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { isConfident } from '@/lib/significance';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import {
   BUCKET_DISPLAY_LABELS,
   BUCKET_DISPLAY_LABELS_WITH_METRIC,
-  BULLET_DOMAIN,
   FIXED_GAUGE_ZONES,
-  MIN_OPPONENT_BASELINE_GAMES,
-  NEUTRAL_ZONE_MAX,
-  NEUTRAL_ZONE_MIN,
-  formatDiffPct,
-  formatScorePct,
-  opponentRate,
-  userRate,
 } from '@/lib/endgameMetrics';
+// Per-bucket neutral bands for the Section 2 Delta-ES Score Gap bullet (D-02 / Plan 01).
+import {
+  SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN,
+  SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX,
+  SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN,
+  SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX,
+  SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN,
+  SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX,
+} from '@/generated/endgameZones';
 import type { MaterialBucket, MaterialRow } from '@/types/endgames';
 
+import { ScoreGapRow } from './EndgameOverallScoreGapRow';
 import { deriveLevel } from './EndgameOverallShared';
+
+// Bucket-specific popover copy per D-08 with identical sigmoid-bias caveat.
+// No "vs opponents" framing anywhere (D-08 rule: Stockfish-baseline anchor).
+// No em-dashes per CLAUDE.md style guide.
+const POPOVER_COPY: Record<MaterialBucket, string> = {
+  conversion:
+    'Average per-span Score Gap on endgame spans you entered ahead by >= 1 pawn. Positive = you converted advantages above the Stockfish baseline; negative = you bled away expected score on winning entries. Positive = above the Stockfish baseline; negative = below.',
+  parity:
+    'Average per-span Score Gap on endgame spans you entered roughly balanced (eval within +/-1 pawn). Positive = you outperformed the baseline from balanced; negative = you underperformed. Positive = above the Stockfish baseline; negative = below.',
+  recovery:
+    'Average per-span Score Gap on endgame spans you entered behind by >= 1 pawn. Positive = you salvaged disadvantages above the Stockfish baseline; negative = the position deteriorated further than expected. Positive = above the Stockfish baseline; negative = below.',
+};
 
 interface EndgameMetricCardProps {
   bucket: MaterialBucket;
   row: MaterialRow;
-  /** Mirror-bucket row (Conv ↔ Recov, Parity ↔ Parity). Undefined if the response
-   * is missing the mirror — `opponentRate` returns null in that case. */
-  mirror: MaterialRow | undefined;
   /** Share of total material games this bucket occupies, as a percent 0-100
    * (e.g. 45.5 for 45.5%). Computed by the caller from `row.games / totalGames`. */
   sharePct: number;
-  /** Bold metric name shown inside the popover (e.g. "Conversion"). */
-  metricName: string;
-  /** 1-2 sentence inline explanation rendered next to the bold name. */
-  metricExplanation: ReactNode;
+  /** Phase 87.2: 5 eval-baseline Delta-ES Score Gap fields from
+   * ScoreGapMaterialResponse.section2_score_gap_{conv,parity,recov}_*. */
+  scoreGapMean: number | null;
+  scoreGapN: number | null;
+  scoreGapPValue: number | null;
+  scoreGapCiLow: number | null;
+  scoreGapCiHigh: number | null;
   /** Container data-testid (e.g. "tile-conversion"). Sub-element testids derive
-   * from this via template literals: `${tileTestId}-diff`, `${tileTestId}-muted`,
-   * `${tileTestId}-info`. */
+   * from this: `${tileTestId}-score-gap-bullet`, `${tileTestId}-score-gap-value`,
+   * `${tileTestId}-score-gap-info`. */
   tileTestId: string;
   /** Content rendered inside the InfoPopover next to the card's h3 title. */
   titleTooltip: ReactNode;
@@ -63,32 +75,59 @@ interface EndgameMetricCardProps {
 export function EndgameMetricCard({
   bucket,
   row,
-  mirror,
   sharePct,
-  metricName,
-  metricExplanation,
+  scoreGapMean,
+  scoreGapN,
+  scoreGapPValue,
+  scoreGapCiLow,
+  scoreGapCiHigh,
   tileTestId,
   titleTooltip,
 }: EndgameMetricCardProps) {
-  const userR = userRate(row);
-  const oppR = opponentRate(row, mirror);
+  const userR = bucket === 'conversion'
+    ? row.win_pct / 100
+    : bucket === 'recovery'
+      ? (row.win_pct + row.draw_pct) / 100
+      : row.score;
   const hasGames = row.games > 0;
-  const hasOpponent =
-    oppR !== null && row.opponent_games >= MIN_OPPONENT_BASELINE_GAMES;
 
-  // Diff is only meaningful when opponent is available; otherwise unused.
-  const diff = hasOpponent ? userR - (oppR as number) : 0;
+  // Phase 87.2: per-bucket Delta-ES Score Gap derivation.
+  // Zone-only tint (Phase 85.1 D-04): no sig-gate on the row font color.
+  const gapMean = scoreGapMean;
+  const gapN = scoreGapN ?? 0;
+  const showGapRow = gapN > 0;
+  const gapFormatted =
+    gapMean != null
+      ? (gapMean >= 0 ? '+' : '') + `${Math.round(gapMean * 100)}%`
+      : '—';
 
-  // Sig-gating triple: confident level AND outside the neutral band AND
-  // sample-size floor met. The MIN_OPPONENT_BASELINE_GAMES floor is encoded
-  // both in `hasOpponent` (controls whether the row renders) and in `deriveLevel`
-  // (uses MIN_GAMES_FOR_RELIABLE_STATS, same threshold).
-  const level = deriveLevel(row.diff_p_value, row.opponent_games);
-  const outsideNeutral = diff < NEUTRAL_ZONE_MIN || diff >= NEUTRAL_ZONE_MAX;
-  const paintColor = hasOpponent && isConfident(level) && outsideNeutral;
-  const diffStyle: CSSProperties | undefined = paintColor
-    ? { color: diff < NEUTRAL_ZONE_MIN ? ZONE_DANGER : ZONE_SUCCESS }
-    : undefined;
+  const { section2NeutralMin, section2NeutralMax } = useMemo(
+    () => ({
+      section2NeutralMin:
+        bucket === 'conversion'
+          ? SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN
+          : bucket === 'parity'
+            ? SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN
+            : SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN,
+      section2NeutralMax:
+        bucket === 'conversion'
+          ? SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX
+          : bucket === 'parity'
+            ? SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX
+            : SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX,
+    }),
+    [bucket],
+  );
+
+  const gapColor: string | undefined =
+    gapMean != null
+      ? gapMean < section2NeutralMin
+        ? ZONE_DANGER
+        : gapMean >= section2NeutralMax
+          ? ZONE_SUCCESS
+          : undefined
+      : undefined;
+  const gapLevel = deriveLevel(scoreGapPValue ?? null, gapN);
 
   const sharePctFormatted = sharePct.toFixed(1);
   const gamesCountFormatted = row.games.toLocaleString();
@@ -106,7 +145,7 @@ export function EndgameMetricCard({
         </InfoPopover>
       </h3>
       <div className="flex flex-col gap-4">
-        {/* Gauge row — opacity-50 when no games per D-17. */}
+        {/* Gauge row -- opacity-50 when no games per D-17. */}
         <div className={`flex justify-center${hasGames ? '' : ' opacity-50'}`}>
           <EndgameGauge
             value={userR * 100}
@@ -117,7 +156,7 @@ export function EndgameMetricCard({
 
         {hasGames ? (
           <>
-            {/* Games-count row — mirrors EndgameOverallCard.tsx:88-100. */}
+            {/* Games-count row -- mirrors EndgameOverallCard.tsx:88-100. */}
             <div className="flex flex-col gap-2">
               <span className="flex items-center gap-2 text-sm tabular-nums w-full">
                 <span className="text-muted-foreground">Win/Draw/Loss</span>
@@ -140,83 +179,53 @@ export function EndgameMetricCard({
               </div>
             </div>
 
-            {/* Peer-bullet row */}
-            {hasOpponent ? (
-              <div className="flex flex-col gap-2">
-                <span className="flex items-center gap-1 text-sm tabular-nums w-full flex-wrap">
-                  <span>
-                    <span className="text-muted-foreground">You: </span>
-                    <span
-                      className="font-medium"
-                      data-testid={`${tileTestId}-you`}
-                    >
-                      {formatScorePct(userR)}
+            {/* Phase 87.2: per-bucket Delta-ES Score Gap bullet (replaces peer-bullet row).
+                Shows when gapN > 0; hidden when no span data yet. */}
+            {showGapRow && (
+              <div data-testid={`${tileTestId}-score-gap-bullet`}>
+                <ScoreGapRow
+                  label={
+                    <span className="inline-flex items-center gap-1">
+                      <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                      {`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap:`}
                     </span>
-                  </span>
-                  <span>
-                    <span className="text-muted-foreground">Opp: </span>
-                    <span
-                      className="font-medium"
-                      data-testid={`${tileTestId}-opp`}
-                    >
-                      {formatScorePct(oppR as number)}
-                    </span>
-                  </span>
-                  <span>
-                    <span className="text-muted-foreground">Gap: </span>
-                    <span
-                      className="font-semibold"
-                      style={diffStyle}
-                      data-testid={`${tileTestId}-diff`}
-                    >
-                      {formatDiffPct(userR, oppR as number)}
-                    </span>
-                  </span>
-                  <MetricStatPopover
-                    name={metricName}
-                    explanation={metricExplanation}
-                    value={userR - (oppR as number)}
-                    baseline={0}
-                    unit="percent"
-                    gameCount={row.opponent_games}
-                    level={level}
-                    pValue={row.diff_p_value}
-                    vocabulary="score"
-                    neutralLower={NEUTRAL_ZONE_MIN}
-                    neutralUpper={NEUTRAL_ZONE_MAX}
-                    baselineLabel="0%"
-                    relative
-                    methodology={
-                      <>
-                        Score: per-bucket headline rate (Conv = wins, Parity = wins + ½ draws, Recov = wins + draws).<br />
-                        Test: Wald-z on the signed difference vs 0.<br />
-                        Confidence interval: 95% normal-approx on the diff.
-                      </>
-                    }
-                    testId={`${tileTestId}-info`}
-                    ariaLabel={`What is ${metricName}?`}
-                  />
-                </span>
-                <div className="min-w-0 tabular-nums">
-                  <MiniBulletChart
-                    value={diff}
-                    neutralMin={NEUTRAL_ZONE_MIN}
-                    neutralMax={NEUTRAL_ZONE_MAX}
-                    domain={BULLET_DOMAIN}
-                    ciLow={row.diff_ci_low ?? undefined}
-                    ciHigh={row.diff_ci_high ?? undefined}
-                    barColor="neutral"
-                    ariaLabel={`${BUCKET_DISPLAY_LABELS[bucket]}: ${formatDiffPct(userR, oppR as number)} vs opponents`}
-                  />
-                </div>
+                  }
+                  value={gapMean ?? 0}
+                  formatted={gapFormatted}
+                  resultColor={gapColor}
+                  valueTestId={`${tileTestId}-score-gap-value`}
+                  ariaLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap: ${gapFormatted}`}
+                  neutralMin={section2NeutralMin}
+                  neutralMax={section2NeutralMax}
+                  ciLow={scoreGapCiLow ?? undefined}
+                  ciHigh={scoreGapCiHigh ?? undefined}
+                  tooltip={
+                    <MetricStatPopover
+                      name={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
+                      explanation={POPOVER_COPY[bucket]}
+                      value={gapMean ?? 0}
+                      baseline={0}
+                      unit="percent"
+                      gameCount={gapN}
+                      level={gapLevel}
+                      pValue={scoreGapPValue}
+                      vocabulary="score"
+                      neutralLower={section2NeutralMin}
+                      neutralUpper={section2NeutralMax}
+                      baselineLabel="0%"
+                      methodology={
+                        <>
+                          Score: per-span exit score minus Stockfish expected score from span entry eval.<br />
+                          Test: paired one-sample z-test on per-span Delta-ES values vs 0.<br />
+                          Confidence interval: 95% normal-approx on the paired diffs.
+                        </>
+                      }
+                      testId={`${tileTestId}-score-gap-info`}
+                      ariaLabel={`What is ${BUCKET_DISPLAY_LABELS[bucket]} Score Gap?`}
+                    />
+                  }
+                />
               </div>
-            ) : (
-              <span
-                className="text-sm text-muted-foreground"
-                data-testid={`${tileTestId}-muted`}
-              >
-                n &lt; {MIN_OPPONENT_BASELINE_GAMES}, baseline unavailable
-              </span>
             )}
           </>
         ) : (

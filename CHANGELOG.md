@@ -16,8 +16,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Phase 87.2: Section 2 cards (Conversion, Parity, Recovery, Endgame Skill) now show a per-bucket Score Gap bullet anchored to the Stockfish baseline instead of the previous rate-based peer-diff bullet.** Conversion shows score gap on spans you entered ahead; Recovery on spans you entered behind; Parity on balanced spans; Skill is the equal-weighted average of the three. Auto-generated endgame insights reference the new Section 2 Score Gap family.
 - **Endgame Stats: concept terminology title-cased.** The "Endgame statistics concepts" panel and every reference to the panel's terms across the Endgames Stats page (concept accordion, info popovers, aria-labels, headings, gauge labels, Home page FAQ) now uses title case for the named concepts: Endgame Phase, Endgame Type(s), Endgame Sequence, Endgame Entry Eval, Achievable Score, Endgame Score, Non-Endgame Score. The LLM Insights prompt is updated to match (UI-label table + glossary + prose) and the prompt version bumps `endgame_v27` → `endgame_v28` to invalidate cached reports so newly generated narration uses the capitalized terms.
 - **Endgame "Overall Performance" section redesigned as 3-card composite (Phase 85).** Replaces the legacy `EndgamePerformanceSection` table and the "Start vs End" twin-tile layout with three cards: "Games ending in Middlegame" (WDL + score), "At Endgame Entry" (entry eval + Stockfish achievable score, no WDL), and "Endgame results" (WDL + score). The Endgame Score Gap tile sits under Card 2 on desktop and stacks at the bottom on mobile. Card scores use sig-gated tinting (Wilson confidence on n>=10 cohorts) and per-row info popovers explain Endgame Score Gap and Achievable Score Gap. Backend exposes `non_endgame_score_p_value` alongside the existing endgame p-value for symmetric gating.
+
+### Removed
+
+- **Phase 87.2: Rate-based peer-diff bullet on Section 2 cards (the `You / Opp / Gap` row).** The prior framing produced mathematically identical Conversion and Recovery values by construction; the new Stockfish-anchored framing yields genuinely independent per-bucket signals.
 
 ### Fixed
 

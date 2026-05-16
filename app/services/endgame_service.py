@@ -70,12 +70,12 @@ from app.services.eval_utils import (
 )
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
 from app.services.score_confidence import (
+    CI_Z_95,
+    CONFIDENCE_MIN_N,
     compute_confidence_bucket,
     compute_paired_difference_test,
-    compute_per_bucket_diff_test,
     compute_score_confidence_from_mean,
     compute_score_difference_test,
-    compute_skill_diff_test,
     wilson_bounds,
 )
 
@@ -340,7 +340,7 @@ SCORE_GAP_TIMELINE_WINDOW = 100
 
 def _aggregate_endgame_stats(
     rows: Sequence[Row[Any] | tuple[Any, ...]],
-) -> list[EndgameCategoryStats]:
+) -> tuple[list[EndgameCategoryStats], dict[str, list[float]]]:
     """Aggregate raw per-(game, class) endgame rows into EndgameCategoryStats list.
 
     Each row is: (game_id, endgame_class_int, result, user_color, eval_cp, eval_mate)
@@ -353,10 +353,15 @@ def _aggregate_endgame_stats(
     - Conversion: win rate when user entered with eval advantage (REFAC-02) — D-08
     - Recovery: draw+win rate when user entered with eval deficit (REFAC-02) — D-09
 
-    Returns categories sorted by total game count descending (D-05).
+    Phase 87.2 (D-01): also builds gaps_by_bucket — a per-bucket ΔES accumulator
+    at per-span grain (not per-game). Returned alongside the categories list so
+    the orchestrator can thread it to _compute_score_gap_material.
+
+    Returns (categories, gaps_by_bucket) where categories are sorted by total
+    game count descending (D-05) and gaps_by_bucket is a plain dict (not defaultdict).
     """
     if not rows:
-        return []
+        return [], {}
 
     # Accumulators per endgame class (per D-02: TypedDicts for internal data structures)
     wdl: dict[EndgameClass, dict[str, int]] = defaultdict(
@@ -376,6 +381,11 @@ def _aggregate_endgame_stats(
     # Phase 85.1 SEC1-10 for the page-level Achievable Score Gap) is invoked
     # below in the per-class builder loop.
     gaps_by_class: dict[EndgameClass, list[float]] = defaultdict(list)
+    # Phase 87.2 (D-01): per-bucket ΔES accumulator. Shares iteration with
+    # gaps_by_class; bucket already computed at the _classify_endgame_bucket
+    # call below for the rate-based counts. Per-span grain (not per-game):
+    # a game spanning two bucket classes contributes a span-gap to each bucket.
+    gaps_by_bucket: dict[str, list[float]] = defaultdict(list)
 
     for row in rows:
         # Phase 87.1: rows are 8-column SA Rows in prod (Phase 87.1 repo
@@ -468,6 +478,10 @@ def _aggregate_endgame_stats(
         )
         if gap is not None:
             gaps_by_class[endgame_class].append(gap)
+            # Phase 87.2 (D-01): bucket is already computed above; append the
+            # same gap into the bucket cohort for the per-bucket paired-z test.
+            # Excluded when gap is None (NULL-eval spans, same gate as per-class).
+            gaps_by_bucket[bucket].append(gap)
 
     # Build EndgameCategoryStats objects
     categories: list[EndgameCategoryStats] = []
@@ -604,7 +618,8 @@ def _aggregate_endgame_stats(
     # Sort by total descending (D-05) — not a fixed category order
     categories.sort(key=lambda c: c.total, reverse=True)
 
-    return categories
+    # Convert defaultdict to plain dict to avoid downstream defaultdict surprises.
+    return categories, dict(gaps_by_bucket)
 
 
 async def get_endgame_stats(
@@ -638,7 +653,9 @@ async def get_endgame_stats(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    categories = _aggregate_endgame_stats(rows)
+    # _aggregate_endgame_stats returns (categories, gaps_by_bucket) as of Phase 87.2.
+    # get_endgame_stats does not use gaps_by_bucket — it's consumed by get_endgame_overview.
+    categories, _gaps_by_bucket = _aggregate_endgame_stats(rows)
 
     # Total games matching current filters (not just endgame games)
     total_games = await count_filtered_games(
@@ -990,46 +1007,6 @@ def _aggregate_bucket_counts(
     return bucket_wins, bucket_draws, bucket_losses, bucket_games
 
 
-def _compute_skill_wire(
-    bucket_wins: dict[MaterialBucket, int],
-    bucket_draws: dict[MaterialBucket, int],
-    bucket_losses: dict[MaterialBucket, int],
-    bucket_games: dict[MaterialBucket, int],
-) -> tuple[float | None, float | None, float | None, float | None, float | None]:
-    """Wire compute_skill_diff_test for the aggregate Skill peer-bullet test.
-
-    The opp_*_row arguments are the USER's rows in the mirror bucket per the
-    swap dict (conversion <-> recovery, parity <-> parity); compute_skill_diff_test
-    applies the W<->L swap internally to derive opp's headline rate.
-    """
-    conv_row = (
-        bucket_wins["conversion"],
-        bucket_draws["conversion"],
-        bucket_losses["conversion"],
-        bucket_games["conversion"],
-    )
-    parity_row = (
-        bucket_wins["parity"],
-        bucket_draws["parity"],
-        bucket_losses["parity"],
-        bucket_games["parity"],
-    )
-    recov_row = (
-        bucket_wins["recovery"],
-        bucket_draws["recovery"],
-        bucket_losses["recovery"],
-        bucket_games["recovery"],
-    )
-    return compute_skill_diff_test(
-        conv_row,
-        parity_row,
-        recov_row,
-        opp_conv_row=recov_row,
-        opp_parity_row=parity_row,
-        opp_recov_row=conv_row,
-    )
-
-
 def _bucket_pcts_and_scores(
     bucket_wins: dict[MaterialBucket, int],
     bucket_draws: dict[MaterialBucket, int],
@@ -1055,13 +1032,9 @@ def _bucket_pcts_and_scores(
     return bucket_score, bucket_pct
 
 
-# Mirror-bucket map: opponent's score in user's bucket B is recoverable from
-# user's score in mirror[B] via same-game symmetry (Phase 60).
-_MIRROR_BUCKET: dict[MaterialBucket, MaterialBucket] = {
-    "conversion": "recovery",
-    "parity": "parity",
-    "recovery": "conversion",
-}
+# Phase 87.2 (D-05): _MIRROR_BUCKET and opponent_score / diff_* fields deleted.
+# The peer-bullet WDL sig-test approach (Phase 60/86) is replaced by the
+# per-bucket ΔES Score Gap metric (Phase 87.2).
 
 
 def _build_material_rows(
@@ -1072,36 +1045,13 @@ def _build_material_rows(
     bucket_score: dict[MaterialBucket, float],
     bucket_pct: dict[MaterialBucket, tuple[float, float, float]],
 ) -> list[MaterialRow]:
-    """Build the 3 MaterialRow records (conv/parity/recov) with opponent_score
-    (mirror identity, gated at _MIN_OPPONENT_SAMPLE) and per-bucket peer-bullet
-    sig fields (compute_per_bucket_diff_test). The opp_row passed to the sig
-    helper is the USER's row in the mirror bucket; the helper applies the
-    W<->L swap internally."""
+    """Build the 3 MaterialRow records (conversion/parity/recovery) with WDL
+    percentages and chess score per bucket. Opponent-score mirror fields and
+    per-bucket peer-bullet sig fields were deleted in Phase 87.2 (D-05)."""
     material_rows: list[MaterialRow] = []
     for bucket_key in ("conversion", "parity", "recovery"):
         b2: MaterialBucket = bucket_key
-        swap_bucket = _MIRROR_BUCKET[b2]
-        swap_games = bucket_games[swap_bucket]
-        if swap_games >= _MIN_OPPONENT_SAMPLE:
-            opponent_score: float | None = 1.0 - bucket_score[swap_bucket]
-        else:
-            opponent_score = None
         win_pct, draw_pct, loss_pct = bucket_pct[b2]
-        user_row_b2 = (
-            bucket_wins[b2],
-            bucket_draws[b2],
-            bucket_losses[b2],
-            bucket_games[b2],
-        )
-        opp_row_b2 = (
-            bucket_wins[swap_bucket],
-            bucket_draws[swap_bucket],
-            bucket_losses[swap_bucket],
-            bucket_games[swap_bucket],
-        )
-        diff_p, diff_ci_low_v, diff_ci_high_v = compute_per_bucket_diff_test(
-            b2, user_row_b2, opp_row_b2
-        )
         material_rows.append(
             MaterialRow(
                 bucket=b2,
@@ -1111,14 +1061,96 @@ def _build_material_rows(
                 draw_pct=draw_pct,
                 loss_pct=loss_pct,
                 score=bucket_score[b2],
-                opponent_score=opponent_score,
-                opponent_games=swap_games,
-                diff_p_value=diff_p,
-                diff_ci_low=diff_ci_low_v,
-                diff_ci_high=diff_ci_high_v,
             )
         )
     return material_rows
+
+
+def _compute_per_bucket_score_gap(
+    gaps_by_bucket: dict[str, list[float]],
+) -> dict[MaterialBucket, tuple[float | None, int, float | None, float | None, float | None]]:
+    """Compute per-bucket ΔES Score Gap stats using compute_paired_difference_test.
+
+    Returns a dict keyed by bucket with (mean, n, p_value, ci_low, ci_high).
+    Mean is gated to None when n == 0 to prevent the helper's 0.0 default from
+    polluting the wire (per RESEARCH §Pitfall 2).
+
+    Sign convention: positive mean = user's exit_score exceeded Stockfish baseline
+    (exit_score - ES_entry > 0 = outperformed). Matches Phase 87.1's per-class sign.
+    """
+    result: dict[
+        MaterialBucket, tuple[float | None, int, float | None, float | None, float | None]
+    ] = {}
+    for bucket in ("conversion", "parity", "recovery"):
+        b: MaterialBucket = bucket
+        gaps = gaps_by_bucket.get(b, [])
+        n = len(gaps)
+        mean_raw, p_val, ci_lo, ci_hi = compute_paired_difference_test(gaps)
+        # Gate mean to None when cohort is empty — avoids 0.0 polluting wire.
+        mean_out: float | None = mean_raw if n > 0 else None
+        result[b] = (mean_out, n, p_val, ci_lo, ci_hi)
+    return result
+
+
+def _compute_skill_score_gap(
+    per_bucket: dict[
+        MaterialBucket, tuple[float | None, int, float | None, float | None, float | None]
+    ],
+) -> tuple[float | None, int, float | None, float | None, float | None]:
+    """Equal-weighted Skill aggregator over the three per-bucket ΔES results (D-01).
+
+    Active buckets are those with n >= CONFIDENCE_MIN_N. The denominator drops
+    sparse buckets (D-01): Skill = mean(mean_b for active b).
+
+    CI propagation uses variance-of-sum / n_active² (Open Q §3 Option A):
+      SE_b = (ci_high_b - ci_low_b) / (2 * CI_Z_95)
+      SE_skill = sqrt(sum(SE_b²)) / n_active
+      ci_low  = skill_mean - CI_Z_95 * SE_skill
+      ci_high = skill_mean + CI_Z_95 * SE_skill
+
+    Returns (skill_mean, skill_n, skill_p, skill_ci_low, skill_ci_high).
+    skill_mean is None when n_active == 0. p_value is derived from two-sided
+    normal z-test via erfc; None when SE_skill == 0 (degenerate constant signal).
+    """
+    active_buckets: list[MaterialBucket] = []
+    for bucket in ("conversion", "parity", "recovery"):
+        b: MaterialBucket = bucket
+        _, n_b, _, _, _ = per_bucket[b]
+        if n_b >= CONFIDENCE_MIN_N:
+            active_buckets.append(b)
+
+    n_active = len(active_buckets)
+
+    if n_active == 0:
+        return None, 0, None, None, None
+
+    skill_n = sum(per_bucket[b][1] for b in active_buckets)
+    skill_mean = sum(per_bucket[b][0] for b in active_buckets) / n_active  # type: ignore[misc]
+
+    # Recover SE per active bucket from CI bounds (guaranteed populated: n >= 10 >= 2).
+    se_sq_sum = 0.0
+    for b in active_buckets:
+        ci_lo_b = per_bucket[b][3]
+        ci_hi_b = per_bucket[b][4]
+        # ci_lo/ci_hi are None only when n < 2, but CONFIDENCE_MIN_N=10 >= 2,
+        # so active buckets always have both CI bounds. Guard defensively.
+        if ci_lo_b is not None and ci_hi_b is not None:
+            se_b = (ci_hi_b - ci_lo_b) / (2.0 * CI_Z_95)
+            se_sq_sum += se_b * se_b
+
+    se_skill = math.sqrt(se_sq_sum) / n_active
+
+    if se_skill == 0.0:
+        # Degenerate: all active bucket means equal and zero SE. No informative CI.
+        return skill_mean, skill_n, None, None, None
+
+    # Two-sided z-test p-value: 2 * (1 - Phi(|z|)) = erfc(|z| / sqrt(2)).
+    z_skill = abs(skill_mean / se_skill)
+    skill_p: float = math.erfc(z_skill / math.sqrt(2.0))
+    skill_ci_low = skill_mean - CI_Z_95 * se_skill
+    skill_ci_high = skill_mean + CI_Z_95 * se_skill
+
+    return skill_mean, skill_n, skill_p, skill_ci_low, skill_ci_high
 
 
 def _compute_score_gap_material(
@@ -1126,6 +1158,7 @@ def _compute_score_gap_material(
     non_endgame_wdl: EndgameWDLSummary,
     entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
     *,
+    gaps_by_bucket: dict[str, list[float]] | None = None,
     timeline: list[ScoreGapTimelinePoint] | None = None,
     timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
 ) -> ScoreGapMaterialResponse:
@@ -1150,6 +1183,10 @@ def _compute_score_gap_material(
             dedupes by game_id defensively. For any game where
             eval_cp/eval_mate is NULL (not yet backfilled), the game routes to
             the "parity" bucket via _classify_endgame_bucket.
+        gaps_by_bucket: Phase 87.2 (D-01/D-06). Per-bucket ΔES span-gap
+            accumulator produced by _aggregate_endgame_stats. Keys are
+            "conversion", "parity", "recovery". None or missing keys treated
+            as empty cohorts.
         timeline: Pre-computed score-gap timeline. The orchestrator builds
             this from the unfiltered-by-recency performance rows (so the
             rolling window is pre-filled with games before the cutoff) and
@@ -1194,16 +1231,38 @@ def _compute_score_gap_material(
 
     bucket_wins, bucket_draws, bucket_losses, bucket_games = _aggregate_bucket_counts(entry_rows)
 
-    # Phase 86 (D-01 / SEC2-08 / SEC2-06): aggregate Skill peer-bullet sig test.
-    skill, opp_skill, skill_p, skill_ci_low, skill_ci_high = _compute_skill_wire(
-        bucket_wins, bucket_draws, bucket_losses, bucket_games
-    )
-
     bucket_score, bucket_pct = _bucket_pcts_and_scores(
         bucket_wins, bucket_draws, bucket_losses, bucket_games
     )
     material_rows = _build_material_rows(
         bucket_wins, bucket_draws, bucket_losses, bucket_games, bucket_score, bucket_pct
+    )
+
+    # Phase 87.2 (D-01/D-05/D-06): per-bucket ΔES + equal-weighted Skill aggregator.
+    # Replaces _compute_skill_wire composite Wald-z (D-05).
+    # Sign: exit_score - ES_entry, positive = user outperformed Stockfish baseline.
+    # Skill CI: variance-of-sum / n_active² propagation from 3 independent
+    # paired-z outputs (Open Q §3 option A).
+    resolved_gaps: dict[str, list[float]] = gaps_by_bucket if gaps_by_bucket is not None else {}
+    per_bucket = _compute_per_bucket_score_gap(resolved_gaps)
+
+    conv_mean, conv_n, conv_p, conv_ci_lo, conv_ci_hi = per_bucket["conversion"]
+    parity_mean, parity_n, parity_p, parity_ci_lo, parity_ci_hi = per_bucket["parity"]
+    recov_mean, recov_n, recov_p, recov_ci_lo, recov_ci_hi = per_bucket["recovery"]
+
+    skill_mean, skill_n, skill_p, skill_ci_lo, skill_ci_hi = _compute_skill_score_gap(per_bucket)
+
+    # quick-260515-wye: rate-based Endgame Skill composite for the gauge.
+    # Equal-weighted mean of chess-scores over active buckets (n >= floor).
+    # Restores the gauge driver dropped by Phase 87.2 D-05; the ΔES skill
+    # mean above drives the bullet, not the gauge.
+    active_rate_buckets: list[MaterialBucket] = [
+        b for b in ("conversion", "parity", "recovery") if bucket_games[b] >= CONFIDENCE_MIN_N
+    ]
+    endgame_skill_rate_mean: float | None = (
+        sum(bucket_score[b] for b in active_rate_buckets) / len(active_rate_buckets)
+        if active_rate_buckets
+        else None
     )
 
     return ScoreGapMaterialResponse(
@@ -1216,11 +1275,28 @@ def _compute_score_gap_material(
         score_difference_p_value=score_diff_p,
         score_difference_ci_low=score_diff_ci_low,
         score_difference_ci_high=score_diff_ci_high,
-        skill=skill,
-        opp_skill=opp_skill,
-        skill_diff_p_value=skill_p,
-        skill_diff_ci_low=skill_ci_low,
-        skill_diff_ci_high=skill_ci_high,
+        # Phase 87.2 (D-06): per-bucket ΔES Score Gap fields.
+        section2_score_gap_conv_mean=conv_mean,
+        section2_score_gap_conv_n=conv_n,
+        section2_score_gap_conv_p_value=conv_p,
+        section2_score_gap_conv_ci_low=conv_ci_lo,
+        section2_score_gap_conv_ci_high=conv_ci_hi,
+        section2_score_gap_parity_mean=parity_mean,
+        section2_score_gap_parity_n=parity_n,
+        section2_score_gap_parity_p_value=parity_p,
+        section2_score_gap_parity_ci_low=parity_ci_lo,
+        section2_score_gap_parity_ci_high=parity_ci_hi,
+        section2_score_gap_recov_mean=recov_mean,
+        section2_score_gap_recov_n=recov_n,
+        section2_score_gap_recov_p_value=recov_p,
+        section2_score_gap_recov_ci_low=recov_ci_lo,
+        section2_score_gap_recov_ci_high=recov_ci_hi,
+        section2_score_gap_skill_mean=skill_mean,
+        section2_score_gap_skill_n=skill_n,
+        section2_score_gap_skill_p_value=skill_p,
+        section2_score_gap_skill_ci_low=skill_ci_lo,
+        section2_score_gap_skill_ci_high=skill_ci_hi,
+        endgame_skill_rate_mean=endgame_skill_rate_mean,
     )
 
 
@@ -2496,8 +2572,10 @@ async def get_endgame_overview(
         opponent_gap_max=opponent_gap_max,
     )
 
-    # Stats: aggregate per-category W/D/L + conversion/recovery from entry_rows
-    categories = _aggregate_endgame_stats(entry_rows)
+    # Stats: aggregate per-category W/D/L + conversion/recovery from entry_rows.
+    # Phase 87.2: also produces gaps_by_bucket (per-span ΔES per eval bucket),
+    # threaded to _compute_score_gap_material below for the Section 2 bullets.
+    categories, gaps_by_bucket = _aggregate_endgame_stats(entry_rows)
     total_games = await count_filtered_games(
         session,
         user_id=user_id,
@@ -2583,6 +2661,7 @@ async def get_endgame_overview(
         performance.endgame_wdl,
         performance.non_endgame_wdl,
         bucket_rows,
+        gaps_by_bucket=gaps_by_bucket,
         timeline=score_gap_timeline,
         timeline_window=SCORE_GAP_TIMELINE_WINDOW,
     )

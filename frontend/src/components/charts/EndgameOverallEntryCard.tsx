@@ -69,23 +69,22 @@ export function EntryCard({ data }: EntryCardProps) {
 
   return (
     <div className="charcoal-texture rounded-md p-4" data-testid="tile-at-endgame-entry">
-      <h3 className="text-base font-semibold mb-2 inline-flex items-center gap-1">
-        <Cpu className="h-4 w-4" aria-hidden="true" />
-        Eval at Endgame Entry
-      </h3>
+      <h3 className="text-base font-semibold mb-2">Eval at Endgame Entry</h3>
       <div className="flex flex-col gap-4">
         {/* Row 1: entry-eval bullet (pawns) */}
         {showEntryEvalChart ? (
           <div className="flex flex-col gap-2">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-              <span className="text-muted-foreground">Endgame Entry Eval:</span>
+              <span className="text-muted-foreground inline-flex items-center gap-1">
+                <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                Endgame Entry Eval:
+              </span>
               <span
-                className="font-semibold inline-flex items-center gap-0.5"
+                className="font-semibold"
                 style={evalColor ? { color: evalColor } : undefined}
                 data-testid="entry-eval-value"
               >
                 {formatSignedEvalPawns(data.entry_eval_mean_pawns)}
-                <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
               </span>
               <MetricStatPopover
                 name="Endgame Entry Eval"
@@ -133,7 +132,10 @@ export function EntryCard({ data }: EntryCardProps) {
           {showAchievableChart ? (
             <div className="flex flex-col gap-2">
               <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-                <span className="text-muted-foreground">Achievable Score:</span>
+                <span className="text-muted-foreground inline-flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                  Achievable Score:
+                </span>
                 <span
                   className="font-semibold"
                   style={achievableColor ? { color: achievableColor } : undefined}

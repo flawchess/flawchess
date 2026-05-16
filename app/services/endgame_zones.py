@@ -34,6 +34,18 @@ MetricId = Literal[
     # User-facing label is "Endgame Type Score Gap" (concepts) / "Score Gap" (card row).
     # Internal name retains "achievable" to mark the math-family with achievable_score_gap (Phase 85.1).
     "endgame_type_achievable_score_gap",
+    # Phase 87.2 (D-02 / D-07): per-bucket Score Gap on Section 2 cards.
+    # User-facing labels (card row): "Conversion Score Gap" / "Parity Score Gap" /
+    # "Recovery Score Gap" / "Skill Score Gap" (D-07). Glossary umbrella: "Section 2
+    # Score Gap" (D-07). Internal snake_case preserves grep-ability with the
+    # achievable_score_gap family. Option (a) from D-02 RESEARCH: 4 distinct scalar
+    # MetricIds (not a bucket-dispatched parent) because dispatch here is eval-entry-
+    # bucket-keyed, not class-keyed like PER_CLASS_GAUGE_ZONES. See BucketedMetricId
+    # note below.
+    "section2_score_gap_conv",
+    "section2_score_gap_parity",
+    "section2_score_gap_recov",
+    "section2_score_gap_skill",
     "entry_eval_pawns",  # Phase 82 D-04: new endgame_start_vs_end Tile 1
     "entry_expected_score",  # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",  # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
@@ -75,6 +87,11 @@ SubsectionId = Literal[
 # added to BucketedMetricId — it is per-class only (via PER_CLASS_GAUGE_ZONES),
 # not per-(class × material-axis). If benchmark §3.4.2 later requires per-rating-
 # bucket bands, add it then in a follow-up.
+# Phase 87.2 (D-02): the 4 Section 2 per-bucket ΔES MetricIds (`section2_score_gap_*`)
+# are also NOT added here. They use 4 scalar MetricIds in ZONE_REGISTRY (option (a)),
+# not a bucket-dispatched parent. The existing bucket-dispatch shape is class-keyed
+# (PER_CLASS_GAUGE_ZONES), not eval-entry-bucket-keyed, so a new dispatch shape would
+# be required for option (b) — D-02 RESEARCH recommends option (a) instead.
 BucketedMetricId = Literal[
     "conversion_win_pct",
     "parity_score_pct",
@@ -168,6 +185,41 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     "endgame_type_achievable_score_gap": ZoneSpec(
         typical_lower=-0.04,
         typical_upper=0.04,
+        direction="higher_is_better",
+    ),
+    # Phase 87.2 (D-02): per-bucket bands for Section 2 ΔES Score Gap cards.
+    # Calibrated 2026-05-15 from reports/benchmarks-latest.md §3.4.4 — pooled
+    # per-user mean span gap per entry-eval bucket, sparse cell (2400,
+    # classical) excluded, equal-footing filter applied, pooled [p25, p75]
+    # rounded to nearest 1pp.
+    #
+    # Bands are intentionally OFF-ZERO for conversion and recovery because the
+    # Lichess winning-chances sigmoid drives an asymmetric population null:
+    # converting a winning position scores ~5pp BELOW entry ES (ceiling near
+    # 1.0); recovering from a losing one scores ~6pp ABOVE (floor near 0.0).
+    # Anchoring at 0 would mis-paint every typical user as "red on conv, green
+    # on recov". The chart keeps 0 (or 50%) as the engine-neutral anchor; the
+    # band is drawn offset where the calibration says it sits. The
+    # MiniBulletChart asymmetric rendering contract is locked in by tests
+    # added in quick task 260516-0ax.
+    "section2_score_gap_conv": ZoneSpec(
+        typical_lower=-0.11,
+        typical_upper=0.00,
+        direction="higher_is_better",
+    ),
+    "section2_score_gap_parity": ZoneSpec(
+        typical_lower=-0.04,
+        typical_upper=0.04,
+        direction="higher_is_better",
+    ),
+    "section2_score_gap_recov": ZoneSpec(
+        typical_lower=0.01,
+        typical_upper=0.11,
+        direction="higher_is_better",
+    ),
+    "section2_score_gap_skill": ZoneSpec(
+        typical_lower=-0.03,
+        typical_upper=0.03,
         direction="higher_is_better",
     ),
     # entry_eval_pawns: average Stockfish eval at endgame entry, signed from

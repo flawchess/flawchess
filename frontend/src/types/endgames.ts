@@ -132,15 +132,10 @@ export interface MaterialRow {
   draw_pct: number;
   loss_pct: number;
   score: number;
-  // Phase 60: opponent's score in the mirror bucket; null when opponent_games < 10
-  opponent_score: number | null;
-  // Phase 60: opponent's sample size (== swap-bucket game count)
-  opponent_games: number;
-  // Phase 86 (SEC2-06 / D-06): Wald-z on userRate - opponentRate per bucket;
-  // null when opp_row.N < 10 (D-05 strict-opp-gate) or user-side games == 0.
-  diff_p_value: number | null;
-  diff_ci_low: number | null;
-  diff_ci_high: number | null;
+  // Phase 87.2 (D-05): opponent_score, opponent_games, diff_p_value, diff_ci_low,
+  // diff_ci_high deleted. The mirror-bucket Wald-z peer-bullet was mathematically
+  // degenerate (Conv-Gap == Recov-Gap by symmetry; Parity-Gap affine of gauge).
+  // Replaced by the eval-baseline Delta-ES Score Gap fields on ScoreGapMaterialResponse.
 }
 
 /** Single point in the score-gap rolling-window time series.
@@ -178,15 +173,49 @@ export interface ScoreGapMaterialResponse {
   score_difference_p_value: number | null;
   score_difference_ci_low: number | null;
   score_difference_ci_high: number | null;
-  // Phase 86 (SEC2-03 / SEC2-08 / D-01..D-02): Skill composite + peer-bullet sig test.
-  // Skill scalars are null only when 0 active buckets (active = both user_N>0 AND opp_N>0);
-  // sig fields null when n_active < 2 OR any active opp component has opp_row.N < 10
-  // (D-05 strict-opp-gate). Mirrors backend `compute_skill_diff_test`.
-  skill: number | null;
-  opp_skill: number | null;
-  skill_diff_p_value: number | null;
-  skill_diff_ci_low: number | null;
-  skill_diff_ci_high: number | null;
+  // Phase 87.2 (D-06): 20 eval-baseline Delta-ES Score Gap fields (4 buckets x 5).
+  // Replaces the rate-based mirror-bucket peer-bullet (skill, opp_skill, skill_diff_*
+  // deleted per D-04). Each cluster: mean per-span Score Gap, sample count,
+  // one-sample paired z-test p_value, and 95% CI bounds.
+  // All fields are null when the cohort is empty (n=0) or below the reliability gate.
+  // Mirrors app/schemas/endgames.py ScoreGapMaterialResponse (Phase 87.2 D-06).
+  // Dual-label rationale: "conv/parity/recov" in field names vs "conversion/parity/recovery"
+  // in user-facing labels — the abbreviated form is shorter and consistent with backend.
+
+  // Conversion bucket (entered endgame with eval >= +1.0):
+  section2_score_gap_conv_mean: number | null;
+  section2_score_gap_conv_n: number | null;
+  section2_score_gap_conv_p_value: number | null;
+  section2_score_gap_conv_ci_low: number | null;
+  section2_score_gap_conv_ci_high: number | null;
+
+  // Parity bucket (entered endgame with eval between -1.0 and +1.0):
+  section2_score_gap_parity_mean: number | null;
+  section2_score_gap_parity_n: number | null;
+  section2_score_gap_parity_p_value: number | null;
+  section2_score_gap_parity_ci_low: number | null;
+  section2_score_gap_parity_ci_high: number | null;
+
+  // Recovery bucket (entered endgame with eval <= -1.0):
+  section2_score_gap_recov_mean: number | null;
+  section2_score_gap_recov_n: number | null;
+  section2_score_gap_recov_p_value: number | null;
+  section2_score_gap_recov_ci_low: number | null;
+  section2_score_gap_recov_ci_high: number | null;
+
+  // Skill composite (equal-weighted mean of conv + parity + recov over active buckets):
+  section2_score_gap_skill_mean: number | null;
+  section2_score_gap_skill_n: number | null;  // total span count across active buckets
+  section2_score_gap_skill_p_value: number | null;
+  section2_score_gap_skill_ci_low: number | null;
+  section2_score_gap_skill_ci_high: number | null;
+
+  // quick-260515-wye: rate-based Endgame Skill composite for the gauge.
+  // Equal-weighted mean of (conv, parity, recov) chess-scores over buckets
+  // with games >= CONFIDENCE_MIN_N. Distinct from section2_score_gap_skill_mean
+  // (the ΔES bullet). The gauge plots this absolute rate composite; the
+  // bullet plots the eval-baseline delta.
+  endgame_skill_rate_mean: number | null;
 }
 
 export interface ClockStatsRow {
