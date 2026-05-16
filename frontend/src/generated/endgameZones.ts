@@ -29,12 +29,6 @@ export const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
   ],
 };
 
-export const ENDGAME_SKILL_ZONES: GaugeZone[] = [
-  { from: 0, to: 0.47 },
-  { from: 0.47, to: 0.55 },
-  { from: 0.55, to: 1.0 },
-];
-
 export const NEUTRAL_PCT_THRESHOLD = 5.0;
 export const NEUTRAL_TIMEOUT_THRESHOLD = 5.0;
 export const SCORE_GAP_NEUTRAL_MIN = -0.1;
@@ -53,8 +47,8 @@ export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN = -0.04;
 export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX = 0.04;
 export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN = 0.01;
 export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX = 0.11;
-export const SECTION2_SCORE_GAP_SKILL_NEUTRAL_MIN = -0.03;
-export const SECTION2_SCORE_GAP_SKILL_NEUTRAL_MAX = 0.03;
+// Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_NEUTRAL_* emission dropped
+// alongside the Endgame Skill concept retirement.
 
 // Phase 83 D-14/D-17: per-user entry_expected_score cohort band.
 // Source: reports/benchmarks-2026-05-11.md §7 (pooled IQR aligned with

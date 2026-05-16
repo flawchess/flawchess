@@ -45,7 +45,6 @@ MetricId = Literal[
     "section2_score_gap_conv",
     "section2_score_gap_parity",
     "section2_score_gap_recov",
-    "section2_score_gap_skill",
     "entry_eval_pawns",  # Phase 82 D-04: new endgame_start_vs_end Tile 1
     "entry_expected_score",  # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",  # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
@@ -60,13 +59,13 @@ MetricId = Literal[
     # "non_endgame_score" to free the clean slot for the new subsection.
     "endgame_score_timeline",  # Phase 82 D-01: renamed from "endgame_score" (score_timeline subsection)
     "non_endgame_score_timeline",  # Phase 82 D-02: renamed from "non_endgame_score"
-    "endgame_skill",
     "conversion_win_pct",
     "parity_score_pct",
     "recovery_save_pct",
     "avg_clock_diff_pct",
     "net_timeout_rate",
-    "endgame_elo_gap",
+    # Phase 87.4 D-06: renamed from "endgame_elo_gap" alongside Conversion ELO Timeline.
+    "conversion_elo_gap",
     "win_rate",
 ]
 
@@ -75,7 +74,8 @@ SubsectionId = Literal[
     "endgame_start_vs_end",  # Phase 82 D-05
     "score_timeline",
     "endgame_metrics",
-    "endgame_elo_timeline",
+    # Phase 87.4 D-06: renamed from "endgame_elo_timeline".
+    "conversion_elo_timeline",
     "time_pressure_at_entry",
     "clock_diff_timeline",
     "time_pressure_vs_performance",
@@ -87,11 +87,13 @@ SubsectionId = Literal[
 # added to BucketedMetricId — it is per-class only (via PER_CLASS_GAUGE_ZONES),
 # not per-(class × material-axis). If benchmark §3.4.2 later requires per-rating-
 # bucket bands, add it then in a follow-up.
-# Phase 87.2 (D-02): the 4 Section 2 per-bucket ΔES MetricIds (`section2_score_gap_*`)
-# are also NOT added here. They use 4 scalar MetricIds in ZONE_REGISTRY (option (a)),
+# Phase 87.2 (D-02): the 3 Section 2 per-bucket ΔES MetricIds (`section2_score_gap_*`)
+# are also NOT added here. They use 3 scalar MetricIds in ZONE_REGISTRY (option (a)),
 # not a bucket-dispatched parent. The existing bucket-dispatch shape is class-keyed
 # (PER_CLASS_GAUGE_ZONES), not eval-entry-bucket-keyed, so a new dispatch shape would
 # be required for option (b) — D-02 RESEARCH recommends option (a) instead.
+# Phase 87.4 (D-05): the 4th Skill ΔES bucket was dropped when the Endgame Skill
+# concept was retracted; the 3 remaining buckets (conv/parity/recov) are unchanged.
 BucketedMetricId = Literal[
     "conversion_win_pct",
     "parity_score_pct",
@@ -133,10 +135,11 @@ TREND_MIN_WEEKLY_POINTS: int = 20
 # Placeholder value — Plan 04 may tune against the SEED-001 fixture.
 TREND_MIN_SLOPE_VOL_RATIO: float = 0.5
 
-# Max |endgame_elo - actual_elo| that counts as not-notable (D-09 flag 4).
+# Max |conversion_elo - actual_elo| that counts as not-notable (D-09 flag 4).
 # Values above this threshold across any (platform, time_control) combo fire
-# the `notable_endgame_elo_divergence` cross-section flag.
-NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD: int = 100
+# the `notable_conversion_elo_divergence` cross-section flag. Renamed in
+# Phase 87.4 (D-06) alongside the Conversion ELO Timeline rename.
+NOTABLE_CONVERSION_ELO_DIVERGENCE_THRESHOLD: int = 100
 
 # Neutral band for clock-diff percentage of base time (mirrors the inline
 # frontend constant in EndgameClockPressureSection.tsx line 18). Used by the
@@ -217,11 +220,11 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=0.11,
         direction="higher_is_better",
     ),
-    "section2_score_gap_skill": ZoneSpec(
-        typical_lower=-0.03,
-        typical_upper=0.03,
-        direction="higher_is_better",
-    ),
+    # Phase 87.4 (D-05): section2_score_gap_skill ZoneSpec deleted. The Skill
+    # composite was retracted — no composite definition survived scrutiny on
+    # cohort de-confounding, individual interpretation, temporal stability, or
+    # the Phase 57 median-coincide invariant. See
+    # `.planning/notes/endgame-skill-dropped-conversion-elo.md`.
     # entry_eval_pawns: average Stockfish eval at endgame entry, signed from
     # user's perspective. Phase 82 D-08.
     "entry_eval_pawns": ZoneSpec(
@@ -281,15 +284,9 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=1.0,
         direction="higher_is_better",
     ),
-    # Endgame Skill: simple average of Conv/Parity/Recov rates (0.0-1.0).
-    # Mirrors ENDGAME_SKILL_ZONES in EndgameScoreGapSection.tsx lines 101-105.
-    # 260503: lower bound shifted 0.45 -> 0.47 to better center on pooled p25
-    # (0.466) from reports/benchmarks-2026-05-03.md.
-    "endgame_skill": ZoneSpec(
-        typical_lower=0.47,
-        typical_upper=0.55,
-        direction="higher_is_better",
-    ),
+    # Phase 87.4 (D-05): endgame_skill ZoneSpec deleted. The Endgame Skill
+    # composite concept was retracted end-to-end alongside the Conversion ELO
+    # Timeline rewire (see `.planning/notes/endgame-skill-dropped-conversion-elo.md`).
     # Clock diff at endgame entry, % of base time, signed.
     # Typical band = ±NEUTRAL_PCT_THRESHOLD (10%). Above = user has more time left
     # at endgame entry than opponent (good); below = user has less (bad).
@@ -309,19 +306,20 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=NEUTRAL_TIMEOUT_THRESHOLD,
         direction="higher_is_better",
     ),
-    # Endgame ELO gap (endgame_elo - actual_elo, signed Elo).
-    # Typical band = ±100 Elo, matches NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD.
+    # Conversion ELO gap (conversion_elo - actual_elo, signed Elo).
+    # Typical band = ±100 Elo, matches NOTABLE_CONVERSION_ELO_DIVERGENCE_THRESHOLD.
     # Per-combo fan-out happens at the finding level, not here — the registry
     # entry is the band used for each individual (platform, tc) finding.
-    "endgame_elo_gap": ZoneSpec(
+    # Phase 87.4 D-06: renamed from "endgame_elo_gap".
+    "conversion_elo_gap": ZoneSpec(
         typical_lower=-100.0,
         typical_upper=100.0,
         direction="higher_is_better",
     ),
     # Plain win rate (W / total, draws excluded) for per-type findings in the
-    # results_by_endgame_type subsection. Band mirrors endgame_skill (0.45-0.55)
-    # because before the relabel these same values were zoned with the
-    # endgame_skill spec. Kept identical to preserve all prior zone assignments.
+    # results_by_endgame_type subsection. Band [0.45, 0.55] preserved from the
+    # historical endgame_skill spec (retracted in Phase 87.4) so prior zone
+    # assignments do not shift.
     "win_rate": ZoneSpec(
         typical_lower=0.45,
         typical_upper=0.55,
@@ -377,7 +375,7 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "endgame_start_vs_end": (10, 50),
     "score_timeline": (10, 52),
     "endgame_metrics": (30, 100),
-    "endgame_elo_timeline": (10, 40),
+    "conversion_elo_timeline": (10, 40),  # Phase 87.4 D-06: renamed from "endgame_elo_timeline".
     "time_pressure_at_entry": (10, 50),
     "clock_diff_timeline": (10, 52),
     "time_pressure_vs_performance": (30, 100),

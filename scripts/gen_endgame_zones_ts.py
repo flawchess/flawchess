@@ -62,7 +62,8 @@ _ENTRY_XS_SPEC = ZONE_REGISTRY["entry_expected_score"]
 _SECTION2_SCORE_GAP_CONV_SPEC = ZONE_REGISTRY["section2_score_gap_conv"]
 _SECTION2_SCORE_GAP_PARITY_SPEC = ZONE_REGISTRY["section2_score_gap_parity"]
 _SECTION2_SCORE_GAP_RECOV_SPEC = ZONE_REGISTRY["section2_score_gap_recov"]
-_SECTION2_SCORE_GAP_SKILL_SPEC = ZONE_REGISTRY["section2_score_gap_skill"]
+# Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_SPEC dropped alongside the
+# section2_score_gap_skill ZoneSpec deletion.
 
 
 def _format_bucket_zones(bucket: str) -> str:
@@ -111,7 +112,8 @@ def _render() -> str:
     The exact bytes emitted by this function are what gets committed. CI runs
     the script and uses `git diff --exit-code` to block any drift.
     """
-    skill = ZONE_REGISTRY["endgame_skill"]
+    # Phase 87.4 (D-05): ENDGAME_SKILL_ZONES emission dropped (Endgame Skill
+    # concept retracted end-to-end).
     return (
         "// AUTO-GENERATED — do not edit by hand.\n"
         "// Source: app/services/endgame_zones.py\n"
@@ -132,12 +134,6 @@ def _render() -> str:
         "  recovery: [\n" + _format_bucket_zones("recovery") + "  ],\n"
         "};\n"
         "\n"
-        "export const ENDGAME_SKILL_ZONES: GaugeZone[] = [\n"
-        f"  {{ from: 0, to: {skill.typical_lower} }},\n"
-        f"  {{ from: {skill.typical_lower}, to: {skill.typical_upper} }},\n"
-        f"  {{ from: {skill.typical_upper}, to: 1.0 }},\n"
-        "];\n"
-        "\n"
         f"export const NEUTRAL_PCT_THRESHOLD = {NEUTRAL_PCT_THRESHOLD};\n"
         f"export const NEUTRAL_TIMEOUT_THRESHOLD = {NEUTRAL_TIMEOUT_THRESHOLD};\n"
         f"export const SCORE_GAP_NEUTRAL_MIN = {_SCORE_GAP_SPEC.typical_lower};\n"
@@ -156,8 +152,8 @@ def _render() -> str:
         f"export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_PARITY_SPEC.typical_upper};\n"
         f"export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_RECOV_SPEC.typical_lower};\n"
         f"export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_RECOV_SPEC.typical_upper};\n"
-        f"export const SECTION2_SCORE_GAP_SKILL_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_SKILL_SPEC.typical_lower};\n"
-        f"export const SECTION2_SCORE_GAP_SKILL_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_SKILL_SPEC.typical_upper};\n"
+        "// Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_NEUTRAL_* emission dropped\n"
+        "// alongside the Endgame Skill concept retirement.\n"
         "\n"
         "// Phase 83 D-14/D-17: per-user entry_expected_score cohort band.\n"
         "// Source: reports/benchmarks-2026-05-11.md §7 (pooled IQR aligned with\n"
