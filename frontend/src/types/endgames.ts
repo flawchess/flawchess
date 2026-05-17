@@ -269,12 +269,33 @@ export interface TimePressureCardsResponse {
   cards: TimePressureTcCard[];  // only TCs with total >= MIN_GAMES_PER_TC_CARD
 }
 
+/** One ISO-week point on the Average Clock Difference over Time line chart.
+ *  Plan 88-15 (CONTEXT §2 A-2): restored after the Phase 88-07 cleanup deleted
+ *  the line chart. Renamed (vs the pre-88-07 timeline point class) to make the
+ *  design-pivot history obvious. `avg_clock_diff_pct` is in PERCENT units
+ *  (50.0 = 50%, not 0.5) — matches the chart Y-axis convention and the backend
+ *  `(user_clock - opp_clock) / base_time_seconds * 100` calculation. */
+export interface ClockDiffTimelinePoint {
+  date: string;                  // ISO Monday YYYY-MM-DD
+  avg_clock_diff_pct: number;    // rolling-window mean in percent units
+  game_count: number;            // trailing rolling-window size (<= 100)
+  per_week_game_count: number;   // clock-eligible games in THIS week only
+}
+
+/** Wrapper for the Average Clock Difference over Time line chart payload.
+ *  Plan 88-15 (CONTEXT §2 A-2). points is empty when no clock-eligible game
+ *  exists in the user's filtered set — frontend hides the chart in that case. */
+export interface ClockDiffTimelineResponse {
+  points: ClockDiffTimelinePoint[];
+}
+
 export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
   timeline: EndgameTimelineResponse;
   score_gap_material: ScoreGapMaterialResponse;  // Phase 53
   time_pressure_cards: TimePressureCardsResponse; // Phase 88 (replaces clock_pressure + time_pressure_chart)
+  clock_diff_timeline: ClockDiffTimelineResponse; // Plan 88-15 (CONTEXT §2 A-2): restored line chart payload
   endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57 (rebuilt Phase 87.5)
 }
 
