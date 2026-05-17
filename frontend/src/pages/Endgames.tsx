@@ -527,12 +527,13 @@ export function EndgamesPage() {
           )}
 
           {/* ── Time Pressure ── */}
+          {/* Plan 88-13 A-1: no outer charcoal-texture wrap; each TC card carries
+              its own charcoal container, matching the EndgameTypeBreakdownSection
+              convention below. */}
           {showTimePressureCards && timePressureCardsData && (
             <>
               <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
-              <div className="charcoal-texture rounded-md p-4">
-                <EndgameTimePressureSection data={timePressureCardsData} />
-              </div>
+              <EndgameTimePressureSection data={timePressureCardsData} />
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}

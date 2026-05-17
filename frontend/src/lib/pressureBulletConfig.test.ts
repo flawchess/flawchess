@@ -13,8 +13,8 @@ describe('pressureBulletConfig constants', () => {
     expect(PRESSURE_DELTA_CENTER).toBe(0);
   });
 
-  it('PRESSURE_DELTA_DOMAIN is 0.20', () => {
-    expect(PRESSURE_DELTA_DOMAIN).toBe(0.20);
+  it('PRESSURE_DELTA_DOMAIN is 0.30 (Plan 88-13 A-5: widened from 0.20 to cover real-world ±20pp+ deltas)', () => {
+    expect(PRESSURE_DELTA_DOMAIN).toBe(0.30);
   });
 
   it('CLOCK_GAP_DOMAIN is 0.30', () => {
