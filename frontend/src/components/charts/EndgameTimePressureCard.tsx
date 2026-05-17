@@ -20,9 +20,11 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { InfoPopover } from '@/components/ui/info-popover';
 import {
-  PRESSURE_BIN_SCORE_NEUTRAL_ZONES,
   CLOCK_GAP_NEUTRAL_MIN,
   CLOCK_GAP_NEUTRAL_MAX,
+  MIN_GAMES_PER_TC_CARD,
+  MIN_GAMES_PER_PRESSURE_BIN,
+  getPressureBinBand,
 } from '@/generated/endgameZones';
 import {
   PRESSURE_DELTA_CENTER,
@@ -36,11 +38,8 @@ import { UNRELIABLE_OPACITY, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type { ClockGapBullet, PressureQuintileBullet, TimePressureTcCard } from '@/types/endgames';
 import { deriveLevel } from './EndgameOverallShared';
 
-// Minimum total endgame games in a TC for the card to render (mirrors backend gate).
-const MIN_GAMES_PER_TC_CARD = 20;
-
-// Minimum games in a quintile bin for a reliable bullet (mirrors backend gate).
-const MIN_GAMES_PER_PRESSURE_BIN = 5;
+// MIN_GAMES_PER_TC_CARD and MIN_GAMES_PER_PRESSURE_BIN are imported from
+// @/generated/endgameZones (codegen-mirrored from app/services/endgame_zones.py).
 
 // Human-readable time-control labels.
 const TC_LABELS: Record<'bullet' | 'blitz' | 'rapid' | 'classical', string> = {
@@ -137,7 +136,12 @@ interface QuintileRowProps {
 }
 
 function QuintileRow({ bin, tc }: QuintileRowProps) {
-  const neutralBand = PRESSURE_BIN_SCORE_NEUTRAL_ZONES[tc][bin.quintile_index as 0 | 1 | 2 | 3 | 4]!;
+  // Phase 88.1 WR-03/IN-06: use the typed helper instead of an unsafe non-null
+  // assertion on a Record index. Returns null for out-of-range quintile_index;
+  // we early-return the row in that case rather than rendering with a bogus band.
+  const neutralBand = getPressureBinBand(tc, bin.quintile_index);
+  if (!neutralBand) return null;
+
   const level = deriveLevel(bin.p_value, bin.n);
   const isInColoredZone = bin.delta >= neutralBand.max || bin.delta <= neutralBand.min;
   const showFontColor =
@@ -152,8 +156,8 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
     : undefined;
 
   const signedDelta = `${bin.delta >= 0 ? '+' : ''}${(bin.delta * 100).toFixed(1)}%`;
-  const cohortPct =
-    bin.cohort_score != null ? `${(bin.cohort_score * 100).toFixed(1)}%` : 'n/a';
+  const oppPct =
+    bin.opp_score != null ? `${(bin.opp_score * 100).toFixed(1)}%` : 'n/a';
 
   return (
     <div
@@ -180,7 +184,7 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
         )}
         <MetricStatPopover
           name={`Score Delta (${bin.quintile_label} pressure)`}
-          explanation={`Your score vs. cohort score when you had ${bin.quintile_label} of your clock remaining at endgame entry. Positive = outperformed.`}
+          explanation={`Your score vs. your opponents' score when you had ${bin.quintile_label} of your clock remaining at endgame entry, compared against the matching opponent-clock quintile in the same games. Positive = you outperformed your opponents.`}
           value={bin.delta}
           baseline={0}
           unit="percent"
@@ -190,12 +194,13 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
           vocabulary="score"
           neutralLower={neutralBand.min}
           neutralUpper={neutralBand.max}
-          baselineLabel={cohortPct}
+          baselineLabel={oppPct}
           methodology={
             <>
-              delta = user_score − cohort_score (W+0.5D/N).<br />
-              Test: Wilson score test vs cohort reference.<br />
-              Confidence interval: Wilson 95% transplanted to delta space.
+              delta = user_score − opp_score (W+0.5D/N).<br />
+              Each side bucketed by its own clock remaining at endgame entry.<br />
+              Test: independent two-sample test; same filtered games.<br />
+              CI: 95% normal-approximation on the difference.
             </>
           }
           testId={`time-pressure-card-${tc}-bin-${bin.quintile_index}-info`}
