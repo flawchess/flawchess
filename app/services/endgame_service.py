@@ -13,7 +13,6 @@ Exposes:
 """
 
 import bisect
-import math
 import statistics
 from collections import defaultdict
 from collections.abc import Sequence
@@ -761,9 +760,17 @@ async def get_endgame_games(
 
 
 def _build_wdl_summary(rows: list[Row[Any]]) -> EndgameWDLSummary:
-    """Build EndgameWDLSummary from a list of (played_at, result, user_color) rows."""
+    """Build EndgameWDLSummary from query_endgame_performance_rows rows.
+
+    Row shape (Phase 87.5): ``(played_at, result, user_color, platform,
+    time_control_bucket)`` — only indices 1 (result) and 2 (user_color) are
+    consumed here; the trailing platform / TC columns enable per-combo
+    partitioning in the Endgame ELO orchestrator and are ignored otherwise.
+    """
     wins = draws = losses = 0
-    for _played_at, result, user_color in rows:
+    for row in rows:
+        result = row[1]
+        user_color = row[2]
         outcome = derive_user_result(result, user_color)
         if outcome == "win":
             wins += 1
@@ -880,9 +887,14 @@ def _compute_score_gap_timeline(
     endgame_window: list[float] = []
     non_endgame_window: list[float] = []
     # Per-ISO-week count of all events (endgame + non-endgame) — drives the
-    # frontend volume bars. Mirrors `per_week_count` in
-    # `_compute_endgame_elo_weekly_series` (Phase 57.1 D-06).
+    # frontend volume bars on the Score % Difference timeline. Mirrors
+    # `per_week_count` in `_compute_endgame_elo_weekly_series` (Phase 57.1 D-06).
     per_week_total: dict[tuple[int, int], int] = {}
+    # Per-ISO-week count of ENDGAME games only — drives the Endgame ELO
+    # Timeline volume bars. Restored after Phase 87.5 CR-01 had collapsed
+    # `per_week_endgame_games` into the trailing-window count, which made the
+    # bars unreadable (they no longer reflected weekly activity).
+    per_week_endgame: dict[tuple[int, int], int] = {}
     data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
 
     for played_at, side, score in events:
@@ -895,6 +907,10 @@ def _compute_score_gap_timeline(
 
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
         per_week_total[(iso_year, iso_week)] = per_week_total.get((iso_year, iso_week), 0) + 1
+        if side == "endgame":
+            per_week_endgame[(iso_year, iso_week)] = (
+                per_week_endgame.get((iso_year, iso_week), 0) + 1
+            )
 
         eg_count = len(endgame_window)
         neg_count = len(non_endgame_window)
@@ -920,6 +936,7 @@ def _compute_score_gap_timeline(
             "endgame_game_count": eg_count,
             "non_endgame_game_count": neg_count,
             "per_week_total_games": per_week_total[(iso_year, iso_week)],
+            "per_week_endgame_games": per_week_endgame.get((iso_year, iso_week), 0),
             "endgame_score": round(endgame_mean, 4),
             "non_endgame_score": round(non_endgame_mean, 4),
         }
@@ -1263,27 +1280,29 @@ CLOCK_PRESSURE_TIMELINE_WINDOW = 100
 # Matches SCORE_GAP_TIMELINE_WINDOW and CLOCK_PRESSURE_TIMELINE_WINDOW per D-05.
 ENDGAME_ELO_TIMELINE_WINDOW = 100
 
-# Clamp bounds for the Conversion ELO formula (Phase 57 D-01). Skill outside this
-# range would blow up log10(skill / (1 - skill)); clamping caps contribution at
-# roughly +-510 Elo above/below opponent average, which is well beyond realistic
-# performance-rating territory for any plausible sample size.
-_ENDGAME_ELO_SKILL_CLAMP_LO = 0.05
-_ENDGAME_ELO_SKILL_CLAMP_HI = 0.95
-
-# Phase 87.4 (D-01): affine recenter mapping conv_ΔES → s for Conversion ELO.
-# Frozen — do NOT update without bumping CALIBRATION_VERSION and a deliberate commit.
-# Source: reports/benchmarks-latest.md §3.2.2 (2026-05-16).
+# Phase 87.5 (D-01): additive Endgame ELO formula —
+#   endgame_elo = round(actual_elo + K · eg_score_gap)
+# where ``eg_score_gap`` is the per-week windowed difference between endgame
+# and non-endgame outcome means (1.0 win / 0.5 draw / 0.0 loss). At gap = 0
+# the result equals round(actual_elo) exactly — the neutral case is literal
+# zero, not a benchmark-derived constant.
 #
-# Calibration rule (RESEARCH.md §α Calibration — pin-upper):
-# The calibrated band of typical players spans conv_ΔES ∈ [-0.108, +0.002] (asymmetric
-# around PIVOT). A single α cannot hit both endpoints exactly; we pin the upper end
-# such that s(+0.002) = 0.60 (the typical-upper boundary). That yields
-# α = (0.60 - 0.5) / (0.002 - PIVOT) = 0.1 / 0.0494 ≈ 2.025. The lower end then maps to
-# s(-0.108) = 0.5 + 2.025 * (-0.108 - PIVOT) ≈ 0.378, slightly tighter than the nominal
-# 0.40 — acceptable because the LLM zone and Phase 57 clamp are robust to ±0.02 on s.
-PIVOT: float = -0.0474  # benchmark conv_ΔES p50
-ALPHA: float = 2.025  # pin-upper calibration (see docstring above)
-CALIBRATION_VERSION: str = "conv_delta_v1_260516"  # bump if PIVOT or ALPHA changes
+# K is calibrated against the §3.1.6 benchmark Lichess percentile table
+# (reports/benchmarks-latest.md line 174, pooled n=1,632):
+#   p05 = -0.227 → -102 ELO   p25 = -0.104 →  -47 ELO
+#   p50 = -0.014 →   -6 ELO   p75 = +0.073 →  +33 ELO
+#   p95 = +0.202 →  +91 ELO
+# Typical p25/p75 lands in the targeted 30-60 ELO band; extremes p05/p95
+# land near ±100 ELO. See .planning/todos/pending/calibrate-endgame-elo-k.md
+# for the eyeball procedure and the §3.1.6 ELO d=0.17 collapse verdict that
+# motivates switching off the Phase 87.4 Conv ΔES input (which had ELO d=1.62).
+#
+# Phase 57 multiplicative formula RETIRED 2026-05-17 (Phase 87.5): the
+# ``400 · log10(s / (1 - s))`` mapping (and its Phase 87.4 affine-recenter
+# input PIVOT / ALPHA / CALIBRATION_VERSION) is superseded wholesale by this
+# additive formula. The historical Phase 57 / 87.4 design notes carry the
+# rationale; the executable code path is gone.
+K: float = 450.0
 
 # Ordered combo list: chess.com first then lichess, per-platform follows
 # _TIME_CONTROL_ORDER. Used for stable response ordering (Phase 57 D-09).
@@ -1292,268 +1311,115 @@ _ENDGAME_ELO_COMBO_ORDER: list[tuple[str, str]] = [
 ]
 
 
-def _affine_recenter_conv_delta(conv_delta_es: float) -> float:
-    """Map windowed Conv ΔES Score Gap to ``s`` input for ``_conversion_elo_from_skill``
-    (Phase 87.4 D-01).
+def _endgame_elo_from_score_gap(actual_elo: float, eg_score_gap: float, k: float) -> int:
+    """Additive Endgame ELO from Endgame Score Gap (Phase 87.5).
 
-    Formula::
+    ``endgame_elo = round(actual_elo + k * eg_score_gap)``
 
-        s = clamp(0.5 + ALPHA * (conv_delta_es - PIVOT),
-                  _ENDGAME_ELO_SKILL_CLAMP_LO, _ENDGAME_ELO_SKILL_CLAMP_HI)
+    At ``eg_score_gap = 0`` the result equals ``round(actual_elo)`` exactly,
+    restoring the "lifts up / holds back" semantics by construction (the
+    neutral case is literal zero, not a benchmark-derived constant).
 
-    ``PIVOT`` is the benchmark p50 of Conv ΔES (-0.0474), so a typical-skill user
-    (conv_ΔES = PIVOT) yields ``s = 0.5``, preserving the Phase 57 invariant:
-    ``Conversion ELO = actual ELO``. ``ALPHA = 2.025`` follows the pin-upper rule
-    (see module-level constant docstring): the calibrated band [-0.108, +0.002]
-    maps to s ≈ [0.378, 0.600]. See RESEARCH.md §α Calibration.
+    Phase 87.5 supersedes BOTH the Phase 57 multiplicative
+    ``400·log10(s/(1-s))`` formula AND the Phase 87.4 affine recenter
+    (PIVOT/ALPHA) wholesale. The §3.1.6 Endgame Score Gap metric has ELO
+    Cohen's d = 0.17 (essentially flat across rating buckets) versus the
+    Phase 87.4 Conv ΔES metric's d = 1.62 — the input switch is what
+    eliminates the strong-player bias, not a re-calibration of the mapping.
+    See ``.planning/notes/endgame-elo-rebuild-on-score-gap.md``.
 
-    This is the sole connection between Phase 87.2 (Conv ΔES Score Gap) and Phase 57
-    (Conversion ELO formula). The formula itself is unchanged — only the input
-    source changes.
-
-    Pure function. Safe at any real input via the unconditional clamp.
+    Pure function. No clamping — the additive form is well-behaved for any
+    real input (a 2000 actual_elo with the extreme p95 gap +0.20 lands at
+    2091, well inside realistic territory).
     """
-    s = 0.5 + ALPHA * (conv_delta_es - PIVOT)
-    return max(_ENDGAME_ELO_SKILL_CLAMP_LO, min(_ENDGAME_ELO_SKILL_CLAMP_HI, s))
-
-
-def _conversion_elo_from_skill(skill: float, actual_elo_at_date: float) -> int:
-    """Skill-adjusted rating from a recentered skill scalar + actual rating anchor
-    (Phase 57.1 D-01; renamed from ``_endgame_elo_from_skill`` in Phase 87.4 D-06).
-
-    conversion_elo = round(actual_elo_at_date + 400 * log10(s / (1 - s))) where s is
-    clamped to ``[_ENDGAME_ELO_SKILL_CLAMP_LO, _ENDGAME_ELO_SKILL_CLAMP_HI]``.
-
-    When ``skill == 0.5`` the log10 term is 0, so conversion_elo == actual_elo_at_date.
-    Both timeline lines coincide at the neutral skill mark. 75 % skill puts
-    conversion_elo roughly +190 Elo above; 25 % skill puts it roughly -190 Elo below.
-    The anchor change (Phase 57.1) replaces the old opponent-average anchor; this is
-    no longer a classical performance metric, it is a skill-adjusted rating.
-
-    Phase 87.4 (D-06): the formula identity is unchanged from Phase 57. Only the
-    upstream input source changed — ``s`` now comes from
-    ``_affine_recenter_conv_delta`` (windowed Conv ΔES) instead of the retired
-    rate-based ``_endgame_skill_from_bucket_rows``.
-
-    Pure function. Safe for skill=0.0 and skill=1.0 by construction (clamp is applied
-    unconditionally before the log10 / division).
-    """
-    s = max(_ENDGAME_ELO_SKILL_CLAMP_LO, min(_ENDGAME_ELO_SKILL_CLAMP_HI, skill))
-    return round(actual_elo_at_date + 400 * math.log10(s / (1 - s)))
-
-
-def _windowed_conv_delta_es(
-    rows: Sequence[Row[Any] | tuple[Any, ...]],
-) -> float | None:
-    """Mean per-game Conv ΔES across conversion-bucket rows in a trailing window
-    (Phase 87.4 D-01 — replaces ``_endgame_skill_from_bucket_rows``).
-
-    Row tuple shape (matches query_endgame_elo_timeline_rows bucket output)::
-
-        (played_at, platform, time_control_bucket, user_color,
-         white_rating, black_rating, eval_cp, eval_mate, result)
-
-    Conv ΔES proxy chosen here (RESEARCH.md §Open Question #1 / Pitfall 3
-    "option (b)"): for each conversion-bucket row (``_classify_endgame_bucket``
-    returns ``"conversion"`` — eval at endgame entry ≥ +EVAL_ADVANTAGE_THRESHOLD
-    after color-flip) we compute
-
-        ``per_game_gap = game_result_score - ES_entry``
-
-    where ``ES_entry`` is the Lichess expected-score sigmoid applied to the
-    entry-ply Stockfish eval (mate scores short-circuit to ±1.0 via
-    ``eval_mate_to_expected_score``). This approximates
-    ``_compute_span_gap`` at the per-game granularity available to this query
-    (the timeline query does not carry next-span eval, so transitory-span
-    accounting is collapsed onto the game's terminal outcome). The mean is
-    over conversion-bucket rows only — parity and recovery rows are excluded
-    so the affine recenter operates on the same quantity surfaced by the
-    Section 2 ``section2_score_gap_conv`` bullet.
-
-    Returns ``None`` when zero conversion-bucket rows are present in the window
-    (mean is undefined). The caller treats ``None`` like the previous Skill
-    helper's ``None`` return — skip emission for this ISO week.
-    """
-    gap_sum = 0.0
-    gap_count = 0
-
-    for row in rows:
-        # Tuple unpacking per Pitfall 5 (avoid ty row-attribute errors).
-        (
-            _played_at,
-            _platform,
-            _tc,
-            user_color,
-            _white_rating,
-            _black_rating,
-            eval_cp,
-            eval_mate,
-            result,
-        ) = row
-
-        bucket = _classify_endgame_bucket(eval_cp, eval_mate, user_color)
-        if bucket != "conversion":
-            continue
-
-        # Entry expected score from the user's perspective. Mate takes precedence
-        # over cp (forced-mate is a terminal eval the sigmoid would over-compress).
-        if eval_mate is not None:
-            es_entry = eval_mate_to_expected_score(eval_mate, user_color)
-        elif eval_cp is not None:
-            es_entry = eval_cp_to_expected_score(eval_cp, user_color)
-        else:
-            # _classify_endgame_bucket returns "conversion" only when eval is
-            # populated and >= +threshold; the both-None case routes to "parity"
-            # and is excluded above. Defensive skip.
-            continue
-
-        outcome = derive_user_result(result, user_color)
-        game_result_score = _GAME_RESULT_TO_SCORE[outcome]
-        gap_sum += game_result_score - es_entry
-        gap_count += 1
-
-    if gap_count == 0:
-        return None
-    return gap_sum / gap_count
+    return int(round(actual_elo + k * eg_score_gap))
 
 
 def _compute_endgame_elo_weekly_series(
-    bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
-    all_rows: Sequence[Row[Any] | tuple[Any, ...]],
-    window: int,
+    score_gap_timeline: Sequence[ScoreGapTimelinePoint],
     actual_elo_dates: Sequence[datetime],
     actual_elo_ratings: Sequence[int],
     cutoff_str: str | None = None,
 ) -> list[EndgameEloTimelinePoint]:
-    """Co-compute weekly Endgame ELO + Actual ELO rolling series for one combo (Phase 57.1).
+    """Build weekly Endgame ELO + Actual ELO series for one combo (Phase 87.5).
 
-    Walks a merged chronological event stream of endgame bucket rows + all-games
-    rows, maintaining one trailing window of bucket rows for the skill composite.
-    At each ISO-week boundary, emits one point dated to the ISO-Sunday
-    (end of week) with:
-    - actual_elo = asof-join of (actual_elo_dates, actual_elo_ratings) at the
-        ISO-week-end timestamp (Monday + 7 days, exclusive). Forward-fills from
-        the latest prior game when the week itself has no games (D-02). The
-        plotted date (Sunday) matches when this rating was measured — so a daily
-        rating chart at the same date shows the same value (assuming matching
-        filters).
-    - endgame_elo = _endgame_elo_from_skill(skill, actual_elo) — both lines share
-        the asof rating anchor (D-04).
-    - endgame_games_in_window = len(endgame_window).
-    - per_week_endgame_games = count of endgame events for this specific ISO week
-        (NOT the trailing-window count). Drives the frontend volume bars (D-06).
+    For each ``ScoreGapTimelinePoint`` (already filtered to weeks where both
+    the endgame and non-endgame trailing windows hold ``>= MIN_GAMES_FOR_TIMELINE``
+    games by the upstream producer), emit one ``EndgameEloTimelinePoint`` with:
 
-    Per-point emission requires endgame_window_count >= MIN_GAMES_FOR_TIMELINE
-    (D-06 carry-over from Phase 57). `cutoff_str` filters output points to
-    >= cutoff while letting earlier games pre-fill the windows (Pitfall 2).
+    - ``endgame_elo = round(actual_elo + K · eg_score_gap)`` where
+      ``eg_score_gap`` is ``pt.endgame_score - pt.non_endgame_score``.
+    - ``actual_elo`` = asof-join of (actual_elo_dates, actual_elo_ratings) at
+      ``next_monday_dt``. Forward-fills from the latest prior game when the
+      week itself has no games. Both lines share the asof rating anchor so
+      the gap between them IS the over/underperformance signal.
+    - ``endgame_games_in_window`` = ``pt.endgame_game_count`` (carry-through
+      from the score-gap producer; the trailing 100-game window count).
+    - ``per_week_endgame_games`` = ``pt.per_week_endgame_games`` (UAT fix
+      post-Phase 87.5): the count of endgame games played in THIS specific
+      ISO week. Drives the frontend Endgame ELO Timeline volume bars so users
+      see at a glance whether a weekly point is well-supported. Pre-Phase 87.5
+      this was the producer's own per-ISO-week tally; the 87.5 CR-01 fix had
+      collapsed it onto the trailing-window count which destroyed the bar
+      series. We restored the per-week semantics by tracking endgame-only ISO
+      week counts inside the score-gap producer (which is where ISO-week
+      bucketing already happens).
 
-    bucket_rows tuple shape matches query_endgame_elo_timeline_rows bucket output:
-      (played_at, platform, tc, user_color, white_rating, black_rating,
-       eval_cp, eval_mate, result)
-    all_rows tuple shape:
-      (played_at, platform, tc, user_color, white_rating, black_rating)
-    actual_elo_dates / actual_elo_ratings: parallel arrays sorted by date ASC,
-        pre-computed by the orchestrator from this combo's all_rows. Derived from
-        white_rating/black_rating by user_color. NULL-rating rows are excluded by
-        the orchestrator before these arrays are built.
+    ``cutoff_str`` filters output points to dates ``>= cutoff_str``; the
+    score-gap producer already pre-fills the trailing windows from earlier
+    games so no double-filtering is needed here.
+
+    Phase 87.5 supersedes the Phase 57.1 weekly producer that walked merged
+    bucket+all event streams. The bucket-row aggregator is gone; the
+    score-gap series IS the input.
     """
-    # Merge into single chronological stream. Tag each event with its side.
-    events: list[tuple[Any, Literal["endgame", "all"], tuple[Any, ...]]] = []
-    for row in bucket_rows:
-        if row[0] is None:
-            continue
-        events.append((row[0], "endgame", tuple(row)))
-    for row in all_rows:
-        if row[0] is None:
-            continue
-        events.append((row[0], "all", tuple(row)))
-
-    # Stable chronological sort. Ties broken by side tag so deterministic.
-    events.sort(key=lambda e: (e[0], e[1]))
-
-    endgame_window: list[tuple[Any, ...]] = []  # bucket rows for skill composite
-    per_week_count: dict[tuple[int, int], int] = {}  # NEW (D-06): per-ISO-week endgame counts
-    data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
-
-    for played_at, side, row in events:
-        # BUGFIX (Phase 57.1 WR-02): only emit on endgame events. Previously the
-        # emission block ran for every merged event (endgame + "all"), so an
-        # "all" event in a new ISO week with no endgame games yet would still
-        # produce an emission with per_week_endgame_games=0. That contradicts
-        # the docstring ("only emits on endgame events") and misleads the
-        # frontend tooltip.
-        if side != "endgame":
+    out: list[EndgameEloTimelinePoint] = []
+    for pt in score_gap_timeline:
+        if cutoff_str is not None and pt.date < cutoff_str:
             continue
 
-        endgame_window.append(row)
-        endgame_window = endgame_window[-window:]
-        iso_year_evt, iso_week_evt, _ = played_at.isocalendar()
-        per_week_count[(iso_year_evt, iso_week_evt)] = (
-            per_week_count.get((iso_year_evt, iso_week_evt), 0) + 1
-        )
-
-        # Require endgame window >= threshold for emission. NOTE (Phase 57.1):
-        # the rolling user-rating mean from Phase 57 is gone — actual_elo now
-        # comes from the per-combo asof arrays passed in by the orchestrator.
-        if len(endgame_window) < MIN_GAMES_FOR_TIMELINE:
+        # Plot on the ISO-week Monday to match the Score Gap timeline (which
+        # also stores Monday). The asof bisect still runs against next-Monday
+        # so the rating reflects the END of the ISO week — i.e. the same
+        # window state that drove the score-gap value plotted at this Monday.
+        # (UAT 2026-05-17: the earlier Sunday-of-week label caused a 6-day
+        # x-axis shift between the two charts.)
+        try:
+            monday = datetime.fromisoformat(pt.date).date()
+        except ValueError:
             continue
-
-        # Phase 87.4 (D-01): windowed mean of per-row conv ΔES (Lichess sigmoid
-        # on entry-ply eval_cp / eval_mate, conv-bucket rows only). Approximates
-        # _compute_span_gap at the per-game granularity available in this query —
-        # the timeline query does not carry next-span eval. See RESEARCH.md
-        # §Open Question #1 + Pitfall 3.
-        mean_conv_delta = _windowed_conv_delta_es(endgame_window)
-        if mean_conv_delta is None:
-            continue
-
-        # Compute the ISO-week emission key + monday + asof cutoff (Phase 57.1 D-01/D-02).
-        # Cutoff = start of NEXT Monday (Pitfall 2): inclusive of any Sunday game.
-        # BUGFIX (Phase 57.1 WR-01): pin monday_dt / next_monday_dt to midnight at the
-        # ISO boundary. Previously these carried played_at's time-of-day, so the
-        # bisect_right cutoff drifted up to 24h into the next ISO week — letting a
-        # Monday-morning rating from week N+1 leak into week N's actual_elo.
-        # Preserve tzinfo so the bisect comparison stays on the same tz axis
-        # (played_at is tz-aware in production via DateTime(timezone=True)).
-        iso_year, iso_week, iso_weekday = played_at.isocalendar()
-        monday = (played_at - timedelta(days=iso_weekday - 1)).date()
-        monday_dt = datetime.combine(monday, time.min, tzinfo=played_at.tzinfo)
+        tzinfo = actual_elo_dates[0].tzinfo if actual_elo_dates else None
+        monday_dt = datetime.combine(monday, time.min, tzinfo=tzinfo)
         next_monday_dt = monday_dt + timedelta(days=7)
-        # Stored date is the ISO-Sunday (end of week). The asof rating reflects
-        # end-of-Sunday, so the plotted date must match that moment — otherwise
-        # a daily rating chart (e.g. Global Stats RatingChart) at the same date
-        # shows a rating that lags the Endgame Timeline by 6 days (Phase 57.1
-        # polish of D-02 framing).
-        sunday = monday + timedelta(days=6)
 
         idx = bisect.bisect_right(actual_elo_dates, next_monday_dt)
         if idx == 0:
-            # No prior game — unreachable in practice because the >=10-endgame-games
-            # floor above prevents emission before the bucket window fills (which
-            # itself requires games to have been played). Defensive skip.
+            # No prior actual-rating sample for this combo — defensive skip.
+            # In practice the score-gap producer already enforces both-window
+            # MIN_GAMES_FOR_TIMELINE so an actual-rating row exists.
             continue
         actual_elo_at_date = actual_elo_ratings[idx - 1]
 
-        # Phase 87.4 (D-01/D-06): affine-recenter the windowed Conv ΔES into the
-        # Phase 57 formula's s ∈ [0.05, 0.95] domain, then apply the unchanged
-        # Phase 57 formula. Dict key renamed endgame_elo → conversion_elo in
-        # lockstep with the Pydantic schema field (Pitfall 2).
-        s = _affine_recenter_conv_delta(mean_conv_delta)
-        conversion_elo = _conversion_elo_from_skill(s, float(actual_elo_at_date))
+        # Use the pre-rounded `score_difference` directly (the score_gap producer
+        # stores it as round(endgame_score - non_endgame_score, 4)). Recomputing
+        # from the per-side values introduces sub-ulp float noise that flips the
+        # rounding boundary at half-integer K·gap (e.g. K=450, gap=0.05 →
+        # 22.50000000004 rounds to 23 but the intended value is 22 via
+        # round-half-to-even on the pre-rounded 22.5).
+        eg_score_gap = pt.score_difference
+        endgame_elo = _endgame_elo_from_score_gap(float(actual_elo_at_date), eg_score_gap, K)
 
-        data_by_week[(iso_year, iso_week)] = {
-            "date": sunday.isoformat(),
-            "conversion_elo": conversion_elo,
-            "actual_elo": int(actual_elo_at_date),
-            "endgame_games_in_window": len(endgame_window),
-            "per_week_endgame_games": per_week_count.get((iso_year, iso_week), 0),
-        }
+        out.append(
+            EndgameEloTimelinePoint(
+                date=monday.isoformat(),
+                endgame_elo=endgame_elo,
+                actual_elo=int(actual_elo_at_date),
+                endgame_games_in_window=pt.endgame_game_count,
+                per_week_endgame_games=pt.per_week_endgame_games,
+            )
+        )
 
-    return [
-        EndgameEloTimelinePoint(**data_by_week[key])
-        for key in sorted(data_by_week.keys())
-        if cutoff_str is None or data_by_week[key]["date"] >= cutoff_str
-    ]
+    return out
 
 
 def _extract_entry_clocks(
@@ -2428,21 +2294,37 @@ async def get_endgame_elo_timeline(
     rated: bool | None,
     opponent_type: str,
     recency: str | None,
+    endgame_rows_all: Sequence[Row[Any] | tuple[Any, ...]],
+    non_endgame_rows_all: Sequence[Row[Any] | tuple[Any, ...]],
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> EndgameEloTimelineResponse:
-    """Orchestrate the Endgame ELO timeline query (Phase 57 ELO-05).
+    """Orchestrate the Endgame ELO timeline query (Phase 57 ELO-05; Phase 87.5
+    D-06 rebuild on Endgame Score Gap).
 
-    Fetches rows WITHOUT the recency cutoff so the 100-game rolling windows
-    pre-fill from games before the cutoff (Pitfall 2). Partitions both row
-    streams in Python by (platform, time_control_bucket), invokes the weekly
-    helper per combo, drops combos with zero qualifying points (D-10 tier 2),
-    and returns combos ordered per _ENDGAME_ELO_COMBO_ORDER.
+    Fetches per-combo all-game rows for the Actual ELO asof-join (rolling
+    window pre-fill via recency_cutoff=None — Pitfall 2). Derives the
+    per-combo Endgame Score Gap series by partitioning the caller-supplied
+    cross-combo ``endgame_rows_all`` / ``non_endgame_rows_all`` (shape
+    ``(played_at, result, user_color, platform, time_control_bucket)`` from
+    ``query_endgame_performance_rows``) by (platform, TC) and calling
+    ``_compute_score_gap_timeline`` ONCE per combo. Feeds each per-combo
+    score-gap series into ``_compute_endgame_elo_weekly_series``, which
+    applies the additive ``actual_elo + K · eg_score_gap`` mapping
+    point-by-point.
+
+    Per-combo invariant (Phase 87.5): the Endgame ELO line for combo X is
+    derived ONLY from combo X's own ScoreGapTimelinePoint series, NOT from
+    the overview-level cross-combo score-gap timeline. The Phase 57 / 87.4
+    pairing of Endgame ELO with Actual ELO per (platform, TC) is preserved.
+
+    Drops combos with zero qualifying points (D-10 tier 2) and returns
+    combos ordered per ``_ENDGAME_ELO_COMBO_ORDER``.
     """
     cutoff = recency_cutoff(recency)
     cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
 
-    bucket_rows_all, all_rows_all = await query_endgame_elo_timeline_rows(
+    all_rows_all = await query_endgame_elo_timeline_rows(
         session,
         user_id=user_id,
         time_control=time_control,
@@ -2454,17 +2336,25 @@ async def get_endgame_elo_timeline(
         opponent_gap_max=opponent_gap_max,
     )
 
-    # Partition by (platform, time_control_bucket).
+    # Partition all_rows by (platform, time_control_bucket).
     # Row positions: played_at=0, platform=1, time_control_bucket=2
-    bucket_by_combo: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
-    for row in bucket_rows_all:
-        key = (row[1], row[2])
-        bucket_by_combo.setdefault(key, []).append(tuple(row))
-
     all_by_combo: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
     for row in all_rows_all:
         key = (row[1], row[2])
         all_by_combo.setdefault(key, []).append(tuple(row))
+
+    # Partition the cross-combo endgame / non-endgame rows by (platform, TC).
+    # These rows come from query_endgame_performance_rows with shape
+    # (played_at, result, user_color, platform, time_control_bucket) — platform
+    # is at index 3 and time_control_bucket at index 4.
+    endgame_by_combo: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
+    for row in endgame_rows_all:
+        key = (row[3], row[4])
+        endgame_by_combo.setdefault(key, []).append(tuple(row))
+    non_endgame_by_combo: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
+    for row in non_endgame_rows_all:
+        key = (row[3], row[4])
+        non_endgame_by_combo.setdefault(key, []).append(tuple(row))
 
     # Pre-compute per-combo (dates, ratings) parallel arrays for the asof-join
     # (Phase 57.1 D-01/D-02). Each combo's all_rows is already sorted by
@@ -2489,10 +2379,22 @@ async def get_endgame_elo_timeline(
     for platform_name, tc in _ENDGAME_ELO_COMBO_ORDER:
         key = (platform_name, tc)
         asof_dates, asof_ratings = asof_by_combo.get(key, ([], []))
-        points = _compute_endgame_elo_weekly_series(
-            bucket_by_combo.get(key, []),
-            all_by_combo.get(key, []),
+
+        # Per-combo score-gap series — built ONLY from this combo's rows so
+        # the Endgame ELO line for combo X is not contaminated by games from
+        # other combos. _compute_score_gap_timeline accepts generic row
+        # sequences and only reads indices 0/1/2 (played_at, result,
+        # user_color), so the extended 5-tuple from
+        # query_endgame_performance_rows passes through unchanged.
+        score_gap_for_combo = _compute_score_gap_timeline(
+            endgame_by_combo.get(key, []),
+            non_endgame_by_combo.get(key, []),
             ENDGAME_ELO_TIMELINE_WINDOW,
+            cutoff_str=cutoff_str,
+        )
+
+        points = _compute_endgame_elo_weekly_series(
+            score_gap_for_combo,
             asof_dates,
             asof_ratings,
             cutoff_str=cutoff_str,
@@ -2695,14 +2597,16 @@ async def get_endgame_overview(
     )
     time_pressure_chart = _compute_time_pressure_chart(clock_rows)
 
-    # Phase 57 ELO-05 / Phase 87.4 D-06: paired Conversion ELO + Actual ELO
-    # timeline per (platform, TC) combo. Uses its own repo query
-    # (query_endgame_elo_timeline_rows) because the row shape differs from
-    # existing queries (adds white_rating/black_rating for Elo math and
-    # requires the all-games stream for the Actual ELO line per D-04). The
-    # orchestrator runs this sequentially — no asyncio.gather on AsyncSession
-    # per CLAUDE.md.
-    conversion_elo_timeline = await get_endgame_elo_timeline(
+    # Phase 57 ELO-05 / Phase 87.5 D-06: paired Endgame ELO + Actual ELO
+    # timeline per (platform, TC) combo. Endgame ELO is derived per
+    # (platform, TC) combo from THAT combo's own ScoreGapTimelinePoint series
+    # via the additive ``actual_elo + K · eg_score_gap`` mapping — NEVER from
+    # the cross-combo overview-level score-gap timeline (which mixes games
+    # across combos and would silently contaminate the Endgame ELO line).
+    # Uses its own all-rows repo query (query_endgame_elo_timeline_rows) for
+    # the per-combo Actual ELO asof-arrays. The orchestrator runs this
+    # sequentially — no asyncio.gather on AsyncSession per CLAUDE.md.
+    endgame_elo_timeline = await get_endgame_elo_timeline(
         session,
         user_id=user_id,
         time_control=time_control,
@@ -2710,6 +2614,8 @@ async def get_endgame_overview(
         rated=rated,
         opponent_type=opponent_type,
         recency=recency,
+        endgame_rows_all=endgame_rows_all,
+        non_endgame_rows_all=non_endgame_rows_all,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -2721,5 +2627,5 @@ async def get_endgame_overview(
         score_gap_material=score_gap_material,
         clock_pressure=clock_pressure,
         time_pressure_chart=time_pressure_chart,
-        conversion_elo_timeline=conversion_elo_timeline,
+        endgame_elo_timeline=endgame_elo_timeline,
     )

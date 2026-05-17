@@ -337,6 +337,12 @@ class ScoreGapTimelinePoint(BaseModel):
     # timeline so users see at a glance whether a weekly point is well-supported
     # or marginal. Mirrors the per_week_* fields on the other endgame timelines.
     per_week_total_games: int
+    # Count of ENDGAME games (only) played in THIS specific ISO week. Threaded
+    # downstream into `EndgameEloTimelinePoint.per_week_endgame_games` so the
+    # Endgame ELO Timeline volume bars show per-week endgame activity (not the
+    # trailing 100-game window count). Defaults to 0 for back-compat with older
+    # fixtures and existing tests that don't set it.
+    per_week_endgame_games: int = 0
     # Phase 68: absolute per-side rolling-window mean scores (0.0-1.0). Drives
     # the two-line Endgame vs Non-Endgame Score chart and the
     # `score_timeline` insights subsection's two per-part series blocks.
@@ -530,35 +536,41 @@ class TimePressureChartResponse(BaseModel):
 
 
 class EndgameEloTimelinePoint(BaseModel):
-    """One weekly point for a (platform, time_control) combo of the Conversion ELO
-    Timeline (Phase 57 ELO-05; Phase 57.1 anchor change; Phase 87.4 D-06 rename).
+    """One weekly point for a (platform, time_control) combo of the Endgame ELO
+    Timeline (Phase 57 ELO-05; Phase 57.1 anchor change; Phase 87.5 D-06 rebuild
+    on Endgame Score Gap).
 
     date: Sunday of the ISO week (end of week), YYYY-MM-DD. Aligned with the asof
         rating moment so a daily rating chart at the same date shows the same value
         (assuming matching filter inputs).
-    conversion_elo: skill-adjusted rating (Phase 87.4 D-06 — renamed from
-        ``endgame_elo``; formula is unchanged from Phase 57). Computed as
-        ``round(actual_elo_at_date + 400 * log10(clamp(s) / (1 - clamp)))``
-        anchored on the user's actual rating at the point's date (per-combo asof-join
-        with forward-fill from the latest game played on or before the ISO-week-end).
-        ``s`` is the affine-recentered windowed Conv ΔES mean per Phase 87.4 D-01:
-        ``s = clamp(0.5 + ALPHA * (conv_ΔES − PIVOT), 0.05, 0.95)``. When the input
-        equals PIVOT (the benchmark p50 of Conv ΔES) ``s = 0.5`` and the log10 term
-        is 0, so ``conversion_elo == actual_elo_at_date`` (Phase 57 invariant).
+    endgame_elo: additive Endgame ELO from windowed Endgame Score Gap
+        (Phase 87.5 D-01 — supersedes the Phase 87.4 conv-ΔES affine recenter
+        AND the Phase 57 multiplicative ``400 · log10`` formula). Computed as
+        ``round(actual_elo_at_date + K · eg_score_gap)`` where ``eg_score_gap``
+        is the per-week windowed difference between endgame and non-endgame
+        outcome means (1.0 win / 0.5 draw / 0.0 loss). When ``eg_score_gap == 0``
+        the result equals ``round(actual_elo_at_date)`` exactly — the "lifts up /
+        holds back" neutral is literal zero, not a benchmark-derived constant.
+        K is a single global float calibrated against the §3.1.6 benchmark
+        percentile table.
     actual_elo: the user's rating at this point's date, sourced via the same per-combo
-        asof-join used as the conversion_elo anchor. Both lines share the anchor so the
-        gap between them IS the skill signal.
+        asof-join used as the endgame_elo anchor. Both lines share the anchor so the
+        gap between them IS the endgame over/underperformance signal.
     endgame_games_in_window: count of endgame games contributing to the trailing-window
-        Conv ΔES mean. Drives the >=MIN_GAMES_FOR_TIMELINE (10) emission floor and
-        the frontend tooltip's "past N games" copy.
-    per_week_endgame_games: count of endgame games for THIS specific ISO week (NOT the
-        trailing window). Frontend uses this for the muted volume-bar series so users can
-        see at a glance whether a weekly point is well-supported (50+ games this week)
-        or marginal (just over the 10-game floor).
+        Endgame Score Gap mean. Inherited from ``_compute_score_gap_timeline``: a point
+        is only emitted when both the endgame and non-endgame trailing windows hold
+        ``>= MIN_GAMES_FOR_TIMELINE`` (10) games. Drives the frontend tooltip's
+        "past N games" copy.
+    per_week_endgame_games: count of endgame games played in THIS specific ISO week
+        (NOT the trailing window). Frontend uses this for the muted volume-bar series
+        on the Endgame ELO Timeline so users see at a glance whether a weekly point
+        is well-supported (many endgame games this week) or marginal. Restored to
+        true per-week semantics in the UAT fix that followed Phase 87.5 CR-01, which
+        had collapsed it onto the trailing-window count.
     """
 
     date: str
-    conversion_elo: int
+    endgame_elo: int
     actual_elo: int
     endgame_games_in_window: int
     per_week_endgame_games: int
@@ -612,4 +624,4 @@ class EndgameOverviewResponse(BaseModel):
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
     clock_pressure: ClockPressureResponse  # Phase 54: time pressure at endgame entry
     time_pressure_chart: TimePressureChartResponse  # Phase 55: time pressure vs performance chart
-    conversion_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.4 D-06: paired Conversion ELO + Actual ELO series per (platform, TC)
+    endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.5 D-06: paired Endgame ELO + Actual ELO series per (platform, TC) via additive K · eg_score_gap

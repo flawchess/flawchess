@@ -6,7 +6,7 @@ Functions:
 - query_endgame_performance_rows: endgame and non-endgame game rows for performance comparison
 - query_endgame_timeline_rows: rows for rolling-window time series, overall and per-type
 - query_clock_stats_rows: rows for time pressure at endgame entry (Phase 54)
-- query_endgame_elo_timeline_rows: bucket + all-game rows per-combo for Phase 57 Conversion ELO timeline (renamed Phase 87.4 D-06; function name kept as-is for internal grep continuity)
+- query_endgame_elo_timeline_rows: all-game rows per-combo for Phase 57 Endgame ELO timeline (Phase 87.5 D-06 rebuild on Endgame Score Gap; function name kept as-is for internal grep continuity)
 """
 
 import datetime
@@ -478,14 +478,26 @@ async def query_endgame_performance_rows(
     for this split).
 
     Returns: (endgame_rows, non_endgame_rows) where each row is
-    (played_at, result, user_color).
+    (played_at, result, user_color, platform, time_control_bucket).
+
+    The trailing platform / time_control_bucket columns were added in Phase 87.5
+    so the orchestrator can partition both row streams per (platform, TC) combo
+    before deriving the per-combo Endgame Score Gap series that drives the
+    Endgame ELO timeline. Existing callers ignore columns past index 2.
 
     Rows are ordered by played_at ASC for chronological processing.
     """
     endgame_game_ids_subq = _any_endgame_ply_subquery(user_id)
 
-    # Base select for game rows — columns needed for WDL derivation and timeline
-    game_cols = select(Game.played_at, Game.result, Game.user_color).where(
+    # Base select for game rows — columns needed for WDL derivation, timeline,
+    # and (Phase 87.5) per-combo partitioning of the score-gap input series.
+    game_cols = select(
+        Game.played_at,
+        Game.result,
+        Game.user_color,
+        Game.platform,
+        Game.time_control_bucket,
+    ).where(
         Game.user_id == user_id,
         Game.played_at.isnot(None),
     )
@@ -796,24 +808,25 @@ async def query_endgame_elo_timeline_rows(
     recency_cutoff: datetime.datetime | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
-) -> tuple[list[Row[Any]], list[Row[Any]]]:
-    """Return (bucket_rows, all_rows) for the Phase 57 Conversion ELO timeline (renamed in Phase 87.4 D-06; function name preserved for internal grep continuity).
+) -> list[Row[Any]]:
+    """Return all-game rows for the Phase 57 Endgame ELO timeline (Phase 87.5 D-06
+    rebuild on Endgame Score Gap; function name preserved for internal grep continuity).
 
-    bucket_rows: one row per ENDGAME game (uniform 6-ply rule via entry_subq HAVING).
-        Tuple shape:
-            (played_at, platform, time_control_bucket, user_color,
-             white_rating, black_rating, eval_cp, eval_mate, result)
-        eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply.
-        NO sign flip in SQL — the service layer's _classify_endgame_bucket applies the
-        user-color flip (REFAC-02). Drives per-window skill computation AND avg(opponent_rating).
+    Returns one row per ALL user games (endgame + non-endgame) for the combo:
 
-    all_rows: one row per ALL user games (endgame + non-endgame) for the combo.
-        Tuple shape:
-            (played_at, platform, time_control_bucket, user_color,
-             white_rating, black_rating)
-        Drives per-window mean(user_rating) for the Actual ELO line (D-04).
+        (played_at, platform, time_control_bucket, user_color,
+         white_rating, black_rating)
 
-    Both queries:
+    Drives per-window mean(user_rating) for the Actual ELO line (D-04).
+
+    Phase 87.5 D-06: the prior ``bucket_rows`` subquery (which projected
+    ``eval_cp / eval_mate / result`` for the deleted ``_windowed_conv_delta_es``
+    aggregator) was removed wholesale. With the additive K formula deriving the
+    Endgame ELO line from the per-combo Endgame Score Gap series (built upstream
+    from ``query_endgame_performance_rows``), the bucket subquery's eval columns
+    are dead weight.
+
+    Filters:
     - Filter by Game.user_id == user_id at the TOP LEVEL (user scoping).
     - Use apply_game_filters for time_control/platform/rated/opponent_type/
       recency_cutoff/opponent_gap_{min,max}. Never duplicate filter logic.
@@ -821,81 +834,11 @@ async def query_endgame_elo_timeline_rows(
     - Exclude rows where white_rating IS NULL OR black_rating IS NULL (needed
       for per-side Elo math; a game without ratings can't contribute).
     - ORDER BY played_at ASC for chronological walking by the service layer.
-    - Execute sequentially on the same session (AsyncSession is not safe for
-      gather; single connection anyway).
 
     The `recency_cutoff` param is deliberately forwarded to apply_game_filters
     but the orchestrator passes None so the rolling window pre-fills (Pitfall 2
     in 57-RESEARCH.md). Callers filter emitted timeline points afterwards.
     """
-    # ── bucket_rows: one row per endgame game (uniform 6-ply rule) ─────────
-    # Single per-game aggregation (mirrors query_endgame_bucket_rows / _entry_rows).
-    # Avoids two GamePosition self-joins whose plan was unstable across users — the
-    # planner couldn't reliably push (game_id, ply+N) into after_pos's index cond
-    # and would scan the user's full endgame population per outer game.
-    # INCLUDE(eval_cp, eval_mate) on ix_gp_user_endgame_game enables index-only scans
-    # for array_agg(eval_cp ORDER BY ply) and array_agg(eval_mate ORDER BY ply).
-    entry_eval_cp_agg = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.eval_cp, GamePosition.ply.asc())),
-        ARRAY(SmallIntegerType),
-    )[1]
-
-    entry_eval_mate_agg = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.eval_mate, GamePosition.ply.asc())),
-        ARRAY(SmallIntegerType),
-    )[1]
-
-    entry_subq = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            entry_eval_cp_agg.label("entry_eval_cp"),
-            entry_eval_mate_agg.label("entry_eval_mate"),
-        )
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.endgame_class.isnot(None),
-        )
-        .group_by(GamePosition.game_id)
-        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
-        .subquery("elo_entry")
-    )
-
-    # eval_cp and eval_mate are projected raw (white-perspective, no SQL color flip).
-    # The service layer's _classify_endgame_bucket(eval_cp, eval_mate, user_color)
-    # applies the sign flip at read time (REFAC-02).
-    bucket_stmt = (
-        select(
-            Game.played_at,
-            Game.platform,
-            Game.time_control_bucket,
-            Game.user_color,
-            Game.white_rating,
-            Game.black_rating,
-            entry_subq.c.entry_eval_cp.label("eval_cp"),
-            entry_subq.c.entry_eval_mate.label("eval_mate"),
-            Game.result,
-        )
-        .join(entry_subq, Game.id == entry_subq.c.game_id)
-        .where(
-            Game.user_id == user_id,
-            Game.played_at.isnot(None),
-            Game.white_rating.isnot(None),
-            Game.black_rating.isnot(None),
-        )
-        .order_by(Game.played_at.asc())
-    )
-    bucket_stmt = apply_game_filters(
-        bucket_stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-    )
-
-    # ── all_rows: one row per user game (endgame + non-endgame) ─────────────
     all_stmt = (
         select(
             Game.played_at,
@@ -924,9 +867,5 @@ async def query_endgame_elo_timeline_rows(
         opponent_gap_max=opponent_gap_max,
     )
 
-    # Execute sequentially — AsyncSession is not safe for concurrent use from
-    # multiple coroutines, and a single session uses one DB connection so
-    # asyncio.gather provides no benefit (CLAUDE.md §Critical Constraints).
-    bucket_result = await session.execute(bucket_stmt)
     all_result = await session.execute(all_stmt)
-    return list(bucket_result.fetchall()), list(all_result.fetchall())
+    return list(all_result.fetchall())

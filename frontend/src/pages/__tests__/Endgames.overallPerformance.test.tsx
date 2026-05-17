@@ -70,8 +70,8 @@ vi.mock('@/components/charts/EndgameClockPressureSection', () => ({
 vi.mock('@/components/charts/EndgameTimePressureSection', () => ({
   EndgameTimePressureSection: () => <div data-testid="mock-endgame-time-pressure-section" />,
 }));
-vi.mock('@/components/charts/ConversionEloTimelineSection', () => ({
-  ConversionEloTimelineSection: () => <div data-testid="mock-conversion-elo-timeline-section" />,
+vi.mock('@/components/charts/EndgameEloTimelineSection', () => ({
+  EndgameEloTimelineSection: () => <div data-testid="mock-endgame-elo-timeline-section" />,
 }));
 vi.mock('@/components/results/GameCardList', () => ({
   GameCardList: () => <div data-testid="mock-game-card-list" />,
@@ -254,7 +254,25 @@ function buildOverview(overrides?: {
       opp_series: [],
       total_endgame_games: 0,
     },
-    conversion_elo_timeline: { combos: [], timeline_window: 100 },
+    endgame_elo_timeline: {
+      combos: [
+        {
+          combo_key: 'chess_com_blitz',
+          platform: 'chess.com',
+          time_control: 'blitz',
+          points: [
+            {
+              date: '2026-01-05',
+              endgame_elo: 1620,
+              actual_elo: 1580,
+              endgame_games_in_window: 50,
+              per_week_endgame_games: 4,
+            },
+          ],
+        },
+      ],
+      timeline_window: 100,
+    },
   };
 }
 
@@ -365,6 +383,60 @@ describe('Endgames page — Phase 85 Plan 05 single composite section', () => {
     const { container } = renderPage();
     openConceptsAccordion(container);
     expect(screen.getAllByText(/Opponent Strength filter/).length).toBeGreaterThan(0);
+  });
+
+  // Phase 87.5 (Plan 02 SC#2 / SC#9): the renamed Endgame ELO Timeline section
+  // sits directly below the Score Gap over Time chart inside the "Endgame
+  // Overall Performance" group. The mocked component renders a stub div with
+  // the testid `mock-endgame-elo-timeline-section` and is mounted inside the
+  // `endgame-elo-timeline-section` wrapper. The score chart renders for real
+  // (its outermost wrapper carries `endgame-score-timeline-chart`). We assert
+  // both DOM order (compareDocumentPosition) and the section grouping (the ELO
+  // wrapper is a sibling of, not a descendant of, the metrics block).
+  it('renders the Endgame ELO Timeline directly below EndgameScoreOverTimeChart in the Overall Performance section', () => {
+    overviewState.data = buildOverview();
+    const { container } = renderPage();
+    // Both surfaces appear twice (desktop tabs + mobile tabs render the same
+    // statisticsContent); pick the first of each — DOM order between siblings
+    // inside the same wrapper is what matters.
+    const scoreCharts = container.querySelectorAll(
+      '[data-testid="endgame-score-timeline-chart"]',
+    );
+    const eloSections = container.querySelectorAll(
+      '[data-testid="endgame-elo-timeline-section"]',
+    );
+    expect(scoreCharts.length).toBeGreaterThanOrEqual(1);
+    expect(eloSections.length).toBeGreaterThanOrEqual(1);
+    const scoreChart = scoreCharts[0];
+    const eloSection = eloSections[0];
+    expect(scoreChart).toBeTruthy();
+    expect(eloSection).toBeTruthy();
+    // ELO section appears AFTER score chart in DOM order.
+    const relation = scoreChart!.compareDocumentPosition(eloSection!);
+    expect(relation & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // ELO section is NOT a descendant of the mocked metrics section.
+    const metricsMounts = container.querySelectorAll(
+      '[data-testid="mock-endgame-metrics-section"]',
+    );
+    for (const metrics of metricsMounts) {
+      expect(metrics.contains(eloSection!)).toBe(false);
+    }
+  });
+
+  // Phase 87.5 WR-01: the parent wrapper used to gate on
+  // `eloTimelineData.combos.length > 0`, which made the component's own
+  // empty/error/loading branches unreachable. The wrapper now renders the
+  // section whenever overview data is present and delegates empty/error/loading
+  // to the component itself.
+  it('renders the Endgame ELO Timeline wrapper even when combos array is empty', () => {
+    const overview = buildOverview();
+    overview.endgame_elo_timeline = { combos: [], timeline_window: 100 };
+    overviewState.data = overview;
+    const { container } = renderPage();
+    const eloSections = container.querySelectorAll(
+      '[data-testid="endgame-elo-timeline-section"]',
+    );
+    expect(eloSections.length).toBeGreaterThanOrEqual(1);
   });
 });
 

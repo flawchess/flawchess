@@ -1,26 +1,30 @@
 /**
- * Phase 87.4 — Conversion ELO Timeline section (renamed from Endgame ELO
- * Timeline; revised Phase 57.1).
+ * Phase 87.5 — Endgame ELO Timeline section.
  *
  * Paired-line weekly timeline per (platform, time_control) combo:
  *   - bright stroke: Actual ELO (per-combo asof rating at each emitted date)
- *   - dark dashed stroke: Conversion ELO (rating shifted by Conversion ΔES
- *     Score Gap via the Phase 87.4 affine recenter into the Phase 57 formula)
+ *   - dark dashed stroke: Endgame ELO (rating shifted by the additive
+ *     `K · eg_score_gap` mapping; see Phase 87.5 D-01)
  *
  * Phase 57.1 additions (carried forward):
  *   - Muted volume bars at the bottom ~20% of the chart canvas showing endgame
  *     games per ISO week summed across currently-visible combos (ComposedChart +
- *     hidden right Y-axis; Pattern 3 in 57.1-RESEARCH.md).
+ *     hidden right Y-axis; Pattern 3 in 57.1-RESEARCH.md). The Phase 87.5 CR-01
+ *     fix had briefly collapsed this onto the trailing-window count, which made
+ *     the bars unreadable; the UAT follow-up restored true per-week semantics
+ *     by tracking endgame-only ISO-week counts in the score-gap producer.
  *   - Tooltip gains a "Games this week: N (visible combos)" top line.
  *
- * Phase 87.4 rename: component, props interface, types, per-point field
- * (endgame_elo → conversion_elo), tooltip, heading, popover, error copy,
- * testids all read "Conversion ELO".
+ * Phase 87.5 rebuild: the Phase 87.4 Conv ΔES affine-recenter formula is
+ * replaced by the additive `endgame_elo = round(actual_elo + K · eg_score_gap)`
+ * mapping driven directly by the per-combo Endgame Score Gap series. Component
+ * file + props interface + per-point field renamed accordingly
+ * (conversion_elo → endgame_elo). Co-located beneath EndgameScoreOverTimeChart
+ * inside the "Endgame Overall Performance" section.
  *
  * Owns its own loading / error / empty / chart branches so the locked
  * component-level error UI (`endgame-elo-timeline-error`) is reachable per
- * UI-SPEC §Copywriting Contract. The error-container testid intentionally
- * keeps its historical name — Endgames.tsx uses it as a stable selector.
+ * UI-SPEC §Copywriting Contract.
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
@@ -29,7 +33,7 @@ import { ComposedChart, Line, Bar, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { InfoPopover } from '@/components/ui/info-popover';
 import { createDateTickFormatter, formatDateWithYear, niceEloAxis } from '@/lib/utils';
 import { ELO_COMBO_COLORS, ENDGAME_VOLUME_BAR_COLOR } from '@/lib/theme';
-import type { ConversionEloTimelineResponse, EloComboKey } from '@/types/endgames';
+import type { EndgameEloTimelineResponse, EloComboKey } from '@/types/endgames';
 
 const MOBILE_BREAKPOINT_PX = 768;
 
@@ -47,8 +51,8 @@ function useIsMobile(): boolean {
   return isMobile;
 }
 
-interface ConversionEloTimelineSectionProps {
-  data: ConversionEloTimelineResponse | undefined;
+interface EndgameEloTimelineSectionProps {
+  data: EndgameEloTimelineResponse | undefined;
   isLoading: boolean;
   isError: boolean;
 }
@@ -78,11 +82,11 @@ function getComboLabel(combo_key: string): string {
   return COMBO_LABELS[combo_key as EloComboKey] ?? combo_key;
 }
 
-export function ConversionEloTimelineSection({
+export function EndgameEloTimelineSection({
   data,
   isLoading,
   isError,
-}: ConversionEloTimelineSectionProps) {
+}: EndgameEloTimelineSectionProps) {
   const isMobile = useIsMobile();
   // One Set keyed by combo_key — toggles BOTH lines of a combo as a unit (UI-SPEC LOCKED).
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
@@ -114,19 +118,19 @@ export function ConversionEloTimelineSection({
 
   const formatDateTick = useMemo(() => createDateTickFormatter(allDates), [allDates]);
 
-  // Y-axis over all visible Elo values (conversion_elo + actual_elo) for non-hidden combos.
+  // Y-axis over all visible Elo values (endgame_elo + actual_elo) for non-hidden combos.
   const yAxis = useMemo(() => {
     const values: number[] = [];
     for (const combo of data?.combos ?? []) {
       if (hiddenKeys.has(combo.combo_key)) continue;
       for (const pt of combo.points) {
-        values.push(pt.conversion_elo, pt.actual_elo);
+        values.push(pt.endgame_elo, pt.actual_elo);
       }
     }
     return niceEloAxis(values);
   }, [data?.combos, hiddenKeys]);
 
-  // Merged chart rows: one row per date with {combo_key}_conversion_elo /
+  // Merged chart rows: one row per date with {combo_key}_endgame_elo /
   // {combo_key}_actual_elo / {combo_key}_games_in_window / {combo_key}_per_week_games columns.
   // Promoted to useMemo (Phase 57.1) because barChartData below derives from it;
   // inline mapping would re-create the array every render.
@@ -136,7 +140,7 @@ export function ConversionEloTimelineSection({
       for (const combo of data?.combos ?? []) {
         const pt = combo.points.find((p) => p.date === date);
         if (pt) {
-          row[`${combo.combo_key}_conversion_elo`] = pt.conversion_elo;
+          row[`${combo.combo_key}_endgame_elo`] = pt.endgame_elo;
           row[`${combo.combo_key}_actual_elo`] = pt.actual_elo;
           row[`${combo.combo_key}_games_in_window`] = pt.endgame_games_in_window;
           row[`${combo.combo_key}_per_week_games`] = pt.per_week_endgame_games;
@@ -148,12 +152,14 @@ export function ConversionEloTimelineSection({
   }, [allDates, data?.combos]);
 
   // Phase 57.1 volume bars: per-row aggregate of per_week_endgame_games across
-  // currently-visible combos. Recomputes on legend toggle so hidden combos
-  // are excluded from the sum (CONTEXT D-09).
+  // currently-visible combos. The UAT fix that followed Phase 87.5 CR-01
+  // restored `per_week_endgame_games` to true per-ISO-week endgame counts, so
+  // the bars again reflect weekly activity. Recomputes on legend toggle so
+  // hidden combos are excluded from the sum (CONTEXT D-09).
   //
   // Explicit return type keeps the Record<string, ...> index signature alive
   // after the spread — without it TypeScript narrows to `{ per_week_total_visible }`
-  // and the tooltip's `dateRow[`${combo}_conversion_elo`]` lookups lose their typing.
+  // and the tooltip's `dateRow[`${combo}_endgame_elo`]` lookups lose their typing.
   const barChartData = useMemo<
     Array<Record<string, string | number | undefined> & { per_week_total_visible: number }>
   >(() => {
@@ -180,36 +186,37 @@ export function ConversionEloTimelineSection({
     return Math.max(m, 1);
   }, [barChartData]);
 
+  // Phase 87.5: popover copy follows CLAUDE.md popover minimalism (WHAT +
+  // sign convention only; no jargon). The "lifts up / holds back" metaphor
+  // restored per CONTEXT.md §Specific Ideas.
   const infoPopover = (
     <InfoPopover
-      ariaLabel="Conversion ELO Timeline info"
-      testId="conversion-elo-timeline-info"
+      ariaLabel="Endgame ELO Timeline info"
+      testId="endgame-elo-timeline-info"
       side="top"
     >
       <div className="space-y-2">
         <p>
-          <strong>Conversion ELO</strong> is your weekly rating, adjusted for how
-          well you've been converting winning positions. When your Conversion ΔES
-          Score Gap sits above the population baseline (you out-convert your
-          cohort), Conversion ELO rises above your Actual ELO; when it sits below,
-          Conversion ELO falls below. A player at the typical-cohort result sees
-          Conversion ELO matching Actual ELO.
+          <strong>Endgame ELO</strong> is your actual rating plus a small offset
+          proportional to your Endgame Score Gap (your trailing-window endgame
+          outcomes minus your non-endgame outcomes). Positive Score Gap lifts
+          your rating; negative holds it back.
         </p>
         <p>
-          The solid bright line is your <strong>Actual ELO</strong>, your rating at
-          each date from the most recent game on or before that date. The dark
-          dashed line is <strong>Conversion ELO</strong>. The gap between the lines
+          The solid bright line is your <strong>Actual ELO</strong>, your rating
+          at each date from the most recent game on or before that date. The dark
+          dashed line is <strong>Endgame ELO</strong>. The gap between the lines
           is the interesting signal.
         </p>
         <p>
-          Points are emitted weekly; each Conversion ELO value looks back at your
-          trailing 100 endgame games for that platform and time control. Weeks with
-          fewer than 10 qualifying endgame games are hidden.
+          Points are emitted weekly; each Endgame ELO value looks back at your
+          trailing 100 endgame games for that platform and time control. Weeks
+          with fewer than 10 qualifying endgame games are hidden.
         </p>
         <p>
-          Chess.com uses Glicko-1 and lichess uses Glicko-2, so ratings across the
-          two platforms aren't directly comparable. Each combo line is self-consistent
-          on its own scale.
+          Chess.com uses Glicko-1 and lichess uses Glicko-2, so ratings across
+          the two platforms aren't directly comparable. Each combo line is
+          self-consistent on its own scale.
         </p>
       </div>
     </InfoPopover>
@@ -219,12 +226,12 @@ export function ConversionEloTimelineSection({
     <div className="mb-3">
       <h3 className="text-base font-semibold">
         <span className="inline-flex items-center gap-1">
-          Conversion ELO Timeline
+          Endgame ELO Timeline
           {infoPopover}
         </span>
       </h3>
       <p className="text-sm text-muted-foreground mt-1">
-        Is your conversion-based ELO (dashed lines) lifting your actual ELO rating (solid lines), or holding it back?
+        Is your Endgame ELO (dashed lines) lifting your actual ELO rating (solid lines), or holding it back?
       </p>
     </div>
   );
@@ -239,7 +246,7 @@ export function ConversionEloTimelineSection({
         data-testid="endgame-elo-timeline-error"
       >
         <p className="mb-2 text-base font-medium text-foreground">
-          Failed to load Conversion ELO timeline
+          Failed to load Endgame ELO timeline
         </p>
         <p className="text-sm text-muted-foreground">
           Something went wrong. Please try again in a moment.
@@ -381,11 +388,11 @@ export function ConversionEloTimelineSection({
                     Games this week: {perWeekTotal}
                   </div>
                   {visibleCombos.map((combo) => {
-                    const conversion = dateRow[`${combo.combo_key}_conversion_elo`] as number | undefined;
+                    const endgameElo = dateRow[`${combo.combo_key}_endgame_elo`] as number | undefined;
                     const actual = dateRow[`${combo.combo_key}_actual_elo`] as number | undefined;
                     const games = dateRow[`${combo.combo_key}_games_in_window`] as number | undefined;
-                    if (conversion === undefined || actual === undefined) return null;
-                    const gap = conversion - actual;
+                    if (endgameElo === undefined || actual === undefined) return null;
+                    const gap = endgameElo - actual;
                     const gapSign = gap > 0 ? '+' : '';
                     const colors = getComboColors(combo.combo_key);
                     // Renamed from `label` to `comboLabel` — the outer destructure
@@ -408,7 +415,7 @@ export function ConversionEloTimelineSection({
                             style={{ backgroundColor: colors.dark }}
                           />
                           <span>
-                            Conversion ELO: {conversion}
+                            Endgame ELO: {endgameElo}
                             <span className="text-muted-foreground ml-1">
                               gap {gapSign}{gap}
                               {games !== undefined && ` (past ${games} games)`}
@@ -462,9 +469,9 @@ export function ConversionEloTimelineSection({
               />,
               <Line
                 yAxisId="elo"
-                key={`${combo.combo_key}_conversion_elo`}
+                key={`${combo.combo_key}_endgame_elo`}
                 type="monotone"
-                dataKey={`${combo.combo_key}_conversion_elo`}
+                dataKey={`${combo.combo_key}_endgame_elo`}
                 name={combo.combo_key}
                 stroke={colors.dark}
                 strokeWidth={1.5}

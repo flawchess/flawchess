@@ -153,6 +153,10 @@ export interface ScoreGapTimelinePoint {
   // Count of games (endgame + non-endgame) played in THIS specific ISO week.
   // Drives the muted volume-bar series on the Score Gap timeline.
   per_week_total_games: number;
+  // Count of ENDGAME games (only) played in THIS specific ISO week. Threaded
+  // through to EndgameEloTimelinePoint.per_week_endgame_games so the Endgame
+  // ELO Timeline volume bars show per-week endgame activity.
+  per_week_endgame_games: number;
   // Phase 68: absolute per-side rolling-window mean scores (0.0-1.0). Invariant:
   // abs((endgame_score - non_endgame_score) - score_difference) < 1e-9 per bucket.
   endgame_score: number;
@@ -259,20 +263,19 @@ export interface EndgameOverviewResponse {
   score_gap_material: ScoreGapMaterialResponse;  // Phase 53
   clock_pressure: ClockPressureResponse;         // Phase 54
   time_pressure_chart: TimePressureChartResponse; // Phase 55
-  conversion_elo_timeline: ConversionEloTimelineResponse; // Phase 57 (renamed Phase 87.4)
+  endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57 (rebuilt Phase 87.5)
 }
 
-// ── Phase 87.4: Conversion ELO Timeline (renamed from Endgame ELO Timeline) ──
+// ── Phase 87.5: Endgame ELO Timeline (rebuilt on Endgame Score Gap) ──
 
 /** Stable string-literal union of all 8 (platform, time_control) combo keys.
  *  Format: {platform_with_dot_replaced_by_underscore}_{time_control}.
  *  Frontend uses this as the lookup key into ELO_COMBO_COLORS.
- *  Backend populates via ConversionEloTimelineCombo.combo_key.
+ *  Backend populates via EndgameEloTimelineCombo.combo_key.
  *
- *  Phase 87.4 D-06 / RESEARCH §Open Q#3 (Claude's Discretion): kept as
- *  EloComboKey, not renamed to ConversionEloComboKey — the combo_key encodes
- *  (platform, time_control) and carries no "endgame" semantic, so the rename
- *  would add churn without clarifying anything. */
+ *  Phase 87.4 D-06: kept as EloComboKey rather than renaming — the combo_key
+ *  encodes (platform, time_control) and carries no "endgame" semantic, so a
+ *  rename would add churn without clarifying anything. */
 export type EloComboKey =
   | 'chess_com_bullet'
   | 'chess_com_blitz'
@@ -283,33 +286,39 @@ export type EloComboKey =
   | 'lichess_rapid'
   | 'lichess_classical';
 
-/** One weekly point for a (platform, time_control) combo (Phase 57 ELO-05;
- *  revised Phase 57.1; renamed Phase 87.4 endgame_elo → conversion_elo).
- *  date: Monday of ISO week, YYYY-MM-DD.
- *  conversion_elo: skill-adjusted rating = round(actual_elo + 400 * log10(s / (1 - s))),
- *    where s = clamp(0.5 + ALPHA * (conv_ΔES − PIVOT), 0.05, 0.95) per the Phase 87.4
- *    affine recenter (PIVOT = -0.0474, ALPHA = 2.025, CALIBRATION_VERSION =
- *    "conv_delta_v1_260516"). A typical-cohort player (conv_ΔES = PIVOT) yields s = 0.5
- *    and Conversion ELO = actual ELO (Phase 57 median-coincide invariant preserved).
+/** One weekly point for a (platform, time_control) combo.
+ *  Phase 87.5 D-01: rebuilt on the additive Endgame Score Gap mapping.
+ *  date: Monday of ISO week (start of week), YYYY-MM-DD. Matches the Endgame
+ *    Score Gap over Time chart's date convention so the two charts align on
+ *    the x-axis. The asof rating is still resolved at next-Monday (end of the
+ *    ISO week), so the plotted point reflects the window state at week-end.
+ *  endgame_elo: round(actual_elo + K · eg_score_gap), where eg_score_gap is the
+ *    trailing-window Endgame Score minus Non-Endgame Score for this combo. At
+ *    eg_score_gap = 0 the rendered Endgame ELO equals actual_elo exactly.
+ *    K is a single global constant (locked at 450 in app/services/endgame_service.py).
+ *    Positive Endgame Score Gap lifts the rating; negative holds it back.
  *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
- *  endgame_games_in_window: trailing 100-game window count (drives >=10 floor + tooltip "past N games").
- *  per_week_endgame_games: count of endgame games for THIS specific ISO week (Phase 57.1, drives muted volume bars). */
-export interface ConversionEloTimelinePoint {
+ *  endgame_games_in_window: trailing 100-game window count (drives ≥10 floor + tooltip "past N games").
+ *  per_week_endgame_games: count of endgame games played in THIS specific ISO week
+ *    (NOT the trailing window). Drives the muted volume-bar series on the Endgame
+ *    ELO Timeline so the bars reflect per-week activity. Restored to per-week
+ *    semantics in the UAT fix that followed Phase 87.5 CR-01. */
+export interface EndgameEloTimelinePoint {
   date: string;
-  conversion_elo: number;
+  endgame_elo: number;
   actual_elo: number;
   endgame_games_in_window: number;
   per_week_endgame_games: number;
 }
 
-export interface ConversionEloTimelineCombo {
+export interface EndgameEloTimelineCombo {
   combo_key: EloComboKey;
   platform: 'chess.com' | 'lichess';
   time_control: 'bullet' | 'blitz' | 'rapid' | 'classical';
-  points: ConversionEloTimelinePoint[];
+  points: EndgameEloTimelinePoint[];
 }
 
-export interface ConversionEloTimelineResponse {
-  combos: ConversionEloTimelineCombo[];
+export interface EndgameEloTimelineResponse {
+  combos: EndgameEloTimelineCombo[];
   timeline_window: number;
 }

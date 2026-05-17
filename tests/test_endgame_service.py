@@ -17,10 +17,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.endgames import EndgameEloTimelinePoint, EndgameWDLSummary
+from app.schemas.endgames import (
+    EndgameEloTimelinePoint,
+    EndgameWDLSummary,
+    ScoreGapTimelinePoint,
+)
 from app.services.endgame_service import (
     CLOCK_PRESSURE_TIMELINE_WINDOW,
-    ENDGAME_ELO_TIMELINE_WINDOW,
+    K,
     SCORE_GAP_TIMELINE_WINDOW,
     _aggregate_endgame_stats,
     _build_bucket_series,
@@ -34,7 +38,6 @@ from app.services.endgame_service import (
     _compute_span_gap,
     _compute_time_pressure_chart,
     _compute_weekly_rolling_series,
-    _conversion_elo_from_skill,
     _extract_entry_clocks,
     _get_endgame_performance_from_rows,
     _wdl_to_score,
@@ -1542,9 +1545,9 @@ class TestGetEndgameOverview:
         assert result.score_gap_material is not None
         assert result.clock_pressure is not None
         assert result.clock_pressure.rows == []
-        assert result.conversion_elo_timeline is not None
-        assert result.conversion_elo_timeline.combos == []
-        assert result.conversion_elo_timeline.timeline_window == 100
+        assert result.endgame_elo_timeline is not None
+        assert result.endgame_elo_timeline.combos == []
+        assert result.endgame_elo_timeline.timeline_window == 100
 
     @pytest.mark.asyncio
     async def test_overview_passes_window_to_timeline(self):
@@ -3152,6 +3155,10 @@ class TestComputeScoreGapTimeline:
         assert series[0].score_difference == pytest.approx(1.0)
         assert series[0].endgame_game_count == 10
         assert series[0].non_endgame_game_count == 10
+        # UAT fix post-87.5: per_week_endgame_games tracks endgame events in the
+        # ISO week (10 endgame rows scheduled into week 1, 10 into week 2).
+        assert series[0].per_week_endgame_games == 10
+        assert series[0].per_week_total_games == 20
         # Phase 68: absolute per-side means persisted.
         assert series[0].endgame_score == pytest.approx(1.0)
         assert series[0].non_endgame_score == pytest.approx(0.0)
@@ -3159,6 +3166,8 @@ class TestComputeScoreGapTimeline:
         assert series[1].score_difference == pytest.approx(0.25)
         assert series[1].endgame_game_count == 20
         assert series[1].non_endgame_game_count == 20
+        assert series[1].per_week_endgame_games == 10
+        assert series[1].per_week_total_games == 20
         # endgame_mean = (10*1 + 10*0.5)/20 = 0.75
         # non_endgame_mean = (10*0 + 10*1)/20 = 0.5
         assert series[1].endgame_score == pytest.approx(0.75)
@@ -3300,94 +3309,17 @@ class TestComputeScoreGapTimeline:
 
 
 # -----------------------------------------------------------------------------
-# Phase 57 ELO-05 — Endgame ELO formula + timeline helpers
+# Phase 57 ELO-05 / Phase 87.5 — Endgame ELO additive K mapping + timeline helpers
 # -----------------------------------------------------------------------------
 
 
-class TestConversionElo:
-    """Unit tests for the Conversion ELO formula (Phase 57 D-01; renamed
-    in Phase 87.4 D-06 from Endgame ELO — formula unchanged).
-
-    Formula: round(avg_opp + 400 * log10(clamp(skill, 0.05, 0.95) /
-             (1 - clamp(skill)))).
-    """
-
-    def test_formula_mid_range(self):
-        # skill=0.5 -> log10(0.5/0.5) = 0 -> returns round(avg_opp).
-        assert _conversion_elo_from_skill(0.5, 1500.0) == 1500
-        assert _conversion_elo_from_skill(0.5, 1847.0) == 1847
-
-    def test_clamp_boundaries_skill_zero_does_not_raise(self):
-        # skill=0.0 -> clamped to 0.05 -> log10(0.05/0.95) ~ -1.279
-        # -> 1500 + 400*-1.279 ~ 988
-        result = _conversion_elo_from_skill(0.0, 1500.0)
-        assert isinstance(result, int)
-        assert result < 1500
-        # Clamp at 0.05 yields approximately -510 Elo delta at the extreme.
-        assert result > 900  # not <= 0, not -inf
-
-    def test_clamp_boundaries_skill_one_does_not_raise(self):
-        # skill=1.0 -> clamped to 0.95 -> log10(0.95/0.05) ~ +1.279
-        # -> 1500 + 400*1.279 ~ 2012
-        result = _conversion_elo_from_skill(1.0, 1500.0)
-        assert isinstance(result, int)
-        assert result > 1500
-        assert result < 2100  # well below numeric-overflow territory
-
-    def test_formula_above_parity_raises_elo(self):
-        # skill=0.7 > 0.5 -> Elo above opponent average.
-        assert _conversion_elo_from_skill(0.7, 1500.0) > 1500
-
-    def test_formula_below_parity_lowers_elo(self):
-        # skill=0.3 < 0.5 -> Elo below opponent average.
-        assert _conversion_elo_from_skill(0.3, 1500.0) < 1500
-
-
-# Helper for the timeline tests — mirrors the repo output tuple shape.
-def _elo_bucket_row(
-    played_at: Any,
-    platform: str,
-    tc: str,
-    user_color: str,
-    white_rating: int,
-    black_rating: int,
-    eval_cp: int | None,
-    eval_mate: int | None,
-    result: str,
-) -> tuple:
-    """Row matching query_endgame_elo_timeline_rows bucket output (9 columns).
-
-    Columns: (played_at, platform, time_control_bucket, user_color,
-              white_rating, black_rating, eval_cp, eval_mate, result)
-    eval_cp and eval_mate are white-perspective Stockfish eval at span-entry ply (REFAC-02).
-    """
-    return (
-        played_at,
-        platform,
-        tc,
-        user_color,
-        white_rating,
-        black_rating,
-        eval_cp,
-        eval_mate,
-        result,
-    )
-
-
-def _elo_all_row(
-    played_at: Any,
-    platform: str,
-    tc: str,
-    user_color: str,
-    white_rating: int,
-    black_rating: int,
-) -> tuple:
-    """Row matching query_endgame_elo_timeline_rows all_rows output (6 columns)."""
-    return (played_at, platform, tc, user_color, white_rating, black_rating)
-
-
 def _asof_arrays_from_all_rows(all_rows: list[tuple]) -> tuple[list, list[int]]:
-    """Mirror the orchestrator's per-combo asof-array build for unit tests (Phase 57.1)."""
+    """Mirror the orchestrator's per-combo asof-array build for unit tests.
+
+    Row shape (Phase 57.1): (played_at, platform, time_control_bucket,
+    user_color, white_rating, black_rating). The orchestrator derives the
+    user's rating per-row via user_color and skips NULL-rating rows.
+    """
     dates: list = []
     ratings: list[int] = []
     for r in all_rows:
@@ -3398,720 +3330,183 @@ def _asof_arrays_from_all_rows(all_rows: list[tuple]) -> tuple[list, list[int]]:
     return dates, ratings
 
 
-# Phase 87.4 (D-05): TestEndgameSkillFromBucketRows class deleted alongside
-# _endgame_skill_from_bucket_rows. Endgame Skill concept retired end-to-end.
+def _sg_pt(
+    date: str,
+    *,
+    endgame_score: float,
+    non_endgame_score: float,
+    endgame_game_count: int = 10,
+    non_endgame_game_count: int = 10,
+    per_week_total_games: int = 20,
+    per_week_endgame_games: int = 0,
+) -> "ScoreGapTimelinePoint":
+    """Build a ScoreGapTimelinePoint fixture for the Phase 87.5 weekly producer."""
+    return ScoreGapTimelinePoint(
+        date=date,
+        score_difference=round(endgame_score - non_endgame_score, 4),
+        endgame_game_count=endgame_game_count,
+        non_endgame_game_count=non_endgame_game_count,
+        per_week_total_games=per_week_total_games,
+        per_week_endgame_games=per_week_endgame_games,
+        endgame_score=endgame_score,
+        non_endgame_score=non_endgame_score,
+    )
 
 
-class TestConversionEloTimeline:
-    """Unit tests for _compute_endgame_elo_weekly_series — emits Conversion ELO
-    timeline points (Phase 57; revised in Phase 57.1; renamed Phase 87.4 D-06).
+class TestEndgameEloTimeline:
+    """Unit tests for _compute_endgame_elo_weekly_series (Phase 87.5 rebuild).
 
-    Note (Phase 87.4 D-01): inputs are now drawn from windowed Conv ΔES
-    (conversion-bucket rows only, terminal per-game score gap via Lichess
-    sigmoid on entry-ply eval). Tests that previously fed parity-bucket
-    fixtures (eval_cp=0 / draws) were updated: under the new helper those
-    rows do not contribute (parity is excluded by _windowed_conv_delta_es)
-    so the timeline emits zero points. The tests below use conversion-bucket
-    fixtures (eval_cp > +100, sign-flipped to the user's perspective) to
-    keep the emission path exercised."""
+    The Phase 87.5 weekly producer consumes a per-combo ScoreGapTimelinePoint
+    list (already filtered to weeks where both windows hold
+    >= MIN_GAMES_FOR_TIMELINE games) and the per-combo asof arrays. Each
+    point's endgame_elo = round(actual_elo + K * eg_score_gap).
+    """
 
     def test_empty_inputs_returns_empty(self):
-        assert _compute_endgame_elo_weekly_series([], [], 100, [], []) == []
+        assert _compute_endgame_elo_weekly_series([], [], []) == []
 
-    def test_below_min_games_dropped(self):
-        """Endgame window with 9 conv-bucket games -> no point emitted (D-06 threshold = 10)."""
-        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        # Phase 87.4 (D-01): conv-bucket fixture (eval_cp >= +100 from white POV).
-        bucket_rows = [
-            _elo_bucket_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,  # white-perspective eval — conv-bucket for white user.
-                None,
-                "1-0",
-            )
-            for i in range(9)
-        ]
-        all_rows = [
-            _elo_all_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            )
-            for i in range(50)
-        ]
+    def test_single_point_at_zero_gap_preserves_actual_elo(self):
+        # eg_score_gap = 0 -> endgame_elo == round(actual_elo) exactly.
+        played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
+        all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows, all_rows, 100, asof_dates, asof_ratings
-        )
-        assert result == []
-
-    def test_min_games_emits_point(self):
-        """Endgame window with 10 conv-bucket wins -> one point. Phase 87.4 D-01:
-        per-game Conv ΔES > PIVOT, so the affine recenter pushes ``s`` above 0.5
-        and conversion_elo lands above the 1500 actual_elo anchor. We assert
-        ordering, not an exact value (the recenter math is unit-tested under
-        TestAffineRecenter)."""
-        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        bucket_rows = [
-            _elo_bucket_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,  # +200cp white POV — conv-bucket.
-                None,
-                "1-0",
-            )
-            for i in range(10)
-        ]
-        all_rows = [
-            _elo_all_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            )
-            for i in range(10)
-        ]
-        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows, all_rows, 100, asof_dates, asof_ratings
-        )
+        sg = [_sg_pt("2026-01-05", endgame_score=0.5, non_endgame_score=0.5)]
+        result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
-        # Dated to ISO-Sunday (end of week 2 = 2026-01-11). Monday was 2026-01-05.
-        assert result[0].date == "2026-01-11"
-        # 10 wins at +200cp (es_entry ≈ 0.68) → per-game gap ≈ +0.32. Mean is
-        # well above PIVOT (-0.0474), so s clamps near 0.95 and conversion_elo
-        # is the upper-clamp Phase 57 ceiling (~+510 Elo above actual).
+        assert result[0].endgame_elo == 1500
         assert result[0].actual_elo == 1500
-        assert result[0].conversion_elo > result[0].actual_elo
-        assert result[0].endgame_games_in_window == 10
-        # Phase 57.1: new per-week count field.
-        assert result[0].per_week_endgame_games == 10
 
-    def test_actual_elo_uses_asof_not_rolling_mean(self):
-        """Actual ELO comes from per-combo asof-join (Phase 57.1 D-04), not rolling mean.
-
-        Phase 87.4 (D-06): conversion_elo equals actual_elo iff windowed Conv ΔES
-        equals PIVOT (-0.0474) via _affine_recenter_conv_delta → s = 0.5. The
-        invariant itself is unit-tested under
-        ``TestConversionEloInvariant.test_pivot_pipeline_invariant_actual_elo_preserved``;
-        here we only assert that the asof-join anchor lands on the latest all-game
-        rating (1800, not the rolling mean of 1400/1800).
-        """
-        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        # 10 conv-bucket games at rating 1400 (per-game user_rating in bucket rows
-        # no longer influences the Elo formula after Phase 57.1).
-        bucket_rows = [
-            _elo_bucket_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1400,
-                1400,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(10)
-        ]
-        # All-games at rating 1800 — the asof of the LATEST one wins.
-        all_rows = [
-            _elo_all_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1800,
-                1800,
-            )
-            for i in range(50)
-        ]
+    def test_positive_gap_lifts_endgame_elo(self):
+        # gap = +0.10 at K=450 -> +45 ELO.
+        played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
+        all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            100,
-            asof_dates,
-            asof_ratings,
-        )
+        sg = [_sg_pt("2026-01-05", endgame_score=0.6, non_endgame_score=0.5)]
+        result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
-        # Asof returns the latest all-game's rating: 1800 (the asof anchor —
-        # NOT the bucket-row 1400 rating, NOT a rolling mean).
-        assert result[0].actual_elo == 1800
-
-    def test_cutoff_str_does_not_starve_window(self):
-        """Recency cutoff filters EMITTED points but window pre-fills from earlier games (Pitfall 2)."""
-        # Week 1: 10 endgame games pre-cutoff (pre-fills the window).
-        # Week 2: 1 endgame game post-cutoff (brings window to 11).
-        # With cutoff_str = week 2's Monday, only week 2's point should emit,
-        # and its window count must be 11 (not 1).
-        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
-        bucket_rows = [
-            _elo_bucket_row(
-                wk1 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(10)
-        ] + [
-            _elo_bucket_row(wk2, "chess.com", "blitz", "white", 1500, 1500, 200, None, "1-0"),
-        ]
-        all_rows = [
-            _elo_all_row(
-                wk1 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            )
-            for i in range(10)
-        ] + [
-            _elo_all_row(wk2, "chess.com", "blitz", "white", 1500, 1500),
-        ]
-        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows, all_rows, 100, asof_dates, asof_ratings, cutoff_str="2026-01-12"
-        )
-        assert len(result) == 1
-        # Dated to ISO-Sunday (end of week 3 = 2026-01-18). Monday was 2026-01-12.
-        # cutoff_str="2026-01-12" excludes week-2 point dated 2026-01-11.
-        assert result[0].date == "2026-01-18"
-        # Window filled with 11 games (10 pre-cutoff + 1 post-cutoff).
-        assert result[0].endgame_games_in_window == 11
-
-    def test_rolling_window_caps_at_window_size(self):
-        """Window size caps at ENDGAME_ELO_TIMELINE_WINDOW (100); extra games are dropped.
-
-        Seed 150 endgame games across a single ISO week. The emitted point's
-        `endgame_games_in_window` must equal the window size (100), not 150 —
-        proving the trailing slice `[-window:]` trims old events correctly.
-        """
-        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        bucket_rows = [
-            _elo_bucket_row(
-                monday + datetime.timedelta(minutes=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(150)
-        ]
-        all_rows = [
-            _elo_all_row(
-                monday + datetime.timedelta(minutes=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            )
-            for i in range(150)
-        ]
-        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            ENDGAME_ELO_TIMELINE_WINDOW,
-            asof_dates,
-            asof_ratings,
-        )
-        assert len(result) >= 1
-        # Last emitted point of the week reflects the fully-saturated 100-game window.
-        assert result[-1].endgame_games_in_window == 100
-
-    # --- Phase 57.1 D-18 tests (asof + per-week count) ---
-
-    def test_actual_elo_asof_forward_fill(self):
-        """Week with no games forward-fills from the latest prior game's rating (D-02).
-
-        Week 1 has 12 endgame games at rating 1500 -> emits with actual_elo=1500.
-        Week 3 has 1 game with rating 1600 -> emits with actual_elo=1600 (new asof).
-        Week 2 has no games -> no emission (the helper only emits on endgame events).
-        The forward-fill property is implicit: between week 1's emission and week 3's
-        emission, the asof value for any intermediate week would be 1500 until the
-        week-3 game updates it.
-        """
-        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        wk3 = datetime.datetime(2026, 1, 19, 12, 0, 0)
-        bucket_rows = [
-            _elo_bucket_row(
-                wk1 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(12)
-        ] + [
-            _elo_bucket_row(
-                wk3,
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            ),
-        ]
-        # All-games contains the week-1 history at rating 1500 and a week-3 game at
-        # rating 1600 (user's rating changed between weeks).
-        all_rows = [
-            _elo_all_row(
-                wk1 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            )
-            for i in range(12)
-        ] + [
-            _elo_all_row(wk3, "chess.com", "blitz", "white", 1600, 1600),
-        ]
-        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            100,
-            asof_dates,
-            asof_ratings,
-        )
-        # Week 1 emits with actual_elo=1500 (asof of week-1 latest game).
-        # Week 3 emits with actual_elo=1600 (asof of week-3 game).
-        assert len(result) >= 2
+        assert result[0].endgame_elo == 1500 + round(K * 0.10)
         assert result[0].actual_elo == 1500
-        assert result[-1].actual_elo == 1600
 
-    def test_asof_same_day_uses_last_game(self):
-        """Multiple games on the same Sunday: asof picks the last game's rating (D-03)."""
-        # 2026-01-11 is a Sunday (ISO week 2 of 2026).
-        sunday = datetime.datetime(2026, 1, 11, 12, 0, 0)
-        # 10 endgame games on the same Sunday.
-        bucket_rows = [
-            _elo_bucket_row(
-                sunday + datetime.timedelta(minutes=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(10)
-        ]
-        # All-games rows: three games on the same Sunday with ratings 1500, 1550, 1600
-        # (in chronological order). Asof at week-end (next Monday) must return 1600.
+    def test_negative_gap_holds_back_endgame_elo(self):
+        # gap = -0.20 at K=450 -> -90 ELO.
+        played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
+        all_rows = [(played_at, "chess.com", "blitz", "white", 1800, 1800)]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        sg = [_sg_pt("2026-01-05", endgame_score=0.4, non_endgame_score=0.6)]
+        result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
+        assert len(result) == 1
+        assert result[0].endgame_elo == 1800 + round(K * -0.20)
+
+    def test_multi_point_series_each_point_matches_formula(self):
+        # Three points spanning a small set of weeks. Each point's
+        # endgame_elo == round(actual_elo_at_date + K * eg_score_gap).
         all_rows = [
-            _elo_all_row(
-                sunday + datetime.timedelta(hours=1),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            ),
-            _elo_all_row(
-                sunday + datetime.timedelta(hours=2),
-                "chess.com",
-                "blitz",
-                "white",
-                1550,
-                1550,
-            ),
-            _elo_all_row(
-                sunday + datetime.timedelta(hours=3),
-                "chess.com",
-                "blitz",
-                "white",
-                1600,
-                1600,
-            ),
+            (datetime.datetime(2026, 1, 9, 12, 0, 0), "chess.com", "blitz", "white", 1500, 1500),
+            (datetime.datetime(2026, 1, 16, 12, 0, 0), "chess.com", "blitz", "white", 1520, 1500),
+            (datetime.datetime(2026, 1, 23, 12, 0, 0), "chess.com", "blitz", "white", 1540, 1500),
         ]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        sg = [
+            _sg_pt("2026-01-05", endgame_score=0.55, non_endgame_score=0.50),
+            _sg_pt("2026-01-12", endgame_score=0.50, non_endgame_score=0.50),
+            _sg_pt("2026-01-19", endgame_score=0.45, non_endgame_score=0.55),
+        ]
+        result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
+        assert len(result) == 3
+        # Each point's endgame_elo - actual_elo == round(K * score_difference).
+        # Use the pre-rounded `score_difference` to avoid float-subtraction noise
+        # at half-integer K·gap boundaries (e.g. K=450, gap=0.05 → 22.50000004
+        # rounds up while the canonical 22.5 rounds to 22 via banker's).
+        for pt, sgp in zip(result, sg):
+            assert pt.endgame_elo - pt.actual_elo == round(K * sgp.score_difference)
+
+    def test_cutoff_filters_pre_cutoff_points(self):
+        # cutoff_str drops points whose date < cutoff.
+        played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
+        all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        sg = [
+            _sg_pt("2026-01-05", endgame_score=0.55, non_endgame_score=0.50),
+            _sg_pt("2026-01-12", endgame_score=0.50, non_endgame_score=0.50),
+        ]
         result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            100,
-            asof_dates,
-            asof_ratings,
+            sg, asof_dates, asof_ratings, cutoff_str="2026-01-10"
         )
         assert len(result) == 1
-        assert result[0].actual_elo == 1600  # last game on the Sunday wins
+        assert result[0].date >= "2026-01-10"
 
-    def test_parity_only_window_emits_no_point(self):
-        """Phase 87.4 (D-01): _windowed_conv_delta_es restricts the input to
-        conversion-bucket rows. A window of pure parity-bucket games (eval ≈ 0)
-        produces no Conv ΔES samples, so the timeline emits zero points.
-
-        The Phase 57 "neutral skill ⇒ Conversion ELO == Actual ELO" invariant
-        moved to ``TestConversionEloInvariant`` (unit test on
-        ``_affine_recenter_conv_delta`` + ``_conversion_elo_from_skill``).
-        """
-        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        bucket_rows = [
-            _elo_bucket_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                0,  # parity bucket — excluded from windowed Conv ΔES.
-                None,
-                "1/2-1/2",
-            )
-            for i in range(10)
-        ]
+    def test_asof_uses_largest_date_le_point_date(self):
+        # asof-join must pick the latest rating sample <= next-Monday of the
+        # point's ISO week. We seed three actual-rating points; for a point
+        # dated 2026-01-12 (Monday) the bisect cutoff is 2026-01-19 (next
+        # Monday, exclusive). The 2026-01-15 sample at rating 1520 must be
+        # the picked one.
         all_rows = [
-            _elo_all_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1700,
-                1700,
-            )
-            for i in range(10)
+            (datetime.datetime(2026, 1, 5, 12, 0, 0), "chess.com", "blitz", "white", 1500, 1500),
+            (datetime.datetime(2026, 1, 15, 12, 0, 0), "chess.com", "blitz", "white", 1520, 1500),
+            (datetime.datetime(2026, 2, 1, 12, 0, 0), "chess.com", "blitz", "white", 1540, 1500),
         ]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            100,
-            asof_dates,
-            asof_ratings,
-        )
-        assert result == []
-
-    def test_per_combo_asof_isolation(self):
-        """asof arrays are per-combo: a chess.com rating doesn't bleed into a lichess call.
-
-        The helper itself takes per-combo arrays as inputs, so isolation is
-        enforced at the orchestrator boundary. Test the helper-level contract:
-        passing only chess.com asof data still uses ONLY the chess.com asof for
-        actual_elo (no leak from a separate lichess pool).
-        """
-        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        bucket_rows = [
-            _elo_bucket_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1400,
-                1400,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(10)
-        ]
-        # all_rows contains only chess.com entries (orchestrator partitions by
-        # combo before calling the helper); asof arrays are derived from them.
-        all_rows = [
-            _elo_all_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1400,
-                1400,
-            )
-            for i in range(10)
-        ]
-        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        # Sanity: only chess.com ratings made it into the asof arrays.
-        assert max(asof_ratings) == 1400
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            100,
-            asof_dates,
-            asof_ratings,
-        )
+        sg = [_sg_pt("2026-01-12", endgame_score=0.5, non_endgame_score=0.5)]
+        result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
-        assert result[0].actual_elo == 1400  # chess.com rating wins, no leak
+        assert result[0].actual_elo == 1520
+        assert result[0].endgame_elo == 1520
 
-    def test_per_week_count_is_not_trailing(self):
-        """per_week_endgame_games counts THIS week's games, not trailing window (D-06)."""
-        # Week 1: 15 endgame games. Window fills, points emit.
-        # Week 2: 12 endgame games. Window now has 27.
-        # Points emitted for week 2 must have per_week_endgame_games == 12 (not 27).
-        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)
-        bucket_rows = [
-            _elo_bucket_row(
-                wk1 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(15)
-        ] + [
-            _elo_bucket_row(
-                wk2 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(12)
-        ]
-        all_rows = [
-            _elo_all_row(
-                wk1 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            )
-            for i in range(15)
-        ] + [
-            _elo_all_row(
-                wk2 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            )
-            for i in range(12)
-        ]
+    def test_per_week_endgame_games_carries_through(self):
+        # The producer carries pt.endgame_game_count → endgame_games_in_window
+        # and pt.per_week_endgame_games → per_week_endgame_games (true per-ISO
+        # week count, restored after the Phase 87.5 CR-01 collapse).
+        played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
+        all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            100,
-            asof_dates,
-            asof_ratings,
-        )
-        # Two points emitted (one per week). Verify per-week counts.
-        # Dates are ISO-Sundays (end of week): 2026-01-11 for week 2, 2026-01-18 for week 3.
-        assert len(result) == 2
-        wk1_pt = next(p for p in result if p.date == "2026-01-11")
-        wk2_pt = next(p for p in result if p.date == "2026-01-18")
-        assert wk1_pt.per_week_endgame_games == 15
-        assert wk2_pt.per_week_endgame_games == 12  # NOT 27 (trailing window)
-        # endgame_games_in_window IS the trailing window:
-        assert wk2_pt.endgame_games_in_window == 27
-
-    def test_no_prior_game_does_not_emit(self):
-        """Empty asof arrays -> bisect returns idx=0 -> no emission (defensive skip)."""
-        monday = datetime.datetime(2026, 1, 5, 12, 0, 0)
-        bucket_rows = [
-            _elo_bucket_row(
-                monday + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
+        sg = [
+            _sg_pt(
+                "2026-01-05",
+                endgame_score=0.5,
+                non_endgame_score=0.5,
+                endgame_game_count=42,
+                per_week_endgame_games=7,
             )
-            for i in range(10)
         ]
-        all_rows: list[tuple] = []  # no all-games rows -> empty asof
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            100,
-            [],
-            [],
-        )
-        assert result == []
+        result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
+        assert len(result) == 1
+        assert result[0].endgame_games_in_window == 42
+        assert result[0].per_week_endgame_games == 7
 
-    def test_asof_cutoff_pinned_to_midnight_no_week_bleed(self):
-        """Regression for Phase 57.1 WR-01.
-
-        Previously next_monday_dt carried the triggering played_at's time-of-day,
-        so the bisect_right cutoff drifted up to 24h into the next ISO week and
-        a Monday-morning rating (week N+1) could leak into week N's actual_elo.
-
-        Setup: 10 endgame games on Sunday 2026-01-11 at 14:00 (ISO week 2, rating
-        1500) plus a Monday-morning 2026-01-12 at 08:00 all-game with a fresh
-        rating of 1600 (ISO week 3). With the bug, asof for week 2 would return
-        1600 because the cutoff (Mon 14:00) > Mon 08:00. Fixed: cutoff is
-        Mon 00:00 so week 2's actual_elo stays 1500.
-        """
-        sunday = datetime.datetime(2026, 1, 11, 14, 0, 0)  # ISO week 2, Sunday
-        bucket_rows = [
-            _elo_bucket_row(
-                sunday + datetime.timedelta(minutes=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(10)
-        ]
-        # All-games: 10 week-2 games at rating 1500 + a Monday-morning week-3
-        # game at rating 1600. The cutoff for week 2's emission must be
-        # Mon 2026-01-12 00:00, not Mon 14:00, so the 08:00 game is excluded.
-        all_rows = [
-            _elo_all_row(
-                sunday + datetime.timedelta(minutes=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            )
-            for i in range(10)
-        ] + [
-            _elo_all_row(
-                datetime.datetime(2026, 1, 12, 8, 0, 0),  # Monday 08:00 week 3
-                "chess.com",
-                "blitz",
-                "white",
-                1600,
-                1600,
-            ),
-        ]
+    def test_per_combo_isolation(self):
+        # Phase 87.5 per-combo invariant: each combo's Endgame ELO is derived
+        # ONLY from its own score-gap series; combos must not contaminate
+        # each other. We synthesize two distinct ScoreGapTimelinePoint inputs
+        # (combo A: +0.20 gap, combo B: -0.20 gap) at the same date and verify
+        # the producer reflects EACH combo's gap independently.
+        played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
+        all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            100,
-            asof_dates,
-            asof_ratings,
-        )
-        # Scoped strictly to WR-01: week 2's actual_elo must NOT see the
-        # Monday-morning 1600 rating (cutoff pinned to midnight excludes it).
-        # A separate WR-02 regression test covers whether a week-3 point is
-        # emitted at all off an "all" event.
-        # Point dated to ISO-Sunday (2026-01-11, end of ISO week 2).
-        wk2_pt = next(p for p in result if p.date == "2026-01-11")
-        assert wk2_pt.actual_elo == 1500  # NOT 1600 — no week-3 bleed
-
-    def test_all_events_do_not_trigger_emission_in_fresh_week(self):
-        """Regression for Phase 57.1 WR-02.
-
-        Setup: 10 endgame games in ISO week 1 (saturates window), plus 3
-        all-games in ISO week 2 with NO endgame games that week. Before the
-        fix, each week-2 all-game triggered an emission with
-        per_week_endgame_games=0, contradicting the "only emits on endgame
-        events" contract. After the fix, only the week-1 emission should
-        appear — no week-2 point at all.
-        """
-        wk1 = datetime.datetime(2026, 1, 5, 12, 0, 0)  # ISO week 1 Monday
-        wk2 = datetime.datetime(2026, 1, 12, 12, 0, 0)  # ISO week 2 Monday
-        bucket_rows = [
-            _elo_bucket_row(
-                wk1 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-                200,
-                None,
-                "1-0",
-            )
-            for i in range(10)
-        ]
-        all_rows = [
-            _elo_all_row(
-                wk1 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1500,
-                1500,
-            )
-            for i in range(10)
-        ] + [
-            _elo_all_row(
-                wk2 + datetime.timedelta(hours=i),
-                "chess.com",
-                "blitz",
-                "white",
-                1600,
-                1600,
-            )
-            for i in range(3)
-        ]
-        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        result = _compute_endgame_elo_weekly_series(
-            bucket_rows,
-            all_rows,
-            100,
-            asof_dates,
-            asof_ratings,
-        )
-        # Only week 1 should emit (where endgame games actually happened).
-        # Week 2 must NOT be in the result even though "all" events fall there.
-        # Dates are ISO-Sundays (end of week): 2026-01-11 for ISO week 2,
-        # 2026-01-18 for ISO week 3.
-        dates = {p.date for p in result}
-        assert "2026-01-11" in dates  # week 1 present
-        assert "2026-01-18" not in dates  # week 2 absent (no endgame events)
-        # And the week-1 point carries its true per-week count.
-        wk1_pt = next(p for p in result if p.date == "2026-01-11")
-        assert wk1_pt.per_week_endgame_games == 10
+        # Combo A: positive +0.20 gap → +90 ELO at K=450.
+        sg_a = [_sg_pt("2026-01-05", endgame_score=0.6, non_endgame_score=0.4)]
+        out_a = _compute_endgame_elo_weekly_series(sg_a, asof_dates, asof_ratings)
+        # Combo B: negative -0.20 gap → -90 ELO at K=450.
+        sg_b = [_sg_pt("2026-01-05", endgame_score=0.4, non_endgame_score=0.6)]
+        out_b = _compute_endgame_elo_weekly_series(sg_b, asof_dates, asof_ratings)
+        assert len(out_a) == 1 and len(out_b) == 1
+        assert out_a[0].endgame_elo == 1500 + round(K * 0.20)
+        assert out_b[0].endgame_elo == 1500 + round(K * -0.20)
+        # Cross-combo independence: combo A's output is not influenced by combo B's gap.
+        assert out_a[0].endgame_elo != out_b[0].endgame_elo
 
 
 # Sanity check: EndgameEloTimelinePoint is actually exported from the schema.
-# Phase 87.4 (D-06): per-point field renamed endgame_elo → conversion_elo.
+# Phase 87.5 (D-06): per-point field name restored to endgame_elo (Phase 87.4 had renamed it).
 def test_endgame_elo_timeline_point_constructs():
     pt = EndgameEloTimelinePoint(
         date="2026-01-05",
-        conversion_elo=1500,
+        endgame_elo=1500,
         actual_elo=1480,
         endgame_games_in_window=42,
         per_week_endgame_games=8,
     )
-    assert pt.conversion_elo == 1500
+    assert pt.endgame_elo == 1500
     assert pt.endgame_games_in_window == 42
     assert pt.per_week_endgame_games == 8
 

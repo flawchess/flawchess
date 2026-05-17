@@ -236,21 +236,23 @@ Then for each pair `(a, b)`: `pooled_sd = sqrt(((n_a-1)*var_a + (n_b-1)*var_b) /
 
 #### Per-metric output block (every subchapter)
 
+**Mandatory tables per metric (where applicable):** every per-user metric subchapter MUST emit three tables in this order:
+
+1. **p50 cell table** — 5×4 grid (rows = ELO bucket, cols = TC). Cell = per-user `p50 (n_users)`. Sparse `(2400, classical)` cell shown with footnote. This is the headline visual.
+2. **ELO marginal** — 5 rows (800/1200/1600/2000/2400) pooled across TC, excluding the sparse cell. Columns: `n_users / mean / SD / p25 / p50 / p75` (plus `p05 / p95` for distributions with wide tails).
+3. **TC marginal** — 4 rows (bullet/blitz/rapid/classical) pooled across ELO, excluding the sparse cell. Same columns.
+
+Then the collapse verdict block:
+
 ```
 ### Collapse verdict
 - TC axis: max |d| = X.XX (between {pair}) → {collapse | review | keep}
 - ELO axis: max |d| = Y.YY (between {pair}) → {collapse | review | keep}
-- Heatmap of per-user p50 (5 ELO × 4 TC):
-
-           bullet   blitz   rapid   classical
-  800      51.0%   48.0%   49.0%   49.0%
-  1200     51.0%   50.0%   50.0%   47.0%
-  ...
-
-(Score heatmaps render as percent; eval heatmaps render as integer cp, e.g. `+25 / −10 / +18 / +4`.)
 ```
 
-The heatmap is a 5×4 grid of per-user p50 — visual sanity check for interaction effects that marginals would miss.
+Score heatmaps render as percent; eval heatmaps render as integer cp (e.g. `+25 / −10 / +18 / +4`); score-gap heatmaps render as `pp` per the display-formatting rules above.
+
+**"Where applicable" exceptions:** subchapters with intrinsically different structure (e.g. 3.4.1 / 3.4.2 / 3.4.3 partition by endgame class; 3.3.2 partitions by time-pressure bucket; 3.2.2 partitions by entry bucket) emit the per-partition equivalent — one p50 cell table + ELO marginal + TC marginal **per partition** (class / bucket / time-bin). The principle is unconditional: the reader must always see the cell-level p50 grid plus both marginals for every metric, just sliced by the subchapter's natural partition. Sub-table suppression for cells below `n_users` floor is fine; skipping marginals entirely is not.
 
 ### Equal-footing opponent filter (all subchapters)
 

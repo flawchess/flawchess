@@ -150,20 +150,20 @@ class TestResample:
 
 def _make_elo_combo(
     n_points: int,
-    conversion_elo: int = 1500,
+    endgame_elo: int = 1500,
     actual_elo: int = 1400,
     platform: "Literal['chess.com', 'lichess']" = "chess.com",
     time_control: "Literal['bullet', 'blitz', 'rapid', 'classical']" = "blitz",
 ) -> EndgameEloTimelineCombo:
     """Build a synthetic EndgameEloTimelineCombo with n_points weekly points.
 
-    Phase 87.4 (D-06): parameter renamed endgame_elo → conversion_elo to match
-    the renamed Pydantic field.
+    Phase 87.5 (D-06): parameter name restored to endgame_elo in lockstep
+    with the renamed Pydantic field.
     """
     points: list[EndgameEloTimelinePoint] = [
         EndgameEloTimelinePoint(
             date=f"2026-01-{i + 1:02d}",
-            conversion_elo=conversion_elo,
+            endgame_elo=endgame_elo,
             actual_elo=actual_elo,
             endgame_games_in_window=50,
             per_week_endgame_games=5,
@@ -183,7 +183,7 @@ class TestEloCombo:
 
     def test_gap_only_series(self) -> None:
         """Gap value = endgame_elo - actual_elo for each point (D-04)."""
-        combo = _make_elo_combo(10, conversion_elo=1500, actual_elo=1400)
+        combo = _make_elo_combo(10, endgame_elo=1500, actual_elo=1400)
         result = _series_for_endgame_elo_combo(combo, "last_3mo")
         assert result is not None
         for point in result:
@@ -205,7 +205,7 @@ class TestEloCombo:
 
     def test_gap_negative_value(self) -> None:
         """Negative gap (actual_elo > endgame_elo) produces negative TimePoint value."""
-        combo = _make_elo_combo(10, conversion_elo=1300, actual_elo=1400)
+        combo = _make_elo_combo(10, endgame_elo=1300, actual_elo=1400)
         result = _series_for_endgame_elo_combo(combo, "last_3mo")
         assert result is not None
         for point in result:
@@ -213,7 +213,7 @@ class TestEloCombo:
 
     def test_combo_n_field_uses_per_week_endgame_games(self) -> None:
         """TimePoint.n comes from per_week_endgame_games, not endgame_games_in_window."""
-        combo = _make_elo_combo(10, conversion_elo=1500, actual_elo=1400)
+        combo = _make_elo_combo(10, endgame_elo=1500, actual_elo=1400)
         result = _series_for_endgame_elo_combo(combo, "last_3mo")
         assert result is not None
         for point in result:
@@ -355,7 +355,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         points=[
             EndgameEloTimelinePoint(
                 date=f"2026-01-{i + 4:02d}",
-                conversion_elo=1500,
+                endgame_elo=1500,
                 actual_elo=1400,
                 endgame_games_in_window=50,
                 per_week_endgame_games=5,
@@ -389,7 +389,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         score_gap_material=score_gap_material,
         clock_pressure=clock_pressure,
         time_pressure_chart=time_pressure_chart,
-        conversion_elo_timeline=elo_timeline,
+        endgame_elo_timeline=elo_timeline,
     )
 
 
@@ -422,7 +422,7 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
-        "conversion_elo_timeline",
+        "endgame_elo_timeline",
     }
 )
 
@@ -459,8 +459,8 @@ class TestIntegration:
         assert "clock_diff_timeline" in timeline_with_series, (
             "clock_diff_timeline should have series populated"
         )
-        assert "conversion_elo_timeline" in timeline_with_series, (
-            "conversion_elo_timeline should have series populated"
+        assert "endgame_elo_timeline" in timeline_with_series, (
+            "endgame_elo_timeline should have series populated"
         )
         # Non-timeline findings must NOT have series
         assert non_timeline_with_series == [], (

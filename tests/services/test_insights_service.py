@@ -262,8 +262,8 @@ class TestComputeHash:
             update={
                 "findings": [
                     _make_finding(
-                        "conversion_elo_timeline",
-                        "conversion_elo_gap",
+                        "endgame_elo_timeline",
+                        "endgame_elo_gap",
                         50.0,
                         "typical",
                         dimension=dim_ab,
@@ -275,8 +275,8 @@ class TestComputeHash:
             update={
                 "findings": [
                     _make_finding(
-                        "conversion_elo_timeline",
-                        "conversion_elo_gap",
+                        "endgame_elo_timeline",
+                        "endgame_elo_gap",
                         50.0,
                         "typical",
                         dimension=dim_ba,
@@ -328,9 +328,9 @@ class TestEmptyFinding:
         """Dimension passes through for per-combo / per-bucket empty findings."""
         dim = {"platform": "chess.com", "time_control": "blitz"}
         f = _empty_finding(
-            "conversion_elo_timeline",
+            "endgame_elo_timeline",
             "all_time",
-            "conversion_elo_gap",
+            "endgame_elo_gap",
             dimension=dim,
         )
         assert f.dimension == dim
@@ -480,7 +480,7 @@ def _stub_endgame_overview_response() -> EndgameOverviewResponse:
         time_pressure_chart=None,
         performance=None,
         stats=type("StatsStub", (), {"categories": []})(),
-        conversion_elo_timeline=type("EloTimelineStub", (), {"combos": []})(),
+        endgame_elo_timeline=type("EloTimelineStub", (), {"combos": []})(),
     )
 
 
@@ -1228,7 +1228,7 @@ class TestComputePlayerProfile:
         points = [
             EndgameEloTimelinePoint(
                 date=(first + _dt.timedelta(weeks=i)).isoformat(),
-                conversion_elo=1400 + i,
+                endgame_elo=1400 + i,
                 actual_elo=1350 + i,
                 endgame_games_in_window=50,
                 per_week_endgame_games=10,
