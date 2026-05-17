@@ -219,18 +219,19 @@ export interface ScoreGapMaterialResponse {
 }
 
 // ── Phase 88: Time Pressure Cards (replaces ClockPressureResponse + TimePressureChartResponse) ──
-// ClockStatsRow and ClockPressureTimelinePoint removed in Plan 07 (EndgameClockPressureSection deleted).
+// Phase 88.1 (D-07): independent opp-quintile split — both sides derived from the user's
+// own filtered game stream. See .planning/.../88-CONTEXT.md D-07 for design rationale.
 
 /** Score-Delta bullet data for one pressure quintile in a TC card. */
 export interface PressureQuintileBullet {
   quintile_index: number;       // 0 = 0-20% (max pressure) … 4 = 80-100% (min)
   quintile_label: string;       // "0-20%" … "80-100%"
   n: number;                    // game count in this bin
-  delta: number;                // user_score - cohort_score
+  delta: number;                // user_score - opp_score (independent quintile splits per side)
   p_value: number | null;
   ci_low: number | null;
   ci_high: number | null;
-  cohort_score: number | null;  // reference line (live mirror-bucket)
+  opp_score: number | null;     // opponent's same-game score in the matching opp-clock quintile
 }
 
 /** Clock Gap bullet data for one TC card (mean of (my-opp)/base at endgame entry). */

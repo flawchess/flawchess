@@ -13,7 +13,7 @@
  */
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 import { UNRELIABLE_OPACITY } from '@/lib/theme';
 import type { ClockGapBullet, PressureQuintileBullet, TimePressureTcCard } from '@/types/endgames';
@@ -69,6 +69,7 @@ function makeBin(
   n: number,
   delta: number,
   p_value: number | null,
+  opp_score: number | null = n > 0 ? 0.5 : null,
 ): PressureQuintileBullet {
   const labels = ['0-20%', '20-40%', '40-60%', '60-80%', '80-100%'] as const;
   return {
@@ -79,7 +80,7 @@ function makeBin(
     p_value,
     ci_low: n > 0 ? delta - 0.02 : null,
     ci_high: n > 0 ? delta + 0.02 : null,
-    cohort_score: n > 0 ? 0.5 : null,
+    opp_score,
   };
 }
 
@@ -312,5 +313,81 @@ describe('EndgameTimePressureCard — triple-gate font coloring', () => {
     const valueEl = screen.queryByTestId('time-pressure-card-bullet-bin-0-value');
     expect(valueEl).not.toBeNull();
     expect((valueEl as HTMLElement).style.color).toBeTruthy();
+  });
+});
+
+describe('EndgameTimePressureCard — Phase 88.1 opp-quintile rename (Plan 88-11)', () => {
+  it('uses opp_score from the bin payload (renamed from cohort_score)', () => {
+    // Render with a known opp_score and assert the popover trigger exists.
+    // The opp_score is consumed by the popover's baselineLabel; we open the
+    // popover (Radix click trigger) and verify the formatted percent appears.
+    renderCard(
+      makeCard({
+        quintiles: [
+          makeBin(0, 50, 0.0, 0.5, 0.48),
+          makeBin(1, 40, 0, 0.5),
+          makeBin(2, 40, 0, 0.5),
+          makeBin(3, 40, 0, 0.5),
+          makeBin(4, 40, 0, 0.5),
+        ],
+      }),
+    );
+    const trigger = screen.getByTestId('time-pressure-card-bullet-bin-0-info');
+    fireEvent.click(trigger);
+    // Popover content portals to document.body; query the whole document.
+    expect(document.body.textContent ?? '').toContain('48.0%');
+  });
+
+  it('popover copy says "opponent" not "cohort"', () => {
+    renderCard(
+      makeCard({
+        quintiles: [
+          makeBin(0, 50, 0.0, 0.5, 0.48),
+          makeBin(1, 40, 0, 0.5),
+          makeBin(2, 40, 0, 0.5),
+          makeBin(3, 40, 0, 0.5),
+          makeBin(4, 40, 0, 0.5),
+        ],
+      }),
+    );
+    const trigger = screen.getByTestId('time-pressure-card-bullet-bin-0-info');
+    fireEvent.click(trigger);
+    const body = (document.body.textContent ?? '').toLowerCase();
+    expect(body).toContain('opponent');
+    expect(body).not.toContain('cohort');
+  });
+
+  it('handles out-of-range quintile_index gracefully (getPressureBinBand returns null → row renders no glyph)', () => {
+    // A malformed bin with quintile_index=5 has no defined band.
+    // The QuintileRow should early-return null instead of throwing.
+    const malformed: PressureQuintileBullet = {
+      quintile_index: 5,
+      quintile_label: 'BAD',
+      n: 40,
+      delta: 0.0,
+      p_value: 0.5,
+      ci_low: -0.02,
+      ci_high: 0.02,
+      opp_score: 0.5,
+    };
+    expect(() =>
+      renderCard(
+        makeCard({
+          // Replace Q4 with a malformed bin (quintile_index=5).
+          quintiles: [
+            makeBin(0, 40, 0, 0.5),
+            makeBin(1, 40, 0, 0.5),
+            makeBin(2, 40, 0, 0.5),
+            makeBin(3, 40, 0, 0.5),
+            malformed,
+          ],
+        }),
+      ),
+    ).not.toThrow();
+    // The malformed quintile's value cell must not render — getPressureBinBand
+    // returns null and the row returns null.
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-bin-5-value'),
+    ).toBeNull();
   });
 });
