@@ -27,7 +27,7 @@ import {
 } from '@/lib/endgameMetrics';
 import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
-import { ConversionEloTimelineSection } from '@/components/charts/ConversionEloTimelineSection';
+import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
@@ -284,7 +284,7 @@ export function EndgamesPage() {
   const scoreGapData = overviewData?.score_gap_material;
   const clockPressureData = overviewData?.clock_pressure;
   const timePressureChartData = overviewData?.time_pressure_chart;
-  const eloTimelineData = overviewData?.conversion_elo_timeline;
+  const eloTimelineData = overviewData?.endgame_elo_timeline;
 
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
     selectedCategory,
@@ -483,23 +483,29 @@ export function EndgamesPage() {
                   />
                 </div>
               )}
+              {/* Phase 87.5 SC#2: Endgame ELO Timeline relocated here, directly
+                  below the Score Gap timeline, inside the "Endgame Overall
+                  Performance" section. The chart shares the same filter
+                  plumbing (overviewData) as EndgameScoreOverTimeChart above. */}
+              {eloTimelineData && eloTimelineData.combos.length > 0 && (
+                <div
+                  className="charcoal-texture rounded-md p-4"
+                  data-testid="endgame-elo-timeline-section"
+                >
+                  <EndgameEloTimelineSection
+                    data={eloTimelineData}
+                    isLoading={overviewLoading}
+                    isError={overviewError}
+                  />
+                </div>
+              )}
               <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
               {scoreGapData && perfData && (
                 <>
                   <h2 className="text-lg font-semibold text-foreground mt-2">
-                    Endgame Metrics and ELO
+                    Endgame Metrics
                   </h2>
                   <EndgameMetricsSection data={scoreGapData} />
-                  <div
-                    className="charcoal-texture rounded-md p-4"
-                    data-testid="endgame-elo-timeline-section"
-                  >
-                    <ConversionEloTimelineSection
-                      data={eloTimelineData}
-                      isLoading={overviewLoading}
-                      isError={overviewError}
-                    />
-                  </div>
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}

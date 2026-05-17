@@ -101,11 +101,10 @@ export const IMPERSONATION_PILL_BG = 'oklch(0.50 0.18 40)';
 export const IMPERSONATION_PILL_FG = 'oklch(0.95 0.02 40)';
 export const IMPERSONATION_PILL_BORDER = 'oklch(0.60 0.18 40)';
 
-// Conversion ELO Timeline chart combo palette (Phase 57 ELO-05; renamed
-// Phase 87.4). 8 combos = 2 platforms x 4 time controls. Two constants per
-// combo (bright Conversion ELO stroke + dark Actual ELO stroke) instead of an
-// opacity modifier,
-// so both tones preserve their hue reading on the dark charcoal surface.
+// Endgame ELO Timeline chart combo palette (Phase 57 ELO-05; rebuilt Phase
+// 87.5). 8 combos = 2 platforms x 4 time controls. Two constants per combo
+// (bright Endgame ELO stroke + dark Actual ELO stroke) instead of an opacity
+// modifier, so both tones preserve their hue reading on the dark charcoal surface.
 // Hues chosen to clear WCAG AA 3:1 non-text contrast against oklch(0.145 0 0);
 // adjacent combos separated by >=40 deg hue to stay visually distinct.
 // Values locked in 57-UI-SPEC.md §ELO_COMBO_COLORS.
@@ -147,7 +146,7 @@ export const BULLET_BAR_NEUTRAL = 'oklch(0.85 0 0)';
 // branch, so DARK_BLUE in arrowColor.ts re-exports this exact string.
 export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORDER_DRAW
 
-// Conversion ELO Timeline volume bars (Phase 57.1; renamed Phase 87.4).
+// Endgame ELO Timeline volume bars (Phase 57.1; rebuilt Phase 87.5).
 // Muted gray with alpha so the
 // bars read as "context, not data" on the charcoal-texture card surface.
 // L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
