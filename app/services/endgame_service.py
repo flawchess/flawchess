@@ -1320,6 +1320,7 @@ class _ClockAggregate:
     timeout_wins: int = 0
     timeout_losses: int = 0
 
+
 # Rolling window size for the Endgame ELO timeline chart (Phase 57 ELO-05).
 # Matches SCORE_GAP_TIMELINE_WINDOW.
 ENDGAME_ELO_TIMELINE_WINDOW = 100

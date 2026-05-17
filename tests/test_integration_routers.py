@@ -204,9 +204,7 @@ class TestTimePressureCardsRouter:
     """
 
     @pytest.mark.asyncio
-    async def test_time_pressure_cards_present_in_response(
-        self, seeded_user: SeededUser
-    ) -> None:
+    async def test_time_pressure_cards_present_in_response(self, seeded_user: SeededUser) -> None:
         """time_pressure_cards key must be present in the overview response."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=_BASE

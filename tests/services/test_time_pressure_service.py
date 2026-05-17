@@ -888,13 +888,11 @@ class TestTcCardTopZoneStats:
             TimePressureTcCard,
         )
 
-        gap = ClockGapBullet(
-            n=10, mean_diff_pct=0.0, p_value=None, ci_low=None, ci_high=None
-        )
+        gap = ClockGapBullet(n=10, mean_diff_pct=0.0, p_value=None, ci_low=None, ci_high=None)
         quintiles = [
             PressureQuintileBullet(
                 quintile_index=q,
-                quintile_label=f"{q*20}-{(q+1)*20}%",
+                quintile_label=f"{q * 20}-{(q + 1) * 20}%",
                 n=0,
                 delta=0.0,
                 p_value=None,
@@ -977,19 +975,31 @@ class TestComputeClockDiffTimeline:
         #   wk3            -> (20+10-10+0)/4 = 5.0   (4 games)
         rows = [
             _make_row(
-                "blitz", 0.60, 0.40, game_id=1,
+                "blitz",
+                0.60,
+                0.40,
+                game_id=1,
                 played_at=_dt(2025, 1, 8),  # wk1
             ),
             _make_row(
-                "blitz", 0.55, 0.45, game_id=2,
+                "blitz",
+                0.55,
+                0.45,
+                game_id=2,
                 played_at=_dt(2025, 1, 14),  # wk2, Tue
             ),
             _make_row(
-                "blitz", 0.45, 0.55, game_id=3,
+                "blitz",
+                0.45,
+                0.55,
+                game_id=3,
                 played_at=_dt(2025, 1, 17),  # wk2, Fri (LAST of wk2)
             ),
             _make_row(
-                "blitz", 0.50, 0.50, game_id=4,
+                "blitz",
+                0.50,
+                0.50,
+                game_id=4,
                 played_at=_dt(2025, 1, 22),  # wk3
             ),
         ]
@@ -1015,15 +1025,26 @@ class TestComputeClockDiffTimeline:
         # - row 3: eligible, diff = +30%
         rows = [
             _make_row(
-                "blitz", 0.60, 0.40, game_id=1, base_time_seconds=0,
+                "blitz",
+                0.60,
+                0.40,
+                game_id=1,
+                base_time_seconds=0,
                 played_at=_dt(2025, 1, 8),
             ),
             _make_row(
-                "blitz", 0.60, 0.40, game_id=2, user_clock=None,
+                "blitz",
+                0.60,
+                0.40,
+                game_id=2,
+                user_clock=None,
                 played_at=_dt(2025, 1, 8),
             ),
             _make_row(
-                "blitz", 0.65, 0.35, game_id=3,
+                "blitz",
+                0.65,
+                0.35,
+                game_id=3,
                 played_at=_dt(2025, 1, 8),
             ),
         ]
@@ -1040,15 +1061,24 @@ class TestComputeClockDiffTimeline:
         # (last) game's rolling mean of 20. per_week_game_count = 3.
         rows = [
             _make_row(
-                "blitz", 0.55, 0.45, game_id=1,  # +10%
+                "blitz",
+                0.55,
+                0.45,
+                game_id=1,  # +10%
                 played_at=_dt(2025, 1, 6),  # Mon
             ),
             _make_row(
-                "blitz", 0.60, 0.40, game_id=2,  # +20% (cum mean 15)
+                "blitz",
+                0.60,
+                0.40,
+                game_id=2,  # +20% (cum mean 15)
                 played_at=_dt(2025, 1, 8),  # Wed
             ),
             _make_row(
-                "blitz", 0.65, 0.35, game_id=3,  # +30% (cum mean 20)
+                "blitz",
+                0.65,
+                0.35,
+                game_id=3,  # +30% (cum mean 20)
                 played_at=_dt(2025, 1, 12),  # Sun (LAST of week)
             ),
         ]
