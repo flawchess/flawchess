@@ -3478,7 +3478,7 @@ class TestEndgameEloTimeline:
 
 
 # Sanity check: EndgameEloTimelinePoint is actually exported from the schema.
-# Phase 87.5 (D-06): per-point field restored endgame_elo (was conversion_elo in 87.4).
+# Phase 87.5 (D-06): per-point field name restored to endgame_elo (Phase 87.4 had renamed it).
 def test_endgame_elo_timeline_point_constructs():
     pt = EndgameEloTimelinePoint(
         date="2026-01-05",

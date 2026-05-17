@@ -101,7 +101,7 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
-        "endgame_elo_timeline",  # Phase 87.5 D-06: restored from conversion_elo_timeline.
+        "endgame_elo_timeline",  # Phase 87.5 D-06: restored from the Phase 87.4 subsection name.
     }
 )
 
@@ -254,7 +254,7 @@ def compute_player_profile(
 ) -> list[PlayerProfileEntry] | None:
     """Produce per-combo Elo context for the LLM prompt.
 
-    Uses the already-fetched `conversion_elo_timeline.combos` — no extra DB
+    Uses the already-fetched `endgame_elo_timeline.combos` — no extra DB
     work. Each combo with >= _PLAYER_PROFILE_MIN_POINTS weekly points yields
     a `quality="full"` entry with paired all_time / last_3mo window stats
     (mean, n, buckets, trend, std). Combos are sorted by total game count
@@ -277,7 +277,7 @@ def compute_player_profile(
     carries a STALE marker.
 
     Returns None only when no combo has any weekly points at all (the user
-    has imported games but somehow has zero conversion_elo timeline rows).
+    has imported games but somehow has zero endgame_elo timeline rows).
     """
     today = datetime.date.today()
     cutoff_last_3mo = today - datetime.timedelta(days=_PLAYER_PROFILE_LAST_3MO_DAYS)
@@ -399,7 +399,7 @@ def _compute_subsection_findings(
     findings.extend(_findings_endgame_start_vs_end(response, window))  # Phase 82 D-16
     findings.extend(_findings_score_timeline(response, window))
     findings.extend(_findings_endgame_metrics(response, window))
-    findings.extend(_findings_conversion_elo_timeline(response, window))
+    findings.extend(_findings_endgame_elo_timeline(response, window))
     findings.extend(_findings_time_pressure_at_entry(response, window))
     findings.append(_finding_clock_diff_timeline(response, window))
     findings.append(_finding_time_pressure_vs_performance(response, window))
@@ -811,13 +811,13 @@ def _findings_endgame_metrics(
     return findings
 
 
-def _findings_conversion_elo_timeline(
+def _findings_endgame_elo_timeline(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """conversion_elo_timeline -> one finding per (platform, time_control) combo.
+    """endgame_elo_timeline -> one finding per (platform, time_control) combo.
 
-    Value = most recent point's (conversion_elo - actual_elo). Combo identity
+    Value = most recent point's (endgame_elo - actual_elo). Combo identity
     lives in the `dimension` field (D-14). Combos with zero points are
     already dropped by the endgame service, but we defensively skip any
     empty `points` list.
@@ -826,9 +826,10 @@ def _findings_conversion_elo_timeline(
     observations are skipped entirely — no SubsectionFinding is emitted.
     The gap-only series is populated via _series_for_endgame_elo_combo.
 
-    Phase 87.4 (D-06): renamed from `_findings_endgame_elo_timeline`. The
-    subsection / metric Literal IDs renamed in lockstep; the formula and
-    emission semantics are unchanged.
+    Phase 87.5 (D-06): restored from the Phase 87.4 helper name. The
+    subsection / metric Literal IDs are restored in lockstep with the
+    Phase 87.5 backend rebuild on the additive K mapping; emission semantics
+    are unchanged.
     """
     combos: list[EndgameEloTimelineCombo] = response.endgame_elo_timeline.combos
     findings: list[SubsectionFinding] = []
@@ -1272,9 +1273,10 @@ def _series_for_endgame_elo_combo(
     render `gap=<v>, elo=<r>` per row and distinguish endgame regression from
     rating growth outpacing endgame.
 
-    Phase 87.5 (D-06): per-point ``conversion_elo`` field restored to
-    ``endgame_elo`` on EndgameEloTimelinePoint; function name kept as
-    `_series_for_endgame_elo_combo` (internal-only, no semantic load).
+    Phase 87.5 (D-06): per-point ``endgame_elo`` field on
+    EndgameEloTimelinePoint is consumed directly (Plan 01 restored the field
+    name); function name is `_series_for_endgame_elo_combo` (internal-only,
+    no semantic load — kept stable across the rename).
     """
     if len(combo.points) < SPARSE_COMBO_FLOOR:
         return None

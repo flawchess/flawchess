@@ -64,8 +64,8 @@ MetricId = Literal[
     "recovery_save_pct",
     "avg_clock_diff_pct",
     "net_timeout_rate",
-    # Phase 87.5 D-06: restored from "conversion_elo_gap" — Endgame ELO Timeline
-    # is now derived additively from Endgame Score Gap, not from Conv ΔES.
+    # Phase 87.5 D-06: restored from the Phase 87.4 metric name — Endgame ELO
+    # Timeline is now derived additively from Endgame Score Gap.
     "endgame_elo_gap",
     "win_rate",
 ]
@@ -75,7 +75,7 @@ SubsectionId = Literal[
     "endgame_start_vs_end",  # Phase 82 D-05
     "score_timeline",
     "endgame_metrics",
-    # Phase 87.5 D-06: restored from "conversion_elo_timeline".
+    # Phase 87.5 D-06: restored from the Phase 87.4 subsection name.
     "endgame_elo_timeline",
     "time_pressure_at_entry",
     "clock_diff_timeline",
@@ -286,8 +286,9 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         direction="higher_is_better",
     ),
     # Phase 87.4 (D-05): endgame_skill ZoneSpec deleted. The Endgame Skill
-    # composite concept was retracted end-to-end alongside the Conversion ELO
-    # Timeline rewire (see `.planning/notes/endgame-skill-dropped-conversion-elo.md`).
+    # composite concept was retracted end-to-end alongside the Phase 87.4
+    # Endgame ELO Timeline rewire (see
+    # `.planning/notes/endgame-skill-dropped-conversion-elo.md`).
     # Clock diff at endgame entry, % of base time, signed.
     # Typical band = ±NEUTRAL_PCT_THRESHOLD (10%). Above = user has more time left
     # at endgame entry than opponent (good); below = user has less (bad).
@@ -311,7 +312,7 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     # Typical band = ±100 Elo, matches NOTABLE_ENDGAME_ELO_DIVERGENCE_THRESHOLD.
     # Per-combo fan-out happens at the finding level, not here — the registry
     # entry is the band used for each individual (platform, tc) finding.
-    # Phase 87.5 D-06: restored from "conversion_elo_gap" — the additive-K
+    # Phase 87.5 D-06: restored from the Phase 87.4 metric name — the additive-K
     # formula (endgame_elo = actual_elo + K · eg_score_gap) drives the gap.
     "endgame_elo_gap": ZoneSpec(
         typical_lower=-100.0,
@@ -377,7 +378,7 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "endgame_start_vs_end": (10, 50),
     "score_timeline": (10, 52),
     "endgame_metrics": (30, 100),
-    "endgame_elo_timeline": (10, 40),  # Phase 87.5 D-06: restored from "conversion_elo_timeline".
+    "endgame_elo_timeline": (10, 40),  # Phase 87.5 D-06: restored from the Phase 87.4 subsection name.
     "time_pressure_at_entry": (10, 50),
     "clock_diff_timeline": (10, 52),
     "time_pressure_vs_performance": (30, 100),

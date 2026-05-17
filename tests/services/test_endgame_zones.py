@@ -228,7 +228,7 @@ class TestRegistrySanity:
         powering the four Section 2 cards. Bands calibrate from benchmarks
         SKILL.md §3.4.4.
         """
-        # Phase 87.5 (D-06): conversion_elo_gap renamed → endgame_elo_gap
+        # Phase 87.5 (D-06): metric name restored to endgame_elo_gap
         # (additive-K formula; the gap is now actual_elo + K · eg_score_gap,
         # not the Phase 87.4 affine-recentered Conv ΔES).
         assert set(ZONE_REGISTRY.keys()) == {
