@@ -418,10 +418,7 @@ class TestSeriesForEndgameEloComboPRFields:
         every point in the series (no silent None-propagation through the 6-tuple
         threading).
         """
-        points_data = [
-            (1700 + i * 10, 1650 + i * 10, 1675 + i * 10)
-            for i in range(10)
-        ]
+        points_data = [(1700 + i * 10, 1650 + i * 10, 1675 + i * 10) for i in range(10)]
         combo = _make_elo_combo_with_pr(points_data)
         result = _series_for_endgame_elo_combo(combo, "last_3mo")
         assert result is not None

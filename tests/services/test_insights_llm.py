@@ -3828,7 +3828,14 @@ class TestPhase876LLMPayloadExtension:
         """
         from typing import cast
 
-        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, TimePoint, Window, Zone
+        from app.schemas.insights import (
+            MetricId,
+            SampleQuality,
+            SubsectionId,
+            TimePoint,
+            Window,
+            Zone,
+        )
 
         # Build a finding for endgame_elo_gap with TimePoints carrying all three PR fields.
         # _render_endgame_elo_summary_block + _render_non_endgame_elo_summary_block both
