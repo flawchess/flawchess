@@ -163,10 +163,11 @@ export const ENDGAME_VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
 //   visually anchored to the same hue used on the Time Pressure chart.
 // - LINE_NON_ENDGAME uses a muted neutral (matches WDL_DRAW) to read as a
 //   passive partner line, not a competing signal.
-// - FILL_ABOVE (green) and FILL_BELOW (red) reuse WDL win/loss hues at 0.18
-//   alpha. Sign convention: above == endgame > non_endgame (green), below ==
-//   endgame < non_endgame (red).
+// - FILL_ABOVE (green) and FILL_BELOW (red) reuse WDL win/loss hues at 0.28
+//   alpha — bumped from 0.18 (UAT 2026-05-17) so the signed band reads more
+//   clearly against the chart background. Sign convention: above ==
+//   endgame > non_endgame (green), below == endgame < non_endgame (red).
 export const SCORE_TIMELINE_LINE_ENDGAME = MY_SCORE_COLOR;
 export const SCORE_TIMELINE_LINE_NON_ENDGAME = 'oklch(0.60 0.02 260)';
-export const SCORE_TIMELINE_FILL_ABOVE = 'oklch(0.50 0.14 145 / 0.18)';
-export const SCORE_TIMELINE_FILL_BELOW = 'oklch(0.50 0.15 25 / 0.18)';
+export const SCORE_TIMELINE_FILL_ABOVE = 'oklch(0.50 0.14 145 / 0.28)';
+export const SCORE_TIMELINE_FILL_BELOW = 'oklch(0.50 0.15 25 / 0.28)';
