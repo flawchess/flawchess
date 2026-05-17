@@ -79,7 +79,7 @@ function buildQuintile(index: 0 | 1 | 2 | 3 | 4): PressureQuintileBullet {
     p_value: 0.5,
     ci_low: -0.05,
     ci_high: 0.05,
-    cohort_score: 0.5,
+    opp_score: 0.5,
   };
 }
 
@@ -174,5 +174,19 @@ describe('EndgameTimePressureSection — Section wrapper', () => {
     renderSection(makePayload('bullet', 'blitz', 'rapid', 'classical'));
 
     expect(screen.getByTestId('time-pressure-cards-section')).not.toBeNull();
+  });
+
+  it('exposes a non-dangling accessible name on the section', () => {
+    // Phase 88.1 WR-02 / IN-05: section uses aria-label (self-contained),
+    // not aria-labelledby pointing at a non-existent heading id.
+    const { container } = renderSection(
+      makePayload('bullet', 'blitz', 'rapid', 'classical'),
+    );
+    const section = container.querySelector(
+      '[data-testid="time-pressure-cards-section"]',
+    );
+    expect(section).not.toBeNull();
+    expect(section!.getAttribute('aria-label')).toBe('Time pressure analysis');
+    expect(section!.getAttribute('aria-labelledby')).toBeNull();
   });
 });

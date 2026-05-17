@@ -19,7 +19,7 @@ export function EndgameTimePressureSection({
   return (
     <section
       data-testid="time-pressure-cards-section"
-      aria-labelledby="time-pressure-heading"
+      aria-label="Time pressure analysis"
     >
       <p className="text-sm text-muted-foreground">
         How does your score change as your clock runs down?
