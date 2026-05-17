@@ -867,53 +867,26 @@ def _compute_score_gap_timeline(
         outcome = derive_user_result(row[1], row[2])
         return {"win": 1.0, "draw": 0.5, "loss": 0.0}[outcome]
 
-    def _opp_rating_for(row: Row[Any] | tuple[Any, ...]) -> float | None:
-        """Derive opponent rating from the 7-tuple row (Phase 87.6).
-
-        Row shape: (played_at, result, user_color, platform, time_control_bucket,
-        white_rating, black_rating). Opponent rating = white_rating when the user
-        played as black, black_rating when the user played as white.
-        Returns None if the relevant rating is NULL (repo NULL guards should prevent
-        this in practice, but defensive None-handling matches Phase 87.5 pattern).
-        """
-        user_color = row[2]
-        white_rating = row[5] if len(row) > 5 else None
-        black_rating = row[6] if len(row) > 6 else None
-        if user_color == "black":
-            return float(white_rating) if white_rating is not None else None
-        return float(black_rating) if black_rating is not None else None
-
     # Tag each game with its side ("endgame"/"non_endgame") and merge into a
     # single chronological event stream. We can't just walk both lists in
     # lockstep — events must interleave by played_at to keep the rolling
     # windows in sync with real history.
-    # Phase 87.6: event tuple extended to 4 slots: (played_at, side, score, opp_rating).
-    events: list[tuple[Any, Literal["endgame", "non_endgame"], float, float]] = []
+    events: list[tuple[Any, Literal["endgame", "non_endgame"], float]] = []
     for row in endgame_rows:
         score = _score_for(row)
         if score is None:
             continue
-        opp_rating = _opp_rating_for(row)
-        if opp_rating is None:
-            continue
-        events.append((row[0], "endgame", score, opp_rating))
+        events.append((row[0], "endgame", score))
     for row in non_endgame_rows:
         score = _score_for(row)
         if score is None:
             continue
-        opp_rating = _opp_rating_for(row)
-        if opp_rating is None:
-            continue
-        events.append((row[0], "non_endgame", score, opp_rating))
+        events.append((row[0], "non_endgame", score))
 
     events.sort(key=lambda e: e[0])
 
     endgame_window: list[float] = []
     non_endgame_window: list[float] = []
-    # Phase 87.6: per-side trailing-window opp-rating accumulators. Parallel to
-    # the score windows; slice-truncated identically (PATTERNS pattern 2).
-    endgame_opp_window: list[float] = []
-    non_endgame_opp_window: list[float] = []
     # Per-ISO-week count of all events (endgame + non-endgame) — drives the
     # frontend volume bars on the Score % Difference timeline. Mirrors
     # `per_week_count` in `_compute_endgame_elo_weekly_series` (Phase 57.1 D-06).
@@ -925,17 +898,13 @@ def _compute_score_gap_timeline(
     per_week_endgame: dict[tuple[int, int], int] = {}
     data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
 
-    for played_at, side, score, opp_rating in events:
+    for played_at, side, score in events:
         if side == "endgame":
             endgame_window.append(score)
             endgame_window = endgame_window[-window:]
-            endgame_opp_window.append(opp_rating)
-            endgame_opp_window = endgame_opp_window[-window:]
         else:
             non_endgame_window.append(score)
             non_endgame_window = non_endgame_window[-window:]
-            non_endgame_opp_window.append(opp_rating)
-            non_endgame_opp_window = non_endgame_opp_window[-window:]
 
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
         per_week_total[(iso_year, iso_week)] = per_week_total.get((iso_year, iso_week), 0) + 1
@@ -971,9 +940,6 @@ def _compute_score_gap_timeline(
             "per_week_endgame_games": per_week_endgame.get((iso_year, iso_week), 0),
             "endgame_score": round(endgame_mean, 4),
             "non_endgame_score": round(non_endgame_mean, 4),
-            # Phase 87.6: per-side trailing-window mean opponent ratings for PR math.
-            "endgame_opp_rating_avg": round(statistics.mean(endgame_opp_window), 1),
-            "non_endgame_opp_rating_avg": round(statistics.mean(non_endgame_opp_window), 1),
         }
 
     return [
@@ -1321,32 +1287,50 @@ _ENDGAME_ELO_COMBO_ORDER: list[tuple[str, str]] = [
     (platform_name, tc) for platform_name in ("chess.com", "lichess") for tc in _TIME_CONTROL_ORDER
 ]
 
-# Phase 87.6 (D-01): FIDE Performance Rating with Laplace smoothing.
-# The `400` is fixed by Elo's logistic-skill assumption -- not a knob.
-# See .planning/notes/endgame-elo-pr-direct-rebuild.md for derivation.
+# Phase 87.6 amendment (2026-05-17): logistic stretch around Actual ELO.
+# The `400` is fixed by Elo's logistic-skill assumption -- the same `400` the
+# FIDE Performance Rating formula uses -- not a knob.
+# See .planning/notes/endgame-elo-logistic-anchored.md for derivation.
 _ELO_LOGISTIC_SCALE = 400.0
 
+# Score-clamp epsilon for the logit transform — protects against log(0) when
+# the trailing-window mean hits exactly 0.0 (all losses) or 1.0 (all wins).
+# 1e-6 keeps the per-side ELO bounded inside roughly +-2400 (400 * log10(1e6))
+# which is well past realistic territory at n=100.
+_ENDGAME_ELO_SCORE_EPSILON = 1e-6
 
-def _performance_rating(score: float, n: int, opp_rating_avg: float) -> int:
-    """FIDE Performance Rating with Laplace smoothing (Phase 87.6 D-01).
 
-    PR = R_opp_avg + 400 * log10(s* / (1 - s*))
-    s* = (n * score + 1) / (n + 2)   # Laplace-smoothed; bounds PR delta near +-802 ELO at n=100
+def _endgame_elo_logistic(
+    actual_elo: int,
+    endgame_score: float,
+    non_endgame_score: float,
+) -> tuple[int, int]:
+    """Logistic stretch around Actual ELO (Phase 87.6 amendment 2026-05-17).
 
-    The Laplace prior of (1, 1) shifts the raw score toward 0.5 to handle
-    all-win or all-loss streaks without infinite PR. At score = 0.5 the
-    smoothed score is exactly 0.5 regardless of n, so PR equals R_opp_avg
-    exactly -- preserving the midpoint property that anchors the dual-line
-    chart's center on Actual ELO.
+    Returns (endgame_elo, non_endgame_elo) where the midpoint equals
+    Actual ELO by construction:
 
-    Pure function. No clamping -- Laplace smoothing alone bounds PR delta
-    at +-802 ELO at n=100, comfortably inside realistic territory.
-    Phase 87.6 supersedes the Phase 87.5 additive `K * eg_score_gap`
-    mapping wholesale; K is deleted, not retuned.
-    See `.planning/notes/endgame-elo-pr-direct-rebuild.md`.
+        spread = 400 * log10( (s_E / (1 - s_E)) / (s_N / (1 - s_N)) )
+        endgame_elo     = actual_elo + spread / 2
+        non_endgame_elo = actual_elo - spread / 2
+
+    Each side score is clamped to (epsilon, 1 - epsilon) so a streak of all
+    wins or all losses on either side cannot blow up the logit. Same `400`
+    that appears in the FIDE Performance Rating formula — no free constant.
+
+    Supersedes the earlier Phase 87.6 PR-direct mapping (per-side FIDE PR),
+    which UAT against prod showed violated the "Actual ELO sits between the
+    two PR lines" invariant in ~88% of weekly points because the 100-game
+    trailing PR estimator lagged the live Glicko snapshot used for Actual
+    ELO. See `.planning/notes/endgame-elo-logistic-anchored.md`.
     """
-    smoothed = (n * score + 1) / (n + 2)
-    return int(round(opp_rating_avg + _ELO_LOGISTIC_SCALE * math.log10(smoothed / (1 - smoothed))))
+    s_e = max(min(endgame_score, 1 - _ENDGAME_ELO_SCORE_EPSILON), _ENDGAME_ELO_SCORE_EPSILON)
+    s_n = max(min(non_endgame_score, 1 - _ENDGAME_ELO_SCORE_EPSILON), _ENDGAME_ELO_SCORE_EPSILON)
+    spread = _ELO_LOGISTIC_SCALE * math.log10((s_e / (1 - s_e)) / (s_n / (1 - s_n)))
+    return (
+        int(round(actual_elo + spread / 2)),
+        int(round(actual_elo - spread / 2)),
+    )
 
 
 def _compute_endgame_elo_weekly_series(
@@ -1361,10 +1345,11 @@ def _compute_endgame_elo_weekly_series(
     the endgame and non-endgame trailing windows hold ``>= MIN_GAMES_FOR_TIMELINE``
     games by the upstream producer), emit one ``EndgameEloTimelinePoint`` with:
 
-    - ``endgame_elo`` = FIDE Performance Rating on the endgame-games subset:
-      ``_performance_rating(pt.endgame_score, pt.endgame_game_count, pt.endgame_opp_rating_avg)``.
-    - ``non_endgame_elo`` = FIDE Performance Rating on the non-endgame-games subset:
-      ``_performance_rating(pt.non_endgame_score, pt.non_endgame_game_count, pt.non_endgame_opp_rating_avg)``.
+    - ``endgame_elo`` / ``non_endgame_elo`` = ``_endgame_elo_logistic(actual_elo,
+      pt.endgame_score, pt.non_endgame_score)``. A logistic stretch around the
+      asof-joined Actual ELO; the midpoint equals Actual ELO by construction
+      (Phase 87.6 amendment 2026-05-17 supersedes the earlier per-side FIDE
+      PR mapping).
     - ``actual_elo`` = asof-join of (actual_elo_dates, actual_elo_ratings) at
       ``next_monday_dt``. Forward-fills from the latest prior game when the
       week itself has no games.
@@ -1374,15 +1359,11 @@ def _compute_endgame_elo_weekly_series(
       week count; see UAT fix post-Phase 87.5 CR-01).
     - ``per_week_total_games`` = ``pt.per_week_total_games`` (endgame +
       non-endgame games this ISO week; drives the volume bars because the
-      chart plots both PR lines, so total weekly activity is what matters).
+      chart plots both lines, so total weekly activity is what matters).
 
     ``cutoff_str`` filters output points to dates ``>= cutoff_str``; the
     score-gap producer already pre-fills the trailing windows from earlier
     games so no double-filtering is needed here.
-
-    Phase 87.6: per-side PR. The asof-join carries Actual ELO; PR_E and PR_N
-    derive from per-side score + opp_rating_avg in the trailing window -- no
-    dependence on actual_elo.
     """
     out: list[EndgameEloTimelinePoint] = []
     for pt in score_gap_timeline:
@@ -1411,11 +1392,8 @@ def _compute_endgame_elo_weekly_series(
             continue
         actual_elo_at_date = actual_elo_ratings[idx - 1]
 
-        endgame_elo = _performance_rating(
-            pt.endgame_score, pt.endgame_game_count, pt.endgame_opp_rating_avg
-        )
-        non_endgame_elo = _performance_rating(
-            pt.non_endgame_score, pt.non_endgame_game_count, pt.non_endgame_opp_rating_avg
+        endgame_elo, non_endgame_elo = _endgame_elo_logistic(
+            int(actual_elo_at_date), pt.endgame_score, pt.non_endgame_score
         )
 
         out.append(
@@ -2321,8 +2299,8 @@ async def get_endgame_elo_timeline(
     ``query_endgame_performance_rows``) by (platform, TC) and calling
     ``_compute_score_gap_timeline`` ONCE per combo. Feeds each per-combo
     score-gap series into ``_compute_endgame_elo_weekly_series``, which
-    applies the additive ``actual_elo + K · eg_score_gap`` mapping
-    point-by-point.
+    applies the Phase 87.6 logistic stretch around Actual ELO
+    (``_endgame_elo_logistic``) point-by-point.
 
     Per-combo invariant (Phase 87.5): the Endgame ELO line for combo X is
     derived ONLY from combo X's own ScoreGapTimelinePoint series, NOT from
@@ -2393,10 +2371,7 @@ async def get_endgame_elo_timeline(
 
         # Per-combo score-gap series — built ONLY from this combo's rows so
         # the Endgame ELO line for combo X is not contaminated by games from
-        # other combos. Phase 87.6: _compute_score_gap_timeline now also reads
-        # indices 5/6 (white_rating, black_rating) to thread per-side opponent-
-        # rating running means through to the PR helper. The extended 7-tuple
-        # from query_endgame_performance_rows passes through unchanged.
+        # other combos.
         score_gap_for_combo = _compute_score_gap_timeline(
             endgame_by_combo.get(key, []),
             non_endgame_by_combo.get(key, []),
@@ -2611,7 +2586,7 @@ async def get_endgame_overview(
     # Phase 57 ELO-05 / Phase 87.5 D-06: paired Endgame ELO + Actual ELO
     # timeline per (platform, TC) combo. Endgame ELO is derived per
     # (platform, TC) combo from THAT combo's own ScoreGapTimelinePoint series
-    # via the additive ``actual_elo + K · eg_score_gap`` mapping — NEVER from
+    # via the Phase 87.6 logistic stretch around Actual ELO — NEVER from
     # the cross-combo overview-level score-gap timeline (which mixes games
     # across combos and would silently contaminate the Endgame ELO line).
     # Uses its own all-rows repo query (query_endgame_elo_timeline_rows) for

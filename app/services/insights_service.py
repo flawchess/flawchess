@@ -1309,7 +1309,9 @@ def _weekly_points_to_time_points_with_elo(
     for v1 since window size is stable across the series.
 
     Phase 87.6: extended tuple from 4-element to 6-element to thread
-    `endgame_elo` and `non_endgame_elo` FIDE Performance Ratings through.
+    `endgame_elo` and `non_endgame_elo` through (post-amendment 2026-05-17:
+    these are derived from the logistic stretch around Actual ELO, not FIDE
+    Performance Ratings).
     """
     if not weekly:
         return []

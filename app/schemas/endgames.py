@@ -348,13 +348,6 @@ class ScoreGapTimelinePoint(BaseModel):
     # `score_timeline` insights subsection's two per-part series blocks.
     endgame_score: float
     non_endgame_score: float
-    # Phase 87.6: per-side trailing-window mean opponent rating. Drives the
-    # Performance Rating math in _compute_endgame_elo_weekly_series. Default
-    # 0.0 for back-compat with older fixtures and tests that don't construct
-    # these — a real timeline emission ALWAYS writes the rolling mean. Tests
-    # that exercise the PR math must supply non-zero values.
-    endgame_opp_rating_avg: float = 0.0
-    non_endgame_opp_rating_avg: float = 0.0
 
 
 class ScoreGapMaterialResponse(BaseModel):
@@ -544,24 +537,21 @@ class TimePressureChartResponse(BaseModel):
 
 class EndgameEloTimelinePoint(BaseModel):
     """One weekly point for a (platform, time_control) combo of the Endgame ELO
-    Timeline (Phase 57 ELO-05; Phase 57.1 anchor change; Phase 87.6 rebuild on
-    FIDE Performance Rating per side).
+    Timeline (Phase 57 ELO-05; Phase 57.1 anchor change; Phase 87.6 amendment
+    2026-05-17 — logistic stretch anchored on Actual ELO).
 
     date: Monday of the ISO week, YYYY-MM-DD. Aligned with the Score Gap timeline
         for x-axis consistency.
-    endgame_elo: FIDE Performance Rating computed on this combo's endgame games over
-        the trailing 100-game window (Phase 87.6 D-01 -- supersedes the Phase 87.5
-        additive ``actual_elo + K * eg_score_gap`` mapping). Formula:
-            endgame_elo = R_opp_avg_E + 400 * log10(s_E* / (1 - s_E*))
-        with Laplace-smoothed s_E* = (n_E * score_E + 1) / (n_E + 2). The ``400``
-        is fixed by Elo's logistic-skill assumption -- not a calibration knob.
-        Bounds PR delta near +-802 ELO at n=100 (research section 1b); no clamping.
-        See ``.planning/notes/endgame-elo-pr-direct-rebuild.md``.
-    non_endgame_elo: FIDE Performance Rating computed on this combo's non-endgame
-        games over the same trailing 100-game window (Phase 87.6). Same formula as
-        endgame_elo but applied to the non-endgame subset. By the midpoint property
-        (research section 2a), midpoint(endgame_elo, non_endgame_elo) approximates
-        actual_elo within +-5 ELO for |score gap| <= 0.20 with equal opp pools.
+    endgame_elo: ``actual_elo + spread / 2`` where
+        ``spread = 400 * log10((s_E / (1 - s_E)) / (s_N / (1 - s_N)))`` and
+        ``s_E``, ``s_N`` are the trailing-window mean scores on the endgame /
+        non-endgame subsets. The ``400`` is the same logistic scale FIDE Elo
+        uses for its expected-score curve — not a calibration knob.
+        Supersedes the earlier Phase 87.6 per-side FIDE PR mapping; see
+        ``.planning/notes/endgame-elo-logistic-anchored.md`` for derivation.
+    non_endgame_elo: ``actual_elo - spread / 2`` (same ``spread``). Endgame ELO
+        and Non-Endgame ELO sit symmetrically around Actual ELO by construction:
+        ``endgame_elo + non_endgame_elo == 2 * actual_elo`` for every emitted point.
     actual_elo: the user's rating at this point's date, sourced via the per-combo
         asof-join. Three-line chart: Actual ELO is bracketed by Endgame ELO and
         Non-Endgame ELO, making the over/underperformance signal visually obvious.

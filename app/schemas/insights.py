@@ -302,8 +302,9 @@ class TimePoint(BaseModel):
     user's actual rating alongside the gap lets the prompt render
     `gap=<v>, elo=<r>` per bucket so the LLM can distinguish endgame-skill
     regression from rating growth outpacing skill. `endgame_elo` and
-    `non_endgame_elo` are the FIDE Performance Ratings computed independently
-    from the endgame and non-endgame game subsets respectively (Phase 87.6).
+    `non_endgame_elo` are derived by Phase 87.6's amended logistic stretch
+    around Actual ELO; the midpoint property holds exactly
+    (`endgame_elo + non_endgame_elo == 2 * actual_elo`).
     """
 
     bucket_start: str  # ISO YYYY-MM-DD
