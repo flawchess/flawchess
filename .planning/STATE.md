@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: "Phase 87.6 shipped — PR #106"
-last_updated: "2026-05-17T11:20:56.537Z"
+status: "Phase 88 shipped — PR #107"
+last_updated: "2026-05-17T21:03:35.154Z"
 last_activity: 2026-05-17
 ---
 
@@ -11,9 +11,9 @@ last_activity: 2026-05-17
 
 ## Current Position
 
-Phase: 87.6 (endgame-elo-via-performance-rating) — EXECUTING
-Plan: 1 of 3
-Status: Phase 87.6 shipped — PR #106
+Phase: 88 (time-pressure-stats-rework) — EXECUTING
+Plan: 1 of 15
+Status: Phase 88 shipped — PR #107
 Last activity: 2026-05-17
 Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 

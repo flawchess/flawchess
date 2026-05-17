@@ -25,8 +25,8 @@ import {
   ENDGAME_CLASS_TO_SLUG,
   HIDDEN_ENDGAME_CLASSES,
 } from '@/lib/endgameMetrics';
-import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
+import { EndgameClockDiffOverTimeChart } from '@/components/charts/EndgameClockDiffOverTimeChart';
 import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
@@ -282,8 +282,11 @@ export function EndgamesPage() {
   }, [rawStatsData]);
   const perfData = overviewData?.performance;
   const scoreGapData = overviewData?.score_gap_material;
-  const clockPressureData = overviewData?.clock_pressure;
-  const timePressureChartData = overviewData?.time_pressure_chart;
+  const timePressureCardsData = overviewData?.time_pressure_cards;
+  const clockDiffTimelineData = overviewData?.clock_diff_timeline;
+  const showClockDiffTimeline = !!(
+    clockDiffTimelineData && clockDiffTimelineData.points.length > 0
+  );
   const eloTimelineData = overviewData?.endgame_elo_timeline;
 
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
@@ -350,8 +353,7 @@ export function EndgamesPage() {
 
   // Summary line + collapsible explaining endgame concepts and metric limitations
   const showPerfSection = !!(perfData && perfData.endgame_wdl.total > 0);
-  const showClockPressure = !!(clockPressureData && clockPressureData.rows.length > 0);
-  const showTimePressureChart = !!(timePressureChartData && timePressureChartData.total_endgame_games > 0);
+  const showTimePressureCards = !!(timePressureCardsData && timePressureCardsData.cards.length > 0);
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
@@ -530,29 +532,22 @@ export function EndgamesPage() {
           )}
 
           {/* ── Time Pressure ── */}
-          {(showClockPressure || showTimePressureChart) && (
+          {/* Plan 88-13 A-1: no outer charcoal-texture wrap; each TC card carries
+              its own charcoal container, matching the EndgameTypeBreakdownSection
+              convention below. */}
+          {showTimePressureCards && timePressureCardsData && (
             <>
               <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
-              {showClockPressure && (
-                <>
-                  <div className="charcoal-texture rounded-md p-4">
-                    <EndgameClockPressureSection data={clockPressureData} />
-                  </div>
-                  {clockPressureData && clockPressureData.timeline.length > 0 && (
-                    <div className="charcoal-texture rounded-md p-4">
-                      <ClockDiffTimelineChart
-                        timeline={clockPressureData.timeline}
-                        window={clockPressureData.timeline_window}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-              {showTimePressureChart && (
+              {/* Plan 88-15 + post-UAT reorder (CONTEXT §2 A-2): restored
+                  Average Clock Difference over Time line chart. Sits ABOVE the
+                  per-TC cards so the user sees the trend story first, then
+                  drills into per-TC breakdowns. Hides when no eligible points. */}
+              {showClockDiffTimeline && clockDiffTimelineData && (
                 <div className="charcoal-texture rounded-md p-4">
-                  <EndgameTimePressureSection data={timePressureChartData} />
+                  <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
                 </div>
               )}
+              <EndgameTimePressureSection data={timePressureCardsData} />
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}

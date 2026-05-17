@@ -872,3 +872,10 @@ async def query_endgame_elo_timeline_rows(
 
     all_result = await session.execute(all_stmt)
     return list(all_result.fetchall())
+
+
+# Phase 88.1 (D-07 supersedes D-05, REVIEW.md CR-01): query_cohort_clock_rows
+# removed. The cohort layer was replaced by a same-game opponent-quintile split
+# in endgame_service._iterate_clock_rows / _build_quintile_bullets, which uses
+# only the existing query_clock_stats_rows. See 88-CONTEXT.md D-07 and
+# 88-VERIFICATION.md "Resolution Direction" (lines 177-220) for the design.

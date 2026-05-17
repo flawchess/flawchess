@@ -218,47 +218,75 @@ export interface ScoreGapMaterialResponse {
   // .planning/notes/endgame-skill-dropped-conversion-elo.md.
 }
 
-export interface ClockStatsRow {
-  time_control: string;       // "bullet" | "blitz" | "rapid" | "classical"
-  label: string;              // "Bullet" | "Blitz" | "Rapid" | "Classical"
-  total_endgame_games: number;
-  clock_games: number;
-  user_avg_pct: number | null;
-  user_avg_seconds: number | null;
-  opp_avg_pct: number | null;
-  opp_avg_seconds: number | null;
-  avg_clock_diff_seconds: number | null;
-  net_timeout_rate: number;
+// ── Phase 88: Time Pressure Cards (replaces ClockPressureResponse + TimePressureChartResponse) ──
+// Phase 88.1 (D-07): independent opp-quintile split — both sides derived from the user's
+// own filtered game stream. See .planning/.../88-CONTEXT.md D-07 for design rationale.
+
+/** Score-Delta bullet data for one pressure quintile in a TC card. */
+export interface PressureQuintileBullet {
+  quintile_index: number;       // 0 = 0-20% (max pressure) … 4 = 80-100% (min)
+  quintile_label: string;       // "0-20%" … "80-100%"
+  n: number;                    // game count in this bin
+  delta: number;                // user_score - opp_score (independent quintile splits per side)
+  p_value: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
+  opp_score: number | null;     // opponent's same-game score in the matching opp-clock quintile
 }
 
-export interface ClockPressureTimelinePoint {
-  date: string;                 // Monday of ISO week, YYYY-MM-DD
-  avg_clock_diff_pct: number;   // mean (user_clock - opp_clock) / base_time * 100 over trailing window
-  game_count: number;           // games in the rolling window (<= timeline_window)
-  // Count of clock-eligible endgame games in THIS specific ISO week.
-  // Drives the muted volume-bar series on the Average Clock Difference timeline.
-  per_week_game_count: number;
+/** Clock Gap bullet data for one TC card (mean of (my-opp)/base at endgame entry). */
+export interface ClockGapBullet {
+  n: number;
+  mean_diff_pct: number;        // mean (user_clock - opp_clock) / base_clock
+  p_value: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
 }
 
-export interface ClockPressureResponse {
-  rows: ClockStatsRow[];
-  total_clock_games: number;
-  total_endgame_games: number;
-  timeline: ClockPressureTimelinePoint[];
-  timeline_window: number;
+/** All bullet data for one time-control card.
+ *
+ * Plan 88-14 A-3: restored top-zone summary stats from the deleted
+ * EndgameClockPressureSection (CONTEXT §2 scope amendment). The 5 averages are
+ * fractions / absolute seconds depending on the suffix; net_timeout_rate is a
+ * fraction (0.005 = 0.5%) consistent with clock_gap.mean_diff_pct's convention.
+ * Averages are null when no game in this TC has clock data (legacy imports).
+ */
+export interface TimePressureTcCard {
+  tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
+  total: number;                    // total endgame games in this TC
+  user_avg_pct: number | null;      // mean user_clock/base across clock-eligible games, fraction
+  user_avg_seconds: number | null;  // mean user_clock in absolute seconds
+  opp_avg_pct: number | null;       // mean opp_clock/base, fraction
+  opp_avg_seconds: number | null;   // mean opp_clock in absolute seconds
+  avg_clock_diff_seconds: number | null; // mean (user_clock - opp_clock) in seconds
+  net_timeout_rate: number;         // (timeout_wins - timeout_losses) / total, fraction (0.005 = 0.5%)
+  clock_gap: ClockGapBullet;
+  quintiles: PressureQuintileBullet[]; // always 5, ordered Q0..Q4
 }
 
-export interface TimePressureBucketPoint {
-  bucket_index: number;      // 0-9
-  bucket_label: string;      // "0-10%" etc.
-  score: number | null;      // null when game_count == 0
-  game_count: number;
+/** Replaces ClockPressureResponse + TimePressureChartResponse (Phase 88). */
+export interface TimePressureCardsResponse {
+  cards: TimePressureTcCard[];  // only TCs with total >= MIN_GAMES_PER_TC_CARD
 }
 
-export interface TimePressureChartResponse {
-  user_series: TimePressureBucketPoint[];  // 10 points, pre-aggregated across time controls
-  opp_series: TimePressureBucketPoint[];   // 10 points, pre-aggregated across time controls
-  total_endgame_games: number;
+/** One ISO-week point on the Average Clock Difference over Time line chart.
+ *  Plan 88-15 (CONTEXT §2 A-2): restored after the Phase 88-07 cleanup deleted
+ *  the line chart. Renamed (vs the pre-88-07 timeline point class) to make the
+ *  design-pivot history obvious. `avg_clock_diff_pct` is in PERCENT units
+ *  (50.0 = 50%, not 0.5) — matches the chart Y-axis convention and the backend
+ *  `(user_clock - opp_clock) / base_time_seconds * 100` calculation. */
+export interface ClockDiffTimelinePoint {
+  date: string;                  // ISO Monday YYYY-MM-DD
+  avg_clock_diff_pct: number;    // rolling-window mean in percent units
+  game_count: number;            // trailing rolling-window size (<= 100)
+  per_week_game_count: number;   // clock-eligible games in THIS week only
+}
+
+/** Wrapper for the Average Clock Difference over Time line chart payload.
+ *  Plan 88-15 (CONTEXT §2 A-2). points is empty when no clock-eligible game
+ *  exists in the user's filtered set — frontend hides the chart in that case. */
+export interface ClockDiffTimelineResponse {
+  points: ClockDiffTimelinePoint[];
 }
 
 export interface EndgameOverviewResponse {
@@ -266,8 +294,8 @@ export interface EndgameOverviewResponse {
   performance: EndgamePerformanceResponse;
   timeline: EndgameTimelineResponse;
   score_gap_material: ScoreGapMaterialResponse;  // Phase 53
-  clock_pressure: ClockPressureResponse;         // Phase 54
-  time_pressure_chart: TimePressureChartResponse; // Phase 55
+  time_pressure_cards: TimePressureCardsResponse; // Phase 88 (replaces clock_pressure + time_pressure_chart)
+  clock_diff_timeline: ClockDiffTimelineResponse; // Plan 88-15 (CONTEXT §2 A-2): restored line chart payload
   endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57 (rebuilt Phase 87.5)
 }
 

@@ -16,7 +16,7 @@ gives p = 1.0 (z = 0).
 
 The helper returns a 3-tuple (confidence, p_value, se). The third element is
 the *empirical* trinomial standard error, retained for backward compat and
-informational only — not used in the Wilson p-value computation.
+informational only -- not used in the Wilson p-value computation.
 """
 
 import math
@@ -544,3 +544,10 @@ class TestComputePairedDifferenceTest:
         assert (hi - lo) / 2.0 == pytest.approx(bessel_half_width, rel=1e-9)
         # Explicitly NOT the naive half-width:
         assert (hi - lo) / 2.0 != pytest.approx(naive_half_width, rel=1e-9)
+
+
+# Phase 88.1 (Plan 09, REVIEW.md CR-01): compute_score_delta_vs_reference and
+# its private helper _wilson_score_test_vs_ref were removed when the global
+# cohort layer was retired in favour of a same-game opponent-quintile split.
+# The TestComputeScoreDeltaVsReference test class is gone with them; the new
+# delta path is exercised in tests/services/test_time_pressure_service.py.

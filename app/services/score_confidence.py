@@ -121,6 +121,13 @@ def _wilson_score_test_vs_half(score: float, n: int) -> tuple[float, float]:
     return p_value, se_null
 
 
+# Phase 88.1 (Plan 09, REVIEW.md CR-01): _wilson_score_test_vs_ref and
+# compute_score_delta_vs_reference were removed. Their sole consumer was the
+# Phase 88 per-quintile Score-Delta bullet, which now uses
+# compute_score_difference_test against an in-set opponent-quintile split (see
+# app/services/endgame_service._build_quintile_bullets).
+
+
 def _bucket_from_p_value(p_value: float, n: int) -> Literal["low", "medium", "high"]:
     """Bucket a Wilson p-value into low/medium/high, with the N>=10 sample-size gate."""
     if n < CONFIDENCE_MIN_N:

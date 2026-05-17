@@ -466,8 +466,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
     Supplies the minimal fields that compute_findings reads.
     """
     from app.schemas.endgames import (
-        ClockPressureResponse,
-        ClockPressureTimelinePoint,
+        ClockDiffTimelineResponse,
         EndgameCategoryStats,
         EndgameEloTimelineResponse,
         EndgamePerformanceResponse,
@@ -476,7 +475,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         EndgameWDLSummary,
         ScoreGapMaterialResponse,
         ScoreGapTimelinePoint,
-        TimePressureChartResponse,
+        TimePressureCardsResponse,
     )
 
     wdl = EndgameWDLSummary(
@@ -534,28 +533,6 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         timeline=score_gap_timeline,
         timeline_window=50,
     )
-    # Clock pressure timeline
-    clock_timeline = [
-        ClockPressureTimelinePoint(
-            date=f"2026-01-{i + 4:02d}",
-            avg_clock_diff_pct=float(i + 1),
-            game_count=10,
-            per_week_game_count=10,
-        )
-        for i in range(13)
-    ]
-    clock_pressure = ClockPressureResponse(
-        rows=[],
-        total_clock_games=130,
-        total_endgame_games=130,
-        timeline=clock_timeline,
-        timeline_window=50,
-    )
-    time_pressure_chart = TimePressureChartResponse(
-        user_series=[],
-        opp_series=[],
-        total_endgame_games=0,
-    )
     # ELO timeline with >=10 points per combo
     elo_combo = EndgameEloTimelineCombo(
         combo_key="chess_com_blitz",
@@ -597,8 +574,8 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         performance=performance,
         timeline=type_timeline,
         score_gap_material=score_gap_material,
-        clock_pressure=clock_pressure,
-        time_pressure_chart=time_pressure_chart,
+        time_pressure_cards=TimePressureCardsResponse(cards=[]),
+        clock_diff_timeline=ClockDiffTimelineResponse(points=[]),
         endgame_elo_timeline=elo_timeline,
     )
 
@@ -628,10 +605,12 @@ def _make_conv_stats() -> ConversionRecoveryStats:
 # for the 3 timeline subsections (type_win_rate_timeline removed 260501-s0u).
 # ---------------------------------------------------------------------------
 
+# Phase 88: clock_diff_timeline removed from active timeline subsections — the
+# ClockPressureResponse.timeline field was replaced by TimePressureCardsResponse.
+# _finding_clock_diff_timeline now returns an empty finding (series=None).
 _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
-        "clock_diff_timeline",
         "endgame_elo_timeline",
     }
 )
@@ -642,7 +621,11 @@ class TestIntegration:
 
     @pytest.mark.asyncio
     async def test_compute_findings_populates_series_only_for_timelines(self) -> None:
-        """series is not None exactly for the 3 timeline subsection_ids (D-02)."""
+        """series is not None exactly for the active timeline subsection_ids (D-02).
+
+        Phase 88: clock_diff_timeline no longer populates series (timeline removed
+        from EndgameOverviewResponse with ClockPressureResponse migration).
+        """
         mock_response = _make_minimal_response()
         with patch.object(
             insights_module,
@@ -662,15 +645,17 @@ class TestIntegration:
             if f.subsection_id not in _TIMELINE_SUBSECTION_IDS and f.series is not None
         ]
 
-        # All 3 timeline subsections must have series populated
+        # Active timeline subsections must have series populated (Phase 88: 2 of 3 remain)
         assert "score_timeline" in timeline_with_series, (
             "score_timeline should have series populated"
         )
-        assert "clock_diff_timeline" in timeline_with_series, (
-            "clock_diff_timeline should have series populated"
-        )
         assert "endgame_elo_timeline" in timeline_with_series, (
             "endgame_elo_timeline should have series populated"
+        )
+        # Phase 88: clock_diff_timeline returns empty finding (series=None); verify it doesn't
+        # appear in timeline_with_series (its timeline was removed with ClockPressureResponse).
+        assert "clock_diff_timeline" not in timeline_with_series, (
+            "clock_diff_timeline should NOT have series in Phase 88 (timeline removed)"
         )
         # Non-timeline findings must NOT have series
         assert non_timeline_with_series == [], (

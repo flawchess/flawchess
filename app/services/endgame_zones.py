@@ -68,6 +68,11 @@ MetricId = Literal[
     # Timeline is now derived additively from Endgame Score Gap.
     "endgame_elo_gap",
     "win_rate",
+    # Phase 88: (my_clock - opp_clock) / base_clock at endgame entry; scalar zone
+    # for the Clock Gap bullet on the time-pressure cards. LLM narration deferred
+    # (CONTEXT.md Deferred Ideas) — insights_service.py uses named allow-list, so
+    # adding this MetricId does NOT auto-fire any LLM finding.
+    "clock_gap_pct",
 ]
 
 SubsectionId = Literal[
@@ -152,6 +157,23 @@ NEUTRAL_PCT_THRESHOLD: float = 5.0
 # Neutral band for net timeout rate in percentage points (mirrors the inline
 # frontend constant in EndgameClockPressureSection.tsx line 23).
 NEUTRAL_TIMEOUT_THRESHOLD: float = 5.0
+
+# Phase 88 D-03: minimum endgame games per TC to emit a TimePressureTcCard.
+# Codegen-emitted to frontend/src/generated/endgameZones.ts (Plan 88-10) to
+# eliminate cross-stack drift (REVIEW.md WR-04). Backend imports from here.
+MIN_GAMES_PER_TC_CARD: int = 20
+
+# Phase 88 D-03: minimum games per (TC, quintile) bin for a reliable bullet.
+# After Phase 88.1 (Plan 88-09) this is the floor for min(n_user_in_Q, n_opp_in_Q)
+# before _build_quintile_bullets emits delta + stats. Below it: stats are None.
+MIN_GAMES_PER_PRESSURE_BIN: int = 5
+
+# Phase 88 D-02: editorial half-width cap for the per-(TC, quintile) Score-Delta
+# neutral bands. Calibrated in Plan 08 after running /benchmarks §3.3.3 — cap
+# confirmed at 0.06 (prevents extreme delta-IQR widths from creating unusably wide
+# bands; applied independently to each edge: lower = max(p25 - p50, -0.06),
+# upper = min(p75 - p50, +0.06); activated in 14 of 20 cells at one or both edges).
+PRESSURE_BIN_NEUTRAL_CAP: float = 0.06
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +350,22 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=0.55,
         direction="higher_is_better",
     ),
+    # Phase 88: Clock Gap percentage at endgame entry — (user_clock - opp_clock)
+    # / base_clock. Positive = user has more time (good); negative = user has
+    # less. Calibrated from reports/benchmarks-latest.md §3.3.1 clock-gap-%
+    # submetric (2026-05-17 snapshot, n=1,743 pooled users). TC d=0.23 and
+    # ELO d=0.21 are both "review" — pooled IQR [-0.0641, +0.0466] rounded to
+    # (-0.065, +0.047) is a defensible single band. Asymmetric because
+    # blitz/rapid/classical users tend to enter endgames with a slight clock
+    # deficit. clock_gap_pct is a ratio — its absolute IQR IS the delta IQR
+    # (no p50 subtraction needed). No LLM finding is registered for this metric
+    # (insights_service.py uses a named allow-list; time-pressure LLM narration
+    # is deferred per CONTEXT.md Deferred Ideas).
+    "clock_gap_pct": ZoneSpec(
+        typical_lower=-0.065,
+        typical_upper=0.047,
+        direction="higher_is_better",
+    ),
 }
 
 
@@ -461,6 +499,88 @@ PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
         # global pooled band until a larger sample emerges.
         achievable_score_gap=(-0.04, 0.04),
     ),
+}
+
+
+# ---------------------------------------------------------------------------
+# PRESSURE_BIN_SCORE_NEUTRAL_ZONES — per-(TC, pressure-quintile) neutral bands.
+# Phase 88 D-02. Calibrated from /benchmarks §3.3.3 (Plan 08, 2026-05-17).
+# ELO is pooled by acceptance (accept-pooled-with-caveat decision, 2026-05-17).
+# ELO gradient inside the band is intentional: stronger players land higher
+# (greener) because they score better against their opponents at every TC.
+# Quintile index 0 = 0-20% clock remaining (max pressure); 4 = 80-100% (min).
+#
+# Semantics: band is on Score-Delta (user_score − cohort_score), NOT absolute
+# score. Transformation: lower = max(p25 - p50, -cap), upper = min(p75 - p50,
+# +cap) where cap = PRESSURE_BIN_NEUTRAL_CAP = 0.06. Both edges capped
+# independently so bands are asymmetric in general.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PressureBinBand:
+    """Neutral [lower, upper] band for Score-Delta in one (TC, quintile) cell."""
+
+    lower: float
+    upper: float
+
+
+# Calibrated from reports/benchmarks-latest.md §3.3.3 chess-score-per-pressure-bin
+# (2026-05-17 benchmark snapshot, n=1,912 completed users across 19 non-sparse cells).
+# Each band = delta IQR: lower = max(p25-p50, -0.06), upper = min(p75-p50, +0.06).
+# "cap" in comments below means the edge hit ±PRESSURE_BIN_NEUTRAL_CAP=0.06.
+PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Mapping[
+    Literal["bullet", "blitz", "rapid", "classical"],
+    Mapping[Literal[0, 1, 2, 3, 4], PressureBinBand],
+] = {
+    "bullet": {
+        # p25/p50/p75: 0.2872/0.3495/0.4138 → delta IQR (-0.0623, +0.0643)
+        0: PressureBinBand(-0.06, 0.06),  # both edges capped
+        # p25/p50/p75: 0.4645/0.5126/0.5650 → delta IQR (-0.0481, +0.0524)
+        1: PressureBinBand(-0.0481, 0.0524),  # no cap
+        # p25/p50/p75: 0.5198/0.5578/0.6071 → delta IQR (-0.0380, +0.0493)
+        2: PressureBinBand(-0.0380, 0.0493),  # no cap
+        # p25/p50/p75: 0.5066/0.5629/0.6230 → delta IQR (-0.0563, +0.0601)
+        3: PressureBinBand(-0.0563, 0.06),  # upper edge capped
+        # p25/p50/p75: 0.4414/0.5455/0.6538 → delta IQR (-0.1041, +0.1083)
+        4: PressureBinBand(-0.06, 0.06),  # both edges capped
+    },
+    "blitz": {
+        # p25/p50/p75: 0.3070/0.3889/0.4667 → delta IQR (-0.0819, +0.0778)
+        0: PressureBinBand(-0.06, 0.06),  # both edges capped
+        # p25/p50/p75: 0.4554/0.5133/0.5784 → delta IQR (-0.0579, +0.0651)
+        1: PressureBinBand(-0.0579, 0.06),  # upper edge capped
+        # p25/p50/p75: 0.4930/0.5487/0.6017 → delta IQR (-0.0557, +0.0530)
+        2: PressureBinBand(-0.0557, 0.0530),  # no cap
+        # p25/p50/p75: 0.5000/0.5598/0.6146 → delta IQR (-0.0598, +0.0548)
+        3: PressureBinBand(-0.0598, 0.0548),  # no cap
+        # p25/p50/p75: 0.4615/0.5500/0.6250 → delta IQR (-0.0885, +0.0750)
+        4: PressureBinBand(-0.06, 0.06),  # both edges capped
+    },
+    "rapid": {
+        # p25/p50/p75: 0.3000/0.4000/0.5000 → delta IQR (-0.1000, +0.1000)
+        0: PressureBinBand(-0.06, 0.06),  # both edges capped
+        # p25/p50/p75: 0.4340/0.5000/0.5753 → delta IQR (-0.0660, +0.0753)
+        1: PressureBinBand(-0.06, 0.06),  # both edges capped
+        # p25/p50/p75: 0.4858/0.5421/0.6111 → delta IQR (-0.0563, +0.0690)
+        2: PressureBinBand(-0.0563, 0.06),  # upper edge capped
+        # p25/p50/p75: 0.4808/0.5390/0.6000 → delta IQR (-0.0582, +0.0610)
+        3: PressureBinBand(-0.0582, 0.06),  # upper edge capped
+        # p25/p50/p75: 0.4688/0.5370/0.6077 → delta IQR (-0.0682, +0.0707)
+        4: PressureBinBand(-0.06, 0.06),  # both edges capped
+    },
+    "classical": {
+        # p25/p50/p75: 0.3290/0.4183/0.5515 → delta IQR (-0.0893, +0.1332)
+        0: PressureBinBand(-0.06, 0.06),  # both edges capped
+        # p25/p50/p75: 0.3718/0.5000/0.5833 → delta IQR (-0.1282, +0.0833)
+        1: PressureBinBand(-0.06, 0.06),  # both edges capped
+        # p25/p50/p75: 0.3919/0.5000/0.5897 → delta IQR (-0.1081, +0.0897)
+        2: PressureBinBand(-0.06, 0.06),  # both edges capped
+        # p25/p50/p75: 0.4198/0.5000/0.6124 → delta IQR (-0.0802, +0.1124)
+        3: PressureBinBand(-0.06, 0.06),  # both edges capped
+        # p25/p50/p75: 0.4205/0.5183/0.6094 → delta IQR (-0.0978, +0.0911)
+        4: PressureBinBand(-0.06, 0.06),  # both edges capped
+    },
 }
 
 

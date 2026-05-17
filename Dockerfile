@@ -28,6 +28,7 @@ ARG STOCKFISH_ASSET=stockfish-ubuntu-x86-64-avx2
 # Build fails if hash mismatches (T-78-01 mitigation).
 ARG STOCKFISH_SHA256=536c0c2c0cf06450df0bfb5e876ef0d3119950703a8f143627f990c7b5417964
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends wget ca-certificates \
     && wget -q "https://github.com/official-stockfish/Stockfish/releases/download/${STOCKFISH_TAG}/${STOCKFISH_ASSET}.tar" -O /tmp/stockfish.tar \
     && echo "${STOCKFISH_SHA256}  /tmp/stockfish.tar" | sha256sum -c - \

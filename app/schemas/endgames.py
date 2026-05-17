@@ -3,7 +3,7 @@
 Provides response models for:
 - GET /api/endgames/stats: per-category W/D/L with inline conversion/recovery stats
 - GET /api/endgames/games: paginated game list filtered by endgame class
-- GET /api/endgames/overview: composed response including clock pressure stats (Phase 54)
+- GET /api/endgames/overview: composed response including time pressure cards (Phase 88)
 """
 
 from typing import Literal
@@ -458,45 +458,47 @@ class ClockStatsRow(BaseModel):
     net_timeout_rate: float  # (timeout wins - timeout losses) / total_endgame_games * 100
 
 
-class ClockPressureTimelinePoint(BaseModel):
-    """One point in the clock-diff timeline (quick-260416-w3q).
+class ClockDiffTimelinePoint(BaseModel):
+    """One ISO-week point on the Average Clock Difference over Time line chart.
+
+    Plan 88-15 (CONTEXT §2 A-2): restored after the Phase 88-07 cleanup deleted
+    the line chart that previously consumed an equivalent shape on the legacy
+    clock-pressure response. Renamed (vs the pre-88-07 timeline point class) to
+    make the design-pivot history obvious to future readers.
 
     date: Monday of the ISO week, YYYY-MM-DD.
-    avg_clock_diff_pct: mean of (user_clock - opp_clock) / base_time_seconds * 100
-        over the trailing `timeline_window` games (see ClockPressureResponse).
-        Positive means the user entered the endgame with more clock than the opponent.
-    game_count: games represented in the window (<= timeline_window).
+    avg_clock_diff_pct: rolling-window mean of
+        (user_clock - opp_clock) / base_time_seconds * 100 — in PERCENT units,
+        not fraction. 50.0 means the user entered the endgame with 50% more of
+        the base clock than the opponent. Matches the chart Y-axis unit and the
+        pre-deletion convention.
+    game_count: count of eligible games in the trailing rolling window
+        (<= CLOCK_PRESSURE_TIMELINE_WINDOW). Drives confidence in the rolling
+        mean — small windows hint at sparse early history.
+    per_week_game_count: count of clock-eligible endgame games in THIS specific
+        ISO week (NOT the trailing window). Drives the muted volume-bar series
+        on the frontend chart. Mirrors per_week_* fields on the other endgame
+        timelines.
     """
 
     date: str
     avg_clock_diff_pct: float
     game_count: int
-    # Count of clock-eligible endgame games in THIS specific ISO week (NOT the
-    # trailing window). Drives the muted volume-bar series on the frontend
-    # Average Clock Difference timeline. Mirrors the per_week_* fields on the
-    # other endgame timelines.
     per_week_game_count: int
 
 
-class ClockPressureResponse(BaseModel):
-    """Time Pressure at Endgame Entry — table broken down by time control (Phase 54).
+class ClockDiffTimelineResponse(BaseModel):
+    """Wrapper for the Average Clock Difference over Time line chart payload.
 
-    rows: per-time-control stats (only rows with >= MIN_GAMES_FOR_CLOCK_STATS games).
-    total_clock_games: total games (across all time controls) with both clocks present.
-    total_endgame_games: total distinct endgame games across all time controls.
-    Both totals include all time controls (even hidden rows) for "Based on X of Y" note.
+    Plan 88-15 (CONTEXT §2 A-2): served on EndgameOverviewResponse alongside
+    time_pressure_cards. points is empty when no game in the user's filtered
+    set passes the clock-eligibility predicate — the frontend hides the chart
+    in that case.
 
-    timeline: weekly rolling-window series of average clock-diff % across all time
-        controls (quick-260416-w3q). Collapsed to a single series — filter by time
-        control via the sidebar filter.
-    timeline_window: rolling window size used for each timeline point.
+    points: chronological list of ISO-week points sorted by date ascending.
     """
 
-    rows: list[ClockStatsRow]
-    total_clock_games: int
-    total_endgame_games: int
-    timeline: list[ClockPressureTimelinePoint]
-    timeline_window: int
+    points: list[ClockDiffTimelinePoint]
 
 
 class TimePressureBucketPoint(BaseModel):
@@ -612,6 +614,115 @@ class EndgameEloTimelineResponse(BaseModel):
     timeline_window: int
 
 
+class PressureQuintileBullet(BaseModel):
+    """Per-quintile Score-Delta bullet for the time pressure card.
+
+    Phase 88.1 (D-07 supersedes D-05): the global cohort layer was retired in
+    favour of a same-game opponent-quintile split. The user's own filtered
+    games are bucketed twice — once by the USER's clock-pct at endgame entry
+    (yielding user_score for quintile Q), once by the OPPONENT's clock-pct
+    (yielding opp_score for the matching quintile index). The two splits are
+    independent samples drawn from the same game-set; the significance test
+    is the unpaired two-sample Wilson via compute_score_difference_test.
+
+    quintile_index: 0..4, where 0 = 0-20% clock remaining (maximum pressure),
+        4 = 80-100% clock remaining (minimum pressure).
+    quintile_label: human-readable range string e.g. "0-20%".
+    n: user-side games in this quintile bin (drives the displayed sample-size
+        chip; the opponent-side count is gated by min(n_user, n_opp) >=
+        MIN_GAMES_PER_PRESSURE_BIN inside _build_quintile_bullets).
+    delta: user_score - opp_score where each side is bucketed by its OWN
+        clock-pct at endgame entry. 0.0 when either side has zero games at
+        this quintile (no signal to compare).
+    p_value: unpaired two-sample Wilson score-test p-value of
+        H0: user_score - opp_score == 0; None when the n-gate is unmet.
+    ci_low/ci_high: 95% CI on delta from the same two-sample test; None when
+        the n-gate is unmet.
+    opp_score: opponent's same-game score in the matching opponent-clock
+        quintile; None when the n-gate is unmet.
+    """
+
+    quintile_index: int  # 0..4
+    quintile_label: str  # "0-20%", "20-40%", "40-60%", "60-80%", "80-100%"
+    n: int
+    delta: float
+    p_value: float | None
+    ci_low: float | None
+    ci_high: float | None
+    opp_score: float | None
+
+
+class ClockGapBullet(BaseModel):
+    """Clock advantage/disadvantage at endgame entry (Phase 88).
+
+    Summarises the per-game (user_clock - opp_clock) / base_clock distribution
+    for one time control. The mean_diff_pct is a fraction (not a percentage):
+    0.05 means the user had 5% more base-clock time than the opponent at entry.
+
+    n: games with both clocks available and valid base_clock.
+    mean_diff_pct: mean per-game (user_clock - opp_clock) / base_clock.
+    p_value/ci_low/ci_high: paired one-sample z-test output from
+        compute_paired_difference_test; None when insufficient data.
+    """
+
+    n: int
+    mean_diff_pct: float
+    p_value: float | None
+    ci_low: float | None
+    ci_high: float | None
+
+
+class TimePressureTcCard(BaseModel):
+    """Per-time-control time pressure card carrying Clock Gap + Score-Delta bullets (Phase 88).
+
+    tc: time control bucket.
+    total: total endgame games for this TC (used to gate card visibility).
+    clock_gap: paired clock-advantage bullet across all games in this TC.
+    quintiles: exactly 5 PressureQuintileBullet entries, ordered Q0..Q4 (0=max pressure).
+
+    Top-zone summary stats restored from the deleted EndgameClockPressureSection
+    (CONTEXT §2 A-3, Plan 88-14). The 5 averages are None when no game in this
+    TC has clock data (e.g. legacy imports without ply/clock arrays). All ship
+    with explicit Pydantic defaults so legacy call sites that build
+    TimePressureTcCard(...) keyword-style without these new args do not break
+    (B-2 lock).
+
+    user_avg_pct: mean (user_clock / base_time_seconds) across clock-eligible
+        games in this TC. Fraction (0..1) — 0.47 means the user entered endgames
+        with 47% of their starting clock remaining on average.
+    user_avg_seconds: mean user_clock in absolute seconds at endgame entry.
+    opp_avg_pct: mean (opp_clock / base_time_seconds), fraction.
+    opp_avg_seconds: mean opp_clock in absolute seconds.
+    avg_clock_diff_seconds: mean (user_clock − opp_clock) in absolute seconds.
+        Related to clock_gap.mean_diff_pct (same metric in fraction units) but
+        NOT redundant — one is a fraction, the other is signed seconds.
+    net_timeout_rate: (timeout_wins − timeout_losses) / total. Fraction units
+        (0.005 = 0.5%) consistent with clock_gap.mean_diff_pct's convention.
+        0.0 when neither side timed out.
+    """
+
+    tc: Literal["bullet", "blitz", "rapid", "classical"]
+    total: int
+    user_avg_pct: float | None = None
+    user_avg_seconds: float | None = None
+    opp_avg_pct: float | None = None
+    opp_avg_seconds: float | None = None
+    avg_clock_diff_seconds: float | None = None
+    net_timeout_rate: float = 0.0
+    clock_gap: ClockGapBullet
+    quintiles: list[PressureQuintileBullet]  # always 5, ordered Q0..Q4
+
+
+class TimePressureCardsResponse(BaseModel):
+    """Time pressure cards response — one card per TC that meets MIN_GAMES_PER_TC_CARD (Phase 88).
+
+    cards: list of TimePressureTcCard, ordered bullet -> blitz -> rapid -> classical.
+        Only includes TCs where total endgame games >= MIN_GAMES_PER_TC_CARD (20).
+    """
+
+    cards: list[TimePressureTcCard]
+
+
 class EndgameOverviewResponse(BaseModel):
     """Composed response for GET /api/endgames/overview.
 
@@ -625,6 +736,6 @@ class EndgameOverviewResponse(BaseModel):
     performance: EndgamePerformanceResponse
     timeline: EndgameTimelineResponse
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
-    clock_pressure: ClockPressureResponse  # Phase 54: time pressure at endgame entry
-    time_pressure_chart: TimePressureChartResponse  # Phase 55: time pressure vs performance chart
+    time_pressure_cards: TimePressureCardsResponse  # Phase 88: per-TC time pressure cards
+    clock_diff_timeline: ClockDiffTimelineResponse  # Plan 88-15 (CONTEXT §2 A-2): restored Average Clock Difference over Time line chart payload
     endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.5 D-06: paired Endgame ELO + Actual ELO series per (platform, TC) via additive K · eg_score_gap

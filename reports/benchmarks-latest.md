@@ -944,6 +944,284 @@ Verdict — TC d_max = **0.07** → **collapse**; ELO d_max = **0.41** (800 vs 2
 - **ELO `collapse` (d=0.17)**: time-pressure curve is well-collapsed across ELO buckets. Pooling ELO when displaying the curve is justified.
 - **TC `review` (d=0.34)**: driven entirely by tb=0 (severe time pressure < 10% remaining): bullet 26.0% vs classical 41.0%. At low time pressure (tb≥4) TC differences shrink to d~0.1. The curve **shape** is TC-similar but the **severe-pressure floor** is markedly lower in bullet. Live overlay-by-TC is justified at the low-pressure end; consider a per-TC curve series even though the rest collapses.
 
+#### §3.3.1 clock-gap-% submetric
+
+**Question:** How does per-user mean `(user_clock - opp_clock) / base_clock` at endgame entry distribute, and can TC and ELO be pooled for a single scalar zone band?
+
+**Snapshot:** 2026-05-17 benchmark DB. Equal-footing filter applied (`|opp − user| ≤ 100`). Sparse cell `(2400, classical)` excluded. Minimum 20 games per user per cell. Total pooled n = 1,743 users.
+
+##### Per-(ELO, TC) cell table
+
+| ELO \\ TC | bullet | blitz | rapid | classical |
+|---:|---:|---:|---:|---:|
+| 800 | −0.51% (n=98) | −2.82% (n=100) | −0.59% (n=96) | −1.73% (n=38) |
+| 1200 | −0.16% (n=100) | −1.48% (n=99) | −1.66% (n=100) | −1.46% (n=72) |
+| 1600 | −0.29% (n=99) | −1.54% (n=100) | −1.44% (n=100) | −2.65% (n=85) |
+| 2000 | −1.12% (n=100) | −2.02% (n=100) | −1.91% (n=98) | −4.76% (n=64) |
+| 2400 | −0.01% (n=99) | +0.85% (n=100) | −1.79% (n=95) | — (sparse)* |
+
+`*` Sparse cell excluded.
+
+Note: values in percent (`mean_gap_frac * 100`). Near-zero medians throughout; gap_p50 in the pooled range is approximately 0.
+
+##### TC marginal (ELO pooled, sparse excluded)
+
+| TC | n_users | gap_mean | gap_var |
+|---:|---:|---:|---:|
+| bullet | 496 | −0.22% | 0.003358 |
+| blitz | 499 | −1.40% | 0.008632 |
+| rapid | 489 | −1.48% | 0.009814 |
+| classical | 259 | −2.71% | 0.026778 |
+
+##### ELO marginal (TC pooled, sparse excluded)
+
+| ELO | n_users | gap_mean | gap_var |
+|---:|---:|---:|---:|
+| 800 | 332 | −1.07% | 0.009405 |
+| 1200 | 371 | −1.17% | 0.011204 |
+| 1600 | 384 | −1.43% | 0.012988 |
+| 2000 | 362 | −2.23% | 0.010784 |
+| 2400 | 294 | −0.29% | 0.005393 |
+
+##### Collapse verdicts
+
+Cohen's d formula: `d = |mean_a - mean_b| / pooled_sd`.
+
+- **TC axis:** d_max = **0.23** (bullet vs classical) → **review** (0.20–0.50). Largest gap is bullet (+0.22%) vs classical (−2.71%) = 2.49pp difference, pooled SD ≈ 10.9pp.
+- **ELO axis:** d_max = **0.21** (2000 vs 2400) → **review** (0.20–0.50). Largest gap is 2000 (−2.23%) vs 2400 (−0.29%) = 1.94pp difference.
+
+Both axes are "review" (d ~0.21–0.23). No axis reaches the 0.5 keep-separate threshold.
+
+##### Pooled IQR band
+
+From the pooled distribution across all cells (n=1,743):
+
+| n | gap_p25 | gap_p50 | gap_p75 |
+|---:|---:|---:|---:|
+| 1,743 | −6.41% | ≈0% | +4.66% |
+
+**Conclusion:** Both axes are "review" but neither reaches "keep separate". The pooled band `[−0.0641, +0.0466]` is the calibrated zone for `ZONE_REGISTRY["clock_gap_pct"]`. This is asymmetric (lower = −6.4%, upper = +4.7%) because blitz/rapid/classical users tend to enter endgames with a slight clock deficit.
+
+**Recommended value:** `ZoneSpec(typical_lower=-0.065, typical_upper=0.047, direction="higher_is_better")`. Rounded to 3dp from the exact pooled IQR.
+
+---
+
+#### §3.3.3 chess-score-per-pressure-bin
+
+**Question:** How does per-user chess score distribute across clock-pressure quintiles per (TC, ELO) cell, and can ELO (and TC) be pooled per quintile for a calibrated neutral-zone band?
+
+**Snapshot:** 2026-05-17 benchmark DB. Equal-footing filter applied. Sparse cell `(2400, classical)` excluded. Minimum 5 games per user per (TC, quintile) cell for the per-user quintile aggregation; minimum 10 users per cell for group statistics. Total rows: 92 cells across the full 5 × 5 × 4 grid (quintile × ELO × TC, sparse excluded + some below 10-user floor dropped).
+
+##### Per-(quintile, ELO, TC) cell table (selected cells)
+
+Full raw output (92 rows). Key cells:
+
+| quintile | elo_bucket | tc | n_users | mean_score | p25 | p50 | p75 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 800 | bullet | 98 | 0.3200 | 0.2598 | 0.3212 | 0.3694 |
+| 0 | 800 | classical | — | — | — | — | — |
+| 0 | 2400 | bullet | 99 | 0.3971 | 0.3346 | 0.4000 | 0.4634 |
+| 0 | 2400 | rapid | 84 | 0.4541 | 0.3687 | 0.4485 | 0.5116 |
+| 4 | 800 | bullet | 34 | 0.5713 | 0.5000 | 0.5465 | 0.6758 |
+| 4 | 2400 | blitz | 83 | 0.6034 | 0.5242 | 0.6000 | 0.6667 |
+
+##### Collapse verdicts per quintile
+
+Cohen's d computed from TC and ELO marginals. Max pairwise d across 4 TC levels (6 pairs) and 5 ELO levels (10 pairs), sparse cell excluded.
+
+| Quintile | Range | TC axis d_max (worst pair) | TC verdict | ELO axis d_max (worst pair) | ELO verdict |
+|---:|---:|---:|---:|---:|---:|
+| Q0 | 0–20% clock | **0.63** (bullet vs classical) | **keep separate** | **0.79** (800 vs 2400) | **keep separate** |
+| Q1 | 20–40% | 0.29 (bullet vs classical) | review | 0.43 (800 vs 2400) | review |
+| Q2 | 40–60% | **0.63** (bullet vs classical) | **keep separate** | **0.58** (1200 vs 2400) | **keep separate** |
+| Q3 | 60–80% | 0.39 (bullet vs classical) | review | **0.61** (1200 vs 2400) | **keep separate** |
+| Q4 | 80–100% | 0.22 (bullet vs classical) | review | **0.71** (800 vs 2400) | **keep separate** |
+
+**Summary:**
+- TC axis: Q0 and Q2 `keep separate` (d ≥ 0.5); Q1, Q3, Q4 `review` (0.2–0.5).
+- ELO axis: ALL 5 quintiles are `keep separate` or `review` — ELO does NOT collapse for any quintile. Q0 is the most extreme (d=0.79), Q1 is the mildest (d=0.43).
+
+**This is a blocking decision point** — the Plan 03 scaffolded 4×5 (TC, quintile) shape assumes ELO collapse per quintile. The data contradicts that assumption across all quintiles. See Plan 08 Task 2 checkpoint for resolution options.
+
+##### TC marginals per quintile (ELO pooled, for TC axis verdict)
+
+| Quintile | bullet (n, mean) | blitz (n, mean) | rapid (n, mean) | classical (n, mean) |
+|---:|---:|---:|---:|---:|
+| Q0 | 493, 0.3531 | 475, 0.3903 | 338, 0.4012 | 82, 0.4236 |
+| Q1 | 497, 0.5192 | 494, 0.5159 | 429, 0.5055 | 122, 0.4874 |
+| Q2 | 496, 0.5661 | 492, 0.5519 | 474, 0.5479 | 160, 0.4979 |
+| Q3 | 488, 0.5670 | 492, 0.5593 | 485, 0.5450 | 211, 0.5205 |
+| Q4 | 309, 0.5538 | 435, 0.5444 | 434, 0.5366 | 305, 0.5197 |
+
+##### ELO marginals per quintile (TC pooled, for ELO axis verdict)
+
+| Quintile | 800 (n, mean) | 1200 (n, mean) | 1600 (n, mean) | 2000 (n, mean) | 2400 (n, mean) |
+|---:|---:|---:|---:|---:|---:|
+| Q0 | 233, 0.3326 | 257, 0.3562 | 297, 0.3740 | 318, 0.4021 | 283, 0.4306 |
+| Q1 | 268, 0.4879 | 303, 0.5026 | 334, 0.5107 | 346, 0.5184 | 291, 0.5368 |
+| Q2 | 287, 0.5372 | 328, 0.5324 | 364, 0.5386 | 350, 0.5558 | 293, 0.5881 |
+| Q3 | 307, 0.5256 | 351, 0.5302 | 374, 0.5471 | 355, 0.5714 | 289, 0.5920 |
+| Q4 | 273, 0.4830 | 328, 0.5292 | 346, 0.5365 | 319, 0.5650 | 217, 0.5901 |
+
+##### 4×5 pooled (TC, quintile) IQR band table — ELO collapsed
+
+This table shows the shipped band shape if ELO is accepted as pooled-with-caveat (the per-ELO divergence is acknowledged but not stratified at the schema level). Editorial cap `PRESSURE_BIN_NEUTRAL_CAP = 0.06` applied symmetrically around p50 when half-width > 0.06.
+
+| tc | quintile | n_users | p25 | p50 | p75 | half_w | band_lower | band_upper | cap? |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 0 | 493 | 0.2872 | 0.3495 | 0.4138 | 0.0633 | 0.2895 | 0.4095 | yes |
+| bullet | 1 | 497 | 0.4645 | 0.5126 | 0.5650 | 0.0502 | 0.4645 | 0.5650 | — |
+| bullet | 2 | 496 | 0.5198 | 0.5578 | 0.6071 | 0.0437 | 0.5198 | 0.6071 | — |
+| bullet | 3 | 488 | 0.5066 | 0.5629 | 0.6230 | 0.0582 | 0.5066 | 0.6230 | — |
+| bullet | 4 | 309 | 0.4414 | 0.5455 | 0.6538 | 0.1062 | 0.4855 | 0.6055 | yes |
+| blitz | 0 | 475 | 0.3070 | 0.3889 | 0.4667 | 0.0799 | 0.3289 | 0.4489 | yes |
+| blitz | 1 | 494 | 0.4554 | 0.5133 | 0.5784 | 0.0615 | 0.4533 | 0.5733 | yes |
+| blitz | 2 | 492 | 0.4930 | 0.5487 | 0.6017 | 0.0544 | 0.4930 | 0.6017 | — |
+| blitz | 3 | 492 | 0.5000 | 0.5598 | 0.6146 | 0.0573 | 0.5000 | 0.6146 | — |
+| blitz | 4 | 435 | 0.4615 | 0.5500 | 0.6250 | 0.0818 | 0.4900 | 0.6100 | yes |
+| rapid | 0 | 338 | 0.3000 | 0.4000 | 0.5000 | 0.1000 | 0.3400 | 0.4600 | yes |
+| rapid | 1 | 429 | 0.4340 | 0.5000 | 0.5753 | 0.0707 | 0.4400 | 0.5600 | yes |
+| rapid | 2 | 474 | 0.4858 | 0.5421 | 0.6111 | 0.0627 | 0.4821 | 0.6021 | yes |
+| rapid | 3 | 485 | 0.4808 | 0.5390 | 0.6000 | 0.0596 | 0.4808 | 0.6000 | — |
+| rapid | 4 | 434 | 0.4688 | 0.5370 | 0.6077 | 0.0695 | 0.4770 | 0.5970 | yes |
+| classical | 0 | 82 | 0.3290 | 0.4183 | 0.5515 | 0.1113 | 0.3583 | 0.4783 | yes |
+| classical | 1 | 122 | 0.3718 | 0.5000 | 0.5833 | 0.1058 | 0.4400 | 0.5600 | yes |
+| classical | 2 | 160 | 0.3919 | 0.5000 | 0.5897 | 0.0989 | 0.4400 | 0.5600 | yes |
+| classical | 3 | 211 | 0.4198 | 0.5000 | 0.6124 | 0.0963 | 0.4400 | 0.5600 | yes |
+| classical | 4 | 305 | 0.4205 | 0.5183 | 0.6094 | 0.0945 | 0.4583 | 0.5783 | yes |
+
+Cap activated in 12 of 20 cells. The editorial cap prevents extreme IQR widths (especially in classical and Q0/Q4 extreme quintiles) from creating unusably wide bands.
+
+##### Ready-to-use Python dict (accept-pooled-with-caveat resolution)
+
+```python
+PRESSURE_BIN_SCORE_NEUTRAL_ZONES = {
+    "bullet": {
+        0: PressureBinBand(0.2895, 0.4095),  # editorial cap; raw IQR [0.2872, 0.4138], half-width 0.0633
+        1: PressureBinBand(0.4645, 0.5650),  # raw IQR; half-width 0.0502
+        2: PressureBinBand(0.5198, 0.6071),  # raw IQR; half-width 0.0437
+        3: PressureBinBand(0.5066, 0.6230),  # raw IQR; half-width 0.0582
+        4: PressureBinBand(0.4855, 0.6055),  # editorial cap; raw IQR [0.4414, 0.6538], half-width 0.1062
+    },
+    "blitz": {
+        0: PressureBinBand(0.3289, 0.4489),  # editorial cap; raw IQR [0.3070, 0.4667], half-width 0.0799
+        1: PressureBinBand(0.4533, 0.5733),  # editorial cap; raw IQR [0.4554, 0.5784], half-width 0.0615
+        2: PressureBinBand(0.4930, 0.6017),  # raw IQR; half-width 0.0544
+        3: PressureBinBand(0.5000, 0.6146),  # raw IQR; half-width 0.0573
+        4: PressureBinBand(0.4900, 0.6100),  # editorial cap; raw IQR [0.4615, 0.6250], half-width 0.0818
+    },
+    "rapid": {
+        0: PressureBinBand(0.3400, 0.4600),  # editorial cap; raw IQR [0.3000, 0.5000], half-width 0.1000
+        1: PressureBinBand(0.4400, 0.5600),  # editorial cap; raw IQR [0.4340, 0.5753], half-width 0.0707
+        2: PressureBinBand(0.4821, 0.6021),  # editorial cap; raw IQR [0.4858, 0.6111], half-width 0.0627
+        3: PressureBinBand(0.4808, 0.6000),  # raw IQR; half-width 0.0596
+        4: PressureBinBand(0.4770, 0.5970),  # editorial cap; raw IQR [0.4688, 0.6077], half-width 0.0695
+    },
+    "classical": {
+        0: PressureBinBand(0.3583, 0.4783),  # editorial cap; raw IQR [0.3290, 0.5515], half-width 0.1113
+        1: PressureBinBand(0.4400, 0.5600),  # editorial cap; raw IQR [0.3718, 0.5833], half-width 0.1058
+        2: PressureBinBand(0.4400, 0.5600),  # editorial cap; raw IQR [0.3919, 0.5897], half-width 0.0989
+        3: PressureBinBand(0.4400, 0.5600),  # editorial cap; raw IQR [0.4198, 0.6124], half-width 0.0963
+        4: PressureBinBand(0.4583, 0.5783),  # editorial cap; raw IQR [0.4205, 0.6094], half-width 0.0945
+    },
+}
+```
+
+**Caveat:** ELO does NOT collapse for any quintile (d=0.43–0.79). The pooled bands above fold a real ELO gradient into a single wide band — the editorial cap then truncates that width. A higher-rated user (ELO 2400) has a meaningfully different score distribution than a lower-rated user (ELO 800) within the same pressure bin, particularly at Q0 (800 mean=0.33 vs 2400 mean=0.43). The pooled band centered near the population median is a fair approximation but will mis-classify the extremes.
+
+---
+
+#### §3.3.3.b chess-score-per-pressure-bin — opp-quintile rerun (Phase 88.1 / 2026-05-17)
+
+**Semantic difference from §3.3.3 above.** The §3.3.3 calibration (Plan 88-08, shipped as `PRESSURE_BIN_SCORE_NEUTRAL_ZONES`) was based on the global-cohort framing: each user's per-(TC, quintile) score was compared against a single population reference for that cell. Phase 88.1 retired the cohort layer (Plan 88-09, D-07 supersedes D-05) in favour of a **same-game opp-quintile split**: for each of the user's filtered games, the user side is bucketed by the user's own clock-pct quintile and the opp side is bucketed by the opponent's own clock-pct quintile from the same game, with the result inverted. The two sides land in (usually different) quintiles within the same game, so the per-(TC, quintile) delta the live frontend now consumes is `delta = user_score_in_user_Q − opp_score_in_opp_Q`.
+
+This rerun recomputes the per-(TC, quintile) IQR of that new delta against the same benchmark snapshot (2026-05-01, 1912 users) under the same filters (rated, non-computer, equal-footing ±100 rating, sparse-cell `(2400, classical)` excluded, MIN_GAMES_PER_PRESSURE_BIN=5 per side per cell, ELO pooled).
+
+##### Per-user delta IQR (rerun, opp-quintile semantics)
+
+| tc | quintile | n_users | p25 | p50 | p75 | mean_delta |
+|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 0 | 493 | -0.0956 |  0.0157 | 0.1270 |  0.0189 |
+| bullet | 1 | 495 | -0.0925 |  0.0072 | 0.1081 |  0.0144 |
+| bullet | 2 | 496 | -0.0727 | -0.0016 | 0.0934 |  0.0087 |
+| bullet | 3 | 483 | -0.0956 | -0.0032 | 0.1071 | -0.0016 |
+| bullet | 4 | 291 | -0.1714 | -0.0092 | 0.1654 |  0.0051 |
+| blitz  | 0 | 469 | -0.0964 |  0.0221 | 0.1458 |  0.0326 |
+| blitz  | 1 | 490 | -0.0725 |  0.0320 | 0.1459 |  0.0360 |
+| blitz  | 2 | 492 | -0.0694 |  0.0264 | 0.1235 |  0.0349 |
+| blitz  | 3 | 491 | -0.0650 |  0.0303 | 0.1350 |  0.0344 |
+| blitz  | 4 | 429 | -0.0910 |  0.0332 | 0.1488 |  0.0278 |
+| rapid  | 0 | 319 | -0.1298 |  0.0200 | 0.1809 |  0.0263 |
+| rapid  | 1 | 415 | -0.0815 |  0.0433 | 0.1734 |  0.0558 |
+| rapid  | 2 | 467 | -0.0633 |  0.0536 | 0.1628 |  0.0587 |
+| rapid  | 3 | 483 | -0.0613 |  0.0420 | 0.1495 |  0.0515 |
+| rapid  | 4 | 431 | -0.0785 |  0.0476 | 0.1730 |  0.0436 |
+| classical | 0 | 63 | -0.2585 | -0.0704 | 0.1577 | -0.0312 |
+| classical | 1 | 98 | -0.1761 | -0.0476 | 0.1115 | -0.0455 |
+| classical | 2 | 138 | -0.1625 |  0.0000 | 0.1007 | -0.0144 |
+| classical | 3 | 189 | -0.1425 |  0.0169 | 0.1538 |  0.0077 |
+| classical | 4 | 293 | -0.1534 |  0.0313 | 0.2163 |  0.0389 |
+
+Applying the same delta-IQR transform as 88-08 (`lower = max(p25 - p50, -0.06)`, `upper = min(p75 - p50, +0.06)`):
+
+##### Rerun-derived bands (after delta-IQR transform + ±0.06 cap)
+
+| tc | quintile | rerun_lower | rerun_upper |
+|---:|---:|---:|---:|
+| bullet | 0 | -0.06 | 0.06 |
+| bullet | 1 | -0.06 | 0.06 |
+| bullet | 2 | -0.06 | 0.06 |
+| bullet | 3 | -0.06 | 0.06 |
+| bullet | 4 | -0.06 | 0.06 |
+| blitz  | 0 | -0.06 | 0.06 |
+| blitz  | 1 | -0.06 | 0.06 |
+| blitz  | 2 | -0.06 | 0.06 |
+| blitz  | 3 | -0.06 | 0.06 |
+| blitz  | 4 | -0.06 | 0.06 |
+| rapid  | 0 | -0.06 | 0.06 |
+| rapid  | 1 | -0.06 | 0.06 |
+| rapid  | 2 | -0.06 | 0.06 |
+| rapid  | 3 | -0.06 | 0.06 |
+| rapid  | 4 | -0.06 | 0.06 |
+| classical | 0 | -0.06 | 0.06 |
+| classical | 1 | -0.06 | 0.06 |
+| classical | 2 | -0.06 | 0.06 |
+| classical | 3 | -0.06 | 0.06 |
+| classical | 4 | -0.06 | 0.06 |
+
+**All 20 cells fully cap at ±0.06 under the new semantics.** The raw delta-IQR widths range from 0.166 (blitz/Q2) to 0.370 (classical/Q0), all well outside the ±0.06 editorial cap.
+
+##### Compare to §3.3.3 (2026-05-17 delta-IQR, cohort version)
+
+| tc | q | rerun_lower | rerun_upper | shipped_lower | shipped_upper | Δlower | Δupper | flag (|Δ|≥0.02)? |
+|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
+| bullet | 0 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| bullet | 1 | -0.06 | 0.06 | -0.0481 | 0.0524 | -0.0119 | 0.0076 | |
+| bullet | 2 | -0.06 | 0.06 | -0.0380 | 0.0493 | -0.0220 | 0.0107 | **YES** |
+| bullet | 3 | -0.06 | 0.06 | -0.0563 | 0.06 | -0.0037 | 0.0000 | |
+| bullet | 4 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| blitz  | 0 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| blitz  | 1 | -0.06 | 0.06 | -0.0579 | 0.06 | -0.0021 | 0.0000 | |
+| blitz  | 2 | -0.06 | 0.06 | -0.0557 | 0.0530 | -0.0043 | 0.0070 | |
+| blitz  | 3 | -0.06 | 0.06 | -0.0598 | 0.0548 | -0.0002 | 0.0052 | |
+| blitz  | 4 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| rapid  | 0 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| rapid  | 1 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| rapid  | 2 | -0.06 | 0.06 | -0.0563 | 0.06 | -0.0037 | 0.0000 | |
+| rapid  | 3 | -0.06 | 0.06 | -0.0582 | 0.06 | -0.0018 | 0.0000 | |
+| rapid  | 4 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 0 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 1 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 2 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 3 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 4 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+
+**Pattern.** 14 of 20 cells were already fully capped in 88-08 and remain fully capped in the rerun — zero delta. 6 cells (bullet Q1-Q3, blitz Q1-Q3) were *partially uncapped* in 88-08 (delta-IQR narrower than ±0.06 on at least one edge under cohort semantics); under the rerun they all widen to the full ±0.06 cap. The widening per edge is 0.0–0.024. Only bullet/Q2 crosses the |Δ| ≥ 0.02 flag threshold (Δlower = -0.0220).
+
+**Structural observation.** Under opp-quintile semantics the per-user delta is intrinsically more variable than under cohort semantics: both sides of the comparison are sample statistics on the same game-set rather than a sample minus a fixed population reference, so each delta carries two estimation errors. The new IQRs are ~2x wider than the 88-08 cohort-version IQRs (most p75−p25 widths are 0.16–0.20 vs the 88-08 0.08–0.12). The ±0.06 editorial cap fully dominates in all 20 cells.
+
+**Verdict.** Within editorial tolerance overall — **recommend keep-as-is** with one judgment-call cell (bullet/Q2). VERIFICATION.md line 211 ("the editorial cap (±0.06) and asymmetric structure will look very similar") is partially confirmed: the cap structure looks essentially identical (already saturated cells stay saturated), but the *asymmetric* structure does NOT survive — all 6 asymmetric 88-08 cells would flatten to the cap under the new semantics. The user-visible behaviour change from a full recalibration would be a marginally more permissive (wider) neutral band in 6 bullet/blitz mid-quintile cells. See the Plan 88-12 Task 2 checkpoint for the keep/recalibrate decision.
+
 ---
 
 ### 3.4 Endgame Type Breakdown
@@ -1340,6 +1618,12 @@ Applying the rubric from SKILL §3.4.3:
 | Clock pressure %-of-base | 3.3.1 | review (0.23) | review (0.21) | Live ±5% within 1.4pp of pooled |
 | Net timeout rate | 3.3.1 | collapse (0.07) | review (0.41) | Live ±5pp matches |
 | Time-pressure curve (per-bucket) | 3.3.2 | review (0.34 @ tb=0) | collapse (0.17) | TC-overlay justified at severe-pressure end only |
+| Clock gap % at endgame entry | §3.3.1 clock-gap-% | review (0.23) | review (0.21) | Pooled IQR `[−0.0641, +0.0466]`; pooled band justified |
+| Chess score per pressure bin Q0 | §3.3.3 | **keep (0.63)** | **keep (0.79)** | ELO does NOT collapse; blocking decision required |
+| Chess score per pressure bin Q1 | §3.3.3 | review (0.29) | review (0.43) | ELO does NOT collapse; blocking decision required |
+| Chess score per pressure bin Q2 | §3.3.3 | **keep (0.63)** | **keep (0.58)** | ELO does NOT collapse; blocking decision required |
+| Chess score per pressure bin Q3 | §3.3.3 | review (0.39) | **keep (0.61)** | ELO does NOT collapse; blocking decision required |
+| Chess score per pressure bin Q4 | §3.3.3 | review (0.22) | **keep (0.71)** | ELO does NOT collapse; blocking decision required |
 | Per-class score — rook | 3.4.1 | review (0.21) | **keep (0.53)** | Per-class score-bullet band recommended |
 | Per-class score — minor_piece | 3.4.1 | collapse (0.14) | **keep (0.57)** | Per-class score-bullet band recommended |
 | Per-class score — pawn | 3.4.1 | collapse (0.13) | review (0.42) | Per-class score-bullet band recommended |
@@ -1378,6 +1662,8 @@ Applying the rubric from SKILL §3.4.3:
 | Clock-diff % band | 3.3.1 | `NEUTRAL_PCT_THRESHOLD` | `±5%` | `±5%` | TC review / ELO review | **keep** |
 | Net timeout band | 3.3.1 | `NEUTRAL_TIMEOUT_THRESHOLD` | `±5pp` | `±5pp` | TC collapse / ELO review | **keep** |
 | Time-pressure curve | 3.3.2 | (chart config) | n/a | per-TC overlay at tb=0 end | TC review / ELO collapse | **keep**; optional per-TC overlay at severe-pressure end |
+| Clock gap % band | §3.3.1 clock-gap-% | `clock_gap_pct` ZoneSpec | `(−0.05, 0.05)` (placeholder) | `(−0.065, 0.047)` | TC review / ELO review | **update** |
+| Chess score per pressure bin | §3.3.3 | `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` | all `(−0.06, 0.06)` (placeholder) | 20-cell table above | TC keep Q0/Q2 / ELO keep all | **blocking decision** — see checkpoint |
 | Per-class score bullet (rook) | 3.4.1 | shared `SCORE_BULLET_NEUTRAL_*` | `[0.45, 0.55]` | `(0.44, 0.57)` per-class | TC review / ELO keep | **introduce `PER_CLASS_SCORE_BULLET_ZONES`** |
 | Per-class score bullet (minor_piece) | 3.4.1 | shared | `[0.45, 0.55]` | `(0.43, 0.58)` | TC collapse / ELO keep | per-class override |
 | Per-class score bullet (pawn) | 3.4.1 | shared | `[0.45, 0.55]` | `(0.42, 0.59)` | TC collapse / ELO review | per-class override |

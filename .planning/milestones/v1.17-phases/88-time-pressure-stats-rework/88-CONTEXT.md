@@ -74,6 +74,36 @@ Mirror-bucket per v1.17 doctrine: same `(rating tier × TC × color × opponent-
 
 `base_clock = initial time only` (no increment). Confirmed by `reports/benchmarks-latest.md` to collapse cleanly across ELO and TC. Edge cases for unusual TC strings (`30+30`, `1+30` correspondence) are bucketed to bullet/blitz/rapid/classical anyway — planner sanity-checks during plan-phase.
 
+### D-07 (revised cohort design — supersedes D-05; LOCKED 2026-05-17 post-verification)
+
+The mirror-bucket cohort framing locked in D-05 is retired. The Phase 88
+implementation (88-01..88-08) shipped an unfiltered global cohort query
+that violated D-05 doctrine and risked OOM at production scale (see
+88-VERIFICATION.md CR-01). The Phase 88.1 gap closure replaces the entire
+cohort layer with a same-game opponent-quintile split:
+
+- **Comparison set:** the user's own filtered games. No cross-user query.
+- **Two parallel quintile splits within the same game-set:**
+  - `user_quintile_wdl[tc][q]` — user WDL bucketed by USER's clock-pct at endgame entry.
+  - `opp_quintile_wdl[tc][q]` — opponent WDL bucketed by OPPONENT's clock-pct
+    at endgame entry, with inverted result (user-win = opp-loss).
+- **Delta:** `delta = user_score_in_Q − opp_score_in_Q` (each side scored
+  from its own quintile of the same filtered game-set).
+- **Significance test:** unpaired two-sample Wilson via existing
+  `compute_score_difference_test` (the two splits are independent because
+  user and opp clocks fall in different quintiles within the same game).
+- **n-gate:** `min(n_user_in_Q, n_opp_in_Q) >= MIN_GAMES_PER_PRESSURE_BIN`.
+  Subsumes the small-N cohort cell gate flagged in REVIEW.md WR-01.
+- **Schema:** `PressureQuintileBullet.cohort_score` → `opp_score`.
+- **Popover copy:** "vs cohort" → "vs opponent".
+
+D-02's per-(TC, quintile) neutral band stays valid as a band on
+`user_score − opp_score` — the band shape is independent of which reference
+is subtracted. A sanity recalibration runs as Plan 88-12 to confirm the
+existing values still apply; expect the ±0.06 editorial cap to dominate
+as before. The retired global cohort query, the `compute_score_delta_vs_reference`
+helper, and the `_compute_cohort_lookup` aggregator are all deleted.
+
 ### Claude's Discretion
 
 Areas the user didn't lock and explicitly delegated to research/planning:
@@ -172,5 +202,58 @@ Areas the user didn't lock and explicitly delegated to research/planning:
 
 ---
 
+## §2: Phase 88.2 Scope Amendment (post-verification, LOCKED 2026-05-17)
+
+**Status:** Locked after `88-VERIFICATION.md` returned `human_needed` with all 12 prior gap-closure findings closed. This section captures 5 user-driven refinements raised during post-verification review that route as additional plans (88-13..N) on the existing Phase 88 directory rather than a separate sub-phase.
+
+**Honest framing — this is a scope amendment, not a defect fix.** Items A-2 and A-3 below partially walk back ROADMAP Phase 88 Success Criterion #1 ("replace the table and the line chart with bullet cards"). A-2 restores the line chart (now repositioned and re-purposed); A-3 restores the 3 numeric stats from the deleted table onto each card's top zone. The user explicitly approved this pivot — it is recorded here so future readers and the verifier see the amendment without digging through chat history. CHANGELOG entry for the next release must reflect this honestly.
+
+### Locked Asks
+
+| ID | Ask | Scope | Touch points |
+|---|---|---|---|
+| **A-1** | 4 cards in separate charcoal containers | Frontend layout (CSS only) | `EndgameTimePressureCard.tsx` / section orchestrator — apply standard v1.17 card chrome (charcoal background, border, padding) consistent with `EndgameTypeCard` |
+| **A-2** | Restore "Average Clock Difference over Time" line chart | Backend timeline payload + new chart component | New chart component (use the deleted `EndgameTimePressureSection` line chart as the design reference). Backend exposes a slim time-series payload — likely a new field on the overview response or a small dedicated endpoint. Positioning on the Endgames page TBD by the planner (likely above or below the card grid). |
+| **A-3** | Card top zone: Clock Gap bullet + my avg time + opp avg time + net timeout rate | Backend schema additions + frontend card layout split | Backend: revive `user_avg_pct`/`seconds`, `opp_avg_pct`/`seconds`, `avg_clock_diff_seconds`, `net_timeout_rate` per TC card on the new `TimePressureTcCard` schema. The repo function `query_clock_stats_rows` still exists — the consumer path was deleted in 88-07 and needs restoring against the new schema. Frontend: split card visually into top zone (Clock Gap bullet + 3 stat row) and bottom zone (quintile bullets). |
+| **A-4** | Show 4 quintiles (Q0–Q3) with new labels | Frontend filter + label constants + popover copy | Q0 = "High Pressure (0–20%)", Q1 = "Medium Pressure (20–40%)", Q2 = "Low Pressure (40–60%)", Q3 = "Very Low Pressure (60–80%)". Q4 (80–100%) hidden in UI only. Replaces "Q0..Q4" copy across card body, popover bodies, ARIA labels, and any tests asserting label text. |
+| **A-5** | Quintile bullet axis ±30% | Frontend constant only | `PRESSURE_DELTA_DOMAIN` = 0.30 (up from 0.20). Neutral zones at ±0.06 (D-02 editorial cap) stay unchanged — the colored side-zones widen from ~70% of axis to ~80% of axis, neutral strip shrinks from 30% to 20% of axis. |
+
+### Clarification Answers (LOCKED)
+
+1. **Quintile axis change intent**: widen the axis itself to handle real-world score deltas >20% (not a CI-overflow fix). User-confirmed: ±30%, not ±50%. Many score gaps observed in real data exceed ±20% so the existing ±20% axis clips. ±30% balances "show the data" against "keep the neutral band visually meaningful".
+2. **Backend computation of dropped quintile (Q4)**: keep computing all 5 quintiles backend-side. Frontend filters Q4 out before rendering. Rationale: cheap to flip back if the design decision reverses; the per-game cost of computing Q4 is negligible (single bucket in the existing iteration); aligns with the codegen pattern (`PressureBinBand` entries for all 5 quintiles stay in `endgame_zones.py`).
+
+### Planner Routing Notes
+
+- **Continuation as Phase 88, not Phase 88.2 in ROADMAP.** Plans are numbered 88-13..N on the existing phase directory. Re-verification picks up after the new plans land.
+- **Suggested plan grouping** (planner refines):
+  - Plan 88-13 (frontend-only wave): A-1 card chrome + A-4 quintile filter/labels + A-5 axis constant. Single wave, layout/copy/constants only.
+  - Plan 88-14 (backend + schema + frontend wiring): A-3 card top zone — schema additions, repo wiring, frontend top-zone split. Bigger slice, has its own tests.
+  - Plan 88-15 (backend + frontend new component): A-2 line chart — backend timeline payload, new chart component, page integration. Largest slice.
+- **CHANGELOG**: the next release entry must note the SC #1 walk-back honestly (e.g. "Restored avg-clock-diff-over-time line chart and per-card top-zone stats by user request after the initial table-and-chart deletion; bullet-card grid retained as the primary surface").
+- **Re-verification**: after plans 88-13..N execute, re-run verification. The 4 human-UAT items in `88-HUMAN-UAT.md` (responsive grid, sparse-bin rendering, popover at 375px, screen reader) remain valid and add new human-UAT items for the restored line chart and top-zone stats.
+
+### Planner Open Questions — Resolved (2026-05-17)
+
+After the planner produced 88-13..15 it surfaced 5 leaf decisions. User defaults accepted:
+
+| # | Question | Locked answer |
+|---|---|---|
+| 1 | 88-15 line color | `MY_SCORE_COLOR` from `@/lib/theme` (no new `CLOCK_DIFF_LINE_COLOR` constant) |
+| 2 | 88-15 chart position | Below the cards grid, above `SectionInsightSlot` |
+| 3 | 88-15 orphan cleanup | Leave `ClockStatsRow` alone — separate hygiene pass |
+| 4 | 88-13 Q4 popover wording | Describe only the 4 shown quintiles ("from High Pressure ... to Very Low Pressure"); the 80–100% omission is internal-only |
+| 5 | Re-verification gate after 88-13..15 | New human-UAT items from these plans (line-chart real-data render, top-zone stat readability) gate Phase 88 closure — they do NOT roll forward into the next phase's UAT bucket. Cleaner re-verification trail. |
+
+### What's NOT changing in §2
+
+- D-07 same-game opp-quintile split — STAYS. The score-delta semantics ("vs opponent" not "vs cohort") are unchanged.
+- D-02 per-(TC, quintile) neutral band at ±0.06 cap — STAYS. The widened ±30% axis displays the same band; the band gets visually thinner relative to the axis but the threshold is unchanged.
+- D-01 sparse-bin gating (`min(n_user, n_opp) ≥ MIN_GAMES_PER_PRESSURE_BIN`) — STAYS.
+- `MIN_GAMES_PER_TC_CARD = 20`, `MIN_GAMES_PER_PRESSURE_BIN = 5` — STAY.
+
+---
+
 *Phase: 88-time-pressure-stats-rework*
 *Context gathered: 2026-05-17*
+*§2 scope amendment locked: 2026-05-17*
