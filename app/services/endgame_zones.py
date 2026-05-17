@@ -159,9 +159,11 @@ NEUTRAL_PCT_THRESHOLD: float = 5.0
 NEUTRAL_TIMEOUT_THRESHOLD: float = 5.0
 
 # Phase 88 D-02: editorial half-width cap for the per-(TC, quintile) Score-Delta
-# neutral bands. PLACEHOLDER — real benchmark-calibrated values land in Plan 08
-# after running /benchmarks §3.3.3. Each band's half-width (upper - lower) / 2
-# must not exceed this cap so the zone coloring stays meaningful.
+# neutral bands. Calibrated in Plan 08 after running /benchmarks §3.3.3 — cap
+# confirmed at 0.06 (prevents extreme IQR widths from creating unusably wide bands;
+# applied symmetrically around p50 when half_w > 0.06; activated in 12 of 20 cells).
+# Each band's half-width (upper - lower) / 2 must not exceed this cap so the zone
+# coloring stays meaningful.
 PRESSURE_BIN_NEUTRAL_CAP: float = 0.06
 
 
@@ -341,13 +343,16 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     ),
     # Phase 88: Clock Gap percentage at endgame entry — (user_clock - opp_clock)
     # / base_clock. Positive = user has more time (good); negative = user has
-    # less. PLACEHOLDER band: ±NEUTRAL_PCT_THRESHOLD until benchmarks §3.3.1
-    # clock-gap-% runs calibrate a tighter band. No LLM finding is registered
-    # for this metric (insights_service.py uses a named allow-list; time-pressure
-    # LLM narration is deferred per CONTEXT.md Deferred Ideas).
+    # less. Calibrated from reports/benchmarks-latest.md §3.3.1 clock-gap-%
+    # submetric (2026-05-17 snapshot, n=1,743 pooled users). TC d=0.23 and
+    # ELO d=0.21 are both "review" — pooled IQR [-0.0641, +0.0466] is a
+    # defensible single band. Asymmetric because blitz/rapid/classical users
+    # tend to enter endgames with a slight clock deficit. No LLM finding is
+    # registered for this metric (insights_service.py uses a named allow-list;
+    # time-pressure LLM narration is deferred per CONTEXT.md Deferred Ideas).
     "clock_gap_pct": ZoneSpec(
-        typical_lower=-NEUTRAL_PCT_THRESHOLD,
-        typical_upper=NEUTRAL_PCT_THRESHOLD,
+        typical_lower=-0.065,
+        typical_upper=0.047,
         direction="higher_is_better",
     ),
 }
@@ -489,7 +494,9 @@ PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
 # ---------------------------------------------------------------------------
 # PRESSURE_BIN_SCORE_NEUTRAL_ZONES — per-(TC, pressure-quintile) neutral bands.
 # Phase 88 D-02. Calibrated from /benchmarks §3.3.3 (Plan 08).
-# ELO is pooled by default (collapse confirmed per quintile in §3.3.3).
+# ELO is pooled by acceptance (accept-pooled-with-caveat decision, 2026-05-17).
+# ELO gradient inside the band is intentional: stronger players land higher
+# (greener) because they score better against their opponents at every TC.
 # Quintile index 0 = 0-20% clock remaining (max pressure); 4 = 80-100% (min).
 # ---------------------------------------------------------------------------
 
@@ -502,42 +509,46 @@ class PressureBinBand:
     upper: float
 
 
-# PLACEHOLDER values: every band set to ±PRESSURE_BIN_NEUTRAL_CAP = ±0.06.
-# Real benchmark-calibrated values land in Plan 08 after running /benchmarks
-# §3.3.3 against the benchmark DB. Downstream consumers (Plans 05-07) import
-# this constant's shape; values are swapped in Plan 08 without touching any
-# consumer code.
+# Calibrated from reports/benchmarks-latest.md §3.3.3 chess-score-per-pressure-bin
+# (2026-05-17 benchmark snapshot, n=1,912 completed users across 19 non-sparse cells).
+# ELO is pooled by acceptance (decision: accept-pooled-with-caveat, 2026-05-17).
+# ELO does NOT collapse per quintile (d=0.43–0.79 across all 5 quintiles), but
+# pooling is intentional product behavior: stronger players score higher against their
+# opponents at every TC, so a higher-rated user will land higher (greener) inside the
+# cohort band — this is the correct user-visible outcome, not a deficiency.
+# Editorial cap PRESSURE_BIN_NEUTRAL_CAP=0.06 applied symmetrically around p50 when
+# half_w=(p75-p25)/2 > 0.06. Cap activated in 12 of 20 cells (marked below).
 PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Mapping[
     Literal["bullet", "blitz", "rapid", "classical"],
     Mapping[Literal[0, 1, 2, 3, 4], PressureBinBand],
 ] = {
     "bullet": {
-        0: PressureBinBand(-0.06, 0.06),
-        1: PressureBinBand(-0.06, 0.06),
-        2: PressureBinBand(-0.06, 0.06),
-        3: PressureBinBand(-0.06, 0.06),
-        4: PressureBinBand(-0.06, 0.06),
+        0: PressureBinBand(0.2895, 0.4095),  # editorial cap; raw IQR [0.2872, 0.4138], half-width 0.0633
+        1: PressureBinBand(0.4645, 0.5650),  # raw IQR; half-width 0.0502
+        2: PressureBinBand(0.5198, 0.6071),  # raw IQR; half-width 0.0437
+        3: PressureBinBand(0.5066, 0.6230),  # raw IQR; half-width 0.0582
+        4: PressureBinBand(0.4855, 0.6055),  # editorial cap; raw IQR [0.4414, 0.6538], half-width 0.1062
     },
     "blitz": {
-        0: PressureBinBand(-0.06, 0.06),
-        1: PressureBinBand(-0.06, 0.06),
-        2: PressureBinBand(-0.06, 0.06),
-        3: PressureBinBand(-0.06, 0.06),
-        4: PressureBinBand(-0.06, 0.06),
+        0: PressureBinBand(0.3289, 0.4489),  # editorial cap; raw IQR [0.3070, 0.4667], half-width 0.0799
+        1: PressureBinBand(0.4533, 0.5733),  # editorial cap; raw IQR [0.4554, 0.5784], half-width 0.0615
+        2: PressureBinBand(0.4930, 0.6017),  # raw IQR; half-width 0.0544
+        3: PressureBinBand(0.5000, 0.6146),  # raw IQR; half-width 0.0573
+        4: PressureBinBand(0.4900, 0.6100),  # editorial cap; raw IQR [0.4615, 0.6250], half-width 0.0818
     },
     "rapid": {
-        0: PressureBinBand(-0.06, 0.06),
-        1: PressureBinBand(-0.06, 0.06),
-        2: PressureBinBand(-0.06, 0.06),
-        3: PressureBinBand(-0.06, 0.06),
-        4: PressureBinBand(-0.06, 0.06),
+        0: PressureBinBand(0.3400, 0.4600),  # editorial cap; raw IQR [0.3000, 0.5000], half-width 0.1000
+        1: PressureBinBand(0.4400, 0.5600),  # editorial cap; raw IQR [0.4340, 0.5753], half-width 0.0707
+        2: PressureBinBand(0.4821, 0.6021),  # editorial cap; raw IQR [0.4858, 0.6111], half-width 0.0627
+        3: PressureBinBand(0.4808, 0.6000),  # raw IQR; half-width 0.0596
+        4: PressureBinBand(0.4770, 0.5970),  # editorial cap; raw IQR [0.4688, 0.6077], half-width 0.0695
     },
     "classical": {
-        0: PressureBinBand(-0.06, 0.06),
-        1: PressureBinBand(-0.06, 0.06),
-        2: PressureBinBand(-0.06, 0.06),
-        3: PressureBinBand(-0.06, 0.06),
-        4: PressureBinBand(-0.06, 0.06),
+        0: PressureBinBand(0.3583, 0.4783),  # editorial cap; raw IQR [0.3290, 0.5515], half-width 0.1113
+        1: PressureBinBand(0.4400, 0.5600),  # editorial cap; raw IQR [0.3718, 0.5833], half-width 0.1058
+        2: PressureBinBand(0.4400, 0.5600),  # editorial cap; raw IQR [0.3919, 0.5897], half-width 0.0989
+        3: PressureBinBand(0.4400, 0.5600),  # editorial cap; raw IQR [0.4198, 0.6124], half-width 0.0963
+        4: PressureBinBand(0.4583, 0.5783),  # editorial cap; raw IQR [0.4205, 0.6094], half-width 0.0945
     },
 }
 
