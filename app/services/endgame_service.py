@@ -18,7 +18,8 @@ import statistics
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
+from datetime import date as _date
 from enum import IntEnum
 from typing import Any, Literal, cast
 
@@ -1836,7 +1837,7 @@ def _compute_clock_diff_timeline(
     # raw counts. Eligibility predicate mirrors _iterate_clock_rows exactly —
     # if you change one, change the other.
     eligible: list[tuple[datetime, float]] = []
-    per_week_counts: dict[date, int] = defaultdict(int)
+    per_week_counts: dict[_date, int] = defaultdict(int)
     for row in clock_rows:
         time_control_bucket: str | None = row[1]
         base_time_seconds: int | None = row[2]
@@ -1873,7 +1874,7 @@ def _compute_clock_diff_timeline(
     # convention and the iso_week_bucketing_emits_last_game test).
     eligible.sort(key=lambda t: t[0])
     rolling: list[float] = []
-    week_to_rolling: dict[date, tuple[float, int]] = {}
+    week_to_rolling: dict[_date, tuple[float, int]] = {}
     for played_at, diff_pct in eligible:
         rolling.append(diff_pct)
         if len(rolling) > window:
@@ -1887,7 +1888,7 @@ def _compute_clock_diff_timeline(
     # already contributed to the rolling-window state (Phase 2) so the first
     # emitted post-cutoff point has a fully populated trailing window
     # (REVIEW.md WR-01).
-    cutoff_monday: date | None = None
+    cutoff_monday: _date | None = None
     if cutoff is not None:
         cutoff_date = cutoff.date()
         cutoff_monday = cutoff_date - timedelta(days=cutoff_date.weekday())
