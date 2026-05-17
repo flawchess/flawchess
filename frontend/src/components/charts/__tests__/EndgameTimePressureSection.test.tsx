@@ -87,6 +87,13 @@ function buildCard(tc: TimePressureTcCard['tc']): TimePressureTcCard {
   return {
     tc,
     total: 100,
+    // Plan 88-14 A-3: top-zone summary stats defaults.
+    user_avg_pct: 0.47,
+    user_avg_seconds: 215,
+    opp_avg_pct: 0.52,
+    opp_avg_seconds: 231,
+    avg_clock_diff_seconds: -16,
+    net_timeout_rate: -0.005,
     clock_gap: buildClockGap(),
     quintiles: [
       buildQuintile(0),
