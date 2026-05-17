@@ -1540,6 +1540,11 @@ class TestGetEndgameOverview:
         assert result.score_gap_material is not None
         assert result.time_pressure_cards is not None
         assert result.time_pressure_cards.cards == []
+        # Plan 88-15: clock_diff_timeline payload present (empty when no rows).
+        from app.schemas.endgames import ClockDiffTimelineResponse
+
+        assert isinstance(result.clock_diff_timeline, ClockDiffTimelineResponse)
+        assert result.clock_diff_timeline.points == []
         assert result.endgame_elo_timeline is not None
         assert result.endgame_elo_timeline.combos == []
         assert result.endgame_elo_timeline.timeline_window == 100

@@ -26,6 +26,7 @@ import {
   HIDDEN_ENDGAME_CLASSES,
 } from '@/lib/endgameMetrics';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
+import { EndgameClockDiffOverTimeChart } from '@/components/charts/EndgameClockDiffOverTimeChart';
 import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
@@ -282,6 +283,10 @@ export function EndgamesPage() {
   const perfData = overviewData?.performance;
   const scoreGapData = overviewData?.score_gap_material;
   const timePressureCardsData = overviewData?.time_pressure_cards;
+  const clockDiffTimelineData = overviewData?.clock_diff_timeline;
+  const showClockDiffTimeline = !!(
+    clockDiffTimelineData && clockDiffTimelineData.points.length > 0
+  );
   const eloTimelineData = overviewData?.endgame_elo_timeline;
 
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
@@ -534,6 +539,14 @@ export function EndgamesPage() {
             <>
               <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
               <EndgameTimePressureSection data={timePressureCardsData} />
+              {/* Plan 88-15 (CONTEXT §2 A-2): restored Average Clock Difference
+                  over Time line chart. Sits between the cards grid and the
+                  insights slot. Hides when timeline has no eligible points. */}
+              {showClockDiffTimeline && clockDiffTimelineData && (
+                <div className="charcoal-texture rounded-md p-4">
+                  <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
+                </div>
+              )}
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}
