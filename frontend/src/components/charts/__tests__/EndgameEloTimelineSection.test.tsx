@@ -338,6 +338,120 @@ describe('EndgameEloTimelineSection — gradient ID uniqueness', () => {
   });
 });
 
+describe('EndgameEloTimelineSection — default-hidden filter (Phase 87.6 amendment)', () => {
+  // Builds a response with `count` combos, each carrying a configurable
+  // (active_weeks, per_week_games) profile. combo_keys cycle through the 8
+  // valid EloComboKey values so legend testids are deterministic.
+  const ALL_KEYS = [
+    'chess_com_bullet',
+    'chess_com_blitz',
+    'chess_com_rapid',
+    'chess_com_classical',
+    'lichess_bullet',
+    'lichess_blitz',
+    'lichess_rapid',
+    'lichess_classical',
+  ] as const;
+
+  function buildCombo(
+    combo_key: (typeof ALL_KEYS)[number],
+    activeWeeks: number,
+    perWeekGames: number,
+  ): EndgameEloTimelineResponse['combos'][number] {
+    const points = Array.from({ length: activeWeeks }, (_, i) => {
+      // Monday dates spaced 7 days apart starting 2026-01-05.
+      const base = new Date('2026-01-05T00:00:00Z');
+      base.setUTCDate(base.getUTCDate() + i * 7);
+      const date = base.toISOString().slice(0, 10);
+      return {
+        date,
+        endgame_elo: 1600,
+        non_endgame_elo: 1580,
+        actual_elo: 1590,
+        endgame_games_in_window: 50,
+        per_week_endgame_games: Math.floor(perWeekGames / 2),
+        per_week_total_games: perWeekGames,
+      };
+    });
+    const [platform, ...tcParts] = combo_key.split('_');
+    const platformLabel = platform === 'chess' ? 'chess.com' : 'lichess';
+    const tc = (platform === 'chess' ? tcParts.slice(1) : tcParts).join('_');
+    return {
+      combo_key,
+      platform: platformLabel as 'chess.com' | 'lichess',
+      time_control: tc as 'bullet' | 'blitz' | 'rapid' | 'classical',
+      points,
+    };
+  }
+
+  it('caps default-visible combos to 3 when more qualify', () => {
+    // 5 combos, all identical 20 active weeks (no filter trims) → expect
+    // exactly 3 visible (top by total games), 2 hidden.
+    const combos = ALL_KEYS.slice(0, 5).map((k, i) =>
+      // Decreasing per-week games so rank is deterministic.
+      buildCombo(k, 20, 30 - i * 4),
+    );
+    const data: EndgameEloTimelineResponse = { combos, timeline_window: 100 };
+    const { container } = render(
+      <EndgameEloTimelineSection data={data} isLoading={false} isError={false} />,
+    );
+    // 3 visible × 3 lines each = 9
+    expect(container.querySelectorAll('.recharts-line-curve').length).toBe(9);
+    // Legend still shows all 5
+    for (const k of ALL_KEYS.slice(0, 5)) {
+      expect(screen.getByTestId(`endgame-elo-legend-${k}`)).not.toBeNull();
+    }
+    // Top 3 (highest per-week-games) are aria-pressed=true; last 2 are false
+    expect(
+      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[0]}`).getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[3]}`).getAttribute('aria-pressed'),
+    ).toBe('false');
+  });
+
+  it('hides combos whose active weeks fall below 33% of the leader', () => {
+    // Leader: 30 active weeks. Threshold: 9.9 weeks.
+    //   combo A: 30 weeks (keep)
+    //   combo B: 20 weeks (keep — passes ratio)
+    //   combo C:  3 weeks (HIDE — sparse stray)
+    // Only 3 combos so top-3 cap doesn't bite; only the active-weeks filter does.
+    const combos = [
+      buildCombo(ALL_KEYS[0], 30, 25),
+      buildCombo(ALL_KEYS[1], 20, 25),
+      buildCombo(ALL_KEYS[2], 3, 25),
+    ];
+    const data: EndgameEloTimelineResponse = { combos, timeline_window: 100 };
+    const { container } = render(
+      <EndgameEloTimelineSection data={data} isLoading={false} isError={false} />,
+    );
+    // 2 visible × 3 lines = 6
+    expect(container.querySelectorAll('.recharts-line-curve').length).toBe(6);
+    expect(
+      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[2]}`).getAttribute('aria-pressed'),
+    ).toBe('false');
+  });
+
+  it('keeps a hidden combo in the legend, clickable to re-show', () => {
+    const combos = [
+      buildCombo(ALL_KEYS[0], 30, 25),
+      buildCombo(ALL_KEYS[1], 3, 25),
+    ];
+    const data: EndgameEloTimelineResponse = { combos, timeline_window: 100 };
+    const { container } = render(
+      <EndgameEloTimelineSection data={data} isLoading={false} isError={false} />,
+    );
+    // Only leader is visible: 3 lines
+    expect(container.querySelectorAll('.recharts-line-curve').length).toBe(3);
+    // Click the dimmed legend item — it should activate.
+    const dimmedBtn = screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[1]}`);
+    expect(dimmedBtn.className).toContain('opacity-50');
+    fireEvent.click(dimmedBtn);
+    // Now both visible: 6 lines
+    expect(container.querySelectorAll('.recharts-line-curve').length).toBe(6);
+  });
+});
+
 describe('EndgameEloTimelineSection — info popover content', () => {
   it('info popover frames the band symmetrically around Actual ELO', async () => {
     render(

@@ -93,6 +93,58 @@ function getComboLabel(combo_key: string): string {
   return COMBO_LABELS[combo_key as EloComboKey] ?? combo_key;
 }
 
+// Phase 87.6 amendment (2026-05-17): default-hide rarely-played combos to keep
+// the chart readable when a user has up to 8 platform/TC combinations.
+//   1. Filter: hide combos whose active weeks < 33% of the leader's active weeks.
+//      Active weeks = combo.points.length (the backend already drops weeks with
+//      < 10 qualifying endgame games, so each point ≡ one active week).
+//      Active-weeks-not-games is the right denominator: a player who logs 30
+//      bullet games in one weekend produces 1 timeline point, while 30 rapid
+//      games over 10 weeks produces 10 — visual clutter scales with the latter.
+//   2. Rank: of combos passing the filter, keep the top MAX_DEFAULT_VISIBLE by
+//      total games (sum of per_week_total_games). Ranking still uses raw games
+//      so a blitz main sees their blitz line at the top.
+// Hidden combos remain in the legend (dimmed + line-through) and become visible
+// on click. When data changes, the default is recomputed via useEffect — user
+// toggles within a single dataset are preserved, but a fresh dataset resets.
+const MAX_DEFAULT_VISIBLE = 3;
+const MIN_ACTIVE_WEEKS_RATIO = 0.33;
+
+function computeDefaultHidden(
+  combos: ReadonlyArray<{ combo_key: string; points: ReadonlyArray<{ per_week_total_games: number }> }>,
+): Set<string> {
+  if (combos.length <= MAX_DEFAULT_VISIBLE) {
+    // No need to hide anything; the cap can't bite. Still compute the
+    // active-weeks filter though — a 2-combo player with one sparse stray
+    // combo should not see the stray line.
+  }
+  const totalGames = new Map<string, number>();
+  const activeWeeks = new Map<string, number>();
+  let leaderWeeks = 0;
+  for (const combo of combos) {
+    let games = 0;
+    for (const pt of combo.points) games += pt.per_week_total_games;
+    totalGames.set(combo.combo_key, games);
+    activeWeeks.set(combo.combo_key, combo.points.length);
+    if (combo.points.length > leaderWeeks) leaderWeeks = combo.points.length;
+  }
+  const minWeeks = leaderWeeks * MIN_ACTIVE_WEEKS_RATIO;
+  const passing = combos.filter(
+    (c) => (activeWeeks.get(c.combo_key) ?? 0) >= minWeeks,
+  );
+  const ranked = [...passing].sort(
+    (a, b) => (totalGames.get(b.combo_key) ?? 0) - (totalGames.get(a.combo_key) ?? 0),
+  );
+  const visible = new Set(
+    ranked.slice(0, MAX_DEFAULT_VISIBLE).map((c) => c.combo_key),
+  );
+  const hidden = new Set<string>();
+  for (const combo of combos) {
+    if (!visible.has(combo.combo_key)) hidden.add(combo.combo_key);
+  }
+  return hidden;
+}
+
 export function EndgameEloTimelineSection({
   data,
   isLoading,
@@ -101,7 +153,23 @@ export function EndgameEloTimelineSection({
   const isMobile = useIsMobile();
   // One Set keyed by combo_key — toggles ALL four chart elements (3 Lines + 1 Area) of
   // a combo as a unit. The hide={isHidden} prop on each element uses the same lookup.
-  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set());
+  // Seeded from `computeDefaultHidden(data.combos)` so rarely-played combos start
+  // hidden; React's "adjust state during render" pattern (below) resets the default
+  // whenever the combo set changes (user picked different filters, new data
+  // arrived). User toggles within a single dataset are preserved because the
+  // signature only changes when the underlying combo list does.
+  const comboSignature = useMemo(
+    () => (data?.combos ?? []).map((c) => c.combo_key).sort().join('|'),
+    [data?.combos],
+  );
+  const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() =>
+    computeDefaultHidden(data?.combos ?? []),
+  );
+  const [hiddenSignature, setHiddenSignature] = useState<string>(comboSignature);
+  if (hiddenSignature !== comboSignature) {
+    setHiddenSignature(comboSignature);
+    setHiddenKeys(computeDefaultHidden(data?.combos ?? []));
+  }
 
   // Per-component useId for gradient IDs. The baseGradientId is suffixed per-combo
   // with `_${combo.combo_key}` to avoid SVG ID collisions across up to 8 combos.
