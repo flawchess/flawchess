@@ -506,15 +506,8 @@ export function EndgameEloTimelineSection({
                               className="h-2 w-2 shrink-0 rounded-[2px]"
                               style={{ backgroundColor: colors.bright }}
                             />
-                            <span>Endgame ELO: {endgameElo}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-[2px]"
-                              style={{ backgroundColor: colors.bright }}
-                            />
                             <span>
-                              Actual ELO: {actual}
+                              Endgame ELO: {endgameElo}
                               {games !== undefined && (
                                 <span className="text-muted-foreground ml-1">(past {games} games)</span>
                               )}
@@ -525,7 +518,19 @@ export function EndgameEloTimelineSection({
                               className="h-2 w-2 shrink-0 rounded-[2px]"
                               style={{ backgroundColor: colors.bright }}
                             />
-                            <span>Non-Endgame ELO: {nonEndgameElo}</span>
+                            <span>Actual ELO: {actual}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-[2px]"
+                              style={{ backgroundColor: colors.bright }}
+                            />
+                            <span>
+                              Non-Endgame ELO: {nonEndgameElo}
+                              {games !== undefined && (
+                                <span className="text-muted-foreground ml-1">(past {games} games)</span>
+                              )}
+                            </span>
                           </div>
                         </div>
                       );
