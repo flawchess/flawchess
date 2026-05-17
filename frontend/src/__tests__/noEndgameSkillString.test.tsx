@@ -154,6 +154,7 @@ describe('SC#1 (Phase 87.5) — no "Conversion ELO" string in rendered Endgames 
               actual_elo: 1580,
               endgame_games_in_window: 50,
               per_week_endgame_games: 4,
+              per_week_total_games: 16,
             },
           ],
         },

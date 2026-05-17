@@ -1372,6 +1372,9 @@ def _compute_endgame_elo_weekly_series(
       from the score-gap producer; the trailing 100-game window count).
     - ``per_week_endgame_games`` = ``pt.per_week_endgame_games`` (true per-ISO
       week count; see UAT fix post-Phase 87.5 CR-01).
+    - ``per_week_total_games`` = ``pt.per_week_total_games`` (endgame +
+      non-endgame games this ISO week; drives the volume bars because the
+      chart plots both PR lines, so total weekly activity is what matters).
 
     ``cutoff_str`` filters output points to dates ``>= cutoff_str``; the
     score-gap producer already pre-fills the trailing windows from earlier
@@ -1423,6 +1426,7 @@ def _compute_endgame_elo_weekly_series(
                 actual_elo=int(actual_elo_at_date),
                 endgame_games_in_window=pt.endgame_game_count,
                 per_week_endgame_games=pt.per_week_endgame_games,
+                per_week_total_games=pt.per_week_total_games,
             )
         )
 

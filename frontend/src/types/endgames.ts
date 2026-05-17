@@ -304,8 +304,12 @@ export type EloComboKey =
  *  endgame_games_in_window: trailing 100-game window count (drives ≥10 floor +
  *    tooltip "past N games").
  *  per_week_endgame_games: count of endgame games played in THIS specific ISO
- *    week (NOT the trailing window). Drives the muted volume-bar series on the
- *    Endgame ELO Timeline. */
+ *    week (NOT the trailing window). Used by the insights service trend math.
+ *  per_week_total_games: count of ALL games (endgame + non-endgame) played in
+ *    THIS specific ISO week. Drives the muted volume-bar series on the
+ *    Endgame ELO Timeline — the chart plots both Endgame ELO and Non-Endgame
+ *    ELO, so the volume bar reflects total weekly activity feeding both PR
+ *    lines (matches the Endgame Score Gap over Time chart's bars). */
 export interface EndgameEloTimelinePoint {
   date: string;
   endgame_elo: number;
@@ -313,6 +317,7 @@ export interface EndgameEloTimelinePoint {
   actual_elo: number;
   endgame_games_in_window: number;
   per_week_endgame_games: number;
+  per_week_total_games: number;
 }
 
 export interface EndgameEloTimelineCombo {

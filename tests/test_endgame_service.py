@@ -3542,12 +3542,17 @@ class TestEndgameEloTimeline:
                 non_endgame_score=0.5,
                 endgame_game_count=42,
                 per_week_endgame_games=7,
+                per_week_total_games=23,
             )
         ]
         result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
         assert result[0].endgame_games_in_window == 42
         assert result[0].per_week_endgame_games == 7
+        # per_week_total_games (endgame + non-endgame) drives the frontend
+        # volume bars now that the ELO Timeline plots both PR lines (UAT
+        # 2026-05-17).
+        assert result[0].per_week_total_games == 23
 
     def test_per_combo_isolation(self):
         # Phase 87.6 per-combo invariant: each combo's Endgame ELO and Non-Endgame ELO

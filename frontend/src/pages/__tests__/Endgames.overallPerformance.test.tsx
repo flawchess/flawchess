@@ -267,6 +267,7 @@ function buildOverview(overrides?: {
               actual_elo: 1580,
               endgame_games_in_window: 50,
               per_week_endgame_games: 4,
+              per_week_total_games: 18,
             },
           ],
         },

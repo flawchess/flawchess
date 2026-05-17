@@ -164,7 +164,11 @@ export function EndgameEloTimelineSection({
           row[`${combo.combo_key}_non_endgame_elo`] = pt.non_endgame_elo;
           row[`${combo.combo_key}_actual_elo`] = pt.actual_elo;
           row[`${combo.combo_key}_games_in_window`] = pt.endgame_games_in_window;
-          row[`${combo.combo_key}_per_week_games`] = pt.per_week_endgame_games;
+          // per_week_total_games (endgame + non-endgame) drives the volume bars
+          // and tooltip count — the chart plots BOTH Endgame ELO and Non-Endgame
+          // ELO, so total weekly activity is what feeds both lines. Matches the
+          // Endgame Score Gap over Time chart's bars (UAT 2026-05-17).
+          row[`${combo.combo_key}_per_week_games`] = pt.per_week_total_games;
           row[`${combo.combo_key}_band`] = [
             Math.min(pt.endgame_elo, pt.non_endgame_elo),
             Math.max(pt.endgame_elo, pt.non_endgame_elo),
@@ -176,9 +180,12 @@ export function EndgameEloTimelineSection({
     });
   }, [allDates, data?.combos]);
 
-  // Phase 57.1 volume bars: per-row aggregate of per_week_endgame_games across
-  // currently-visible combos. Recomputes on legend toggle so hidden combos are
-  // excluded from the sum (CONTEXT D-09).
+  // Volume bars: per-row aggregate of per_week_total_games (endgame +
+  // non-endgame) across currently-visible combos. Recomputes on legend toggle
+  // so hidden combos are excluded from the sum (CONTEXT D-09). Pre-UAT
+  // 2026-05-17 this used per_week_endgame_games and so undercounted the games
+  // feeding the Non-Endgame ELO line; matches the Endgame Score Gap over Time
+  // chart's bars now.
   //
   // Explicit return type keeps the Record<string, ...> index signature alive
   // after the spread — without it TypeScript narrows to `{ per_week_total_visible }`

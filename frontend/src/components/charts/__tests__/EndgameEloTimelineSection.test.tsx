@@ -80,6 +80,7 @@ function buildResponse(): EndgameEloTimelineResponse {
             actual_elo: 1580,
             endgame_games_in_window: 50,
             per_week_endgame_games: 4,
+            per_week_total_games: 18,
           },
           {
             date: '2026-04-13',
@@ -88,6 +89,7 @@ function buildResponse(): EndgameEloTimelineResponse {
             actual_elo: 1590,
             endgame_games_in_window: 55,
             per_week_endgame_games: 5,
+            per_week_total_games: 22,
           },
         ],
       },
@@ -104,6 +106,7 @@ function buildResponse(): EndgameEloTimelineResponse {
             actual_elo: 1675,
             endgame_games_in_window: 50,
             per_week_endgame_games: 4,
+            per_week_total_games: 16,
           },
           {
             // Endgame trails (red band — crossover)
@@ -113,6 +116,7 @@ function buildResponse(): EndgameEloTimelineResponse {
             actual_elo: 1725,
             endgame_games_in_window: 55,
             per_week_endgame_games: 5,
+            per_week_total_games: 20,
           },
           {
             // Endgame leads again (crossover back)
@@ -122,6 +126,7 @@ function buildResponse(): EndgameEloTimelineResponse {
             actual_elo: 1725,
             endgame_games_in_window: 60,
             per_week_endgame_games: 6,
+            per_week_total_games: 24,
           },
         ],
       },

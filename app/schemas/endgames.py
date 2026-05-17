@@ -570,9 +570,14 @@ class EndgameEloTimelinePoint(BaseModel):
         trailing windows hold >= MIN_GAMES_FOR_TIMELINE (10) games. Drives the
         frontend tooltip's "past N games" copy.
     per_week_endgame_games: count of endgame games played in THIS specific ISO week
-        (NOT the trailing window). Frontend uses this for the muted volume-bar series
-        on the Endgame ELO Timeline so users see at a glance whether a weekly point
-        is well-supported (many endgame games this week) or marginal.
+        (NOT the trailing window). Used by the insights service trend math
+        (`per_week_endgame_games` summed across the series).
+    per_week_total_games: count of ALL games (endgame + non-endgame) played in
+        THIS specific ISO week. Drives the muted volume-bar series on the
+        frontend Endgame ELO Timeline. The chart plots both Endgame ELO and
+        Non-Endgame ELO, so the volume bar reflects the total weekly activity
+        feeding both PR lines (matches the Endgame Score Gap over Time chart's
+        volume bars, which also count both sides).
     """
 
     date: str
@@ -581,6 +586,7 @@ class EndgameEloTimelinePoint(BaseModel):
     actual_elo: int
     endgame_games_in_window: int
     per_week_endgame_games: int
+    per_week_total_games: int = 0
 
 
 class EndgameEloTimelineCombo(BaseModel):
