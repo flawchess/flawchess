@@ -1093,3 +1093,59 @@ class TestComputeClockDiffTimeline:
         assert len(resp.points) == 1
         # The hard line: 50.0 not 0.5. Documents the percent-units lock.
         assert resp.points[0].avg_clock_diff_pct == pytest.approx(50.0, abs=1e-6)
+
+    def test_cutoff_prefills_rolling_window_from_pre_cutoff_games(self) -> None:
+        """REVIEW.md WR-01: pre-cutoff games pre-fill the rolling window but
+        do NOT produce emitted points.
+
+        Fixture: 4 pre-cutoff games (week 2024-12-30) with diff +10% each, then
+        1 post-cutoff game (week 2025-01-13) with diff +30%. The cutoff is set
+        to Mon 2025-01-06 12:00.
+
+        Expected behaviour (post-fix):
+          - Only the post-cutoff week's point is emitted (1 point total).
+          - That point's game_count = 5 (4 pre-cutoff pre-fill + 1 post-cutoff)
+            — the trailing rolling-window is fully populated from history.
+          - per_week_game_count = 1 (only the in-week post-cutoff game).
+          - avg_clock_diff_pct = (10*4 + 30) / 5 = 14.0.
+
+        Pre-fix behaviour (the bug): the call site passed the already-filtered
+        ``clock_rows`` so pre-cutoff games were dropped before reaching the
+        aggregator, and the first emitted point's game_count was 1 instead of 5
+        — the "trailing 100" tooltip was a lie at the leading edge.
+        """
+        rows = [
+            # 4 pre-cutoff games on Wed 2025-01-01 (ISO week 2024-12-30).
+            _make_row("blitz", 0.55, 0.45, game_id=1, played_at=_dt(2025, 1, 1)),
+            _make_row("blitz", 0.55, 0.45, game_id=2, played_at=_dt(2025, 1, 1)),
+            _make_row("blitz", 0.55, 0.45, game_id=3, played_at=_dt(2025, 1, 2)),
+            _make_row("blitz", 0.55, 0.45, game_id=4, played_at=_dt(2025, 1, 2)),
+            # 1 post-cutoff game on Tue 2025-01-14 (ISO week 2025-01-13).
+            _make_row("blitz", 0.65, 0.35, game_id=5, played_at=_dt(2025, 1, 14)),
+        ]
+        cutoff = _dt(2025, 1, 6)  # Mon 2025-01-06 noon
+        resp = _compute_clock_diff_timeline(rows, cutoff=cutoff)
+        # Only the post-cutoff week emits a point — pre-cutoff weeks are
+        # pre-fill only.
+        assert len(resp.points) == 1
+        pt = resp.points[0]
+        assert pt.date == "2025-01-13"
+        # Rolling window saturated from pre-cutoff history: 5 games.
+        assert pt.game_count == 5
+        # Only 1 game in the post-cutoff week — per-week count tracks
+        # in-window games only.
+        assert pt.per_week_game_count == 1
+        # Mean: 4 games at +10% pre-cutoff + 1 game at +30% post-cutoff = +14%.
+        assert pt.avg_clock_diff_pct == pytest.approx(14.0, abs=1e-6)
+
+    def test_cutoff_none_emits_all_weeks(self) -> None:
+        """Sanity: cutoff=None preserves the legacy behaviour of emitting
+        every ISO-week point (no pre-cutoff drop).
+        """
+        rows = [
+            _make_row("blitz", 0.55, 0.45, game_id=1, played_at=_dt(2025, 1, 1)),
+            _make_row("blitz", 0.65, 0.35, game_id=2, played_at=_dt(2025, 1, 14)),
+        ]
+        resp = _compute_clock_diff_timeline(rows, cutoff=None)
+        assert len(resp.points) == 2
+        assert {p.date for p in resp.points} == {"2024-12-30", "2025-01-13"}

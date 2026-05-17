@@ -18,7 +18,7 @@ import statistics
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from enum import IntEnum
 from typing import Any, Literal, cast
 
@@ -1792,6 +1792,7 @@ def _compute_time_pressure_cards(
 def _compute_clock_diff_timeline(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
     window: int = CLOCK_PRESSURE_TIMELINE_WINDOW,
+    cutoff: datetime | None = None,
 ) -> ClockDiffTimelineResponse:
     """Build the per-ISO-week rolling clock-diff timeline (Plan 88-15, CONTEXT §2 A-2).
 
@@ -1813,10 +1814,19 @@ def _compute_clock_diff_timeline(
     Args:
         clock_rows: rows from query_clock_stats_rows (shape: game_id,
             time_control_bucket, base_time_seconds, termination, result,
-            user_color, ply_array, clock_array, played_at).
+            user_color, ply_array, clock_array, played_at). Callers should pass
+            the UNFILTERED-by-recency row stream so the rolling window can
+            pre-fill from games before ``cutoff``; the function drops emitted
+            points dated before the cutoff's ISO Monday (REVIEW.md WR-01).
         window: trailing rolling-window size. Defaults to
             CLOCK_PRESSURE_TIMELINE_WINDOW (100). Parameterised for tests that
             want to exercise window-truncation behaviour without 100 fixtures.
+        cutoff: optional recency cutoff. Rows with ``played_at < cutoff`` still
+            participate in the rolling window (so the first displayed week's
+            "trailing 100" mean is fully populated), but ISO-week points whose
+            Monday falls strictly before ``cutoff_monday`` are not emitted.
+            ``None`` (no cutoff) keeps the legacy behaviour of emitting every
+            week.
 
     Returns:
         ClockDiffTimelineResponse with chronologically-sorted points (empty
@@ -1826,7 +1836,7 @@ def _compute_clock_diff_timeline(
     # raw counts. Eligibility predicate mirrors _iterate_clock_rows exactly —
     # if you change one, change the other.
     eligible: list[tuple[datetime, float]] = []
-    per_week_counts: dict[Any, int] = defaultdict(int)
+    per_week_counts: dict[date, int] = defaultdict(int)
     for row in clock_rows:
         time_control_bucket: str | None = row[1]
         base_time_seconds: int | None = row[2]
@@ -1851,7 +1861,11 @@ def _compute_clock_diff_timeline(
         clock_diff_pct = (user_clock - opp_clock) / base_time_seconds * 100
         eligible.append((played_at, clock_diff_pct))
         monday = played_at.date() - timedelta(days=played_at.date().weekday())
-        per_week_counts[monday] += 1
+        # WR-01: only count games at-or-after the cutoff toward per_week_counts.
+        # Pre-cutoff games pre-fill the rolling window (Phase 2) but never
+        # produce an emitted point, so their per-week tallies are not surfaced.
+        if cutoff is None or played_at >= cutoff:
+            per_week_counts[monday] += 1
 
     # Phase 2: sort by played_at ASC, then trailing rolling-window walk.
     # week_to_rolling maps ISO Monday -> (rolling_mean, window_size_at_that_point).
@@ -1859,7 +1873,7 @@ def _compute_clock_diff_timeline(
     # convention and the iso_week_bucketing_emits_last_game test).
     eligible.sort(key=lambda t: t[0])
     rolling: list[float] = []
-    week_to_rolling: dict[Any, tuple[float, int]] = {}
+    week_to_rolling: dict[date, tuple[float, int]] = {}
     for played_at, diff_pct in eligible:
         rolling.append(diff_pct)
         if len(rolling) > window:
@@ -1868,9 +1882,19 @@ def _compute_clock_diff_timeline(
         monday = played_at.date() - timedelta(days=played_at.date().weekday())
         week_to_rolling[monday] = (round(avg, 4), len(rolling))
 
-    # Phase 3: emit chronologically.
+    # Phase 3: emit chronologically. With a cutoff, drop ISO-week points whose
+    # Monday is strictly before the cutoff's ISO Monday — pre-cutoff weeks
+    # already contributed to the rolling-window state (Phase 2) so the first
+    # emitted post-cutoff point has a fully populated trailing window
+    # (REVIEW.md WR-01).
+    cutoff_monday: date | None = None
+    if cutoff is not None:
+        cutoff_date = cutoff.date()
+        cutoff_monday = cutoff_date - timedelta(days=cutoff_date.weekday())
     points: list[ClockDiffTimelinePoint] = []
     for monday in sorted(week_to_rolling.keys()):
+        if cutoff_monday is not None and monday < cutoff_monday:
+            continue
         avg, n = week_to_rolling[monday]
         points.append(
             ClockDiffTimelinePoint(
@@ -2625,8 +2649,11 @@ async def get_endgame_overview(
     # Plan 88-15 (CONTEXT §2 A-2): Build the per-ISO-week rolling clock-diff
     # timeline for the restored Average Clock Difference over Time line chart.
     # Pooled across TCs. Separate single-pass aggregator from the per-TC cards
-    # (timeline has different filter semantics — pooled, not faceted).
-    clock_diff_timeline = _compute_clock_diff_timeline(clock_rows)
+    # (timeline has different filter semantics — pooled, not faceted). Pass
+    # ``clock_rows_all`` (UNFILTERED by recency) + ``cutoff`` so the rolling
+    # window pre-fills from games before the cutoff; the function drops
+    # pre-cutoff weeks from the emitted output (REVIEW.md WR-01).
+    clock_diff_timeline = _compute_clock_diff_timeline(clock_rows_all, cutoff=cutoff)
 
     # Phase 57 ELO-05 / Phase 87.5 D-06: paired Endgame ELO + Actual ELO
     # timeline per (platform, TC) combo. Endgame ELO is derived per
