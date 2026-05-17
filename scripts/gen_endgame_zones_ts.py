@@ -32,6 +32,7 @@ from app.services.endgame_zones import (  # noqa: E402
     NEUTRAL_PCT_THRESHOLD,
     NEUTRAL_TIMEOUT_THRESHOLD,
     PER_CLASS_GAUGE_ZONES,
+    PRESSURE_BIN_SCORE_NEUTRAL_ZONES,  # Phase 88
     ZONE_REGISTRY,
 )
 
@@ -64,6 +65,10 @@ _SECTION2_SCORE_GAP_PARITY_SPEC = ZONE_REGISTRY["section2_score_gap_parity"]
 _SECTION2_SCORE_GAP_RECOV_SPEC = ZONE_REGISTRY["section2_score_gap_recov"]
 # Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_SPEC dropped alongside the
 # section2_score_gap_skill ZoneSpec deletion.
+
+# Phase 88: clock_gap_pct scalar zone spec for the Clock Gap bullet.
+# PLACEHOLDER band until benchmarks §3.3.1 clock-gap-% runs calibrate it.
+_CLOCK_GAP_SPEC = ZONE_REGISTRY["clock_gap_pct"]
 
 
 def _format_bucket_zones(bucket: str) -> str:
@@ -103,6 +108,22 @@ def _format_per_class_gauge_zones() -> str:
             f"  {cls}: {{ conversion: [{c_lo}, {c_hi}], recovery: [{r_lo}, {r_hi}],"
             f" achievable_score_gap: [{g_lo}, {g_hi}] }},"
         )
+    return "\n".join(lines) + "\n"
+
+
+def _format_pressure_bin_zones() -> str:
+    """Emit PRESSURE_BIN_SCORE_NEUTRAL_ZONES as a nested TS Record literal.
+
+    Each TC entry contains 5 quintile keys (0-4) with { min, max } bands.
+    Mirrors _format_per_class_gauge_zones() structure.
+    """
+    lines: list[str] = []
+    for tc, quintile_map in PRESSURE_BIN_SCORE_NEUTRAL_ZONES.items():
+        q_entries = ", ".join(
+            f"{q}: {{ min: {band.lower}, max: {band.upper} }}"
+            for q, band in quintile_map.items()
+        )
+        lines.append(f"  {tc}: {{ {q_entries} }},")
     return "\n".join(lines) + "\n"
 
 
@@ -185,6 +206,20 @@ def _render() -> str:
         + "} as const;\n"
         "\n"
         "export type EndgameClassKey = keyof typeof PER_CLASS_GAUGE_ZONES;\n"
+        "\n"
+        "// Phase 88 D-02: per-(TC, pressure-quintile) neutral bands.\n"
+        "// Quintile 0 = 0-20% clock remaining (max pressure), 4 = 80-100%.\n"
+        "// PLACEHOLDER values — calibrated by benchmarks §3.3.3 in Plan 08.\n"
+        "export const PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Record<\n"
+        "  'bullet' | 'blitz' | 'rapid' | 'classical',\n"
+        "  Record<0 | 1 | 2 | 3 | 4, { min: number; max: number }>\n"
+        "> = {\n"
+        + _format_pressure_bin_zones()
+        + "} as const;\n"
+        "\n"
+        "// Phase 88: Clock Gap scalar neutral band (placeholder until benchmarks §3.3.1).\n"
+        f"export const CLOCK_GAP_NEUTRAL_MIN = {_CLOCK_GAP_SPEC.typical_lower};\n"
+        f"export const CLOCK_GAP_NEUTRAL_MAX = {_CLOCK_GAP_SPEC.typical_upper};\n"
     )
 
 

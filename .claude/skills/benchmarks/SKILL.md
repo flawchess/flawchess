@@ -335,6 +335,8 @@ Before running each subchapter, grep the code for the constants the subchapter's
 | 3.2.1 | Conv / Par / Recov + Endgame Skill | `frontend/src/components/charts/EndgameScoreGapSection.tsx`, `frontend/src/generated/endgameZones.ts` | `FIXED_GAUGE_ZONES`, `NEUTRAL_ZONE_MIN/MAX`, `BULLET_DOMAIN`, `ENDGAME_SKILL_ZONES` |
 | 3.3.1 | Clock-diff + net timeout | `frontend/src/components/charts/EndgameClockPressureSection.tsx` | `NEUTRAL_PCT_THRESHOLD`, `NEUTRAL_TIMEOUT_THRESHOLD` |
 | 3.3.2 | Time-pressure chart | `app/services/endgame_service.py::_compute_time_pressure_chart`, `EndgameTimePressureSection.tsx` | `Y_AXIS_DOMAIN`, `X_AXIS_DOMAIN`, `MIN_GAMES_FOR_CLOCK_STATS` |
+| 3.3.1 clock-gap-% | Clock gap fraction at endgame entry | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts` | `CLOCK_GAP_NEUTRAL_MIN`, `CLOCK_GAP_NEUTRAL_MAX`; `ZONE_REGISTRY["clock_gap_pct"]` ZoneSpec. Placeholder: `(-0.05, 0.05)`. |
+| §3.3.3 | Chess score per pressure bin | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts` | `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` (nested dict by tc/quintile); `PRESSURE_BIN_NEUTRAL_CAP = 0.06`. Placeholder: all bands `(-0.06, 0.06)`. |
 | 3.4.1 | Per-class chess-score bullet + conv/recov gauges | `frontend/src/components/charts/EndgameTypeCard.tsx`, `EndgameTypeBreakdownSection.tsx`, `frontend/src/generated/endgameZones.ts`, `frontend/src/lib/scoreBulletConfig.ts` | Score bullet uses GLOBAL `SCORE_BULLET_NEUTRAL_MIN/MAX` (0.45/0.55) + `SCORE_BULLET_CENTER` (no per-class zones yet — see 3.4.1 recommendations); gauges use per-class IQR-derived `PER_CLASS_GAUGE_ZONES.{class}.{conversion,recovery}` |
 | 3.4.2 | Per-span Score Gap by endgame type (per-type card "Score Gap" bullet — Phase 87.1) | `app/services/endgame_zones.py` → generated `frontend/src/generated/endgameZones.ts`; consumed by `frontend/src/components/charts/EndgameTypeCard.tsx` (Plan 03) | `endgame_type_achievable_score_gap` ZoneSpec; `ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN/MAX`; `PER_CLASS_GAUGE_ZONES.{class}.achievable_score_gap`. Placeholder bands `(-0.05, 0.05)` shipped in Phase 87.1 Plan 01; calibrate per this subchapter then update both registry entries and regenerate. |
 
@@ -1786,6 +1788,53 @@ Two metric blocks (% diff, net timeout). Each:
    - If TC verdict = `keep`, recommend per-TC thresholds (one value per TC).
 4. **Collapse verdict block** per metric.
 
+#### clock-gap-%
+
+**Shape:** per-user mean `(my_clock - opp_clock) / base_clock` at endgame entry, computed per `(user_id, TC, ELO)` cell. Single-dimension metric (no sub-bins). Each user contributes one mean value across their games in the cell. Aggregated across users for the Cohen's d and IQR band computation.
+
+**SQL skeleton:** extend the §3.3.1 standard CTE above. Add a `per_user_gap` CTE that computes per-user mean clock gap per `(user_id, elo_bucket, tc)`, reusing the same `selected_users`, `first_endgame`, `clock_raw`, and `routed` CTEs:
+
+```sql
+-- Extend the §3.3.1 query: replace per_user_cell with per_user_gap
+per_user_gap AS (
+  SELECT
+    user_id, elo_bucket, tc,
+    count(*) AS games,
+    avg((user_clk - opp_clk) / NULLIF(base_time_seconds, 0)) AS mean_gap_frac
+  FROM routed
+  WHERE user_clk IS NOT NULL AND opp_clk IS NOT NULL
+    AND base_time_seconds > 0
+    AND user_clk <= 2.0 * base_time_seconds
+    AND opp_clk <= 2.0 * base_time_seconds
+    -- Equal-footing filter already applied in clock_raw
+  GROUP BY user_id, elo_bucket, tc
+  HAVING count(*) >= 20
+)
+SELECT
+  elo_bucket, tc,
+  count(*) AS n_users,
+  round(avg(mean_gap_frac)::numeric, 4) AS gap_mean,
+  round(var_samp(mean_gap_frac)::numeric, 6) AS gap_var,
+  round(percentile_cont(0.05) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p05,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p75,
+  round(percentile_cont(0.95) WITHIN GROUP (ORDER BY mean_gap_frac)::numeric, 4) AS gap_p95
+FROM per_user_gap
+GROUP BY elo_bucket, tc
+HAVING count(*) >= 10
+ORDER BY elo_bucket,
+  CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
+```
+
+Note: the gap fraction here is `(user_clk - opp_clk) / base_clock` (dimensionless, range roughly -1 to +1). Multiply by 100 for percentage display if preferred; the zone constants use the fractional form.
+
+**Expected verdict:** collapse on both TC and ELO axes. The prod-DB distribution (88-RESEARCH.md §Q1) shows skewness approximately -0.05 to -0.09 across TCs (near-symmetric), with IQR approximately ±10–16pp. The modest TC-level difference in mean gap (bullet: -1.3pp, blitz: -4.2pp, rapid: -1.5pp) is unlikely to exceed the d >= 0.2 review threshold once per-user variance is accounted for. ELO is expected to collapse similarly (clock management correlates weakly with rating at a population level).
+
+**Output destination:** `app/services/endgame_zones.py` `ZONE_REGISTRY["clock_gap_pct"]` as a single ZoneSpec with `direction="higher_is_better"`. The zone constants are emitted as flat constants `CLOCK_GAP_NEUTRAL_MIN` / `CLOCK_GAP_NEUTRAL_MAX` in `frontend/src/generated/endgameZones.ts`, following the same pattern as `NEUTRAL_PCT_THRESHOLD`.
+
+**Placeholder note:** the initial scaffolded values are `(-0.05, 0.05)` (matching `NEUTRAL_PCT_THRESHOLD`) and will be replaced with the benchmark-derived IQR band (pooled `[gap_p25, gap_p75]` across all cells) after running this metric on the benchmark DB.
+
 #### 3.3.2 Time pressure vs performance
 
 **Question:** Does the time-pressure-vs-performance curve collapse across (TC × ELO), or does it need stratified display?
@@ -1869,6 +1918,167 @@ ORDER BY elo_bucket, tc, time_bucket;
 4. **Verdict (per axis)**: per time-bucket, compute marginal-pair Cohen's d on **per-game-score binary outcome** (0/0.5/1) using `n / mean / var_samp`. Take **`max |d|` across buckets where ≥3 marginal levels have n ≥ 100** as the axis verdict input.
 5. Recommendation: if either axis verdict ≠ `collapse`, recommend stratified display (per-TC overlay or full per-(TC × ELO) display).
 6. **Collapse verdict block**: TC and ELO axes evaluated independently using the per-bucket-pooled approach.
+
+### §3.3.3 chess-score-per-pressure-bin
+
+**Question:** How does per-user chess score distribute across clock-pressure quintiles per (TC, ELO) cell, and can ELO (and TC) be pooled per quintile for a calibrated neutral-zone band?
+
+**Shape:** metric-with-sub-bins. Per-user `user_score = (W + 0.5D) / N` per `(user_id × TC × ELO × quintile)` cell, where `quintile = LEAST(4, FLOOR(user_clk_pct / 20.0)::int)` and `user_clk_pct = user_clock_at_endgame_entry / base_clock * 100`. This is a per-user metric (not game-level aggregate), matching the pattern of §3.1.4 Endgame Score.
+
+**Collapse verdict runs per quintile independently (5 verdicts)**, one per quintile axis pair. Score distributions compress at extreme quintiles (Q0: forced-loss pressure, Q4: full clock), so a global single verdict would obscure quintile-specific stratification needs.
+
+**Shipped band shape:** 20 entries (4 TC × 5 quintile) keyed `(tc, quintile_index)`, values = Q1/Q3 of per-user `user_score` in that cell, ELO pooled by default. Any quintile where the ELO verdict is "keep separate" (d >= 0.5) gets promoted to per-(TC × ELO × quintile) for that quintile only (adds up to 5 entries per stratified quintile).
+
+**Output destination:** `app/services/endgame_zones.py` `PRESSURE_BIN_SCORE_NEUTRAL_ZONES`. Note: `cohort_score` is NOT in this output. It comes from the live API mirror-bucket lookup, not benchmark precomputation.
+
+**Editorial cap:** If `(p75 - p25) / 2 > PRESSURE_BIN_NEUTRAL_CAP` (= 0.06, defined in `endgame_zones.py`), cap the half-width at 0.06 symmetrically around the median. This cap is most likely to activate at extreme quintiles (Q0, Q4) where per-user sample sizes are small.
+
+##### Query
+
+```sql
+WITH selected_users AS (
+  SELECT u.id AS user_id, bsu.rating_bucket, bsu.tc_bucket
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON u.lichess_username = bsu.lichess_username
+),
+first_endgame AS (
+  SELECT game_id, min(ply) AS entry_ply
+  FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+endgame_games_with_clock AS (
+  -- One row per game with endgame entry and clock data
+  SELECT
+    g.id AS game_id, g.user_id, g.user_color,
+    su.rating_bucket AS elo_bucket,
+    su.tc_bucket AS tc,
+    g.base_time_seconds, g.result,
+    fe.entry_ply,
+    -- user clock at endgame entry (same routing logic as _compute_clock_pressure)
+    CASE
+      WHEN g.user_color='white' AND fe.entry_ply % 2 = 0 THEN p1.clock_seconds
+      WHEN g.user_color='white' AND fe.entry_ply % 2 = 1 THEN p2.clock_seconds
+      WHEN g.user_color='black' AND fe.entry_ply % 2 = 1 THEN p1.clock_seconds
+      ELSE p2.clock_seconds
+    END AS user_clk,
+    -- derived fields
+    CASE
+      WHEN g.user_color='white' AND fe.entry_ply % 2 = 0 THEN p1.clock_seconds
+      WHEN g.user_color='white' AND fe.entry_ply % 2 = 1 THEN p2.clock_seconds
+      WHEN g.user_color='black' AND fe.entry_ply % 2 = 1 THEN p1.clock_seconds
+      ELSE p2.clock_seconds
+    END / NULLIF(g.base_time_seconds, 0) * 100 AS user_clk_pct,
+    -- game score from user perspective
+    CASE
+      WHEN (g.result='1-0' AND g.user_color='white')
+        OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+      WHEN g.result='1/2-1/2' THEN 0.5
+      ELSE 0.0
+    END AS score
+  FROM games g
+  JOIN selected_users su ON su.user_id = g.user_id
+  JOIN first_endgame fe ON fe.game_id = g.id
+  LEFT JOIN game_positions p1 ON p1.game_id = g.id AND p1.ply = fe.entry_ply
+  LEFT JOIN game_positions p2 ON p2.game_id = g.id AND p2.ply = fe.entry_ply + 1
+  WHERE g.rated AND NOT g.is_computer_game
+    AND g.time_control_bucket::text = su.tc_bucket
+    AND g.base_time_seconds > 0
+    -- Equal-footing filter (universal — see "Equal-footing opponent filter (all subchapters)")
+    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+    AND abs(
+          (CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)
+        - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)
+        ) <= 100
+    -- Sparse-cell exclusion
+    AND NOT (su.rating_bucket = 2400 AND su.tc_bucket = 'classical')
+    -- Outlier guard on clock percentage
+    AND (
+      CASE
+        WHEN g.user_color='white' AND fe.entry_ply % 2 = 0 THEN p1.clock_seconds
+        WHEN g.user_color='white' AND fe.entry_ply % 2 = 1 THEN p2.clock_seconds
+        WHEN g.user_color='black' AND fe.entry_ply % 2 = 1 THEN p1.clock_seconds
+        ELSE p2.clock_seconds
+      END / NULLIF(g.base_time_seconds, 0) * 100
+    ) BETWEEN 0 AND 200
+),
+per_user_quintile AS (
+  SELECT
+    user_id, elo_bucket, tc,
+    LEAST(4, FLOOR(user_clk_pct / 20.0)::int) AS quintile,
+    count(*) AS n_games,
+    avg(score) AS user_score
+  FROM endgame_games_with_clock
+  WHERE user_clk IS NOT NULL
+  GROUP BY user_id, elo_bucket, tc, LEAST(4, FLOOR(user_clk_pct / 20.0)::int)
+  HAVING count(*) >= 5  -- sample floor per bin
+)
+-- Per-(quintile, ELO, TC) distribution: use for Cohen's d + IQR band
+SELECT
+  quintile, elo_bucket, tc,
+  count(*) AS n_users,
+  round(avg(user_score)::numeric, 4) AS mean_score,
+  round(var_samp(user_score)::numeric, 6) AS var_score,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY user_score)::numeric, 4) AS p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY user_score)::numeric, 4) AS p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY user_score)::numeric, 4) AS p75
+FROM per_user_quintile
+GROUP BY quintile, elo_bucket, tc
+HAVING count(*) >= 10  -- Cohen's d floor
+ORDER BY quintile, elo_bucket,
+  CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 WHEN 'classical' THEN 4 END;
+```
+
+##### Collapse verdict per quintile
+
+Run the standard Cohen's d recipe (see §"Collapse verdict methodology") independently for each of the 5 quintiles. Each quintile produces two independent verdicts: one for the TC axis and one for the ELO axis. This yields 5 separate verdicts per axis (10 total), not a single global verdict.
+
+For each quintile, pool the cells for the marginal computation:
+- **TC marginal:** pool users across ELO buckets per TC level; exclude `NOT (elo_bucket = 2400 AND tc = 'classical')`.
+- **ELO marginal:** pool users across TC levels per ELO bucket; same exclusion.
+
+Report as a verdict table:
+
+```
+Quintile 0 (0–20% clock remaining — maximum pressure):
+  TC axis:  d_max = X.XX (e.g. bullet vs classical) → collapse | review | keep
+  ELO axis: d_max = Y.YY (e.g. 800 vs 2400)        → collapse | review | keep
+
+Quintile 1 (20–40% clock remaining):
+  TC axis:  d_max = X.XX → collapse | review | keep
+  ELO axis: d_max = Y.YY → collapse | review | keep
+
+Quintile 2 (40–60% clock remaining):
+  TC axis:  d_max = X.XX → collapse | review | keep
+  ELO axis: d_max = Y.YY → collapse | review | keep
+
+Quintile 3 (60–80% clock remaining):
+  TC axis:  d_max = X.XX → collapse | review | keep
+  ELO axis: d_max = Y.YY → collapse | review | keep
+
+Quintile 4 (80–100% clock remaining — minimum pressure):
+  TC axis:  d_max = X.XX → collapse | review | keep
+  ELO axis: d_max = Y.YY → collapse | review | keep
+```
+
+Thresholds: d < 0.2 = collapse, 0.2–0.5 = review, >= 0.5 = keep separate (identical to §"Collapse verdict methodology"). Each quintile's verdict is independent: Q0 may require TC stratification while Q3 and Q4 collapse cleanly.
+
+Expected outcome from benchmark data (88-RESEARCH.md §Q4): Q0 is where TC matters most (bullet score near 0.26 vs classical near 0.41 under extreme clock pressure). Q4 is expected to collapse more cleanly across TC. ELO is expected to collapse across all quintiles (current pooled d = 0.17 per §3.3.2 data).
+
+##### Output
+
+For each quintile where ELO verdict = "collapse" (expected default): report `(tc, quintile)` IQR band as the shipped zone bound.
+
+1. **5×4 per-quintile verdict table** (quintiles as rows, TC/ELO axes as columns). Format: `d_max → verdict`.
+2. **20-entry band table** (4 TC × 5 quintile), ELO pooled. Columns: `tc`, `quintile`, `n_users`, `p25`, `p50`, `p75`, `band_lower` (= p25 or capped), `band_upper` (= p75 or capped).
+   - `band_lower = max(p25, p50 - PRESSURE_BIN_NEUTRAL_CAP)` if cap activates.
+   - `band_upper = min(p75, p50 + PRESSURE_BIN_NEUTRAL_CAP)` if cap activates.
+3. **Recommendations:** paste the final 20 `PressureBinBand(lower=..., upper=...)` entries as a ready-to-copy Python dict literal for `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` in `app/services/endgame_zones.py`. Mark any quintile promoted to per-(TC × ELO × quintile) with a note.
+4. **Collapse verdict block** per axis (TC, ELO), one block per quintile.
 
 ---
 
@@ -2560,6 +2770,7 @@ Write to `reports/benchmarks-latest.md`. Before writing, if that file already ex
 ### 3.3 Time Pressure
 #### 3.3.1 Clock pressure at endgame entry
 #### 3.3.2 Time pressure vs performance
+#### §3.3.3 chess-score-per-pressure-bin
 
 ### 3.4 Endgame Type Breakdown
 #### 3.4.1 Per-class score / conversion / recovery
@@ -2584,6 +2795,12 @@ Write to `reports/benchmarks-latest.md`. Before writing, if that file already ex
 | Clock pressure %-of-base | 3.3.1 | ... | ... | ... |
 | Net timeout rate | 3.3.1 | ... | ... | ... |
 | Time-pressure curve (per-bucket) | 3.3.2 | ... | ... | ... |
+| Clock gap % at endgame entry (per-user) | 3.3.1 clock-gap-% | ... | ... | ... |
+| Chess score per pressure bin Q0 (per-user) | §3.3.3 | ... (per quintile) | ... (per quintile) | ... |
+| Chess score per pressure bin Q1 (per-user) | §3.3.3 | ... | ... | ... |
+| Chess score per pressure bin Q2 (per-user) | §3.3.3 | ... | ... | ... |
+| Chess score per pressure bin Q3 (per-user) | §3.3.3 | ... | ... | ... |
+| Chess score per pressure bin Q4 (per-user) | §3.3.3 | ... | ... | ... |
 | Per-class score | 3.4.1 | ... | ... | ... |
 | Per-class conversion | 3.4.1 | ... | ... | ... |
 | Per-class recovery | 3.4.1 | ... | ... | ... |
