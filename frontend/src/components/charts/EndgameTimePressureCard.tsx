@@ -230,7 +230,7 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
         )}
         <MetricStatPopover
           name={`Score Delta (${displayLabel})`}
-          explanation={`Your score vs. your opponents' score when you had ${displayLabel} of your clock remaining at endgame entry, compared against the matching opponent-clock quintile in the same games. Positive = you outperformed your opponents.`}
+          explanation={`Your score in games where you entered the endgame with ${displayLabel} of clock left, vs. your opponents' score in games where they entered with the same amount. Positive = you outperformed your opponents.`}
           value={bin.delta}
           baseline={0}
           unit="percent"
