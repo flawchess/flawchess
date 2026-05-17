@@ -218,29 +218,8 @@ export interface ScoreGapMaterialResponse {
   // .planning/notes/endgame-skill-dropped-conversion-elo.md.
 }
 
-export interface ClockStatsRow {
-  time_control: string;       // "bullet" | "blitz" | "rapid" | "classical"
-  label: string;              // "Bullet" | "Blitz" | "Rapid" | "Classical"
-  total_endgame_games: number;
-  clock_games: number;
-  user_avg_pct: number | null;
-  user_avg_seconds: number | null;
-  opp_avg_pct: number | null;
-  opp_avg_seconds: number | null;
-  avg_clock_diff_seconds: number | null;
-  net_timeout_rate: number;
-}
-
-export interface ClockPressureTimelinePoint {
-  date: string;                 // Monday of ISO week, YYYY-MM-DD
-  avg_clock_diff_pct: number;   // mean (user_clock - opp_clock) / base_time * 100 over trailing window
-  game_count: number;           // games in the rolling window (<= timeline_window)
-  // Count of clock-eligible endgame games in THIS specific ISO week.
-  // Drives the muted volume-bar series on the Average Clock Difference timeline.
-  per_week_game_count: number;
-}
-
 // ── Phase 88: Time Pressure Cards (replaces ClockPressureResponse + TimePressureChartResponse) ──
+// ClockStatsRow and ClockPressureTimelinePoint removed in Plan 07 (EndgameClockPressureSection deleted).
 
 /** Score-Delta bullet data for one pressure quintile in a TC card. */
 export interface PressureQuintileBullet {

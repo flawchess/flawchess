@@ -40,9 +40,6 @@ from app.repositories.endgame_repository import (
 from app.schemas.openings import GameRecord
 from app.schemas.endgames import (
     ClockGapBullet,
-    ClockPressureResponse,
-    ClockPressureTimelinePoint,
-    ClockStatsRow,
     ConversionRecoveryStats,
     EndgameClass,
     EndgameCategoryStats,
@@ -63,9 +60,7 @@ from app.schemas.endgames import (
     PressureQuintileBullet,
     ScoreGapMaterialResponse,
     ScoreGapTimelinePoint,
-    TimePressureBucketPoint,
     TimePressureCardsResponse,
-    TimePressureChartResponse,
     TimePressureTcCard,
 )
 from app.services.eval_confidence import compute_eval_confidence_bucket

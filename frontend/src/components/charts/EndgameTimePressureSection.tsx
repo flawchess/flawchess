@@ -15,7 +15,7 @@ export function EndgameTimePressureSection({
   data,
 }: {
   data: TimePressureCardsResponse;
-}): JSX.Element {
+}) {
   return (
     <section
       data-testid="time-pressure-cards-section"
