@@ -422,6 +422,22 @@ describe('Endgames page — Phase 85 Plan 05 single composite section', () => {
       expect(metrics.contains(eloSection!)).toBe(false);
     }
   });
+
+  // Phase 87.5 WR-01: the parent wrapper used to gate on
+  // `eloTimelineData.combos.length > 0`, which made the component's own
+  // empty/error/loading branches unreachable. The wrapper now renders the
+  // section whenever overview data is present and delegates empty/error/loading
+  // to the component itself.
+  it('renders the Endgame ELO Timeline wrapper even when combos array is empty', () => {
+    const overview = buildOverview();
+    overview.endgame_elo_timeline = { combos: [], timeline_window: 100 };
+    overviewState.data = overview;
+    const { container } = renderPage();
+    const eloSections = container.querySelectorAll(
+      '[data-testid="endgame-elo-timeline-section"]',
+    );
+    expect(eloSections.length).toBeGreaterThanOrEqual(1);
+  });
 });
 
 /**

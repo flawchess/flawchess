@@ -487,7 +487,7 @@ export function EndgamesPage() {
                   below the Score Gap timeline, inside the "Endgame Overall
                   Performance" section. The chart shares the same filter
                   plumbing (overviewData) as EndgameScoreOverTimeChart above. */}
-              {eloTimelineData && eloTimelineData.combos.length > 0 && (
+              {eloTimelineData && (
                 <div
                   className="charcoal-texture rounded-md p-4"
                   data-testid="endgame-elo-timeline-section"
