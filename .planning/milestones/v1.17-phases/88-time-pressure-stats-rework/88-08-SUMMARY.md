@@ -131,5 +131,46 @@ None.
 ## Self-Check: PASSED
 
 ---
+
+## Defect-and-Fix Loop: delta-IQR Recalibration (2026-05-17, post-revert)
+
+### What went wrong
+
+The first executor calibrated `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` using the **absolute score IQR** for each (TC, quintile) cell — e.g., bullet/Q0 got `PressureBinBand(0.2895, 0.4095)` directly from the benchmark `[p25, p75]` columns. This was semantically wrong. The `PressureBinBand` docstring explicitly states "Neutral [lower, upper] band for **Score-Delta**", and the frontend card compares `bin.delta` (= `user_score - cohort_score`) against the band. Using absolute score IQR produced bands centered at ~0.35-0.55 (the population absolute score range), while deltas are always near zero. Every user's delta would have been "below the band" and painted "weak/red".
+
+The orchestrator detected the defect from the Calibrated Values Summary in the original SUMMARY (all 20 values were in the [0.28, 0.65] range instead of near zero) and reverted commits `8785f4c0` and `40442a78` (calibration + codegen).
+
+### The correct transformation
+
+For each (TC, quintile) cell with benchmark percentiles (p25, p50, p75):
+
+```
+lower = max(p25 - p50, -PRESSURE_BIN_NEUTRAL_CAP)  # = max(..., -0.06)
+upper = min(p75 - p50, +PRESSURE_BIN_NEUTRAL_CAP)  # = min(..., +0.06)
+```
+
+This centers the band at zero (the delta null) and caps each edge independently at ±0.06 so extreme IQR widths (e.g., classical Q0: raw delta IQR is [-0.0893, +0.1332]) don't produce unusably wide bands.
+
+### Recalibration outcome
+
+| TC | Q0 | Q1 | Q2 | Q3 | Q4 |
+|---|---|---|---|---|---|
+| bullet | (-0.06, 0.06) cap | (-0.0481, 0.0524) | (-0.0380, 0.0493) | (-0.0563, 0.06) | (-0.06, 0.06) cap |
+| blitz | (-0.06, 0.06) cap | (-0.0579, 0.06) | (-0.0557, 0.0530) | (-0.0598, 0.0548) | (-0.06, 0.06) cap |
+| rapid | (-0.06, 0.06) cap | (-0.06, 0.06) cap | (-0.0563, 0.06) | (-0.0582, 0.06) | (-0.06, 0.06) cap |
+| classical | (-0.06, 0.06) cap | (-0.06, 0.06) cap | (-0.06, 0.06) cap | (-0.06, 0.06) cap | (-0.06, 0.06) cap |
+
+14 of 20 cells fully capped on both edges (delta IQR exceeds ±0.06). 6 cells are asymmetric (bullet Q1-Q3, blitz Q1-Q3). Classical is fully saturated: all 5 quintiles have delta IQR wider than ±0.06 on both sides, so the cap applies everywhere.
+
+`clock_gap_pct` at `ZoneSpec(-0.065, 0.047)` was already correct in the first calibration (the clock-gap ratio is intrinsically a delta — no p50 subtraction needed) and was not reverted by the orchestrator.
+
+### Recalibration commits
+
+- `af8e246d` — `feat(88-08): recalibrate PRESSURE_BIN_SCORE_NEUTRAL_ZONES on delta-IQR (correct semantics)`
+- `f12e145d` — `chore(88-08): regenerate endgameZones.ts after delta-IQR recalibration`
+
+All 43 backend tests pass, 13/13 frontend tests pass, tsc exits 0, drift gate clean.
+
+---
 *Phase: 88-time-pressure-stats-rework*
 *Completed: 2026-05-17*
