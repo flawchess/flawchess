@@ -4,6 +4,7 @@ date: 2026-05-17
 context: Captured during `/gsd-explore` reviewing the just-shipped Phase 87.5. The additive `endgame_elo = actual_elo + K · eg_score_gap` mapping is well-behaved but contains a free constant K = 450 calibrated by eyeball against §3.1.6 percentiles (`reports/benchmarks-latest.md`). The FIDE Performance Rating formula derives Endgame ELO and Non-Endgame ELO directly from the per-side scores against the per-side average opponent rating — no free constant, no calibration, mathematically defensible. By Adrian's intuition (confirmed below) actual_elo ≈ midpoint(PR_E, PR_N), so the "lifts up / holds back" semantics are preserved by construction while K is deleted wholesale.
 supersedes:
   - .planning/todos/pending/calibrate-endgame-elo-k.md
+supersededBy: .planning/notes/endgame-elo-logistic-anchored.md
 related_files:
   - app/services/endgame_service.py
   - app/repositories/endgame_repository.py
