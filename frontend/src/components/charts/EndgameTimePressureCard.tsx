@@ -26,6 +26,7 @@ import {
   CLOCK_GAP_NEUTRAL_MAX,
   MIN_GAMES_PER_TC_CARD,
   MIN_GAMES_PER_PRESSURE_BIN,
+  NEUTRAL_TIMEOUT_THRESHOLD,
   getPressureBinBand,
 } from '@/generated/endgameZones';
 import {
@@ -293,6 +294,77 @@ function EmptyBinRow({ bin, tc }: EmptyBinRowProps) {
   );
 }
 
+// ─── Plan 88-14 (A-3): top-zone 3-stat row ──────────────────────────────────
+
+/**
+ * Format "Ns%" + "(Ns)" cell content for the My/Opp avg time cells.
+ * Returns an em-dash when either input is null (legacy imports without
+ * clock data). pct is a fraction (0..1) — multiplied by 100 here for display.
+ */
+function formatPctSecs(pct: number | null, secs: number | null): string {
+  if (pct === null || secs === null) return '—';
+  return `${Math.round(pct * 100)}% (${Math.round(secs).toLocaleString()}s)`;
+}
+
+/**
+ * Format the net flag rate as a signed percentage with one decimal point.
+ * rate is a fraction (0.005 = 0.5%) — multiplied by 100 here for display.
+ * Always shows a sign except for 0.0%.
+ */
+function formatNetTimeoutRate(rate: number): string {
+  const pct = rate * 100;
+  if (pct === 0) return '0.0%';
+  const sign = pct > 0 ? '+' : '';
+  return `${sign}${pct.toFixed(1)}%`;
+}
+
+/**
+ * Return a zone color for the net flag rate, or `undefined` when the rate is
+ * within the neutral band. `rate` is a fraction (0.005 = 0.5%);
+ * `NEUTRAL_TIMEOUT_THRESHOLD = 5.0` is in PERCENT units (codegen-emitted from
+ * app/services/endgame_zones.py). We multiply rate by 100 before comparing —
+ * the unit mismatch is intentional and tested explicitly (Plan 88-14 B-1 lock).
+ */
+function tintForNetTimeoutRate(rate: number): string | undefined {
+  const pct = rate * 100;
+  if (pct > NEUTRAL_TIMEOUT_THRESHOLD) return ZONE_SUCCESS;
+  if (pct < -NEUTRAL_TIMEOUT_THRESHOLD) return ZONE_DANGER;
+  return undefined;
+}
+
+interface ThreeStatRowProps {
+  card: TimePressureTcCard;
+}
+
+function ThreeStatRow({ card }: ThreeStatRowProps) {
+  const tint = tintForNetTimeoutRate(card.net_timeout_rate);
+  return (
+    <div
+      className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground tabular-nums mt-1"
+      data-testid={`time-pressure-card-${card.tc}-top-stats`}
+    >
+      <span data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
+        My avg time:{' '}
+        <span className="text-foreground">
+          {formatPctSecs(card.user_avg_pct, card.user_avg_seconds)}
+        </span>
+      </span>
+      <span data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
+        Opp avg time:{' '}
+        <span className="text-foreground">
+          {formatPctSecs(card.opp_avg_pct, card.opp_avg_seconds)}
+        </span>
+      </span>
+      <span data-testid={`time-pressure-card-${card.tc}-net-flag-rate`}>
+        Net flag rate:{' '}
+        <span style={tint ? { color: tint } : undefined}>
+          {formatNetTimeoutRate(card.net_timeout_rate)}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) {
@@ -318,7 +390,8 @@ export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) 
           How your chess score changes with the clock remaining at endgame entry,
           from High Pressure (0-20% clock left) to Very Low Pressure (60-80% clock
           left). The 80-100% (minimum pressure) bin is intentionally hidden as a
-          low-signal tail.
+          low-signal tail. The top zone summarises overall clock state and flag
+          rate; the bullets below break score performance down by clock remaining.
         </InfoPopover>
         <span
           className="ml-1 text-sm text-muted-foreground tabular-nums font-normal"
@@ -329,7 +402,14 @@ export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) 
       </h3>
 
       <div className="flex flex-col gap-4">
-        <ClockGapRow gap={card.clock_gap} tc={card.tc} />
+        {/* Plan 88-14 A-3: top zone — Clock Gap bullet + 3-stat row. */}
+        <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
+          <ClockGapRow gap={card.clock_gap} tc={card.tc} />
+          <ThreeStatRow card={card} />
+        </div>
+
+        {/* Visual separator between top zone and per-quintile bullets. */}
+        <div className="border-t border-border/40" aria-hidden="true" />
 
         {card.quintiles
           // Plan 88-13 A-4: hide the Q4 (80-100% clock remaining) row entirely.
