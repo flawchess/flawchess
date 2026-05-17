@@ -478,28 +478,42 @@ async def query_endgame_performance_rows(
     for this split).
 
     Returns: (endgame_rows, non_endgame_rows) where each row is
-    (played_at, result, user_color, platform, time_control_bucket).
+    (played_at, result, user_color, platform, time_control_bucket, white_rating, black_rating).
 
-    The trailing platform / time_control_bucket columns were added in Phase 87.5
-    so the orchestrator can partition both row streams per (platform, TC) combo
-    before deriving the per-combo Endgame Score Gap series that drives the
-    Endgame ELO timeline. Existing callers ignore columns past index 2.
+    Phase 87.6: white_rating + black_rating appended at indices 5-6 for the PR-ELO
+    opponent-rating term. The service layer derives opp_rating from these:
+    white_rating if user_color == "black", black_rating if user_color == "white".
+    Existing callers (Time Pressure sections) ignore columns past index 4 today,
+    so the new columns sit safely past them. Rows with NULL white_rating or
+    black_rating are filtered out since NULL-rating rows cannot contribute to PR.
+
+    The platform / time_control_bucket columns were added in Phase 87.5 so the
+    orchestrator can partition both row streams per (platform, TC) combo before
+    deriving the per-combo Endgame Score Gap series that drives the Endgame ELO
+    timeline.
 
     Rows are ordered by played_at ASC for chronological processing.
     """
     endgame_game_ids_subq = _any_endgame_ply_subquery(user_id)
 
     # Base select for game rows — columns needed for WDL derivation, timeline,
-    # and (Phase 87.5) per-combo partitioning of the score-gap input series.
+    # (Phase 87.5) per-combo partitioning, and (Phase 87.6) per-side opp-rating
+    # running means for the FIDE Performance Rating computation.
     game_cols = select(
         Game.played_at,
         Game.result,
         Game.user_color,
         Game.platform,
         Game.time_control_bucket,
+        Game.white_rating,
+        Game.black_rating,
     ).where(
         Game.user_id == user_id,
         Game.played_at.isnot(None),
+        # Phase 87.6: NULL-rating rows cannot contribute to the PR opponent-rating term.
+        # Matches the precedent in query_endgame_elo_timeline_rows.
+        Game.white_rating.isnot(None),
+        Game.black_rating.isnot(None),
     )
 
     # Endgame games: id in the endgame subquery

@@ -3104,13 +3104,21 @@ class TestComputeClockPressureTimeline:
 # ---------------------------------------------------------------------------
 
 
-def _perf_row(played_at: Any, result: str, user_color: str) -> tuple:
+def _perf_row(
+    played_at: Any,
+    result: str,
+    user_color: str,
+    white_rating: int = 1500,
+    black_rating: int = 1500,
+) -> tuple:
     """Build a row matching query_endgame_performance_rows output shape.
 
-    Shape: (played_at, result, user_color). Used for the score-gap timeline
-    where derive_user_result(result, user_color) yields the per-game outcome.
+    Shape (Phase 87.6): (played_at, result, user_color, platform, time_control_bucket,
+    white_rating, black_rating). Phase 87.6 extended the repo query to include ratings
+    for the PR opponent-rating term; default ratings of 1500/1500 preserve existing
+    test semantics for tests that don't care about rating values.
     """
-    return (played_at, result, user_color)
+    return (played_at, result, user_color, "chess.com", "blitz", white_rating, black_rating)
 
 
 class TestComputeScoreGapTimeline:
@@ -3438,9 +3446,10 @@ class TestEndgameEloTimeline:
         assert result[0].endgame_elo == _performance_rating(0.4, 100, 1800.0)
 
     def test_multi_point_series_each_point_matches_formula(self):
-        # Five points with endgame scores in [0.45, 0.60] and non-endgame score fixed at 0.50.
-        # Equal opp pools = 1500. Midpoint property holds within 5 ELO (research section 2a:
-        # max drift <= 2.26 ELO for s_all in [0.4, 0.6] and |gap| <= 0.20).
+        # Five points with symmetric score gaps: s_E = 0.5 + g/2, s_N = 0.5 - g/2.
+        # This keeps s_all = 0.5 by construction, so the midpoint property holds
+        # within 5 ELO (research section 2a: drift = 0.0 ELO at s_all = 0.5 exactly,
+        # any |gap| <= 0.20).
         all_rows = [
             (datetime.datetime(2026, 1, 9, 12, 0, 0), "chess.com", "blitz", "white", 1500, 1500),
             (datetime.datetime(2026, 1, 16, 12, 0, 0), "chess.com", "blitz", "white", 1500, 1500),
@@ -3449,58 +3458,26 @@ class TestEndgameEloTimeline:
             (datetime.datetime(2026, 2, 6, 12, 0, 0), "chess.com", "blitz", "white", 1500, 1500),
         ]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        endgame_scores = [0.45, 0.50, 0.55, 0.60, 0.55]
+        # Symmetric gaps: s_E = 0.5 + g/2, s_N = 0.5 - g/2 => s_all = 0.5.
+        # Research section 2c recommends this fixture shape.
+        gaps = [-0.20, -0.10, 0.0, 0.10, 0.20]
+        dates = ["2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02"]
         sg = [
             _sg_pt(
-                f"2026-01-0{i + 5}" if i < 4 else "2026-02-02",
-                endgame_score=s,
-                non_endgame_score=0.50,
+                dates[i],
+                endgame_score=0.5 + g / 2,
+                non_endgame_score=0.5 - g / 2,
                 endgame_game_count=100,
                 non_endgame_game_count=100,
             )
-            for i, s in enumerate(endgame_scores)
+            for i, g in enumerate(gaps)
         ]
-        # Fix dates to be valid Mondays
-        sg[0] = _sg_pt(
-            "2026-01-05",
-            endgame_score=0.45,
-            non_endgame_score=0.50,
-            endgame_game_count=100,
-            non_endgame_game_count=100,
-        )
-        sg[1] = _sg_pt(
-            "2026-01-12",
-            endgame_score=0.50,
-            non_endgame_score=0.50,
-            endgame_game_count=100,
-            non_endgame_game_count=100,
-        )
-        sg[2] = _sg_pt(
-            "2026-01-19",
-            endgame_score=0.55,
-            non_endgame_score=0.50,
-            endgame_game_count=100,
-            non_endgame_game_count=100,
-        )
-        sg[3] = _sg_pt(
-            "2026-01-26",
-            endgame_score=0.60,
-            non_endgame_score=0.50,
-            endgame_game_count=100,
-            non_endgame_game_count=100,
-        )
-        sg[4] = _sg_pt(
-            "2026-02-02",
-            endgame_score=0.55,
-            non_endgame_score=0.50,
-            endgame_game_count=100,
-            non_endgame_game_count=100,
-        )
         result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 5
         # Phase 87.6: midpoint property + per-point exactness.
-        for pt, sgp in zip(result, sg):
+        for pt, sgp, g in zip(result, sg, gaps):
             # Midpoint(PR_E, PR_N) approximates actual_elo within 5 ELO.
+            # At s_all = 0.5 and equal opp pools the drift is exactly 0 ELO.
             midpoint = (pt.endgame_elo + pt.non_endgame_elo) / 2
             assert abs(midpoint - pt.actual_elo) <= 5
             # Per-point exactness: PR_E matches the formula directly.

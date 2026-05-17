@@ -164,6 +164,7 @@ def _make_elo_combo(
         EndgameEloTimelinePoint(
             date=f"2026-01-{i + 1:02d}",
             endgame_elo=endgame_elo,
+            non_endgame_elo=actual_elo,
             actual_elo=actual_elo,
             endgame_games_in_window=50,
             per_week_endgame_games=5,
@@ -356,6 +357,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
             EndgameEloTimelinePoint(
                 date=f"2026-01-{i + 4:02d}",
                 endgame_elo=1500,
+                non_endgame_elo=1400,
                 actual_elo=1400,
                 endgame_games_in_window=50,
                 per_week_endgame_games=5,

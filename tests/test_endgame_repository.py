@@ -67,6 +67,8 @@ async def _seed_game(
     played_at: datetime.datetime | None = None,
     rated: bool = True,
     is_computer_game: bool = False,
+    white_rating: int | None = 1500,
+    black_rating: int | None = 1500,
 ) -> Game:
     """Insert a Game row and flush to obtain an ID."""
     if played_at is None:
@@ -85,6 +87,8 @@ async def _seed_game(
         time_control_seconds=600,
         rated=rated,
         is_computer_game=is_computer_game,
+        white_rating=white_rating,
+        black_rating=black_rating,
     )
     game.played_at = played_at
     session.add(game)
