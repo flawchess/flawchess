@@ -304,8 +304,11 @@ class TestSeriesForEndgameEloComboPRFields:
     def test_all_time_window_aggregates_both_pr_fields(self) -> None:
         """all_time window computes weighted mean for endgame_elo and non_endgame_elo.
 
-        4-point combo spanning 2 months (Jan 2026 and Feb 2026), 2 weekly
-        buckets each. Asserts weighted mean of both PR fields per month bucket.
+        10-point combo (SPARSE_COMBO_FLOOR boundary) spanning 2 months (Jan
+        2026 and Feb 2026). The 4 data-bearing points carry per_week_endgame_games
+        > 0; 6 filler points carry per_week_endgame_games=0 so they do not
+        affect weighted means but do satisfy the SPARSE_COMBO_FLOOR=10 gate.
+        Asserts weighted mean of both PR fields per month bucket.
         """
         points: list[EndgameEloTimelinePoint] = [
             EndgameEloTimelinePoint(
@@ -340,6 +343,21 @@ class TestSeriesForEndgameEloComboPRFields:
                 endgame_games_in_window=100,
                 per_week_endgame_games=15,
             ),
+            # 6 filler points to satisfy SPARSE_COMBO_FLOOR=10; n=0 so they
+            # do not contribute to weighted means (statistics.mean path is
+            # guarded by total_n == 0, which cannot happen here since the 4
+            # data points already contribute positive weights).
+            *[
+                EndgameEloTimelinePoint(
+                    date=f"2026-01-{19 + i}",
+                    endgame_elo=1710,
+                    non_endgame_elo=1670,
+                    actual_elo=1690,
+                    endgame_games_in_window=0,
+                    per_week_endgame_games=0,
+                )
+                for i in range(6)
+            ],
         ]
         combo = EndgameEloTimelineCombo(
             combo_key="chess_com_blitz",
