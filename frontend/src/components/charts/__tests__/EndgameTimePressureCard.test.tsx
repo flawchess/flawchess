@@ -10,6 +10,9 @@
  * - n >= MIN_GAMES_PER_PRESSURE_BIN + p > 0.05 → no font color.
  * - n >= MIN_GAMES_PER_PRESSURE_BIN + p < 0.05 + delta inside neutral band → no font color.
  * - Triple-gate passes (n >= MIN + p < 0.05 + delta outside neutral band) → font color applied.
+ * - Plan 88-13 A-4: Q4 (80-100% clock remaining) row is filtered out from display.
+ * - Plan 88-13 A-4: visible labels are qualitative ("High Pressure (0-20%)" …
+ *   "Very Low Pressure (60-80%)"), not the raw `bin.quintile_label` range string.
  */
 
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -384,10 +387,129 @@ describe('EndgameTimePressureCard — Phase 88.1 opp-quintile rename (Plan 88-11
         }),
       ),
     ).not.toThrow();
-    // The malformed quintile's value cell must not render — getPressureBinBand
-    // returns null and the row returns null.
+    // The malformed quintile's value cell must not render. Plan 88-13 A-4 added a
+    // parent-side filter `quintile_index <= 3`, so quintile_index=5 is dropped before
+    // reaching the row (defense-in-depth: getPressureBinBand also returns null).
     expect(
       screen.queryByTestId('time-pressure-card-bullet-bin-5-value'),
     ).toBeNull();
+  });
+});
+
+// ─── Plan 88-13 (A-4 + A-5) ─────────────────────────────────────────────────
+
+describe('EndgameTimePressureCard — Plan 88-13 A-4: Q4 (80-100%) row hidden', () => {
+  it('renders only 4 quintile rows (Q0..Q3), Q4 is filtered out', () => {
+    renderCard(makeCard());
+
+    // Q0..Q3 render normally (default fixture has n=40 for all 5).
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-bin-0-value'),
+    ).not.toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-bin-1-value'),
+    ).not.toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-bin-2-value'),
+    ).not.toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-bin-3-value'),
+    ).not.toBeNull();
+
+    // Q4 is filtered out — neither the QuintileRow nor any EmptyBinRow path
+    // should render for quintile_index=4.
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-bin-4-value'),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-bin-4-empty'),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-bin-4'),
+    ).toBeNull();
+  });
+
+  it('hides Q4 even when Q4 has n=0 (would otherwise render EmptyBinRow)', () => {
+    renderCard(
+      makeCard({
+        quintiles: [
+          makeBin(0, 40, 0, 0.5),
+          makeBin(1, 40, 0, 0.5),
+          makeBin(2, 40, 0, 0.5),
+          makeBin(3, 40, 0, 0.5),
+          makeBin(4, 0, 0, null), // n=0 normally renders EmptyBinRow
+        ],
+      }),
+    );
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-bin-4-empty'),
+    ).toBeNull();
+  });
+});
+
+describe('EndgameTimePressureCard — Plan 88-13 A-4: new qualitative pressure labels', () => {
+  it('Q0 visible row uses "High Pressure (0-20%)" label, not the raw "0-20%"', () => {
+    renderCard(makeCard());
+    const row = screen.getByTestId('time-pressure-card-bullet-bin-0');
+    expect(row.textContent).toContain('High Pressure (0-20%)');
+    // Raw range-only label no longer appears as a label in the row.
+    // (the percent string still appears inside the new label — that's the point)
+    expect(row.textContent).not.toMatch(/^0-20%:/m);
+  });
+
+  it('Q1 visible row uses "Medium Pressure (20-40%)" label', () => {
+    renderCard(makeCard());
+    const row = screen.getByTestId('time-pressure-card-bullet-bin-1');
+    expect(row.textContent).toContain('Medium Pressure (20-40%)');
+  });
+
+  it('Q2 visible row uses "Low Pressure (40-60%)" label', () => {
+    renderCard(makeCard());
+    const row = screen.getByTestId('time-pressure-card-bullet-bin-2');
+    expect(row.textContent).toContain('Low Pressure (40-60%)');
+  });
+
+  it('Q3 visible row uses "Very Low Pressure (60-80%)" label', () => {
+    renderCard(makeCard());
+    const row = screen.getByTestId('time-pressure-card-bullet-bin-3');
+    expect(row.textContent).toContain('Very Low Pressure (60-80%)');
+  });
+
+  it('EmptyBinRow for Q0 (n=0) uses "High Pressure (0-20%)" label', () => {
+    renderCard(
+      makeCard({
+        quintiles: [
+          makeBin(0, 0, 0, null), // empty
+          makeBin(1, 40, 0, 0.5),
+          makeBin(2, 40, 0, 0.5),
+          makeBin(3, 40, 0, 0.5),
+          makeBin(4, 40, 0, 0.5),
+        ],
+      }),
+    );
+    const empty = screen.getByTestId('time-pressure-card-bullet-bin-0-empty');
+    expect(empty.textContent).toContain('High Pressure (0-20%)');
+    expect(empty.textContent).toContain('no games');
+  });
+
+  it('popover for Q0 references "High Pressure" not the raw range', () => {
+    renderCard(makeCard());
+    const trigger = screen.getByTestId('time-pressure-card-bullet-bin-0-info');
+    fireEvent.click(trigger);
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('High Pressure (0-20%)');
+  });
+
+  it('title popover no longer mentions Q4 or 80-100%', () => {
+    renderCard(makeCard());
+    const trigger = screen.getByTestId('time-pressure-card-bullet-title-info');
+    fireEvent.click(trigger);
+    const body = document.body.textContent ?? '';
+    // Must surface the four visible labels' framing.
+    expect(body).toContain('High Pressure');
+    expect(body).toContain('Very Low Pressure');
+    // Must NOT surface the legacy Q0/Q4 framing.
+    expect(body).not.toContain('Q0 = 0-20%');
+    expect(body).not.toContain('Q4 = 80-100%');
   });
 });

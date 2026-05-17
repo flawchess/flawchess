@@ -14,10 +14,13 @@ import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 /** Center the pressure Score-Delta bullet on 0 (delta = 0 means matches cohort). */
 export const PRESSURE_DELTA_CENTER = 0;
 
-/** Axis half-width for the Score-Delta bullet: ±20pp covers the expected ±15pp IQR generously.
- *  CIs that overflow this window render with open-ended whiskers.
+/** Axis half-width for the Score-Delta bullet: ±30pp covers real-world score deltas
+ *  exceeding ±20pp (CONTEXT §2 A-5, 2026-05-17). The ±0.06 D-02 editorial neutral
+ *  cap stays unchanged; the colored side-zones widen, the neutral strip shrinks
+ *  visually inside the wider axis. CIs that overflow this window render with
+ *  open-ended whiskers.
  */
-export const PRESSURE_DELTA_DOMAIN = 0.20;
+export const PRESSURE_DELTA_DOMAIN = 0.30;
 
 /** Axis half-width for the Clock Gap bullet: ±30pp covers the p5/p95 production range.
  *  CIs that overflow this window render with open-ended whiskers.

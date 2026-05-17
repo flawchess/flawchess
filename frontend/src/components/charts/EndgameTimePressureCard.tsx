@@ -1,8 +1,10 @@
 /**
- * Phase 88 — Per-TC card for the Time Pressure section. Renders 6 horizontal
+ * Phase 88 — Per-TC card for the Time Pressure section. Renders 5 horizontal
  * bullet rows stacked vertically:
  *   1. Clock Gap bullet (mean (my_clock - opp_clock) / base_clock at endgame entry).
- *   2–6. Score-Delta bullets for the 5 quintiles (Q0 = 0-20% clock left, Q4 = 80-100%).
+ *   2–5. Score-Delta bullets for the 4 visible quintiles (Q0..Q3 only; Q4 = 80-100%
+ *        clock remaining is hidden — low-signal tail per CONTEXT §2 A-4, 2026-05-17).
+ *        Backend keeps emitting all 5 quintiles; the Q4 filter is purely frontend.
  *
  * Sparse handling:
  *   - card.total < MIN_GAMES_PER_TC_CARD → return null (TC hidden entirely).
@@ -48,6 +50,35 @@ const TC_LABELS: Record<'bullet' | 'blitz' | 'rapid' | 'classical', string> = {
   rapid: 'Rapid',
   classical: 'Classical',
 };
+
+/**
+ * Qualitative pressure labels for the 4 visible quintiles (Plan 88-13 A-4).
+ * Backend's `bin.quintile_label` (raw "0-20%" range string) is intentionally
+ * not surfaced anywhere in the UI — these labels replace it.
+ * Q4 (80-100%) is filtered out at the parent map() and never reaches a row,
+ * so it has no entry here.
+ */
+const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
+  0: 'High Pressure (0-20%)',
+  1: 'Medium Pressure (20-40%)',
+  2: 'Low Pressure (40-60%)',
+  3: 'Very Low Pressure (60-80%)',
+};
+
+/** Highest displayed quintile index; Q4 (80-100%) is filtered out for display. */
+const MAX_VISIBLE_QUINTILE_INDEX = 3;
+
+/**
+ * Return the qualitative pressure label for `quintile_index ∈ [0, 3]`, or `null`
+ * for any out-of-range index. The parent filter already drops Q4, so this is a
+ * defense-in-depth type-narrowing helper for the row components.
+ */
+function pressureLabel(quintileIndex: number): string | null {
+  if (quintileIndex === 0 || quintileIndex === 1 || quintileIndex === 2 || quintileIndex === 3) {
+    return PRESSURE_LABELS[quintileIndex];
+  }
+  return null;
+}
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -142,6 +173,12 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
   const neutralBand = getPressureBinBand(tc, bin.quintile_index);
   if (!neutralBand) return null;
 
+  // Plan 88-13 A-4: source the displayed label from PRESSURE_LABELS (qualitative
+  // names), not bin.quintile_label (raw "0-20%" range string). The parent filter
+  // already drops Q4; null-guard handles any out-of-range index defensively.
+  const displayLabel = pressureLabel(bin.quintile_index);
+  if (displayLabel === null) return null;
+
   const level = deriveLevel(bin.p_value, bin.n);
   const isInColoredZone = bin.delta >= neutralBand.max || bin.delta <= neutralBand.min;
   const showFontColor =
@@ -166,7 +203,7 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
       data-testid={`time-pressure-card-${tc}-bin-${bin.quintile_index}`}
     >
       <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-        <span className="text-muted-foreground">{bin.quintile_label}:</span>
+        <span className="text-muted-foreground">{displayLabel}:</span>
         <span
           className="font-semibold"
           style={fontColor ? { color: fontColor } : undefined}
@@ -183,8 +220,8 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
           </span>
         )}
         <MetricStatPopover
-          name={`Score Delta (${bin.quintile_label} pressure)`}
-          explanation={`Your score vs. your opponents' score when you had ${bin.quintile_label} of your clock remaining at endgame entry, compared against the matching opponent-clock quintile in the same games. Positive = you outperformed your opponents.`}
+          name={`Score Delta (${displayLabel})`}
+          explanation={`Your score vs. your opponents' score when you had ${displayLabel} of your clock remaining at endgame entry, compared against the matching opponent-clock quintile in the same games. Positive = you outperformed your opponents.`}
           value={bin.delta}
           baseline={0}
           unit="percent"
@@ -204,7 +241,7 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
             </>
           }
           testId={`time-pressure-card-${tc}-bin-${bin.quintile_index}-info`}
-          ariaLabel={`What is Score Delta at ${bin.quintile_label} pressure?`}
+          ariaLabel={`What is Score Delta at ${displayLabel}?`}
         />
       </span>
       <div
@@ -219,7 +256,7 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
           domain={PRESSURE_DELTA_DOMAIN}
           ciLow={bin.ci_low != null ? clampDeltaCi(bin.ci_low) : undefined}
           ciHigh={bin.ci_high != null ? clampDeltaCi(bin.ci_high) : undefined}
-          ariaLabel={`Score delta at ${bin.quintile_label} pressure: ${signedDelta}`}
+          ariaLabel={`Score delta at ${displayLabel}: ${signedDelta}`}
         />
       </div>
     </div>
@@ -232,13 +269,16 @@ interface EmptyBinRowProps {
 }
 
 function EmptyBinRow({ bin, tc }: EmptyBinRowProps) {
+  // Plan 88-13 A-4: use qualitative pressure label instead of bin.quintile_label.
+  const displayLabel = pressureLabel(bin.quintile_index);
+  if (displayLabel === null) return null;
   return (
     <div
       className="flex flex-col gap-1"
       data-testid={`time-pressure-card-${tc}-bin-${bin.quintile_index}-empty`}
     >
       <span className="flex items-center gap-1 text-sm w-full">
-        <span className="text-muted-foreground">{bin.quintile_label}:</span>
+        <span className="text-muted-foreground">{displayLabel}:</span>
         <span
           className="text-muted-foreground text-sm"
           aria-label="no games"
@@ -275,8 +315,10 @@ export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) 
           testId={`time-pressure-card-${card.tc}-title-info`}
           side="top"
         >
-          How your clock position and chess score relate across {tcLabel} endgames.
-          Q0 = 0-20% clock remaining (maximum pressure), Q4 = 80-100% (minimum pressure).
+          How your chess score changes with the clock remaining at endgame entry,
+          from High Pressure (0-20% clock left) to Very Low Pressure (60-80% clock
+          left). The 80-100% (minimum pressure) bin is intentionally hidden as a
+          low-signal tail.
         </InfoPopover>
         <span
           className="ml-1 text-sm text-muted-foreground tabular-nums font-normal"
@@ -289,13 +331,18 @@ export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) 
       <div className="flex flex-col gap-4">
         <ClockGapRow gap={card.clock_gap} tc={card.tc} />
 
-        {card.quintiles.map((bin) =>
-          bin.n === 0 ? (
-            <EmptyBinRow key={bin.quintile_index} bin={bin} tc={card.tc} />
-          ) : (
-            <QuintileRow key={bin.quintile_index} bin={bin} tc={card.tc} />
-          ),
-        )}
+        {card.quintiles
+          // Plan 88-13 A-4: hide the Q4 (80-100% clock remaining) row entirely.
+          // Backend still emits 5 quintiles; the asymmetry is intentional per
+          // CONTEXT §2 clarification #2.
+          .filter((bin) => bin.quintile_index <= MAX_VISIBLE_QUINTILE_INDEX)
+          .map((bin) =>
+            bin.n === 0 ? (
+              <EmptyBinRow key={bin.quintile_index} bin={bin} tc={card.tc} />
+            ) : (
+              <QuintileRow key={bin.quintile_index} bin={bin} tc={card.tc} />
+            ),
+          )}
       </div>
     </div>
   );
