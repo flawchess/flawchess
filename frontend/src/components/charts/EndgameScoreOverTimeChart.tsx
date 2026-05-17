@@ -279,6 +279,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
               dataKey="endgame"
               stroke={SCORE_TIMELINE_LINE_ENDGAME}
               strokeWidth={2}
+              strokeDasharray="6 3"
               dot={false}
               connectNulls={false}
               isAnimationActive={false}
@@ -289,6 +290,8 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
               dataKey="non_endgame"
               stroke={SCORE_TIMELINE_LINE_NON_ENDGAME}
               strokeWidth={2}
+              strokeDasharray="1 4"
+              strokeLinecap="round"
               dot={false}
               connectNulls={false}
               isAnimationActive={false}
