@@ -158,6 +158,16 @@ NEUTRAL_PCT_THRESHOLD: float = 5.0
 # frontend constant in EndgameClockPressureSection.tsx line 23).
 NEUTRAL_TIMEOUT_THRESHOLD: float = 5.0
 
+# Phase 88 D-03: minimum endgame games per TC to emit a TimePressureTcCard.
+# Codegen-emitted to frontend/src/generated/endgameZones.ts (Plan 88-10) to
+# eliminate cross-stack drift (REVIEW.md WR-04). Backend imports from here.
+MIN_GAMES_PER_TC_CARD: int = 20
+
+# Phase 88 D-03: minimum games per (TC, quintile) bin for a reliable bullet.
+# After Phase 88.1 (Plan 88-09) this is the floor for min(n_user_in_Q, n_opp_in_Q)
+# before _build_quintile_bullets emits delta + stats. Below it: stats are None.
+MIN_GAMES_PER_PRESSURE_BIN: int = 5
+
 # Phase 88 D-02: editorial half-width cap for the per-(TC, quintile) Score-Delta
 # neutral bands. Calibrated in Plan 08 after running /benchmarks §3.3.3 — cap
 # confirmed at 0.06 (prevents extreme delta-IQR widths from creating unusably wide
