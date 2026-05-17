@@ -90,12 +90,25 @@ def test_holds_back_metaphor_present() -> None:
 
 
 def test_no_delta_es_token() -> None:
-    """Phase 87.4 D-10 forbidden-token rule inherited: no ΔES variants in user-facing narration."""
+    """Phase 87.4 D-10 forbidden-token rule inherited: no ΔES variants in user-facing narration.
+
+    The tokens may appear on lines that *declare* them as forbidden ("Do NOT use ΔES",
+    "Forbidden internal coinages"); those are meta-narration to the LLM and are
+    explicitly allowed. Every other line that uses the token is a violation.
+    """
     forbidden = re.compile(r"ΔES|delta_es|conv_ΔES|Conv ΔES")
-    matches = forbidden.findall(_PROMPT_TEXT)
-    assert not matches, (
-        f"Forbidden ΔES tokens present in prompt: {matches}. Phase 87.5 uses "
-        "'Endgame Score Gap' as the user-facing series name."
+    offenders: list[str] = []
+    for lineno, line in enumerate(_PROMPT_TEXT.splitlines(), start=1):
+        if not forbidden.search(line):
+            continue
+        lowered = line.lower()
+        if "forbidden" in lowered or "do not use" in lowered:
+            continue
+        offenders.append(f"L{lineno}: {line.strip()}")
+    assert not offenders, (
+        "Forbidden ΔES tokens present in prompt outside meta-narration:\n"
+        + "\n".join(offenders)
+        + "\nPhase 87.5 uses 'Endgame Score Gap' as the user-facing series name."
     )
 
 

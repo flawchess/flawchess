@@ -157,7 +157,7 @@ def _make_elo_combo(
 ) -> EndgameEloTimelineCombo:
     """Build a synthetic EndgameEloTimelineCombo with n_points weekly points.
 
-    Phase 87.5 (D-06): parameter restored conversion_elo → endgame_elo in lockstep
+    Phase 87.5 (D-06): parameter name restored to endgame_elo in lockstep
     with the renamed Pydantic field.
     """
     points: list[EndgameEloTimelinePoint] = [

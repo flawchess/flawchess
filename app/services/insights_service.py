@@ -101,7 +101,7 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
-        "endgame_elo_timeline",  # Phase 87.5 D-06: restored from conversion_elo_timeline.
+        "endgame_elo_timeline",  # Phase 87.5 D-06: restored from the Phase 87.4 subsection name.
     }
 )
 
@@ -826,7 +826,7 @@ def _findings_endgame_elo_timeline(
     observations are skipped entirely — no SubsectionFinding is emitted.
     The gap-only series is populated via _series_for_endgame_elo_combo.
 
-    Phase 87.5 (D-06): restored from `_findings_conversion_elo_timeline`. The
+    Phase 87.5 (D-06): restored from the Phase 87.4 helper name. The
     subsection / metric Literal IDs are restored in lockstep with the
     Phase 87.5 backend rebuild on the additive K mapping; emission semantics
     are unchanged.
