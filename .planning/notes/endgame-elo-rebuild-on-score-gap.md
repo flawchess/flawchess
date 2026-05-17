@@ -1,3 +1,5 @@
+> **SUPERSEDED by Phase 87.6** (2026-05-17): The K=450 additive formula documented here is replaced by FIDE Performance Rating computed independently for endgame and non-endgame game subsets. The "lifts up / holds back" interpretation is preserved; Non-Endgame ELO is now a first-class data point. See `.planning/milestones/v1.17-phases/87.6-endgame-elo-via-performance-rating/` for the current design.
+
 ---
 title: Endgame ELO rebuild — additive mapping from Endgame Score Gap (eg − non_eg)
 date: 2026-05-17

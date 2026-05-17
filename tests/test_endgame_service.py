@@ -24,7 +24,6 @@ from app.schemas.endgames import (
 )
 from app.services.endgame_service import (
     CLOCK_PRESSURE_TIMELINE_WINDOW,
-    K,
     SCORE_GAP_TIMELINE_WINDOW,
     _aggregate_endgame_stats,
     _build_bucket_series,
@@ -38,6 +37,7 @@ from app.services.endgame_service import (
     _compute_span_gap,
     _compute_time_pressure_chart,
     _compute_weekly_rolling_series,
+    _endgame_elo_logistic,
     _extract_entry_clocks,
     _get_endgame_performance_from_rows,
     _wdl_to_score,
@@ -3104,13 +3104,19 @@ class TestComputeClockPressureTimeline:
 # ---------------------------------------------------------------------------
 
 
-def _perf_row(played_at: Any, result: str, user_color: str) -> tuple:
+def _perf_row(
+    played_at: Any,
+    result: str,
+    user_color: str,
+) -> tuple:
     """Build a row matching query_endgame_performance_rows output shape.
 
-    Shape: (played_at, result, user_color). Used for the score-gap timeline
-    where derive_user_result(result, user_color) yields the per-game outcome.
+    Shape: (played_at, result, user_color, platform, time_control_bucket).
+    Phase 87.6 amendment dropped the opponent-rating columns added by the
+    earlier 87.6 PR-direct mapping; the logistic-anchored stretch reads only
+    per-side scores + Actual ELO.
     """
-    return (played_at, result, user_color)
+    return (played_at, result, user_color, "chess.com", "blitz")
 
 
 class TestComputeScoreGapTimeline:
@@ -3340,7 +3346,7 @@ def _sg_pt(
     per_week_total_games: int = 20,
     per_week_endgame_games: int = 0,
 ) -> "ScoreGapTimelinePoint":
-    """Build a ScoreGapTimelinePoint fixture for the Phase 87.5 weekly producer."""
+    """Build a ScoreGapTimelinePoint fixture for the weekly Endgame ELO producer."""
     return ScoreGapTimelinePoint(
         date=date,
         score_difference=round(endgame_score - non_endgame_score, 4),
@@ -3354,74 +3360,134 @@ def _sg_pt(
 
 
 class TestEndgameEloTimeline:
-    """Unit tests for _compute_endgame_elo_weekly_series (Phase 87.5 rebuild).
+    """Unit tests for _compute_endgame_elo_weekly_series (Phase 87.6 amendment
+    2026-05-17 — logistic stretch anchored on Actual ELO).
 
-    The Phase 87.5 weekly producer consumes a per-combo ScoreGapTimelinePoint
-    list (already filtered to weeks where both windows hold
-    >= MIN_GAMES_FOR_TIMELINE games) and the per-combo asof arrays. Each
-    point's endgame_elo = round(actual_elo + K * eg_score_gap).
+    The weekly producer consumes a per-combo ScoreGapTimelinePoint list
+    (already filtered to weeks where both windows hold >= MIN_GAMES_FOR_TIMELINE
+    games) and the per-combo asof arrays. Each point's endgame_elo and
+    non_endgame_elo are placed symmetrically around the asof-joined Actual ELO:
+    endgame_elo + non_endgame_elo == 2 * actual_elo exactly.
     """
 
     def test_empty_inputs_returns_empty(self):
         assert _compute_endgame_elo_weekly_series([], [], []) == []
 
     def test_single_point_at_zero_gap_preserves_actual_elo(self):
-        # eg_score_gap = 0 -> endgame_elo == round(actual_elo) exactly.
+        # At endgame_score == non_endgame_score the logit ratio is 1, spread = 0,
+        # so both ELO sides equal actual_elo.
         played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
         all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        sg = [_sg_pt("2026-01-05", endgame_score=0.5, non_endgame_score=0.5)]
+        sg = [
+            _sg_pt(
+                "2026-01-05",
+                endgame_score=0.5,
+                non_endgame_score=0.5,
+                endgame_game_count=20,
+                non_endgame_game_count=20,
+            )
+        ]
         result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
         assert result[0].endgame_elo == 1500
+        assert result[0].non_endgame_elo == 1500
         assert result[0].actual_elo == 1500
 
     def test_positive_gap_lifts_endgame_elo(self):
-        # gap = +0.10 at K=450 -> +45 ELO.
+        # endgame_score > non_endgame_score => endgame_elo > actual_elo > non_endgame_elo.
         played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
         all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        sg = [_sg_pt("2026-01-05", endgame_score=0.6, non_endgame_score=0.5)]
+        sg = [
+            _sg_pt(
+                "2026-01-05",
+                endgame_score=0.6,
+                non_endgame_score=0.5,
+                endgame_game_count=100,
+                non_endgame_game_count=100,
+            )
+        ]
         result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
-        assert result[0].endgame_elo == 1500 + round(K * 0.10)
-        assert result[0].actual_elo == 1500
+        pt = result[0]
+        assert pt.endgame_elo > pt.actual_elo > pt.non_endgame_elo
+        # Midpoint exactness.
+        assert pt.endgame_elo + pt.non_endgame_elo == 2 * pt.actual_elo
 
     def test_negative_gap_holds_back_endgame_elo(self):
-        # gap = -0.20 at K=450 -> -90 ELO.
+        # endgame_score < non_endgame_score => endgame_elo < actual_elo < non_endgame_elo.
         played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
         all_rows = [(played_at, "chess.com", "blitz", "white", 1800, 1800)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        sg = [_sg_pt("2026-01-05", endgame_score=0.4, non_endgame_score=0.6)]
+        sg = [
+            _sg_pt(
+                "2026-01-05",
+                endgame_score=0.4,
+                non_endgame_score=0.5,
+                endgame_game_count=100,
+                non_endgame_game_count=100,
+            )
+        ]
         result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
-        assert result[0].endgame_elo == 1800 + round(K * -0.20)
+        pt = result[0]
+        assert pt.endgame_elo < pt.actual_elo < pt.non_endgame_elo
+        assert pt.endgame_elo + pt.non_endgame_elo == 2 * pt.actual_elo
 
-    def test_multi_point_series_each_point_matches_formula(self):
-        # Three points spanning a small set of weeks. Each point's
-        # endgame_elo == round(actual_elo_at_date + K * eg_score_gap).
+    def test_multi_point_series_each_point_satisfies_midpoint_identity(self):
+        # Five points spanning the realistic gap range. The midpoint property
+        # must hold EXACTLY for every emitted point (Phase 87.6 amendment
+        # invariant): endgame_elo + non_endgame_elo == 2 * actual_elo.
         all_rows = [
             (datetime.datetime(2026, 1, 9, 12, 0, 0), "chess.com", "blitz", "white", 1500, 1500),
-            (datetime.datetime(2026, 1, 16, 12, 0, 0), "chess.com", "blitz", "white", 1520, 1500),
-            (datetime.datetime(2026, 1, 23, 12, 0, 0), "chess.com", "blitz", "white", 1540, 1500),
+            (datetime.datetime(2026, 1, 16, 12, 0, 0), "chess.com", "blitz", "white", 1520, 1520),
+            (datetime.datetime(2026, 1, 23, 12, 0, 0), "chess.com", "blitz", "white", 1540, 1540),
+            (datetime.datetime(2026, 1, 30, 12, 0, 0), "chess.com", "blitz", "white", 1560, 1560),
+            (datetime.datetime(2026, 2, 6, 12, 0, 0), "chess.com", "blitz", "white", 1580, 1580),
         ]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        gaps = [-0.20, -0.10, 0.0, 0.10, 0.20]
+        dates = ["2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26", "2026-02-02"]
         sg = [
-            _sg_pt("2026-01-05", endgame_score=0.55, non_endgame_score=0.50),
-            _sg_pt("2026-01-12", endgame_score=0.50, non_endgame_score=0.50),
-            _sg_pt("2026-01-19", endgame_score=0.45, non_endgame_score=0.55),
+            _sg_pt(
+                dates[i],
+                endgame_score=0.5 + g / 2,
+                non_endgame_score=0.5 - g / 2,
+                endgame_game_count=100,
+                non_endgame_game_count=100,
+            )
+            for i, g in enumerate(gaps)
         ]
         result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
-        assert len(result) == 3
-        # Each point's endgame_elo - actual_elo == round(K * score_difference).
-        # Use the pre-rounded `score_difference` to avoid float-subtraction noise
-        # at half-integer K·gap boundaries (e.g. K=450, gap=0.05 → 22.50000004
-        # rounds up while the canonical 22.5 rounds to 22 via banker's).
-        for pt, sgp in zip(result, sg):
-            assert pt.endgame_elo - pt.actual_elo == round(K * sgp.score_difference)
+        assert len(result) == 5
+        for pt in result:
+            assert pt.endgame_elo + pt.non_endgame_elo == 2 * pt.actual_elo
+
+    def test_monotone_in_score_gap(self):
+        # Increasing endgame_score with non_endgame_score held fixed must
+        # monotonically grow endgame_elo.
+        played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
+        all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        prev = None
+        for s_e in [0.40, 0.45, 0.50, 0.55, 0.60]:
+            sg = [
+                _sg_pt(
+                    "2026-01-05",
+                    endgame_score=s_e,
+                    non_endgame_score=0.50,
+                    endgame_game_count=100,
+                    non_endgame_game_count=100,
+                )
+            ]
+            result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
+            assert len(result) == 1
+            if prev is not None:
+                assert result[0].endgame_elo > prev
+            prev = result[0].endgame_elo
 
     def test_cutoff_filters_pre_cutoff_points(self):
-        # cutoff_str drops points whose date < cutoff.
         played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
         all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
@@ -3437,26 +3503,33 @@ class TestEndgameEloTimeline:
 
     def test_asof_uses_largest_date_le_point_date(self):
         # asof-join must pick the latest rating sample <= next-Monday of the
-        # point's ISO week. We seed three actual-rating points; for a point
-        # dated 2026-01-12 (Monday) the bisect cutoff is 2026-01-19 (next
-        # Monday, exclusive). The 2026-01-15 sample at rating 1520 must be
-        # the picked one.
+        # point's ISO week. For a point dated 2026-01-12 (Monday) the bisect
+        # cutoff is 2026-01-19 (next Monday, exclusive). The 2026-01-15 sample
+        # at rating 1520 must be the picked one; with score gap = 0 the midpoint
+        # stretch is 0 so both endgame_elo and non_endgame_elo equal that 1520.
         all_rows = [
             (datetime.datetime(2026, 1, 5, 12, 0, 0), "chess.com", "blitz", "white", 1500, 1500),
             (datetime.datetime(2026, 1, 15, 12, 0, 0), "chess.com", "blitz", "white", 1520, 1500),
             (datetime.datetime(2026, 2, 1, 12, 0, 0), "chess.com", "blitz", "white", 1540, 1500),
         ]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        sg = [_sg_pt("2026-01-12", endgame_score=0.5, non_endgame_score=0.5)]
+        sg = [
+            _sg_pt(
+                "2026-01-12",
+                endgame_score=0.5,
+                non_endgame_score=0.5,
+            )
+        ]
         result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
         assert result[0].actual_elo == 1520
         assert result[0].endgame_elo == 1520
+        assert result[0].non_endgame_elo == 1520
 
     def test_per_week_endgame_games_carries_through(self):
-        # The producer carries pt.endgame_game_count → endgame_games_in_window
-        # and pt.per_week_endgame_games → per_week_endgame_games (true per-ISO
-        # week count, restored after the Phase 87.5 CR-01 collapse).
+        # The producer carries pt.endgame_game_count → endgame_games_in_window,
+        # pt.per_week_endgame_games → per_week_endgame_games, and
+        # pt.per_week_total_games → per_week_total_games.
         played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
         all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
@@ -3467,48 +3540,194 @@ class TestEndgameEloTimeline:
                 non_endgame_score=0.5,
                 endgame_game_count=42,
                 per_week_endgame_games=7,
+                per_week_total_games=23,
             )
         ]
         result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
         assert result[0].endgame_games_in_window == 42
         assert result[0].per_week_endgame_games == 7
+        assert result[0].per_week_total_games == 23
 
     def test_per_combo_isolation(self):
-        # Phase 87.5 per-combo invariant: each combo's Endgame ELO is derived
-        # ONLY from its own score-gap series; combos must not contaminate
-        # each other. We synthesize two distinct ScoreGapTimelinePoint inputs
-        # (combo A: +0.20 gap, combo B: -0.20 gap) at the same date and verify
-        # the producer reflects EACH combo's gap independently.
+        # Each combo's Endgame ELO is derived ONLY from that combo's own
+        # score-gap series. Symmetric mirror: combo A's positive gap and
+        # combo B's negative gap must produce different endgame_elos.
         played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
         all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        # Combo A: positive +0.20 gap → +90 ELO at K=450.
-        sg_a = [_sg_pt("2026-01-05", endgame_score=0.6, non_endgame_score=0.4)]
+        sg_a = [
+            _sg_pt(
+                "2026-01-05",
+                endgame_score=0.6,
+                non_endgame_score=0.5,
+                endgame_game_count=100,
+                non_endgame_game_count=100,
+            )
+        ]
+        sg_b = [
+            _sg_pt(
+                "2026-01-05",
+                endgame_score=0.4,
+                non_endgame_score=0.5,
+                endgame_game_count=100,
+                non_endgame_game_count=100,
+            )
+        ]
         out_a = _compute_endgame_elo_weekly_series(sg_a, asof_dates, asof_ratings)
-        # Combo B: negative -0.20 gap → -90 ELO at K=450.
-        sg_b = [_sg_pt("2026-01-05", endgame_score=0.4, non_endgame_score=0.6)]
         out_b = _compute_endgame_elo_weekly_series(sg_b, asof_dates, asof_ratings)
         assert len(out_a) == 1 and len(out_b) == 1
-        assert out_a[0].endgame_elo == 1500 + round(K * 0.20)
-        assert out_b[0].endgame_elo == 1500 + round(K * -0.20)
-        # Cross-combo independence: combo A's output is not influenced by combo B's gap.
+        assert out_a[0].endgame_elo > 1500 > out_b[0].endgame_elo
+        # Cross-combo independence: combos produce different endgame_elos.
         assert out_a[0].endgame_elo != out_b[0].endgame_elo
+
+    def test_per_side_independence(self):
+        # Changing only the endgame score must change endgame_elo AND
+        # non_endgame_elo symmetrically (the anchored stretch ties both sides
+        # to the same spread, mirroring through actual_elo).
+        played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
+        all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
+        asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
+        sg_a = [
+            _sg_pt(
+                "2026-01-05",
+                endgame_score=0.6,
+                non_endgame_score=0.5,
+                endgame_game_count=100,
+                non_endgame_game_count=100,
+            )
+        ]
+        sg_b = [
+            _sg_pt(
+                "2026-01-05",
+                endgame_score=0.4,
+                non_endgame_score=0.5,
+                endgame_game_count=100,
+                non_endgame_game_count=100,
+            )
+        ]
+        series_a = _compute_endgame_elo_weekly_series(sg_a, asof_dates, asof_ratings)
+        series_b = _compute_endgame_elo_weekly_series(sg_b, asof_dates, asof_ratings)
+        assert len(series_a) == 1 and len(series_b) == 1
+        assert series_a[0].endgame_elo != series_b[0].endgame_elo
+        # Midpoint property holds in both fixtures.
+        for s in (series_a[0], series_b[0]):
+            assert s.endgame_elo + s.non_endgame_elo == 2 * s.actual_elo
 
 
 # Sanity check: EndgameEloTimelinePoint is actually exported from the schema.
 # Phase 87.5 (D-06): per-point field name restored to endgame_elo (Phase 87.4 had renamed it).
+# Phase 87.6: non_endgame_elo added.
 def test_endgame_elo_timeline_point_constructs():
     pt = EndgameEloTimelinePoint(
         date="2026-01-05",
         endgame_elo=1500,
+        non_endgame_elo=1480,
         actual_elo=1480,
         endgame_games_in_window=42,
         per_week_endgame_games=8,
     )
     assert pt.endgame_elo == 1500
+    assert pt.non_endgame_elo == 1480
     assert pt.endgame_games_in_window == 42
     assert pt.per_week_endgame_games == 8
+
+
+class TestEndgameEloLogistic:
+    """Unit tests for _endgame_elo_logistic helper (Phase 87.6 amendment
+    2026-05-17 — logistic stretch anchored on Actual ELO).
+
+    Formula:
+        spread = 400 * log10( (s_E / (1 - s_E)) / (s_N / (1 - s_N)) )
+        endgame_elo     = actual_elo + spread / 2
+        non_endgame_elo = actual_elo - spread / 2
+
+    At s_E == s_N the spread is 0 so both sides equal actual_elo. The midpoint
+    holds exactly for every input because round(a + d) + round(a - d) == 2a
+    when a is an integer.
+    """
+
+    @pytest.mark.parametrize("actual_elo", [800, 1200, 1500, 2000, 2400])
+    def test_zero_gap_returns_actual_elo(self, actual_elo: int) -> None:
+        eg, neg = _endgame_elo_logistic(actual_elo, 0.5, 0.5)
+        assert eg == actual_elo
+        assert neg == actual_elo
+
+    @pytest.mark.parametrize(
+        "endgame_score, non_endgame_score, actual_elo",
+        [
+            (0.30, 0.70, 1200),
+            (0.45, 0.55, 1500),
+            (0.55, 0.45, 1500),
+            (0.70, 0.30, 1800),
+            (0.99, 0.01, 2000),
+            (0.01, 0.99, 2000),
+            (0.50, 0.50, 1500),
+        ],
+    )
+    def test_midpoint_property_exact(
+        self, endgame_score: float, non_endgame_score: float, actual_elo: int
+    ) -> None:
+        eg, neg = _endgame_elo_logistic(actual_elo, endgame_score, non_endgame_score)
+        # The midpoint property must hold EXACTLY for every emitted pair.
+        assert eg + neg == 2 * actual_elo
+
+    def test_sign_convention_positive_gap_lifts_endgame_elo(self) -> None:
+        eg, neg = _endgame_elo_logistic(1500, 0.60, 0.50)
+        assert eg > 1500 > neg
+
+    def test_sign_convention_negative_gap_lowers_endgame_elo(self) -> None:
+        eg, neg = _endgame_elo_logistic(1500, 0.40, 0.50)
+        assert eg < 1500 < neg
+
+    def test_monotone_in_endgame_score(self) -> None:
+        # With non_endgame_score fixed, endgame_elo grows monotonically with
+        # endgame_score over the realistic range.
+        prev = None
+        for s_e in [0.30, 0.40, 0.50, 0.60, 0.70]:
+            eg, _ = _endgame_elo_logistic(1500, s_e, 0.50)
+            if prev is not None:
+                assert eg > prev
+            prev = eg
+
+    def test_clamps_score_extremes_no_overflow(self) -> None:
+        # All-loss/all-win streaks must not blow up the logit. Both sides
+        # remain finite ints with the midpoint property intact.
+        eg_high, neg_high = _endgame_elo_logistic(1500, 1.0, 0.0)
+        eg_low, neg_low = _endgame_elo_logistic(1500, 0.0, 1.0)
+        assert isinstance(eg_high, int) and isinstance(neg_high, int)
+        assert isinstance(eg_low, int) and isinstance(neg_low, int)
+        assert eg_high + neg_high == 3000
+        assert eg_low + neg_low == 3000
+        # Sign convention preserved at the extremes.
+        assert eg_high > neg_high
+        assert eg_low < neg_low
+
+    def test_returns_ints(self) -> None:
+        eg, neg = _endgame_elo_logistic(1500, 0.55, 0.50)
+        assert isinstance(eg, int)
+        assert isinstance(neg, int)
+
+
+def test_K_constant_deleted_from_endgame_service() -> None:
+    """Regression: Phase 87.5 K=450 and Phase 87.6 PR helper must both be gone
+    after the Phase 87.6 amendment (logistic-anchored stretch) ships.
+    """
+    from pathlib import Path
+
+    src = Path("app/services/endgame_service.py").read_text()
+    # Strip comments before searching so a historical mention in a comment
+    # cannot mask a real definition.
+    non_comment_lines = [ln for ln in src.splitlines() if not ln.lstrip().startswith("#")]
+    non_comment = "\n".join(non_comment_lines)
+    assert "K: float = 450" not in non_comment, "K=450 must be deleted, not retuned"
+    assert "K = 450" not in non_comment, "K=450 must be deleted, not retuned"
+    assert "_endgame_elo_from_score_gap" not in non_comment, (
+        "Phase 87.5 additive helper must be deleted"
+    )
+    assert "_performance_rating" not in non_comment, (
+        "Phase 87.6 PR helper must be deleted (amendment supersedes it)"
+    )
 
 
 class TestEntryEvalAggregation:

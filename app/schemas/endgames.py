@@ -537,43 +537,46 @@ class TimePressureChartResponse(BaseModel):
 
 class EndgameEloTimelinePoint(BaseModel):
     """One weekly point for a (platform, time_control) combo of the Endgame ELO
-    Timeline (Phase 57 ELO-05; Phase 57.1 anchor change; Phase 87.5 D-06 rebuild
-    on Endgame Score Gap).
+    Timeline (Phase 57 ELO-05; Phase 57.1 anchor change; Phase 87.6 amendment
+    2026-05-17 — logistic stretch anchored on Actual ELO).
 
-    date: Sunday of the ISO week (end of week), YYYY-MM-DD. Aligned with the asof
-        rating moment so a daily rating chart at the same date shows the same value
-        (assuming matching filter inputs).
-    endgame_elo: additive Endgame ELO from windowed Endgame Score Gap
-        (Phase 87.5 D-01 — supersedes the Phase 87.4 conv-ΔES affine recenter
-        AND the Phase 57 multiplicative ``400 · log10`` formula). Computed as
-        ``round(actual_elo_at_date + K · eg_score_gap)`` where ``eg_score_gap``
-        is the per-week windowed difference between endgame and non-endgame
-        outcome means (1.0 win / 0.5 draw / 0.0 loss). When ``eg_score_gap == 0``
-        the result equals ``round(actual_elo_at_date)`` exactly — the "lifts up /
-        holds back" neutral is literal zero, not a benchmark-derived constant.
-        K is a single global float calibrated against the §3.1.6 benchmark
-        percentile table.
-    actual_elo: the user's rating at this point's date, sourced via the same per-combo
-        asof-join used as the endgame_elo anchor. Both lines share the anchor so the
-        gap between them IS the endgame over/underperformance signal.
+    date: Monday of the ISO week, YYYY-MM-DD. Aligned with the Score Gap timeline
+        for x-axis consistency.
+    endgame_elo: ``actual_elo + spread / 2`` where
+        ``spread = 400 * log10((s_E / (1 - s_E)) / (s_N / (1 - s_N)))`` and
+        ``s_E``, ``s_N`` are the trailing-window mean scores on the endgame /
+        non-endgame subsets. The ``400`` is the same logistic scale FIDE Elo
+        uses for its expected-score curve — not a calibration knob.
+        Supersedes the earlier Phase 87.6 per-side FIDE PR mapping; see
+        ``.planning/notes/endgame-elo-logistic-anchored.md`` for derivation.
+    non_endgame_elo: ``actual_elo - spread / 2`` (same ``spread``). Endgame ELO
+        and Non-Endgame ELO sit symmetrically around Actual ELO by construction:
+        ``endgame_elo + non_endgame_elo == 2 * actual_elo`` for every emitted point.
+    actual_elo: the user's rating at this point's date, sourced via the per-combo
+        asof-join. Three-line chart: Actual ELO is bracketed by Endgame ELO and
+        Non-Endgame ELO, making the over/underperformance signal visually obvious.
     endgame_games_in_window: count of endgame games contributing to the trailing-window
-        Endgame Score Gap mean. Inherited from ``_compute_score_gap_timeline``: a point
-        is only emitted when both the endgame and non-endgame trailing windows hold
-        ``>= MIN_GAMES_FOR_TIMELINE`` (10) games. Drives the frontend tooltip's
-        "past N games" copy.
+        score mean. A point is only emitted when both the endgame and non-endgame
+        trailing windows hold >= MIN_GAMES_FOR_TIMELINE (10) games. Drives the
+        frontend tooltip's "past N games" copy.
     per_week_endgame_games: count of endgame games played in THIS specific ISO week
-        (NOT the trailing window). Frontend uses this for the muted volume-bar series
-        on the Endgame ELO Timeline so users see at a glance whether a weekly point
-        is well-supported (many endgame games this week) or marginal. Restored to
-        true per-week semantics in the UAT fix that followed Phase 87.5 CR-01, which
-        had collapsed it onto the trailing-window count.
+        (NOT the trailing window). Used by the insights service trend math
+        (`per_week_endgame_games` summed across the series).
+    per_week_total_games: count of ALL games (endgame + non-endgame) played in
+        THIS specific ISO week. Drives the muted volume-bar series on the
+        frontend Endgame ELO Timeline. The chart plots both Endgame ELO and
+        Non-Endgame ELO, so the volume bar reflects the total weekly activity
+        feeding both PR lines (matches the Endgame Score Gap over Time chart's
+        volume bars, which also count both sides).
     """
 
     date: str
     endgame_elo: int
+    non_endgame_elo: int
     actual_elo: int
     endgame_games_in_window: int
     per_week_endgame_games: int
+    per_week_total_games: int = 0
 
 
 class EndgameEloTimelineCombo(BaseModel):

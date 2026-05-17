@@ -211,8 +211,8 @@ class TestPromptVersionAndBody:
     """
 
     def test_prompt_version_is_v33(self) -> None:
-        # Phase 87.5 Plan 03 bumped v32 → v33 (Endgame ELO rebuild on Endgame Score Gap).
-        assert insights_llm._PROMPT_VERSION == "endgame_v33"
+        # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
+        assert insights_llm._PROMPT_VERSION == "endgame_v35"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -362,28 +362,25 @@ class TestPromptVersionAndBody:
                 break
         assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
 
-    def test_prompt_version_bumped_to_v33(self) -> None:
-        """Latest bump v32 -> v33 (Phase 87.5 Endgame ELO rebuild on Endgame Score Gap):
-        the Conversion ELO Timeline (driven by Conv ΔES + affine recenter) is replaced
-        end-to-end by an Endgame ELO Timeline driven by the per-week windowed Endgame
-        Score Gap series via the additive K mapping
-        `endgame_elo = round(actual_elo + K * eg_score_gap)`. Cache-busts prior v32
-        reports so newly generated narration uses the restored "lifts up / holds back"
-        framing.
+    def test_prompt_version_bumped_to_v34(self) -> None:
+        """Latest bump v33 -> v34 (Phase 87.6 PR-direct rebuild): replaces the additive
+        K mapping with FIDE Performance Rating computed per side. new non_endgame_elo
+        field added to per-point payload; prompt sentence skeleton added.
 
-        Prior bumps (v28 -> v29 -> v30 -> v31 -> v32) are preserved in the changelog
-        comment (append-only-at-FRONT pattern).
+        Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
+        changelog comment (append-only-at-FRONT pattern).
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v33"
-        # Changelog comment must mention the Phase 87.5 rebuild AND restored metaphor.
+        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+        # Changelog comment must mention the Phase 87.6 rebuild.
         import inspect as _inspect
 
         src = _inspect.getsource(insights_llm)
-        # v33 changelog block present and tagged.
+        # v34 changelog block present and tagged.
+        assert "v34 (260517 Phase 87.6 PR-direct rebuild)" in src
+        # Phase 87.6: K deleted, PR formula.
+        assert "K=450 deleted" in src
+        # v33 entry must still be present (changelog preserved verbatim).
         assert "v33 (260517 Phase 87.5" in src
-        # Phase 87.5 narrative substrings: additive-K input and the score-gap input.
-        assert "Endgame Score Gap input" in src or "endgame_elo_from_score_gap" in src
-        assert "additive K" in src
         # Prior version comments must still be present (FRONT-prepend preserves history).
         assert "v32 (260516 Phase 87.4 Conversion ELO rewire)" in src
         assert "v31 (260515 Phase 87.2 Section 2 ΔES Score Gap family)" in src
@@ -454,8 +451,8 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """Phase 87.5: _PROMPT_VERSION is endgame_v33; prior v32 active-constant is gone."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v33"
+        """Phase 87.6: _PROMPT_VERSION is endgame_v35; prior v33 stays in changelog."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v35"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2655,8 +2652,8 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        # Phase 87.5: bumped from endgame_v32 to endgame_v33.
-        assert response.report.prompt_version == "endgame_v33"
+        # Phase 87.6: bumped from endgame_v33 to endgame_v35.
+        assert response.report.prompt_version == "endgame_v35"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2680,7 +2677,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v33"
+        assert log.response_json["prompt_version"] == "endgame_v35"
 
 
 class TestCacheBehavior:
@@ -3727,8 +3724,8 @@ class TestPhase874PromptVersion:
     """
 
     def test_prompt_version_is_v33(self) -> None:
-        """SC#7: _PROMPT_VERSION reads endgame_v33 after the Phase 87.5 bump."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v33"
+        """SC#7: bumped to endgame_v35 by Phase 87.6 (was endgame_v33 after Phase 87.5)."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v35"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3759,4 +3756,135 @@ class TestPhase874PromptVersion:
         )
         assert '"endgame_skill_rate_mean"' not in src, (
             "quoted-string 'endgame_skill_rate_mean' literal still present"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestPhase876LLMPayloadExtension — Phase 87.6 PR-direct rebuild assertions.
+# ---------------------------------------------------------------------------
+
+
+class TestPhase876LLMPayloadExtension:
+    """Phase 87.6: guards for the non_endgame_elo payload extension + v34 prompt.
+
+    RED gate: these tests fail until Task 2 extends the prompt, bumps the version,
+    and wires the non_endgame_elo renderer.
+    """
+
+    def test_prompt_version_is_endgame_v35(self) -> None:
+        """Phase 87.6: _PROMPT_VERSION bumped from endgame_v33 to endgame_v35."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+
+    def test_prompt_changelog_preserves_v33_entry(self) -> None:
+        """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
+
+        The changelog is append-only-at-FRONT; v33 must remain verbatim after
+        v34 is prepended. Protects against accidental trimming.
+        """
+        from pathlib import Path
+
+        src = Path(__file__).resolve().parents[2] / "app" / "services" / "insights_llm.py"
+        body = src.read_text(encoding="utf-8")
+        assert "v33 (260517 Phase 87.5 Endgame ELO rebuild" in body, (
+            "v33 changelog entry must remain verbatim after v34 is prepended"
+        )
+
+    def test_prompt_prose_includes_non_endgame_elo_sentence_pattern(self) -> None:
+        """Phase 87.6: the canonical 'Your Endgame ELO sits at X, vs Y' sentence skeleton
+        must be present verbatim in the prompt file so future drift surfaces as a test failure.
+        """
+        from pathlib import Path
+
+        prompt_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        body = prompt_path.read_text(encoding="utf-8")
+        assert "Your Endgame ELO sits at X, vs Y in non-endgame games" in body, (
+            "Canonical sentence skeleton for Non-Endgame ELO comparison must be present "
+            "in endgame_insights.md"
+        )
+
+    def test_prompt_glossary_has_non_endgame_elo_entry(self) -> None:
+        """Phase 87.6: glossary entry for non_endgame_elo must exist with the exact header."""
+        from pathlib import Path
+
+        prompt_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        body = prompt_path.read_text(encoding="utf-8")
+        assert '- **non_endgame_elo** (UI label: "Non-Endgame ELO")' in body, (
+            "Glossary entry for non_endgame_elo must be present in endgame_insights.md"
+        )
+
+    def test_endgame_elo_timeline_emits_three_summary_blocks(self) -> None:
+        """Phase 87.6: the subsection renderer emits THREE summary blocks per combo.
+
+        1. [summary endgame_elo | platform=..., time_control=...]
+        2. [summary non_endgame_elo | platform=..., time_control=...]
+        3. [summary endgame_elo_gap | platform=..., time_control=...]
+
+        Uses a minimal mock SubsectionFinding + TimePoint series with all three
+        ELO fields populated. Mirrors the TestV6Enrichments._finding() helper shape.
+        """
+        from typing import cast
+
+        from app.schemas.insights import (
+            MetricId,
+            SampleQuality,
+            SubsectionId,
+            TimePoint,
+            Window,
+            Zone,
+        )
+
+        # Build a finding for endgame_elo_gap with TimePoints carrying all three PR fields.
+        # _render_endgame_elo_summary_block + _render_non_endgame_elo_summary_block both
+        # read from the same series — populate all three fields.
+        series = [
+            TimePoint(
+                bucket_start=f"2026-0{m}-01",
+                value=34.0,  # gap = endgame_elo - actual_elo = 1734 - 1700
+                n=52,
+                actual_elo=1700,
+                endgame_elo=1734,
+                non_endgame_elo=1671,
+            )
+            for m in (1, 2, 3, 4)
+        ]
+        finding = SubsectionFinding(
+            subsection_id=cast(SubsectionId, "endgame_elo_timeline"),
+            parent_subsection_id=None,
+            window=cast(Window, "all_time"),
+            metric=cast(MetricId, "endgame_elo_gap"),
+            value=34.0,
+            zone=cast(Zone, "typical"),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=200,
+            sample_quality=cast(SampleQuality, "rich"),
+            is_headline_eligible=True,
+            dimension={"platform": "chess.com", "time_control": "blitz"},
+            series=series,
+        )
+        filters = _sample_filter_context()
+        tab = _fake_findings(filters, findings=[finding])
+        prompt = _assemble_user_prompt(tab)
+
+        assert "[summary endgame_elo | platform=chess.com, time_control=blitz]" in prompt, (
+            "endgame_elo summary block must be present"
+        )
+        assert "[summary non_endgame_elo | platform=chess.com, time_control=blitz]" in prompt, (
+            "non_endgame_elo summary block must be present (Phase 87.6)"
+        )
+        assert "[summary endgame_elo_gap | platform=chess.com, time_control=blitz]" in prompt, (
+            "endgame_elo_gap summary block must be present"
+        )
+
+        # Ordering: endgame_elo must precede non_endgame_elo must precede endgame_elo_gap.
+        elo_idx = prompt.index("[summary endgame_elo | platform=chess.com")
+        neg_idx = prompt.index("[summary non_endgame_elo | platform=chess.com")
+        gap_idx = prompt.index("[summary endgame_elo_gap | platform=chess.com")
+        assert elo_idx < neg_idx < gap_idx, (
+            f"Block ordering wrong: endgame_elo({elo_idx}) < non_endgame_elo({neg_idx}) < "
+            f"endgame_elo_gap({gap_idx}) required"
         )

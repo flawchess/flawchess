@@ -1229,6 +1229,7 @@ class TestComputePlayerProfile:
             EndgameEloTimelinePoint(
                 date=(first + _dt.timedelta(weeks=i)).isoformat(),
                 endgame_elo=1400 + i,
+                non_endgame_elo=1380 + i,
                 actual_elo=1350 + i,
                 endgame_games_in_window=50,
                 per_week_endgame_games=10,

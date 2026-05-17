@@ -463,6 +463,23 @@ export function EndgamesPage() {
                       converted them worse.
                     </p>
                     <p>
+                      <strong>Endgame ELO and Non-Endgame ELO:</strong> what your rating would be if your whole
+                      game played at the level of just your endgame games, or just your non-endgame games. Both
+                      sit symmetrically around your Actual ELO: we take your trailing-window score on each side
+                      (S_E for endgame games, S_N for non-endgame games), convert the score gap into an ELO
+                      spread via the Elo logistic, and split it across the two lines:
+                      {' '}
+                      <code>
+                        spread = 400 · log₁₀((S_E / (1 − S_E)) / (S_N / (1 − S_N)))
+                      </code>
+                      , {' '}
+                      <code>Endgame ELO = Actual ELO + spread / 2</code>, {' '}
+                      <code>Non-Endgame ELO = Actual ELO − spread / 2</code>. The midpoint
+                      equals your Actual ELO by construction. When Endgame ELO sits above Non-Endgame ELO your
+                      endgame play is lifting your rating (green band); when it sits below, your endgame is
+                      holding it back (red band).
+                    </p>
+                    <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating
                       level. As your rating changes, you face stronger or weaker opponents, so trends may not
                       directly indicate improvement or stagnation in absolute terms. If you often play against

@@ -1280,57 +1280,84 @@ def _series_for_endgame_elo_combo(
     """
     if len(combo.points) < SPARSE_COMBO_FLOOR:
         return None
-    weekly: list[tuple[str, float, int, int]] = [
-        (p.date, float(p.endgame_elo - p.actual_elo), p.per_week_endgame_games, p.actual_elo)
+    weekly: list[tuple[str, float, int, int, int, int]] = [
+        (
+            p.date,
+            float(p.endgame_elo - p.actual_elo),
+            p.per_week_endgame_games,
+            p.actual_elo,
+            p.endgame_elo,
+            p.non_endgame_elo,
+        )
         for p in combo.points
     ]
     return _weekly_points_to_time_points_with_elo(weekly, window)
 
 
 def _weekly_points_to_time_points_with_elo(
-    weekly: list[tuple[str, float, int, int]],
+    weekly: list[tuple[str, float, int, int, int, int]],
     window: Window,
 ) -> list[TimePoint]:
-    """Endgame-elo variant of `_weekly_points_to_time_points` that also
-    carries `actual_elo` through. Weighted by game count (same convention as
-    the gap value) so the monthly aggregate satisfies the invariant
-    `value ≈ endgame_elo - actual_elo` for the aggregated `actual_elo`.
+    """Endgame-elo variant of `_weekly_points_to_time_points` that carries
+    `actual_elo`, `endgame_elo`, and `non_endgame_elo` through. All three are
+    weighted by game count so monthly aggregates satisfy the invariant
+    `value ≈ endgame_elo - actual_elo`.
 
     Phase 87.5 D-06: post-rewire `per_week_endgame_games` carries the
     trailing-window count (≈ constant ≈ window size), so within a single
     TC × platform combo the weighting degenerates to ~unweighted. Acceptable
     for v1 since window size is stable across the series.
+
+    Phase 87.6: extended tuple from 4-element to 6-element to thread
+    `endgame_elo` and `non_endgame_elo` through (post-amendment 2026-05-17:
+    these are derived from the logistic stretch around Actual ELO, not FIDE
+    Performance Ratings).
     """
     if not weekly:
         return []
     if window == "last_3mo":
         return [
-            TimePoint(bucket_start=d, value=v, n=n, actual_elo=elo)
-            for d, v, n, elo in sorted(weekly, key=lambda t: t[0])
+            TimePoint(
+                bucket_start=d,
+                value=v,
+                n=n,
+                actual_elo=elo,
+                endgame_elo=e_elo,
+                non_endgame_elo=ne_elo,
+            )
+            for d, v, n, elo, e_elo, ne_elo in sorted(weekly, key=lambda t: t[0])
         ]
     # all_time -> monthly
-    buckets: dict[str, list[tuple[float, int, int]]] = defaultdict(list)
-    for date_iso, value, n, elo in weekly:
+    buckets: dict[str, list[tuple[float, int, int, int, int]]] = defaultdict(list)
+    for date_iso, value, n, elo, e_elo, ne_elo in weekly:
         ym = date_iso[:7]
-        buckets[ym].append((value, n, elo))
+        buckets[ym].append((value, n, elo, e_elo, ne_elo))
     points: list[TimePoint] = []
     for ym in sorted(buckets.keys()):
         weeks = buckets[ym]
-        total_n = sum(n for _, n, _ in weeks)
+        total_n = sum(n for _, n, _, _, _ in weeks)
         if total_n > 0:
-            weighted_sum = sum(v * n for v, n, _ in weeks)
+            weighted_sum = sum(v * n for v, n, _, _, _ in weeks)
             mean_value = weighted_sum / total_n
-            elo_weighted_sum = sum(elo * n for _, n, elo in weeks)
+            elo_weighted_sum = sum(elo * n for _, n, elo, _, _ in weeks)
             mean_elo = round(elo_weighted_sum / total_n)
+            e_elo_weighted_sum = sum(e_elo * n for _, n, _, e_elo, _ in weeks)
+            mean_e_elo = round(e_elo_weighted_sum / total_n)
+            ne_elo_weighted_sum = sum(ne_elo * n for _, n, _, _, ne_elo in weeks)
+            mean_ne_elo = round(ne_elo_weighted_sum / total_n)
         else:
-            mean_value = statistics.mean(v for v, _, _ in weeks)
-            mean_elo = round(statistics.mean(elo for _, _, elo in weeks))
+            mean_value = statistics.mean(v for v, _, _, _, _ in weeks)
+            mean_elo = round(statistics.mean(elo for _, _, elo, _, _ in weeks))
+            mean_e_elo = round(statistics.mean(e_elo for _, _, _, e_elo, _ in weeks))
+            mean_ne_elo = round(statistics.mean(ne_elo for _, _, _, _, ne_elo in weeks))
         points.append(
             TimePoint(
                 bucket_start=f"{ym}-01",
                 value=mean_value,
                 n=total_n,
                 actual_elo=mean_elo,
+                endgame_elo=mean_e_elo,
+                non_endgame_elo=mean_ne_elo,
             )
         )
     return points

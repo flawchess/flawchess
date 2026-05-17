@@ -480,17 +480,20 @@ async def query_endgame_performance_rows(
     Returns: (endgame_rows, non_endgame_rows) where each row is
     (played_at, result, user_color, platform, time_control_bucket).
 
-    The trailing platform / time_control_bucket columns were added in Phase 87.5
-    so the orchestrator can partition both row streams per (platform, TC) combo
-    before deriving the per-combo Endgame Score Gap series that drives the
-    Endgame ELO timeline. Existing callers ignore columns past index 2.
+    The platform / time_control_bucket columns were added in Phase 87.5 so the
+    orchestrator can partition both row streams per (platform, TC) combo before
+    deriving the per-combo Endgame Score Gap series that drives the Endgame ELO
+    timeline.
 
     Rows are ordered by played_at ASC for chronological processing.
     """
     endgame_game_ids_subq = _any_endgame_ply_subquery(user_id)
 
     # Base select for game rows — columns needed for WDL derivation, timeline,
-    # and (Phase 87.5) per-combo partitioning of the score-gap input series.
+    # and (Phase 87.5) per-combo partitioning. Per-side opponent ratings are
+    # NOT projected here: the Phase 87.6 amendment (logistic-anchored stretch
+    # around Actual ELO) derives Endgame ELO directly from per-side score and
+    # the asof-joined Actual ELO, so opponent ratings are never read.
     game_cols = select(
         Game.played_at,
         Game.result,

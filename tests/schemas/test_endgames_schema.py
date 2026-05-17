@@ -54,11 +54,13 @@ class TestEndgameEloTimelinePointFieldRename:
         pt = EndgameEloTimelinePoint(
             date="2026-05-17",
             endgame_elo=1500,
+            non_endgame_elo=1480,
             actual_elo=1500,
             endgame_games_in_window=10,
             per_week_endgame_games=10,
         )
         assert pt.endgame_elo == 1500
+        assert pt.non_endgame_elo == 1480
         assert pt.actual_elo == 1500
 
     def test_point_rejects_legacy_conversion_elo(self) -> None:

@@ -13,6 +13,7 @@ Exposes:
 """
 
 import bisect
+import math
 import statistics
 from collections import defaultdict
 from collections.abc import Sequence
@@ -1280,59 +1281,56 @@ CLOCK_PRESSURE_TIMELINE_WINDOW = 100
 # Matches SCORE_GAP_TIMELINE_WINDOW and CLOCK_PRESSURE_TIMELINE_WINDOW per D-05.
 ENDGAME_ELO_TIMELINE_WINDOW = 100
 
-# Phase 87.5 (D-01): additive Endgame ELO formula —
-#   endgame_elo = round(actual_elo + K · eg_score_gap)
-# where ``eg_score_gap`` is the per-week windowed difference between endgame
-# and non-endgame outcome means (1.0 win / 0.5 draw / 0.0 loss). At gap = 0
-# the result equals round(actual_elo) exactly — the neutral case is literal
-# zero, not a benchmark-derived constant.
-#
-# K is calibrated against the §3.1.6 benchmark Lichess percentile table
-# (reports/benchmarks-latest.md line 174, pooled n=1,632):
-#   p05 = -0.227 → -102 ELO   p25 = -0.104 →  -47 ELO
-#   p50 = -0.014 →   -6 ELO   p75 = +0.073 →  +33 ELO
-#   p95 = +0.202 →  +91 ELO
-# Typical p25/p75 lands in the targeted 30-60 ELO band; extremes p05/p95
-# land near ±100 ELO. See .planning/todos/pending/calibrate-endgame-elo-k.md
-# for the eyeball procedure and the §3.1.6 ELO d=0.17 collapse verdict that
-# motivates switching off the Phase 87.4 Conv ΔES input (which had ELO d=1.62).
-#
-# Phase 57 multiplicative formula RETIRED 2026-05-17 (Phase 87.5): the
-# ``400 · log10(s / (1 - s))`` mapping (and its Phase 87.4 affine-recenter
-# input PIVOT / ALPHA / CALIBRATION_VERSION) is superseded wholesale by this
-# additive formula. The historical Phase 57 / 87.4 design notes carry the
-# rationale; the executable code path is gone.
-K: float = 450.0
-
 # Ordered combo list: chess.com first then lichess, per-platform follows
 # _TIME_CONTROL_ORDER. Used for stable response ordering (Phase 57 D-09).
 _ENDGAME_ELO_COMBO_ORDER: list[tuple[str, str]] = [
     (platform_name, tc) for platform_name in ("chess.com", "lichess") for tc in _TIME_CONTROL_ORDER
 ]
 
+# Phase 87.6 amendment (2026-05-17): logistic stretch around Actual ELO.
+# The `400` is fixed by Elo's logistic-skill assumption -- the same `400` the
+# FIDE Performance Rating formula uses -- not a knob.
+# See .planning/notes/endgame-elo-logistic-anchored.md for derivation.
+_ELO_LOGISTIC_SCALE = 400.0
 
-def _endgame_elo_from_score_gap(actual_elo: float, eg_score_gap: float, k: float) -> int:
-    """Additive Endgame ELO from Endgame Score Gap (Phase 87.5).
+# Score-clamp epsilon for the logit transform — protects against log(0) when
+# the trailing-window mean hits exactly 0.0 (all losses) or 1.0 (all wins).
+# 1e-6 keeps the per-side ELO bounded inside roughly +-2400 (400 * log10(1e6))
+# which is well past realistic territory at n=100.
+_ENDGAME_ELO_SCORE_EPSILON = 1e-6
 
-    ``endgame_elo = round(actual_elo + k * eg_score_gap)``
 
-    At ``eg_score_gap = 0`` the result equals ``round(actual_elo)`` exactly,
-    restoring the "lifts up / holds back" semantics by construction (the
-    neutral case is literal zero, not a benchmark-derived constant).
+def _endgame_elo_logistic(
+    actual_elo: int,
+    endgame_score: float,
+    non_endgame_score: float,
+) -> tuple[int, int]:
+    """Logistic stretch around Actual ELO (Phase 87.6 amendment 2026-05-17).
 
-    Phase 87.5 supersedes BOTH the Phase 57 multiplicative
-    ``400·log10(s/(1-s))`` formula AND the Phase 87.4 affine recenter
-    (PIVOT/ALPHA) wholesale. The §3.1.6 Endgame Score Gap metric has ELO
-    Cohen's d = 0.17 (essentially flat across rating buckets) versus the
-    Phase 87.4 Conv ΔES metric's d = 1.62 — the input switch is what
-    eliminates the strong-player bias, not a re-calibration of the mapping.
-    See ``.planning/notes/endgame-elo-rebuild-on-score-gap.md``.
+    Returns (endgame_elo, non_endgame_elo) where the midpoint equals
+    Actual ELO by construction:
 
-    Pure function. No clamping — the additive form is well-behaved for any
-    real input (a 2000 actual_elo with the extreme p95 gap +0.20 lands at
-    2091, well inside realistic territory).
+        spread = 400 * log10( (s_E / (1 - s_E)) / (s_N / (1 - s_N)) )
+        endgame_elo     = actual_elo + spread / 2
+        non_endgame_elo = actual_elo - spread / 2
+
+    Each side score is clamped to (epsilon, 1 - epsilon) so a streak of all
+    wins or all losses on either side cannot blow up the logit. Same `400`
+    that appears in the FIDE Performance Rating formula — no free constant.
+
+    Supersedes the earlier Phase 87.6 PR-direct mapping (per-side FIDE PR),
+    which UAT against prod showed violated the "Actual ELO sits between the
+    two PR lines" invariant in ~88% of weekly points because the 100-game
+    trailing PR estimator lagged the live Glicko snapshot used for Actual
+    ELO. See `.planning/notes/endgame-elo-logistic-anchored.md`.
     """
-    return int(round(actual_elo + k * eg_score_gap))
+    s_e = max(min(endgame_score, 1 - _ENDGAME_ELO_SCORE_EPSILON), _ENDGAME_ELO_SCORE_EPSILON)
+    s_n = max(min(non_endgame_score, 1 - _ENDGAME_ELO_SCORE_EPSILON), _ENDGAME_ELO_SCORE_EPSILON)
+    spread = _ELO_LOGISTIC_SCALE * math.log10((s_e / (1 - s_e)) / (s_n / (1 - s_n)))
+    return (
+        int(round(actual_elo + spread / 2)),
+        int(round(actual_elo - spread / 2)),
+    )
 
 
 def _compute_endgame_elo_weekly_series(
@@ -1341,37 +1339,31 @@ def _compute_endgame_elo_weekly_series(
     actual_elo_ratings: Sequence[int],
     cutoff_str: str | None = None,
 ) -> list[EndgameEloTimelinePoint]:
-    """Build weekly Endgame ELO + Actual ELO series for one combo (Phase 87.5).
+    """Build weekly Endgame ELO + Non-Endgame ELO + Actual ELO series for one combo (Phase 87.6).
 
     For each ``ScoreGapTimelinePoint`` (already filtered to weeks where both
     the endgame and non-endgame trailing windows hold ``>= MIN_GAMES_FOR_TIMELINE``
     games by the upstream producer), emit one ``EndgameEloTimelinePoint`` with:
 
-    - ``endgame_elo = round(actual_elo + K · eg_score_gap)`` where
-      ``eg_score_gap`` is ``pt.endgame_score - pt.non_endgame_score``.
+    - ``endgame_elo`` / ``non_endgame_elo`` = ``_endgame_elo_logistic(actual_elo,
+      pt.endgame_score, pt.non_endgame_score)``. A logistic stretch around the
+      asof-joined Actual ELO; the midpoint equals Actual ELO by construction
+      (Phase 87.6 amendment 2026-05-17 supersedes the earlier per-side FIDE
+      PR mapping).
     - ``actual_elo`` = asof-join of (actual_elo_dates, actual_elo_ratings) at
       ``next_monday_dt``. Forward-fills from the latest prior game when the
-      week itself has no games. Both lines share the asof rating anchor so
-      the gap between them IS the over/underperformance signal.
+      week itself has no games.
     - ``endgame_games_in_window`` = ``pt.endgame_game_count`` (carry-through
       from the score-gap producer; the trailing 100-game window count).
-    - ``per_week_endgame_games`` = ``pt.per_week_endgame_games`` (UAT fix
-      post-Phase 87.5): the count of endgame games played in THIS specific
-      ISO week. Drives the frontend Endgame ELO Timeline volume bars so users
-      see at a glance whether a weekly point is well-supported. Pre-Phase 87.5
-      this was the producer's own per-ISO-week tally; the 87.5 CR-01 fix had
-      collapsed it onto the trailing-window count which destroyed the bar
-      series. We restored the per-week semantics by tracking endgame-only ISO
-      week counts inside the score-gap producer (which is where ISO-week
-      bucketing already happens).
+    - ``per_week_endgame_games`` = ``pt.per_week_endgame_games`` (true per-ISO
+      week count; see UAT fix post-Phase 87.5 CR-01).
+    - ``per_week_total_games`` = ``pt.per_week_total_games`` (endgame +
+      non-endgame games this ISO week; drives the volume bars because the
+      chart plots both lines, so total weekly activity is what matters).
 
     ``cutoff_str`` filters output points to dates ``>= cutoff_str``; the
     score-gap producer already pre-fills the trailing windows from earlier
     games so no double-filtering is needed here.
-
-    Phase 87.5 supersedes the Phase 57.1 weekly producer that walked merged
-    bucket+all event streams. The bucket-row aggregator is gone; the
-    score-gap series IS the input.
     """
     out: list[EndgameEloTimelinePoint] = []
     for pt in score_gap_timeline:
@@ -1380,7 +1372,7 @@ def _compute_endgame_elo_weekly_series(
 
         # Plot on the ISO-week Monday to match the Score Gap timeline (which
         # also stores Monday). The asof bisect still runs against next-Monday
-        # so the rating reflects the END of the ISO week — i.e. the same
+        # so the rating reflects the END of the ISO week -- i.e. the same
         # window state that drove the score-gap value plotted at this Monday.
         # (UAT 2026-05-17: the earlier Sunday-of-week label caused a 6-day
         # x-axis shift between the two charts.)
@@ -1394,28 +1386,25 @@ def _compute_endgame_elo_weekly_series(
 
         idx = bisect.bisect_right(actual_elo_dates, next_monday_dt)
         if idx == 0:
-            # No prior actual-rating sample for this combo — defensive skip.
+            # No prior actual-rating sample for this combo -- defensive skip.
             # In practice the score-gap producer already enforces both-window
             # MIN_GAMES_FOR_TIMELINE so an actual-rating row exists.
             continue
         actual_elo_at_date = actual_elo_ratings[idx - 1]
 
-        # Use the pre-rounded `score_difference` directly (the score_gap producer
-        # stores it as round(endgame_score - non_endgame_score, 4)). Recomputing
-        # from the per-side values introduces sub-ulp float noise that flips the
-        # rounding boundary at half-integer K·gap (e.g. K=450, gap=0.05 →
-        # 22.50000000004 rounds to 23 but the intended value is 22 via
-        # round-half-to-even on the pre-rounded 22.5).
-        eg_score_gap = pt.score_difference
-        endgame_elo = _endgame_elo_from_score_gap(float(actual_elo_at_date), eg_score_gap, K)
+        endgame_elo, non_endgame_elo = _endgame_elo_logistic(
+            int(actual_elo_at_date), pt.endgame_score, pt.non_endgame_score
+        )
 
         out.append(
             EndgameEloTimelinePoint(
                 date=monday.isoformat(),
                 endgame_elo=endgame_elo,
+                non_endgame_elo=non_endgame_elo,
                 actual_elo=int(actual_elo_at_date),
                 endgame_games_in_window=pt.endgame_game_count,
                 per_week_endgame_games=pt.per_week_endgame_games,
+                per_week_total_games=pt.per_week_total_games,
             )
         )
 
@@ -2310,8 +2299,8 @@ async def get_endgame_elo_timeline(
     ``query_endgame_performance_rows``) by (platform, TC) and calling
     ``_compute_score_gap_timeline`` ONCE per combo. Feeds each per-combo
     score-gap series into ``_compute_endgame_elo_weekly_series``, which
-    applies the additive ``actual_elo + K · eg_score_gap`` mapping
-    point-by-point.
+    applies the Phase 87.6 logistic stretch around Actual ELO
+    (``_endgame_elo_logistic``) point-by-point.
 
     Per-combo invariant (Phase 87.5): the Endgame ELO line for combo X is
     derived ONLY from combo X's own ScoreGapTimelinePoint series, NOT from
@@ -2382,10 +2371,7 @@ async def get_endgame_elo_timeline(
 
         # Per-combo score-gap series — built ONLY from this combo's rows so
         # the Endgame ELO line for combo X is not contaminated by games from
-        # other combos. _compute_score_gap_timeline accepts generic row
-        # sequences and only reads indices 0/1/2 (played_at, result,
-        # user_color), so the extended 5-tuple from
-        # query_endgame_performance_rows passes through unchanged.
+        # other combos.
         score_gap_for_combo = _compute_score_gap_timeline(
             endgame_by_combo.get(key, []),
             non_endgame_by_combo.get(key, []),
@@ -2600,7 +2586,7 @@ async def get_endgame_overview(
     # Phase 57 ELO-05 / Phase 87.5 D-06: paired Endgame ELO + Actual ELO
     # timeline per (platform, TC) combo. Endgame ELO is derived per
     # (platform, TC) combo from THAT combo's own ScoreGapTimelinePoint series
-    # via the additive ``actual_elo + K · eg_score_gap`` mapping — NEVER from
+    # via the Phase 87.6 logistic stretch around Actual ELO — NEVER from
     # the cross-combo overview-level score-gap timeline (which mixes games
     # across combos and would silently contaminate the Endgame ELO line).
     # Uses its own all-rows repo query (query_endgame_elo_timeline_rows) for

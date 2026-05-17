@@ -297,16 +297,22 @@ class TimePoint(BaseModel):
     `n` is the sample size for this bucket (weekly game count for last_3mo,
     summed-over-the-month for all_time — see insights_service resampler).
 
-    `actual_elo` is populated ONLY for `endgame_elo_timeline` series; None for
-    all other timelines. Carrying the user's actual rating alongside the gap
-    lets the prompt render `gap=<v>, elo=<r>` per bucket so the LLM can
-    distinguish endgame-skill regression from rating growth outpacing skill.
+    `actual_elo`, `endgame_elo`, and `non_endgame_elo` are populated ONLY for
+    `endgame_elo_timeline` series; None for all other timelines. Carrying the
+    user's actual rating alongside the gap lets the prompt render
+    `gap=<v>, elo=<r>` per bucket so the LLM can distinguish endgame-skill
+    regression from rating growth outpacing skill. `endgame_elo` and
+    `non_endgame_elo` are derived by Phase 87.6's amended logistic stretch
+    around Actual ELO; the midpoint property holds exactly
+    (`endgame_elo + non_endgame_elo == 2 * actual_elo`).
     """
 
     bucket_start: str  # ISO YYYY-MM-DD
     value: float
     n: int
     actual_elo: int | None = None
+    endgame_elo: int | None = None
+    non_endgame_elo: int | None = None
 
 
 class SectionInsight(BaseModel):

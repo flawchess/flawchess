@@ -448,6 +448,16 @@ class TestEndgameEloTimelineRouter:
                     f"per_week_endgame_games must be int, got {type(point['per_week_endgame_games'])}"
                 )
                 assert point["per_week_endgame_games"] >= 0
+                # UAT 2026-05-17: per_week_total_games (endgame + non-endgame)
+                # carries through to the ELO Timeline so its volume bars reflect
+                # total weekly activity (both PR lines), not endgame-only games.
+                assert "per_week_total_games" in point, (
+                    f"missing per_week_total_games on point: {point}"
+                )
+                assert isinstance(point["per_week_total_games"], int), (
+                    f"per_week_total_games must be int, got {type(point['per_week_total_games'])}"
+                )
+                assert point["per_week_total_games"] >= point["per_week_endgame_games"]
                 # Sanity: actual_elo is now an asof rating, must be a positive int.
                 assert isinstance(point["actual_elo"], int) and point["actual_elo"] > 0
                 assert isinstance(point["endgame_elo"], int) and point["endgame_elo"] > 0

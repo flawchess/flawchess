@@ -18,6 +18,7 @@ import {
   SCORE_TIMELINE_LINE_ENDGAME,
   SCORE_TIMELINE_LINE_NON_ENDGAME,
 } from '@/lib/theme';
+import { signedBandGradient, type GradientStop } from '@/lib/signedBandGradient';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type { ScoreGapTimelinePoint } from '@/types/endgames';
 
@@ -66,11 +67,6 @@ interface ScoreOverTimeChartPoint {
   band: [number, number];
 }
 
-interface GradientStop {
-  offset: number;  // percentage 0..100 along the gradient's x-axis
-  color: string;
-}
-
 /**
  * Phase 68: two-line absolute Score timeline (endgame + non-endgame) with a
  * sign-aware shaded band in between.
@@ -115,52 +111,18 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
       };
     });
 
-    const colorFor = (diff: number): string =>
-      diff >= 0 ? SCORE_TIMELINE_FILL_ABOVE : SCORE_TIMELINE_FILL_BELOW;
-
-    const stops: GradientStop[] = [];
-    const N = data.length;
-    if (N > 0) {
-      // Bug 260424: initialize the starting color from the first NON-ZERO
-      // diff, not `data[0]`. If the first sample rounds to `endgame === non_endgame`
-      // (diff=0), `colorFor(0)` returns green. The prior sign-flip detector
-      // then missed subsequent negative diffs because `0 * dB = 0` is not
-      // strictly `< 0`, so the whole band stayed green even where endgame
-      // trailed. Finding the first non-zero diff makes the initial color
-      // match the first visible band direction.
-      let currentColor = SCORE_TIMELINE_FILL_ABOVE;
-      for (const p of data) {
-        const d = p.endgame - p.non_endgame;
-        if (d !== 0) {
-          currentColor = colorFor(d);
-          break;
-        }
-      }
-      stops.push({ offset: 0, color: currentColor });
-      const denom = N > 1 ? N - 1 : 1;
-      for (let i = 0; i < N - 1; i++) {
-        const a = data[i]!;
-        const b = data[i + 1]!;
-        const dA = a.endgame - a.non_endgame;
-        const dB = b.endgame - b.non_endgame;
-        const colorA = colorFor(dA);
-        const colorB = colorFor(dB);
-        // Insert an instant color flip whenever the segment endpoints fall
-        // on different color sides. Using `colorA !== colorB` instead of the
-        // stricter `dA * dB < 0` correctly handles the zero-endpoint case:
-        // if dA=0 and dB<0 the linear t lands at 0 (start of segment),
-        // producing a coincident flip-stop that switches `currentColor`
-        // forward.
-        if (colorA !== colorB) {
-          const t = dA / (dA - dB); // in [0, 1] when colorA !== colorB
-          const offsetPct = ((i + t) / denom) * 100;
-          stops.push({ offset: offsetPct, color: currentColor });
-          stops.push({ offset: offsetPct, color: colorB });
-          currentColor = colorB;
-        }
-      }
-      stops.push({ offset: 100, color: currentColor });
-    }
+    // Phase 87.6: extracted into shared helper signedBandGradient.
+    // Verbatim algorithm from EndgameScoreOverTimeChart.tsx:121-163 before extraction.
+    // GradientStop type is now imported from the helper module.
+    const rows: Array<{ x: number; sign: 1 | -1 | 0 }> = data.map((p, i) => ({
+      x: i,
+      sign: Math.sign(p.endgame - p.non_endgame) as 1 | -1 | 0,
+    }));
+    const stops: GradientStop[] = signedBandGradient(
+      rows,
+      [0, Math.max(0, data.length - 1)],
+      { positive: SCORE_TIMELINE_FILL_ABOVE, negative: SCORE_TIMELINE_FILL_BELOW },
+    );
 
     return { data, gradientStops: stops };
   }, [timeline]);
@@ -317,6 +279,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
               dataKey="endgame"
               stroke={SCORE_TIMELINE_LINE_ENDGAME}
               strokeWidth={2}
+              strokeDasharray="6 3"
               dot={false}
               connectNulls={false}
               isAnimationActive={false}
@@ -327,6 +290,8 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
               dataKey="non_endgame"
               stroke={SCORE_TIMELINE_LINE_NON_ENDGAME}
               strokeWidth={2}
+              strokeDasharray="1 4"
+              strokeLinecap="round"
               dot={false}
               connectNulls={false}
               isAnimationActive={false}
