@@ -27,9 +27,7 @@ from app.services.score_confidence import (
     compute_confidence_bucket,
     compute_paired_difference_test,
     compute_score_confidence_from_mean,
-    compute_score_delta_vs_reference,
     compute_score_difference_test,
-    wilson_bounds,
 )
 
 
@@ -548,116 +546,8 @@ class TestComputePairedDifferenceTest:
         assert (hi - lo) / 2.0 != pytest.approx(naive_half_width, rel=1e-9)
 
 
-# --- compute_score_delta_vs_reference (Phase 88 Plan 1 Task 1) ------------
-# One-sample Wilson score test vs arbitrary reference (cohort_score).
-# delta = user_score - cohort_score. Wilson 95% CI on user_score transplanted
-# to delta space by subtracting cohort_score from both bounds.
-# p_value gated to None when user_n < CONFIDENCE_MIN_N (=10).
-# CI gated to None when user_n < 2.
-
-
-class TestComputeScoreDeltaVsReference:
-    """Boundary tests for compute_score_delta_vs_reference.
-
-    Tests the delta = user_score - cohort_score path and Wilson CI transplant.
-    Mirrors TestComputePairedDifferenceTest structure and docstring conventions.
-    """
-
-    def test_n_zero_returns_zero_delta_all_none(self) -> None:
-        """user_n == 0: no sample -> delta=0.0, all others None. Must not raise."""
-        delta, p, ci_low, ci_high = compute_score_delta_vs_reference(0, 0, 0, 0, 0.5)
-        assert delta == pytest.approx(0.0, abs=1e-9)
-        assert p is None
-        assert ci_low is None
-        assert ci_high is None
-
-    def test_n_one_returns_delta_only(self) -> None:
-        """user_n == 1: Bessel-type single-observation guard; delta returned but no CI."""
-        # 1 win, cohort 0.5 -> delta = 1.0 - 0.5 = 0.5
-        delta, p, ci_low, ci_high = compute_score_delta_vs_reference(1, 0, 0, 1, 0.5)
-        assert delta == pytest.approx(0.5, abs=1e-9)
-        assert p is None
-        assert ci_low is None
-        assert ci_high is None
-
-    def test_all_wins_delta_positive(self) -> None:
-        """5 wins vs cohort 0.5: delta = +0.5, ci_low > 0, ci_high finite (n=5 < gate)."""
-        delta, p, ci_low, ci_high = compute_score_delta_vs_reference(5, 0, 0, 5, 0.5)
-        assert delta == pytest.approx(0.5, abs=1e-9)
-        assert ci_low is not None
-        assert ci_low > 0.0
-        assert ci_high is not None
-        # p_value is None because n=5 < CONFIDENCE_MIN_N=10
-        assert p is None
-
-    def test_all_losses_delta_negative(self) -> None:
-        """10 losses vs cohort 0.5: delta = -0.5, ci_high < 0."""
-        delta, p, ci_low, ci_high = compute_score_delta_vs_reference(0, 0, 10, 10, 0.5)
-        assert delta == pytest.approx(-0.5, abs=1e-9)
-        assert ci_high is not None
-        assert ci_high < 0.0
-        # p_value present (n=10 == CONFIDENCE_MIN_N)
-        assert p is not None
-
-    def test_user_score_equals_cohort_score_delta_zero(self) -> None:
-        """5 wins 5 losses vs cohort 0.5: delta=0.0, p_value approx 1.0."""
-        # user_score = (5 + 0.0) / 10 = 0.5, cohort = 0.5 -> z = 0 -> p = 1.0
-        delta, p, ci_low, ci_high = compute_score_delta_vs_reference(5, 0, 5, 10, 0.5)
-        assert delta == pytest.approx(0.0, abs=1e-9)
-        assert p is not None
-        assert p == pytest.approx(1.0, abs=1e-6)
-
-    def test_n_below_gate_p_value_none(self) -> None:
-        """n=9 < CONFIDENCE_MIN_N=10: p_value is None (but CI may be present)."""
-        _, p, ci_low, ci_high = compute_score_delta_vs_reference(5, 0, 4, 9, 0.5)
-        assert p is None
-        # CI is still computed at n=9 >= 2
-        assert ci_low is not None
-        assert ci_high is not None
-
-    def test_n_at_gate_p_value_float(self) -> None:
-        """n=10 == CONFIDENCE_MIN_N: p_value is a float (not None)."""
-        _, p, _, _ = compute_score_delta_vs_reference(7, 0, 3, 10, 0.5)
-        assert p is not None
-        assert isinstance(p, float)
-        assert 0.0 <= p <= 1.0
-
-    def test_cohort_score_near_zero(self) -> None:
-        """1W 0D 9L vs cohort 0.02: function does not raise, produces finite results."""
-        # user_score = 0.1, cohort_score = 0.02 -> delta ~ 0.08
-        delta, p, ci_low, ci_high = compute_score_delta_vs_reference(1, 0, 9, 10, 0.02)
-        assert math.isfinite(delta)
-        assert p is not None
-        assert math.isfinite(p)
-        assert ci_low is not None and ci_high is not None
-        assert math.isfinite(ci_low) and math.isfinite(ci_high)
-
-    def test_cohort_score_near_one(self) -> None:
-        """9W 0D 1L vs cohort 0.95: function does not raise, produces finite results."""
-        # user_score = 0.9, cohort_score = 0.95 -> delta ~ -0.05
-        delta, p, ci_low, ci_high = compute_score_delta_vs_reference(9, 0, 1, 10, 0.95)
-        assert math.isfinite(delta)
-        assert p is not None
-        assert math.isfinite(p)
-        assert ci_low is not None and ci_high is not None
-        assert math.isfinite(ci_low) and math.isfinite(ci_high)
-
-    def test_wilson_transplant_invariant(self) -> None:
-        """ci_low == wilson_bounds(user_score, user_n)[0] - cohort_score (Wilson transplant)."""
-        user_w, user_d, user_l, user_n = 7, 2, 6, 15
-        cohort_score = 0.45
-        user_score = (user_w + 0.5 * user_d) / user_n
-        wilson_lo, wilson_hi = wilson_bounds(user_score, user_n)
-
-        _, _, ci_low, ci_high = compute_score_delta_vs_reference(
-            user_w, user_d, user_l, user_n, cohort_score
-        )
-        assert ci_low is not None and ci_high is not None
-        assert ci_low == pytest.approx(wilson_lo - cohort_score, abs=1e-9)
-        assert ci_high == pytest.approx(wilson_hi - cohort_score, abs=1e-9)
-
-    def test_ci_contains_delta_for_non_degenerate(self) -> None:
-        """For non-degenerate inputs with n >= 2: ci_low <= delta <= ci_high."""
-        delta, _, ci_low, ci_high = compute_score_delta_vs_reference(6, 3, 6, 15, 0.40)
-        assert ci_low is not None and ci_high is not None
-        assert ci_low <= delta <= ci_high
+# Phase 88.1 (Plan 09, REVIEW.md CR-01): compute_score_delta_vs_reference and
+# its private helper _wilson_score_test_vs_ref were removed when the global
+# cohort layer was retired in favour of a same-game opponent-quintile split.
+# The TestComputeScoreDeltaVsReference test class is gone with them; the new
+# delta path is exercised in tests/services/test_time_pressure_service.py.

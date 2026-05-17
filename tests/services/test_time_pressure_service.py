@@ -89,7 +89,9 @@ class TestUserAndOppQuintileIndependentSplit:
         opp_quintile_wdl[(tc, 4)] — two different quintile indices,
         same row.
         """
-        row = _make_row("blitz", user_clk_pct=0.10, opp_clk_pct=0.90, result="1-0", user_color="white")
+        row = _make_row(
+            "blitz", user_clk_pct=0.10, opp_clk_pct=0.90, result="1-0", user_color="white"
+        )
         _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl = _iterate_clock_rows([row])
 
         # User in quintile 0 (max pressure) with one win.
@@ -105,7 +107,9 @@ class TestUserAndOppQuintileIndependentSplit:
 
         Game contributes (1,0,0) to user_quintile_wdl and (0,0,1) to opp_quintile_wdl.
         """
-        row = _make_row("rapid", user_clk_pct=0.50, opp_clk_pct=0.50, result="1-0", user_color="white")
+        row = _make_row(
+            "rapid", user_clk_pct=0.50, opp_clk_pct=0.50, result="1-0", user_color="white"
+        )
         _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl = _iterate_clock_rows([row])
         assert user_q_wdl.get(("rapid", 2)) == (1, 0, 0)  # user win
         assert opp_q_wdl.get(("rapid", 2)) == (0, 0, 1)  # opp loss
@@ -133,7 +137,9 @@ class TestUserAndOppQuintileIndependentSplit:
 
     def test_draw_appears_as_draw_in_both_splits(self) -> None:
         """Draw is a draw on both sides."""
-        row = _make_row("bullet", user_clk_pct=0.30, opp_clk_pct=0.70, result="1/2-1/2", user_color="white")
+        row = _make_row(
+            "bullet", user_clk_pct=0.30, opp_clk_pct=0.70, result="1/2-1/2", user_color="white"
+        )
         _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl = _iterate_clock_rows([row])
         # User in quintile 1 (0.30 -> int(1.5) = 1), opp in quintile 3 (0.70 -> int(3.5) = 3).
         assert user_q_wdl.get(("bullet", 1)) == (0, 1, 0)
@@ -159,14 +165,54 @@ class TestQuintileBulletDelta:
         # Need symmetric distribution: 4 wins user / 4 wins opp / 2 draws -> 4W 2D 4L each.
         rows: list[tuple[Any, ...]] = []
         for i in range(4):
-            rows.append(_make_row(tc, 0.50, 0.50, result="1-0", user_color="white", game_id=i, base_time_seconds=base))
+            rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.50,
+                    result="1-0",
+                    user_color="white",
+                    game_id=i,
+                    base_time_seconds=base,
+                )
+            )
         for i in range(2):
-            rows.append(_make_row(tc, 0.50, 0.50, result="1/2-1/2", user_color="white", game_id=100 + i, base_time_seconds=base))
+            rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.50,
+                    result="1/2-1/2",
+                    user_color="white",
+                    game_id=100 + i,
+                    base_time_seconds=base,
+                )
+            )
         for i in range(4):
-            rows.append(_make_row(tc, 0.50, 0.50, result="0-1", user_color="white", game_id=200 + i, base_time_seconds=base))
+            rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.50,
+                    result="0-1",
+                    user_color="white",
+                    game_id=200 + i,
+                    base_time_seconds=base,
+                )
+            )
         # Pad to MIN_GAMES_PER_TC_CARD with quintile-0 games (mirror layout: clk_pct 0.10 both)
         for i in range(MIN_GAMES_PER_TC_CARD - 10):
-            rows.append(_make_row(tc, 0.10, 0.10, result="1-0", user_color="white", game_id=300 + i, base_time_seconds=base))
+            rows.append(
+                _make_row(
+                    tc,
+                    0.10,
+                    0.10,
+                    result="1-0",
+                    user_color="white",
+                    game_id=300 + i,
+                    base_time_seconds=base,
+                )
+            )
 
         result = _compute_time_pressure_cards(rows)
         assert len(result.cards) == 1
@@ -186,10 +232,30 @@ class TestQuintileBulletDelta:
         rows: list[tuple[Any, ...]] = []
         # 3 games at Q2 (user_clk_pct=0.5, opp_clk_pct=0.5)
         for i in range(3):
-            rows.append(_make_row(tc, 0.50, 0.50, result="1-0", user_color="white", game_id=i, base_time_seconds=base))
+            rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.50,
+                    result="1-0",
+                    user_color="white",
+                    game_id=i,
+                    base_time_seconds=base,
+                )
+            )
         # Pad to threshold with quintile-0 games (clk_pct 0.05 both -> user Q0, opp Q0)
         for i in range(MIN_GAMES_PER_TC_CARD - 3):
-            rows.append(_make_row(tc, 0.05, 0.05, result="1-0", user_color="white", game_id=100 + i, base_time_seconds=base))
+            rows.append(
+                _make_row(
+                    tc,
+                    0.05,
+                    0.05,
+                    result="1-0",
+                    user_color="white",
+                    game_id=100 + i,
+                    base_time_seconds=base,
+                )
+            )
 
         result = _compute_time_pressure_cards(rows)
         assert len(result.cards) == 1
@@ -207,7 +273,9 @@ class TestQuintileBulletDelta:
         base = 300
         # 20 games at Q2 (user_clk_pct=0.5, opp_clk_pct=0.5): user all wins -> opp all losses.
         rows = [
-            _make_row(tc, 0.50, 0.50, result="1-0", user_color="white", game_id=i, base_time_seconds=base)
+            _make_row(
+                tc, 0.50, 0.50, result="1-0", user_color="white", game_id=i, base_time_seconds=base
+            )
             for i in range(MIN_GAMES_PER_TC_CARD)
         ]
         result = _compute_time_pressure_cards(rows)
@@ -320,11 +388,41 @@ class TestPerQuintileWdlAccumulator:
 
         rows: list[tuple[Any, ...]] = []
         for i in range(6):
-            rows.append(_make_row(tc, 0.50, 0.50, result="1-0", user_color="white", game_id=i, base_time_seconds=base))
+            rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.50,
+                    result="1-0",
+                    user_color="white",
+                    game_id=i,
+                    base_time_seconds=base,
+                )
+            )
         for i in range(2):
-            rows.append(_make_row(tc, 0.50, 0.50, result="1/2-1/2", user_color="white", game_id=100 + i, base_time_seconds=base))
+            rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.50,
+                    result="1/2-1/2",
+                    user_color="white",
+                    game_id=100 + i,
+                    base_time_seconds=base,
+                )
+            )
         for i in range(2):
-            rows.append(_make_row(tc, 0.50, 0.50, result="0-1", user_color="white", game_id=200 + i, base_time_seconds=base))
+            rows.append(
+                _make_row(
+                    tc,
+                    0.50,
+                    0.50,
+                    result="0-1",
+                    user_color="white",
+                    game_id=200 + i,
+                    base_time_seconds=base,
+                )
+            )
         # Pad to MIN_GAMES_PER_TC_CARD with quintile-0 games so the card is emitted
         for i in range(MIN_GAMES_PER_TC_CARD - 10):
             rows.append(_make_row(tc, 0.01, 0.01, game_id=300 + i, base_time_seconds=base))
@@ -382,7 +480,10 @@ class TestSparseQuintile:
         tc = "classical"
         base = 1800
         # 20 games all at quintile 2 (user_clk_pct=0.5, opp_clk_pct=0.5) -> quintiles 0,1,3,4 are empty
-        rows = [_make_row(tc, 0.50, 0.50, game_id=i, base_time_seconds=base) for i in range(MIN_GAMES_PER_TC_CARD)]
+        rows = [
+            _make_row(tc, 0.50, 0.50, game_id=i, base_time_seconds=base)
+            for i in range(MIN_GAMES_PER_TC_CARD)
+        ]
         result = _compute_time_pressure_cards(rows)
         assert len(result.cards) == 1
 
@@ -406,8 +507,7 @@ class TestBaseClockGuard:
             for i in range(MIN_GAMES_PER_TC_CARD - 1)
         ]
         bad_rows = [
-            _make_row("blitz", 0.5, 0.5, game_id=100 + i, base_time_seconds=0)
-            for i in range(10)
+            _make_row("blitz", 0.5, 0.5, game_id=100 + i, base_time_seconds=0) for i in range(10)
         ]
         rows = valid_rows + bad_rows
         result = _compute_time_pressure_cards(rows)
@@ -420,8 +520,7 @@ class TestBaseClockGuard:
             for i in range(MIN_GAMES_PER_TC_CARD)
         ]
         bad_rows = [
-            _make_row("blitz", 0.5, 0.5, game_id=100 + i, base_time_seconds=0)
-            for i in range(5)
+            _make_row("blitz", 0.5, 0.5, game_id=100 + i, base_time_seconds=0) for i in range(5)
         ]
         rows = valid_rows + bad_rows
         result = _compute_time_pressure_cards(rows)

@@ -121,24 +121,11 @@ def _wilson_score_test_vs_half(score: float, n: int) -> tuple[float, float]:
     return p_value, se_null
 
 
-def _wilson_score_test_vs_ref(score: float, n: int, ref: float) -> float:
-    """Return two-sided p-value for H0: score == ref (Wald approximation at n>=10).
-
-    z = (score - ref) / sqrt(ref * (1 - ref) / n). Same erfc formula as
-    _wilson_score_test_vs_half but with an arbitrary null parameter ref.
-
-    Edge case: se_null == 0.0 when ref is exactly 0 or 1 (degenerate null).
-    Resolves directly: return 0.0 (sure signal) when score != ref, else 1.0
-    (trivially agrees with H0). Matches the eval_confidence.py:116-119 pattern.
-
-    Assumes n >= 1; callers must gate. Phase 88 Plan 1 Task 1.
-    """
-    se_null = math.sqrt(ref * (1.0 - ref) / n)
-    if se_null == 0.0:
-        # ref is 0 or 1 — degenerate null distribution.
-        return 0.0 if score != ref else 1.0
-    z = (score - ref) / se_null
-    return math.erfc(abs(z) / math.sqrt(2.0))
+# Phase 88.1 (Plan 09, REVIEW.md CR-01): _wilson_score_test_vs_ref and
+# compute_score_delta_vs_reference were removed. Their sole consumer was the
+# Phase 88 per-quintile Score-Delta bullet, which now uses
+# compute_score_difference_test against an in-set opponent-quintile split (see
+# app/services/endgame_service._build_quintile_bullets).
 
 
 def _bucket_from_p_value(p_value: float, n: int) -> Literal["low", "medium", "high"]:
@@ -334,58 +321,6 @@ def compute_paired_difference_test(
     p_out: float | None = p_value if n >= CONFIDENCE_MIN_N else None
     # CI gate is just n >= 2 (already passed by the early-return n==1 guard).
     return mean_d, p_out, ci_low, ci_high
-
-
-def compute_score_delta_vs_reference(
-    user_w: int,
-    user_d: int,
-    user_l: int,
-    user_n: int,
-    cohort_score: float,
-) -> tuple[float, float | None, float | None, float | None]:
-    """Return (delta, p_value, ci_low, ci_high) treating cohort_score as fixed.
-
-    delta = user_score - cohort_score
-    user_score = (user_w + 0.5 * user_d) / user_n
-
-    Wilson 95% CI on user_score transplanted to delta space:
-      ci_low  = wilson_low(user_score, user_n)  - cohort_score
-      ci_high = wilson_high(user_score, user_n) - cohort_score
-
-    p_value = Wilson score test of H0: user_score == cohort_score via
-    _wilson_score_test_vs_ref (Wald approximation adequate at n >= CONFIDENCE_MIN_N).
-
-    N-gates (same contract as compute_paired_difference_test):
-      - user_n == 0: returns (0.0, None, None, None) — no sample.
-      - user_n == 1: returns (delta, None, None, None) — CI ill-defined at n=1.
-      - user_n >= 2, user_n < CONFIDENCE_MIN_N: p_value is None; CI present.
-      - user_n >= CONFIDENCE_MIN_N: all four fields populated.
-
-    Cohort is treated as a fixed reference (cohort N >> user N per bin, so
-    cohort SE contributes negligibly). Phase 88 D-04 — feeds the per-quintile
-    Score-Delta bullets in EndgameTimePressureCard.
-    """
-    if user_n == 0:
-        return 0.0, None, None, None
-
-    user_score = (user_w + 0.5 * user_d) / user_n
-    delta = user_score - cohort_score
-
-    if user_n == 1:
-        # CI requires at least 2 observations; p_value gated by n < CONFIDENCE_MIN_N.
-        return delta, None, None, None
-
-    # Wilson 95% CI on user_score, transplanted to delta space.
-    ci_lo_abs, ci_hi_abs = wilson_bounds(user_score, user_n)
-    ci_low: float = ci_lo_abs - cohort_score
-    ci_high: float = ci_hi_abs - cohort_score
-
-    p_value = _wilson_score_test_vs_ref(user_score, user_n, cohort_score)
-
-    # N-gate: p_value requires user_n >= CONFIDENCE_MIN_N (same as the paired test).
-    p_out: float | None = p_value if user_n >= CONFIDENCE_MIN_N else None
-
-    return delta, p_out, ci_low, ci_high
 
 
 def compute_confidence_bucket(

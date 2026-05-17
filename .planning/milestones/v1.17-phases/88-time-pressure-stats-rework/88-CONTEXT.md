@@ -74,6 +74,36 @@ Mirror-bucket per v1.17 doctrine: same `(rating tier × TC × color × opponent-
 
 `base_clock = initial time only` (no increment). Confirmed by `reports/benchmarks-latest.md` to collapse cleanly across ELO and TC. Edge cases for unusual TC strings (`30+30`, `1+30` correspondence) are bucketed to bullet/blitz/rapid/classical anyway — planner sanity-checks during plan-phase.
 
+### D-07 (revised cohort design — supersedes D-05; LOCKED 2026-05-17 post-verification)
+
+The mirror-bucket cohort framing locked in D-05 is retired. The Phase 88
+implementation (88-01..88-08) shipped an unfiltered global cohort query
+that violated D-05 doctrine and risked OOM at production scale (see
+88-VERIFICATION.md CR-01). The Phase 88.1 gap closure replaces the entire
+cohort layer with a same-game opponent-quintile split:
+
+- **Comparison set:** the user's own filtered games. No cross-user query.
+- **Two parallel quintile splits within the same game-set:**
+  - `user_quintile_wdl[tc][q]` — user WDL bucketed by USER's clock-pct at endgame entry.
+  - `opp_quintile_wdl[tc][q]` — opponent WDL bucketed by OPPONENT's clock-pct
+    at endgame entry, with inverted result (user-win = opp-loss).
+- **Delta:** `delta = user_score_in_Q − opp_score_in_Q` (each side scored
+  from its own quintile of the same filtered game-set).
+- **Significance test:** unpaired two-sample Wilson via existing
+  `compute_score_difference_test` (the two splits are independent because
+  user and opp clocks fall in different quintiles within the same game).
+- **n-gate:** `min(n_user_in_Q, n_opp_in_Q) >= MIN_GAMES_PER_PRESSURE_BIN`.
+  Subsumes the small-N cohort cell gate flagged in REVIEW.md WR-01.
+- **Schema:** `PressureQuintileBullet.cohort_score` → `opp_score`.
+- **Popover copy:** "vs cohort" → "vs opponent".
+
+D-02's per-(TC, quintile) neutral band stays valid as a band on
+`user_score − opp_score` — the band shape is independent of which reference
+is subtracted. A sanity recalibration runs as Plan 88-12 to confirm the
+existing values still apply; expect the ±0.06 editorial cap to dominate
+as before. The retired global cohort query, the `compute_score_delta_vs_reference`
+helper, and the `_compute_cohort_lookup` aggregator are all deleted.
+
 ### Claude's Discretion
 
 Areas the user didn't lock and explicitly delegated to research/planning:
