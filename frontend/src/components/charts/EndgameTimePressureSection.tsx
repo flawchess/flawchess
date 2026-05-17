@@ -32,11 +32,23 @@ export function EndgameTimePressureSection({
           No time-pressure data yet. Import more games to see this section.
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4 mt-2">
-          {data.cards.map((card) => (
-            <EndgameTimePressureCard key={card.tc} card={card} />
-          ))}
-        </div>
+        (() => {
+          // Sum across ALL cards (sub-threshold included), so the per-card
+          // percentage stays honest under filter changes — a hidden card's
+          // games still belong to the user's filtered game pool.
+          const grandTotal = data.cards.reduce((acc, c) => acc + c.total, 0);
+          return (
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4 mt-2">
+              {data.cards.map((card) => (
+                <EndgameTimePressureCard
+                  key={card.tc}
+                  card={card}
+                  grandTotal={grandTotal}
+                />
+              ))}
+            </div>
+          );
+        })()
       )}
     </section>
   );

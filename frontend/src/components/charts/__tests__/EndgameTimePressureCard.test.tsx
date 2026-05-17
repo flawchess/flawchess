@@ -455,33 +455,40 @@ describe('EndgameTimePressureCard — Plan 88-13 A-4: Q4 (80-100%) row hidden', 
   });
 });
 
-describe('EndgameTimePressureCard — qualitative pressure labels (range | qualitative)', () => {
-  // Post-UAT relabel: format is "{range} | {qualitative-name}" (range first).
-  it('Q0 visible row uses "0-20% | High Pressure" label', () => {
+describe('EndgameTimePressureCard — quintile bucket labels (range only)', () => {
+  // Post-UAT (round 2): qualitative annotation removed — bucket shows the
+  // percent range only, the "Score by Remaining Time" subtitle above the
+  // stack carries the framing.
+  it('Q0 visible row uses "0-20%" label', () => {
     renderCard(makeCard());
     const row = screen.getByTestId('time-pressure-card-bullet-bin-0');
-    expect(row.textContent).toContain('0-20% | High Pressure');
+    expect(row.textContent).toContain('0-20%');
+    // Must NOT carry the old qualitative annotation.
+    expect(row.textContent).not.toContain('High Pressure');
   });
 
-  it('Q1 visible row uses "20-40% | Medium Pressure" label', () => {
+  it('Q1 visible row uses "20-40%" label', () => {
     renderCard(makeCard());
     const row = screen.getByTestId('time-pressure-card-bullet-bin-1');
-    expect(row.textContent).toContain('20-40% | Medium Pressure');
+    expect(row.textContent).toContain('20-40%');
+    expect(row.textContent).not.toContain('Medium Pressure');
   });
 
-  it('Q2 visible row uses "40-60% | Low Pressure" label', () => {
+  it('Q2 visible row uses "40-60%" label', () => {
     renderCard(makeCard());
     const row = screen.getByTestId('time-pressure-card-bullet-bin-2');
-    expect(row.textContent).toContain('40-60% | Low Pressure');
+    expect(row.textContent).toContain('40-60%');
+    expect(row.textContent).not.toContain('Low Pressure');
   });
 
-  it('Q3 visible row uses "60-80% | Very Low Pressure" label', () => {
+  it('Q3 visible row uses "60-80%" label', () => {
     renderCard(makeCard());
     const row = screen.getByTestId('time-pressure-card-bullet-bin-3');
-    expect(row.textContent).toContain('60-80% | Very Low Pressure');
+    expect(row.textContent).toContain('60-80%');
+    expect(row.textContent).not.toContain('Very Low Pressure');
   });
 
-  it('EmptyBinRow for Q0 (n=0) uses "0-20% | High Pressure" label', () => {
+  it('EmptyBinRow for Q0 (n=0) uses "0-20%" label', () => {
     renderCard(
       makeCard({
         quintiles: [
@@ -494,26 +501,25 @@ describe('EndgameTimePressureCard — qualitative pressure labels (range | quali
       }),
     );
     const empty = screen.getByTestId('time-pressure-card-bullet-bin-0-empty');
-    expect(empty.textContent).toContain('0-20% | High Pressure');
+    expect(empty.textContent).toContain('0-20%');
     expect(empty.textContent).toContain('no games');
   });
 
-  it('popover for Q0 references "High Pressure" not the raw range', () => {
+  it('popover for Q0 references the bucket range', () => {
     renderCard(makeCard());
     const trigger = screen.getByTestId('time-pressure-card-bullet-bin-0-info');
     fireEvent.click(trigger);
     const body = document.body.textContent ?? '';
-    expect(body).toContain('0-20% | High Pressure');
+    expect(body).toContain('0-20%');
   });
 
-  it('title popover no longer mentions Q4 or 80-100%', () => {
+  it('title popover names the band structure without legacy Q-naming', () => {
     renderCard(makeCard());
     const trigger = screen.getByTestId('time-pressure-card-bullet-title-info');
     fireEvent.click(trigger);
     const body = document.body.textContent ?? '';
-    // Must surface the four visible labels' framing.
-    expect(body).toContain('High Pressure');
-    expect(body).toContain('Very Low Pressure');
+    expect(body).toContain('0-20%');
+    expect(body).toContain('60-80%');
     // Must NOT surface the legacy Q0/Q4 framing.
     expect(body).not.toContain('Q0 = 0-20%');
     expect(body).not.toContain('Q4 = 80-100%');
@@ -538,8 +544,10 @@ describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone 3-stat row', () =
     const oppAvg = screen.getByTestId('time-pressure-card-bullet-opp-avg-time');
     const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
 
-    expect(myAvg.textContent).toContain('My avg time');
-    expect(oppAvg.textContent).toContain('Opp avg time');
+    // Post-UAT (round 2): label copy is "You" / "Opponents" instead of
+    // "My avg time" / "Opp avg time".
+    expect(myAvg.textContent).toContain('You');
+    expect(oppAvg.textContent).toContain('Opponents');
     expect(netRate.textContent).toContain('Net flag rate');
 
     // Formatted values: pct rounded to int + seconds rounded to int + "s".
@@ -636,5 +644,25 @@ describe('EndgameTimePressureCard — post-UAT structural refinements', () => {
     // Clock-eligible count of 123 is reachable via the popover — not duplicated
     // inline next to the value.
     expect(row.textContent).not.toContain('(123 games)');
+  });
+
+  it('title game count uses "Games: X% (N)" framing with a right-aligned sword icon when grandTotal is supplied', () => {
+    render(<EndgameTimePressureCard card={makeCard({ total: 1234 })} grandTotal={4936} />);
+    const total = screen.getByTestId('time-pressure-card-bullet-total');
+    // 1234 / 4936 ≈ 25%; rounded to integer percent.
+    expect(total.textContent).toContain('Games: 25% (1,234)');
+    expect(total.textContent).not.toContain('(1,234 games)');
+    // Right-aligned via `ml-auto` on the total span.
+    expect(total.className).toContain('ml-auto');
+    // Sword icon present (lucide Swords renders as an <svg>).
+    expect(total.querySelector('svg')).not.toBeNull();
+  });
+
+  it('title falls back to "Games: N" when grandTotal is not supplied', () => {
+    renderCard(makeCard({ total: 1234 }));
+    const total = screen.getByTestId('time-pressure-card-bullet-total');
+    // Without a grand total the percentage is suppressed; count-only fallback.
+    expect(total.textContent).toContain('Games: 1,234');
+    expect(total.textContent).not.toMatch(/Games: \d+%/);
   });
 });

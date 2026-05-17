@@ -136,14 +136,14 @@ export function EndgameClockDiffOverTimeChart({
     <div
       data-testid="clock-diff-over-time-chart"
       role="img"
-      aria-label="Average clock difference over time"
+      aria-label="Average clock gap over time"
     >
       <div className="mb-3">
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
-            Average Clock Difference over Time
+            Average Clock Gap over Time
             <InfoPopover
-              ariaLabel="Average clock difference over time info"
+              ariaLabel="Average clock gap over time info"
               testId="clock-diff-over-time-info"
               side="top"
             >
@@ -180,7 +180,7 @@ export function EndgameClockDiffOverTimeChart({
             className="flex items-center text-sm text-muted-foreground shrink-0 pt-32 -mr-1"
             style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
           >
-            Clock diff %
+            Clock Gap
           </div>
         )}
         <ChartContainer

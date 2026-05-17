@@ -176,6 +176,18 @@ describe('EndgameTimePressureSection — Legacy absence (knip-clean proxy)', () 
   });
 });
 
+describe('EndgameTimePressureSection — grandTotal propagation', () => {
+  it('passes the summed total to each card so the percentage in the title is consistent across cards', () => {
+    // 4 cards × 100 games each → grandTotal = 400 → each card is 25%.
+    renderSection(makePayload('bullet', 'blitz', 'rapid', 'classical'));
+
+    for (const tc of ['bullet', 'blitz', 'rapid', 'classical'] as const) {
+      const total = screen.getByTestId(`time-pressure-card-${tc}-total`);
+      expect(total.textContent).toContain('Games: 25% (100)');
+    }
+  });
+});
+
 describe('EndgameTimePressureSection — Section wrapper', () => {
   it('wraps content in a section with time-pressure-cards-section testid', () => {
     renderSection(makePayload('bullet', 'blitz', 'rapid', 'classical'));

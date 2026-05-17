@@ -17,6 +17,7 @@
  */
 
 import type { CSSProperties } from 'react';
+import { Swords } from 'lucide-react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
@@ -54,18 +55,17 @@ const TC_LABELS: Record<'bullet' | 'blitz' | 'rapid' | 'classical', string> = {
 };
 
 /**
- * Qualitative pressure labels for the 4 visible quintiles. Format is
- * `{range} | {qualitative-name}` so the quantitative band reads first and the
- * qualitative interpretation reads as a pipe-delimited annotation (post-UAT
- * relabel; superseded the earlier "Qualitative (range)" wording from Plan
- * 88-13 A-4). Q4 (80-100%) is filtered out at the parent map() and never
- * reaches a row, so it has no entry here.
+ * Quintile bucket labels. Post-UAT (round 2): qualitative annotation removed —
+ * the "Score by Remaining Time" subtitle above the bullet stack already names
+ * what the range is, so the bucket itself just shows the percent range.
+ * Q4 (80-100%) is filtered out at the parent map() and never reaches a row,
+ * so it has no entry here.
  */
 const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
-  0: '0-20% | High Pressure',
-  1: '20-40% | Medium Pressure',
-  2: '40-60% | Low Pressure',
-  3: '60-80% | Very Low Pressure',
+  0: '0-20%',
+  1: '20-40%',
+  2: '40-60%',
+  3: '60-80%',
 };
 
 /** Highest displayed quintile index; Q4 (80-100%) is filtered out for display. */
@@ -350,17 +350,20 @@ function ThreeStatRow({ card }: ThreeStatRowProps) {
   const tint = tintForNetTimeoutRate(card.net_timeout_rate);
   return (
     <div
-      className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground tabular-nums mt-1"
+      // Post-UAT (round 2): mt-3 instead of mt-1 — adds a visible vertical
+      // gap between the Clock Gap bullet above and the 3-stat row, so the
+      // bullet doesn't visually crowd the stats.
+      className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground tabular-nums mt-3"
       data-testid={`time-pressure-card-${card.tc}-top-stats`}
     >
       <span data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
-        My avg time:{' '}
+        You:{' '}
         <span className="text-foreground">
           {formatPctSecs(card.user_avg_pct, card.user_avg_seconds)}
         </span>
       </span>
       <span data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
-        Opp avg time:{' '}
+        Opponents:{' '}
         <span className="text-foreground">
           {formatPctSecs(card.opp_avg_pct, card.opp_avg_seconds)}
         </span>
@@ -395,11 +398,31 @@ function ThreeStatRow({ card }: ThreeStatRowProps) {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) {
+export function EndgameTimePressureCard({
+  card,
+  grandTotal,
+}: {
+  card: TimePressureTcCard;
+  /**
+   * Sum of `total` across all TC cards in the section. Used to render the
+   * per-card percentage in the title ("Games: X% (N)"). Optional so the card
+   * stays usable from tests without forcing a fixture rewrite — when absent
+   * we fall back to the count-only format. Section-level orchestrator
+   * computes this once and passes it down.
+   */
+  grandTotal?: number;
+}) {
   // TC-level hide: not enough games to show any meaningful data for this TC.
   if (card.total < MIN_GAMES_PER_TC_CARD) return null;
 
   const tcLabel = TC_LABELS[card.tc];
+  // Percent of the user's filtered games belonging to this TC, rounded to an
+  // integer. `null` when the section didn't supply a grand total or it would
+  // produce a div-by-zero.
+  const pctOfTotal =
+    grandTotal !== undefined && grandTotal > 0
+      ? Math.round((card.total / grandTotal) * 100)
+      : null;
 
   return (
     <div
@@ -408,7 +431,7 @@ export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) 
       role="group"
       aria-label={`${tcLabel} time pressure breakdown`}
     >
-      <h3 className="text-base font-semibold mb-3 inline-flex items-center gap-1.5">
+      <h3 className="text-base font-semibold mb-3 flex items-center gap-1.5">
         {/* Post-UAT: TC icon next to the label matches the filter-button
             convention. h-4 w-4 keeps icon optical weight aligned with the
             text-base heading. */}
@@ -419,18 +442,25 @@ export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) 
           testId={`time-pressure-card-${card.tc}-title-info`}
           side="top"
         >
-          How your chess score changes with the clock remaining at endgame entry,
-          from High Pressure (0-20% clock left) to Very Low Pressure (60-80% clock
-          left). The 80-100% (minimum pressure) bin is intentionally hidden as a
-          low-signal tail. The top section summarises overall clock state and
-          flag rate; the bullets below break score performance down by clock
-          remaining.
+          How your chess score changes with the clock remaining at endgame
+          entry, broken into 20% bands from 0-20% (highest pressure) up to
+          60-80%. The 80-100% bin is intentionally hidden as a low-signal tail.
+          The top section summarises overall clock state and flag rate; the
+          bullets below break score performance down by clock remaining.
         </InfoPopover>
+        {/* Post-UAT (round 2): game count right-aligned, "Games: X% (N)"
+            framing with a sword icon. The percentage is this TC's share of
+            the user's filtered games (computed at the section level so all
+            cards share the same denominator). Falls back to "Games: N" when
+            the section didn't pass a grand total. */}
         <span
-          className="ml-1 text-sm text-muted-foreground tabular-nums font-normal"
+          className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums font-normal"
           data-testid={`time-pressure-card-${card.tc}-total`}
         >
-          ({card.total.toLocaleString()} games)
+          {pctOfTotal !== null
+            ? `Games: ${pctOfTotal}% (${card.total.toLocaleString()})`
+            : `Games: ${card.total.toLocaleString()}`}
+          <Swords className="h-3.5 w-3.5" aria-hidden="true" />
         </span>
       </h3>
 

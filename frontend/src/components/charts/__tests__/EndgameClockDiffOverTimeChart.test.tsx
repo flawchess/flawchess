@@ -86,7 +86,7 @@ describe('EndgameClockDiffOverTimeChart', () => {
   it('renders the chart container and title for non-empty timeline', () => {
     render(<EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />);
     expect(screen.getByTestId('clock-diff-over-time-chart')).toBeTruthy();
-    expect(screen.getByText('Average Clock Difference over Time')).toBeTruthy();
+    expect(screen.getByText('Average Clock Gap over Time')).toBeTruthy();
   });
 
   it('renders one bar rectangle per timeline entry', () => {
@@ -118,7 +118,7 @@ describe('EndgameClockDiffOverTimeChart', () => {
     render(<EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />);
     // The trigger is button-shaped and reachable by aria-label.
     expect(
-      screen.getByLabelText('Average clock difference over time info'),
+      screen.getByLabelText('Average clock gap over time info'),
     ).toBeTruthy();
   });
 
@@ -180,10 +180,10 @@ describe('EndgameClockDiffOverTimeChart', () => {
     expect(linePath?.getAttribute('stroke')).toBe('white');
   });
 
-  it('renders the vertical "Clock diff %" Y-axis label on desktop', () => {
+  it('renders the vertical "Clock Gap" Y-axis label on desktop', () => {
     // matchMedia is stubbed to always return matches=false → desktop path.
     render(<EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />);
     // The label is plain HTML text rotated via CSS, so screen.getByText works.
-    expect(screen.getByText('Clock diff %')).toBeTruthy();
+    expect(screen.getByText('Clock Gap')).toBeTruthy();
   });
 });
