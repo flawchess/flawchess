@@ -861,7 +861,7 @@ def _trend_info(
     )
     n_total = sum(pt.n for pt in points)
     noise_cap = (
-        # Phase 87.5 (D-06): restored from "conversion_elo_gap" in lockstep with MetricId.
+        # Phase 87.5 (D-06): restored from the Phase 87.4 metric name in lockstep with MetricId.
         _DELTA_WITHIN_NOISE_ELO if metric_id == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
     )
     within_noise = direction != "flat" and abs(diff) < noise_cap
@@ -874,7 +874,7 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
     Percent-scale metrics use _PROXIMITY_PCT_THRESHOLD; endgame_elo_gap uses
     _PROXIMITY_ELO_THRESHOLD. Returns '' for unknown metrics or when the value
     is comfortably inside one zone. Phase 87.5 (D-06): metric restored from
-    conversion_elo_gap.
+    the Phase 87.4 metric name.
     """
     spec: ZoneSpec | None = None
     bucket = dimension.get("bucket") if dimension else None
