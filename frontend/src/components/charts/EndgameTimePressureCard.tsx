@@ -56,16 +56,16 @@ const TC_LABELS: Record<'bullet' | 'blitz' | 'rapid' | 'classical', string> = {
 
 /**
  * Quintile bucket labels. Post-UAT (round 2): qualitative annotation removed —
- * the "Score by Remaining Time" subtitle above the bullet stack already names
+ * the "Score Gap by Remaining Time" subtitle above the bullet stack already names
  * what the range is, so the bucket itself just shows the percent range.
  * Q4 (80-100%) is filtered out at the parent map() and never reaches a row,
  * so it has no entry here.
  */
 const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
-  0: '0-20%',
-  1: '20-40%',
-  2: '40-60%',
-  3: '60-80%',
+  0: '0-20% Time',
+  1: '20-40% Time',
+  2: '40-60% Time',
+  3: '60-80% Time',
 };
 
 /** Highest displayed quintile index; Q4 (80-100%) is filtered out for display. */
@@ -112,7 +112,7 @@ function ClockGapRow({ gap, tc }: ClockGapRowProps) {
       data-testid={`time-pressure-card-${tc}-clock-gap`}
     >
       <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-        <span className="text-muted-foreground">Clock gap:</span>
+        <span className="text-muted-foreground">Clock Gap:</span>
         <span
           className="font-semibold"
           style={fontColor ? { color: fontColor } : undefined}
@@ -159,7 +159,7 @@ function ClockGapRow({ gap, tc }: ClockGapRowProps) {
           domain={CLOCK_GAP_DOMAIN}
           ciLow={gap.ci_low != null ? clampDeltaCi(gap.ci_low) : undefined}
           ciHigh={gap.ci_high != null ? clampDeltaCi(gap.ci_high) : undefined}
-          ariaLabel={`Clock gap: ${formattedValue}`}
+          ariaLabel={`Clock Gap: ${formattedValue}`}
           // Post-UAT: bars rendered neutral (white-ish) like EndgameTypeCard
           // and OpeningStatsCard — zone tint is carried by the background
           // bands, the bar itself only encodes position.
@@ -488,7 +488,7 @@ export function EndgameTimePressureCard({
             className="text-sm font-medium text-muted-foreground mb-2"
             data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
           >
-            Score by Remaining Time
+            Score Gap by Remaining Time
           </p>
           <div className="flex flex-col gap-4">
             {card.quintiles

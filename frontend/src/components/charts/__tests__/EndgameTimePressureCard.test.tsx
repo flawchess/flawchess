@@ -457,12 +457,12 @@ describe('EndgameTimePressureCard — Plan 88-13 A-4: Q4 (80-100%) row hidden', 
 
 describe('EndgameTimePressureCard — quintile bucket labels (range only)', () => {
   // Post-UAT (round 2): qualitative annotation removed — bucket shows the
-  // percent range only, the "Score by Remaining Time" subtitle above the
+  // percent range only, the "Score Gap by Remaining Time" subtitle above the
   // stack carries the framing.
-  it('Q0 visible row uses "0-20%" label', () => {
+  it('Q0 visible row uses "0-20% Time" label', () => {
     renderCard(makeCard());
     const row = screen.getByTestId('time-pressure-card-bullet-bin-0');
-    expect(row.textContent).toContain('0-20%');
+    expect(row.textContent).toContain('0-20% Time');
     // Must NOT carry the old qualitative annotation.
     expect(row.textContent).not.toContain('High Pressure');
   });
@@ -630,15 +630,15 @@ describe('EndgameTimePressureCard — post-UAT structural refinements', () => {
     expect(subtitle.textContent).toBe('Remaining Time at Endgame Entry');
   });
 
-  it('renders the "Score by Remaining Time" quintile-section subtitle', () => {
+  it('renders the "Score Gap by Remaining Time" quintile-section subtitle', () => {
     renderCard(makeCard());
     const subtitle = screen.getByTestId(
       'time-pressure-card-bullet-quintiles-subtitle',
     );
-    expect(subtitle.textContent).toBe('Score by Remaining Time');
+    expect(subtitle.textContent).toBe('Score Gap by Remaining Time');
   });
 
-  it('Clock gap row no longer renders the redundant "(N games)" suffix', () => {
+  it('Clock Gap row no longer renders the redundant "(N games)" suffix', () => {
     renderCard(makeCard({ clock_gap: makeClockGap({ n: 123, mean_diff_pct: 0.05 }) }));
     const row = screen.getByTestId('time-pressure-card-bullet-clock-gap');
     // Clock-eligible count of 123 is reachable via the popover — not duplicated
