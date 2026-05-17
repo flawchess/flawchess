@@ -93,12 +93,12 @@ export const PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Record<
   'bullet' | 'blitz' | 'rapid' | 'classical',
   Record<0 | 1 | 2 | 3 | 4, { min: number; max: number }>
 > = {
-  bullet: { 0: { min: 0.2895, max: 0.4095 }, 1: { min: 0.4645, max: 0.565 }, 2: { min: 0.5198, max: 0.6071 }, 3: { min: 0.5066, max: 0.623 }, 4: { min: 0.4855, max: 0.6055 } },
-  blitz: { 0: { min: 0.3289, max: 0.4489 }, 1: { min: 0.4533, max: 0.5733 }, 2: { min: 0.493, max: 0.6017 }, 3: { min: 0.5, max: 0.6146 }, 4: { min: 0.49, max: 0.61 } },
-  rapid: { 0: { min: 0.34, max: 0.46 }, 1: { min: 0.44, max: 0.56 }, 2: { min: 0.4821, max: 0.6021 }, 3: { min: 0.4808, max: 0.6 }, 4: { min: 0.477, max: 0.597 } },
-  classical: { 0: { min: 0.3583, max: 0.4783 }, 1: { min: 0.44, max: 0.56 }, 2: { min: 0.44, max: 0.56 }, 3: { min: 0.44, max: 0.56 }, 4: { min: 0.4583, max: 0.5783 } },
+  bullet: { 0: { min: -0.06, max: 0.06 }, 1: { min: -0.06, max: 0.06 }, 2: { min: -0.06, max: 0.06 }, 3: { min: -0.06, max: 0.06 }, 4: { min: -0.06, max: 0.06 } },
+  blitz: { 0: { min: -0.06, max: 0.06 }, 1: { min: -0.06, max: 0.06 }, 2: { min: -0.06, max: 0.06 }, 3: { min: -0.06, max: 0.06 }, 4: { min: -0.06, max: 0.06 } },
+  rapid: { 0: { min: -0.06, max: 0.06 }, 1: { min: -0.06, max: 0.06 }, 2: { min: -0.06, max: 0.06 }, 3: { min: -0.06, max: 0.06 }, 4: { min: -0.06, max: 0.06 } },
+  classical: { 0: { min: -0.06, max: 0.06 }, 1: { min: -0.06, max: 0.06 }, 2: { min: -0.06, max: 0.06 }, 3: { min: -0.06, max: 0.06 }, 4: { min: -0.06, max: 0.06 } },
 } as const;
 
 // Phase 88: Clock Gap scalar neutral band (placeholder until benchmarks §3.3.1).
-export const CLOCK_GAP_NEUTRAL_MIN = -0.065;
-export const CLOCK_GAP_NEUTRAL_MAX = 0.047;
+export const CLOCK_GAP_NEUTRAL_MIN = -5.0;
+export const CLOCK_GAP_NEUTRAL_MAX = 5.0;
