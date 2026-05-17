@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: "Phase 87.6 shipped — PR #106"
-last_updated: "2026-05-17T10:45:34.681Z"
+last_updated: "2026-05-17T11:20:56.537Z"
 last_activity: 2026-05-17
 ---
 
