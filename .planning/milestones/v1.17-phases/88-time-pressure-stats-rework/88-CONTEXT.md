@@ -233,6 +233,18 @@ Areas the user didn't lock and explicitly delegated to research/planning:
 - **CHANGELOG**: the next release entry must note the SC #1 walk-back honestly (e.g. "Restored avg-clock-diff-over-time line chart and per-card top-zone stats by user request after the initial table-and-chart deletion; bullet-card grid retained as the primary surface").
 - **Re-verification**: after plans 88-13..N execute, re-run verification. The 4 human-UAT items in `88-HUMAN-UAT.md` (responsive grid, sparse-bin rendering, popover at 375px, screen reader) remain valid and add new human-UAT items for the restored line chart and top-zone stats.
 
+### Planner Open Questions — Resolved (2026-05-17)
+
+After the planner produced 88-13..15 it surfaced 5 leaf decisions. User defaults accepted:
+
+| # | Question | Locked answer |
+|---|---|---|
+| 1 | 88-15 line color | `MY_SCORE_COLOR` from `@/lib/theme` (no new `CLOCK_DIFF_LINE_COLOR` constant) |
+| 2 | 88-15 chart position | Below the cards grid, above `SectionInsightSlot` |
+| 3 | 88-15 orphan cleanup | Leave `ClockStatsRow` alone — separate hygiene pass |
+| 4 | 88-13 Q4 popover wording | Describe only the 4 shown quintiles ("from High Pressure ... to Very Low Pressure"); the 80–100% omission is internal-only |
+| 5 | Re-verification gate after 88-13..15 | New human-UAT items from these plans (line-chart real-data render, top-zone stat readability) gate Phase 88 closure — they do NOT roll forward into the next phase's UAT bucket. Cleaner re-verification trail. |
+
 ### What's NOT changing in §2
 
 - D-07 same-game opp-quintile split — STAYS. The score-delta semantics ("vs opponent" not "vs cohort") are unchanged.
