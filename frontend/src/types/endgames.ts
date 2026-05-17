@@ -161,6 +161,11 @@ export interface ScoreGapTimelinePoint {
   // abs((endgame_score - non_endgame_score) - score_difference) < 1e-9 per bucket.
   endgame_score: number;
   non_endgame_score: number;
+  // Phase 87.6: per-side trailing-window mean opponent rating. Drives the
+  // Performance Rating math backend-side; not consumed by the score chart
+  // but mirrored for schema parity with the Pydantic model.
+  endgame_opp_rating_avg: number;
+  non_endgame_opp_rating_avg: number;
 }
 
 export interface ScoreGapMaterialResponse {
@@ -286,26 +291,25 @@ export type EloComboKey =
   | 'lichess_rapid'
   | 'lichess_classical';
 
-/** One weekly point for a (platform, time_control) combo.
- *  Phase 87.5 D-01: rebuilt on the additive Endgame Score Gap mapping.
- *  date: Monday of ISO week (start of week), YYYY-MM-DD. Matches the Endgame
- *    Score Gap over Time chart's date convention so the two charts align on
- *    the x-axis. The asof rating is still resolved at next-Monday (end of the
- *    ISO week), so the plotted point reflects the window state at week-end.
- *  endgame_elo: round(actual_elo + K · eg_score_gap), where eg_score_gap is the
- *    trailing-window Endgame Score minus Non-Endgame Score for this combo. At
- *    eg_score_gap = 0 the rendered Endgame ELO equals actual_elo exactly.
- *    K is a single global constant (locked at 450 in app/services/endgame_service.py).
- *    Positive Endgame Score Gap lifts the rating; negative holds it back.
+/** Single weekly point for a (platform, time_control) combo of the Endgame ELO timeline.
+ *  date: Monday of the ISO week, YYYY-MM-DD.
+ *  endgame_elo: FIDE Performance Rating computed on this combo's endgame games
+ *    over the trailing 100-game window (Phase 87.6 — supersedes the Phase 87.5
+ *    additive K mapping). Bounded by Laplace smoothing at ±802 ELO at n=100.
+ *    See .planning/notes/endgame-elo-pr-direct-rebuild.md for derivation.
+ *  non_endgame_elo: parallel PR computed on non-endgame games in the same
+ *    trailing window. The Actual ELO line sits inside the band by construction
+ *    (midpoint property; see .planning/notes/endgame-elo-pr-direct-rebuild.md).
  *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
- *  endgame_games_in_window: trailing 100-game window count (drives ≥10 floor + tooltip "past N games").
- *  per_week_endgame_games: count of endgame games played in THIS specific ISO week
- *    (NOT the trailing window). Drives the muted volume-bar series on the Endgame
- *    ELO Timeline so the bars reflect per-week activity. Restored to per-week
- *    semantics in the UAT fix that followed Phase 87.5 CR-01. */
+ *  endgame_games_in_window: trailing 100-game window count (drives ≥10 floor +
+ *    tooltip "past N games").
+ *  per_week_endgame_games: count of endgame games played in THIS specific ISO
+ *    week (NOT the trailing window). Drives the muted volume-bar series on the
+ *    Endgame ELO Timeline. */
 export interface EndgameEloTimelinePoint {
   date: string;
   endgame_elo: number;
+  non_endgame_elo: number;
   actual_elo: number;
   endgame_games_in_window: number;
   per_week_endgame_games: number;
