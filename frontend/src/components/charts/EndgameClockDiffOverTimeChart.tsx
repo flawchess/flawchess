@@ -15,7 +15,6 @@
  * layer (B-5 lock).
  */
 
-import { useEffect, useState } from 'react';
 import {
   Bar,
   CartesianGrid,
@@ -49,22 +48,13 @@ const Y_TICKS = [-30, -20, -10, 0, 10, 20, 30];
 // dominate the line. Pre-deletion convention.
 const ZONE_OPACITY = 0.15;
 
-const MOBILE_BREAKPOINT_PX = 768;
-
-function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
-    const update = () => setIsMobile(mq.matches);
-    mq.addEventListener('change', update);
-    return () => mq.removeEventListener('change', update);
-  }, []);
-  return isMobile;
-}
+// REVIEW.md WR-05: the original implementation scaffolded a `useIsMobile`
+// hook with a media-query listener just to set `margin.left` to 0 on mobile.
+// That listener cost wasn't worth a single layout tweak, so we drop the hook
+// and shave the left margin via a Tailwind responsive class on the wrapper
+// instead (`-ml-2 sm:ml-0`). If a future change needs richer mobile awareness
+// (tick density, height, label rotation), reach for `useIsMobile` from
+// `EndgameScoreOverTimeChart` rather than reintroducing a one-line listener.
 
 export interface EndgameClockDiffOverTimeChartProps {
   timeline: ClockDiffTimelinePoint[];
@@ -82,7 +72,6 @@ export function EndgameClockDiffOverTimeChart({
 }: EndgameClockDiffOverTimeChartProps) {
   // Belt-and-suspenders: page-level integration also guards on empty, but
   // returning null here keeps the chart fully self-contained.
-  const isMobile = useIsMobile();
   if (timeline.length === 0) return null;
 
   const data: ChartPoint[] = timeline.map((p) => ({
@@ -134,12 +123,12 @@ export function EndgameClockDiffOverTimeChart({
       </div>
       <ChartContainer
         config={{}}
-        className="w-full h-72"
+        className="w-full h-72 -ml-2 sm:ml-0"
         data-testid="clock-diff-over-time-chart-container"
       >
         <ComposedChart
           data={data}
-          margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
+          margin={{ top: 5, right: 10, left: 10, bottom: 10 }}
         >
           <CartesianGrid vertical={false} />
           <XAxis dataKey="date" tickFormatter={formatDateTick} />
@@ -240,7 +229,10 @@ export function EndgameClockDiffOverTimeChart({
           />
         </ComposedChart>
       </ChartContainer>
-      <p className="text-xs text-muted-foreground text-center mt-1">
+      {/* REVIEW.md IN-04: bumped from text-xs to text-sm — CLAUDE.md sets
+          text-sm as the floor for non-tooltip copy; the popover-body
+          exception does not extend to plain chart captions. */}
+      <p className="text-sm text-muted-foreground text-center mt-1">
         Week (rolling average of the last 100 games)
       </p>
     </div>
