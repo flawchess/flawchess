@@ -48,12 +48,16 @@ def _make_row(
     user_color: str = "white",
     base_time_seconds: int = 300,
     game_id: int = 1,
+    termination: str | None = None,
+    user_clock: float | None = None,
+    opp_clock: float | None = None,
 ) -> tuple[Any, ...]:
     """Build a minimal clock-stats row matching the shape consumed by _iterate_clock_rows.
 
     Row indices consumed:
         [1] time_control_bucket
         [2] base_time_seconds
+        [3] termination
         [4] result
         [5] user_color
         [6] ply_array
@@ -61,14 +65,21 @@ def _make_row(
 
     We use white-at-ply-0 (even) for user_clock, ply-1 (odd) for opp_clock.
     user_color="white" so _extract_entry_clocks extracts (ply-0, ply-1).
+
+    Plan 88-14: `termination` is consumed by the new top-zone aggregator for
+    net_timeout_rate. `user_clock` / `opp_clock` overrides allow the caller to
+    inject absolute-second clock values that don't match the pct convention,
+    or pass `None` to exercise the clock-ineligible accumulation branch.
     """
-    user_clock = user_clk_pct * base_time_seconds
-    opp_clock = opp_clk_pct * base_time_seconds
+    if user_clock is None:
+        user_clock = user_clk_pct * base_time_seconds
+    if opp_clock is None:
+        opp_clock = opp_clk_pct * base_time_seconds
     return (
         game_id,  # [0] game_id
         tc,  # [1] time_control_bucket
         base_time_seconds,  # [2] base_time_seconds
-        None,  # [3] termination
+        termination,  # [3] termination
         result,  # [4] result
         user_color,  # [5] user_color
         [0, 1],  # [6] ply_array (0=white's first move, 1=black's first move)
@@ -546,3 +557,369 @@ class TestMinGamesPerPressureBinWired:
         """MIN_GAMES_PER_PRESSURE_BIN must be importable from endgame_service (WR-05 wired)."""
         assert isinstance(MIN_GAMES_PER_PRESSURE_BIN, int)
         assert MIN_GAMES_PER_PRESSURE_BIN >= 1
+
+
+# ---------------------------------------------------------------------------
+# Plan 88-14 (A-3: top-zone stats restored — user_avg / opp_avg / net_timeout_rate)
+# ---------------------------------------------------------------------------
+
+
+def _pad_to_threshold(rows: list[tuple[Any, ...]], tc: str = "bullet") -> list[tuple[Any, ...]]:
+    """Pad a row list with neutral filler rows so the TC card passes
+    MIN_GAMES_PER_TC_CARD gating without disturbing the top-zone averages
+    we care about — except the filler rows DO contribute clock-eligible
+    games. Use only when the test does not need to control which rows are
+    clock-eligible vs not.
+
+    Each filler row has the same user/opp clock pct as the prior fixture so the
+    averages remain interpretable when the per-test fixture is small.
+    """
+    return rows
+
+
+class TestTcCardTopZoneStats:
+    """Plan 88-14 A-3: per-TC top-zone summary stats restored from the
+    deleted EndgameClockPressureSection.
+
+    The card carries 6 derived fields:
+    - user_avg_pct, user_avg_seconds, opp_avg_pct, opp_avg_seconds,
+      avg_clock_diff_seconds (5 averages — float | None when no clock-eligible games)
+    - net_timeout_rate (float, 0.0 when no timeouts on either side)
+
+    All derived from a single pass through query_clock_stats_rows — no new repo
+    function. Defaults on the Pydantic model are mandatory so legacy fixtures
+    constructing TimePressureTcCard(...) keyword-style stay compatible.
+    """
+
+    def _bullet_card(self, rows: list[tuple[Any, ...]]) -> Any:
+        """Pad + compute and return the bullet card or None when below threshold."""
+        # Pad with neutral, non-timeout, clock-bearing rows so the TC card
+        # passes the MIN_GAMES_PER_TC_CARD gate. Filler clocks match the
+        # existing test fixture's averages where applicable; tests that care
+        # about exact averages pad with self-similar rows.
+        result = _compute_time_pressure_cards(rows)
+        bullets = [c for c in result.cards if c.tc == "bullet"]
+        return bullets[0] if bullets else None
+
+    def test_averages_computed_from_clock_eligible_rows(self) -> None:
+        """3 bullet rows with varying clocks; assert the 5 averages match a
+        hand-computed expectation. The same rows are padded with copies to
+        clear the MIN_GAMES_PER_TC_CARD gate; padding rows match the original
+        averages so the computed mean is unchanged.
+        """
+        # 3 distinctive rows: (user 60s, opp 40s base 300), (user 150s, opp 90s base 300),
+        # (user 30s, opp 60s base 300).
+        rows: list[tuple[Any, ...]] = []
+        clocks = [(60.0, 40.0), (150.0, 90.0), (30.0, 60.0)]
+        # Repeat the 3-row pattern enough times to clear MIN_GAMES_PER_TC_CARD.
+        repeats = (MIN_GAMES_PER_TC_CARD + len(clocks) - 1) // len(clocks)
+        for r in range(repeats):
+            for i, (uc, oc) in enumerate(clocks):
+                rows.append(
+                    _make_row(
+                        "bullet",
+                        0.0,  # ignored — user_clock override below
+                        0.0,
+                        base_time_seconds=300,
+                        game_id=r * 10 + i,
+                        user_clock=uc,
+                        opp_clock=oc,
+                    )
+                )
+
+        card = self._bullet_card(rows)
+        assert card is not None
+
+        # Hand-computed averages (all rows are clock-eligible).
+        # user_clock_sum_seconds = (60 + 150 + 30) * repeats = 240 * repeats
+        # opp_clock_sum_seconds  = (40 +  90 + 60) * repeats = 190 * repeats
+        # diff_sum_seconds       = (20 +  60 - 30) * repeats =  50 * repeats
+        # user_clock_sum_pct = (60/300 + 150/300 + 30/300) * repeats = 0.8 * repeats
+        # opp_clock_sum_pct  = (40/300 +  90/300 + 60/300) * repeats = (190/300) * repeats
+        # clock_games = 3 * repeats
+        n = 3 * repeats
+        expected_user_avg_seconds = (240.0 * repeats) / n
+        expected_opp_avg_seconds = (190.0 * repeats) / n
+        expected_diff_seconds = (50.0 * repeats) / n
+        expected_user_avg_pct = (0.8 * repeats) / n
+        expected_opp_avg_pct = ((190.0 / 300.0) * repeats) / n
+
+        assert card.user_avg_seconds == pytest.approx(expected_user_avg_seconds)
+        assert card.opp_avg_seconds == pytest.approx(expected_opp_avg_seconds)
+        assert card.avg_clock_diff_seconds == pytest.approx(expected_diff_seconds)
+        assert card.user_avg_pct == pytest.approx(expected_user_avg_pct)
+        assert card.opp_avg_pct == pytest.approx(expected_opp_avg_pct)
+        # No timeouts in any row → net_timeout_rate == 0.0
+        assert card.net_timeout_rate == 0.0
+
+    def test_clock_ineligible_rows_excluded_from_averages(self) -> None:
+        """Clock-ineligible rows (missing user_clock or opp_clock) must NOT
+        contribute to the average-clock denominator. They DO count toward
+        total_games (the denominator for net_timeout_rate).
+        """
+        rows: list[tuple[Any, ...]] = []
+        # Eligible rows: user 90s, opp 60s on base 300 (user_pct=0.3, opp_pct=0.2, diff=30s).
+        n_eligible = MIN_GAMES_PER_TC_CARD
+        for i in range(n_eligible):
+            rows.append(
+                _make_row(
+                    "bullet",
+                    0.0,
+                    0.0,
+                    base_time_seconds=300,
+                    game_id=i,
+                    user_clock=90.0,
+                    opp_clock=60.0,
+                )
+            )
+        # Ineligible rows: user_clock None (no clock data for user). Different
+        # clock magnitudes that would skew the averages if (wrongly) counted.
+        for i in range(5):
+            rows.append(
+                _make_row(
+                    "bullet",
+                    0.0,
+                    0.0,
+                    base_time_seconds=300,
+                    game_id=100 + i,
+                    user_clock=None,
+                    opp_clock=200.0,
+                )
+            )
+
+        card = self._bullet_card(rows)
+        assert card is not None
+        assert card.user_avg_seconds == pytest.approx(90.0)
+        assert card.opp_avg_seconds == pytest.approx(60.0)
+        assert card.avg_clock_diff_seconds == pytest.approx(30.0)
+        assert card.user_avg_pct == pytest.approx(0.3)
+        assert card.opp_avg_pct == pytest.approx(0.2)
+
+    def test_net_timeout_rate_handles_timeout_wins_and_losses(self) -> None:
+        """1 timeout-win + 1 timeout-loss + 2 non-timeout → net = (1-1) / total = 0.0.
+        Padded above the TC-card threshold with non-timeout games so the rate
+        denominator includes them.
+        """
+        rows: list[tuple[Any, ...]] = []
+        # 1 timeout-win
+        rows.append(
+            _make_row(
+                "bullet",
+                0.5,
+                0.5,
+                result="1-0",
+                user_color="white",
+                game_id=1,
+                termination="timeout",
+            )
+        )
+        # 1 timeout-loss
+        rows.append(
+            _make_row(
+                "bullet",
+                0.5,
+                0.5,
+                result="0-1",
+                user_color="white",
+                game_id=2,
+                termination="timeout",
+            )
+        )
+        # 1 normal win
+        rows.append(
+            _make_row(
+                "bullet",
+                0.5,
+                0.5,
+                result="1-0",
+                user_color="white",
+                game_id=3,
+                termination="normal",
+            )
+        )
+        # 1 normal loss
+        rows.append(
+            _make_row(
+                "bullet",
+                0.5,
+                0.5,
+                result="0-1",
+                user_color="white",
+                game_id=4,
+                termination="normal",
+            )
+        )
+        # Pad with neutral non-timeout games so the card passes MIN_GAMES_PER_TC_CARD.
+        for i in range(MIN_GAMES_PER_TC_CARD):
+            rows.append(
+                _make_row(
+                    "bullet",
+                    0.5,
+                    0.5,
+                    result="1/2-1/2",
+                    game_id=100 + i,
+                    termination="normal",
+                )
+            )
+
+        card = self._bullet_card(rows)
+        assert card is not None
+        # Net = (1 - 1) / total_games = 0.0
+        assert card.net_timeout_rate == pytest.approx(0.0)
+
+    def test_net_timeout_rate_pure_timeout_wins(self) -> None:
+        """2 timeout wins, 0 timeout losses, 18 other games → net = 2 / 20 = 0.1."""
+        rows: list[tuple[Any, ...]] = []
+        # 2 timeout wins
+        for i in range(2):
+            rows.append(
+                _make_row(
+                    "bullet",
+                    0.5,
+                    0.5,
+                    result="1-0",
+                    user_color="white",
+                    game_id=i,
+                    termination="timeout",
+                )
+            )
+        # 18 normal non-timeout games (draws so they don't bias the avg)
+        for i in range(18):
+            rows.append(
+                _make_row(
+                    "bullet",
+                    0.5,
+                    0.5,
+                    result="1/2-1/2",
+                    game_id=100 + i,
+                    termination="normal",
+                )
+            )
+
+        card = self._bullet_card(rows)
+        assert card is not None
+        assert card.net_timeout_rate == pytest.approx(2.0 / 20.0)  # 0.1
+
+    def test_all_none_when_no_clock_eligible_games(self) -> None:
+        """Every row has either base_time_seconds=None or no clock data → all
+        5 averages are None. net_timeout_rate is 0.0 (no timeouts either).
+
+        Note: base_time_seconds=None or 0 short-circuits BEFORE the per-TC
+        accumulator increments total_games (T-88-04-02 defensive guard), so
+        such rows do not even register as a "TC game" for top-zone purposes.
+        To exercise the all-None branch we ship rows that DO pass the base-clock
+        guard but have no clock_array values (user_clock=None, opp_clock=None).
+        """
+        rows: list[tuple[Any, ...]] = []
+        for i in range(MIN_GAMES_PER_TC_CARD):
+            rows.append(
+                _make_row(
+                    "bullet",
+                    0.0,
+                    0.0,
+                    base_time_seconds=300,
+                    game_id=i,
+                    user_clock=None,
+                    opp_clock=None,
+                    termination="normal",
+                )
+            )
+
+        card = self._bullet_card(rows)
+        assert card is not None
+        assert card.user_avg_pct is None
+        assert card.user_avg_seconds is None
+        assert card.opp_avg_pct is None
+        assert card.opp_avg_seconds is None
+        assert card.avg_clock_diff_seconds is None
+        assert card.net_timeout_rate == 0.0
+
+    def test_fraction_convention_matches_clock_gap(self) -> None:
+        """user_avg_pct - opp_avg_pct ≈ clock_gap.mean_diff_pct on a fixture
+        where every game is clock-eligible. This guards against unit confusion
+        (% vs fraction) between the two related fields.
+        """
+        rows: list[tuple[Any, ...]] = []
+        # Mixed clocks so the averages aren't trivially equal.
+        clock_pairs = [(120.0, 80.0), (60.0, 100.0), (180.0, 150.0), (200.0, 175.0)]
+        repeats = (MIN_GAMES_PER_TC_CARD + len(clock_pairs) - 1) // len(clock_pairs)
+        for r in range(repeats):
+            for i, (uc, oc) in enumerate(clock_pairs):
+                rows.append(
+                    _make_row(
+                        "bullet",
+                        0.0,
+                        0.0,
+                        base_time_seconds=300,
+                        game_id=r * 10 + i,
+                        user_clock=uc,
+                        opp_clock=oc,
+                    )
+                )
+
+        card = self._bullet_card(rows)
+        assert card is not None
+        assert card.user_avg_pct is not None
+        assert card.opp_avg_pct is not None
+        diff_from_avgs = card.user_avg_pct - card.opp_avg_pct
+        assert diff_from_avgs == pytest.approx(card.clock_gap.mean_diff_pct, abs=1e-9)
+
+    def test_termination_none_not_counted_as_timeout(self) -> None:
+        """Legacy rows where termination is None must contribute 0 to timeout
+        counters. With no timeouts anywhere net_timeout_rate is 0.0.
+        """
+        rows: list[tuple[Any, ...]] = []
+        for i in range(MIN_GAMES_PER_TC_CARD):
+            rows.append(
+                _make_row(
+                    "bullet",
+                    0.5,
+                    0.5,
+                    result="1-0",
+                    game_id=i,
+                    termination=None,
+                )
+            )
+        card = self._bullet_card(rows)
+        assert card is not None
+        assert card.net_timeout_rate == 0.0
+
+    def test_pydantic_defaults_allow_keyword_construction_without_new_fields(self) -> None:
+        """B-2 lock: existing fixtures must keep building TimePressureTcCard
+        without supplying the 6 new fields. Verifies the Pydantic defaults.
+        """
+        from app.schemas.endgames import (
+            ClockGapBullet,
+            PressureQuintileBullet,
+            TimePressureTcCard,
+        )
+
+        gap = ClockGapBullet(
+            n=10, mean_diff_pct=0.0, p_value=None, ci_low=None, ci_high=None
+        )
+        quintiles = [
+            PressureQuintileBullet(
+                quintile_index=q,
+                quintile_label=f"{q*20}-{(q+1)*20}%",
+                n=0,
+                delta=0.0,
+                p_value=None,
+                ci_low=None,
+                ci_high=None,
+                opp_score=None,
+            )
+            for q in range(5)
+        ]
+        # Construct WITHOUT the 6 new fields — defaults must fill in.
+        card = TimePressureTcCard(
+            tc="bullet",
+            total=20,
+            clock_gap=gap,
+            quintiles=quintiles,
+        )
+        assert card.user_avg_pct is None
+        assert card.user_avg_seconds is None
+        assert card.opp_avg_pct is None
+        assert card.opp_avg_seconds is None
+        assert card.avg_clock_diff_seconds is None
+        assert card.net_timeout_rate == 0.0
