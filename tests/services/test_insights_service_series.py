@@ -466,8 +466,6 @@ def _make_minimal_response() -> EndgameOverviewResponse:
     Supplies the minimal fields that compute_findings reads.
     """
     from app.schemas.endgames import (
-        ClockPressureResponse,
-        ClockPressureTimelinePoint,
         EndgameCategoryStats,
         EndgameEloTimelineResponse,
         EndgamePerformanceResponse,
@@ -477,7 +475,6 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         ScoreGapMaterialResponse,
         ScoreGapTimelinePoint,
         TimePressureCardsResponse,
-        TimePressureChartResponse,
     )
 
     wdl = EndgameWDLSummary(
@@ -534,28 +531,6 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         material_rows=[],
         timeline=score_gap_timeline,
         timeline_window=50,
-    )
-    # Clock pressure timeline
-    clock_timeline = [
-        ClockPressureTimelinePoint(
-            date=f"2026-01-{i + 4:02d}",
-            avg_clock_diff_pct=float(i + 1),
-            game_count=10,
-            per_week_game_count=10,
-        )
-        for i in range(13)
-    ]
-    clock_pressure = ClockPressureResponse(
-        rows=[],
-        total_clock_games=130,
-        total_endgame_games=130,
-        timeline=clock_timeline,
-        timeline_window=50,
-    )
-    time_pressure_chart = TimePressureChartResponse(
-        user_series=[],
-        opp_series=[],
-        total_endgame_games=0,
     )
     # ELO timeline with >=10 points per combo
     elo_combo = EndgameEloTimelineCombo(

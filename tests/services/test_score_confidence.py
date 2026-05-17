@@ -24,7 +24,6 @@ import math
 import pytest
 
 from app.services.score_confidence import (
-    CONFIDENCE_MIN_N,
     compute_confidence_bucket,
     compute_paired_difference_test,
     compute_score_confidence_from_mean,
