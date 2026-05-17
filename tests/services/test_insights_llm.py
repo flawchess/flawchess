@@ -382,7 +382,7 @@ class TestPromptVersionAndBody:
         # v33 changelog block present and tagged.
         assert "v33 (260517 Phase 87.5" in src
         # Phase 87.5 narrative substrings: additive-K input and the score-gap input.
-        assert "Endgame Score Gap input" in src or "endgame_elo_from_score_gap" in src
+        assert "Endgame Score Gap input" in src or "_performance_rating" in src
         assert "additive K" in src
         # Prior version comments must still be present (FRONT-prepend preserves history).
         assert "v32 (260516 Phase 87.4 Conversion ELO rewire)" in src
