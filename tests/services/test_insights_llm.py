@@ -1136,113 +1136,12 @@ class TestPromptAssembly:
         assert "2026-02-16" not in prompt
         assert "(n=2)" not in prompt
 
-    def test_assemble_user_prompt_skips_time_pressure_vs_performance_subsection_finding(
-        self,
-    ) -> None:
-        """The single-value time_pressure_vs_performance finding is dropped.
-
-        The 10-bucket chart is rendered separately via
-        `_format_time_pressure_chart_block`; the scalar placeholder finding
-        must NOT appear as a `## Subsection` row (it would be a meaningless
-        weighted-mean number labelled as `avg_clock_diff_pct`).
-        """
-        filters = _sample_filter_context()
-        hidden = SubsectionFinding(
-            subsection_id="time_pressure_vs_performance",
-            parent_subsection_id=None,
-            window="all_time",
-            metric="avg_clock_diff_pct",
-            value=0.46,
-            zone="typical",
-            trend="n_a",
-            weekly_points_in_window=0,
-            sample_size=2940,
-            sample_quality="rich",
-            is_headline_eligible=False,
-            dimension=None,
-            series=None,
-        )
-        tab_findings = _fake_findings(filters, findings=[hidden])
-        prompt = _assemble_user_prompt(tab_findings)
-        assert "### Subsection: time_pressure_vs_performance" not in prompt
-
-    def test_assemble_user_prompt_renders_time_pressure_chart_block(self) -> None:
-        """The 10-bucket chart is rendered as a `## Chart` table.
-
-        Mirrors the frontend's MIN_GAMES_FOR_RELIABLE_STATS=10 gate: buckets
-        where both sides have <10 games are dropped, and a side with <10
-        games renders as "—".
-        """
-        from app.schemas.endgames import TimePressureBucketPoint, TimePressureChartResponse
-
-        user_series = [
-            TimePressureBucketPoint(
-                bucket_index=i,
-                bucket_label=f"{i * 10}-{(i + 1) * 10}%",
-                score=0.30 + 0.05 * i,  # climbs from 0.30 to 0.75
-                game_count=20 if i >= 2 else 3,  # first two buckets thin
-            )
-            for i in range(10)
-        ]
-        opp_series = [
-            TimePressureBucketPoint(
-                bucket_index=i,
-                bucket_label=f"{i * 10}-{(i + 1) * 10}%",
-                score=0.45 + 0.03 * i,
-                game_count=20 if i >= 2 else 3,
-            )
-            for i in range(10)
-        ]
-        chart = TimePressureChartResponse(
-            user_series=user_series,
-            opp_series=opp_series,
-            total_endgame_games=487,
-        )
-        filters = _sample_filter_context()
-        tab_findings = EndgameTabFindings(
-            as_of=datetime.datetime.now(datetime.UTC),
-            filters=filters,
-            findings=[],
-            time_pressure_chart=chart,
-            findings_hash="b" * 64,
-        )
-        prompt = _assemble_user_prompt(tab_findings)
-
-        assert "### Chart: time_pressure_vs_performance" in prompt
-        assert "Total endgame games: 487" in prompt
-        assert "| time_left | user_score | user_n | opp_score | opp_n |" in prompt
-        # Buckets with >=10 games on both sides render scores.
-        assert "20-30%" in prompt
-        assert "90-100%" in prompt
-        # Buckets where both sides have <10 games are dropped entirely.
-        assert "0-10%" not in prompt
-        assert "10-20%" not in prompt
-
-    def test_assemble_user_prompt_omits_chart_block_when_empty(self) -> None:
-        """Chart block is omitted when total_endgame_games == 0 or chart is None."""
-        from app.schemas.endgames import TimePressureChartResponse
-
-        filters = _sample_filter_context()
-        empty_chart = TimePressureChartResponse(
-            user_series=[], opp_series=[], total_endgame_games=0
-        )
-        tab = EndgameTabFindings(
-            as_of=datetime.datetime.now(datetime.UTC),
-            filters=filters,
-            findings=[],
-            time_pressure_chart=empty_chart,
-            findings_hash="b" * 64,
-        )
-        assert "### Chart: time_pressure_vs_performance" not in _assemble_user_prompt(tab)
-
-        tab_none = EndgameTabFindings(
-            as_of=datetime.datetime.now(datetime.UTC),
-            filters=filters,
-            findings=[],
-            time_pressure_chart=None,
-            findings_hash="b" * 64,
-        )
-        assert "### Chart: time_pressure_vs_performance" not in _assemble_user_prompt(tab_none)
+    # Phase 88.1 (Plan 09, REVIEW.md WR-06): three tests removed alongside the
+    # _format_time_pressure_chart_block / _SKIPPED_SUBSECTIONS / time_pressure_chart
+    # plumbing deletion. The old assertions covered:
+    #   - test_assemble_user_prompt_skips_time_pressure_vs_performance_subsection_finding
+    #   - test_assemble_user_prompt_renders_time_pressure_chart_block
+    #   - test_assemble_user_prompt_omits_chart_block_when_empty
 
     def test_assemble_user_prompt_renders_overall_wdl_chart_block(self) -> None:
         """The endgame-vs-non-endgame WDL block is rendered when performance is set."""
@@ -1688,10 +1587,13 @@ class TestPromptAssembly:
         cap to 36 so the LLM can speak about multi-year trajectories without
         overclaiming a 12-month window as "long-term". Older history beyond
         36 months is still trimmed to keep tokens bounded.
+
+        Phase 88.1 (Plan 09): repointed from clock_diff_timeline to
+        endgame_elo_timeline after the former subsection was retired alongside
+        the cohort layer (REVIEW.md WR-06). endgame_elo_timeline is also
+        monthly-for-all_time so the bucket-cap semantics are identical.
         """
         filters = _sample_filter_context()
-        # Uses clock_diff_timeline (still monthly for all_time) since Phase 68
-        # pinned score_timeline at weekly granularity across both windows.
         # 40 consecutive monthly buckets ending 2025-10: 2022-07 .. 2025-10.
         bucket_starts: list[str] = []
         cursor = datetime.date(2022, 7, 1)
@@ -1704,24 +1606,22 @@ class TestPromptAssembly:
                 month = 1
             cursor = datetime.date(year, month, 1)
         assert len(bucket_starts) == 40
-        # Values alternate between -5 and -15 so the flat-trend collapse
-        # (v7 B4) doesn't trigger — the series must retain its per-bucket lines
-        # for this test's date-presence assertions to make sense.
+        # Values alternate so the flat-trend collapse (v7 B4) doesn't trigger.
         timeline = SubsectionFinding(
-            subsection_id="clock_diff_timeline",
+            subsection_id="endgame_elo_timeline",
             parent_subsection_id=None,
             window="all_time",
-            metric="avg_clock_diff_pct",
-            value=-8.0,
+            metric="endgame_elo_gap",
+            value=-40.0,
             zone="typical",
             trend="stable",
             weekly_points_in_window=40,
             sample_size=40,
             sample_quality="rich",
             is_headline_eligible=True,
-            dimension=None,
+            dimension={"platform": "lichess", "time_control": "rapid"},
             series=[
-                TimePoint(bucket_start=bs, value=-5.0 if i % 2 == 0 else -15.0, n=20)
+                TimePoint(bucket_start=bs, value=-30.0 if i % 2 == 0 else -50.0, n=20)
                 for i, bs in enumerate(bucket_starts)
             ],
         )
@@ -1997,9 +1897,13 @@ class TestV6Enrichments:
 
         Phase 68 dropped the score_gap_timeline suppression carve-out, so
         every timeline subsection emits a [summary] block now. This test
-        uses clock_diff_timeline to verify that timeseries [summary] lines
-        carry `trend=` / `std=` fields (the same format score_timeline
-        now also emits for each per-part finding).
+        verifies that timeseries [summary] lines carry `trend=` / `std=`
+        fields (the same format score_timeline now also emits for each
+        per-part finding).
+
+        Phase 88.1 (Plan 09): repointed from clock_diff_timeline to
+        endgame_elo_timeline after the former subsection was retired
+        alongside the cohort layer (REVIEW.md WR-06).
         """
         filters = _sample_filter_context()
         series = [
@@ -2007,24 +1911,27 @@ class TestV6Enrichments:
             for day, v in zip((5, 12, 19, 26), (-25.0, -20.0, -10.0, -2.0), strict=False)
         ]
         finding = self._finding(
-            subsection_id="clock_diff_timeline",
-            metric="avg_clock_diff_pct",
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
             window="last_3mo",
             value=-2.0,
             series=series,
+            dimension={"platform": "lichess", "time_control": "rapid"},
         )
         tab = _fake_findings(filters, findings=[finding])
         prompt = _assemble_user_prompt(tab)
 
         # The summary block's last_3mo line carries trend= and std=.
         lines = prompt.splitlines()
-        summary_idx = lines.index("[summary avg_clock_diff_pct]")
+        summary_idx = next(
+            i for i, ln in enumerate(lines) if ln.startswith("[summary endgame_elo_gap")
+        )
         last_3mo_line = lines[summary_idx + 1]
         assert last_3mo_line.startswith("  last_3mo: ")
         assert "trend=improving" in last_3mo_line  # latest -2 vs prior-mean -18.3 → improving
         assert "std=" in last_3mo_line
         # Raw [series ...] still emits for the timeline data.
-        assert "[series avg_clock_diff_pct, last_3mo, weekly]" in prompt
+        assert "[series endgame_elo_gap, last_3mo, weekly" in prompt
 
     def test_asymmetry_line_emitted_for_strong_weak_split(self) -> None:
         """Pawn with strong conversion + weak recovery emits `[asymmetry type=pawn] ...`.
@@ -2088,42 +1995,8 @@ class TestV6Enrichments:
         assert "[asymmetry type=rook] conversion=80 strong, recovery=18 weak" in prompt
         assert "closes winning endgames but bleeds losing ones" in prompt
 
-    def test_low_time_gap_line_emitted_in_time_pressure_chart(self) -> None:
-        """`[low-time-gap] 0-30% buckets, weighted:` appears in the chart caption."""
-        from app.schemas.endgames import TimePressureBucketPoint, TimePressureChartResponse
-
-        user_series = [
-            TimePressureBucketPoint(
-                bucket_index=i,
-                bucket_label=f"{i * 10}-{(i + 1) * 10}%",
-                score=0.30 + 0.03 * i,
-                game_count=100,
-            )
-            for i in range(10)
-        ]
-        opp_series = [
-            TimePressureBucketPoint(
-                bucket_index=i,
-                bucket_label=f"{i * 10}-{(i + 1) * 10}%",
-                score=0.50 + 0.01 * i,
-                game_count=100,
-            )
-            for i in range(10)
-        ]
-        chart = TimePressureChartResponse(
-            user_series=user_series, opp_series=opp_series, total_endgame_games=1000
-        )
-        tab = EndgameTabFindings(
-            as_of=datetime.datetime.now(datetime.UTC),
-            filters=_sample_filter_context(),
-            findings=[],
-            time_pressure_chart=chart,
-            findings_hash="b" * 64,
-        )
-        prompt = _assemble_user_prompt(tab)
-
-        assert "[low-time-gap] 0-30% buckets, weighted:" in prompt
-        assert "user cracks under time pressure" in prompt
+    # Phase 88.1 (Plan 09, REVIEW.md WR-06): test_low_time_gap_line_emitted_in_time_pressure_chart
+    # removed alongside _low_time_gap_line + _format_time_pressure_chart_block deletion.
 
     def test_summary_emitted_for_paired_windows(self) -> None:
         """Paired all_time + last_3mo scalars fold into one [summary] block with a within-noise shift.
@@ -2324,8 +2197,11 @@ class TestV6Enrichments:
     def test_payload_summary_includes_all_time_window(self) -> None:
         """v11: payload summary spells out the all-time series window bounds.
 
-        Uses clock_diff_timeline (still monthly for all_time) since Phase 68
-        pinned score_timeline at weekly granularity across both windows.
+        Phase 88.1 (Plan 09): repointed from clock_diff_timeline to
+        endgame_elo_timeline after the former subsection was retired
+        alongside the cohort layer (REVIEW.md WR-06). endgame_elo_timeline
+        is also monthly-for-all_time so the window-bounds assertion is
+        unchanged.
         """
         filters = _sample_filter_context()
         series = [
@@ -2335,11 +2211,12 @@ class TestV6Enrichments:
             TimePoint(bucket_start=f"2026-{month:02d}-01", value=-5.0, n=20) for month in (1, 2, 3)
         ]
         finding = self._finding(
-            subsection_id="clock_diff_timeline",
-            metric="avg_clock_diff_pct",
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
             window="all_time",
             value=-5.0,
             series=series,
+            dimension={"platform": "lichess", "time_control": "rapid"},
         )
         tab = _fake_findings(filters, findings=[finding])
         prompt = _assemble_user_prompt(tab)

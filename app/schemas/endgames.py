@@ -613,18 +613,31 @@ class EndgameEloTimelineResponse(BaseModel):
 
 
 class PressureQuintileBullet(BaseModel):
-    """Per-quintile Score-Delta bullet for the time pressure card (Phase 88).
+    """Per-quintile Score-Delta bullet for the time pressure card.
+
+    Phase 88.1 (D-07 supersedes D-05): the global cohort layer was retired in
+    favour of a same-game opponent-quintile split. The user's own filtered
+    games are bucketed twice — once by the USER's clock-pct at endgame entry
+    (yielding user_score for quintile Q), once by the OPPONENT's clock-pct
+    (yielding opp_score for the matching quintile index). The two splits are
+    independent samples drawn from the same game-set; the significance test
+    is the unpaired two-sample Wilson via compute_score_difference_test.
 
     quintile_index: 0..4, where 0 = 0-20% clock remaining (maximum pressure),
         4 = 80-100% clock remaining (minimum pressure).
     quintile_label: human-readable range string e.g. "0-20%".
-    n: games in this quintile bin.
-    delta: user_score - cohort_score; 0.0 when cohort_score is None (no cohort data).
-    p_value: Wilson score-test p-value of H0: user_score == cohort_score; None when
-        n < CONFIDENCE_MIN_N (10) or cohort_score is None.
-    ci_low/ci_high: Wilson 95% CI on delta; None when n < 2 or cohort_score is None.
-    cohort_score: mirror-bucket aggregate score for this (TC, quintile); None when
-        no cohort data is available.
+    n: user-side games in this quintile bin (drives the displayed sample-size
+        chip; the opponent-side count is gated by min(n_user, n_opp) >=
+        MIN_GAMES_PER_PRESSURE_BIN inside _build_quintile_bullets).
+    delta: user_score - opp_score where each side is bucketed by its OWN
+        clock-pct at endgame entry. 0.0 when either side has zero games at
+        this quintile (no signal to compare).
+    p_value: unpaired two-sample Wilson score-test p-value of
+        H0: user_score - opp_score == 0; None when the n-gate is unmet.
+    ci_low/ci_high: 95% CI on delta from the same two-sample test; None when
+        the n-gate is unmet.
+    opp_score: opponent's same-game score in the matching opponent-clock
+        quintile; None when the n-gate is unmet.
     """
 
     quintile_index: int  # 0..4
@@ -634,7 +647,7 @@ class PressureQuintileBullet(BaseModel):
     p_value: float | None
     ci_low: float | None
     ci_high: float | None
-    cohort_score: float | None
+    opp_score: float | None
 
 
 class ClockGapBullet(BaseModel):

@@ -1498,9 +1498,6 @@ class TestGetEndgameOverview:
                 "app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock
             ) as mock_clock,
             patch(
-                "app.services.endgame_service.query_cohort_clock_rows", new_callable=AsyncMock
-            ) as mock_cohort,
-            patch(
                 "app.services.endgame_service.get_endgame_elo_timeline", new_callable=AsyncMock
             ) as mock_elo_timeline,
         ):
@@ -1511,7 +1508,6 @@ class TestGetEndgameOverview:
             mock_eg_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=50)
             mock_clock.return_value = []
-            mock_cohort.return_value = []
             mock_elo_timeline.return_value = EndgameEloTimelineResponse(
                 combos=[], timeline_window=100
             )
@@ -1527,7 +1523,7 @@ class TestGetEndgameOverview:
                 window=50,
             )
 
-        # Repository functions called once each
+        # Repository functions called once each (Phase 88.1: query_cohort_clock_rows removed)
         mock_entry.assert_called_once()
         mock_bucket.assert_called_once()
         mock_perf_rows.assert_called_once()
@@ -1535,7 +1531,6 @@ class TestGetEndgameOverview:
         mock_eg_count.assert_called_once()
         mock_timeline.assert_called_once()
         mock_clock.assert_called_once()
-        mock_cohort.assert_called_once()
         mock_elo_timeline.assert_called_once()
 
         # All sub-payloads must be present
@@ -1576,9 +1571,6 @@ class TestGetEndgameOverview:
                 "app.services.endgame_service.query_clock_stats_rows", new_callable=AsyncMock
             ) as mock_clock,
             patch(
-                "app.services.endgame_service.query_cohort_clock_rows", new_callable=AsyncMock
-            ) as mock_cohort,
-            patch(
                 "app.services.endgame_service.get_endgame_elo_timeline", new_callable=AsyncMock
             ) as mock_elo_timeline,
         ):
@@ -1588,7 +1580,6 @@ class TestGetEndgameOverview:
             mock_count.return_value = 0
             mock_timeline.return_value = EndgameTimelineResponse(overall=[], per_type={}, window=75)
             mock_clock.return_value = []
-            mock_cohort.return_value = []
             mock_elo_timeline.return_value = EndgameEloTimelineResponse(
                 combos=[], timeline_window=100
             )
@@ -2051,7 +2042,6 @@ class TestExtractEntryClocks:
         """Single ply matching opp parity -> (None, value)."""
         result = _extract_entry_clocks([1], [5.0], "white")
         assert result == (None, 5.0)
-
 
 
 # ---------------------------------------------------------------------------

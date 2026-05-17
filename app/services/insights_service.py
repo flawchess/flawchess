@@ -398,8 +398,10 @@ def _compute_subsection_findings(
     findings.extend(_findings_endgame_metrics(response, window))
     findings.extend(_findings_endgame_elo_timeline(response, window))
     findings.extend(_findings_time_pressure_at_entry(response, window))
-    findings.append(_finding_clock_diff_timeline(response, window))
-    findings.append(_finding_time_pressure_vs_performance(response, window))
+    # Phase 88.1: removed silent empty-finding regression (REVIEW.md WR-06).
+    # The clock-diff and time-pressure-vs-performance subsection helpers used to
+    # be appended here, both returning permanent empty findings since Phase 88
+    # removed their backing fields from EndgameOverviewResponse.
     findings.extend(_findings_results_by_endgame_type(response, window))
     findings.extend(_findings_conversion_recovery_by_type(response, window))
 
@@ -949,32 +951,14 @@ def _findings_time_pressure_at_entry(
     return findings
 
 
-def _finding_clock_diff_timeline(
-    response: EndgameOverviewResponse,
-    window: Window,
-) -> SubsectionFinding:
-    """clock_diff_timeline -> empty finding.
-
-    Phase 88: ClockPressureResponse.timeline removed from EndgameOverviewResponse.
-    The clock-diff timeline series was part of the legacy clock_pressure field and
-    is not replicated in TimePressureCardsResponse. Returns an empty finding until
-    a replacement timeline is added in a follow-up phase.
-    """
-    return _empty_finding("clock_diff_timeline", window, "avg_clock_diff_pct")
-
-
-def _finding_time_pressure_vs_performance(
-    response: EndgameOverviewResponse,
-    window: Window,
-) -> SubsectionFinding:
-    """time_pressure_vs_performance -> empty finding.
-
-    Phase 88: TimePressureChartResponse removed from EndgameOverviewResponse.
-    The 10-bucket user/opp score series was part of the legacy time_pressure_chart
-    field and is not replicated in TimePressureCardsResponse. Returns an empty
-    finding until the Phase 88 frontend wiring (Plans 05-07) provides a replacement.
-    """
-    return _empty_finding("time_pressure_vs_performance", window, "avg_clock_diff_pct")
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): _finding_clock_diff_timeline and
+# _finding_time_pressure_vs_performance were removed. Both helpers had returned
+# permanent empty findings since Phase 88 retired the underlying ClockPressureResponse
+# and TimePressureChartResponse fields; emitting them on every call was a silent
+# LLM-prompt regression because downstream consumers could not distinguish
+# "feature deprecated" from "no user data". The full WR-06 orphan cleanup
+# (insights_llm.py _SKIPPED_SUBSECTIONS, _format_time_pressure_chart_block, etc.)
+# lives in app/services/insights_llm.py.
 
 
 def _findings_results_by_endgame_type(

@@ -29,7 +29,6 @@ from app.repositories.endgame_repository import (
     count_endgame_games,
     count_filtered_games,
     query_clock_stats_rows,
-    query_cohort_clock_rows,
     query_endgame_bucket_rows,
     query_endgame_elo_timeline_rows,
     query_endgame_entry_rows,
@@ -73,7 +72,6 @@ from app.services.score_confidence import (
     compute_confidence_bucket,
     compute_paired_difference_test,
     compute_score_confidence_from_mean,
-    compute_score_delta_vs_reference,
     compute_score_difference_test,
     wilson_bounds,
 )
@@ -1249,25 +1247,17 @@ def _compute_score_gap_material(
     )
 
 
-# Minimum endgame games per time control to include a row in the clock stats table.
-# Rows below this threshold are too sparse for meaningful averages.
-MIN_GAMES_FOR_CLOCK_STATS = 10
-
 # Phase 88 (D-03): minimum endgame games per TC to emit a TimePressureTcCard.
 # Prod-DB validated — ensures each card has enough games for meaningful stats.
 MIN_GAMES_PER_TC_CARD: int = 20
 
-# Phase 88 (D-03): minimum games per (TC, quintile) bin to emit a PressureQuintileBullet
-# with full stats. Bins below this have n populated but delta/p_value/ci_low/ci_high
-# come from compute_score_delta_vs_reference's own n-gates (n < 2 -> CI None, etc.).
+# Phase 88.1 (Plan 09): minimum games per (TC, quintile) bin per SIDE (user or opp)
+# to emit a PressureQuintileBullet with full stats. The n-gate is
+# min(n_user_in_Q, n_opp_in_Q) >= MIN_GAMES_PER_PRESSURE_BIN (REVIEW.md WR-05 wired).
 MIN_GAMES_PER_PRESSURE_BIN: int = 5
 
 # Quintile labels for the 5 pressure bins (0=max pressure, 4=min pressure).
 _QUINTILE_LABELS: list[str] = ["0-20%", "20-40%", "40-60%", "60-80%", "80-100%"]
-
-# Number of time-remaining buckets for the pressure-performance chart (Phase 55).
-NUM_BUCKETS = 10
-BUCKET_WIDTH_PCT = 10  # each bucket spans 10 percentage points
 
 # Clamp: games where either clock at endgame entry exceeds this multiple of
 # base_time_seconds are treated as bad data (bogus clock readings, e.g. from
@@ -1286,12 +1276,8 @@ _TIME_CONTROL_LABELS: dict[str, str] = {
 # Fixed display order for time control rows (fastest to slowest).
 _TIME_CONTROL_ORDER: list[str] = ["bullet", "blitz", "rapid", "classical"]
 
-# Rolling window size for the clock-diff timeline chart (quick-260416-w3q).
-# Mirrors the 100-game window the frontend uses for the Win Rate by Endgame Type chart.
-CLOCK_PRESSURE_TIMELINE_WINDOW = 100
-
 # Rolling window size for the Endgame ELO timeline chart (Phase 57 ELO-05).
-# Matches SCORE_GAP_TIMELINE_WINDOW and CLOCK_PRESSURE_TIMELINE_WINDOW per D-05.
+# Matches SCORE_GAP_TIMELINE_WINDOW.
 ENDGAME_ELO_TIMELINE_WINDOW = 100
 
 # Ordered combo list: chess.com first then lichess, per-platform follows
@@ -1450,24 +1436,48 @@ def _extract_entry_clocks(
 
 def _iterate_clock_rows(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
-) -> tuple[dict[str, int], dict[str, list[float]], dict[tuple[str, int], tuple[int, int, int]]]:
+) -> tuple[
+    dict[str, int],
+    dict[str, list[float]],
+    dict[tuple[str, int], tuple[int, int, int]],
+    dict[tuple[str, int], tuple[int, int, int]],
+]:
     """Iterate clock_rows once, accumulating per-TC and per-(TC, quintile) data.
+
+    Phase 88.1 (D-07 supersedes D-05, REVIEW.md CR-01): the cohort layer was
+    removed. We now build TWO parallel quintile splits from the SAME filtered
+    games — one bucketed by USER's clock-pct, one by OPPONENT's clock-pct. The
+    per-quintile delta is computed in _build_quintile_bullets against these
+    independent splits, not against a cross-user cohort.
 
     Returns:
         tc_total: dict[tc -> total valid endgame games]
         tc_clock_diffs: dict[tc -> list of (user_clock - opp_clock) / base_clock per game]
-        tc_quintile_wdl: dict[(tc, quintile_index) -> (wins, draws, losses)]
+        tc_user_quintile_wdl: dict[(tc, quintile) -> (wins, draws, losses)] bucketed by USER's clock-pct
+        tc_opp_quintile_wdl:  dict[(tc, quintile) -> (wins, draws, losses)] bucketed by OPP's clock-pct,
+            with result inverted from the opponent's perspective (user-win = opp-loss).
 
-    Quintile index = min(4, int(user_clk_pct * 5)) so:
+    Quintile index = min(4, int(clk_pct * 5)) so:
         0.0..0.2 -> 0 (max pressure), 0.2..0.4 -> 1, ..., 0.8..1.0 -> 4 (min pressure)
+
+    User and opponent quintile assignments are INDEPENDENT within the same row:
+    a game where the user banked clock but the opponent burned it will fall in
+    different quintiles for the two splits. That independence is what makes the
+    unpaired two-sample test (compute_score_difference_test) valid in
+    _build_quintile_bullets.
 
     Rows with base_clock <= 0 are skipped (T-88-04-02 defensive guard).
     Rows where either clock exceeds MAX_CLOCK_PCT_OF_BASE * base_clock are skipped
-    (bogus readings — same guard as _compute_clock_pressure).
+    (bogus readings — same guard as the legacy clock_pressure path).
     """
     tc_total: dict[str, int] = defaultdict(int)
     tc_clock_diffs: dict[str, list[float]] = defaultdict(list)
-    tc_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]] = defaultdict(lambda: (0, 0, 0))
+    tc_user_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]] = defaultdict(
+        lambda: (0, 0, 0)
+    )
+    tc_opp_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]] = defaultdict(
+        lambda: (0, 0, 0)
+    )
 
     for row in clock_rows:
         time_control_bucket: str | None = row[1]
@@ -1495,24 +1505,43 @@ def _iterate_clock_rows(
         ):
             continue
 
-        # Quintile: 0=0-20% clock remaining (max pressure), 4=80-100% (min pressure).
+        # Independent quintile assignments per side. 0 = 0-20% remaining (max
+        # pressure), 4 = 80-100% remaining (min pressure).
         user_clk_pct = user_clock / base_time_seconds
-        quintile = min(4, int(user_clk_pct * 5))
+        opp_clk_pct = opp_clock / base_time_seconds
+        user_quintile = min(4, int(user_clk_pct * 5))
+        opp_quintile = min(4, int(opp_clk_pct * 5))
 
         clock_diff_pct = (user_clock - opp_clock) / base_time_seconds
         tc_clock_diffs[tc].append(clock_diff_pct)
 
-        # Accumulate WDL per (TC, quintile).
+        # Accumulate user-side WDL into user_quintile_wdl.
         outcome = derive_user_result(result, user_color)
-        w, d, los = tc_quintile_wdl[(tc, quintile)]
+        uw, ud, ul = tc_user_quintile_wdl[(tc, user_quintile)]
         if outcome == "win":
-            tc_quintile_wdl[(tc, quintile)] = (w + 1, d, los)
+            tc_user_quintile_wdl[(tc, user_quintile)] = (uw + 1, ud, ul)
         elif outcome == "draw":
-            tc_quintile_wdl[(tc, quintile)] = (w, d + 1, los)
+            tc_user_quintile_wdl[(tc, user_quintile)] = (uw, ud + 1, ul)
         else:
-            tc_quintile_wdl[(tc, quintile)] = (w, d, los + 1)
+            tc_user_quintile_wdl[(tc, user_quintile)] = (uw, ud, ul + 1)
 
-    return dict(tc_total), dict(tc_clock_diffs), dict(tc_quintile_wdl)
+        # Accumulate opp-side WDL into opp_quintile_wdl with inverted outcome
+        # (user-win = opp-loss; draws stay draws). Same game, different
+        # quintile index (driven by opponent's clock-pct).
+        ow, od, ol = tc_opp_quintile_wdl[(tc, opp_quintile)]
+        if outcome == "win":
+            tc_opp_quintile_wdl[(tc, opp_quintile)] = (ow, od, ol + 1)
+        elif outcome == "draw":
+            tc_opp_quintile_wdl[(tc, opp_quintile)] = (ow, od + 1, ol)
+        else:
+            tc_opp_quintile_wdl[(tc, opp_quintile)] = (ow + 1, od, ol)
+
+    return (
+        dict(tc_total),
+        dict(tc_clock_diffs),
+        dict(tc_user_quintile_wdl),
+        dict(tc_opp_quintile_wdl),
+    )
 
 
 def _build_clock_gap(tc: str, clock_diffs: list[float]) -> ClockGapBullet:
@@ -1532,72 +1561,104 @@ def _build_clock_gap(tc: str, clock_diffs: list[float]) -> ClockGapBullet:
 
 def _build_quintile_bullets(
     tc: str,
-    quintile_wdl: dict[tuple[str, int], tuple[int, int, int]],
-    cohort_lookup: dict[tuple[str, int], float],
+    user_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]],
+    opp_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]],
 ) -> list[PressureQuintileBullet]:
     """Build exactly 5 PressureQuintileBullet entries for quintiles 0..4.
 
-    For each quintile:
-    - Looks up cohort_score from cohort_lookup[(tc, q)]; None if not in lookup.
-    - When cohort_score is None: emits bullet with delta=0.0, all stats None.
-    - When cohort_score is present: delegates to compute_score_delta_vs_reference.
+    Phase 88.1 (D-07 supersedes D-05): each bullet compares the user's score
+    in quintile Q (bucketed by USER's clock-pct) against the opponent's score
+    in the same quintile index Q (bucketed by OPPONENT's clock-pct). The two
+    splits are INDEPENDENT samples of the same filtered game-set — a game where
+    the user banked clock but the opponent burned it falls in different quintile
+    indices on the two splits — so the unpaired two-sample Wilson test in
+    compute_score_difference_test is the correct significance test.
+
+    For each quintile q in 0..4:
+    - n_user = sum of user_quintile_wdl[(tc, q)]; n_opp = sum of opp_quintile_wdl[(tc, q)].
+    - Bullet n is the user-side count (drives the displayed sample-size chip).
+    - n-gate: min(n_user, n_opp) >= MIN_GAMES_PER_PRESSURE_BIN (WR-05). If unmet,
+      delta is the raw difference (or 0.0 when either side has zero games) and
+      all stats (p_value, ci_low, ci_high, opp_score) are None.
+    - When the gate is met, delta = user_score - opp_score and significance comes
+      from compute_score_difference_test(user_w, user_d, user_l, n_user, opp_w,
+      opp_d, opp_l, n_opp).
     """
     bullets: list[PressureQuintileBullet] = []
     for q in range(5):
-        w, d, los = quintile_wdl.get((tc, q), (0, 0, 0))
-        n = w + d + los
-        cohort_score: float | None = cohort_lookup.get((tc, q))
+        u_w, u_d, u_l = user_quintile_wdl.get((tc, q), (0, 0, 0))
+        n_user = u_w + u_d + u_l
+        o_w, o_d, o_l = opp_quintile_wdl.get((tc, q), (0, 0, 0))
+        n_opp = o_w + o_d + o_l
 
-        if cohort_score is None:
+        # n-gate per WR-05: both sides must clear the bin floor before we trust
+        # the delta enough to report stats. Zero games on either side also fails
+        # the gate (no opp_score to subtract).
+        gate_met = n_user >= MIN_GAMES_PER_PRESSURE_BIN and n_opp >= MIN_GAMES_PER_PRESSURE_BIN
+
+        if not gate_met:
+            # Raw delta only when both sides have at least one game; otherwise 0.0.
+            if n_user > 0 and n_opp > 0:
+                raw_user_score = (u_w + 0.5 * u_d) / n_user
+                raw_opp_score = (o_w + 0.5 * o_d) / n_opp
+                raw_delta = raw_user_score - raw_opp_score
+            else:
+                raw_delta = 0.0
             bullets.append(
                 PressureQuintileBullet(
                     quintile_index=q,
                     quintile_label=_QUINTILE_LABELS[q],
-                    n=n,
-                    delta=0.0,
+                    n=n_user,
+                    delta=raw_delta,
                     p_value=None,
                     ci_low=None,
                     ci_high=None,
-                    cohort_score=None,
+                    opp_score=None,
                 )
             )
-        else:
-            delta, p_value, ci_low, ci_high = compute_score_delta_vs_reference(
-                w, d, los, n, cohort_score
+            continue
+
+        user_score = (u_w + 0.5 * u_d) / n_user
+        opp_score = (o_w + 0.5 * o_d) / n_opp
+        delta = user_score - opp_score
+        p_value, ci_low, ci_high = compute_score_difference_test(
+            u_w, u_d, u_l, n_user, o_w, o_d, o_l, n_opp
+        )
+        bullets.append(
+            PressureQuintileBullet(
+                quintile_index=q,
+                quintile_label=_QUINTILE_LABELS[q],
+                n=n_user,
+                delta=delta,
+                p_value=p_value,
+                ci_low=ci_low,
+                ci_high=ci_high,
+                opp_score=opp_score,
             )
-            bullets.append(
-                PressureQuintileBullet(
-                    quintile_index=q,
-                    quintile_label=_QUINTILE_LABELS[q],
-                    n=n,
-                    delta=delta,
-                    p_value=p_value,
-                    ci_low=ci_low,
-                    ci_high=ci_high,
-                    cohort_score=cohort_score,
-                )
-            )
+        )
     return bullets
 
 
 def _compute_time_pressure_cards(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
-    cohort_lookup: dict[tuple[str, int], float],
 ) -> TimePressureCardsResponse:
     """Compute per-TC time pressure cards from clock_rows.
+
+    Phase 88.1: signature simplified to a single argument. The Phase 88
+    cohort-reference parameter was removed when the cohort layer was retired
+    (REVIEW.md CR-01, 88-CONTEXT.md D-07).
 
     One card per TC where total endgame games >= MIN_GAMES_PER_TC_CARD.
     Each card carries:
     - ClockGapBullet: paired (user-opp)/base clock diff test via compute_paired_difference_test.
-    - 5 PressureQuintileBullet entries (Q0=max pressure .. Q4=min pressure) via
-      compute_score_delta_vs_reference against cohort_lookup[(tc, quintile)].
-
-    cohort_lookup: dict[(tc, quintile_index) -> cohort_score] — the global aggregate
-    (all other users) mean chess score per (TC, quintile). Build with _compute_cohort_lookup.
+    - 5 PressureQuintileBullet entries (Q0=max pressure .. Q4=min pressure)
+      computed from the same-game opp-quintile split (see _build_quintile_bullets).
 
     Returns cards in fixed order: bullet -> blitz -> rapid -> classical.
     """
-    tc_total, tc_clock_diffs, tc_quintile_wdl = _iterate_clock_rows(clock_rows)
+    tc_total, tc_clock_diffs, tc_user_quintile_wdl, tc_opp_quintile_wdl = _iterate_clock_rows(
+        clock_rows
+    )
 
     cards: list[TimePressureTcCard] = []
     for tc in _TIME_CONTROL_ORDER:
@@ -1606,7 +1667,7 @@ def _compute_time_pressure_cards(
             continue
 
         clock_gap = _build_clock_gap(tc, tc_clock_diffs.get(tc, []))
-        quintiles = _build_quintile_bullets(tc, tc_quintile_wdl, cohort_lookup)
+        quintiles = _build_quintile_bullets(tc, tc_user_quintile_wdl, tc_opp_quintile_wdl)
         cards.append(
             TimePressureTcCard(
                 tc=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
@@ -1616,65 +1677,6 @@ def _compute_time_pressure_cards(
             )
         )
     return TimePressureCardsResponse(cards=cards)
-
-
-def _compute_cohort_lookup(
-    cohort_rows: Sequence[Row[Any] | tuple[Any, ...]],
-) -> dict[tuple[str, int], float]:
-    """Aggregate raw cohort clock_rows into (tc, quintile) -> mean_score lookup.
-
-    Same row shape as query_clock_stats_rows. Processes all rows (all users except
-    the requesting user) into per-(TC, quintile) WDL counts, then returns the mean
-    chess score (W + 0.5*D) / N per bucket.
-
-    Buckets with zero games are omitted from the returned dict, which causes the
-    caller to treat them as no cohort data (cohort_score=None).
-    """
-    # Accumulate WDL counts per (TC, quintile) across all cohort rows.
-    bucket_wdl: dict[tuple[str, int], tuple[int, int, int]] = defaultdict(lambda: (0, 0, 0))
-
-    for row in cohort_rows:
-        time_control_bucket: str | None = row[1]
-        base_time_seconds: int | None = row[2]
-        result: str = row[4]
-        user_color: str = row[5]
-        ply_array: list[int] = row[6]
-        clock_array: list[float | None] = row[7]
-
-        if time_control_bucket is None:
-            continue
-        if base_time_seconds is None or base_time_seconds <= 0:
-            continue
-
-        user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
-        if user_clock is None or opp_clock is None:
-            continue
-        if (
-            user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
-            or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
-        ):
-            continue
-
-        tc = time_control_bucket
-        user_clk_pct = user_clock / base_time_seconds
-        quintile = min(4, int(user_clk_pct * 5))
-
-        outcome = derive_user_result(result, user_color)
-        w, d, los = bucket_wdl[(tc, quintile)]
-        if outcome == "win":
-            bucket_wdl[(tc, quintile)] = (w + 1, d, los)
-        elif outcome == "draw":
-            bucket_wdl[(tc, quintile)] = (w, d + 1, los)
-        else:
-            bucket_wdl[(tc, quintile)] = (w, d, los + 1)
-
-    # Convert WDL counts to mean chess score.
-    lookup: dict[tuple[str, int], float] = {}
-    for (tc, quintile), (w, d, los) in bucket_wdl.items():
-        n = w + d + los
-        if n > 0:
-            lookup[(tc, quintile)] = (w + 0.5 * d) / n
-    return lookup
 
 
 def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
@@ -2409,12 +2411,12 @@ async def get_endgame_overview(
         clock_rows = [r for r in clock_rows_all if r[8] is not None and r[8] >= cutoff]
     else:
         clock_rows = list(clock_rows_all)
-    # Phase 88: Build per-TC time pressure cards (replaces _compute_clock_pressure +
-    # _compute_time_pressure_chart). Fetch cohort clock rows (all users except requesting
-    # user) for the mirror-bucket cohort_score lookup.
-    cohort_rows = await query_cohort_clock_rows(session, exclude_user_id=user_id)
-    cohort_lookup = _compute_cohort_lookup(cohort_rows)
-    time_pressure_cards = _compute_time_pressure_cards(clock_rows, cohort_lookup)
+    # Phase 88.1: Build per-TC time pressure cards from the user's own filtered
+    # games. The cohort layer was removed (REVIEW.md CR-01, 88-CONTEXT.md D-07);
+    # the per-quintile delta now compares the user's score in a quintile against
+    # the opponent's score in the matching opponent-clock quintile of the same
+    # game-set (see _iterate_clock_rows + _build_quintile_bullets).
+    time_pressure_cards = _compute_time_pressure_cards(clock_rows)
 
     # Phase 57 ELO-05 / Phase 87.5 D-06: paired Endgame ELO + Actual ELO
     # timeline per (platform, TC) combo. Endgame ELO is derived per

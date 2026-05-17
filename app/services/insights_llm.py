@@ -41,7 +41,7 @@ from app.repositories.llm_log_repository import (
     get_latest_successful_log_for_user,
     get_oldest_recent_miss_timestamp,
 )
-from app.schemas.endgames import EndgameClass, TimePressureChartResponse
+from app.schemas.endgames import EndgameClass
 from app.schemas.insights import (
     EndgameInsightsReport,
     EndgameInsightsResponse,
@@ -86,10 +86,10 @@ _ALL_TIME_CUTOFF_DAYS: int = 90  # C2: trim last 90d from all_time series when l
 # v11: raised from 12 → 36 so the LLM can speak about multi-year trajectories
 # without overclaiming a 12-month window as a long-term arc.
 _ALL_TIME_MAX_POINTS: int = 36
-# time_pressure_vs_performance produces a single weighted-mean finding that is
-# not useful on its own; the 10-bucket chart is rendered separately by
-# `_format_time_pressure_chart_block`.
-_SKIPPED_SUBSECTIONS: frozenset[str] = frozenset({"time_pressure_vs_performance"})
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): the per-subsection skip-set frozenset
+# was removed alongside its sole consumer (the empty time-pressure finding upstream
+# in insights_service.compose_findings). The assembler no longer needs a skip-set —
+# the finding never reaches the visible-findings filter to begin with.
 # Mirror frontend MIN_GAMES_FOR_RELIABLE_STATS (frontend/src/lib/theme.ts) so
 # the LLM sees the same bucket gating as the rendered chart.
 _MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
@@ -139,10 +139,9 @@ _TREND_MIN_POINTS: int = 4  # minimum retained buckets before we emit trend fiel
 _TREND_FLAT_THRESHOLD: float = (
     3.0  # on the 0-100 scale; |latest - mean(prior 3)| below this reads as flat
 )
-_LOW_TIME_BUCKETS: tuple[int, ...] = (0, 1, 2)  # 0-10%, 10-20%, 20-30%
-_LOW_TIME_GAP_DECISIVE: float = (
-    5.0  # on 0-100 scale; user vs opp gap below this reads as near-parity
-)
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): _LOW_TIME_BUCKETS and _LOW_TIME_GAP_DECISIVE
+# removed alongside the time-pressure chart-block helper and _low_time_gap_line
+# (their only consumers).
 _DELTA_WITHIN_NOISE_SHIFT: float = (
     5.0  # |all_time → last_3mo| shift on 0-100 scale below this reads as within-noise
 )
@@ -526,63 +525,10 @@ def _format_player_profile_block(
     return lines
 
 
-def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]:
-    """Render the 10-bucket time_pressure_vs_performance chart as a table.
-
-    Emits one `## Chart` header followed by a markdown table with one row per
-    bucket (0-10% ... 90-100%), each showing user Score %, user game count,
-    opponent Score %, opponent game count. Buckets where BOTH sides have
-    fewer than _MIN_GAMES_FOR_RELIABLE_BUCKET games are dropped (mirrors
-    the frontend's visual suppression). Returns [] if the chart is missing
-    or empty. Rendered separately from SubsectionFinding rows because the
-    20 data points do not fit the single-value finding shape.
-    """
-    chart = findings.time_pressure_chart
-    if chart is None or chart.total_endgame_games == 0:
-        return []
-
-    user_by_idx = {p.bucket_index: p for p in chart.user_series}
-    opp_by_idx = {p.bucket_index: p for p in chart.opp_series}
-
-    rows: list[str] = []
-    for idx in range(10):
-        u = user_by_idx.get(idx)
-        o = opp_by_idx.get(idx)
-        u_n = u.game_count if u else 0
-        o_n = o.game_count if o else 0
-        if u_n < _MIN_GAMES_FOR_RELIABLE_BUCKET and o_n < _MIN_GAMES_FOR_RELIABLE_BUCKET:
-            continue
-        label = u.bucket_label if u else (o.bucket_label if o else f"{idx * 10}-{(idx + 1) * 10}%")
-        u_score = (
-            f"{u.score * 100:.0f}"
-            if u is not None and u.score is not None and u_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
-            else "—"
-        )
-        o_score = (
-            f"{o.score * 100:.0f}"
-            if o is not None and o.score is not None and o_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
-            else "—"
-        )
-        rows.append(f"| {label:<7} | {u_score:<10} | {u_n:<6} | {o_score:<10} | {o_n:<6} |")
-
-    if not rows:
-        return []
-
-    lines: list[str] = [
-        "### Chart: time_pressure_vs_performance (all_time)",
-        f"Total endgame games: {chart.total_endgame_games}. "
-        "Rows show Score % conditional on time remaining at endgame entry, "
-        "for the user and the opponent separately (each side binned by their own clock). "
-        "user_score / opp_score are whole-number Score % values (wins=100, draws=50).",
-    ]
-    low_time_line = _low_time_gap_line(chart)
-    if low_time_line:
-        lines.append(low_time_line)
-    lines.append("| time_left | user_score | user_n | opp_score | opp_n |")
-    lines.append("| --------- | ---------- | ------ | ---------- | ------ |")
-    lines.extend(rows)
-    lines.append("")
-    return lines
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): the 10-bucket time-pressure chart
+# block helper was removed. Its sole consumer was the chart_blocks dict in
+# _assemble_user_prompt, which no longer references it (see chart_blocks
+# construction below).
 
 
 def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
@@ -1022,37 +968,8 @@ def _asymmetry_lines(findings: list[SubsectionFinding]) -> list[str]:
     return lines
 
 
-def _low_time_gap_line(chart: TimePressureChartResponse | None) -> str:
-    """Weighted user-vs-opp Score % over the low-time buckets (0-30%)."""
-    if chart is None:
-        return ""
-    user_by_idx = {p.bucket_index: p for p in chart.user_series}
-    opp_by_idx = {p.bucket_index: p for p in chart.opp_series}
-    user_num = user_den = opp_num = opp_den = 0.0
-    for idx in _LOW_TIME_BUCKETS:
-        u = user_by_idx.get(idx)
-        o = opp_by_idx.get(idx)
-        if u is not None and u.score is not None and u.game_count >= _MIN_GAMES_FOR_RELIABLE_BUCKET:
-            user_num += u.score * u.game_count
-            user_den += u.game_count
-        if o is not None and o.score is not None and o.game_count >= _MIN_GAMES_FOR_RELIABLE_BUCKET:
-            opp_num += o.score * o.game_count
-            opp_den += o.game_count
-    if user_den == 0 or opp_den == 0:
-        return ""
-    user_avg = user_num / user_den * 100.0
-    opp_avg = opp_num / opp_den * 100.0
-    gap = user_avg - opp_avg
-    if gap < -_LOW_TIME_GAP_DECISIVE:
-        verdict = "user cracks under time pressure"
-    elif gap > _LOW_TIME_GAP_DECISIVE:
-        verdict = "user cooler under time pressure"
-    else:
-        verdict = "near parity"
-    return (
-        f"[low-time-gap] 0-30% buckets, weighted: user={user_avg:.0f}, opp={opp_avg:.0f}, "
-        f"gap={gap:+.0f} — {verdict}"
-    )
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): _low_time_gap_line removed. Its sole
+# consumer was the 10-bucket time-pressure chart block helper (also removed).
 
 
 def _dim_key_for_finding(f: SubsectionFinding) -> str:
@@ -1571,8 +1488,9 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
         "time_pressure",
         [
             ("subsection", "time_pressure_at_entry"),
-            ("subsection", "clock_diff_timeline"),
-            ("chart", "time_pressure_vs_performance"),
+            # Phase 88.1 (Plan 09, REVIEW.md WR-06): clock-diff timeline subsection
+            # and time-pressure-vs-performance chart block removed alongside the
+            # corresponding compose_findings entries and chart-block helper.
         ],
     ),
     (
@@ -1854,8 +1772,6 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     in the LLM output. Empty sections (no qualifying blocks) are omitted.
 
     Filters applied:
-    - A5: skip findings in _SKIPPED_SUBSECTIONS (time_pressure_vs_performance
-      single-value placeholder; the 10-bucket chart is rendered instead).
     - A2: skip findings where value is NaN or (sample_size=0 AND thin quality).
     - A4: drop series points with n < MIN_BUCKET_N.
     - C2: for `all_time` series, drop points within last 90 days if a matching
@@ -1873,11 +1789,11 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     # Pre-render chart blocks so we can gate the scalar `overall` subsection
     # (C4) on whether the overall_wdl chart will emit.
     overall_wdl_block = _format_overall_wdl_chart_block(findings)
-    time_pressure_block = _format_time_pressure_chart_block(findings)
     type_wdl_block = _format_type_wdl_chart_block(findings)
+    # Phase 88.1 (Plan 09, REVIEW.md WR-06): the time-pressure 10-bucket
+    # chart block was dropped alongside its formatter helper.
     chart_blocks: dict[str, list[str]] = {
         "overall_wdl": overall_wdl_block,
-        "time_pressure_vs_performance": time_pressure_block,
         "results_by_endgame_type_wdl": type_wdl_block,
     }
 
@@ -1898,8 +1814,7 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     visible: list[SubsectionFinding] = [
         f
         for f in raw_findings
-        if f.subsection_id not in _SKIPPED_SUBSECTIONS
-        and not math.isnan(f.value)
+        if not math.isnan(f.value)
         and not (f.sample_size == 0 and f.sample_quality == "thin")
         and not (f.dimension is not None and f.dimension.get("endgame_class") == "pawnless")
     ]
