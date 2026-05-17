@@ -284,7 +284,8 @@ export type EloComboKey =
 
 /** One weekly point for a (platform, time_control) combo.
  *  Phase 87.5 D-01: rebuilt on the additive Endgame Score Gap mapping.
- *  date: Monday of ISO week, YYYY-MM-DD.
+ *  date: Sunday of ISO week (end of week), YYYY-MM-DD. Aligned with the asof
+ *    rating moment so a daily rating chart at the same date shows the same value.
  *  endgame_elo: round(actual_elo + K · eg_score_gap), where eg_score_gap is the
  *    trailing-window Endgame Score minus Non-Endgame Score for this combo. At
  *    eg_score_gap = 0 the rendered Endgame ELO equals actual_elo exactly.
