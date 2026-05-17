@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 /**
- * Phase 87.4 (Plan 02, SC#8) — RTL regression test.
+ * Phase 87.4 (Plan 02, SC#8) + Phase 87.5 (Plan 02, SC#1) — RTL regression tests.
  *
  * Renders the two surfaces where Endgame Skill could leak (the Section 2 card
- * grid and the renamed Conversion ELO Timeline) and asserts the phrase "Endgame
+ * grid and the renamed Endgame ELO Timeline) and asserts the phrase "Endgame
  * Skill" never appears in rendered output. The tile-endgame-skill testid is
  * likewise gone.
+ *
+ * Phase 87.5 extension: a parallel regression block asserts the phrase
+ * "Conversion ELO" is also absent from rendered output across the same
+ * surfaces. Plan 03 owns the Python-side repo-wide grep regression.
  *
  * Whitelist: CHANGELOG.md historical entries are excluded by test scope (we
  * mount components, not markdown content).

@@ -254,7 +254,25 @@ function buildOverview(overrides?: {
       opp_series: [],
       total_endgame_games: 0,
     },
-    endgame_elo_timeline: { combos: [], timeline_window: 100 },
+    endgame_elo_timeline: {
+      combos: [
+        {
+          combo_key: 'chess_com_blitz',
+          platform: 'chess.com',
+          time_control: 'blitz',
+          points: [
+            {
+              date: '2026-01-05',
+              endgame_elo: 1620,
+              actual_elo: 1580,
+              endgame_games_in_window: 50,
+              per_week_endgame_games: 4,
+            },
+          ],
+        },
+      ],
+      timeline_window: 100,
+    },
   };
 }
 

@@ -48,10 +48,10 @@ const FEATURES: {
     heading: 'Endgame Analytics',
     desc: [
       'Measure how well you convert winning endgames and recover from losing ones.',
-      'Track your Conversion ELO over time by platform and time control.',
+      'Track your Endgame ELO over time by platform and time control.',
       'Get personalized feedback on what your stats mean.',
     ],
-    screenshot: { src: '/screenshots/endgame-metrics-and-elo-llm-badge.png', alt: 'Endgame metrics and Conversion ELO timeline over time' },
+    screenshot: { src: '/screenshots/endgame-metrics-and-elo-llm-badge.png', alt: 'Endgame metrics and Endgame ELO timeline over time' },
     imagePosition: 'left',
   },
   {
