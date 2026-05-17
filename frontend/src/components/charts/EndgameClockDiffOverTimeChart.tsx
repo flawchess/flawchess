@@ -147,7 +147,13 @@ export function EndgameClockDiffOverTimeChart({
             yAxisId="value"
             domain={Y_DOMAIN}
             ticks={Y_TICKS}
-            allowDataOverflow={false}
+            // REVIEW.md WR-02: allow values outside ±30% to render past the
+            // envelope rather than silently clipping to the edge. Mirrors the
+            // bullet-chart "open-ended whisker" convention (clampDeltaCi). Real
+            // rapid/classical users routinely bank >30% more clock than their
+            // opponents at endgame entry; clipping turned that into a flat line
+            // at the axis edge.
+            allowDataOverflow={true}
             tickFormatter={(v: number) => `${v}%`}
             width={44}
           />

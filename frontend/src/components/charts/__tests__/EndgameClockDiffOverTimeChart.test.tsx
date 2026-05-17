@@ -131,4 +131,45 @@ describe('EndgameClockDiffOverTimeChart', () => {
     const bands = container.querySelectorAll('.recharts-reference-area-rect');
     expect(bands.length).toBe(2);
   });
+
+  it('does not clip values outside the ±30% Y envelope (REVIEW.md WR-02)', () => {
+    // Real rapid/classical users can legitimately exceed ±30%; the previous
+    // `allowDataOverflow={false}` silently flattened those points to the axis
+    // edge. With overflow allowed, the line plot still emits a dot whose
+    // Y-coordinate is computed proportionally to the out-of-band value — it
+    // ends up rendered above the visible viewbox rather than pinned at +30%.
+    const OVERFLOW_FIXTURE: ClockDiffTimelinePoint[] = [
+      makePoint('2025-01-06', 10.0, { game_count: 5, per_week_game_count: 5 }),
+      // 42% is well outside the ±30% envelope.
+      makePoint('2025-01-13', 42.0, { game_count: 12, per_week_game_count: 7 }),
+      makePoint('2025-01-20', 2.5, { game_count: 18, per_week_game_count: 6 }),
+    ];
+    const { container } = render(
+      <EndgameClockDiffOverTimeChart timeline={OVERFLOW_FIXTURE} />,
+    );
+    // Recharts emits one <circle> dot per Line datum at class .recharts-line-dot.
+    // All three should render — none silently dropped.
+    const dots = container.querySelectorAll('.recharts-line-dot');
+    expect(dots.length).toBe(OVERFLOW_FIXTURE.length);
+    // The 42% point should not share the same Y-coord as the +30% Y-tick.
+    // We extract the second dot (the 42% one — Recharts orders by data index)
+    // and the +30% tick text and confirm the dot's cy is strictly less than
+    // the +30% tick's y (smaller cy = higher on the SVG canvas = above the
+    // visible band, exactly what allowDataOverflow={true} permits).
+    const dot42 = dots[1] as SVGCircleElement;
+    const tick30 = Array.from(
+      container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick'),
+    ).find((el) => (el.textContent ?? '').replace(/\s/g, '') === '30%');
+    expect(dot42).toBeTruthy();
+    expect(tick30).toBeTruthy();
+    const dotCy = parseFloat(dot42.getAttribute('cy') ?? 'NaN');
+    const tickY = parseFloat(
+      tick30!.querySelector('text')?.getAttribute('y') ?? 'NaN',
+    );
+    // Both must be finite numbers, and the 42% dot must sit above the +30%
+    // tick (smaller y in SVG coordinate space).
+    expect(Number.isFinite(dotCy)).toBe(true);
+    expect(Number.isFinite(tickY)).toBe(true);
+    expect(dotCy).toBeLessThan(tickY);
+  });
 });
