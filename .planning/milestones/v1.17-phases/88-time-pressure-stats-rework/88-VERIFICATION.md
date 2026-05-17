@@ -1,67 +1,75 @@
 ---
 phase: 88-time-pressure-stats-rework
-verified: 2026-05-17T16:50:18Z
+verified: 2026-05-17T19:24:35Z
 status: human_needed
-score: 6/6 must-haves verified (all gap-closure targets + original ROADMAP SCs)
+score: 11/11 must-haves verified (6 from §2 A-1..A-5 + WR fixes + 5 carried-forward invariants from prior re-verification)
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 5/6
-  gaps_closed:
-    - "CR-01: query_cohort_clock_rows unfiltered global cohort — cohort layer dropped entirely (D-07 supersedes D-05)"
-    - "WR-01: small-N cohort cell admission — subsumed by min(n_user, n_opp) gate"
-    - "WR-02: dangling aria-labelledby='time-pressure-heading' — replaced with self-contained aria-label"
-    - "WR-03: unsafe `!` non-null assertion on PRESSURE_BIN_SCORE_NEUTRAL_ZONES — replaced with getPressureBinBand helper"
-    - "WR-04/WR-05: MIN_GAMES_* duplicated + unused — lifted to endgame_zones.py + codegen-mirrored + n-gate wired in _build_quintile_bullets"
-    - "WR-06: orphan LLM prompt subsection + helpers — removed (8+ symbols + 2 finding-helpers gone)"
-    - "IN-01: dead constants (MIN_GAMES_FOR_CLOCK_STATS, NUM_BUCKETS, BUCKET_WIDTH_PCT, CLOCK_PRESSURE_TIMELINE_WINDOW) — removed"
-    - "IN-02: 'PLACEHOLDER' / 'placeholder until benchmarks' comments on calibrated zones — stripped from generated TS and codegen template"
-    - "IN-04: D-07 documented in 88-CONTEXT.md retiring D-05 — locked"
-    - "IN-05: ARIA-wiring regression test added to EndgameTimePressureSection.test.tsx"
-    - "IN-06: getPressureBinBand helper generated in endgameZones.ts and consumed in card"
-    - "POLISH-01: §3.3.3.b rerun appended to reports/benchmarks-latest.md; keep-as-is decision recorded in 88-12-SUMMARY frontmatter"
-  gaps_remaining: []
+  previous_status: human_needed
+  previous_score: 6/6
+  scope_amendment: "Phase 88 §2 (LOCKED 2026-05-17) added 3 plans (88-13/14/15) addressing A-1..A-5; this re-verification supersedes the prior human_needed verdict that gated only on 88-09..88-12 UAT items."
+  gaps_closed: []  # No gap closure cycle — this is a scope amendment re-verification
   regressions: []
+  new_work_verified:
+    - "A-1: Time Pressure section renders without outer charcoal wrap; each TC card stands alone with its own charcoal-texture container"
+    - "A-2: Average Clock Difference over Time line chart restored as EndgameClockDiffOverTimeChart.tsx; backend ClockDiffTimelineResponse on EndgameOverviewResponse"
+    - "A-3: Card top zone with Clock Gap bullet + 3-stat row (my avg time / opp avg time / net flag rate) above the quintile bullets"
+    - "A-4: Q4 (80-100% clock remaining) hidden; Q0..Q3 relabelled as High / Medium / Low / Very Low Pressure"
+    - "A-5: PRESSURE_DELTA_DOMAIN widened from 0.20 to 0.30; ±0.06 D-02 neutral band unchanged"
+    - "WR-01: clock-diff timeline rolling window pre-fills from pre-cutoff games; emit-side drops points before cutoff_monday"
+    - "WR-02: Y-axis allowDataOverflow={true} so real values >±30% render past envelope instead of silently clipping"
+    - "WR-03: dict[Any, ...] in timeline aggregator replaced with explicit dict[date, ...]"
+    - "WR-04: net flag rate has an InfoPopover so screen readers get the WDL convention reference"
+    - "WR-05: scaffolded useIsMobile dropped; Tailwind responsive class on chart wrapper instead"
+    - "IN-01: redundant aria-label='no games' on em-dash replaced with aria-hidden='true'"
+    - "IN-02: dead _pad_to_threshold helper removed from test module"
+    - "IN-04: chart caption bumped from text-xs to text-sm per CLAUDE.md min-font-size rule"
 human_verification:
-  - test: "Render the Endgames page in a real browser at xl (≥1280px), lg (≥1024px), and base (<1024px) widths. Apply various sidebar filter combinations (all TCs / bullet-only / classical-only / rated-only)."
-    expected: "4-col (xl) / 2-col (lg) / 1-col (base) card grid renders. TC cards with total < 20 are hidden. Each rendered card shows 6 rows (1 Clock Gap + 5 quintiles). Score-delta values now reflect user_score − opp_score (D-07), not the prior cohort frame; popover copy reads 'vs opponent'."
-    why_human: "Responsive Tailwind layout, conditional card visibility, and filter-response interactivity cannot be verified by grep. The display change from 'vs cohort' to 'vs opponent' is a user-facing semantic shift worth eyeballing on real data."
-  - test: "Sparse-bin rendering: with a real user, find a bin where 0 < min(n_user, n_opp) < 5 (dimmed at UNRELIABLE_OPACITY + n=X chip), a bin where n=0 (dash + 'no games' empty row), and a confidently-rendered bin (full opacity)."
-    expected: "Three visually-distinct sparse states (full / dimmed / empty). The n-gate is now min(n_user, n_opp) ≥ MIN_GAMES_PER_PRESSURE_BIN (changed from the prior single-side gate), so a few previously-rendered bins may now drop into the dimmed state — confirm this is acceptable."
-    why_human: "UNRELIABLE_OPACITY dimming and inline n-chip display require visual inspection; behavioural change from D-07 may affect which bins paint colored."
-  - test: "MetricStatPopover on a Clock Gap row and a Score-Delta row at 375px width."
-    expected: "Popover opens with the new 'vs opponent' / 'same-game opp-quintile' methodology copy; readable and reachable on mobile; dismisses cleanly."
-    why_human: "Interactive popover behavior, 44px tap-target sizing, and copy correctness require browser testing."
-  - test: "ARIA accessible name on the Time Pressure section is announced as 'Time pressure analysis' by a screen reader (VoiceOver / NVDA)."
-    expected: "Screen reader announces section by aria-label, not silently degrading to no accessible name (which was the WR-02 state pre-fix)."
-    why_human: "Requires assistive-technology testing; jsdom-based unit test asserts the attribute is present but cannot confirm the actual AT announcement."
+  - test: "Render the Endgames page in a real browser at xl (≥1280px), lg (≥1024px), and base (<1024px) widths. Apply various sidebar filter combinations. Confirm the 4 Time Pressure TC cards stand alone in separate charcoal containers (A-1) — no outer wrap visually grouping them under one chrome."
+    expected: "4-col (xl) / 2-col (lg) / 1-col (base) grid. Each visible TC card sits in its own charcoal container with clear inter-card spacing. The section heading 'Time Pressure' sits directly above the cards with no enclosing chrome (matches the EndgameTypeBreakdownSection convention)."
+    why_human: "Responsive Tailwind layout, card-chrome visual separation, and the SC #1 scope amendment all depend on visual inspection. Grep confirms the outer wrap is removed but cannot confirm the resulting hierarchy reads correctly to a user."
+  - test: "On each rendered TC card, verify the top zone shows: 1 Clock Gap bullet, then a 3-stat row reading 'My avg time: X% (Ys)', 'Opp avg time: X% (Ys)', 'Net flag rate: ±X.X%'. The 3-stat row sits above a thin separator and the 4 quintile bullets render below."
+    expected: "Top-zone layout matches the description (A-3 restored stats). Net flag rate is colored green when positive past NEUTRAL_TIMEOUT_THRESHOLD, red when negative past it, neutral inside the band. The InfoPopover trigger next to the net flag rate value is reachable and explains the WDL convention (WR-04)."
+    why_human: "Visual layout, color tinting, and popover interactivity require browser testing. Em-dash fallback on null averages also needs visual confirmation in real data."
+  - test: "Confirm only 4 quintile bullets render per card (A-4): labelled 'High Pressure (0-20%)', 'Medium Pressure (20-40%)', 'Low Pressure (40-60%)', 'Very Low Pressure (60-80%)'. The 80-100% bin does not appear. The bullet axis extends to ±30% (A-5)."
+    expected: "4 visible bullets only; copy matches; bullets at the extreme ends of the data range still fit within the axis without clipping (the 0.30 domain handles real-world score deltas)."
+    why_human: "Axis sizing, label readability, and the deliberate Q4 omission all require visual inspection. The new labels also drive popover content and aria-labels — those need real screen-reader confirmation."
+  - test: "Scroll below the cards grid and confirm the 'Average Clock Difference over Time' line chart renders (A-2 restored). Apply a recency filter (e.g. last 30 days) and confirm the chart's leading-edge weeks have a fully populated rolling window."
+    expected: "Chart visible below the card grid, above the SectionInsightSlot. With a recency filter applied, hover over the first visible point and confirm the 'trailing 100' tooltip count is at or near 100 (not 1/2/3/...). The line color is MY_SCORE_COLOR. Per-week volume bars render at the bottom 20% of the canvas. Hide the entire chart cleanly when no clock-eligible games exist."
+    why_human: "WR-01 pre-fill behavior, tooltip accuracy on real data, Y-axis behavior with values outside ±30% (WR-02), and the chart's empty-state hide cannot be verified without rendered data."
+  - test: "Resize browser to 375px (mobile). Confirm chart caption, tooltip, and axis labels render legibly without horizontal scroll. Confirm InfoPopovers on the chart header, net flag rate, and bullets open and close cleanly with tap targets ≥44px."
+    expected: "All popovers reachable. No text below text-sm. Caption 'Are you banking time into the endgame or burning it down?' reads cleanly. Tooltip on the line chart doesn't overflow horizontally."
+    why_human: "Mobile parity at 375px requires visual + tap-target testing. CLAUDE.md min-font-size rule already validated by grep but readability is a human call."
+  - test: "Run a screen reader (VoiceOver / NVDA) on the Time Pressure section. Confirm the chart announces 'Average clock difference over time' (role='img' + aria-label) and the net flag rate value gets WDL context via the new InfoPopover (WR-04 fix)."
+    expected: "Chart region announced cleanly. Net flag rate context reachable without sighted clues. Card section retains its aria-label='Time pressure analysis' (88-09..88-11 invariant)."
+    why_human: "Assistive-technology announcements cannot be verified by jsdom tests; requires AT runtime."
 ---
 
-# Phase 88: Time Pressure Stats Rework — Verification Report (post-gap-closure, re-verification)
+# Phase 88: Time Pressure Stats Rework — Verification Report (Phase 88.2 scope-amendment re-verification)
 
-**Phase Goal (ROADMAP):** Replace the Time Pressure at Endgame Entry table and the Time Pressure vs Performance line chart with a unified per-TC card design (one card per bullet/blitz/rapid/classical, 6 bullets each: 1 Clock Gap + 5 Score-Delta quintile bullets). Closes v1.17 endgame rework arc.
+**Phase Goal (ROADMAP):** Per-TC card layout for the Endgames Time Pressure section (bullet/blitz/rapid/classical). v1.17 single-bullet doctrine; sparse-TC card gate; codegen-driven zone bands; significance gating.
 
-**Verified:** 2026-05-17T16:50:18Z
+**§2 Scope Amendment (LOCKED 2026-05-17):** Walks back SC #1's deletion of the line chart and the table's clock summary stats. A-1..A-5 add: each TC card in its own charcoal container (A-1), restored "Average Clock Difference over Time" line chart (A-2), restored per-card top-zone stats (A-3), qualitative quintile labels + Q4 hide (A-4), ±30% quintile axis (A-5). CHANGELOG entries from 88-13/14/15 frame the walk-back honestly.
+
+**Verified:** 2026-05-17T19:24:35Z
 **Status:** human_needed
-**Re-verification:** Yes — closing the `gaps_found` from the prior 88-VERIFICATION.md (CR-01 blocker + 6 warnings) after Plans 88-09..88-12 shipped.
+**Re-verification:** Yes — supersedes the prior `human_needed` verdict after Plans 88-13 / 88-14 / 88-15 landed the §2 amendment and the 88-REVIEW.md WR-01..WR-05 + IN-01/IN-02/IN-04 fixes shipped.
 
 ## Re-Verification Summary
 
-| Prior gap | Closure plan | Status now |
-|---|---|---|
-| CR-01 (cohort blocker) | 88-09 | CLOSED — cohort layer deleted; D-07 supersedes D-05 |
-| WR-01 (small-N cohort gate) | 88-09 | CLOSED (subsumed by min-n-per-side gate) |
-| WR-02 (aria-labelledby orphan) | 88-11 | CLOSED — aria-label="Time pressure analysis" |
-| WR-03 (unsafe `!` non-null assertion) | 88-11 | CLOSED — getPressureBinBand helper consumed |
-| WR-04 (duplicated MIN_GAMES_*) | 88-10 | CLOSED — single source of truth in endgame_zones.py |
-| WR-05 (MIN_GAMES_PER_PRESSURE_BIN unused) | 88-09 | CLOSED — wired into gate inside _build_quintile_bullets |
-| WR-06 (orphan LLM subsection / helpers) | 88-09 | CLOSED — 8+ symbols + 2 finding helpers removed |
-| IN-01 (dead constants) | 88-09 | CLOSED — 4 constants removed |
-| IN-02 (PLACEHOLDER strings) | 88-10 | CLOSED |
-| IN-04 (D-07 retires D-05) | 88-09 | CLOSED — D-07 locked in 88-CONTEXT.md |
-| IN-05 (ARIA-wiring test) | 88-11 | CLOSED |
-| IN-06 (getPressureBinBand helper) | 88-10 | CLOSED |
-| POLISH-01 (rerun + decision) | 88-12 | CLOSED (keep-as-is, documented) |
+| §2 Ask | Plan | Closure status | Evidence |
+|---|---|---|---|
+| A-1 — separate per-TC charcoal containers | 88-13 | VERIFIED | `Endgames.tsx:534-541` — no outer `<div className="charcoal-texture rounded-md p-4">` wrap around `<EndgameTimePressureSection>`; comment cites Plan 88-13 A-1 and the EndgameTypeBreakdownSection convention. |
+| A-2 — restored Average Clock Difference over Time line chart | 88-15 | VERIFIED | New file `EndgameClockDiffOverTimeChart.tsx` exists, exports the chart component, role="img" + aria-label, wired in `Endgames.tsx:545-549`. Backend `ClockDiffTimelineResponse` on overview at `app/schemas/endgames.py:740`. |
+| A-3 — top-zone Clock Gap + 3-stat row | 88-14 | VERIFIED | `EndgameTimePressureCard.tsx:335-384` defines `ThreeStatRow` rendering 3 stats with their `time-pressure-card-{tc}-{my-avg-time|opp-avg-time|net-flag-rate}` test-ids; backend 6 new fields on `TimePressureTcCard` (`app/schemas/endgames.py:706-711`). |
+| A-4 — Q4 hidden + qualitative labels | 88-13 | VERIFIED | `EndgameTimePressureCard.tsx:62-66` defines PRESSURE_LABELS; `:436` filters `quintile_index <= MAX_VISIBLE_QUINTILE_INDEX (=3)`. All 4 displayed labels present. |
+| A-5 — quintile axis ±30% | 88-13 | VERIFIED | `pressureBulletConfig.ts:23` — `export const PRESSURE_DELTA_DOMAIN = 0.30;`. |
+| WR-01 — pre-fill rolling window from pre-cutoff games | post-88-15 | VERIFIED | `_compute_clock_diff_timeline` accepts `cutoff: datetime | None`; per_week_counts only incremented for at-or-after cutoff; emit phase drops weeks `< cutoff_monday`. Call site at `endgame_service.py:2657` passes `clock_rows_all` + `cutoff=cutoff`. |
+| WR-02 — Y-axis overflow allowed | post-88-15 | VERIFIED | `EndgameClockDiffOverTimeChart.tsx:145` — `allowDataOverflow={true}` with explanatory comment. |
+| WR-03 — explicit `dict[date, ...]` typings | post-88-15 | VERIFIED | `endgame_service.py:1840, 1877` — `dict[_date, int]` / `dict[_date, tuple[float, int]]` instead of `dict[Any, ...]`. |
+| WR-04 — net flag rate screen-reader context | post-88-14 | VERIFIED | `EndgameTimePressureCard.tsx:370-380` — `InfoPopover` on net flag rate with WDL convention explainer. |
+| WR-05 — drop scaffolded useIsMobile from chart | post-88-15 | VERIFIED | Chart uses Tailwind responsive `-ml-2 sm:ml-0` (line 126) instead of a hook. |
+| IN-01/IN-02/IN-04 (housekeeping) | post-88-15 | VERIFIED | aria-hidden em-dash, dead test helper removed, caption bumped to `text-sm`. |
 
 ## Goal Achievement
 
@@ -69,107 +77,110 @@ human_verification:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Legacy `EndgameClockPressureSection.tsx` deleted; `EndgameTimePressureSection.tsx` is the NEW card-grid orchestrator | VERIFIED (regression-clean) | `ls frontend/src/components/charts/ | grep -i "clock\|pressure\|legacy"` returns only `EndgameTimePressureCard.tsx` and `EndgameTimePressureSection.tsx`. Section renders `grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4` of `EndgameTimePressureCard`. |
-| 2 | `data.time_pressure_chart` / `data.clock_pressure` references are gone from Endgames.tsx; replaced by `time_pressure_cards` | VERIFIED (regression-clean) | Endgames.tsx:284 reads `overviewData?.time_pressure_cards`; line 534 renders `<EndgameTimePressureSection data={timePressureCardsData} />`. |
-| 3 | Per-TC card renders 6 bullets: 1 Clock Gap + 5 Score-Delta quintile bullets, sparse-handled, triple-gate font coloring | VERIFIED (regression-clean) | `EndgameTimePressureCard.tsx` defines `ClockGapRow`, `QuintileRow`, `EmptyBinRow`. Card hides when `card.total < MIN_GAMES_PER_TC_CARD` (now imported from generated `endgameZones`). 5 quintile rows iterate `card.quintiles`. |
-| 4 | Cohort doctrine — the prior CR-01 failed truth ("filter-responsive mirror-bucket") is REPLACED by D-07's same-game opp-quintile split | VERIFIED (design pivot, scope-supersedes) | `query_cohort_clock_rows` and `_compute_cohort_lookup` are deleted. `_build_quintile_bullets` now consumes `(user_w, user_d, user_l, user_n, opp_w, opp_d, opp_l, opp_n)` via `compute_score_difference_test` (unpaired two-sample Wilson). D-07 in `88-CONTEXT.md:77` explicitly retires D-05. No cross-user query runs on `/api/endgames/overview`. |
-| 5 | Score-Delta significance test exists, is wired, and the n-gate is min(n_user, n_opp) ≥ MIN_GAMES_PER_PRESSURE_BIN | VERIFIED | `compute_score_difference_test` is the unpaired two-sample Wilson helper (kept from Phase 85.1). `_build_quintile_bullets` at endgame_service.py:1593 enforces `n_user >= MIN_GAMES_PER_PRESSURE_BIN AND n_opp >= MIN_GAMES_PER_PRESSURE_BIN`. The 88-01-vintage `compute_score_delta_vs_reference` helper (and its private `_wilson_score_test_vs_ref`) were deliberately removed by 88-09 — the D-07 design uses the two-sample form, not the fixed-reference form. |
-| 6 | Frontend type `PressureQuintileBullet.opp_score` matches backend schema; popover copy reads "vs opponent"; unsafe index-narrowing replaced; ARIA accessible-name resolves; MIN_GAMES_* sourced from codegen | VERIFIED | `frontend/src/types/endgames.ts:234` declares `opp_score: number | null`. Card imports `MIN_GAMES_PER_TC_CARD, MIN_GAMES_PER_PRESSURE_BIN, getPressureBinBand` from `@/generated/endgameZones`. `getPressureBinBand(tc, bin.quintile_index)` replaces the `[q as 0|1|2|3|4]!` pattern. Section uses `aria-label="Time pressure analysis"`. |
+| 1 | Four per-TC cards (bullet / blitz / rapid / classical) each render with the §2 top-zone (Clock Gap bullet + 3-stat row) and four quintile bullets (Q4 hidden) below | VERIFIED | `EndgameTimePressureCard.tsx:418-444` renders ClockGapRow + ThreeStatRow (top zone) then a separator then `.filter(bin => bin.quintile_index <= MAX_VISIBLE_QUINTILE_INDEX).map(...)`. `EndgameTimePressureSection.tsx` lays out as `grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4`. Card-level gate `card.total < MIN_GAMES_PER_TC_CARD` retained. |
+| 2 | Restored "Average Clock Difference over Time" line chart renders with pre-cutoff pre-fill, no Y-axis silent clipping, and correct screen-reader copy | VERIFIED | `EndgameClockDiffOverTimeChart.tsx` defines the component. Pre-fill: see Truth 4 evidence. Overflow: `allowDataOverflow={true}` at line 145. ARIA: `role="img"` + `aria-label="Average clock difference over time"` at lines 94-95. |
+| 3 | Endgames page wires the chart into the slot per §2 (between EndgameTimePressureSection and SectionInsightSlot) | VERIFIED | `Endgames.tsx:545-549` — conditional render on `showClockDiffTimeline && clockDiffTimelineData` with its own `charcoal-texture rounded-md p-4` wrap (per-component card convention, distinct from the section-level wrap that A-1 removed). |
+| 4 | Backend `clock_diff_timeline` aggregator is in `EndgameOverviewResponse`, fed by `clock_rows_all` (unfiltered-by-recency), and pre-fills the rolling window from pre-cutoff rows | VERIFIED | `endgame_service.py:2628-2657` fetches `clock_rows_all = await query_clock_stats_rows(... recency_cutoff=None ...)`, filters separately to `clock_rows` for the per-TC aggregator, and passes the unfiltered `clock_rows_all` + `cutoff=cutoff` into `_compute_clock_diff_timeline`. The function pre-fills the rolling-window state from pre-cutoff rows and drops pre-cutoff-monday points from the emitted list (`endgame_service.py:1865-1898`). |
+| 5 | Codegen drift gate clean | VERIFIED | `uv run python scripts/gen_endgame_zones_ts.py --check` → "OK: frontend/src/generated/endgameZones.ts is up to date." |
+| 6 | Carried-forward invariants from 88-09..88-12 still hold: no cross-user cohort query, opp-quintile split intact, MIN_GAMES_* sourced from codegen, aria-label on section, opp_score in PressureQuintileBullet | VERIFIED (regression-clean) | `grep -c "query_cohort_clock_rows\|_compute_cohort_lookup\|cohort_lookup" app/services/endgame_service.py` → 0. `MIN_GAMES_PER_TC_CARD` / `MIN_GAMES_PER_PRESSURE_BIN` still imported from `app.services.endgame_zones` (lines 67-68). `aria-label="Time pressure analysis"` still on `EndgameTimePressureSection.tsx`. `PressureQuintileBullet.opp_score` still in schema. |
+| 7 | A-3 backend top-zone fields populate from the same `query_clock_stats_rows` row stream the per-quintile aggregator consumes | VERIFIED | `_iterate_clock_rows` returns a 5-tuple including `tc_clock_agg: dict[str, _ClockAggregate]`; `_compute_time_pressure_cards` consumes it to derive `user_avg_pct`, `user_avg_seconds`, `opp_avg_pct`, `opp_avg_seconds`, `avg_clock_diff_seconds`, `net_timeout_rate`. No new repo function. |
+| 8 | Net flag rate unit convention (FRACTION on the wire, PERCENT for the threshold comparison) is correctly bridged | VERIFIED | `EndgameTimePressureCard.tsx:323-332` — `tintForNetTimeoutRate` multiplies `rate * 100` before comparing to `NEUTRAL_TIMEOUT_THRESHOLD`. Backend ships fraction (`net_timeout_rate: float = 0.0`, docstring "Fraction units"). |
+| 9 | Clock-diff timeline unit convention (PERCENT end-to-end) is correct | VERIFIED | Backend `clock_diff_pct = (user_clock - opp_clock) / base_time_seconds * 100` (endgame_service.py:1862). Chart Y domain `[-30, 30]` is percent. `NEUTRAL_PCT_THRESHOLD = 5.0` is percent. No conversion at any layer. Backend test `test_percent_units_not_fraction` pins this. |
+| 10 | Orphan schemas `ClockPressureTimelinePoint` and `ClockPressureResponse` deleted | VERIFIED | `grep -c "ClockPressureTimelinePoint\|ClockPressureResponse" app/schemas/endgames.py` → 0. |
+| 11 | CHANGELOG honest about SC #1 walk-back | VERIFIED | `CHANGELOG.md` carries §2-related bullets under `## [Unreleased]`: card relabel + Q4 hide + axis widen + chrome split (88-13), restored top-zone stats (88-14), restored line chart (88-15). |
 
-**Score:** 6/6 truths verified.
-
-Note on Truth 4 vs the original ROADMAP SC: the ROADMAP Phase 88 SC text predates the post-VERIFICATION pivot and references "cohort_score" + "compute_score_delta_vs_reference". The user explicitly approved a design pivot (D-07 supersedes D-05) inside the same phase boundary, recorded in 88-VERIFICATION.md lines 178-220 and 88-CONTEXT.md lines 77-105. The pivot delivers the same observable user-facing outcome (per-quintile score deltas with CI whiskers and triple-gate coloring) via a cleaner, OOM-safe data path. Treating this as an in-phase amendment to the ROADMAP SC, not a deviation.
+**Score:** 11/11 truths verified.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `app/repositories/endgame_repository.py` | `query_cohort_clock_rows` REMOVED | VERIFIED (DELETED) | Only a commemorative comment remains at line 877 documenting the removal under D-07 / CR-01. |
-| `app/services/endgame_service.py` | Cohort plumbing removed; opp-quintile split; MIN_GAMES_* imported from endgame_zones | VERIFIED | `_compute_cohort_lookup` / `cohort_lookup` / `cohort_rows`: 0 occurrences in source. `MIN_GAMES_PER_PRESSURE_BIN` / `MIN_GAMES_PER_TC_CARD` imported from endgame_zones at lines 67-68. Gate at line 1593, card-total gate at line 1662. Dead constants (`MIN_GAMES_FOR_CLOCK_STATS`, `NUM_BUCKETS`, `BUCKET_WIDTH_PCT`, `CLOCK_PRESSURE_TIMELINE_WINDOW`): 0 occurrences. |
-| `app/services/score_confidence.py` | `compute_score_delta_vs_reference` + `_wilson_score_test_vs_ref` REMOVED | VERIFIED (DELETED) | Only a commemorative comment remains at lines 124-128. `compute_score_difference_test` (the surviving Phase 85.1 helper) is the live function used by `_build_quintile_bullets`. |
-| `app/schemas/endgames.py` | `PressureQuintileBullet.opp_score` (not `cohort_score`) | VERIFIED | `opp_score: float | None` at line 650; docstrings rewritten for D-07 semantics; `cohort_score` absent. |
-| `app/services/endgame_zones.py` | `MIN_GAMES_PER_TC_CARD = 20`, `MIN_GAMES_PER_PRESSURE_BIN = 5` as module-level constants; 20 `PressureBinBand` entries preserved (keep-as-is from 88-08) | VERIFIED | Constants at lines 164, 169. 20 `PressureBinBand` entries intact (bullet/blitz/rapid/classical × Q0..Q4) with 88-08 calibration values unchanged. |
-| `scripts/gen_endgame_zones_ts.py` | Emits `MIN_GAMES_PER_TC_CARD`, `MIN_GAMES_PER_PRESSURE_BIN`, and `getPressureBinBand` helper; no PLACEHOLDER strings on calibrated zones | VERIFIED | Lines 212-241 emit the calibrated zones with attribution to §3.3.3 (no PLACEHOLDER on the pressure-bin block), the two MIN_GAMES_* constants, and the typed helper. Codegen drift gate: `uv run python scripts/gen_endgame_zones_ts.py --check` → "OK: ... is up to date". |
-| `frontend/src/generated/endgameZones.ts` | New TS exports + helper; no PLACEHOLDER comments on calibrated values | VERIFIED | Exports `MIN_GAMES_PER_TC_CARD = 20` (line 105), `MIN_GAMES_PER_PRESSURE_BIN = 5` (line 106), `getPressureBinBand` (line 113). `grep -E "PLACEHOLDER\|placeholder until benchmarks" frontend/src/generated/endgameZones.ts` → 0. |
-| `frontend/src/components/charts/EndgameTimePressureCard.tsx` | Imports codegen constants; uses `getPressureBinBand`; "vs opponent" copy | VERIFIED | Imports at line 23-28. `getPressureBinBand(tc, bin.quintile_index)` at line 142 (2 references total). Unsafe `[q as 0|1|2|3|4]!` pattern: 0 occurrences. Local `const MIN_GAMES_PER_*` shadows: 0 occurrences. |
-| `frontend/src/components/charts/EndgameTimePressureSection.tsx` | `aria-label="Time pressure analysis"` (not dangling `aria-labelledby`) | VERIFIED | Line 22. `aria-labelledby="time-pressure-heading"`: 0 occurrences. `time-pressure-heading` id across entire `frontend/src/` tree: 0 references — no orphan id. |
-| `frontend/src/types/endgames.ts` | `PressureQuintileBullet.opp_score` | VERIFIED | Line 234 declares `opp_score: number | null`. `cohort_score`/`cohortPct` greps: 0. |
-| `app/services/insights_service.py` | `_finding_clock_diff_timeline` + `_finding_time_pressure_vs_performance` REMOVED | VERIFIED (DELETED) | Only a commemorative comment remains at lines 954-956. |
-| `app/services/insights_llm.py` | WR-06 orphans REMOVED (`_SKIPPED_SUBSECTIONS`, `_format_time_pressure_chart_block`, `_low_time_gap_line`, `_LOW_TIME_BUCKETS`, `_LOW_TIME_GAP_DECISIVE`) | VERIFIED (DELETED) | Only commemorative comments remain at lines 142-143 and line 971. Live code references: 0. |
-| `frontend/src/components/charts/__tests__/EndgameTimePressureSection.test.tsx` | IN-05 ARIA-wiring regression test | VERIFIED | Lines 180-190 assert `aria-label === 'Time pressure analysis'` AND `aria-labelledby === null`. |
-| `.planning/milestones/v1.17-phases/88-time-pressure-stats-rework/88-CONTEXT.md` | D-07 entry retiring D-05 | VERIFIED | Lines 77-105 contain the locked D-07 decision; explicit "supersedes D-05" in the heading. |
-| `reports/benchmarks-latest.md` | §3.3.3.b opp-quintile rerun subsection | VERIFIED | Line 1134 contains `#### §3.3.3.b chess-score-per-pressure-bin — opp-quintile rerun (Phase 88.1 / 2026-05-17)`. |
+| `frontend/src/lib/pressureBulletConfig.ts` | `PRESSURE_DELTA_DOMAIN = 0.30` | VERIFIED | Line 23 — `export const PRESSURE_DELTA_DOMAIN = 0.30;` |
+| `frontend/src/components/charts/EndgameTimePressureCard.tsx` | PRESSURE_LABELS for Q0..Q3, MAX_VISIBLE_QUINTILE_INDEX=3, filter, pressureLabel helper, ThreeStatRow, tintForNetTimeoutRate, InfoPopover on net flag rate | VERIFIED | Lines 62-66 labels, 70 filter index, 77-81 helper, 335-384 ThreeStatRow (+ format helpers + tint), 436 filter call, 370-380 net-flag-rate InfoPopover. |
+| `frontend/src/pages/Endgames.tsx` | No outer charcoal wrap around EndgameTimePressureSection; clockDiffTimelineData + showClockDiffTimeline derived; chart rendered conditionally | VERIFIED | Lines 286-289 derive timeline data + visibility flag; 534-552 renders without outer wrap, chart conditionally inside its own charcoal container above SectionInsightSlot. |
+| `frontend/src/components/charts/EndgameClockDiffOverTimeChart.tsx` | New file; Recharts ComposedChart; Y_DOMAIN [-30, 30]; allowDataOverflow=true; role="img" + aria-label; InfoPopover; ChartTooltip; line + bar + 2 ReferenceArea bands + ReferenceLine at 0 | VERIFIED | File exists; lines 43 (Y_DOMAIN), 75 empty-handling, 94-95 ARIA, 101-117 InfoPopover, 145 overflow, 156-171 zone bands. |
+| `frontend/src/components/charts/__tests__/EndgameClockDiffOverTimeChart.test.tsx` | Tests exist and pass | VERIFIED | 6 tests under `EndgameClockDiffOverTimeChart` describe; ran clean. |
+| `frontend/src/types/endgames.ts` | TimePressureTcCard mirrors backend 6 new fields + ClockDiffTimelinePoint + ClockDiffTimelineResponse + clock_diff_timeline on EndgameOverviewResponse | VERIFIED | `grep -c "user_avg_pct" frontend/src/types/endgames.ts` → 1; `ClockDiffTimelinePoint` / `ClockDiffTimelineResponse` declared; `clock_diff_timeline` added to overview type. |
+| `app/schemas/endgames.py` | 6 new fields on TimePressureTcCard (5 averages `float \| None = None` + `net_timeout_rate: float = 0.0`); new ClockDiffTimelinePoint + ClockDiffTimelineResponse; clock_diff_timeline field on EndgameOverviewResponse; ClockPressureTimelinePoint/Response deleted | VERIFIED | Lines 706-711 fields with defaults; new pair adjacent to time_pressure_cards; line 740 field on overview; orphans deleted (grep → 0). |
+| `app/services/endgame_service.py` | `_ClockAggregate` dataclass; `_iterate_clock_rows` returns 5-tuple; `_compute_clock_diff_timeline(clock_rows, window, cutoff)` with pre-fill semantics; `compose_endgame_overview` passes `clock_rows_all` + `cutoff=cutoff`; CLOCK_PRESSURE_TIMELINE_WINDOW reintroduced | VERIFIED | `grep -c "_ClockAggregate"` → ≥2 (definition + consumer). `_compute_clock_diff_timeline` defined at line 1793, called at 2657 with `cutoff=cutoff`. `CLOCK_PRESSURE_TIMELINE_WINDOW: int = 100` at line 1271. |
+| `tests/services/test_time_pressure_service.py` | TestTcCardTopZoneStats (7 tests) + TestComputeClockDiffTimeline (6 tests) | VERIFIED | Both test classes present and green; total time_pressure suite passes. |
+| `CHANGELOG.md` | Bullets under `[Unreleased]` for 88-13/14/15 | VERIFIED | `grep -c "Average Clock Difference over Time" CHANGELOG.md` → ≥1 (88-15). Card relabel + restored top-zone bullets present. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|-----|--------|---------|
-| `endgame_zones.py` (MIN_GAMES_* + PressureBinBand) | `endgameZones.ts` (constants + helper + ZONES record) | `scripts/gen_endgame_zones_ts.py` | WIRED | Codegen drift gate exits 0. Generated file emits all expected exports. |
-| `endgame_zones.MIN_GAMES_PER_PRESSURE_BIN` | `_build_quintile_bullets` (gate) | python import at endgame_service.py:67 | WIRED | Imported once at the top of the module; consumed at line 1593 in the n-gate. |
-| `compute_score_difference_test` | `_build_quintile_bullets` | python import at endgame_service.py:80 | WIRED | Called at line 1620 with `(user_w, user_d, user_l, n_user, opp_w, opp_d, opp_l, n_opp)`. |
-| `getPressureBinBand` (generated) | `EndgameTimePressureCard.tsx` (QuintileRow) | TS import at line 27 | WIRED | `neutralBand = getPressureBinBand(tc, bin.quintile_index)` at line 142, with early-null handling. |
-| `MIN_GAMES_PER_TC_CARD` (generated) | `EndgameTimePressureCard.tsx` (card-level visibility) | TS import (codegen-side) | WIRED | Consumed in the card-level gate (no local shadow remains; `grep -cE "^const MIN_GAMES_PER_" EndgameTimePressureCard.tsx` → 0). |
-| Schema `opp_score` (Pydantic) | `PressureQuintileBullet.opp_score` (TS) | manual mirror | WIRED | Both fields present; popover copy switched to "vs opponent". |
-| Endgames page section | section accessible name | self-contained `aria-label` | WIRED | aria-label is now self-contained; no cross-file id dependency. |
+| `compose_endgame_overview` (clock_rows_all + cutoff) | `_compute_clock_diff_timeline` (pre-fill + emit-cutoff filter) | direct call at endgame_service.py:2657 | WIRED | Comment at 2654 cites WR-01 explicitly; signature accepts `cutoff: datetime \| None`. |
+| `EndgameOverviewResponse.clock_diff_timeline` | `EndgameClockDiffOverTimeChart` | overview hook + Endgames.tsx render | WIRED | Frontend type mirrors backend; conditional render guards on `points.length > 0`. |
+| `TimePressureTcCard` top-zone fields | `EndgameTimePressureCard.ThreeStatRow` | mirrored TS type + JSX consumer | WIRED | 6 fields read in ThreeStatRow; test-ids resolve. |
+| `NEUTRAL_TIMEOUT_THRESHOLD` (percent) | `tintForNetTimeoutRate(rate)` (fraction → percent) | `rate * 100 > NEUTRAL_TIMEOUT_THRESHOLD` | WIRED | B-1 unit lock; tested explicitly at ±6% and ±3%. |
+| Endgames page Time Pressure section | per-TC card chrome | NO outer charcoal-texture wrap (A-1) | WIRED | Outer wrap removed; cards retain `charcoal-texture` internally. |
+| `MIN_GAMES_PER_TC_CARD` / `MIN_GAMES_PER_PRESSURE_BIN` | card gates | codegen-emitted from endgame_zones.py → endgameZones.ts | WIRED | Backend import at endgame_service.py:67-68; frontend import in card; no local shadows. |
 
 ### Data-Flow Trace (Level 4)
 
 | Artifact | Data Variable | Source | Produces Real Data | Status |
 |---|---|---|---|---|
-| `EndgameTimePressureCard` quintile delta | `bin.delta` | `_build_quintile_bullets` → `compute_score_difference_test` on `user_quintile_wdl[tc][q]` and `opp_quintile_wdl[tc][q]` (both from `_iterate_clock_rows` over user's own filtered games) | Yes — single-pass derivation from the user's filtered game stream; both sides backed by real DB rows | FLOWING |
-| `EndgameTimePressureCard` opp_score | `bin.opp_score` | Same path; opp side derived by bucketing same rows with opp clock-pct and inverting result | Yes; replaces the prior HOLLOW (unfiltered cohort) data path flagged in the original verification | FLOWING |
-| `EndgameTimePressureCard` clock_gap | `card.clock_gap.mean_diff_pct` | `_build_clock_gap` → `compute_paired_difference_test` over same rows | Yes (unchanged from original) | FLOWING |
+| `ThreeStatRow` my/opp avg time + net flag rate | `card.user_avg_pct`, `card.opp_avg_pct`, `card.net_timeout_rate`, etc. | `_iterate_clock_rows` `_ClockAggregate` → `_compute_time_pressure_cards` derives averages and ratio | Yes — derived from the same filtered row stream the per-quintile bullets already consume | FLOWING |
+| `EndgameClockDiffOverTimeChart` line + bars | `timeline.points[*].avg_clock_diff_pct`, `per_week_game_count`, `game_count` | `_compute_clock_diff_timeline(clock_rows_all, cutoff)` ISO-Monday bucketed rolling-window walk over the unfiltered-by-recency row stream | Yes — pre-fill via `clock_rows_all`; cutoff applied at emit time; `clock_diff_pct = (user_clock - opp_clock) / base_time_seconds * 100` | FLOWING |
+| `tintForNetTimeoutRate` color | `card.net_timeout_rate` (FRACTION) | Cross-checked against `NEUTRAL_TIMEOUT_THRESHOLD` (PERCENT) via `* 100` | Yes; unit relationship tested at ±6% / ±3% | FLOWING |
 
-The previously-HOLLOW cohort path (the original Truth 6 / CR-01 failure) is removed entirely. All bullet values now flow from the user's own filtered games, scientifically valid (independent two-sample test because user/opp clocks fall in different quintiles within the same game), and OOM-safe (no cross-user query).
+No HOLLOW / DISCONNECTED / STATIC paths introduced. The 88-09 anti-pattern (unfiltered cross-user cohort) remains absent.
 
 ### Behavioral Spot-Checks
 
-- Backend tests (gap-closure surface): `uv run pytest tests/services/test_time_pressure_service.py tests/services/test_score_confidence.py tests/services/test_insights_llm.py tests/services/test_endgame_zones.py -q` → **193 passed in 0.56s**.
-- Frontend tests for the two card files: `npm test -- --run EndgameTimePressureCard.test.tsx EndgameTimePressureSection.test.tsx` → **22 passed (22)**.
-- Codegen drift gate: `uv run python scripts/gen_endgame_zones_ts.py --check` → exits 0 ("OK: frontend/src/generated/endgameZones.ts is up to date.").
-- Backend type check on touched files: `uv run ty check app/services/endgame_service.py app/services/endgame_zones.py app/services/score_confidence.py app/schemas/endgames.py app/services/insights_service.py app/services/insights_llm.py` → "All checks passed!".
+- `uv run pytest tests/services/test_time_pressure_service.py tests/test_endgame_service.py -q` → **324 passed in 0.38s**.
+- `cd frontend && npm test -- --run EndgameTimePressureCard.test.tsx EndgameTimePressureSection.test.tsx EndgameClockDiffOverTimeChart.test.tsx` → **42 passed (42)** across 3 test files.
+- `uv run python scripts/gen_endgame_zones_ts.py --check` → "OK: frontend/src/generated/endgameZones.ts is up to date."
 
 ### Probe Execution
 
-No `scripts/*/tests/probe-*.sh` files declared in any of the 12 plans. Step skipped.
+No `scripts/*/tests/probe-*.sh` files declared in any of the §2 plans. Step skipped (consistent with prior verification).
 
 ### Requirements Coverage
 
 | Requirement | Source plan(s) | Description | Status | Evidence |
 |---|---|---|---|---|
-| POLISH-01 | 88-09, 88-11, 88-12 | Peer/neutral band decision resolved | SATISFIED | §3.3.3.b rerun documented in reports/benchmarks-latest.md; keep-as-is decision in 88-12-SUMMARY frontmatter; PRESSURE_BIN_SCORE_NEUTRAL_ZONES intact and now semantically valid on `user_score − opp_score`. |
-| POLISH-03 | 88-10, 88-11 | data-testid + ARIA + semantic HTML coverage | SATISFIED (for Phase 88 surfaces) | data-testid present across card / bullets / values / info / empty rows. ARIA accessible name resolves. WR-02 closed. Full v1.17 sweep remains Phase 89 scope per ROADMAP. |
-| POLISH-02 | — | Gauge significance gating | DEFERRED to Phase 89 (per ROADMAP). |
-| POLISH-04 | — | Mobile parity at 375px | DEFERRED to Phase 89 (per ROADMAP); spot-checked here as human-needed item below. |
+| A-1 | 88-13 | Each TC card in its own charcoal container | SATISFIED | Outer wrap removed; cards retain internal chrome. |
+| A-2 | 88-15 | Average Clock Difference over Time line chart restored | SATISFIED | New backend payload + new chart component + page wiring; pre-fill + overflow + ARIA fixes applied. |
+| A-3 | 88-14 | Card top-zone: Clock Gap + 3-stat row | SATISFIED | 6 new schema fields, aggregator, top-zone JSX, format helpers, popover. |
+| A-4 | 88-13 | Q4 hidden + qualitative labels | SATISFIED | Filter + PRESSURE_LABELS + helper; backend payload unchanged. |
+| A-5 | 88-13 | Quintile bullet axis ±30% | SATISFIED | `PRESSURE_DELTA_DOMAIN = 0.30`; D-02 band unchanged. |
+| POLISH-01 | 88-09..88-12 | Peer/neutral band decision resolved | SATISFIED (carried forward) | Documented in prior verification; no §2 change affects this. |
+| POLISH-03 | 88-10..88-14 | data-testid + ARIA + semantic HTML | SATISFIED (Phase 88 surfaces) | New top-zone testids and chart testid present. WR-04 closes the net-flag-rate ARIA gap. |
+| POLISH-02 | — | Gauge significance gating | DEFERRED (Phase 89) |
+| POLISH-04 | — | Mobile parity at 375px | DEFERRED (Phase 89) — included as a human-UAT item. |
 
-REQUIREMENTS.md still lists POLISH-01..04 against Phase 88. POLISH-01 and POLISH-03 are now satisfied within the Phase 88 scope as far as the Time Pressure section is concerned; POLISH-02 and POLISH-04 are explicitly Phase 89 scope per the ROADMAP. No orphaned requirement IDs.
+REQUIREMENTS.md still lists POLISH-01..04 against Phase 88. A-1..A-5 are §2 amendment-scoped and not separately tracked in REQUIREMENTS.md — they are anchored in `88-CONTEXT.md` §2 as the binding contract.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| `scripts/gen_endgame_zones_ts.py` | 72 | Internal Python comment `# PLACEHOLDER band until benchmarks §3.3.1 clock-gap-% runs calibrate it.` references a stale state — Phase 88-08 has since calibrated the clock-gap band | INFO | Codegen-template-internal Python comment about the `_CLOCK_GAP_SPEC` source variable; doesn't appear in the generated TS (the TS-side block at lines 243-244 correctly attributes the calibrated values to §3.3.1). Not in IN-02 scope (IN-02 specifically targeted the generated-TS PLACEHOLDER strings). Worth a one-line cleanup but out of Phase 88.1 scope; flagging for future hygiene. |
-| `scripts/gen_endgame_zones_ts.py` | 200-201 | `// Phase 87.1 (SEED-016 D-04): achievable_score_gap added as a placeholder` mention | INFO | Belongs to Phase 87.1 work (different ZoneSpec), not Phase 88 / IN-02. Mentioned here only to confirm grep noise is not a Phase 88 regression. |
+| `scripts/gen_endgame_zones_ts.py` | 72 | Pre-existing PLACEHOLDER mention on the `_CLOCK_GAP_SPEC` Python-side comment | INFO | Same finding as prior verification — not §2 scope. Stale internal comment; doesn't appear in generated TS. |
+| `scripts/gen_endgame_zones_ts.py` | 200-201 | Pre-existing PLACEHOLDER mention on Phase 87.1 SEED-016 zone | INFO | Belongs to Phase 87.1; not §2 scope. Mentioned to confirm grep noise is unchanged from prior verification. |
 
-No blocker- or warning-severity anti-patterns introduced or remaining in Phase 88 scope.
+No blocker- or warning-severity anti-patterns introduced or remaining in §2 scope. All `TBD`/`FIXME`/`XXX` greps on files modified by §2 plans return zero unreferenced markers.
 
 ### Human Verification Required
 
-See `human_verification:` in frontmatter. Four items, all standard rendering / interactivity / accessibility checks that require a running browser:
+See `human_verification:` in frontmatter. Six items, all in the same family as the prior re-verification but expanded to cover the §2-restored surfaces:
 
-1. Responsive 4/2/1 col grid at xl/lg/base with filter-response behaviour (D-07 user-facing semantic shift: "vs opponent" rather than "vs cohort").
-2. Three sparse states render distinctly (full / dimmed / empty), with the new min(n_user, n_opp) gate.
-3. MetricStatPopover content + mobile tap-target at 375px.
-4. Screen reader announces the section's accessible name correctly (jsdom-level test passes but cannot confirm the actual AT announcement).
+1. Per-card charcoal containers (A-1) read correctly in the responsive grid.
+2. Top-zone stats (A-3) render with correct values, em-dash fallbacks, and tinted net flag rate.
+3. Q4 hide (A-4) + qualitative labels + ±30% axis (A-5) read cleanly.
+4. Line chart (A-2) renders with correct pre-fill on filtered cohorts (WR-01) and no silent clipping (WR-02).
+5. Mobile parity at 375px on the new surfaces.
+6. Screen-reader announcements on the chart and the new net flag rate popover (WR-04).
 
 ### Gaps Summary
 
-No remaining gaps. All 12 previously-identified findings (CR-01 + 6 WR-* + 5 IN-* + POLISH-01 partial) are closed in the live codebase. The CR-01 cohort-fairness blocker is resolved by a design pivot (D-07) — the entire cohort data path is gone, replaced by a same-game opp-quintile split that is both semantically cleaner (no cross-user query, no OOM risk) and statistically valid (compute_score_difference_test is the right test for two independent samples drawn from the same filtered game-set).
+No remaining gaps. The §2 scope amendment (A-1..A-5) is fully delivered in code, all WR-* and IN-* review findings have follow-up commits, the codegen drift gate is clean, and the targeted backend / frontend test suites are green. The five carried-forward invariants from 88-09..88-12 (no cohort query, opp-quintile split, MIN_GAMES_* from codegen, aria-label on section, opp_score type) regress-cleanly.
 
-Status is `human_needed` rather than `passed` because the rendering / interactivity / accessibility checks in `human_verification:` are intrinsically not grep-verifiable, not because of any open gap.
+Status is `human_needed` because the §2 deliverables include UI restorations (chart pre-fill behaviour on real recency-filtered data, top-zone tint legibility, ±30% axis on real-world score deltas, screen-reader announcements) that are intrinsically not grep-verifiable. Per CONTEXT §2 routing note #5, these new human-UAT items gate Phase 88 closure and do NOT roll forward.
 
 ---
 
-_Verified: 2026-05-17T16:50:18Z_
+_Verified: 2026-05-17T19:24:35Z_
 _Verifier: Claude (gsd-verifier)_
-_Re-verification of: 88-VERIFICATION.md gaps_found (2026-05-17)_
+_Re-verification of: 88-VERIFICATION.md (prior status: human_needed, awaiting UAT for the now-superseded scope; §2 amendment replaces that bucket with the new UAT items above)_
