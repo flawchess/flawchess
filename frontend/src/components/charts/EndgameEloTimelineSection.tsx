@@ -246,9 +246,8 @@ export function EndgameEloTimelineSection({
     >
       <div className="space-y-2">
         <p>
-          <strong>Endgame ELO</strong> and <strong>Non-Endgame ELO</strong> sit
-          symmetrically around your <strong>Actual ELO</strong> — the band between
-          them is your endgame&apos;s lift (green) or drag (red), measured in ELO
+          <strong>Endgame ELO</strong> (dashed line) and <strong>Non-Endgame ELO</strong> (dotted line) sit symmetrically around your <strong>Actual ELO</strong>. The band between
+          them is your endgame's lift (green) or drag (red), measured in ELO
           units.
         </p>
         <p>
