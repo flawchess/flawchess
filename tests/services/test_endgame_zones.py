@@ -6,6 +6,8 @@ registry sanity.
 from app.services.endgame_zones import (
     BUCKETED_ZONE_REGISTRY,
     NEUTRAL_TIMEOUT_THRESHOLD,
+    PRESSURE_BIN_NEUTRAL_CAP,
+    PRESSURE_BIN_SCORE_NEUTRAL_ZONES,
     ZONE_REGISTRY,
     assign_bucketed_zone,
     assign_zone,
@@ -231,6 +233,10 @@ class TestRegistrySanity:
         # Phase 87.5 (D-06): metric name restored to endgame_elo_gap
         # (additive-K formula; the gap is now actual_elo + K · eg_score_gap,
         # not the Phase 87.4 affine-recentered Conv ΔES).
+        # Phase 88: clock_gap_pct added for the Clock Gap bullet on the
+        # time-pressure cards. LLM narration deferred (insights_service.py
+        # uses a named allow-list; no auto-finding is registered for this
+        # metric).
         assert set(ZONE_REGISTRY.keys()) == {
             "score_gap",
             "achievable_score_gap",
@@ -247,6 +253,7 @@ class TestRegistrySanity:
             "section2_score_gap_conv",
             "section2_score_gap_parity",
             "section2_score_gap_recov",
+            "clock_gap_pct",
         }
 
     def test_net_timeout_rate_uses_threshold_constant(self) -> None:
@@ -255,6 +262,55 @@ class TestRegistrySanity:
         assert spec.direction == "higher_is_better"
         assert spec.typical_upper == NEUTRAL_TIMEOUT_THRESHOLD
         assert spec.typical_lower == -NEUTRAL_TIMEOUT_THRESHOLD
+
+    def test_clock_gap_pct_registry_entry(self) -> None:
+        """Phase 88: clock_gap_pct is registered with higher_is_better direction
+        and finite typical_lower < typical_upper.
+
+        LLM narration is deferred; this test confirms only the zone registry
+        entry has the correct direction and valid band (not the finding wiring).
+        """
+        assert "clock_gap_pct" in ZONE_REGISTRY
+        spec = ZONE_REGISTRY["clock_gap_pct"]
+        assert spec.direction == "higher_is_better"
+        assert spec.typical_lower < spec.typical_upper
+        assert not (spec.typical_lower != spec.typical_lower)  # not NaN
+        assert not (spec.typical_upper != spec.typical_upper)  # not NaN
+
+    def test_pressure_bin_zones_shape(self) -> None:
+        """Phase 88 D-02: PRESSURE_BIN_SCORE_NEUTRAL_ZONES covers all 4 TCs x 5 quintiles.
+
+        Invariants:
+        - Keys are exactly the 4 TC strings.
+        - Each TC maps to exactly quintiles {0, 1, 2, 3, 4}.
+        - For every (tc, q): band.lower < band.upper (valid interval).
+        - Half-width <= PRESSURE_BIN_NEUTRAL_CAP (editorial cap enforced).
+
+        Test uses PRESSURE_BIN_NEUTRAL_CAP constant (not hardcoded 0.06) so it
+        stays green when Plan 08 swaps in real benchmark-calibrated values that
+        may use a different cap.
+
+        Iterates directly over the mapping's typed keys to satisfy ty's
+        Literal-key inference (iterating a set[str] would fail the key type
+        check for Mapping[Literal[...], ...]).
+        """
+        assert set(PRESSURE_BIN_SCORE_NEUTRAL_ZONES.keys()) == {
+            "bullet",
+            "blitz",
+            "rapid",
+            "classical",
+        }
+        for tc, quintile_map in PRESSURE_BIN_SCORE_NEUTRAL_ZONES.items():
+            assert set(quintile_map.keys()) == {0, 1, 2, 3, 4}
+            for q, band in quintile_map.items():
+                assert band.lower < band.upper, (
+                    f"Invalid band for tc={tc} q={q}: lower={band.lower} >= upper={band.upper}"
+                )
+                half_width = (band.upper - band.lower) / 2
+                assert half_width <= PRESSURE_BIN_NEUTRAL_CAP + 1e-9, (
+                    f"Half-width {half_width} exceeds PRESSURE_BIN_NEUTRAL_CAP={PRESSURE_BIN_NEUTRAL_CAP}"
+                    f" for tc={tc} q={q}"
+                )
 
     def test_bucketed_recovery_matches_benchmark(self) -> None:
         """260503: recovery typical band tightened to [0.24, 0.36] — pooled
