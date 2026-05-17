@@ -205,7 +205,11 @@ describe('EndgameEloTimelineSection — 3-line + signed-band layout', () => {
     expect(areas.length).toBe(2);
   });
 
-  it('does not render any dashed-stroke Line (Phase 87.5 dashed Endgame ELO is gone)', () => {
+  it('renders Endgame ELO as dashed and Non-Endgame ELO as dotted (UAT 87.6 2026-05-17)', () => {
+    // Per UAT feedback: use dashed lines for Endgame ELO and dotted lines for
+    // Non-Endgame ELO so the two PR lines are distinguishable from each other
+    // and from the bold solid Actual ELO line at a glance. Phase 87.5's "no
+    // dashed line" rule is rescinded.
     const { container } = render(
       <EndgameEloTimelineSection
         data={buildResponse()}
@@ -213,11 +217,17 @@ describe('EndgameEloTimelineSection — 3-line + signed-band layout', () => {
         isError={false}
       />,
     );
-    // strokeDasharray on <path> elements inside the chart (not user-defined CSS)
     const dashedPaths = container.querySelectorAll(
       '.recharts-line-curve[stroke-dasharray]:not([stroke-dasharray=""])',
     );
-    expect(dashedPaths.length).toBe(0);
+    // 2 combos × (1 dashed Endgame + 1 dotted Non-Endgame) = 4 dash-arrayed lines.
+    // The solid Actual ELO line carries no stroke-dasharray.
+    expect(dashedPaths.length).toBe(4);
+    const patterns = new Set(
+      Array.from(dashedPaths).map((p) => p.getAttribute('stroke-dasharray')),
+    );
+    // Two distinct dash patterns — one dashed, one dotted.
+    expect(patterns.size).toBe(2);
   });
 
   it('renders the chart container', () => {

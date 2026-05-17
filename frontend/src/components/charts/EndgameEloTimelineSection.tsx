@@ -525,7 +525,9 @@ export function EndgameEloTimelineSection({
                   isAnimationActive={false}
                   legendType="none"
                 />,
-                // 2. Fine Endgame ELO line (PR on endgame games)
+                // 2. Fine Endgame ELO line (PR on endgame games) — dashed
+                //    UAT 2026-05-17: dashed vs dotted distinguishes the two
+                //    PR lines for users (combo color is shared with Actual ELO).
                 <Line
                   yAxisId="elo"
                   key={`${combo.combo_key}_endgame_elo`}
@@ -533,14 +535,15 @@ export function EndgameEloTimelineSection({
                   dataKey={`${combo.combo_key}_endgame_elo`}
                   name={combo.combo_key}
                   stroke={colors.bright}
-                  strokeWidth={1}
+                  strokeWidth={1.25}
+                  strokeDasharray="6 3"
                   dot={false}
                   connectNulls={true}
                   hide={isHidden}
                   isAnimationActive={false}
                   legendType="none"
                 />,
-                // 3. Fine Non-Endgame ELO line (PR on non-endgame games)
+                // 3. Fine Non-Endgame ELO line (PR on non-endgame games) — dotted
                 <Line
                   yAxisId="elo"
                   key={`${combo.combo_key}_non_endgame_elo`}
@@ -548,7 +551,9 @@ export function EndgameEloTimelineSection({
                   dataKey={`${combo.combo_key}_non_endgame_elo`}
                   name={combo.combo_key}
                   stroke={colors.bright}
-                  strokeWidth={1}
+                  strokeWidth={1.25}
+                  strokeDasharray="1 3"
+                  strokeLinecap="round"
                   dot={false}
                   connectNulls={true}
                   hide={isHidden}
