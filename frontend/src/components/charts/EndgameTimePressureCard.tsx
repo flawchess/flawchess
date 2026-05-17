@@ -355,11 +355,29 @@ function ThreeStatRow({ card }: ThreeStatRowProps) {
           {formatPctSecs(card.opp_avg_pct, card.opp_avg_seconds)}
         </span>
       </span>
-      <span data-testid={`time-pressure-card-${card.tc}-net-flag-rate`}>
+      <span
+        data-testid={`time-pressure-card-${card.tc}-net-flag-rate`}
+        className="inline-flex items-center gap-1"
+      >
         Net flag rate:{' '}
+        {/* REVIEW.md WR-04: the tinted span on its own conveys directionality
+            to sighted users only. The popover (consistent with the Clock Gap
+            row above) carries the WDL convention reference so screen-reader
+            users get the same context. */}
         <span style={tint ? { color: tint } : undefined}>
           {formatNetTimeoutRate(card.net_timeout_rate)}
         </span>
+        <InfoPopover
+          ariaLabel="What is Net flag rate?"
+          testId={`time-pressure-card-${card.tc}-net-flag-rate-info`}
+          side="top"
+        >
+          <p>
+            Your opponents' flag (timeout) rate minus your own, on games in this
+            time control. Positive = you flag less often than your opponents.
+            Negative = you flag more often.
+          </p>
+        </InfoPopover>
       </span>
     </div>
   );
