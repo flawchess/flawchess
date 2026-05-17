@@ -378,7 +378,7 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "endgame_start_vs_end": (10, 50),
     "score_timeline": (10, 52),
     "endgame_metrics": (30, 100),
-    "endgame_elo_timeline": (10, 40),  # Phase 87.5 D-06: restored from the Phase 87.4 subsection name.
+    "endgame_elo_timeline": (10, 40),  # Phase 87.5 D-06: restored Phase 87.4 subsection name.
     "time_pressure_at_entry": (10, 50),
     "clock_diff_timeline": (10, 52),
     "time_pressure_vs_performance": (30, 100),
