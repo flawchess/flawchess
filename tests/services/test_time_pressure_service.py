@@ -40,6 +40,9 @@ from app.services.score_confidence import compute_paired_difference_test
 # ---------------------------------------------------------------------------
 
 
+_UNSET: Any = object()
+
+
 def _make_row(
     tc: str,
     user_clk_pct: float,
@@ -49,8 +52,8 @@ def _make_row(
     base_time_seconds: int = 300,
     game_id: int = 1,
     termination: str | None = None,
-    user_clock: float | None = None,
-    opp_clock: float | None = None,
+    user_clock: Any = _UNSET,
+    opp_clock: Any = _UNSET,
 ) -> tuple[Any, ...]:
     """Build a minimal clock-stats row matching the shape consumed by _iterate_clock_rows.
 
@@ -71,9 +74,9 @@ def _make_row(
     inject absolute-second clock values that don't match the pct convention,
     or pass `None` to exercise the clock-ineligible accumulation branch.
     """
-    if user_clock is None:
+    if user_clock is _UNSET:
         user_clock = user_clk_pct * base_time_seconds
-    if opp_clock is None:
+    if opp_clock is _UNSET:
         opp_clock = opp_clk_pct * base_time_seconds
     return (
         game_id,  # [0] game_id
@@ -103,7 +106,7 @@ class TestUserAndOppQuintileIndependentSplit:
         row = _make_row(
             "blitz", user_clk_pct=0.10, opp_clk_pct=0.90, result="1-0", user_color="white"
         )
-        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl = _iterate_clock_rows([row])
+        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg = _iterate_clock_rows([row])
 
         # User in quintile 0 (max pressure) with one win.
         assert user_q_wdl.get(("blitz", 0)) == (1, 0, 0)
@@ -121,7 +124,7 @@ class TestUserAndOppQuintileIndependentSplit:
         row = _make_row(
             "rapid", user_clk_pct=0.50, opp_clk_pct=0.50, result="1-0", user_color="white"
         )
-        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl = _iterate_clock_rows([row])
+        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg = _iterate_clock_rows([row])
         assert user_q_wdl.get(("rapid", 2)) == (1, 0, 0)  # user win
         assert opp_q_wdl.get(("rapid", 2)) == (0, 0, 1)  # opp loss
 
@@ -142,7 +145,7 @@ class TestUserAndOppQuintileIndependentSplit:
             [0, 1],
             [0.50 * base, 0.50 * base],  # ply 0 = opp's clock, ply 1 = user's clock
         )
-        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl = _iterate_clock_rows([row])
+        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg = _iterate_clock_rows([row])
         assert user_q_wdl.get(("rapid", 2)) == (0, 0, 1)  # user loss
         assert opp_q_wdl.get(("rapid", 2)) == (1, 0, 0)  # opp win
 
@@ -151,7 +154,7 @@ class TestUserAndOppQuintileIndependentSplit:
         row = _make_row(
             "bullet", user_clk_pct=0.30, opp_clk_pct=0.70, result="1/2-1/2", user_color="white"
         )
-        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl = _iterate_clock_rows([row])
+        _tc_total, _tc_diffs, user_q_wdl, opp_q_wdl, _tc_agg = _iterate_clock_rows([row])
         # User in quintile 1 (0.30 -> int(1.5) = 1), opp in quintile 3 (0.70 -> int(3.5) = 3).
         assert user_q_wdl.get(("bullet", 1)) == (0, 1, 0)
         assert opp_q_wdl.get(("bullet", 3)) == (0, 1, 0)
