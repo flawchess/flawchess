@@ -68,6 +68,11 @@ MetricId = Literal[
     # Timeline is now derived additively from Endgame Score Gap.
     "endgame_elo_gap",
     "win_rate",
+    # Phase 88: (my_clock - opp_clock) / base_clock at endgame entry; scalar zone
+    # for the Clock Gap bullet on the time-pressure cards. LLM narration deferred
+    # (CONTEXT.md Deferred Ideas) — insights_service.py uses named allow-list, so
+    # adding this MetricId does NOT auto-fire any LLM finding.
+    "clock_gap_pct",
 ]
 
 SubsectionId = Literal[
@@ -152,6 +157,12 @@ NEUTRAL_PCT_THRESHOLD: float = 5.0
 # Neutral band for net timeout rate in percentage points (mirrors the inline
 # frontend constant in EndgameClockPressureSection.tsx line 23).
 NEUTRAL_TIMEOUT_THRESHOLD: float = 5.0
+
+# Phase 88 D-02: editorial half-width cap for the per-(TC, quintile) Score-Delta
+# neutral bands. PLACEHOLDER — real benchmark-calibrated values land in Plan 08
+# after running /benchmarks §3.3.3. Each band's half-width (upper - lower) / 2
+# must not exceed this cap so the zone coloring stays meaningful.
+PRESSURE_BIN_NEUTRAL_CAP: float = 0.06
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +339,17 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=0.55,
         direction="higher_is_better",
     ),
+    # Phase 88: Clock Gap percentage at endgame entry — (user_clock - opp_clock)
+    # / base_clock. Positive = user has more time (good); negative = user has
+    # less. PLACEHOLDER band: ±NEUTRAL_PCT_THRESHOLD until benchmarks §3.3.1
+    # clock-gap-% runs calibrate a tighter band. No LLM finding is registered
+    # for this metric (insights_service.py uses a named allow-list; time-pressure
+    # LLM narration is deferred per CONTEXT.md Deferred Ideas).
+    "clock_gap_pct": ZoneSpec(
+        typical_lower=-NEUTRAL_PCT_THRESHOLD,
+        typical_upper=NEUTRAL_PCT_THRESHOLD,
+        direction="higher_is_better",
+    ),
 }
 
 
@@ -461,6 +483,62 @@ PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
         # global pooled band until a larger sample emerges.
         achievable_score_gap=(-0.04, 0.04),
     ),
+}
+
+
+# ---------------------------------------------------------------------------
+# PRESSURE_BIN_SCORE_NEUTRAL_ZONES — per-(TC, pressure-quintile) neutral bands.
+# Phase 88 D-02. Calibrated from /benchmarks §3.3.3 (Plan 08).
+# ELO is pooled by default (collapse confirmed per quintile in §3.3.3).
+# Quintile index 0 = 0-20% clock remaining (max pressure); 4 = 80-100% (min).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PressureBinBand:
+    """Neutral [lower, upper] band for Score-Delta in one (TC, quintile) cell."""
+
+    lower: float
+    upper: float
+
+
+# PLACEHOLDER values: every band set to ±PRESSURE_BIN_NEUTRAL_CAP = ±0.06.
+# Real benchmark-calibrated values land in Plan 08 after running /benchmarks
+# §3.3.3 against the benchmark DB. Downstream consumers (Plans 05-07) import
+# this constant's shape; values are swapped in Plan 08 without touching any
+# consumer code.
+PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Mapping[
+    Literal["bullet", "blitz", "rapid", "classical"],
+    Mapping[Literal[0, 1, 2, 3, 4], PressureBinBand],
+] = {
+    "bullet": {
+        0: PressureBinBand(-0.06, 0.06),
+        1: PressureBinBand(-0.06, 0.06),
+        2: PressureBinBand(-0.06, 0.06),
+        3: PressureBinBand(-0.06, 0.06),
+        4: PressureBinBand(-0.06, 0.06),
+    },
+    "blitz": {
+        0: PressureBinBand(-0.06, 0.06),
+        1: PressureBinBand(-0.06, 0.06),
+        2: PressureBinBand(-0.06, 0.06),
+        3: PressureBinBand(-0.06, 0.06),
+        4: PressureBinBand(-0.06, 0.06),
+    },
+    "rapid": {
+        0: PressureBinBand(-0.06, 0.06),
+        1: PressureBinBand(-0.06, 0.06),
+        2: PressureBinBand(-0.06, 0.06),
+        3: PressureBinBand(-0.06, 0.06),
+        4: PressureBinBand(-0.06, 0.06),
+    },
+    "classical": {
+        0: PressureBinBand(-0.06, 0.06),
+        1: PressureBinBand(-0.06, 0.06),
+        2: PressureBinBand(-0.06, 0.06),
+        3: PressureBinBand(-0.06, 0.06),
+        4: PressureBinBand(-0.06, 0.06),
+    },
 }
 
 
