@@ -3155,6 +3155,10 @@ class TestComputeScoreGapTimeline:
         assert series[0].score_difference == pytest.approx(1.0)
         assert series[0].endgame_game_count == 10
         assert series[0].non_endgame_game_count == 10
+        # UAT fix post-87.5: per_week_endgame_games tracks endgame events in the
+        # ISO week (10 endgame rows scheduled into week 1, 10 into week 2).
+        assert series[0].per_week_endgame_games == 10
+        assert series[0].per_week_total_games == 20
         # Phase 68: absolute per-side means persisted.
         assert series[0].endgame_score == pytest.approx(1.0)
         assert series[0].non_endgame_score == pytest.approx(0.0)
@@ -3162,6 +3166,8 @@ class TestComputeScoreGapTimeline:
         assert series[1].score_difference == pytest.approx(0.25)
         assert series[1].endgame_game_count == 20
         assert series[1].non_endgame_game_count == 20
+        assert series[1].per_week_endgame_games == 10
+        assert series[1].per_week_total_games == 20
         # endgame_mean = (10*1 + 10*0.5)/20 = 0.75
         # non_endgame_mean = (10*0 + 10*1)/20 = 0.5
         assert series[1].endgame_score == pytest.approx(0.75)
@@ -3332,6 +3338,7 @@ def _sg_pt(
     endgame_game_count: int = 10,
     non_endgame_game_count: int = 10,
     per_week_total_games: int = 20,
+    per_week_endgame_games: int = 0,
 ) -> "ScoreGapTimelinePoint":
     """Build a ScoreGapTimelinePoint fixture for the Phase 87.5 weekly producer."""
     return ScoreGapTimelinePoint(
@@ -3340,6 +3347,7 @@ def _sg_pt(
         endgame_game_count=endgame_game_count,
         non_endgame_game_count=non_endgame_game_count,
         per_week_total_games=per_week_total_games,
+        per_week_endgame_games=per_week_endgame_games,
         endgame_score=endgame_score,
         non_endgame_score=non_endgame_score,
     )
@@ -3446,14 +3454,25 @@ class TestEndgameEloTimeline:
         assert result[0].endgame_elo == 1520
 
     def test_per_week_endgame_games_carries_through(self):
-        # The producer carries pt.endgame_game_count into the output point.
+        # The producer carries pt.endgame_game_count → endgame_games_in_window
+        # and pt.per_week_endgame_games → per_week_endgame_games (true per-ISO
+        # week count, restored after the Phase 87.5 CR-01 collapse).
         played_at = datetime.datetime(2026, 1, 9, 12, 0, 0)
         all_rows = [(played_at, "chess.com", "blitz", "white", 1500, 1500)]
         asof_dates, asof_ratings = _asof_arrays_from_all_rows(all_rows)
-        sg = [_sg_pt("2026-01-05", endgame_score=0.5, non_endgame_score=0.5, endgame_game_count=42)]
+        sg = [
+            _sg_pt(
+                "2026-01-05",
+                endgame_score=0.5,
+                non_endgame_score=0.5,
+                endgame_game_count=42,
+                per_week_endgame_games=7,
+            )
+        ]
         result = _compute_endgame_elo_weekly_series(sg, asof_dates, asof_ratings)
         assert len(result) == 1
         assert result[0].endgame_games_in_window == 42
+        assert result[0].per_week_endgame_games == 7
 
     def test_per_combo_isolation(self):
         # Phase 87.5 per-combo invariant: each combo's Endgame ELO is derived

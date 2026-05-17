@@ -887,9 +887,14 @@ def _compute_score_gap_timeline(
     endgame_window: list[float] = []
     non_endgame_window: list[float] = []
     # Per-ISO-week count of all events (endgame + non-endgame) — drives the
-    # frontend volume bars. Mirrors `per_week_count` in
-    # `_compute_endgame_elo_weekly_series` (Phase 57.1 D-06).
+    # frontend volume bars on the Score % Difference timeline. Mirrors
+    # `per_week_count` in `_compute_endgame_elo_weekly_series` (Phase 57.1 D-06).
     per_week_total: dict[tuple[int, int], int] = {}
+    # Per-ISO-week count of ENDGAME games only — drives the Endgame ELO
+    # Timeline volume bars. Restored after Phase 87.5 CR-01 had collapsed
+    # `per_week_endgame_games` into the trailing-window count, which made the
+    # bars unreadable (they no longer reflected weekly activity).
+    per_week_endgame: dict[tuple[int, int], int] = {}
     data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
 
     for played_at, side, score in events:
@@ -902,6 +907,10 @@ def _compute_score_gap_timeline(
 
         iso_year, iso_week, iso_weekday = played_at.isocalendar()
         per_week_total[(iso_year, iso_week)] = per_week_total.get((iso_year, iso_week), 0) + 1
+        if side == "endgame":
+            per_week_endgame[(iso_year, iso_week)] = (
+                per_week_endgame.get((iso_year, iso_week), 0) + 1
+            )
 
         eg_count = len(endgame_window)
         neg_count = len(non_endgame_window)
@@ -927,6 +936,7 @@ def _compute_score_gap_timeline(
             "endgame_game_count": eg_count,
             "non_endgame_game_count": neg_count,
             "per_week_total_games": per_week_total[(iso_year, iso_week)],
+            "per_week_endgame_games": per_week_endgame.get((iso_year, iso_week), 0),
             "endgame_score": round(endgame_mean, 4),
             "non_endgame_score": round(non_endgame_mean, 4),
         }
@@ -1344,13 +1354,16 @@ def _compute_endgame_elo_weekly_series(
       week itself has no games. Both lines share the asof rating anchor so
       the gap between them IS the over/underperformance signal.
     - ``endgame_games_in_window`` = ``pt.endgame_game_count`` (carry-through
-      from the score-gap producer).
-    - ``per_week_endgame_games`` = ``pt.endgame_game_count`` (the trailing
-      100-game window count). The score-gap producer does not split per-week
-      vs trailing-window counts, so this field carries the trailing-window
-      count. Phase 87.5 D-06: this is now the documented contract; the schema,
-      frontend types, and tooltip copy reflect the trailing-window semantics
-      ("Games in window") rather than the pre-87.5 per-ISO-week meaning.
+      from the score-gap producer; the trailing 100-game window count).
+    - ``per_week_endgame_games`` = ``pt.per_week_endgame_games`` (UAT fix
+      post-Phase 87.5): the count of endgame games played in THIS specific
+      ISO week. Drives the frontend Endgame ELO Timeline volume bars so users
+      see at a glance whether a weekly point is well-supported. Pre-Phase 87.5
+      this was the producer's own per-ISO-week tally; the 87.5 CR-01 fix had
+      collapsed it onto the trailing-window count which destroyed the bar
+      series. We restored the per-week semantics by tracking endgame-only ISO
+      week counts inside the score-gap producer (which is where ISO-week
+      bucketing already happens).
 
     ``cutoff_str`` filters output points to dates ``>= cutoff_str``; the
     score-gap producer already pre-fills the trailing windows from earlier
@@ -1401,7 +1414,7 @@ def _compute_endgame_elo_weekly_series(
                 endgame_elo=endgame_elo,
                 actual_elo=int(actual_elo_at_date),
                 endgame_games_in_window=pt.endgame_game_count,
-                per_week_endgame_games=pt.endgame_game_count,
+                per_week_endgame_games=pt.per_week_endgame_games,
             )
         )
 

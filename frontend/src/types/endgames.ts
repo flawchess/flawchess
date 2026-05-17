@@ -153,6 +153,10 @@ export interface ScoreGapTimelinePoint {
   // Count of games (endgame + non-endgame) played in THIS specific ISO week.
   // Drives the muted volume-bar series on the Score Gap timeline.
   per_week_total_games: number;
+  // Count of ENDGAME games (only) played in THIS specific ISO week. Threaded
+  // through to EndgameEloTimelinePoint.per_week_endgame_games so the Endgame
+  // ELO Timeline volume bars show per-week endgame activity.
+  per_week_endgame_games: number;
   // Phase 68: absolute per-side rolling-window mean scores (0.0-1.0). Invariant:
   // abs((endgame_score - non_endgame_score) - score_difference) < 1e-9 per bucket.
   endgame_score: number;
@@ -293,9 +297,10 @@ export type EloComboKey =
  *    Positive Endgame Score Gap lifts the rating; negative holds it back.
  *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
  *  endgame_games_in_window: trailing 100-game window count (drives ≥10 floor + tooltip "past N games").
- *  per_week_endgame_games: count of endgame games in the trailing 100-game window
- *    ending at this week (drives muted volume bars; reads as "window support"
- *    rather than per-week activity per Phase 87.5 D-06 redefinition). */
+ *  per_week_endgame_games: count of endgame games played in THIS specific ISO week
+ *    (NOT the trailing window). Drives the muted volume-bar series on the Endgame
+ *    ELO Timeline so the bars reflect per-week activity. Restored to per-week
+ *    semantics in the UAT fix that followed Phase 87.5 CR-01. */
 export interface EndgameEloTimelinePoint {
   date: string;
   endgame_elo: number;

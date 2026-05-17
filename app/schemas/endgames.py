@@ -337,6 +337,12 @@ class ScoreGapTimelinePoint(BaseModel):
     # timeline so users see at a glance whether a weekly point is well-supported
     # or marginal. Mirrors the per_week_* fields on the other endgame timelines.
     per_week_total_games: int
+    # Count of ENDGAME games (only) played in THIS specific ISO week. Threaded
+    # downstream into `EndgameEloTimelinePoint.per_week_endgame_games` so the
+    # Endgame ELO Timeline volume bars show per-week endgame activity (not the
+    # trailing 100-game window count). Defaults to 0 for back-compat with older
+    # fixtures and existing tests that don't set it.
+    per_week_endgame_games: int = 0
     # Phase 68: absolute per-side rolling-window mean scores (0.0-1.0). Drives
     # the two-line Endgame vs Non-Endgame Score chart and the
     # `score_timeline` insights subsection's two per-part series blocks.
@@ -555,12 +561,12 @@ class EndgameEloTimelinePoint(BaseModel):
         is only emitted when both the endgame and non-endgame trailing windows hold
         ``>= MIN_GAMES_FOR_TIMELINE`` (10) games. Drives the frontend tooltip's
         "past N games" copy.
-    per_week_endgame_games: count of endgame games in the trailing 100-game window
-        ending at this week. Frontend uses this for the muted volume-bar series; the
-        bars now read as "window support" rather than per-week activity. Phase 87.5
-        D-06 redefinition: the score-gap producer does not split per-week vs
-        trailing-window counts, so both ``endgame_games_in_window`` and this field
-        carry the same trailing-window count.
+    per_week_endgame_games: count of endgame games played in THIS specific ISO week
+        (NOT the trailing window). Frontend uses this for the muted volume-bar series
+        on the Endgame ELO Timeline so users see at a glance whether a weekly point
+        is well-supported (many endgame games this week) or marginal. Restored to
+        true per-week semantics in the UAT fix that followed Phase 87.5 CR-01, which
+        had collapsed it onto the trailing-window count.
     """
 
     date: str
