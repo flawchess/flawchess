@@ -458,45 +458,47 @@ class ClockStatsRow(BaseModel):
     net_timeout_rate: float  # (timeout wins - timeout losses) / total_endgame_games * 100
 
 
-class ClockPressureTimelinePoint(BaseModel):
-    """One point in the clock-diff timeline (quick-260416-w3q).
+class ClockDiffTimelinePoint(BaseModel):
+    """One ISO-week point on the Average Clock Difference over Time line chart.
+
+    Plan 88-15 (CONTEXT §2 A-2): restored after the Phase 88-07 cleanup deleted
+    the line chart that previously consumed an equivalent shape on the legacy
+    clock-pressure response. Renamed (vs the pre-88-07 timeline point class) to
+    make the design-pivot history obvious to future readers.
 
     date: Monday of the ISO week, YYYY-MM-DD.
-    avg_clock_diff_pct: mean of (user_clock - opp_clock) / base_time_seconds * 100
-        over the trailing `timeline_window` games (see ClockPressureResponse).
-        Positive means the user entered the endgame with more clock than the opponent.
-    game_count: games represented in the window (<= timeline_window).
+    avg_clock_diff_pct: rolling-window mean of
+        (user_clock - opp_clock) / base_time_seconds * 100 — in PERCENT units,
+        not fraction. 50.0 means the user entered the endgame with 50% more of
+        the base clock than the opponent. Matches the chart Y-axis unit and the
+        pre-deletion convention.
+    game_count: count of eligible games in the trailing rolling window
+        (<= CLOCK_PRESSURE_TIMELINE_WINDOW). Drives confidence in the rolling
+        mean — small windows hint at sparse early history.
+    per_week_game_count: count of clock-eligible endgame games in THIS specific
+        ISO week (NOT the trailing window). Drives the muted volume-bar series
+        on the frontend chart. Mirrors per_week_* fields on the other endgame
+        timelines.
     """
 
     date: str
     avg_clock_diff_pct: float
     game_count: int
-    # Count of clock-eligible endgame games in THIS specific ISO week (NOT the
-    # trailing window). Drives the muted volume-bar series on the frontend
-    # Average Clock Difference timeline. Mirrors the per_week_* fields on the
-    # other endgame timelines.
     per_week_game_count: int
 
 
-class ClockPressureResponse(BaseModel):
-    """Time Pressure at Endgame Entry — table broken down by time control (Phase 54).
+class ClockDiffTimelineResponse(BaseModel):
+    """Wrapper for the Average Clock Difference over Time line chart payload.
 
-    rows: per-time-control stats (only rows with >= MIN_GAMES_FOR_CLOCK_STATS games).
-    total_clock_games: total games (across all time controls) with both clocks present.
-    total_endgame_games: total distinct endgame games across all time controls.
-    Both totals include all time controls (even hidden rows) for "Based on X of Y" note.
+    Plan 88-15 (CONTEXT §2 A-2): served on EndgameOverviewResponse alongside
+    time_pressure_cards. points is empty when no game in the user's filtered
+    set passes the clock-eligibility predicate — the frontend hides the chart
+    in that case.
 
-    timeline: weekly rolling-window series of average clock-diff % across all time
-        controls (quick-260416-w3q). Collapsed to a single series — filter by time
-        control via the sidebar filter.
-    timeline_window: rolling window size used for each timeline point.
+    points: chronological list of ISO-week points sorted by date ascending.
     """
 
-    rows: list[ClockStatsRow]
-    total_clock_games: int
-    total_endgame_games: int
-    timeline: list[ClockPressureTimelinePoint]
-    timeline_window: int
+    points: list[ClockDiffTimelinePoint]
 
 
 class TimePressureBucketPoint(BaseModel):
@@ -735,4 +737,5 @@ class EndgameOverviewResponse(BaseModel):
     timeline: EndgameTimelineResponse
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
     time_pressure_cards: TimePressureCardsResponse  # Phase 88: per-TC time pressure cards
+    clock_diff_timeline: ClockDiffTimelineResponse  # Plan 88-15 (CONTEXT §2 A-2): restored Average Clock Difference over Time line chart payload
     endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.5 D-06: paired Endgame ELO + Actual ELO series per (platform, TC) via additive K · eg_score_gap

@@ -466,6 +466,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
     Supplies the minimal fields that compute_findings reads.
     """
     from app.schemas.endgames import (
+        ClockDiffTimelineResponse,
         EndgameCategoryStats,
         EndgameEloTimelineResponse,
         EndgamePerformanceResponse,
@@ -574,6 +575,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         timeline=type_timeline,
         score_gap_material=score_gap_material,
         time_pressure_cards=TimePressureCardsResponse(cards=[]),
+        clock_diff_timeline=ClockDiffTimelineResponse(points=[]),
         endgame_elo_timeline=elo_timeline,
     )
 

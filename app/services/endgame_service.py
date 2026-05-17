@@ -39,6 +39,8 @@ from app.repositories.endgame_repository import (
 )
 from app.schemas.openings import GameRecord
 from app.schemas.endgames import (
+    ClockDiffTimelinePoint,
+    ClockDiffTimelineResponse,
     ClockGapBullet,
     ConversionRecoveryStats,
     EndgameClass,
@@ -1262,6 +1264,11 @@ _QUINTILE_LABELS: list[str] = ["0-20%", "20-40%", "40-60%", "60-80%", "80-100%"]
 # (p99 in prod is 109%), but >200% is noise (saw max 2047% in prod).
 MAX_CLOCK_PCT_OF_BASE = 2.0
 
+# Rolling-window size for the Average Clock Difference over Time line chart.
+# Restored under CONTEXT §2 A-2 (Plan 88-15) after 88-09 removed it during the
+# unused-constant sweep (IN-01). The line-chart consumer returned in 88-15.
+CLOCK_PRESSURE_TIMELINE_WINDOW: int = 100
+
 # Display labels for time control buckets.
 _TIME_CONTROL_LABELS: dict[str, str] = {
     "bullet": "Bullet",
@@ -1780,6 +1787,100 @@ def _compute_time_pressure_cards(
             )
         )
     return TimePressureCardsResponse(cards=cards)
+
+
+def _compute_clock_diff_timeline(
+    clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    window: int = CLOCK_PRESSURE_TIMELINE_WINDOW,
+) -> ClockDiffTimelineResponse:
+    """Build the per-ISO-week rolling clock-diff timeline (Plan 88-15, CONTEXT §2 A-2).
+
+    Pooled across TCs (no time-control faceting — matches the pre-deletion
+    line-chart convention). Filters out rows that lack clock data, have
+    base_time_seconds <= 0, exceed MAX_CLOCK_PCT_OF_BASE, or are missing
+    played_at. One point per ISO Monday using the rolling-window mean value of
+    the LAST eligible game in that week. per_week_game_count counts only
+    eligible games in THIS week; game_count reports the trailing window size.
+
+    Runs as a separate single-pass aggregator (NOT inside _iterate_clock_rows)
+    to keep timeline semantics independent of the per-TC card aggregator —
+    different filter semantics (pooled vs per-TC) and different output shape
+    (chronological points vs TC buckets) make a shared pass awkward.
+
+    Units: avg_clock_diff_pct is in PERCENT (not fraction). Multiplied by 100
+    here so the field is directly chart-renderable on a [-30, 30] Y-axis.
+
+    Args:
+        clock_rows: rows from query_clock_stats_rows (shape: game_id,
+            time_control_bucket, base_time_seconds, termination, result,
+            user_color, ply_array, clock_array, played_at).
+        window: trailing rolling-window size. Defaults to
+            CLOCK_PRESSURE_TIMELINE_WINDOW (100). Parameterised for tests that
+            want to exercise window-truncation behaviour without 100 fixtures.
+
+    Returns:
+        ClockDiffTimelineResponse with chronologically-sorted points (empty
+        when no row passes the eligibility predicate).
+    """
+    # Phase 1: collect eligible (played_at, clock_diff_pct) tuples + per-week
+    # raw counts. Eligibility predicate mirrors _iterate_clock_rows exactly —
+    # if you change one, change the other.
+    eligible: list[tuple[datetime, float]] = []
+    per_week_counts: dict[Any, int] = defaultdict(int)
+    for row in clock_rows:
+        time_control_bucket: str | None = row[1]
+        base_time_seconds: int | None = row[2]
+        user_color: str = row[5]
+        ply_array: list[int] = row[6]
+        clock_array: list[float | None] = row[7]
+        played_at = row[8] if len(row) > 8 else None
+        if time_control_bucket is None:
+            continue
+        if base_time_seconds is None or base_time_seconds <= 0:
+            continue
+        if played_at is None:
+            continue
+        user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
+        if user_clock is None or opp_clock is None:
+            continue
+        if (
+            user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+            or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+        ):
+            continue
+        clock_diff_pct = (user_clock - opp_clock) / base_time_seconds * 100
+        eligible.append((played_at, clock_diff_pct))
+        monday = played_at.date() - timedelta(days=played_at.date().weekday())
+        per_week_counts[monday] += 1
+
+    # Phase 2: sort by played_at ASC, then trailing rolling-window walk.
+    # week_to_rolling maps ISO Monday -> (rolling_mean, window_size_at_that_point).
+    # Overwrite-on-week means the LAST game of the week wins (matches pre-88-07
+    # convention and the iso_week_bucketing_emits_last_game test).
+    eligible.sort(key=lambda t: t[0])
+    rolling: list[float] = []
+    week_to_rolling: dict[Any, tuple[float, int]] = {}
+    for played_at, diff_pct in eligible:
+        rolling.append(diff_pct)
+        if len(rolling) > window:
+            rolling = rolling[-window:]
+        avg = sum(rolling) / len(rolling)
+        monday = played_at.date() - timedelta(days=played_at.date().weekday())
+        week_to_rolling[monday] = (round(avg, 4), len(rolling))
+
+    # Phase 3: emit chronologically.
+    points: list[ClockDiffTimelinePoint] = []
+    for monday in sorted(week_to_rolling.keys()):
+        avg, n = week_to_rolling[monday]
+        points.append(
+            ClockDiffTimelinePoint(
+                date=monday.isoformat(),
+                avg_clock_diff_pct=avg,
+                game_count=n,
+                per_week_game_count=per_week_counts[monday],
+            )
+        )
+    return ClockDiffTimelineResponse(points=points)
 
 
 def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
@@ -2521,6 +2622,12 @@ async def get_endgame_overview(
     # game-set (see _iterate_clock_rows + _build_quintile_bullets).
     time_pressure_cards = _compute_time_pressure_cards(clock_rows)
 
+    # Plan 88-15 (CONTEXT §2 A-2): Build the per-ISO-week rolling clock-diff
+    # timeline for the restored Average Clock Difference over Time line chart.
+    # Pooled across TCs. Separate single-pass aggregator from the per-TC cards
+    # (timeline has different filter semantics — pooled, not faceted).
+    clock_diff_timeline = _compute_clock_diff_timeline(clock_rows)
+
     # Phase 57 ELO-05 / Phase 87.5 D-06: paired Endgame ELO + Actual ELO
     # timeline per (platform, TC) combo. Endgame ELO is derived per
     # (platform, TC) combo from THAT combo's own ScoreGapTimelinePoint series
@@ -2550,5 +2657,6 @@ async def get_endgame_overview(
         timeline=timeline,
         score_gap_material=score_gap_material,
         time_pressure_cards=time_pressure_cards,
+        clock_diff_timeline=clock_diff_timeline,
         endgame_elo_timeline=endgame_elo_timeline,
     )
