@@ -3437,10 +3437,10 @@ class TestEndgameEloTimeline:
 
     def test_asof_uses_largest_date_le_point_date(self):
         # asof-join must pick the latest rating sample <= next-Monday of the
-        # point's ISO week. We seed three actual-rating points; the producer's
-        # ISO-Sunday for a point dated 2026-01-12 (Monday) is 2026-01-18 and
-        # the bisect cutoff is 2026-01-19 (next Monday, exclusive). The
-        # 2026-01-15 sample at rating 1520 must be the picked one.
+        # point's ISO week. We seed three actual-rating points; for a point
+        # dated 2026-01-12 (Monday) the bisect cutoff is 2026-01-19 (next
+        # Monday, exclusive). The 2026-01-15 sample at rating 1520 must be
+        # the picked one.
         all_rows = [
             (datetime.datetime(2026, 1, 5, 12, 0, 0), "chess.com", "blitz", "white", 1500, 1500),
             (datetime.datetime(2026, 1, 15, 12, 0, 0), "chess.com", "blitz", "white", 1520, 1500),

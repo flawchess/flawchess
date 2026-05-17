@@ -1378,10 +1378,12 @@ def _compute_endgame_elo_weekly_series(
         if cutoff_str is not None and pt.date < cutoff_str:
             continue
 
-        # ISO-week end (Sunday) is one day before the next-Monday cutoff. The
-        # ScoreGapTimelinePoint stores Monday; align the asof bisect to the
-        # END of that ISO week so a daily rating chart at the plotted date
-        # shows the same rating (Phase 57.1 D-02 framing).
+        # Plot on the ISO-week Monday to match the Score Gap timeline (which
+        # also stores Monday). The asof bisect still runs against next-Monday
+        # so the rating reflects the END of the ISO week — i.e. the same
+        # window state that drove the score-gap value plotted at this Monday.
+        # (UAT 2026-05-17: the earlier Sunday-of-week label caused a 6-day
+        # x-axis shift between the two charts.)
         try:
             monday = datetime.fromisoformat(pt.date).date()
         except ValueError:
@@ -1389,7 +1391,6 @@ def _compute_endgame_elo_weekly_series(
         tzinfo = actual_elo_dates[0].tzinfo if actual_elo_dates else None
         monday_dt = datetime.combine(monday, time.min, tzinfo=tzinfo)
         next_monday_dt = monday_dt + timedelta(days=7)
-        sunday = monday + timedelta(days=6)
 
         idx = bisect.bisect_right(actual_elo_dates, next_monday_dt)
         if idx == 0:
@@ -1410,7 +1411,7 @@ def _compute_endgame_elo_weekly_series(
 
         out.append(
             EndgameEloTimelinePoint(
-                date=sunday.isoformat(),
+                date=monday.isoformat(),
                 endgame_elo=endgame_elo,
                 actual_elo=int(actual_elo_at_date),
                 endgame_games_in_window=pt.endgame_game_count,
