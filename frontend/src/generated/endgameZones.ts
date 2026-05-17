@@ -88,7 +88,8 @@ export type EndgameClassKey = keyof typeof PER_CLASS_GAUGE_ZONES;
 
 // Phase 88 D-02: per-(TC, pressure-quintile) neutral bands.
 // Quintile 0 = 0-20% clock remaining (max pressure), 4 = 80-100%.
-// PLACEHOLDER values — calibrated by benchmarks §3.3.3 in Plan 08.
+// Calibrated from reports/benchmarks-latest.md §3.3.3 (Phase 88-08, 2026-05-17).
+// Sanity-rerun against opp-quintile semantics in Plan 88-12.
 export const PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Record<
   'bullet' | 'blitz' | 'rapid' | 'classical',
   Record<0 | 1 | 2 | 3 | 4, { min: number; max: number }>
@@ -99,6 +100,27 @@ export const PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Record<
   classical: { 0: { min: -0.06, max: 0.06 }, 1: { min: -0.06, max: 0.06 }, 2: { min: -0.06, max: 0.06 }, 3: { min: -0.06, max: 0.06 }, 4: { min: -0.06, max: 0.06 } },
 } as const;
 
-// Phase 88: Clock Gap scalar neutral band (placeholder until benchmarks §3.3.1).
+// Phase 88 D-03 / Phase 88.1 WR-04: gating thresholds shared with backend.
+// Source of truth: app/services/endgame_zones.py (codegen-mirrored to avoid drift).
+export const MIN_GAMES_PER_TC_CARD = 20;
+export const MIN_GAMES_PER_PRESSURE_BIN = 5;
+
+/**
+ * Look up the neutral band for a (TC, quintile) cell with explicit narrowing.
+ * Phase 88.1 IN-06 / WR-03 — replaces the unsafe `[q as 0|1|2|3|4]!` pattern
+ * with a defensive range check. Returns null if quintile is outside 0..4.
+ */
+export function getPressureBinBand(
+  tc: 'bullet' | 'blitz' | 'rapid' | 'classical',
+  quintile: number,
+): { min: number; max: number } | null {
+  if (quintile < 0 || quintile > 4) return null;
+  const q = quintile as 0 | 1 | 2 | 3 | 4;
+  const band = PRESSURE_BIN_SCORE_NEUTRAL_ZONES[tc][q];
+  return band ?? null;
+}
+
+// Phase 88: Clock Gap scalar neutral band.
+// Calibrated from reports/benchmarks-latest.md §3.3.1 clock-gap-% (Phase 88-08, 2026-05-17).
 export const CLOCK_GAP_NEUTRAL_MIN = -0.065;
 export const CLOCK_GAP_NEUTRAL_MAX = 0.047;

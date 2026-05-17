@@ -62,6 +62,11 @@ from app.schemas.endgames import (
     TimePressureCardsResponse,
     TimePressureTcCard,
 )
+from app.services.endgame_zones import (
+    # Phase 88.1: MIN_GAMES_* lifted to endgame_zones.py for codegen sharing (WR-04).
+    MIN_GAMES_PER_PRESSURE_BIN,
+    MIN_GAMES_PER_TC_CARD,
+)
 from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.eval_utils import (
     eval_cp_to_expected_score,
@@ -1246,15 +1251,6 @@ def _compute_score_gap_material(
         # Pydantic model in app/schemas/endgames.py.
     )
 
-
-# Phase 88 (D-03): minimum endgame games per TC to emit a TimePressureTcCard.
-# Prod-DB validated — ensures each card has enough games for meaningful stats.
-MIN_GAMES_PER_TC_CARD: int = 20
-
-# Phase 88.1 (Plan 09): minimum games per (TC, quintile) bin per SIDE (user or opp)
-# to emit a PressureQuintileBullet with full stats. The n-gate is
-# min(n_user_in_Q, n_opp_in_Q) >= MIN_GAMES_PER_PRESSURE_BIN (REVIEW.md WR-05 wired).
-MIN_GAMES_PER_PRESSURE_BIN: int = 5
 
 # Quintile labels for the 5 pressure bins (0=max pressure, 4=min pressure).
 _QUINTILE_LABELS: list[str] = ["0-20%", "20-40%", "40-60%", "60-80%", "80-100%"]
