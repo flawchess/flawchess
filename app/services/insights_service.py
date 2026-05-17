@@ -46,7 +46,6 @@ import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.endgames import (
-    ClockStatsRow,
     EndgameCategoryStats,
     EndgameEloTimelineCombo,
     EndgameEloTimelinePoint,
@@ -54,6 +53,7 @@ from app.schemas.endgames import (
     MaterialBucket,
     MaterialRow,
     ScoreGapTimelinePoint,
+    TimePressureTcCard,
 )
 from app.schemas.insights import (
     EndgameTabFindings,
@@ -184,12 +184,9 @@ async def compute_findings(
         as_of=datetime.datetime.now(datetime.UTC),
         filters=filter_context,
         findings=all_findings,
-        # Pass the raw 10-bucket all_time chart through to the LLM prompt
-        # assembler. The single-value _finding_time_pressure_vs_performance
-        # placeholder stays in `all_findings` (still filtered out of the
-        # prompt) so the findings list shape is unchanged — bucket rendering
-        # is additive, not a replacement.
-        time_pressure_chart=all_time_resp.time_pressure_chart,
+        # Phase 88: time_pressure_chart removed from EndgameOverviewResponse; LLM
+        # prompt assembly now uses time_pressure_cards instead (Plan 88-07).
+        time_pressure_chart=None,
         # Pass the all_time WDL detail (endgame vs non-endgame, plus per-type
         # categories) through so the LLM prompt can render the `overall_wdl`
         # and `results_by_endgame_type_wdl` chart blocks. The corresponding
@@ -894,37 +891,39 @@ def _findings_time_pressure_at_entry(
 ) -> list[SubsectionFinding]:
     """time_pressure_at_entry -> avg_clock_diff_pct + net_timeout_rate.
 
-    Values are game-weighted means across ClockStatsRow rows (one per time
-    control). Both metrics are zoned as higher_is_better, so zones are read
-    directly from the raw formula output — no sign flip.
+    Phase 88: source switched from ClockStatsRow.clock_pressure to TimePressureTcCard
+    time_pressure_cards. avg_clock_diff_pct is the n-weighted mean of
+    ClockGapBullet.mean_diff_pct * 100 across cards. net_timeout_rate is no longer
+    available in the new response shape — always emits an empty finding.
     """
-    rows: list[ClockStatsRow] = response.clock_pressure.rows
-    total_clock_games = response.clock_pressure.total_clock_games
-
-    clock_diff_quality = sample_quality("time_pressure_at_entry", total_clock_games)
-    is_headline = clock_diff_quality != "thin"
+    cards: list[TimePressureTcCard] = response.time_pressure_cards.cards
 
     findings: list[SubsectionFinding] = []
 
-    if not rows or total_clock_games == 0:
+    if not cards:
         findings.append(_empty_finding("time_pressure_at_entry", window, "avg_clock_diff_pct"))
         findings.append(_empty_finding("time_pressure_at_entry", window, "net_timeout_rate"))
         return findings
 
-    # avg_clock_diff_pct: mean of (user_avg_pct - opp_avg_pct) across rows,
-    # weighted by clock_games. Rows without clock data (user_avg_pct is
-    # None) are excluded from the weighted mean.
+    # avg_clock_diff_pct: n-weighted mean of mean_diff_pct * 100 across TC cards.
+    # mean_diff_pct is a fraction (0.0-1.0 scale); multiply by 100 to match the
+    # avg_clock_diff_pct metric scale expected by assign_zone.
     diff_num = 0.0
     diff_den = 0
-    for r in rows:
-        if r.user_avg_pct is None or r.opp_avg_pct is None or r.clock_games <= 0:
+    for card in cards:
+        n = card.clock_gap.n
+        if n <= 0:
             continue
-        diff_num += (r.user_avg_pct - r.opp_avg_pct) * r.clock_games
-        diff_den += r.clock_games
+        diff_num += card.clock_gap.mean_diff_pct * 100.0 * n
+        diff_den += n
+
     if diff_den > 0:
         clock_diff_value = diff_num / diff_den
     else:
         clock_diff_value = float("nan")
+
+    clock_diff_quality = sample_quality("time_pressure_at_entry", diff_den)
+    is_headline = clock_diff_quality != "thin"
 
     findings.append(
         SubsectionFinding(
@@ -943,36 +942,9 @@ def _findings_time_pressure_at_entry(
         )
     )
 
-    # net_timeout_rate: mean weighted by total_endgame_games (net_timeout_rate
-    # is defined per that denominator in ClockStatsRow).
-    nt_num = 0.0
-    nt_den = 0
-    for r in rows:
-        if r.total_endgame_games <= 0:
-            continue
-        nt_num += r.net_timeout_rate * r.total_endgame_games
-        nt_den += r.total_endgame_games
-    if nt_den > 0:
-        net_timeout_value = nt_num / nt_den
-    else:
-        net_timeout_value = float("nan")
-
-    findings.append(
-        SubsectionFinding(
-            subsection_id="time_pressure_at_entry",
-            parent_subsection_id=None,
-            window=window,
-            metric="net_timeout_rate",
-            value=net_timeout_value,
-            zone=assign_zone("net_timeout_rate", net_timeout_value),
-            trend="n_a",
-            weekly_points_in_window=0,
-            sample_size=nt_den,
-            sample_quality=sample_quality("time_pressure_at_entry", nt_den),
-            is_headline_eligible=is_headline and not math.isnan(net_timeout_value),
-            dimension=None,
-        )
-    )
+    # net_timeout_rate: not available in Phase 88 response shape (removed with
+    # ClockStatsRow / ClockPressureResponse migration). Always emit empty finding.
+    findings.append(_empty_finding("time_pressure_at_entry", window, "net_timeout_rate"))
 
     return findings
 
@@ -981,87 +953,28 @@ def _finding_clock_diff_timeline(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> SubsectionFinding:
-    """clock_diff_timeline -> trend over clock_pressure.timeline series."""
-    timeline = response.clock_pressure.timeline
-    if not timeline:
-        return _empty_finding("clock_diff_timeline", window, "avg_clock_diff_pct")
+    """clock_diff_timeline -> empty finding.
 
-    values = [p.avg_clock_diff_pct for p in timeline]
-    trend, weekly_points = _compute_trend(values)
-    last_value = values[-1]
-    sample_size = len(values)
-    quality = sample_quality("clock_diff_timeline", sample_size)
-    is_headline = trend != "n_a"
-    # D-02/D-03: populate resampled series for LLM prompt assembly.
-    weekly: list[tuple[str, float, int]] = [
-        (p.date, p.avg_clock_diff_pct, p.per_week_game_count) for p in timeline
-    ]
-    return SubsectionFinding(
-        subsection_id="clock_diff_timeline",
-        parent_subsection_id=None,
-        window=window,
-        metric="avg_clock_diff_pct",
-        value=last_value,
-        zone=assign_zone("avg_clock_diff_pct", last_value),
-        trend=trend,
-        weekly_points_in_window=weekly_points,
-        sample_size=sample_size,
-        sample_quality=quality,
-        is_headline_eligible=is_headline,
-        dimension=None,
-        series=_weekly_points_to_time_points(weekly, window),
-    )
+    Phase 88: ClockPressureResponse.timeline removed from EndgameOverviewResponse.
+    The clock-diff timeline series was part of the legacy clock_pressure field and
+    is not replicated in TimePressureCardsResponse. Returns an empty finding until
+    a replacement timeline is added in a follow-up phase.
+    """
+    return _empty_finding("clock_diff_timeline", window, "avg_clock_diff_pct")
 
 
 def _finding_time_pressure_vs_performance(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> SubsectionFinding:
-    """time_pressure_vs_performance -> weighted mean score across user_series.
+    """time_pressure_vs_performance -> empty finding.
 
-    MVP simplification (planner discretion per RESEARCH.md): emit one
-    finding using `avg_clock_diff_pct` as the metric with the weighted-mean
-    user score reinterpreted. The value is NOT a clock-diff percentage in
-    the registry sense — it is the user's weighted mean score (0.0-1.0)
-    across time-pressure buckets. We set `is_headline_eligible=False` until
-    a dedicated metric lands in a follow-up phase; the finding still tracks
-    sample size so Phase 65 prompt-assembly can skip it when thin.
+    Phase 88: TimePressureChartResponse removed from EndgameOverviewResponse.
+    The 10-bucket user/opp score series was part of the legacy time_pressure_chart
+    field and is not replicated in TimePressureCardsResponse. Returns an empty
+    finding until the Phase 88 frontend wiring (Plans 05-07) provides a replacement.
     """
-    chart = response.time_pressure_chart
-    total = chart.total_endgame_games
-    quality = sample_quality("time_pressure_vs_performance", total)
-
-    score_num = 0.0
-    score_den = 0
-    for p in chart.user_series:
-        if p.score is None or p.game_count <= 0:
-            continue
-        score_num += p.score * p.game_count
-        score_den += p.game_count
-    if score_den > 0:
-        value = score_num / score_den
-    else:
-        value = float("nan")
-
-    if total == 0 or math.isnan(value):
-        return _empty_finding("time_pressure_vs_performance", window, "avg_clock_diff_pct")
-
-    return SubsectionFinding(
-        subsection_id="time_pressure_vs_performance",
-        parent_subsection_id=None,
-        window=window,
-        metric="avg_clock_diff_pct",
-        value=value,
-        zone=assign_zone("avg_clock_diff_pct", value),
-        trend="n_a",
-        weekly_points_in_window=0,
-        sample_size=total,
-        sample_quality=quality,
-        # Conservative headline policy until a dedicated slope metric lands
-        # (planner note in RESEARCH.md §Subsection Mapping).
-        is_headline_eligible=False,
-        dimension=None,
-    )
+    return _empty_finding("time_pressure_vs_performance", window, "avg_clock_diff_pct")
 
 
 def _findings_results_by_endgame_type(

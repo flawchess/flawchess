@@ -7,6 +7,7 @@ Functions:
 - query_endgame_timeline_rows: rows for rolling-window time series, overall and per-type
 - query_clock_stats_rows: rows for time pressure at endgame entry (Phase 54)
 - query_endgame_elo_timeline_rows: all-game rows per-combo for Phase 57 Endgame ELO timeline (Phase 87.5 D-06 rebuild on Endgame Score Gap; function name kept as-is for internal grep continuity)
+- query_cohort_clock_rows: clock rows for all users except a given user_id (Phase 88 mirror-bucket cohort)
 """
 
 import datetime
@@ -872,3 +873,71 @@ async def query_endgame_elo_timeline_rows(
 
     all_result = await session.execute(all_stmt)
     return list(all_result.fetchall())
+
+
+async def query_cohort_clock_rows(
+    session: AsyncSession,
+    *,
+    exclude_user_id: int,
+) -> list[Row[Any]]:
+    """Return clock rows for ALL users except exclude_user_id (Phase 88 mirror-bucket cohort).
+
+    Same row shape as query_clock_stats_rows:
+        (game_id, time_control_bucket, base_time_seconds, termination,
+         result, user_color, ply_array, clock_array, played_at)
+
+    Used by _compute_cohort_lookup to build per-(TC, quintile) aggregate chess
+    scores for the PressureQuintileBullet cohort_score field. Excludes the
+    requesting user so their own games do not contaminate the cohort reference.
+
+    No filter parameters are applied beyond user exclusion — the cohort is a
+    global cross-user aggregate. The requesting user's own filter preferences
+    (time_control, platform, rated, opponent_type) do NOT apply to the cohort:
+    the cohort represents the broader population, not a mirror of the user's
+    own filters (Phase 88 Research Q3 / mirror-bucket doctrine).
+
+    Uses the same whole-game ENDGAME_PLY_THRESHOLD rule as query_clock_stats_rows
+    so only games that truly reached an endgame phase contribute to the cohort.
+    """
+    ply_array_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.ply, GamePosition.ply.asc())),
+        ARRAY(SmallIntegerType),
+    )
+    clock_array_agg = type_coerce(
+        func.array_agg(aggregate_order_by(GamePosition.clock_seconds, GamePosition.ply.asc())),
+        ARRAY(FloatType()),
+    )
+
+    per_game_subq = (
+        select(
+            GamePosition.game_id.label("game_id"),
+            ply_array_agg.label("ply_array"),
+            clock_array_agg.label("clock_array"),
+        )
+        .where(
+            GamePosition.user_id != exclude_user_id,
+            GamePosition.endgame_class.isnot(None),
+        )
+        .group_by(GamePosition.game_id)
+        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
+        .subquery("cohort_clock_per_game")
+    )
+
+    stmt = (
+        select(
+            Game.id.label("game_id"),
+            Game.time_control_bucket,
+            Game.base_time_seconds,
+            Game.termination,
+            Game.result,
+            Game.user_color,
+            per_game_subq.c.ply_array,
+            per_game_subq.c.clock_array,
+            Game.played_at,
+        )
+        .join(per_game_subq, Game.id == per_game_subq.c.game_id)
+        .where(Game.user_id != exclude_user_id)
+    )
+
+    result = await session.execute(stmt)
+    return list(result.fetchall())

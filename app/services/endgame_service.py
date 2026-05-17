@@ -29,6 +29,7 @@ from app.repositories.endgame_repository import (
     count_endgame_games,
     count_filtered_games,
     query_clock_stats_rows,
+    query_cohort_clock_rows,
     query_endgame_bucket_rows,
     query_endgame_elo_timeline_rows,
     query_endgame_entry_rows,
@@ -38,6 +39,7 @@ from app.repositories.endgame_repository import (
 )
 from app.schemas.openings import GameRecord
 from app.schemas.endgames import (
+    ClockGapBullet,
     ClockPressureResponse,
     ClockPressureTimelinePoint,
     ClockStatsRow,
@@ -58,10 +60,13 @@ from app.schemas.endgames import (
     EndgameWDLSummary,
     MaterialBucket,
     MaterialRow,
+    PressureQuintileBullet,
     ScoreGapMaterialResponse,
     ScoreGapTimelinePoint,
     TimePressureBucketPoint,
+    TimePressureCardsResponse,
     TimePressureChartResponse,
+    TimePressureTcCard,
 )
 from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.eval_utils import (
@@ -73,6 +78,7 @@ from app.services.score_confidence import (
     compute_confidence_bucket,
     compute_paired_difference_test,
     compute_score_confidence_from_mean,
+    compute_score_delta_vs_reference,
     compute_score_difference_test,
     wilson_bounds,
 )
@@ -1252,6 +1258,18 @@ def _compute_score_gap_material(
 # Rows below this threshold are too sparse for meaningful averages.
 MIN_GAMES_FOR_CLOCK_STATS = 10
 
+# Phase 88 (D-03): minimum endgame games per TC to emit a TimePressureTcCard.
+# Prod-DB validated — ensures each card has enough games for meaningful stats.
+MIN_GAMES_PER_TC_CARD: int = 20
+
+# Phase 88 (D-03): minimum games per (TC, quintile) bin to emit a PressureQuintileBullet
+# with full stats. Bins below this have n populated but delta/p_value/ci_low/ci_high
+# come from compute_score_delta_vs_reference's own n-gates (n < 2 -> CI None, etc.).
+MIN_GAMES_PER_PRESSURE_BIN: int = 5
+
+# Quintile labels for the 5 pressure bins (0=max pressure, 4=min pressure).
+_QUINTILE_LABELS: list[str] = ["0-20%", "20-40%", "40-60%", "60-80%", "80-100%"]
+
 # Number of time-remaining buckets for the pressure-performance chart (Phase 55).
 NUM_BUCKETS = 10
 BUCKET_WIDTH_PCT = 10  # each bucket spans 10 percentage points
@@ -1435,220 +1453,202 @@ def _extract_entry_clocks(
     return user_clock, opp_clock
 
 
-def _compute_clock_pressure(
+def _iterate_clock_rows(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
-    *,
-    timeline: list[ClockPressureTimelinePoint] | None = None,
-    timeline_window: int = CLOCK_PRESSURE_TIMELINE_WINDOW,
-) -> ClockPressureResponse:
-    """Compute time pressure stats at endgame entry, grouped by time control.
+) -> tuple[dict[str, int], dict[str, list[float]], dict[tuple[str, int], tuple[int, int, int]]]:
+    """Iterate clock_rows once, accumulating per-TC and per-(TC, quintile) data.
 
-    Each row from query_clock_stats_rows has the shape:
-    (game_id, time_control_bucket, base_time_seconds, termination, result,
-     user_color, ply_array, clock_array)
+    Returns:
+        tc_total: dict[tc -> total valid endgame games]
+        tc_clock_diffs: dict[tc -> list of (user_clock - opp_clock) / base_clock per game]
+        tc_quintile_wdl: dict[(tc, quintile_index) -> (wins, draws, losses)]
 
-    query_clock_stats_rows returns one row per qualifying game (whole-game 6-ply
-    rule via _any_endgame_ply_subquery, per quick-260414-pv4), so no Python-side
-    deduplication is needed — rows can be iterated directly.
+    Quintile index = min(4, int(user_clk_pct * 5)) so:
+        0.0..0.2 -> 0 (max pressure), 0.2..0.4 -> 1, ..., 0.8..1.0 -> 4 (min pressure)
 
-    Percentage is computed per-game as user_clock / base_time_seconds * 100,
-    where base_time_seconds is the actual starting clock for that game (e.g. 600
-    for a 600+0 game, 900 for a 900+10 game). This avoids the old bucket-first-seen
-    bug where time_control_seconds (base + inc*40) mixed different starting clocks
-    within a bucket (quick-260414-smt).
-
-    Games where either clock exceeds MAX_CLOCK_PCT_OF_BASE * base_time_seconds are
-    excluded entirely from clock accumulation as bad data.
-
-    Returns ClockPressureResponse with:
-    - rows: one ClockStatsRow per time control with >= MIN_GAMES_FOR_CLOCK_STATS games
-    - total_clock_games: total endgame games with both entry clocks present
-    - total_endgame_games: total distinct endgame games (all time controls, pre-filter)
+    Rows with base_clock <= 0 are skipped (T-88-04-02 defensive guard).
+    Rows where either clock exceeds MAX_CLOCK_PCT_OF_BASE * base_clock are skipped
+    (bogus readings — same guard as _compute_clock_pressure).
     """
-    # Previously collapsed multi-span rows to the earliest span per game; SQL now
-    # delivers one row per game (whole-game rule, quick-260414-pv4), so we iterate directly.
-
-    # Accumulators per time control bucket.
-    # Using plain dicts to avoid ty complaints with mutable defaults in TypedDict.
-    tc_game_ids: dict[str, set[int]] = defaultdict(set)
-    tc_timeout_win_ids: dict[str, set[int]] = defaultdict(set)
-    tc_timeout_loss_ids: dict[str, set[int]] = defaultdict(set)
-    tc_user_clocks: dict[str, list[float]] = defaultdict(list)
-    tc_opp_clocks: dict[str, list[float]] = defaultdict(list)
+    tc_total: dict[str, int] = defaultdict(int)
     tc_clock_diffs: dict[str, list[float]] = defaultdict(list)
-    tc_user_pcts: dict[str, list[float]] = defaultdict(list)
-    tc_opp_pcts: dict[str, list[float]] = defaultdict(list)
+    tc_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]] = defaultdict(lambda: (0, 0, 0))
 
     for row in clock_rows:
-        game_id: int = row[0]
         time_control_bucket: str | None = row[1]
         base_time_seconds: int | None = row[2]
-        termination: str | None = row[3]
         result: str = row[4]
         user_color: str = row[5]
         ply_array: list[int] = row[6]
         clock_array: list[float | None] = row[7]
 
-        # Skip rows without a time control bucket
         if time_control_bucket is None:
+            continue
+        # T-88-04-02: skip rows with invalid base clock.
+        if base_time_seconds is None or base_time_seconds <= 0:
             continue
 
         tc = time_control_bucket
-        # Set-based dedup retained as a defensive guard; under the post-pv4 SQL
-        # contract, game_ids are already unique (one row per game).
-        tc_game_ids[tc].add(game_id)
+        tc_total[tc] += 1
 
-        # Extract entry clocks using ply parity
         user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
-
-        # Only accumulate clock stats when BOTH clocks are available AND
-        # base_time_seconds is valid. Without a base clock we can't compute pct
-        # or apply the 2x clamp, so the reading is unreliable — drop the whole
-        # game from every accumulator (seconds, diff, pct) to keep the row
-        # internally consistent.
-        if (
-            user_clock is not None
-            and opp_clock is not None
-            and base_time_seconds is not None
-            and base_time_seconds > 0
-        ):
-            # Clamp: exclude games where either clock exceeds 2x base time — bogus
-            # readings (e.g. adjudicated/disconnected games). Banked increment can
-            # push clocks over 100% legitimately (p99 ~109%), but >200% is noise.
-            if (
-                user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
-                or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
-            ):
-                pass  # Skip entire game — bogus clock reading
-            else:
-                tc_user_clocks[tc].append(user_clock)
-                tc_opp_clocks[tc].append(opp_clock)
-                tc_clock_diffs[tc].append(user_clock - opp_clock)
-                tc_user_pcts[tc].append(user_clock / base_time_seconds * 100)
-                tc_opp_pcts[tc].append(opp_clock / base_time_seconds * 100)
-
-        # Track timeouts — deduplicated by game_id per bucket
-        if termination == "timeout":
-            outcome = derive_user_result(result, user_color)
-            if outcome == "win":
-                tc_timeout_win_ids[tc].add(game_id)
-            elif outcome == "loss":
-                tc_timeout_loss_ids[tc].add(game_id)
-
-    # Build response rows in fixed order; collect pre-filter totals
-    grand_endgame_game_ids: set[int] = set()
-    grand_clock_game_count = 0
-    for game_ids in tc_game_ids.values():
-        grand_endgame_game_ids.update(game_ids)
-    for user_clocks in tc_user_clocks.values():
-        grand_clock_game_count += len(user_clocks)
-
-    rows: list[ClockStatsRow] = []
-    for tc in _TIME_CONTROL_ORDER:
-        game_ids = tc_game_ids.get(tc, set())
-        total_endgame_games = len(game_ids)
-
-        user_clocks = tc_user_clocks.get(tc, [])
-        opp_clocks = tc_opp_clocks.get(tc, [])
-        clock_diffs = tc_clock_diffs.get(tc, [])
-        user_pcts = tc_user_pcts.get(tc, [])
-        opp_pcts = tc_opp_pcts.get(tc, [])
-
-        clock_games = len(user_clocks)
-
-        # Two gates:
-        # 1. total_endgame_games floor — not enough endgame games overall to bother.
-        # 2. clock_games > 0 — no usable clock data at all (e.g. bucket is entirely
-        #    daily/correspondence games with no base_time_seconds). Without this
-        #    the table would show a row full of "—" under "Time Pressure at
-        #    Endgame Entry".
-        if total_endgame_games < MIN_GAMES_FOR_CLOCK_STATS or clock_games == 0:
+        if user_clock is None or opp_clock is None:
             continue
-        user_avg_seconds = statistics.mean(user_clocks) if user_clocks else None
-        opp_avg_seconds = statistics.mean(opp_clocks) if opp_clocks else None
-        avg_clock_diff_seconds = statistics.mean(clock_diffs) if clock_diffs else None
-        user_avg_pct = statistics.mean(user_pcts) if user_pcts else None
-        opp_avg_pct = statistics.mean(opp_pcts) if opp_pcts else None
+        if (
+            user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+            or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
+        ):
+            continue
 
-        timeout_wins = len(tc_timeout_win_ids.get(tc, set()))
-        timeout_losses = len(tc_timeout_loss_ids.get(tc, set()))
-        net_timeout_rate = (timeout_wins - timeout_losses) / total_endgame_games * 100
+        # Quintile: 0=0-20% clock remaining (max pressure), 4=80-100% (min pressure).
+        user_clk_pct = user_clock / base_time_seconds
+        quintile = min(4, int(user_clk_pct * 5))
 
-        label = _TIME_CONTROL_LABELS.get(tc, tc.capitalize())
+        clock_diff_pct = (user_clock - opp_clock) / base_time_seconds
+        tc_clock_diffs[tc].append(clock_diff_pct)
 
-        rows.append(
-            ClockStatsRow(
-                time_control=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
-                label=label,
-                total_endgame_games=total_endgame_games,
-                clock_games=clock_games,
-                user_avg_pct=user_avg_pct,
-                user_avg_seconds=user_avg_seconds,
-                opp_avg_pct=opp_avg_pct,
-                opp_avg_seconds=opp_avg_seconds,
-                avg_clock_diff_seconds=avg_clock_diff_seconds,
-                net_timeout_rate=net_timeout_rate,
-            )
-        )
+        # Accumulate WDL per (TC, quintile).
+        outcome = derive_user_result(result, user_color)
+        w, d, los = tc_quintile_wdl[(tc, quintile)]
+        if outcome == "win":
+            tc_quintile_wdl[(tc, quintile)] = (w + 1, d, los)
+        elif outcome == "draw":
+            tc_quintile_wdl[(tc, quintile)] = (w, d + 1, los)
+        else:
+            tc_quintile_wdl[(tc, quintile)] = (w, d, los + 1)
 
-    # Caller (the orchestrator) passes a pre-computed timeline built from
-    # rows unfiltered by recency, so the rolling window can pre-fill from
-    # games before the cutoff. Fall back to computing from `clock_rows` for
-    # standalone use (tests, ad-hoc calls).
-    if timeline is None:
-        timeline = _compute_clock_pressure_timeline(clock_rows, timeline_window)
+    return dict(tc_total), dict(tc_clock_diffs), dict(tc_quintile_wdl)
 
-    return ClockPressureResponse(
-        rows=rows,
-        total_clock_games=grand_clock_game_count,
-        total_endgame_games=len(grand_endgame_game_ids),
-        timeline=timeline,
-        timeline_window=timeline_window,
+
+def _build_clock_gap(tc: str, clock_diffs: list[float]) -> ClockGapBullet:
+    """Build ClockGapBullet from per-game (user-opp)/base clock diffs for one TC.
+
+    Uses compute_paired_difference_test for mean + CI + p_value.
+    """
+    mean_diff, p_value, ci_low, ci_high = compute_paired_difference_test(clock_diffs)
+    return ClockGapBullet(
+        n=len(clock_diffs),
+        mean_diff_pct=mean_diff,
+        p_value=p_value,
+        ci_low=ci_low,
+        ci_high=ci_high,
     )
 
 
-def _compute_clock_pressure_timeline(
-    clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
-    window: int,
-    cutoff_str: str | None = None,
-) -> list[ClockPressureTimelinePoint]:
-    """Weekly rolling-window series of average clock-diff % at endgame entry.
+def _build_quintile_bullets(
+    tc: str,
+    quintile_wdl: dict[tuple[str, int], tuple[int, int, int]],
+    cohort_lookup: dict[tuple[str, int], float],
+) -> list[PressureQuintileBullet]:
+    """Build exactly 5 PressureQuintileBullet entries for quintiles 0..4.
 
-    Single series collapsed across all time controls — users filter TCs via the
-    sidebar. Each emitted point sits on the Monday of an ISO week and reflects
-    the mean of (user_clock - opp_clock) / base_time_seconds * 100 over the
-    trailing `window` games, using the window state after that week's last game
-    (mirrors `_compute_weekly_rolling_series`).
-
-    Filters applied per game (mirrors `_compute_clock_pressure` inclusion rules):
-    - time_control_bucket must be present
-    - base_time_seconds must be > 0
-    - both entry clocks must be available
-    - neither clock may exceed MAX_CLOCK_PCT_OF_BASE * base_time_seconds
-    - played_at must be non-null (needed for ISO-week bucketing)
-
-    Points with fewer than MIN_GAMES_FOR_TIMELINE games in the window are dropped,
-    matching the same cold-start handling used by the Win Rate by Endgame Type chart.
-
-    `cutoff_str` (YYYY-MM-DD) drops emitted points dated before the cutoff but
-    lets earlier games pre-fill the rolling window — mirrors
-    `get_endgame_timeline` so the recency filter does not starve the window
-    when the user picks a short window like "past 3 months".
+    For each quintile:
+    - Looks up cohort_score from cohort_lookup[(tc, q)]; None if not in lookup.
+    - When cohort_score is None: emits bullet with delta=0.0, all stats None.
+    - When cohort_score is present: delegates to compute_score_delta_vs_reference.
     """
-    game_data: list[tuple[Any, float]] = []
-    for row in clock_rows:
+    bullets: list[PressureQuintileBullet] = []
+    for q in range(5):
+        w, d, los = quintile_wdl.get((tc, q), (0, 0, 0))
+        n = w + d + los
+        cohort_score: float | None = cohort_lookup.get((tc, q))
+
+        if cohort_score is None:
+            bullets.append(
+                PressureQuintileBullet(
+                    quintile_index=q,
+                    quintile_label=_QUINTILE_LABELS[q],
+                    n=n,
+                    delta=0.0,
+                    p_value=None,
+                    ci_low=None,
+                    ci_high=None,
+                    cohort_score=None,
+                )
+            )
+        else:
+            delta, p_value, ci_low, ci_high = compute_score_delta_vs_reference(
+                w, d, los, n, cohort_score
+            )
+            bullets.append(
+                PressureQuintileBullet(
+                    quintile_index=q,
+                    quintile_label=_QUINTILE_LABELS[q],
+                    n=n,
+                    delta=delta,
+                    p_value=p_value,
+                    ci_low=ci_low,
+                    ci_high=ci_high,
+                    cohort_score=cohort_score,
+                )
+            )
+    return bullets
+
+
+def _compute_time_pressure_cards(
+    clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    cohort_lookup: dict[tuple[str, int], float],
+) -> TimePressureCardsResponse:
+    """Compute per-TC time pressure cards from clock_rows.
+
+    One card per TC where total endgame games >= MIN_GAMES_PER_TC_CARD.
+    Each card carries:
+    - ClockGapBullet: paired (user-opp)/base clock diff test via compute_paired_difference_test.
+    - 5 PressureQuintileBullet entries (Q0=max pressure .. Q4=min pressure) via
+      compute_score_delta_vs_reference against cohort_lookup[(tc, quintile)].
+
+    cohort_lookup: dict[(tc, quintile_index) -> cohort_score] — the global aggregate
+    (all other users) mean chess score per (TC, quintile). Build with _compute_cohort_lookup.
+
+    Returns cards in fixed order: bullet -> blitz -> rapid -> classical.
+    """
+    tc_total, tc_clock_diffs, tc_quintile_wdl = _iterate_clock_rows(clock_rows)
+
+    cards: list[TimePressureTcCard] = []
+    for tc in _TIME_CONTROL_ORDER:
+        total = tc_total.get(tc, 0)
+        if total < MIN_GAMES_PER_TC_CARD:
+            continue
+
+        clock_gap = _build_clock_gap(tc, tc_clock_diffs.get(tc, []))
+        quintiles = _build_quintile_bullets(tc, tc_quintile_wdl, cohort_lookup)
+        cards.append(
+            TimePressureTcCard(
+                tc=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+                total=total,
+                clock_gap=clock_gap,
+                quintiles=quintiles,
+            )
+        )
+    return TimePressureCardsResponse(cards=cards)
+
+
+def _compute_cohort_lookup(
+    cohort_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> dict[tuple[str, int], float]:
+    """Aggregate raw cohort clock_rows into (tc, quintile) -> mean_score lookup.
+
+    Same row shape as query_clock_stats_rows. Processes all rows (all users except
+    the requesting user) into per-(TC, quintile) WDL counts, then returns the mean
+    chess score (W + 0.5*D) / N per bucket.
+
+    Buckets with zero games are omitted from the returned dict, which causes the
+    caller to treat them as no cohort data (cohort_score=None).
+    """
+    # Accumulate WDL counts per (TC, quintile) across all cohort rows.
+    bucket_wdl: dict[tuple[str, int], tuple[int, int, int]] = defaultdict(lambda: (0, 0, 0))
+
+    for row in cohort_rows:
         time_control_bucket: str | None = row[1]
         base_time_seconds: int | None = row[2]
+        result: str = row[4]
         user_color: str = row[5]
         ply_array: list[int] = row[6]
         clock_array: list[float | None] = row[7]
-        played_at: Any = row[8]
 
         if time_control_bucket is None:
             continue
         if base_time_seconds is None or base_time_seconds <= 0:
-            continue
-        if played_at is None:
             continue
 
         user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
@@ -1660,183 +1660,26 @@ def _compute_clock_pressure_timeline(
         ):
             continue
 
-        diff_pct = (user_clock - opp_clock) / base_time_seconds * 100
-        game_data.append((played_at, diff_pct))
-
-    game_data.sort(key=lambda x: x[0])
-
-    diffs_so_far: list[float] = []
-    # Per-ISO-week count of clock-eligible endgame games — drives the frontend
-    # volume bars (mirrors `per_week_count` in `_compute_endgame_elo_weekly_series`).
-    per_week_count: dict[tuple[int, int], int] = {}
-    data_by_week: dict[tuple[int, int], dict[str, Any]] = {}
-
-    for played_at, diff_pct in game_data:
-        diffs_so_far.append(diff_pct)
-        window_slice = diffs_so_far[-window:]
-        avg = statistics.mean(window_slice)
-
-        iso_year, iso_week, iso_weekday = played_at.isocalendar()
-        per_week_count[(iso_year, iso_week)] = per_week_count.get((iso_year, iso_week), 0) + 1
-        monday = (played_at - timedelta(days=iso_weekday - 1)).date()
-        data_by_week[(iso_year, iso_week)] = {
-            "date": monday.isoformat(),
-            "avg_clock_diff_pct": round(avg, 4),
-            "game_count": len(window_slice),
-            "per_week_game_count": per_week_count[(iso_year, iso_week)],
-        }
-
-    return [
-        ClockPressureTimelinePoint(**data_by_week[key])
-        for key in sorted(data_by_week.keys())
-        if data_by_week[key]["game_count"] >= MIN_GAMES_FOR_TIMELINE
-        and (cutoff_str is None or data_by_week[key]["date"] >= cutoff_str)
-    ]
-
-
-def _build_bucket_series(
-    buckets: list[list[float]],
-) -> list[TimePressureBucketPoint]:
-    """Build 10-point series from accumulated [score_sum, game_count] pairs.
-
-    Each element of buckets is [score_sum, game_count] for one bucket index.
-    Returns a list of TimePressureBucketPoint with score=None when game_count==0.
-    """
-    points: list[TimePressureBucketPoint] = []
-    for i, bucket in enumerate(buckets):
-        score_sum = bucket[0]
-        count = bucket[1]
-        lo = i * BUCKET_WIDTH_PCT
-        hi = (i + 1) * BUCKET_WIDTH_PCT
-        label = f"{lo}-{hi}%"
-        score = (score_sum / count) if count > 0 else None
-        points.append(
-            TimePressureBucketPoint(
-                bucket_index=i,
-                bucket_label=label,
-                score=score,
-                game_count=int(count),
-            )
-        )
-    return points
-
-
-def _compute_time_pressure_chart(
-    clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
-) -> TimePressureChartResponse:
-    """Compute time-pressure performance chart data from clock_rows.
-
-    Reuses the same clock_rows already fetched by query_clock_stats_rows in
-    get_endgame_overview -- no additional DB query needed.
-
-    query_clock_stats_rows returns one row per qualifying game (whole-game 6-ply
-    rule via _any_endgame_ply_subquery, per quick-260414-pv4), so iterating rows
-    directly produces one data point per game with no risk of double-counting
-    games that cycle through multiple endgame classes.
-
-    For each game with both clocks and valid time_control_seconds:
-    - Bucket user's time% -> accumulate user_score into user_series
-    - Bucket opp's time% -> accumulate (1 - user_score) into opp_series
-
-    quick-260416-pkx: rows are now pooled across all time controls that pass
-    MIN_GAMES_FOR_CLOCK_STATS into a single user_series + opp_series (10 buckets
-    each). Per-time-control rows were dropped — the frontend previously
-    re-aggregated them into a single weighted-average series, so the math now
-    lives here (closer to the data). The per-TC threshold still applies: games
-    belonging to a time control with fewer than MIN_GAMES_FOR_CLOCK_STATS
-    endgame games are excluded from the pool.
-    """
-    # Per-time-control accumulators: [score_sum, game_count] per bucket per time control.
-    # Kept at per-TC granularity so the MIN_GAMES_FOR_CLOCK_STATS threshold can drop
-    # entire TCs before pooling — same behaviour the frontend had when it filtered
-    # the backend's per-TC rows before aggregating.
-    tc_user_buckets: dict[str, list[list[float]]] = defaultdict(
-        lambda: [[0.0, 0] for _ in range(NUM_BUCKETS)]
-    )
-    tc_opp_buckets: dict[str, list[list[float]]] = defaultdict(
-        lambda: [[0.0, 0] for _ in range(NUM_BUCKETS)]
-    )
-    # Count games with valid time_control_bucket (regardless of clock data) — used
-    # for the MIN_GAMES_FOR_CLOCK_STATS gate and for the pooled total_endgame_games.
-    tc_game_count: dict[str, int] = defaultdict(int)
-
-    for row in clock_rows:
-        # game_id (row[0]) and termination (row[3]) are unused in this consumer —
-        # _compute_clock_pressure handles the timeout accounting.
-        time_control_bucket: str | None = row[1]
-        base_time_seconds: int | None = row[2]
-        result: str = row[4]
-        user_color: str = row[5]
-        ply_array: list[int] = row[6]
-        clock_array: list[float | None] = row[7]
-
-        # Skip rows without a time control bucket
-        if time_control_bucket is None:
-            continue
-
         tc = time_control_bucket
-        # One row per game after quick-260414-pv4 rewrite of query_clock_stats_rows, so
-        # this increment cannot double-count games with multiple endgame-class spans.
-        tc_game_count[tc] += 1
+        user_clk_pct = user_clock / base_time_seconds
+        quintile = min(4, int(user_clk_pct * 5))
 
-        # Extract entry clocks via ply parity — same as _compute_clock_pressure
-        user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
+        outcome = derive_user_result(result, user_color)
+        w, d, los = bucket_wdl[(tc, quintile)]
+        if outcome == "win":
+            bucket_wdl[(tc, quintile)] = (w + 1, d, los)
+        elif outcome == "draw":
+            bucket_wdl[(tc, quintile)] = (w, d + 1, los)
+        else:
+            bucket_wdl[(tc, quintile)] = (w, d, los + 1)
 
-        # Skip if either clock is missing — can't bucket without both
-        if user_clock is None or opp_clock is None:
-            continue
-
-        # Skip if base_time_seconds is absent or zero — can't compute per-game percentage
-        # (quick-260414-smt: switched from bucket-first-seen time_control_seconds to
-        # per-game base_time_seconds for apples-to-apples % within each bucket)
-        if base_time_seconds is None or base_time_seconds <= 0:
-            continue
-
-        # Clamp: skip games where either clock exceeds 2x base time — bogus readings
-        if (
-            user_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
-            or opp_clock > MAX_CLOCK_PCT_OF_BASE * base_time_seconds
-        ):
-            continue
-
-        user_pct = user_clock / base_time_seconds * 100
-        opp_pct = opp_clock / base_time_seconds * 100
-
-        # Clamp to [0, NUM_BUCKETS-1] — 100% maps to bucket 9, not 10
-        user_bucket = min(int(user_pct / BUCKET_WIDTH_PCT), NUM_BUCKETS - 1)
-        opp_bucket = min(int(opp_pct / BUCKET_WIDTH_PCT), NUM_BUCKETS - 1)
-
-        user_score = {"win": 1.0, "draw": 0.5, "loss": 0.0}[derive_user_result(result, user_color)]
-
-        # Accumulate: initialise defaultdict entry if needed, then update
-        tc_user_buckets[tc][user_bucket][0] += user_score
-        tc_user_buckets[tc][user_bucket][1] += 1
-        tc_opp_buckets[tc][opp_bucket][0] += 1.0 - user_score
-        tc_opp_buckets[tc][opp_bucket][1] += 1
-
-    # Pool per-TC accumulators into a single series pair. TCs below the threshold
-    # are dropped entirely — same behaviour as the previous per-TC filter that the
-    # frontend then re-aggregated.
-    pooled_user_buckets: list[list[float]] = [[0.0, 0] for _ in range(NUM_BUCKETS)]
-    pooled_opp_buckets: list[list[float]] = [[0.0, 0] for _ in range(NUM_BUCKETS)]
-    total_endgame_games = 0
-    for tc in _TIME_CONTROL_ORDER:
-        if tc_game_count.get(tc, 0) < MIN_GAMES_FOR_CLOCK_STATS:
-            continue
-        total_endgame_games += tc_game_count[tc]
-        tc_user = tc_user_buckets[tc]
-        tc_opp = tc_opp_buckets[tc]
-        for i in range(NUM_BUCKETS):
-            pooled_user_buckets[i][0] += tc_user[i][0]
-            pooled_user_buckets[i][1] += tc_user[i][1]
-            pooled_opp_buckets[i][0] += tc_opp[i][0]
-            pooled_opp_buckets[i][1] += tc_opp[i][1]
-
-    return TimePressureChartResponse(
-        user_series=_build_bucket_series(pooled_user_buckets),
-        opp_series=_build_bucket_series(pooled_opp_buckets),
-        total_endgame_games=total_endgame_games,
-    )
+    # Convert WDL counts to mean chess score.
+    lookup: dict[tuple[str, int], float] = {}
+    for (tc, quintile), (w, d, los) in bucket_wdl.items():
+        n = w + d + los
+        if n > 0:
+            lookup[(tc, quintile)] = (w + 0.5 * d) / n
+    return lookup
 
 
 def _compute_rolling_series(rows: list[Row[Any]], window: int) -> list[dict]:
@@ -2571,17 +2414,12 @@ async def get_endgame_overview(
         clock_rows = [r for r in clock_rows_all if r[8] is not None and r[8] >= cutoff]
     else:
         clock_rows = list(clock_rows_all)
-    clock_diff_timeline = _compute_clock_pressure_timeline(
-        clock_rows_all,
-        CLOCK_PRESSURE_TIMELINE_WINDOW,
-        cutoff_str=cutoff_str,
-    )
-    clock_pressure = _compute_clock_pressure(
-        clock_rows,
-        timeline=clock_diff_timeline,
-        timeline_window=CLOCK_PRESSURE_TIMELINE_WINDOW,
-    )
-    time_pressure_chart = _compute_time_pressure_chart(clock_rows)
+    # Phase 88: Build per-TC time pressure cards (replaces _compute_clock_pressure +
+    # _compute_time_pressure_chart). Fetch cohort clock rows (all users except requesting
+    # user) for the mirror-bucket cohort_score lookup.
+    cohort_rows = await query_cohort_clock_rows(session, exclude_user_id=user_id)
+    cohort_lookup = _compute_cohort_lookup(cohort_rows)
+    time_pressure_cards = _compute_time_pressure_cards(clock_rows, cohort_lookup)
 
     # Phase 57 ELO-05 / Phase 87.5 D-06: paired Endgame ELO + Actual ELO
     # timeline per (platform, TC) combo. Endgame ELO is derived per
@@ -2611,7 +2449,6 @@ async def get_endgame_overview(
         performance=performance,
         timeline=timeline,
         score_gap_material=score_gap_material,
-        clock_pressure=clock_pressure,
-        time_pressure_chart=time_pressure_chart,
+        time_pressure_cards=time_pressure_cards,
         endgame_elo_timeline=endgame_elo_timeline,
     )
