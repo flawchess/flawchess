@@ -57,7 +57,7 @@ interface ClockGapRowProps {
   tc: TimePressureTcCard['tc'];
 }
 
-function ClockGapRow({ gap, tc }: ClockGapRowProps): JSX.Element {
+function ClockGapRow({ gap, tc }: ClockGapRowProps) {
   const level = deriveLevel(gap.p_value, gap.n);
   const neutralMin = CLOCK_GAP_NEUTRAL_MIN;
   const neutralMax = CLOCK_GAP_NEUTRAL_MAX;
@@ -136,7 +136,7 @@ interface QuintileRowProps {
   tc: TimePressureTcCard['tc'];
 }
 
-function QuintileRow({ bin, tc }: QuintileRowProps): JSX.Element {
+function QuintileRow({ bin, tc }: QuintileRowProps) {
   const neutralBand = PRESSURE_BIN_SCORE_NEUTRAL_ZONES[tc][bin.quintile_index as 0 | 1 | 2 | 3 | 4]!;
   const level = deriveLevel(bin.p_value, bin.n);
   const isInColoredZone = bin.delta >= neutralBand.max || bin.delta <= neutralBand.min;
@@ -226,7 +226,7 @@ interface EmptyBinRowProps {
   tc: TimePressureTcCard['tc'];
 }
 
-function EmptyBinRow({ bin, tc }: EmptyBinRowProps): JSX.Element {
+function EmptyBinRow({ bin, tc }: EmptyBinRowProps) {
   return (
     <div
       className="flex flex-col gap-1"
@@ -250,7 +250,7 @@ function EmptyBinRow({ bin, tc }: EmptyBinRowProps): JSX.Element {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }): JSX.Element | null {
+export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) {
   // TC-level hide: not enough games to show any meaningful data for this TC.
   if (card.total < MIN_GAMES_PER_TC_CARD) return null;
 
