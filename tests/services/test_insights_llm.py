@@ -1953,8 +1953,8 @@ class TestV6Enrichments:
         ]
         new_series.sort(key=lambda pt: pt.bucket_start)
         blitz_old = self._finding(
-            subsection_id="conversion_elo_timeline",
-            metric="conversion_elo_gap",
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
             window="all_time",
             value=60.0,
             dimension={"platform": "chess.com", "time_control": "blitz"},
@@ -1962,8 +1962,8 @@ class TestV6Enrichments:
             sample_size=60,
         )
         rapid_new = self._finding(
-            subsection_id="conversion_elo_timeline",
-            metric="conversion_elo_gap",
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
             window="all_time",
             value=-42.0,
             dimension={"platform": "chess.com", "time_control": "rapid"},
@@ -1978,12 +1978,12 @@ class TestV6Enrichments:
         blitz_summary_idx = next(
             i
             for i, ln in enumerate(prompt.splitlines())
-            if ln == "[summary conversion_elo_gap | platform=chess.com, time_control=blitz]"
+            if ln == "[summary endgame_elo_gap | platform=chess.com, time_control=blitz]"
         )
         rapid_summary_idx = next(
             i
             for i, ln in enumerate(prompt.splitlines())
-            if ln == "[summary conversion_elo_gap | platform=chess.com, time_control=rapid]"
+            if ln == "[summary endgame_elo_gap | platform=chess.com, time_control=rapid]"
         )
         prompt_lines = prompt.splitlines()
         # The `all_time:` line sits immediately below its [summary] header.
@@ -2265,8 +2265,8 @@ class TestV6Enrichments:
             TimePoint(bucket_start="2026-01-01", value=-35.0, n=15, actual_elo=1500),
         ]
         finding = self._finding(
-            subsection_id="conversion_elo_timeline",
-            metric="conversion_elo_gap",
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
             window="all_time",
             value=-40.0,
             zone="typical",
@@ -2278,7 +2278,7 @@ class TestV6Enrichments:
         prompt = _assemble_user_prompt(tab)
 
         elo_header = "[summary conversion_elo | platform=chess.com, time_control=rapid]"
-        gap_header = "[summary conversion_elo_gap | platform=chess.com, time_control=rapid]"
+        gap_header = "[summary endgame_elo_gap | platform=chess.com, time_control=rapid]"
         assert elo_header in prompt
         assert gap_header in prompt
         elo_idx = prompt.index(elo_header)
@@ -2310,8 +2310,8 @@ class TestV6Enrichments:
             for day in (5, 12, 19, 26)
         ]
         finding = self._finding(
-            subsection_id="conversion_elo_timeline",
-            metric="conversion_elo_gap",
+            subsection_id="endgame_elo_timeline",
+            metric="endgame_elo_gap",
             window="all_time",
             value=-40.0,
             dimension={"platform": "chess.com", "time_control": "rapid"},
@@ -2321,7 +2321,7 @@ class TestV6Enrichments:
         prompt = _assemble_user_prompt(tab)
 
         assert "[summary conversion_elo |" not in prompt
-        assert "[summary conversion_elo_gap |" in prompt
+        assert "[summary endgame_elo_gap |" in prompt
 
     def test_payload_summary_includes_all_time_window(self) -> None:
         """v11: payload summary spells out the all-time series window bounds.
@@ -2530,7 +2530,7 @@ class TestSparseHistoryFixes:
         tab = _fake_findings(filters, findings=[])
         prompt = _assemble_user_prompt(tab)
 
-        assert "### Subsection: conversion_elo_timeline" in prompt
+        assert "### Subsection: endgame_elo_timeline" in prompt
         assert "[no qualifying combo" in prompt
         assert str(SPARSE_COMBO_FLOOR) in prompt
 
@@ -3730,12 +3730,12 @@ class TestPhase874PromptVersion:
         assert insights_llm._PROMPT_VERSION == "endgame_v32"
 
     def test_non_fractional_metrics_renamed(self) -> None:
-        """D-06: _NON_FRACTIONAL_METRICS swaps endgame_elo_gap → conversion_elo_gap."""
-        assert "conversion_elo_gap" in insights_llm._NON_FRACTIONAL_METRICS, (
-            "conversion_elo_gap must be registered as non-fractional (Elo points)"
+        """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
+        assert "endgame_elo_gap" in insights_llm._NON_FRACTIONAL_METRICS, (
+            "endgame_elo_gap must be registered as non-fractional (Elo points)"
         )
-        assert "endgame_elo_gap" not in insights_llm._NON_FRACTIONAL_METRICS, (
-            "legacy endgame_elo_gap must not survive in _NON_FRACTIONAL_METRICS"
+        assert "conversion_elo_gap" not in insights_llm._NON_FRACTIONAL_METRICS, (
+            "legacy conversion_elo_gap must not survive in _NON_FRACTIONAL_METRICS"
         )
 
     def test_no_endgame_skill_payload_field(self) -> None:
