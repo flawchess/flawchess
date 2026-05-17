@@ -383,7 +383,7 @@ class TestPromptVersionAndBody:
         assert "v33 (260517 Phase 87.5" in src
         # Phase 87.5 narrative substrings: additive-K input and the score-gap input.
         assert "Endgame Score Gap input" in src or "endgame_elo_from_score_gap" in src
-        assert "additive K" in src.lower()
+        assert "additive K" in src
         # Prior version comments must still be present (FRONT-prepend preserves history).
         assert "v32 (260516 Phase 87.4 Conversion ELO rewire)" in src
         assert "v31 (260515 Phase 87.2 Section 2 ΔES Score Gap family)" in src
@@ -1940,7 +1940,7 @@ class TestV6Enrichments:
         # v9: Filters: line is no longer emitted at defaults.
         assert "Filters:" not in prompt
 
-    def test_stale_marker_on_old_conversion_elo_gap(self) -> None:
+    def test_stale_marker_on_old_endgame_elo_gap(self) -> None:
         """A combo whose series trails >6mo behind the newest bucket is STALE-tagged."""
         filters = _sample_filter_context()
         old_series = [

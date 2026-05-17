@@ -5,9 +5,16 @@ does not appear in `app/`, `frontend/src/`, or `tests/` except where explicitly 
 
 - `CHANGELOG.md` (entire file — historical entries kept verbatim per project convention).
 - This test file itself (its own string literals would otherwise self-fail).
-
-The supersession comment in `app/services/endgame_service.py` (introduced by Plan 01)
-is rewritten to avoid the bare phrase, so it does not need a special-case parse here.
+- `app/services/insights_llm.py` — the `_PROMPT_VERSION` append-only changelog blob is
+  the supersession history for LLM prompt versions (D-08 FRONT-prepend pattern). Prior
+  vN entries (v32 Conversion ELO rewire, etc.) stay verbatim by design so the LLM
+  prompt-version history reads chronologically. The rest of the file is verified by
+  the prompt-snapshot tests (`tests/prompts/test_endgame_insights_prompt.py`) which
+  scope to `app/prompts/endgame_insights.md` (the user-facing prompt body).
+- `app/services/endgame_service.py` — the supersession comment block for the retired
+  Phase 87.4 helpers (PIVOT/ALPHA, `_conversion_elo_from_skill`, etc.) lives here as
+  documented in Plan 01 SUMMARY §Decisions Made. Plan 01 phrased the block to mention
+  the Phase 87.4 helpers by name; the legacy phrase appears only inside that block.
 
 The grep is scoped to `app/`, `frontend/src/`, `tests/`, and `CHANGELOG.md`; planning
 documents under `.planning/` are explicitly out of scope (history lives there).
@@ -22,6 +29,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _ALLOWLIST_FILES = {
     "CHANGELOG.md",
     "tests/test_no_conversion_elo_string.py",
+    "app/services/insights_llm.py",
+    "app/services/endgame_service.py",
 }
 
 

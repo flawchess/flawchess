@@ -85,8 +85,7 @@ def test_holds_back_metaphor_present() -> None:
     """SC#7: the 'holds back / holding back' headline metaphor is restored."""
     pattern = re.compile(r"\bholds?\s+back\b|\bholding\s+back\b", re.IGNORECASE)
     assert pattern.search(_PROMPT_TEXT) is not None, (
-        "Expected at least one 'hold back' / 'holds back' / 'holding back' "
-        "token in prompt prose"
+        "Expected at least one 'hold back' / 'holds back' / 'holding back' token in prompt prose"
     )
 
 
