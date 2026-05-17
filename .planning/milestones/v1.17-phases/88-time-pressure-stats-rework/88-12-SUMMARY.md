@@ -4,8 +4,9 @@ plan: 12
 subsystem: benchmarks
 tags: [endgame-analytics, time-pressure, pressure-bin-zones, recalibration, sanity-rerun, checkpoint]
 
-status: checkpoint — awaiting user decision
+status: complete
 gap_closure: true
+decision: keep-as-is
 
 requires:
   - phase: 88-08
@@ -15,8 +16,8 @@ requires:
 provides:
   - reports/benchmarks-latest.md §3.3.3.b — opp-quintile rerun (per-(TC, quintile) delta-IQR table; rerun-derived bands; per-cell comparison vs 88-08; verdict line)
 affects:
-  - app/services/endgame_zones.py PRESSURE_BIN_SCORE_NEUTRAL_ZONES (no change yet — pending Task 2 decision)
-  - frontend/src/generated/endgameZones.ts (no change yet — pending Task 2 decision)
+  - app/services/endgame_zones.py PRESSURE_BIN_SCORE_NEUTRAL_ZONES (no change — keep-as-is decision)
+  - frontend/src/generated/endgameZones.ts (no change — keep-as-is decision)
 
 tech-stack:
   added: []
@@ -29,19 +30,20 @@ key-files:
 
 key-decisions:
   - "Rerun confirms VERIFICATION.md line 211 in shape (editorial cap dominates) but contradicts it on the asymmetric-structure point: 6 asymmetric 88-08 cells would all flatten to the ±0.06 cap under the new semantics."
-  - "Recommendation pending user verification at the Task 2 decision checkpoint."
+  - "User decision (2026-05-17): keep PRESSURE_BIN_SCORE_NEUTRAL_ZONES as shipped. The 88-08 asymmetric calibration in bullet/blitz Q1-Q3 is product-louder (paints more user deltas as weak/strong); aligns with the project preference for tighter bands when small effects are meaningful."
 
-requirements-completed: []
+requirements-completed:
+  - POLISH-01
 
-duration: ~30min (Task 1 only)
+duration: ~35min (Task 1 + checkpoint review)
 started: 2026-05-17
-completed: <pending>
+completed: 2026-05-17
 ---
 
 # Phase 88.1 Plan 12: Sanity-rerun §3.3.3 under opp-quintile semantics — Summary
 
-> **Status: CHECKPOINT — awaiting user decision.**
-> Task 1 (benchmark rerun + report subsection) is complete and committed. Task 2 (keep-as-is vs recalibrate decision) is `checkpoint:decision`. Task 3 (conditional retune) has not run. STATE.md and ROADMAP.md are intentionally not updated.
+> **Status: COMPLETE.**
+> Task 1 (benchmark rerun + report subsection) committed (`e32a2e26`). Task 2 (keep-as-is vs recalibrate decision): user decision **`keep`** (2026-05-17). Task 3 (conditional retune): no-op (no code changes required by the keep path). `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` and `endgameZones.ts` are unchanged from 88-08.
 
 ## What Task 1 did
 
@@ -107,29 +109,43 @@ Reasoning:
 - **`recalibrate selective`** — update only flagged cells. Under |Δ|≥0.02, that's just bullet/Q2: `PressureBinBand(-0.0380, 0.0493)` → `PressureBinBand(-0.06, 0.06)`. The grid becomes 15/20 fully capped (one more than today).
 - **`recalibrate all`** — flatten all 20 cells to `PressureBinBand(-0.06, 0.06)`. Structurally identical to the original Plan 88-08 placeholder shape, but the comments would cite §3.3.3.b. This removes all asymmetric calibration.
 
+## User Decision (Task 2)
+
+Presented the three options at the checkpoint (keep / recalibrate bullet/Q2 only / recalibrate all 6 asymmetric cells / abort). User selected **`keep`**:
+
+- No edits to `app/services/endgame_zones.py`.
+- No edits to `frontend/src/generated/endgameZones.ts`.
+- The §3.3.3.b rerun note in `reports/benchmarks-latest.md` stands as documentation of the methodology shift.
+- The 88-08 asymmetric calibration (bullet Q1-Q3, blitz Q1-Q3) is preserved because it's product-louder: those narrower bands paint more user deltas as non-neutral, which aligns with the project preference for tighter bands when small effects are meaningful.
+
+## Task 3 — no-op
+
+The `keep` path skips Task 3 (conditional retune + CHANGELOG bullet) by design. No code, codegen, or CHANGELOG changes are required. The CI drift gate is trivially clean (no Python → TS edits to propagate).
+
 ## Deviations from Plan
 
-None. Task 1 executed exactly as specified. Task 2 / Task 3 are pending the checkpoint.
+None. Task 1 executed exactly as specified; Task 2 produced the user's decision via the checkpoint protocol; Task 3 was a no-op under the chosen decision branch.
 
 ## Issues Encountered
 
 - The MCP tool `mcp__flawchess-benchmark-db__query` is not exposed in the worktree agent's tool surface (consistent with the 88-08 SUMMARY note about #3098). Ran the rerun query via `docker compose ... exec -T db psql` against the `flawchess_benchmark` superuser instead. The query is read-only; results are identical to what the MCP wrapper would have returned.
 
-## Self-Check (Task 1 only)
+## Self-Check (final)
 
 - [x] `e32a2e26` exists: Task 1 §3.3.3.b rerun committed
 - [x] `grep -c "opp-quintile rerun" reports/benchmarks-latest.md` returns 1
 - [x] `grep -c "§3.3.3.b" reports/benchmarks-latest.md` returns 1
 - [x] `grep -c "^\*\*Verdict\.\*\*" reports/benchmarks-latest.md` returns 1
-- [x] No changes to `app/services/endgame_zones.py` (verified via `git diff HEAD~1`)
-- [x] No changes to `frontend/src/generated/endgameZones.ts`
-- [x] No changes to `.planning/STATE.md` or `.planning/ROADMAP.md`
+- [x] No changes to `app/services/endgame_zones.py` (keep decision)
+- [x] No changes to `frontend/src/generated/endgameZones.ts` (keep decision)
+- [x] No changes to `.planning/STATE.md` or `.planning/ROADMAP.md` (orchestrator-owned)
+- [x] Codegen drift gate clean (no Python → TS edits in this plan)
+- [x] User decision recorded in frontmatter (`decision: keep-as-is`) and body
+- [x] POLISH-01 requirement closed
 
-## Self-Check: PASSED (Task 1)
-
-Task 2 and Task 3 will produce their own self-check entries after the user's decision.
+## Self-Check: PASSED
 
 ---
 *Phase: 88-time-pressure-stats-rework (Phase 88.1 gap closure)*
-*Status: checkpoint — awaiting user decision on `keep` vs `recalibrate`*
-*Task 1 completed: 2026-05-17*
+*Status: complete (keep-as-is)*
+*Completed: 2026-05-17*
