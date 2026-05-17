@@ -243,10 +243,23 @@ export interface ClockGapBullet {
   ci_high: number | null;
 }
 
-/** All bullet data for one time-control card. */
+/** All bullet data for one time-control card.
+ *
+ * Plan 88-14 A-3: restored top-zone summary stats from the deleted
+ * EndgameClockPressureSection (CONTEXT §2 scope amendment). The 5 averages are
+ * fractions / absolute seconds depending on the suffix; net_timeout_rate is a
+ * fraction (0.005 = 0.5%) consistent with clock_gap.mean_diff_pct's convention.
+ * Averages are null when no game in this TC has clock data (legacy imports).
+ */
 export interface TimePressureTcCard {
   tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
   total: number;                    // total endgame games in this TC
+  user_avg_pct: number | null;      // mean user_clock/base across clock-eligible games, fraction
+  user_avg_seconds: number | null;  // mean user_clock in absolute seconds
+  opp_avg_pct: number | null;       // mean opp_clock/base, fraction
+  opp_avg_seconds: number | null;   // mean opp_clock in absolute seconds
+  avg_clock_diff_seconds: number | null; // mean (user_clock - opp_clock) in seconds
+  net_timeout_rate: number;         // (timeout_wins - timeout_losses) / total, fraction (0.005 = 0.5%)
   clock_gap: ClockGapBullet;
   quintiles: PressureQuintileBullet[]; // always 5, ordered Q0..Q4
 }

@@ -677,10 +677,36 @@ class TimePressureTcCard(BaseModel):
     total: total endgame games for this TC (used to gate card visibility).
     clock_gap: paired clock-advantage bullet across all games in this TC.
     quintiles: exactly 5 PressureQuintileBullet entries, ordered Q0..Q4 (0=max pressure).
+
+    Top-zone summary stats restored from the deleted EndgameClockPressureSection
+    (CONTEXT §2 A-3, Plan 88-14). The 5 averages are None when no game in this
+    TC has clock data (e.g. legacy imports without ply/clock arrays). All ship
+    with explicit Pydantic defaults so legacy call sites that build
+    TimePressureTcCard(...) keyword-style without these new args do not break
+    (B-2 lock).
+
+    user_avg_pct: mean (user_clock / base_time_seconds) across clock-eligible
+        games in this TC. Fraction (0..1) — 0.47 means the user entered endgames
+        with 47% of their starting clock remaining on average.
+    user_avg_seconds: mean user_clock in absolute seconds at endgame entry.
+    opp_avg_pct: mean (opp_clock / base_time_seconds), fraction.
+    opp_avg_seconds: mean opp_clock in absolute seconds.
+    avg_clock_diff_seconds: mean (user_clock − opp_clock) in absolute seconds.
+        Related to clock_gap.mean_diff_pct (same metric in fraction units) but
+        NOT redundant — one is a fraction, the other is signed seconds.
+    net_timeout_rate: (timeout_wins − timeout_losses) / total. Fraction units
+        (0.005 = 0.5%) consistent with clock_gap.mean_diff_pct's convention.
+        0.0 when neither side timed out.
     """
 
     tc: Literal["bullet", "blitz", "rapid", "classical"]
     total: int
+    user_avg_pct: float | None = None
+    user_avg_seconds: float | None = None
+    opp_avg_pct: float | None = None
+    opp_avg_seconds: float | None = None
+    avg_clock_diff_seconds: float | None = None
+    net_timeout_rate: float = 0.0
     clock_gap: ClockGapBullet
     quintiles: list[PressureQuintileBullet]  # always 5, ordered Q0..Q4
 

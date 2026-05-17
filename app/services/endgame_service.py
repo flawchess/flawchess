@@ -17,6 +17,7 @@ import math
 import statistics
 from collections import defaultdict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from enum import IntEnum
 from typing import Any, Literal, cast
@@ -1272,6 +1273,45 @@ _TIME_CONTROL_LABELS: dict[str, str] = {
 # Fixed display order for time control rows (fastest to slowest).
 _TIME_CONTROL_ORDER: list[str] = ["bullet", "blitz", "rapid", "classical"]
 
+
+@dataclass(slots=True)
+class _ClockAggregate:
+    """Plan 88-14 A-3: per-TC accumulator for the TimePressureTcCard top-zone
+    summary stats (5 averages + net_timeout_rate).
+
+    Fields are summable so they accumulate in the same single pass through
+    clock_rows that already drives the per-quintile WDL accumulator. Derived
+    averages are computed in _compute_time_pressure_cards once the row stream
+    is exhausted (sum / count). When clock_games == 0 the 5 averages render as
+    None on the card; when total_games == 0 the card is gated out by
+    MIN_GAMES_PER_TC_CARD before this aggregate is read.
+
+    user_clock_sum_pct: sum of (user_clock / base_time_seconds) across
+        clock-eligible rows in this TC.
+    user_clock_sum_seconds: sum of user_clock in absolute seconds.
+    opp_clock_sum_pct: sum of (opp_clock / base_time_seconds).
+    opp_clock_sum_seconds: sum of opp_clock in absolute seconds.
+    diff_sum_seconds: sum of (user_clock − opp_clock) in absolute seconds.
+    clock_games: count of rows where both clocks are present + base > 0 AND
+        the MAX_CLOCK_PCT_OF_BASE cap is met. Denominator for the 5 averages.
+    total_games: count of all rows in this TC that pass the base-clock guard
+        (matches tc_total[tc] semantics). Denominator for net_timeout_rate.
+    timeout_wins: count of rows where termination == 'timeout' AND user
+        outcome (via derive_user_result) == 'win'.
+    timeout_losses: count of rows where termination == 'timeout' AND user
+        outcome == 'loss'. Timeout draws (rare) count toward neither.
+    """
+
+    user_clock_sum_pct: float = 0.0
+    user_clock_sum_seconds: float = 0.0
+    opp_clock_sum_pct: float = 0.0
+    opp_clock_sum_seconds: float = 0.0
+    diff_sum_seconds: float = 0.0
+    clock_games: int = 0
+    total_games: int = 0
+    timeout_wins: int = 0
+    timeout_losses: int = 0
+
 # Rolling window size for the Endgame ELO timeline chart (Phase 57 ELO-05).
 # Matches SCORE_GAP_TIMELINE_WINDOW.
 ENDGAME_ELO_TIMELINE_WINDOW = 100
@@ -1437,6 +1477,7 @@ def _iterate_clock_rows(
     dict[str, list[float]],
     dict[tuple[str, int], tuple[int, int, int]],
     dict[tuple[str, int], tuple[int, int, int]],
+    dict[str, _ClockAggregate],
 ]:
     """Iterate clock_rows once, accumulating per-TC and per-(TC, quintile) data.
 
@@ -1446,12 +1487,18 @@ def _iterate_clock_rows(
     per-quintile delta is computed in _build_quintile_bullets against these
     independent splits, not against a cross-user cohort.
 
+    Plan 88-14 (A-3 top-zone restore): an additional per-TC _ClockAggregate
+    accumulates in the same pass — clock sums (for the 5 average fields) plus
+    timeout-result counts (for net_timeout_rate). No new repo function.
+
     Returns:
         tc_total: dict[tc -> total valid endgame games]
         tc_clock_diffs: dict[tc -> list of (user_clock - opp_clock) / base_clock per game]
         tc_user_quintile_wdl: dict[(tc, quintile) -> (wins, draws, losses)] bucketed by USER's clock-pct
         tc_opp_quintile_wdl:  dict[(tc, quintile) -> (wins, draws, losses)] bucketed by OPP's clock-pct,
             with result inverted from the opponent's perspective (user-win = opp-loss).
+        tc_clock_agg: dict[tc -> _ClockAggregate] of summable inputs for the
+            TimePressureTcCard top-zone summary stats (Plan 88-14 A-3).
 
     Quintile index = min(4, int(clk_pct * 5)) so:
         0.0..0.2 -> 0 (max pressure), 0.2..0.4 -> 1, ..., 0.8..1.0 -> 4 (min pressure)
@@ -1474,10 +1521,12 @@ def _iterate_clock_rows(
     tc_opp_quintile_wdl: dict[tuple[str, int], tuple[int, int, int]] = defaultdict(
         lambda: (0, 0, 0)
     )
+    tc_clock_agg: dict[str, _ClockAggregate] = defaultdict(_ClockAggregate)
 
     for row in clock_rows:
         time_control_bucket: str | None = row[1]
         base_time_seconds: int | None = row[2]
+        termination: str | None = row[3]
         result: str = row[4]
         user_color: str = row[5]
         ply_array: list[int] = row[6]
@@ -1491,6 +1540,19 @@ def _iterate_clock_rows(
 
         tc = time_control_bucket
         tc_total[tc] += 1
+
+        # Plan 88-14 A-3: count this row toward the top-zone aggregates (the
+        # denominator for net_timeout_rate matches tc_total). derive_user_result
+        # is reused below for the WDL accumulator — compute once.
+        agg = tc_clock_agg[tc]
+        agg.total_games += 1
+        if termination == "timeout":
+            outcome_for_timeout = derive_user_result(result, user_color)
+            if outcome_for_timeout == "win":
+                agg.timeout_wins += 1
+            elif outcome_for_timeout == "loss":
+                agg.timeout_losses += 1
+            # Timeout draws (rare) contribute to neither counter.
 
         user_clock, opp_clock = _extract_entry_clocks(ply_array, clock_array, user_color)
         if user_clock is None or opp_clock is None:
@@ -1510,6 +1572,15 @@ def _iterate_clock_rows(
 
         clock_diff_pct = (user_clock - opp_clock) / base_time_seconds
         tc_clock_diffs[tc].append(clock_diff_pct)
+
+        # Plan 88-14 A-3: accumulate the per-TC clock sums for the top-zone
+        # 5-average payload. Same row guard as tc_clock_diffs above.
+        agg.user_clock_sum_seconds += user_clock
+        agg.opp_clock_sum_seconds += opp_clock
+        agg.user_clock_sum_pct += user_clock / base_time_seconds
+        agg.opp_clock_sum_pct += opp_clock / base_time_seconds
+        agg.diff_sum_seconds += user_clock - opp_clock
+        agg.clock_games += 1
 
         # Accumulate user-side WDL into user_quintile_wdl.
         outcome = derive_user_result(result, user_color)
@@ -1537,6 +1608,7 @@ def _iterate_clock_rows(
         dict(tc_clock_diffs),
         dict(tc_user_quintile_wdl),
         dict(tc_opp_quintile_wdl),
+        dict(tc_clock_agg),
     )
 
 
@@ -1652,9 +1724,13 @@ def _compute_time_pressure_cards(
 
     Returns cards in fixed order: bullet -> blitz -> rapid -> classical.
     """
-    tc_total, tc_clock_diffs, tc_user_quintile_wdl, tc_opp_quintile_wdl = _iterate_clock_rows(
-        clock_rows
-    )
+    (
+        tc_total,
+        tc_clock_diffs,
+        tc_user_quintile_wdl,
+        tc_opp_quintile_wdl,
+        tc_clock_agg,
+    ) = _iterate_clock_rows(clock_rows)
 
     cards: list[TimePressureTcCard] = []
     for tc in _TIME_CONTROL_ORDER:
@@ -1664,10 +1740,41 @@ def _compute_time_pressure_cards(
 
         clock_gap = _build_clock_gap(tc, tc_clock_diffs.get(tc, []))
         quintiles = _build_quintile_bullets(tc, tc_user_quintile_wdl, tc_opp_quintile_wdl)
+
+        # Plan 88-14 A-3: derive the top-zone summary stats from the per-TC
+        # clock aggregate. 5 averages render None when no clock-eligible game
+        # exists; net_timeout_rate is 0.0 when total_games == 0 (defensive —
+        # this branch is unreachable because total >= MIN_GAMES_PER_TC_CARD
+        # implies total_games > 0).
+        agg = tc_clock_agg.get(tc, _ClockAggregate())
+        if agg.clock_games > 0:
+            user_avg_pct: float | None = agg.user_clock_sum_pct / agg.clock_games
+            user_avg_seconds: float | None = agg.user_clock_sum_seconds / agg.clock_games
+            opp_avg_pct: float | None = agg.opp_clock_sum_pct / agg.clock_games
+            opp_avg_seconds: float | None = agg.opp_clock_sum_seconds / agg.clock_games
+            avg_clock_diff_seconds: float | None = agg.diff_sum_seconds / agg.clock_games
+        else:
+            user_avg_pct = None
+            user_avg_seconds = None
+            opp_avg_pct = None
+            opp_avg_seconds = None
+            avg_clock_diff_seconds = None
+        net_timeout_rate = (
+            (agg.timeout_wins - agg.timeout_losses) / agg.total_games
+            if agg.total_games > 0
+            else 0.0
+        )
+
         cards.append(
             TimePressureTcCard(
                 tc=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
                 total=total,
+                user_avg_pct=user_avg_pct,
+                user_avg_seconds=user_avg_seconds,
+                opp_avg_pct=opp_avg_pct,
+                opp_avg_seconds=opp_avg_seconds,
+                avg_clock_diff_seconds=avg_clock_diff_seconds,
+                net_timeout_rate=net_timeout_rate,
                 clock_gap=clock_gap,
                 quintiles=quintiles,
             )

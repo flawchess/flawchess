@@ -91,6 +91,14 @@ function makeCard(overrides?: Partial<TimePressureTcCard>): TimePressureTcCard {
   return {
     tc: 'bullet',
     total: 100,
+    // Plan 88-14 A-3: top-zone summary stats. Defaults are plausible non-null
+    // values so tests that don't care about the top zone still build a valid card.
+    user_avg_pct: 0.47,
+    user_avg_seconds: 215,
+    opp_avg_pct: 0.52,
+    opp_avg_seconds: 231,
+    avg_clock_diff_seconds: -16,
+    net_timeout_rate: -0.005,
     clock_gap: makeClockGap(),
     quintiles: [
       makeBin(0, 40, 0.0, 0.5),
@@ -511,5 +519,88 @@ describe('EndgameTimePressureCard — Plan 88-13 A-4: new qualitative pressure l
     // Must NOT surface the legacy Q0/Q4 framing.
     expect(body).not.toContain('Q0 = 0-20%');
     expect(body).not.toContain('Q4 = 80-100%');
+  });
+});
+
+// ─── Plan 88-14 (A-3): top-zone 3-stat row ──────────────────────────────────
+
+describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone 3-stat row', () => {
+  it('renders the top-zone 3-stat row with all 3 cells', () => {
+    renderCard(
+      makeCard({
+        user_avg_pct: 0.47,
+        user_avg_seconds: 215,
+        opp_avg_pct: 0.52,
+        opp_avg_seconds: 231,
+        avg_clock_diff_seconds: -16,
+        net_timeout_rate: -0.003,
+      }),
+    );
+    const myAvg = screen.getByTestId('time-pressure-card-bullet-my-avg-time');
+    const oppAvg = screen.getByTestId('time-pressure-card-bullet-opp-avg-time');
+    const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
+
+    expect(myAvg.textContent).toContain('My avg time');
+    expect(oppAvg.textContent).toContain('Opp avg time');
+    expect(netRate.textContent).toContain('Net flag rate');
+
+    // Formatted values: pct rounded to int + seconds rounded to int + "s".
+    expect(myAvg.textContent).toContain('47%');
+    expect(myAvg.textContent).toContain('215s');
+    expect(oppAvg.textContent).toContain('52%');
+    expect(oppAvg.textContent).toContain('231s');
+    // Negative net rate shows with a minus sign and one decimal point.
+    expect(netRate.textContent).toContain('-0.3%');
+  });
+
+  it('shows em-dash when an average is null', () => {
+    renderCard(
+      makeCard({
+        user_avg_pct: null,
+        user_avg_seconds: null,
+        opp_avg_pct: 0.5,
+        opp_avg_seconds: 150,
+        avg_clock_diff_seconds: null,
+        net_timeout_rate: 0,
+      }),
+    );
+    const myAvg = screen.getByTestId('time-pressure-card-bullet-my-avg-time');
+    // Em-dash (U+2014) when the underlying value is null.
+    expect(myAvg.textContent).toContain('—');
+    // Opp side still renders normally.
+    const oppAvg = screen.getByTestId('time-pressure-card-bullet-opp-avg-time');
+    expect(oppAvg.textContent).toContain('50%');
+    // 0.0% for net_timeout_rate === 0.
+    const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
+    expect(netRate.textContent).toContain('0.0%');
+  });
+
+  it('tints net flag rate green for positive above threshold and red for negative below', async () => {
+    // 0.06 fraction = 6% — above the 5% threshold => green (ZONE_SUCCESS)
+    const { unmount } = renderCard(makeCard({ net_timeout_rate: 0.06 }));
+    const greenCell = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
+    // The colored span is a child of the cell; locate by looking at all spans.
+    const greenColoredSpan = greenCell.querySelector('span[style*="color"]');
+    expect(greenColoredSpan).not.toBeNull();
+    unmount();
+
+    // -0.06 fraction = -6% — below the -5% threshold => red (ZONE_DANGER)
+    renderCard(makeCard({ net_timeout_rate: -0.06 }));
+    const redCell = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
+    const redColoredSpan = redCell.querySelector('span[style*="color"]');
+    expect(redColoredSpan).not.toBeNull();
+    // Different color from the green case.
+    expect((greenColoredSpan as HTMLElement).style.color).not.toBe(
+      (redColoredSpan as HTMLElement).style.color,
+    );
+  });
+
+  it('does NOT tint net flag rate when within the neutral threshold', () => {
+    // 0.03 fraction = 3% — within the +/-5% neutral band.
+    renderCard(makeCard({ net_timeout_rate: 0.03 }));
+    const cell = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
+    // The value span should have no inline color style.
+    const coloredSpan = cell.querySelector('span[style*="color"]');
+    expect(coloredSpan).toBeNull();
   });
 });
