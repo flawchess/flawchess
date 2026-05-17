@@ -192,132 +192,64 @@ class TestEndgamesOverviewRouter:
 
 
 # -----------------------------------------------------------------------------
-# TestClockPressureRouter — Phase 54 time-pressure table
+# TestTimePressureCardsRouter — Phase 88 time-pressure cards
 # -----------------------------------------------------------------------------
 
 
-class TestClockPressureRouter:
-    """GET /api/endgames/overview → clock_pressure sub-payload.
+class TestTimePressureCardsRouter:
+    """GET /api/endgames/overview → time_pressure_cards sub-payload (Phase 88).
 
-    Only the `blitz` bucket meets MIN_GAMES_FOR_CLOCK_STATS=10 in the seeded
-    portfolio (11 blitz endgame games carry clock_seconds; rapid has 3,
-    classical has 1, bullet has 0). So `rows` must have length 1.
+    The seed has 11 blitz endgame games, which is below MIN_GAMES_PER_TC_CARD=20,
+    so no TC card qualifies. The response must have a cards list (possibly empty).
     """
 
     @pytest.mark.asyncio
-    async def test_only_blitz_bucket_qualifies(self, seeded_user: SeededUser) -> None:
+    async def test_time_pressure_cards_present_in_response(
+        self, seeded_user: SeededUser
+    ) -> None:
+        """time_pressure_cards key must be present in the overview response."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=_BASE
         ) as client:
             resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
+        assert resp.status_code == 200, resp.text
         data = resp.json()
-        rows = data["clock_pressure"]["rows"]
-        buckets = sorted(r["time_control"] for r in rows)
-        assert buckets == seeded_user.expected["clock_pressure_qualifying_buckets"], (
-            f"clock_pressure buckets={buckets} "
-            f"expected={seeded_user.expected['clock_pressure_qualifying_buckets']}"
+        assert "time_pressure_cards" in data, f"missing time_pressure_cards key; keys={list(data)}"
+        assert "cards" in data["time_pressure_cards"], (
+            f"missing cards key; time_pressure_cards={data['time_pressure_cards']}"
         )
 
     @pytest.mark.asyncio
-    async def test_blitz_row_shape_and_counts(self, seeded_user: SeededUser) -> None:
-        """The single blitz row carries the expected game counts and a
-        well-formed average clock (between 0 and base_time_seconds=600).
-        """
+    async def test_no_cards_below_threshold(self, seeded_user: SeededUser) -> None:
+        """Seed has 11 blitz endgame games, below MIN_GAMES_PER_TC_CARD=20, so cards is empty."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=_BASE
         ) as client:
             resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
         data = resp.json()
-        rows = data["clock_pressure"]["rows"]
-        blitz = next((r for r in rows if r["time_control"] == "blitz"), None)
-        assert blitz is not None, f"no blitz row in {rows}"
-        assert blitz["label"] == "Blitz"
-        assert blitz["total_endgame_games"] == seeded_user.expected["clock_pressure_blitz_games"]
-        assert blitz["clock_games"] == seeded_user.expected["clock_pressure_blitz_games"]
-        # Averages must be present (clocks are fully populated) and within
-        # reasonable bounds — the 11 user/opp clocks all sit in [50, 400].
-        assert blitz["user_avg_seconds"] is not None
-        assert 0 < blitz["user_avg_seconds"] < 600
-        assert blitz["opp_avg_seconds"] is not None
-        assert 0 < blitz["opp_avg_seconds"] < 600
-        assert blitz["user_avg_pct"] is not None
-        assert 0 < blitz["user_avg_pct"] < 100
-
-    @pytest.mark.asyncio
-    async def test_net_timeout_rate_reflects_seeded_terminations(
-        self, seeded_user: SeededUser
-    ) -> None:
-        """Seed has 2 timeout wins + 1 timeout loss in blitz → net rate = +1/11 ≈ 9.09%."""
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
-        data = resp.json()
-        blitz = next(r for r in data["clock_pressure"]["rows"] if r["time_control"] == "blitz")
-        wins = seeded_user.expected["clock_pressure_blitz_timeout_wins"]
-        losses = seeded_user.expected["clock_pressure_blitz_timeout_losses"]
-        games = seeded_user.expected["clock_pressure_blitz_games"]
-        expected_rate = (wins - losses) / games * 100
-        assert abs(blitz["net_timeout_rate"] - expected_rate) < 0.01, (
-            f"net_timeout_rate={blitz['net_timeout_rate']} expected≈{expected_rate}"
+        cards = data["time_pressure_cards"]["cards"]
+        assert isinstance(cards, list), f"cards must be a list, got {type(cards)}"
+        # Blitz is the only TC with clock data, but it only has 11 endgame games
+        # (below MIN_GAMES_PER_TC_CARD=20), so no card should be emitted.
+        assert cards == [], (
+            f"expected no cards (all TCs below threshold), got {len(cards)} card(s): "
+            f"{[c.get('tc') for c in cards]}"
         )
 
-
-# -----------------------------------------------------------------------------
-# TestTimePressureChartRouter — Phase 55 time-pressure performance chart
-# -----------------------------------------------------------------------------
-
-
-class TestTimePressureChartRouter:
-    """GET /api/endgames/overview → time_pressure_chart sub-payload.
-
-    Pooled across all time controls that passed MIN_GAMES_FOR_CLOCK_STATS —
-    in the seed that is just blitz (11 games). Each of user_series and
-    opp_series has 10 bucket points (0-10%, 10-20%, ..., 90-100%).
-    """
-
     @pytest.mark.asyncio
-    async def test_series_have_10_buckets(self, seeded_user: SeededUser) -> None:
+    async def test_legacy_clock_pressure_field_absent(self, seeded_user: SeededUser) -> None:
+        """Phase 88: clock_pressure and time_pressure_chart fields removed from overview."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=_BASE
         ) as client:
             resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
         data = resp.json()
-        chart = data["time_pressure_chart"]
-        assert len(chart["user_series"]) == 10
-        assert len(chart["opp_series"]) == 10
-
-    @pytest.mark.asyncio
-    async def test_total_endgame_games_matches_blitz_clock_games(
-        self, seeded_user: SeededUser
-    ) -> None:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
-        data = resp.json()
-        chart = data["time_pressure_chart"]
-        # Only blitz qualifies → the chart pools just those 11 games.
-        assert chart["total_endgame_games"] == (seeded_user.expected["clock_pressure_blitz_games"])
-
-    @pytest.mark.asyncio
-    async def test_chart_game_counts_sum_to_total(self, seeded_user: SeededUser) -> None:
-        """Sum of user_series bucket game_counts == total_endgame_games.
-
-        Each qualifying game contributes exactly one data point to user_series
-        (keyed by user's clock-remaining bucket) and one to opp_series (keyed
-        by opponent's bucket).
-        """
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url=_BASE
-        ) as client:
-            resp = await client.get("/api/endgames/overview", headers=seeded_user.auth_headers)
-        data = resp.json()
-        chart = data["time_pressure_chart"]
-        user_sum = sum(pt["game_count"] for pt in chart["user_series"])
-        opp_sum = sum(pt["game_count"] for pt in chart["opp_series"])
-        assert user_sum == chart["total_endgame_games"]
-        assert opp_sum == chart["total_endgame_games"]
+        assert "clock_pressure" not in data, (
+            "clock_pressure should no longer be in the overview response (Phase 88)"
+        )
+        assert "time_pressure_chart" not in data, (
+            "time_pressure_chart should no longer be in the overview response (Phase 88)"
+        )
 
 
 # -----------------------------------------------------------------------------

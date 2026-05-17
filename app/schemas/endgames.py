@@ -3,7 +3,7 @@
 Provides response models for:
 - GET /api/endgames/stats: per-category W/D/L with inline conversion/recovery stats
 - GET /api/endgames/games: paginated game list filtered by endgame class
-- GET /api/endgames/overview: composed response including clock pressure stats (Phase 54)
+- GET /api/endgames/overview: composed response including time pressure cards (Phase 88)
 """
 
 from typing import Literal
@@ -612,6 +612,76 @@ class EndgameEloTimelineResponse(BaseModel):
     timeline_window: int
 
 
+class PressureQuintileBullet(BaseModel):
+    """Per-quintile Score-Delta bullet for the time pressure card (Phase 88).
+
+    quintile_index: 0..4, where 0 = 0-20% clock remaining (maximum pressure),
+        4 = 80-100% clock remaining (minimum pressure).
+    quintile_label: human-readable range string e.g. "0-20%".
+    n: games in this quintile bin.
+    delta: user_score - cohort_score; 0.0 when cohort_score is None (no cohort data).
+    p_value: Wilson score-test p-value of H0: user_score == cohort_score; None when
+        n < CONFIDENCE_MIN_N (10) or cohort_score is None.
+    ci_low/ci_high: Wilson 95% CI on delta; None when n < 2 or cohort_score is None.
+    cohort_score: mirror-bucket aggregate score for this (TC, quintile); None when
+        no cohort data is available.
+    """
+
+    quintile_index: int  # 0..4
+    quintile_label: str  # "0-20%", "20-40%", "40-60%", "60-80%", "80-100%"
+    n: int
+    delta: float
+    p_value: float | None
+    ci_low: float | None
+    ci_high: float | None
+    cohort_score: float | None
+
+
+class ClockGapBullet(BaseModel):
+    """Clock advantage/disadvantage at endgame entry (Phase 88).
+
+    Summarises the per-game (user_clock - opp_clock) / base_clock distribution
+    for one time control. The mean_diff_pct is a fraction (not a percentage):
+    0.05 means the user had 5% more base-clock time than the opponent at entry.
+
+    n: games with both clocks available and valid base_clock.
+    mean_diff_pct: mean per-game (user_clock - opp_clock) / base_clock.
+    p_value/ci_low/ci_high: paired one-sample z-test output from
+        compute_paired_difference_test; None when insufficient data.
+    """
+
+    n: int
+    mean_diff_pct: float
+    p_value: float | None
+    ci_low: float | None
+    ci_high: float | None
+
+
+class TimePressureTcCard(BaseModel):
+    """Per-time-control time pressure card carrying Clock Gap + Score-Delta bullets (Phase 88).
+
+    tc: time control bucket.
+    total: total endgame games for this TC (used to gate card visibility).
+    clock_gap: paired clock-advantage bullet across all games in this TC.
+    quintiles: exactly 5 PressureQuintileBullet entries, ordered Q0..Q4 (0=max pressure).
+    """
+
+    tc: Literal["bullet", "blitz", "rapid", "classical"]
+    total: int
+    clock_gap: ClockGapBullet
+    quintiles: list[PressureQuintileBullet]  # always 5, ordered Q0..Q4
+
+
+class TimePressureCardsResponse(BaseModel):
+    """Time pressure cards response — one card per TC that meets MIN_GAMES_PER_TC_CARD (Phase 88).
+
+    cards: list of TimePressureTcCard, ordered bullet -> blitz -> rapid -> classical.
+        Only includes TCs where total endgame games >= MIN_GAMES_PER_TC_CARD (20).
+    """
+
+    cards: list[TimePressureTcCard]
+
+
 class EndgameOverviewResponse(BaseModel):
     """Composed response for GET /api/endgames/overview.
 
@@ -625,6 +695,5 @@ class EndgameOverviewResponse(BaseModel):
     performance: EndgamePerformanceResponse
     timeline: EndgameTimelineResponse
     score_gap_material: ScoreGapMaterialResponse  # Phase 53: score gap & material breakdown
-    clock_pressure: ClockPressureResponse  # Phase 54: time pressure at endgame entry
-    time_pressure_chart: TimePressureChartResponse  # Phase 55: time pressure vs performance chart
+    time_pressure_cards: TimePressureCardsResponse  # Phase 88: per-TC time pressure cards
     endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.5 D-06: paired Endgame ELO + Actual ELO series per (platform, TC) via additive K · eg_score_gap
