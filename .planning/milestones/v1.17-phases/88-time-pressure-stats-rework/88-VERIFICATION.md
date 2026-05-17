@@ -172,3 +172,49 @@ The fix options are documented in REVIEW.md CR-01. The phase history notes ackno
 
 _Verified: 2026-05-17_
 _Verifier: Claude (gsd-verifier)_
+
+---
+
+## Resolution Direction (user, 2026-05-17 post-verify)
+
+The three CR-01 fix options enumerated above (wire `apply_game_filters` into a mirror-bucket query, bake the cohort as a constant, or cache + gate) all assume the cohort design itself is correct and just needs to honor filters. The user has supplied a cleaner design that obviates the cohort infrastructure entirely. **Phase 88.1 (gap closure) should implement this design rather than any of the three fix options above.**
+
+### What changes
+
+**Drop the entire cohort layer:**
+- Remove `query_cohort_clock_rows` (the unfiltered global fetch).
+- Remove `_compute_cohort_lookup`.
+- Remove the `cohort_rows` / `cohort_lookup` plumbing through `_compute_time_pressure_cards`.
+- No new request-scoped cache, no precomputed constant, no mirror-bucket query — none of it.
+
+**Compare user vs the user's own opponents on the SAME filtered games**, independently bucketed:
+- The existing `query_clock_stats_rows` already returns clock arrays for the user's filtered games. Each row carries enough information to derive both the user's clock-pct at endgame entry AND the opponent's clock-pct at endgame entry, plus the WDL outcome from either side's perspective (result + user_color).
+- In `_iterate_clock_rows`, build two parallel structures from the same rows:
+  - `user_quintile_wdl[tc][q]` — user's WDL bucketed by USER's own clock quintile at endgame entry (this already exists today).
+  - `opp_quintile_wdl[tc][q]` — opponent's WDL bucketed by OPPONENT's own clock quintile at endgame entry. **New.** Same games, but using opp's clock-pct for the bucket assignment and the inverted result for the WDL (when user lost, opp won, etc.).
+
+**Per-bullet delta = paired-set difference of two independent quintile splits:**
+- `delta = user_score_in_Q − opp_score_in_Q` where each side's score is derived from its own quintile of the same filtered game-set.
+- Significance test: unpaired two-sample Wilson (the two splits are independent because user and opp clocks fall in different quintiles within the same game). The existing `compute_score_difference_test` in `score_confidence.py` is exactly this two-sample shape and can be reused — `compute_score_delta_vs_reference` (added in 88-01) is the *paired-against-fixed-reference* shape and is no longer needed for the bullet's main calculation. Keep it if anything else consumes it; remove it if not.
+
+**Schema rename in `PressureQuintileBullet`:**
+- `cohort_score: float | None` → `opp_score: float | None` (with adjusted docstring).
+- Frontend `PressureQuintileBullet` TS type follows.
+- Card-component popover copy ("vs cohort") → ("vs opponent").
+
+**N-gate per quintile bullet:** `min(n_user_in_Q, n_opp_in_Q) >= MIN_GAMES_PER_PRESSURE_BIN`. This naturally subsumes WR-01 (no separate sparse-cohort-cell gate needed).
+
+### What stays
+
+- The 4-card grid layout, `EndgameTimePressureCard`, sparse handling, triple-gate font coloring, MetricStatPopover patterns — all unchanged.
+- The `clock_gap_pct` bullet — unchanged (it's already same-game paired via `compute_paired_difference_test`).
+- The `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` delta-IQR calibration shipped in 88-08 stays valid as a neutral band on `user_score − opp_score` (the bandwidth/cap shape is unaffected by which reference is subtracted). A sanity rerun of `/benchmarks` §3.3.3 against the new opp-quintile semantics is worth doing inside 88.1, but the editorial cap (±0.06) and asymmetric structure will look very similar.
+
+### CONTEXT D-05
+
+This direction supersedes the mirror-bucket framing in 88-CONTEXT.md D-05. The gap-closure phase should write a `D-05-revised` decision capturing the new design (or add a new D-NN that explicitly retires D-05).
+
+### Warnings to fold in
+
+Phase 88.1 should also pick up the 6 non-blocking warnings from REVIEW.md (WR-02 broken aria id, WR-03 unsafe index narrowing, WR-04/05 duplicated/dead constants, WR-06 missing deprecation sentinel, IN-01/02 dead constants + stale PLACEHOLDER comments) — most become 1–2-line cleanups after the cohort layer is gone.
+
