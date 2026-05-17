@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: executing
-last_updated: "2026-05-16T23:38:55.861Z"
-last_activity: 2026-05-16 -- Phase 87.5 execution started
+status: completed
+last_updated: "2026-05-17T01:05:54.014Z"
+last_activity: 2026-05-17 -- Phase 87.5 marked complete
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 87.5 (rebuild-endgame-elo-on-endgame-score-gap) — EXECUTING
+Phase: 87.5 — COMPLETE
 Plan: 1 of 3
-Status: Executing Phase 87.5
-Last activity: 2026-05-16 -- Phase 87.5 execution started
+Status: Phase 87.5 complete
+Last activity: 2026-05-17 -- Phase 87.5 marked complete
 Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
