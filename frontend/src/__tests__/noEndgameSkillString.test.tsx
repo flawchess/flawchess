@@ -17,7 +17,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import type {
   MaterialRow,
   ScoreGapMaterialResponse,
-  ConversionEloTimelineResponse,
+  EndgameEloTimelineResponse,
 } from '@/types/endgames';
 
 beforeAll(() => {
@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 import { EndgameMetricsSection } from '@/components/charts/EndgameMetricsSection';
-import { ConversionEloTimelineSection } from '@/components/charts/ConversionEloTimelineSection';
+import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 
 function buildRow(overrides?: Partial<MaterialRow>): MaterialRow {
   return {
@@ -96,7 +96,7 @@ function buildScoreGapResponse(): ScoreGapMaterialResponse {
   };
 }
 
-function buildEmptyTimeline(): ConversionEloTimelineResponse {
+function buildEmptyTimeline(): EndgameEloTimelineResponse {
   return { combos: [], timeline_window: 100 };
 }
 
@@ -111,14 +111,71 @@ describe('SC#8 — no "Endgame Skill" string in rendered Endgames surfaces', () 
     expect(screen.queryByTestId('tile-endgame-skill')).toBeNull();
   });
 
-  it('ConversionEloTimelineSection (empty state): rendered output contains zero matches for /endgame skill/i', () => {
+  it('EndgameEloTimelineSection (empty state): rendered output contains zero matches for /endgame skill/i', () => {
     render(
-      <ConversionEloTimelineSection
+      <EndgameEloTimelineSection
         data={buildEmptyTimeline()}
         isLoading={false}
         isError={false}
       />,
     );
     expect(screen.queryAllByText(/endgame skill/i)).toHaveLength(0);
+  });
+});
+
+// Phase 87.5 (Plan 02 SC#1 frontend half): after the rename, the rendered
+// surfaces must contain zero matches for "Conversion ELO" — chart heading,
+// info popover, tooltip, and error copy all read "Endgame ELO" now. The
+// per-bucket Conv/Parity/Recov gauge labels (the literal word "Conversion"
+// without "ELO") are SAFE — this regression test searches for the two-word
+// phrase only.
+describe('SC#1 (Phase 87.5) — no "Conversion ELO" string in rendered Endgames surfaces', () => {
+  it('EndgameMetricsSection: rendered text contains no "Conversion ELO" phrase', () => {
+    const { container } = render(<EndgameMetricsSection data={buildScoreGapResponse()} />);
+    const rendered = (container.textContent ?? '').toLowerCase();
+    expect(rendered).not.toContain('conversion elo');
+  });
+
+  it('EndgameEloTimelineSection (rendered chart): no "Conversion ELO" phrase in rendered text', () => {
+    const buildPopulatedTimeline = (): EndgameEloTimelineResponse => ({
+      combos: [
+        {
+          combo_key: 'chess_com_blitz',
+          platform: 'chess.com',
+          time_control: 'blitz',
+          points: [
+            {
+              date: '2026-04-06',
+              endgame_elo: 1620,
+              actual_elo: 1580,
+              endgame_games_in_window: 50,
+              per_week_endgame_games: 4,
+            },
+          ],
+        },
+      ],
+      timeline_window: 100,
+    });
+    const { container } = render(
+      <EndgameEloTimelineSection
+        data={buildPopulatedTimeline()}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+    const rendered = (container.textContent ?? '').toLowerCase();
+    expect(rendered).not.toContain('conversion elo');
+  });
+
+  it('EndgameEloTimelineSection (error state): "Conversion ELO" phrase absent from error copy', () => {
+    const { container } = render(
+      <EndgameEloTimelineSection
+        data={undefined}
+        isLoading={false}
+        isError={true}
+      />,
+    );
+    const rendered = (container.textContent ?? '').toLowerCase();
+    expect(rendered).not.toContain('conversion elo');
   });
 });

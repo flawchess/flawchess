@@ -1,19 +1,21 @@
 // @vitest-environment jsdom
 /**
- * Phase 87.4 (Plan 02 Wave 0) — Conversion ELO Timeline section render tests.
+ * Phase 87.5 (Plan 02 Wave 0) — Endgame ELO Timeline section render tests.
  *
- * Replaces the implicit "Endgame ELO Timeline" naming end-to-end:
- * chart heading, info popover testid + aria-label, tooltip label, error copy.
- * Mock data uses the renamed conversion_elo field on each point.
+ * Inverts the Phase 87.4 naming end-to-end:
+ * chart heading, info popover testid + aria-label, tooltip label, error copy
+ * all read "Endgame ELO". Mock data uses the renamed `endgame_elo` field.
  *
- * Initially RED — Task 4 lands the source rename to satisfy these tests.
+ * Initially RED — Task 2 lands the source rename (file rename + types rename +
+ * per-point field rename) and Task 3 wires the consumer, so the assertions
+ * below pass only after the full rename cycle completes.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 
 import type {
-  ConversionEloTimelineResponse,
+  EndgameEloTimelineResponse,
 } from '@/types/endgames';
 
 beforeAll(() => {
@@ -43,9 +45,9 @@ afterEach(() => {
   cleanup();
 });
 
-import { ConversionEloTimelineSection } from '../ConversionEloTimelineSection';
+import { EndgameEloTimelineSection } from '../EndgameEloTimelineSection';
 
-function buildResponse(): ConversionEloTimelineResponse {
+function buildResponse(): EndgameEloTimelineResponse {
   return {
     combos: [
       {
@@ -55,14 +57,14 @@ function buildResponse(): ConversionEloTimelineResponse {
         points: [
           {
             date: '2026-04-06',
-            conversion_elo: 1620,
+            endgame_elo: 1620,
             actual_elo: 1580,
             endgame_games_in_window: 50,
             per_week_endgame_games: 4,
           },
           {
             date: '2026-04-13',
-            conversion_elo: 1640,
+            endgame_elo: 1640,
             actual_elo: 1590,
             endgame_games_in_window: 55,
             per_week_endgame_games: 5,
@@ -74,51 +76,51 @@ function buildResponse(): ConversionEloTimelineResponse {
   };
 }
 
-describe('ConversionEloTimelineSection — rename', () => {
-  it('renders the new chart heading "Conversion ELO Timeline"', () => {
+describe('EndgameEloTimelineSection — rename', () => {
+  it('renders the new chart heading "Endgame ELO Timeline"', () => {
     render(
-      <ConversionEloTimelineSection
+      <EndgameEloTimelineSection
         data={buildResponse()}
         isLoading={false}
         isError={false}
       />,
     );
-    expect(screen.getByText('Conversion ELO Timeline')).not.toBeNull();
+    expect(screen.getByText('Endgame ELO Timeline')).not.toBeNull();
   });
 
-  it('exposes the renamed info-popover testid "conversion-elo-timeline-info"', () => {
+  it('exposes the renamed info-popover testid "endgame-elo-timeline-info"', () => {
     render(
-      <ConversionEloTimelineSection
+      <EndgameEloTimelineSection
         data={buildResponse()}
         isLoading={false}
         isError={false}
       />,
     );
-    expect(screen.queryByTestId('conversion-elo-timeline-info')).not.toBeNull();
-    expect(screen.queryByTestId('endgame-elo-timeline-info')).toBeNull();
+    expect(screen.queryByTestId('endgame-elo-timeline-info')).not.toBeNull();
+    expect(screen.queryByTestId('conversion-elo-timeline-info')).toBeNull();
   });
 
   it('renders the renamed error copy when isError is true', () => {
     render(
-      <ConversionEloTimelineSection
+      <EndgameEloTimelineSection
         data={undefined}
         isLoading={false}
         isError={true}
       />,
     );
-    expect(screen.getByText('Failed to load Conversion ELO timeline')).not.toBeNull();
-    expect(screen.queryByText(/Failed to load Endgame ELO timeline/)).toBeNull();
+    expect(screen.getByText('Failed to load Endgame ELO timeline')).not.toBeNull();
+    expect(screen.queryByText(/Failed to load Conversion ELO timeline/)).toBeNull();
   });
 
-  it('does not render any "Endgame ELO" strings in the heading or popover', () => {
+  it('does not render any "Conversion ELO" strings in the heading or popover', () => {
     render(
-      <ConversionEloTimelineSection
+      <EndgameEloTimelineSection
         data={buildResponse()}
         isLoading={false}
         isError={false}
       />,
     );
-    // queryAllByText for both literal forms — heading + info popover surfaces.
-    expect(screen.queryAllByText(/Endgame ELO Timeline/i)).toHaveLength(0);
+    // queryAllByText for any "Conversion ELO" surface — heading + info popover.
+    expect(screen.queryAllByText(/Conversion ELO/i)).toHaveLength(0);
   });
 });
