@@ -90,7 +90,7 @@ _OPPONENT_TYPE: str = "human"
 # ---------------------------------------------------------------------------
 
 # D-04: min weekly observations per (platform, time_control) combo for the
-# conversion_elo_timeline series. Combos below this floor are silently skipped —
+# endgame_elo_timeline series. Combos below this floor are silently skipped —
 # no SubsectionFinding is emitted for them.
 SPARSE_COMBO_FLOOR: int = 10
 
@@ -101,7 +101,7 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
-        "conversion_elo_timeline",  # Phase 87.4 D-06: renamed from endgame_elo_timeline.
+        "endgame_elo_timeline",  # Phase 87.5 D-06: restored from conversion_elo_timeline.
     }
 )
 
@@ -178,7 +178,7 @@ async def compute_findings(
     last_3mo_findings = _compute_subsection_findings(last_3mo_resp, window="last_3mo")
     all_findings = all_time_findings + last_3mo_findings
 
-    player_profile = compute_player_profile(all_time_resp.conversion_elo_timeline.combos)
+    player_profile = compute_player_profile(all_time_resp.endgame_elo_timeline.combos)
 
     findings = EndgameTabFindings(
         as_of=datetime.datetime.now(datetime.UTC),
@@ -830,11 +830,11 @@ def _findings_conversion_elo_timeline(
     subsection / metric Literal IDs renamed in lockstep; the formula and
     emission semantics are unchanged.
     """
-    combos: list[EndgameEloTimelineCombo] = response.conversion_elo_timeline.combos
+    combos: list[EndgameEloTimelineCombo] = response.endgame_elo_timeline.combos
     findings: list[SubsectionFinding] = []
 
     if not combos:
-        findings.append(_empty_finding("conversion_elo_timeline", window, "conversion_elo_gap"))
+        findings.append(_empty_finding("endgame_elo_timeline", window, "endgame_elo_gap"))
         return findings
 
     for combo in combos:
@@ -848,9 +848,9 @@ def _findings_conversion_elo_timeline(
         if not combo.points:
             findings.append(
                 _empty_finding(
-                    "conversion_elo_timeline",
+                    "endgame_elo_timeline",
                     window,
-                    "conversion_elo_gap",
+                    "endgame_elo_gap",
                     dimension=dim,
                 )
             )
@@ -863,17 +863,17 @@ def _findings_conversion_elo_timeline(
             continue
 
         last = combo.points[-1]
-        value = float(last.conversion_elo - last.actual_elo)
+        value = float(last.endgame_elo - last.actual_elo)
         sample_size = len(combo.points)
-        quality = sample_quality("conversion_elo_timeline", sample_size)
+        quality = sample_quality("endgame_elo_timeline", sample_size)
         findings.append(
             SubsectionFinding(
-                subsection_id="conversion_elo_timeline",
+                subsection_id="endgame_elo_timeline",
                 parent_subsection_id=None,
                 window=window,
-                metric="conversion_elo_gap",
+                metric="endgame_elo_gap",
                 value=value,
-                zone=assign_zone("conversion_elo_gap", value),
+                zone=assign_zone("endgame_elo_gap", value),
                 trend="n_a",
                 weekly_points_in_window=0,
                 sample_size=sample_size,
@@ -1267,19 +1267,19 @@ def _series_for_endgame_elo_combo(
 
     Returns None if combo has fewer than SPARSE_COMBO_FLOOR total weekly
     observations in the window (caller skips the subsection finding entirely).
-    Each point carries both `value` (conversion_elo - actual_elo, the zoned gap)
+    Each point carries both `value` (endgame_elo - actual_elo, the zoned gap)
     and `actual_elo` (the user's rating at that bucket) so the LLM prompt can
-    render `gap=<v>, elo=<r>` per row and distinguish skill regression from
-    rating growth outpacing skill.
+    render `gap=<v>, elo=<r>` per row and distinguish endgame regression from
+    rating growth outpacing endgame.
 
-    Phase 87.4 (D-06): per-point ``endgame_elo`` field renamed to
-    ``conversion_elo`` on EndgameEloTimelinePoint; function name kept as
+    Phase 87.5 (D-06): per-point ``conversion_elo`` field restored to
+    ``endgame_elo`` on EndgameEloTimelinePoint; function name kept as
     `_series_for_endgame_elo_combo` (internal-only, no semantic load).
     """
     if len(combo.points) < SPARSE_COMBO_FLOOR:
         return None
     weekly: list[tuple[str, float, int, int]] = [
-        (p.date, float(p.conversion_elo - p.actual_elo), p.per_week_endgame_games, p.actual_elo)
+        (p.date, float(p.endgame_elo - p.actual_elo), p.per_week_endgame_games, p.actual_elo)
         for p in combo.points
     ]
     return _weekly_points_to_time_points_with_elo(weekly, window)
@@ -1289,10 +1289,10 @@ def _weekly_points_to_time_points_with_elo(
     weekly: list[tuple[str, float, int, int]],
     window: Window,
 ) -> list[TimePoint]:
-    """Conversion-elo variant of `_weekly_points_to_time_points` that also
+    """Endgame-elo variant of `_weekly_points_to_time_points` that also
     carries `actual_elo` through. Weighted by game count (same convention as
     the gap value) so the monthly aggregate satisfies the invariant
-    `value ≈ conversion_elo - actual_elo` for the aggregated `actual_elo`.
+    `value ≈ endgame_elo - actual_elo` for the aggregated `actual_elo`.
     """
     if not weekly:
         return []
