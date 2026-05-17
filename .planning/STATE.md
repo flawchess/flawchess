@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: executing
-last_updated: "2026-05-17T15:44:26.204Z"
+last_updated: "2026-05-17T18:14:54.663Z"
 last_activity: 2026-05-17 -- Phase 88 execution started
 ---
 
@@ -12,7 +12,7 @@ last_activity: 2026-05-17 -- Phase 88 execution started
 ## Current Position
 
 Phase: 88 (time-pressure-stats-rework) — EXECUTING
-Plan: 1 of 12
+Plan: 1 of 15
 Status: Executing Phase 88
 Last activity: 2026-05-17 -- Phase 88 execution started
 Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
