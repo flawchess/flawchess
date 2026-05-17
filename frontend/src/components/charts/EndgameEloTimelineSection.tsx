@@ -340,7 +340,7 @@ export function EndgameEloTimelineSection({
         </span>
       </h3>
       <p className="text-sm text-muted-foreground mt-1">
-        Is your endgame lifting your rating, or holding it back? Green band = endgame leads non-endgame; red band = endgame trails.
+        Is your endgame lifting your ELO rating, or holding it back? Green band: Endgame Score is higher than Non-Endgame Score. Red band: Endgame Score is lower.
       </p>
     </div>
   );
