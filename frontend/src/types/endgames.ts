@@ -240,25 +240,40 @@ export interface ClockPressureTimelinePoint {
   per_week_game_count: number;
 }
 
-export interface ClockPressureResponse {
-  rows: ClockStatsRow[];
-  total_clock_games: number;
-  total_endgame_games: number;
-  timeline: ClockPressureTimelinePoint[];
-  timeline_window: number;
+// ── Phase 88: Time Pressure Cards (replaces ClockPressureResponse + TimePressureChartResponse) ──
+
+/** Score-Delta bullet data for one pressure quintile in a TC card. */
+export interface PressureQuintileBullet {
+  quintile_index: number;       // 0 = 0-20% (max pressure) … 4 = 80-100% (min)
+  quintile_label: string;       // "0-20%" … "80-100%"
+  n: number;                    // game count in this bin
+  delta: number;                // user_score - cohort_score
+  p_value: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
+  cohort_score: number | null;  // reference line (live mirror-bucket)
 }
 
-export interface TimePressureBucketPoint {
-  bucket_index: number;      // 0-9
-  bucket_label: string;      // "0-10%" etc.
-  score: number | null;      // null when game_count == 0
-  game_count: number;
+/** Clock Gap bullet data for one TC card (mean of (my-opp)/base at endgame entry). */
+export interface ClockGapBullet {
+  n: number;
+  mean_diff_pct: number;        // mean (user_clock - opp_clock) / base_clock
+  p_value: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
 }
 
-export interface TimePressureChartResponse {
-  user_series: TimePressureBucketPoint[];  // 10 points, pre-aggregated across time controls
-  opp_series: TimePressureBucketPoint[];   // 10 points, pre-aggregated across time controls
-  total_endgame_games: number;
+/** All bullet data for one time-control card. */
+export interface TimePressureTcCard {
+  tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
+  total: number;                    // total endgame games in this TC
+  clock_gap: ClockGapBullet;
+  quintiles: PressureQuintileBullet[]; // always 5, ordered Q0..Q4
+}
+
+/** Replaces ClockPressureResponse + TimePressureChartResponse (Phase 88). */
+export interface TimePressureCardsResponse {
+  cards: TimePressureTcCard[];  // only TCs with total >= MIN_GAMES_PER_TC_CARD
 }
 
 export interface EndgameOverviewResponse {
@@ -266,8 +281,7 @@ export interface EndgameOverviewResponse {
   performance: EndgamePerformanceResponse;
   timeline: EndgameTimelineResponse;
   score_gap_material: ScoreGapMaterialResponse;  // Phase 53
-  clock_pressure: ClockPressureResponse;         // Phase 54
-  time_pressure_chart: TimePressureChartResponse; // Phase 55
+  time_pressure_cards: TimePressureCardsResponse; // Phase 88 (replaces clock_pressure + time_pressure_chart)
   endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57 (rebuilt Phase 87.5)
 }
 
