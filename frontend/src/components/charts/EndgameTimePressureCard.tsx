@@ -280,10 +280,10 @@ function EmptyBinRow({ bin, tc }: EmptyBinRowProps) {
     >
       <span className="flex items-center gap-1 text-sm w-full">
         <span className="text-muted-foreground">{displayLabel}:</span>
-        <span
-          className="text-muted-foreground text-sm"
-          aria-label="no games"
-        >
+        {/* REVIEW.md IN-01: aria-hidden on the em-dash; the adjacent visible
+            "no games" span already announces the state, so an aria-label here
+            would make screen readers say "no games no games". */}
+        <span className="text-muted-foreground text-sm" aria-hidden="true">
           &mdash;
         </span>
         <span className="text-muted-foreground text-sm">no games</span>

@@ -571,19 +571,6 @@ class TestMinGamesPerPressureBinWired:
 # ---------------------------------------------------------------------------
 
 
-def _pad_to_threshold(rows: list[tuple[Any, ...]], tc: str = "bullet") -> list[tuple[Any, ...]]:
-    """Pad a row list with neutral filler rows so the TC card passes
-    MIN_GAMES_PER_TC_CARD gating without disturbing the top-zone averages
-    we care about — except the filler rows DO contribute clock-eligible
-    games. Use only when the test does not need to control which rows are
-    clock-eligible vs not.
-
-    Each filler row has the same user/opp clock pct as the prior fixture so the
-    averages remain interpretable when the per-test fixture is small.
-    """
-    return rows
-
-
 class TestTcCardTopZoneStats:
     """Plan 88-14 A-3: per-TC top-zone summary stats restored from the
     deleted EndgameClockPressureSection.
