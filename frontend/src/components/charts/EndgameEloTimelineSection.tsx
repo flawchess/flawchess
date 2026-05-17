@@ -7,10 +7,12 @@
  *     `K · eg_score_gap` mapping; see Phase 87.5 D-01)
  *
  * Phase 57.1 additions (carried forward):
- *   - Muted volume bars at the bottom ~20% of the chart canvas showing endgame
- *     games per ISO week summed across currently-visible combos (ComposedChart +
- *     hidden right Y-axis; Pattern 3 in 57.1-RESEARCH.md).
- *   - Tooltip gains a "Games this week: N (visible combos)" top line.
+ *   - Muted volume bars at the bottom ~20% of the chart canvas showing the
+ *     trailing 100-game endgame window summed across currently-visible combos
+ *     (ComposedChart + hidden right Y-axis; Pattern 3 in 57.1-RESEARCH.md).
+ *     Phase 87.5 D-06: bars read as "window support" rather than per-week
+ *     activity since the score-gap producer carries the trailing-window count.
+ *   - Tooltip gains a "Games in window: N (visible combos)" top line.
  *
  * Phase 87.5 rebuild: the Phase 87.4 Conv ΔES affine-recenter formula is
  * replaced by the additive `endgame_elo = round(actual_elo + K · eg_score_gap)`
@@ -149,8 +151,10 @@ export function EndgameEloTimelineSection({
   }, [allDates, data?.combos]);
 
   // Phase 57.1 volume bars: per-row aggregate of per_week_endgame_games across
-  // currently-visible combos. Recomputes on legend toggle so hidden combos
-  // are excluded from the sum (CONTEXT D-09).
+  // currently-visible combos. Phase 87.5 D-06: post-rewire this is the trailing
+  // 100-game window count (window support), not per-ISO-week activity.
+  // Recomputes on legend toggle so hidden combos are excluded from the sum
+  // (CONTEXT D-09).
   //
   // Explicit return type keeps the Record<string, ...> index signature alive
   // after the spread — without it TypeScript narrows to `{ per_week_total_visible }`
@@ -380,7 +384,7 @@ export function EndgameEloTimelineSection({
                 <div className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1">
                   <div className="font-medium">{formatDateWithYear(label as string)}</div>
                   <div className="text-muted-foreground">
-                    Games this week: {perWeekTotal}
+                    Games in window: {perWeekTotal}
                   </div>
                   {visibleCombos.map((combo) => {
                     const endgameElo = dateRow[`${combo.combo_key}_endgame_elo`] as number | undefined;

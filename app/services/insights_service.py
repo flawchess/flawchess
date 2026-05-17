@@ -1295,6 +1295,11 @@ def _weekly_points_to_time_points_with_elo(
     carries `actual_elo` through. Weighted by game count (same convention as
     the gap value) so the monthly aggregate satisfies the invariant
     `value ≈ endgame_elo - actual_elo` for the aggregated `actual_elo`.
+
+    Phase 87.5 D-06: post-rewire `per_week_endgame_games` carries the
+    trailing-window count (≈ constant ≈ window size), so within a single
+    TC × platform combo the weighting degenerates to ~unweighted. Acceptable
+    for v1 since window size is stable across the series.
     """
     if not weekly:
         return []

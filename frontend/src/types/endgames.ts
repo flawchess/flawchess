@@ -292,7 +292,9 @@ export type EloComboKey =
  *    Positive Endgame Score Gap lifts the rating; negative holds it back.
  *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
  *  endgame_games_in_window: trailing 100-game window count (drives ≥10 floor + tooltip "past N games").
- *  per_week_endgame_games: count of endgame games for THIS specific ISO week (drives muted volume bars). */
+ *  per_week_endgame_games: count of endgame games in the trailing 100-game window
+ *    ending at this week (drives muted volume bars; reads as "window support"
+ *    rather than per-week activity per Phase 87.5 D-06 redefinition). */
 export interface EndgameEloTimelinePoint {
   date: string;
   endgame_elo: number;

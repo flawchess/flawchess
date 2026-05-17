@@ -1345,11 +1345,12 @@ def _compute_endgame_elo_weekly_series(
       the gap between them IS the over/underperformance signal.
     - ``endgame_games_in_window`` = ``pt.endgame_game_count`` (carry-through
       from the score-gap producer).
-    - ``per_week_endgame_games`` = ``pt.endgame_game_count`` for THIS specific
-      ISO week. The score-gap producer does not split per-week-this-bucket vs
-      trailing-window counts, so this carries the trailing-window count too;
-      the volume-bar UI still reads as "supported window size". See the
-      _compute_score_gap_timeline docstring for the exact semantics.
+    - ``per_week_endgame_games`` = ``pt.endgame_game_count`` (the trailing
+      100-game window count). The score-gap producer does not split per-week
+      vs trailing-window counts, so this field carries the trailing-window
+      count. Phase 87.5 D-06: this is now the documented contract; the schema,
+      frontend types, and tooltip copy reflect the trailing-window semantics
+      ("Games in window") rather than the pre-87.5 per-ISO-week meaning.
 
     ``cutoff_str`` filters output points to dates ``>= cutoff_str``; the
     score-gap producer already pre-fills the trailing windows from earlier

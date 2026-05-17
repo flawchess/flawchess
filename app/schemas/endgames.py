@@ -555,10 +555,12 @@ class EndgameEloTimelinePoint(BaseModel):
         is only emitted when both the endgame and non-endgame trailing windows hold
         ``>= MIN_GAMES_FOR_TIMELINE`` (10) games. Drives the frontend tooltip's
         "past N games" copy.
-    per_week_endgame_games: count of endgame games for THIS specific ISO week (NOT the
-        trailing window). Frontend uses this for the muted volume-bar series so users can
-        see at a glance whether a weekly point is well-supported (50+ games this week)
-        or marginal (just over the 10-game floor).
+    per_week_endgame_games: count of endgame games in the trailing 100-game window
+        ending at this week. Frontend uses this for the muted volume-bar series; the
+        bars now read as "window support" rather than per-week activity. Phase 87.5
+        D-06 redefinition: the score-gap producer does not split per-week vs
+        trailing-window counts, so both ``endgame_games_in_window`` and this field
+        carry the same trailing-window count.
     """
 
     date: str
