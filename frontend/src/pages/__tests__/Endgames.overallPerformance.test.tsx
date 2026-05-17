@@ -262,8 +262,10 @@ function buildOverview(overrides?: {
           time_control: 'blitz',
           points: [
             {
+              // Midpoint property: 1620 + 1540 == 2 * 1580.
               date: '2026-01-05',
               endgame_elo: 1620,
+              non_endgame_elo: 1540,
               actual_elo: 1580,
               endgame_games_in_window: 50,
               per_week_endgame_games: 4,

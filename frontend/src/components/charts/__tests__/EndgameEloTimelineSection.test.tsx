@@ -74,19 +74,21 @@ function buildResponse(): EndgameEloTimelineResponse {
         time_control: 'blitz',
         points: [
           {
+            // Endgame leads; midpoint property: 1620 + 1600 == 2 * 1610.
             date: '2026-04-06',
             endgame_elo: 1620,
             non_endgame_elo: 1600,
-            actual_elo: 1580,
+            actual_elo: 1610,
             endgame_games_in_window: 50,
             per_week_endgame_games: 4,
             per_week_total_games: 18,
           },
           {
+            // Endgame leads; midpoint property: 1640 + 1610 == 2 * 1625.
             date: '2026-04-13',
             endgame_elo: 1640,
             non_endgame_elo: 1610,
-            actual_elo: 1590,
+            actual_elo: 1625,
             endgame_games_in_window: 55,
             per_week_endgame_games: 5,
             per_week_total_games: 22,
@@ -337,7 +339,7 @@ describe('EndgameEloTimelineSection — gradient ID uniqueness', () => {
 });
 
 describe('EndgameEloTimelineSection — info popover content', () => {
-  it('info popover contains Performance Rating explanation', async () => {
+  it('info popover frames the band symmetrically around Actual ELO', async () => {
     render(
       <EndgameEloTimelineSection
         data={buildResponse()}
@@ -352,11 +354,11 @@ describe('EndgameEloTimelineSection — info popover content', () => {
       fireEvent.click(trigger);
     });
     expect(
-      await screen.findByText(/FIDE Performance Ratings/i),
+      await screen.findByText(/symmetrically around your/i),
     ).not.toBeNull();
   });
 
-  it('info popover contains sign convention explanation', async () => {
+  it('info popover names the green-lift / red-drag sign convention', async () => {
     render(
       <EndgameEloTimelineSection
         data={buildResponse()}
@@ -371,7 +373,7 @@ describe('EndgameEloTimelineSection — info popover content', () => {
       fireEvent.click(trigger);
     });
     expect(
-      await screen.findByText(/green when your endgame leads/i),
+      await screen.findByText(/lift \(green\) or drag \(red\)/i),
     ).not.toBeNull();
   });
 });

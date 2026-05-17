@@ -4,8 +4,8 @@
  * Three-line weekly timeline per (platform, time_control) combo plus one
  * signed band per combo:
  *   - bold bright stroke: Actual ELO (per-combo asof rating at each emitted date)
- *   - fine bright stroke: Endgame ELO (FIDE Performance Rating on endgame games)
- *   - fine bright stroke: Non-Endgame ELO (PR on non-endgame games)
+ *   - dashed fine stroke: Endgame ELO (actual ELO + spread/2)
+ *   - dotted fine stroke: Non-Endgame ELO (actual ELO − spread/2)
  *   - signed band: green when Endgame ELO >= Non-Endgame ELO, red when below
  *
  * Phase 57.1 additions (carried forward):
@@ -13,12 +13,15 @@
  *     games per ISO week summed across currently-visible combos.
  *   - Tooltip gains a "Games this week: N (visible combos)" top line.
  *
- * Phase 87.6 rebuild: the Phase 87.5 additive K*eg_score_gap mapping is
- * replaced by FIDE Performance Rating computed per side (endgame games /
- * non-endgame games). K=450 deleted. Both PRs round to int at emission.
- * The signed band between the two PRs replaces the dashed Endgame ELO line.
- * Actual ELO sits inside the band by construction (midpoint property).
- * See .planning/notes/endgame-elo-pr-direct-rebuild.md for derivation.
+ * Phase 87.6 amendment (2026-05-17): the earlier 87.6 per-side FIDE Performance
+ * Rating mapping is replaced by a logistic stretch anchored on Actual ELO:
+ *     spread = 400 · log10((s_E / (1 − s_E)) / (s_N / (1 − s_N)))
+ *     endgame_elo     = actual_elo + spread / 2
+ *     non_endgame_elo = actual_elo − spread / 2
+ * The midpoint property holds exactly: `endgame_elo + non_endgame_elo ==
+ * 2 · actual_elo` for every point. UAT against prod showed the PR-direct
+ * mapping violated this invariant in ~88% of weekly points.
+ * See .planning/notes/endgame-elo-logistic-anchored.md for derivation.
  *
  * Recharts UAT pitfall (Phase 68, 260424-pc6): every <Area> and <Line> for
  * the chart must be a DIRECT child of <ComposedChart> (not inside <g> or
@@ -233,9 +236,8 @@ export function EndgameEloTimelineSection({
     return out;
   }, [data?.combos]);
 
-  // Phase 87.6: popover copy follows CLAUDE.md popover minimalism (WHAT +
-  // sign convention only; no jargon). Plain ELO terms throughout; Performance
-  // Rating distinction in one sentence. Minimum text-sm (CLAUDE.md Frontend).
+  // Phase 87.6 amendment: popover copy follows CLAUDE.md popover minimalism
+  // (WHAT + sign convention only; no jargon, no caveats). Minimum text-sm.
   const infoPopover = (
     <InfoPopover
       ariaLabel="Endgame ELO Timeline info"
@@ -244,17 +246,10 @@ export function EndgameEloTimelineSection({
     >
       <div className="space-y-2">
         <p>
-          Three lines per combo: bold <strong>Actual ELO</strong> (your rating from the
-          platform), fine <strong>Endgame ELO</strong> and{' '}
-          <strong>Non-Endgame ELO</strong>. The two are FIDE Performance Ratings computed
-          on your endgame and non-endgame games over the trailing 100-game window —
-          they tell you what your rating would be if you played all your games at the
-          level of each subset.
-        </p>
-        <p>
-          The signed band between the two PRs is green when your endgame leads
-          (Endgame ELO ≥ Non-Endgame ELO) and red when your endgame trails. Actual
-          ELO sits inside the band by construction.
+          <strong>Endgame ELO</strong> and <strong>Non-Endgame ELO</strong> sit
+          symmetrically around your <strong>Actual ELO</strong> — the band between
+          them is your endgame&apos;s lift (green) or drag (red), measured in ELO
+          units.
         </p>
         <p>
           Points are emitted weekly; weeks with fewer than 10 qualifying endgame games

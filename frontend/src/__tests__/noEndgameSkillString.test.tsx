@@ -149,8 +149,10 @@ describe('SC#1 (Phase 87.5) — no "Conversion ELO" string in rendered Endgames 
           time_control: 'blitz',
           points: [
             {
+              // Midpoint property: 1620 + 1540 == 2 * 1580.
               date: '2026-04-06',
               endgame_elo: 1620,
+              non_endgame_elo: 1540,
               actual_elo: 1580,
               endgame_games_in_window: 50,
               per_week_endgame_games: 4,

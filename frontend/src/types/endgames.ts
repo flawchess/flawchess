@@ -293,13 +293,14 @@ export type EloComboKey =
 
 /** Single weekly point for a (platform, time_control) combo of the Endgame ELO timeline.
  *  date: Monday of the ISO week, YYYY-MM-DD.
- *  endgame_elo: FIDE Performance Rating computed on this combo's endgame games
- *    over the trailing 100-game window (Phase 87.6 — supersedes the Phase 87.5
- *    additive K mapping). Bounded by Laplace smoothing at ±802 ELO at n=100.
- *    See .planning/notes/endgame-elo-pr-direct-rebuild.md for derivation.
- *  non_endgame_elo: parallel PR computed on non-endgame games in the same
- *    trailing window. The Actual ELO line sits inside the band by construction
- *    (midpoint property; see .planning/notes/endgame-elo-pr-direct-rebuild.md).
+ *  endgame_elo: `actual_elo + spread / 2` where
+ *    `spread = 400 · log10((s_E / (1 − s_E)) / (s_N / (1 − s_N)))` (Phase 87.6
+ *    amendment 2026-05-17 — logistic stretch anchored on Actual ELO,
+ *    supersedes the earlier per-side FIDE PR mapping).
+ *  non_endgame_elo: `actual_elo − spread / 2`. Endgame ELO and Non-Endgame ELO
+ *    sit symmetrically around Actual ELO by construction:
+ *    `endgame_elo + non_endgame_elo == 2 · actual_elo` for every point.
+ *    See .planning/notes/endgame-elo-logistic-anchored.md.
  *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
  *  endgame_games_in_window: trailing 100-game window count (drives ≥10 floor +
  *    tooltip "past N games").
