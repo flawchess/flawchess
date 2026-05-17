@@ -1131,6 +1131,99 @@ PRESSURE_BIN_SCORE_NEUTRAL_ZONES = {
 
 ---
 
+#### §3.3.3.b chess-score-per-pressure-bin — opp-quintile rerun (Phase 88.1 / 2026-05-17)
+
+**Semantic difference from §3.3.3 above.** The §3.3.3 calibration (Plan 88-08, shipped as `PRESSURE_BIN_SCORE_NEUTRAL_ZONES`) was based on the global-cohort framing: each user's per-(TC, quintile) score was compared against a single population reference for that cell. Phase 88.1 retired the cohort layer (Plan 88-09, D-07 supersedes D-05) in favour of a **same-game opp-quintile split**: for each of the user's filtered games, the user side is bucketed by the user's own clock-pct quintile and the opp side is bucketed by the opponent's own clock-pct quintile from the same game, with the result inverted. The two sides land in (usually different) quintiles within the same game, so the per-(TC, quintile) delta the live frontend now consumes is `delta = user_score_in_user_Q − opp_score_in_opp_Q`.
+
+This rerun recomputes the per-(TC, quintile) IQR of that new delta against the same benchmark snapshot (2026-05-01, 1912 users) under the same filters (rated, non-computer, equal-footing ±100 rating, sparse-cell `(2400, classical)` excluded, MIN_GAMES_PER_PRESSURE_BIN=5 per side per cell, ELO pooled).
+
+##### Per-user delta IQR (rerun, opp-quintile semantics)
+
+| tc | quintile | n_users | p25 | p50 | p75 | mean_delta |
+|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 0 | 493 | -0.0956 |  0.0157 | 0.1270 |  0.0189 |
+| bullet | 1 | 495 | -0.0925 |  0.0072 | 0.1081 |  0.0144 |
+| bullet | 2 | 496 | -0.0727 | -0.0016 | 0.0934 |  0.0087 |
+| bullet | 3 | 483 | -0.0956 | -0.0032 | 0.1071 | -0.0016 |
+| bullet | 4 | 291 | -0.1714 | -0.0092 | 0.1654 |  0.0051 |
+| blitz  | 0 | 469 | -0.0964 |  0.0221 | 0.1458 |  0.0326 |
+| blitz  | 1 | 490 | -0.0725 |  0.0320 | 0.1459 |  0.0360 |
+| blitz  | 2 | 492 | -0.0694 |  0.0264 | 0.1235 |  0.0349 |
+| blitz  | 3 | 491 | -0.0650 |  0.0303 | 0.1350 |  0.0344 |
+| blitz  | 4 | 429 | -0.0910 |  0.0332 | 0.1488 |  0.0278 |
+| rapid  | 0 | 319 | -0.1298 |  0.0200 | 0.1809 |  0.0263 |
+| rapid  | 1 | 415 | -0.0815 |  0.0433 | 0.1734 |  0.0558 |
+| rapid  | 2 | 467 | -0.0633 |  0.0536 | 0.1628 |  0.0587 |
+| rapid  | 3 | 483 | -0.0613 |  0.0420 | 0.1495 |  0.0515 |
+| rapid  | 4 | 431 | -0.0785 |  0.0476 | 0.1730 |  0.0436 |
+| classical | 0 | 63 | -0.2585 | -0.0704 | 0.1577 | -0.0312 |
+| classical | 1 | 98 | -0.1761 | -0.0476 | 0.1115 | -0.0455 |
+| classical | 2 | 138 | -0.1625 |  0.0000 | 0.1007 | -0.0144 |
+| classical | 3 | 189 | -0.1425 |  0.0169 | 0.1538 |  0.0077 |
+| classical | 4 | 293 | -0.1534 |  0.0313 | 0.2163 |  0.0389 |
+
+Applying the same delta-IQR transform as 88-08 (`lower = max(p25 - p50, -0.06)`, `upper = min(p75 - p50, +0.06)`):
+
+##### Rerun-derived bands (after delta-IQR transform + ±0.06 cap)
+
+| tc | quintile | rerun_lower | rerun_upper |
+|---:|---:|---:|---:|
+| bullet | 0 | -0.06 | 0.06 |
+| bullet | 1 | -0.06 | 0.06 |
+| bullet | 2 | -0.06 | 0.06 |
+| bullet | 3 | -0.06 | 0.06 |
+| bullet | 4 | -0.06 | 0.06 |
+| blitz  | 0 | -0.06 | 0.06 |
+| blitz  | 1 | -0.06 | 0.06 |
+| blitz  | 2 | -0.06 | 0.06 |
+| blitz  | 3 | -0.06 | 0.06 |
+| blitz  | 4 | -0.06 | 0.06 |
+| rapid  | 0 | -0.06 | 0.06 |
+| rapid  | 1 | -0.06 | 0.06 |
+| rapid  | 2 | -0.06 | 0.06 |
+| rapid  | 3 | -0.06 | 0.06 |
+| rapid  | 4 | -0.06 | 0.06 |
+| classical | 0 | -0.06 | 0.06 |
+| classical | 1 | -0.06 | 0.06 |
+| classical | 2 | -0.06 | 0.06 |
+| classical | 3 | -0.06 | 0.06 |
+| classical | 4 | -0.06 | 0.06 |
+
+**All 20 cells fully cap at ±0.06 under the new semantics.** The raw delta-IQR widths range from 0.166 (blitz/Q2) to 0.370 (classical/Q0), all well outside the ±0.06 editorial cap.
+
+##### Compare to §3.3.3 (2026-05-17 delta-IQR, cohort version)
+
+| tc | q | rerun_lower | rerun_upper | shipped_lower | shipped_upper | Δlower | Δupper | flag (|Δ|≥0.02)? |
+|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
+| bullet | 0 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| bullet | 1 | -0.06 | 0.06 | -0.0481 | 0.0524 | -0.0119 | 0.0076 | |
+| bullet | 2 | -0.06 | 0.06 | -0.0380 | 0.0493 | -0.0220 | 0.0107 | **YES** |
+| bullet | 3 | -0.06 | 0.06 | -0.0563 | 0.06 | -0.0037 | 0.0000 | |
+| bullet | 4 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| blitz  | 0 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| blitz  | 1 | -0.06 | 0.06 | -0.0579 | 0.06 | -0.0021 | 0.0000 | |
+| blitz  | 2 | -0.06 | 0.06 | -0.0557 | 0.0530 | -0.0043 | 0.0070 | |
+| blitz  | 3 | -0.06 | 0.06 | -0.0598 | 0.0548 | -0.0002 | 0.0052 | |
+| blitz  | 4 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| rapid  | 0 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| rapid  | 1 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| rapid  | 2 | -0.06 | 0.06 | -0.0563 | 0.06 | -0.0037 | 0.0000 | |
+| rapid  | 3 | -0.06 | 0.06 | -0.0582 | 0.06 | -0.0018 | 0.0000 | |
+| rapid  | 4 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 0 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 1 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 2 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 3 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+| classical | 4 | -0.06 | 0.06 | -0.06 | 0.06 | 0.0000 | 0.0000 | |
+
+**Pattern.** 14 of 20 cells were already fully capped in 88-08 and remain fully capped in the rerun — zero delta. 6 cells (bullet Q1-Q3, blitz Q1-Q3) were *partially uncapped* in 88-08 (delta-IQR narrower than ±0.06 on at least one edge under cohort semantics); under the rerun they all widen to the full ±0.06 cap. The widening per edge is 0.0–0.024. Only bullet/Q2 crosses the |Δ| ≥ 0.02 flag threshold (Δlower = -0.0220).
+
+**Structural observation.** Under opp-quintile semantics the per-user delta is intrinsically more variable than under cohort semantics: both sides of the comparison are sample statistics on the same game-set rather than a sample minus a fixed population reference, so each delta carries two estimation errors. The new IQRs are ~2x wider than the 88-08 cohort-version IQRs (most p75−p25 widths are 0.16–0.20 vs the 88-08 0.08–0.12). The ±0.06 editorial cap fully dominates in all 20 cells.
+
+**Verdict.** Within editorial tolerance overall — **recommend keep-as-is** with one judgment-call cell (bullet/Q2). VERIFICATION.md line 211 ("the editorial cap (±0.06) and asymmetric structure will look very similar") is partially confirmed: the cap structure looks essentially identical (already saturated cells stay saturated), but the *asymmetric* structure does NOT survive — all 6 asymmetric 88-08 cells would flatten to the cap under the new semantics. The user-visible behaviour change from a full recalibration would be a marginally more permissive (wider) neutral band in 6 bullet/blitz mid-quintile cells. See the Plan 88-12 Task 2 checkpoint for the keep/recalibrate decision.
+
+---
+
 ### 3.4 Endgame Type Breakdown
 
 #### 3.4.1 Per-class score / conversion / recovery
