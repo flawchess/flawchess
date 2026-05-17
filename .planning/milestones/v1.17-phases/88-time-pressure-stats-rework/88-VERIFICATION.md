@@ -1,8 +1,15 @@
 ---
 phase: 88-time-pressure-stats-rework
-verified: 2026-05-17T19:24:35Z
-status: human_needed
-score: 11/11 must-haves verified (6 from §2 A-1..A-5 + WR fixes + 5 carried-forward invariants from prior re-verification)
+verified: 2026-05-17T20:30:00Z
+status: pass
+uat_status: passed
+uat_completed: 2026-05-17T20:30:00Z
+score: 11/11 must-haves verified (6 from §2 A-1..A-5 + WR fixes + 5 carried-forward invariants from prior re-verification) + 6/6 HUMAN-UAT tests passed
+post_uat_polish:
+  - "76e6e518: post-UAT polish on Time Pressure section"
+  - "3d512e82: post-UAT round 2 — copy + layout tweaks on Time Pressure"
+  - "19606970: post-UAT round 3 — copy tweaks on Time Pressure cards"
+  - "7a246e96: simplify Score Delta popover copy, drop 'quintile' jargon"
 overrides_applied: 0
 re_verification:
   previous_status: human_needed
