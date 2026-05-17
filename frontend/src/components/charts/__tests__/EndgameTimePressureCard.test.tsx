@@ -455,35 +455,33 @@ describe('EndgameTimePressureCard — Plan 88-13 A-4: Q4 (80-100%) row hidden', 
   });
 });
 
-describe('EndgameTimePressureCard — Plan 88-13 A-4: new qualitative pressure labels', () => {
-  it('Q0 visible row uses "High Pressure (0-20%)" label, not the raw "0-20%"', () => {
+describe('EndgameTimePressureCard — qualitative pressure labels (range | qualitative)', () => {
+  // Post-UAT relabel: format is "{range} | {qualitative-name}" (range first).
+  it('Q0 visible row uses "0-20% | High Pressure" label', () => {
     renderCard(makeCard());
     const row = screen.getByTestId('time-pressure-card-bullet-bin-0');
-    expect(row.textContent).toContain('High Pressure (0-20%)');
-    // Raw range-only label no longer appears as a label in the row.
-    // (the percent string still appears inside the new label — that's the point)
-    expect(row.textContent).not.toMatch(/^0-20%:/m);
+    expect(row.textContent).toContain('0-20% | High Pressure');
   });
 
-  it('Q1 visible row uses "Medium Pressure (20-40%)" label', () => {
+  it('Q1 visible row uses "20-40% | Medium Pressure" label', () => {
     renderCard(makeCard());
     const row = screen.getByTestId('time-pressure-card-bullet-bin-1');
-    expect(row.textContent).toContain('Medium Pressure (20-40%)');
+    expect(row.textContent).toContain('20-40% | Medium Pressure');
   });
 
-  it('Q2 visible row uses "Low Pressure (40-60%)" label', () => {
+  it('Q2 visible row uses "40-60% | Low Pressure" label', () => {
     renderCard(makeCard());
     const row = screen.getByTestId('time-pressure-card-bullet-bin-2');
-    expect(row.textContent).toContain('Low Pressure (40-60%)');
+    expect(row.textContent).toContain('40-60% | Low Pressure');
   });
 
-  it('Q3 visible row uses "Very Low Pressure (60-80%)" label', () => {
+  it('Q3 visible row uses "60-80% | Very Low Pressure" label', () => {
     renderCard(makeCard());
     const row = screen.getByTestId('time-pressure-card-bullet-bin-3');
-    expect(row.textContent).toContain('Very Low Pressure (60-80%)');
+    expect(row.textContent).toContain('60-80% | Very Low Pressure');
   });
 
-  it('EmptyBinRow for Q0 (n=0) uses "High Pressure (0-20%)" label', () => {
+  it('EmptyBinRow for Q0 (n=0) uses "0-20% | High Pressure" label', () => {
     renderCard(
       makeCard({
         quintiles: [
@@ -496,7 +494,7 @@ describe('EndgameTimePressureCard — Plan 88-13 A-4: new qualitative pressure l
       }),
     );
     const empty = screen.getByTestId('time-pressure-card-bullet-bin-0-empty');
-    expect(empty.textContent).toContain('High Pressure (0-20%)');
+    expect(empty.textContent).toContain('0-20% | High Pressure');
     expect(empty.textContent).toContain('no games');
   });
 
@@ -505,7 +503,7 @@ describe('EndgameTimePressureCard — Plan 88-13 A-4: new qualitative pressure l
     const trigger = screen.getByTestId('time-pressure-card-bullet-bin-0-info');
     fireEvent.click(trigger);
     const body = document.body.textContent ?? '';
-    expect(body).toContain('High Pressure (0-20%)');
+    expect(body).toContain('0-20% | High Pressure');
   });
 
   it('title popover no longer mentions Q4 or 80-100%', () => {
@@ -602,5 +600,41 @@ describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone 3-stat row', () =
     // The value span should have no inline color style.
     const coloredSpan = cell.querySelector('span[style*="color"]');
     expect(coloredSpan).toBeNull();
+  });
+});
+
+// ─── Post-UAT structural refinements ────────────────────────────────────────
+
+describe('EndgameTimePressureCard — post-UAT structural refinements', () => {
+  it('renders a time-control icon next to the TC label in the title', () => {
+    renderCard(makeCard({ tc: 'blitz' }));
+    // The TimeControlIcon renders an <svg aria-label="blitz">.
+    const card = screen.getByTestId('time-pressure-card-blitz');
+    const icon = card.querySelector('h3 svg[aria-label="blitz"]');
+    expect(icon).not.toBeNull();
+  });
+
+  it('renders the "Remaining Time at Endgame Entry" top-zone subtitle', () => {
+    renderCard(makeCard());
+    const subtitle = screen.getByTestId(
+      'time-pressure-card-bullet-top-zone-subtitle',
+    );
+    expect(subtitle.textContent).toBe('Remaining Time at Endgame Entry');
+  });
+
+  it('renders the "Score by Remaining Time" quintile-section subtitle', () => {
+    renderCard(makeCard());
+    const subtitle = screen.getByTestId(
+      'time-pressure-card-bullet-quintiles-subtitle',
+    );
+    expect(subtitle.textContent).toBe('Score by Remaining Time');
+  });
+
+  it('Clock gap row no longer renders the redundant "(N games)" suffix', () => {
+    renderCard(makeCard({ clock_gap: makeClockGap({ n: 123, mean_diff_pct: 0.05 }) }));
+    const row = screen.getByTestId('time-pressure-card-bullet-clock-gap');
+    // Clock-eligible count of 123 is reachable via the popover — not duplicated
+    // inline next to the value.
+    expect(row.textContent).not.toContain('(123 games)');
   });
 });

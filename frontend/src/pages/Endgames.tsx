@@ -538,15 +538,16 @@ export function EndgamesPage() {
           {showTimePressureCards && timePressureCardsData && (
             <>
               <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
-              <EndgameTimePressureSection data={timePressureCardsData} />
-              {/* Plan 88-15 (CONTEXT §2 A-2): restored Average Clock Difference
-                  over Time line chart. Sits between the cards grid and the
-                  insights slot. Hides when timeline has no eligible points. */}
+              {/* Plan 88-15 + post-UAT reorder (CONTEXT §2 A-2): restored
+                  Average Clock Difference over Time line chart. Sits ABOVE the
+                  per-TC cards so the user sees the trend story first, then
+                  drills into per-TC breakdowns. Hides when no eligible points. */}
               {showClockDiffTimeline && clockDiffTimelineData && (
                 <div className="charcoal-texture rounded-md p-4">
                   <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
                 </div>
               )}
+              <EndgameTimePressureSection data={timePressureCardsData} />
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}

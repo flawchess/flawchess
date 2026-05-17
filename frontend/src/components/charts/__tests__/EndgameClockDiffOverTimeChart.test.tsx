@@ -99,18 +99,19 @@ describe('EndgameClockDiffOverTimeChart', () => {
     expect(bars.length).toBe(THREE_POINT_FIXTURE.length);
   });
 
-  it('renders Y axis tick labels at −30, 0, +30', () => {
+  it('renders Y axis tick labels at −30, 0, +30 (signed for positives)', () => {
     const { container } = render(
       <EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />,
     );
     // Recharts renders tick labels as <text> nodes inside .recharts-cartesian-axis-tick.
-    // The fixed Y domain pins these three ticks for the line chart Y axis.
+    // The Y domain pins ticks at every 10% across [-30, +30]; positives are
+    // signed (+10%, +20%, +30%) per the tick formatter.
     const tickTexts = Array.from(
       container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value'),
     )
       .map((n) => n.textContent ?? '')
       .map((s) => s.replace(/\s/g, ''));
-    expect(tickTexts).toEqual(expect.arrayContaining(['-30%', '0%', '30%']));
+    expect(tickTexts).toEqual(expect.arrayContaining(['-30%', '0%', '+30%']));
   });
 
   it('renders the InfoPopover trigger with the correct aria-label', () => {
@@ -121,55 +122,68 @@ describe('EndgameClockDiffOverTimeChart', () => {
     ).toBeTruthy();
   });
 
-  it('renders zone-tinted ReferenceArea bands for above/below thresholds', () => {
+  it('renders three zone-tinted ReferenceArea bands (danger / neutral / success)', () => {
     const { container } = render(
       <EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />,
     );
-    // Recharts ReferenceArea renders SVG <rect> elements with class
-    // .recharts-reference-area-rect. With two bands (one above the neutral
-    // threshold, one below the negated threshold) we expect 2 rects total.
+    // Post-UAT: the neutral middle band (blue) was missing from the first
+    // restore pass. Now we render three bands — danger (below -threshold),
+    // neutral (within ±threshold), success (above +threshold). Recharts emits
+    // one SVG rect per ReferenceArea at .recharts-reference-area-rect.
     const bands = container.querySelectorAll('.recharts-reference-area-rect');
-    expect(bands.length).toBe(2);
+    expect(bands.length).toBe(3);
   });
 
-  it('does not clip values outside the ±30% Y envelope (REVIEW.md WR-02)', () => {
-    // Real rapid/classical users can legitimately exceed ±30%; the previous
-    // `allowDataOverflow={false}` silently flattened those points to the axis
-    // edge. With overflow allowed, the line plot still emits a dot whose
-    // Y-coordinate is computed proportionally to the out-of-band value — it
-    // ends up rendered above the visible viewbox rather than pinned at +30%.
+  it('expands Y domain to include values outside the ±30% envelope', () => {
+    // Real rapid/classical users can legitimately exceed ±30%. Instead of
+    // `allowDataOverflow={true}` (which keeps the +30 tick at the edge and
+    // lets the dot escape), we expand the domain so the axis itself includes
+    // the outlier. The point still renders inside the visible viewbox.
     const OVERFLOW_FIXTURE: ClockDiffTimelinePoint[] = [
       makePoint('2025-01-06', 10.0, { game_count: 5, per_week_game_count: 5 }),
-      // 42% is well outside the ±30% envelope.
+      // 42% is well outside the ±30% baseline envelope.
       makePoint('2025-01-13', 42.0, { game_count: 12, per_week_game_count: 7 }),
       makePoint('2025-01-20', 2.5, { game_count: 18, per_week_game_count: 6 }),
     ];
     const { container } = render(
       <EndgameClockDiffOverTimeChart timeline={OVERFLOW_FIXTURE} />,
     );
-    // Recharts emits one <circle> dot per Line datum at class .recharts-line-dot.
-    // All three should render — none silently dropped.
-    const dots = container.querySelectorAll('.recharts-line-dot');
+    // All three dots are emitted via a custom `dot` render function returning
+    // raw <circle> elements. Locate them via the chart line layer.
+    const dots = container.querySelectorAll('.recharts-line circle');
     expect(dots.length).toBe(OVERFLOW_FIXTURE.length);
-    // The 42% point should not share the same Y-coord as the +30% Y-tick.
-    // We extract the second dot (the 42% one — Recharts orders by data index)
-    // and the +30% tick text and confirm the dot's cy is strictly less than
-    // the +30% tick's y (smaller cy = higher on the SVG canvas = above the
-    // visible band, exactly what allowDataOverflow={true} permits).
+    // The 42% dot sits above the +30% tick (smaller cy = higher on the SVG
+    // canvas), proving the domain expanded to admit it.
     const dot42 = dots[1] as SVGCircleElement;
     const tick30 = Array.from(
       container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick'),
-    ).find((el) => (el.textContent ?? '').replace(/\s/g, '') === '30%');
+    ).find((el) => (el.textContent ?? '').replace(/\s/g, '') === '+30%');
     expect(dot42).toBeTruthy();
     expect(tick30).toBeTruthy();
     const dotCy = parseFloat(dot42.getAttribute('cy') ?? 'NaN');
     const tickY = parseFloat(
       tick30!.querySelector('text')?.getAttribute('y') ?? 'NaN',
     );
-    // Both must be finite numbers, and the 42% dot must sit above the +30%
-    // tick (smaller y in SVG coordinate space).
     expect(Number.isFinite(dotCy)).toBe(true);
     expect(Number.isFinite(tickY)).toBe(true);
     expect(dotCy).toBeLessThan(tickY);
+  });
+
+  it('uses a white line stroke', () => {
+    const { container } = render(
+      <EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />,
+    );
+    // Post-UAT: the visible line uses a white stroke; per-point dots carry
+    // the zone color. Recharts emits the Line's path under .recharts-line-curve.
+    const linePath = container.querySelector('.recharts-line-curve');
+    expect(linePath).not.toBeNull();
+    expect(linePath?.getAttribute('stroke')).toBe('white');
+  });
+
+  it('renders the vertical "Clock diff %" Y-axis label on desktop', () => {
+    // matchMedia is stubbed to always return matches=false → desktop path.
+    render(<EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />);
+    // The label is plain HTML text rotated via CSS, so screen.getByText works.
+    expect(screen.getByText('Clock diff %')).toBeTruthy();
   });
 });

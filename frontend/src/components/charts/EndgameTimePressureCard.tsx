@@ -19,6 +19,7 @@
 import type { CSSProperties } from 'react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { InfoPopover } from '@/components/ui/info-popover';
 import {
@@ -53,17 +54,18 @@ const TC_LABELS: Record<'bullet' | 'blitz' | 'rapid' | 'classical', string> = {
 };
 
 /**
- * Qualitative pressure labels for the 4 visible quintiles (Plan 88-13 A-4).
- * Backend's `bin.quintile_label` (raw "0-20%" range string) is intentionally
- * not surfaced anywhere in the UI — these labels replace it.
- * Q4 (80-100%) is filtered out at the parent map() and never reaches a row,
- * so it has no entry here.
+ * Qualitative pressure labels for the 4 visible quintiles. Format is
+ * `{range} | {qualitative-name}` so the quantitative band reads first and the
+ * qualitative interpretation reads as a pipe-delimited annotation (post-UAT
+ * relabel; superseded the earlier "Qualitative (range)" wording from Plan
+ * 88-13 A-4). Q4 (80-100%) is filtered out at the parent map() and never
+ * reaches a row, so it has no entry here.
  */
 const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
-  0: 'High Pressure (0-20%)',
-  1: 'Medium Pressure (20-40%)',
-  2: 'Low Pressure (40-60%)',
-  3: 'Very Low Pressure (60-80%)',
+  0: '0-20% | High Pressure',
+  1: '20-40% | Medium Pressure',
+  2: '40-60% | Low Pressure',
+  3: '60-80% | Very Low Pressure',
 };
 
 /** Highest displayed quintile index; Q4 (80-100%) is filtered out for display. */
@@ -118,7 +120,9 @@ function ClockGapRow({ gap, tc }: ClockGapRowProps) {
         >
           {formattedValue}
         </span>
-        <span className="text-muted-foreground text-sm">({gap.n} games)</span>
+        {/* Post-UAT: dropped the per-row "({gap.n} games)" suffix — the card
+            header already shows total games for this TC, so repeating the
+            clock-eligible count next to every row was visual noise. */}
         <MetricStatPopover
           name="Clock Gap"
           explanation="Average clock time advantage at endgame entry: (your clock − opponent clock) / starting clock. Positive means you entered with more time."
@@ -156,6 +160,10 @@ function ClockGapRow({ gap, tc }: ClockGapRowProps) {
           ciLow={gap.ci_low != null ? clampDeltaCi(gap.ci_low) : undefined}
           ciHigh={gap.ci_high != null ? clampDeltaCi(gap.ci_high) : undefined}
           ariaLabel={`Clock gap: ${formattedValue}`}
+          // Post-UAT: bars rendered neutral (white-ish) like EndgameTypeCard
+          // and OpeningStatsCard — zone tint is carried by the background
+          // bands, the bar itself only encodes position.
+          barColor="neutral"
         />
       </div>
     </div>
@@ -258,6 +266,8 @@ function QuintileRow({ bin, tc }: QuintileRowProps) {
           ciLow={bin.ci_low != null ? clampDeltaCi(bin.ci_low) : undefined}
           ciHigh={bin.ci_high != null ? clampDeltaCi(bin.ci_high) : undefined}
           ariaLabel={`Score delta at ${displayLabel}: ${signedDelta}`}
+          // Post-UAT: bars rendered neutral (white-ish) — see ClockGapRow.
+          barColor="neutral"
         />
       </div>
     </div>
@@ -398,7 +408,11 @@ export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) 
       role="group"
       aria-label={`${tcLabel} time pressure breakdown`}
     >
-      <h3 className="text-base font-semibold mb-3 inline-flex items-center gap-1">
+      <h3 className="text-base font-semibold mb-3 inline-flex items-center gap-1.5">
+        {/* Post-UAT: TC icon next to the label matches the filter-button
+            convention. h-4 w-4 keeps icon optical weight aligned with the
+            text-base heading. */}
+        <TimeControlIcon timeControl={card.tc} className="h-4 w-4 shrink-0" />
         <span>{tcLabel}</span>
         <InfoPopover
           ariaLabel={`${tcLabel} time pressure info`}
@@ -408,8 +422,9 @@ export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) 
           How your chess score changes with the clock remaining at endgame entry,
           from High Pressure (0-20% clock left) to Very Low Pressure (60-80% clock
           left). The 80-100% (minimum pressure) bin is intentionally hidden as a
-          low-signal tail. The top zone summarises overall clock state and flag
-          rate; the bullets below break score performance down by clock remaining.
+          low-signal tail. The top section summarises overall clock state and
+          flag rate; the bullets below break score performance down by clock
+          remaining.
         </InfoPopover>
         <span
           className="ml-1 text-sm text-muted-foreground tabular-nums font-normal"
@@ -420,27 +435,46 @@ export function EndgameTimePressureCard({ card }: { card: TimePressureTcCard }) 
       </h3>
 
       <div className="flex flex-col gap-4">
-        {/* Plan 88-14 A-3: top zone — Clock Gap bullet + 3-stat row. */}
+        {/* Plan 88-14 A-3 + post-UAT subtitle: top section — Clock Gap bullet +
+            3-stat row. The subtitle names what the rows summarise. */}
         <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
+          <p
+            className="text-sm font-medium text-muted-foreground mb-2"
+            data-testid={`time-pressure-card-${card.tc}-top-zone-subtitle`}
+          >
+            Remaining Time at Endgame Entry
+          </p>
           <ClockGapRow gap={card.clock_gap} tc={card.tc} />
           <ThreeStatRow card={card} />
         </div>
 
-        {/* Visual separator between top zone and per-quintile bullets. */}
+        {/* Visual separator between top section and per-quintile bullets. */}
         <div className="border-t border-border/40" aria-hidden="true" />
 
-        {card.quintiles
-          // Plan 88-13 A-4: hide the Q4 (80-100% clock remaining) row entirely.
-          // Backend still emits 5 quintiles; the asymmetry is intentional per
-          // CONTEXT §2 clarification #2.
-          .filter((bin) => bin.quintile_index <= MAX_VISIBLE_QUINTILE_INDEX)
-          .map((bin) =>
-            bin.n === 0 ? (
-              <EmptyBinRow key={bin.quintile_index} bin={bin} tc={card.tc} />
-            ) : (
-              <QuintileRow key={bin.quintile_index} bin={bin} tc={card.tc} />
-            ),
-          )}
+        {/* Post-UAT: name the second section so the relationship between the
+            two zones reads cleanly without the reader having to infer it. */}
+        <div>
+          <p
+            className="text-sm font-medium text-muted-foreground mb-2"
+            data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
+          >
+            Score by Remaining Time
+          </p>
+          <div className="flex flex-col gap-4">
+            {card.quintiles
+              // Plan 88-13 A-4: hide the Q4 (80-100% clock remaining) row.
+              // Backend still emits 5 quintiles; the asymmetry is intentional
+              // per CONTEXT §2 clarification #2.
+              .filter((bin) => bin.quintile_index <= MAX_VISIBLE_QUINTILE_INDEX)
+              .map((bin) =>
+                bin.n === 0 ? (
+                  <EmptyBinRow key={bin.quintile_index} bin={bin} tc={card.tc} />
+                ) : (
+                  <QuintileRow key={bin.quintile_index} bin={bin} tc={card.tc} />
+                ),
+              )}
+          </div>
+        </div>
       </div>
     </div>
   );
