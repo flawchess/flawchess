@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 /**
  * Phase 85 Plan 05: tests for EndgameOverallPerformanceSection.
+ * Phase 88.3 Plan 03 (SC-3): updated for 2-column responsive card layout.
  *
  * Covers:
- * - Section structure: section container, all 3 card testids, score-gap testid,
+ * - Section structure: section container, all 4 testids (tile-games-without-endgame,
+ *   tile-games-with-endgame, tile-at-endgame-entry, endgame-score-differences),
  *   section question line, and all card title texts render.
+ * - SC-3 layout assertions: outer charcoal-texture card present; 3-column grid
+ *   and ConnectorArrows overlay absent; both surviving divider patterns present.
  * - Negative assertions: legacy testids and h3 strings are gone.
  * - Math: per-card chess-score matches (W + 0.5·D)/n on Cards 1 and 3.
  * - Score Gap formatting: signed percentage with explicit '+' or '-' prefix.
@@ -181,6 +185,40 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(screen.queryByTestId('tile-endgame-score')).toBeNull();
     expect(screen.queryByTestId('score-gap-footer')).toBeNull();
     expect(screen.queryByTestId('perf-section-info')).toBeNull();
+  });
+
+  // ── SC-3 layout: 2-column card (88.3-F, 88.3-G) ─────────────────────────
+
+  it('SC-3: outer charcoal-texture card is present inside the section', () => {
+    render(
+      <EndgameOverallPerformanceSection data={makeData()} scoreGap={makeScoreGap()} />,
+    );
+    const section = screen.getByTestId('endgame-overall-performance-section');
+    // The outer card shell has the charcoal-texture class.
+    const outerCard = section.querySelector('.charcoal-texture');
+    expect(outerCard).toBeTruthy();
+  });
+
+  it('SC-3: 3-column grid is absent (replaced by flex layout)', () => {
+    render(
+      <EndgameOverallPerformanceSection data={makeData()} scoreGap={makeScoreGap()} />,
+    );
+    const section = screen.getByTestId('endgame-overall-performance-section');
+    // The old grid class targeted via Tailwind's lg: responsive prefix.
+    // querySelector with attribute selector covers both class list forms.
+    const oldGrid = section.querySelector('[class*="grid-cols-3"]');
+    expect(oldGrid).toBeNull();
+  });
+
+  it('SC-3: ConnectorArrows absolute overlay is absent (no pointer-events-none aria-hidden SVG wrapper)', () => {
+    render(
+      <EndgameOverallPerformanceSection data={makeData()} scoreGap={makeScoreGap()} />,
+    );
+    const section = screen.getByTestId('endgame-overall-performance-section');
+    // ConnectorArrows rendered a wrapper: class="absolute inset-0 hidden lg:block pointer-events-none" aria-hidden="true"
+    // The pointer-events-none + aria-hidden combination is unique to the connector overlay.
+    const arrowsOverlay = section.querySelector('[aria-hidden="true"][class*="pointer-events-none"]');
+    expect(arrowsOverlay).toBeNull();
   });
 
   // ── Top-right games-count badge ──────────────────────────────────────────
