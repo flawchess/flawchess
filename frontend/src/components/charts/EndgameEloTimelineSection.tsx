@@ -33,7 +33,7 @@
 
 import { useState, useCallback, useMemo, useEffect, useId } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend } from '@/components/ui/chart';
-import { ComposedChart, Line, Area, Bar, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { ComposedChart, Line, Area, Bar, CartesianGrid, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { createDateTickFormatter, formatDateWithYear, niceEloAxis } from '@/lib/utils';
 import {
@@ -44,6 +44,7 @@ import {
 } from '@/lib/theme';
 import { signedBandGradient } from '@/lib/signedBandGradient';
 import type { GradientStop } from '@/lib/signedBandGradient';
+import { computeInactivityGaps } from '@/lib/inactivityGaps';
 import type { EndgameEloTimelineResponse, EloComboKey } from '@/types/endgames';
 
 const MOBILE_BREAKPOINT_PX = 768;
@@ -204,6 +205,7 @@ export function EndgameEloTimelineSection({
     return [...set].sort();
   }, [data?.combos]);
 
+  const inactivityGaps = useMemo(() => computeInactivityGaps(allDates), [allDates]);
   const formatDateTick = useMemo(() => createDateTickFormatter(allDates), [allDates]);
 
   // Y-axis over all visible ELO values (endgame_elo + non_endgame_elo + actual_elo)
@@ -538,6 +540,23 @@ export function EndgameEloTimelineSection({
             />
             {/* Custom legend: each item is a <button> with the locked per-combo testid. */}
             <ChartLegend content={renderLegend()} />
+            {/* Inactivity-gap annotations: one ReferenceLine per gap in allDates that
+                exceeds INACTIVITY_GAP_THRESHOLD_DAYS. Placed BEFORE <Bar> so annotations
+                sit behind the data series in SVG z-order.
+                Uses yAxisId="elo" (the named ELO axis for this chart — not "value").
+                x must exactly match a value from allDates passed to createDateTickFormatter
+                — a non-matching value renders no line (Recharts Pitfall 1). */}
+            {inactivityGaps.map((gap) => (
+              <ReferenceLine
+                key={`gap-${gap.afterIndex}`}
+                yAxisId="elo"
+                x={allDates[gap.afterIndex]!} // afterIndex < allDates.length by computeInactivityGaps contract
+                stroke="currentColor"
+                strokeOpacity={0.3}
+                strokeDasharray="4 2"
+                label={{ value: gap.label, position: 'insideTopRight', fontSize: 11, fill: 'currentColor', fillOpacity: 0.6 }}
+              />
+            ))}
             {/* Phase 57.1: muted volume bars bound to the hidden bars axis. */}
             <Bar
               yAxisId="bars"
