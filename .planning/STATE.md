@@ -3,19 +3,19 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: executing
-last_updated: "2026-05-18T20:14:54.351Z"
-last_activity: 2026-05-18 -- Phase 88.3 execution started
+last_updated: "2026-05-18T23:20:00.000Z"
+last_activity: 2026-05-18 -- Phase 88.3 complete (SC-4 gap closure verified 13/13, human_needed — 4 UAT items, user-approved)
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 88.3 (endgame-stats-viz-refinements) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 88.3
-Last activity: 2026-05-18 -- Phase 88.3 execution started
-Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
+Phase: 88.3 (endgame-stats-viz-refinements) — COMPLETE; next: Phase 89 (Polish)
+Plan: 4 of 4 complete (88.3-04 SC-4 gap closure)
+Status: Phase 88.3 complete — verification 13/13 must-haves, status human_needed (4 visual UAT items persist in 88.3-HUMAN-UAT.md), user-approved 2026-05-18. Not yet shipped (no PR).
+Last activity: 2026-05-18 -- Phase 88.3 SC-4 gap closure verified & user-approved
+Prior: Phase 88.3 SC-1/2/3 executed earlier 2026-05-18; Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
 
