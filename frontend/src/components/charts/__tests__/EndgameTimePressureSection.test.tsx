@@ -209,3 +209,41 @@ describe('EndgameTimePressureSection — Section wrapper', () => {
     expect(section!.getAttribute('aria-labelledby')).toBeNull();
   });
 });
+
+describe('EndgameTimePressureSection — SC-1: dynamic grid layout', () => {
+  it('1-card payload wraps card in w-1/2 container', () => {
+    const { container } = renderSection(makePayload('bullet'));
+    const grid = container.querySelector(
+      '[data-testid="time-pressure-cards-section"] > p + div',
+    );
+    // Single card uses half-width, not a grid layout.
+    expect(grid?.className).toContain('w-1/2');
+    expect(grid?.className).not.toContain('grid');
+  });
+
+  it('2-card payload uses grid-cols-2', () => {
+    const { container } = renderSection(makePayload('bullet', 'blitz'));
+    const grid = container.querySelector(
+      '[data-testid="time-pressure-cards-section"] > p + div',
+    );
+    expect(grid?.className).toContain('grid-cols-2');
+  });
+
+  it('3-card payload uses sm:grid-cols-3', () => {
+    const { container } = renderSection(makePayload('bullet', 'blitz', 'rapid'));
+    const grid = container.querySelector(
+      '[data-testid="time-pressure-cards-section"] > p + div',
+    );
+    expect(grid?.className).toContain('grid-cols-3');
+  });
+
+  it('4-card payload uses xl:grid-cols-4', () => {
+    const { container } = renderSection(
+      makePayload('bullet', 'blitz', 'rapid', 'classical'),
+    );
+    const grid = container.querySelector(
+      '[data-testid="time-pressure-cards-section"] > p + div',
+    );
+    expect(grid?.className).toContain('grid-cols-4');
+  });
+});
