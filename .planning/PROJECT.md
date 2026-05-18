@@ -363,7 +363,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-13 — Phase 84 (Data plumbing — mirror-rate audit) complete. DATA-02 shipped via plan 84-01: `ConversionRecoveryStats` extended with 4 `opponent_*` fields populated by same-game mirror identity in `_aggregate_endgame_stats`, gated on `_MIN_OPPONENT_SAMPLE`. Section 2 wiring audited and confirmed already present. Pivot during v1.17 exploration replaced the two-bullet doctrine (cohort + peer) with a single peer bullet on Conv/Parity/Recov + Section 3 — rating-tier confound made the cohort/p50 frame near-redundant with ELO. v1.17 remaining: 4 phases (85, 86, 87, 88).*
+*Last updated: 2026-05-18 — v1.17 in progress. Phase 88.3 (Endgame Stats viz refinements) complete: SC-1 inactivity-gap annotations, SC-2 ELO Timeline single-most-active default, SC-3 Overall Performance 2-column card, SC-4 lucide Palmtree break glyph + shared `inactivityGapReferenceLines` helper rolled out to all 6 ordinal-axis timeline charts (verified 13/13 must-haves, status human_needed — 4 visual UAT items, user-approved). Frontend-only, not yet shipped (no PR). v1.17 remaining: Phase 89 (Polish). Prior v1.17 footer note (Phase 84 / two-bullet→single-peer pivot) still applies for the Conv/Parity/Recov doctrine.*
 
 *Previous: 2026-05-12 — v1.17 (Endgame Stats Card Redesign) opened. Frontend-only refactor (with Phase 84 as the lone backend touch) replacing 3 table-driven sections on the Endgames page with the WDL+ScoreBullet card pattern.*
 

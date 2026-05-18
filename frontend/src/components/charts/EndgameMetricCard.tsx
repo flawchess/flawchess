@@ -40,16 +40,20 @@ import type { MaterialBucket, MaterialRow } from '@/types/endgames';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
 import { deriveLevel } from './EndgameOverallShared';
 
-// Bucket-specific popover copy per D-08 with identical sigmoid-bias caveat.
-// No "vs opponents" framing anywhere (D-08 rule: Stockfish-baseline anchor).
-// No em-dashes per CLAUDE.md style guide.
+// Bucket-specific popover copy. Baseline = what a strong (2300+) player would
+// score from the same positions (Lichess expected-score formula). The typical
+// range is the blue zone, calibrated per bucket. Conversion / recovery each
+// carry a benchmark-grounded counter-intuitive note (benchmarks-latest.md
+// §3.2.2/§3.2.3): conversion gap is normally negative and a rating-driven
+// technique effect; recovery is normally positive because weaker opponents
+// blunder away winning positions. Parity is symmetric, no note needed.
 const POPOVER_COPY: Record<MaterialBucket, string> = {
   conversion:
-    'Average per-span Score Gap on endgame spans you entered ahead by >= 1 pawn. Positive = you converted advantages above the Stockfish baseline; negative = you bled away expected score on winning entries. Positive = above the Stockfish baseline; negative = below.',
+    'How your score from winning endgames compares to what a strong (2300+) player would score from the same positions, according to the Lichess expected-score formula. A negative average gap is normal for most players: converting a won endgame is a technique that keeps improving with rating, so the gap is widest below master level and narrows toward zero near 2300+. The blue zone marks the range that is typical for winning endgames.',
   parity:
-    'Average per-span Score Gap on endgame spans you entered roughly balanced (eval within +/-1 pawn). Positive = you outperformed the baseline from balanced; negative = you underperformed. Positive = above the Stockfish baseline; negative = below.',
+    'How your score from balanced endgames compares to what a strong (2300+) player would score from the same positions, according to the Lichess expected-score formula. The blue zone marks the range that is typical for balanced endgames.',
   recovery:
-    'Average per-span Score Gap on endgame spans you entered behind by >= 1 pawn. Positive = you salvaged disadvantages above the Stockfish baseline; negative = the position deteriorated further than expected. Positive = above the Stockfish baseline; negative = below.',
+    'How your score from losing endgames compares to what a strong (2300+) player would score from the same positions, according to the Lichess expected-score formula. Counter-intuitively, lower-rated players tend to beat this predicted score by more, not from greater skill but because their weaker opponents are likelier to blunder away a winning position. The blue zone marks the range that is typical for losing endgames.',
 };
 
 interface EndgameMetricCardProps {

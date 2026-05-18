@@ -43,6 +43,7 @@ import {
   ZONE_SUCCESS,
 } from '@/lib/theme';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
+import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
 import type { ClockDiffTimelinePoint } from '@/types/endgames';
 
 // Y axis baseline envelope. Real values can exceed this — see
@@ -148,20 +149,16 @@ export function EndgameClockDiffOverTimeChart({
               side="top"
             >
               <p>
-                Average clock difference (your remaining clock minus your
-                opponent's, as % of base time) at endgame entry over the last
-                100 games, sampled once per ISO week. Collapsed across all
-                time controls — use the filter panel to narrow by time control.
+                <strong>Average Clock Gap over Time:</strong> whether you
+                tend to enter endgames with more or less time on your clock
+                than your opponent, tracked over time. Positive means you
+                arrived with more time left.
               </p>
               <p className="mt-1">
                 Dots are colored by zone: green when your lead exceeds
                 +{NEUTRAL_PCT_THRESHOLD}%, red when you're down more than
-                −{NEUTRAL_PCT_THRESHOLD}%, blue in between.
-              </p>
-              <p className="mt-1">
-                Bars at the bottom show how many games you played in each week.
-                Positive values mean you entered endgames with more clock than
-                your opponent.
+                −{NEUTRAL_PCT_THRESHOLD}%, blue in between. Bars at the bottom
+                show how many games you played.
               </p>
             </InfoPopover>
           </span>
@@ -240,6 +237,11 @@ export function EndgameClockDiffOverTimeChart({
               strokeDasharray="3 3"
               strokeOpacity={0.4}
             />
+            {/* Inactivity-gap annotations via shared helper: Palmtree glyph + label per
+                >56-day gap. Vertical x= gap lines are independent from the horizontal
+                y=0 baseline above — no overlap, no double-annotation. Placed BEFORE
+                <Bar> so annotations sit behind data in SVG z-order. */}
+            {inactivityGapReferenceLines({ dates, yAxisId: 'value' })}
             <ChartTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;

@@ -44,6 +44,7 @@ import {
 } from '@/lib/theme';
 import { signedBandGradient } from '@/lib/signedBandGradient';
 import type { GradientStop } from '@/lib/signedBandGradient';
+import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
 import type { EndgameEloTimelineResponse, EloComboKey } from '@/types/endgames';
 
 const MOBILE_BREAKPOINT_PX = 768;
@@ -107,16 +108,16 @@ function getComboLabel(combo_key: string): string {
 // Hidden combos remain in the legend (dimmed + line-through) and become visible
 // on click. When data changes, the default is recomputed via useEffect — user
 // toggles within a single dataset are preserved, but a fresh dataset resets.
-const MAX_DEFAULT_VISIBLE = 3;
+const MAX_DEFAULT_VISIBLE = 1;
 const MIN_ACTIVE_WEEKS_RATIO = 0.33;
 
 function computeDefaultHidden(
   combos: ReadonlyArray<{ combo_key: string; points: ReadonlyArray<{ per_week_total_games: number }> }>,
 ): Set<string> {
   if (combos.length <= MAX_DEFAULT_VISIBLE) {
-    // No need to hide anything; the cap can't bite. Still compute the
-    // active-weeks filter though — a 2-combo player with one sparse stray
-    // combo should not see the stray line.
+    // With MAX_DEFAULT_VISIBLE = 1 this only applies to the single-combo case.
+    // Nothing to hide. Still run the active-weeks filter below — the stray-combo
+    // path (sparse combo hidden even under the cap) still applies.
   }
   const totalGames = new Map<string, number>();
   const activeWeeks = new Map<string, number>();
@@ -314,18 +315,15 @@ export function EndgameEloTimelineSection({
     >
       <div className="space-y-2">
         <p>
-          <strong>Endgame ELO</strong> (dashed line) and <strong>Non-Endgame ELO</strong> (dotted line) sit symmetrically around your <strong>Actual ELO</strong>. The band between
-          them is your endgame's lift (green) or drag (red), measured in ELO
-          units.
+          <strong>Endgame ELO Timeline:</strong> what your rating would look
+          like if your whole game played at the level of just your endgame
+          games (dashed line) or just your non-endgame games (dotted line),
+          plotted over time.
         </p>
         <p>
-          Points are emitted weekly; weeks with fewer than 10 qualifying endgame games
-          are hidden.
-        </p>
-        <p>
-          Chess.com uses Glicko-1 and lichess uses Glicko-2, so ratings across the two
-          platforms aren&apos;t directly comparable. Each combo is self-consistent on
-          its own scale.
+          The band between them is your endgame's lift (green) or drag (red).
+          When the dashed line sits above the dotted line, your endgame is
+          pulling your rating up; below, it's holding it back.
         </p>
       </div>
     </InfoPopover>
@@ -541,6 +539,12 @@ export function EndgameEloTimelineSection({
             />
             {/* Custom legend: each item is a <button> with the locked per-combo testid. */}
             <ChartLegend content={renderLegend()} />
+            {/* Inactivity-gap annotations via shared helper: one ReferenceLine + Palmtree
+                glyph + label per gap in allDates that exceeds INACTIVITY_GAP_THRESHOLD_DAYS.
+                Placed BEFORE <Bar> so annotations sit behind the data series in SVG z-order.
+                Uses yAxisId="elo" (the named ELO axis for this chart — not "value").
+                x must exactly match a value from allDates (Recharts Pitfall 1). */}
+            {inactivityGapReferenceLines({ dates: allDates, yAxisId: 'elo' })}
             {/* Phase 57.1: muted volume bars bound to the hidden bars axis. */}
             <Bar
               yAxisId="bars"

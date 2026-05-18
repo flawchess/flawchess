@@ -19,6 +19,7 @@ import {
   SCORE_TIMELINE_LINE_NON_ENDGAME,
 } from '@/lib/theme';
 import { signedBandGradient, type GradientStop } from '@/lib/signedBandGradient';
+import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type { ScoreGapTimelinePoint } from '@/types/endgames';
 
@@ -132,10 +133,13 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
   // Math.max(..., 1) avoids a [0, 0] domain when no week has any games.
   const barMax = Math.max(1, ...data.map((r) => r.per_week_total_games));
 
-  if (timeline.length === 0) return null;
-
+  // dates and inactivityGaps are derived from `data` (itself from `timeline`),
+  // so they are placed BEFORE the early-return to satisfy the rules-of-hooks
+  // constraint (no hooks after a conditional return).
   const dates = data.map((p) => p.date);
   const formatDateTick = createDateTickFormatter(dates);
+
+  if (timeline.length === 0) return null;
 
   return (
     <div data-testid="endgame-score-timeline-chart">
@@ -149,16 +153,14 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
               side="top"
             >
               <p>
-                Your Endgame Score and Non-Endgame Score over the trailing {window} games,
-                sampled once per week.
+                <strong>Endgame Score Gap over Time:</strong> how your Endgame
+                Score compares to your Non-Endgame Score over time, so you can
+                see whether the gap is closing or widening.
               </p>
               <p className="mt-1">
-                The shaded area between the lines is color-coded: green when your
-                Endgame Score leads your Non-Endgame Score, red when it trails.
-              </p>
-              <p className="mt-1">
-                Early weeks where either side has fewer than 10 games in the
-                window are hidden.
+                The shaded area between the lines is color-coded: green when
+                your Endgame Score leads your Non-Endgame Score, red when it
+                trails.
               </p>
             </InfoPopover>
           </span>
@@ -254,6 +256,12 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
                 ))}
               </linearGradient>
             </defs>
+            {/* Inactivity-gap annotations via shared helper: one ReferenceLine + Palmtree
+                glyph + label per gap that exceeds INACTIVITY_GAP_THRESHOLD_DAYS.
+                Placed BEFORE <Bar> so annotations sit behind the data series in SVG
+                z-order. x must exactly match a value from the dates array
+                (Recharts Pitfall 1 from 88.3-01-PLAN.md). */}
+            {inactivityGapReferenceLines({ dates, yAxisId: 'value' })}
             <Bar
               yAxisId="bars"
               dataKey="per_week_total_games"

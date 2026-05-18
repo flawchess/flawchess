@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: "Phase 88 shipped — PR #107"
-last_updated: "2026-05-17T21:03:35.154Z"
-last_activity: 2026-05-17
+status: "Phase 88.3 shipped — PR #108 (awaiting review/merge)"
+last_updated: "2026-05-18T20:58:44.397Z"
+last_activity: "2026-05-18 -- Phase 88.3 shipped — PR #108"
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 88 (time-pressure-stats-rework) — EXECUTING
-Plan: 1 of 15
-Status: Phase 88 shipped — PR #107
-Last activity: 2026-05-17
-Prior: Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
+Phase: 88.3 (endgame-stats-viz-refinements) — COMPLETE; next: Phase 89 (Polish)
+Plan: 4 of 4 complete (88.3-04 SC-4 gap closure)
+Status: Phase 88.3 shipped — PR #108 (awaiting review/merge)
+Last activity: 2026-05-18 -- Phase 88.3 shipped — PR #108
+Prior: Phase 88.3 SC-1/2/3 executed earlier 2026-05-18; Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
 
 ## Project Reference
 
@@ -105,6 +105,7 @@ Carried forward from v1.11 close (still relevant):
 - 2026-05-03: B-1 ordering deviation — prod backfill (Round 3) ran before the combined PR + bin/deploy.sh, against the 79-04-PLAN sequence. Operator confirmed "already handled, no action" via /gsd-progress dispatcher. Mitigation specifics (paused traffic / delta backfill / minimal window) not documented in 79-04-SUMMARY (TBD on milestone retro).
 - Phase 87.2 inserted after Phase 87.1: Section 2 — replace rate-based peer-diff Gap with eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (URGENT)
 - Phase 87.3 inserted after Phase 87.2: Endgame Skill v2 — Conv+Parity percentile composite (Recovery dropped, opponent-confounded per benchmark spike) (URGENT)
+- Phase 88.3 inserted after Phase 88: Endgame Stats viz refinements (timeline inactivity annotations, ELO default series, Overall Performance 2-col card restructure) — from /gsd-explore chart-quality review (URGENT)
 
 ### Pending Todos
 

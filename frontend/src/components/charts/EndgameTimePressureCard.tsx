@@ -125,7 +125,7 @@ function ClockGapRow({ gap, tc }: ClockGapRowProps) {
             clock-eligible count next to every row was visual noise. */}
         <MetricStatPopover
           name="Clock Gap"
-          explanation="Average clock time advantage at endgame entry: (your clock − opponent clock) / starting clock. Positive means you entered with more time."
+          explanation="Your average clock advantage over your opponent when the endgame begins, as a share of the starting time. Positive means you entered the endgame with more time on your clock."
           value={gap.mean_diff_pct}
           baseline={0}
           unit="percent"
@@ -386,9 +386,9 @@ function ThreeStatRow({ card }: ThreeStatRowProps) {
           side="top"
         >
           <p>
-            Your opponents' flag (timeout) rate minus your own, on games in this
-            time control. Positive = you flag less often than your opponents.
-            Negative = you flag more often.
+            <strong>Net flag rate:</strong> how often you run out of time
+            compared to your opponents. Positive = you flag less often than
+            them; negative = you flag more often.
           </p>
         </InfoPopover>
       </span>
@@ -442,11 +442,12 @@ export function EndgameTimePressureCard({
           testId={`time-pressure-card-${card.tc}-title-info`}
           side="top"
         >
-          How your chess score changes with the clock remaining at endgame
-          entry, broken into 20% bands from 0-20% (highest pressure) up to
-          60-80%. The 80-100% bin is intentionally hidden as a low-signal tail.
-          The top section summarises overall clock state and flag rate; the
-          bullets below break score performance down by clock remaining.
+          <p>
+            <strong>{tcLabel} Time Pressure:</strong> how your endgame
+            performance shifts as your clock runs down in {tcLabel} games. The
+            top row summarises your overall clock situation and flag rate; the
+            rows below break performance down by how much time you had left.
+          </p>
         </InfoPopover>
         {/* Post-UAT (round 2): game count right-aligned, "Games: X% (N)"
             framing with a sword icon. The percentage is this TC's share of

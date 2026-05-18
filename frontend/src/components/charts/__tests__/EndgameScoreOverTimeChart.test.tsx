@@ -279,3 +279,45 @@ describe('EndgameScoreOverTimeChart', () => {
     expect(container.querySelector('[data-testid="endgame-score-timeline-chart"]')).toBeNull();
   });
 });
+
+describe('inactivity gap annotations', () => {
+  // A timeline with a >56-day gap between points 1 and 2.
+  const TIMELINE_WITH_GAP: ScoreGapTimelinePoint[] = [
+    makePoint('2024-01-01', 0.55, 0.50),
+    makePoint('2024-02-01', 0.55, 0.50),   // 31 days apart — below threshold
+    makePoint('2024-05-01', 0.56, 0.51),   // 90 days apart — above 56-day threshold
+    makePoint('2024-05-08', 0.55, 0.50),
+  ];
+
+  // A timeline where all consecutive dates are 7 days apart — no gaps.
+  const TIMELINE_NO_GAP: ScoreGapTimelinePoint[] = [
+    makePoint('2024-01-01', 0.55, 0.50),
+    makePoint('2024-01-08', 0.55, 0.50),
+    makePoint('2024-01-15', 0.55, 0.50),
+    makePoint('2024-01-22', 0.55, 0.50),
+  ];
+
+  it('renders inactivity-gap-label testid for a timeline with a >56-day gap', () => {
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={TIMELINE_WITH_GAP} window={100} />,
+    );
+    // The gap between points 2 and 3 (90 days) exceeds the 56-day threshold.
+    // The shared helper renders data-testid="inactivity-gap-label" for each gap.
+    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
+  });
+
+  it('renders inactivity-gap-glyph (Palmtree) for a timeline with a >56-day gap', () => {
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={TIMELINE_WITH_GAP} window={100} />,
+    );
+    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).not.toBeNull();
+  });
+
+  it('renders no inactivity-gap annotation when all consecutive dates are 7 days apart', () => {
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={TIMELINE_NO_GAP} window={100} />,
+    );
+    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).toBeNull();
+    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).toBeNull();
+  });
+});

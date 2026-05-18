@@ -4,6 +4,7 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear, niceWinRateAxis } from '@/lib/utils';
+import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
 import type { PositionBookmarkResponse } from '@/types/position_bookmarks';
 import type { BookmarkTimeSeries } from '@/types/position_bookmarks';
 
@@ -127,6 +128,11 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
             <CartesianGrid vertical={false} />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis domain={yAxis.domain} ticks={yAxis.ticks} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
+            {/* Inactivity-gap annotations via shared helper: Palmtree glyph + label per
+                >56-day gap. Placed BEFORE the bookmark Line series so annotations
+                sit behind the data in SVG z-order. allDates is pre-sorted
+                (ascending) — no yAxisId (single default axis). */}
+            {inactivityGapReferenceLines({ dates: allDates })}
             <ChartTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;

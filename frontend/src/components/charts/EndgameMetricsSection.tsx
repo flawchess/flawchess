@@ -37,44 +37,26 @@ const TILE_TESTIDS: Record<MaterialBucket, string> = {
 };
 
 // Title-tooltip content per bucket. Lives next to the card title and explains
-// the bucket's eval window, scoring rule, and gauge band semantics.
-const GAUGE_BAND_BLURB = (
-  <p>
-    The <strong>gauge</strong> plots your rate against a fixed
-    target band (blue = typical, red = below, green = above). Bands are
-    calibrated from FlawChess Benchmark data and don't shift with filters,
-    giving you a stable target you can chase as you improve.
-  </p>
-);
-
+// the bucket in plain language. Technical details (eval thresholds, gauge band
+// calibration) live in the "Endgame statistics concepts" section above.
 const TITLE_TOOLTIPS: Record<MaterialBucket, ReactNode> = {
   conversion: (
-    <div className="space-y-2">
-      <p>
-        <strong>Conversion:</strong> your win rate (only wins count) when you
-        entered the endgame with a Stockfish eval {'>='} +1.0 (you ahead).
-      </p>
-      {GAUGE_BAND_BLURB}
-    </div>
+    <p>
+      <strong>Conversion:</strong> how often you closed out winning endgames,
+      the ones you entered with a clear advantage of at least +1.0.
+    </p>
   ),
   parity: (
-    <div className="space-y-2">
-      <p>
-        <strong>Parity:</strong> your chess score (wins + half draws) when you
-        entered the endgame with an eval between -1.0 and +1.0 (roughly
-        balanced).
-      </p>
-      {GAUGE_BAND_BLURB}
-    </div>
+    <p>
+      <strong>Parity:</strong> how well you scored from roughly balanced endgame
+      positions.
+    </p>
   ),
   recovery: (
-    <div className="space-y-2">
-      <p>
-        <strong>Recovery:</strong> your save rate (wins + draws count) when you
-        entered the endgame with an eval {'<='} -1.0 (you behind).
-      </p>
-      {GAUGE_BAND_BLURB}
-    </div>
+    <p>
+      <strong>Recovery:</strong> how often you held or saved losing endgames,
+      the ones you entered with a clear disadvantage of at least -1.0.
+    </p>
   ),
 };
 
@@ -109,7 +91,7 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
   return (
     <section data-testid="endgame-metrics-section">
       <p className="text-sm text-muted-foreground">
-        Do you outperform the Stockfish baseline at converting, holding, and recovering?
+        How do you score from winning, balanced, and losing endgames compared to a strong 2300+ rated player?
       </p>
 
       {/* Phase 87.4: 3-column card grid on lg+, single-column stacked on mobile.
