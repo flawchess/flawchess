@@ -1,25 +1,22 @@
 /**
- * Phase 88 — Per-TC card for the Time Pressure section. Renders 5 horizontal
- * bullet rows stacked vertically:
- *   1. Clock Gap bullet (mean (my_clock - opp_clock) / base_clock at endgame entry).
- *   2–5. Score-Delta bullets for the 4 visible quintiles (Q0..Q3 only; Q4 = 80-100%
- *        clock remaining is hidden — low-signal tail per CONTEXT §2 A-4, 2026-05-17).
- *        Backend keeps emitting all 5 quintiles; the Q4 filter is purely frontend.
+ * Phase 88 — Per-TC card for the Time Pressure section.
  *
- * Sparse handling:
+ * SC-2 (Phase 88.4): Three-column header row (You / Gap+info / Opp) sits
+ * ABOVE the Clock Gap bullet chart. Net flag rate row stays below the bullet.
+ * The old "Clock Gap: X% <info>" label row and the ThreeStatRow (You/Opp/Net)
+ * are replaced by ClockGapHeaderRow + NetFlagRateRow.
+ *
+ * SC-3 (Phase 88.4): The four stacked per-bucket Score-Gap bullet rows
+ * (QuintileRow/EmptyBinRow) are replaced by a single ScoreGapByTimePressureChart.
+ *
+ * Sparse handling (card level only):
  *   - card.total < MIN_GAMES_PER_TC_CARD → return null (TC hidden entirely).
- *   - bin.n === 0 → dash + "no games" label, no bullet glyph; slot preserved for uniform height.
- *   - 0 < bin.n < MIN_GAMES_PER_PRESSURE_BIN → dimmed bullet at UNRELIABLE_OPACITY + n=X chip.
- *   - bin.n >= MIN_GAMES_PER_PRESSURE_BIN → full opacity; triple-gate font coloring.
- *
- * Triple-gate font coloring fires only when:
- *   n >= MIN_GAMES_PER_PRESSURE_BIN AND isConfident(deriveLevel(p, n)) AND delta outside neutral band.
  */
 
-import type { CSSProperties } from 'react';
 import { Swords } from 'lucide-react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { ScoreGapByTimePressureChart } from '@/components/charts/ScoreGapByTimePressureChart';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { InfoPopover } from '@/components/ui/info-popover';
@@ -29,18 +26,11 @@ import {
   MIN_GAMES_PER_TC_CARD,
   MIN_GAMES_PER_PRESSURE_BIN,
   NEUTRAL_TIMEOUT_THRESHOLD,
-  getPressureBinBand,
 } from '@/generated/endgameZones';
-import {
-  PRESSURE_DELTA_CENTER,
-  PRESSURE_DELTA_DOMAIN,
-  CLOCK_GAP_DOMAIN,
-  clampDeltaCi,
-  pressureDeltaZoneColor,
-} from '@/lib/pressureBulletConfig';
+import { CLOCK_GAP_DOMAIN, clampDeltaCi } from '@/lib/pressureBulletConfig';
 import { isConfident } from '@/lib/significance';
-import { UNRELIABLE_OPACITY, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
-import type { ClockGapBullet, PressureQuintileBullet, TimePressureTcCard } from '@/types/endgames';
+import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import type { ClockGapBullet, TimePressureTcCard } from '@/types/endgames';
 import { deriveLevel } from './EndgameOverallShared';
 
 // MIN_GAMES_PER_TC_CARD and MIN_GAMES_PER_PRESSURE_BIN are imported from
@@ -54,262 +44,12 @@ const TC_LABELS: Record<'bullet' | 'blitz' | 'rapid' | 'classical', string> = {
   classical: 'Classical',
 };
 
-/**
- * Quintile bucket labels. Post-UAT (round 2): qualitative annotation removed —
- * the "Score Gap by Remaining Time" subtitle above the bullet stack already names
- * what the range is, so the bucket itself just shows the percent range.
- * Q4 (80-100%) is filtered out at the parent map() and never reaches a row,
- * so it has no entry here.
- */
-const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
-  0: '0-20% Time',
-  1: '20-40% Time',
-  2: '40-60% Time',
-  3: '60-80% Time',
-};
-
-/** Highest displayed quintile index; Q4 (80-100%) is filtered out for display. */
-const MAX_VISIBLE_QUINTILE_INDEX = 3;
-
-/**
- * Return the qualitative pressure label for `quintile_index ∈ [0, 3]`, or `null`
- * for any out-of-range index. The parent filter already drops Q4, so this is a
- * defense-in-depth type-narrowing helper for the row components.
- */
-function pressureLabel(quintileIndex: number): string | null {
-  if (quintileIndex === 0 || quintileIndex === 1 || quintileIndex === 2 || quintileIndex === 3) {
-    return PRESSURE_LABELS[quintileIndex];
-  }
-  return null;
-}
-
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-interface ClockGapRowProps {
-  gap: ClockGapBullet;
-  tc: TimePressureTcCard['tc'];
-}
-
-function ClockGapRow({ gap, tc }: ClockGapRowProps) {
-  const level = deriveLevel(gap.p_value, gap.n);
-  const neutralMin = CLOCK_GAP_NEUTRAL_MIN;
-  const neutralMax = CLOCK_GAP_NEUTRAL_MAX;
-  const isInColoredZone = gap.mean_diff_pct >= neutralMax || gap.mean_diff_pct <= neutralMin;
-  const showFontColor = gap.n >= MIN_GAMES_PER_PRESSURE_BIN && isConfident(level) && isInColoredZone;
-  const signedPct = (gap.mean_diff_pct * 100).toFixed(1);
-  const formattedValue = `${gap.mean_diff_pct >= 0 ? '+' : ''}${signedPct}%`;
-
-  // Pick zone color for font tinting.
-  const fontColor = showFontColor
-    ? gap.mean_diff_pct >= neutralMax
-      ? ZONE_SUCCESS
-      : ZONE_DANGER
-    : undefined;
-
-  return (
-    <div
-      className="flex flex-col gap-1"
-      data-testid={`time-pressure-card-${tc}-clock-gap`}
-    >
-      <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-        <span className="text-muted-foreground">Clock Gap:</span>
-        <span
-          className="font-semibold"
-          style={fontColor ? { color: fontColor } : undefined}
-          data-testid={`time-pressure-card-${tc}-clock-gap-value`}
-        >
-          {formattedValue}
-        </span>
-        {/* Post-UAT: dropped the per-row "({gap.n} games)" suffix — the card
-            header already shows total games for this TC, so repeating the
-            clock-eligible count next to every row was visual noise. */}
-        <MetricStatPopover
-          name="Clock Gap"
-          explanation="Your average clock advantage over your opponent when the endgame begins, as a share of the starting time. Positive means you entered the endgame with more time on your clock."
-          value={gap.mean_diff_pct}
-          baseline={0}
-          unit="percent"
-          gameCount={gap.n}
-          level={level}
-          pValue={gap.p_value}
-          vocabulary="score"
-          neutralLower={neutralMin}
-          neutralUpper={neutralMax}
-          baselineLabel="0%"
-          methodology={
-            <>
-              Mean of (user_clock − opp_clock) / base_clock at endgame entry.<br />
-              Test: one-sample z-test vs 0.<br />
-              Confidence interval: 95% normal-approx.
-            </>
-          }
-          testId={`time-pressure-card-${tc}-clock-gap-info`}
-          ariaLabel="What is Clock Gap?"
-        />
-      </span>
-      <div
-        className="min-w-0 tabular-nums"
-        data-testid={`time-pressure-card-${tc}-clock-gap-bullet`}
-      >
-        <MiniBulletChart
-          value={gap.mean_diff_pct}
-          center={0}
-          neutralMin={neutralMin}
-          neutralMax={neutralMax}
-          domain={CLOCK_GAP_DOMAIN}
-          ciLow={gap.ci_low != null ? clampDeltaCi(gap.ci_low) : undefined}
-          ciHigh={gap.ci_high != null ? clampDeltaCi(gap.ci_high) : undefined}
-          ariaLabel={`Clock Gap: ${formattedValue}`}
-          // Post-UAT: bars rendered neutral (white-ish) like EndgameTypeCard
-          // and OpeningStatsCard — zone tint is carried by the background
-          // bands, the bar itself only encodes position.
-          barColor="neutral"
-        />
-      </div>
-    </div>
-  );
-}
-
-interface QuintileRowProps {
-  bin: PressureQuintileBullet;
-  tc: TimePressureTcCard['tc'];
-}
-
-function QuintileRow({ bin, tc }: QuintileRowProps) {
-  // Phase 88.1 WR-03/IN-06: use the typed helper instead of an unsafe non-null
-  // assertion on a Record index. Returns null for out-of-range quintile_index;
-  // we early-return the row in that case rather than rendering with a bogus band.
-  const neutralBand = getPressureBinBand(tc, bin.quintile_index);
-  if (!neutralBand) return null;
-
-  // Plan 88-13 A-4: source the displayed label from PRESSURE_LABELS (qualitative
-  // names), not bin.quintile_label (raw "0-20%" range string). The parent filter
-  // already drops Q4; null-guard handles any out-of-range index defensively.
-  const displayLabel = pressureLabel(bin.quintile_index);
-  if (displayLabel === null) return null;
-
-  const level = deriveLevel(bin.p_value, bin.n);
-  const isInColoredZone = bin.delta >= neutralBand.max || bin.delta <= neutralBand.min;
-  const showFontColor =
-    bin.n >= MIN_GAMES_PER_PRESSURE_BIN && isConfident(level) && isInColoredZone;
-  const fontColor = showFontColor
-    ? pressureDeltaZoneColor(bin.delta, neutralBand.min, neutralBand.max)
-    : undefined;
-
-  const isDimmed = bin.n > 0 && bin.n < MIN_GAMES_PER_PRESSURE_BIN;
-  const binStyle: CSSProperties | undefined = isDimmed
-    ? { opacity: UNRELIABLE_OPACITY }
-    : undefined;
-
-  const signedDelta = `${bin.delta >= 0 ? '+' : ''}${(bin.delta * 100).toFixed(1)}%`;
-  const oppPct =
-    bin.opp_score != null ? `${(bin.opp_score * 100).toFixed(1)}%` : 'n/a';
-
-  return (
-    <div
-      className="flex flex-col gap-1"
-      style={binStyle}
-      data-testid={`time-pressure-card-${tc}-bin-${bin.quintile_index}`}
-    >
-      <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-        <span className="text-muted-foreground">{displayLabel}:</span>
-        <span
-          className="font-semibold"
-          style={fontColor ? { color: fontColor } : undefined}
-          data-testid={`time-pressure-card-${tc}-bin-${bin.quintile_index}-value`}
-        >
-          {signedDelta}
-        </span>
-        {isDimmed && (
-          <span
-            className="text-muted-foreground text-sm"
-            data-testid={`time-pressure-card-${tc}-bin-${bin.quintile_index}-n`}
-          >
-            n={bin.n}
-          </span>
-        )}
-        <MetricStatPopover
-          name={`Score Delta (${displayLabel})`}
-          explanation={`Your score in games where you entered the endgame with ${displayLabel} of clock left, vs. your opponents' score in games where they entered with the same amount. Positive = you outperformed your opponents.`}
-          value={bin.delta}
-          baseline={0}
-          unit="percent"
-          gameCount={bin.n}
-          level={level}
-          pValue={bin.p_value}
-          vocabulary="score"
-          neutralLower={neutralBand.min}
-          neutralUpper={neutralBand.max}
-          baselineLabel={oppPct}
-          methodology={
-            <>
-              delta = user_score − opp_score (W+0.5D/N).<br />
-              Each side bucketed by its own clock remaining at endgame entry.<br />
-              Test: independent two-sample test; same filtered games.<br />
-              CI: 95% normal-approximation on the difference.
-            </>
-          }
-          testId={`time-pressure-card-${tc}-bin-${bin.quintile_index}-info`}
-          ariaLabel={`What is Score Delta at ${displayLabel}?`}
-        />
-      </span>
-      <div
-        className="min-w-0 tabular-nums"
-        data-testid={`time-pressure-card-${tc}-bin-${bin.quintile_index}-bullet`}
-      >
-        <MiniBulletChart
-          value={bin.delta}
-          center={PRESSURE_DELTA_CENTER}
-          neutralMin={neutralBand.min}
-          neutralMax={neutralBand.max}
-          domain={PRESSURE_DELTA_DOMAIN}
-          ciLow={bin.ci_low != null ? clampDeltaCi(bin.ci_low) : undefined}
-          ciHigh={bin.ci_high != null ? clampDeltaCi(bin.ci_high) : undefined}
-          ariaLabel={`Score delta at ${displayLabel}: ${signedDelta}`}
-          // Post-UAT: bars rendered neutral (white-ish) — see ClockGapRow.
-          barColor="neutral"
-        />
-      </div>
-    </div>
-  );
-}
-
-interface EmptyBinRowProps {
-  bin: PressureQuintileBullet;
-  tc: TimePressureTcCard['tc'];
-}
-
-function EmptyBinRow({ bin, tc }: EmptyBinRowProps) {
-  // Plan 88-13 A-4: use qualitative pressure label instead of bin.quintile_label.
-  const displayLabel = pressureLabel(bin.quintile_index);
-  if (displayLabel === null) return null;
-  return (
-    <div
-      className="flex flex-col gap-1"
-      data-testid={`time-pressure-card-${tc}-bin-${bin.quintile_index}-empty`}
-    >
-      <span className="flex items-center gap-1 text-sm w-full">
-        <span className="text-muted-foreground">{displayLabel}:</span>
-        {/* REVIEW.md IN-01: aria-hidden on the em-dash; the adjacent visible
-            "no games" span already announces the state, so an aria-label here
-            would make screen readers say "no games no games". */}
-        <span className="text-muted-foreground text-sm" aria-hidden="true">
-          &mdash;
-        </span>
-        <span className="text-muted-foreground text-sm">no games</span>
-      </span>
-      {/* Empty slot to preserve uniform row height across the TC grid. */}
-      <div className="h-5 w-full" aria-hidden="true" />
-    </div>
-  );
-}
-
-// ─── Plan 88-14 (A-3): top-zone 3-stat row ──────────────────────────────────
-
 /**
- * Format "Ns%" + "(Ns)" cell content for the My/Opp avg time cells.
+ * Format "X% (Ns)" cell content for the You/Opp avg time cells.
  * Returns an em-dash when either input is null (legacy imports without
- * clock data). pct is a fraction (0..1) — multiplied by 100 here for display.
+ * clock data). pct is a fraction (0..1) multiplied by 100 for display.
  */
 function formatPctSecs(pct: number | null, secs: number | null): string {
   if (pct === null || secs === null) return '—';
@@ -318,7 +58,7 @@ function formatPctSecs(pct: number | null, secs: number | null): string {
 
 /**
  * Format the net flag rate as a signed percentage with one decimal point.
- * rate is a fraction (0.005 = 0.5%) — multiplied by 100 here for display.
+ * rate is a fraction (0.005 = 0.5%) multiplied by 100 for display.
  * Always shows a sign except for 0.0%.
  */
 function formatNetTimeoutRate(rate: number): string {
@@ -342,41 +82,96 @@ function tintForNetTimeoutRate(rate: number): string | undefined {
   return undefined;
 }
 
-interface ThreeStatRowProps {
-  card: TimePressureTcCard;
+/**
+ * SC-2: Three-column header row rendered ABOVE the Clock Gap bullet.
+ * Left: You (user avg pct + seconds). Center: Gap value + MetricStatPopover.
+ * Right: Opp (opp avg pct + seconds).
+ * Preserves the triple-gate font-tinting from the old ClockGapRow.
+ */
+function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePressureTcCard }) {
+  // Preserve font-tinting logic from ClockGapRow (triple-gate).
+  const level = deriveLevel(gap.p_value, gap.n);
+  const neutralMin = CLOCK_GAP_NEUTRAL_MIN;
+  const neutralMax = CLOCK_GAP_NEUTRAL_MAX;
+  const isInColoredZone = gap.mean_diff_pct >= neutralMax || gap.mean_diff_pct <= neutralMin;
+  const showFontColor = gap.n >= MIN_GAMES_PER_PRESSURE_BIN && isConfident(level) && isInColoredZone;
+  const signedPct = (gap.mean_diff_pct * 100).toFixed(1);
+  const formattedGapValue = `${gap.mean_diff_pct >= 0 ? '+' : ''}${signedPct}%`;
+
+  const fontColor = showFontColor
+    ? gap.mean_diff_pct >= neutralMax
+      ? ZONE_SUCCESS
+      : ZONE_DANGER
+    : undefined;
+
+  return (
+    <div
+      className="grid grid-cols-3 items-center text-sm tabular-nums mb-2"
+      data-testid={`time-pressure-card-${card.tc}-clock-gap-header`}
+    >
+      <span className="text-left" data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
+        You: <span className="font-semibold">{formatPctSecs(card.user_avg_pct, card.user_avg_seconds)}</span>
+      </span>
+      <span className="text-center flex items-center justify-center gap-1">
+        <span className="text-muted-foreground">Gap:</span>
+        <span
+          className="font-semibold"
+          style={fontColor ? { color: fontColor } : undefined}
+          data-testid={`time-pressure-card-${card.tc}-clock-gap-value`}
+        >
+          {formattedGapValue}
+        </span>
+        {/* MetricStatPopover migrated verbatim from ClockGapRow. */}
+        <MetricStatPopover
+          name="Clock Gap"
+          explanation="Your average clock advantage over your opponent when the endgame begins, as a share of the starting time. Positive means you entered the endgame with more time on your clock."
+          value={gap.mean_diff_pct}
+          baseline={0}
+          unit="percent"
+          gameCount={gap.n}
+          level={level}
+          pValue={gap.p_value}
+          vocabulary="score"
+          neutralLower={neutralMin}
+          neutralUpper={neutralMax}
+          baselineLabel="0%"
+          methodology={
+            <>
+              Mean of (user_clock − opp_clock) / base_clock at endgame entry.<br />
+              Test: one-sample z-test vs 0.<br />
+              Confidence interval: 95% normal-approx.
+            </>
+          }
+          testId={`time-pressure-card-${card.tc}-clock-gap-info`}
+          ariaLabel="What is Clock Gap?"
+        />
+      </span>
+      <span className="text-right" data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
+        Opp: <span className="font-semibold">{formatPctSecs(card.opp_avg_pct, card.opp_avg_seconds)}</span>
+      </span>
+    </div>
+  );
 }
 
-function ThreeStatRow({ card }: ThreeStatRowProps) {
+/**
+ * SC-2: Slim row holding only the surviving "Net flag rate:" stat.
+ * Extracted from the old ThreeStatRow; the You/Opp stats moved to ClockGapHeaderRow.
+ */
+function NetFlagRateRow({ card }: { card: TimePressureTcCard }) {
   const tint = tintForNetTimeoutRate(card.net_timeout_rate);
   return (
     <div
-      // Post-UAT (round 2): mt-3 instead of mt-1 — adds a visible vertical
-      // gap between the Clock Gap bullet above and the 3-stat row, so the
-      // bullet doesn't visually crowd the stats.
-      className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground tabular-nums mt-3"
-      data-testid={`time-pressure-card-${card.tc}-top-stats`}
+      className="flex text-sm text-muted-foreground tabular-nums mt-2"
+      data-testid={`time-pressure-card-${card.tc}-net-flag-rate-row`}
     >
-      <span data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
-        You:{' '}
-        <span className="text-foreground">
-          {formatPctSecs(card.user_avg_pct, card.user_avg_seconds)}
-        </span>
-      </span>
-      <span data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
-        Opponents:{' '}
-        <span className="text-foreground">
-          {formatPctSecs(card.opp_avg_pct, card.opp_avg_seconds)}
-        </span>
-      </span>
       <span
         data-testid={`time-pressure-card-${card.tc}-net-flag-rate`}
         className="inline-flex items-center gap-1"
       >
         Net flag rate:{' '}
         {/* REVIEW.md WR-04: the tinted span on its own conveys directionality
-            to sighted users only. The popover (consistent with the Clock Gap
-            row above) carries the WDL convention reference so screen-reader
-            users get the same context. */}
+            to sighted users only. The popover carries the WDL convention
+            reference so screen-reader users get the same context. */}
         <span style={tint ? { color: tint } : undefined}>
           {formatNetTimeoutRate(card.net_timeout_rate)}
         </span>
@@ -424,6 +219,8 @@ export function EndgameTimePressureCard({
       ? Math.round((card.total / grandTotal) * 100)
       : null;
 
+  const gap = card.clock_gap;
+
   return (
     <div
       className="charcoal-texture rounded-md p-4"
@@ -446,7 +243,7 @@ export function EndgameTimePressureCard({
             <strong>{tcLabel} Time Pressure:</strong> how your endgame
             performance shifts as your clock runs down in {tcLabel} games. The
             top row summarises your overall clock situation and flag rate; the
-            rows below break performance down by how much time you had left.
+            chart below shows performance by how much time you had left.
           </p>
         </InfoPopover>
         {/* Post-UAT (round 2): game count right-aligned, "Games: X% (N)"
@@ -466,8 +263,8 @@ export function EndgameTimePressureCard({
       </h3>
 
       <div className="flex flex-col gap-4">
-        {/* Plan 88-14 A-3 + post-UAT subtitle: top section — Clock Gap bullet +
-            3-stat row. The subtitle names what the rows summarise. */}
+        {/* SC-2: top section — 3-column header row + Clock Gap bullet + net flag rate.
+            The ClockGapHeaderRow sits ABOVE the bullet, replacing the old label row. */}
         <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
           <p
             className="text-sm font-medium text-muted-foreground mb-2"
@@ -475,15 +272,31 @@ export function EndgameTimePressureCard({
           >
             Remaining Time at Endgame Entry
           </p>
-          <ClockGapRow gap={card.clock_gap} tc={card.tc} />
-          <ThreeStatRow card={card} />
+          <ClockGapHeaderRow gap={gap} card={card} />
+          <div
+            className="min-w-0 tabular-nums"
+            data-testid={`time-pressure-card-${card.tc}-clock-gap-bullet`}
+          >
+            <MiniBulletChart
+              value={gap.mean_diff_pct}
+              center={0}
+              neutralMin={CLOCK_GAP_NEUTRAL_MIN}
+              neutralMax={CLOCK_GAP_NEUTRAL_MAX}
+              domain={CLOCK_GAP_DOMAIN}
+              ciLow={gap.ci_low != null ? clampDeltaCi(gap.ci_low) : undefined}
+              ciHigh={gap.ci_high != null ? clampDeltaCi(gap.ci_high) : undefined}
+              ariaLabel={`Clock Gap: ${gap.mean_diff_pct >= 0 ? '+' : ''}${(gap.mean_diff_pct * 100).toFixed(1)}%`}
+              barColor="neutral"
+            />
+          </div>
+          <NetFlagRateRow card={card} />
         </div>
 
-        {/* Visual separator between top section and per-quintile bullets. */}
+        {/* Visual separator between top section and score-gap chart. */}
         <div className="border-t border-border/40" aria-hidden="true" />
 
-        {/* Post-UAT: name the second section so the relationship between the
-            two zones reads cleanly without the reader having to infer it. */}
+        {/* SC-3: Replace the four stacked per-bucket bullet rows with the
+            ScoreGapByTimePressureChart (line chart with zone bands). */}
         <div>
           <p
             className="text-sm font-medium text-muted-foreground mb-2"
@@ -491,19 +304,8 @@ export function EndgameTimePressureCard({
           >
             Score Gap by Remaining Time
           </p>
-          <div className="flex flex-col gap-4">
-            {card.quintiles
-              // Plan 88-13 A-4: hide the Q4 (80-100% clock remaining) row.
-              // Backend still emits 5 quintiles; the asymmetry is intentional
-              // per CONTEXT §2 clarification #2.
-              .filter((bin) => bin.quintile_index <= MAX_VISIBLE_QUINTILE_INDEX)
-              .map((bin) =>
-                bin.n === 0 ? (
-                  <EmptyBinRow key={bin.quintile_index} bin={bin} tc={card.tc} />
-                ) : (
-                  <QuintileRow key={bin.quintile_index} bin={bin} tc={card.tc} />
-                ),
-              )}
+          <div data-testid={`time-pressure-card-${card.tc}-score-gap-chart`}>
+            <ScoreGapByTimePressureChart quintiles={card.quintiles} tc={card.tc} />
           </div>
         </div>
       </div>
