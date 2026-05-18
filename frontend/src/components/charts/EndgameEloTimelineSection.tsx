@@ -314,18 +314,15 @@ export function EndgameEloTimelineSection({
     >
       <div className="space-y-2">
         <p>
-          <strong>Endgame ELO</strong> (dashed line) and <strong>Non-Endgame ELO</strong> (dotted line) sit symmetrically around your <strong>Actual ELO</strong>. The band between
-          them is your endgame's lift (green) or drag (red), measured in ELO
-          units.
+          <strong>Endgame ELO Timeline:</strong> what your rating would look
+          like if your whole game played at the level of just your endgame
+          games (dashed line) or just your non-endgame games (dotted line),
+          plotted over time.
         </p>
         <p>
-          Points are emitted weekly; weeks with fewer than 10 qualifying endgame games
-          are hidden.
-        </p>
-        <p>
-          Chess.com uses Glicko-1 and lichess uses Glicko-2, so ratings across the two
-          platforms aren&apos;t directly comparable. Each combo is self-consistent on
-          its own scale.
+          The band between them is your endgame's lift (green) or drag (red).
+          When the dashed line sits above the dotted line, your endgame is
+          pulling your rating up; below, it's holding it back.
         </p>
       </div>
     </InfoPopover>

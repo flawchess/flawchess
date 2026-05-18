@@ -140,7 +140,7 @@ export function EndgameOverallPerformanceSection({
           pValue={data.non_endgame_score_p_value}
           gamesShare={withoutShare}
           popoverName="Non-Endgame Score"
-          popoverExplanation="Your win rate (draws counted as half) across games that did not reach an endgame, tested against the 50% baseline."
+          popoverExplanation="Your win rate (with draws counted as half) across games that ended before reaching an endgame."
         />
 
         {/* Card 2: At Endgame Entry (center on desktop — no WDL bar) */}
@@ -159,7 +159,7 @@ export function EndgameOverallPerformanceSection({
           pValue={data.endgame_score_p_value}
           gamesShare={withShare}
           popoverName="Endgame Score"
-          popoverExplanation="Your win rate (draws counted as half) across games that reached an endgame, tested against the 50% baseline."
+          popoverExplanation="Your win rate (with draws counted as half) across games that reached an endgame."
         />
 
         {/* Endgame Score Differences: lg:col-start-2 places it under Card 2 on desktop.

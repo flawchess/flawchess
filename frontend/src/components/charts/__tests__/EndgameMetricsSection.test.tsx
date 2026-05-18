@@ -114,7 +114,7 @@ describe('EndgameMetricsSection — full-rendering case (Phase 87.4: 3 cards)', 
     expect(screen.queryByTestId('tile-endgame-skill')).toBeNull();
     expect(
       screen.getByText(
-        'Do you outperform the Stockfish baseline at converting, holding, and recovering?',
+        'How do you score from winning, balanced, and losing endgames compared to a strong 2300+ rated player?',
       ),
     ).not.toBeNull();
   });

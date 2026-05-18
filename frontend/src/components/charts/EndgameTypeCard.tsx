@@ -159,7 +159,9 @@ export function EndgameTypeCard({
         testId={`${tileTestId}-title-info`}
         side="top"
       >
-        {typeDescription}
+        <p>
+          <strong>{category.label}:</strong> {typeDescription}
+        </p>
       </InfoPopover>
       {isUnreliable && (
         <span

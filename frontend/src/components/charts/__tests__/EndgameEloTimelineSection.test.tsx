@@ -453,7 +453,7 @@ describe('EndgameEloTimelineSection — default-hidden filter (Phase 87.6 amendm
 });
 
 describe('EndgameEloTimelineSection — info popover content', () => {
-  it('info popover frames the band symmetrically around Actual ELO', async () => {
+  it('info popover names the endgame vs non-endgame lines', async () => {
     render(
       <EndgameEloTimelineSection
         data={buildResponse()}
@@ -468,7 +468,7 @@ describe('EndgameEloTimelineSection — info popover content', () => {
       fireEvent.click(trigger);
     });
     expect(
-      await screen.findByText(/symmetrically around your/i),
+      await screen.findByText(/your endgame games/i),
     ).not.toBeNull();
   });
 

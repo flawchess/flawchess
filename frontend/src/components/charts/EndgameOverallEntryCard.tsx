@@ -88,7 +88,7 @@ export function EntryCard({ data }: EntryCardProps) {
               </span>
               <MetricStatPopover
                 name="Endgame Entry Eval"
-                explanation="The average Stockfish eval (in pawns, from your perspective) at the position where the endgame begins. Positive means you reached the endgame with the better position."
+                explanation="The average engine evaluation at the position where the endgame begins. Positive means you reached the endgame with the better position."
                 value={data.entry_eval_mean_pawns}
                 baseline={0}
                 unit="pawns"
@@ -145,7 +145,7 @@ export function EntryCard({ data }: EntryCardProps) {
                 </span>
                 <MetricStatPopover
                   name="Achievable Score"
-                  explanation="What a 2300+ rated player would score from your endgame-entry positions against a peer of similar rating, via the Lichess expected-score formula. Compare against your Endgame Score."
+                  explanation="What a strong (2300+ rated) player would score from your endgame-entry positions against a peer of similar rating. Compare against your Endgame Score to see how well you converted the positions you reached."
                   value={data.entry_expected_score}
                   baseline={0.5}
                   unit="percent"

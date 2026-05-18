@@ -372,7 +372,6 @@ export function EndgamesPage() {
           {/* ── Endgame Overall Performance ── */}
           {showPerfSection && (
             <>
-              <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Overall Performance</h2>
               <Accordion type="single" collapsible>
                 <AccordionItem value="concepts" className="charcoal-texture rounded-md px-4" data-testid="endgame-concepts-trigger">
                   <AccordionTrigger className="text-foreground justify-start flex-none gap-2 **:data-[slot=accordion-trigger-icon]:ml-0 **:data-[slot=accordion-trigger-icon]:order-first">
@@ -491,6 +490,7 @@ export function EndgamesPage() {
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
+              <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Overall Performance</h2>
               {scoreGapData && (
                 <EndgameOverallPerformanceSection data={perfData} scoreGap={scoreGapData} />
               )}
@@ -566,23 +566,13 @@ export function EndgamesPage() {
               >
                 <div className="space-y-2">
                   <p>
-                    Shows your win, draw, and loss percentages for each Endgame
-                    Type, along with your Conversion and Recovery rates.
-                    A single game can include several Endgame Sequences, which are
-                    continuous spans of at least 3 full moves (6 half-moves) spent in a single Endgame Type.
+                    <strong>Endgame Type Breakdown:</strong> how you perform across the different
+                    kinds of endgames (rook, minor piece, pawn, queen, mixed).
                   </p>
                   <p>
-                    <strong>Conversion</strong>: your win rate in games where you entered an Endgame Sequence of this
-                    Endgame Type with a Stockfish evaluation of +1.0 or better. <br/>
-                    <strong>Recovery</strong>: your save
-                    rate (wins + draws) in games where you entered an Endgame Sequence of this
-                    Endgame Type with a Stockfish evaluation of −1.0 or worse.
-                  </p>
-                  {/* Gauge bands explainer: lifted from EndgameConvRecovChart.tsx:45-49. */}
-                  <p>
-                    Gauge zones are per-type typical bands sourced from pooled
-                    FlawChess benchmark data. Blue = typical for that type, red
-                    = below, green = above.
+                    Each card shows your win, draw, and loss rate for that type, plus your
+                    Conversion rate (closing out winning endgames) and Recovery rate (saving
+                    losing endgames).
                   </p>
                 </div>
               </InfoPopover>
