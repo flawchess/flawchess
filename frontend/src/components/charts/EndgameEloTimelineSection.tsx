@@ -108,16 +108,16 @@ function getComboLabel(combo_key: string): string {
 // Hidden combos remain in the legend (dimmed + line-through) and become visible
 // on click. When data changes, the default is recomputed via useEffect — user
 // toggles within a single dataset are preserved, but a fresh dataset resets.
-const MAX_DEFAULT_VISIBLE = 3;
+const MAX_DEFAULT_VISIBLE = 1;
 const MIN_ACTIVE_WEEKS_RATIO = 0.33;
 
 function computeDefaultHidden(
   combos: ReadonlyArray<{ combo_key: string; points: ReadonlyArray<{ per_week_total_games: number }> }>,
 ): Set<string> {
   if (combos.length <= MAX_DEFAULT_VISIBLE) {
-    // No need to hide anything; the cap can't bite. Still compute the
-    // active-weeks filter though — a 2-combo player with one sparse stray
-    // combo should not see the stray line.
+    // With MAX_DEFAULT_VISIBLE = 1 this only applies to the single-combo case.
+    // Nothing to hide. Still run the active-weeks filter below — the stray-combo
+    // path (sparse combo hidden even under the cap) still applies.
   }
   const totalGames = new Map<string, number>();
   const activeWeeks = new Map<string, number>();
