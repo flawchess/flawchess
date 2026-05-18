@@ -297,21 +297,27 @@ describe('inactivity gap annotations', () => {
     makePoint('2024-01-22', 0.55, 0.50),
   ];
 
-  it('renders a ReferenceLine (line element) for a timeline with a >56-day gap', () => {
+  it('renders inactivity-gap-label testid for a timeline with a >56-day gap', () => {
     const { container } = render(
       <EndgameScoreOverTimeChart timeline={TIMELINE_WITH_GAP} window={100} />,
     );
-    // A Recharts ReferenceLine renders a <line> element (SVG) inside the chart.
     // The gap between points 2 and 3 (90 days) exceeds the 56-day threshold.
-    const lines = container.querySelectorAll('.recharts-reference-line-line');
-    expect(lines.length).toBeGreaterThan(0);
+    // The shared helper renders data-testid="inactivity-gap-label" for each gap.
+    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
   });
 
-  it('renders no ReferenceLine when all consecutive dates are 7 days apart', () => {
+  it('renders inactivity-gap-glyph (Palmtree) for a timeline with a >56-day gap', () => {
+    const { container } = render(
+      <EndgameScoreOverTimeChart timeline={TIMELINE_WITH_GAP} window={100} />,
+    );
+    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).not.toBeNull();
+  });
+
+  it('renders no inactivity-gap annotation when all consecutive dates are 7 days apart', () => {
     const { container } = render(
       <EndgameScoreOverTimeChart timeline={TIMELINE_NO_GAP} window={100} />,
     );
-    const lines = container.querySelectorAll('.recharts-reference-line-line');
-    expect(lines.length).toBe(0);
+    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).toBeNull();
+    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).toBeNull();
   });
 });

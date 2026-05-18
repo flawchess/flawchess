@@ -187,3 +187,46 @@ describe('EndgameClockDiffOverTimeChart', () => {
     expect(screen.getByText('Clock Gap')).toBeTruthy();
   });
 });
+
+describe('EndgameClockDiffOverTimeChart — inactivity gap annotations', () => {
+  /** Timeline with a >56-day gap between index 0 and 1 (90 days). */
+  const GAP_FIXTURE: ClockDiffTimelinePoint[] = [
+    makePoint('2025-01-06', 5.0),
+    makePoint('2025-04-06', 3.0), // 90 days later — exceeds the 56-day threshold
+    makePoint('2025-04-13', 2.0),
+  ];
+
+  /** Timeline with all consecutive points 7 days apart — no gap. */
+  const NO_GAP_FIXTURE: ClockDiffTimelinePoint[] = [
+    makePoint('2025-01-06', 5.0),
+    makePoint('2025-01-13', 3.0),
+    makePoint('2025-01-20', 2.0),
+    makePoint('2025-01-27', 1.0),
+  ];
+
+  it('renders inactivity-gap-label for a >56-day gap fixture', () => {
+    const { container } = render(<EndgameClockDiffOverTimeChart timeline={GAP_FIXTURE} />);
+    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
+  });
+
+  it('renders inactivity-gap-glyph (Palmtree) for a >56-day gap fixture', () => {
+    const { container } = render(<EndgameClockDiffOverTimeChart timeline={GAP_FIXTURE} />);
+    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).not.toBeNull();
+  });
+
+  it('renders no inactivity-gap annotation for a gap-free fixture', () => {
+    const { container } = render(<EndgameClockDiffOverTimeChart timeline={NO_GAP_FIXTURE} />);
+    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).toBeNull();
+    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).toBeNull();
+  });
+
+  it('the y=0 baseline ReferenceLine still renders alongside the gap annotation (no regression)', () => {
+    // The existing y=0 baseline is a horizontal reference line; the gap annotations
+    // are vertical x= lines. They are independent and must coexist.
+    const { container } = render(<EndgameClockDiffOverTimeChart timeline={GAP_FIXTURE} />);
+    // y=0 baseline: look for recharts-reference-line elements — there should be at
+    // least 2: one horizontal baseline + one vertical gap line
+    const refLines = container.querySelectorAll('.recharts-reference-line');
+    expect(refLines.length).toBeGreaterThanOrEqual(2);
+  });
+});

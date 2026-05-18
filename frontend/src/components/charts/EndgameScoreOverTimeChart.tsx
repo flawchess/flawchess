@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Area, Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Area, Bar, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { InfoPopover } from '@/components/ui/info-popover';
 import {
@@ -19,7 +19,7 @@ import {
   SCORE_TIMELINE_LINE_NON_ENDGAME,
 } from '@/lib/theme';
 import { signedBandGradient, type GradientStop } from '@/lib/signedBandGradient';
-import { computeInactivityGaps } from '@/lib/inactivityGaps';
+import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
 import type { ScoreGapTimelinePoint } from '@/types/endgames';
 
@@ -137,7 +137,6 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
   // so they are placed BEFORE the early-return to satisfy the rules-of-hooks
   // constraint (no hooks after a conditional return).
   const dates = data.map((p) => p.date);
-  const inactivityGaps = useMemo(() => computeInactivityGaps(dates), [dates]);
   const formatDateTick = createDateTickFormatter(dates);
 
   if (timeline.length === 0) return null;
@@ -257,23 +256,12 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
                 ))}
               </linearGradient>
             </defs>
-            {/* Inactivity-gap annotations: one ReferenceLine per gap that exceeds
-                INACTIVITY_GAP_THRESHOLD_DAYS. Placed BEFORE <Bar> so annotations
-                sit behind the data series in SVG z-order.
-                x must exactly match a value from the dates array passed to
-                createDateTickFormatter — a non-matching value renders no line
+            {/* Inactivity-gap annotations via shared helper: one ReferenceLine + Palmtree
+                glyph + label per gap that exceeds INACTIVITY_GAP_THRESHOLD_DAYS.
+                Placed BEFORE <Bar> so annotations sit behind the data series in SVG
+                z-order. x must exactly match a value from the dates array
                 (Recharts Pitfall 1 from 88.3-01-PLAN.md). */}
-            {inactivityGaps.map((gap) => (
-              <ReferenceLine
-                key={`gap-${gap.afterIndex}`}
-                yAxisId="value"
-                x={dates[gap.afterIndex]!} // afterIndex < dates.length by computeInactivityGaps contract
-                stroke="currentColor"
-                strokeOpacity={0.3}
-                strokeDasharray="4 2"
-                label={{ value: gap.label, position: 'insideTopRight', fontSize: 11, fill: 'currentColor', fillOpacity: 0.6 }}
-              />
-            ))}
+            {inactivityGapReferenceLines({ dates, yAxisId: 'value' })}
             <Bar
               yAxisId="bars"
               dataKey="per_week_total_games"
