@@ -452,6 +452,68 @@ describe('EndgameEloTimelineSection — default-hidden filter (Phase 87.6 amendm
   });
 });
 
+describe('gap annotations', () => {
+  // A response where two points are more than 56 days apart.
+  function buildResponseWithGap(): EndgameEloTimelineResponse {
+    return {
+      combos: [
+        {
+          combo_key: 'chess_com_blitz',
+          platform: 'chess.com',
+          time_control: 'blitz',
+          points: [
+            {
+              date: '2025-01-06',
+              endgame_elo: 1620,
+              non_endgame_elo: 1600,
+              actual_elo: 1610,
+              endgame_games_in_window: 50,
+              per_week_endgame_games: 4,
+              per_week_total_games: 18,
+            },
+            {
+              // 90 days later — exceeds the 56-day threshold
+              date: '2025-04-06',
+              endgame_elo: 1640,
+              non_endgame_elo: 1610,
+              actual_elo: 1625,
+              endgame_games_in_window: 55,
+              per_week_endgame_games: 5,
+              per_week_total_games: 22,
+            },
+          ],
+        },
+      ],
+      timeline_window: 100,
+    };
+  }
+
+  it('renders a ReferenceLine when allDates contains a >56-day gap', () => {
+    const { container } = render(
+      <EndgameEloTimelineSection
+        data={buildResponseWithGap()}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+    // A Recharts ReferenceLine renders a <line> with the recharts-reference-line-line class.
+    const lines = container.querySelectorAll('.recharts-reference-line-line');
+    expect(lines.length).toBeGreaterThan(0);
+  });
+
+  it('renders no ReferenceLine when all dates are 7 days apart', () => {
+    const { container } = render(
+      <EndgameEloTimelineSection
+        data={buildResponse()}  // buildResponse dates are 7 days apart
+        isLoading={false}
+        isError={false}
+      />,
+    );
+    const lines = container.querySelectorAll('.recharts-reference-line-line');
+    expect(lines.length).toBe(0);
+  });
+});
+
 describe('EndgameEloTimelineSection — info popover content', () => {
   it('info popover names the endgame vs non-endgame lines', async () => {
     render(
