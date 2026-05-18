@@ -73,6 +73,10 @@ export function colorizeGaugeZones(bands: readonly { from: number; to: number }[
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 
+// Inactivity-gap break-label font (px). 14 = the CLAUDE.md text-sm floor; SC-4 enlarges the
+// prior compact fontSize-11 annotation into a deliberately prominent marker.
+export const BREAK_LABEL_FONT_SIZE = 14;
+
 // Minimum total games to render an opening table row at full opacity. Mirrors
 // backend EVAL_CONFIDENCE_MIN_N (app/services/opening_insights_constants.py) —
 // rows below this threshold can't sustain a reliable MG-entry eval signal, so
