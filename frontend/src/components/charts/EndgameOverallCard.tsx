@@ -81,7 +81,7 @@ export function EndgameCard({
   const gamesCountFormatted = total.toLocaleString();
 
   return (
-    <div className="charcoal-texture rounded-md p-4" data-testid={tileTestId}>
+    <div data-testid={tileTestId}>
       <h3 className="text-base font-semibold mb-2">{title}</h3>
       <div className="flex flex-col gap-4">
         {showWdl ? (

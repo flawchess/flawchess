@@ -68,7 +68,7 @@ export function EntryCard({ data }: EntryCardProps) {
     data.entry_expected_score_n >= MIN_GAMES_FOR_RELIABLE_STATS;
 
   return (
-    <div className="charcoal-texture rounded-md p-4" data-testid="tile-at-endgame-entry">
+    <div data-testid="tile-at-endgame-entry">
       <h3 className="text-base font-semibold mb-2">Eval at Endgame Entry</h3>
       <div className="flex flex-col gap-4">
         {/* Row 1: entry-eval bullet (pawns) */}
