@@ -50,31 +50,31 @@ describe('computeInactivityGaps', () => {
     expect(result).toHaveLength(0);
   });
 
-  it('label matches /^≈\\d+(\\.\\d)?y inactive$/ for gaps >= 365 days', () => {
+  it('label matches /^\\d+(\\.\\d)?y$/ for gaps >= 365 days', () => {
     const dates = [BASE, addDays(BASE, 365)];
     const result = computeInactivityGaps(dates);
     expect(result).toHaveLength(1);
-    expect(result[0]?.label).toMatch(/^≈\d+(\.\d)?y inactive$/);
+    expect(result[0]?.label).toMatch(/^\d+(\.\d)?y$/);
   });
 
-  it('label for exactly 365-day gap reads ≈1.0y inactive', () => {
+  it('label for exactly 365-day gap reads 1.0y', () => {
     const dates = [BASE, addDays(BASE, 365)];
     const result = computeInactivityGaps(dates);
-    expect(result[0]?.label).toBe('≈1.0y inactive');
+    expect(result[0]?.label).toBe('1.0y');
   });
 
-  it('label matches /^≈\\d+mo inactive$/ for gaps < 365 days and > threshold', () => {
+  it('label matches /^\\d+mo$/ for gaps < 365 days and > threshold', () => {
     // 4 months ≈ 120 days
     const dates = [BASE, addDays(BASE, 120)];
     const result = computeInactivityGaps(dates);
     expect(result).toHaveLength(1);
-    expect(result[0]?.label).toMatch(/^≈\d+mo inactive$/);
+    expect(result[0]?.label).toMatch(/^\d+mo$/);
   });
 
-  it('label for ~60 days reads ≈2mo inactive', () => {
+  it('label for ~60 days reads 2mo', () => {
     const dates = [BASE, addDays(BASE, 60)];
     const result = computeInactivityGaps(dates);
-    expect(result[0]?.label).toBe('≈2mo inactive');
+    expect(result[0]?.label).toBe('2mo');
   });
 
   it('afterIndex always points to the date BEFORE the gap', () => {

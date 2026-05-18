@@ -140,7 +140,7 @@ describe('inactivityGapReferenceLines — render cases (no yAxisId)', () => {
     expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).not.toBeNull();
   });
 
-  it('renders a label text containing the ≈ inactive string for a gap fixture', () => {
+  it('renders the compact gap label (e.g. "Nmo") for a gap fixture', () => {
     render(
       <ComposedChart width={800} height={400} data={makeChartData(GAP_DATES)}>
         <XAxis dataKey="date" />
@@ -148,8 +148,8 @@ describe('inactivityGapReferenceLines — render cases (no yAxisId)', () => {
         {inactivityGapReferenceLines({ dates: GAP_DATES })}
       </ComposedChart>,
     );
-    // computeInactivityGaps labels gaps < 365 days as "≈Nmo inactive"
-    expect(screen.getByText(/≈.*inactive/)).toBeTruthy();
+    // computeInactivityGaps labels gaps < 365 days as compact "Nmo"
+    expect(screen.getByText(/^\d+mo$/)).toBeTruthy();
   });
 
   it('renders no gap label for a gap-free fixture', () => {

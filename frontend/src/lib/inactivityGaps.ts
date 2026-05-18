@@ -19,7 +19,7 @@ export interface InactivityGap {
   afterIndex: number;
   /** Size of the gap in days (rounded to the nearest whole day). */
   gapDays: number;
-  /** Human-readable label: "≈Ny inactive" (>=365 days) or "≈Nmo inactive" (< 365 days). */
+  /** Compact label: "Ny" (>=365 days) or "Nmo" (< 365 days), paired with the Palmtree glyph. */
   label: string;
 }
 
@@ -51,8 +51,8 @@ export function computeInactivityGaps(
     if (days > thresholdDays) {
       const label =
         days >= 365
-          ? `≈${(days / 365).toFixed(1)}y inactive`
-          : `≈${Math.round(days / 30)}mo inactive`;
+          ? `${(days / 365).toFixed(1)}y`
+          : `${Math.round(days / 30)}mo`;
       gaps.push({ afterIndex: i, gapDays: days, label });
     }
   }

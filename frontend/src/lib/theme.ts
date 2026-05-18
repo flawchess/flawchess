@@ -77,6 +77,10 @@ export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 // prior compact fontSize-11 annotation into a deliberately prominent marker.
 export const BREAK_LABEL_FONT_SIZE = 14;
 
+// Inactivity-gap Palmtree glyph size (px). Deliberately larger than the label text so the
+// icon reads as the primary break marker while the compact "1.1y" text stays at text-sm.
+export const BREAK_LABEL_GLYPH_SIZE = 22;
+
 // Minimum total games to render an opening table row at full opacity. Mirrors
 // backend EVAL_CONFIDENCE_MIN_N (app/services/opening_insights_constants.py) —
 // rows below this threshold can't sustain a reliable MG-entry eval signal, so

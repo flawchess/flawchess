@@ -15,7 +15,7 @@ import type { ReactElement } from 'react';
 import { ReferenceLine } from 'recharts';
 import { Palmtree } from 'lucide-react';
 import { computeInactivityGaps } from '@/lib/inactivityGaps';
-import { BREAK_LABEL_FONT_SIZE } from '@/lib/theme';
+import { BREAK_LABEL_FONT_SIZE, BREAK_LABEL_GLYPH_SIZE } from '@/lib/theme';
 
 export interface InactivityGapReferenceLinesProps {
   /** MUST be ascending-sorted ISO YYYY-MM-DD strings; caller's responsibility. */
@@ -51,15 +51,18 @@ export function inactivityGapReferenceLines({
       viewBox?: { x?: number; y?: number; width?: number; height?: number };
     }) => {
       const { x = 0, y = 0 } = props.viewBox ?? {};
-      const glyphSize = BREAK_LABEL_FONT_SIZE;
+      const glyphSize = BREAK_LABEL_GLYPH_SIZE;
       const labelX = x + 4;
       const labelY = y + 4;
       const textX = labelX + glyphSize + 4;
+      // Text stays at BREAK_LABEL_FONT_SIZE while the glyph is larger; center the
+      // text on the glyph's vertical midpoint so the two stay visually aligned.
+      const textY = labelY + glyphSize / 2;
       return (
         <g data-testid="inactivity-gap-label">
           {/* Palmtree glyph: lucide renders as <svg class="lucide ..."> which is
-              valid SVG content inside a chart <g>. Size matches BREAK_LABEL_FONT_SIZE
-              so glyph and text share the same visual weight. */}
+              valid SVG content inside a chart <g>. Sized via BREAK_LABEL_GLYPH_SIZE
+              (larger than the text) so the icon is the primary break marker. */}
           <Palmtree
             data-testid="inactivity-gap-glyph"
             width={glyphSize}
@@ -71,11 +74,11 @@ export function inactivityGapReferenceLines({
           />
           <text
             x={textX}
-            y={labelY}
+            y={textY}
             fontSize={BREAK_LABEL_FONT_SIZE}
             fill="currentColor"
             fillOpacity={0.6}
-            dominantBaseline="hanging"
+            dominantBaseline="central"
           >
             {label}
           </text>
