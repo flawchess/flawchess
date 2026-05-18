@@ -601,7 +601,7 @@ describe('gap annotations', () => {
     };
   }
 
-  it('renders a ReferenceLine when allDates contains a >56-day gap', () => {
+  it('renders inactivity-gap-label testid when allDates contains a >56-day gap', () => {
     const { container } = render(
       <EndgameEloTimelineSection
         data={buildResponseWithGap()}
@@ -609,12 +609,22 @@ describe('gap annotations', () => {
         isError={false}
       />,
     );
-    // A Recharts ReferenceLine renders a <line> with the recharts-reference-line-line class.
-    const lines = container.querySelectorAll('.recharts-reference-line-line');
-    expect(lines.length).toBeGreaterThan(0);
+    // The shared helper renders data-testid="inactivity-gap-label" for each gap.
+    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
   });
 
-  it('renders no ReferenceLine when all dates are 7 days apart', () => {
+  it('renders inactivity-gap-glyph (Palmtree) when allDates contains a >56-day gap', () => {
+    const { container } = render(
+      <EndgameEloTimelineSection
+        data={buildResponseWithGap()}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).not.toBeNull();
+  });
+
+  it('renders no inactivity-gap annotation when all dates are 7 days apart', () => {
     const { container } = render(
       <EndgameEloTimelineSection
         data={buildResponse()}  // buildResponse dates are 7 days apart
@@ -622,8 +632,8 @@ describe('gap annotations', () => {
         isError={false}
       />,
     );
-    const lines = container.querySelectorAll('.recharts-reference-line-line');
-    expect(lines.length).toBe(0);
+    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).toBeNull();
+    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).toBeNull();
   });
 });
 
