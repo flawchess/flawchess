@@ -106,6 +106,7 @@ Carried forward from v1.11 close (still relevant):
 - Phase 87.2 inserted after Phase 87.1: Section 2 — replace rate-based peer-diff Gap with eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (URGENT)
 - Phase 87.3 inserted after Phase 87.2: Endgame Skill v2 — Conv+Parity percentile composite (Recovery dropped, opponent-confounded per benchmark spike) (URGENT)
 - Phase 88.3 inserted after Phase 88: Endgame Stats viz refinements (timeline inactivity annotations, ELO default series, Overall Performance 2-col card restructure) — from /gsd-explore chart-quality review (URGENT)
+- Phase 88.4 inserted after Phase 88.3: Time Pressure card layout refactor (responsive grid, 3-stat header row over Clock Gap bullet, Score-Gap bullets → one zone-banded line chart w/ whiskers + tooltip stats, neutral zone TC-collapsed per §3.3.3) — from user layout review of screenshots/tc-cards.png; frontend-only
 
 ### Pending Todos
 
