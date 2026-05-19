@@ -16,7 +16,6 @@ import {
   CartesianGrid,
   ComposedChart,
   ErrorBar,
-  Label,
   Line,
   ReferenceArea,
   ReferenceLine,
@@ -283,7 +282,7 @@ export function ScoreGapByTimePressureChart({
         className="w-full h-64"
         data-testid="score-gap-by-time-pressure-chart-container"
       >
-        <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 24 }}>
+        <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
           {/* Horizontal-only fine grid — identical to EndgameClockDiffOverTimeChart. */}
           <CartesianGrid vertical={false} />
           {/* Hidden full-range numeric x-axis the zone bands bind to. The
@@ -339,9 +338,7 @@ export function ScoreGapByTimePressureChart({
             dataKey="label"
             type="category"
             padding={{ left: X_AXIS_EDGE_PADDING, right: X_AXIS_EDGE_PADDING }}
-          >
-            <Label value="Remaining Time" position="insideBottom" offset={-14} />
-          </XAxis>
+          />
           <YAxis
             yAxisId="value"
             domain={yDomain}
@@ -415,6 +412,13 @@ export function ScoreGapByTimePressureChart({
           </Line>
         </ComposedChart>
       </ChartContainer>
+      {/* X-axis caption rendered as HTML (not a Recharts SVG <Label>) so it
+          matches the "Clock Gap at Endgame Entry" chart's text-sm caption
+          exactly on every viewport — SVG label text scales with the
+          responsive container and would not match on mobile. */}
+      <p className="text-sm text-muted-foreground text-center mt-1">
+        Remaining Time
+      </p>
     </div>
   );
 }

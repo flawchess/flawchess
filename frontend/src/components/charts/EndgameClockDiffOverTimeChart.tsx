@@ -262,7 +262,7 @@ export function EndgameClockDiffOverTimeChart({
                         style={{ backgroundColor: zoneColor(diff) }}
                       />
                       <span>
-                        Avg clock diff: {sign}
+                        Clock Gap: {sign}
                         {diff.toFixed(1)}%
                         <span className="text-muted-foreground ml-1">
                           (trailing {point.game_count})
