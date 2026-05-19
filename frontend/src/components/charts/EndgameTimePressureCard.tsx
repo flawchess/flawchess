@@ -320,10 +320,9 @@ export function EndgameTimePressureCard({
                   outscored you.
                 </p>
                 <p>
-                  Each marker is sized by how many of that bucket's games were
-                  yours versus your opponents'. A bigger dot means more of the
-                  games were yours, so the comparison is better-sampled on
-                  your side.
+                  Each marker is sized by how many of that time bucket's games were
+                  yours versus your opponents'. A bigger dot means you were in this
+                  time pressure situation more often than your opponents.
                 </p>
               </div>
             </InfoPopover>
