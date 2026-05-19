@@ -36,6 +36,56 @@ export function clampDeltaCi(value: number): number {
   return value;
 }
 
+// ── Score-Gap line chart Y-axis (post-UAT 88.4) ──────────────────────────────
+
+const Y_BASE_PCT = Math.round(PRESSURE_DELTA_DOMAIN * 100); // 30
+const Y_TICK_STEP_PCT = 10;
+
+/** Minimal point shape computeScoreGapYAxis needs (a subset of the chart's
+ *  ChartPoint): the plotted delta plus the drawn CI whisker offsets. */
+export interface ScoreGapAxisPoint {
+  delta: number;
+  /** [downward_offset, upward_offset] — already clamped upstream. */
+  ciError?: [number, number];
+}
+
+/**
+ * Compute the Score-Gap line chart's Y domain + tick array (fraction units).
+ * Expands past the ±30% baseline when a datapoint OR its drawn CI whisker
+ * would clip, snapping each edge outward to the next 10% step so ticks stay
+ * evenly spaced at exactly 10%. 0 is always a tick (the base envelope is
+ * symmetric and 10 divides 30). Mirrors EndgameClockDiffOverTimeChart's
+ * domain-expansion behavior, extended to also emit the tick array so the
+ * added headroom stays labelled.
+ */
+export function computeScoreGapYAxis(points: ScoreGapAxisPoint[]): {
+  domain: [number, number];
+  ticks: number[];
+} {
+  let minPct = -Y_BASE_PCT;
+  let maxPct = Y_BASE_PCT;
+  for (const p of points) {
+    const candidates = [p.delta];
+    if (p.ciError) {
+      candidates.push(p.delta - p.ciError[0], p.delta + p.ciError[1]);
+    }
+    for (const v of candidates) {
+      // Round to 0.01% to strip float noise before the floor/ceil snap, so a
+      // value sitting exactly on ±30% doesn't push the axis to ±40%.
+      const pct = Math.round(v * 10000) / 100;
+      minPct = Math.min(minPct, pct);
+      maxPct = Math.max(maxPct, pct);
+    }
+  }
+  const loPct = Math.floor(minPct / Y_TICK_STEP_PCT) * Y_TICK_STEP_PCT;
+  const hiPct = Math.ceil(maxPct / Y_TICK_STEP_PCT) * Y_TICK_STEP_PCT;
+  const ticks: number[] = [];
+  for (let t = loPct; t <= hiPct; t += Y_TICK_STEP_PCT) {
+    ticks.push(t / 100);
+  }
+  return { domain: [loPct / 100, hiPct / 100], ticks };
+}
+
 /** Pick the zone color for a score-delta relative to the per-bin neutral band.
  *  neutralMin and neutralMax come from PRESSURE_BIN_SCORE_NEUTRAL_ZONES[tc][quintile].
  *  Returns ZONE_SUCCESS when the user outperforms the neutral band,
