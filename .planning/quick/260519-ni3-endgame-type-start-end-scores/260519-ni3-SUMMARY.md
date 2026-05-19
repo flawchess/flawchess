@@ -96,7 +96,15 @@ metrics:
 
 ## Deviations from Plan
 
-None. Plan executed exactly as written.
+None during the plan tasks. Two post-checkpoint UAT tweaks (commit `66ede60d`):
+(1) the `Cpu` icon now appears only on **Start** (the eval-based entry anchor);
+**Score Gap** and **End** drop it to keep the 3-column row uncluttered — note
+the Score Gap row's `Cpu` predated this task (Phase 87.1), so this also removes
+that pre-existing icon. (2) The center label is shortened from "Score Gap:" to
+"Gap:"; the `MetricStatPopover` keeps the full "Score Gap" name + explanation,
+and the bullet's screen-reader `ariaLabel` keeps the descriptive
+"<type> Score Gap" form. No test asserted the icon or the label text, so no test
+changes were needed. Gates re-run green: tsc/lint/knip clean, frontend 586 passed.
 
 ## Known Stubs
 
