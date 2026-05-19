@@ -110,8 +110,27 @@ function conclusionText(
 // line doesn't touch the y-axis / right border. Recharts category-axis padding.
 const X_AXIS_EDGE_PADDING = 24;
 
-// Post-UAT (88.4): larger datapoint markers for readability (was 2.5).
+// Datapoint marker size encodes how many games YOU had in the bucket
+// relative to your opponent (n / n_opp): a bigger dot means more of the
+// bucket's games were yours, so the user-side score is the better-sampled
+// of the two. DOT_RADIUS is the base radius at parity (n == n_opp); the
+// scaled radius is clamped to [MIN, MAX] so a lopsided bucket can't produce
+// an invisible or oversized marker.
+// Post-UAT (88.4): base radius bumped for readability (was 2.5).
 const DOT_RADIUS = 4.5;
+const DOT_RADIUS_MIN = 3;
+const DOT_RADIUS_MAX = 7;
+
+/**
+ * Scale the marker radius by the user/opponent sample-size ratio, capped to
+ * [DOT_RADIUS_MIN, DOT_RADIUS_MAX]. n_opp == 0 with n > 0 means you played
+ * every game in the bucket — max the marker rather than divide by zero.
+ */
+function dotRadius(n: number, nOpp: number): number {
+  if (nOpp <= 0) return DOT_RADIUS_MAX;
+  const scaled = DOT_RADIUS * (n / nOpp);
+  return Math.min(DOT_RADIUS_MAX, Math.max(DOT_RADIUS_MIN, scaled));
+}
 
 interface ChartPoint {
   label: string;
@@ -370,12 +389,14 @@ export function ScoreGapByTimePressureChart({
                 return <g key={`nodot-${String(payload?.label ?? cx)}`} />;
               }
               const delta = (payload.delta as number) ?? 0;
+              const n = (payload.n as number) ?? 0;
+              const nOpp = (payload.n_opp as number) ?? 0;
               return (
                 <circle
                   key={`score-gap-dot-${payload.label as string}`}
                   cx={cx}
                   cy={cy}
-                  r={DOT_RADIUS}
+                  r={dotRadius(n, nOpp)}
                   fill={zoneDotColor(delta)}
                 />
               );
