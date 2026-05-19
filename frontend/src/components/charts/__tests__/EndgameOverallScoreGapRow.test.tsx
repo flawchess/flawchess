@@ -85,3 +85,54 @@ describe('ScoreGapRow CI prop threading', () => {
     expect(bullet.getAttribute('data-ci-high')).toBeNull();
   });
 });
+
+describe('ScoreGapRow startSlot/endSlot props (quick-260519-ni3)', () => {
+  it('renders center gap value when neither slot is provided (pixel-identical to existing behavior)', () => {
+    render(<ScoreGapRow {...baseProps} />);
+    // value span is present
+    expect(screen.getByTestId('test-score-gap-value')).not.toBeNull();
+    expect(screen.getByTestId('test-score-gap-value').textContent).toBe('+5%');
+    // no slot elements
+    expect(screen.queryByTestId('slot-start')).toBeNull();
+    expect(screen.queryByTestId('slot-end')).toBeNull();
+  });
+
+  it('renders startSlot when provided', () => {
+    render(
+      <ScoreGapRow
+        {...baseProps}
+        startSlot={<span data-testid="slot-start">Start: 41%</span>}
+      />,
+    );
+    expect(screen.getByTestId('slot-start')).not.toBeNull();
+    expect(screen.getByTestId('slot-start').textContent).toBe('Start: 41%');
+    // center gap still renders
+    expect(screen.getByTestId('test-score-gap-value')).not.toBeNull();
+  });
+
+  it('renders endSlot when provided', () => {
+    render(
+      <ScoreGapRow
+        {...baseProps}
+        endSlot={<span data-testid="slot-end">End: 49%</span>}
+      />,
+    );
+    expect(screen.getByTestId('slot-end')).not.toBeNull();
+    expect(screen.getByTestId('slot-end').textContent).toBe('End: 49%');
+    // center gap still renders
+    expect(screen.getByTestId('test-score-gap-value')).not.toBeNull();
+  });
+
+  it('renders both startSlot and endSlot when provided', () => {
+    render(
+      <ScoreGapRow
+        {...baseProps}
+        startSlot={<span data-testid="slot-start">Start: 41%</span>}
+        endSlot={<span data-testid="slot-end">End: 49%</span>}
+      />,
+    );
+    expect(screen.getByTestId('slot-start')).not.toBeNull();
+    expect(screen.getByTestId('slot-end')).not.toBeNull();
+    expect(screen.getByTestId('test-score-gap-value')).not.toBeNull();
+  });
+});

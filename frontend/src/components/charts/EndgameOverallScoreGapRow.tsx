@@ -44,6 +44,14 @@ interface ScoreGapRowProps {
    *  Per-class cards pass ENDGAME_TYPE_SCORE_GAP_DOMAIN so the neutral band
    *  fills the same fraction of the axis as the Endgame Score bullet above. */
   domain?: number;
+  /** Optional left slot rendered before the center label group. Used by
+   *  EndgameTypeCard to show the Start predicted score. Defaults to undefined
+   *  (renders nothing) so the 3 other callers remain pixel-identical. */
+  startSlot?: ReactNode;
+  /** Optional right slot rendered after the center label group. Used by
+   *  EndgameTypeCard to show the End predicted score. Defaults to undefined
+   *  (renders nothing) so the 3 other callers remain pixel-identical. */
+  endSlot?: ReactNode;
 }
 
 export function ScoreGapRow({
@@ -60,20 +68,45 @@ export function ScoreGapRow({
   ciLow,
   ciHigh,
   domain = SCORE_GAP_DOMAIN,
+  startSlot,
+  endSlot,
 }: ScoreGapRowProps) {
+  // quick-260519-ni3: 3-column label line when start/end slots are provided.
+  // When both are undefined the layout collapses to the original single-line
+  // flex row so the 3 other callers (EndgameOverallPerformanceSection x2,
+  // EndgameMetricCard) render pixel-identical to before.
+  const hasSlots = startSlot !== undefined || endSlot !== undefined;
   return (
     <div className="flex flex-col gap-2">
-      <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-        <span className="text-muted-foreground">{label}</span>
-        <span
-          className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
-          style={resultColor ? { color: resultColor } : undefined}
-          data-testid={valueTestId}
-        >
-          {formatted}
+      {hasSlots ? (
+        <div className="flex items-center gap-1 text-sm tabular-nums w-full">
+          <div className="flex-1">{startSlot}</div>
+          <span className="flex items-center gap-1 shrink-0">
+            <span className="text-muted-foreground">{label}</span>
+            <span
+              className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
+              style={resultColor ? { color: resultColor } : undefined}
+              data-testid={valueTestId}
+            >
+              {formatted}
+            </span>
+            {tooltip}
+          </span>
+          <div className="flex-1 flex justify-end">{endSlot}</div>
+        </div>
+      ) : (
+        <span className="flex items-center gap-1 text-sm tabular-nums w-full">
+          <span className="text-muted-foreground">{label}</span>
+          <span
+            className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
+            style={resultColor ? { color: resultColor } : undefined}
+            data-testid={valueTestId}
+          >
+            {formatted}
+          </span>
+          {tooltip}
         </span>
-        {tooltip}
-      </span>
+      )}
       <div className="min-w-0 tabular-nums">
         <MiniBulletChart
           value={value}
