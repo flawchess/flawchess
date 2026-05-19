@@ -151,7 +151,7 @@ export function EndgameTypeCard({
       ? ENDGAME_TYPE_DESCRIPTIONS[category.endgame_class]
       : '';
 
-  const sharePctFormatted = sharePct.toFixed(1);
+  const sharePctFormatted = Math.round(sharePct);
   const gamesCountFormatted = category.total.toLocaleString();
 
   const titleRow = (

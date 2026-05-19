@@ -59,15 +59,15 @@ function formatPct(pct: number | null): string {
 }
 
 /**
- * Format the net flag rate as a signed percentage with one decimal point.
+ * Format the net flag rate as a signed, integer-rounded percentage.
  * rate is a fraction (0.005 = 0.5%) multiplied by 100 for display.
- * Always shows a sign except for 0.0%.
+ * Always shows a sign except for 0%.
  */
 function formatNetTimeoutRate(rate: number): string {
-  const pct = rate * 100;
-  if (pct === 0) return '0.0%';
+  const pct = Math.round(rate * 100);
+  if (pct === 0) return '0%';
   const sign = pct > 0 ? '+' : '';
-  return `${sign}${pct.toFixed(1)}%`;
+  return `${sign}${pct}%`;
 }
 
 /**
@@ -97,7 +97,7 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
   const neutralMax = CLOCK_GAP_NEUTRAL_MAX;
   const isInColoredZone = gap.mean_diff_pct >= neutralMax || gap.mean_diff_pct <= neutralMin;
   const showFontColor = gap.n >= MIN_GAMES_PER_PRESSURE_BIN && isConfident(level) && isInColoredZone;
-  const signedPct = (gap.mean_diff_pct * 100).toFixed(1);
+  const signedPct = Math.round(gap.mean_diff_pct * 100);
   const formattedGapValue = `${gap.mean_diff_pct >= 0 ? '+' : ''}${signedPct}%`;
 
   const fontColor = showFontColor
@@ -287,7 +287,7 @@ export function EndgameTimePressureCard({
               domain={CLOCK_GAP_DOMAIN}
               ciLow={gap.ci_low != null ? clampDeltaCi(gap.ci_low) : undefined}
               ciHigh={gap.ci_high != null ? clampDeltaCi(gap.ci_high) : undefined}
-              ariaLabel={`Clock Gap: ${gap.mean_diff_pct >= 0 ? '+' : ''}${(gap.mean_diff_pct * 100).toFixed(1)}%`}
+              ariaLabel={`Clock Gap: ${gap.mean_diff_pct >= 0 ? '+' : ''}${Math.round(gap.mean_diff_pct * 100)}%`}
               barColor="neutral"
             />
           </div>
