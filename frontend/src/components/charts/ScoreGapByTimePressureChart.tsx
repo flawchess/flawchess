@@ -13,6 +13,7 @@
  */
 
 import {
+  CartesianGrid,
   ComposedChart,
   ErrorBar,
   Line,
@@ -51,14 +52,23 @@ const Y_DOMAIN: [number, number] = [-PRESSURE_DELTA_DOMAIN, PRESSURE_DELTA_DOMAI
 const MAX_VISIBLE_QUINTILE_INDEX = 3;
 
 // Ordinal x-axis labels for the 4 displayed quintile buckets.
-// Redeclared here (not imported from EndgameTimePressureCard) to keep this
-// chart self-contained per the "build independently" guidance (RESEARCH.md line 450).
+// Post-UAT (88.4): bucket *center* values (the midpoint of each 20%-wide
+// clock-remaining band), no "Time" suffix — the section/axis already conveys
+// "Remaining Time". Redeclared here (not imported from EndgameTimePressureCard)
+// to keep this chart self-contained per the "build independently" guidance.
 const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
-  0: '0-20% Time',
-  1: '20-40% Time',
-  2: '40-60% Time',
-  3: '60-80% Time',
+  0: '10%',
+  1: '30%',
+  2: '50%',
+  3: '70%',
 };
+
+// Post-UAT (88.4): inset the first/last datapoints from the chart edges so the
+// line doesn't touch the y-axis / right border. Recharts category-axis padding.
+const X_AXIS_EDGE_PADDING = 24;
+
+// Post-UAT (88.4): larger datapoint markers for readability (was 2.5).
+const DOT_RADIUS = 4.5;
 
 interface ChartPoint {
   label: string;
@@ -66,7 +76,26 @@ interface ChartPoint {
   n: number;
   opp_score: number | null;
   p_value: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
   ciError?: [number, number]; // [downward_offset, upward_offset] for ErrorBar
+}
+
+/** Signed percentage, one decimal, explicit leading +/−. e.g. -0.17 → "-17.0%". */
+function formatSignedPct(frac: number): string {
+  const pct = frac * 100;
+  const sign = pct >= 0 ? '+' : '';
+  return `${sign}${pct.toFixed(1)}%`;
+}
+
+/** Plain percentage, one decimal (no forced sign). e.g. 0.55 → "55.0%". */
+function formatPct(frac: number | null): string {
+  return frac != null ? `${(frac * 100).toFixed(1)}%` : 'n/a';
+}
+
+/** p-value display matching MetricStatTooltip: 3 decimals, "< 0.001" floor. */
+function formatPValue(p: number): string {
+  return p < 0.001 ? 'p < 0.001' : `p = ${p.toFixed(3)}`;
 }
 
 /** Pick zone color for a score-gap dot relative to the TC-collapsed neutral band. */
@@ -101,9 +130,51 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
         n: bin.n,
         opp_score: bin.opp_score,
         p_value: bin.p_value,
+        ci_low: bin.ci_low,
+        ci_high: bin.ci_high,
         ciError,
       };
     });
+}
+
+/**
+ * Tooltip body for a single bucket. Exported so the test renders the REAL
+ * production tooltip instead of a reimplementation (REVIEW.md IN-01 tautology
+ * fix). Post-UAT 88.4: "You: x% | Opp: y%" line replaces "vs opponents at …";
+ * "Games: N" replaces "n = N"; the statistical test + CI methodology we had
+ * behind the old per-bucket info icons returns as an italic footnote.
+ */
+export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
+  const userScore = point.opp_score != null ? point.opp_score + point.delta : null;
+  const ciText =
+    point.ci_low != null && point.ci_high != null
+      ? `95% CI [${formatSignedPct(point.ci_low)}, ${formatSignedPct(point.ci_high)}]`
+      : null;
+  const testLine =
+    `Independent two-sample test vs opponents` +
+    (point.p_value != null ? `, ${formatPValue(point.p_value)}` : '') +
+    `. ${ciText ?? '95% normal-approx CI'}.`;
+
+  return (
+    <div
+      className="rounded-lg border border-border/50 bg-background px-3 py-2 text-sm shadow-xl space-y-1"
+      data-testid="score-gap-tooltip"
+    >
+      <div className="font-medium">{point.label}</div>
+      <div className="flex items-center gap-1.5">
+        <div
+          className="h-2 w-2 shrink-0 rounded-[2px]"
+          style={{ backgroundColor: zoneDotColor(point.delta) }}
+        />
+        <span>Score gap: {formatSignedPct(point.delta)}</span>
+      </div>
+      <div className="text-muted-foreground">
+        You: {formatPct(userScore)} | Opp: {formatPct(point.opp_score)}
+      </div>
+      <div className="text-muted-foreground">Games: {point.n}</div>
+      <div className="text-muted-foreground italic">{testLine}</div>
+    </div>
+  );
 }
 
 export interface ScoreGapByTimePressureChartProps {
@@ -129,6 +200,8 @@ export function ScoreGapByTimePressureChart({
         data-testid="score-gap-by-time-pressure-chart-container"
       >
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
+          {/* Horizontal-only fine grid — identical to EndgameClockDiffOverTimeChart. */}
+          <CartesianGrid vertical={false} />
           {/* Three flat zone bands — same pattern as EndgameClockDiffOverTimeChart. */}
           <ReferenceArea
             yAxisId="value"
@@ -154,8 +227,13 @@ export function ScoreGapByTimePressureChart({
             fillOpacity={ZONE_OPACITY}
             ifOverflow="visible"
           />
-          {/* Category x-axis — 4 ordinal labels, no tick formatter needed */}
-          <XAxis dataKey="label" type="category" />
+          {/* Category x-axis — 4 bucket-center labels. Edge padding insets the
+              first/last datapoints off the chart borders (post-UAT 88.4). */}
+          <XAxis
+            dataKey="label"
+            type="category"
+            padding={{ left: X_AXIS_EDGE_PADDING, right: X_AXIS_EDGE_PADDING }}
+          />
           <YAxis
             yAxisId="value"
             domain={Y_DOMAIN}
@@ -177,29 +255,7 @@ export function ScoreGapByTimePressureChart({
               if (!active || !payload?.length) return null;
               const point = payload[0]?.payload as ChartPoint | undefined;
               if (!point) return null;
-              const sign = point.delta >= 0 ? '+' : '';
-              const signedDelta = `${sign}${(point.delta * 100).toFixed(1)}%`;
-              const oppPct =
-                point.opp_score != null
-                  ? `${(point.opp_score * 100).toFixed(1)}%`
-                  : 'n/a';
-              return (
-                <div
-                  className="rounded-lg border border-border/50 bg-background px-3 py-2 text-sm shadow-xl space-y-1"
-                  data-testid="score-gap-tooltip"
-                >
-                  <div className="font-medium">{point.label}</div>
-                  <div className="flex items-center gap-1.5">
-                    <div
-                      className="h-2 w-2 shrink-0 rounded-[2px]"
-                      style={{ backgroundColor: zoneDotColor(point.delta) }}
-                    />
-                    <span>Score gap: {signedDelta}</span>
-                  </div>
-                  <div className="text-muted-foreground">vs opponents at {oppPct}</div>
-                  <div className="text-muted-foreground">n = {point.n}</div>
-                </div>
-              );
+              return <ScoreGapTooltipContent point={point} />;
             }}
           />
           <Line
@@ -225,7 +281,7 @@ export function ScoreGapByTimePressureChart({
                   key={`score-gap-dot-${payload.label as string}`}
                   cx={cx}
                   cy={cy}
-                  r={2.5}
+                  r={DOT_RADIUS}
                   fill={zoneDotColor(delta)}
                 />
               );

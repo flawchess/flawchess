@@ -29,6 +29,7 @@ vi.mock('recharts', async () => {
 
 import {
   ScoreGapByTimePressureChart,
+  ScoreGapTooltipContent,
   PRESSURE_SCORE_GAP_NEUTRAL_MIN,
   PRESSURE_SCORE_GAP_NEUTRAL_MAX,
 } from '../ScoreGapByTimePressureChart';
@@ -169,69 +170,60 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(PRESSURE_SCORE_GAP_NEUTRAL_MAX).toBe(0.06);
   });
 
-  // Test 8: tooltip surfaces per-bucket stats
-  it('renders a tooltip element with data-testid score-gap-tooltip', () => {
-    // Recharts renders the tooltip content when `active` is true on a payload.
-    // The custom content function returns a node with data-testid="score-gap-tooltip"
-    // when active and payload are present. We verify the tooltip container exists
-    // by querying the component structure directly — the same approach used in
-    // EndgameClockDiffOverTimeChart (ChartTooltip renders its content function
-    // lazily; we verify the tooltip's root testid is attributed correctly by
-    // rendering the content function inline with a synthetic payload).
-    const syntheticPayload = [
-      {
-        payload: {
-          label: '0-20% Time',
+  // Test 8: tooltip surfaces per-bucket stats — renders the REAL exported
+  // production tooltip (no reimplementation). Fixes REVIEW.md IN-01 tautology.
+  it('tooltip shows You/Opp split, Games, and the italic test+CI footnote', () => {
+    const { getByTestId, getByText } = render(
+      <ScoreGapTooltipContent
+        point={{
+          label: '10%',
           delta: -0.17,
           n: 40,
           opp_score: 0.55,
           p_value: 0.03,
-          ciError: [0.02, 0.02] as [number, number],
-        },
-      },
-    ];
-    // Import ChartTooltip's content function by rendering ScoreGapByTimePressureChart
-    // and extracting the tooltip root via a simulated active tooltip state.
-    // Per the Recharts test pattern, we render the content function directly.
-    const { ScoreGapTooltipContent } = (() => {
-      // We export the tooltip content function indirectly by checking that
-      // the data-testid appears when active=true is simulated.
-      // Use a simple wrapper that calls the Recharts content prop directly.
-      return {
-        ScoreGapTooltipContent: (props: {
-          active?: boolean;
-          payload?: typeof syntheticPayload;
-        }) => {
-          if (!props.active || !props.payload?.length) return null;
-          const point = props.payload[0]?.payload;
-          if (!point) return null;
-          const sign = point.delta >= 0 ? '+' : '';
-          const signedDelta = `${sign}${(point.delta * 100).toFixed(1)}%`;
-          const oppPct =
-            point.opp_score != null ? `${(point.opp_score * 100).toFixed(1)}%` : 'n/a';
-          return (
-            <div
-              data-testid="score-gap-tooltip"
-            >
-              <div>{point.label}</div>
-              <div>Score gap: {signedDelta}</div>
-              <div>vs opponents at {oppPct}</div>
-              <div>n = {point.n}</div>
-            </div>
-          );
-        },
-      };
-    })();
-
-    const { getByTestId, getByText } = render(
-      <ScoreGapTooltipContent active={true} payload={syntheticPayload} />,
+          ci_low: -0.02,
+          ci_high: 0.02,
+        }}
+      />,
     );
     const tooltip = getByTestId('score-gap-tooltip');
     expect(tooltip).toBeTruthy();
-    expect(tooltip.textContent).toContain('-17.0%');
-    expect(tooltip.textContent).toContain('55.0%');
-    expect(tooltip.textContent).toContain('n = 40');
-    // Signed delta format check
-    expect(getByText(/Score gap:.*-17\.0%/)).toBeTruthy();
+    expect(tooltip.textContent).toContain('10%');
+    expect(tooltip.textContent).toContain('Score gap: -17.0%');
+    // Post-UAT 88.4: "You: x% | Opp: y%" replaces "vs opponents at …".
+    // userScore = opp_score + delta = 0.55 + (-0.17) = 0.38.
+    expect(tooltip.textContent).toContain('You: 38.0%');
+    expect(tooltip.textContent).toContain('Opp: 55.0%');
+    // "Games: N" replaces "n = N".
+    expect(tooltip.textContent).toContain('Games: 40');
+    expect(tooltip.textContent).not.toContain('n = 40');
+    // Italic statistical test + CI footnote (the info we had before).
+    const footnote = getByText(/Independent two-sample test vs opponents/);
+    expect(footnote.className).toContain('italic');
+    expect(footnote.textContent).toContain('p = 0.030');
+    expect(footnote.textContent).toContain('95% CI [-2.0%, +2.0%]');
+  });
+
+  it('tooltip degrades gracefully when opp_score / p_value / CI are null', () => {
+    const { getByTestId } = render(
+      <ScoreGapTooltipContent
+        point={{
+          label: '30%',
+          delta: 0.04,
+          n: 7,
+          opp_score: null,
+          p_value: null,
+          ci_low: null,
+          ci_high: null,
+        }}
+      />,
+    );
+    const tooltip = getByTestId('score-gap-tooltip');
+    expect(tooltip.textContent).toContain('You: n/a');
+    expect(tooltip.textContent).toContain('Opp: n/a');
+    expect(tooltip.textContent).toContain('Score gap: +4.0%');
+    // No p-value segment; CI falls back to the methodology phrase.
+    expect(tooltip.textContent).not.toContain('p = ');
+    expect(tooltip.textContent).toContain('95% normal-approx CI');
   });
 });

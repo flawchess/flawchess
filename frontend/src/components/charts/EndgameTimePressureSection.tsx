@@ -16,8 +16,10 @@ import { EndgameTimePressureCard } from '@/components/charts/EndgameTimePressure
 import type { TimePressureCardsResponse } from '@/types/endgames';
 
 // SC-1: Named grid class constants — no magic strings in the ternary.
-const GRID_ONE_CARD = 'w-1/2 mt-2';
-const GRID_TWO_CARDS = 'grid grid-cols-2 gap-4 mt-2';
+// Mobile-first: every layout collapses to a single stacked column below `sm`
+// so TC cards stack on top of each other on phones (post-UAT 88.4).
+const GRID_ONE_CARD = 'w-full sm:w-1/2 mt-2';
+const GRID_TWO_CARDS = 'grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2';
 const GRID_THREE_CARDS = 'grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2';
 const GRID_FOUR_CARDS = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-2';
 

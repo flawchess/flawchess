@@ -217,11 +217,11 @@ describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone stats', () => {
     expect(oppAvg.textContent).toContain('Opp');
     expect(netRate.textContent).toContain('Net flag rate');
 
-    // Formatted values: pct rounded to int + seconds rounded to int + "s".
+    // Post-UAT 88.4: pct rounded to int only — raw seconds dropped from cell.
     expect(myAvg.textContent).toContain('47%');
-    expect(myAvg.textContent).toContain('215s');
+    expect(myAvg.textContent).not.toContain('215s');
     expect(oppAvg.textContent).toContain('52%');
-    expect(oppAvg.textContent).toContain('231s');
+    expect(oppAvg.textContent).not.toContain('231s');
     // Negative net rate shows with a minus sign and one decimal point.
     expect(netRate.textContent).toContain('-0.3%');
   });

@@ -47,13 +47,15 @@ const TC_LABELS: Record<'bullet' | 'blitz' | 'rapid' | 'classical', string> = {
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 /**
- * Format "X% (Ns)" cell content for the You/Opp avg time cells.
- * Returns an em-dash when either input is null (legacy imports without
- * clock data). pct is a fraction (0..1) multiplied by 100 for display.
+ * Format the "X%" cell content for the You/Opp avg time cells.
+ * Returns an em-dash when the pct is null (legacy imports without clock
+ * data). pct is a fraction (0..1) multiplied by 100 for display. The raw
+ * seconds were dropped from the cell post-UAT (88.4) — the percentage of
+ * starting time carries the signal; the absolute seconds added noise.
  */
-function formatPctSecs(pct: number | null, secs: number | null): string {
-  if (pct === null || secs === null) return '—';
-  return `${Math.round(pct * 100)}% (${Math.round(secs).toLocaleString()}s)`;
+function formatPct(pct: number | null): string {
+  if (pct === null) return '—';
+  return `${Math.round(pct * 100)}%`;
 }
 
 /**
@@ -110,7 +112,7 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
       data-testid={`time-pressure-card-${card.tc}-clock-gap-header`}
     >
       <span className="text-left" data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
-        You: <span className="font-semibold">{formatPctSecs(card.user_avg_pct, card.user_avg_seconds)}</span>
+        You: <span className="font-semibold">{formatPct(card.user_avg_pct)}</span>
       </span>
       <span className="text-center flex items-center justify-center gap-1">
         <span className="text-muted-foreground">Gap:</span>
@@ -147,7 +149,7 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
         />
       </span>
       <span className="text-right" data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
-        Opp: <span className="font-semibold">{formatPctSecs(card.opp_avg_pct, card.opp_avg_seconds)}</span>
+        Opp: <span className="font-semibold">{formatPct(card.opp_avg_pct)}</span>
       </span>
     </div>
   );
@@ -161,7 +163,7 @@ function NetFlagRateRow({ card }: { card: TimePressureTcCard }) {
   const tint = tintForNetTimeoutRate(card.net_timeout_rate);
   return (
     <div
-      className="flex text-sm text-muted-foreground tabular-nums mt-2"
+      className="flex text-sm text-muted-foreground tabular-nums mt-3"
       data-testid={`time-pressure-card-${card.tc}-net-flag-rate-row`}
     >
       <span
