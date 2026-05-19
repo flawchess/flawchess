@@ -101,7 +101,18 @@ The eval cohort is per-span at endgame entry (user-perspective cp; mate excluded
 
 ## Deviations from Plan
 
-None. Plan executed exactly as written.
+None during the plan tasks. One post-checkpoint fix during human UAT (commit `a7e99a7a`):
+the shared `EvalConfidenceTooltip` was hardcoded with the openings phrasing
+("average Stockfish eval at the *end* of your openings"), which mislabeled the
+Endgames Games-subtab Eval bullet (the underlying math was already correct —
+endgame span-entry `eval_cp` via `compute_eval_confidence_bucket`; this was a copy
+bug, not a math bug). Added an `evalContext: 'opening-end' | 'endgame-entry'` prop
+threaded `PositionResultsPanel → BulletConfidencePopover → EvalConfidenceTooltip`.
+In `endgame-entry` mode the copy now reads "average Stockfish eval at the position
+where the endgame begins" and the opening-only per-color +0.25 baseline tick (and
+its legend line) is dropped, matching the Stats-tab "Endgame Entry Eval" framing.
+Openings/move-explorer unchanged (default `opening-end`). Gates re-run green:
+tsc/lint/knip clean, frontend 576 passed.
 
 ## Known Stubs
 
