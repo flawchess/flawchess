@@ -147,7 +147,7 @@ export function EndgameMetricCard({
       : undefined;
   const gapLevel = deriveLevel(scoreGapPValue ?? null, gapN);
 
-  const sharePctFormatted = sharePct.toFixed(1);
+  const sharePctFormatted = Math.round(sharePct);
   const gamesCountFormatted = row.games.toLocaleString();
 
   return (

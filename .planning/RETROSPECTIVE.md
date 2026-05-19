@@ -2,6 +2,48 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+## Milestone: v1.17 — Endgame Stats Card Redesign
+
+**Shipped:** 2026-05-19
+**Phases:** 13 (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4) | **Plans:** ~54 | **Delivered via:** PRs #89–#117
+**Stats:** 603 files changed, +82,473 / -9,393 lines, 203 commits over 8 days (2026-05-11 → 2026-05-19) since v1.16 (commit 4075431d → 114211c2)
+**Source:** `.planning/notes/endgame-stats-card-redesign.md` — a frontend table→card refactor that became a statistical-rigor milestone.
+
+### What Was Built
+
+Three table-driven Endgames-page sections replaced with the WDL + ScoreBullet card pattern. Eval-based per-span ΔES Score Gap bullets anchored to the Stockfish baseline replaced the mathematically degenerate rate-based mirror-bucket peer-diff. Hypothesis tests (two-sample z, paired one-sample z) + 95% CI whiskers on Endgame Score Differences. Endgame Skill concept dropped end-to-end; timeline rebuilt as Endgame ELO via a logistic stretch around Actual ELO. Time Pressure reworked with benchmark-calibrated zones and a zone-banded line chart. Inactivity-gap break annotations on all 6 ordinal-axis timeline charts.
+
+### What Worked
+
+- **Replan-in-place + inserted decimal phases** absorbed a large scope expansion (5 planned → 13 shipped) without a milestone reset. Each redesign exposing the next measurement flaw became its own tight phase rather than ballooning one.
+- **Math-first scrutiny before UI commit** killed two dead ends cheaply: the degenerate rate-based peer-diff (Phase 87.2) and the percentile-composite Endgame Skill (Phase 87.3, retracted at UAT before shipping).
+- **Benchmarks as the source of truth** for zone calibration kept the Time Pressure rework grounded rather than eyeballed.
+
+### What Was Inefficient
+
+- The Endgame ELO formula churned through four designs (Phase 57 multiplicative → 87.4 Conv ΔES affine → 87.5 additive-K → 87.6 logistic stretch) before landing on an invariant-preserving mapping. Earlier insistence on the "Actual ELO between the lines" invariant as a hard constraint would have shortened the path.
+- Phases 85/85.1/86 shipped via direct push to main (no PR), diverging from the PR-per-phase norm and leaving the top-level ROADMAP `<details>` block badly stale by milestone close (every shipped phase still marked "planned").
+
+### Patterns Established
+
+- **Single-bullet doctrine** — one self-calibrating peer bullet per Conv/Parity/Recov + per-type card; cohort/p50 bullets dropped as rating-tier confounds.
+- **Eval-anchored ΔES Score Gap** as the canonical per-span performance signal, replacing rate-based peer differencing.
+- **Invariant-as-construction** for derived ELO lines (`eg_elo + non_eg_elo == 2·actual_elo` by the logistic stretch, not by post-hoc clamping).
+
+### Key Lessons
+
+- When a peer/diff metric can be derived algebraically from another, check for degeneracy *before* building the UI — Conv-Gap ≡ Recov-Gap was provable on paper.
+- A composite "skill" number is a trap unless it survives cohort-deconfound, individual interpretation, temporal stability, and the median-coincide invariant simultaneously. Dropping it was the right call.
+- Keep the ROADMAP `<details>` block updated as phases ship even when pushing direct-to-main; reconciling 13 stale entries at close is error-prone.
+
+### Cost Observations
+
+- Model mix: predominantly opus (statistical-rigor + design-judgment heavy milestone).
+- Sessions: many short inserted-phase cycles rather than a few long ones.
+- Notable: the inserted-phase cadence kept individual context windows small and focused; the cost was reconciliation overhead at close.
+
+---
+
 ## Milestone: v1.16 — Stockfish Eval Analyses
 
 **Shipped:** 2026-05-11
@@ -655,6 +697,9 @@
 | v1.12 | 1 | 6 | Benchmark DB infrastructure & ingestion pipeline; scope-down deferred analysis phases to SEED-006 |
 | v1.13 | 3 | 14 | Templated opening insights: SQL transition aggregation, deep-link wiring, subnav refactor |
 | v1.14 | 3 | 16 | Score-based opening insights: trinomial Wald confidence, effect size + confidence as orthogonal cues, troll watermark |
+| v1.15 | 2 | 10 | Eval-based endgame classification: Stockfish hard cutover, per-position phase column, proxy deleted |
+| v1.16 | 5 | 24 | Stockfish eval analyses: opening-stats eval column, transposition WDL, Start-vs-End tiles, LLM prompt awareness |
+| v1.17 | 13 | ~54 | Endgame stats card redesign → statistical-rigor pass; inserted-decimal cadence absorbed a 5→13 phase scope expansion; Endgame Skill dropped, ELO rebuilt as invariant-preserving logistic stretch |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -670,3 +715,5 @@
 10. CI structural assertions (single-implementation, threshold lock-step) catch refactoring drift cheaply (v1.13 + v1.14)
 11. Iteration via inline hotfixes / quick tasks is a feature — don't fight it, structure for it (v1.13 + v1.14 both used the inline hotfix loop to land calibrated end states that pre-locked specs couldn't have)
 12. Smoke real data before locking statistical specs — v1.14's three confidence-bucket pivots cost real REQUIREMENTS rewrites that a 30-min discuss-phase smoke would have prevented
+13. Check derived/peer metrics for algebraic degeneracy before building the UI — v1.17's Conv-Gap ≡ Recov-Gap mirror identity was provable on paper; a composite "skill" number is a trap unless it survives cohort-deconfound + individual-interpretation + temporal-stability + median-coincide simultaneously
+14. Keep the ROADMAP `<details>` block current as phases ship even when pushing direct-to-main — v1.17 reconciled 13 stale "planned" entries at close, which is error-prone

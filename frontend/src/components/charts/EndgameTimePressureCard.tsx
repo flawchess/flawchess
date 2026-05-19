@@ -59,15 +59,15 @@ function formatPct(pct: number | null): string {
 }
 
 /**
- * Format the net flag rate as a signed percentage with one decimal point.
+ * Format the net flag rate as a signed, integer-rounded percentage.
  * rate is a fraction (0.005 = 0.5%) multiplied by 100 for display.
- * Always shows a sign except for 0.0%.
+ * Always shows a sign except for 0%.
  */
 function formatNetTimeoutRate(rate: number): string {
-  const pct = rate * 100;
-  if (pct === 0) return '0.0%';
+  const pct = Math.round(rate * 100);
+  if (pct === 0) return '0%';
   const sign = pct > 0 ? '+' : '';
-  return `${sign}${pct.toFixed(1)}%`;
+  return `${sign}${pct}%`;
 }
 
 /**
@@ -97,7 +97,7 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
   const neutralMax = CLOCK_GAP_NEUTRAL_MAX;
   const isInColoredZone = gap.mean_diff_pct >= neutralMax || gap.mean_diff_pct <= neutralMin;
   const showFontColor = gap.n >= MIN_GAMES_PER_PRESSURE_BIN && isConfident(level) && isInColoredZone;
-  const signedPct = (gap.mean_diff_pct * 100).toFixed(1);
+  const signedPct = Math.round(gap.mean_diff_pct * 100);
   const formattedGapValue = `${gap.mean_diff_pct >= 0 ? '+' : ''}${signedPct}%`;
 
   const fontColor = showFontColor
@@ -236,18 +236,6 @@ export function EndgameTimePressureCard({
             text-base heading. */}
         <TimeControlIcon timeControl={card.tc} className="h-4 w-4 shrink-0" />
         <span>{tcLabel}</span>
-        <InfoPopover
-          ariaLabel={`${tcLabel} time pressure info`}
-          testId={`time-pressure-card-${card.tc}-title-info`}
-          side="top"
-        >
-          <p>
-            <strong>{tcLabel} Time Pressure:</strong> how your endgame
-            performance shifts as your clock runs down in {tcLabel} games. The
-            top row summarises your overall clock situation and flag rate; the
-            chart below shows performance by how much time you had left.
-          </p>
-        </InfoPopover>
         {/* Post-UAT (round 2): game count right-aligned, "Games: X% (N)"
             framing with a sword icon. The percentage is this TC's share of
             the user's filtered games (computed at the section level so all
@@ -269,10 +257,22 @@ export function EndgameTimePressureCard({
             The ClockGapHeaderRow sits ABOVE the bullet, replacing the old label row. */}
         <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
           <p
-            className="text-sm font-medium text-muted-foreground mb-2"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
             data-testid={`time-pressure-card-${card.tc}-top-zone-subtitle`}
           >
             Remaining Time at Endgame Entry
+            <InfoPopover
+              ariaLabel={`${tcLabel} remaining time info`}
+              testId={`time-pressure-card-${card.tc}-top-zone-info`}
+              side="top"
+            >
+              <p>
+                This section is about time management <em>before</em> the
+                endgame: how much clock time you and your opponents have left
+                on average when endgames begin, plus your net flag rate
+                (timeout wins minus flag losses).
+              </p>
+            </InfoPopover>
           </p>
           <ClockGapHeaderRow gap={gap} card={card} />
           <div
@@ -287,7 +287,7 @@ export function EndgameTimePressureCard({
               domain={CLOCK_GAP_DOMAIN}
               ciLow={gap.ci_low != null ? clampDeltaCi(gap.ci_low) : undefined}
               ciHigh={gap.ci_high != null ? clampDeltaCi(gap.ci_high) : undefined}
-              ariaLabel={`Clock Gap: ${gap.mean_diff_pct >= 0 ? '+' : ''}${(gap.mean_diff_pct * 100).toFixed(1)}%`}
+              ariaLabel={`Clock Gap: ${gap.mean_diff_pct >= 0 ? '+' : ''}${Math.round(gap.mean_diff_pct * 100)}%`}
               barColor="neutral"
             />
           </div>
@@ -301,10 +301,31 @@ export function EndgameTimePressureCard({
             ScoreGapByTimePressureChart (line chart with zone bands). */}
         <div>
           <p
-            className="text-sm font-medium text-muted-foreground mb-2"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
             data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
           >
             Score Gap by Remaining Time
+            <InfoPopover
+              ariaLabel={`${tcLabel} score gap by remaining time info`}
+              testId={`time-pressure-card-${card.tc}-quintiles-info`}
+              side="top"
+            >
+              <div className="space-y-2">
+                <p>
+                  This breaks your endgames into buckets by how much of your
+                  clock was left, and in each bucket compares your score
+                  against opponents who were under the <em>same amount</em> of
+                  time pressure. A positive gap means you outscored
+                  comparably-pressured opponents; a negative gap means they
+                  outscored you.
+                </p>
+                <p>
+                  Each marker is sized by how many of that time bucket's games were
+                  yours versus your opponents'. A bigger dot means you were in this
+                  time pressure situation more often than your opponents.
+                </p>
+              </div>
+            </InfoPopover>
           </p>
           <div data-testid={`time-pressure-card-${card.tc}-score-gap-chart`}>
             <ScoreGapByTimePressureChart quintiles={card.quintiles} tc={card.tc} />

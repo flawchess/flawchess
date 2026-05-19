@@ -77,7 +77,7 @@ export function EndgameCard({
   const showWdl = total > 0;
   const showScoreRow = total >= MIN_GAMES_FOR_RELIABLE_STATS;
   const scorePct = `${Math.round(score * 100)}%`;
-  const sharePct = `${(gamesShare * 100).toFixed(1)}%`;
+  const sharePct = `${Math.round(gamesShare * 100)}%`;
   const gamesCountFormatted = total.toLocaleString();
 
   return (

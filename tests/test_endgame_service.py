@@ -8,6 +8,7 @@ Tests cover:
 - get_endgame_timeline: rolling-window time series
 - _extract_entry_clocks: ply-parity clock extraction (Phase 54)
 - _compute_time_pressure_cards: per-TC pressure cards with quintile deltas (Phase 88)
+- quick task 260519-lu0: WDLStats-aligned score/eval/last_played_at via shared helpers
 """
 
 import datetime
@@ -896,6 +897,176 @@ class TestAggregateEndgameStatsTypeScoreGap:
         assert rook.type_achievable_score_gap_mean is not None
         # ES_entry at cp=0 ≈ 0.5; exit_score (mate for white) = 1.0; gap ≈ +0.5.
         assert rook.type_achievable_score_gap_mean == pytest.approx(0.5, abs=1e-9)
+
+
+class TestStartEndScoreMeans:
+    """quick-260519-ni3 (Task 1): per-class start/end predicted score means.
+
+    Asserts the reconciliation invariant: end_mean - start_mean == gap_mean
+    (within float tolerance 1e-9) for every class over the identical span cohort.
+    Also covers the null-when-n==0 contract and two-class independence.
+    """
+
+    @staticmethod
+    def _gap_row(
+        game_id: int,
+        endgame_class_int: int,
+        result: str,
+        user_color: str,
+        eval_cp: int | None,
+        eval_mate: int | None,
+        next_entry_eval_cp: int | None = None,
+        next_entry_eval_mate: int | None = None,
+    ) -> tuple[Any, ...]:
+        return (
+            game_id,
+            endgame_class_int,
+            result,
+            user_color,
+            eval_cp,
+            eval_mate,
+            next_entry_eval_cp,
+            next_entry_eval_mate,
+        )
+
+    def test_new_fields_present_on_schema(self) -> None:
+        """type_achievable_score_start_mean / _end_mean attributes exist on EndgameCategoryStats."""
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert hasattr(rook, "type_achievable_score_start_mean")
+        assert hasattr(rook, "type_achievable_score_end_mean")
+
+    def test_start_end_null_when_n_zero(self) -> None:
+        """All spans have NULL entry eval → start/end means are None (same gate as gap_mean)."""
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", None, None),
+            self._gap_row(2, 1, "0-1", "white", None, None),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.type_achievable_score_gap_n == 0
+        assert rook.type_achievable_score_start_mean is None
+        assert rook.type_achievable_score_end_mean is None
+
+    def test_reconciliation_invariant_terminal_spans(self) -> None:
+        """end_mean - start_mean == gap_mean for a 3-span hand-computed rook fixture (terminal spans).
+
+        Fixture:
+          Span 1: entry cp=100, white wins → es_entry=ES(100,white), exit=1.0
+          Span 2: entry cp=-200, white draws → es_entry=ES(-200,white), exit=0.5
+          Span 3: entry cp=0, white wins (transitory, next cp=300) → exit=ES(300,white)
+
+        Reconciliation: gap_i = exit_i - start_i, so
+          mean(exit) - mean(start) = mean(exit - start) = mean(gap) exactly.
+        """
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),
+            self._gap_row(2, 1, "1/2-1/2", "white", -200, None),
+            self._gap_row(3, 1, "1-0", "white", 0, None, next_entry_eval_cp=300),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+
+        assert rook.type_achievable_score_gap_n == 3
+        assert rook.type_achievable_score_gap_mean is not None
+        assert rook.type_achievable_score_start_mean is not None
+        assert rook.type_achievable_score_end_mean is not None
+
+        # Hand-compute expected values
+        starts = [
+            eval_cp_to_expected_score(100, "white"),
+            eval_cp_to_expected_score(-200, "white"),
+            eval_cp_to_expected_score(0, "white"),
+        ]
+        ends = [
+            1.0,
+            0.5,
+            eval_cp_to_expected_score(300, "white"),
+        ]
+        expected_start = sum(starts) / 3
+        expected_end = sum(ends) / 3
+        expected_gap = sum(e - s for e, s in zip(ends, starts)) / 3
+
+        assert rook.type_achievable_score_start_mean == pytest.approx(expected_start, abs=1e-9)
+        assert rook.type_achievable_score_end_mean == pytest.approx(expected_end, abs=1e-9)
+        assert rook.type_achievable_score_gap_mean == pytest.approx(expected_gap, abs=1e-9)
+
+        # Core reconciliation invariant: end_mean - start_mean == gap_mean exactly
+        assert (
+            rook.type_achievable_score_end_mean - rook.type_achievable_score_start_mean
+            == pytest.approx(rook.type_achievable_score_gap_mean, abs=1e-9)
+        )
+
+    def test_reconciliation_invariant_two_classes(self) -> None:
+        """Reconciliation holds independently for two classes (rook + queen)."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        rows = [
+            # Rook: 2 terminal spans
+            self._gap_row(1, 1, "1-0", "white", 50, None),
+            self._gap_row(2, 1, "0-1", "white", -100, None),
+            # Queen: 1 transitory + 1 terminal
+            self._gap_row(3, 4, "1-0", "white", 200, None, next_entry_eval_cp=500),
+            self._gap_row(4, 4, "0-1", "black", 0, None),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        queen = next(c for c in result if c.endgame_class == "queen")
+
+        for cat in (rook, queen):
+            assert cat.type_achievable_score_start_mean is not None
+            assert cat.type_achievable_score_end_mean is not None
+            assert cat.type_achievable_score_gap_mean is not None
+            # Reconciliation: end_mean - start_mean == gap_mean (tol 1e-9)
+            assert (
+                cat.type_achievable_score_end_mean - cat.type_achievable_score_start_mean
+                == pytest.approx(cat.type_achievable_score_gap_mean, abs=1e-9)
+            )
+
+        # Spot-check rook start
+        rook_starts = [
+            eval_cp_to_expected_score(50, "white"),
+            eval_cp_to_expected_score(-100, "white"),
+        ]
+        assert rook.type_achievable_score_start_mean == pytest.approx(
+            sum(rook_starts) / 2, abs=1e-9
+        )
+
+    def test_null_eval_spans_excluded_from_start_end(self) -> None:
+        """Mixed cohort: NULL-eval spans excluded; start/end computed only over eligible spans."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),  # eligible
+            self._gap_row(2, 1, "0-1", "white", None, None),  # excluded (NULL eval)
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+
+        assert rook.type_achievable_score_gap_n == 1
+        assert rook.type_achievable_score_start_mean is not None
+        assert rook.type_achievable_score_start_mean == pytest.approx(
+            eval_cp_to_expected_score(100, "white"), abs=1e-9
+        )
+        # Terminal win → exit_score = 1.0
+        assert rook.type_achievable_score_end_mean == pytest.approx(1.0, abs=1e-9)
+
+    def test_per_bucket_path_unchanged(self) -> None:
+        """gaps_by_bucket still receives only gap values (not start/end) — per-bucket path intact."""
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),
+            self._gap_row(2, 1, "0-1", "white", -200, None),
+        ]
+        _, gaps_by_bucket = _aggregate_endgame_stats(rows)
+        # Each bucket entry is a float (the gap), not a tuple or dict
+        for bucket_gaps in gaps_by_bucket.values():
+            for g in bucket_gaps:
+                assert isinstance(g, float)
 
 
 class TestGetEndgameStatsSmoke:
@@ -3775,3 +3946,177 @@ class TestPhase872PerBucketDeltaES:
 
 # Phase 87.4 (D-05): TestEndgameSkillRateMean class deleted alongside the
 # endgame_skill_rate_mean field on ScoreGapMaterialResponse.
+
+
+# ── Quick task 260519-lu0: WDLStats-aligned score/eval/last_played_at fields ──
+
+
+class TestEndgameCategoryStatsWdlAlignedFields:
+    """Quick task 260519-lu0: EndgameCategoryStats now carries WDLStats-aligned
+    score/eval/last_played_at fields populated via the same shared helpers as the
+    openings stats path (_build_wdl_stats + compute_eval_confidence_bucket).
+    """
+
+    # ── Reuse equality tests ──────────────────────────────────────────────────
+
+    def test_score_equals_build_wdl_stats(self) -> None:
+        """score/confidence/ci_low/ci_high/p_value equal _build_wdl_stats for same W/D/L."""
+        from app.services.openings_service import _build_wdl_stats
+
+        # 30W 5D 5L on rook (class_int=1) in parity bucket (eval ~0).
+        rows = [(i + 1, 1, "1-0", "white", 0, None) for i in range(30)]
+        rows += [(i + 31, 1, "1/2-1/2", "white", 0, None) for i in range(5)]
+        rows += [(i + 36, 1, "0-1", "white", 0, None) for i in range(5)]
+
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+
+        reference = _build_wdl_stats(30, 5, 5, 40)
+        assert rook.score == pytest.approx(reference.score, abs=1e-9)
+        assert rook.confidence == reference.confidence
+        assert rook.ci_low == pytest.approx(reference.ci_low, abs=1e-9)
+        assert rook.ci_high == pytest.approx(reference.ci_high, abs=1e-9)
+        assert rook.p_value == pytest.approx(reference.p_value, abs=1e-9)
+
+    def test_score_p_value_gated_below_n10_backward_compat(self) -> None:
+        """score_p_value stays None when total < PVALUE_RELIABILITY_MIN_N=10.
+
+        Regression guard: EndgameTypeCard Stats subtab reads score_p_value (the
+        gated field), NOT the new ungated p_value. Both must exist and the gated
+        one must be None below the threshold.
+        """
+        # 5 games — below the n=10 gate.
+        rows = [(i + 1, 1, "1-0", "white", 0, None) for i in range(5)]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        # Gated field (existing, backward compat) must be None.
+        assert rook.score_p_value is None
+        # New ungated p_value field is always populated.
+        assert rook.p_value is not None
+        assert isinstance(rook.p_value, float)
+
+    # ── Eval cohort tests ─────────────────────────────────────────────────────
+
+    def test_eval_equals_compute_eval_confidence_bucket(self) -> None:
+        """avg_eval_pawns/eval_ci_*/eval_n/eval_p_value/eval_confidence equal
+        compute_eval_confidence_bucket over the same user-perspective cohort.
+        """
+        from app.services.eval_confidence import compute_eval_confidence_bucket
+
+        # 20 parity-bucket rows (for WDL), each at +200 cp white-perspective.
+        # user_color=white → user_cp = +200 cp each.
+        rows = [(i + 1, 1, "1-0", "white", 200, None) for i in range(20)]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+
+        # Reference: compute_eval_confidence_bucket over 20 identical user_cp=200 values.
+        eval_sum = 200.0 * 20
+        eval_sumsq = 200.0 ** 2 * 20
+        eval_n = 20
+        ref_conf, ref_pval, ref_mean_cp, ref_ci_half = compute_eval_confidence_bucket(
+            eval_sum, eval_sumsq, eval_n
+        )
+
+        assert rook.eval_n == eval_n
+        assert rook.avg_eval_pawns == pytest.approx(ref_mean_cp / 100.0, abs=1e-9)
+        assert rook.eval_ci_low_pawns == pytest.approx((ref_mean_cp - ref_ci_half) / 100.0, abs=1e-9)
+        assert rook.eval_ci_high_pawns == pytest.approx((ref_mean_cp + ref_ci_half) / 100.0, abs=1e-9)
+        assert rook.eval_p_value == pytest.approx(ref_pval, abs=1e-9)
+        assert rook.eval_confidence == ref_conf
+
+    def test_eval_sign_flip_for_black_user(self) -> None:
+        """Black-user rows: user_cp = -eval_cp. eval_cp=+200 → user_cp=-200 (disadvantage)."""
+        rows = [(i + 1, 1, "1-0", "black", 200, None) for i in range(20)]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        # Black perspective: eval_cp=+200 (white advantage) → user_cp=-200.
+        assert rook.avg_eval_pawns is not None
+        assert rook.avg_eval_pawns < 0  # negative = user is behind
+
+    def test_eval_outlier_trim_excluded(self) -> None:
+        """Rows with |eval_cp| >= EVAL_OUTLIER_TRIM_CP=2000 must NOT enter eval cohort."""
+        from app.repositories.stats_repository import EVAL_OUTLIER_TRIM_CP
+
+        # 5 normal rows (user_cp=100) + 1 outlier (eval_cp=2000, excluded) + 1 exact boundary (2001, excluded).
+        normal_rows = [(i + 1, 1, "1-0", "white", 100, None) for i in range(5)]
+        outlier_row = (6, 1, "1-0", "white", EVAL_OUTLIER_TRIM_CP, None)     # |cp|=2000 → excluded
+        over_row = (7, 1, "1-0", "white", EVAL_OUTLIER_TRIM_CP + 1, None)    # |cp|=2001 → excluded
+        all_rows = normal_rows + [outlier_row, over_row]
+        result, _ = _aggregate_endgame_stats(all_rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        # Outlier rows excluded → eval_n = 5 (only the normal rows).
+        assert rook.eval_n == 5
+
+    def test_eval_mate_row_excluded(self) -> None:
+        """Rows with eval_mate is not None must be excluded from the eval cohort."""
+        # 5 normal rows + 5 mate rows (eval_mate set → excluded).
+        normal_rows = [(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]
+        mate_rows = [(i + 6, 1, "1-0", "white", None, 3) for i in range(5)]  # eval_mate=3 (in 3 moves)
+        result, _ = _aggregate_endgame_stats(normal_rows + mate_rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.eval_n == 5  # only the normal rows
+
+    def test_eval_null_cp_excluded(self) -> None:
+        """Rows with eval_cp=None (engine not backfilled) must be excluded from eval cohort."""
+        normal_rows = [(i + 1, 1, "1-0", "white", 100, None) for i in range(3)]
+        null_eval_rows = [(i + 4, 1, "1-0", "white", None, None) for i in range(3)]
+        result, _ = _aggregate_endgame_stats(normal_rows + null_eval_rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.eval_n == 3
+
+    def test_eval_fields_null_when_no_eligible_rows(self) -> None:
+        """When all rows have eval_mate set, eval_n=0 and all eval fields are None/default."""
+        rows = [(i + 1, 1, "1-0", "white", None, 2) for i in range(10)]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.eval_n == 0
+        assert rook.avg_eval_pawns is None
+        assert rook.eval_ci_low_pawns is None
+        assert rook.eval_ci_high_pawns is None
+        assert rook.eval_p_value is None
+        assert rook.eval_confidence == "low"
+
+    # ── eval_baseline_pawns ───────────────────────────────────────────────────
+
+    def test_eval_baseline_pawns_is_white_baseline(self) -> None:
+        """eval_baseline_pawns must equal EVAL_BASELINE_PAWNS_WHITE (color-agnostic, D-02)."""
+        from app.services.opening_insights_constants import EVAL_BASELINE_PAWNS_WHITE
+
+        rows = [(1, 1, "1-0", "white", 0, None)]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.eval_baseline_pawns == EVAL_BASELINE_PAWNS_WHITE
+
+    # ── last_played_at ────────────────────────────────────────────────────────
+
+    def test_last_played_at_max_across_rows(self) -> None:
+        """last_played_at is MAX(played_at) across the category's span rows."""
+        older = datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)
+        newer = datetime.datetime(2026, 5, 1, tzinfo=datetime.timezone.utc)
+        # 9-tuple rows (with played_at in position 8).
+        rows: list[tuple] = [
+            (1, 1, "1-0", "white", 0, None, None, None, older),
+            (2, 1, "0-1", "white", 0, None, None, None, newer),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.last_played_at == newer
+
+    def test_last_played_at_none_when_all_missing(self) -> None:
+        """Legacy 6-tuple fixtures have no played_at → last_played_at is None."""
+        rows = [(1, 1, "1-0", "white", 0, None), (2, 1, "0-1", "white", 0, None)]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.last_played_at is None
+
+    # ── eval_n==1 edge case (no CI) ───────────────────────────────────────────
+
+    def test_eval_ci_none_when_n_is_one(self) -> None:
+        """eval_ci_low/high_pawns are None when eval_n < 2 (not enough for a CI)."""
+        rows = [(1, 1, "1-0", "white", 150, None)]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.eval_n == 1
+        assert rook.avg_eval_pawns is not None
+        assert rook.eval_ci_low_pawns is None
+        assert rook.eval_ci_high_pawns is None

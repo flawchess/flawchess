@@ -134,29 +134,11 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - ✓ LLM endgame-insights prompt awareness of Start vs End metrics — `MetricId` + `SubsectionId` Literal extensions, `ZONE_REGISTRY` entries for `entry_eval_pawns` (band ±0.5 after D-08 tightening) + `endgame_score` (band [0.45, 0.55]); prompt version `endgame_v23` → `endgame_v24` — v1.16 Phase 82
 - ✓ Stockfish-baseline predicted endgame score — `eval_cp_to_expected_score` (Lichess sigmoid k=0.00368208) + `eval_mate_to_expected_score`; 5 new `EndgamePerformanceResponse` fields (`entry_expected_score`, `_n`, `_p_value`, `_ci_low`, `_ci_high`); 2x2 grid restructure of Start vs End (Where you start + What you do with it × Stockfish baseline + your achieved); LLM prompt `endgame_v25` → `endgame_v26` narrates achievable-vs-achieved gap as headline diagnostic. Closes SEED-014 — v1.16 Phase 83
 
-### Active (v1.17 — Endgame Stats Card Redesign)
+- ✓ Endgames page table→card redesign (Sections 1–3 on the WDL + ScoreBullet card pattern); eval-based ΔES Score Gap replacing the degenerate rate-based mirror-bucket peer-diff; hypothesis tests + 95% CIs on Endgame Score Differences; Endgame Skill dropped end-to-end and the timeline rebuilt as Endgame ELO via a logistic stretch around Actual ELO; full Time Pressure rework with benchmark-calibrated zones; inactivity-gap annotations on all 6 ordinal-axis timeline charts — v1.17 Phases 84–88.4 (Phase 89 Polish dropped; 87.3 percentile composite superseded by 87.4→87.6)
 
-**Goal:** Replace three table-driven sections on the Endgames page with the established WDL + ScoreBullet card pattern from `EndgameStartVsEndSection.tsx` / `OpeningStatsCard.tsx`, so gauge and bullet tell one coherent population-relative story while a second peer bullet preserves the self-calibrating "vs your actual opponents" signal.
+### Active (next milestone — TBD)
 
-**Target features (source: `.planning/notes/endgame-stats-card-redesign.md`):**
-
-- Section 1 — Games with vs without Endgame: two side-by-side cards (No / Yes) each with WDL bar + Score row + cohort score bullet vs 50%, plus a full-width Score Gap footer bullet (Yes − No vs 0). Replaces `EndgamePerformanceSection`.
-- Section 2 — Endgame Metrics: 4 cards (Conversion, Parity, Recovery, Skill). Conv/Parity/Recov share an identical layout: gauge → percent → WDL → cohort bullet vs p50 → peer bullet (`You − Opp` vs 0). Skill card has no WDL bar and no peer bullet. Replaces `EndgameScoreGapSection` table + 4-gauge strip.
-- Section 3 — Endgame Type Breakdown: 5 per-type cards (rook, minor_piece, pawn, queen, mixed). Each card has side-by-side Conv + Recov gauges, WDL bar, Conv cohort + peer bullets, Recov cohort + peer bullets, and a Games link. Removes grouped `EndgameWDLChart`; extends `EndgameConvRecovChart` into full cards.
-
-**Key design properties:**
-
-- **Two-bullet doctrine on Conv/Parity/Recov + Section 3 per-type cards:** cohort bullet vs global p50 (population frame, Wilson sig) + peer bullet vs 0 on `You − Opp` (filter-responsive self-calibrating frame, Wald-z sig). Reuses existing `MIRROR_BUCKET` / `MIN_OPPONENT_BASELINE_GAMES` mirror logic.
-- **Accepted property of the cohort frame:** p50 anchors from `reports/benchmarks-2026-05-10.md` §171-177 are pooled across all rating × TC cells. Verdict is rating-tier signal mixed with within-tier skill. Document in popover; cell-specific cohort baselines deferred. Peer bullet partially compensates with a tier-independent read.
-- **Parity peer bullet is statistically redundant** with its cohort bullet at p50 = 0.500 (kept for v1.17 layout uniformity; revisit after build).
-- **Mobile-density fallback on Section 3:** if real-device testing reveals scroll bloat, peer bullets are the first to drop on Section 3.
-
-**Out of scope for v1.17:**
-
-- Backend changes — all stats (Conv/Parity/Recov rates, cohort bands, WDL aggregates, score-gap, per-type, mirror-bucket rates) already exist on the response schema.
-- New statistical methods — reuses existing Wilson CI / p-value / `scoreConfidence` / `wilsonBounds` / `computeScoreConfidence` infra.
-- Benchmark refresh — uses the existing 2026-05-10 percentile table.
-- Cell-specific (rating × TC) cohort baselines — deferred to a future benchmarks pass.
+Defined by the next `/gsd:new-milestone`. v1.17 shipped 2026-05-19.
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -176,7 +158,9 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 
 ## Current State
 
-v1.16 Stockfish Eval Analyses shipped 2026-05-11 — 5 phases (80, 80.1, 81, 82, 83), 24 plans, 118 commits over 7 days, delivered via PRs #80, #82, #85, #86, #88. Sixteen milestones complete (v1.0–v1.16), 80 phases (+5 inserted: 27.1, 28.1, 41.1, 57.1, 71.1, plus mid-milestone 80.1), live at flawchess.com.
+v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117. Seventeen milestones complete (v1.0–v1.17), live at flawchess.com. The three table-driven Endgames-page sections (`EndgamePerformanceSection`, `EndgameScoreGapSection`, grouped `EndgameWDLChart`/`EndgameConvRecovChart`) are gone, replaced by the WDL + ScoreBullet card pattern. What began as a layout refactor became a statistical-rigor pass: the rate-based mirror-bucket peer-diff bullet (mathematically degenerate — Conv-Gap ≡ Recov-Gap by mirror symmetry) was retired for an eval-based per-span ΔES Score Gap anchored to the Stockfish baseline; Endgame Score Differences gained two-sample z + paired one-sample z hypothesis tests with 95% CI whiskers; the Endgame Skill concept was dropped entirely and the timeline rebuilt as Endgame ELO via a logistic stretch around Actual ELO (`endgame_elo + non_endgame_elo == 2·actual_elo`, fixing the sigmoid bias and the violated "Actual ELO between the lines" invariant); Time Pressure was reworked with benchmark-calibrated `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` and a zone-banded zero-centered line chart; and all 6 ordinal-axis timeline charts gained inactivity-gap break annotations. Phase 89 (Polish) dropped from scope; 87.3 percentile composite superseded by 87.4→87.6. LLM endgame prompt advanced `endgame_v26` → `endgame_v35` across the milestone.
+
+v1.16 Stockfish Eval Analyses shipped 2026-05-11 — 5 phases (80, 80.1, 81, 82, 83), 24 plans, 118 commits over 7 days, delivered via PRs #80, #82, #85, #86, #88. 80 phases before v1.17 (+5 inserted: 27.1, 28.1, 41.1, 57.1, 71.1, plus mid-milestone 80.1).
 
 The Endgame Start vs End section above the Endgame Overall Performance WDL table is now a 2×2 grid: rows are "Where you start" (entry eval, in pawns) and "What you do with it" (achieved endgame score); columns are Stockfish baseline (predicted via Lichess sigmoid `1/(1+exp(-k·cp))`, k=0.00368208) and the user's measured value. Each tile carries a sig-tested verdict (Wald-z for entry eval vs 0; Wilson for endgame_score vs 50%; Wilson for entry_expected_score vs achieved endgame_score) with three-state color and `n ≥ 10` reliability gate; mobile stacks chronologically setup → execution. LLM narration (`endgame_v26`) frames the achievable-vs-achieved gap as the headline diagnostic and uses tightened cohort bands (entry_eval_pawns ±0.5; endgame_score [0.45, 0.55]) so borderline-but-significant findings land in `zone="typical"` and stay silent. The aggregation runs against `query_endgame_bucket_rows` (one row per game, eval at chronologically first endgame position) so `entry_eval_n + mate_excluded + null_excluded == endgame_wdl.total` by construction.
 
@@ -344,6 +328,12 @@ v1.12 Benchmark DB Infrastructure & Ingestion Pipeline shipped 2026-04-26 (PR #6
 | Lichess sigmoid k=0.00368208 for eval → expected score (Phase 83) | Same constant Lichess uses to color their eval bars; established mapping, no need to retune. `eval_mate` short-circuits to ±1.0 expected score | ✓ Good |
 | 2x2 grid restructure of Start vs End over inserting a third tile (Phase 83) | Stockfish baseline + user achieved now share the same units (W+0.5D ∈ [0,1]) and same visual idiom; the achievable-vs-achieved gap is visually readable instead of requiring LLM prose to translate centipawns → score | ✓ Good |
 | Forbidden-word guarding in prompt assets via regression test scanning the prompt file (Phase 83) | Single source of truth: any narration-guidance line using a forbidden term fails CI before the prompt ships | ✓ Good |
+| Single-bullet doctrine — one peer bullet per Conv/Parity/Recov + Section 3 card (v1.17 Phase 84 pivot) | Cohort/p50 bullets were a rating-tier confound roughly redundant with ELO; one self-calibrating peer frame per card is cleaner | ✓ Good |
+| Eval-based ΔES Score Gap replaces rate-based mirror-bucket peer-diff (v1.17 Phase 87.2) | The rate-based peer-diff was mathematically degenerate: Conv-Gap ≡ Recov-Gap by mirror symmetry, Parity-Gap an affine of `user_parity` — two rows, one signal | ✓ Good |
+| Endgame Skill concept dropped entirely (v1.17 Phase 87.4) | No composite definition (mean / percentile / rate aggregate) survived cohort-deconfound + individual-interpretation + temporal-stability + median-coincide scrutiny | ✓ Good |
+| Endgame ELO = logistic stretch around Actual ELO, `eg_elo + non_eg_elo == 2·actual_elo` (v1.17 Phase 87.6) | Additive-K and FIDE-PR mappings both broke the "Actual ELO between the lines" invariant (~88% of points) and carried sigmoid bias; the stretch is symmetric and invariant-preserving by construction | ✓ Good |
+| Time-pressure zones calibrated from the Lichess benchmark cohort, pooled across ELO within (TC, quintile) (v1.17 Phase 88) | Benchmarks are the source of truth for "typical"; the within-band ELO gradient (stronger players greener) is intended, not noise | ✓ Good |
+| Phase 89 (Polish) dropped at v1.17 close | Popover/gating/automation/375px-parity polish was absorbed incrementally across the inserted phases' UAT cycles; a dedicated phase added no remaining value | — Pending |
 
 ## Evolution
 
@@ -363,7 +353,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-19 — v1.17 in progress. Phase 88.4 (Time Pressure card layout refactor) complete: SC-1 responsive card grid (1/2/3/4-card grid constants in `EndgameTimePressureSection`), SC-2 3-stat "Remaining Time at Endgame Entry" header row (`ClockGapHeaderRow` You/Gap+info/Opp) above the Clock Gap bullet, SC-3 new self-contained `ScoreGapByTimePressureChart` (zone-banded 0-centered line chart + CI whiskers + hover tooltip) replacing the four stacked per-bucket bullets; per-bucket info icons removed. Verified 3/3 must-haves (569 frontend tests green, knip/tsc clean); WR-01 chart-tooltip `text-xs`→`text-sm` fixed per user; 3 in-browser visual UAT items pending in 88.4-HUMAN-UAT.md. Frontend-only, not yet shipped (no PR). Phase 88.3 (Endgame Stats viz refinements) complete: SC-1 inactivity-gap annotations, SC-2 ELO Timeline single-most-active default, SC-3 Overall Performance 2-column card, SC-4 lucide Palmtree break glyph + shared `inactivityGapReferenceLines` helper rolled out to all 6 ordinal-axis timeline charts (verified 13/13 must-haves, status human_needed — 4 visual UAT items, user-approved). v1.17 remaining: Phase 89 (Polish). Prior v1.17 footer note (Phase 84 / two-bullet→single-peer pivot) still applies for the Conv/Parity/Recov doctrine.*
+*Last updated: 2026-05-19 after v1.17 milestone. v1.17 Endgame Stats Card Redesign shipped — 13 phases (84–88.4), ~54 plans, delivered via PRs #89–#117. Phase 89 (Polish) dropped from scope; Phase 87.3 (percentile composite) superseded by 87.4→87.6. Next: `/gsd:new-milestone`.*
 
 *Previous: 2026-05-12 — v1.17 (Endgame Stats Card Redesign) opened. Frontend-only refactor (with Phase 84 as the lone backend touch) replacing 3 table-driven sections on the Endgames page with the WDL+ScoreBullet card pattern.*
 

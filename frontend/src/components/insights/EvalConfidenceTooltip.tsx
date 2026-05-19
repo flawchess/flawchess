@@ -46,6 +46,11 @@ interface EvalConfidenceTooltipProps {
   /** Whether the bullet chart renders a per-color baseline tick. When false
    * (endgame entry eval is color-agnostic), the tick legend line is hidden. */
   showBaselineTick?: boolean;
+  /** Which game phase the averaged eval is sampled at. 'opening-end' (default)
+   * = end of the openings containing this position (move explorer / Openings).
+   * 'endgame-entry' = the position where the endgame begins (Endgames Games
+   * subtab), matching the Stats-tab "Endgame Entry Eval" metric. */
+  evalContext?: 'opening-end' | 'endgame-entry';
 }
 
 /**
@@ -66,13 +71,24 @@ export function EvalConfidenceTooltip({
   evalMeanPawns,
   color,
   showBaselineTick = true,
+  evalContext = 'opening-end',
 }: EvalConfidenceTooltipProps): ReactNode {
   const baselinePawns =
     color === 'white' ? EVAL_BASELINE_PAWNS_WHITE : EVAL_BASELINE_PAWNS_BLACK;
+  const evalPhraseClause =
+    evalContext === 'endgame-entry' ? (
+      <>
+        average Stockfish eval at the position where the <em>endgame begins</em>
+      </>
+    ) : (
+      <>
+        average Stockfish eval at the <em>end</em> of your openings which include this position
+      </>
+    );
   return (
     <div className="text-left space-y-1">
       <p>
-        <strong>{fmtSigned(evalMeanPawns)} pawns</strong> over {gameCount} games (average Stockfish eval at the <em>end</em> of your openings which include this position).
+        <strong>{fmtSigned(evalMeanPawns)} pawns</strong> over {gameCount} games ({evalPhraseClause}).
       </p>
       <p>
         <strong>{headline(level, evalMeanPawns)}</strong> {CONFIDENCE_LABEL[level]} confidence

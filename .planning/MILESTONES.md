@@ -1,5 +1,24 @@
 # Milestones: FlawChess
 
+## v1.17 Endgame Stats Card Redesign (Shipped: 2026-05-19)
+
+**Phases completed:** 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans. Phase 87.3 superseded by 87.4; Phase 89 (Polish) dropped from scope. Delivered via PRs #89–#117.
+**Stats:** 603 files changed, +82,473 / -9,393 lines, 203 commits over 8 days (2026-05-11 → 2026-05-19) since v1.16 (commit 4075431d → 114211c2).
+**Known deferred items at close:** 164 open audit items acknowledged and deferred (see STATE.md Deferred Items) — same historical carry-forward as v1.11–v1.16 (155 misclassified quick-task dirs, 1 diagnosed debug session, 5 long-range todos, 3 dormant SEED-002/006 seeds).
+
+**Definition of done:** Three table-driven Endgames-page sections replaced with the WDL + ScoreBullet card pattern, plus a full statistical-rigor pass (eval-based ΔES Score Gap, hypothesis tests + CIs, Endgame Skill dropped, Endgame ELO rebuilt, Time Pressure reworked).
+
+**Key accomplishments:**
+
+- **Section 1 (Phase 85/85.1)** — 3-card composite (Middlegame / At Entry / Endgame results) replacing the perf table + Start-vs-End twin-tile; two-sample z + paired one-sample z hypothesis tests with 95% CI whiskers on the Score Gap rows.
+- **Section 2 (Phase 86/87.2)** — 4-card Endgame Metrics layout; retired the mathematically degenerate rate-based mirror-bucket peer-diff (Conv-Gap ≡ Recov-Gap) for an eval-based ΔES Score Gap anchored to the Stockfish baseline.
+- **Section 3 (Phase 87/87.1)** — 5 per-type breakdown cards (rook/minor/pawn/queen/mixed) with Conv+Recov gauges, WDL bar, sig-gated chess-score bullet, per-span ΔES Score Gap row, `?type=` deep-links.
+- **Endgame ELO rebuilt (Phase 87.4→87.5→87.6)** — Endgame Skill concept dropped end-to-end; timeline rebuilt as a logistic stretch around Actual ELO (`endgame_elo + non_endgame_elo == 2·actual_elo`), eliminating the sigmoid bias and the violated "Actual ELO between the lines" invariant.
+- **Time Pressure rework (Phase 88/88.4)** — per-TC cards with benchmark-calibrated zones, 3-stat header row, and a zone-banded zero-centered line chart with CI whiskers replacing the stacked per-bucket bullets.
+- **Viz polish (Phase 88.3)** — inactivity-gap break annotations on all 6 ordinal-axis timeline charts; ELO Timeline defaults to the single most-active series; Overall Performance restructured into one responsive 2-column card.
+
+---
+
 ## v1.16 Stockfish Eval Analyses (Shipped: 2026-05-11)
 
 **Phases completed:** 5 phases (80, 80.1, 81, 82, 83), 24 plans, delivered via PRs #80, #82, #85, #86, #88.

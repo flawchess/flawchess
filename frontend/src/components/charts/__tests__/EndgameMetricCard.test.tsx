@@ -114,7 +114,7 @@ describe('EndgameMetricCard — structural render', () => {
         {...DEFAULT_SCORE_GAP_PROPS}
       />,
     );
-    expect(screen.getByText(/Games: 45\.5% \(1,234\)/)).not.toBeNull();
+    expect(screen.getByText(/Games: 46% \(1,234\)/)).not.toBeNull();
   });
 
   it('renders the bucket-with-metric label as title', () => {

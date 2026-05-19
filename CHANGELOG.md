@@ -10,6 +10,21 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- Openings and Endgames *Games* subtabs now show the Score and Eval bullet charts below the WDL chart, matching the move explorer's "Results played as" panel. The Endgames Games subtab reports per-category Wilson score and the eval at endgame entry.
+- Endgame Type Breakdown cards now show per-type Start and End predicted scores flanking the Gap row (Start on the left with a Cpu icon, Gap centered with its info popover, End on the right). End − Start reconciles exactly with the Gap.
+
+### Changed
+
+- The Eval popover on the Endgames Games subtab now reads "average Stockfish eval at the position where the endgame begins" (instead of the openings phrasing), matching the Stats-tab "Endgame Entry Eval" metric.
+- **Score Gap by Remaining Time tooltip splits You/Opp game counts** (post-v1.17 polish). The per-bucket hover tooltip now shows your score and your opponents' score on two separate lines, each with its own game count (`You: 38.0% (40 games)` / `Opp: 55.0% (37 games)`). The two figures come from independent clock-pressure splits of the same game-set, so the counts can legitimately differ; the previous single line showed only one count.
+- **Time Pressure card help moved to per-section info popovers** (post-v1.17 polish). The single card-title info popover is gone. Each of the two sections now carries its own info trigger next to its subtitle: "Remaining Time at Endgame Entry" explains the pre-endgame time-management stats and net flag rate; "Score Gap by Remaining Time" explains the same-pressure opponent comparison and what the marker size encodes (how many of the bucket's games were yours).
+- **Score Gap by Remaining Time markers scale with your sample size** (post-v1.17 polish). Each datapoint dot is now sized by the user/opponent game-count ratio (`n / n_opp`), clamped to a capped range. A bigger marker means more of that bucket's games were yours, so the user-side score is the better-sampled side of the comparison.
+- **Endgame chart axis/tooltip label consistency** (post-v1.17 polish). The "Score Gap by Remaining Time" x-axis caption now renders as an HTML caption matching the "Clock Gap at Endgame Entry" chart, so it is the same size on mobile. The Clock Gap chart's datapoint tooltip label was renamed "Avg clock diff" → "Clock Gap" to match the metric name used elsewhere.
+
+## [v1.17] Endgame Stats Card Redesign — 2026-05-19
+
+### Added
+
 - **Inactivity-gap annotations on all timeline charts** (Phase 88.3). Every ordinal-by-activity timeline chart now marks long inactive stretches with a palm-tree break glyph plus a compact label ("1.1y", "3mo") at each gap longer than 8 weeks, so a flat stretch on the x-axis no longer reads as continuous play. Applied consistently to six charts: Endgame Score Gap over Time, Endgame ELO Timeline, Bookmarked Openings Score over Time, Average Clock Gap over Time, and the Chess.com and Lichess rating charts. Charts with no long gap are unaffected.
 - **Endgames page: restored the "Average Clock Difference over Time" line chart** (Phase 88-15, post-UAT polish). Plots the rolling 100-game mean of (your clock minus opponent's clock) at endgame entry, per ISO week, with per-week game volume bars behind the line and three zone-tinted bands (danger / neutral / success). White line with zone-colored dots. Y-axis auto-expands past the ±30% baseline when a real point would otherwise sit at the edge. Vertical "Clock diff %" Y-axis label on desktop (hidden on mobile). Sits ABOVE the Time Pressure cards grid so the trend story reads first and the per-TC cards act as drilldown. User-approved scope amendment to ROADMAP Phase 88 SC #1 ("replace the line chart with bullet cards"): the bullet-card grid is retained as the primary surface, and the line chart returns alongside as a complementary trend view that the cards (a single time-window snapshot) cannot show.
 - **Endgame Type Score Gap row on each per-type card** (Phase 87.1). Each Endgame Type Breakdown card (rook, minor piece, pawn, queen, mixed) gains a new "Score Gap" row showing the average per-span gap between exit score and Stockfish-baseline expected score at span entry. Positive means the user outperformed expectation in that endgame type; negative means they gave back expected score. The new row uses the same `ScoreGapRow` bullet primitive as the page-level Achievable Score Gap (Phase 85.1), with per-class typical bands and a `MetricStatPopover` info trigger. LLM Insights now references the per-type Score Gap per class; prompt version bumps `endgame_v28` → `endgame_v29` to invalidate cached reports so newly generated narration uses the new metric.
@@ -537,7 +552,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.16...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.17...HEAD
+[v1.17]: https://github.com/flawchess/flawchess/compare/v1.16...v1.17
 [v1.16]: https://github.com/flawchess/flawchess/compare/v1.15...v1.16
 [v1.15]: https://github.com/flawchess/flawchess/compare/v1.14...v1.15
 [v1.14]: https://github.com/flawchess/flawchess/compare/v1.13...v1.14
