@@ -390,20 +390,17 @@ export function EndgameTypeCard({
         )}
 
         {/* Phase 87.1 (SEED-016 D-08): per-span Score Gap bullet row.
-            Positioned last in the card; Cpu icon flags this as eval-based.
-            Card row label is "Score Gap" (short form per D-02); card title
-            ("Rook Endgames" etc.) supplies the disambiguating type context.
+            Positioned last in the card. Card row label is "Score Gap" (short
+            form per D-02); card title ("Rook Endgames" etc.) supplies the
+            disambiguating type context.
             quick-260519-ni3: startSlot/endSlot show Start/End predicted scores
-            flanking the center Score Gap. Hidden when their mean is null. */}
+            flanking the center Score Gap (hidden when their mean is null). The
+            Cpu icon now flags only Start (the eval-based entry anchor); Score
+            Gap and End drop it to keep the row uncluttered. */}
         {showGapRow && (
           <div data-testid={`${tileTestId}-asg-bullet`}>
             <ScoreGapRow
-              label={
-                <span className="inline-flex items-center gap-1">
-                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                  Score Gap:
-                </span>
-              }
+              label="Gap:"
               value={gapMean ?? 0}
               formatted={gapFormatted}
               resultColor={gapColor}
@@ -456,7 +453,6 @@ export function EndgameTypeCard({
                     className="inline-flex items-center gap-1 text-muted-foreground text-sm"
                     data-testid={`${tileTestId}-asg-end`}
                   >
-                    <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
                     End: {Math.round(endMean * 100)}%
                   </span>
                 ) : undefined
