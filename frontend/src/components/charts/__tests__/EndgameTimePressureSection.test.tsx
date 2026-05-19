@@ -237,13 +237,15 @@ describe('EndgameTimePressureSection — SC-1: dynamic grid layout', () => {
     expect(grid?.className).toContain('grid-cols-3');
   });
 
-  it('4-card payload uses xl:grid-cols-4', () => {
+  it('4-card payload uses a 2×2 grid (md:grid-cols-2, never >2 per row)', () => {
     const { container } = renderSection(
       makePayload('bullet', 'blitz', 'rapid', 'classical'),
     );
     const grid = container.querySelector(
       '[data-testid="time-pressure-cards-section"] > p + div',
     );
-    expect(grid?.className).toContain('grid-cols-4');
+    expect(grid?.className).toContain('md:grid-cols-2');
+    expect(grid?.className).not.toContain('grid-cols-3');
+    expect(grid?.className).not.toContain('grid-cols-4');
   });
 });
