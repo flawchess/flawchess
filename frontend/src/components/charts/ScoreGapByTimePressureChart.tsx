@@ -193,7 +193,8 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
  * the old per-bucket info icons render below.
  *
  * Font-size note: this Recharts hover tooltip deliberately uses `text-xs` to
- * match the sibling "Average Clock Gap over Time" (EndgameClockDiffOverTimeChart)
+ * match the sibling "Clock Gap at Endgame Entry"
+ * (EndgameClockDiffOverTimeChart)
  * tooltip — a compact, transient, opt-in hover surface, the same rationale as
  * the CLAUDE.md popover-layer exception. User-directed (post-UAT 88.4),
  * superseding the earlier WR-01 text-sm bump; do not re-flag.

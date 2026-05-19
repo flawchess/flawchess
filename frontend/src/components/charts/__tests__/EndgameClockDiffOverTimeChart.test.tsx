@@ -86,7 +86,7 @@ describe('EndgameClockDiffOverTimeChart', () => {
   it('renders the chart container and title for non-empty timeline', () => {
     render(<EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />);
     expect(screen.getByTestId('clock-diff-over-time-chart')).toBeTruthy();
-    expect(screen.getByText('Average Clock Gap over Time')).toBeTruthy();
+    expect(screen.getByText('Clock Gap at Endgame Entry')).toBeTruthy();
   });
 
   it('renders one bar rectangle per timeline entry', () => {
@@ -118,7 +118,7 @@ describe('EndgameClockDiffOverTimeChart', () => {
     render(<EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />);
     // The trigger is button-shaped and reachable by aria-label.
     expect(
-      screen.getByLabelText('Average clock gap over time info'),
+      screen.getByLabelText('Clock gap at endgame entry info'),
     ).toBeTruthy();
   });
 
