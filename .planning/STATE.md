@@ -2,30 +2,28 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: executing
-last_updated: "2026-05-19T00:00:00.000Z"
-last_activity: 2026-05-19 -- Phase 88.4 complete (verification passed, 3/3 must-haves; 3 in-browser UAT items pending)
+status: shipped
+last_updated: "2026-05-19T06:00:00.000Z"
+last_activity: 2026-05-19 -- v1.17 milestone shipped (13 phases 84-88.4, ~54 plans, PRs #89-#117; Phase 89 dropped, 87.3 superseded)
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 88.4 (time-pressure-card-layout-refactor) — COMPLETE
-Plan: 3 of 3
-Status: Phase 88.4 complete — next: Phase 89 Polish
-Last activity: 2026-05-19 -- Phase 88.4 complete (verification passed, 3/3 must-haves; WR-01 text-xs→text-sm fixed; 3 in-browser UAT items pending in 88.4-HUMAN-UAT.md)
-Prior: Phase 88.4 executed 2026-05-19 (3 plans, 2 waves, 569 frontend tests green); Phase 88.3 SC-1/2/3 executed earlier 2026-05-18; Phase 87.1 shipped — PR #97 (2026-05-15); Phase 86 shipped to main 2026-05-14 (direct push, no PR); Phase 85.1 shipped to main 2026-05-14 (direct push, no PR — origin/main already contained the phase commits)
+Milestone: v1.17 Endgame Stats Card Redesign — ✅ SHIPPED 2026-05-19
+Status: Milestone complete, archived, tagged v1.17. Next: `/gsd:new-milestone`.
+Last activity: 2026-05-19 -- v1.17 archived (13 phases 84-88.4, ~54 plans, PRs #89-#117; Phase 89 Polish dropped, 87.3 superseded by 87.4→87.6); 164 open audit items acknowledged & deferred (carry-forward)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-12 for v1.17 open)
+See: .planning/PROJECT.md (updated 2026-05-19 after v1.17 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.17 Endgame Stats Card Redesign opens. Frontend-only refactor replacing three table-driven sections on the Endgames page (`EndgamePerformanceSection`, `EndgameScoreGapSection`, grouped `EndgameWDLChart`) with the established WDL + ScoreBullet card pattern from `EndgameStartVsEndSection.tsx` / `OpeningStatsCard.tsx`. Two-bullet doctrine (cohort vs population p50 + peer `You − Opp` vs 0) preserves the self-calibrating opponent signal on Conv/Parity/Recov + Section 3 per-type cards. 5 phases (84-88), 30 / 30 v1 requirements mapped. Phase 84 is the only non-pure-frontend phase — codegen extension to surface per-type cohort p50 on `PER_CLASS_GAUGE_ZONES` plus a mirror-rate audit on `/api/endgames/overview` (DATA-02 likely already-exposed, DATA-01 is the real codegen work). No backend stats / new statistical methods / benchmark refresh.
+Current focus: Planning next milestone. v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — three table-driven Endgames sections replaced with the WDL + ScoreBullet card pattern; single-bullet doctrine; eval-based ΔES Score Gap replacing the degenerate rate-based peer-diff; hypothesis tests + 95% CIs; Endgame Skill dropped and the timeline rebuilt as Endgame ELO via a logistic stretch around Actual ELO; Time Pressure reworked with benchmark-calibrated zones; inactivity-gap annotations on all 6 ordinal-axis timeline charts. Run `/gsd:new-milestone` to scope the next milestone.
 
 ## Milestone Progress
 
-Fourteen milestones complete (v1.0–v1.14). v1.15 Eval-Based Endgame Classification (Phases 78 + 79) — 9 plans across both phases, all code commits landed; combined operator cutover (rounds 1-3) complete; draft PR #78 open against main awaiting deploy + post-deploy UI smoke. v1.14 Score-Based Opening Insights shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). 73 phases total before v1.15 (+4 inserted: 27.1, 28.1, 41.1, 57.1, 71.1); v1.15 adds 2 more (78, 79) for 75 total.
+Seventeen milestones complete (v1.0–v1.17). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88). 80 phases before v1.17; v1.17 adds 13 shipped (incl. 10 inserted decimals) — `git tag v1.17` at commit 114211c2.
 
 ## Key Context
 
@@ -44,6 +42,19 @@ Fourteen milestones complete (v1.0–v1.14). v1.15 Eval-Based Endgame Classifica
 ## Accumulated Context
 
 ### Deferred Items
+
+Acknowledged at v1.17 milestone close on 2026-05-19:
+
+| Category | Item | Status |
+|----------|------|--------|
+| phase | Phase 89 (Polish — popovers, gating decisions, automation rules, 375px parity) | Dropped from scope — polish absorbed incrementally across inserted-phase UAT cycles |
+| phase | Phase 87.3 (Endgame Skill v2 percentile composite) | Superseded by 87.4→87.6 — percentile design retracted at UAT (PR #102) |
+| uat | Phase 88.3 / 88.4 in-browser visual UAT (4 + 3 scenarios) | Deferred — automated gates green (569 frontend tests, knip/tsc clean); not blocking close |
+| debug | import-job-db-conn-closed (diagnosed 2026-05-16) | Diagnosed — prod OOM hotfixed via PRs #99/#100/#101; resilient failure-state recording deferred to a future phase (see CLAUDE.md) |
+| audit | 155 quick-task directory entries without status frontmatter | Historical archive (already merged in git); audit misclassifies as open — same carry-forward as v1.11–v1.16 |
+| todos | 5 long-range todos (bitboard storage, etc.) | Carried forward — long-range ideas, not v1.17-scoped |
+| seeds | SEED-002 (benchmark population baselines), SEED-006 (zone recalibration) | Dormant — gated on full benchmark ingest |
+| tech debt | Pre-existing ORM/DB column drift (`game_positions.clock_seconds`, `games.white_accuracy`, `games.black_accuracy`) | Carried forward from v1.11 — cleanup migration outstanding |
 
 Acknowledged at v1.14 milestone close on 2026-04-29:
 

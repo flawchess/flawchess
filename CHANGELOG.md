@@ -8,6 +8,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.17] Endgame Stats Card Redesign — 2026-05-19
+
 ### Added
 
 - **Inactivity-gap annotations on all timeline charts** (Phase 88.3). Every ordinal-by-activity timeline chart now marks long inactive stretches with a palm-tree break glyph plus a compact label ("1.1y", "3mo") at each gap longer than 8 weeks, so a flat stretch on the x-axis no longer reads as continuous play. Applied consistently to six charts: Endgame Score Gap over Time, Endgame ELO Timeline, Bookmarked Openings Score over Time, Average Clock Gap over Time, and the Chess.com and Lichess rating charts. Charts with no long gap are unaffected.
@@ -537,7 +539,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.16...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.17...HEAD
+[v1.17]: https://github.com/flawchess/flawchess/compare/v1.16...v1.17
 [v1.16]: https://github.com/flawchess/flawchess/compare/v1.15...v1.16
 [v1.15]: https://github.com/flawchess/flawchess/compare/v1.14...v1.15
 [v1.14]: https://github.com/flawchess/flawchess/compare/v1.13...v1.14
