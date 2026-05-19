@@ -47,6 +47,21 @@ export interface EndgameCategoryStats {
   // null when type_achievable_score_gap_n == 0.
   type_achievable_score_start_mean: number | null;
   type_achievable_score_end_mean: number | null;
+  // Quick task 260519-lu0: WDLStats-aligned fields so PositionResultsPanel
+  // can consume EndgameCategoryStats directly (mirrors WDLStats shape in api.ts).
+  score: number;
+  confidence: 'low' | 'medium' | 'high';
+  p_value: number;
+  ci_low: number;
+  ci_high: number;
+  avg_eval_pawns?: number | null;
+  eval_ci_low_pawns?: number | null;
+  eval_ci_high_pawns?: number | null;
+  eval_n: number;
+  eval_p_value?: number | null;
+  eval_confidence: 'low' | 'medium' | 'high';
+  last_played_at?: string | null;
+  eval_baseline_pawns: number;
 }
 
 export interface EndgameStatsResponse {
