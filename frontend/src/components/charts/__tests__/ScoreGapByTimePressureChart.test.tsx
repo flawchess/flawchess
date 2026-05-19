@@ -181,11 +181,12 @@ describe('ScoreGapByTimePressureChart', () => {
 
   // Test 8: tooltip surfaces per-bucket stats — renders the REAL exported
   // production tooltip (no reimplementation). Fixes REVIEW.md IN-01 tautology.
-  it('tooltip shows You/Opp split, Games, and the italic test+CI footnote', () => {
+  it('tooltip: range header, combined line, conclusion, italic test+CI', () => {
     const { getByTestId, getByText } = render(
       <ScoreGapTooltipContent
         point={{
           label: '10%',
+          rangeLabel: '0-20%',
           delta: -0.17,
           n: 40,
           opp_score: 0.55,
@@ -197,15 +198,20 @@ describe('ScoreGapByTimePressureChart', () => {
     );
     const tooltip = getByTestId('score-gap-tooltip');
     expect(tooltip).toBeTruthy();
-    expect(tooltip.textContent).toContain('10%');
+    // Compact text-xs body, matching the Average Clock Gap chart tooltip.
+    expect(tooltip.className).toContain('text-xs');
+    // Header is the full bucket RANGE, not the axis center value.
+    expect(tooltip.textContent).toContain('Time Bucket: 0-20%');
     expect(tooltip.textContent).toContain('Score gap: -17.0%');
-    // Post-UAT 88.4: "You: x% | Opp: y%" replaces "vs opponents at …".
-    // userScore = opp_score + delta = 0.55 + (-0.17) = 0.38.
-    expect(tooltip.textContent).toContain('You: 38.0%');
-    expect(tooltip.textContent).toContain('Opp: 55.0%');
-    // "Games: N" replaces "n = N".
-    expect(tooltip.textContent).toContain('Games: 40');
+    // One combined line: userScore = opp_score + delta = 0.55 + (-0.17) = 0.38.
+    expect(tooltip.textContent).toContain(
+      'You: 38.0%, Opp: 55.0%, Games: 40',
+    );
     expect(tooltip.textContent).not.toContain('n = 40');
+    // App-standard conclusion sentence: p=0.03 → medium; delta ≤ -0.06 → weakness.
+    expect(tooltip.textContent).toContain(
+      'Possibly a real weakness. Medium confidence (p = 0.030).',
+    );
     // Italic statistical test + CI footnote (the info we had before).
     const footnote = getByText(/Independent two-sample test vs opponents/);
     expect(footnote.className).toContain('italic');
@@ -218,6 +224,7 @@ describe('ScoreGapByTimePressureChart', () => {
       <ScoreGapTooltipContent
         point={{
           label: '30%',
+          rangeLabel: '20-40%',
           delta: 0.04,
           n: 7,
           opp_score: null,
@@ -228,11 +235,13 @@ describe('ScoreGapByTimePressureChart', () => {
       />,
     );
     const tooltip = getByTestId('score-gap-tooltip');
-    expect(tooltip.textContent).toContain('You: n/a');
-    expect(tooltip.textContent).toContain('Opp: n/a');
+    expect(tooltip.textContent).toContain('Time Bucket: 20-40%');
+    expect(tooltip.textContent).toContain('You: n/a, Opp: n/a, Games: 7');
     expect(tooltip.textContent).toContain('Score gap: +4.0%');
-    // No p-value segment; CI falls back to the methodology phrase.
+    // n < 10 gate → low confidence, no p segment.
+    expect(tooltip.textContent).toContain('Inconclusive. Low confidence.');
     expect(tooltip.textContent).not.toContain('p = ');
+    // CI falls back to the methodology phrase.
     expect(tooltip.textContent).toContain('95% normal-approx CI');
   });
 });

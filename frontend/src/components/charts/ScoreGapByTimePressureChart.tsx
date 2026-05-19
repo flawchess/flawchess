@@ -30,6 +30,7 @@ import {
   pressureDeltaZoneColor,
 } from '@/lib/pressureBulletConfig';
 import type { PressureQuintileBullet } from '@/types/endgames';
+import { deriveLevel } from './EndgameOverallShared';
 
 // Muted opacity for zone-tinted ReferenceArea bands. Matches EndgameClockDiffOverTimeChart.
 // Not exported from theme.ts — local constant per chart.
@@ -64,6 +65,54 @@ const PRESSURE_LABELS: Record<0 | 1 | 2 | 3, string> = {
   3: '70%',
 };
 
+// Full bucket *range* — shown in the tooltip header ("Time Bucket: 0-20%")
+// where there's room for the precise band, while the x-axis stays compact
+// with the center value (post-UAT 88.4).
+const PRESSURE_RANGE_LABELS: Record<0 | 1 | 2 | 3, string> = {
+  0: '0-20%',
+  1: '20-40%',
+  2: '40-60%',
+  3: '60-80%',
+};
+
+// Confidence label + verdict headline, faithful to MetricStatTooltip so the
+// chart's conclusion line reads identically to the per-bucket info popovers
+// we had before the SC-3 refactor. The neutral band here is the chart's
+// TC-collapsed ±0.06 (so the verdict matches the colored zone the dot sits in).
+const CONFIDENCE_LABEL: Record<'low' | 'medium' | 'high', string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+};
+
+/**
+ * Build the app-standard conclusion sentence, e.g.
+ * "Possibly a real weakness. Medium confidence (p = 0.030)." — mirrors
+ * MetricStatTooltip's paragraph-3 verdict (score vocabulary, 0% baseline).
+ */
+function conclusionText(
+  delta: number,
+  pValue: number | null,
+  n: number,
+): string {
+  const level = deriveLevel(pValue, n);
+  let headline: string;
+  if (level === 'low') {
+    headline = 'Inconclusive.';
+  } else {
+    const lead = level === 'high' ? 'Likely' : 'Possibly';
+    if (delta >= PRESSURE_SCORE_GAP_NEUTRAL_MAX) {
+      headline = `${lead} a real strength.`;
+    } else if (delta <= PRESSURE_SCORE_GAP_NEUTRAL_MIN) {
+      headline = `${lead} a real weakness.`;
+    } else {
+      headline = `${lead} a real difference from the 0% baseline.`;
+    }
+  }
+  const pSegment = pValue !== null ? ` (${formatPValue(pValue)})` : '';
+  return `${headline} ${CONFIDENCE_LABEL[level]} confidence${pSegment}.`;
+}
+
 // Post-UAT (88.4): inset the first/last datapoints from the chart edges so the
 // line doesn't touch the y-axis / right border. Recharts category-axis padding.
 const X_AXIS_EDGE_PADDING = 24;
@@ -73,6 +122,8 @@ const DOT_RADIUS = 4.5;
 
 interface ChartPoint {
   label: string;
+  /** Full bucket range for the tooltip header (e.g. "0-20%"). */
+  rangeLabel: string;
   delta: number;
   n: number;
   opp_score: number | null;
@@ -127,6 +178,8 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
 
       return {
         label: PRESSURE_LABELS[bin.quintile_index as 0 | 1 | 2 | 3] ?? '',
+        rangeLabel:
+          PRESSURE_RANGE_LABELS[bin.quintile_index as 0 | 1 | 2 | 3] ?? '',
         delta: bin.delta,
         n: bin.n,
         opp_score: bin.opp_score,
@@ -141,9 +194,16 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
 /**
  * Tooltip body for a single bucket. Exported so the test renders the REAL
  * production tooltip instead of a reimplementation (REVIEW.md IN-01 tautology
- * fix). Post-UAT 88.4: "You: x% | Opp: y%" line replaces "vs opponents at …";
- * "Games: N" replaces "n = N"; the statistical test + CI methodology we had
- * behind the old per-bucket info icons returns as an italic footnote.
+ * fix). Post-UAT 88.4: header is the full bucket range ("Time Bucket: 0-20%");
+ * You/Opp/Games collapse to one muted line; the app-standard verdict sentence
+ * (conclusionText) plus the statistical test + CI methodology we had behind
+ * the old per-bucket info icons render below.
+ *
+ * Font-size note: this Recharts hover tooltip deliberately uses `text-xs` to
+ * match the sibling "Average Clock Gap over Time" (EndgameClockDiffOverTimeChart)
+ * tooltip — a compact, transient, opt-in hover surface, the same rationale as
+ * the CLAUDE.md popover-layer exception. User-directed (post-UAT 88.4),
+ * superseding the earlier WR-01 text-sm bump; do not re-flag.
  */
 export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
   const userScore = point.opp_score != null ? point.opp_score + point.delta : null;
@@ -158,10 +218,10 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
 
   return (
     <div
-      className="rounded-lg border border-border/50 bg-background px-3 py-2 text-sm shadow-xl space-y-1"
+      className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1"
       data-testid="score-gap-tooltip"
     >
-      <div className="font-medium">{point.label}</div>
+      <div className="font-medium">Time Bucket: {point.rangeLabel}</div>
       <div className="flex items-center gap-1.5">
         <div
           className="h-2 w-2 shrink-0 rounded-[2px]"
@@ -169,9 +229,11 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
         />
         <span>Score gap: {formatSignedPct(point.delta)}</span>
       </div>
-      <div className="text-muted-foreground">You: {formatPct(userScore)}</div>
-      <div className="text-muted-foreground">Opp: {formatPct(point.opp_score)}</div>
-      <div className="text-muted-foreground">Games: {point.n}</div>
+      <div className="text-muted-foreground">
+        You: {formatPct(userScore)}, Opp: {formatPct(point.opp_score)}, Games:{' '}
+        {point.n}
+      </div>
+      <div>{conclusionText(point.delta, point.p_value, point.n)}</div>
       <div className="text-muted-foreground italic">{testLine}</div>
     </div>
   );
