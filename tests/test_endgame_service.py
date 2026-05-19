@@ -4011,7 +4011,7 @@ class TestEndgameCategoryStatsWdlAlignedFields:
 
         # Reference: compute_eval_confidence_bucket over 20 identical user_cp=200 values.
         eval_sum = 200.0 * 20
-        eval_sumsq = 200.0 ** 2 * 20
+        eval_sumsq = 200.0**2 * 20
         eval_n = 20
         ref_conf, ref_pval, ref_mean_cp, ref_ci_half = compute_eval_confidence_bucket(
             eval_sum, eval_sumsq, eval_n
@@ -4019,8 +4019,12 @@ class TestEndgameCategoryStatsWdlAlignedFields:
 
         assert rook.eval_n == eval_n
         assert rook.avg_eval_pawns == pytest.approx(ref_mean_cp / 100.0, abs=1e-9)
-        assert rook.eval_ci_low_pawns == pytest.approx((ref_mean_cp - ref_ci_half) / 100.0, abs=1e-9)
-        assert rook.eval_ci_high_pawns == pytest.approx((ref_mean_cp + ref_ci_half) / 100.0, abs=1e-9)
+        assert rook.eval_ci_low_pawns == pytest.approx(
+            (ref_mean_cp - ref_ci_half) / 100.0, abs=1e-9
+        )
+        assert rook.eval_ci_high_pawns == pytest.approx(
+            (ref_mean_cp + ref_ci_half) / 100.0, abs=1e-9
+        )
         assert rook.eval_p_value == pytest.approx(ref_pval, abs=1e-9)
         assert rook.eval_confidence == ref_conf
 
@@ -4039,8 +4043,8 @@ class TestEndgameCategoryStatsWdlAlignedFields:
 
         # 5 normal rows (user_cp=100) + 1 outlier (eval_cp=2000, excluded) + 1 exact boundary (2001, excluded).
         normal_rows = [(i + 1, 1, "1-0", "white", 100, None) for i in range(5)]
-        outlier_row = (6, 1, "1-0", "white", EVAL_OUTLIER_TRIM_CP, None)     # |cp|=2000 → excluded
-        over_row = (7, 1, "1-0", "white", EVAL_OUTLIER_TRIM_CP + 1, None)    # |cp|=2001 → excluded
+        outlier_row = (6, 1, "1-0", "white", EVAL_OUTLIER_TRIM_CP, None)  # |cp|=2000 → excluded
+        over_row = (7, 1, "1-0", "white", EVAL_OUTLIER_TRIM_CP + 1, None)  # |cp|=2001 → excluded
         all_rows = normal_rows + [outlier_row, over_row]
         result, _ = _aggregate_endgame_stats(all_rows)
         rook = next(c for c in result if c.endgame_class == "rook")
@@ -4051,7 +4055,9 @@ class TestEndgameCategoryStatsWdlAlignedFields:
         """Rows with eval_mate is not None must be excluded from the eval cohort."""
         # 5 normal rows + 5 mate rows (eval_mate set → excluded).
         normal_rows = [(i + 1, 1, "1-0", "white", 200, None) for i in range(5)]
-        mate_rows = [(i + 6, 1, "1-0", "white", None, 3) for i in range(5)]  # eval_mate=3 (in 3 moves)
+        mate_rows = [
+            (i + 6, 1, "1-0", "white", None, 3) for i in range(5)
+        ]  # eval_mate=3 (in 3 moves)
         result, _ = _aggregate_endgame_stats(normal_rows + mate_rows)
         rook = next(c for c in result if c.endgame_class == "rook")
         assert rook.eval_n == 5  # only the normal rows

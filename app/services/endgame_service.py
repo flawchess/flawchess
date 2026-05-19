@@ -558,11 +558,7 @@ def _aggregate_endgame_stats(
         # Sign convention: user_cp = +eval_cp for white, -eval_cp for black
         # (mirrors _classify_endgame_bucket). Exclude mate rows, NULL evals, and
         # |cp| >= EVAL_OUTLIER_TRIM_CP (D-08 outlier trim, same as openings).
-        if (
-            eval_mate is None
-            and eval_cp is not None
-            and abs(eval_cp) < EVAL_OUTLIER_TRIM_CP
-        ):
+        if eval_mate is None and eval_cp is not None and abs(eval_cp) < EVAL_OUTLIER_TRIM_CP:
             sign = 1 if user_color == "white" else -1
             user_cp = sign * eval_cp
             eval_sum_by_class[endgame_class] += user_cp
@@ -658,7 +654,9 @@ def _aggregate_endgame_stats(
         # score_p_value retains its existing gated semantics (None when total <
         # PVALUE_RELIABILITY_MIN_N) for backward compat with EndgameTypeCard Stats subtab.
         category_last_played_at = last_played_at_by_class[endgame_class]
-        wdl_stats = _build_wdl_stats(wins, draws, losses, total, last_played_at=category_last_played_at)
+        wdl_stats = _build_wdl_stats(
+            wins, draws, losses, total, last_played_at=category_last_played_at
+        )
         score_p_value: float | None = (
             wdl_stats.p_value if total >= PVALUE_RELIABILITY_MIN_N else None
         )

@@ -512,11 +512,20 @@ class TestEndgameCategoryStatsWdlAlignedFieldsRouter:
         from app.schemas.endgames import EndgameCategoryStats
 
         required_fields = {
-            "score", "confidence", "p_value", "ci_low", "ci_high",
-            "eval_n", "eval_confidence", "eval_baseline_pawns",
+            "score",
+            "confidence",
+            "p_value",
+            "ci_low",
+            "ci_high",
+            "eval_n",
+            "eval_confidence",
+            "eval_baseline_pawns",
             # optional-with-default fields:
-            "avg_eval_pawns", "eval_ci_low_pawns", "eval_ci_high_pawns",
-            "eval_p_value", "last_played_at",
+            "avg_eval_pawns",
+            "eval_ci_low_pawns",
+            "eval_ci_high_pawns",
+            "eval_p_value",
+            "last_played_at",
             # backward-compat field:
             "score_p_value",
         }
@@ -528,11 +537,20 @@ class TestEndgameCategoryStatsWdlAlignedFieldsRouter:
         from app.schemas.endgames import ConversionRecoveryStats
 
         stub_conversion = ConversionRecoveryStats(
-            conversion_pct=0.0, conversion_games=0, conversion_wins=0,
-            conversion_draws=0, conversion_losses=0, recovery_pct=0.0,
-            recovery_games=0, recovery_saves=0, recovery_wins=0, recovery_draws=0,
-            opponent_conversion_pct=None, opponent_conversion_games=0,
-            opponent_recovery_pct=None, opponent_recovery_games=0,
+            conversion_pct=0.0,
+            conversion_games=0,
+            conversion_wins=0,
+            conversion_draws=0,
+            conversion_losses=0,
+            recovery_pct=0.0,
+            recovery_games=0,
+            recovery_saves=0,
+            recovery_wins=0,
+            recovery_draws=0,
+            opponent_conversion_pct=None,
+            opponent_conversion_games=0,
+            opponent_recovery_pct=None,
+            opponent_recovery_games=0,
         )
         default_cat = EndgameCategoryStats(
             endgame_class="rook",
