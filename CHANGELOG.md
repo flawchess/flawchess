@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Added
 
 - Openings and Endgames *Games* subtabs now show the Score and Eval bullet charts below the WDL chart, matching the move explorer's "Results played as" panel. The Endgames Games subtab reports per-category Wilson score and the eval at endgame entry.
+- Endgame Type Breakdown cards now show per-type Start and End predicted scores flanking the Gap row (Start on the left with a Cpu icon, Gap centered with its info popover, End on the right). End − Start reconciles exactly with the Gap.
 
 ### Changed
 

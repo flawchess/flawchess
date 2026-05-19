@@ -42,6 +42,11 @@ export interface EndgameCategoryStats {
   type_achievable_score_gap_p_value: number | null;
   type_achievable_score_gap_ci_low: number | null;
   type_achievable_score_gap_ci_high: number | null;
+  // quick-260519-ni3: descriptive start/end components of the Score Gap.
+  // end_mean - start_mean == gap_mean exactly (same span cohort, reconciliation invariant).
+  // null when type_achievable_score_gap_n == 0.
+  type_achievable_score_start_mean: number | null;
+  type_achievable_score_end_mean: number | null;
   // Quick task 260519-lu0: WDLStats-aligned fields so PositionResultsPanel
   // can consume EndgameCategoryStats directly (mirrors WDLStats shape in api.ts).
   score: number;
