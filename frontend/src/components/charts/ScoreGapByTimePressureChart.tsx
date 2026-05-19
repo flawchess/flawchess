@@ -75,20 +75,13 @@ const PRESSURE_RANGE_LABELS: Record<0 | 1 | 2 | 3, string> = {
   3: '60-80%',
 };
 
-// Confidence label + verdict headline, faithful to MetricStatTooltip so the
-// chart's conclusion line reads identically to the per-bucket info popovers
-// we had before the SC-3 refactor. The neutral band here is the chart's
-// TC-collapsed ±0.06 (so the verdict matches the colored zone the dot sits in).
-const CONFIDENCE_LABEL: Record<'low' | 'medium' | 'high', string> = {
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-};
-
 /**
- * Build the app-standard conclusion sentence, e.g.
- * "Possibly a real weakness. Medium confidence (p = 0.030)." — mirrors
- * MetricStatTooltip's paragraph-3 verdict (score vocabulary, 0% baseline).
+ * Build the conclusion line, e.g. "Likely a real strength (p < 0.001)".
+ * Verdict noun + Likely/Possibly lead mirror MetricStatTooltip (score
+ * vocabulary, 0% baseline); the confidence-label clause is intentionally
+ * dropped per UAT — the parenthesised p-value already conveys strength of
+ * evidence. The neutral band is the chart's TC-collapsed ±0.06 so the verdict
+ * matches the colored zone the dot sits in.
  */
 function conclusionText(
   delta: number,
@@ -98,19 +91,18 @@ function conclusionText(
   const level = deriveLevel(pValue, n);
   let headline: string;
   if (level === 'low') {
-    headline = 'Inconclusive.';
+    headline = 'Inconclusive';
   } else {
     const lead = level === 'high' ? 'Likely' : 'Possibly';
     if (delta >= PRESSURE_SCORE_GAP_NEUTRAL_MAX) {
-      headline = `${lead} a real strength.`;
+      headline = `${lead} a real strength`;
     } else if (delta <= PRESSURE_SCORE_GAP_NEUTRAL_MIN) {
-      headline = `${lead} a real weakness.`;
+      headline = `${lead} a real weakness`;
     } else {
-      headline = `${lead} a real difference from the 0% baseline.`;
+      headline = `${lead} a real difference from the 0% baseline`;
     }
   }
-  const pSegment = pValue !== null ? ` (${formatPValue(pValue)})` : '';
-  return `${headline} ${CONFIDENCE_LABEL[level]} confidence${pSegment}.`;
+  return pValue !== null ? `${headline} (${formatPValue(pValue)})` : headline;
 }
 
 // Post-UAT (88.4): inset the first/last datapoints from the chart edges so the
@@ -208,7 +200,7 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
 export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
   const userScore = point.opp_score != null ? point.opp_score + point.delta : null;
   // p-value is already in the conclusion line above — don't repeat it here.
-  const testLine = 'Independent two-sample test vs opponents.';
+  const testLine = 'Independent two-sample test.';
   const ciLine =
     point.ci_low != null && point.ci_high != null
       ? `95% CI [${formatSignedPct(point.ci_low)}, ${formatSignedPct(point.ci_high)}]`

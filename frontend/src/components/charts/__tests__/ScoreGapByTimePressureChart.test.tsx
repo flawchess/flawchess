@@ -208,13 +208,15 @@ describe('ScoreGapByTimePressureChart', () => {
       'You: 38.0%, Opp: 55.0%, Games: 40',
     );
     expect(tooltip.textContent).not.toContain('n = 40');
-    // App-standard conclusion sentence: p=0.03 → medium; delta ≤ -0.06 → weakness.
+    // Conclusion: p=0.03 → medium → "Possibly"; delta ≤ -0.06 → weakness.
+    // No confidence-label clause (dropped per UAT) — p-value only.
     expect(tooltip.textContent).toContain(
-      'Possibly a real weakness. Medium confidence (p = 0.030).',
+      'Possibly a real weakness (p = 0.030)',
     );
+    expect(tooltip.textContent).not.toContain('confidence');
     // p-value appears exactly once (conclusion line) — NOT repeated in the
     // italic test footnote.
-    const testFootnote = getByText('Independent two-sample test vs opponents.');
+    const testFootnote = getByText('Independent two-sample test.');
     expect(testFootnote.className).toContain('italic');
     expect(testFootnote.textContent).not.toContain('p = ');
     // CI is on its own italic line.
@@ -244,8 +246,9 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(tooltip.textContent).toContain('Time Bucket: 20-40%');
     expect(tooltip.textContent).toContain('You: n/a, Opp: n/a, Games: 7');
     expect(tooltip.textContent).toContain('Score gap: +4.0%');
-    // n < 10 gate → low confidence, no p segment.
-    expect(tooltip.textContent).toContain('Inconclusive. Low confidence.');
+    // n < 10 gate → low → "Inconclusive", no confidence label, no p segment.
+    expect(tooltip.textContent).toContain('Inconclusive');
+    expect(tooltip.textContent).not.toContain('confidence');
     expect(tooltip.textContent).not.toContain('p = ');
     // CI falls back to the methodology phrase.
     expect(tooltip.textContent).toContain('95% normal-approx CI');
