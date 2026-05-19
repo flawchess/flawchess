@@ -9,7 +9,7 @@
  *
  * Replaces the legacy line-chart EndgameTimePressureSection and the
  * EndgameClockPressureSection (both deleted in Phase 88 Plan 07).
- * Answers: "How does your score change as your clock runs down?"
+ * Answers: "How does your score change under time pressure?"
  */
 
 import { EndgameTimePressureCard } from '@/components/charts/EndgameTimePressureCard';
@@ -34,7 +34,7 @@ export function EndgameTimePressureSection({
       aria-label="Time pressure analysis"
     >
       <p className="text-sm text-muted-foreground">
-        How does your score change as your clock runs down?
+        How does your score change under time pressure?
       </p>
       {data.cards.length === 0 ? (
         <div

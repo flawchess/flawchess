@@ -251,7 +251,7 @@ export function ScoreGapByTimePressureChart({
     >
       <ChartContainer
         config={{}}
-        className="w-full h-56"
+        className="w-full h-64"
         data-testid="score-gap-by-time-pressure-chart-container"
       >
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 24 }}>
