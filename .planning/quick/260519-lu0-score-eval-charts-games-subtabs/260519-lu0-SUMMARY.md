@@ -1,7 +1,7 @@
 ---
 phase: quick-260519-lu0
 plan: 01
-status: incomplete
+status: complete
 subsystem: openings+endgames+frontend
 tags: [score-eval-charts, games-subtab, shared-component, stats-alignment, tdd]
 tech-stack:
@@ -39,9 +39,9 @@ metrics:
 
 **One-liner:** Score + Eval bullet panel extracted into shared PositionResultsPanel; Openings GamesTab and Endgames gamesContent now show WDL + Score + Eval matching the move explorer; endgame stats backend extended with Wilson score + MG-entry eval per category via shared helpers.
 
-## Status: Awaiting Human Verification
+## Status: Complete (user-approved via merge request)
 
-All 5 auto tasks completed and committed. The plan has a blocking `checkpoint:human-verify` task (Task 6) requiring visual verification in the browser. See "Manual Verification Required" section below.
+All 5 auto tasks completed and committed. The blocking `checkpoint:human-verify` (Task 6) was approved by the user requesting the merge to `main`; the post-UAT Eval-copy fix (`a7e99a7a`) is included. Merged to `main` via PR (squash). The browser steps below are retained for reference.
 
 ## Tasks Completed
 
