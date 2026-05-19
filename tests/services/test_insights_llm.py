@@ -983,8 +983,8 @@ class TestPromptAssembly:
         from app.services.insights_llm import _format_zone_bounds
 
         result = _format_zone_bounds("entry_eval_pawns", None)
-        assert "-0.75" in result
-        assert "+0.75" in result
+        assert "-0.60" in result
+        assert "+0.60" in result
         # Negative invariant: no centipawn-style render.
         assert "-75 to" not in result
 
