@@ -185,7 +185,7 @@ export function ScoreGapByTimePressureChart({
                   : 'n/a';
               return (
                 <div
-                  className="rounded-lg border border-border/50 bg-background px-3 py-2 text-xs shadow-xl space-y-1"
+                  className="rounded-lg border border-border/50 bg-background px-3 py-2 text-sm shadow-xl space-y-1"
                   data-testid="score-gap-tooltip"
                 >
                   <div className="font-medium">{point.label}</div>
