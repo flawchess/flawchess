@@ -236,31 +236,6 @@ export function EndgameTimePressureCard({
             text-base heading. */}
         <TimeControlIcon timeControl={card.tc} className="h-4 w-4 shrink-0" />
         <span>{tcLabel}</span>
-        <InfoPopover
-          ariaLabel={`${tcLabel} time pressure info`}
-          testId={`time-pressure-card-${card.tc}-title-info`}
-          side="top"
-        >
-          <div className="space-y-2">
-            <p>
-              <strong>{tcLabel} Time Pressure:</strong> how your endgame
-              performance shifts as your clock runs down in {tcLabel} games.
-            </p>
-            <p>
-              The top section, "Remaining Time at Endgame Entry", is about time management <em>before</em> the endgame
-              and shows how much clock time you and your opponents have left on average when endgames begins,
-              plus your net flag rate (timeout wins minus flag losses).
-            </p>
-            <p>
-              The bottom section, "Score Gap by Remaining Time", breaks your
-              endgames into buckets by how much of your clock was left, and in
-              each bucket compares your score against opponents who were under
-              the <em>same amount</em> of time pressure. A positive gap means you outscored
-              comparably-pressured opponents; a negative gap means they
-              outscored you.
-            </p>
-          </div>
-        </InfoPopover>
         {/* Post-UAT (round 2): game count right-aligned, "Games: X% (N)"
             framing with a sword icon. The percentage is this TC's share of
             the user's filtered games (computed at the section level so all
@@ -282,10 +257,22 @@ export function EndgameTimePressureCard({
             The ClockGapHeaderRow sits ABOVE the bullet, replacing the old label row. */}
         <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
           <p
-            className="text-sm font-medium text-muted-foreground mb-2"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
             data-testid={`time-pressure-card-${card.tc}-top-zone-subtitle`}
           >
             Remaining Time at Endgame Entry
+            <InfoPopover
+              ariaLabel={`${tcLabel} remaining time info`}
+              testId={`time-pressure-card-${card.tc}-top-zone-info`}
+              side="top"
+            >
+              <p>
+                This section is about time management <em>before</em> the
+                endgame: how much clock time you and your opponents have left
+                on average when endgames begin, plus your net flag rate
+                (timeout wins minus flag losses).
+              </p>
+            </InfoPopover>
           </p>
           <ClockGapHeaderRow gap={gap} card={card} />
           <div
@@ -314,10 +301,32 @@ export function EndgameTimePressureCard({
             ScoreGapByTimePressureChart (line chart with zone bands). */}
         <div>
           <p
-            className="text-sm font-medium text-muted-foreground mb-2"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
             data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
           >
             Score Gap by Remaining Time
+            <InfoPopover
+              ariaLabel={`${tcLabel} score gap by remaining time info`}
+              testId={`time-pressure-card-${card.tc}-quintiles-info`}
+              side="top"
+            >
+              <div className="space-y-2">
+                <p>
+                  This breaks your endgames into buckets by how much of your
+                  clock was left, and in each bucket compares your score
+                  against opponents who were under the <em>same amount</em> of
+                  time pressure. A positive gap means you outscored
+                  comparably-pressured opponents; a negative gap means they
+                  outscored you.
+                </p>
+                <p>
+                  Each marker is sized by how many of that bucket's games were
+                  yours versus your opponents'. A bigger dot means more of the
+                  games were yours, so the comparison is better-sampled on
+                  your side.
+                </p>
+              </div>
+            </InfoPopover>
           </p>
           <div data-testid={`time-pressure-card-${card.tc}-score-gap-chart`}>
             <ScoreGapByTimePressureChart quintiles={card.quintiles} tc={card.tc} />
