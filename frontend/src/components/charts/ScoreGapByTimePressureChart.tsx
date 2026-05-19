@@ -207,14 +207,12 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
  */
 export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
   const userScore = point.opp_score != null ? point.opp_score + point.delta : null;
-  const ciText =
+  // p-value is already in the conclusion line above — don't repeat it here.
+  const testLine = 'Independent two-sample test vs opponents.';
+  const ciLine =
     point.ci_low != null && point.ci_high != null
       ? `95% CI [${formatSignedPct(point.ci_low)}, ${formatSignedPct(point.ci_high)}]`
-      : null;
-  const testLine =
-    `Independent two-sample test vs opponents` +
-    (point.p_value != null ? `, ${formatPValue(point.p_value)}` : '') +
-    `. ${ciText ?? '95% normal-approx CI'}.`;
+      : '95% normal-approx CI';
 
   return (
     <div
@@ -235,6 +233,7 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
       </div>
       <div>{conclusionText(point.delta, point.p_value, point.n)}</div>
       <div className="text-muted-foreground italic">{testLine}</div>
+      <div className="text-muted-foreground italic">{ciLine}</div>
     </div>
   );
 }

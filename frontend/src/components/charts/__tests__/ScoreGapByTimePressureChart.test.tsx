@@ -212,11 +212,17 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(tooltip.textContent).toContain(
       'Possibly a real weakness. Medium confidence (p = 0.030).',
     );
-    // Italic statistical test + CI footnote (the info we had before).
-    const footnote = getByText(/Independent two-sample test vs opponents/);
-    expect(footnote.className).toContain('italic');
-    expect(footnote.textContent).toContain('p = 0.030');
-    expect(footnote.textContent).toContain('95% CI [-2.0%, +2.0%]');
+    // p-value appears exactly once (conclusion line) — NOT repeated in the
+    // italic test footnote.
+    const testFootnote = getByText('Independent two-sample test vs opponents.');
+    expect(testFootnote.className).toContain('italic');
+    expect(testFootnote.textContent).not.toContain('p = ');
+    // CI is on its own italic line.
+    const ciFootnote = getByText('95% CI [-2.0%, +2.0%]');
+    expect(ciFootnote.className).toContain('italic');
+    expect(
+      tooltip.textContent?.match(/p = 0\.030/g)?.length,
+    ).toBe(1);
   });
 
   it('tooltip degrades gracefully when opp_score / p_value / CI are null', () => {
