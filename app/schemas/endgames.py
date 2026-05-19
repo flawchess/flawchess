@@ -6,6 +6,7 @@ Provides response models for:
 - GET /api/endgames/overview: composed response including time pressure cards (Phase 88)
 """
 
+import datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -102,6 +103,33 @@ class EndgameCategoryStats(BaseModel):
     type_achievable_score_gap_p_value: float | None = None
     type_achievable_score_gap_ci_low: float | None = None
     type_achievable_score_gap_ci_high: float | None = None
+
+    # quick-260519-ni3: descriptive components of the Score Gap. Computed over the
+    # exact same span cohort as type_achievable_score_gap_* (same NULL-eval gate),
+    # so end_mean - start_mean == gap_mean holds exactly (reconciliation invariant).
+    # None when type_achievable_score_gap_n == 0 (no eligible spans).
+    # start = mean(es_entry) per span; end = mean(exit_score) per span.
+    # These are unsigned expected-score aggregates (0-1 range), no CI / p-value.
+    type_achievable_score_start_mean: float | None = None
+    type_achievable_score_end_mean: float | None = None
+
+    # Quick task 260519-lu0: WDLStats-aligned score/eval/last_played_at fields.
+    # Aligns EndgameCategoryStats with WDLStats (api.ts) so PositionResultsPanel
+    # can consume it directly. Defaults match _build_wdl_stats's total==0 path so
+    # existing constructor call sites that don't pass them remain valid.
+    score: float = 0.5
+    confidence: Literal["low", "medium", "high"] = "low"
+    p_value: float = 1.0
+    ci_low: float = 0.5
+    ci_high: float = 0.5
+    avg_eval_pawns: float | None = None
+    eval_ci_low_pawns: float | None = None
+    eval_ci_high_pawns: float | None = None
+    eval_n: int = 0
+    eval_p_value: float | None = None
+    eval_confidence: Literal["low", "medium", "high"] = "low"
+    last_played_at: datetime.datetime | None = None
+    eval_baseline_pawns: float = 0.25  # always EVAL_BASELINE_PAWNS_WHITE for endgames (color-agnostic, D-02)
 
 
 class EndgameStatsResponse(BaseModel):

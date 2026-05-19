@@ -8,8 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Openings and Endgames *Games* subtabs now show the Score and Eval bullet charts below the WDL chart, matching the move explorer's "Results played as" panel. The Endgames Games subtab reports per-category Wilson score and the eval at endgame entry.
+- Endgame Type Breakdown cards now show per-type Start and End predicted scores flanking the Gap row (Start on the left with a Cpu icon, Gap centered with its info popover, End on the right). End − Start reconciles exactly with the Gap.
+
 ### Changed
 
+- The Eval popover on the Endgames Games subtab now reads "average Stockfish eval at the position where the endgame begins" (instead of the openings phrasing), matching the Stats-tab "Endgame Entry Eval" metric.
 - **Score Gap by Remaining Time tooltip splits You/Opp game counts** (post-v1.17 polish). The per-bucket hover tooltip now shows your score and your opponents' score on two separate lines, each with its own game count (`You: 38.0% (40 games)` / `Opp: 55.0% (37 games)`). The two figures come from independent clock-pressure splits of the same game-set, so the counts can legitimately differ; the previous single line showed only one count.
 - **Time Pressure card help moved to per-section info popovers** (post-v1.17 polish). The single card-title info popover is gone. Each of the two sections now carries its own info trigger next to its subtitle: "Remaining Time at Endgame Entry" explains the pre-endgame time-management stats and net flag rate; "Score Gap by Remaining Time" explains the same-pressure opponent comparison and what the marker size encodes (how many of the bucket's games were yours).
 - **Score Gap by Remaining Time markers scale with your sample size** (post-v1.17 polish). Each datapoint dot is now sized by the user/opponent game-count ratio (`n / n_opp`), clamped to a capped range. A bigger marker means more of that bucket's games were yours, so the user-side score is the better-sampled side of the comparison.

@@ -103,6 +103,10 @@ function buildCategory(
     type_achievable_score_gap_p_value: 0.0001,
     type_achievable_score_gap_ci_low: 0.04,
     type_achievable_score_gap_ci_high: 0.12,
+    // quick-260519-ni3: start/end predicted score means.
+    // start=0.41 (41%), end=0.49 (49%), gap=+0.08 (+8%) — reconciliation holds.
+    type_achievable_score_start_mean: 0.41,
+    type_achievable_score_end_mean: 0.49,
     ...rest,
   };
 }
@@ -388,6 +392,74 @@ describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
     expect(valueSpan.textContent).toBe('+2%');
   });
 
+});
+
+describe('EndgameTypeCard — Start/End predicted scores (quick-260519-ni3)', () => {
+  it('renders asg-start and asg-end with unsigned whole-percent text when means non-null', () => {
+    // start=0.41 → "Start: 41%", end=0.49 → "End: 49%"
+    renderCard(buildCategory());
+    const startEl = screen.getByTestId(`${TILE_TESTID}-asg-start`);
+    const endEl = screen.getByTestId(`${TILE_TESTID}-asg-end`);
+    expect(startEl.textContent).toContain('41%');
+    expect(endEl.textContent).toContain('49%');
+    // Labels are unsigned (no + sign)
+    expect(startEl.textContent).not.toContain('+');
+    expect(endEl.textContent).not.toContain('+');
+  });
+
+  it('hides asg-start when type_achievable_score_start_mean is null', () => {
+    renderCard(buildCategory({ type_achievable_score_start_mean: null }));
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-start`)).toBeNull();
+    // asg-end should still render when its mean is non-null
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-end`)).not.toBeNull();
+  });
+
+  it('hides asg-end when type_achievable_score_end_mean is null', () => {
+    renderCard(buildCategory({ type_achievable_score_end_mean: null }));
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-end`)).toBeNull();
+    // asg-start should still render
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-start`)).not.toBeNull();
+  });
+
+  it('hides both asg-start and asg-end when showGapRow is false (n==0)', () => {
+    renderCard(
+      buildCategory({
+        type_achievable_score_gap_mean: null,
+        type_achievable_score_gap_n: 0,
+        type_achievable_score_gap_p_value: null,
+        type_achievable_score_gap_ci_low: null,
+        type_achievable_score_gap_ci_high: null,
+        type_achievable_score_start_mean: 0.41,
+        type_achievable_score_end_mean: 0.49,
+      }),
+    );
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-start`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-end`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-value`)).toBeNull();
+  });
+
+  it('existing asg-value and asg-info still render unchanged with start/end present', () => {
+    renderCard(buildCategory());
+    // Signed gap value still renders
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-value`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-value`).textContent).toBe('+8%');
+    // Info popover trigger still renders
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-info`)).not.toBeNull();
+  });
+
+  it('rounds start/end means to whole percent (Math.round)', () => {
+    // 0.415 → Math.round(0.415 * 100) = 42 (JS Math.round rounds half-up)
+    renderCard(
+      buildCategory({
+        type_achievable_score_start_mean: 0.415,
+        type_achievable_score_end_mean: 0.495,
+      }),
+    );
+    const startEl = screen.getByTestId(`${TILE_TESTID}-asg-start`);
+    const endEl = screen.getByTestId(`${TILE_TESTID}-asg-end`);
+    expect(startEl.textContent).toContain('42%');
+    expect(endEl.textContent).toContain('50%');
+  });
 });
 
 describe('EndgameTypeCard — WDL flag gating (mocked false)', () => {

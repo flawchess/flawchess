@@ -76,7 +76,14 @@ from app.services.eval_utils import (
     eval_cp_to_expected_score,
     eval_mate_to_expected_score,
 )
-from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, derive_user_result, recency_cutoff
+from app.services.opening_insights_constants import EVAL_BASELINE_PAWNS_WHITE
+from app.services.openings_service import (
+    MIN_GAMES_FOR_TIMELINE,
+    _build_wdl_stats,
+    derive_user_result,
+    recency_cutoff,
+)
+from app.repositories.stats_repository import EVAL_OUTLIER_TRIM_CP
 from app.services.score_confidence import (
     compute_confidence_bucket,
     compute_paired_difference_test,
@@ -263,49 +270,34 @@ _GAME_RESULT_TO_SCORE: dict[Literal["win", "draw", "loss"], float] = {
 }
 
 
-def _compute_span_gap(
+def _compute_span_scores(
     entry_eval_cp: int | None,
     entry_eval_mate: int | None,
     next_entry_eval_cp: int | None,
     next_entry_eval_mate: int | None,
     result: str,
     user_color: str,
-) -> float | None:
-    """Return per-span gap `exit_score - ES_entry`, or None if entry eval unavailable.
+) -> tuple[float, float] | None:
+    """Return (es_entry, exit_score) for a span, or None if entry eval unavailable.
 
-    Phase 87.1 (SEED-016 D-07). Sign convention: positive = user outperformed
-    the Stockfish baseline (recovered eval, decisive conversions); negative =
-    user gave back expected score. Matches the page-level Achievable Score Gap
-    direction (`higher_is_better`) so the per-type ScoreGapRow reads identically
-    to the page-level row on the same visual axis.
+    quick-260519-ni3: pure helper that exposes both components so callers can
+    accumulate starts and ends separately (single source of truth for entry/exit
+    logic). _compute_span_gap delegates here and returns exit_score - es_entry.
 
-    Args:
-        entry_eval_cp:       white-perspective cp at the span's first ply.
-        entry_eval_mate:     white-perspective mate-in-N at the span's first ply.
-        next_entry_eval_cp:  the NEXT span's first-ply cp (from LEAD()); NULL
-                             marks a terminal span.
-        next_entry_eval_mate: the NEXT span's first-ply mate-in-N; NULL for
-                             terminal spans.
-        result:              raw Game.result string ("1-0" / "0-1" / "1/2-1/2").
-        user_color:          "white" | "black".
+    Phase 87.1 (SEED-016 D-07) NULL-eval gate: returns None when both
+    entry_eval_cp and entry_eval_mate are NULL — the span is excluded from the
+    per-class cohort.
 
     Returns:
-        gap_span = exit_score - ES_entry, computed as:
-          - ES_entry  = lichess sigmoid over (eval_cp, eval_mate, user_color).
+        (es_entry, exit_score) where:
+          - es_entry  = lichess sigmoid over (eval_cp, eval_mate, user_color).
           - exit_score:
             * Transitory span (next_entry_eval_cp OR next_entry_eval_mate
               non-NULL): ES_sigmoid(next_entry_eval, user_color).
             * Terminal span (both next_entry_eval_* NULL): game-result score
               via _GAME_RESULT_TO_SCORE[derive_user_result(result, user_color)].
-        Returns None when both entry_eval_cp and entry_eval_mate are NULL —
-        the span is excluded from the per-class cohort (D-07: skip NULL-eval).
-
-    Mate handling reuses eval_mate_to_expected_score (mate-in-N saturates to
-    0.0 / 1.0 from the user's perspective). No new sigmoid math.
     """
-    # D-07: skip spans where the entry eval is unknown. The eval-backfill
-    # coverage on >=6-ply spans is effectively 100% in prod, so this is a
-    # theoretical edge case — but the gate is total and safe.
+    # D-07: skip spans where the entry eval is unknown.
     if entry_eval_cp is None and entry_eval_mate is None:
         return None
 
@@ -336,7 +328,46 @@ def _compute_span_gap(
         outcome = derive_user_result(result, user_color)
         exit_score = _GAME_RESULT_TO_SCORE[outcome]
 
-    return exit_score - es_entry
+    return es_entry, exit_score
+
+
+def _compute_span_gap(
+    entry_eval_cp: int | None,
+    entry_eval_mate: int | None,
+    next_entry_eval_cp: int | None,
+    next_entry_eval_mate: int | None,
+    result: str,
+    user_color: str,
+) -> float | None:
+    """Return per-span gap `exit_score - ES_entry`, or None if entry eval unavailable.
+
+    Phase 87.1 (SEED-016 D-07). Delegates to _compute_span_scores (single
+    source of truth for entry/exit/mate-precedence/terminal-vs-transitory logic).
+    Sign convention: positive = user outperformed the Stockfish baseline
+    (recovered eval, decisive conversions); negative = user gave back expected
+    score. Matches the page-level Achievable Score Gap direction
+    (`higher_is_better`) so the per-type ScoreGapRow reads identically to the
+    page-level row on the same visual axis.
+
+    Args:
+        entry_eval_cp:       white-perspective cp at the span's first ply.
+        entry_eval_mate:     white-perspective mate-in-N at the span's first ply.
+        next_entry_eval_cp:  the NEXT span's first-ply cp (from LEAD()); NULL
+                             marks a terminal span.
+        next_entry_eval_mate: the NEXT span's first-ply mate-in-N; NULL for
+                             terminal spans.
+        result:              raw Game.result string ("1-0" / "0-1" / "1/2-1/2").
+        user_color:          "white" | "black".
+
+    Returns:
+        gap_span = exit_score - ES_entry, or None when entry eval is unavailable.
+    """
+    scores = _compute_span_scores(
+        entry_eval_cp, entry_eval_mate, next_entry_eval_cp, next_entry_eval_mate, result, user_color
+    )
+    if scores is None:
+        return None
+    return scores[1] - scores[0]
 
 
 # Rolling window size for the score-difference timeline chart (quick-260417-o2l).
@@ -387,25 +418,37 @@ def _aggregate_endgame_stats(
     # Phase 85.1 SEC1-10 for the page-level Achievable Score Gap) is invoked
     # below in the per-class builder loop.
     gaps_by_class: dict[EndgameClass, list[float]] = defaultdict(list)
+    # quick-260519-ni3: per-class start (es_entry) and end (exit_score) accumulators.
+    # Appended under the exact same is-not-None gate as gaps_by_class, so the
+    # three lists always have identical length (reconciliation invariant by construction).
+    starts_by_class: dict[EndgameClass, list[float]] = defaultdict(list)
+    ends_by_class: dict[EndgameClass, list[float]] = defaultdict(list)
     # Phase 87.2 (D-01): per-bucket ΔES accumulator. Shares iteration with
     # gaps_by_class; bucket already computed at the _classify_endgame_bucket
     # call below for the rate-based counts. Per-span grain (not per-game):
     # a game spanning two bucket classes contributes a span-gap to each bucket.
     gaps_by_bucket: dict[str, list[float]] = defaultdict(list)
+    # Quick task 260519-lu0: per-class eval cohort (user-perspective cp) for
+    # MG-entry eval aggregation via compute_eval_confidence_bucket (same helper
+    # as openings stats path). mate-excluded, NULL-excluded, |cp|>=2000 trimmed.
+    eval_sum_by_class: dict[EndgameClass, float] = defaultdict(float)
+    eval_sumsq_by_class: dict[EndgameClass, float] = defaultdict(float)
+    eval_n_by_class: dict[EndgameClass, int] = defaultdict(int)
+    # MAX(played_at) per class for last_played_at.
+    last_played_at_by_class: dict[EndgameClass, datetime | None] = defaultdict(lambda: None)
 
     for row in rows:
-        # Phase 87.1: rows are 8-column SA Rows in prod (Phase 87.1 repo
-        # extension) and 6-tuple test fixtures in legacy unit tests. Tuples
-        # are padded with NULL next-eval; Rows expose the same columns by
-        # attribute. Positional unpacking absorbs both shapes through the
-        # branch below.
+        # Quick task 260519-lu0: rows are now 9-column SA Rows (added played_at).
+        # Legacy 6/8-tuple test fixtures don't carry played_at — default to None.
+        # Tuples are padded with NULL next-eval; Rows expose columns by attribute.
+        row_played_at: datetime | None = None
         if isinstance(row, tuple):
             if len(row) == 6:
                 _game_id, endgame_class_int, result, user_color, eval_cp, eval_mate = row
                 next_entry_eval_cp: int | None = None
                 next_entry_eval_mate: int | None = None
-            else:
-                # 8-tuple: full new row shape, also valid via positional unpack.
+            elif len(row) == 8:
+                # 8-tuple: full Phase 87.1 row shape (no played_at).
                 (
                     _game_id,
                     endgame_class_int,
@@ -415,6 +458,19 @@ def _aggregate_endgame_stats(
                     eval_mate,
                     next_entry_eval_cp,
                     next_entry_eval_mate,
+                ) = row
+            else:
+                # 9-tuple: full new row shape with played_at.
+                (
+                    _game_id,
+                    endgame_class_int,
+                    result,
+                    user_color,
+                    eval_cp,
+                    eval_mate,
+                    next_entry_eval_cp,
+                    next_entry_eval_mate,
+                    row_played_at,
                 ) = row
         else:
             # SA Row object — attribute access. The repository labels the LEAD
@@ -427,6 +483,7 @@ def _aggregate_endgame_stats(
             eval_mate = row.eval_mate
             next_entry_eval_cp = row.next_entry_eval_cp
             next_entry_eval_mate = row.next_entry_eval_mate
+            row_played_at = getattr(row, "played_at", None)
         endgame_class = _INT_TO_CLASS.get(endgame_class_int)
         if endgame_class is None:
             # Unexpected class integer from DB — surface to Sentry and skip the
@@ -474,7 +531,9 @@ def _aggregate_endgame_stats(
         # SEC1-10 uses for the page-level Achievable Score Gap. Sign convention:
         # gap = exit_score - ES_entry, positive = user outperformed Stockfish.
         # NULL-eval spans return None and are excluded from the cohort (D-07).
-        gap = _compute_span_gap(
+        # quick-260519-ni3: call _compute_span_scores once to get both components;
+        # _compute_span_gap is now a thin wrapper over it (single source of truth).
+        span_scores = _compute_span_scores(
             entry_eval_cp=eval_cp,
             entry_eval_mate=eval_mate,
             next_entry_eval_cp=next_entry_eval_cp,
@@ -482,12 +541,39 @@ def _aggregate_endgame_stats(
             result=result,
             user_color=user_color,
         )
-        if gap is not None:
+        if span_scores is not None:
+            es_entry, exit_score = span_scores
+            gap = exit_score - es_entry
             gaps_by_class[endgame_class].append(gap)
+            starts_by_class[endgame_class].append(es_entry)
+            ends_by_class[endgame_class].append(exit_score)
             # Phase 87.2 (D-01): bucket is already computed above; append the
             # same gap into the bucket cohort for the per-bucket paired-z test.
-            # Excluded when gap is None (NULL-eval spans, same gate as per-class).
+            # Excluded when span_scores is None (NULL-eval spans, same gate).
+            # Per-bucket path appends gap ONLY (not start/end — locked decision 4).
             gaps_by_bucket[bucket].append(gap)
+
+        # Quick task 260519-lu0: accumulate user-perspective eval cp for the
+        # per-category eval mean / CI / confidence via compute_eval_confidence_bucket.
+        # Sign convention: user_cp = +eval_cp for white, -eval_cp for black
+        # (mirrors _classify_endgame_bucket). Exclude mate rows, NULL evals, and
+        # |cp| >= EVAL_OUTLIER_TRIM_CP (D-08 outlier trim, same as openings).
+        if (
+            eval_mate is None
+            and eval_cp is not None
+            and abs(eval_cp) < EVAL_OUTLIER_TRIM_CP
+        ):
+            sign = 1 if user_color == "white" else -1
+            user_cp = sign * eval_cp
+            eval_sum_by_class[endgame_class] += user_cp
+            eval_sumsq_by_class[endgame_class] += user_cp * user_cp
+            eval_n_by_class[endgame_class] += 1
+
+        # MAX(played_at) per class.
+        if row_played_at is not None:
+            current_max = last_played_at_by_class[endgame_class]
+            if current_max is None or row_played_at > current_max:
+                last_played_at_by_class[endgame_class] = row_played_at
 
     # Build EndgameCategoryStats objects
     categories: list[EndgameCategoryStats] = []
@@ -567,15 +653,38 @@ def _aggregate_endgame_stats(
         # endgame_class is always a valid EndgameClass because _INT_TO_CLASS only contains them.
         label = _ENDGAME_CATEGORY_LABELS[endgame_class]
 
-        # Phase 87 follow-up: per-class Wilson score-test p-value vs 50%.
-        # Drives the per-card Score bullet sig-gating triple. Same wire-format
-        # gate as endgame_score_p_value etc. (PVALUE_RELIABILITY_MIN_N=10).
-        _conf_class, p_score_class_raw, _se_class = compute_confidence_bucket(
-            wins, draws, losses, total
-        )
+        # Quick task 260519-lu0: Wilson score + last_played_at via _build_wdl_stats
+        # (same helper as openings stats path — no reimplemented statistics).
+        # score_p_value retains its existing gated semantics (None when total <
+        # PVALUE_RELIABILITY_MIN_N) for backward compat with EndgameTypeCard Stats subtab.
+        category_last_played_at = last_played_at_by_class[endgame_class]
+        wdl_stats = _build_wdl_stats(wins, draws, losses, total, last_played_at=category_last_played_at)
         score_p_value: float | None = (
-            p_score_class_raw if total >= PVALUE_RELIABILITY_MIN_N else None
+            wdl_stats.p_value if total >= PVALUE_RELIABILITY_MIN_N else None
         )
+
+        # Quick task 260519-lu0: MG-entry eval aggregation via the verbatim
+        # openings eval finalizer (same helper as openings_service.analyze).
+        # Eval is per-span at endgame-entry (user-perspective cp); mate excluded,
+        # NULL excluded, |cp| >= EVAL_OUTLIER_TRIM_CP trimmed (D-08).
+        cat_eval_n = eval_n_by_class[endgame_class]
+        cat_eval_sum = eval_sum_by_class[endgame_class]
+        cat_eval_sumsq = eval_sumsq_by_class[endgame_class]
+        cat_eval_pawns: float | None = None
+        cat_eval_ci_low_pawns: float | None = None
+        cat_eval_ci_high_pawns: float | None = None
+        cat_eval_p_value: float | None = None
+        cat_eval_confidence: Literal["low", "medium", "high"] = "low"
+        if cat_eval_n > 0:
+            conf_mg, p_value_mg, mean_cp_mg, ci_half_mg = compute_eval_confidence_bucket(
+                cat_eval_sum, cat_eval_sumsq, cat_eval_n
+            )  # H0: mean == 0 cp
+            cat_eval_pawns = mean_cp_mg / 100.0
+            if cat_eval_n >= 2:
+                cat_eval_ci_low_pawns = (mean_cp_mg - ci_half_mg) / 100.0
+                cat_eval_ci_high_pawns = (mean_cp_mg + ci_half_mg) / 100.0
+            cat_eval_p_value = p_value_mg
+            cat_eval_confidence = conf_mg
 
         # Phase 87.1 (SEED-016 D-03/D-05/D-07): per-class mean per-span gap with
         # paired one-sample z-test via compute_paired_difference_test. n-gates
@@ -598,6 +707,15 @@ def _aggregate_endgame_stats(
         # matching how the cohort-empty case reads.
         type_gap_mean: float | None = type_gap_mean_raw if type_gap_n > 0 else None
 
+        # quick-260519-ni3: start/end means over the identical cohort (same n,
+        # same NULL-eval gate — lists have equal length by construction).
+        # Use sum/len to avoid a statistics import; None when n == 0 (mirroring
+        # type_gap_mean above so all three fields share the same None contract).
+        type_starts = starts_by_class[endgame_class]
+        type_ends = ends_by_class[endgame_class]
+        type_start_mean: float | None = sum(type_starts) / type_gap_n if type_gap_n > 0 else None
+        type_end_mean: float | None = sum(type_ends) / type_gap_n if type_gap_n > 0 else None
+
         categories.append(
             EndgameCategoryStats(
                 endgame_class=endgame_class,
@@ -612,12 +730,29 @@ def _aggregate_endgame_stats(
                 conversion=conversion_stats,
                 score_p_value=score_p_value,
                 # Phase 87.1 (SEED-016 D-05): per-class Score Gap fields. See
-                # _compute_span_gap + compute_paired_difference_test above.
+                # _compute_span_scores + compute_paired_difference_test above.
                 type_achievable_score_gap_mean=type_gap_mean,
                 type_achievable_score_gap_n=type_gap_n,
                 type_achievable_score_gap_p_value=type_gap_p,
                 type_achievable_score_gap_ci_low=type_gap_ci_low,
                 type_achievable_score_gap_ci_high=type_gap_ci_high,
+                # quick-260519-ni3: descriptive start/end components.
+                type_achievable_score_start_mean=type_start_mean,
+                type_achievable_score_end_mean=type_end_mean,
+                # Quick task 260519-lu0: WDLStats-aligned score/eval/last_played_at.
+                score=wdl_stats.score,
+                confidence=wdl_stats.confidence,
+                p_value=wdl_stats.p_value,
+                ci_low=wdl_stats.ci_low,
+                ci_high=wdl_stats.ci_high,
+                last_played_at=category_last_played_at,
+                avg_eval_pawns=cat_eval_pawns,
+                eval_ci_low_pawns=cat_eval_ci_low_pawns,
+                eval_ci_high_pawns=cat_eval_ci_high_pawns,
+                eval_n=cat_eval_n,
+                eval_p_value=cat_eval_p_value,
+                eval_confidence=cat_eval_confidence,
+                eval_baseline_pawns=EVAL_BASELINE_PAWNS_WHITE,
             )
         )
 

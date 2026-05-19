@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { WDLChartRow } from '@/components/charts/WDLChartRow';
+import { PositionResultsPanel } from '@/components/charts/PositionResultsPanel';
 import { GameCardList } from '@/components/results/GameCardList';
 import type { OpeningsResponse } from '@/types/api';
 import type { ReactNode } from 'react';
@@ -63,14 +63,13 @@ export function GamesTab({
         </div>
       ) : gamesData ? (
         <>
-          <div className="charcoal-texture rounded-md p-4">
-            <WDLChartRow
-              data={gamesData.stats}
-              label={positionResultsLabel}
-              barHeight="h-6"
-              testId="wdl-games-position"
-            />
-          </div>
+          <PositionResultsPanel
+            stats={gamesData.stats}
+            evalBaselinePawns={gamesData.eval_baseline_pawns}
+            filterColor={filterColor}
+            label={positionResultsLabel}
+            className="charcoal-texture rounded-md p-4"
+          />
           <GameCardList
             games={gamesData.games}
             matchedCount={gamesData.matched_count}
