@@ -16,7 +16,6 @@ import {
   CartesianGrid,
   ComposedChart,
   ErrorBar,
-  Label,
   Line,
   ReferenceArea,
   ReferenceLine,
@@ -110,8 +109,27 @@ function conclusionText(
 // line doesn't touch the y-axis / right border. Recharts category-axis padding.
 const X_AXIS_EDGE_PADDING = 24;
 
-// Post-UAT (88.4): larger datapoint markers for readability (was 2.5).
+// Datapoint marker size encodes how many games YOU had in the bucket
+// relative to your opponent (n / n_opp): a bigger dot means more of the
+// bucket's games were yours, so the user-side score is the better-sampled
+// of the two. DOT_RADIUS is the base radius at parity (n == n_opp); the
+// scaled radius is clamped to [MIN, MAX] so a lopsided bucket can't produce
+// an invisible or oversized marker.
+// Post-UAT (88.4): base radius bumped for readability (was 2.5).
 const DOT_RADIUS = 4.5;
+const DOT_RADIUS_MIN = 3;
+const DOT_RADIUS_MAX = 7;
+
+/**
+ * Scale the marker radius by the user/opponent sample-size ratio, capped to
+ * [DOT_RADIUS_MIN, DOT_RADIUS_MAX]. n_opp == 0 with n > 0 means you played
+ * every game in the bucket — max the marker rather than divide by zero.
+ */
+function dotRadius(n: number, nOpp: number): number {
+  if (nOpp <= 0) return DOT_RADIUS_MAX;
+  const scaled = DOT_RADIUS * (n / nOpp);
+  return Math.min(DOT_RADIUS_MAX, Math.max(DOT_RADIUS_MIN, scaled));
+}
 
 interface ChartPoint {
   label: string;
@@ -119,6 +137,7 @@ interface ChartPoint {
   rangeLabel: string;
   delta: number;
   n: number;
+  n_opp: number;
   opp_score: number | null;
   p_value: number | null;
   ci_low: number | null;
@@ -175,6 +194,7 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
           PRESSURE_RANGE_LABELS[bin.quintile_index as 0 | 1 | 2 | 3] ?? '',
         delta: bin.delta,
         n: bin.n,
+        n_opp: bin.n_opp,
         opp_score: bin.opp_score,
         p_value: bin.p_value,
         ci_low: bin.ci_low,
@@ -221,9 +241,16 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
         />
         <span>Score gap: {formatSignedPct(point.delta)}</span>
       </div>
+      {/* Two lines: the user-side and opponent-side splits are independent
+          samples from the same game-set, so their game counts can differ —
+          show each count next to its own score. */}
       <div className="text-muted-foreground">
-        You: {formatPct(userScore)}, Opp: {formatPct(point.opp_score)}, Games:{' '}
-        {point.n}
+        <div>
+          You: {formatPct(userScore)} ({point.n} games)
+        </div>
+        <div>
+          Opp: {formatPct(point.opp_score)} ({point.n_opp} games)
+        </div>
       </div>
       <div>{conclusionText(point.delta, point.p_value, point.n)}</div>
       <div className="text-muted-foreground italic">{testLine}</div>
@@ -255,7 +282,7 @@ export function ScoreGapByTimePressureChart({
         className="w-full h-64"
         data-testid="score-gap-by-time-pressure-chart-container"
       >
-        <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 24 }}>
+        <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
           {/* Horizontal-only fine grid — identical to EndgameClockDiffOverTimeChart. */}
           <CartesianGrid vertical={false} />
           {/* Hidden full-range numeric x-axis the zone bands bind to. The
@@ -311,9 +338,7 @@ export function ScoreGapByTimePressureChart({
             dataKey="label"
             type="category"
             padding={{ left: X_AXIS_EDGE_PADDING, right: X_AXIS_EDGE_PADDING }}
-          >
-            <Label value="Remaining Time" position="insideBottom" offset={-14} />
-          </XAxis>
+          />
           <YAxis
             yAxisId="value"
             domain={yDomain}
@@ -361,12 +386,14 @@ export function ScoreGapByTimePressureChart({
                 return <g key={`nodot-${String(payload?.label ?? cx)}`} />;
               }
               const delta = (payload.delta as number) ?? 0;
+              const n = (payload.n as number) ?? 0;
+              const nOpp = (payload.n_opp as number) ?? 0;
               return (
                 <circle
                   key={`score-gap-dot-${payload.label as string}`}
                   cx={cx}
                   cy={cy}
-                  r={DOT_RADIUS}
+                  r={dotRadius(n, nOpp)}
                   fill={zoneDotColor(delta)}
                 />
               );
@@ -385,6 +412,13 @@ export function ScoreGapByTimePressureChart({
           </Line>
         </ComposedChart>
       </ChartContainer>
+      {/* X-axis caption rendered as HTML (not a Recharts SVG <Label>) so it
+          matches the "Clock Gap at Endgame Entry" chart's text-sm caption
+          exactly on every viewport — SVG label text scales with the
+          responsive container and would not match on mobile. */}
+      <p className="text-sm text-muted-foreground text-center mt-1">
+        Remaining Time
+      </p>
     </div>
   );
 }

@@ -74,6 +74,7 @@ function makeBin(
   quintile_index: 0 | 1 | 2 | 3 | 4,
   opts: {
     n?: number;
+    n_opp?: number;
     delta?: number;
     ci_low?: number | null;
     ci_high?: number | null;
@@ -87,6 +88,7 @@ function makeBin(
     quintile_index,
     quintile_label: labels[quintile_index]!,
     n,
+    n_opp: opts.n_opp ?? n,
     delta: opts.delta ?? 0.0,
     p_value: opts.p_value !== undefined ? opts.p_value : 0.5,
     ci_low: opts.ci_low !== undefined ? opts.ci_low : (n > 0 ? -0.02 : null),
@@ -181,7 +183,7 @@ describe('ScoreGapByTimePressureChart', () => {
 
   // Test 8: tooltip surfaces per-bucket stats — renders the REAL exported
   // production tooltip (no reimplementation). Fixes REVIEW.md IN-01 tautology.
-  it('tooltip: range header, combined line, conclusion, italic test+CI', () => {
+  it('tooltip: range header, two-line You/Opponents split, conclusion, italic test+CI', () => {
     const { getByTestId, getByText } = render(
       <ScoreGapTooltipContent
         point={{
@@ -189,6 +191,7 @@ describe('ScoreGapByTimePressureChart', () => {
           rangeLabel: '0-20%',
           delta: -0.17,
           n: 40,
+          n_opp: 37,
           opp_score: 0.55,
           p_value: 0.03,
           ci_low: -0.02,
@@ -203,10 +206,10 @@ describe('ScoreGapByTimePressureChart', () => {
     // Header is the full bucket RANGE, not the axis center value.
     expect(tooltip.textContent).toContain('Time Bucket: 0-20%');
     expect(tooltip.textContent).toContain('Score gap: -17.0%');
-    // One combined line: userScore = opp_score + delta = 0.55 + (-0.17) = 0.38.
-    expect(tooltip.textContent).toContain(
-      'You: 38.0%, Opp: 55.0%, Games: 40',
-    );
+    // Two separate lines, each with its own independent game count:
+    // userScore = opp_score + delta = 0.55 + (-0.17) = 0.38.
+    expect(tooltip.textContent).toContain('You: 38.0% (40 games)');
+    expect(tooltip.textContent).toContain('Opp: 55.0% (37 games)');
     expect(tooltip.textContent).not.toContain('n = 40');
     // Conclusion: p=0.03 → medium → "Possibly"; delta ≤ -0.06 → weakness.
     // No confidence-label clause (dropped per UAT) — p-value only.
@@ -235,6 +238,7 @@ describe('ScoreGapByTimePressureChart', () => {
           rangeLabel: '20-40%',
           delta: 0.04,
           n: 7,
+          n_opp: 5,
           opp_score: null,
           p_value: null,
           ci_low: null,
@@ -244,7 +248,8 @@ describe('ScoreGapByTimePressureChart', () => {
     );
     const tooltip = getByTestId('score-gap-tooltip');
     expect(tooltip.textContent).toContain('Time Bucket: 20-40%');
-    expect(tooltip.textContent).toContain('You: n/a, Opp: n/a, Games: 7');
+    expect(tooltip.textContent).toContain('You: n/a (7 games)');
+    expect(tooltip.textContent).toContain('Opp: n/a (5 games)');
     expect(tooltip.textContent).toContain('Score gap: +4.0%');
     // n < 10 gate → low → "Inconclusive", no confidence label, no p segment.
     expect(tooltip.textContent).toContain('Inconclusive');

@@ -659,6 +659,9 @@ class PressureQuintileBullet(BaseModel):
     n: user-side games in this quintile bin (drives the displayed sample-size
         chip; the opponent-side count is gated by min(n_user, n_opp) >=
         MIN_GAMES_PER_PRESSURE_BIN inside _build_quintile_bullets).
+    n_opp: opponent-side games in the matching opponent-clock quintile. The
+        two splits are independent samples drawn from the same game-set, so
+        this can differ from n; the tooltip shows both counts separately.
     delta: user_score - opp_score where each side is bucketed by its OWN
         clock-pct at endgame entry. 0.0 when either side has zero games at
         this quintile (no signal to compare).
@@ -673,6 +676,7 @@ class PressureQuintileBullet(BaseModel):
     quintile_index: int  # 0..4
     quintile_label: str  # "0-20%", "20-40%", "40-60%", "60-80%", "80-100%"
     n: int
+    n_opp: int
     delta: float
     p_value: float | None
     ci_low: float | None
