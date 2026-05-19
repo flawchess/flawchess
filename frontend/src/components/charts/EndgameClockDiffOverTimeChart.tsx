@@ -142,14 +142,14 @@ export function EndgameClockDiffOverTimeChart({
       <div className="mb-3">
         <h3 className="text-base font-semibold">
           <span className="inline-flex items-center gap-1">
-            Average Clock Gap over Time
+            Clock Gap at Endgame Entry
             <InfoPopover
-              ariaLabel="Average clock gap over time info"
+              ariaLabel="Clock gap at endgame entry info"
               testId="clock-diff-over-time-info"
               side="top"
             >
               <p>
-                <strong>Average Clock Gap over Time:</strong> whether you
+                <strong>Clock Gap at Endgame Entry:</strong> whether you
                 tend to enter endgames with more or less time on your clock
                 than your opponent, tracked over time. Positive means you
                 arrived with more time left.
