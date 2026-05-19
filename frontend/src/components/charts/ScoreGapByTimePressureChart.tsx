@@ -25,8 +25,8 @@ import {
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 import {
-  PRESSURE_DELTA_DOMAIN,
   clampDeltaCi,
+  computeScoreGapYAxis,
   pressureDeltaZoneColor,
 } from '@/lib/pressureBulletConfig';
 import type { PressureQuintileBullet } from '@/types/endgames';
@@ -44,8 +44,9 @@ const ZONE_OPACITY = 0.15;
 export const PRESSURE_SCORE_GAP_NEUTRAL_MIN = -0.06;
 export const PRESSURE_SCORE_GAP_NEUTRAL_MAX = 0.06;
 
-// Fixed Y domain matching the existing bullet chart axis from pressureBulletConfig.ts.
-const Y_DOMAIN: [number, number] = [-PRESSURE_DELTA_DOMAIN, PRESSURE_DELTA_DOMAIN];
+// Y-axis domain + 10%-spaced tick logic lives in pressureBulletConfig
+// (computeScoreGapYAxis) so this component file only exports React
+// components — keeps Fast Refresh / react-refresh lint happy.
 
 // Q4 (80-100% clock remaining) is a low-signal tail — hidden per Plan 88-13 A-4.
 // The chart displays only Q0–Q3 (4 datapoints).
@@ -168,9 +169,8 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
         />
         <span>Score gap: {formatSignedPct(point.delta)}</span>
       </div>
-      <div className="text-muted-foreground">
-        You: {formatPct(userScore)} | Opp: {formatPct(point.opp_score)}
-      </div>
+      <div className="text-muted-foreground">You: {formatPct(userScore)}</div>
+      <div className="text-muted-foreground">Opp: {formatPct(point.opp_score)}</div>
       <div className="text-muted-foreground">Games: {point.n}</div>
       <div className="text-muted-foreground italic">{testLine}</div>
     </div>
@@ -187,6 +187,7 @@ export function ScoreGapByTimePressureChart({
   tc,
 }: ScoreGapByTimePressureChartProps) {
   const data = toChartData(quintiles);
+  const { domain: yDomain, ticks: yTicks } = computeScoreGapYAxis(data);
 
   return (
     <div
@@ -196,23 +197,42 @@ export function ScoreGapByTimePressureChart({
     >
       <ChartContainer
         config={{}}
-        className="w-full h-44"
+        className="w-full h-56"
         data-testid="score-gap-by-time-pressure-chart-container"
       >
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
           {/* Horizontal-only fine grid — identical to EndgameClockDiffOverTimeChart. */}
           <CartesianGrid vertical={false} />
-          {/* Three flat zone bands — same pattern as EndgameClockDiffOverTimeChart. */}
+          {/* Hidden full-range numeric x-axis the zone bands bind to. The
+              visible category axis is padded (datapoints inset off the
+              borders), so a category-bound band would inherit that inset and
+              leave uncolored gutters. Binding the bands to this unpadded
+              [0,1] axis instead makes them full-bleed: flush to the y-axis on
+              the left and the chart border on the right (post-UAT 88.4). */}
+          <XAxis
+            xAxisId="bleed"
+            type="number"
+            domain={[0, 1]}
+            hide
+            allowDataOverflow
+          />
+          {/* Three flat zone bands — full-bleed via xAxisId="bleed" x1=0/x2=1. */}
           <ReferenceArea
+            xAxisId="bleed"
             yAxisId="value"
-            y1={Y_DOMAIN[0]}
+            x1={0}
+            x2={1}
+            y1={yDomain[0]}
             y2={PRESSURE_SCORE_GAP_NEUTRAL_MIN}
             fill={ZONE_DANGER}
             fillOpacity={ZONE_OPACITY}
             ifOverflow="visible"
           />
           <ReferenceArea
+            xAxisId="bleed"
             yAxisId="value"
+            x1={0}
+            x2={1}
             y1={PRESSURE_SCORE_GAP_NEUTRAL_MIN}
             y2={PRESSURE_SCORE_GAP_NEUTRAL_MAX}
             fill={ZONE_NEUTRAL}
@@ -220,9 +240,12 @@ export function ScoreGapByTimePressureChart({
             ifOverflow="visible"
           />
           <ReferenceArea
+            xAxisId="bleed"
             yAxisId="value"
+            x1={0}
+            x2={1}
             y1={PRESSURE_SCORE_GAP_NEUTRAL_MAX}
-            y2={Y_DOMAIN[1]}
+            y2={yDomain[1]}
             fill={ZONE_SUCCESS}
             fillOpacity={ZONE_OPACITY}
             ifOverflow="visible"
@@ -236,8 +259,9 @@ export function ScoreGapByTimePressureChart({
           />
           <YAxis
             yAxisId="value"
-            domain={Y_DOMAIN}
-            width={44}
+            domain={yDomain}
+            ticks={yTicks}
+            width={48}
             tickFormatter={(v: number) =>
               v > 0 ? `+${(v * 100).toFixed(0)}%` : `${(v * 100).toFixed(0)}%`
             }

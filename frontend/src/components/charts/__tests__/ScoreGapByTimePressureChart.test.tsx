@@ -33,6 +33,15 @@ import {
   PRESSURE_SCORE_GAP_NEUTRAL_MIN,
   PRESSURE_SCORE_GAP_NEUTRAL_MAX,
 } from '../ScoreGapByTimePressureChart';
+import {
+  computeScoreGapYAxis,
+  type ScoreGapAxisPoint,
+} from '@/lib/pressureBulletConfig';
+
+// Minimal axis-point factory — computeScoreGapYAxis only reads delta + ciError.
+function pt(delta: number, ciError?: [number, number]): ScoreGapAxisPoint {
+  return { delta, ciError };
+}
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -225,5 +234,53 @@ describe('ScoreGapByTimePressureChart', () => {
     // No p-value segment; CI falls back to the methodology phrase.
     expect(tooltip.textContent).not.toContain('p = ');
     expect(tooltip.textContent).toContain('95% normal-approx CI');
+  });
+});
+
+describe('ScoreGapByTimePressureChart — computeScoreGapYAxis (post-UAT 88.4)', () => {
+  const approx = (xs: number[]) => xs.map((v) => Math.round(v * 1e6) / 1e6);
+
+  it('keeps the ±30% envelope and 10% ticks when no point clips', () => {
+    const { domain, ticks } = computeScoreGapYAxis([pt(-0.17), pt(0.04), pt(0.22)]);
+    expect(approx(domain)).toEqual([-0.3, 0.3]);
+    expect(approx(ticks)).toEqual([-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3]);
+  });
+
+  it('returns the base envelope for an empty dataset', () => {
+    const { domain, ticks } = computeScoreGapYAxis([]);
+    expect(approx(domain)).toEqual([-0.3, 0.3]);
+    expect(approx(ticks)).toEqual([-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3]);
+  });
+
+  it('expands DOWN to the next 10% step for a sub -30% datapoint', () => {
+    const { domain, ticks } = computeScoreGapYAxis([pt(-0.42), pt(0.05)]);
+    expect(approx(domain)).toEqual([-0.5, 0.3]);
+    expect(approx(ticks)).toEqual([
+      -0.5, -0.4, -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3,
+    ]);
+  });
+
+  it('expands UP when a CI whisker (not just the dot) exceeds +30%', () => {
+    // dot at +0.20 is inside, but the upper whisker reaches +0.45.
+    const { domain, ticks } = computeScoreGapYAxis([pt(0.2, [0.0, 0.25])]);
+    expect(approx(domain)).toEqual([-0.3, 0.5]);
+    expect(approx(ticks)).toEqual([
+      -0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3, 0.4, 0.5,
+    ]);
+  });
+
+  it('a value sitting exactly on ±30% does NOT over-expand the axis', () => {
+    const { domain } = computeScoreGapYAxis([pt(0.3), pt(-0.3)]);
+    expect(approx(domain)).toEqual([-0.3, 0.3]);
+  });
+
+  it('ticks are equidistant at exactly 10% and always include 0', () => {
+    const { ticks } = computeScoreGapYAxis([pt(-0.61), pt(0.37)]);
+    expect(ticks).toContain(0);
+    for (let i = 1; i < ticks.length; i += 1) {
+      const a = ticks[i]!;
+      const b = ticks[i - 1]!;
+      expect(Math.round((a - b) * 1e6) / 1e6).toBe(0.1);
+    }
   });
 });
