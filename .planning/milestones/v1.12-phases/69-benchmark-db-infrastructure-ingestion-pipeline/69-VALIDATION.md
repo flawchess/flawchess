@@ -2,7 +2,7 @@
 phase: 69
 slug: benchmark-db-infrastructure-ingestion-pipeline
 status: planned
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false  # Plan 02 Task 02-01 builds the test scaffold
 created: 2026-04-25
 ---

@@ -1,8 +1,8 @@
 ---
 phase: 15
 slug: enhanced-game-import-data
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-18
 ---

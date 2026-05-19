@@ -41,7 +41,7 @@ from app.repositories.llm_log_repository import (
     get_latest_successful_log_for_user,
     get_oldest_recent_miss_timestamp,
 )
-from app.schemas.endgames import EndgameClass, TimePressureChartResponse
+from app.schemas.endgames import EndgameClass
 from app.schemas.insights import (
     EndgameInsightsReport,
     EndgameInsightsResponse,
@@ -57,13 +57,15 @@ from app.services.endgame_zones import (
     PER_CLASS_GAUGE_ZONES,
     ZONE_REGISTRY,
     ZoneSpec,
+    assign_zone,
+    sample_quality,
 )
 from app.services.insights_service import SPARSE_COMBO_FLOOR, compute_findings
 
 # -- Module-level constants (CLAUDE.md: no magic numbers) --
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v27"  # v27 (260512 sparse-history rescue): three layered fixes for short-history users (< ~20 weekly buckets per (platform, time_control) combo) that previously produced incomplete prompts and hallucinated `player_profile` output. **A**: `all_time_series_pairs` in `_assemble_user_prompt` now registers a pair only when the post-A4/C2/C6 retained series has ≥1 point, so an all_time series that C2-trims to empty no longer suppresses its last_3mo `[series]` twin (restores score_timeline / clock_diff_timeline / endgame_elo_timeline raw points for users whose entire history fits inside the last 90 days). **B**: `compute_player_profile` now emits `quality="sparse"` entries for combos with ≥1 weekly bucket but < _PLAYER_PROFILE_MIN_POINTS=20 when NO combo clears the full floor — the renderer suppresses `trend=` / `std=` on sparse blocks and swaps the [anchor-combo] tag for a `sparse-history` variant that forbids learning-arc / trajectory framing; new prompt section "Sparse-history profile" tells the LLM how to narrate from sparse blocks (current/min/max only, no trajectory claims, ~2-3 sentence player_profile). Replaces the prior hallucination failure mode where the schema-mandated `player_profile` field was fabricated from non-existent anchor data. **C**: `### Subsection: endgame_elo_timeline` now renders a sentinel `[no qualifying combo — every (platform, time_control) combo has fewer than SPARSE_COMBO_FLOOR weekly buckets; no Endgame ELO trajectory available yet]` line when no combo clears `SPARSE_COMBO_FLOOR=10`, instead of vanishing from the prompt entirely. See `.planning/debug/llm-prompt-missing-sections.md`. v26 (260511 entry_eval_pawns band): reverted the EG-entry-eval neutral band from ±0.50 back to ±0.75 pawns (pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`, reports/benchmarks-2026-05-10.md §3). Frontend tile, backend ZoneSpec, and LLM glossary kept in lockstep. v25 (260511 entry_expected_score): wire Stockfish-baseline achievable score (Lichess sigmoid) into the endgame_start_vs_end subsection alongside entry_eval_pawns and endgame_score. New ENTRY_EXPECTED_SCORE_ZONES from reports/benchmarks-2026-05-11.md. LLM narrates the achievable-vs-achieved gap as the headline diagnostic with entry_eval_pawns as the explanatory unit. v24 (260510-ugj): tightened last_3mo narration anchors — quoting any last_3mo value now requires an explicit "last 3 months" framing, and the within-noise legal-frames list no longer endorses vague "currently sitting at X%" / "over the recent window" forms that confused users by naming numbers absent from the dashboard. Stale-series rule strengthened: stale window numbers (mean, n, trend, std) must not appear in the narrative at all — past-tense qualitative reference only. v23 (260510 endgame_start_vs_end): wire Phase 81 entry-eval and endgame-score metrics into the LLM payload via a new `endgame_start_vs_end` subsection under section_id `overall`. Renamed score_timeline `endgame_score` → `endgame_score_timeline` and `non_endgame_score` → `non_endgame_score_timeline` to free the clean `endgame_score` name for the new subsection. Tile color rule amended from sig-only to `zone × p<0.05` (Phase 81 D-09 amendment). EG-entry-eval neutral band tightened from ±0.75 to ±0.50 for both tile and LLM. v22 (260503 eval-proxy cutover): rewrote the Conversion / Parity / Recovery glossary entries and the bucket descriptions in the metric glossary to reflect the Stockfish eval at endgame entry replacing the old material_imbalance + 4-ply persistence proxy. Conversion now means "entered with eval ≥ +1.0", Recovery "entered with eval ≤ -1.0", Parity "entered with eval between -1.0 and +1.0". Display threshold expressed as a signed one-decimal pawn value ("+1.0" / "-1.0") to match the rest of the page's eval rendering. v21 (260501-s0u pass2 polish): score_pct_diff in the type WDL chart is now derived from rounded score_pct − opp_score_pct (avoids 1pp mismatch e.g. 47 − 53 = -6 vs the unrounded -6.8 → -7). Raised SAMPLE_QUALITY_BANDS thin_max from 10 to 20 for per-type subsections (results_by_endgame_type, conversion_recovery_by_type) so 10-19 sequences no longer label as `adequate`. v20 (260501-s0u pass2 type_breakdown cleanup): restored the per-type WDL chart at `### Chart: results_by_endgame_type_wdl` (endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff). The v18 conv/recov delta table was redundant with the conversion_recovery_by_type [summary] blocks (same per-type conv_pct / recov_pct + per-class typical bands) and got dropped. Reordered type_breakdown to chart wdl → results_by_endgame_type → conversion_recovery_by_type so the LLM reads aggregate WDL, then per-type win_rate, then per-type Conv/Recov detail. _format_zone_bounds and the zone classifier (insights_service._findings_conversion_recovery_by_type) now dispatch via PER_CLASS_GAUGE_ZONES when a finding carries `endgame_class` for conversion_win_pct / recovery_save_pct, so per-class [summary] zone labels and inline `(typical LO to UP)` match the table-side per-class baselines. v19 (260501-s0u terminology pass): standardize on "endgame type" instead of "endgame class" in LLM-facing strings — column header is now `endgame_type`, caption and prompt prose use "per-type" / "type-specific" / "type baseline" framing. v18 (260501-s0u benchmark calibration v2): drop per-class win_rate framing in favor of per-class delta-from-baseline. Conversion / Recovery are now narrated against class-specific typical bands sourced from PER_CLASS_GAUGE_ZONES (reports/benchmarks-2026-05-01.md). Per-class user prompt payload replaced win_pct/score_pct rows with conv_pct, recov_pct, class baseline midpoints, and signed deltas. type_win_rate_timeline subsection deprecated — no longer rendered on the UI. v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
+_PROMPT_VERSION = "endgame_v35"  # v35 (260517 Phase 87.6 amendment — logistic-anchored stretch): supersedes v34's PR-direct mapping. Endgame ELO and Non-Endgame ELO are now derived as `actual_elo ± spread/2` where `spread = 400 * log10((s_E/(1-s_E)) / (s_N/(1-s_N)))`. The midpoint property holds exactly: `endgame_elo + non_endgame_elo == 2 * actual_elo` for every emitted point — UAT against prod showed v34's PR formula violated the "Actual ELO surrounded by the two lines" invariant in ~88% of weekly points because the 100-game trailing PR estimator lagged the live Glicko snapshot. Sign convention preserved: `endgame_elo >= non_endgame_elo` ⇔ endgame_score >= non_endgame_score. Glossary entries rewritten to drop FIDE PR framing. v34 (260517 Phase 87.6 PR-direct rebuild): K=450 deleted; Endgame ELO and Non-Endgame ELO are now FIDE Performance Ratings computed independently from endgame and non-endgame game subsets: `PR = R_opp_avg + 400 * log10(s* / (1 - s*))` with Laplace-smoothed `s* = (n * score + 1) / (n + 2)`. The midpoint property holds: `midpoint(endgame_elo, non_endgame_elo) ≈ actual_elo` by construction. `non_endgame_elo` added as a new optional int field on `TimePoint` (populated ONLY for `endgame_elo_timeline` series). THREE summary blocks per combo in deterministic order: `[summary endgame_elo | dim]`, `[summary non_endgame_elo | dim]`, `[summary endgame_elo_gap | dim]`. Sentence skeleton for pairing: "Your Endgame ELO sits at X, vs Y in non-endgame games — your endgame play is [lifting / holding back] your rating by ~Δ ELO." `non_endgame_elo` glossary entry added. `endgame_elo` glossary entry rewritten under PR framing. Series row format extended: `gap=<int>, elo=<int>, non_eg_elo=<int>`. v33 (260517 Phase 87.5 Endgame ELO rebuild on Endgame Score Gap): rebuilt the Endgame ELO Timeline on the additive K mapping `endgame_elo = round(actual_elo + K * eg_score_gap)` where `eg_score_gap` is the per-week windowed Endgame Score Gap series (Phase 87.2 producer; endgame minus non-endgame trailing-100-game outcome scores). Phase 87.4 PIVOT/ALPHA/CALIBRATION_VERSION affine recenter deleted wholesale; the Phase 57 multiplicative `400 · log10(s/(1−s))` formula is retired entirely. MetricId `conversion_elo_gap` → `endgame_elo_gap`; SubsectionId `conversion_elo_timeline` → `endgame_elo_timeline`; the subsection moves from `metrics_elo` to `overall` (co-located below the Endgame Score Gap over Time chart in the UI). Prompt prose restores the "lifts up / holds back actual rating" headline metaphor that v32 traded away for "what your ELO would be if everyone played the way you do when up material" — at `eg_score_gap = 0` Endgame ELO equals actual rating, positive gaps lift it, negative gaps hold it back. K = 450 locked from §3.1.6 benchmark percentiles (typical ±10pp maps to ±33-47 ELO; extreme ±23pp maps to ±100 ELO). Endgame Score Gap input rationale: §3.1.6 ELO d=0.17 (collapsed) vs §3.2.2 Conv ΔES ELO d=1.62 (the bias being unwound). Cache-busts prior v32 reports so newly generated narration uses the restored framing. v32 (260516 Phase 87.4 Conversion ELO rewire): Endgame Skill concept removed end-to-end -- no composite definition survived scrutiny on cohort de-confounding, individual absolute-skill interpretation, per-window temporal stability, and the Phase 57 median-coincide invariant. Specifically: endgame_skill finding dropped from endgame_metrics subsection; section2_score_gap_skill finding dropped from the same subsection; endgame_elo_timeline subsection renamed conversion_elo_timeline; endgame_elo_gap metric renamed conversion_elo_gap. Conv ΔES Score Gap promoted to primary Section 2 finding (structurally: already first in the _SECTION2_BUCKETS list). Affine recenter wires conv_ΔES (Phase 87.2) into the Phase 57 formula -- unchanged formula, new input: s = clamp(0.5 + α·(conv_ΔES − PIVOT), 0.05, 0.95), PIVOT = -0.0474 (benchmark p50). Conversion ELO now means "what your ELO would be if everyone played the way you do when up material." Conv/Parity/Recov bullets display-centered on typical-population zero (display-only affine shifts: Conv -0.055, Recov +0.06, Parity 0; underlying zones/LLM bands unchanged). Dual-label terminology: "Conversion ELO" replaces "Endgame ELO" in all prompt prose, chart titles, and popover copy. v31 (260515 Phase 87.2 Section 2 ΔES Score Gap family): added four new metric findings section2_score_gap_{conv,parity,recov,skill} to the endgame_metrics subsection alongside the existing rate findings (endgame_skill, conversion_win_pct, parity_score_pct, recovery_save_pct). Each carries (mean, n, zone, neutral_band) — no p_value/verdict (band IS the significance signal, per memory feedback_llm_significance_signal.md). Acknowledges that the prior rate-based per-bucket peer-diff Gap on Section 2 cards was mathematically degenerate by construction (Conv-Gap ≡ Recov-Gap by mirror-bucket symmetry; Parity-Gap = 2·user_parity − 1 affine of the gauge). The new ΔES Gap measures eval delta during the span (Stockfish-baseline anchor), making Conv and Recov genuinely independent. Skill uses equal-weighted mean of the three bucket means (NOT pooled all-spans — pooled reduces by telescoping to the page-level Achievable Score Gap). Sigmoid-bias caveat carried verbatim from v29. Dual-label terminology rule: glossary umbrella "Section 2 Score Gap"; card-row form "Conversion Score Gap" / "Parity Score Gap" / "Recovery Score Gap" / "Skill Score Gap". v30 (260515 Achievable Score precision pass): tightened the Achievable Score definition to specify the implicit opponent — "what a 2300+ rated player would score from your endgame-entry positions **against a peer of similar rating**". The Lichess sigmoid was fit on 2300+ rapid game outcomes (peer-vs-peer), so the baseline is the score a 2300+ player would post against another 2300+ player, not against an arbitrary opponent. Also corrected the sigmoid's name throughout the prompt from "Lichess winning-chances sigmoid" → "Lichess expected-score sigmoid": the formula was fit by `scipy.optimize.curve_fit` against {-1, 0, +1} game outcomes (lichess-org/lila#11148), which is mathematically equivalent to fitting expected score on [0, 1] — `Win% = 100 × expected_score`, not `100 × P(win)` (e.g. at cp=0 the curve returns 50%, which is correct as expected score by symmetry but wildly wrong as win probability since draws dominate at 2300+ balanced positions). Both fixes are user-facing prose only; payload shape, zone bands, and the underlying coefficient (-0.00368208) are unchanged. Frontend concepts + popovers were updated in lockstep. v29 (260515 endgame_type_achievable_score_gap): Phase 87.1 adds a per-class per-span Score Gap metric to the LLM payload alongside the existing Conv/Recov findings under `conversion_recovery_by_type`. Payload field name is the internal identifier `endgame_type_achievable_score_gap` (preserves grep-ability with the page-level Phase 85.1 `achievable_score_gap` metric); the glossary in `endgame_insights.md` defines the primary user-facing label as "Endgame Type Score Gap" and instructs the LLM to use the short form "Score Gap" in narrative references inside a per-type card context (matching the card row label users see). No parallel `verdict` / `p_value` field is emitted in the payload — the cohort band IS the significance signal (per memory `feedback_llm_significance_signal.md`); tighten the band via §3.4.2 benchmark calibration rather than editorialising in the prompt. Sigmoid-bias caveat: the metric uses the Lichess winning-chances sigmoid which under-weights endgame eval; zones are percentile-calibrated from benchmark data so the bias does not affect zone placement — see `.planning/notes/lichess-sigmoid-endgame-calibration.md`. v28 (260514 concept capitalization): Endgame Phase / Endgame Type / Endgame Sequence / Endgame Entry Eval / Achievable Score / Endgame Score / Non-Endgame Score are now title-cased everywhere in prompt prose and UI labels to match the user-facing Stats page. Cache-busted to ensure newly generated reports match the capitalized UI terminology. v27 (260512 sparse-history rescue): three layered fixes for short-history users (< ~20 weekly buckets per (platform, time_control) combo) that previously produced incomplete prompts and hallucinated `player_profile` output. **A**: `all_time_series_pairs` in `_assemble_user_prompt` now registers a pair only when the post-A4/C2/C6 retained series has ≥1 point, so an all_time series that C2-trims to empty no longer suppresses its last_3mo `[series]` twin (restores score_timeline / clock_diff_timeline / endgame_elo_timeline raw points for users whose entire history fits inside the last 90 days). **B**: `compute_player_profile` now emits `quality="sparse"` entries for combos with ≥1 weekly bucket but < _PLAYER_PROFILE_MIN_POINTS=20 when NO combo clears the full floor — the renderer suppresses `trend=` / `std=` on sparse blocks and swaps the [anchor-combo] tag for a `sparse-history` variant that forbids learning-arc / trajectory framing; new prompt section "Sparse-history profile" tells the LLM how to narrate from sparse blocks (current/min/max only, no trajectory claims, ~2-3 sentence player_profile). Replaces the prior hallucination failure mode where the schema-mandated `player_profile` field was fabricated from non-existent anchor data. **C**: `### Subsection: endgame_elo_timeline` now renders a sentinel `[no qualifying combo — every (platform, time_control) combo has fewer than SPARSE_COMBO_FLOOR weekly buckets; no Endgame ELO trajectory available yet]` line when no combo clears `SPARSE_COMBO_FLOOR=10`, instead of vanishing from the prompt entirely. See `.planning/debug/llm-prompt-missing-sections.md`. v26 (260511 entry_eval_pawns band): reverted the EG-entry-eval neutral band from ±0.50 back to ±0.75 pawns (pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`, reports/benchmarks-2026-05-10.md §3). Frontend tile, backend ZoneSpec, and LLM glossary kept in lockstep. v25 (260511 entry_expected_score): wire Stockfish-baseline achievable score (Lichess sigmoid) into the endgame_start_vs_end subsection alongside entry_eval_pawns and endgame_score. New ENTRY_EXPECTED_SCORE_ZONES from reports/benchmarks-2026-05-11.md. LLM narrates the achievable-vs-achieved gap as the headline diagnostic with entry_eval_pawns as the explanatory unit. v24 (260510-ugj): tightened last_3mo narration anchors — quoting any last_3mo value now requires an explicit "last 3 months" framing, and the within-noise legal-frames list no longer endorses vague "currently sitting at X%" / "over the recent window" forms that confused users by naming numbers absent from the dashboard. Stale-series rule strengthened: stale window numbers (mean, n, trend, std) must not appear in the narrative at all — past-tense qualitative reference only. v23 (260510 endgame_start_vs_end): wire Phase 81 entry-eval and endgame-score metrics into the LLM payload via a new `endgame_start_vs_end` subsection under section_id `overall`. Renamed score_timeline `endgame_score` → `endgame_score_timeline` and `non_endgame_score` → `non_endgame_score_timeline` to free the clean `endgame_score` name for the new subsection. Tile color rule amended from sig-only to `zone × p<0.05` (Phase 81 D-09 amendment). EG-entry-eval neutral band tightened from ±0.75 to ±0.50 for both tile and LLM. v22 (260503 eval-proxy cutover): rewrote the Conversion / Parity / Recovery glossary entries and the bucket descriptions in the metric glossary to reflect the Stockfish eval at endgame entry replacing the old material_imbalance + 4-ply persistence proxy. Conversion now means "entered with eval ≥ +1.0", Recovery "entered with eval ≤ -1.0", Parity "entered with eval between -1.0 and +1.0". Display threshold expressed as a signed one-decimal pawn value ("+1.0" / "-1.0") to match the rest of the page's eval rendering. v21 (260501-s0u pass2 polish): score_pct_diff in the type WDL chart is now derived from rounded score_pct − opp_score_pct (avoids 1pp mismatch e.g. 47 − 53 = -6 vs the unrounded -6.8 → -7). Raised SAMPLE_QUALITY_BANDS thin_max from 10 to 20 for per-type subsections (results_by_endgame_type, conversion_recovery_by_type) so 10-19 sequences no longer label as `adequate`. v20 (260501-s0u pass2 type_breakdown cleanup): restored the per-type WDL chart at `### Chart: results_by_endgame_type_wdl` (endgame_class | games | win_pct | draw_pct | loss_pct | score_pct | opp_score_pct | score_pct_diff). The v18 conv/recov delta table was redundant with the conversion_recovery_by_type [summary] blocks (same per-type conv_pct / recov_pct + per-class typical bands) and got dropped. Reordered type_breakdown to chart wdl → results_by_endgame_type → conversion_recovery_by_type so the LLM reads aggregate WDL, then per-type win_rate, then per-type Conv/Recov detail. _format_zone_bounds and the zone classifier (insights_service._findings_conversion_recovery_by_type) now dispatch via PER_CLASS_GAUGE_ZONES when a finding carries `endgame_class` for conversion_win_pct / recovery_save_pct, so per-class [summary] zone labels and inline `(typical LO to UP)` match the table-side per-class baselines. v19 (260501-s0u terminology pass): standardize on "endgame type" instead of "endgame class" in LLM-facing strings — column header is now `endgame_type`, caption and prompt prose use "per-type" / "type-specific" / "type baseline" framing. v18 (260501-s0u benchmark calibration v2): drop per-class win_rate framing in favor of per-class delta-from-baseline. Conversion / Recovery are now narrated against class-specific typical bands sourced from PER_CLASS_GAUGE_ZONES (reports/benchmarks-2026-05-01.md). Per-class user prompt payload replaced win_pct/score_pct rows with conv_pct, recov_pct, class baseline midpoints, and signed deltas. type_win_rate_timeline subsection deprecated — no longer rendered on the UI. v17 (260501 tone/framing pass): streamlined player-profile tone calibration and recommendations framing in `app/prompts/endgame_insights.md` — observations now link to skill level without prescriptive labeling, recommendations register loosened from SHOULD to MAY for advanced players, second-person "you" narration required throughout, cross-platform rating comparison restrictions and within-noise shift handling clarified across sections. v16 (260425 benchmarks pass): dropped the pawn-type asymmetry special case in both the prompt and the `[asymmetry type=...]` tag generator — Section 6 benchmark data shows queen has the largest conversion/recovery asymmetry (52 pp) and pawn recovery (34%) sits at the top of the typical 25-35 band, contradicting the v11 "expected asymmetry, pawn-specific cohort recovery is lower than 25-35" rationale. All endgame classes now use the standard "closes winning / defends losing" story framing. v15 (v1.11 cleanup pass): dropped stale "check the `Filters:` header" parenthetical from the avg_clock_diff_pct glossary entry — the `Filters:` header was removed in v9 and the insights router rejects non-default time_control filters, so the instruction pointed at nothing. Cache invalidation is automatic via prompt_version cache key. See `app/prompts/endgame_insights.md`. v14 (260424-pc6 UAT pass) introduced the three-metric score_timeline emitter (endgame_score / non_endgame_score / score_gap) plus constant-N disclosure and no-op zone bands for per-part absolute scores.
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
@@ -84,10 +86,10 @@ _ALL_TIME_CUTOFF_DAYS: int = 90  # C2: trim last 90d from all_time series when l
 # v11: raised from 12 → 36 so the LLM can speak about multi-year trajectories
 # without overclaiming a 12-month window as a long-term arc.
 _ALL_TIME_MAX_POINTS: int = 36
-# time_pressure_vs_performance produces a single weighted-mean finding that is
-# not useful on its own; the 10-bucket chart is rendered separately by
-# `_format_time_pressure_chart_block`.
-_SKIPPED_SUBSECTIONS: frozenset[str] = frozenset({"time_pressure_vs_performance"})
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): the per-subsection skip-set frozenset
+# was removed alongside its sole consumer (the empty time-pressure finding upstream
+# in insights_service.compose_findings). The assembler no longer needs a skip-set —
+# the finding never reaches the visible-findings filter to begin with.
 # Mirror frontend MIN_GAMES_FOR_RELIABLE_STATS (frontend/src/lib/theme.ts) so
 # the LLM sees the same bucket gating as the rendered chart.
 _MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
@@ -98,6 +100,8 @@ _MIN_GAMES_FOR_RELIABLE_BUCKET: int = 10
 # 0-100 percentage scale (v6 shape). Keeping the registry/service layer fractional
 # keeps the frontend gauge codegen unchanged; the scale flip lives at the formatter only.
 _NON_FRACTIONAL_METRICS: frozenset[str] = frozenset(
+    # Phase 87.5 (D-06): the Phase 87.4 metric name restored to "endgame_elo_gap"
+    # in lockstep with the MetricId Literal in app/services/endgame_zones.py.
     {"endgame_elo_gap", "avg_clock_diff_pct", "net_timeout_rate", "entry_eval_pawns"}
 )
 
@@ -135,16 +139,13 @@ _TREND_MIN_POINTS: int = 4  # minimum retained buckets before we emit trend fiel
 _TREND_FLAT_THRESHOLD: float = (
     3.0  # on the 0-100 scale; |latest - mean(prior 3)| below this reads as flat
 )
-_LOW_TIME_BUCKETS: tuple[int, ...] = (0, 1, 2)  # 0-10%, 10-20%, 20-30%
-_LOW_TIME_GAP_DECISIVE: float = (
-    5.0  # on 0-100 scale; user vs opp gap below this reads as near-parity
-)
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): _LOW_TIME_BUCKETS and _LOW_TIME_GAP_DECISIVE
+# removed alongside the time-pressure chart-block helper and _low_time_gap_line
+# (their only consumers).
 _DELTA_WITHIN_NOISE_SHIFT: float = (
     5.0  # |all_time → last_3mo| shift on 0-100 scale below this reads as within-noise
 )
-_DELTA_WITHIN_NOISE_ELO: float = (
-    50.0  # |Elo delta| below this reads as within-noise for endgame_elo_gap
-)
+_DELTA_WITHIN_NOISE_ELO: float = 50.0  # |Elo delta| below this reads as within-noise for endgame_elo_gap (Phase 87.5 D-06: restored from the Phase 87.4 metric name)
 # v11: trend flat threshold for derived [summary endgame_elo] (absolute Elo
 # scale). Roughly half the within-noise cap — bucket-to-bucket Elo drift below
 # this reads as flat. Separate from _TREND_FLAT_THRESHOLD which is on the 0-100
@@ -338,6 +339,7 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
+        # Phase 87.5 (D-06): restored from the Phase 87.4 subsection name.
         "endgame_elo_timeline",
     }
 )
@@ -384,6 +386,19 @@ def _format_zone_bounds(metric_id: str, dimension: dict[str, str] | None) -> str
     ):
         bands = PER_CLASS_GAUGE_ZONES[cast("EndgameClass", endgame_class)]
         lo_hi = bands.conversion if metric_id == "conversion_win_pct" else bands.recovery
+        spec = ZoneSpec(lo_hi[0], lo_hi[1], "higher_is_better")
+    elif (
+        # Phase 87.1 (SEED-016 D-10): per-class Score Gap band dispatch.
+        # Currently both PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap and
+        # the global ZONE_REGISTRY entry hold the same ±5% placeholder, but
+        # routing through the per-class registry now means future §3.4.2
+        # benchmark recalibration takes effect without touching renderer code.
+        metric_id == "endgame_type_achievable_score_gap"
+        and endgame_class is not None
+        and endgame_class in PER_CLASS_GAUGE_ZONES
+    ):
+        bands = PER_CLASS_GAUGE_ZONES[cast("EndgameClass", endgame_class)]
+        lo_hi = bands.achievable_score_gap
         spec = ZoneSpec(lo_hi[0], lo_hi[1], "higher_is_better")
     elif metric_id in bucketed and bucket is not None:
         spec = bucketed[metric_id].get(bucket)
@@ -458,7 +473,7 @@ def _format_player_profile_block(
         lines.append(
             "[anchor-combo] sparse-history — narrate cautiously; only current Elo and "
             "basic range are reliable; do NOT claim trend, learning arc, or trajectory; "
-            "use plain present-tense framing like \"you play at ~<rating>\""
+            'use plain present-tense framing like "you play at ~<rating>"'
         )
     elif anchor is not None:
         lines.append(
@@ -510,63 +525,10 @@ def _format_player_profile_block(
     return lines
 
 
-def _format_time_pressure_chart_block(findings: EndgameTabFindings) -> list[str]:
-    """Render the 10-bucket time_pressure_vs_performance chart as a table.
-
-    Emits one `## Chart` header followed by a markdown table with one row per
-    bucket (0-10% ... 90-100%), each showing user Score %, user game count,
-    opponent Score %, opponent game count. Buckets where BOTH sides have
-    fewer than _MIN_GAMES_FOR_RELIABLE_BUCKET games are dropped (mirrors
-    the frontend's visual suppression). Returns [] if the chart is missing
-    or empty. Rendered separately from SubsectionFinding rows because the
-    20 data points do not fit the single-value finding shape.
-    """
-    chart = findings.time_pressure_chart
-    if chart is None or chart.total_endgame_games == 0:
-        return []
-
-    user_by_idx = {p.bucket_index: p for p in chart.user_series}
-    opp_by_idx = {p.bucket_index: p for p in chart.opp_series}
-
-    rows: list[str] = []
-    for idx in range(10):
-        u = user_by_idx.get(idx)
-        o = opp_by_idx.get(idx)
-        u_n = u.game_count if u else 0
-        o_n = o.game_count if o else 0
-        if u_n < _MIN_GAMES_FOR_RELIABLE_BUCKET and o_n < _MIN_GAMES_FOR_RELIABLE_BUCKET:
-            continue
-        label = u.bucket_label if u else (o.bucket_label if o else f"{idx * 10}-{(idx + 1) * 10}%")
-        u_score = (
-            f"{u.score * 100:.0f}"
-            if u is not None and u.score is not None and u_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
-            else "—"
-        )
-        o_score = (
-            f"{o.score * 100:.0f}"
-            if o is not None and o.score is not None and o_n >= _MIN_GAMES_FOR_RELIABLE_BUCKET
-            else "—"
-        )
-        rows.append(f"| {label:<7} | {u_score:<10} | {u_n:<6} | {o_score:<10} | {o_n:<6} |")
-
-    if not rows:
-        return []
-
-    lines: list[str] = [
-        "### Chart: time_pressure_vs_performance (all_time)",
-        f"Total endgame games: {chart.total_endgame_games}. "
-        "Rows show Score % conditional on time remaining at endgame entry, "
-        "for the user and the opponent separately (each side binned by their own clock). "
-        "user_score / opp_score are whole-number Score % values (wins=100, draws=50).",
-    ]
-    low_time_line = _low_time_gap_line(chart)
-    if low_time_line:
-        lines.append(low_time_line)
-    lines.append("| time_left | user_score | user_n | opp_score | opp_n |")
-    lines.append("| --------- | ---------- | ------ | ---------- | ------ |")
-    lines.extend(rows)
-    lines.append("")
-    return lines
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): the 10-bucket time-pressure chart
+# block helper was removed. Its sole consumer was the chart_blocks dict in
+# _assemble_user_prompt, which no longer references it (see chart_blocks
+# construction below).
 
 
 def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
@@ -599,7 +561,7 @@ def _format_overall_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
 
     lines: list[str] = [
         "### Chart: overall_wdl (all_time)",
-        "Two-row WDL comparison for games that reached an endgame phase vs games that did not. "
+        "Two-row WDL comparison for games that reached an Endgame Phase vs games that did not. "
         "All columns are whole-number percentages; score_pct uses wins=100, draws=50, losses=0.",
         "| series      | games | win_pct | draw_pct | loss_pct | score_pct |",
         "| ----------- | ----- | ------- | -------- | -------- | --------- |",
@@ -679,6 +641,64 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     lines.extend(rows)
     lines.append("")
     return lines
+
+
+# Phase 87.1 (SEED-016 D-10): per-class Score Gap block. Field name uses internal
+# "type_achievable_score_gap" for grep-ability with achievable_score_gap (Phase 85.1).
+# User-facing narration: "Score Gap" (per card row); "Endgame Type Score Gap"
+# when introducing. No p_value / verdict per memory feedback_llm_significance_signal.md.
+def _synthesize_endgame_type_achievable_score_gap_findings(
+    findings: EndgameTabFindings,
+) -> list[SubsectionFinding]:
+    """Build per-class SubsectionFinding for the new per-span Score Gap metric.
+
+    Reads the Phase 87.1 Plan 02 per-category fields
+    (`type_achievable_score_gap_mean` / `_n`) off
+    `findings.type_categories` and emits one finding per non-pawnless class
+    with a populated mean. Findings join `conversion_recovery_by_type` so the
+    rendered prompt groups the Score Gap row next to Conv/Recov per class.
+
+    Zone is dispatched via `assign_zone("endgame_type_achievable_score_gap", mean)`
+    — currently both `ZONE_REGISTRY` and
+    `PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap` hold the same ±5%
+    placeholder, so a single global lookup matches the per-class inline band
+    `_format_zone_bounds` renders below. Future §3.4.2 benchmark recalibration
+    that diverges per class will need to switch this to a per-class dispatch.
+
+    Categories with `mean is None` or `n == 0` are skipped (no finding emitted).
+    Pawnless is dropped to match the UI filter (the visible-finding filter in
+    `_assemble_user_prompt` would drop it anyway, but skipping here is cheaper).
+    """
+    out: list[SubsectionFinding] = []
+    if not findings.type_categories:
+        return out
+    for cat in findings.type_categories:
+        if cat.endgame_class == "pawnless":
+            continue
+        mean = cat.type_achievable_score_gap_mean
+        n = cat.type_achievable_score_gap_n or 0
+        if mean is None or n == 0:
+            continue
+        zone = assign_zone("endgame_type_achievable_score_gap", mean)
+        quality = sample_quality("conversion_recovery_by_type", n)
+        dim: dict[str, str] = {"endgame_class": cat.endgame_class}
+        out.append(
+            SubsectionFinding(
+                subsection_id="conversion_recovery_by_type",
+                parent_subsection_id=None,
+                window="all_time",
+                metric="endgame_type_achievable_score_gap",
+                value=mean,
+                zone=zone,
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=n,
+                sample_quality=quality,
+                is_headline_eligible=quality != "thin",
+                dimension=dim,
+            )
+        )
+    return out
 
 
 # -- Batch 2 enrichments (v6): mechanical signals precomputed for the LLM --
@@ -787,6 +807,7 @@ def _trend_info(
     )
     n_total = sum(pt.n for pt in points)
     noise_cap = (
+        # Phase 87.5 (D-06): restored from the Phase 87.4 metric name in lockstep with MetricId.
         _DELTA_WITHIN_NOISE_ELO if metric_id == "endgame_elo_gap" else _DELTA_WITHIN_NOISE_SHIFT
     )
     within_noise = direction != "flat" and abs(diff) < noise_cap
@@ -798,7 +819,8 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
 
     Percent-scale metrics use _PROXIMITY_PCT_THRESHOLD; endgame_elo_gap uses
     _PROXIMITY_ELO_THRESHOLD. Returns '' for unknown metrics or when the value
-    is comfortably inside one zone.
+    is comfortably inside one zone. Phase 87.5 (D-06): metric restored from
+    the Phase 87.4 metric name.
     """
     spec: ZoneSpec | None = None
     bucket = dimension.get("bucket") if dimension else None
@@ -813,7 +835,7 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
     scale = _scale_for_metric(metric_id)
     lo = spec.typical_lower * scale
     hi = spec.typical_upper * scale
-    if metric_id == "endgame_elo_gap":
+    if metric_id == "endgame_elo_gap":  # Phase 87.5 D-06: restored from the Phase 87.4 metric name.
         threshold = _PROXIMITY_ELO_THRESHOLD
     elif metric_id == "entry_eval_pawns":
         threshold = _PROXIMITY_PAWN_THRESHOLD
@@ -946,37 +968,8 @@ def _asymmetry_lines(findings: list[SubsectionFinding]) -> list[str]:
     return lines
 
 
-def _low_time_gap_line(chart: TimePressureChartResponse | None) -> str:
-    """Weighted user-vs-opp Score % over the low-time buckets (0-30%)."""
-    if chart is None:
-        return ""
-    user_by_idx = {p.bucket_index: p for p in chart.user_series}
-    opp_by_idx = {p.bucket_index: p for p in chart.opp_series}
-    user_num = user_den = opp_num = opp_den = 0.0
-    for idx in _LOW_TIME_BUCKETS:
-        u = user_by_idx.get(idx)
-        o = opp_by_idx.get(idx)
-        if u is not None and u.score is not None and u.game_count >= _MIN_GAMES_FOR_RELIABLE_BUCKET:
-            user_num += u.score * u.game_count
-            user_den += u.game_count
-        if o is not None and o.score is not None and o.game_count >= _MIN_GAMES_FOR_RELIABLE_BUCKET:
-            opp_num += o.score * o.game_count
-            opp_den += o.game_count
-    if user_den == 0 or opp_den == 0:
-        return ""
-    user_avg = user_num / user_den * 100.0
-    opp_avg = opp_num / opp_den * 100.0
-    gap = user_avg - opp_avg
-    if gap < -_LOW_TIME_GAP_DECISIVE:
-        verdict = "user cracks under time pressure"
-    elif gap > _LOW_TIME_GAP_DECISIVE:
-        verdict = "user cooler under time pressure"
-    else:
-        verdict = "near parity"
-    return (
-        f"[low-time-gap] 0-30% buckets, weighted: user={user_avg:.0f}, opp={opp_avg:.0f}, "
-        f"gap={gap:+.0f} — {verdict}"
-    )
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): _low_time_gap_line removed. Its sole
+# consumer was the 10-bucket time-pressure chart block helper (also removed).
 
 
 def _dim_key_for_finding(f: SubsectionFinding) -> str:
@@ -993,7 +986,7 @@ def _within_noise_shift(
     shift: float,
 ) -> bool:
     """Shift is within-noise when it's below the metric cap AND the last_3mo window is much smaller."""
-    if metric == "endgame_elo_gap":
+    if metric == "endgame_elo_gap":  # Phase 87.5 D-06: restored from the Phase 87.4 metric name.
         noise_cap = _DELTA_WITHIN_NOISE_ELO
     elif metric == "entry_eval_pawns":
         # Phase 82: 0.05 pawns is the within-noise cap for entry_eval_pawns
@@ -1090,10 +1083,13 @@ def _summary_shift_line(
 def _endgame_elo_per_bucket(points: list[TimePoint] | None) -> list[tuple[float, int]]:
     """Return [(endgame_elo_value, n), ...] derived from endgame_elo_gap series points.
 
-    endgame_elo per bucket = actual_elo + gap. The gap metric is non-fractional
+    Endgame ELO per bucket = actual_elo + gap. The gap metric is non-fractional
     (scale=1.0), so `pt.value` is already in Elo units. Points missing
     `actual_elo` are skipped — the gap series carries it for endgame_elo_gap
     only (see _render_series_block).
+
+    Phase 87.5 (D-06): restored from the Phase 87.4 helper name in lockstep
+    with the metric rename to `endgame_elo_gap`.
     """
     out: list[tuple[float, int]] = []
     if not points:
@@ -1116,12 +1112,15 @@ def _render_endgame_elo_summary_block(
 ) -> list[str]:
     """Emit `[summary endgame_elo | dim]` derived from the endgame_elo_gap series.
 
-    v11: the chart's headline value is Endgame ELO (absolute Elo, skill-adjusted)
+    v11: the chart's headline value is Endgame ELO (absolute Elo, score-gap-adjusted)
     not the gap. We derive a per-window aggregate from the same retained series
     points used by the gap summary so the LLM can cite the chart number directly
     without doing arithmetic. No zone / quality fields — endgame_elo has no
     calibrated band; the paired `[summary endgame_elo_gap]` block (rendered
     immediately after this one) carries the zone interpretation.
+
+    Phase 87.5 (D-06): restored from the Phase 87.4 helper name and every
+    legacy identifier in lockstep with the metric rename to `endgame_elo_*`.
     """
 
     def window_line(
@@ -1170,7 +1169,134 @@ def _render_endgame_elo_summary_block(
                 parts.append(stale)
         return f"  {window_label}: " + ", ".join(parts), weighted_mean
 
+    # Phase 87.5 (D-06): header literal restored from the Phase 87.4 form.
     header = "[summary endgame_elo"
+    if dim_key:
+        header += f" | {dim_key}"
+    header += "]"
+
+    at_line, at_mean = window_line("all_time", all_time_finding, all_time_series)
+    lm_line, lm_mean = window_line("last_3mo", last_3mo_finding, last_3mo_series)
+
+    if at_line is None and lm_line is None:
+        return []
+
+    lines: list[str] = [header]
+    if at_line is not None:
+        lines.append(at_line)
+    if lm_line is not None:
+        lines.append(lm_line)
+    elif at_line is not None:
+        lines.append("  last_3mo: no data")
+
+    if (
+        at_line is not None
+        and lm_line is not None
+        and at_mean is not None
+        and lm_mean is not None
+        and all_time_finding is not None
+        and last_3mo_finding is not None
+    ):
+        shift = lm_mean - at_mean
+        sample_mismatch = (
+            all_time_finding.sample_size > 0
+            and (last_3mo_finding.sample_size / all_time_finding.sample_size)
+            < _DELTA_SMALL_SAMPLE_RATIO
+        )
+        shift_line = f"  shift={shift:+.0f} Elo"
+        if abs(shift) < _DELTA_WITHIN_NOISE_ELO and sample_mismatch:
+            shift_line += ", within-noise"
+        lines.append(shift_line)
+
+    return lines
+
+
+def _non_endgame_elo_per_bucket(points: list[TimePoint] | None) -> list[tuple[float, int]]:
+    """Return [(non_endgame_elo_value, n), ...] from endgame_elo_gap series points.
+
+    Points missing `non_endgame_elo` are skipped (only endgame_elo_timeline
+    populates this field; see TimePoint docstring).
+
+    Phase 87.6: companion to `_endgame_elo_per_bucket`; reads pt.non_endgame_elo
+    instead of deriving endgame_elo from pt.actual_elo + pt.value.
+    """
+    out: list[tuple[float, int]] = []
+    if not points:
+        return out
+    for pt in points:
+        if pt.non_endgame_elo is None:
+            continue
+        out.append((float(pt.non_endgame_elo), pt.n))
+    return out
+
+
+def _render_non_endgame_elo_summary_block(
+    *,
+    dim_key: str,
+    all_time_finding: SubsectionFinding | None,
+    last_3mo_finding: SubsectionFinding | None,
+    all_time_series: list[TimePoint] | None,
+    last_3mo_series: list[TimePoint] | None,
+    stale_markers: dict[int, str],
+) -> list[str]:
+    """Emit `[summary non_endgame_elo | dim]` from the endgame_elo_gap series.
+
+    Analogous to `_render_endgame_elo_summary_block` but reads pt.non_endgame_elo
+    directly (the FIDE Performance Rating for the non-endgame game subset).
+    No zone / quality fields — non_endgame_elo has no calibrated band; the
+    paired `[summary endgame_elo_gap]` block carries the zone interpretation.
+
+    Phase 87.6: new helper enabling THREE summary blocks per combo in the
+    endgame_elo_timeline subsection.
+    """
+
+    def window_line(
+        window_label: str, finding: SubsectionFinding | None, series: list[TimePoint] | None
+    ) -> tuple[str | None, float | None]:
+        """Return (rendered_line, weighted_mean) or (None, None) if no usable data."""
+        values = _non_endgame_elo_per_bucket(series)
+        if not values:
+            return None, None
+        total_n = sum(n for _, n in values)
+        if total_n == 0:
+            return None, None
+        weighted_mean = sum(v * n for v, n in values) / total_n
+        elos = [v for v, _ in values]
+        elo_mean = sum(elos) / len(elos)
+        std = (
+            (sum((v - elo_mean) ** 2 for v in elos) / (len(elos) - 1)) ** 0.5
+            if len(elos) >= 2
+            else 0.0
+        )
+        granularity = "weekly" if window_label == "last_3mo" else "monthly"
+        parts: list[str] = [
+            f"mean={weighted_mean:+.0f} Elo",
+            f"n={finding.sample_size if finding is not None else total_n}",
+            f"buckets={len(values)} ({granularity})",
+        ]
+        within_noise = False
+        if len(elos) >= _TREND_MIN_POINTS:
+            latest = elos[-1]
+            prior_mean = sum(elos[-4:-1]) / 3
+            diff = latest - prior_mean
+            if abs(diff) < _TREND_FLAT_THRESHOLD_ELO:
+                direction = "flat"
+            elif diff > 0:
+                direction = "improving"
+            else:
+                direction = "regressing"
+            parts.append(f"trend={direction}")
+            within_noise = direction != "flat" and abs(diff) < _DELTA_WITHIN_NOISE_ELO
+        parts.append(f"std={std:.0f}")
+        if within_noise:
+            parts.append("within-noise")
+        if finding is not None:
+            stale = stale_markers.get(id(finding), "")
+            if stale:
+                parts.append(stale)
+        return f"  {window_label}: " + ", ".join(parts), weighted_mean
+
+    header = "[summary non_endgame_elo"
     if dim_key:
         header += f" | {dim_key}"
     header += "]"
@@ -1344,21 +1470,27 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
             ("subsection", "overall"),
             ("subsection", "endgame_start_vs_end"),
             ("subsection", "score_timeline"),
+            # Phase 87.5 D-07: endgame_elo_timeline moved from `metrics_elo` to
+            # `overall` so it co-locates with the Endgame Score Gap timeline
+            # (its input series). The chart's UI position mirrors this — it
+            # now renders directly below the Endgame Score Gap over Time chart
+            # in the Endgame Overall Performance section.
+            ("subsection", "endgame_elo_timeline"),
         ],
     ),
     (
         "metrics_elo",
         [
             ("subsection", "endgame_metrics"),
-            ("subsection", "endgame_elo_timeline"),
         ],
     ),
     (
         "time_pressure",
         [
             ("subsection", "time_pressure_at_entry"),
-            ("subsection", "clock_diff_timeline"),
-            ("chart", "time_pressure_vs_performance"),
+            # Phase 88.1 (Plan 09, REVIEW.md WR-06): clock-diff timeline subsection
+            # and time-pressure-vs-performance chart block removed alongside the
+            # corresponding compose_findings entries and chart-block helper.
         ],
     ),
     (
@@ -1420,6 +1552,8 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
     endgame_elo_gap variant (which also carries per-point `elo=`) always
     keeps the per-point `(n=<N>)` suffix because its `elo=` field can
     still vary per bucket — the disclosure shortcut would lose signal.
+    Phase 87.5 (D-06): metric name restored to `endgame_elo_gap` from the
+    Phase 87.4 variant.
     """
     granularity = _series_granularity(finding)
     header = f"[series {finding.metric}, {finding.window}, {granularity}"
@@ -1429,6 +1563,7 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
     header += "]"
     lines = [header]
     series_scale = _scale_for_metric(finding.metric)
+    # Phase 87.5 (D-06): restored metric → "endgame_elo_gap" in lockstep.
     emit_elo = finding.metric == "endgame_elo_gap"
     # Constant-n suppression (260424-pc6 C): only applies when every point
     # shares the same `n` AND this is NOT the endgame_elo_gap variant (whose
@@ -1452,7 +1587,16 @@ def _render_series_block(finding: SubsectionFinding, points: list[TimePoint]) ->
             lines.append(f"[activity-gap] {prev_bucket_start} → {pt.bucket_start}")
         pt_value = pt.value * series_scale
         if emit_elo and pt.actual_elo is not None:
-            lines.append(f"{pt.bucket_start}: gap={pt_value:+.0f}, elo={pt.actual_elo} (n={pt.n})")
+            # Phase 87.6: extend series rows with non_eg_elo= when available.
+            if pt.non_endgame_elo is not None:
+                lines.append(
+                    f"{pt.bucket_start}: gap={pt_value:+.0f}, elo={pt.actual_elo},"
+                    f" non_eg_elo={pt.non_endgame_elo} (n={pt.n})"
+                )
+            else:
+                lines.append(
+                    f"{pt.bucket_start}: gap={pt_value:+.0f}, elo={pt.actual_elo} (n={pt.n})"
+                )
         elif n_is_constant:
             lines.append(f"{pt.bucket_start}: {pt_value:+.0f}")
         else:
@@ -1538,12 +1682,26 @@ def _render_subsection_block(
             else None
         )
 
-        # v11: in endgame_elo_timeline, lead each combo with the derived
-        # absolute Endgame ELO summary (the chart's headline value), then
-        # the gap summary (which carries the zone interpretation).
+        # v11 (Phase 87.5 D-07): in endgame_elo_timeline (subsection moved from
+        # `metrics_elo` to `overall` co-located with the Endgame Score Gap over
+        # Time chart), lead each combo with the derived absolute Endgame ELO
+        # summary (the chart's headline value), then the gap summary (which
+        # carries the zone interpretation).
+        # Phase 87.6: adds a second derived summary for Non-Endgame ELO between
+        # the Endgame ELO and the gap summaries, making THREE blocks per combo.
         if subsection_id == "endgame_elo_timeline" and metric == "endgame_elo_gap":
             lines.extend(
                 _render_endgame_elo_summary_block(
+                    dim_key=dim_key,
+                    all_time_finding=all_time,
+                    last_3mo_finding=last_3mo,
+                    all_time_series=all_time_series,
+                    last_3mo_series=last_3mo_series,
+                    stale_markers=stale_markers,
+                )
+            )
+            lines.extend(
+                _render_non_endgame_elo_summary_block(
                     dim_key=dim_key,
                     all_time_finding=all_time,
                     last_3mo_finding=last_3mo,
@@ -1569,7 +1727,7 @@ def _render_subsection_block(
             and subsection_id == "conversion_recovery_by_type"
         ):
             lines.append(
-                "  [typical bands above are per endgame type from cohort data; weak here "
+                "  [typical bands above are per Endgame Type from cohort data; weak here "
                 "means at/below the type's population average, not absolute crisis]"
             )
             recovery_note_emitted = True
@@ -1614,8 +1772,6 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     in the LLM output. Empty sections (no qualifying blocks) are omitted.
 
     Filters applied:
-    - A5: skip findings in _SKIPPED_SUBSECTIONS (time_pressure_vs_performance
-      single-value placeholder; the 10-bucket chart is rendered instead).
     - A2: skip findings where value is NaN or (sample_size=0 AND thin quality).
     - A4: drop series points with n < MIN_BUCKET_N.
     - C2: for `all_time` series, drop points within last 90 days if a matching
@@ -1633,13 +1789,23 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     # Pre-render chart blocks so we can gate the scalar `overall` subsection
     # (C4) on whether the overall_wdl chart will emit.
     overall_wdl_block = _format_overall_wdl_chart_block(findings)
-    time_pressure_block = _format_time_pressure_chart_block(findings)
     type_wdl_block = _format_type_wdl_chart_block(findings)
+    # Phase 88.1 (Plan 09, REVIEW.md WR-06): the time-pressure 10-bucket
+    # chart block was dropped alongside its formatter helper.
     chart_blocks: dict[str, list[str]] = {
         "overall_wdl": overall_wdl_block,
-        "time_pressure_vs_performance": time_pressure_block,
         "results_by_endgame_type_wdl": type_wdl_block,
     }
+
+    # Phase 87.1 (SEED-016 D-10): synthesize per-class Score Gap findings from
+    # the Plan 02 schema fields on findings.type_categories. The metric is wired
+    # into the prompt-renderer pipeline alongside the existing Conv/Recov
+    # findings under `conversion_recovery_by_type`. Kept inside `insights_llm`
+    # (not `insights_service`) to keep the surface change isolated to the
+    # prompt layer for v29; can migrate to `insights_service._findings_*`
+    # later if other tabs need the same data shape.
+    synthetic_gap_findings = _synthesize_endgame_type_achievable_score_gap_findings(findings)
+    raw_findings: list[SubsectionFinding] = list(findings.findings) + synthetic_gap_findings
 
     # A5 + A2: drop hidden subsections, NaN values, and thin empty findings.
     # v6: also drop any finding dimensioned on endgame_class=pawnless — the UI
@@ -1647,9 +1813,8 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     # not narrate a type the user cannot see.
     visible: list[SubsectionFinding] = [
         f
-        for f in findings.findings
-        if f.subsection_id not in _SKIPPED_SUBSECTIONS
-        and not math.isnan(f.value)
+        for f in raw_findings
+        if not math.isnan(f.value)
         and not (f.sample_size == 0 and f.sample_quality == "thin")
         and not (f.dimension is not None and f.dimension.get("endgame_class") == "pawnless")
     ]
@@ -1742,6 +1907,7 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
                     # this the whole subsection vanishes for short-history
                     # users, and the LLM has no signal that the Endgame ELO
                     # chart exists. See `.planning/debug/llm-prompt-missing-sections.md`.
+                    # Phase 87.5 (D-06): block_id restored from the Phase 87.4 name.
                     if block_id == "endgame_elo_timeline":
                         section_body.extend(
                             [

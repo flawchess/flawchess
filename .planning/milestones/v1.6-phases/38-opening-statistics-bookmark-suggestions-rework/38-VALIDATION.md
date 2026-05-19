@@ -1,8 +1,8 @@
 ---
 phase: 38
 slug: opening-statistics-bookmark-suggestions-rework
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-29
 ---

@@ -47,6 +47,7 @@ _ALL_TEST_USER_IDS = [_USER_RATING, _USER_GLOBAL, _USER_MOST_PLAYED]
 async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure all test user IDs exist in the users table (FK constraint)."""
     from tests.conftest import ensure_test_user
+
     for uid in _ALL_TEST_USER_IDS:
         await ensure_test_user(db_session, uid)
 
@@ -302,20 +303,32 @@ class TestGetGlobalStats:
     """Verify get_global_stats WDL aggregation with seeded data."""
 
     @pytest.mark.asyncio
-    async def test_returns_wdl_by_time_control_and_color(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_returns_wdl_by_time_control_and_color(self, db_session: AsyncSession) -> None:
         """3 blitz games as white (1W/1D/1L) + 2 rapid games as black (2W) produce correct counts."""
         uid = _USER_GLOBAL
 
         # 3 blitz games as white
-        await _seed_game(db_session, user_id=uid, result="1-0", user_color="white", time_control_bucket="blitz")
-        await _seed_game(db_session, user_id=uid, result="1/2-1/2", user_color="white", time_control_bucket="blitz")
-        await _seed_game(db_session, user_id=uid, result="0-1", user_color="white", time_control_bucket="blitz")
+        await _seed_game(
+            db_session, user_id=uid, result="1-0", user_color="white", time_control_bucket="blitz"
+        )
+        await _seed_game(
+            db_session,
+            user_id=uid,
+            result="1/2-1/2",
+            user_color="white",
+            time_control_bucket="blitz",
+        )
+        await _seed_game(
+            db_session, user_id=uid, result="0-1", user_color="white", time_control_bucket="blitz"
+        )
 
         # 2 rapid games as black (both wins for the user)
-        await _seed_game(db_session, user_id=uid, result="0-1", user_color="black", time_control_bucket="rapid")
-        await _seed_game(db_session, user_id=uid, result="0-1", user_color="black", time_control_bucket="rapid")
+        await _seed_game(
+            db_session, user_id=uid, result="0-1", user_color="black", time_control_bucket="rapid"
+        )
+        await _seed_game(
+            db_session, user_id=uid, result="0-1", user_color="black", time_control_bucket="rapid"
+        )
 
         response = await get_global_stats(db_session, uid, recency=None)
 
@@ -360,9 +373,15 @@ class TestGetGlobalStats:
         # Data was seeded in previous test (same db_session within function scope —
         # each test gets its own transaction-rolled-back session). This test seeds
         # independently to be self-contained.
-        await _seed_game(db_session, user_id=uid, result="1-0", user_color="white", time_control_bucket="blitz")
-        await _seed_game(db_session, user_id=uid, result="1-0", user_color="white", time_control_bucket="blitz")
-        await _seed_game(db_session, user_id=uid, result="0-1", user_color="white", time_control_bucket="blitz")
+        await _seed_game(
+            db_session, user_id=uid, result="1-0", user_color="white", time_control_bucket="blitz"
+        )
+        await _seed_game(
+            db_session, user_id=uid, result="1-0", user_color="white", time_control_bucket="blitz"
+        )
+        await _seed_game(
+            db_session, user_id=uid, result="0-1", user_color="white", time_control_bucket="blitz"
+        )
 
         response = await get_global_stats(db_session, uid, recency=None)
 

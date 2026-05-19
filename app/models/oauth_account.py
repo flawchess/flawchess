@@ -1,6 +1,5 @@
 """OAuth account model for FastAPI-Users OAuth integration."""
 
-
 from fastapi_users.db import SQLAlchemyBaseOAuthAccountTable
 from sqlalchemy import ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
@@ -13,6 +12,4 @@ class OAuthAccount(SQLAlchemyBaseOAuthAccountTable[int], Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="cascade"), nullable=False
-    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="cascade"), nullable=False)

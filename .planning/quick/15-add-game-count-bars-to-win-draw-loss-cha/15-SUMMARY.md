@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-15
 plan: "01"
 subsystem: frontend-charts

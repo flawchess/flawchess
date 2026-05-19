@@ -42,9 +42,7 @@ async def _register_login_and_get_id(
     Used by BETA-01 tests that need to flip `beta_enabled` via a direct DB
     UPDATE — matches the "direct DB op only" contract from BETA-01 / T-66-04.
     """
-    reg = await client.post(
-        "/api/auth/register", json={"email": email, "password": password}
-    )
+    reg = await client.post("/api/auth/register", json={"email": email, "password": password})
     user_id = int(reg.json()["id"])
     login_resp = await client.post(
         "/api/auth/jwt/login",

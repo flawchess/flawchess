@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick
 plan: 260326-wjj
 subsystem: frontend/endgame-charts

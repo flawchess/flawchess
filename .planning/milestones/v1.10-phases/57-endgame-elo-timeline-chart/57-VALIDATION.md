@@ -1,7 +1,7 @@
 ---
 phase: 57
 slug: endgame-elo-timeline-chart
-status: draft
+status: approved
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-04-18

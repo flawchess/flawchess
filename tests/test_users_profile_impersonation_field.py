@@ -23,19 +23,13 @@ def unique_email(prefix: str = "profimp") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}@example.com"
 
 
-async def register(
-    client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD
-) -> int:
-    resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": password}
-    )
+async def register(client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD) -> int:
+    resp = await client.post("/api/auth/register", json={"email": email, "password": password})
     assert resp.status_code in (200, 201), f"register failed: {resp.status_code} {resp.text}"
     return int(resp.json()["id"])
 
 
-async def login(
-    client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD
-) -> str:
+async def login(client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD) -> str:
     resp = await client.post(
         "/api/auth/jwt/login",
         data={"username": email, "password": password},
@@ -134,7 +128,9 @@ async def test_profile_impersonation_null_for_guest_token(test_engine):
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         guest_resp = await client.post("/api/auth/guest/create")
-        assert guest_resp.status_code == 201, f"guest create: {guest_resp.status_code} {guest_resp.text}"
+        assert guest_resp.status_code == 201, (
+            f"guest create: {guest_resp.status_code} {guest_resp.text}"
+        )
         guest_token = guest_resp.json()["access_token"]
 
         resp = await client.get(

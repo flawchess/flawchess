@@ -317,9 +317,7 @@ class TestGetMostPlayedOpeningsPhaseEntry:
         )
 
     @pytest.mark.asyncio
-    async def test_color_flip_symmetry_through_service(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_color_flip_symmetry_through_service(self, db_session: AsyncSession) -> None:
         """Sign convention: same raw eval_cp=+50 → white +0.50, black -0.50 after sign flip."""
         uid = _USER_SS_FLIP
 

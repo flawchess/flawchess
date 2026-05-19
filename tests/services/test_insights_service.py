@@ -183,7 +183,6 @@ class TestComputeTrend:
         assert default == TREND_MIN_WEEKLY_POINTS
 
 
-
 # ---------------------------------------------------------------------------
 # TestComputeHash — FIND-05 hash format + stability + discrimination.
 # ---------------------------------------------------------------------------
@@ -214,9 +213,7 @@ class TestComputeHash:
         import datetime
 
         a = self._base_findings()
-        b = a.model_copy(
-            update={"as_of": datetime.datetime(2099, 1, 1, tzinfo=datetime.UTC)}
-        )
+        b = a.model_copy(update={"as_of": datetime.datetime(2099, 1, 1, tzinfo=datetime.UTC)})
         assert _compute_hash(a) == _compute_hash(b)
 
     def test_hash_excludes_findings_hash_itself(self) -> None:
@@ -331,7 +328,10 @@ class TestEmptyFinding:
         """Dimension passes through for per-combo / per-bucket empty findings."""
         dim = {"platform": "chess.com", "time_control": "blitz"}
         f = _empty_finding(
-            "endgame_elo_timeline", "all_time", "endgame_elo_gap", dimension=dim,
+            "endgame_elo_timeline",
+            "all_time",
+            "endgame_elo_gap",
+            dimension=dim,
         )
         assert f.dimension == dim
 
@@ -381,7 +381,9 @@ class TestComputeFindingsLayering:
         ) as mocked:
             try:
                 await compute_findings(
-                    FilterContext(), session=AsyncMock(), user_id=1,
+                    FilterContext(),
+                    session=AsyncMock(),
+                    user_id=1,
                 )
             except Exception:
                 # compute_findings may fail downstream because model_construct
@@ -401,7 +403,9 @@ class TestComputeFindingsLayering:
         ) as mocked:
             try:
                 await compute_findings(
-                    FilterContext(), session=AsyncMock(), user_id=1,
+                    FilterContext(),
+                    session=AsyncMock(),
+                    user_id=1,
                 )
             except Exception:
                 pass
@@ -419,7 +423,9 @@ class TestComputeFindingsLayering:
         ) as mocked:
             try:
                 await compute_findings(
-                    FilterContext(), session=AsyncMock(), user_id=1,
+                    FilterContext(),
+                    session=AsyncMock(),
+                    user_id=1,
                 )
             except Exception:
                 pass
@@ -534,8 +540,10 @@ class TestComputeFindingsReturnContract:
 # TestFindingsEndgameMetrics — 260422-tnb A1: bucket-matched metric emission.
 # Each MaterialRow maps to exactly ONE finding whose metric matches the
 # bucket (conversion -> conversion_win_pct, parity -> parity_score_pct,
-# recovery -> recovery_save_pct). Total emitted: 1 endgame_skill + N
-# bucket-rows = N+1 findings (was: 1 + 3N with the old fan-out).
+# recovery -> recovery_save_pct). Phase 87.4 (D-05): the aggregate
+# ``endgame_skill`` finding was removed end-to-end. Total emitted = N bucket
+# rate findings + 3 section2_score_gap_* findings (Phase 87.2 D-09 minus the
+# retired "skill" bucket).
 # ---------------------------------------------------------------------------
 
 
@@ -580,38 +588,53 @@ class TestFindingsEndgameMetrics:
             draw_pct=draw_pct,
             loss_pct=100.0 - win_pct - draw_pct,
             score=score,
-            opponent_score=None,
-            opponent_games=0,
         )
 
     def test_emits_exactly_one_finding_per_non_empty_bucket(self) -> None:
-        """3 non-zero MaterialRows -> 1 endgame_skill + 3 bucket findings = 4 total."""
+        """3 non-zero MaterialRows -> 3 bucket rate findings + 3 section2_score_gap
+        findings (Phase 87.2 D-09 minus the retired Skill bucket per Phase 87.4 D-05)
+        = 6 total. The aggregate ``endgame_skill`` finding was removed in 87.4."""
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
-            self._make_material_row("conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73),
+            self._make_material_row(
+                "conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73
+            ),
             self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
             self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
         ]
         response = self._make_overview_with_material_rows(rows)
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        assert len(findings) == 4
-        # First is endgame_skill (aggregate, no dimension).
-        assert findings[0].metric == "endgame_skill"
-        assert findings[0].dimension is None
+        assert len(findings) == 6
+        # Phase 87.4 (D-05): no aggregate endgame_skill finding any more.
+        assert not any(f.metric == "endgame_skill" for f in findings)
 
-        # Remaining three: one per bucket, metric matches the bucket.
-        by_bucket: dict[str, str] = {
-            f.dimension["bucket"]: f.metric
-            for f in findings[1:]
+        # Three rate bucket findings: one per bucket, metric matches the bucket.
+        rate_findings = [
+            f
+            for f in findings
             if f.dimension is not None
+            and f.metric in {"conversion_win_pct", "parity_score_pct", "recovery_save_pct"}
+        ]
+        by_bucket: dict[str, str] = {
+            f.dimension["bucket"]: f.metric for f in rate_findings if f.dimension is not None
         }
         assert by_bucket == {
             "conversion": "conversion_win_pct",
             "parity": "parity_score_pct",
             "recovery": "recovery_save_pct",
         }
+
+        # Three section2_score_gap_* findings (Phase 87.2 D-09 minus retired skill).
+        section2_metrics = sorted(
+            f.metric for f in findings if f.metric.startswith("section2_score_gap_")
+        )
+        assert section2_metrics == [
+            "section2_score_gap_conv",
+            "section2_score_gap_parity",
+            "section2_score_gap_recov",
+        ]
 
     def test_no_cross_bucket_fan_out(self) -> None:
         """No finding has (bucket=conversion, metric=parity_score_pct) or similar.
@@ -623,7 +646,9 @@ class TestFindingsEndgameMetrics:
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
-            self._make_material_row("conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73),
+            self._make_material_row(
+                "conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73
+            ),
             self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
             self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
         ]
@@ -632,7 +657,12 @@ class TestFindingsEndgameMetrics:
 
         for f in findings:
             if f.dimension is None:
-                continue  # endgame_skill has no bucket dim
+                # Phase 87.4 (D-05): section2_score_gap_* findings have no
+                # bucket dim (they live on the response as scalars, not
+                # per-MaterialBucket). The aggregate endgame_skill finding
+                # was retired so the dimension==None branch now covers only
+                # those.
+                continue
             bucket = f.dimension.get("bucket")
             if bucket == "conversion":
                 assert f.metric == "conversion_win_pct"
@@ -642,7 +672,11 @@ class TestFindingsEndgameMetrics:
                 assert f.metric == "recovery_save_pct"
 
     def test_empty_bucket_emits_one_empty_finding(self) -> None:
-        """A MaterialRow with games=0 emits ONE empty finding for the matching metric."""
+        """A MaterialRow with games=0 emits ONE empty finding for the matching metric.
+
+        Phase 87.2 (D-09): 4 section2_score_gap_* findings are always emitted alongside
+        the rate findings, so the bucket-only assertions filter on dimension presence.
+        """
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
@@ -653,21 +687,34 @@ class TestFindingsEndgameMetrics:
         response = self._make_overview_with_material_rows(rows)
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        # 1 endgame_skill + 3 bucket findings (2 empty + 1 normal).
-        assert len(findings) == 4
+        # Phase 87.4 (D-05): no aggregate endgame_skill finding.
+        # 3 rate bucket findings (2 empty + 1 normal) +
+        # 3 section2_score_gap_* findings (D-09 minus retired skill bucket).
+        assert len(findings) == 6
 
-        bucket_findings = [f for f in findings if f.dimension is not None]
+        # Rate bucket findings only — filter by metric, not by dimension, because
+        # section2_score_gap_* findings have dimension=None.
+        bucket_findings = [
+            f
+            for f in findings
+            if f.dimension is not None
+            and f.metric in {"conversion_win_pct", "parity_score_pct", "recovery_save_pct"}
+        ]
         # Each bucket appears exactly once.
         buckets_seen = [f.dimension["bucket"] for f in bucket_findings if f.dimension]
         assert sorted(buckets_seen) == ["conversion", "parity", "recovery"]
 
         # Empty-bucket findings carry the matching metric with NaN value.
-        conv = next(f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "conversion")
+        conv = next(
+            f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "conversion"
+        )
         assert conv.metric == "conversion_win_pct"
         assert math.isnan(conv.value)
         assert conv.sample_size == 0
 
-        recov = next(f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "recovery")
+        recov = next(
+            f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "recovery"
+        )
         assert recov.metric == "recovery_save_pct"
         assert math.isnan(recov.value)
 
@@ -676,12 +723,16 @@ class TestFindingsEndgameMetrics:
         from app.services.insights_service import _findings_endgame_metrics
 
         rows = [
-            self._make_material_row("conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73),
+            self._make_material_row(
+                "conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73
+            ),
         ]
         response = self._make_overview_with_material_rows(rows)
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        conv = next(f for f in findings if f.dimension and f.dimension.get("bucket") == "conversion")
+        conv = next(
+            f for f in findings if f.dimension and f.dimension.get("bucket") == "conversion"
+        )
         assert conv.value == pytest.approx(0.68)
 
     def test_parity_value_is_score(self) -> None:
@@ -753,8 +804,13 @@ class TestFindingsEndgameStartVsEnd:
                 loss_pct=losses / total * 100 if total else 0.0,
             ),
             non_endgame_wdl=EndgameWDLSummary(
-                wins=0, draws=0, losses=0, total=0,
-                win_pct=0.0, draw_pct=0.0, loss_pct=0.0,
+                wins=0,
+                draws=0,
+                losses=0,
+                total=0,
+                win_pct=0.0,
+                draw_pct=0.0,
+                loss_pct=0.0,
             ),
             endgame_win_rate=wins / total * 100 if total else 0.0,
         )
@@ -830,7 +886,9 @@ class TestFindingsEndgameStartVsEnd:
         response = self._make_overview(
             entry_eval_mean_pawns=0.30,
             entry_eval_n=10,
-            wins=25, draws=10, losses=15,
+            wins=25,
+            draws=10,
+            losses=15,
         )
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
@@ -845,7 +903,9 @@ class TestFindingsEndgameStartVsEnd:
 
         response = self._make_overview(
             entry_eval_n=50,
-            wins=5, draws=2, losses=3,  # total=10
+            wins=5,
+            draws=2,
+            losses=3,  # total=10
         )
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
@@ -964,7 +1024,9 @@ class TestFindingsEndgameStartVsEnd:
         response = self._make_overview(
             entry_eval_mean_pawns=0.30,
             entry_eval_n=50,
-            wins=25, draws=10, losses=15,
+            wins=25,
+            draws=10,
+            losses=15,
             entry_expected_score=0.58,
             entry_expected_score_n=50,
         )
@@ -1099,9 +1161,13 @@ class TestFindingsEndgameStartVsEnd:
         from app.services.insights_service import _findings_endgame_start_vs_end
 
         response = self._make_overview(
-            entry_eval_mean_pawns=0.30, entry_eval_n=50,
-            wins=25, draws=10, losses=15,  # total=50 > 10
-            entry_expected_score=0.58, entry_expected_score_n=5,  # thin
+            entry_eval_mean_pawns=0.30,
+            entry_eval_n=50,
+            wins=25,
+            draws=10,
+            losses=15,  # total=50 > 10
+            entry_expected_score=0.58,
+            entry_expected_score_n=5,  # thin
         )
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
@@ -1116,7 +1182,9 @@ class TestFindingsEndgameStartVsEnd:
         response = self._make_overview(
             entry_eval_mean_pawns=0.30,
             entry_eval_n=50,
-            wins=25, draws=10, losses=15,
+            wins=25,
+            draws=10,
+            losses=15,
         )
         findings = _findings_endgame_start_vs_end(response, "all_time")
 
@@ -1161,6 +1229,7 @@ class TestComputePlayerProfile:
             EndgameEloTimelinePoint(
                 date=(first + _dt.timedelta(weeks=i)).isoformat(),
                 endgame_elo=1400 + i,
+                non_endgame_elo=1380 + i,
                 actual_elo=1350 + i,
                 endgame_games_in_window=50,
                 per_week_endgame_games=10,

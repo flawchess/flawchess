@@ -1,8 +1,8 @@
 ---
 phase: 8
 slug: rework-games-and-bookmark-tabs-position-filter-section-position-bookmarks-section-rename-bookmarks-to-position-bookmarks
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-14
 ---

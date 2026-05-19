@@ -44,6 +44,7 @@ def _unique_game_id() -> str:
 async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure test user IDs exist in the users table (FK constraint)."""
     from tests.conftest import ensure_test_user
+
     for uid in [2, 99999]:
         await ensure_test_user(db_session, uid)
 
@@ -99,6 +100,7 @@ async def _seed_game(
         from sqlalchemy import select as _select
         from app.models.game_position import GamePosition
         from app.repositories.stats_repository import _openings_dedup
+
         opening_lookup = await session.execute(
             _select(_openings_dedup.c.full_hash, _openings_dedup.c.ply_count)
             .where(_openings_dedup.c.eco == opening_eco)
@@ -180,8 +182,20 @@ class TestQueryRatingHistory:
         recent_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=5)
         cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
 
-        await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=1400, played_at=old_date)
-        await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=1600, played_at=recent_date)
+        await _seed_game(
+            db_session,
+            platform="chess.com",
+            user_color="white",
+            white_rating=1400,
+            played_at=old_date,
+        )
+        await _seed_game(
+            db_session,
+            platform="chess.com",
+            user_color="white",
+            white_rating=1600,
+            played_at=recent_date,
+        )
 
         rows = await query_rating_history(
             db_session, user_id=99999, platform="chess.com", recency_cutoff=cutoff
@@ -201,7 +215,13 @@ class TestQueryRatingHistory:
 
         # Insert in reverse order
         for dt, rating in zip(reversed(dates), reversed(ratings)):
-            await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=rating, played_at=dt)
+            await _seed_game(
+                db_session,
+                platform="chess.com",
+                user_color="white",
+                white_rating=rating,
+                played_at=dt,
+            )
 
         rows = await query_rating_history(
             db_session, user_id=99999, platform="chess.com", recency_cutoff=None
@@ -213,8 +233,12 @@ class TestQueryRatingHistory:
     @pytest.mark.asyncio
     async def test_filters_by_user_id(self, db_session: AsyncSession) -> None:
         """Only games for the specified user_id are returned."""
-        await _seed_game(db_session, user_id=99999, platform="chess.com", user_color="white", white_rating=1500)
-        await _seed_game(db_session, user_id=2, platform="chess.com", user_color="white", white_rating=1900)
+        await _seed_game(
+            db_session, user_id=99999, platform="chess.com", user_color="white", white_rating=1500
+        )
+        await _seed_game(
+            db_session, user_id=2, platform="chess.com", user_color="white", white_rating=1900
+        )
 
         rows = await query_rating_history(
             db_session, user_id=99999, platform="chess.com", recency_cutoff=None
@@ -238,11 +262,11 @@ class TestQueryResultsByTimeControl:
         # 2 wins + 1 draw as white in blitz
         await _seed_game(db_session, time_control_bucket="blitz", result="1-0", user_color="white")
         await _seed_game(db_session, time_control_bucket="blitz", result="1-0", user_color="white")
-        await _seed_game(db_session, time_control_bucket="blitz", result="1/2-1/2", user_color="white")
-
-        rows = await query_results_by_time_control(
-            db_session, user_id=99999, recency_cutoff=None
+        await _seed_game(
+            db_session, time_control_bucket="blitz", result="1/2-1/2", user_color="white"
         )
+
+        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
 
         assert len(rows) == 1
         bucket, total, wins, draws, losses = rows[0]
@@ -257,9 +281,7 @@ class TestQueryResultsByTimeControl:
         """Games without time_control_bucket should be excluded."""
         await _seed_game(db_session, time_control_bucket=None)
 
-        rows = await query_results_by_time_control(
-            db_session, user_id=99999, recency_cutoff=None
-        )
+        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
 
         assert len(rows) == 0
 
@@ -268,11 +290,11 @@ class TestQueryResultsByTimeControl:
         """Returns one aggregated row per time control bucket."""
         await _seed_game(db_session, time_control_bucket="bullet", result="0-1", user_color="white")
         await _seed_game(db_session, time_control_bucket="blitz", result="1-0", user_color="white")
-        await _seed_game(db_session, time_control_bucket="rapid", result="1/2-1/2", user_color="white")
-
-        rows = await query_results_by_time_control(
-            db_session, user_id=99999, recency_cutoff=None
+        await _seed_game(
+            db_session, time_control_bucket="rapid", result="1/2-1/2", user_color="white"
         )
+
+        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
 
         assert len(rows) == 3
         buckets = {r[0] for r in rows}
@@ -288,9 +310,7 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, time_control_bucket="bullet", played_at=old_date)
         await _seed_game(db_session, time_control_bucket="blitz", played_at=recent_date)
 
-        rows = await query_results_by_time_control(
-            db_session, user_id=99999, recency_cutoff=cutoff
-        )
+        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=cutoff)
 
         assert len(rows) == 1
         assert rows[0][0] == "blitz"
@@ -301,9 +321,7 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, user_id=99999, time_control_bucket="blitz")
         await _seed_game(db_session, user_id=2, time_control_bucket="rapid")
 
-        rows = await query_results_by_time_control(
-            db_session, user_id=99999, recency_cutoff=None
-        )
+        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
 
         assert len(rows) == 1
         assert rows[0][0] == "blitz"
@@ -342,9 +360,7 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, time_control_bucket="blitz", result="0-1", user_color="black")
         await _seed_game(db_session, time_control_bucket="blitz", result="1-0", user_color="black")
 
-        rows = await query_results_by_time_control(
-            db_session, user_id=99999, recency_cutoff=None
-        )
+        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
 
         assert len(rows) == 1
         _, total, wins, draws, losses = rows[0]
@@ -424,7 +440,9 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, platform="chess.com", user_color="white")
         await _seed_game(db_session, platform="lichess", user_color="black")
 
-        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None, platform="lichess")
+        rows = await query_results_by_color(
+            db_session, user_id=99999, recency_cutoff=None, platform="lichess"
+        )
 
         assert len(rows) == 1
         assert rows[0][0] == "black"
@@ -435,7 +453,9 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, platform="chess.com", user_color="white")
         await _seed_game(db_session, platform="lichess", user_color="black")
 
-        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None, platform=None)
+        rows = await query_results_by_color(
+            db_session, user_id=99999, recency_cutoff=None, platform=None
+        )
 
         assert len(rows) == 2
         colors = {r[0] for r in rows}
@@ -472,14 +492,27 @@ class TestQueryTopOpeningsSqlWDL:
         # Seed 3 wins + 2 draws for King's Pawn Game as white.
         # "King's Pawn Game" (B00, ply_count=1) exists in openings_dedup.
         for _ in range(3):
-            await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
-                             opening_eco="B00", opening_name="King's Pawn Game")
+            await _seed_game(
+                db_session,
+                user_id=99999,
+                result="1-0",
+                user_color="white",
+                opening_eco="B00",
+                opening_name="King's Pawn Game",
+            )
         for _ in range(2):
-            await _seed_game(db_session, user_id=99999, result="1/2-1/2", user_color="white",
-                             opening_eco="B00", opening_name="King's Pawn Game")
+            await _seed_game(
+                db_session,
+                user_id=99999,
+                result="1/2-1/2",
+                user_color="white",
+                opening_eco="B00",
+                opening_name="King's Pawn Game",
+            )
 
         rows = await query_top_openings_sql_wdl(
-            db_session, user_id=99999, color="white", min_games=1, limit=10, min_ply=1)
+            db_session, user_id=99999, color="white", min_games=1, limit=10, min_ply=1
+        )
         assert len(rows) >= 1
         # Find the King's Pawn Game row
         kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
@@ -500,43 +533,77 @@ class TestQueryTopOpeningsSqlWDL:
     @pytest.mark.asyncio
     async def test_sql_wdl_excludes_below_min_games(self, db_session: AsyncSession) -> None:
         """Openings below min_games threshold should not appear."""
-        await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
-                         opening_eco="B00", opening_name="King's Pawn Game")
+        await _seed_game(
+            db_session,
+            user_id=99999,
+            result="1-0",
+            user_color="white",
+            opening_eco="B00",
+            opening_name="King's Pawn Game",
+        )
         rows = await query_top_openings_sql_wdl(
-            db_session, user_id=99999, color="white", min_games=100, limit=10, min_ply=1)
+            db_session, user_id=99999, color="white", min_games=100, limit=10, min_ply=1
+        )
         assert len(rows) == 0
 
     @pytest.mark.asyncio
     async def test_sql_wdl_filters_by_time_control(self, db_session: AsyncSession) -> None:
         """time_control filter should restrict results."""
         for _ in range(10):
-            await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
-                             opening_eco="B00", opening_name="King's Pawn Game",
-                             time_control_bucket="blitz")
+            await _seed_game(
+                db_session,
+                user_id=99999,
+                result="1-0",
+                user_color="white",
+                opening_eco="B00",
+                opening_name="King's Pawn Game",
+                time_control_bucket="blitz",
+            )
         for _ in range(10):
-            await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
-                             opening_eco="B00", opening_name="King's Pawn Game",
-                             time_control_bucket="rapid")
+            await _seed_game(
+                db_session,
+                user_id=99999,
+                result="1-0",
+                user_color="white",
+                opening_eco="B00",
+                opening_name="King's Pawn Game",
+                time_control_bucket="rapid",
+            )
 
         # Filter to blitz only
         rows = await query_top_openings_sql_wdl(
-            db_session, user_id=99999, color="white", min_games=1, limit=10, min_ply=1,
-            time_control=["blitz"])
+            db_session,
+            user_id=99999,
+            color="white",
+            min_games=1,
+            limit=10,
+            min_ply=1,
+            time_control=["blitz"],
+        )
         kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
         assert len(kpg) == 1
         # Tuple shape: (eco, name, display_name, pgn, fen, full_hash, total, wins, draws, losses)
         assert kpg[0][6] == 10  # total = 10 blitz games only
 
     @pytest.mark.asyncio
-    async def test_sql_wdl_ply_threshold_excludes_short_openings(self, db_session: AsyncSession) -> None:
+    async def test_sql_wdl_ply_threshold_excludes_short_openings(
+        self, db_session: AsyncSession
+    ) -> None:
         """min_ply filter should exclude openings with ply_count below threshold."""
         # King's Pawn Game has ply_count=1 (1. e4)
         for _ in range(10):
-            await _seed_game(db_session, user_id=99999, result="1-0", user_color="white",
-                             opening_eco="B00", opening_name="King's Pawn Game")
+            await _seed_game(
+                db_session,
+                user_id=99999,
+                result="1-0",
+                user_color="white",
+                opening_eco="B00",
+                opening_name="King's Pawn Game",
+            )
         # With min_ply=5, King's Pawn Game (ply=1) should be excluded
         rows = await query_top_openings_sql_wdl(
-            db_session, user_id=99999, color="white", min_games=1, limit=10, min_ply=5)
+            db_session, user_id=99999, color="white", min_games=1, limit=10, min_ply=5
+        )
         kpg = [r for r in rows if r[0] == "B00" and r[1] == "King's Pawn Game"]
         assert len(kpg) == 0
 
@@ -562,19 +629,30 @@ class TestQueryTopOpeningsSqlWDL:
         # off-color openings for that perspective).
         for _ in range(5):
             await _seed_game(
-                db_session, user_id=99999, result="1-0", user_color=color,
-                opening_eco="B00", opening_name="King's Pawn Game",
+                db_session,
+                user_id=99999,
+                result="1-0",
+                user_color=color,
+                opening_eco="B00",
+                opening_name="King's Pawn Game",
             )
             await _seed_game(
-                db_session, user_id=99999, result="1-0", user_color=color,
-                opening_eco="B10", opening_name="Caro-Kann Defense",
+                db_session,
+                user_id=99999,
+                result="1-0",
+                user_color=color,
+                opening_eco="B10",
+                opening_name="Caro-Kann Defense",
             )
 
         # min_ply=1 ensures both ply=1 (B00) and ply=2 (B10) qualify.
         rows = await query_top_openings_sql_wdl(
-            db_session, user_id=99999,
+            db_session,
+            user_id=99999,
             color="white" if color == "white" else "black",
-            min_games=1, limit=10, min_ply=1,
+            min_games=1,
+            limit=10,
+            min_ply=1,
         )
 
         by_eco = {r[0]: r for r in rows}

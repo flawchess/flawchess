@@ -52,6 +52,7 @@ the N>=10 gate are shared.
 """
 
 import math
+from collections.abc import Sequence
 from typing import Literal
 
 from app.services.opening_insights_constants import (
@@ -61,6 +62,13 @@ from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_CONFIDENCE_MIN_N as CONFIDENCE_MIN_N,
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
+
+# Phase 87.2 (D-05): compute_skill_diff_test, compute_per_bucket_diff_test, and
+# their shared internals (_BucketName, _SkillBucketRow, _headline_rate,
+# _opp_headline_rate, _headline_rate_variance, _opp_headline_rate_variance) were
+# deleted. The per-bucket ΔES Score Gap metric (Phase 87.2) replaces the rate-based
+# mirror-bucket peer-bullet approach (Phase 86). compute_paired_difference_test
+# is the sole math helper for the new Section 2 bullets.
 
 
 def wilson_bounds(p: float, n: int) -> tuple[float, float]:
@@ -113,9 +121,14 @@ def _wilson_score_test_vs_half(score: float, n: int) -> tuple[float, float]:
     return p_value, se_null
 
 
-def _bucket_from_p_value(
-    p_value: float, n: int
-) -> Literal["low", "medium", "high"]:
+# Phase 88.1 (Plan 09, REVIEW.md CR-01): _wilson_score_test_vs_ref and
+# compute_score_delta_vs_reference were removed. Their sole consumer was the
+# Phase 88 per-quintile Score-Delta bullet, which now uses
+# compute_score_difference_test against an in-set opponent-quintile split (see
+# app/services/endgame_service._build_quintile_bullets).
+
+
+def _bucket_from_p_value(p_value: float, n: int) -> Literal["low", "medium", "high"]:
     """Bucket a Wilson p-value into low/medium/high, with the N>=10 sample-size gate."""
     if n < CONFIDENCE_MIN_N:
         return "low"
@@ -155,6 +168,159 @@ def compute_score_confidence_from_mean(
         return "low", 1.0, 0.0
     p_value, _se_null = _wilson_score_test_vs_half(score, n)
     return _bucket_from_p_value(p_value, n), p_value, 0.0
+
+
+def compute_score_difference_test(
+    eg_w: int,
+    eg_d: int,
+    eg_l: int,
+    eg_n: int,
+    ne_w: int,
+    ne_d: int,
+    ne_l: int,
+    ne_n: int,
+) -> tuple[float | None, float | None, float | None]:
+    """Return (p_value, ci_low, ci_high) for the independent two-sample z-test
+    on the chess-score difference between two WDL cohorts.
+
+    H0: `score_eg - score_ne == 0`, where `score_i = (w_i + 0.5 * d_i) / n_i`.
+
+    SE of the difference uses the *empirical* trinomial variance per side:
+        var_i = max(0.0, (w_i + 0.25 * d_i) / n_i - score_i ** 2)
+        SE_diff = sqrt(var_eg / eg_n + var_ne / ne_n)
+        z = (score_eg - score_ne) / SE_diff
+        p_value = erfc(|z| / sqrt(2))                       # two-sided
+
+    Wald-on-difference (not Wilson) because the difference of two independent
+    proportions does not reduce to a single-proportion problem; the normal
+    approximation is adequate at `min(eg_n, ne_n) >= CONFIDENCE_MIN_N=10`.
+
+    95% CI (also Wald):
+        ci_low  = (score_eg - score_ne) - CI_Z_95 * SE_diff
+        ci_high = (score_eg - score_ne) + CI_Z_95 * SE_diff
+
+    Independent n-gates (per SEC1-08/09):
+      - p_value is None when `min(eg_n, ne_n) < CONFIDENCE_MIN_N` (=10).
+      - ci_low/ci_high are None when `min(eg_n, ne_n) < 2` (variance ill-defined).
+      - All three are None simultaneously when either n == 0.
+
+    Variance-0 trap (SE_diff == 0.0): occurs when both sides are degenerate
+    (e.g. all-wins vs all-losses, or all-draws both sides). The z-statistic
+    is undefined; we short-circuit per the eval_confidence.py:116-119 pattern:
+      - score_eg != score_ne -> p_value = 0.0 (perfectly determined signal).
+      - score_eg == score_ne -> p_value = 1.0 (no evidence of a difference).
+    CI half-width collapses to 0 in either case (point estimate, no spread).
+    """
+    # n=0 on either side: no sample, no signal, no spread.
+    if eg_n <= 0 or ne_n <= 0:
+        return None, None, None
+
+    min_n = min(eg_n, ne_n)
+
+    score_eg = (eg_w + 0.5 * eg_d) / eg_n
+    score_ne = (ne_w + 0.5 * ne_d) / ne_n
+    # Empirical trinomial variance per side, clamped at 0.0 (floating-point safety
+    # — at all-wins or all-losses the raw value is exactly 0; at all-draws likewise).
+    var_eg = max(0.0, (eg_w + 0.25 * eg_d) / eg_n - score_eg * score_eg)
+    var_ne = max(0.0, (ne_w + 0.25 * ne_d) / ne_n - score_ne * score_ne)
+    se_diff = math.sqrt(var_eg / eg_n + var_ne / ne_n)
+    diff = score_eg - score_ne
+
+    if se_diff == 0.0:
+        # Variance-0 trap (eval_confidence.py:116-119 pattern). Both sides
+        # are degenerate (no spread in either cohort). The z-statistic would
+        # be 0/0 — instead resolve the test by direct comparison of the means.
+        p_value: float = 0.0 if diff != 0.0 else 1.0
+    else:
+        z = diff / se_diff
+        # Two-sided p-value: erfc(|z| / sqrt(2)) is in [0, 1] for any finite z.
+        p_value = math.erfc(abs(z) / math.sqrt(2.0))
+
+    ci_half_width = CI_Z_95 * se_diff
+    ci_low: float = diff - ci_half_width
+    ci_high: float = diff + ci_half_width
+
+    # Independent gates per SEC1-08/09. p_value gate is the strictest (n >= 10);
+    # CI gate (n >= 2) is wider so a sub-gate cohort can still report a CI.
+    p_out: float | None = p_value if min_n >= CONFIDENCE_MIN_N else None
+    if min_n < 2:
+        ci_low_out: float | None = None
+        ci_high_out: float | None = None
+    else:
+        ci_low_out = ci_low
+        ci_high_out = ci_high
+
+    return p_out, ci_low_out, ci_high_out
+
+
+def compute_paired_difference_test(
+    diffs: Sequence[float],
+) -> tuple[float, float | None, float | None, float | None]:
+    """Return (mean_d, p_value, ci_low, ci_high) for the paired one-sample
+    z-test on a pre-computed sequence of per-game differences `d_i`.
+
+    H0: `mean(diffs) == 0`. Typical use is `d_i = actual_score_i - expected_score_i`
+    where actual is the user's WDL outcome (1/0.5/0) and expected is the Lichess
+    sigmoid of the entry eval. The helper is intentionally pure — it sees only
+    the pre-computed diffs, not the (actual, expected) pairs — so it can be
+    unit-tested in isolation.
+
+    Bessel-corrected sample variance (matches eval_confidence.py:113):
+        mean_d = sum(diffs) / n
+        var_d  = max(0.0, (sumsq - n * mean_d ** 2) / (n - 1))    # n >= 2
+        se     = sqrt(var_d / n)
+        z      = mean_d / se
+        p_value = erfc(|z| / sqrt(2))                              # two-sided
+        ci_low  = mean_d - CI_Z_95 * se
+        ci_high = mean_d + CI_Z_95 * se
+
+    n-gates (per SEC1-10):
+      - mean_d is always returned (0.0 when diffs is empty).
+      - p_value is None when `len(diffs) < CONFIDENCE_MIN_N` (=10).
+      - ci_low/ci_high are None when `len(diffs) < 2` (Bessel variance undefined).
+
+    n=1 short-circuit: Bessel correction divides by (n-1) which is zero, so
+    the helper returns `(mean_d, None, None, None)` rather than dividing by
+    zero. p_value is also None at n=1 because n < CONFIDENCE_MIN_N=10.
+
+    Variance-0 trap (se == 0.0): occurs when all diffs are identical. Mirrors
+    the eval_confidence.py:116-119 pattern:
+      - mean_d != 0.0 -> p_value = 0.0 (perfectly determined signal vs H0=0).
+      - mean_d == 0.0 -> p_value = 1.0 (no evidence of a non-zero mean).
+    CI bounds in either case collapse to ci_low == ci_high == mean_d.
+    """
+    n = len(diffs)
+    if n == 0:
+        return 0.0, None, None, None
+
+    mean_d = sum(diffs) / n
+
+    # n == 1: Bessel correction is undefined (n-1 == 0). Return mean only.
+    # p_value is gated to None by the n<10 rule anyway; CI is gated by n<2.
+    if n == 1:
+        return mean_d, None, None, None
+
+    sumsq = sum(d * d for d in diffs)
+    # Bessel-corrected sample variance. `max(0.0, ...)` clamps floating-point
+    # rounding where the raw value is slightly negative despite being
+    # mathematically non-negative (matches eval_confidence.py:113).
+    var_d = max(0.0, (sumsq - n * mean_d * mean_d) / (n - 1))
+    se = math.sqrt(var_d / n)
+
+    if se == 0.0:
+        # All diffs identical. Resolve directly against H0 = 0.
+        p_value: float = 0.0 if mean_d != 0.0 else 1.0
+    else:
+        z = mean_d / se
+        p_value = math.erfc(abs(z) / math.sqrt(2.0))
+
+    ci_half_width = CI_Z_95 * se
+    ci_low: float = mean_d - ci_half_width
+    ci_high: float = mean_d + ci_half_width
+
+    p_out: float | None = p_value if n >= CONFIDENCE_MIN_N else None
+    # CI gate is just n >= 2 (already passed by the early-return n==1 guard).
+    return mean_d, p_out, ci_low, ci_high
 
 
 def compute_confidence_bucket(

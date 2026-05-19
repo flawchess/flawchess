@@ -1,8 +1,8 @@
 ---
 phase: 65
 slug: llm-endpoint-with-pydantic-ai-agent
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-04-21
 ---

@@ -1,8 +1,8 @@
 ---
 phase: 71
 slug: frontend-stats-subtab-openinginsightsblock
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-04-27
 ---

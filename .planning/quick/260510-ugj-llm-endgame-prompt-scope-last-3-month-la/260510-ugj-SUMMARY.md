@@ -1,4 +1,5 @@
 ---
+status: complete
 id: 260510-ugj
 slug: llm-endgame-prompt-scope-last-3-month-la
 phase: quick

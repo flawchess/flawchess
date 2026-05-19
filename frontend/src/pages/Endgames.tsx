@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams, Navigate, Link } from 'react-router-dom';
 import { SlidersHorizontal, X, BarChart2Icon, SwordsIcon, HelpCircle, Lightbulb } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
@@ -17,13 +17,16 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
-import { EndgameWDLChart } from '@/components/charts/EndgameWDLChart';
-import { EndgamePerformanceSection, EndgameScoreOverTimeChart } from '@/components/charts/EndgamePerformanceSection';
-import { EndgameStartVsEndSection } from '@/components/charts/EndgameStartVsEndSection';
-import { EndgameConvRecovChart } from '@/components/charts/EndgameConvRecovChart';
-import { EndgameScoreGapSection } from '@/components/charts/EndgameScoreGapSection';
-import { EndgameClockPressureSection, ClockDiffTimelineChart } from '@/components/charts/EndgameClockPressureSection';
+import { EndgameOverallPerformanceSection } from '@/components/charts/EndgameOverallPerformanceSection';
+import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
+import { EndgameMetricsSection } from '@/components/charts/EndgameMetricsSection';
+import { EndgameTypeBreakdownSection } from '@/components/charts/EndgameTypeBreakdownSection';
+import {
+  ENDGAME_CLASS_TO_SLUG,
+  HIDDEN_ENDGAME_CLASSES,
+} from '@/lib/endgameMetrics';
 import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePressureSection';
+import { EndgameClockDiffOverTimeChart } from '@/components/charts/EndgameClockDiffOverTimeChart';
 import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 import { GameCardList } from '@/components/results/GameCardList';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
@@ -46,17 +49,25 @@ const ENDGAME_CLASS_LABELS: Record<EndgameClass, string> = {
   pawnless: 'Pawnless',
 };
 
-// Pawnless endgames are rare (~0.5% of positions, ~0.7% of qualifying game spans
-// in prod) and sample sizes per user are almost always too small to be meaningful.
-// Hide from the Endgames tab UI; classification remains in the DB so it can be
-// re-enabled without a reimport.
-const HIDDEN_ENDGAME_CLASSES: ReadonlySet<EndgameClass> = new Set(['pawnless']);
+// HIDDEN_ENDGAME_CLASSES lifted to @/lib/endgameMetrics in Phase 87 Plan 03 so
+// EndgameTypeBreakdownSection and this page share one source of truth (pawnless
+// is hidden everywhere). Classification stays in the DB so re-enabling does
+// not require a reimport.
 
 const VISIBLE_ENDGAME_CLASS_ENTRIES = (
   Object.entries(ENDGAME_CLASS_LABELS) as [EndgameClass, string][]
 ).filter(([value]) => !HIDDEN_ENDGAME_CLASSES.has(value));
 
 const DEFAULT_ENDGAME_CLASS: EndgameClass = 'mixed';
+
+// Phase 87 (D-08, SEC3-02): inverse of ENDGAME_CLASS_TO_SLUG so the
+// /endgames/games?type=<slug> deep-link can pre-seed the selected category on
+// page load (shareable URLs, browser back/forward). Built once at module scope.
+const SLUG_TO_ENDGAME_CLASS: Record<string, EndgameClass> = Object.fromEntries(
+  (Object.entries(ENDGAME_CLASS_TO_SLUG) as [EndgameClass, string][]).map(
+    ([cls, slug]) => [slug, cls],
+  ),
+);
 
 const TAB_INFO: Record<'stats' | 'games', { aria: string; text: string }> = {
   stats: {
@@ -65,13 +76,14 @@ const TAB_INFO: Record<'stats' | 'games', { aria: string; text: string }> = {
   },
   games: {
     aria: 'About Endgame Games',
-    text: 'A list of your games that reached the endgame phase, matching your current filter settings.',
+    text: 'A list of your games that reached the Endgame Phase, matching your current filter settings.',
   },
 };
 
 export function EndgamesPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const needsRedirect =
     location.pathname === '/endgames' || location.pathname === '/endgames/';
@@ -270,8 +282,11 @@ export function EndgamesPage() {
   }, [rawStatsData]);
   const perfData = overviewData?.performance;
   const scoreGapData = overviewData?.score_gap_material;
-  const clockPressureData = overviewData?.clock_pressure;
-  const timePressureChartData = overviewData?.time_pressure_chart;
+  const timePressureCardsData = overviewData?.time_pressure_cards;
+  const clockDiffTimelineData = overviewData?.clock_diff_timeline;
+  const showClockDiffTimeline = !!(
+    clockDiffTimelineData && clockDiffTimelineData.points.length > 0
+  );
   const eloTimelineData = overviewData?.endgame_elo_timeline;
 
   const { data: gamesData, isLoading: gamesLoading, isError: gamesError } = useEndgameGames(
@@ -316,12 +331,29 @@ export function EndgamesPage() {
     window.scrollTo(0, 0);
   }, []);
 
+  // Phase 87 (D-08, SEC3-02): `?type=<slug>` URL hydration so shareable
+  // deep-links into /endgames/games?type=rook pre-seed the type filter on page
+  // load and on subsequent SPA navigations. Unknown / malformed slugs are
+  // ignored (T-87-07 mitigation: validate against SLUG_TO_ENDGAME_CLASS).
+  useEffect(() => {
+    const slug = searchParams.get('type');
+    if (!slug) return;
+    const parsed = SLUG_TO_ENDGAME_CLASS[slug];
+    if (parsed && parsed !== selectedCategory) {
+      setSelectedCategory(parsed);
+      setGamesOffset(0);
+    }
+    // selectedCategory intentionally omitted from deps: this effect only
+    // *seeds* state from URL on mount + URL change; user-driven category
+    // selection through handleCategorySelect should not retrigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // ── Stats tab content ──────────────────────────────────────────────────────
 
   // Summary line + collapsible explaining endgame concepts and metric limitations
   const showPerfSection = !!(perfData && perfData.endgame_wdl.total > 0);
-  const showClockPressure = !!(clockPressureData && clockPressureData.rows.length > 0);
-  const showTimePressureChart = !!(timePressureChartData && timePressureChartData.total_endgame_games > 0);
+  const showTimePressureCards = !!(timePressureCardsData && timePressureCardsData.cards.length > 0);
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
@@ -340,7 +372,6 @@ export function EndgamesPage() {
           {/* ── Endgame Overall Performance ── */}
           {showPerfSection && (
             <>
-              <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Overall Performance</h2>
               <Accordion type="single" collapsible>
                 <AccordionItem value="concepts" className="charcoal-texture rounded-md px-4" data-testid="endgame-concepts-trigger">
                   <AccordionTrigger className="text-foreground justify-start flex-none gap-2 **:data-[slot=accordion-trigger-icon]:ml-0 **:data-[slot=accordion-trigger-icon]:order-first">
@@ -349,18 +380,33 @@ export function EndgamesPage() {
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground space-y-2">
                     <p>
-                      <strong>Endgame phase:</strong> positions where the total count of major and minor pieces
-                      (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
-                      counted. This follows the Lichess definition. A game is only counted as having an endgame
-                      phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as no endgame.
+                      <strong>Color Zones and FlawChess Benchmark:</strong> the blue band on each gauge and chart marks the typical range,
+                      defined by the middle 50% of players (interquartile range). Values inside the blue zone are typical, while red and green zones flag below- and
+                      above-average performance. Zone bounds are calibrated from the latest {' '}
+                      <a
+                        href="https://github.com/flawchess/flawchess/blob/main/reports/benchmarks-latest.md"
+                        className="text-primary underline-offset-4 hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        FlawChess Benchmark
+                      </a>
+                      , which provides metric distributions from a stratified sample of Lichess players across rating
+                      and time control buckets.
                     </p>
                     <p>
-                      <strong>Endgame types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
+                      <strong>Endgame Phase:</strong> positions where the total count of major and minor pieces
+                      (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
+                      counted. This follows the Lichess definition. A game is only counted as having an Endgame
+                      Phase if it spans at least 3 full moves (6 half-moves) in the endgame. Shorter tactical transitions from middlegame into a checkmate are treated as no endgame.
+                    </p>
+                    <p>
+                      <strong>Endgame Types:</strong> Rook, Minor Piece (bishops/knights), Pawn (king and pawns only),
                       Queen, and Mixed (two or more piece types).
                     </p>
                     <p>
-                      <strong>Endgame sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
-                      spent in a single endgame type. A single game can produce multiple sequences. For example,
+                      <strong>Endgame Sequence:</strong> a continuous stretch of at least 3 full moves (6 half-moves)
+                      spent in a single Endgame Type. A single game can produce multiple sequences. For example,
                       a rook endgame where the rooks get traded becomes a pawn endgame, giving that game one rook
                       sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown, so a game can appear
                       under more than one type.
@@ -381,13 +427,14 @@ export function EndgamesPage() {
                       and drew or won. Measures how well you defend losing endgames.
                     </p>
                     <p>
-                      <strong>Endgame entry eval:</strong> the average Stockfish evaluation of
+                      <strong>Endgame Entry Eval:</strong> the average Stockfish evaluation of
                       the position where the endgame begins, measured in pawns from your perspective
                       (positive means you have the better position). Mate scores are excluded.
                     </p>
                     <p>
-                      <strong>Achievable score:</strong> what a 2300+ rated player would score
-                      from your endgame-entry positions. Calculated from your Endgame entry eval
+                      <strong>Achievable Score:</strong> what a 2300+ rated player would score
+                      from your endgame-entry positions against a peer of similar rating.
+                      Calculated from your Endgame Entry Eval
                       using the{' '}
                       <a
                         href="https://lichess.org/page/accuracy"
@@ -395,17 +442,43 @@ export function EndgamesPage() {
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        Lichess winning chances formula
+                        Lichess expected-score formula
                       </a>
                       . The curve is fitted on 2300+ rapid games, so scoring a little below this
                       baseline from positive evals is normal at lower ratings. Compare against your
-                      achieved Endgame score to see how well you convert the positions you reach.
+                      achieved Endgame Score to see how well you convert the positions you reach.
                     </p>
                     <p>
-                      <strong>Endgame score:</strong> your win rate (with draws counted as half)
-                      across all games that reach an endgame, tested against 50%, the break-even line
-                      you'd expect against rating-matched opponents. Use the Opponent Strength filter
+                      <strong>Endgame Score:</strong> your win rate (with draws counted as half)
+                      across all games that reach an endgame, tested against 50%, the baseline against rating-matched opponents. Use the Opponent Strength filter
                       to tighten the test against equal-rated opponents specifically.
+                    </p>
+                    <p>
+                      <strong>Endgame Score Gap:</strong> the score difference between games that reach an endgame (Endgame Score) vs. games that end before (Non-Endgame Score). Positive means endgames are your strength; negative
+                      means you perform worse once games reach an endgame.
+                    </p>
+                    <p>
+                      <strong>Achievable Score Gap:</strong> your average per-game score minus the achievable
+                      score from each endgame-entry position. Positive means you converted your endgame entry
+                      positions better than a 2300+ rated rapid player would on average; negative means you
+                      converted them worse.
+                    </p>
+                    <p>
+                      <strong>Endgame ELO and Non-Endgame ELO:</strong> what your rating would be if your whole
+                      game played at the level of just your endgame games, or just your non-endgame games. Both
+                      sit symmetrically around your Actual ELO: we take your trailing-window score on each side
+                      (S_E for endgame games, S_N for non-endgame games), convert the score gap into an ELO
+                      spread via the Elo logistic, and split it across the two lines:
+                      {' '}
+                      <code>
+                        spread = 400 · log₁₀((S_E / (1 − S_E)) / (S_N / (1 − S_N)))
+                      </code>
+                      , {' '}
+                      <code>Endgame ELO = Actual ELO + spread / 2</code>, {' '}
+                      <code>Non-Endgame ELO = Actual ELO − spread / 2</code>. The midpoint
+                      equals your Actual ELO by construction. When Endgame ELO sits above Non-Endgame ELO your
+                      endgame play is lifting your rating (green band); when it sits below, your endgame is
+                      holding it back (red band).
                     </p>
                     <p>
                       Conversion and Recovery rates usually reflect your performance against opponents at your rating
@@ -417,10 +490,10 @@ export function EndgamesPage() {
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
-              <EndgameStartVsEndSection data={perfData} />
-              <div className="charcoal-texture rounded-md p-4">
-                <EndgamePerformanceSection data={perfData} scoreGap={scoreGapData} />
-              </div>
+              <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Overall Performance</h2>
+              {scoreGapData && (
+                <EndgameOverallPerformanceSection data={perfData} scoreGap={scoreGapData} />
+              )}
               {scoreGapData && scoreGapData.timeline.length > 0 && (
                 <div className="charcoal-texture rounded-md p-4">
                   <EndgameScoreOverTimeChart
@@ -429,23 +502,29 @@ export function EndgamesPage() {
                   />
                 </div>
               )}
+              {/* Phase 87.5 SC#2: Endgame ELO Timeline relocated here, directly
+                  below the Score Gap timeline, inside the "Endgame Overall
+                  Performance" section. The chart shares the same filter
+                  plumbing (overviewData) as EndgameScoreOverTimeChart above. */}
+              {eloTimelineData && (
+                <div
+                  className="charcoal-texture rounded-md p-4"
+                  data-testid="endgame-elo-timeline-section"
+                >
+                  <EndgameEloTimelineSection
+                    data={eloTimelineData}
+                    isLoading={overviewLoading}
+                    isError={overviewError}
+                  />
+                </div>
+              )}
               <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
-              {scoreGapData && (
+              {scoreGapData && perfData && (
                 <>
-                  <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Metrics and ELO</h2>
-                  <div className="charcoal-texture rounded-md p-4">
-                    <EndgameScoreGapSection data={scoreGapData} />
-                  </div>
-                  <div
-                    className="charcoal-texture rounded-md p-4"
-                    data-testid="endgame-elo-timeline-section"
-                  >
-                    <EndgameEloTimelineSection
-                      data={eloTimelineData}
-                      isLoading={overviewLoading}
-                      isError={overviewError}
-                    />
-                  </div>
+                  <h2 className="text-lg font-semibold text-foreground mt-2">
+                    Endgame Metrics
+                  </h2>
+                  <EndgameMetricsSection data={scoreGapData} />
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}
@@ -453,46 +532,57 @@ export function EndgamesPage() {
           )}
 
           {/* ── Time Pressure ── */}
-          {(showClockPressure || showTimePressureChart) && (
+          {/* Plan 88-13 A-1: no outer charcoal-texture wrap; each TC card carries
+              its own charcoal container, matching the EndgameTypeBreakdownSection
+              convention below. */}
+          {showTimePressureCards && timePressureCardsData && (
             <>
               <h2 className="text-lg font-semibold text-foreground mt-2">Time Pressure</h2>
-              {showClockPressure && (
-                <>
-                  <div className="charcoal-texture rounded-md p-4">
-                    <EndgameClockPressureSection data={clockPressureData} />
-                  </div>
-                  {clockPressureData && clockPressureData.timeline.length > 0 && (
-                    <div className="charcoal-texture rounded-md p-4">
-                      <ClockDiffTimelineChart
-                        timeline={clockPressureData.timeline}
-                        window={clockPressureData.timeline_window}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-              {showTimePressureChart && (
+              {/* Plan 88-15 + post-UAT reorder (CONTEXT §2 A-2): restored
+                  Average Clock Difference over Time line chart. Sits ABOVE the
+                  per-TC cards so the user sees the trend story first, then
+                  drills into per-TC breakdowns. Hides when no eligible points. */}
+              {showClockDiffTimeline && clockDiffTimelineData && (
                 <div className="charcoal-texture rounded-md p-4">
-                  <EndgameTimePressureSection data={timePressureChartData} />
+                  <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
                 </div>
               )}
+              <EndgameTimePressureSection data={timePressureCardsData} />
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}
 
           {/* ── Endgame Type Breakdown ── */}
-          <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Type Breakdown</h2>
-          <div className="charcoal-texture rounded-md p-4">
-            <EndgameWDLChart
-              categories={statsData.categories}
-              onCategorySelect={handleCategorySelect}
-            />
-          </div>
-          {statsData.categories.length > 0 && (
-            <div className="charcoal-texture rounded-md p-4">
-              <EndgameConvRecovChart categories={statsData.categories} />
-            </div>
-          )}
+          <h2
+            id="endgame-type-breakdown-heading"
+            className="text-lg font-semibold text-foreground mt-2"
+          >
+            <span className="inline-flex items-center gap-1">
+              Endgame Type Breakdown
+              <InfoPopover
+                ariaLabel="Endgame Type Breakdown info"
+                testId="endgame-type-breakdown-info"
+                side="bottom"
+              >
+                <div className="space-y-2">
+                  <p>
+                    <strong>Endgame Type Breakdown:</strong> how you perform across the different
+                    kinds of endgames (rook, minor piece, pawn, queen, mixed).
+                  </p>
+                  <p>
+                    Each card shows your win, draw, and loss rate for that type, plus your
+                    Conversion rate (closing out winning endgames) and Recovery rate (saving
+                    losing endgames).
+                  </p>
+                </div>
+              </InfoPopover>
+            </span>
+          </h2>
+          <EndgameTypeBreakdownSection
+            categories={statsData.categories}
+            totalGames={statsData.endgame_games}
+            onCategorySelect={handleCategorySelect}
+          />
           <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
         </>
       ) : overviewError ? (
@@ -506,7 +596,7 @@ export function EndgamesPage() {
         <div className="flex flex-1 flex-col items-center justify-center py-12 text-center">
           <p className="mb-2 text-base font-medium text-foreground">No endgame data yet</p>
           <p className="mb-6 text-sm text-muted-foreground">
-            No games have reached an endgame phase yet with the current filters. Try adjusting
+            No games have reached an Endgame Phase yet with the current filters. Try adjusting
             the time control or recency filters.
           </p>
         </div>
@@ -529,7 +619,7 @@ export function EndgamesPage() {
   // ── Endgame type dropdown (used in Games tab) ──────────────────────────────
   const endgameTypeDropdown = (
     <div className="flex items-center gap-2">
-      <p className="text-xs text-muted-foreground whitespace-nowrap">Endgame type</p>
+      <p className="text-xs text-muted-foreground whitespace-nowrap">Endgame Type</p>
       <Select
         value={selectedCategory}
         onValueChange={(v) => {

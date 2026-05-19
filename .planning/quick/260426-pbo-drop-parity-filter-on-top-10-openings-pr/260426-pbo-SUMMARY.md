@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: 260426-pbo
 plan: 01
 subsystem: stats / openings

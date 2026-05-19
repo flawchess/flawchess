@@ -1,8 +1,8 @@
 ---
 phase: 9
 slug: rework-the-games-list-with-game-cards-username-import-and-improved-pagination
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-14
 ---

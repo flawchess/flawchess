@@ -155,11 +155,16 @@ def _make_elo_combo(
     platform: "Literal['chess.com', 'lichess']" = "chess.com",
     time_control: "Literal['bullet', 'blitz', 'rapid', 'classical']" = "blitz",
 ) -> EndgameEloTimelineCombo:
-    """Build a synthetic EndgameEloTimelineCombo with n_points weekly points."""
+    """Build a synthetic EndgameEloTimelineCombo with n_points weekly points.
+
+    Phase 87.5 (D-06): parameter name restored to endgame_elo in lockstep
+    with the renamed Pydantic field.
+    """
     points: list[EndgameEloTimelinePoint] = [
         EndgameEloTimelinePoint(
             date=f"2026-01-{i + 1:02d}",
             endgame_elo=endgame_elo,
+            non_endgame_elo=actual_elo,
             actual_elo=actual_elo,
             endgame_games_in_window=50,
             per_week_endgame_games=5,
@@ -217,6 +222,214 @@ class TestEloCombo:
 
 
 # ---------------------------------------------------------------------------
+# TestSeriesForEndgameEloComboPRFields — Phase 87.6 PR field threading.
+# ---------------------------------------------------------------------------
+
+
+def _make_elo_combo_with_pr(
+    points_data: list[tuple[int, int, int]],
+    platform: "Literal['chess.com', 'lichess']" = "chess.com",
+    time_control: "Literal['bullet', 'blitz', 'rapid', 'classical']" = "blitz",
+) -> EndgameEloTimelineCombo:
+    """Build an EndgameEloTimelineCombo from (endgame_elo, non_endgame_elo, actual_elo) tuples.
+
+    Phase 87.6: local fixture builder for PR-field threading tests. Each tuple
+    represents one weekly bucket with distinct endgame_elo / non_endgame_elo /
+    actual_elo values so tests can assert per-field pass-through independence.
+    """
+    points: list[EndgameEloTimelinePoint] = [
+        EndgameEloTimelinePoint(
+            date=f"2026-01-{i + 1:02d}",
+            endgame_elo=endgame_elo,
+            non_endgame_elo=non_endgame_elo,
+            actual_elo=actual_elo,
+            endgame_games_in_window=100,
+            per_week_endgame_games=10,
+        )
+        for i, (endgame_elo, non_endgame_elo, actual_elo) in enumerate(points_data)
+    ]
+    return EndgameEloTimelineCombo(
+        combo_key=f"{platform.replace('.', '_')}_{time_control}",
+        platform=platform,
+        time_control=time_control,
+        points=points,
+    )
+
+
+class TestSeriesForEndgameEloComboPRFields:
+    """Phase 87.6: asserts endgame_elo + non_endgame_elo thread through to TimePoints.
+
+    RED gate: tests fail until Task 2 adds the two optional fields to TimePoint
+    and extends the 4-tuple wiring to a 6-tuple in the service layer.
+    """
+
+    def test_emits_endgame_and_non_endgame_elo_per_timepoint(self) -> None:
+        """last_3mo window passes both PR fields through per-point.
+
+        10-point combo (SPARSE_COMBO_FLOOR boundary) with distinct
+        (endgame_elo, non_endgame_elo, actual_elo) values per point.
+        Asserts exact pass-through: no rounding, no cross-field bleed.
+        """
+        # 10 points: alternating lifting / lagging pattern
+        points_data = [
+            (1700, 1650, 1675),  # endgame lifts: 1700 > 1650
+            (1700, 1750, 1725),  # endgame lags: 1700 < 1750
+            (1750, 1700, 1725),  # endgame lifts: 1750 > 1700
+            (1720, 1680, 1700),  # endgame lifts
+            (1680, 1720, 1700),  # endgame lags
+            (1760, 1740, 1750),  # endgame lifts slightly
+            (1730, 1770, 1750),  # endgame lags slightly
+            (1800, 1780, 1790),  # endgame lifts
+            (1780, 1800, 1790),  # endgame lags
+            (1790, 1790, 1790),  # endgame neutral
+        ]
+        combo = _make_elo_combo_with_pr(points_data)
+        result = _series_for_endgame_elo_combo(combo, "last_3mo")
+        assert result is not None
+        assert len(result) == 10
+        for tp, (eg_elo, neg_elo, act_elo) in zip(result, points_data, strict=True):
+            assert tp.endgame_elo == eg_elo, (
+                f"endgame_elo mismatch at bucket {tp.bucket_start}: "
+                f"expected {eg_elo}, got {tp.endgame_elo}"
+            )
+            assert tp.non_endgame_elo == neg_elo, (
+                f"non_endgame_elo mismatch at bucket {tp.bucket_start}: "
+                f"expected {neg_elo}, got {tp.non_endgame_elo}"
+            )
+            assert tp.actual_elo == act_elo, (
+                f"actual_elo mismatch at bucket {tp.bucket_start}: "
+                f"expected {act_elo}, got {tp.actual_elo}"
+            )
+
+    def test_all_time_window_aggregates_both_pr_fields(self) -> None:
+        """all_time window computes weighted mean for endgame_elo and non_endgame_elo.
+
+        10-point combo (SPARSE_COMBO_FLOOR boundary) spanning 2 months (Jan
+        2026 and Feb 2026). The 4 data-bearing points carry per_week_endgame_games
+        > 0; 6 filler points carry per_week_endgame_games=0 so they do not
+        affect weighted means but do satisfy the SPARSE_COMBO_FLOOR=10 gate.
+        Asserts weighted mean of both PR fields per month bucket.
+        """
+        points: list[EndgameEloTimelinePoint] = [
+            EndgameEloTimelinePoint(
+                date="2026-01-05",
+                endgame_elo=1700,
+                non_endgame_elo=1660,
+                actual_elo=1680,
+                endgame_games_in_window=100,
+                per_week_endgame_games=10,
+            ),
+            EndgameEloTimelinePoint(
+                date="2026-01-12",
+                endgame_elo=1720,
+                non_endgame_elo=1680,
+                actual_elo=1700,
+                endgame_games_in_window=100,
+                per_week_endgame_games=10,
+            ),
+            EndgameEloTimelinePoint(
+                date="2026-02-02",
+                endgame_elo=1730,
+                non_endgame_elo=1690,
+                actual_elo=1710,
+                endgame_games_in_window=100,
+                per_week_endgame_games=5,
+            ),
+            EndgameEloTimelinePoint(
+                date="2026-02-09",
+                endgame_elo=1750,
+                non_endgame_elo=1710,
+                actual_elo=1730,
+                endgame_games_in_window=100,
+                per_week_endgame_games=15,
+            ),
+            # 6 filler points to satisfy SPARSE_COMBO_FLOOR=10; n=0 so they
+            # do not contribute to weighted means (statistics.mean path is
+            # guarded by total_n == 0, which cannot happen here since the 4
+            # data points already contribute positive weights).
+            *[
+                EndgameEloTimelinePoint(
+                    date=f"2026-01-{19 + i}",
+                    endgame_elo=1710,
+                    non_endgame_elo=1670,
+                    actual_elo=1690,
+                    endgame_games_in_window=0,
+                    per_week_endgame_games=0,
+                )
+                for i in range(6)
+            ],
+        ]
+        combo = EndgameEloTimelineCombo(
+            combo_key="chess_com_blitz",
+            platform="chess.com",
+            time_control="blitz",
+            points=points,
+        )
+        result = _series_for_endgame_elo_combo(combo, "all_time")
+        assert result is not None
+        assert len(result) == 2  # Jan and Feb monthly buckets
+
+        jan_point, feb_point = result
+        assert jan_point.bucket_start == "2026-01-01"
+        assert feb_point.bucket_start == "2026-02-01"
+
+        # Jan: equal weights (n=10, n=10); simple mean
+        expected_jan_eg = round((1700 * 10 + 1720 * 10) / 20)
+        expected_jan_neg = round((1660 * 10 + 1680 * 10) / 20)
+        assert jan_point.endgame_elo == expected_jan_eg, (
+            f"Jan endgame_elo: expected {expected_jan_eg}, got {jan_point.endgame_elo}"
+        )
+        assert jan_point.non_endgame_elo == expected_jan_neg, (
+            f"Jan non_endgame_elo: expected {expected_jan_neg}, got {jan_point.non_endgame_elo}"
+        )
+
+        # Feb: n=5 and n=15 (total=20); weighted mean
+        expected_feb_eg = round((1730 * 5 + 1750 * 15) / 20)
+        expected_feb_neg = round((1690 * 5 + 1710 * 15) / 20)
+        assert feb_point.endgame_elo == expected_feb_eg, (
+            f"Feb endgame_elo: expected {expected_feb_eg}, got {feb_point.endgame_elo}"
+        )
+        assert feb_point.non_endgame_elo == expected_feb_neg, (
+            f"Feb non_endgame_elo: expected {expected_feb_neg}, got {feb_point.non_endgame_elo}"
+        )
+
+    def test_other_timeline_series_have_none_for_pr_fields(self) -> None:
+        """Gating contract: only endgame_elo_timeline populates PR fields.
+
+        TimePoint instances constructed directly (not via _series_for_endgame_elo_combo)
+        default both PR fields to None. Any other timeline series (score, clock, etc.)
+        that constructs TimePoints without the PR fields must have None for both.
+        """
+        from app.schemas.insights import TimePoint
+
+        # Direct construction without PR fields mirrors what every other series helper does.
+        tp = TimePoint(bucket_start="2026-04-06", value=0.05, n=50)
+        assert tp.endgame_elo is None, (
+            "TimePoint.endgame_elo must default to None for non-endgame_elo_timeline series"
+        )
+        assert tp.non_endgame_elo is None, (
+            "TimePoint.non_endgame_elo must default to None for non-endgame_elo_timeline series"
+        )
+
+    def test_endgame_elo_combo_all_timepoints_have_non_endgame_elo(self) -> None:
+        """Every TimePoint emitted by _series_for_endgame_elo_combo carries non_endgame_elo.
+
+        Gating contract (Phase 87.6): the payload extension must be non-None for
+        every point in the series (no silent None-propagation through the 6-tuple
+        threading).
+        """
+        points_data = [(1700 + i * 10, 1650 + i * 10, 1675 + i * 10) for i in range(10)]
+        combo = _make_elo_combo_with_pr(points_data)
+        result = _series_for_endgame_elo_combo(combo, "last_3mo")
+        assert result is not None
+        for tp in result:
+            assert tp.non_endgame_elo is not None, (
+                f"non_endgame_elo must not be None for endgame_elo_timeline point "
+                f"at {tp.bucket_start}"
+            )
+
+
+# ---------------------------------------------------------------------------
 # TestTimelineHelpers — weekly vs monthly resampling.
 # ---------------------------------------------------------------------------
 
@@ -253,8 +466,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
     Supplies the minimal fields that compute_findings reads.
     """
     from app.schemas.endgames import (
-        ClockPressureResponse,
-        ClockPressureTimelinePoint,
+        ClockDiffTimelineResponse,
         EndgameCategoryStats,
         EndgameEloTimelineResponse,
         EndgamePerformanceResponse,
@@ -263,7 +475,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         EndgameWDLSummary,
         ScoreGapMaterialResponse,
         ScoreGapTimelinePoint,
-        TimePressureChartResponse,
+        TimePressureCardsResponse,
     )
 
     wdl = EndgameWDLSummary(
@@ -321,28 +533,6 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         timeline=score_gap_timeline,
         timeline_window=50,
     )
-    # Clock pressure timeline
-    clock_timeline = [
-        ClockPressureTimelinePoint(
-            date=f"2026-01-{i + 4:02d}",
-            avg_clock_diff_pct=float(i + 1),
-            game_count=10,
-            per_week_game_count=10,
-        )
-        for i in range(13)
-    ]
-    clock_pressure = ClockPressureResponse(
-        rows=[],
-        total_clock_games=130,
-        total_endgame_games=130,
-        timeline=clock_timeline,
-        timeline_window=50,
-    )
-    time_pressure_chart = TimePressureChartResponse(
-        user_series=[],
-        opp_series=[],
-        total_endgame_games=0,
-    )
     # ELO timeline with >=10 points per combo
     elo_combo = EndgameEloTimelineCombo(
         combo_key="chess_com_blitz",
@@ -352,6 +542,7 @@ def _make_minimal_response() -> EndgameOverviewResponse:
             EndgameEloTimelinePoint(
                 date=f"2026-01-{i + 4:02d}",
                 endgame_elo=1500,
+                non_endgame_elo=1400,
                 actual_elo=1400,
                 endgame_games_in_window=50,
                 per_week_endgame_games=5,
@@ -383,8 +574,8 @@ def _make_minimal_response() -> EndgameOverviewResponse:
         performance=performance,
         timeline=type_timeline,
         score_gap_material=score_gap_material,
-        clock_pressure=clock_pressure,
-        time_pressure_chart=time_pressure_chart,
+        time_pressure_cards=TimePressureCardsResponse(cards=[]),
+        clock_diff_timeline=ClockDiffTimelineResponse(points=[]),
         endgame_elo_timeline=elo_timeline,
     )
 
@@ -414,10 +605,12 @@ def _make_conv_stats() -> ConversionRecoveryStats:
 # for the 3 timeline subsections (type_win_rate_timeline removed 260501-s0u).
 # ---------------------------------------------------------------------------
 
+# Phase 88: clock_diff_timeline removed from active timeline subsections — the
+# ClockPressureResponse.timeline field was replaced by TimePressureCardsResponse.
+# _finding_clock_diff_timeline now returns an empty finding (series=None).
 _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
-        "clock_diff_timeline",
         "endgame_elo_timeline",
     }
 )
@@ -428,7 +621,11 @@ class TestIntegration:
 
     @pytest.mark.asyncio
     async def test_compute_findings_populates_series_only_for_timelines(self) -> None:
-        """series is not None exactly for the 3 timeline subsection_ids (D-02)."""
+        """series is not None exactly for the active timeline subsection_ids (D-02).
+
+        Phase 88: clock_diff_timeline no longer populates series (timeline removed
+        from EndgameOverviewResponse with ClockPressureResponse migration).
+        """
         mock_response = _make_minimal_response()
         with patch.object(
             insights_module,
@@ -448,15 +645,17 @@ class TestIntegration:
             if f.subsection_id not in _TIMELINE_SUBSECTION_IDS and f.series is not None
         ]
 
-        # All 3 timeline subsections must have series populated
+        # Active timeline subsections must have series populated (Phase 88: 2 of 3 remain)
         assert "score_timeline" in timeline_with_series, (
             "score_timeline should have series populated"
         )
-        assert "clock_diff_timeline" in timeline_with_series, (
-            "clock_diff_timeline should have series populated"
-        )
         assert "endgame_elo_timeline" in timeline_with_series, (
             "endgame_elo_timeline should have series populated"
+        )
+        # Phase 88: clock_diff_timeline returns empty finding (series=None); verify it doesn't
+        # appear in timeline_with_series (its timeline was removed with ClockPressureResponse).
+        assert "clock_diff_timeline" not in timeline_with_series, (
+            "clock_diff_timeline should NOT have series in Phase 88 (timeline removed)"
         )
         # Non-timeline findings must NOT have series
         assert non_timeline_with_series == [], (

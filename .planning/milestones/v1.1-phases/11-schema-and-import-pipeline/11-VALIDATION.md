@@ -1,8 +1,8 @@
 ---
 phase: 11
 slug: schema-and-import-pipeline
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-16
 ---

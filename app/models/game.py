@@ -10,6 +10,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import REAL
 from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -103,8 +104,8 @@ class Game(Base):
     result_fen: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Engine analysis: game-level accuracy from chess.com (NULL for lichess and unanalyzed games)
-    white_accuracy: Mapped[float | None] = mapped_column(Float(24), nullable=True)
-    black_accuracy: Mapped[float | None] = mapped_column(Float(24), nullable=True)
+    white_accuracy: Mapped[float | None] = mapped_column(REAL, nullable=True)
+    black_accuracy: Mapped[float | None] = mapped_column(REAL, nullable=True)
 
     # Lichess analysis metrics: ACPL and move quality counts per color
     # (NULL for chess.com games and unanalyzed lichess games)

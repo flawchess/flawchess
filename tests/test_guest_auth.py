@@ -299,7 +299,9 @@ class TestPromoteGuestWithPassword:
 
         user, _token = await create_guest_user(db_session)
         new_email = unique_email("promoted")
-        updated_user, _new_token = await promote_guest_with_password(db_session, user, new_email, "SecurePass1!")
+        updated_user, _new_token = await promote_guest_with_password(
+            db_session, user, new_email, "SecurePass1!"
+        )
 
         assert updated_user.is_guest is False
         assert updated_user.email == new_email
@@ -312,7 +314,9 @@ class TestPromoteGuestWithPassword:
 
         user, _token = await create_guest_user(db_session)
         new_email = unique_email("hashtest")
-        updated_user, _new_token = await promote_guest_with_password(db_session, user, new_email, "SecurePass1!")
+        updated_user, _new_token = await promote_guest_with_password(
+            db_session, user, new_email, "SecurePass1!"
+        )
 
         assert updated_user.hashed_password != ""
         assert updated_user.hashed_password != "SecurePass1!"
@@ -324,7 +328,9 @@ class TestPromoteGuestWithPassword:
 
         user, _token = await create_guest_user(db_session)
         new_email = unique_email("jwttest")
-        _updated_user, new_token = await promote_guest_with_password(db_session, user, new_email, "SecurePass1!")
+        _updated_user, new_token = await promote_guest_with_password(
+            db_session, user, new_email, "SecurePass1!"
+        )
 
         assert isinstance(new_token, str)
         assert len(new_token) > 0
@@ -351,7 +357,9 @@ class TestPromoteGuestWithPassword:
         guest_user, _token = await create_guest_user(db_session)
 
         with pytest.raises(UserAlreadyExists):
-            await promote_guest_with_password(db_session, guest_user, existing_email, "SecurePass1!")
+            await promote_guest_with_password(
+                db_session, guest_user, existing_email, "SecurePass1!"
+            )
 
     @pytest.mark.asyncio
     async def test_promotion_raises_value_error_for_non_guest(self, db_session):
@@ -370,7 +378,9 @@ class TestPromoteGuestWithPassword:
         await db_session.flush()
 
         with pytest.raises(ValueError, match="Not a guest user"):
-            await promote_guest_with_password(db_session, regular_user, unique_email("target"), "SecurePass1!")
+            await promote_guest_with_password(
+                db_session, regular_user, unique_email("target"), "SecurePass1!"
+            )
 
 
 # ---------------------------------------------------------------------------

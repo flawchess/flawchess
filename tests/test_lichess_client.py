@@ -16,6 +16,7 @@ from app.services.lichess_client import fetch_lichess_games
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_lichess_game(
     game_id: str = "abcd1234",
     variant_key: str = "standard",
@@ -84,7 +85,6 @@ def _make_streaming_response(
 
 
 class TestFetchLichessGames:
-
     @pytest.mark.asyncio
     async def test_valid_username_yields_normalized_games(self):
         """Should yield a normalized game dict from a valid NDJSON line."""
@@ -107,9 +107,7 @@ class TestFetchLichessGames:
     async def test_404_raises_value_error(self):
         """Should raise ValueError when the lichess user is not found."""
         mock_client = MagicMock()
-        mock_client.stream = MagicMock(
-            return_value=_make_streaming_response([], status_code=404)
-        )
+        mock_client.stream = MagicMock(return_value=_make_streaming_response([], status_code=404))
 
         with pytest.raises(ValueError, match="lichess user 'unknown_user' not found"):
             async for _ in fetch_lichess_games(mock_client, "unknown_user", user_id=1):
@@ -237,9 +235,7 @@ class TestFetchLichessGames:
         and last_synced_at is preserved.
         """
         mock_client = MagicMock()
-        mock_client.stream = MagicMock(
-            return_value=_make_streaming_response([], status_code=503)
-        )
+        mock_client.stream = MagicMock(return_value=_make_streaming_response([], status_code=503))
 
         with patch("app.services.lichess_client.asyncio.sleep", new=AsyncMock()):
             with pytest.raises(RuntimeError, match="failed after 3 retries"):
@@ -275,9 +271,7 @@ class TestFetchLichessGames:
     async def test_429_persistent_raises_runtime_error(self):
         """Persistent 429 must raise after retries (not silently advance cursor)."""
         mock_client = MagicMock()
-        mock_client.stream = MagicMock(
-            return_value=_make_streaming_response([], status_code=429)
-        )
+        mock_client.stream = MagicMock(return_value=_make_streaming_response([], status_code=429))
 
         with patch("app.services.lichess_client.asyncio.sleep", new=AsyncMock()):
             with pytest.raises(RuntimeError, match="failed after 3 retries"):
@@ -294,9 +288,7 @@ class TestFetchLichessGames:
         or auth problem and should fail loud on the first response.
         """
         mock_client = MagicMock()
-        mock_client.stream = MagicMock(
-            return_value=_make_streaming_response([], status_code=401)
-        )
+        mock_client.stream = MagicMock(return_value=_make_streaming_response([], status_code=401))
 
         with patch("app.services.lichess_client.asyncio.sleep", new=AsyncMock()):
             with pytest.raises(RuntimeError, match="unexpected status 401"):

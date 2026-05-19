@@ -72,6 +72,7 @@ _TEST_USER_IDS = [1, 2, 3, 10, 20, 99, 500, 501, 502, 503, 504, 505, 600, 601, 7
 async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure all test user IDs exist in the users table before each test."""
     from tests.conftest import ensure_test_user
+
     for uid in _TEST_USER_IDS:
         await ensure_test_user(db_session, uid)
 
@@ -280,6 +281,7 @@ async def _seed_game_with_positions(
 ) -> Game:
     """Insert a Game and one or more GamePosition rows, return the Game."""
     from tests.conftest import ensure_test_user
+
     await ensure_test_user(session, user_id)
     game = Game(
         user_id=user_id,
@@ -335,7 +337,9 @@ class TestSuggestions:
                 db_session,
                 user_id=uid,
                 user_color="white",
-                positions=[{"ply": 8, "full_hash": 1001 + i, "white_hash": 2001, "black_hash": 3001 + i}],
+                positions=[
+                    {"ply": 8, "full_hash": 1001 + i, "white_hash": 2001, "black_hash": 3001 + i}
+                ],
             )
 
         # Position B appears in 2 games (white_hash=2002)
@@ -344,7 +348,9 @@ class TestSuggestions:
                 db_session,
                 user_id=uid,
                 user_color="white",
-                positions=[{"ply": 10, "full_hash": 1010 + i, "white_hash": 2002, "black_hash": 3010 + i}],
+                positions=[
+                    {"ply": 10, "full_hash": 1010 + i, "white_hash": 2002, "black_hash": 3010 + i}
+                ],
             )
 
         results = await get_top_positions_for_color(
@@ -381,7 +387,14 @@ class TestSuggestions:
                     db_session,
                     user_id=uid,
                     user_color="white",
-                    positions=[{"ply": 8, "full_hash": 1100 + wh_offset * 10 + i, "white_hash": 2101 + wh_offset, "black_hash": 3100 + i}],
+                    positions=[
+                        {
+                            "ply": 8,
+                            "full_hash": 1100 + wh_offset * 10 + i,
+                            "white_hash": 2101 + wh_offset,
+                            "black_hash": 3100 + i,
+                        }
+                    ],
                 )
 
         # Exclude position A by its target hash (white_hash for white color)
@@ -397,7 +410,7 @@ class TestSuggestions:
 
         white_hashes = [r[0] for r in results]
         assert 2101 not in white_hashes  # Position A excluded
-        assert 2102 in white_hashes      # Position B still present
+        assert 2102 in white_hashes  # Position B still present
 
     @pytest.mark.asyncio
     async def test_get_top_positions_respects_color_filter(self, db_session: AsyncSession) -> None:
@@ -461,10 +474,12 @@ class TestSuggestions:
 
         white_hashes = [r[0] for r in results]
         assert 2301 not in white_hashes  # 1-game position excluded
-        assert 2302 in white_hashes       # 2-game position included
+        assert 2302 in white_hashes  # 2-game position included
 
     @pytest.mark.asyncio
-    async def test_get_top_positions_deduplicates_by_color_hash(self, db_session: AsyncSession) -> None:
+    async def test_get_top_positions_deduplicates_by_color_hash(
+        self, db_session: AsyncSession
+    ) -> None:
         """Multiple full_hashes sharing the same white_hash produce only one result."""
         uid = 504
 
@@ -474,7 +489,9 @@ class TestSuggestions:
                 db_session,
                 user_id=uid,
                 user_color="white",
-                positions=[{"ply": 8, "full_hash": 1400 + i, "white_hash": 2401, "black_hash": 3400 + i}],
+                positions=[
+                    {"ply": 8, "full_hash": 1400 + i, "white_hash": 2401, "black_hash": 3400 + i}
+                ],
             )
 
         results = await get_top_positions_for_color(
@@ -539,7 +556,9 @@ class TestMatchSideHeuristic:
         assert result == "both"
 
     @pytest.mark.asyncio
-    async def test_suggest_match_side_mine_when_opponent_varies(self, db_session: AsyncSession) -> None:
+    async def test_suggest_match_side_mine_when_opponent_varies(
+        self, db_session: AsyncSession
+    ) -> None:
         """Returns 'mine' when opponents vary significantly across games.
 
         6 games share the same white_hash but only 1 game has this specific full_hash:
@@ -565,7 +584,9 @@ class TestMatchSideHeuristic:
                 db_session,
                 user_id=uid,
                 user_color="white",
-                positions=[{"ply": 8, "full_hash": 6010 + i, "white_hash": wh, "black_hash": 8200 + i}],
+                positions=[
+                    {"ply": 8, "full_hash": 6010 + i, "white_hash": wh, "black_hash": 8200 + i}
+                ],
             )
 
         result = await suggest_match_side(
@@ -649,7 +670,9 @@ class TestMatchSideUpdate:
         assert updated.target_hash == fh  # full_hash
 
     @pytest.mark.asyncio
-    async def test_update_match_side_wrong_user_returns_none(self, db_session: AsyncSession) -> None:
+    async def test_update_match_side_wrong_user_returns_none(
+        self, db_session: AsyncSession
+    ) -> None:
         """update_match_side returns None when bookmark belongs to another user."""
         board = chess.Board()
         fen = board.fen()

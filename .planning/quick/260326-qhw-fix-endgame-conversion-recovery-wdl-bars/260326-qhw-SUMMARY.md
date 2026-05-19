@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick
 plan: 260326-qhw
 subsystem: endgame-analytics

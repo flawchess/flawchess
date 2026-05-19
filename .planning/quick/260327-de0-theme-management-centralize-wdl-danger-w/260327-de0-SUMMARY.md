@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260327-de0
 plan: 01
 subsystem: frontend/theme

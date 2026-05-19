@@ -63,8 +63,30 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Indexes that Alembic autogenerate keeps emitting as "changed" due to upstream
+# bugs around postgresql_ops={"col": "DESC"} on functional/composite indexes
+# (Alembic #1166 / #1213 / #1285). The ORM declaration matches the DB; autogen
+# just can't see through the literal_column("col DESC") representation. Skip
+# them so noise diffs stop landing in every fresh autogenerate run.
+_AUTOGEN_INDEX_IGNORELIST = {
+    "ix_llm_logs_endpoint_created_at",
+    "ix_llm_logs_model_created_at",
+    "ix_llm_logs_user_id_created_at",
+}
+
+
+def _include_object(object_, name, type_, reflected, compare_to):  # type: ignore[no-untyped-def]
+    if type_ == "index" and name in _AUTOGEN_INDEX_IGNORELIST:
+        return False
+    return True
+
+
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=_include_object,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

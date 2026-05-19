@@ -6,7 +6,7 @@ Functions:
 - query_endgame_performance_rows: endgame and non-endgame game rows for performance comparison
 - query_endgame_timeline_rows: rows for rolling-window time series, overall and per-type
 - query_clock_stats_rows: rows for time pressure at endgame entry (Phase 54)
-- query_endgame_elo_timeline_rows: bucket + all-game rows per-combo for Phase 57 Endgame ELO timeline
+- query_endgame_elo_timeline_rows: all-game rows per-combo for Phase 57 Endgame ELO timeline (Phase 87.5 D-06 rebuild on Endgame Score Gap; function name kept as-is for internal grep continuity)
 """
 
 import datetime
@@ -154,13 +154,23 @@ async def query_endgame_entry_rows(
     plies in each class. Per REFAC-02: eval_cp/eval_mate at the FIRST position of each class span
     determines conversion/recovery classification via _classify_endgame_bucket in the service layer.
 
-    Returns rows of: (game_id, endgame_class, result, user_color, eval_cp, eval_mate)
+    Returns rows of:
+        (game_id, endgame_class, result, user_color,
+         eval_cp, eval_mate, next_entry_eval_cp, next_entry_eval_mate)
     where endgame_class is an integer (1-6, see EndgameClassInt).
 
     eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply.
     NO sign flip in SQL — the service layer's _classify_endgame_bucket applies the
     user-color flip. NULL eval (engine error / not yet backfilled) is handled by the
     service layer as parity.
+
+    Phase 87.1 (SEED-016 D-06): next_entry_eval_cp / next_entry_eval_mate are the
+    span-entry eval of the NEXT span in the same game (ordered by span_min_ply ASC),
+    computed via LEAD() window over (game_id, span_min_ply). For the LAST span in a
+    game (terminal span), both fields are NULL — the service layer falls back to
+    `(result, user_color)` for the exit score. The min(ply) used for ordering is
+    computed during the existing GROUP BY at no extra scan cost, since ply is the
+    sort key of the ix_gp_user_endgame_game index covering this query.
 
     NO color filter is applied per D-02 — stats cover both white and black games.
     """
@@ -187,6 +197,11 @@ async def query_endgame_entry_rows(
             GamePosition.endgame_class.label("endgame_class"),
             entry_eval_cp_agg.label("entry_eval_cp"),
             entry_eval_mate_agg.label("entry_eval_mate"),
+            # Phase 87.1 (SEED-016 D-06): span_min_ply orders spans within a game
+            # so the LEAD() window can look up the NEXT span's entry eval. Computed
+            # during the existing GROUP BY at zero extra scan cost (ply is already
+            # the sort key of ix_gp_user_endgame_game).
+            func.min(GamePosition.ply).label("span_min_ply"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -197,20 +212,50 @@ async def query_endgame_entry_rows(
         .subquery("span")
     )
 
-    # Main query: join Game -> span_subq (no second subquery needed).
+    # Phase 87.1 (SEED-016 D-06): wrap span_subq with a LEAD() window so each span
+    # row also carries the entry eval of the NEXT span in the same game (ordered by
+    # span_min_ply ASC). Terminal spans (the last per game) get NULL on both new
+    # columns — the service layer treats that as "use game result as exit score".
+    # The window runs on the per-span result set (~ <=6 rows per game), so cost is
+    # O(spans_per_game) and adds no extra scan over game_positions.
+    span_with_next = select(
+        span_subq.c.game_id,
+        span_subq.c.endgame_class,
+        span_subq.c.entry_eval_cp,
+        span_subq.c.entry_eval_mate,
+        span_subq.c.span_min_ply,
+        func.lead(span_subq.c.entry_eval_cp)
+        .over(
+            partition_by=span_subq.c.game_id,
+            order_by=span_subq.c.span_min_ply.asc(),
+        )
+        .label("next_entry_eval_cp"),
+        func.lead(span_subq.c.entry_eval_mate)
+        .over(
+            partition_by=span_subq.c.game_id,
+            order_by=span_subq.c.span_min_ply.asc(),
+        )
+        .label("next_entry_eval_mate"),
+    ).subquery("span_with_next")
+
+    # Main query: join Game -> span_with_next (no second subquery needed).
     # eval_cp and eval_mate are projected raw (white-perspective, no SQL color flip).
     # The service layer's _classify_endgame_bucket(eval_cp, eval_mate, user_color)
     # applies the sign flip at read time (REFAC-02).
     stmt = (
         select(
             Game.id.label("game_id"),
-            span_subq.c.endgame_class,
+            span_with_next.c.endgame_class,
             Game.result,
             Game.user_color,
-            span_subq.c.entry_eval_cp.label("eval_cp"),
-            span_subq.c.entry_eval_mate.label("eval_mate"),
+            span_with_next.c.entry_eval_cp.label("eval_cp"),
+            span_with_next.c.entry_eval_mate.label("eval_mate"),
+            # Phase 87.1 (SEED-016 D-06): next-span entry eval per game.
+            # NULL for terminal spans — handled in service layer.
+            span_with_next.c.next_entry_eval_cp.label("next_entry_eval_cp"),
+            span_with_next.c.next_entry_eval_mate.label("next_entry_eval_mate"),
         )
-        .join(span_subq, Game.id == span_subq.c.game_id)
+        .join(span_with_next, Game.id == span_with_next.c.game_id)
         .where(Game.user_id == user_id)
     )
 
@@ -433,14 +478,29 @@ async def query_endgame_performance_rows(
     for this split).
 
     Returns: (endgame_rows, non_endgame_rows) where each row is
-    (played_at, result, user_color).
+    (played_at, result, user_color, platform, time_control_bucket).
+
+    The platform / time_control_bucket columns were added in Phase 87.5 so the
+    orchestrator can partition both row streams per (platform, TC) combo before
+    deriving the per-combo Endgame Score Gap series that drives the Endgame ELO
+    timeline.
 
     Rows are ordered by played_at ASC for chronological processing.
     """
     endgame_game_ids_subq = _any_endgame_ply_subquery(user_id)
 
-    # Base select for game rows — columns needed for WDL derivation and timeline
-    game_cols = select(Game.played_at, Game.result, Game.user_color).where(
+    # Base select for game rows — columns needed for WDL derivation, timeline,
+    # and (Phase 87.5) per-combo partitioning. Per-side opponent ratings are
+    # NOT projected here: the Phase 87.6 amendment (logistic-anchored stretch
+    # around Actual ELO) derives Endgame ELO directly from per-side score and
+    # the asof-joined Actual ELO, so opponent ratings are never read.
+    game_cols = select(
+        Game.played_at,
+        Game.result,
+        Game.user_color,
+        Game.platform,
+        Game.time_control_bucket,
+    ).where(
         Game.user_id == user_id,
         Game.played_at.isnot(None),
     )
@@ -751,24 +811,25 @@ async def query_endgame_elo_timeline_rows(
     recency_cutoff: datetime.datetime | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
-) -> tuple[list[Row[Any]], list[Row[Any]]]:
-    """Return (bucket_rows, all_rows) for the Phase 57 Endgame ELO timeline.
+) -> list[Row[Any]]:
+    """Return all-game rows for the Phase 57 Endgame ELO timeline (Phase 87.5 D-06
+    rebuild on Endgame Score Gap; function name preserved for internal grep continuity).
 
-    bucket_rows: one row per ENDGAME game (uniform 6-ply rule via entry_subq HAVING).
-        Tuple shape:
-            (played_at, platform, time_control_bucket, user_color,
-             white_rating, black_rating, eval_cp, eval_mate, result)
-        eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply.
-        NO sign flip in SQL — the service layer's _classify_endgame_bucket applies the
-        user-color flip (REFAC-02). Drives per-window skill computation AND avg(opponent_rating).
+    Returns one row per ALL user games (endgame + non-endgame) for the combo:
 
-    all_rows: one row per ALL user games (endgame + non-endgame) for the combo.
-        Tuple shape:
-            (played_at, platform, time_control_bucket, user_color,
-             white_rating, black_rating)
-        Drives per-window mean(user_rating) for the Actual ELO line (D-04).
+        (played_at, platform, time_control_bucket, user_color,
+         white_rating, black_rating)
 
-    Both queries:
+    Drives per-window mean(user_rating) for the Actual ELO line (D-04).
+
+    Phase 87.5 D-06: the prior ``bucket_rows`` subquery (which projected
+    ``eval_cp / eval_mate / result`` for the deleted ``_windowed_conv_delta_es``
+    aggregator) was removed wholesale. With the additive K formula deriving the
+    Endgame ELO line from the per-combo Endgame Score Gap series (built upstream
+    from ``query_endgame_performance_rows``), the bucket subquery's eval columns
+    are dead weight.
+
+    Filters:
     - Filter by Game.user_id == user_id at the TOP LEVEL (user scoping).
     - Use apply_game_filters for time_control/platform/rated/opponent_type/
       recency_cutoff/opponent_gap_{min,max}. Never duplicate filter logic.
@@ -776,81 +837,11 @@ async def query_endgame_elo_timeline_rows(
     - Exclude rows where white_rating IS NULL OR black_rating IS NULL (needed
       for per-side Elo math; a game without ratings can't contribute).
     - ORDER BY played_at ASC for chronological walking by the service layer.
-    - Execute sequentially on the same session (AsyncSession is not safe for
-      gather; single connection anyway).
 
     The `recency_cutoff` param is deliberately forwarded to apply_game_filters
     but the orchestrator passes None so the rolling window pre-fills (Pitfall 2
     in 57-RESEARCH.md). Callers filter emitted timeline points afterwards.
     """
-    # ── bucket_rows: one row per endgame game (uniform 6-ply rule) ─────────
-    # Single per-game aggregation (mirrors query_endgame_bucket_rows / _entry_rows).
-    # Avoids two GamePosition self-joins whose plan was unstable across users — the
-    # planner couldn't reliably push (game_id, ply+N) into after_pos's index cond
-    # and would scan the user's full endgame population per outer game.
-    # INCLUDE(eval_cp, eval_mate) on ix_gp_user_endgame_game enables index-only scans
-    # for array_agg(eval_cp ORDER BY ply) and array_agg(eval_mate ORDER BY ply).
-    entry_eval_cp_agg = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.eval_cp, GamePosition.ply.asc())),
-        ARRAY(SmallIntegerType),
-    )[1]
-
-    entry_eval_mate_agg = type_coerce(
-        func.array_agg(aggregate_order_by(GamePosition.eval_mate, GamePosition.ply.asc())),
-        ARRAY(SmallIntegerType),
-    )[1]
-
-    entry_subq = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            entry_eval_cp_agg.label("entry_eval_cp"),
-            entry_eval_mate_agg.label("entry_eval_mate"),
-        )
-        .where(
-            GamePosition.user_id == user_id,
-            GamePosition.endgame_class.isnot(None),
-        )
-        .group_by(GamePosition.game_id)
-        .having(func.count(GamePosition.ply) >= ENDGAME_PLY_THRESHOLD)
-        .subquery("elo_entry")
-    )
-
-    # eval_cp and eval_mate are projected raw (white-perspective, no SQL color flip).
-    # The service layer's _classify_endgame_bucket(eval_cp, eval_mate, user_color)
-    # applies the sign flip at read time (REFAC-02).
-    bucket_stmt = (
-        select(
-            Game.played_at,
-            Game.platform,
-            Game.time_control_bucket,
-            Game.user_color,
-            Game.white_rating,
-            Game.black_rating,
-            entry_subq.c.entry_eval_cp.label("eval_cp"),
-            entry_subq.c.entry_eval_mate.label("eval_mate"),
-            Game.result,
-        )
-        .join(entry_subq, Game.id == entry_subq.c.game_id)
-        .where(
-            Game.user_id == user_id,
-            Game.played_at.isnot(None),
-            Game.white_rating.isnot(None),
-            Game.black_rating.isnot(None),
-        )
-        .order_by(Game.played_at.asc())
-    )
-    bucket_stmt = apply_game_filters(
-        bucket_stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
-        opponent_gap_min=opponent_gap_min,
-        opponent_gap_max=opponent_gap_max,
-    )
-
-    # ── all_rows: one row per user game (endgame + non-endgame) ─────────────
     all_stmt = (
         select(
             Game.played_at,
@@ -879,9 +870,12 @@ async def query_endgame_elo_timeline_rows(
         opponent_gap_max=opponent_gap_max,
     )
 
-    # Execute sequentially — AsyncSession is not safe for concurrent use from
-    # multiple coroutines, and a single session uses one DB connection so
-    # asyncio.gather provides no benefit (CLAUDE.md §Critical Constraints).
-    bucket_result = await session.execute(bucket_stmt)
     all_result = await session.execute(all_stmt)
-    return list(bucket_result.fetchall()), list(all_result.fetchall())
+    return list(all_result.fetchall())
+
+
+# Phase 88.1 (D-07 supersedes D-05, REVIEW.md CR-01): query_cohort_clock_rows
+# removed. The cohort layer was replaced by a same-game opponent-quintile split
+# in endgame_service._iterate_clock_rows / _build_quintile_bullets, which uses
+# only the existing query_clock_stats_rows. See 88-CONTEXT.md D-07 and
+# 88-VERIFICATION.md "Resolution Direction" (lines 177-220) for the design.

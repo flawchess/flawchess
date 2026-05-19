@@ -24,10 +24,10 @@ Critical invariants:
 - Two sequential awaits of `get_endgame_overview`, never concurrent gather
   — a single `AsyncSession` is not safe for concurrent coroutines (CLAUDE.md
   §Critical Constraints).
-- Phase 59 removed the aggregate `endgame_skill` field from
-  `EndgamePerformanceResponse`; this service recomputes it from
-  `score_gap_material.material_rows` via `_endgame_skill_from_material_rows`
-  (RESEARCH.md §Pitfall 7).
+- Phase 87.4 (D-05): the aggregate `endgame_skill` concept was retired
+  end-to-end (no composite definition survived scrutiny). The prior
+  `_endgame_skill_from_material_rows` recompute path and its sole
+  endgame_metrics emitter were deleted in the same change.
 - `FilterContext.color` is not forwarded to `get_endgame_overview` (the
   endgame service has no color filter).
 - Non-trivial except blocks call `sentry_sdk.set_context` with structured
@@ -46,7 +46,6 @@ import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.endgames import (
-    ClockStatsRow,
     EndgameCategoryStats,
     EndgameEloTimelineCombo,
     EndgameEloTimelinePoint,
@@ -54,6 +53,7 @@ from app.schemas.endgames import (
     MaterialBucket,
     MaterialRow,
     ScoreGapTimelinePoint,
+    TimePressureTcCard,
 )
 from app.schemas.insights import (
     EndgameTabFindings,
@@ -101,7 +101,7 @@ _TIMELINE_SUBSECTION_IDS: frozenset[str] = frozenset(
     {
         "score_timeline",
         "clock_diff_timeline",
-        "endgame_elo_timeline",
+        "endgame_elo_timeline",  # Phase 87.5 D-06: restored from the Phase 87.4 subsection name.
     }
 )
 
@@ -184,12 +184,9 @@ async def compute_findings(
         as_of=datetime.datetime.now(datetime.UTC),
         filters=filter_context,
         findings=all_findings,
-        # Pass the raw 10-bucket all_time chart through to the LLM prompt
-        # assembler. The single-value _finding_time_pressure_vs_performance
-        # placeholder stays in `all_findings` (still filtered out of the
-        # prompt) so the findings list shape is unchanged — bucket rendering
-        # is additive, not a replacement.
-        time_pressure_chart=all_time_resp.time_pressure_chart,
+        # Phase 88: time_pressure_chart removed from EndgameOverviewResponse; LLM
+        # prompt assembly now uses time_pressure_cards instead (Plan 88-07).
+        time_pressure_chart=None,
         # Pass the all_time WDL detail (endgame vs non-endgame, plus per-type
         # categories) through so the LLM prompt can render the `overall_wdl`
         # and `results_by_endgame_type_wdl` chart blocks. The corresponding
@@ -282,9 +279,7 @@ def compute_player_profile(
     today = datetime.date.today()
     cutoff_last_3mo = today - datetime.timedelta(days=_PLAYER_PROFILE_LAST_3MO_DAYS)
 
-    sparse_mode = not any(
-        len(c.points) >= _PLAYER_PROFILE_MIN_POINTS for c in combos
-    )
+    sparse_mode = not any(len(c.points) >= _PLAYER_PROFILE_MIN_POINTS for c in combos)
     min_points = 1 if sparse_mode else _PLAYER_PROFILE_MIN_POINTS
     quality: Literal["full", "sparse"] = "sparse" if sparse_mode else "full"
 
@@ -403,8 +398,10 @@ def _compute_subsection_findings(
     findings.extend(_findings_endgame_metrics(response, window))
     findings.extend(_findings_endgame_elo_timeline(response, window))
     findings.extend(_findings_time_pressure_at_entry(response, window))
-    findings.append(_finding_clock_diff_timeline(response, window))
-    findings.append(_finding_time_pressure_vs_performance(response, window))
+    # Phase 88.1: removed silent empty-finding regression (REVIEW.md WR-06).
+    # The clock-diff and time-pressure-vs-performance subsection helpers used to
+    # be appended here, both returning permanent empty findings since Phase 88
+    # removed their backing fields from EndgameOverviewResponse.
     findings.extend(_findings_results_by_endgame_type(response, window))
     findings.extend(_findings_conversion_recovery_by_type(response, window))
 
@@ -695,7 +692,7 @@ def _findings_endgame_metrics(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """endgame_metrics -> 1 endgame_skill + 1 per-bucket matching metric.
+    """endgame_metrics -> 1 finding per bucket (conversion / parity / recovery).
 
     Per CONTEXT.md A1: each bucketed metric is tied to exactly ONE bucket
     (conversion_win_pct -> conversion, parity_score_pct -> parity,
@@ -705,39 +702,20 @@ def _findings_endgame_metrics(
     several categories" from conversion-bucket data. Fix: dispatch on
     `row.bucket` via _BUCKET_TO_METRIC and emit only the matching metric.
 
-    endgame_skill is recomputed from material_rows (Phase 59 removed the
-    aggregate field per RESEARCH.md §Pitfall 7).
+    Phase 87.4 (D-05): the aggregate ``endgame_skill`` finding was dropped
+    end-to-end alongside the Endgame Skill concept retirement.
     """
     rows: list[MaterialRow] = response.score_gap_material.material_rows
-    total_games = sum(r.games for r in rows)
-    quality = sample_quality("endgame_metrics", total_games)
-    is_headline = quality != "thin"
 
     findings: list[SubsectionFinding] = []
 
-    # 1. endgame_skill — recomputed from material_rows because
-    # EndgamePerformanceResponse no longer exposes an aggregate endgame_skill
-    # field (Phase 59 trimmed it; see RESEARCH.md §Pitfall 7). Mirrors the
-    # logic of _endgame_skill_from_bucket_rows in endgame_service.py.
-    skill_value = _endgame_skill_from_material_rows(rows)
-    findings.append(
-        SubsectionFinding(
-            subsection_id="endgame_metrics",
-            parent_subsection_id=None,
-            window=window,
-            metric="endgame_skill",
-            value=skill_value,
-            zone=assign_zone("endgame_skill", skill_value),
-            trend="n_a",
-            weekly_points_in_window=0,
-            sample_size=total_games,
-            sample_quality=quality,
-            is_headline_eligible=is_headline and not math.isnan(skill_value),
-            dimension=None,
-        )
-    )
+    # Phase 87.4 (D-05): the prior endgame_skill aggregate finding emitter was
+    # removed along with _endgame_skill_from_material_rows. The per-bucket
+    # findings below cover the same surface without the composite scalar.
+    # The previous total_games / quality locals fed only that aggregate
+    # finding; per-bucket findings compute their own bucket_quality.
 
-    # 2. One finding per MaterialRow using the bucket's matching metric (A1 fix).
+    # One finding per MaterialRow using the bucket's matching metric (A1 fix).
     # Values follow RESEARCH.md §Subsection Mapping:
     #   conversion bucket -> conversion_win_pct = win_pct / 100
     #   parity bucket     -> parity_score_pct   = score (already 0.0-1.0)
@@ -790,6 +768,45 @@ def _findings_endgame_metrics(
             )
         )
 
+    # Phase 87.2 (D-09 — ADDITIVE per RESEARCH §LLM Payload Critical Drift):
+    # ΔES Score Gap findings alongside the existing rate findings above.
+    # Wire shape per finding: (mean, n, zone, neutral_band). No p_value / verdict —
+    # band IS the significance signal (memory feedback_llm_significance_signal.md).
+    # Phase 87.4 (D-05): the "skill"/"section2_score_gap_skill" tuple was
+    # dropped — Endgame Skill composite retired end-to-end.
+    _SECTION2_BUCKETS: list[tuple[str, MetricId]] = [
+        ("conv", "section2_score_gap_conv"),
+        ("parity", "section2_score_gap_parity"),
+        ("recov", "section2_score_gap_recov"),
+    ]
+    for bucket_id, metric_id in _SECTION2_BUCKETS:
+        # Dynamic attribute access: section2_score_gap_{bucket_id}_{mean,n} are
+        # defined on ScoreGapMaterialResponse in endgames.py (Plan 02 fields).
+        mean_raw: float | None = getattr(
+            response.score_gap_material, f"section2_score_gap_{bucket_id}_mean"
+        )
+        n_raw_or_none: int | None = getattr(
+            response.score_gap_material, f"section2_score_gap_{bucket_id}_n"
+        )
+        n_raw = n_raw_or_none if n_raw_or_none is not None else 0
+        value_for_payload = mean_raw if mean_raw is not None else float("nan")
+        findings.append(
+            SubsectionFinding(
+                subsection_id="endgame_metrics",
+                parent_subsection_id=None,
+                window=window,
+                metric=metric_id,
+                value=value_for_payload,
+                zone=assign_zone(metric_id, value_for_payload),
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=n_raw,
+                sample_quality=sample_quality("endgame_metrics", n_raw),
+                is_headline_eligible=(n_raw >= 10 and mean_raw is not None),
+                dimension=None,
+            )
+        )
+
     return findings
 
 
@@ -807,6 +824,11 @@ def _findings_endgame_elo_timeline(
     Phase 65 D-04: combos with fewer than SPARSE_COMBO_FLOOR weekly
     observations are skipped entirely — no SubsectionFinding is emitted.
     The gap-only series is populated via _series_for_endgame_elo_combo.
+
+    Phase 87.5 (D-06): restored from the Phase 87.4 helper name. The
+    subsection / metric Literal IDs are restored in lockstep with the
+    Phase 87.5 backend rebuild on the additive K mapping; emission semantics
+    are unchanged.
     """
     combos: list[EndgameEloTimelineCombo] = response.endgame_elo_timeline.combos
     findings: list[SubsectionFinding] = []
@@ -871,37 +893,39 @@ def _findings_time_pressure_at_entry(
 ) -> list[SubsectionFinding]:
     """time_pressure_at_entry -> avg_clock_diff_pct + net_timeout_rate.
 
-    Values are game-weighted means across ClockStatsRow rows (one per time
-    control). Both metrics are zoned as higher_is_better, so zones are read
-    directly from the raw formula output — no sign flip.
+    Phase 88: source switched from ClockStatsRow.clock_pressure to TimePressureTcCard
+    time_pressure_cards. avg_clock_diff_pct is the n-weighted mean of
+    ClockGapBullet.mean_diff_pct * 100 across cards. net_timeout_rate is no longer
+    available in the new response shape — always emits an empty finding.
     """
-    rows: list[ClockStatsRow] = response.clock_pressure.rows
-    total_clock_games = response.clock_pressure.total_clock_games
-
-    clock_diff_quality = sample_quality("time_pressure_at_entry", total_clock_games)
-    is_headline = clock_diff_quality != "thin"
+    cards: list[TimePressureTcCard] = response.time_pressure_cards.cards
 
     findings: list[SubsectionFinding] = []
 
-    if not rows or total_clock_games == 0:
+    if not cards:
         findings.append(_empty_finding("time_pressure_at_entry", window, "avg_clock_diff_pct"))
         findings.append(_empty_finding("time_pressure_at_entry", window, "net_timeout_rate"))
         return findings
 
-    # avg_clock_diff_pct: mean of (user_avg_pct - opp_avg_pct) across rows,
-    # weighted by clock_games. Rows without clock data (user_avg_pct is
-    # None) are excluded from the weighted mean.
+    # avg_clock_diff_pct: n-weighted mean of mean_diff_pct * 100 across TC cards.
+    # mean_diff_pct is a fraction (0.0-1.0 scale); multiply by 100 to match the
+    # avg_clock_diff_pct metric scale expected by assign_zone.
     diff_num = 0.0
     diff_den = 0
-    for r in rows:
-        if r.user_avg_pct is None or r.opp_avg_pct is None or r.clock_games <= 0:
+    for card in cards:
+        n = card.clock_gap.n
+        if n <= 0:
             continue
-        diff_num += (r.user_avg_pct - r.opp_avg_pct) * r.clock_games
-        diff_den += r.clock_games
+        diff_num += card.clock_gap.mean_diff_pct * 100.0 * n
+        diff_den += n
+
     if diff_den > 0:
         clock_diff_value = diff_num / diff_den
     else:
         clock_diff_value = float("nan")
+
+    clock_diff_quality = sample_quality("time_pressure_at_entry", diff_den)
+    is_headline = clock_diff_quality != "thin"
 
     findings.append(
         SubsectionFinding(
@@ -920,125 +944,21 @@ def _findings_time_pressure_at_entry(
         )
     )
 
-    # net_timeout_rate: mean weighted by total_endgame_games (net_timeout_rate
-    # is defined per that denominator in ClockStatsRow).
-    nt_num = 0.0
-    nt_den = 0
-    for r in rows:
-        if r.total_endgame_games <= 0:
-            continue
-        nt_num += r.net_timeout_rate * r.total_endgame_games
-        nt_den += r.total_endgame_games
-    if nt_den > 0:
-        net_timeout_value = nt_num / nt_den
-    else:
-        net_timeout_value = float("nan")
-
-    findings.append(
-        SubsectionFinding(
-            subsection_id="time_pressure_at_entry",
-            parent_subsection_id=None,
-            window=window,
-            metric="net_timeout_rate",
-            value=net_timeout_value,
-            zone=assign_zone("net_timeout_rate", net_timeout_value),
-            trend="n_a",
-            weekly_points_in_window=0,
-            sample_size=nt_den,
-            sample_quality=sample_quality("time_pressure_at_entry", nt_den),
-            is_headline_eligible=is_headline and not math.isnan(net_timeout_value),
-            dimension=None,
-        )
-    )
+    # net_timeout_rate: not available in Phase 88 response shape (removed with
+    # ClockStatsRow / ClockPressureResponse migration). Always emit empty finding.
+    findings.append(_empty_finding("time_pressure_at_entry", window, "net_timeout_rate"))
 
     return findings
 
 
-def _finding_clock_diff_timeline(
-    response: EndgameOverviewResponse,
-    window: Window,
-) -> SubsectionFinding:
-    """clock_diff_timeline -> trend over clock_pressure.timeline series."""
-    timeline = response.clock_pressure.timeline
-    if not timeline:
-        return _empty_finding("clock_diff_timeline", window, "avg_clock_diff_pct")
-
-    values = [p.avg_clock_diff_pct for p in timeline]
-    trend, weekly_points = _compute_trend(values)
-    last_value = values[-1]
-    sample_size = len(values)
-    quality = sample_quality("clock_diff_timeline", sample_size)
-    is_headline = trend != "n_a"
-    # D-02/D-03: populate resampled series for LLM prompt assembly.
-    weekly: list[tuple[str, float, int]] = [
-        (p.date, p.avg_clock_diff_pct, p.per_week_game_count) for p in timeline
-    ]
-    return SubsectionFinding(
-        subsection_id="clock_diff_timeline",
-        parent_subsection_id=None,
-        window=window,
-        metric="avg_clock_diff_pct",
-        value=last_value,
-        zone=assign_zone("avg_clock_diff_pct", last_value),
-        trend=trend,
-        weekly_points_in_window=weekly_points,
-        sample_size=sample_size,
-        sample_quality=quality,
-        is_headline_eligible=is_headline,
-        dimension=None,
-        series=_weekly_points_to_time_points(weekly, window),
-    )
-
-
-def _finding_time_pressure_vs_performance(
-    response: EndgameOverviewResponse,
-    window: Window,
-) -> SubsectionFinding:
-    """time_pressure_vs_performance -> weighted mean score across user_series.
-
-    MVP simplification (planner discretion per RESEARCH.md): emit one
-    finding using `avg_clock_diff_pct` as the metric with the weighted-mean
-    user score reinterpreted. The value is NOT a clock-diff percentage in
-    the registry sense — it is the user's weighted mean score (0.0-1.0)
-    across time-pressure buckets. We set `is_headline_eligible=False` until
-    a dedicated metric lands in a follow-up phase; the finding still tracks
-    sample size so Phase 65 prompt-assembly can skip it when thin.
-    """
-    chart = response.time_pressure_chart
-    total = chart.total_endgame_games
-    quality = sample_quality("time_pressure_vs_performance", total)
-
-    score_num = 0.0
-    score_den = 0
-    for p in chart.user_series:
-        if p.score is None or p.game_count <= 0:
-            continue
-        score_num += p.score * p.game_count
-        score_den += p.game_count
-    if score_den > 0:
-        value = score_num / score_den
-    else:
-        value = float("nan")
-
-    if total == 0 or math.isnan(value):
-        return _empty_finding("time_pressure_vs_performance", window, "avg_clock_diff_pct")
-
-    return SubsectionFinding(
-        subsection_id="time_pressure_vs_performance",
-        parent_subsection_id=None,
-        window=window,
-        metric="avg_clock_diff_pct",
-        value=value,
-        zone=assign_zone("avg_clock_diff_pct", value),
-        trend="n_a",
-        weekly_points_in_window=0,
-        sample_size=total,
-        sample_quality=quality,
-        # Conservative headline policy until a dedicated slope metric lands
-        # (planner note in RESEARCH.md §Subsection Mapping).
-        is_headline_eligible=False,
-        dimension=None,
-    )
+# Phase 88.1 (Plan 09, REVIEW.md WR-06): _finding_clock_diff_timeline and
+# _finding_time_pressure_vs_performance were removed. Both helpers had returned
+# permanent empty findings since Phase 88 retired the underlying ClockPressureResponse
+# and TimePressureChartResponse fields; emitting them on every call was a silent
+# LLM-prompt regression because downstream consumers could not distinguish
+# "feature deprecated" from "no user data". The full WR-06 orphan cleanup
+# (insights_llm.py _SKIPPED_SUBSECTIONS, _format_time_pressure_chart_block, etc.)
+# lives in app/services/insights_llm.py.
 
 
 def _findings_results_by_endgame_type(
@@ -1141,9 +1061,7 @@ def _findings_conversion_recovery_by_type(
                     window=window,
                     metric="conversion_win_pct",
                     value=conv_value,
-                    zone=assign_per_class_zone(
-                        "conversion_win_pct", cat.endgame_class, conv_value
-                    ),
+                    zone=assign_per_class_zone("conversion_win_pct", cat.endgame_class, conv_value),
                     trend="n_a",
                     weekly_points_in_window=0,
                     sample_size=conv_games,
@@ -1179,9 +1097,7 @@ def _findings_conversion_recovery_by_type(
                     window=window,
                     metric="recovery_save_pct",
                     value=recov_value,
-                    zone=assign_per_class_zone(
-                        "recovery_save_pct", cat.endgame_class, recov_value
-                    ),
+                    zone=assign_per_class_zone("recovery_save_pct", cat.endgame_class, recov_value),
                     trend="n_a",
                     weekly_points_in_window=0,
                     sample_size=recov_games,
@@ -1251,90 +1167,102 @@ def _series_for_endgame_elo_combo(
     observations in the window (caller skips the subsection finding entirely).
     Each point carries both `value` (endgame_elo - actual_elo, the zoned gap)
     and `actual_elo` (the user's rating at that bucket) so the LLM prompt can
-    render `gap=<v>, elo=<r>` per row and distinguish skill regression from
-    rating growth outpacing skill.
+    render `gap=<v>, elo=<r>` per row and distinguish endgame regression from
+    rating growth outpacing endgame.
+
+    Phase 87.5 (D-06): per-point ``endgame_elo`` field on
+    EndgameEloTimelinePoint is consumed directly (Plan 01 restored the field
+    name); function name is `_series_for_endgame_elo_combo` (internal-only,
+    no semantic load — kept stable across the rename).
     """
     if len(combo.points) < SPARSE_COMBO_FLOOR:
         return None
-    weekly: list[tuple[str, float, int, int]] = [
-        (p.date, float(p.endgame_elo - p.actual_elo), p.per_week_endgame_games, p.actual_elo)
+    weekly: list[tuple[str, float, int, int, int, int]] = [
+        (
+            p.date,
+            float(p.endgame_elo - p.actual_elo),
+            p.per_week_endgame_games,
+            p.actual_elo,
+            p.endgame_elo,
+            p.non_endgame_elo,
+        )
         for p in combo.points
     ]
     return _weekly_points_to_time_points_with_elo(weekly, window)
 
 
 def _weekly_points_to_time_points_with_elo(
-    weekly: list[tuple[str, float, int, int]],
+    weekly: list[tuple[str, float, int, int, int, int]],
     window: Window,
 ) -> list[TimePoint]:
-    """Endgame-elo variant of `_weekly_points_to_time_points` that also
-    carries `actual_elo` through. Weighted by game count (same convention as
-    the gap value) so the monthly aggregate satisfies the invariant
-    `value ≈ endgame_elo - actual_elo` for the aggregated `actual_elo`.
+    """Endgame-elo variant of `_weekly_points_to_time_points` that carries
+    `actual_elo`, `endgame_elo`, and `non_endgame_elo` through. All three are
+    weighted by game count so monthly aggregates satisfy the invariant
+    `value ≈ endgame_elo - actual_elo`.
+
+    Phase 87.5 D-06: post-rewire `per_week_endgame_games` carries the
+    trailing-window count (≈ constant ≈ window size), so within a single
+    TC × platform combo the weighting degenerates to ~unweighted. Acceptable
+    for v1 since window size is stable across the series.
+
+    Phase 87.6: extended tuple from 4-element to 6-element to thread
+    `endgame_elo` and `non_endgame_elo` through (post-amendment 2026-05-17:
+    these are derived from the logistic stretch around Actual ELO, not FIDE
+    Performance Ratings).
     """
     if not weekly:
         return []
     if window == "last_3mo":
         return [
-            TimePoint(bucket_start=d, value=v, n=n, actual_elo=elo)
-            for d, v, n, elo in sorted(weekly, key=lambda t: t[0])
+            TimePoint(
+                bucket_start=d,
+                value=v,
+                n=n,
+                actual_elo=elo,
+                endgame_elo=e_elo,
+                non_endgame_elo=ne_elo,
+            )
+            for d, v, n, elo, e_elo, ne_elo in sorted(weekly, key=lambda t: t[0])
         ]
     # all_time -> monthly
-    buckets: dict[str, list[tuple[float, int, int]]] = defaultdict(list)
-    for date_iso, value, n, elo in weekly:
+    buckets: dict[str, list[tuple[float, int, int, int, int]]] = defaultdict(list)
+    for date_iso, value, n, elo, e_elo, ne_elo in weekly:
         ym = date_iso[:7]
-        buckets[ym].append((value, n, elo))
+        buckets[ym].append((value, n, elo, e_elo, ne_elo))
     points: list[TimePoint] = []
     for ym in sorted(buckets.keys()):
         weeks = buckets[ym]
-        total_n = sum(n for _, n, _ in weeks)
+        total_n = sum(n for _, n, _, _, _ in weeks)
         if total_n > 0:
-            weighted_sum = sum(v * n for v, n, _ in weeks)
+            weighted_sum = sum(v * n for v, n, _, _, _ in weeks)
             mean_value = weighted_sum / total_n
-            elo_weighted_sum = sum(elo * n for _, n, elo in weeks)
+            elo_weighted_sum = sum(elo * n for _, n, elo, _, _ in weeks)
             mean_elo = round(elo_weighted_sum / total_n)
+            e_elo_weighted_sum = sum(e_elo * n for _, n, _, e_elo, _ in weeks)
+            mean_e_elo = round(e_elo_weighted_sum / total_n)
+            ne_elo_weighted_sum = sum(ne_elo * n for _, n, _, _, ne_elo in weeks)
+            mean_ne_elo = round(ne_elo_weighted_sum / total_n)
         else:
-            mean_value = statistics.mean(v for v, _, _ in weeks)
-            mean_elo = round(statistics.mean(elo for _, _, elo in weeks))
+            mean_value = statistics.mean(v for v, _, _, _, _ in weeks)
+            mean_elo = round(statistics.mean(elo for _, _, elo, _, _ in weeks))
+            mean_e_elo = round(statistics.mean(e_elo for _, _, _, e_elo, _ in weeks))
+            mean_ne_elo = round(statistics.mean(ne_elo for _, _, _, _, ne_elo in weeks))
         points.append(
             TimePoint(
                 bucket_start=f"{ym}-01",
                 value=mean_value,
                 n=total_n,
                 actual_elo=mean_elo,
+                endgame_elo=mean_e_elo,
+                non_endgame_elo=mean_ne_elo,
             )
         )
     return points
 
 
-def _endgame_skill_from_material_rows(rows: list[MaterialRow]) -> float:
-    """Arithmetic mean of non-empty bucket-level rates (Phase 59 restored).
-
-    Mirrors the frontend `endgameSkill()` helper and the backend
-    `_endgame_skill_from_bucket_rows` pattern in endgame_service.py, but
-    consumes the already-aggregated MaterialRow values from the response
-    (not raw per-game rows). Per-bucket rate:
-
-      conversion: win_pct / 100
-      parity:     score (already 0.0-1.0)
-      recovery:   (win_pct + draw_pct) / 100
-
-    Returns `float("nan")` when no bucket has any games — the caller maps
-    NaN to `is_headline_eligible=False`.
-    """
-    rates: list[float] = []
-    for r in rows:
-        if r.games <= 0:
-            continue
-        if r.bucket == "conversion":
-            rates.append(r.win_pct / 100.0)
-        elif r.bucket == "parity":
-            rates.append(r.score)
-        else:  # recovery
-            rates.append((r.win_pct + r.draw_pct) / 100.0)
-    if not rates:
-        return float("nan")
-    return sum(rates) / len(rates)
+# Phase 87.4 (D-05): _endgame_skill_from_material_rows deleted alongside the
+# Endgame Skill concept retirement. Its sole caller (_findings_endgame_metrics'
+# aggregate endgame_skill finding emitter) was removed in the same change.
 
 
 def _compute_trend(

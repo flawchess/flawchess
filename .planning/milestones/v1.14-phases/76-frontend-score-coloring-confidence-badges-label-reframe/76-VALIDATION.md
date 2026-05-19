@@ -1,8 +1,8 @@
 ---
 phase: 76
 slug: frontend-score-coloring-confidence-badges-label-reframe
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-04-28
 ---

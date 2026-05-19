@@ -37,19 +37,13 @@ def unique_email(prefix: str = "imp") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:8]}@example.com"
 
 
-async def register(
-    client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD
-) -> int:
-    resp = await client.post(
-        "/api/auth/register", json={"email": email, "password": password}
-    )
+async def register(client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD) -> int:
+    resp = await client.post("/api/auth/register", json={"email": email, "password": password})
     assert resp.status_code in (200, 201), f"register failed: {resp.status_code} {resp.text}"
     return int(resp.json()["id"])
 
 
-async def login(
-    client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD
-) -> str:
+async def login(client: httpx.AsyncClient, email: str, password: str = _DEFAULT_PASSWORD) -> str:
     resp = await client.post(
         "/api/auth/jwt/login",
         data={"username": email, "password": password},
@@ -132,9 +126,7 @@ async def test_impersonate_issues_token_with_claims(test_engine):
     assert body["token_type"] == "bearer"
     assert body["target_id"] == target_id
 
-    claims = decode_jwt(
-        body["access_token"], settings.SECRET_KEY, _JWT_AUDIENCE
-    )
+    claims = decode_jwt(body["access_token"], settings.SECRET_KEY, _JWT_AUDIENCE)
     assert claims["sub"] == str(target_id)
     assert claims["act_as"] == target_id
     assert claims["admin_id"] == admin_id

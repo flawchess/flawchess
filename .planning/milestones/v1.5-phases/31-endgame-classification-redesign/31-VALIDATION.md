@@ -1,8 +1,8 @@
 ---
 phase: 31
 slug: endgame-classification-redesign
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-26
 ---

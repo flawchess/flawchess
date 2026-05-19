@@ -86,9 +86,7 @@ class TestBookmarkCRUD:
     """Verify CRUD operations through the HTTP layer."""
 
     @pytest.mark.asyncio
-    async def test_create_returns_201_with_bookmark(
-        self, auth_headers: dict[str, str]
-    ) -> None:
+    async def test_create_returns_201_with_bookmark(self, auth_headers: dict[str, str]) -> None:
         """POST /position-bookmarks returns 201 with correct response shape."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -116,9 +114,7 @@ class TestBookmarkCRUD:
         assert "sort_order" in data
 
     @pytest.mark.asyncio
-    async def test_list_returns_created_bookmarks(
-        self, auth_headers: dict[str, str]
-    ) -> None:
+    async def test_list_returns_created_bookmarks(self, auth_headers: dict[str, str]) -> None:
         """GET /position-bookmarks returns both created bookmarks."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -179,23 +175,17 @@ class TestBookmarkCRUD:
             assert bkm_id not in ids
 
     @pytest.mark.asyncio
-    async def test_delete_nonexistent_returns_404(
-        self, auth_headers: dict[str, str]
-    ) -> None:
+    async def test_delete_nonexistent_returns_404(self, auth_headers: dict[str, str]) -> None:
         """DELETE with a non-existent ID returns 404."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.delete(
-                "/api/position-bookmarks/999999999", headers=auth_headers
-            )
+            resp = await client.delete("/api/position-bookmarks/999999999", headers=auth_headers)
 
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_update_nonexistent_returns_404(
-        self, auth_headers: dict[str, str]
-    ) -> None:
+    async def test_update_nonexistent_returns_404(self, auth_headers: dict[str, str]) -> None:
         """PUT with a non-existent ID returns 404."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -218,9 +208,7 @@ class TestBookmarkReorder:
     """Verify PUT /reorder assigns correct sort_order values."""
 
     @pytest.mark.asyncio
-    async def test_reorder_assigns_new_sort_order(
-        self, auth_headers: dict[str, str]
-    ) -> None:
+    async def test_reorder_assigns_new_sort_order(self, auth_headers: dict[str, str]) -> None:
         """Create 3 bookmarks, reorder them reversed — sort_order reflects new positions."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -277,9 +265,7 @@ class TestBookmarkMatchSide:
                 "color": "white",
                 "match_side": "full",
             }
-            created = await client.post(
-                "/api/position-bookmarks", json=body, headers=auth_headers
-            )
+            created = await client.post("/api/position-bookmarks", json=body, headers=auth_headers)
             assert created.status_code == 201
             bkm_id = created.json()["id"]
             original_hash = created.json()["target_hash"]
@@ -337,9 +323,7 @@ class TestBookmarkAuth:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.post(
-                "/api/position-bookmarks", json=_STANDARD_BOOKMARK_BODY
-            )
+            resp = await client.post("/api/position-bookmarks", json=_STANDARD_BOOKMARK_BODY)
 
         assert resp.status_code == 401
 
@@ -360,9 +344,7 @@ class TestBookmarkSuggestions:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get(
-                "/api/position-bookmarks/suggestions", headers=auth_headers
-            )
+            resp = await client.get("/api/position-bookmarks/suggestions", headers=auth_headers)
 
         assert resp.status_code == 200
         data = resp.json()
@@ -375,9 +357,7 @@ class TestBookmarkSuggestions:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get(
-                "/api/position-bookmarks/suggestions", headers=auth_headers
-            )
+            resp = await client.get("/api/position-bookmarks/suggestions", headers=auth_headers)
 
         assert resp.status_code == 200
         data = resp.json()

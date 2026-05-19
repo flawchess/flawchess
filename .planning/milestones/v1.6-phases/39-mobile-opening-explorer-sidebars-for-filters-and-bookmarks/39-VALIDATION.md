@@ -1,8 +1,8 @@
 ---
 phase: 39
 slug: mobile-opening-explorer-sidebars-for-filters-and-bookmarks
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-30
 ---

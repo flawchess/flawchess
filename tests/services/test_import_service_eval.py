@@ -62,25 +62,27 @@ def _make_endgame_plies(
     """
     plies: list[dict[str, Any]] = []
     for i in range(count):
-        plies.append({
-            "ply": start_ply + i,
-            "white_hash": start_ply + i + 100,
-            "black_hash": start_ply + i + 200,
-            "full_hash": start_ply + i + 300,
-            "move_san": "Rh1" if i % 2 == 0 else None,
-            "clock_seconds": None,
-            "eval_cp": eval_cp,
-            "eval_mate": eval_mate,
-            "material_count": 1000,
-            "material_signature": "KR_KR",
-            "material_imbalance": 0,
-            "has_opposite_color_bishops": False,
-            "piece_count": 2,
-            "backrank_sparse": True,
-            "mixedness": 0,
-            "endgame_class": endgame_class,
-            "phase": 2,  # endgame_class non-None ⟺ phase=2 (PHASE-INV-01)
-        })
+        plies.append(
+            {
+                "ply": start_ply + i,
+                "white_hash": start_ply + i + 100,
+                "black_hash": start_ply + i + 200,
+                "full_hash": start_ply + i + 300,
+                "move_san": "Rh1" if i % 2 == 0 else None,
+                "clock_seconds": None,
+                "eval_cp": eval_cp,
+                "eval_mate": eval_mate,
+                "material_count": 1000,
+                "material_signature": "KR_KR",
+                "material_imbalance": 0,
+                "has_opposite_color_bishops": False,
+                "piece_count": 2,
+                "backrank_sparse": True,
+                "mixedness": 0,
+                "endgame_class": endgame_class,
+                "phase": 2,  # endgame_class non-None ⟺ phase=2 (PHASE-INV-01)
+            }
+        )
     return plies
 
 
@@ -93,25 +95,27 @@ def _make_two_class_plies() -> list[dict[str, Any]]:
     rook_plies = _make_endgame_plies(count=8, endgame_class=_EC_ROOK, eval_cp=None, start_ply=0)
     pawn_plies: list[dict[str, Any]] = []
     for i in range(8):
-        pawn_plies.append({
-            "ply": 8 + i,
-            "white_hash": 8 + i + 100,
-            "black_hash": 8 + i + 200,
-            "full_hash": 8 + i + 300,
-            "move_san": "a4" if i % 2 == 0 else None,
-            "clock_seconds": None,
-            "eval_cp": None,
-            "eval_mate": None,
-            "material_count": 500,
-            "material_signature": "KP_KP",
-            "material_imbalance": 0,
-            "has_opposite_color_bishops": False,
-            "piece_count": 0,
-            "backrank_sparse": True,
-            "mixedness": 0,
-            "endgame_class": _EC_PAWN,
-            "phase": 2,  # endgame_class non-None ⟺ phase=2 (PHASE-INV-01)
-        })
+        pawn_plies.append(
+            {
+                "ply": 8 + i,
+                "white_hash": 8 + i + 100,
+                "black_hash": 8 + i + 200,
+                "full_hash": 8 + i + 300,
+                "move_san": "a4" if i % 2 == 0 else None,
+                "clock_seconds": None,
+                "eval_cp": None,
+                "eval_mate": None,
+                "material_count": 500,
+                "material_signature": "KP_KP",
+                "material_imbalance": 0,
+                "has_opposite_color_bishops": False,
+                "piece_count": 0,
+                "backrank_sparse": True,
+                "mixedness": 0,
+                "endgame_class": _EC_PAWN,
+                "phase": 2,  # endgame_class non-None ⟺ phase=2 (PHASE-INV-01)
+            }
+        )
     return rook_plies + pawn_plies
 
 
@@ -241,8 +245,7 @@ class TestImportEvalChessCom:
         # At least one UPDATE call (session.execute with UPDATE stmt for eval_cp)
         execute_calls = mock_session.execute.call_args_list
         update_calls = [
-            c for c in execute_calls
-            if hasattr(c.args[0], "is_update") and c.args[0].is_update
+            c for c in execute_calls if hasattr(c.args[0], "is_update") and c.args[0].is_update
         ]
         assert len(update_calls) >= 1, (
             "Expected at least one UPDATE call for eval_cp after engine.evaluate"
@@ -418,13 +421,8 @@ class TestImportEvalEngineError:
         )
 
         # Find the 'eval' context call
-        eval_ctx_calls = [
-            c for c in mock_set_ctx.call_args_list
-            if c.args and c.args[0] == "eval"
-        ]
-        assert len(eval_ctx_calls) >= 1, (
-            "Expected sentry_sdk.set_context('eval', {...}) call"
-        )
+        eval_ctx_calls = [c for c in mock_set_ctx.call_args_list if c.args and c.args[0] == "eval"]
+        assert len(eval_ctx_calls) >= 1, "Expected sentry_sdk.set_context('eval', {...}) call"
 
         ctx_payload = eval_ctx_calls[0].args[1]
 
@@ -434,15 +432,11 @@ class TestImportEvalEngineError:
         assert "endgame_class" in ctx_payload, "Sentry context must contain endgame_class"
 
         # Information-disclosure mitigation (T-78-18): no PGN, no user_id, no fen
-        assert "pgn" not in ctx_payload, (
-            "SECURITY: Sentry context must NOT contain pgn (T-78-18)"
-        )
+        assert "pgn" not in ctx_payload, "SECURITY: Sentry context must NOT contain pgn (T-78-18)"
         assert "user_id" not in ctx_payload, (
             "SECURITY: Sentry context must NOT contain user_id (T-78-18)"
         )
-        assert "fen" not in ctx_payload, (
-            "SECURITY: Sentry context must NOT contain fen (T-78-18)"
-        )
+        assert "fen" not in ctx_payload, "SECURITY: Sentry context must NOT contain fen (T-78-18)"
 
         # No eval UPDATE should be issued for the row (D-11: skip, leave NULL)
         execute_calls = mock_session.execute.call_args_list
@@ -479,24 +473,42 @@ class TestImportEvalNoEndgame:
 
         non_endgame_plies: list[dict[str, Any]] = [
             {
-                "ply": 0, "white_hash": 1, "black_hash": 2, "full_hash": 3,
-                "move_san": "e4", "clock_seconds": None,
-                "eval_cp": None, "eval_mate": None,
+                "ply": 0,
+                "white_hash": 1,
+                "black_hash": 2,
+                "full_hash": 3,
+                "move_san": "e4",
+                "clock_seconds": None,
+                "eval_cp": None,
+                "eval_mate": None,
                 "material_count": 7800,
                 "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                "material_imbalance": 0, "has_opposite_color_bishops": False,
-                "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                "endgame_class": None, "phase": 0,
+                "material_imbalance": 0,
+                "has_opposite_color_bishops": False,
+                "piece_count": 14,
+                "backrank_sparse": False,
+                "mixedness": 0,
+                "endgame_class": None,
+                "phase": 0,
             },
             {
-                "ply": 1, "white_hash": 4, "black_hash": 5, "full_hash": 6,
-                "move_san": None, "clock_seconds": None,
-                "eval_cp": None, "eval_mate": None,
+                "ply": 1,
+                "white_hash": 4,
+                "black_hash": 5,
+                "full_hash": 6,
+                "move_san": None,
+                "clock_seconds": None,
+                "eval_cp": None,
+                "eval_mate": None,
                 "material_count": 7800,
                 "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                "material_imbalance": 0, "has_opposite_color_bishops": False,
-                "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
-                "endgame_class": None, "phase": 0,
+                "material_imbalance": 0,
+                "has_opposite_color_bishops": False,
+                "piece_count": 14,
+                "backrank_sparse": False,
+                "mixedness": 0,
+                "endgame_class": None,
+                "phase": 0,
             },
         ]
         processing_result: dict[str, Any] = {
@@ -655,25 +667,27 @@ def _make_midgame_plies(
     """Return *count* ply dicts all in phase=1 (middlegame), no endgame_class."""
     plies: list[dict[str, Any]] = []
     for i in range(count):
-        plies.append({
-            "ply": start_ply + i,
-            "white_hash": start_ply + i + 100,
-            "black_hash": start_ply + i + 200,
-            "full_hash": start_ply + i + 300,
-            "move_san": "Rd1" if i % 2 == 0 else None,
-            "clock_seconds": None,
-            "eval_cp": eval_cp,
-            "eval_mate": eval_mate,
-            "material_count": 4000,
-            "material_signature": "KQRBN_KQRBN",
-            "material_imbalance": 0,
-            "has_opposite_color_bishops": False,
-            "piece_count": 10,
-            "backrank_sparse": True,
-            "mixedness": 30,
-            "endgame_class": None,
-            "phase": 1,
-        })
+        plies.append(
+            {
+                "ply": start_ply + i,
+                "white_hash": start_ply + i + 100,
+                "black_hash": start_ply + i + 200,
+                "full_hash": start_ply + i + 300,
+                "move_san": "Rd1" if i % 2 == 0 else None,
+                "clock_seconds": None,
+                "eval_cp": eval_cp,
+                "eval_mate": eval_mate,
+                "material_count": 4000,
+                "material_signature": "KQRBN_KQRBN",
+                "material_imbalance": 0,
+                "has_opposite_color_bishops": False,
+                "piece_count": 10,
+                "backrank_sparse": True,
+                "mixedness": 30,
+                "endgame_class": None,
+                "phase": 1,
+            }
+        )
     return plies
 
 
@@ -849,13 +863,21 @@ class TestImportEvalMiddlegameEntry:
         # Opening-only plies: phase=0, no endgame, no middlegame
         opening_plies: list[dict[str, Any]] = [
             {
-                "ply": i, "white_hash": i + 100, "black_hash": i + 200, "full_hash": i + 300,
-                "move_san": "e4" if i == 0 else None, "clock_seconds": None,
-                "eval_cp": None, "eval_mate": None,
+                "ply": i,
+                "white_hash": i + 100,
+                "black_hash": i + 200,
+                "full_hash": i + 300,
+                "move_san": "e4" if i == 0 else None,
+                "clock_seconds": None,
+                "eval_cp": None,
+                "eval_mate": None,
                 "material_count": 7800,
                 "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
-                "material_imbalance": 0, "has_opposite_color_bishops": False,
-                "piece_count": 14, "backrank_sparse": False, "mixedness": 0,
+                "material_imbalance": 0,
+                "has_opposite_color_bishops": False,
+                "piece_count": 14,
+                "backrank_sparse": False,
+                "mixedness": 0,
                 "endgame_class": None,
                 "phase": 0,
             }

@@ -1,8 +1,8 @@
 ---
 phase: 5
 slug: position-bookmarks-and-w-d-l-comparison-charts
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-13
 ---

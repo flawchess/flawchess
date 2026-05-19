@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: 260508-dcp
 plan: 01
 subsystem: frontend (Openings + Endgames UI)

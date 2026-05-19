@@ -1,8 +1,8 @@
 ---
 phase: 82
 slug: llm-prompt-awareness-of-endgame-start-vs-end-metrics
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-05-10
 ---

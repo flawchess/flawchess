@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: 260501-s0u
 plan: 01
 subsystem: endgame-analytics

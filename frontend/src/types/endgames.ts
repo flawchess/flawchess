@@ -30,6 +30,18 @@ export interface EndgameCategoryStats {
   draw_pct: number;
   loss_pct: number;
   conversion: ConversionRecoveryStats;
+  // Phase 87 follow-up: Wilson score-test p-value of this class's WDL vs 50%.
+  // null when total < PVALUE_RELIABILITY_MIN_N (=10). Drives the per-card
+  // Score bullet sig-gating triple in EndgameTypeCard.
+  score_p_value: number | null;
+  // Phase 87.1 (SEED-016, D-05): per-span mean Score Gap for this endgame type.
+  // User-facing label: "Score Gap" (card row) / "Endgame Type Score Gap" (concepts).
+  // Internal name retains "achievable" to preserve grep-ability with Phase 85.1.
+  type_achievable_score_gap_mean: number | null;
+  type_achievable_score_gap_n: number | null;
+  type_achievable_score_gap_p_value: number | null;
+  type_achievable_score_gap_ci_low: number | null;
+  type_achievable_score_gap_ci_high: number | null;
 }
 
 export interface EndgameStatsResponse {
@@ -64,6 +76,7 @@ export interface EndgamePerformanceResponse {
   entry_eval_n: number;
   entry_eval_p_value: number | null;
   endgame_score_p_value: number | null;
+  non_endgame_score_p_value: number | null;
   entry_eval_ci_low_pawns: number | null;
   entry_eval_ci_high_pawns: number | null;
   // Phase 83 (D-21): Stockfish-baseline achievable score for "Where you start" tile.
@@ -73,6 +86,13 @@ export interface EndgamePerformanceResponse {
   entry_expected_score_p_value: number | null;
   entry_expected_score_ci_low: number | null;
   entry_expected_score_ci_high: number | null;
+  // Phase 85.1 (SEC1-10): server-side achievable score gap + paired z-test.
+  // Always-present scalar (0.0 when n=0); p / CI gated to null when n is below
+  // the reliability gate (PVALUE_RELIABILITY_MIN_N=10 for p, 2 for CI).
+  achievable_score_gap: number;
+  achievable_score_gap_p_value: number | null;
+  achievable_score_gap_ci_low: number | null;
+  achievable_score_gap_ci_high: number | null;
 }
 
 /** Single data point in the per-type weekly win-rate time series.
@@ -112,10 +132,10 @@ export interface MaterialRow {
   draw_pct: number;
   loss_pct: number;
   score: number;
-  // Phase 60: opponent's score in the mirror bucket; null when opponent_games < 10
-  opponent_score: number | null;
-  // Phase 60: opponent's sample size (== swap-bucket game count)
-  opponent_games: number;
+  // Phase 87.2 (D-05): opponent_score, opponent_games, diff_p_value, diff_ci_low,
+  // diff_ci_high deleted. The mirror-bucket Wald-z peer-bullet was mathematically
+  // degenerate (Conv-Gap == Recov-Gap by symmetry; Parity-Gap affine of gauge).
+  // Replaced by the eval-baseline Delta-ES Score Gap fields on ScoreGapMaterialResponse.
 }
 
 /** Single point in the score-gap rolling-window time series.
@@ -133,10 +153,19 @@ export interface ScoreGapTimelinePoint {
   // Count of games (endgame + non-endgame) played in THIS specific ISO week.
   // Drives the muted volume-bar series on the Score Gap timeline.
   per_week_total_games: number;
+  // Count of ENDGAME games (only) played in THIS specific ISO week. Threaded
+  // through to EndgameEloTimelinePoint.per_week_endgame_games so the Endgame
+  // ELO Timeline volume bars show per-week endgame activity.
+  per_week_endgame_games: number;
   // Phase 68: absolute per-side rolling-window mean scores (0.0-1.0). Invariant:
   // abs((endgame_score - non_endgame_score) - score_difference) < 1e-9 per bucket.
   endgame_score: number;
   non_endgame_score: number;
+  // Phase 87.6: per-side trailing-window mean opponent rating. Drives the
+  // Performance Rating math backend-side; not consumed by the score chart
+  // but mirrored for schema parity with the Pydantic model.
+  endgame_opp_rating_avg: number;
+  non_endgame_opp_rating_avg: number;
 }
 
 export interface ScoreGapMaterialResponse {
@@ -146,49 +175,118 @@ export interface ScoreGapMaterialResponse {
   material_rows: MaterialRow[];
   timeline: ScoreGapTimelinePoint[];
   timeline_window: number;
+  // Phase 85.1 (SEC1-08, SEC1-09): independent two-sample z-test on
+  // (endgame_score - non_endgame_score). p_value is gated to null when
+  // min(endgame_wdl.total, non_endgame_wdl.total) < PVALUE_RELIABILITY_MIN_N
+  // (=10); CI bounds are gated when min n < 2.
+  score_difference_p_value: number | null;
+  score_difference_ci_low: number | null;
+  score_difference_ci_high: number | null;
+  // Phase 87.2 (D-06): 20 eval-baseline Delta-ES Score Gap fields (4 buckets x 5).
+  // Replaces the rate-based mirror-bucket peer-bullet (skill, opp_skill, skill_diff_*
+  // deleted per D-04). Each cluster: mean per-span Score Gap, sample count,
+  // one-sample paired z-test p_value, and 95% CI bounds.
+  // All fields are null when the cohort is empty (n=0) or below the reliability gate.
+  // Mirrors app/schemas/endgames.py ScoreGapMaterialResponse (Phase 87.2 D-06).
+  // Dual-label rationale: "conv/parity/recov" in field names vs "conversion/parity/recovery"
+  // in user-facing labels — the abbreviated form is shorter and consistent with backend.
+
+  // Conversion bucket (entered endgame with eval >= +1.0):
+  section2_score_gap_conv_mean: number | null;
+  section2_score_gap_conv_n: number | null;
+  section2_score_gap_conv_p_value: number | null;
+  section2_score_gap_conv_ci_low: number | null;
+  section2_score_gap_conv_ci_high: number | null;
+
+  // Parity bucket (entered endgame with eval between -1.0 and +1.0):
+  section2_score_gap_parity_mean: number | null;
+  section2_score_gap_parity_n: number | null;
+  section2_score_gap_parity_p_value: number | null;
+  section2_score_gap_parity_ci_low: number | null;
+  section2_score_gap_parity_ci_high: number | null;
+
+  // Recovery bucket (entered endgame with eval <= -1.0):
+  section2_score_gap_recov_mean: number | null;
+  section2_score_gap_recov_n: number | null;
+  section2_score_gap_recov_p_value: number | null;
+  section2_score_gap_recov_ci_low: number | null;
+  section2_score_gap_recov_ci_high: number | null;
+
+  // Phase 87.4 (D-05): the 6 Skill fields (section2_score_gap_skill_* and
+  // endgame_skill_rate_mean) were hard-deleted alongside EndgameSkillCard.
+  // No composite definition survived scrutiny on all four axes; see
+  // .planning/notes/endgame-skill-dropped-conversion-elo.md.
 }
 
-export interface ClockStatsRow {
-  time_control: string;       // "bullet" | "blitz" | "rapid" | "classical"
-  label: string;              // "Bullet" | "Blitz" | "Rapid" | "Classical"
-  total_endgame_games: number;
-  clock_games: number;
-  user_avg_pct: number | null;
-  user_avg_seconds: number | null;
-  opp_avg_pct: number | null;
-  opp_avg_seconds: number | null;
-  avg_clock_diff_seconds: number | null;
-  net_timeout_rate: number;
+// ── Phase 88: Time Pressure Cards (replaces ClockPressureResponse + TimePressureChartResponse) ──
+// Phase 88.1 (D-07): independent opp-quintile split — both sides derived from the user's
+// own filtered game stream. See .planning/.../88-CONTEXT.md D-07 for design rationale.
+
+/** Score-Delta bullet data for one pressure quintile in a TC card. */
+export interface PressureQuintileBullet {
+  quintile_index: number;       // 0 = 0-20% (max pressure) … 4 = 80-100% (min)
+  quintile_label: string;       // "0-20%" … "80-100%"
+  n: number;                    // game count in this bin
+  delta: number;                // user_score - opp_score (independent quintile splits per side)
+  p_value: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
+  opp_score: number | null;     // opponent's same-game score in the matching opp-clock quintile
 }
 
-export interface ClockPressureTimelinePoint {
-  date: string;                 // Monday of ISO week, YYYY-MM-DD
-  avg_clock_diff_pct: number;   // mean (user_clock - opp_clock) / base_time * 100 over trailing window
-  game_count: number;           // games in the rolling window (<= timeline_window)
-  // Count of clock-eligible endgame games in THIS specific ISO week.
-  // Drives the muted volume-bar series on the Average Clock Difference timeline.
-  per_week_game_count: number;
+/** Clock Gap bullet data for one TC card (mean of (my-opp)/base at endgame entry). */
+export interface ClockGapBullet {
+  n: number;
+  mean_diff_pct: number;        // mean (user_clock - opp_clock) / base_clock
+  p_value: number | null;
+  ci_low: number | null;
+  ci_high: number | null;
 }
 
-export interface ClockPressureResponse {
-  rows: ClockStatsRow[];
-  total_clock_games: number;
-  total_endgame_games: number;
-  timeline: ClockPressureTimelinePoint[];
-  timeline_window: number;
+/** All bullet data for one time-control card.
+ *
+ * Plan 88-14 A-3: restored top-zone summary stats from the deleted
+ * EndgameClockPressureSection (CONTEXT §2 scope amendment). The 5 averages are
+ * fractions / absolute seconds depending on the suffix; net_timeout_rate is a
+ * fraction (0.005 = 0.5%) consistent with clock_gap.mean_diff_pct's convention.
+ * Averages are null when no game in this TC has clock data (legacy imports).
+ */
+export interface TimePressureTcCard {
+  tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
+  total: number;                    // total endgame games in this TC
+  user_avg_pct: number | null;      // mean user_clock/base across clock-eligible games, fraction
+  user_avg_seconds: number | null;  // mean user_clock in absolute seconds
+  opp_avg_pct: number | null;       // mean opp_clock/base, fraction
+  opp_avg_seconds: number | null;   // mean opp_clock in absolute seconds
+  avg_clock_diff_seconds: number | null; // mean (user_clock - opp_clock) in seconds
+  net_timeout_rate: number;         // (timeout_wins - timeout_losses) / total, fraction (0.005 = 0.5%)
+  clock_gap: ClockGapBullet;
+  quintiles: PressureQuintileBullet[]; // always 5, ordered Q0..Q4
 }
 
-export interface TimePressureBucketPoint {
-  bucket_index: number;      // 0-9
-  bucket_label: string;      // "0-10%" etc.
-  score: number | null;      // null when game_count == 0
-  game_count: number;
+/** Replaces ClockPressureResponse + TimePressureChartResponse (Phase 88). */
+export interface TimePressureCardsResponse {
+  cards: TimePressureTcCard[];  // only TCs with total >= MIN_GAMES_PER_TC_CARD
 }
 
-export interface TimePressureChartResponse {
-  user_series: TimePressureBucketPoint[];  // 10 points, pre-aggregated across time controls
-  opp_series: TimePressureBucketPoint[];   // 10 points, pre-aggregated across time controls
-  total_endgame_games: number;
+/** One ISO-week point on the Average Clock Difference over Time line chart.
+ *  Plan 88-15 (CONTEXT §2 A-2): restored after the Phase 88-07 cleanup deleted
+ *  the line chart. Renamed (vs the pre-88-07 timeline point class) to make the
+ *  design-pivot history obvious. `avg_clock_diff_pct` is in PERCENT units
+ *  (50.0 = 50%, not 0.5) — matches the chart Y-axis convention and the backend
+ *  `(user_clock - opp_clock) / base_time_seconds * 100` calculation. */
+export interface ClockDiffTimelinePoint {
+  date: string;                  // ISO Monday YYYY-MM-DD
+  avg_clock_diff_pct: number;    // rolling-window mean in percent units
+  game_count: number;            // trailing rolling-window size (<= 100)
+  per_week_game_count: number;   // clock-eligible games in THIS week only
+}
+
+/** Wrapper for the Average Clock Difference over Time line chart payload.
+ *  Plan 88-15 (CONTEXT §2 A-2). points is empty when no clock-eligible game
+ *  exists in the user's filtered set — frontend hides the chart in that case. */
+export interface ClockDiffTimelineResponse {
+  points: ClockDiffTimelinePoint[];
 }
 
 export interface EndgameOverviewResponse {
@@ -196,17 +294,21 @@ export interface EndgameOverviewResponse {
   performance: EndgamePerformanceResponse;
   timeline: EndgameTimelineResponse;
   score_gap_material: ScoreGapMaterialResponse;  // Phase 53
-  clock_pressure: ClockPressureResponse;         // Phase 54
-  time_pressure_chart: TimePressureChartResponse; // Phase 55
-  endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57
+  time_pressure_cards: TimePressureCardsResponse; // Phase 88 (replaces clock_pressure + time_pressure_chart)
+  clock_diff_timeline: ClockDiffTimelineResponse; // Plan 88-15 (CONTEXT §2 A-2): restored line chart payload
+  endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57 (rebuilt Phase 87.5)
 }
 
-// ── Phase 57: Endgame ELO Timeline ─────────────────────────────────────────
+// ── Phase 87.5: Endgame ELO Timeline (rebuilt on Endgame Score Gap) ──
 
 /** Stable string-literal union of all 8 (platform, time_control) combo keys.
  *  Format: {platform_with_dot_replaced_by_underscore}_{time_control}.
  *  Frontend uses this as the lookup key into ELO_COMBO_COLORS.
- *  Backend populates via EndgameEloTimelineCombo.combo_key. */
+ *  Backend populates via EndgameEloTimelineCombo.combo_key.
+ *
+ *  Phase 87.4 D-06: kept as EloComboKey rather than renaming — the combo_key
+ *  encodes (platform, time_control) and carries no "endgame" semantic, so a
+ *  rename would add churn without clarifying anything. */
 export type EloComboKey =
   | 'chess_com_bullet'
   | 'chess_com_blitz'
@@ -217,18 +319,34 @@ export type EloComboKey =
   | 'lichess_rapid'
   | 'lichess_classical';
 
-/** One weekly point for a (platform, time_control) combo (Phase 57 ELO-05; revised Phase 57.1).
- *  date: Monday of ISO week, YYYY-MM-DD.
- *  endgame_elo: skill-adjusted rating = round(actual_elo + 400 * log10(skill / (1 - skill))).
+/** Single weekly point for a (platform, time_control) combo of the Endgame ELO timeline.
+ *  date: Monday of the ISO week, YYYY-MM-DD.
+ *  endgame_elo: `actual_elo + spread / 2` where
+ *    `spread = 400 · log10((s_E / (1 − s_E)) / (s_N / (1 − s_N)))` (Phase 87.6
+ *    amendment 2026-05-17 — logistic stretch anchored on Actual ELO,
+ *    supersedes the earlier per-side FIDE PR mapping).
+ *  non_endgame_elo: `actual_elo − spread / 2`. Endgame ELO and Non-Endgame ELO
+ *    sit symmetrically around Actual ELO by construction:
+ *    `endgame_elo + non_endgame_elo == 2 · actual_elo` for every point.
+ *    See .planning/notes/endgame-elo-logistic-anchored.md.
  *  actual_elo: user's rating at this date via per-combo asof-join (forward-filled).
- *  endgame_games_in_window: trailing 100-game window count (drives >=10 floor + tooltip "past N games").
- *  per_week_endgame_games: count of endgame games for THIS specific ISO week (Phase 57.1, drives muted volume bars). */
+ *  endgame_games_in_window: trailing 100-game window count (drives ≥10 floor +
+ *    tooltip "past N games").
+ *  per_week_endgame_games: count of endgame games played in THIS specific ISO
+ *    week (NOT the trailing window). Used by the insights service trend math.
+ *  per_week_total_games: count of ALL games (endgame + non-endgame) played in
+ *    THIS specific ISO week. Drives the muted volume-bar series on the
+ *    Endgame ELO Timeline — the chart plots both Endgame ELO and Non-Endgame
+ *    ELO, so the volume bar reflects total weekly activity feeding both PR
+ *    lines (matches the Endgame Score Gap over Time chart's bars). */
 export interface EndgameEloTimelinePoint {
   date: string;
   endgame_elo: number;
+  non_endgame_elo: number;
   actual_elo: number;
   endgame_games_in_window: number;
   per_week_endgame_games: number;
+  per_week_total_games: number;
 }
 
 export interface EndgameEloTimelineCombo {

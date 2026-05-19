@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { ChartContainer, ChartTooltip, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { createDateTickFormatter, formatDateWithYear } from '@/lib/utils';
+import { inactivityGapReferenceLines } from '@/components/charts/InactivityGapReferenceLines';
 import type { RatingDataPoint } from '@/types/stats';
 
 interface RatingChartProps {
@@ -67,6 +68,12 @@ export function RatingChart({ data, platform }: RatingChartProps) {
 
   const allDates = useMemo(() => chartData.map((d) => d.date as string), [chartData]);
   const formatDateTick = useMemo(() => createDateTickFormatter(allDates), [allDates]);
+
+  // computeInactivityGaps requires ascending-sorted dates. allDates derives from a
+  // Map keyed by date string (insertion order = backend chronological order), which
+  // is generally already sorted. Sort a copy defensively to guarantee the invariant
+  // without disturbing allDates (used by the tick formatter for ordinal x-axis).
+  const sortedGapDates = useMemo(() => [...allDates].sort(), [allDates]);
 
   const { yDomain, yTicks } = useMemo(() => {
     const visibleTcs = TIME_CONTROLS.filter((tc) => !hiddenKeys.has(tc));
@@ -176,6 +183,14 @@ export function RatingChart({ data, platform }: RatingChartProps) {
         <ChartLegend
           content={<ChartLegendContent hiddenKeys={hiddenKeys} onClickItem={handleLegendClick} />}
         />
+        {/* Inactivity-gap annotations via shared helper: Palmtree glyph + label per
+            >56-day gap. Placed BEFORE the TIME_CONTROLS Line series so annotations
+            sit behind the data in SVG z-order. sortedGapDates is a defensively
+            sorted copy of allDates so computeInactivityGaps' ascending-sort
+            requirement is guaranteed even if the backend order shifts. No yAxisId
+            (single default axis). Covers both Chess.com and Lichess instances
+            (same component, platform prop only affects testid/labels). */}
+        {inactivityGapReferenceLines({ dates: sortedGapDates })}
         {TIME_CONTROLS.map((tc) => (
           <Line
             key={tc}

@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260402-qms
 plan: 01
 subsystem: observability

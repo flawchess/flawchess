@@ -1,8 +1,8 @@
 ---
 phase: 66
 slug: frontend-endgameinsightsblock-beta-flag
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-04-21
 ---

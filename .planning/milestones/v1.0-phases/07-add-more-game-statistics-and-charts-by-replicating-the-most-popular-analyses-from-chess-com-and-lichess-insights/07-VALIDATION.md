@@ -1,8 +1,8 @@
 ---
 phase: 7
 slug: add-more-game-statistics-and-charts-by-replicating-the-most-popular-analyses-from-chess-com-and-lichess-insights
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-03-14
 ---

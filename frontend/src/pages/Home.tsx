@@ -365,7 +365,7 @@ export function HomePageContent() {
           <AccordionItem value="endgames" data-testid="faq-item-endgames">
             <AccordionTrigger>What endgame analytics does FlawChess offer?</AccordionTrigger>
             <AccordionContent>
-              FlawChess tracks your win/draw/loss rates by endgame type (rook, minor piece, pawn,
+              FlawChess tracks your win/draw/loss rates by Endgame Type (rook, minor piece, pawn,
               queen, and more), plus conversion rates when you enter the endgame ahead and recovery
               rates when you enter behind, scored against Stockfish evaluation. All statistics are
               filterable by time control, color, and recency.

@@ -14,7 +14,12 @@ from app.core.database import get_async_session
 from app.models.import_job import ImportJob
 from app.models.user import User
 from app.repositories import game_repository, import_job_repository, user_repository
-from app.schemas.imports import DeleteGamesResponse, ImportRequest, ImportStartedResponse, ImportStatusResponse
+from app.schemas.imports import (
+    DeleteGamesResponse,
+    ImportRequest,
+    ImportStartedResponse,
+    ImportStatusResponse,
+)
 from app.services import import_service
 from app.users import current_active_user
 
@@ -92,14 +97,14 @@ async def get_active_imports(
                 games_fetched=job.games_fetched,
                 games_imported=job.games_imported,
                 error=job.error,
-                other_importers=import_service.count_active_platform_jobs(job.platform, job.user_id),
+                other_importers=import_service.count_active_platform_jobs(
+                    job.platform, job.user_id
+                ),
             )
         )
 
     # Recently failed DB jobs (e.g. orphaned after server restart)
-    failed_jobs = await import_job_repository.get_unseen_failed_jobs_for_user(
-        session, user.id
-    )
+    failed_jobs = await import_job_repository.get_unseen_failed_jobs_for_user(session, user.id)
     for db_job in failed_jobs:
         if db_job.id in seen_job_ids:
             continue

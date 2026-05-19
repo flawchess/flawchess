@@ -16,7 +16,9 @@ class ImportJob(Base):
     )
     platform: Mapped[str] = mapped_column(String(20), nullable=False)
     username: Mapped[str] = mapped_column(String(100), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False)  # pending/in_progress/completed/failed
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # pending/in_progress/completed/failed
     games_fetched: Mapped[int] = mapped_column(nullable=False, default=0)
     games_imported: Mapped[int] = mapped_column(nullable=False, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)

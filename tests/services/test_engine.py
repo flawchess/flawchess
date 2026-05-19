@@ -1,4 +1,5 @@
 """Engine wrapper contract tests (ENG-02). Phase 78 Wave 0."""
+
 import shutil
 
 import chess

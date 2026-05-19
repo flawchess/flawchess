@@ -19,20 +19,29 @@
 - ✅ **v1.14 Score-Based Opening Insights** — Phases 75, 76, 77 (shipped 2026-04-29; INSIGHT-UI-04 descoped) — see [milestones/v1.14-ROADMAP.md](milestones/v1.14-ROADMAP.md)
 - ✅ **v1.15 Eval-Based Endgame Classification** — Phases 78, 79 (shipped 2026-05-03; VAL-01 / PHASE-VAL-01 rescinded) — see [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md)
 - ✅ **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82, 83 (shipped 2026-05-11) — see [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md)
-- 🚧 **v1.17 Endgame Stats Card Redesign** — Phases 84-88 (opened 2026-05-12) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
+- 🚧 **v1.17 Endgame Stats Card Redesign** — Phases 84-89 (opened 2026-05-12) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 
 ## Phases
 
 <details open>
-<summary>🚧 v1.17 Endgame Stats Card Redesign (Phases 84-88) — IN PROGRESS (opened 2026-05-12)</summary>
+<summary>🚧 v1.17 Endgame Stats Card Redesign (Phases 84-89) — IN PROGRESS (opened 2026-05-12)</summary>
 
-Replaces three table-driven sections on the Endgames page with the established WDL + ScoreBullet card pattern. Two-bullet doctrine (cohort + peer) preserves the self-calibrating opponent signal on Conv/Parity/Recov + Section 3 per-type cards. Frontend-only refactor; no backend or benchmark changes.
+Started as a frontend refactor of three table-driven sections on the Endgames page (WDL + ScoreBullet card pattern). Scope has since expanded to a full statistical-rigor pass: Phase 85.1 adds hypothesis tests + CIs on the Endgame Score Differences card with new backend math helpers; Phase 88 reworks Time Pressure with new /benchmarks metrics, new backend service code, and CI-gated bullet stacks; Phase 87.1 (INSERTED 2026-05-15) adds a new per-endgame-type performance metric (per-span ΔES) spanning backend, /benchmarks, frontend, and LLM payload; Phase 87.2 (INSERTED 2026-05-15) backports the eval-based ΔES Score Gap bullet pattern to Section 2 (Conv/Parity/Recov + Endgame Skill cards), retiring the rate-based mirror-bucket peer-diff Gap which is mathematically degenerate (Conv-Gap ≡ Recov-Gap by mirror symmetry; Parity-Gap is a deterministic affine of the absolute Parity rate). Phase 87.3 (INSERTED 2026-05-16) redefines Endgame Skill as a percentile of the Conv+Parity ΔES composite (Recovery dropped — opponent-confounded, validated by a benchmark spike), feeding the unchanged Phase 57 Endgame ELO formula. Single-bullet doctrine (peer bullet only on Conv/Parity/Recov + Section 3 per-type cards) preserved across all phases.
 
 - [ ] Phase 84: Data plumbing — per-type cohort p50 + mirror-rate audit (3 plans) — planned
-- [ ] Phase 85: Section 1 — Games with vs without Endgame cards (TBD plans) — planned
-- [ ] Phase 86: Section 2 — Endgame Metrics 4-card layout (TBD plans) — planned
-- [ ] Phase 87: Section 3 — Per-type Endgame Type Breakdown cards (TBD plans) — planned
-- [ ] Phase 88: Polish — popovers, gating decisions, automation rules, 375px parity (TBD plans) — planned
+- [ ] Phase 85: Section 1 — Games with vs without Endgame cards (5 plans; replan-in-place 2026-05-13 added Plan 85-05 for 3-card composite redesign) — planned
+- [ ] Phase 86: Section 2 — Endgame Metrics 4-card layout (5 plans) — planned
+- [ ] Phase 87: Section 3 — Per-type Endgame Type Breakdown cards (3 plans) — planned
+- [x] Phase 87.1: Per-span ΔES metric for endgame types (4/4 plans) — completed 2026-05-15 (verification: human_needed — 4 UAT items)
+- [x] Phase 87.2: Section 2 — eval-based ΔES Score Gap on Conv/Parity/Recov + Endgame Skill cards (4 plans; INSERTED 2026-05-15) — completed 2026-05-16 (PR #98)
+- [ ] Phase 87.3: Endgame Skill v2 — Conv+Parity percentile composite (TBD plans; INSERTED 2026-05-16) — **superseded** by Phase 87.4 (percentile design retracted on UAT review)
+- [x] Phase 87.4: Drop Endgame Skill — rewire timeline as Conversion ELO from Conv ΔES (3 plans, 2 waves; INSERTED 2026-05-16) — completed 2026-05-16 (verification: 10/10 must-haves passed)
+- [x] Phase 87.5: Rebuild Endgame ELO on Endgame Score Gap (eg − non_eg) — additive mapping `endgame_elo = actual_elo + K · eg_score_gap`; rename Conversion ELO → Endgame ELO end-to-end; move timeline into "Endgame Overall Performance" section under "Endgame Score Gap over Time"; drop PIVOT/ALPHA/CALIBRATION_VERSION + affine recenter from Phase 87.4 (3 plans, 2 waves; INSERTED 2026-05-17) — completed 2026-05-17 (verification: 9/9 must-haves passed; code review: 1 critical + 3 warnings, all fixed)
+- [ ] Phase 87.6: Endgame ELO via Performance Rating — drop free constant K; derive Endgame ELO and Non-Endgame ELO directly from per-side scores via FIDE Performance Rating `PR = R_opp_avg + 400·log10(s/(1−s))` (Laplace-smoothed); dual fine PR lines + signed green/red band around bold Actual ELO line per combo; reuse Score Gap chart's gradient-stops algorithm; LLM payload keeps `eg_score_gap` as primary signal, adds PR-ELO fields; deletes `K`, `calibrate-endgame-elo-k` todo, and the eyeball calibration comment block (TBD plans; INSERTED 2026-05-17) — planned
+- [ ] Phase 88: Time Pressure stats rework with hypothesis tests + CIs (TBD plans; INSERTED 2026-05-14) — planned
+- [x] Phase 88.3: Endgame Stats viz refinements — timeline inactivity-gap annotations (Palmtree axis-break glyph + compact "1.1y"/"3mo" label, shared helper across all 6 ordinal-axis charts); ELO Timeline defaults to single most-active series (toggleable, no tabs); "Endgame Overall Performance" arrow-flow replaced by one responsive 2-column card (Games without/with Endgame | Eval at Entry/Score Differences), equal height by construction. Frontend-only, no stats/benchmark change (4/4 plans; INSERTED 2026-05-18) — completed 2026-05-18 (verification: passed — 4 UAT items user-confirmed)
+- [x] Phase 88.4: Time Pressure card layout refactor — responsive card grid (3×1/2×2 full-width, half-width when 1 card); "Remaining Time at Endgame Entry" 3-stat header row (You left / Gap+info centered / Opp right) above the Clock Gap bullet, Net flag rate stays below; "Score Gap by Remaining Time" 4 bullet charts replaced by one zone-banded 0-centered line chart over the 4 pressure-bucket labels with CI whiskers + per-bucket stats in the hover tooltip (neutral zone collapsed across TC per §3.3.3). Frontend-only, no stats/benchmark change (3/3 plans; INSERTED 2026-05-18) — completed 2026-05-19
+- [ ] Phase 89: Polish — popovers, gating decisions, automation rules, 375px parity (TBD plans) — planned
 
 See [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md) for full phase details, success criteria, and requirement traceability.
 
@@ -266,7 +275,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 75-77. v1.14 phases | v1.14 | 16/16 | Complete (INSIGHT-UI-04 descoped) | 2026-04-29 |
 | 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
 | 80-83. v1.16 phases | v1.16 | 24/24 | Complete | 2026-05-11 |
-| 84-88. v1.17 phases | v1.17 | 0/TBD | In progress | — |
+| 84-89. v1.17 phases | v1.17 | 0/TBD | In progress | — |
 
 ## Backlog
 

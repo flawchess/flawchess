@@ -47,6 +47,7 @@ _ALL_TEST_USER_IDS = [_USER_ROLLING, _USER_RECENCY, _USER_MULTI]
 async def _create_test_users(db_session: AsyncSession) -> None:
     """Ensure all test user IDs exist in users table (FK constraint)."""
     from tests.conftest import ensure_test_user
+
     for uid in _ALL_TEST_USER_IDS:
         await ensure_test_user(db_session, uid)
 
@@ -115,7 +116,8 @@ def _make_request(
     target_hash: int,
     color: Literal["white", "black"] = "white",
     match_side: Literal["white", "black", "full"] = "full",
-    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None = None,
+    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"]
+    | None = None,
 ) -> TimeSeriesRequest:
     """Build a minimal TimeSeriesRequest for one bookmark."""
     return TimeSeriesRequest(
@@ -451,9 +453,7 @@ class TestMultipleBookmarks:
     """Verify a single TimeSeriesRequest with multiple bookmarks returns separate series."""
 
     @pytest.mark.asyncio
-    async def test_two_bookmarks_return_two_series(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_two_bookmarks_return_two_series(self, db_session: AsyncSession) -> None:
         """Two bookmarks with different hashes produce two distinct BookmarkTimeSeries."""
         uid = _USER_MULTI
         fh_a = 9_300_001
@@ -519,9 +519,7 @@ class TestMultipleBookmarks:
         assert series_b.data[0].score == 0.0
 
     @pytest.mark.asyncio
-    async def test_empty_and_populated_bookmark_together(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_empty_and_populated_bookmark_together(self, db_session: AsyncSession) -> None:
         """One populated bookmark + one with no games: both series returned, one empty."""
         uid = _USER_MULTI
         fh_populated = 9_300_003

@@ -1,3 +1,7 @@
+---
+status: complete
+---
+
 # Quick Task 260413-pwv: Conversion / Even / Recovery labels + 4-ply preservation
 
 **Completed:** 2026-04-13

@@ -35,5 +35,22 @@
   },
   "enabledPlugins": {
     "codebase-audit@aimfeld": true
+  },
+  "permissions": {
+    "deny": [
+      "Read(./.prod.env)",
+      "Bash(cat .prod.env)",
+      "Bash(cat ./.prod.env)",
+      "Bash(less .prod.env)",
+      "Bash(more .prod.env)",
+      "Bash(head .prod.env)",
+      "Bash(tail .prod.env)",
+      "Bash(grep * .prod.env)",
+      "Bash(grep * ./.prod.env)",
+      "Bash(awk * .prod.env)",
+      "Bash(sed * .prod.env)",
+      "Bash(xxd .prod.env)",
+      "Bash(od .prod.env)"
+    ]
   }
 }

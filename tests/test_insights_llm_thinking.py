@@ -58,17 +58,13 @@ def _sample_report() -> EndgameInsightsReport:
 
 
 class TestBuildGoogleThinkingConfig:
-    def test_gemini_3_uses_thinking_level(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_gemini_3_uses_thinking_level(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "GEMINI_THINKING_LEVEL", "low")
         monkeypatch.setattr(settings, "GEMINI_INCLUDE_THOUGHTS", True)
         cfg = insights_llm._build_google_thinking_config("gemini-3-flash-preview")
         assert cfg == {"include_thoughts": True, "thinking_level": "low"}
 
-    def test_gemini_25_uses_thinking_budget(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_gemini_25_uses_thinking_budget(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(settings, "GEMINI_THINKING_BUDGET", 0)
         monkeypatch.setattr(settings, "GEMINI_INCLUDE_THOUGHTS", False)
         cfg = insights_llm._build_google_thinking_config("gemini-2.5-flash")
@@ -246,12 +242,10 @@ class TestGenerateInsightsPersistsThinkingTokens:
                 as_of=datetime.datetime.now(datetime.UTC),
                 filters=fc,
                 findings=[],
-                                findings_hash="t" * 64,
+                findings_hash="t" * 64,
             )
 
-        monkeypatch.setattr(
-            "app.services.insights_llm.compute_findings", _fake_compute_findings
-        )
+        monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_findings)
 
         fake_agent = _FakeAgent(
             _FakeResult(

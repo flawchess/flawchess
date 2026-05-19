@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: 260507-t4r
 plan: 01
 subsystem: frontend/openings

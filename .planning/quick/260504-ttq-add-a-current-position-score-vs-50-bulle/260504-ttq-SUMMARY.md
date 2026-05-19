@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260504-ttq
 plan: "01"
 subsystem: openings

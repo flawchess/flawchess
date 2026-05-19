@@ -73,6 +73,14 @@ export function colorizeGaugeZones(bands: readonly { from: number; to: number }[
 // Minimum games required for reliable stats — rows/charts below this threshold are dimmed
 export const MIN_GAMES_FOR_RELIABLE_STATS = 10;
 
+// Inactivity-gap break-label font (px). 14 = the CLAUDE.md text-sm floor; SC-4 enlarges the
+// prior compact fontSize-11 annotation into a deliberately prominent marker.
+export const BREAK_LABEL_FONT_SIZE = 14;
+
+// Inactivity-gap Palmtree glyph size (px). Deliberately larger than the label text so the
+// icon reads as the primary break marker while the compact "1.1y" text stays at text-sm.
+export const BREAK_LABEL_GLYPH_SIZE = 22;
+
 // Minimum total games to render an opening table row at full opacity. Mirrors
 // backend EVAL_CONFIDENCE_MIN_N (app/services/opening_insights_constants.py) —
 // rows below this threshold can't sustain a reliable MG-entry eval signal, so
@@ -101,10 +109,10 @@ export const IMPERSONATION_PILL_BG = 'oklch(0.50 0.18 40)';
 export const IMPERSONATION_PILL_FG = 'oklch(0.95 0.02 40)';
 export const IMPERSONATION_PILL_BORDER = 'oklch(0.60 0.18 40)';
 
-// Endgame ELO Timeline chart combo palette (Phase 57 ELO-05).
-// 8 combos = 2 platforms x 4 time controls. Two constants per combo (bright
-// Endgame ELO stroke + dark Actual ELO stroke) instead of an opacity modifier,
-// so both tones preserve their hue reading on the dark charcoal surface.
+// Endgame ELO Timeline chart combo palette (Phase 57 ELO-05; rebuilt Phase
+// 87.5). 8 combos = 2 platforms x 4 time controls. Two constants per combo
+// (bright Endgame ELO stroke + dark Actual ELO stroke) instead of an opacity
+// modifier, so both tones preserve their hue reading on the dark charcoal surface.
 // Hues chosen to clear WCAG AA 3:1 non-text contrast against oklch(0.145 0 0);
 // adjacent combos separated by >=40 deg hue to stay visually distinct.
 // Values locked in 57-UI-SPEC.md §ELO_COMBO_COLORS.
@@ -146,7 +154,8 @@ export const BULLET_BAR_NEUTRAL = 'oklch(0.85 0 0)';
 // branch, so DARK_BLUE in arrowColor.ts re-exports this exact string.
 export const ARROW_NEUTRAL = '#6B7280';  // Tailwind gray-500 / matches WDL_BORDER_DRAW
 
-// Endgame ELO Timeline volume bars (Phase 57.1). Muted gray with alpha so the
+// Endgame ELO Timeline volume bars (Phase 57.1; rebuilt Phase 87.5).
+// Muted gray with alpha so the
 // bars read as "context, not data" on the charcoal-texture card surface.
 // L=0.55 / chroma=0 keeps the bar visually distinct from all 8 ELO_COMBO_COLORS
 // hues; alpha=0.25 lets the texture noise show through, reinforcing the
@@ -160,12 +169,14 @@ export const ENDGAME_VOLUME_BAR_COLOR = 'oklch(0.55 0 0 / 0.25)';
 // conveying the sign of the gap at a glance.
 // - LINE_ENDGAME reuses MY_SCORE_COLOR (brand blue) — keeps "user's endgame"
 //   visually anchored to the same hue used on the Time Pressure chart.
-// - LINE_NON_ENDGAME uses a muted neutral (matches WDL_DRAW) to read as a
-//   passive partner line, not a competing signal.
-// - FILL_ABOVE (green) and FILL_BELOW (red) reuse WDL win/loss hues at 0.18
-//   alpha. Sign convention: above == endgame > non_endgame (green), below ==
-//   endgame < non_endgame (red).
+// - LINE_NON_ENDGAME uses a light blue (UAT 2026-05-17) so the two lines
+//   share the blue family but stay visually distinct via lightness + dash
+//   pattern (endgame = dashed brand blue, non-endgame = dotted light blue).
+// - FILL_ABOVE (green) and FILL_BELOW (red) reuse WDL win/loss hues at 0.28
+//   alpha — bumped from 0.18 (UAT 2026-05-17) so the signed band reads more
+//   clearly against the chart background. Sign convention: above ==
+//   endgame > non_endgame (green), below == endgame < non_endgame (red).
 export const SCORE_TIMELINE_LINE_ENDGAME = MY_SCORE_COLOR;
-export const SCORE_TIMELINE_LINE_NON_ENDGAME = 'oklch(0.60 0.02 260)';
-export const SCORE_TIMELINE_FILL_ABOVE = 'oklch(0.50 0.14 145 / 0.18)';
-export const SCORE_TIMELINE_FILL_BELOW = 'oklch(0.50 0.15 25 / 0.18)';
+export const SCORE_TIMELINE_LINE_NON_ENDGAME = 'oklch(0.78 0.09 230)';
+export const SCORE_TIMELINE_FILL_ABOVE = 'oklch(0.50 0.14 145 / 0.28)';
+export const SCORE_TIMELINE_FILL_BELOW = 'oklch(0.50 0.15 25 / 0.28)';
