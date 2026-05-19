@@ -29,7 +29,7 @@ import { EndgameTimePressureSection } from '@/components/charts/EndgameTimePress
 import { EndgameClockDiffOverTimeChart } from '@/components/charts/EndgameClockDiffOverTimeChart';
 import { EndgameEloTimelineSection } from '@/components/charts/EndgameEloTimelineSection';
 import { GameCardList } from '@/components/results/GameCardList';
-import { WDLChartRow } from '@/components/charts/WDLChartRow';
+import { PositionResultsPanel } from '@/components/charts/PositionResultsPanel';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
 import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
 import { useCachedEndgameInsights, useEndgameInsights } from '@/hooks/useEndgameInsights';
@@ -643,15 +643,15 @@ export function EndgamesPage() {
 
   const gamesContent = (
     <div className="flex flex-col gap-4">
-      {selectedCategoryStats && selectedCategoryStats.total > 0 && (
-        <div className="charcoal-texture rounded-md p-4">
-          <WDLChartRow
-            data={selectedCategoryStats}
-            label={`${ENDGAME_CLASS_LABELS[selectedCategory]} Endgame Results`}
-            barHeight="h-6"
-            testId="wdl-endgame-games"
-          />
-        </div>
+      {selectedCategoryStats && (
+        <PositionResultsPanel
+          stats={selectedCategoryStats}
+          evalBaselinePawns={selectedCategoryStats.eval_baseline_pawns}
+          filterColor="white"
+          label={`${ENDGAME_CLASS_LABELS[selectedCategory]} Endgame Results`}
+          className="charcoal-texture rounded-md p-4"
+          evalContext="endgame-entry"
+        />
       )}
       {endgameTypeDropdown}
       {gamesLoading ? (

@@ -156,7 +156,7 @@ async def query_endgame_entry_rows(
 
     Returns rows of:
         (game_id, endgame_class, result, user_color,
-         eval_cp, eval_mate, next_entry_eval_cp, next_entry_eval_mate)
+         eval_cp, eval_mate, next_entry_eval_cp, next_entry_eval_mate, played_at)
     where endgame_class is an integer (1-6, see EndgameClassInt).
 
     eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply.
@@ -254,6 +254,9 @@ async def query_endgame_entry_rows(
             # NULL for terminal spans — handled in service layer.
             span_with_next.c.next_entry_eval_cp.label("next_entry_eval_cp"),
             span_with_next.c.next_entry_eval_mate.label("next_entry_eval_mate"),
+            # Quick task 260519-lu0: played_at for MAX(played_at) per category
+            # (drives last_played_at in EndgameCategoryStats / PositionResultsPanel).
+            Game.played_at.label("played_at"),
         )
         .join(span_with_next, Game.id == span_with_next.c.game_id)
         .where(Game.user_id == user_id)

@@ -8,6 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Openings and Endgames *Games* subtabs now show the Score and Eval bullet charts below the WDL chart, matching the move explorer's "Results played as" panel. The Endgames Games subtab reports per-category Wilson score and the eval at endgame entry.
+
+### Changed
+
+- The Eval popover on the Endgames Games subtab now reads "average Stockfish eval at the position where the endgame begins" (instead of the openings phrasing), matching the Stats-tab "Endgame Entry Eval" metric.
+
 ## [v1.17] Endgame Stats Card Redesign — 2026-05-19
 
 ### Added
