@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Security
+
+- Bumped transitive dependency `idna` 3.11 → 3.15 to clear CVE-2026-45409 (flagged by the CI `pip-audit --strict` gate). Lockfile-only; no behavior change.
+
 ### Added
 
 - Openings and Endgames *Games* subtabs now show the Score and Eval bullet charts below the WDL chart, matching the move explorer's "Results played as" panel. The Endgames Games subtab reports per-category Wilson score and the eval at endgame entry.
