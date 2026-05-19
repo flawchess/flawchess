@@ -241,12 +241,25 @@ export function EndgameTimePressureCard({
           testId={`time-pressure-card-${card.tc}-title-info`}
           side="top"
         >
-          <p>
-            <strong>{tcLabel} Time Pressure:</strong> how your endgame
-            performance shifts as your clock runs down in {tcLabel} games. The
-            top row summarises your overall clock situation and flag rate; the
-            chart below shows performance by how much time you had left.
-          </p>
+          <div className="space-y-2">
+            <p>
+              <strong>{tcLabel} Time Pressure:</strong> how your endgame
+              performance shifts as your clock runs down in {tcLabel} games.
+            </p>
+            <p>
+              The top section, "Remaining Time at Endgame Entry", shows how
+              much clock time you and your opponents have left on average when endgames begins,
+              plus your net flag rate (timeout wins minus flag losses).
+            </p>
+            <p>
+              The bottom section, "Score Gap by Remaining Time", breaks your
+              endgames into buckets by how much of your clock was left, and in
+              each bucket compares your score against opponents who were under
+              the <em>same amount</em> of time pressure. A positive gap means you outscored
+              comparably-pressured opponents; a negative gap means they
+              outscored you.
+            </p>
+          </div>
         </InfoPopover>
         {/* Post-UAT (round 2): game count right-aligned, "Games: X% (N)"
             framing with a sword icon. The percentage is this TC's share of
