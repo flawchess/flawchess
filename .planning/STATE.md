@@ -123,6 +123,7 @@ Carried forward from v1.11 close (still relevant):
 
 - **Human-like engine analysis** (general) — v2+ engine eval filtered by human move plausibility at target Elo
 - **Bitboard storage for partial-position queries** (database) — 12 BIGINT bitboard columns on game_positions
+- **Fix rating-lag selection bias in /benchmarks skill** (skills / benchmarks) — SQL-only SKILL.md rebucket by rating-at-game-time; existing sample, no rebuild
 
 ### Blockers/Concerns
 
