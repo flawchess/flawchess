@@ -247,8 +247,8 @@ export function EndgameTimePressureCard({
               performance shifts as your clock runs down in {tcLabel} games.
             </p>
             <p>
-              The top section, "Remaining Time at Endgame Entry", shows how
-              much clock time you and your opponents have left on average when endgames begins,
+              The top section, "Remaining Time at Endgame Entry", is about time management <em>before</em> the endgame
+              and shows how much clock time you and your opponents have left on average when endgames begins,
               plus your net flag rate (timeout wins minus flag losses).
             </p>
             <p>

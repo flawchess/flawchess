@@ -226,7 +226,8 @@ export interface ScoreGapMaterialResponse {
 export interface PressureQuintileBullet {
   quintile_index: number;       // 0 = 0-20% (max pressure) … 4 = 80-100% (min)
   quintile_label: string;       // "0-20%" … "80-100%"
-  n: number;                    // game count in this bin
+  n: number;                    // user-side game count in this bin
+  n_opp: number;                // opponent-side game count in the matching opp-clock quintile
   delta: number;                // user_score - opp_score (independent quintile splits per side)
   p_value: number | null;
   ci_low: number | null;

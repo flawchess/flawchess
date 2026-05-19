@@ -894,6 +894,7 @@ class TestTcCardTopZoneStats:
                 quintile_index=q,
                 quintile_label=f"{q * 20}-{(q + 1) * 20}%",
                 n=0,
+                n_opp=0,
                 delta=0.0,
                 p_value=None,
                 ci_low=None,

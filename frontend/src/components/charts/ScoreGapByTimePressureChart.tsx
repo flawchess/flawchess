@@ -119,6 +119,7 @@ interface ChartPoint {
   rangeLabel: string;
   delta: number;
   n: number;
+  n_opp: number;
   opp_score: number | null;
   p_value: number | null;
   ci_low: number | null;
@@ -175,6 +176,7 @@ function toChartData(quintiles: PressureQuintileBullet[]): ChartPoint[] {
           PRESSURE_RANGE_LABELS[bin.quintile_index as 0 | 1 | 2 | 3] ?? '',
         delta: bin.delta,
         n: bin.n,
+        n_opp: bin.n_opp,
         opp_score: bin.opp_score,
         p_value: bin.p_value,
         ci_low: bin.ci_low,
@@ -221,9 +223,16 @@ export function ScoreGapTooltipContent({ point }: { point: ChartPoint }) {
         />
         <span>Score gap: {formatSignedPct(point.delta)}</span>
       </div>
+      {/* Two lines: the user-side and opponent-side splits are independent
+          samples from the same game-set, so their game counts can differ —
+          show each count next to its own score. */}
       <div className="text-muted-foreground">
-        You: {formatPct(userScore)}, Opp: {formatPct(point.opp_score)}, Games:{' '}
-        {point.n}
+        <div>
+          You: {formatPct(userScore)} ({point.n} games)
+        </div>
+        <div>
+          Opp: {formatPct(point.opp_score)} ({point.n_opp} games)
+        </div>
       </div>
       <div>{conclusionText(point.delta, point.p_value, point.n)}</div>
       <div className="text-muted-foreground italic">{testLine}</div>

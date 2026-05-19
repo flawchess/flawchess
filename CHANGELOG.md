@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- **Score Gap by Remaining Time tooltip splits You/Opp game counts** (post-v1.17 polish). The per-bucket hover tooltip now shows your score and your opponents' score on two separate lines, each with its own game count (`You: 38.0% (40 games)` / `Opp: 55.0% (37 games)`). The two figures come from independent clock-pressure splits of the same game-set, so the counts can legitimately differ; the previous single line showed only one count. The Time Pressure card's info popover was also reworded into three paragraphs (one-sentence summary, top section, bottom section) and now correctly describes the score gap as a comparison against opponents under equal time pressure.
+
 ## [v1.17] Endgame Stats Card Redesign — 2026-05-19
 
 ### Added
