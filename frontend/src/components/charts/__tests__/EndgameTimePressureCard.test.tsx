@@ -204,7 +204,7 @@ describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone stats', () => {
         opp_avg_pct: 0.52,
         opp_avg_seconds: 231,
         avg_clock_diff_seconds: -16,
-        net_timeout_rate: -0.003,
+        net_timeout_rate: -0.03,
       }),
     );
     // SC-2: my-avg-time and opp-avg-time now live in ClockGapHeaderRow.
@@ -222,8 +222,8 @@ describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone stats', () => {
     expect(myAvg.textContent).not.toContain('215s');
     expect(oppAvg.textContent).toContain('52%');
     expect(oppAvg.textContent).not.toContain('231s');
-    // Negative net rate shows with a minus sign and one decimal point.
-    expect(netRate.textContent).toContain('-0.3%');
+    // Net flag rate is integer-rounded (16bf43f0); negative shows a minus sign.
+    expect(netRate.textContent).toContain('-3%');
   });
 
   it('shows em-dash when an average is null', () => {
@@ -243,9 +243,9 @@ describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone stats', () => {
     // Opp side still renders normally.
     const oppAvg = screen.getByTestId('time-pressure-card-bullet-opp-avg-time');
     expect(oppAvg.textContent).toContain('50%');
-    // 0.0% for net_timeout_rate === 0.
+    // 0% for net_timeout_rate === 0 (integer-rounded, no sign — 16bf43f0).
     const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
-    expect(netRate.textContent).toContain('0.0%');
+    expect(netRate.textContent).toContain('0%');
   });
 
   it('tints net flag rate green for positive above threshold and red for negative below', async () => {
