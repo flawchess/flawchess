@@ -263,49 +263,34 @@ _GAME_RESULT_TO_SCORE: dict[Literal["win", "draw", "loss"], float] = {
 }
 
 
-def _compute_span_gap(
+def _compute_span_scores(
     entry_eval_cp: int | None,
     entry_eval_mate: int | None,
     next_entry_eval_cp: int | None,
     next_entry_eval_mate: int | None,
     result: str,
     user_color: str,
-) -> float | None:
-    """Return per-span gap `exit_score - ES_entry`, or None if entry eval unavailable.
+) -> tuple[float, float] | None:
+    """Return (es_entry, exit_score) for a span, or None if entry eval unavailable.
 
-    Phase 87.1 (SEED-016 D-07). Sign convention: positive = user outperformed
-    the Stockfish baseline (recovered eval, decisive conversions); negative =
-    user gave back expected score. Matches the page-level Achievable Score Gap
-    direction (`higher_is_better`) so the per-type ScoreGapRow reads identically
-    to the page-level row on the same visual axis.
+    quick-260519-ni3: pure helper that exposes both components so callers can
+    accumulate starts and ends separately (single source of truth for entry/exit
+    logic). _compute_span_gap delegates here and returns exit_score - es_entry.
 
-    Args:
-        entry_eval_cp:       white-perspective cp at the span's first ply.
-        entry_eval_mate:     white-perspective mate-in-N at the span's first ply.
-        next_entry_eval_cp:  the NEXT span's first-ply cp (from LEAD()); NULL
-                             marks a terminal span.
-        next_entry_eval_mate: the NEXT span's first-ply mate-in-N; NULL for
-                             terminal spans.
-        result:              raw Game.result string ("1-0" / "0-1" / "1/2-1/2").
-        user_color:          "white" | "black".
+    Phase 87.1 (SEED-016 D-07) NULL-eval gate: returns None when both
+    entry_eval_cp and entry_eval_mate are NULL — the span is excluded from the
+    per-class cohort.
 
     Returns:
-        gap_span = exit_score - ES_entry, computed as:
-          - ES_entry  = lichess sigmoid over (eval_cp, eval_mate, user_color).
+        (es_entry, exit_score) where:
+          - es_entry  = lichess sigmoid over (eval_cp, eval_mate, user_color).
           - exit_score:
             * Transitory span (next_entry_eval_cp OR next_entry_eval_mate
               non-NULL): ES_sigmoid(next_entry_eval, user_color).
             * Terminal span (both next_entry_eval_* NULL): game-result score
               via _GAME_RESULT_TO_SCORE[derive_user_result(result, user_color)].
-        Returns None when both entry_eval_cp and entry_eval_mate are NULL —
-        the span is excluded from the per-class cohort (D-07: skip NULL-eval).
-
-    Mate handling reuses eval_mate_to_expected_score (mate-in-N saturates to
-    0.0 / 1.0 from the user's perspective). No new sigmoid math.
     """
-    # D-07: skip spans where the entry eval is unknown. The eval-backfill
-    # coverage on >=6-ply spans is effectively 100% in prod, so this is a
-    # theoretical edge case — but the gate is total and safe.
+    # D-07: skip spans where the entry eval is unknown.
     if entry_eval_cp is None and entry_eval_mate is None:
         return None
 
@@ -336,7 +321,46 @@ def _compute_span_gap(
         outcome = derive_user_result(result, user_color)
         exit_score = _GAME_RESULT_TO_SCORE[outcome]
 
-    return exit_score - es_entry
+    return es_entry, exit_score
+
+
+def _compute_span_gap(
+    entry_eval_cp: int | None,
+    entry_eval_mate: int | None,
+    next_entry_eval_cp: int | None,
+    next_entry_eval_mate: int | None,
+    result: str,
+    user_color: str,
+) -> float | None:
+    """Return per-span gap `exit_score - ES_entry`, or None if entry eval unavailable.
+
+    Phase 87.1 (SEED-016 D-07). Delegates to _compute_span_scores (single
+    source of truth for entry/exit/mate-precedence/terminal-vs-transitory logic).
+    Sign convention: positive = user outperformed the Stockfish baseline
+    (recovered eval, decisive conversions); negative = user gave back expected
+    score. Matches the page-level Achievable Score Gap direction
+    (`higher_is_better`) so the per-type ScoreGapRow reads identically to the
+    page-level row on the same visual axis.
+
+    Args:
+        entry_eval_cp:       white-perspective cp at the span's first ply.
+        entry_eval_mate:     white-perspective mate-in-N at the span's first ply.
+        next_entry_eval_cp:  the NEXT span's first-ply cp (from LEAD()); NULL
+                             marks a terminal span.
+        next_entry_eval_mate: the NEXT span's first-ply mate-in-N; NULL for
+                             terminal spans.
+        result:              raw Game.result string ("1-0" / "0-1" / "1/2-1/2").
+        user_color:          "white" | "black".
+
+    Returns:
+        gap_span = exit_score - ES_entry, or None when entry eval is unavailable.
+    """
+    scores = _compute_span_scores(
+        entry_eval_cp, entry_eval_mate, next_entry_eval_cp, next_entry_eval_mate, result, user_color
+    )
+    if scores is None:
+        return None
+    return scores[1] - scores[0]
 
 
 # Rolling window size for the score-difference timeline chart (quick-260417-o2l).
@@ -387,6 +411,11 @@ def _aggregate_endgame_stats(
     # Phase 85.1 SEC1-10 for the page-level Achievable Score Gap) is invoked
     # below in the per-class builder loop.
     gaps_by_class: dict[EndgameClass, list[float]] = defaultdict(list)
+    # quick-260519-ni3: per-class start (es_entry) and end (exit_score) accumulators.
+    # Appended under the exact same is-not-None gate as gaps_by_class, so the
+    # three lists always have identical length (reconciliation invariant by construction).
+    starts_by_class: dict[EndgameClass, list[float]] = defaultdict(list)
+    ends_by_class: dict[EndgameClass, list[float]] = defaultdict(list)
     # Phase 87.2 (D-01): per-bucket ΔES accumulator. Shares iteration with
     # gaps_by_class; bucket already computed at the _classify_endgame_bucket
     # call below for the rate-based counts. Per-span grain (not per-game):
@@ -474,7 +503,9 @@ def _aggregate_endgame_stats(
         # SEC1-10 uses for the page-level Achievable Score Gap. Sign convention:
         # gap = exit_score - ES_entry, positive = user outperformed Stockfish.
         # NULL-eval spans return None and are excluded from the cohort (D-07).
-        gap = _compute_span_gap(
+        # quick-260519-ni3: call _compute_span_scores once to get both components;
+        # _compute_span_gap is now a thin wrapper over it (single source of truth).
+        span_scores = _compute_span_scores(
             entry_eval_cp=eval_cp,
             entry_eval_mate=eval_mate,
             next_entry_eval_cp=next_entry_eval_cp,
@@ -482,11 +513,16 @@ def _aggregate_endgame_stats(
             result=result,
             user_color=user_color,
         )
-        if gap is not None:
+        if span_scores is not None:
+            es_entry, exit_score = span_scores
+            gap = exit_score - es_entry
             gaps_by_class[endgame_class].append(gap)
+            starts_by_class[endgame_class].append(es_entry)
+            ends_by_class[endgame_class].append(exit_score)
             # Phase 87.2 (D-01): bucket is already computed above; append the
             # same gap into the bucket cohort for the per-bucket paired-z test.
-            # Excluded when gap is None (NULL-eval spans, same gate as per-class).
+            # Excluded when span_scores is None (NULL-eval spans, same gate).
+            # Per-bucket path appends gap ONLY (not start/end — locked decision 4).
             gaps_by_bucket[bucket].append(gap)
 
     # Build EndgameCategoryStats objects
@@ -598,6 +634,15 @@ def _aggregate_endgame_stats(
         # matching how the cohort-empty case reads.
         type_gap_mean: float | None = type_gap_mean_raw if type_gap_n > 0 else None
 
+        # quick-260519-ni3: start/end means over the identical cohort (same n,
+        # same NULL-eval gate — lists have equal length by construction).
+        # Use sum/len to avoid a statistics import; None when n == 0 (mirroring
+        # type_gap_mean above so all three fields share the same None contract).
+        type_starts = starts_by_class[endgame_class]
+        type_ends = ends_by_class[endgame_class]
+        type_start_mean: float | None = sum(type_starts) / type_gap_n if type_gap_n > 0 else None
+        type_end_mean: float | None = sum(type_ends) / type_gap_n if type_gap_n > 0 else None
+
         categories.append(
             EndgameCategoryStats(
                 endgame_class=endgame_class,
@@ -612,12 +657,15 @@ def _aggregate_endgame_stats(
                 conversion=conversion_stats,
                 score_p_value=score_p_value,
                 # Phase 87.1 (SEED-016 D-05): per-class Score Gap fields. See
-                # _compute_span_gap + compute_paired_difference_test above.
+                # _compute_span_scores + compute_paired_difference_test above.
                 type_achievable_score_gap_mean=type_gap_mean,
                 type_achievable_score_gap_n=type_gap_n,
                 type_achievable_score_gap_p_value=type_gap_p,
                 type_achievable_score_gap_ci_low=type_gap_ci_low,
                 type_achievable_score_gap_ci_high=type_gap_ci_high,
+                # quick-260519-ni3: descriptive start/end components.
+                type_achievable_score_start_mean=type_start_mean,
+                type_achievable_score_end_mean=type_end_mean,
             )
         )
 

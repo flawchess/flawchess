@@ -898,6 +898,176 @@ class TestAggregateEndgameStatsTypeScoreGap:
         assert rook.type_achievable_score_gap_mean == pytest.approx(0.5, abs=1e-9)
 
 
+class TestStartEndScoreMeans:
+    """quick-260519-ni3 (Task 1): per-class start/end predicted score means.
+
+    Asserts the reconciliation invariant: end_mean - start_mean == gap_mean
+    (within float tolerance 1e-9) for every class over the identical span cohort.
+    Also covers the null-when-n==0 contract and two-class independence.
+    """
+
+    @staticmethod
+    def _gap_row(
+        game_id: int,
+        endgame_class_int: int,
+        result: str,
+        user_color: str,
+        eval_cp: int | None,
+        eval_mate: int | None,
+        next_entry_eval_cp: int | None = None,
+        next_entry_eval_mate: int | None = None,
+    ) -> tuple[Any, ...]:
+        return (
+            game_id,
+            endgame_class_int,
+            result,
+            user_color,
+            eval_cp,
+            eval_mate,
+            next_entry_eval_cp,
+            next_entry_eval_mate,
+        )
+
+    def test_new_fields_present_on_schema(self) -> None:
+        """type_achievable_score_start_mean / _end_mean attributes exist on EndgameCategoryStats."""
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert hasattr(rook, "type_achievable_score_start_mean")
+        assert hasattr(rook, "type_achievable_score_end_mean")
+
+    def test_start_end_null_when_n_zero(self) -> None:
+        """All spans have NULL entry eval → start/end means are None (same gate as gap_mean)."""
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", None, None),
+            self._gap_row(2, 1, "0-1", "white", None, None),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        assert rook.type_achievable_score_gap_n == 0
+        assert rook.type_achievable_score_start_mean is None
+        assert rook.type_achievable_score_end_mean is None
+
+    def test_reconciliation_invariant_terminal_spans(self) -> None:
+        """end_mean - start_mean == gap_mean for a 3-span hand-computed rook fixture (terminal spans).
+
+        Fixture:
+          Span 1: entry cp=100, white wins → es_entry=ES(100,white), exit=1.0
+          Span 2: entry cp=-200, white draws → es_entry=ES(-200,white), exit=0.5
+          Span 3: entry cp=0, white wins (transitory, next cp=300) → exit=ES(300,white)
+
+        Reconciliation: gap_i = exit_i - start_i, so
+          mean(exit) - mean(start) = mean(exit - start) = mean(gap) exactly.
+        """
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),
+            self._gap_row(2, 1, "1/2-1/2", "white", -200, None),
+            self._gap_row(3, 1, "1-0", "white", 0, None, next_entry_eval_cp=300),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+
+        assert rook.type_achievable_score_gap_n == 3
+        assert rook.type_achievable_score_gap_mean is not None
+        assert rook.type_achievable_score_start_mean is not None
+        assert rook.type_achievable_score_end_mean is not None
+
+        # Hand-compute expected values
+        starts = [
+            eval_cp_to_expected_score(100, "white"),
+            eval_cp_to_expected_score(-200, "white"),
+            eval_cp_to_expected_score(0, "white"),
+        ]
+        ends = [
+            1.0,
+            0.5,
+            eval_cp_to_expected_score(300, "white"),
+        ]
+        expected_start = sum(starts) / 3
+        expected_end = sum(ends) / 3
+        expected_gap = sum(e - s for e, s in zip(ends, starts)) / 3
+
+        assert rook.type_achievable_score_start_mean == pytest.approx(expected_start, abs=1e-9)
+        assert rook.type_achievable_score_end_mean == pytest.approx(expected_end, abs=1e-9)
+        assert rook.type_achievable_score_gap_mean == pytest.approx(expected_gap, abs=1e-9)
+
+        # Core reconciliation invariant: end_mean - start_mean == gap_mean exactly
+        assert (
+            rook.type_achievable_score_end_mean - rook.type_achievable_score_start_mean
+            == pytest.approx(rook.type_achievable_score_gap_mean, abs=1e-9)
+        )
+
+    def test_reconciliation_invariant_two_classes(self) -> None:
+        """Reconciliation holds independently for two classes (rook + queen)."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        rows = [
+            # Rook: 2 terminal spans
+            self._gap_row(1, 1, "1-0", "white", 50, None),
+            self._gap_row(2, 1, "0-1", "white", -100, None),
+            # Queen: 1 transitory + 1 terminal
+            self._gap_row(3, 4, "1-0", "white", 200, None, next_entry_eval_cp=500),
+            self._gap_row(4, 4, "0-1", "black", 0, None),
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+        queen = next(c for c in result if c.endgame_class == "queen")
+
+        for cat in (rook, queen):
+            assert cat.type_achievable_score_start_mean is not None
+            assert cat.type_achievable_score_end_mean is not None
+            assert cat.type_achievable_score_gap_mean is not None
+            # Reconciliation: end_mean - start_mean == gap_mean (tol 1e-9)
+            assert (
+                cat.type_achievable_score_end_mean - cat.type_achievable_score_start_mean
+                == pytest.approx(cat.type_achievable_score_gap_mean, abs=1e-9)
+            )
+
+        # Spot-check rook start
+        rook_starts = [
+            eval_cp_to_expected_score(50, "white"),
+            eval_cp_to_expected_score(-100, "white"),
+        ]
+        assert rook.type_achievable_score_start_mean == pytest.approx(
+            sum(rook_starts) / 2, abs=1e-9
+        )
+
+    def test_null_eval_spans_excluded_from_start_end(self) -> None:
+        """Mixed cohort: NULL-eval spans excluded; start/end computed only over eligible spans."""
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),  # eligible
+            self._gap_row(2, 1, "0-1", "white", None, None),  # excluded (NULL eval)
+        ]
+        result, _ = _aggregate_endgame_stats(rows)
+        rook = next(c for c in result if c.endgame_class == "rook")
+
+        assert rook.type_achievable_score_gap_n == 1
+        assert rook.type_achievable_score_start_mean is not None
+        assert rook.type_achievable_score_start_mean == pytest.approx(
+            eval_cp_to_expected_score(100, "white"), abs=1e-9
+        )
+        # Terminal win → exit_score = 1.0
+        assert rook.type_achievable_score_end_mean == pytest.approx(1.0, abs=1e-9)
+
+    def test_per_bucket_path_unchanged(self) -> None:
+        """gaps_by_bucket still receives only gap values (not start/end) — per-bucket path intact."""
+        rows = [
+            self._gap_row(1, 1, "1-0", "white", 100, None),
+            self._gap_row(2, 1, "0-1", "white", -200, None),
+        ]
+        _, gaps_by_bucket = _aggregate_endgame_stats(rows)
+        # Each bucket entry is a float (the gap), not a tuple or dict
+        for bucket_gaps in gaps_by_bucket.values():
+            for g in bucket_gaps:
+                assert isinstance(g, float)
+
+
 class TestGetEndgameStatsSmoke:
     """Smoke tests for service entry points — catch wiring bugs like typos and broken imports."""
 
