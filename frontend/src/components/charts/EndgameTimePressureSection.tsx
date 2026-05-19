@@ -5,7 +5,7 @@
  *   1 card  → half width
  *   2 cards → 2-column full width
  *   3 cards → 3-column full width
- *   4 cards → 2×2 on md, 3+1 on lg (never more than 3 per row)
+ *   4 cards → 2×2 on md+ (never more than 2 per row)
  *
  * Replaces the legacy line-chart EndgameTimePressureSection and the
  * EndgameClockPressureSection (both deleted in Phase 88 Plan 07).
@@ -21,7 +21,7 @@ import type { TimePressureCardsResponse } from '@/types/endgames';
 const GRID_ONE_CARD = 'w-full sm:w-1/2 mt-2';
 const GRID_TWO_CARDS = 'grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2';
 const GRID_THREE_CARDS = 'grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2';
-const GRID_FOUR_CARDS = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-2';
+const GRID_FOUR_CARDS = 'grid grid-cols-1 md:grid-cols-2 gap-4 mt-2';
 
 export function EndgameTimePressureSection({
   data,
