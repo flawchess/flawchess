@@ -650,6 +650,7 @@ export function EndgamesPage() {
           filterColor="white"
           label={`${ENDGAME_CLASS_LABELS[selectedCategory]} Endgame Results`}
           className="charcoal-texture rounded-md p-4"
+          evalContext="endgame-entry"
         />
       )}
       {endgameTypeDropdown}

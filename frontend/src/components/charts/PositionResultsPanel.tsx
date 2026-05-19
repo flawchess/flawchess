@@ -41,6 +41,12 @@ type PositionResultsPanelProps = {
    *  When omitted, games count is plain text (data-testid="games-count-position"). */
   gamesHref?: string;
   className?: string;
+  /** Which game phase the averaged eval is sampled at. 'opening-end' (default,
+   *  move explorer / Openings) = end of the openings containing this position;
+   *  'endgame-entry' (Endgames Games subtab) = the position where the endgame
+   *  begins. Drives the Eval popover copy and hides the opening-only per-color
+   *  baseline tick (the Endgames eval is color-agnostic — see quick 260519-lu0). */
+  evalContext?: 'opening-end' | 'endgame-entry';
 };
 
 /**
@@ -58,6 +64,7 @@ export function PositionResultsPanel({
   label,
   gamesHref,
   className = 'order-2 lg:order-1',
+  evalContext = 'opening-end',
 }: PositionResultsPanelProps) {
   if (stats.total === 0) return null;
 
@@ -90,6 +97,14 @@ export function PositionResultsPanel({
   const evalBaselinePawnsLocal =
     filterColor === 'black' ? EVAL_BASELINE_PAWNS_BLACK : EVAL_BASELINE_PAWNS_WHITE;
   const resolvedEvalBaselinePawns = evalBaselinePawns ?? evalBaselinePawnsLocal;
+
+  // The Endgames Games subtab samples the eval at endgame entry (color-agnostic,
+  // matching the Stats-tab "Endgame Entry Eval"): no per-color baseline tick,
+  // and the popover copy describes the endgame start rather than opening end.
+  const isEndgameEntryEval = evalContext === 'endgame-entry';
+  const evalAriaLabel = isEndgameEntryEval
+    ? `Avg eval at endgame entry: ${hasMgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`
+    : `Avg eval at MG entry: ${hasMgEval ? (stats.avg_eval_pawns as number).toFixed(2) : '—'} pawns`;
 
   return (
     <div
@@ -193,6 +208,8 @@ export function PositionResultsPanel({
               evalMeanPawns={stats.avg_eval_pawns}
               color={filterColor}
               testId="eval-bullet-popover-trigger"
+              evalContext={evalContext}
+              showBaselineTick={isEndgameEntryEval ? false : undefined}
             />
           )}
         </span>
@@ -202,12 +219,12 @@ export function PositionResultsPanel({
               value={stats.avg_eval_pawns as number}
               ciLow={stats.eval_ci_low_pawns ?? undefined}
               ciHigh={stats.eval_ci_high_pawns ?? undefined}
-              tickPawns={resolvedEvalBaselinePawns}
+              tickPawns={isEndgameEntryEval ? undefined : resolvedEvalBaselinePawns}
               neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
               neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
               domain={EVAL_BULLET_DOMAIN_PAWNS}
               barColor="neutral"
-              ariaLabel={`Avg eval at MG entry: ${(stats.avg_eval_pawns as number).toFixed(2)} pawns`}
+              ariaLabel={evalAriaLabel}
             />
           ) : (
             <span className="text-muted-foreground">—</span>
