@@ -16,6 +16,7 @@ import {
   CartesianGrid,
   ComposedChart,
   ErrorBar,
+  Label,
   Line,
   ReferenceArea,
   ReferenceLine,
@@ -253,7 +254,7 @@ export function ScoreGapByTimePressureChart({
         className="w-full h-56"
         data-testid="score-gap-by-time-pressure-chart-container"
       >
-        <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
+        <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 24 }}>
           {/* Horizontal-only fine grid — identical to EndgameClockDiffOverTimeChart. */}
           <CartesianGrid vertical={false} />
           {/* Hidden full-range numeric x-axis the zone bands bind to. The
@@ -309,11 +310,17 @@ export function ScoreGapByTimePressureChart({
             dataKey="label"
             type="category"
             padding={{ left: X_AXIS_EDGE_PADDING, right: X_AXIS_EDGE_PADDING }}
-          />
+          >
+            <Label value="Remaining Time" position="insideBottom" offset={-14} />
+          </XAxis>
           <YAxis
             yAxisId="value"
             domain={yDomain}
             ticks={yTicks}
+            // interval={0} forces every 10% tick (and its CartesianGrid line)
+            // to render — Recharts otherwise auto-thins ticks/grid lines when
+            // the expanded domain produces many ticks (post-UAT 88.4).
+            interval={0}
             width={48}
             tickFormatter={(v: number) =>
               v > 0 ? `+${(v * 100).toFixed(0)}%` : `${(v * 100).toFixed(0)}%`
