@@ -129,7 +129,9 @@ class EndgameCategoryStats(BaseModel):
     eval_p_value: float | None = None
     eval_confidence: Literal["low", "medium", "high"] = "low"
     last_played_at: datetime.datetime | None = None
-    eval_baseline_pawns: float = 0.25  # always EVAL_BASELINE_PAWNS_WHITE for endgames (color-agnostic, D-02)
+    eval_baseline_pawns: float = (
+        0.25  # always EVAL_BASELINE_PAWNS_WHITE for endgames (color-agnostic, D-02)
+    )
 
 
 class EndgameStatsResponse(BaseModel):
