@@ -32,6 +32,7 @@ from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories import game_repository, import_job_repository
+from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, engine as engine_service, lichess_client
 from app.services.zobrist import PlyData, process_game_pgn
@@ -363,6 +364,7 @@ async def _record_failure_with_retry(
                 await import_job_repository.update_import_job(
                     session,
                     job_id=job_id,
+                    must_exist=True,
                     status=status,
                     games_fetched=games_fetched,
                     games_imported=games_imported,
@@ -371,6 +373,22 @@ async def _record_failure_with_retry(
                 )
                 await session.commit()
                 return
+        except ImportJobNotFound:
+            # CR-01: bootstrap scope never committed, so no DB row exists. Retrying
+            # cannot help — the row truly is missing. Log + capture once, then
+            # stop. The in-memory JobState still reflects FAILED for the caller.
+            logger.error(
+                "Cannot persist failure state for job %s: no DB row exists "
+                "(bootstrap session never committed)",
+                job_id,
+            )
+            sentry_sdk.set_tag("source", "import")
+            sentry_sdk.set_context("import", {"job_id": job_id})
+            sentry_sdk.capture_message(
+                "Failure-state UPDATE skipped: import job row missing",
+                level="error",
+            )
+            return
         except OperationalError as exc:
             last_exc = exc
             continue

@@ -8,6 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.import_job import ImportJob
 
 
+class ImportJobNotFound(Exception):
+    """Raised by update_import_job when must_exist=True and the row is missing.
+
+    Phase 90 / CR-01: closes the silent-data-loss window when a failure-state
+    UPDATE is issued before the bootstrap scope committed the job row. Retrying
+    cannot help — the row truly does not exist — so callers should log + capture
+    to Sentry and stop.
+    """
+
+
 async def create_import_job(
     session: AsyncSession,
     job_id: str,
@@ -42,16 +52,28 @@ async def create_import_job(
     return job
 
 
-async def update_import_job(session: AsyncSession, job_id: str, **kwargs) -> None:
+async def update_import_job(
+    session: AsyncSession,
+    job_id: str,
+    *,
+    must_exist: bool = False,
+    **kwargs,
+) -> None:
     """Update specified fields on an existing ImportJob row.
 
     Args:
         session: AsyncSession to use.
         job_id: The UUID of the job to update.
+        must_exist: When True, raise ImportJobNotFound if the row is missing
+            instead of silently no-op'ing. Used by failure-state recording in
+            run_import so a missing row (bootstrap scope never committed) is
+            surfaced rather than silently dropped (Phase 90 / CR-01).
         **kwargs: Field names and values to update (e.g., status='completed').
     """
     job = await get_import_job(session, job_id)
     if job is None:
+        if must_exist:
+            raise ImportJobNotFound(job_id)
         return
     for key, value in kwargs.items():
         setattr(job, key, value)
