@@ -2756,3 +2756,137 @@ class TestRunImportSessionPerBatch:
         assert third_arg == last_synced, (
             f"Expected previous_last_synced_at={last_synced!r}, got {third_arg!r}"
         )
+
+
+class TestFlushBatchStage5RealDb:
+    """DB-backed regression test for Stage 5 executemany.
+
+    The mock-based TestFlushBatchStage5 tests use AsyncMock sessions, which
+    never trigger SQLAlchemy's real ORM-update-with-executemany validation.
+    UAT 2026-05-20 caught a runtime failure ("bulk synchronize of persistent
+    objects not supported when using bulk update with additional WHERE
+    criteria right now") that the mock tests could not detect. This class
+    pins the contract against a real DB session via the rollback-scoped
+    db_session fixture, so any future regression in synchronize_session
+    handling will fail in CI.
+    """
+
+    async def _seed_user_and_games(
+        self,
+        session,
+        user_id: int,
+        n_games: int,
+    ) -> list[int]:
+        """Insert a test user and N Game rows with NULL move_count / result_fen.
+
+        Returns the list of inserted game ids in order.
+        """
+        from app.models.game import Game
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(session, user_id)
+        ids: list[int] = []
+        for i in range(n_games):
+            g = Game(
+                user_id=user_id,
+                platform="lichess",
+                platform_game_id=f"stage5-real-{user_id}-{i}",
+                pgn="1. e4 *",
+                result="1-0",
+                user_color="white",
+                rated=True,
+                is_computer_game=False,
+            )
+            session.add(g)
+            await session.flush()
+            ids.append(g.id)
+        return ids
+
+    @pytest.mark.asyncio
+    async def test_stage5_executemany_runs_against_real_session(self, db_session):
+        """Issue both Stage 5 UPDATE groups via real session.execute(stmt, params).
+
+        The Table-level (not ORM) update bypasses SQLAlchemy 2.x's ORM
+        bulk-update machinery, which would otherwise raise either
+        "bulk synchronize of persistent objects not supported when using
+        bulk update with additional WHERE criteria right now" (default) or
+        "per-row ORM Bulk UPDATE by Primary Key requires that records
+        contain primary key values" (with synchronize_session=False but the
+        bind param keyed by `b_id` instead of `id`).
+        """
+        from sqlalchemy import bindparam, select, update
+
+        from app.models.game import Game
+
+        game_ids = await self._seed_user_and_games(db_session, 9501, 3)
+        games_table = Game.__table__
+
+        # Group (a): move_count for ALL games. This must NOT raise.
+        move_count_stmt = (
+            update(games_table)  # ty: ignore[invalid-argument-type]
+            .where(games_table.c.id == bindparam("b_id"))
+            .values(move_count=bindparam("b_mc"))
+        )
+        await db_session.execute(
+            move_count_stmt,
+            [{"b_id": gid, "b_mc": 10 + i} for i, gid in enumerate(game_ids)],
+        )
+
+        # Group (b): result_fen for a SUBSET — only the first game.
+        fen_stmt = (
+            update(games_table)  # ty: ignore[invalid-argument-type]
+            .where(games_table.c.id == bindparam("b_id"))
+            .values(result_fen=bindparam("b_rf"))
+        )
+        await db_session.execute(
+            fen_stmt,
+            [{"b_id": game_ids[0], "b_rf": "8/8/8/8/8/8/8/8 w - -"}],
+        )
+        await db_session.flush()
+
+        # Verify both groups landed correctly.
+        rows = (
+            await db_session.execute(
+                select(Game.id, Game.move_count, Game.result_fen)
+                .where(Game.id.in_(game_ids))
+                .order_by(Game.id)
+            )
+        ).all()
+
+        assert len(rows) == 3
+        # move_count set for all 3
+        assert [r.move_count for r in rows] == [10, 11, 12]
+        # result_fen set ONLY for the first
+        assert rows[0].result_fen == "8/8/8/8/8/8/8/8 w - -"
+        assert rows[1].result_fen is None
+        assert rows[2].result_fen is None
+
+    @pytest.mark.asyncio
+    async def test_orm_level_update_with_executemany_raises(self, db_session):
+        """Document SQLAlchemy's contract for the ORM-level alternative.
+
+        `update(Game).where(Game.id == bindparam(...))` + executemany goes
+        through the ORM bulk-update path, which raises by default. This
+        pins WHY Stage 5 targets `Game.__table__` directly rather than the
+        ORM mapper. If a future SQLAlchemy release relaxes this restriction,
+        this test will fail and we can revisit whether the Table-level
+        rewrite is still needed.
+        """
+        from sqlalchemy import bindparam, update
+        from sqlalchemy.exc import InvalidRequestError
+
+        from app.models.game import Game
+
+        game_ids = await self._seed_user_and_games(db_session, 9502, 2)
+
+        bad_stmt = (
+            update(Game)
+            .where(Game.id == bindparam("b_id"))
+            .values(move_count=bindparam("b_mc"))
+        )
+
+        with pytest.raises(InvalidRequestError, match="bulk synchronize"):
+            await db_session.execute(
+                bad_stmt,
+                [{"b_id": gid, "b_mc": i} for i, gid in enumerate(game_ids)],
+            )

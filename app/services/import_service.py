@@ -739,11 +739,32 @@ async def _flush_batch(
     # contexts). See 90-RESEARCH.md Pitfall 1.
 
     # Stage 5: bulk UPDATE move_count and result_fen via two executemany groups.
+    #
+    # We target the underlying Table (`Game.__table__`) rather than the ORM
+    # `Game` mapper. SQLAlchemy 2.x routes `update(Game).where(...)` with
+    # executemany through the ORM bulk-update machinery, which (a) refuses to
+    # run without an explicit `synchronize_session=False` and (b) even then,
+    # expects parameter keys named after the PK column (`id`) to use the ORM
+    # Bulk UPDATE by Primary Key path. Going Table-level emits plain Core SQL,
+    # bypasses both restrictions, and yields exactly the invariant prepared
+    # statement we want for the leak fix. The identity map is irrelevant here
+    # — we never read these rows back inside the same session; the very next
+    # batch opens a fresh session (Plan 90-02).
+    #
+    # Caught in UAT 2026-05-20: the original ORM-level statement raised
+    # "bulk synchronize of persistent objects not supported when using bulk
+    #  update with additional WHERE criteria right now" against a real DB.
+    # Unit tests using AsyncMock sessions never exercised this path. Pinned
+    # by TestFlushBatchStage5RealDb against the rollback-scoped db_session.
     if rows_result.move_counts:
+        # ty: __table__ is typed as FromClause on declarative base, but is a
+        # Table at runtime. Cast at module level not needed — the Table API
+        # is what we use here.
+        games_table = Game.__table__
         # Group (a): move_count for ALL games in the batch.
         move_count_stmt = (
-            update(Game)
-            .where(Game.id == bindparam("b_id"))
+            update(games_table)  # ty: ignore[invalid-argument-type]
+            .where(games_table.c.id == bindparam("b_id"))
             .values(move_count=bindparam("b_mc"))
         )
         move_count_params: list[dict[str, Any]] = [
@@ -762,8 +783,8 @@ async def _flush_batch(
         ]
         if fen_params:
             fen_stmt = (
-                update(Game)
-                .where(Game.id == bindparam("b_id"))
+                update(games_table)  # ty: ignore[invalid-argument-type]
+                .where(games_table.c.id == bindparam("b_id"))
                 .values(result_fen=bindparam("b_rf"))
             )
             await session.execute(fen_stmt, fen_params)
