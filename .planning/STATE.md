@@ -2,18 +2,26 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: shipped
-last_updated: "2026-05-19T06:00:00.000Z"
-last_activity: 2026-05-19 -- v1.17 milestone shipped (13 phases 84-88.4, ~54 plans, PRs #89-#117; Phase 89 dropped, 87.3 superseded)
+status: executing
+last_updated: "2026-05-20T16:21:25.961Z"
+last_activity: 2026-05-20 -- Phase 90 execution started
+progress:
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 3
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
+Phase: 90 (import-pipeline-memory-leak-fix-resilience) — EXECUTING
+Plan: 1 of 3
 Milestone: v1.17 Endgame Stats Card Redesign — ✅ SHIPPED 2026-05-19
-Status: Milestone complete, archived, tagged v1.17. Next: `/gsd:new-milestone`.
-Last activity: 2026-05-19 -- v1.17 archived (13 phases 84-88.4, ~54 plans, PRs #89-#117; Phase 89 Polish dropped, 87.3 superseded by 87.4→87.6); 164 open audit items acknowledged & deferred (carry-forward)
+Status: Executing Phase 90
+Last activity: 2026-05-20 -- Phase 90 execution started
 
 ## Project Reference
 
