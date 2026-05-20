@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: executing
-last_updated: "2026-05-20T16:21:25.961Z"
-last_activity: 2026-05-20 -- Phase 90 execution started
+status: awaiting_uat
+last_updated: "2026-05-20T16:45:00Z"
+last_activity: 2026-05-20 -- Phase 90 execution complete; awaiting human UAT (RSS-flat, Postgres-restart, Sentry monitoring)
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
+  completed_plans: 3
   percent: 0
 ---
 
@@ -17,11 +17,11 @@ progress:
 
 ## Current Position
 
-Phase: 90 (import-pipeline-memory-leak-fix-resilience) — EXECUTING
-Plan: 1 of 3
+Phase: 90 (import-pipeline-memory-leak-fix-resilience) — AWAITING HUMAN UAT
+Plan: 3 of 3 (all plans executed + verified)
 Milestone: v1.17 Endgame Stats Card Redesign — ✅ SHIPPED 2026-05-19
-Status: Executing Phase 90
-Last activity: 2026-05-20 -- Phase 90 execution started
+Status: Phase 90 plans executed and merged; 9/9 must-haves automated-verified; 3 live-test items pending in 90-HUMAN-UAT.md
+Last activity: 2026-05-20 -- Phase 90 execution complete; awaiting human UAT
 
 ## Project Reference
 
