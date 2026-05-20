@@ -14,9 +14,9 @@ import logging
 import time
 import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Literal
 
@@ -24,18 +24,42 @@ import chess
 import chess.pgn
 import httpx
 import sentry_sdk
-from sqlalchemy import case, select, update
+import asyncpg
+from sqlalchemy import bindparam, select, update
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import async_session_maker
+from app.core.database import async_session_maker, engine
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories import game_repository, import_job_repository
+from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, engine as engine_service, lichess_client
 from app.services.zobrist import PlyData, process_game_pgn
 
 logger = logging.getLogger(__name__)
+
+# UAT 2026-05-20 — a real Postgres-restart outage raises any of these on the
+# next write/connect, and the original `except OperationalError` was too
+# narrow. SQLAlchemy translates query-time asyncpg errors via the dialect's
+# _handle_exception, but the pool's connect-time path can propagate the raw
+# asyncpg exception (e.g. CannotConnectNowError, ConnectionDoesNotExistError)
+# AND the OS-level ConnectionRefusedError without translation. The retry
+# classifier must catch all of them or the helper falls through to the
+# generic `except Exception` fail-fast branch and the job stays in_progress.
+_RETRIABLE_DB_OUTAGE_ERRORS: tuple[type[BaseException], ...] = (
+    OperationalError,
+    InterfaceError,
+    DBAPIError,
+    asyncpg.exceptions.CannotConnectNowError,
+    asyncpg.exceptions.ConnectionDoesNotExistError,
+    asyncpg.exceptions.InterfaceError,
+    asyncpg.exceptions.PostgresConnectionError,
+    ConnectionRefusedError,
+    ConnectionResetError,
+    OSError,
+)
 
 
 def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
@@ -74,6 +98,15 @@ def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
 # INSERT, so batch size is the cheapest lever.
 _BATCH_SIZE = 12
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
+
+# Phase 90 / SEED-017 resilience constants — no magic numbers (CLAUDE.md).
+_REAPER_INTERVAL_SECONDS = 5 * 60  # 5 minutes between periodic reaper ticks
+_FAILURE_RECORD_MAX_RETRIES = 5  # max attempts in failure-state retry loop
+# With MAX_RETRIES=5 the loop runs attempts 0..4 with sleeps before attempts
+# 1..4, giving the schedule 2/4/8/16s = 30s total. The cap (30s) never binds
+# because 2*2^3 = 16 < 30; it's a safety guard for any future tuning.
+_FAILURE_RECORD_BACKOFF_BASE_SECONDS = 2  # base for exponential backoff
+_FAILURE_RECORD_BACKOFF_CAP_SECONDS = 30  # per-sleep cap (defensive, currently never hit)
 
 
 @dataclass(slots=True)
@@ -143,14 +176,25 @@ class JobState:
 _jobs: dict[str, JobState] = {}
 
 
-async def cleanup_orphaned_jobs() -> None:
+async def cleanup_orphaned_jobs(
+    orphan_age_threshold: timedelta | None = None,
+) -> None:
     """Mark any DB jobs stuck in pending/in_progress as failed.
 
-    Called at startup — no in-memory tasks survive a restart, so any
-    non-terminal DB jobs are orphaned.
+    Called at startup (no threshold) and periodically (with IMPORT_TIMEOUT_SECONDS
+    threshold) via run_periodic_reaper (Phase 90 / SEED-017).
+
+    Args:
+        orphan_age_threshold: Passed through to fail_orphaned_jobs. None means
+            reap all non-terminal jobs (startup behavior). A timedelta reaps
+            only jobs older than the threshold (periodic reaper behavior to
+            avoid killing live healthy imports, per Pitfall 3 in 90-RESEARCH.md).
     """
     async with async_session_maker() as session:
-        count = await import_job_repository.fail_orphaned_jobs(session)
+        count = await import_job_repository.fail_orphaned_jobs(
+            session,
+            orphan_age_threshold=orphan_age_threshold,
+        )
         await session.commit()
         if count:
             logger.info("Marked %d orphaned import job(s) as failed", count)
@@ -261,6 +305,242 @@ def count_active_platform_jobs(platform: str, exclude_user_id: int) -> int:
     )
 
 
+# Bug fix (Phase 90, SEED-017): cleanup_orphaned_jobs() only ran at backend
+# startup. A Postgres-only restart (or any DB recovery window the backend
+# survives) left in_progress jobs stuck forever. This coroutine runs
+# every _REAPER_INTERVAL_SECONDS and uses an orphan-age threshold of
+# IMPORT_TIMEOUT_SECONDS (3h) so a live healthy import is never reaped
+# (Pitfall 3 in 90-RESEARCH.md).
+async def run_periodic_reaper() -> None:
+    """Periodically mark stuck import jobs as failed.
+
+    Companion to cleanup_orphaned_jobs (which only runs at backend startup).
+    A Postgres-only restart leaves the backend up, so without this loop
+    orphaned in_progress jobs would stay stuck until the next backend deploy.
+
+    Sleeps BEFORE the first cleanup call so the startup-time cleanup_orphaned_jobs()
+    handles T=0 and this reaper handles T+5min, T+10min, etc.
+
+    Wired in app/main.py lifespan — started on startup, cancelled+awaited on shutdown.
+    """
+    while True:
+        await asyncio.sleep(_REAPER_INTERVAL_SECONDS)
+        try:
+            await cleanup_orphaned_jobs(
+                orphan_age_threshold=timedelta(seconds=IMPORT_TIMEOUT_SECONDS)
+            )
+        except Exception:
+            logger.exception("Periodic orphan-job reaper failed")
+            sentry_sdk.set_tag("source", "import")
+            sentry_sdk.capture_exception()
+
+
+# Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): the original except-block
+# opened a session + UPDATE'd while Postgres was still in crash recovery
+# (OperationalError). The capture_exception swallowed it and the job
+# stayed in_progress forever. Retry across a ~30s recovery window
+# (2/4/8/16s backoff = 30s total) before giving up. Mirrors the in-tree
+# retry pattern from app/services/lichess_client.py.
+async def _record_failure_with_retry(
+    *,
+    job_id: str,
+    status: Literal["failed"],
+    games_fetched: int,
+    games_imported: int,
+    error_message: str,
+    completed_at: datetime,
+) -> None:
+    """Persist a job's failure state with bounded retry against DB recovery.
+
+    Retries on sqlalchemy.exc.OperationalError (the SQLAlchemy wrapper for
+    asyncpg connection errors like CannotConnectNowError — Assumption A3,
+    verified per Pitfall 4 in 90-RESEARCH.md). Non-transient exceptions
+    fail fast. Sentry capture happens only on final exhaustion (CLAUDE.md rule).
+
+    Backoff schedule with MAX_RETRIES=5: sleeps 2/4/8/16s between attempts
+    (30s total). The 30s cap never binds at current settings; it's a
+    defensive guard for future tuning. The 2026-05-16 Postgres crash-
+    recovery window was ~2s, so 30s is generous.
+
+    Cancellation contract (WR-07): this helper is cancellation-aware. A
+    CancelledError raised during asyncio.sleep (e.g. lifespan shutdown
+    cancelling an in-flight run_import) propagates without retry — it is
+    a BaseException, not Exception, so neither except OperationalError nor
+    except Exception catches it. The periodic orphan-job reaper is the
+    backstop: jobs left in_progress because the failure-state UPDATE was
+    cancelled mid-retry will be reaped on the next reaper tick.
+
+    Args:
+        job_id: The import job UUID to update.
+        status: Always "failed" — typed as Literal to enforce CLAUDE.md no-bare-str rule.
+        games_fetched: Counters to persist alongside the failed status.
+        games_imported: Counters to persist alongside the failed status.
+        error_message: Human-readable failure reason (the import's own error, not
+            a retry-loop error — variables go via set_context, not inline).
+        completed_at: Timestamp to record as the job's completion time.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(_FAILURE_RECORD_MAX_RETRIES):
+        if attempt > 0:
+            backoff = min(
+                _FAILURE_RECORD_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)),
+                _FAILURE_RECORD_BACKOFF_CAP_SECONDS,
+            )
+            logger.warning(
+                "Retrying failure-state UPDATE for job %s (attempt %d/%d) in %ds",
+                job_id,
+                attempt + 1,
+                _FAILURE_RECORD_MAX_RETRIES,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
+            # UAT 2026-05-20 fix: invalidate the pool between retries. After a
+            # Postgres restart, the existing asyncpg connections in SA's pool
+            # are stale — the very next checkout raises InterfaceError ("the
+            # underlying connection is closed"). engine.dispose() drops the
+            # entire pool so the next session opens a brand-new connection.
+            try:
+                await engine.dispose()
+            except Exception:
+                logger.warning(
+                    "engine.dispose() during failure-record retry raised — continuing",
+                    exc_info=True,
+                )
+        try:
+            async with async_session_maker() as session:
+                await import_job_repository.update_import_job(
+                    session,
+                    job_id=job_id,
+                    must_exist=True,
+                    status=status,
+                    games_fetched=games_fetched,
+                    games_imported=games_imported,
+                    error_message=error_message,
+                    completed_at=completed_at,
+                )
+                await session.commit()
+                return
+        except asyncio.CancelledError:
+            # WR-07: cancellation contract — propagate, do not retry. The
+            # periodic reaper picks up the stuck job on its next tick.
+            raise
+        except ImportJobNotFound:
+            # CR-01: bootstrap scope never committed, so no DB row exists. Retrying
+            # cannot help — the row truly is missing. Log + capture once, then
+            # stop. The in-memory JobState still reflects FAILED for the caller.
+            logger.error(
+                "Cannot persist failure state for job %s: no DB row exists "
+                "(bootstrap session never committed)",
+                job_id,
+            )
+            sentry_sdk.set_tag("source", "import")
+            sentry_sdk.set_context("import", {"job_id": job_id})
+            sentry_sdk.capture_message(
+                "Failure-state UPDATE skipped: import job row missing",
+                level="error",
+            )
+            return
+        except _RETRIABLE_DB_OUTAGE_ERRORS as exc:
+            # UAT 2026-05-20 — broadened from `except OperationalError` to the
+            # full tuple above. The original narrow catch let real Postgres-
+            # restart outages fall through to the generic Exception branch and
+            # leave jobs stranded in_progress. See _RETRIABLE_DB_OUTAGE_ERRORS
+            # comment for the rationale.
+            last_exc = exc
+            continue
+        except Exception as exc:
+            # Non-transient error — fail fast, no point retrying.
+            logger.exception("Non-transient error recording failure state for job %s", job_id)
+            sentry_sdk.set_tag("source", "import")
+            sentry_sdk.capture_exception(exc)
+            return
+
+    # All retries exhausted — capture once per CLAUDE.md (last-attempt rule).
+    logger.error(
+        "Failed to record failure state for job %s after %d retries",
+        job_id,
+        _FAILURE_RECORD_MAX_RETRIES,
+    )
+    if last_exc is not None:
+        sentry_sdk.set_tag("source", "import")
+        sentry_sdk.capture_exception(last_exc)
+
+
+async def _bootstrap_import_job(job: JobState, job_id: str) -> datetime | None:
+    """Bootstrap scope: previous-job lookup + job-record creation.
+
+    Extracted from run_import (WR-01: nesting-depth reduction). Owns its own
+    AsyncSession so the bootstrap row is committed and the session is closed
+    before the batch loop begins. Only the plain scalar `previous_last_synced_at`
+    crosses the boundary, avoiding any DetachedInstanceError risk on cross-scope
+    ORM attribute access (Pitfall 2, 90-RESEARCH.md).
+    """
+    async with async_session_maker() as bootstrap_session:
+        previous_job = await import_job_repository.get_latest_for_user_platform(
+            bootstrap_session, job.user_id, job.platform, job.username
+        )
+        # Extract scalar INSIDE the bootstrap scope (Pitfall 2 mitigation, Assumption A2).
+        previous_last_synced_at: datetime | None = (
+            previous_job.last_synced_at if previous_job is not None else None
+        )
+        await import_job_repository.create_import_job(
+            bootstrap_session,
+            job_id=job_id,
+            user_id=job.user_id,
+            platform=job.platform,
+            username=job.username,
+        )
+        await bootstrap_session.commit()
+    return previous_last_synced_at
+
+
+async def _flush_batch_with_progress(
+    batch: list[NormalizedGame], job: JobState, job_id: str
+) -> None:
+    """Per-batch scope: flush rows + bump progress counter in one session.
+
+    Extracted from run_import (WR-01: nesting-depth reduction). Each call
+    opens, commits, and releases a single AsyncSession so per-batch session
+    lifetime is bounded (Phase 90 / SEED-018).
+    """
+    async with async_session_maker() as session:
+        imported = await _flush_batch(session, batch, job.user_id)
+        job.games_imported += imported
+        # Persist incremental counters so orphaned-job cleanup and post-restart
+        # status reads reflect accurate progress (not zero) if the server
+        # crashes mid-import.
+        await import_job_repository.update_import_job(
+            session,
+            job_id=job_id,
+            status="in_progress",
+            games_fetched=job.games_fetched,
+            games_imported=job.games_imported,
+        )
+        await session.commit()
+
+
+async def _complete_import_job(job: JobState, job_id: str) -> None:
+    """Completion scope: mark job complete and advance last_synced_at.
+
+    Extracted from run_import (WR-01: nesting-depth reduction). Always
+    advances last_synced_at so a no-op sync (0 new games) still confirms
+    we're caught up; without this, the next sync would re-fetch everything
+    if the previous completed job had last_synced_at=NULL.
+    """
+    now = datetime.now(timezone.utc)
+    async with async_session_maker() as session:
+        await import_job_repository.update_import_job(
+            session,
+            job_id=job_id,
+            status="completed",
+            games_fetched=job.games_fetched,
+            games_imported=job.games_imported,
+            completed_at=now,
+            last_synced_at=now,
+        )
+        await session.commit()
+
+
 async def run_import(job_id: str) -> None:
     """Background import orchestrator — launched via asyncio.create_task.
 
@@ -284,82 +564,31 @@ async def run_import(job_id: str) -> None:
 
     try:
         async with asyncio.timeout(IMPORT_TIMEOUT_SECONDS):
-            async with async_session_maker() as session:
-                # Determine since parameter for incremental sync (scoped to username)
-                previous_job = await import_job_repository.get_latest_for_user_platform(
-                    session, job.user_id, job.platform, job.username
+            # Phase 90 / SEED-018 / WR-01: pipeline reads as a list of stages.
+            # Each helper owns its own AsyncSession scope (bootstrap / per-batch /
+            # completion) so session lifetime is bounded — the old single-session
+            # pattern was the secondary accumulation surface alongside the Stage 5
+            # unique-SQL leak fixed in Plan 90-01.
+            previous_last_synced_at = await _bootstrap_import_job(job, job_id)
+
+            def _on_game_fetched() -> None:
+                job.games_fetched += 1
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                game_iter = _make_game_iterator(
+                    client, job, previous_last_synced_at, _on_game_fetched
                 )
+                batch: list[NormalizedGame] = []
+                async for game_dict in game_iter:
+                    batch.append(game_dict)
+                    if len(batch) >= _BATCH_SIZE:
+                        await _flush_batch_with_progress(batch, job, job_id)
+                        batch = []
+                if batch:
+                    # Trailing batch < _BATCH_SIZE.
+                    await _flush_batch_with_progress(batch, job, job_id)
 
-                # Create the DB record for this import job
-                await import_job_repository.create_import_job(
-                    session,
-                    job_id=job_id,
-                    user_id=job.user_id,
-                    platform=job.platform,
-                    username=job.username,
-                )
-                await session.commit()
-
-                def _on_game_fetched() -> None:
-                    job.games_fetched += 1
-
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    game_iter = _make_game_iterator(client, job, previous_job, _on_game_fetched)
-                    batch: list[NormalizedGame] = []
-
-                    async for game_dict in game_iter:
-                        batch.append(game_dict)
-                        if len(batch) >= _BATCH_SIZE:
-                            imported = await _flush_batch(session, batch, job.user_id)
-                            job.games_imported += imported
-                            # Persist incremental counters to DB after each batch so that
-                            # orphaned-job cleanup and post-restart status reads reflect
-                            # accurate progress (not zero) if the server crashes mid-import.
-                            await import_job_repository.update_import_job(
-                                session,
-                                job_id=job_id,
-                                status="in_progress",
-                                games_fetched=job.games_fetched,
-                                games_imported=job.games_imported,
-                            )
-                            await session.commit()
-                            batch = []
-
-                    # Flush any remaining games
-                    if batch:
-                        imported = await _flush_batch(session, batch, job.user_id)
-                        job.games_imported += imported
-                        # Persist incremental counters for the trailing batch as well.
-                        await import_job_repository.update_import_job(
-                            session,
-                            job_id=job_id,
-                            status="in_progress",
-                            games_fetched=job.games_fetched,
-                            games_imported=job.games_imported,
-                        )
-                        await session.commit()
-
-                # Mark job complete in DB — always advance last_synced_at so that
-                # future syncs start from this point. A no-op sync (0 new games)
-                # still confirms we're caught up — without this, the next sync
-                # would re-fetch everything if the previous completed job had
-                # last_synced_at=NULL (e.g. after a crash recovery re-sync).
-                now = datetime.now(timezone.utc)
-                completion_fields: dict[str, object] = {
-                    "status": "completed",
-                    "games_fetched": job.games_fetched,
-                    "games_imported": job.games_imported,
-                    "completed_at": now,
-                    "last_synced_at": now,
-                }
-
-                await import_job_repository.update_import_job(
-                    session,
-                    job_id=job_id,
-                    **completion_fields,
-                )
-                await session.commit()
-
+            await _complete_import_job(job, job_id)
             job.status = JobStatus.COMPLETED
 
     except TimeoutError:
@@ -373,21 +602,16 @@ async def run_import(job_id: str) -> None:
         )
         sentry_sdk.capture_exception()
 
-        try:
-            async with async_session_maker() as session:
-                await import_job_repository.update_import_job(
-                    session,
-                    job_id=job_id,
-                    status="failed",
-                    games_fetched=job.games_fetched,
-                    games_imported=job.games_imported,
-                    error_message=job.error,
-                    completed_at=datetime.now(timezone.utc),
-                )
-                await session.commit()
-        except Exception:
-            logger.exception("Failed to record timeout for job %s", job_id)
-            sentry_sdk.capture_exception()
+        # Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): use bounded-retry helper so
+        # a Postgres crash-recovery window does not swallow this failed transition.
+        await _record_failure_with_retry(
+            job_id=job_id,
+            status="failed",
+            games_fetched=job.games_fetched,
+            games_imported=job.games_imported,
+            error_message=job.error or "Import timed out — re-sync to continue where it left off",
+            completed_at=datetime.now(timezone.utc),
+        )
 
     except Exception as exc:
         logger.exception("Import job %s failed: %s", job_id, exc)
@@ -398,38 +622,34 @@ async def run_import(job_id: str) -> None:
         )
         sentry_sdk.capture_exception(exc)
 
-        # Attempt to record failure in DB (best-effort)
-        try:
-            async with async_session_maker() as session:
-                await import_job_repository.update_import_job(
-                    session,
-                    job_id=job_id,
-                    status="failed",
-                    games_fetched=job.games_fetched,
-                    games_imported=job.games_imported,
-                    error_message=str(exc),
-                    completed_at=datetime.now(timezone.utc),
-                )
-                await session.commit()
-        except Exception:
-            logger.exception("Failed to record failure state for job %s", job_id)
-            sentry_sdk.capture_exception()
+        # Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): use bounded-retry helper so
+        # a Postgres crash-recovery window does not swallow this failed transition.
+        await _record_failure_with_retry(
+            job_id=job_id,
+            status="failed",
+            games_fetched=job.games_fetched,
+            games_imported=job.games_imported,
+            error_message=str(exc),
+            completed_at=datetime.now(timezone.utc),
+        )
 
 
 async def _make_game_iterator(
     client: httpx.AsyncClient,
     job: JobState,
-    previous_job: Any,
-    on_game_fetched: Any,
-):
+    previous_last_synced_at: datetime | None,
+    on_game_fetched: Callable[[], None],
+) -> AsyncIterator[NormalizedGame]:
     """Return the appropriate platform async iterator based on job.platform.
 
-    Computes the incremental sync parameter from previous_job.last_synced_at.
+    Bug fix (Phase 90, SEED-018, Pitfall 2): accepts `previous_last_synced_at`
+    as a plain scalar (datetime | None) instead of a `previous_job` ORM instance.
+    The scalar is extracted inside the bootstrap session scope in `run_import`,
+    so no ORM instance crosses the bootstrap-to-batch-loop boundary (eliminating
+    any risk of DetachedInstanceError from cross-scope ORM attribute access).
     """
     if job.platform == "chess.com":
-        since_timestamp = None
-        if previous_job is not None and previous_job.last_synced_at is not None:
-            since_timestamp = previous_job.last_synced_at
+        since_timestamp: datetime | None = previous_last_synced_at
 
         async for game in chesscom_client.fetch_chesscom_games(
             client,
@@ -445,11 +665,11 @@ async def _make_game_iterator(
             # Benchmark ingest path: skip get_latest_for_user_platform entirely.
             # The same lichess user can be imported once per perf_type, and the
             # second run must not inherit the first run's last_synced_at cursor.
-            since_ms = job.since_ms_override
+            since_ms: int | None = job.since_ms_override
         else:
             since_ms = None
-            if previous_job is not None and previous_job.last_synced_at is not None:
-                last_synced = previous_job.last_synced_at
+            if previous_last_synced_at is not None:
+                last_synced = previous_last_synced_at
                 if last_synced.tzinfo is None:
                     last_synced = last_synced.replace(tzinfo=timezone.utc)
                 since_ms = int(last_synced.timestamp() * 1000)
@@ -480,6 +700,10 @@ async def _flush_batch(
     platform_game_id lookup to avoid redundant SELECT Game.pgn (D-03),
     and bulk CASE UPDATE for move_count/result_fen (D-04).
 
+    WR-05: this function does NOT commit. The caller owns the transaction
+    boundary so the row inserts and the per-batch progress-counter UPDATE
+    can land in a single atomic transaction. See _flush_batch_with_progress.
+
     Args:
         session: AsyncSession to use.
         batch: List of NormalizedGame objects from platform client.
@@ -492,7 +716,6 @@ async def _flush_batch(
     # eval data. Helper handles the early-empty-batch case via empty result.
     rows_result = await _collect_position_rows(session, batch, user_id)
     if not rows_result.new_game_ids:
-        await session.commit()
         return 0
 
     # Stage 2: bulk insert positions (chunked at 1,700 rows by repository).
@@ -541,22 +764,70 @@ async def _flush_batch(
         },
     )
 
-    # Stage 5: bulk UPDATE move_count and result_fen via CASE expressions (D-04).
-    if rows_result.move_counts:
-        # Filter None result_fens — let NULL remain as default for those games.
-        fen_case_map = {gid: fen for gid, fen in rows_result.result_fens.items() if fen is not None}
-        values_dict: dict[str, Any] = {
-            "move_count": case(rows_result.move_counts, value=Game.id),
-        }
-        if fen_case_map:
-            values_dict["result_fen"] = case(fen_case_map, value=Game.id, else_=None)
-        await session.execute(
-            update(Game)
-            .where(Game.id.in_(list(rows_result.move_counts.keys())))
-            .values(**values_dict)
-        )
+    # Bug fix (Phase 90, SEED-018, FLAWCHESS-56 / FLAWCHESS-3Q):
+    # Old code used case(...)+IN whose SQL text varied per batch (game-id set
+    # differs every batch). That grew SQLAlchemy's compile cache and asyncpg's
+    # prepared-statement LRU unboundedly, OOM-killing prod on 2026-03-22 and
+    # 2026-05-16. The two bound-param executemany groups below emit invariant
+    # SQL text — compiled once, prepared once, reused forever.
+    #
+    # Two groups (not one COALESCE) because result_fen must be preserved for
+    # games whose PGN parses to result_fen=None: only update result_fen for
+    # ids where we actually parsed a value. The COALESCE alternative is
+    # fragile (SQLAlchemy issue #9075 drops the expression in some executemany
+    # contexts). See 90-RESEARCH.md Pitfall 1.
 
-    await session.commit()
+    # Stage 5: bulk UPDATE move_count and result_fen via two executemany groups.
+    #
+    # We target the underlying Table (`Game.__table__`) rather than the ORM
+    # `Game` mapper. SQLAlchemy 2.x routes `update(Game).where(...)` with
+    # executemany through the ORM bulk-update machinery, which (a) refuses to
+    # run without an explicit `synchronize_session=False` and (b) even then,
+    # expects parameter keys named after the PK column (`id`) to use the ORM
+    # Bulk UPDATE by Primary Key path. Going Table-level emits plain Core SQL,
+    # bypasses both restrictions, and yields exactly the invariant prepared
+    # statement we want for the leak fix. The identity map is irrelevant here
+    # — we never read these rows back inside the same session; the very next
+    # batch opens a fresh session (Plan 90-02).
+    #
+    # Caught in UAT 2026-05-20: the original ORM-level statement raised
+    # "bulk synchronize of persistent objects not supported when using bulk
+    #  update with additional WHERE criteria right now" against a real DB.
+    # Unit tests using AsyncMock sessions never exercised this path. Pinned
+    # by TestFlushBatchStage5RealDb against the rollback-scoped db_session.
+    if rows_result.move_counts:
+        # ty: __table__ is typed as FromClause on declarative base, but is a
+        # Table at runtime. Cast at module level not needed — the Table API
+        # is what we use here.
+        games_table = Game.__table__
+        # Group (a): move_count for ALL games in the batch.
+        move_count_stmt = (
+            update(games_table)  # ty: ignore[invalid-argument-type]
+            .where(games_table.c.id == bindparam("b_id"))
+            .values(move_count=bindparam("b_mc"))
+        )
+        move_count_params: list[dict[str, Any]] = [
+            {"b_id": gid, "b_mc": mc} for gid, mc in rows_result.move_counts.items()
+        ]
+        await session.execute(move_count_stmt, move_count_params)
+
+        # Group (b): result_fen ONLY for games where result_fen is not None.
+        # Games without a parsed result_fen keep their prior column value (or
+        # stay NULL if never set) — they are NOT actively overwritten to NULL.
+        fen_params: list[dict[str, Any]] = [
+            {"b_id": gid, "b_rf": fen}
+            for gid, fen in rows_result.result_fens.items()
+            if fen is not None
+        ]
+        if fen_params:
+            fen_stmt = (
+                update(games_table)  # ty: ignore[invalid-argument-type]
+                .where(games_table.c.id == bindparam("b_id"))
+                .values(result_fen=bindparam("b_rf"))
+            )
+            await session.execute(fen_stmt, fen_params)
+
+    # WR-05: caller owns the commit (single transaction per batch).
     return len(rows_result.new_game_ids)
 
 

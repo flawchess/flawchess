@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -16,8 +18,10 @@ from app.routers.insights import router as insights_router
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
 from app.services.engine import start_engine, stop_engine
-from app.services.import_service import cleanup_orphaned_jobs
+from app.services.import_service import cleanup_orphaned_jobs, run_periodic_reaper
 from app.services.insights_llm import get_insights_agent
+
+logger = logging.getLogger(__name__)
 
 _DB_TRANSIENT_ERRORS = (ConnectionDoesNotExistError, CannotConnectNowError)
 _MAX_CAUSE_CHAIN_DEPTH = 5
@@ -54,10 +58,27 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # so engine startup failure does not mask deploy-blocker validation. try/finally
     # ensures stop_engine runs on exception during yield (graceful shutdown of UCI).
     await start_engine()
+    # Phase 90 / SEED-017: periodic reaper for the live process. Catches
+    # orphans that arise from a Postgres-only restart (backend survives)
+    # which the startup-only cleanup_orphaned_jobs() call would miss.
+    reaper_task = asyncio.create_task(run_periodic_reaper(), name="periodic-orphan-reaper")
     try:
         yield
     finally:
-        await stop_engine()
+        # WR-03: stop_engine() must always run even if the reaper task raises
+        # a non-CancelledError on shutdown — otherwise the long-lived
+        # Stockfish UCI process leaks across restarts. Wrap the await in an
+        # inner try/finally so the engine shutdown is unconditional.
+        reaper_task.cancel()
+        try:
+            try:
+                await reaper_task
+            except asyncio.CancelledError:
+                pass  # expected on shutdown
+            except Exception:
+                logger.exception("Periodic reaper task raised on shutdown")
+        finally:
+            await stop_engine()
 
 
 if settings.SENTRY_DSN:

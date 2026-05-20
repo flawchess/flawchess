@@ -8,9 +8,20 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Import pipeline OOM root cause** (Phase 90, FLAWCHESS-56 / FLAWCHESS-3Q). The 2026-05-16 production OOM-kill is closed out by eliminating the per-batch unique-SQL leak in `_flush_batch` Stage 5: the old `case()+IN` UPDATE, whose SQL text varied with every game-id set, is replaced by two `bindparam` executemany groups against `Game.__table__` whose SQL text is invariant across batches. SQLAlchemy's compile cache and asyncpg's prepared-statement LRU no longer grow unboundedly during long imports. Locally verified: post-warmup RSS plateau at 577 MB across +1044 games (≈0 MB/game), vs the pre-fix ~0.48 MB/game linear growth.
+- **Per-batch session scoping** (Phase 90). `run_import` is restructured into three `AsyncSession` scopes — bootstrap, per-batch, completion. The identity map, transaction state, and per-connection statement cache are now released after every batch, capping the secondary accumulation surface alongside the Stage 5 fix.
+- **DB-recovery window no longer strands import jobs** (Phase 90). Adds a bounded-retry helper (`_record_failure_with_retry`, 5 attempts, 2/4/8/16 s backoff with `engine.dispose()` pool invalidation between retries) so a brief Postgres restart no longer leaves a job stuck `in_progress`. The retriable-error classifier covers `sqlalchemy.exc.OperationalError`, `InterfaceError`, `DBAPIError`, raw asyncpg `CannotConnectNowError` / `ConnectionDoesNotExistError`, and OS-level `ConnectionRefusedError`. Sentry capture fires only on final exhaustion (last-attempt rule).
+- **Periodic orphan-job reaper** (Phase 90). A new background task (`run_periodic_reaper`, 5-minute tick, 3-hour age threshold) wired into the FastAPI lifespan picks up any `in_progress` job left stranded by an outage longer than the retry budget. `fail_orphaned_jobs` accepts an `orphan_age_threshold` so the reaper does not touch live healthy imports; the startup-time call is unchanged (no threshold).
+
 ### Security
 
 - Bumped transitive dependency `idna` 3.11 → 3.15 to clear CVE-2026-45409 (flagged by the CI `pip-audit --strict` gate). Lockfile-only; no behavior change.
+
+### Tests
+
+- **Real-DB regression coverage for the import pipeline** (Phase 90). New `TestFlushBatchStage5RealDb` (rollback-scoped `db_session` fixture) pins the Stage 5 Table-level executemany contract against actual SQLAlchemy execution; the previous mock-only tests could not catch the ORM bulk-update fragility this PR resolves. New `TestRecordFailureWithRetryDbOutage` (6 tests) pins each retriable exception class plus the pool-invalidation and dispose-failure-resilience contracts.
 
 ### Added
 

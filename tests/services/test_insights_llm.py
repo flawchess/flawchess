@@ -504,8 +504,8 @@ class TestEndgameTypeAchievableScoreGapPayload:
 
         Asserts the rendered prompt carries `[summary endgame_type_achievable_score_gap | endgame_class=rook]`,
         the window line includes mean / n / zone / inline band, and the band is
-        scaled to the 0-100% rendering convention (typical -5 to +4 from the
-        rook calibration in PER_CLASS_GAUGE_ZONES, (-0.05, +0.04) fraction).
+        scaled to the 0-100% rendering convention (typical -5 to +5 from the
+        rook calibration in PER_CLASS_GAUGE_ZONES, (-0.05, +0.05) fraction).
         """
         filters = _sample_filter_context()
         gap = self._gap_finding(
@@ -526,8 +526,8 @@ class TestEndgameTypeAchievableScoreGapPayload:
         # Zone label rendered.
         assert "zone=strong" in prompt
         # Inline band from PER_CLASS_GAUGE_ZONES["rook"].achievable_score_gap
-        # (-0.05, +0.04) -> "(typical -5 to +4)" after §3.4.2 calibration.
-        assert "(typical -5 to +4)" in prompt
+        # (-0.05, +0.05) -> "(typical -5 to +5)" after §3.4.2 calibration (diff item E).
+        assert "(typical -5 to +5)" in prompt
 
     def test_gap_renders_sparse_cohort_with_band_intact(self) -> None:
         """Sparse cohort (n < CONFIDENCE_MIN_N) still renders summary block.
@@ -556,8 +556,9 @@ class TestEndgameTypeAchievableScoreGapPayload:
         assert "n=3" in prompt
         # Zone label present even for thin cohort.
         assert "zone=typical" in prompt
-        # Inline band still rendered for thin cohort.
-        assert "(typical -5 to +5)" in prompt
+        # Inline band still rendered for thin cohort. Queen band (-0.04, +0.05)
+        # -> "(typical -4 to +5)" after diff item F calibration.
+        assert "(typical -4 to +5)" in prompt
         # sample_quality flags the thin cohort.
         assert "quality=thin" in prompt
 
@@ -644,10 +645,11 @@ class TestEndgameTypeAchievableScoreGapPayload:
         tab = _fake_findings(filters, findings=[gap])
         prompt = _assemble_user_prompt(tab)
         # Calibrated rook band from PER_CLASS_GAUGE_ZONES["rook"].achievable_score_gap.
-        assert "(typical -5 to +4)" in prompt
+        # Band updated to (-0.05, +0.05) per diff item E (upper drifted +0.6pp).
+        assert "(typical -5 to +5)" in prompt
         # Sanity check: the per-class registry carries the calibrated band.
         bands = endgame_zones.PER_CLASS_GAUGE_ZONES["rook"]
-        assert bands.achievable_score_gap == (-0.05, 0.04)
+        assert bands.achievable_score_gap == (-0.05, 0.05)
 
     def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
         """v14 (260424-pc6 C): when every point's `n` is equal, the series block
@@ -833,7 +835,7 @@ class TestPromptAssembly:
 
         Also asserts the rendered SCALE for both metrics:
         - entry_eval_pawns is in PAWNS — value 0.46 must render as "+0.46", band as
-          "(typical -0.75 to +0.75)". The prompt glossary (D-22) explicitly says
+          "(typical -0.60 to +0.60)". The prompt glossary (D-22) explicitly says
           "Render as signed one-decimal value with the unit 'pawns' ... Do NOT
           convert to centipawns." Phase 82 initially shipped with the metric
           missing from `_NON_FRACTIONAL_METRICS`, which scaled values by 100×
@@ -884,13 +886,13 @@ class TestPromptAssembly:
             "entry_eval_pawns must render in pawns (e.g. +0.46), not centipawns "
             f"(+46). Prompt slice:\n{prompt}"
         )
-        assert "(typical -0.75 to +0.75)" in prompt, (
-            "entry_eval_pawns zone band must render in pawns (-0.75 to +0.75), "
-            f"not centipawns (-75 to +75). Prompt slice:\n{prompt}"
+        assert "(typical -0.60 to +0.60)" in prompt, (
+            "entry_eval_pawns zone band must render in pawns (-0.60 to +0.60), "
+            f"not centipawns (-60 to +60). Prompt slice:\n{prompt}"
         )
         # Negative invariant: no centipawn rendering of entry_eval_pawns.
         assert "mean=+46" not in prompt
-        assert "(typical -75 to +75)" not in prompt
+        assert "(typical -60 to +60)" not in prompt
 
         # endgame_score scale: integer percentage (0-100). Value 0.58 → +58.
         assert "mean=+58" in prompt
@@ -983,10 +985,10 @@ class TestPromptAssembly:
         from app.services.insights_llm import _format_zone_bounds
 
         result = _format_zone_bounds("entry_eval_pawns", None)
-        assert "-0.75" in result
-        assert "+0.75" in result
+        assert "-0.60" in result
+        assert "+0.60" in result
         # Negative invariant: no centipawn-style render.
-        assert "-75 to" not in result
+        assert "-60 to" not in result
 
     def test_system_prompt_loaded_from_file(self) -> None:
         """_SYSTEM_PROMPT is the markdown file contents + auto-generated zone appendix.
