@@ -52,7 +52,14 @@ jobs:
       - name: Python vulnerability scan (pip-audit)
         # CVE-2026-3219 is in pip itself, pulled transitively by `--with pip-audit`.
         # Not a project runtime dependency and no fix version exists yet. Revisit when upstream ships a fix.
-        run: uv run --with pip-audit pip-audit --strict --ignore-vuln CVE-2026-3219
+        #
+        # PYSEC-2025-183 / CVE-2025-45768 is a vendor-disputed "weak encryption" report against pyjwt
+        # (all versions through 2.12.1; transitive via fastapi-users). The pyjwt maintainer disputes
+        # the classification because key length is chosen by the consuming application; no fix version
+        # exists upstream. FlawChess generates JWTs through fastapi-users with the standard
+        # SECRET_KEY from env, which is a high-entropy random string — not the weak-key scenario the
+        # CVE flags. Revisit if upstream publishes a fix or new guidance.
+        run: uv run --with pip-audit pip-audit --strict --ignore-vuln CVE-2026-3219 --ignore-vuln PYSEC-2025-183
 
       - name: Lint (ruff)
         run: uv run ruff check .
