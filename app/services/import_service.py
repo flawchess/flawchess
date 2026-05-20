@@ -807,8 +807,7 @@ async def _flush_batch(
             .values(move_count=bindparam("b_mc"))
         )
         move_count_params: list[dict[str, Any]] = [
-            {"b_id": gid, "b_mc": mc}
-            for gid, mc in rows_result.move_counts.items()
+            {"b_id": gid, "b_mc": mc} for gid, mc in rows_result.move_counts.items()
         ]
         await session.execute(move_count_stmt, move_count_params)
 
