@@ -2,26 +2,26 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: awaiting_uat
-last_updated: "2026-05-20T16:45:00Z"
-last_activity: 2026-05-20 -- Phase 90 execution complete; awaiting human UAT (RSS-flat, Postgres-restart, Sentry monitoring)
+status: idle
+last_updated: "2026-05-20T19:50:00Z"
+last_activity: 2026-05-20 -- Phase 90 shipped to production (PR #128 squash-merged to main, release PR #129 promoted to production, deploy verified healthy); UAT-3 48h Sentry watch is the only non-blocking item
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
   completed_plans: 3
-  percent: 0
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 90 (import-pipeline-memory-leak-fix-resilience) — AWAITING HUMAN UAT
-Plan: 3 of 3 (all plans executed + verified)
-Milestone: v1.17 Endgame Stats Card Redesign — ✅ SHIPPED 2026-05-19
-Status: Phase 90 plans executed and merged; 9/9 must-haves automated-verified; 3 live-test items pending in 90-HUMAN-UAT.md
-Last activity: 2026-05-20 -- Phase 90 execution complete; awaiting human UAT
+Phase: 90 (import-pipeline-memory-leak-fix-resilience) — ✅ SHIPPED 2026-05-20
+Plan: 3 of 3 (all plans executed, verified, and deployed)
+Milestone: v1.17 Endgame Stats Card Redesign — ✅ SHIPPED 2026-05-19 (Phase 90 is a post-v1.17 carryover; v1.18 release tag deferred)
+Status: Phase 90 shipped to production via PR #128 → main, PR #129 → production. Production `/api/health` returns 200; backend container Up (healthy); reaper task spawned without error. Local UAT-1 (RSS plateau), UAT-2 Signal A (retry helper), UAT-2 Signal B (reaper) all PASS. UAT-3 (48h Sentry watch on FLAWCHESS-56 / FLAWCHESS-3Q) is the only outstanding item — non-blocking, manual.
+Last activity: 2026-05-20 -- Phase 90 shipped to production; awaiting 48h Sentry watch
 
 ## Project Reference
 
