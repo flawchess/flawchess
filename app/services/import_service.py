@@ -649,6 +649,10 @@ async def _flush_batch(
     platform_game_id lookup to avoid redundant SELECT Game.pgn (D-03),
     and bulk CASE UPDATE for move_count/result_fen (D-04).
 
+    WR-05: this function does NOT commit. The caller owns the transaction
+    boundary so the row inserts and the per-batch progress-counter UPDATE
+    can land in a single atomic transaction. See _flush_batch_with_progress.
+
     Args:
         session: AsyncSession to use.
         batch: List of NormalizedGame objects from platform client.
@@ -661,7 +665,6 @@ async def _flush_batch(
     # eval data. Helper handles the early-empty-batch case via empty result.
     rows_result = await _collect_position_rows(session, batch, user_id)
     if not rows_result.new_game_ids:
-        await session.commit()
         return 0
 
     # Stage 2: bulk insert positions (chunked at 1,700 rows by repository).
@@ -753,7 +756,7 @@ async def _flush_batch(
             )
             await session.execute(fen_stmt, fen_params)
 
-    await session.commit()
+    # WR-05: caller owns the commit (single transaction per batch).
     return len(rows_result.new_game_ids)
 
 
