@@ -1,15 +1,16 @@
 /**
  * Zone constants for the endgame-entry-eval bullet on the Endgames page.
  *
- * Values are pawn units, signed user-perspective. The neutral band is ±0.75
- * pawns, derived from the pooled benchmark IQR `max(|p25|, |p75|) = 75 cp`
- * (reports/benchmarks-2026-05-10.md §3, line 281). Aligned with the backend
- * ZoneSpec (app/services/endgame_zones.py::ZONE_REGISTRY["entry_eval_pawns"])
- * and the LLM narration threshold.
+ * Values are pawn units, signed user-perspective. The neutral band is ±0.60
+ * pawns, editorially tightened inside the IQR so the 0-centered EG-entry tile
+ * actually paints green/red (live ±0.75 painted neutral for ~70% of users).
+ * Aligned with the backend ZoneSpec
+ * (app/services/endgame_zones.py::ZONE_REGISTRY["entry_eval_pawns"])
+ * per reports/benchmarks-diff-2026-05-17-vs-2026-05-19.md item A.
  *
  * History: Phase 82 D-09 had editorially tightened the band to ±0.50 to
- * narrate half-pawn swings; reverted to the benchmark-recommended ±0.75 so
- * the green/red zones track the actual cohort distribution.
+ * narrate half-pawn swings; reverted to benchmark-recommended ±0.75; then
+ * re-tightened to ±0.60 per diff item A (game-time bucketing pass).
  *
  * Why a separate module from openingStatsZones.ts: the MG-entry baseline (±0.30
  * pawns there) is calibrated for the middlegame-entry distribution (per-game
@@ -20,11 +21,13 @@
 import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 /** EG-entry: lower bound of the neutral zone in pawns (signed user-perspective).
- * Pooled benchmark IQR ≈ [-0.56, +0.75]; symmetric `max(|p25|, |p75|) = 0.75`. */
-export const ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.75;
+ * Editorially tightened to ±0.60 per diff item A (2026-05-17 vs 2026-05-19).
+ * Must match ZONE_REGISTRY["entry_eval_pawns"].typical_lower in endgame_zones.py. */
+export const ENDGAME_ENTRY_EVAL_NEUTRAL_MIN_PAWNS = -0.60;
 
-/** EG-entry: upper bound of the neutral zone in pawns. Symmetric around 0. */
-export const ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = 0.75;
+/** EG-entry: upper bound of the neutral zone in pawns. Symmetric around 0.
+ * Must match ZONE_REGISTRY["entry_eval_pawns"].typical_upper in endgame_zones.py. */
+export const ENDGAME_ENTRY_EVAL_NEUTRAL_MAX_PAWNS = 0.60;
 
 /** EG-entry: bullet-chart half-domain in pawns. Sized so the neutral band
  * (width 1.5 pawns) fills ≈1/3 of the axis (1.5 / 4.5), matching the visual

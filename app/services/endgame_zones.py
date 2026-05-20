@@ -251,12 +251,13 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     # entry_eval_pawns: average Stockfish eval at endgame entry, signed from
     # user's perspective. Phase 82 D-08.
     "entry_eval_pawns": ZoneSpec(
-        # Pooled benchmark IQR `max(|p25|, |p75|) = 75 cp = 0.75 pawns`
-        # (reports/benchmarks-2026-05-10.md §3, line 281). Single global
-        # band justified (TC max d=0.22, ELO max d=0.28 per the same
-        # §3 — both "review", not "keep separate"). Unit: signed pawns.
-        typical_lower=-0.75,
-        typical_upper=0.75,
+        # Editorial tighten inside the IQR so the 0-centered EG-entry tile
+        # actually paints; live was 0.75 but the tile painted neutral for
+        # ~70% of users. New band ±0.60 pawns per
+        # reports/benchmarks-diff-2026-05-17-vs-2026-05-19.md item A.
+        # Unit: signed pawns.
+        typical_lower=-0.60,
+        typical_upper=0.60,
         direction="higher_is_better",
     ),
     # entry_expected_score: per-user mean expected score (Lichess winning-
@@ -465,11 +466,14 @@ PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
         conversion=(0.65, 0.75),
         recovery=(0.26, 0.36),
         # n=1,309 — pooled IQR [-4.97pp, +4.27pp]; TC d=0.20, ELO d=0.32 (both review).
-        achievable_score_gap=(-0.05, 0.04),
+        # Upper edge raised +0.05 → +0.05 no change; was (-0.05, 0.04), upper drifted
+        # +0.6pp past the 0.5pp tolerance (diff item E). New band: (-0.05, +0.05).
+        achievable_score_gap=(-0.05, 0.05),
     ),
     "minor_piece": PerClassBands(
         conversion=(0.63, 0.73),
-        recovery=(0.31, 0.41),
+        # Pooled recovery 32.7% drifts -3.3pp from old midpoint 36% (diff item D).
+        recovery=(0.28, 0.38),
         # n=1,129 — pooled IQR [-4.21pp, +5.53pp]; TC d=0.12 (collapse), ELO d=0.39 (review).
         achievable_score_gap=(-0.04, 0.06),
     ),
@@ -483,7 +487,9 @@ PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
         conversion=(0.73, 0.83),
         recovery=(0.20, 0.30),
         # n=744 — pooled IQR [-4.63pp, +4.60pp]; TC d=0.49 (review/borderline keep), ELO d=0.39.
-        achievable_score_gap=(-0.05, 0.05),
+        # Lower edge tightened -0.05 → -0.04: lower drifted +0.8pp past the 0.5pp
+        # tolerance (diff item F). New band: (-0.04, +0.05).
+        achievable_score_gap=(-0.04, 0.05),
     ),
     "mixed": PerClassBands(
         conversion=(0.65, 0.75),

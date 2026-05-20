@@ -12,9 +12,10 @@ import { MIN_GAMES_FOR_RELIABLE_STATS } from '@/lib/theme';
 // CONTEXT D-13 so the neutral band [0.45, 0.55] fills ≈1/3 of the axis (0.10 / 0.30).
 export const ENDGAME_TILE_SCORE_DOMAIN = 0.15;
 
-// Score Gap bullet half-domain. Population p05/p95 spans ~±0.16, so ±0.20
-// covers the observed range without making typical values look tiny.
-export const SCORE_GAP_DOMAIN = 0.20;
+// Score Gap bullet half-domain. p05 tail reaches -22.1pp and was clipped at the
+// old ±0.20 axis edge; ±0.22 covers it per
+// reports/benchmarks-diff-2026-05-17-vs-2026-05-19.md item B.
+export const SCORE_GAP_DOMAIN = 0.22;
 
 // Per-class Score Gap (Endgame Type Breakdown) half-domain. Sized so the
 // neutral band (±0.04, width 0.08) fills 1/3 of the axis — matching the
