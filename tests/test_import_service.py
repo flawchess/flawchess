@@ -4,15 +4,18 @@ Focuses on orchestration logic: job lifecycle, incremental sync, hash computatio
 and error handling. All external dependencies are mocked.
 """
 
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta, timezone
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 import app.services.import_service as import_service
 from app.schemas.normalization import NormalizedGame
 from app.services.import_service import (
+    IMPORT_TIMEOUT_SECONDS,
     JobStatus,
     create_job,
     find_active_job,
@@ -1694,3 +1697,466 @@ class TestFlushBatchStage5:
                 f"(the memory-leak regression guard). "
                 f"Batch A: {sql_a!r}\nBatch B: {sql_b!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Phase 90 / SEED-017 carry-forward: Resilience defect tests
+#
+# Assumption A3 verified (2026-05-20) via code inspection and SQLAlchemy
+# exception hierarchy research:
+#   SQLAlchemy wraps asyncpg connection exceptions (CannotConnectNowError,
+#   ConnectionDoesNotExistError) in sqlalchemy.exc.OperationalError.
+#   The asyncpg exception is accessible via exc.__cause__. Catching
+#   sqlalchemy.exc.OperationalError covers both connection-refused and
+#   connection-dropped scenarios (Pitfall 4 in 90-RESEARCH.md).
+#   Therefore _record_failure_with_retry catches OperationalError, not raw
+#   asyncpg types. This mirrors the finding in app/main.py:_sentry_before_send
+#   which walks __cause__ to detect the underlying asyncpg type.
+#
+# If local verification showed OperationalError does NOT match (e.g. only
+# DBAPIError with __cause__ walk), swap the except clause in
+# _record_failure_with_retry to catch DBAPIError and inspect __cause__.
+# ---------------------------------------------------------------------------
+
+
+class TestFailOrphanedJobsAgeThreshold:
+    """DB-backed tests for fail_orphaned_jobs age-threshold extension.
+
+    Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): cleanup_orphaned_jobs() only
+    ran at backend startup. A Postgres-only restart left in_progress jobs
+    stuck. The periodic reaper needed an age threshold to avoid killing a
+    live healthy import (Pitfall 3 in 90-RESEARCH.md).
+
+    Uses the real test DB via db_session fixture (rollback-scoped transactions).
+    """
+
+    async def _seed_job(
+        self,
+        session,
+        user_id: int,
+        job_id: str,
+        status: str,
+        started_at: datetime,
+    ) -> None:
+        """Insert an ImportJob with a controlled started_at."""
+        from app.models.import_job import ImportJob
+
+        from tests.conftest import ensure_test_user
+
+        await ensure_test_user(session, user_id)
+        job = ImportJob(
+            id=job_id,
+            user_id=user_id,
+            platform="lichess",
+            username="test_user",
+            status=status,
+            games_fetched=0,
+            games_imported=0,
+        )
+        session.add(job)
+        await session.flush()
+        # Override started_at with a controlled value via direct UPDATE.
+        from sqlalchemy import text
+
+        await session.execute(
+            text("UPDATE import_jobs SET started_at = :ts WHERE id = :id"),
+            {"ts": started_at, "id": job_id},
+        )
+        await session.flush()
+
+    @pytest.mark.asyncio
+    async def test_no_threshold_reaps_all_in_progress(self, db_session):
+        """fail_orphaned_jobs() with no threshold reaps all in_progress jobs.
+
+        Pins the startup-call behavior: every in_progress job is reaped
+        regardless of age. This is safe at startup — no in-flight tasks
+        survive a backend restart.
+        """
+        import uuid
+
+        from app.repositories.import_job_repository import fail_orphaned_jobs
+
+        now = datetime.now(timezone.utc)
+        job_id_recent = str(uuid.uuid4())
+        job_id_old = str(uuid.uuid4())
+
+        await self._seed_job(db_session, 9001, job_id_recent, "in_progress", now - timedelta(seconds=10))
+        await self._seed_job(db_session, 9001, job_id_old, "in_progress", now - timedelta(hours=4))
+
+        count = await fail_orphaned_jobs(db_session)
+        await db_session.commit()
+
+        assert count == 2
+
+        from sqlalchemy import select
+
+        from app.models.import_job import ImportJob
+
+        rows = (await db_session.execute(
+            select(ImportJob).where(ImportJob.id.in_([job_id_recent, job_id_old]))
+        )).scalars().all()
+        assert all(j.status == "failed" for j in rows), (
+            f"Expected both jobs to be failed, got: {[j.status for j in rows]}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: orphan_age_threshold parameter")
+    async def test_threshold_reaps_only_old(self, db_session):
+        """fail_orphaned_jobs() with a 3h threshold reaps only jobs older than 3h.
+
+        A 10 s old job must NOT be reaped — it is a live healthy import.
+        A 4 h old job MUST be reaped — it exceeded its 3-hour budget.
+
+        This is the critical Pitfall 3 mitigation in 90-RESEARCH.md:
+        without this threshold the periodic reaper would kill live imports.
+        """
+        import uuid
+
+        from app.repositories.import_job_repository import fail_orphaned_jobs
+        from sqlalchemy import select
+        from app.models.import_job import ImportJob
+
+        now = datetime.now(timezone.utc)
+        job_id_recent = str(uuid.uuid4())
+        job_id_old = str(uuid.uuid4())
+
+        await self._seed_job(db_session, 9002, job_id_recent, "in_progress", now - timedelta(seconds=10))
+        await self._seed_job(db_session, 9002, job_id_old, "in_progress", now - timedelta(hours=4))
+
+        count = await fail_orphaned_jobs(
+            db_session,
+            orphan_age_threshold=timedelta(seconds=IMPORT_TIMEOUT_SECONDS),  # ty: ignore[unknown-argument]
+        )
+        await db_session.commit()
+
+        assert count == 1
+
+        rows = (await db_session.execute(
+            select(ImportJob).where(ImportJob.id.in_([job_id_recent, job_id_old]))
+        )).scalars().all()
+        status_by_id = {j.id: j.status for j in rows}
+        assert status_by_id[job_id_recent] == "in_progress", (
+            "Recent job (10s old) must stay in_progress when threshold=3h"
+        )
+        assert status_by_id[job_id_old] == "failed", (
+            "Old job (4h old) must be reaped when threshold=3h"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: orphan_age_threshold parameter")
+    async def test_threshold_zero_equivalent_to_no_threshold(self, db_session):
+        """fail_orphaned_jobs() with threshold=timedelta(0) reaps any job older than 0s.
+
+        Semantics: None means no threshold (startup behavior). timedelta(0) means
+        any job with started_at < NOW() - 0 = NOW() — i.e., everything already
+        started (practically equivalent to no threshold for jobs started before
+        the current instant).
+        """
+        import uuid
+
+        from app.repositories.import_job_repository import fail_orphaned_jobs
+        from sqlalchemy import select
+        from app.models.import_job import ImportJob
+
+        now = datetime.now(timezone.utc)
+        job_id = str(uuid.uuid4())
+        await self._seed_job(db_session, 9003, job_id, "in_progress", now - timedelta(seconds=10))
+
+        count = await fail_orphaned_jobs(db_session, orphan_age_threshold=timedelta(0))  # ty: ignore[unknown-argument]
+        await db_session.commit()
+
+        assert count == 1
+        rows = (await db_session.execute(
+            select(ImportJob).where(ImportJob.id == job_id)
+        )).scalars().all()
+        assert rows[0].status == "failed"
+
+
+class TestPeriodicReaper:
+    """Unit tests for run_periodic_reaper coroutine (mocked — no real DB).
+
+    Bug fix (Phase 90, SEED-017): cleanup_orphaned_jobs() only ran at
+    backend startup. A Postgres-only restart left the backend up but
+    orphaned import jobs stuck in_progress. run_periodic_reaper runs
+    every _REAPER_INTERVAL_SECONDS and uses IMPORT_TIMEOUT_SECONDS as
+    the orphan-age threshold so live imports are never reaped.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: run_periodic_reaper")
+    async def test_reaper_calls_cleanup_at_interval(self, monkeypatch):
+        """run_periodic_reaper calls cleanup_orphaned_jobs at least 3 times before cancel."""
+        from app.services.import_service import run_periodic_reaper  # ty: ignore[unresolved-import]
+
+        call_count = 0
+
+        async def _mock_sleep(_seconds: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 3:
+                raise asyncio.CancelledError()
+
+        async def _mock_cleanup(**kwargs) -> None:
+            pass
+
+        monkeypatch.setattr("app.services.import_service.asyncio.sleep", _mock_sleep)
+        monkeypatch.setattr("app.services.import_service.cleanup_orphaned_jobs", _mock_cleanup)
+
+        with pytest.raises(asyncio.CancelledError):
+            await run_periodic_reaper()
+
+        assert call_count >= 3
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: run_periodic_reaper")
+    async def test_reaper_passes_age_threshold(self, monkeypatch):
+        """run_periodic_reaper calls cleanup_orphaned_jobs with the 3h age threshold.
+
+        The reaper sleeps FIRST, then calls cleanup. So we let the first sleep succeed,
+        let cleanup run once, then cancel on the second sleep.
+        """
+        from app.services.import_service import run_periodic_reaper  # ty: ignore[unresolved-import]
+
+        received_kwargs: list[dict] = []
+        sleep_count = 0
+
+        async def _mock_sleep(_seconds: float) -> None:
+            nonlocal sleep_count
+            sleep_count += 1
+            if sleep_count >= 2:
+                raise asyncio.CancelledError()
+
+        async def _mock_cleanup(**kwargs) -> None:
+            received_kwargs.append(kwargs)
+
+        monkeypatch.setattr("app.services.import_service.asyncio.sleep", _mock_sleep)
+        monkeypatch.setattr("app.services.import_service.cleanup_orphaned_jobs", _mock_cleanup)
+
+        with pytest.raises(asyncio.CancelledError):
+            await run_periodic_reaper()
+
+        assert len(received_kwargs) >= 1, (
+            "Reaper must have called cleanup at least once before second sleep cancelled it."
+        )
+        # Verify that cleanup was called with the 3h orphan age threshold.
+        first_call = received_kwargs[0]
+        expected_threshold = timedelta(seconds=IMPORT_TIMEOUT_SECONDS)
+        assert first_call.get("orphan_age_threshold") == expected_threshold, (
+            f"Expected orphan_age_threshold={expected_threshold!r}, "
+            f"got: {first_call!r}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: run_periodic_reaper")
+    async def test_reaper_survives_cleanup_exception(self, monkeypatch):
+        """run_periodic_reaper catches cleanup exceptions, logs them, and continues."""
+        from app.services.import_service import run_periodic_reaper  # ty: ignore[unresolved-import]
+
+        sleep_count = 0
+
+        async def _mock_sleep(_seconds: float) -> None:
+            nonlocal sleep_count
+            sleep_count += 1
+            if sleep_count >= 3:
+                raise asyncio.CancelledError()
+
+        call_count = 0
+
+        async def _mock_cleanup(**kwargs) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("DB temporarily unavailable")
+            # Subsequent calls succeed.
+
+        monkeypatch.setattr("app.services.import_service.asyncio.sleep", _mock_sleep)
+        monkeypatch.setattr("app.services.import_service.cleanup_orphaned_jobs", _mock_cleanup)
+
+        with (
+            patch("app.services.import_service.sentry_sdk.capture_exception") as mock_capture,
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_periodic_reaper()
+
+        # Reaper must not crash and must have attempted cleanup >= 2 times.
+        assert call_count >= 2, (
+            f"Reaper should continue after cleanup exception. cleanup called {call_count} time(s)"
+        )
+        # Sentry capture must have been called (once per exception from cleanup).
+        assert mock_capture.call_count >= 1, (
+            "Sentry.capture_exception must be called when cleanup raises"
+        )
+
+
+class TestRecordFailureWithRetry:
+    """Unit tests for _record_failure_with_retry helper (mocked — no real DB).
+
+    Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): the original except-block in
+    run_import opened a new session and immediately UPDATEd the job to failed
+    while Postgres was still in crash recovery (OperationalError, ~2s window
+    observed in the 2026-05-16 incident). The capture_exception swallowed the
+    error and the job stayed in_progress forever.
+
+    _record_failure_with_retry wraps the UPDATE in a bounded retry loop with
+    exponential backoff (2/4/8/16/30s) mirroring app/services/lichess_client.py.
+    Sentry capture happens only on final exhaustion per CLAUDE.md rule.
+    """
+
+    def _make_failure_kwargs(self) -> dict:
+        return dict(
+            job_id="test-job-id",
+            status="failed",
+            games_fetched=5,
+            games_imported=3,
+            error_message="something went wrong",
+            completed_at=datetime.now(timezone.utc),
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: _record_failure_with_retry")
+    async def test_succeeds_first_attempt(self, monkeypatch):
+        """Helper returns after one attempt; asyncio.sleep not called."""
+        from app.services.import_service import _record_failure_with_retry  # ty: ignore[unresolved-import]
+
+        mock_update = AsyncMock()
+        mock_commit = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_session.commit = mock_commit
+
+        session_ctx = AsyncMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_maker = MagicMock(return_value=session_ctx)
+
+        sleep_mock = AsyncMock()
+
+        monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
+        monkeypatch.setattr("app.services.import_service.import_job_repository.update_import_job", mock_update)
+        monkeypatch.setattr("app.services.import_service.asyncio.sleep", sleep_mock)
+
+        await _record_failure_with_retry(**self._make_failure_kwargs())
+
+        mock_update.assert_called_once()
+        sleep_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: _record_failure_with_retry")
+    async def test_retries_on_operational_error_then_succeeds(self, monkeypatch):
+        """Helper retries on OperationalError and succeeds on 3rd attempt.
+
+        asyncio.sleep called twice (attempts 1 and 2) with backoffs 2s and 4s.
+        No Sentry capture because the helper succeeded before exhaustion.
+        """
+        from app.services.import_service import _record_failure_with_retry  # ty: ignore[unresolved-import]
+
+        call_count = 0
+
+        async def _mock_update(*args, **kwargs) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise OperationalError("connection refused", None, Exception("transient"))
+
+        mock_commit = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session.commit = mock_commit
+
+        session_ctx = AsyncMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_maker = MagicMock(return_value=session_ctx)
+
+        sleep_calls: list[float] = []
+
+        async def _mock_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+
+        monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
+        monkeypatch.setattr("app.services.import_service.import_job_repository.update_import_job", _mock_update)
+        monkeypatch.setattr("app.services.import_service.asyncio.sleep", _mock_sleep)
+
+        with patch("app.services.import_service.sentry_sdk.capture_exception") as mock_capture:
+            await _record_failure_with_retry(**self._make_failure_kwargs())
+
+        assert call_count == 3
+        assert len(sleep_calls) == 2
+        assert sleep_calls[0] == 2
+        assert sleep_calls[1] == 4
+        mock_capture.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: _record_failure_with_retry")
+    async def test_exhausts_retries_and_captures_once(self, monkeypatch):
+        """Helper exhausts all 5 retries and calls Sentry capture exactly once.
+
+        asyncio.sleep called 4 times (backoff between attempts 1-2, 2-3, 3-4, 4-5).
+        Sentry capture_exception called exactly once (last-attempt rule per CLAUDE.md).
+        Helper returns without re-raising (best-effort — same as the original pattern).
+        """
+        from app.services.import_service import (
+            _FAILURE_RECORD_MAX_RETRIES,  # ty: ignore[unresolved-import]
+            _record_failure_with_retry,  # ty: ignore[unresolved-import]
+        )
+
+        async def _mock_update(*args, **kwargs) -> None:
+            raise OperationalError("connection refused", None, Exception("transient"))
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        session_ctx = AsyncMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_maker = MagicMock(return_value=session_ctx)
+
+        sleep_calls: list[float] = []
+
+        async def _mock_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+
+        monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
+        monkeypatch.setattr("app.services.import_service.import_job_repository.update_import_job", _mock_update)
+        monkeypatch.setattr("app.services.import_service.asyncio.sleep", _mock_sleep)
+
+        with patch("app.services.import_service.sentry_sdk.capture_exception") as mock_capture:
+            # Should return without raising (best-effort).
+            await _record_failure_with_retry(**self._make_failure_kwargs())
+
+        # 5 attempts → 4 sleep calls between them.
+        assert len(sleep_calls) == _FAILURE_RECORD_MAX_RETRIES - 1
+        # Sentry called exactly once (on exhaustion, not per attempt).
+        assert mock_capture.call_count == 1, (
+            f"Expected exactly 1 Sentry capture (last-attempt rule), got {mock_capture.call_count}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: _record_failure_with_retry")
+    async def test_non_transient_error_fails_fast(self, monkeypatch):
+        """Helper fails fast on non-transient exception (no retries, one Sentry capture)."""
+        from app.services.import_service import _record_failure_with_retry  # ty: ignore[unresolved-import]
+
+        async def _mock_update(*args, **kwargs) -> None:
+            raise ValueError("unexpected schema drift")
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        session_ctx = AsyncMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_maker = MagicMock(return_value=session_ctx)
+
+        sleep_mock = AsyncMock()
+
+        monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
+        monkeypatch.setattr("app.services.import_service.import_job_repository.update_import_job", _mock_update)
+        monkeypatch.setattr("app.services.import_service.asyncio.sleep", sleep_mock)
+
+        with patch("app.services.import_service.sentry_sdk.capture_exception") as mock_capture:
+            await _record_failure_with_retry(**self._make_failure_kwargs())
+
+        # No retries — sleep never called.
+        sleep_mock.assert_not_called()
+        # Sentry capture called once for the non-transient exception.
+        assert mock_capture.call_count == 1
