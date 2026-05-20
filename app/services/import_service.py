@@ -14,7 +14,7 @@ import logging
 import time
 import uuid
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -587,8 +587,8 @@ async def _make_game_iterator(
     client: httpx.AsyncClient,
     job: JobState,
     previous_last_synced_at: datetime | None,
-    on_game_fetched: Any,
-):
+    on_game_fetched: Callable[[], None],
+) -> AsyncIterator[NormalizedGame]:
     """Return the appropriate platform async iterator based on job.platform.
 
     Bug fix (Phase 90, SEED-018, Pitfall 2): accepts `previous_last_synced_at`
