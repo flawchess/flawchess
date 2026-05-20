@@ -4,8 +4,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import sentry_sdk
-
-logger = logging.getLogger(__name__)
 from asyncpg.exceptions import CannotConnectNowError, ConnectionDoesNotExistError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +20,8 @@ from app.routers.users import router as users_router
 from app.services.engine import start_engine, stop_engine
 from app.services.import_service import cleanup_orphaned_jobs, run_periodic_reaper
 from app.services.insights_llm import get_insights_agent
+
+logger = logging.getLogger(__name__)
 
 _DB_TRANSIENT_ERRORS = (ConnectionDoesNotExistError, CannotConnectNowError)
 _MAX_CAUSE_CHAIN_DEPTH = 5
