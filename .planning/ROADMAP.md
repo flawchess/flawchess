@@ -23,6 +23,27 @@
 
 ## Phases
 
+### Phase 90: Import Pipeline Memory Leak Fix + Resilience
+
+**Goal:** Eliminate the per-batch unique-SQL leak in `_flush_batch` Stage 5 that OOM-killed prod twice (2026-03-22, 2026-05-16; FLAWCHESS-56 / FLAWCHESS-3Q), and ship the two leak-independent resilience defects carried forward from SEED-017 so a Postgres OOM no longer strands jobs `in_progress` indefinitely.
+
+**Scope (in):**
+1. **Primary leak fix** — replace the literal `case()`+`IN` bulk UPDATE in `_flush_batch` Stage 5 with bound-parameter `executemany`, preserving the `result_fen` None-handling (two executemany groups, or COALESCE/keep-existing) so games without a result_fen aren't silently NULLed.
+2. **Defense-in-depth session-recycle** — scope `AsyncSession` per batch inside `run_import`'s loop (currently one session for the whole import at `import_service.py:281`); touches job-record creation, the previous-job/`since` lookup, and per-batch progress commits.
+3. **Scheduled / on-reconnect orphan-job reaper** — `cleanup_orphaned_jobs()` currently runs only at backend startup; add a periodic task and/or on-DB-reconnect hook so a Postgres-only restart doesn't strand `in_progress` jobs.
+4. **Resilient failure-state recording** — bounded retry with backoff around the `except Exception` UPDATE in `run_import` (~386–410) so a still-recovering DB doesn't swallow the `failed` transition.
+
+**Scope (out):**
+- Atomic duplicate-import guard (SEED-017 part 1, demoted to optional UX/data-hygiene in SEED-018) — not recurrence-preventing; single import OOMs alone.
+- Automated regression test for the leak — verified manually instead (see Verification).
+
+**Verification:** manual import of a real ~5k+ game account in dev, watching backend RSS stay flat across the full import (vs. linear climb today). Repeat in prod after deploy, then resolve Sentry FLAWCHESS-56 (120262007) and FLAWCHESS-3Q (115610288).
+
+**References:** [.planning/seeds/SEED-018-import-statement-cache-memory-leak.md](seeds/SEED-018-import-statement-cache-memory-leak.md), [.planning/seeds/SEED-017-import-resilience-hardening.md](seeds/SEED-017-import-resilience-hardening.md) (closed, superseded), [.planning/debug/import-job-db-conn-closed.md](debug/import-job-db-conn-closed.md), [.planning/notes/v1.18-import-pipeline-fix-scope.md](notes/v1.18-import-pipeline-fix-scope.md).
+
+Plans:
+- [ ] TBD (run `/gsd-plan-phase`)
+
 <details>
 <summary>✅ v1.17 Endgame Stats Card Redesign (Phases 84-88.4) — SHIPPED 2026-05-19</summary>
 
