@@ -295,6 +295,26 @@ The mixed case (transient followed by non-transient) loses context. Practically 
 
 ---
 
+## Fixes Applied
+
+Applied 2026-05-20 against branch `gsd/phase-90-import-pipeline-memory-leak-fix-resilience`. Each fix is its own atomic commit (one extra follow-up commit lands a ruff E402 lint fix on top of WR-03). All 8 in-scope findings (CR-01 + WR-01..WR-07) addressed. Info findings (IN-01..IN-05) intentionally untouched. Full test suite (1585 passed, 6 skipped) + ruff + ty all pass clean after the last commit.
+
+| Finding | Commit    | Description |
+| ------- | --------- | ----------- |
+| CR-01   | `dddd66f5` | Add `ImportJobNotFound` + `update_import_job(must_exist=True)`; `_record_failure_with_retry` now surfaces the missing-row case instead of silently no-op'ing. |
+| WR-01   | `432ee3d0` | Extract `_bootstrap_import_job`, `_flush_batch_with_progress`, `_complete_import_job` so `run_import` reads as a list of pipeline stages (nesting drops from 6 to ~3). |
+| WR-02   | `2262fb15` | Correct docstring/comment to actual 2/4/8/16s (30s total) schedule; pin schedule in `test_exhausts_retries_and_captures_once`. |
+| WR-03   | `453803fc` | Wrap reaper await in inner try/except (CancelledError + Exception) inside outer try/finally so `stop_engine()` is unconditional on shutdown. |
+| WR-03   | `554ada5b` | Follow-up: move `logger = logging.getLogger(__name__)` after imports (ruff E402). |
+| WR-04   | `57dcf054` | Strengthen SQL-text invariance test with a `literal_binds=True` compile and assert no batch game id appears inline — catches regression to case()+IN. |
+| WR-05   | `8ec8ca7a` | Remove `session.commit()` from inside `_flush_batch`; caller (`_flush_batch_with_progress`) now owns one atomic transaction per batch. |
+| WR-06   | `d6696273` | Replace `on_game_fetched: Any` with `Callable[[], None]` and add `-> AsyncIterator[NormalizedGame]` return annotation. |
+| WR-07   | `6b9350ad` | Document the cancellation contract; add explicit `except CancelledError: raise`; add `test_cancelled_error_propagates_without_retry`. |
+
+No findings deferred.
+
+---
+
 _Reviewed: 2026-05-20_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
