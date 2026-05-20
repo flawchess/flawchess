@@ -2117,6 +2117,11 @@ class TestRecordFailureWithRetry:
 
         # 5 attempts → 4 sleep calls between them.
         assert len(sleep_calls) == _FAILURE_RECORD_MAX_RETRIES - 1
+        # Pin the documented backoff schedule (WR-02) so a future change to
+        # the constants is forced to update the docstring too.
+        assert sleep_calls == [2, 4, 8, 16], (
+            f"Backoff schedule must be 2/4/8/16s (30s total budget). Got {sleep_calls}."
+        )
         # Sentry called exactly once (on exhaustion, not per attempt).
         assert mock_capture.call_count == 1, (
             f"Expected exactly 1 Sentry capture (last-attempt rule), got {mock_capture.call_count}"

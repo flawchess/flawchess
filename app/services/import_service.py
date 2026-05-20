@@ -80,8 +80,11 @@ IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
 # Phase 90 / SEED-017 resilience constants — no magic numbers (CLAUDE.md).
 _REAPER_INTERVAL_SECONDS = 5 * 60  # 5 minutes between periodic reaper ticks
 _FAILURE_RECORD_MAX_RETRIES = 5  # max attempts in failure-state retry loop
-_FAILURE_RECORD_BACKOFF_BASE_SECONDS = 2  # base for exponential backoff (2/4/8/16/30s)
-_FAILURE_RECORD_BACKOFF_CAP_SECONDS = 30  # per-sleep cap (~60s total budget)
+# With MAX_RETRIES=5 the loop runs attempts 0..4 with sleeps before attempts
+# 1..4, giving the schedule 2/4/8/16s = 30s total. The cap (30s) never binds
+# because 2*2^3 = 16 < 30; it's a safety guard for any future tuning.
+_FAILURE_RECORD_BACKOFF_BASE_SECONDS = 2  # base for exponential backoff
+_FAILURE_RECORD_BACKOFF_CAP_SECONDS = 30  # per-sleep cap (defensive, currently never hit)
 
 
 @dataclass(slots=True)
@@ -313,9 +316,9 @@ async def run_periodic_reaper() -> None:
 # Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): the original except-block
 # opened a session + UPDATE'd while Postgres was still in crash recovery
 # (OperationalError). The capture_exception swallowed it and the job
-# stayed in_progress forever. Retry across a ~60s recovery window
-# (2/4/8/16/30s backoff) before giving up. Mirrors the in-tree retry
-# pattern from app/services/lichess_client.py.
+# stayed in_progress forever. Retry across a ~30s recovery window
+# (2/4/8/16s backoff = 30s total) before giving up. Mirrors the in-tree
+# retry pattern from app/services/lichess_client.py.
 async def _record_failure_with_retry(
     *,
     job_id: str,
@@ -332,8 +335,10 @@ async def _record_failure_with_retry(
     verified per Pitfall 4 in 90-RESEARCH.md). Non-transient exceptions
     fail fast. Sentry capture happens only on final exhaustion (CLAUDE.md rule).
 
-    Backoff schedule: 2/4/8/16/30s (~60s total budget). The 2026-05-16
-    Postgres crash-recovery window was ~2s, so this is generous.
+    Backoff schedule with MAX_RETRIES=5: sleeps 2/4/8/16s between attempts
+    (30s total). The 30s cap never binds at current settings; it's a
+    defensive guard for future tuning. The 2026-05-16 Postgres crash-
+    recovery window was ~2s, so 30s is generous.
 
     Args:
         job_id: The import job UUID to update.
