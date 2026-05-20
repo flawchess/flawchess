@@ -16,7 +16,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Literal
 
@@ -25,6 +25,7 @@ import chess.pgn
 import httpx
 import sentry_sdk
 from sqlalchemy import bindparam, select, update
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
@@ -74,6 +75,12 @@ def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
 # INSERT, so batch size is the cheapest lever.
 _BATCH_SIZE = 12
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
+
+# Phase 90 / SEED-017 resilience constants — no magic numbers (CLAUDE.md).
+_REAPER_INTERVAL_SECONDS = 5 * 60  # 5 minutes between periodic reaper ticks
+_FAILURE_RECORD_MAX_RETRIES = 5  # max attempts in failure-state retry loop
+_FAILURE_RECORD_BACKOFF_BASE_SECONDS = 2  # base for exponential backoff (2/4/8/16/30s)
+_FAILURE_RECORD_BACKOFF_CAP_SECONDS = 30  # per-sleep cap (~60s total budget)
 
 
 @dataclass(slots=True)
@@ -143,14 +150,25 @@ class JobState:
 _jobs: dict[str, JobState] = {}
 
 
-async def cleanup_orphaned_jobs() -> None:
+async def cleanup_orphaned_jobs(
+    orphan_age_threshold: timedelta | None = None,
+) -> None:
     """Mark any DB jobs stuck in pending/in_progress as failed.
 
-    Called at startup — no in-memory tasks survive a restart, so any
-    non-terminal DB jobs are orphaned.
+    Called at startup (no threshold) and periodically (with IMPORT_TIMEOUT_SECONDS
+    threshold) via run_periodic_reaper (Phase 90 / SEED-017).
+
+    Args:
+        orphan_age_threshold: Passed through to fail_orphaned_jobs. None means
+            reap all non-terminal jobs (startup behavior). A timedelta reaps
+            only jobs older than the threshold (periodic reaper behavior to
+            avoid killing live healthy imports, per Pitfall 3 in 90-RESEARCH.md).
     """
     async with async_session_maker() as session:
-        count = await import_job_repository.fail_orphaned_jobs(session)
+        count = await import_job_repository.fail_orphaned_jobs(
+            session,
+            orphan_age_threshold=orphan_age_threshold,
+        )
         await session.commit()
         if count:
             logger.info("Marked %d orphaned import job(s) as failed", count)
@@ -259,6 +277,119 @@ def count_active_platform_jobs(platform: str, exclude_user_id: int) -> int:
         and job.status in (JobStatus.PENDING, JobStatus.IN_PROGRESS)
         and job.user_id != exclude_user_id
     )
+
+
+# Bug fix (Phase 90, SEED-017): cleanup_orphaned_jobs() only ran at backend
+# startup. A Postgres-only restart (or any DB recovery window the backend
+# survives) left in_progress jobs stuck forever. This coroutine runs
+# every _REAPER_INTERVAL_SECONDS and uses an orphan-age threshold of
+# IMPORT_TIMEOUT_SECONDS (3h) so a live healthy import is never reaped
+# (Pitfall 3 in 90-RESEARCH.md).
+async def run_periodic_reaper() -> None:
+    """Periodically mark stuck import jobs as failed.
+
+    Companion to cleanup_orphaned_jobs (which only runs at backend startup).
+    A Postgres-only restart leaves the backend up, so without this loop
+    orphaned in_progress jobs would stay stuck until the next backend deploy.
+
+    Sleeps BEFORE the first cleanup call so the startup-time cleanup_orphaned_jobs()
+    handles T=0 and this reaper handles T+5min, T+10min, etc.
+
+    Wired in app/main.py lifespan — started on startup, cancelled+awaited on shutdown.
+    """
+    while True:
+        await asyncio.sleep(_REAPER_INTERVAL_SECONDS)
+        try:
+            await cleanup_orphaned_jobs(
+                orphan_age_threshold=timedelta(seconds=IMPORT_TIMEOUT_SECONDS)
+            )
+        except Exception:
+            logger.exception("Periodic orphan-job reaper failed")
+            sentry_sdk.set_tag("source", "import")
+            sentry_sdk.capture_exception()
+
+
+# Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): the original except-block
+# opened a session + UPDATE'd while Postgres was still in crash recovery
+# (OperationalError). The capture_exception swallowed it and the job
+# stayed in_progress forever. Retry across a ~60s recovery window
+# (2/4/8/16/30s backoff) before giving up. Mirrors the in-tree retry
+# pattern from app/services/lichess_client.py.
+async def _record_failure_with_retry(
+    *,
+    job_id: str,
+    status: Literal["failed"],
+    games_fetched: int,
+    games_imported: int,
+    error_message: str,
+    completed_at: datetime,
+) -> None:
+    """Persist a job's failure state with bounded retry against DB recovery.
+
+    Retries on sqlalchemy.exc.OperationalError (the SQLAlchemy wrapper for
+    asyncpg connection errors like CannotConnectNowError — Assumption A3,
+    verified per Pitfall 4 in 90-RESEARCH.md). Non-transient exceptions
+    fail fast. Sentry capture happens only on final exhaustion (CLAUDE.md rule).
+
+    Backoff schedule: 2/4/8/16/30s (~60s total budget). The 2026-05-16
+    Postgres crash-recovery window was ~2s, so this is generous.
+
+    Args:
+        job_id: The import job UUID to update.
+        status: Always "failed" — typed as Literal to enforce CLAUDE.md no-bare-str rule.
+        games_fetched: Counters to persist alongside the failed status.
+        games_imported: Counters to persist alongside the failed status.
+        error_message: Human-readable failure reason (the import's own error, not
+            a retry-loop error — variables go via set_context, not inline).
+        completed_at: Timestamp to record as the job's completion time.
+    """
+    last_exc: OperationalError | None = None
+    for attempt in range(_FAILURE_RECORD_MAX_RETRIES):
+        if attempt > 0:
+            backoff = min(
+                _FAILURE_RECORD_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)),
+                _FAILURE_RECORD_BACKOFF_CAP_SECONDS,
+            )
+            logger.warning(
+                "Retrying failure-state UPDATE for job %s (attempt %d/%d) in %ds",
+                job_id,
+                attempt + 1,
+                _FAILURE_RECORD_MAX_RETRIES,
+                backoff,
+            )
+            await asyncio.sleep(backoff)
+        try:
+            async with async_session_maker() as session:
+                await import_job_repository.update_import_job(
+                    session,
+                    job_id=job_id,
+                    status=status,
+                    games_fetched=games_fetched,
+                    games_imported=games_imported,
+                    error_message=error_message,
+                    completed_at=completed_at,
+                )
+                await session.commit()
+                return
+        except OperationalError as exc:
+            last_exc = exc
+            continue
+        except Exception as exc:
+            # Non-transient error — fail fast, no point retrying.
+            logger.exception("Non-transient error recording failure state for job %s", job_id)
+            sentry_sdk.set_tag("source", "import")
+            sentry_sdk.capture_exception(exc)
+            return
+
+    # All retries exhausted — capture once per CLAUDE.md (last-attempt rule).
+    logger.error(
+        "Failed to record failure state for job %s after %d retries",
+        job_id,
+        _FAILURE_RECORD_MAX_RETRIES,
+    )
+    if last_exc is not None:
+        sentry_sdk.set_tag("source", "import")
+        sentry_sdk.capture_exception(last_exc)
 
 
 async def run_import(job_id: str) -> None:
@@ -373,21 +504,16 @@ async def run_import(job_id: str) -> None:
         )
         sentry_sdk.capture_exception()
 
-        try:
-            async with async_session_maker() as session:
-                await import_job_repository.update_import_job(
-                    session,
-                    job_id=job_id,
-                    status="failed",
-                    games_fetched=job.games_fetched,
-                    games_imported=job.games_imported,
-                    error_message=job.error,
-                    completed_at=datetime.now(timezone.utc),
-                )
-                await session.commit()
-        except Exception:
-            logger.exception("Failed to record timeout for job %s", job_id)
-            sentry_sdk.capture_exception()
+        # Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): use bounded-retry helper so
+        # a Postgres crash-recovery window does not swallow this failed transition.
+        await _record_failure_with_retry(
+            job_id=job_id,
+            status="failed",
+            games_fetched=job.games_fetched,
+            games_imported=job.games_imported,
+            error_message=job.error or "Import timed out — re-sync to continue where it left off",
+            completed_at=datetime.now(timezone.utc),
+        )
 
     except Exception as exc:
         logger.exception("Import job %s failed: %s", job_id, exc)
@@ -398,22 +524,16 @@ async def run_import(job_id: str) -> None:
         )
         sentry_sdk.capture_exception(exc)
 
-        # Attempt to record failure in DB (best-effort)
-        try:
-            async with async_session_maker() as session:
-                await import_job_repository.update_import_job(
-                    session,
-                    job_id=job_id,
-                    status="failed",
-                    games_fetched=job.games_fetched,
-                    games_imported=job.games_imported,
-                    error_message=str(exc),
-                    completed_at=datetime.now(timezone.utc),
-                )
-                await session.commit()
-        except Exception:
-            logger.exception("Failed to record failure state for job %s", job_id)
-            sentry_sdk.capture_exception()
+        # Bug fix (Phase 90, SEED-017, FLAWCHESS-3Q): use bounded-retry helper so
+        # a Postgres crash-recovery window does not swallow this failed transition.
+        await _record_failure_with_retry(
+            job_id=job_id,
+            status="failed",
+            games_fetched=job.games_fetched,
+            games_imported=job.games_imported,
+            error_message=str(exc),
+            completed_at=datetime.now(timezone.utc),
+        )
 
 
 async def _make_game_iterator(

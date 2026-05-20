@@ -1800,7 +1800,6 @@ class TestFailOrphanedJobsAgeThreshold:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: orphan_age_threshold parameter")
     async def test_threshold_reaps_only_old(self, db_session):
         """fail_orphaned_jobs() with a 3h threshold reaps only jobs older than 3h.
 
@@ -1825,7 +1824,7 @@ class TestFailOrphanedJobsAgeThreshold:
 
         count = await fail_orphaned_jobs(
             db_session,
-            orphan_age_threshold=timedelta(seconds=IMPORT_TIMEOUT_SECONDS),  # ty: ignore[unknown-argument]
+            orphan_age_threshold=timedelta(seconds=IMPORT_TIMEOUT_SECONDS),
         )
         await db_session.commit()
 
@@ -1843,7 +1842,6 @@ class TestFailOrphanedJobsAgeThreshold:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: orphan_age_threshold parameter")
     async def test_threshold_zero_equivalent_to_no_threshold(self, db_session):
         """fail_orphaned_jobs() with threshold=timedelta(0) reaps any job older than 0s.
 
@@ -1862,7 +1860,7 @@ class TestFailOrphanedJobsAgeThreshold:
         job_id = str(uuid.uuid4())
         await self._seed_job(db_session, 9003, job_id, "in_progress", now - timedelta(seconds=10))
 
-        count = await fail_orphaned_jobs(db_session, orphan_age_threshold=timedelta(0))  # ty: ignore[unknown-argument]
+        count = await fail_orphaned_jobs(db_session, orphan_age_threshold=timedelta(0))
         await db_session.commit()
 
         assert count == 1
@@ -1883,10 +1881,9 @@ class TestPeriodicReaper:
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: run_periodic_reaper")
     async def test_reaper_calls_cleanup_at_interval(self, monkeypatch):
         """run_periodic_reaper calls cleanup_orphaned_jobs at least 3 times before cancel."""
-        from app.services.import_service import run_periodic_reaper  # ty: ignore[unresolved-import]
+        from app.services.import_service import run_periodic_reaper
 
         call_count = 0
 
@@ -1908,14 +1905,13 @@ class TestPeriodicReaper:
         assert call_count >= 3
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: run_periodic_reaper")
     async def test_reaper_passes_age_threshold(self, monkeypatch):
         """run_periodic_reaper calls cleanup_orphaned_jobs with the 3h age threshold.
 
         The reaper sleeps FIRST, then calls cleanup. So we let the first sleep succeed,
         let cleanup run once, then cancel on the second sleep.
         """
-        from app.services.import_service import run_periodic_reaper  # ty: ignore[unresolved-import]
+        from app.services.import_service import run_periodic_reaper
 
         received_kwargs: list[dict] = []
         sleep_count = 0
@@ -1947,10 +1943,9 @@ class TestPeriodicReaper:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: run_periodic_reaper")
     async def test_reaper_survives_cleanup_exception(self, monkeypatch):
         """run_periodic_reaper catches cleanup exceptions, logs them, and continues."""
-        from app.services.import_service import run_periodic_reaper  # ty: ignore[unresolved-import]
+        from app.services.import_service import run_periodic_reaper
 
         sleep_count = 0
 
@@ -2013,10 +2008,9 @@ class TestRecordFailureWithRetry:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: _record_failure_with_retry")
     async def test_succeeds_first_attempt(self, monkeypatch):
         """Helper returns after one attempt; asyncio.sleep not called."""
-        from app.services.import_service import _record_failure_with_retry  # ty: ignore[unresolved-import]
+        from app.services.import_service import _record_failure_with_retry
 
         mock_update = AsyncMock()
         mock_commit = AsyncMock()
@@ -2041,14 +2035,13 @@ class TestRecordFailureWithRetry:
         sleep_mock.assert_not_called()
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: _record_failure_with_retry")
     async def test_retries_on_operational_error_then_succeeds(self, monkeypatch):
         """Helper retries on OperationalError and succeeds on 3rd attempt.
 
         asyncio.sleep called twice (attempts 1 and 2) with backoffs 2s and 4s.
         No Sentry capture because the helper succeeded before exhaustion.
         """
-        from app.services.import_service import _record_failure_with_retry  # ty: ignore[unresolved-import]
+        from app.services.import_service import _record_failure_with_retry
 
         call_count = 0
 
@@ -2086,7 +2079,6 @@ class TestRecordFailureWithRetry:
         mock_capture.assert_not_called()
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: _record_failure_with_retry")
     async def test_exhausts_retries_and_captures_once(self, monkeypatch):
         """Helper exhausts all 5 retries and calls Sentry capture exactly once.
 
@@ -2095,8 +2087,8 @@ class TestRecordFailureWithRetry:
         Helper returns without re-raising (best-effort — same as the original pattern).
         """
         from app.services.import_service import (
-            _FAILURE_RECORD_MAX_RETRIES,  # ty: ignore[unresolved-import]
-            _record_failure_with_retry,  # ty: ignore[unresolved-import]
+            _FAILURE_RECORD_MAX_RETRIES,
+            _record_failure_with_retry,
         )
 
         async def _mock_update(*args, **kwargs) -> None:
@@ -2131,10 +2123,9 @@ class TestRecordFailureWithRetry:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="Pending Plan 90-03 Task 2 implementation: _record_failure_with_retry")
     async def test_non_transient_error_fails_fast(self, monkeypatch):
         """Helper fails fast on non-transient exception (no retries, one Sentry capture)."""
-        from app.services.import_service import _record_failure_with_retry  # ty: ignore[unresolved-import]
+        from app.services.import_service import _record_failure_with_retry
 
         async def _mock_update(*args, **kwargs) -> None:
             raise ValueError("unexpected schema drift")

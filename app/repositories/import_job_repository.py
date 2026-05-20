@@ -1,6 +1,6 @@
 """Import job repository: CRUD for the import_jobs table."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,15 +154,37 @@ async def get_unseen_failed_jobs_for_user(
     return list(result.scalars().all())
 
 
-async def fail_orphaned_jobs(session: AsyncSession) -> int:
+async def fail_orphaned_jobs(
+    session: AsyncSession,
+    orphan_age_threshold: timedelta | None = None,
+) -> int:
     """Mark any pending/in_progress jobs as failed (orphaned after server restart).
+
+    None = no threshold (startup behavior): every non-terminal job is reaped.
+    non-None = only reap jobs older than threshold (used by periodic reaper,
+    Phase 90, SEED-017). The threshold prevents the periodic reaper from killing
+    a live healthy import (Pitfall 3 in 90-RESEARCH.md).
+
+    Args:
+        session: AsyncSession to use.
+        orphan_age_threshold: When provided, only reap jobs with
+            started_at < NOW() - threshold. When None, reap all non-terminal jobs.
 
     Returns:
         Number of jobs marked as failed.
     """
+    # Bug fix (Phase 90, SEED-017): extended to accept an age threshold so the
+    # periodic reaper (run_periodic_reaper) can safely call this function during
+    # a live import without killing healthy in-flight jobs. The startup call
+    # passes None (no threshold) because no in-flight tasks survive a restart.
+    where_clause = ImportJob.status.in_(["pending", "in_progress"])
+    if orphan_age_threshold is not None:
+        cutoff = datetime.now(timezone.utc) - orphan_age_threshold
+        where_clause = where_clause & (ImportJob.started_at < cutoff)
+
     result = await session.execute(
         update(ImportJob)
-        .where(ImportJob.status.in_(["pending", "in_progress"]))
+        .where(where_clause)
         .values(
             status="failed",
             error_message="Server restarted while import was in progress",
