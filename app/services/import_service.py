@@ -415,32 +415,52 @@ async def run_import(job_id: str) -> None:
 
     try:
         async with asyncio.timeout(IMPORT_TIMEOUT_SECONDS):
-            async with async_session_maker() as session:
-                # Determine since parameter for incremental sync (scoped to username)
-                previous_job = await import_job_repository.get_latest_for_user_platform(
-                    session, job.user_id, job.platform, job.username
-                )
+            # Bug fix (Phase 90, SEED-018, FLAWCHESS-56 / FLAWCHESS-3Q): three session
+            # scopes (bootstrap / per-batch / completion) instead of one. The old
+            # single-session-for-whole-import pattern was the secondary accumulation
+            # surface alongside the Stage 5 unique-SQL leak fixed in Plan 90-01.
+            # `expire_on_commit=False` keeps loaded scalars accessible after commit,
+            # but we extract `previous_last_synced_at` as a local scalar inside the
+            # bootstrap scope to avoid any risk of DetachedInstanceError from
+            # cross-scope ORM attribute access (Pitfall 2, 90-RESEARCH.md).
 
-                # Create the DB record for this import job
+            # Bootstrap scope: previous-job lookup + job-record creation.
+            async with async_session_maker() as bootstrap_session:
+                previous_job = await import_job_repository.get_latest_for_user_platform(
+                    bootstrap_session, job.user_id, job.platform, job.username
+                )
+                # Extract scalar INSIDE the bootstrap scope (Pitfall 2 mitigation,
+                # Assumption A2). After the scope closes, bootstrap_session is no
+                # longer valid; only the plain scalar crosses the boundary.
+                previous_last_synced_at: datetime | None = (
+                    previous_job.last_synced_at if previous_job is not None else None
+                )
+                # Create the DB record for this import job.
                 await import_job_repository.create_import_job(
-                    session,
+                    bootstrap_session,
                     job_id=job_id,
                     user_id=job.user_id,
                     platform=job.platform,
                     username=job.username,
                 )
-                await session.commit()
+                await bootstrap_session.commit()
+            # bootstrap_session is now closed — only `previous_last_synced_at`
+            # (a plain scalar) carries state into the batch loop.
 
-                def _on_game_fetched() -> None:
-                    job.games_fetched += 1
+            def _on_game_fetched() -> None:
+                job.games_fetched += 1
 
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    game_iter = _make_game_iterator(client, job, previous_job, _on_game_fetched)
-                    batch: list[NormalizedGame] = []
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                game_iter = _make_game_iterator(
+                    client, job, previous_last_synced_at, _on_game_fetched
+                )
+                batch: list[NormalizedGame] = []
 
-                    async for game_dict in game_iter:
-                        batch.append(game_dict)
-                        if len(batch) >= _BATCH_SIZE:
+                async for game_dict in game_iter:
+                    batch.append(game_dict)
+                    if len(batch) >= _BATCH_SIZE:
+                        # Per-batch scope: flush + progress update, then release session.
+                        async with async_session_maker() as session:
                             imported = await _flush_batch(session, batch, job.user_id)
                             job.games_imported += imported
                             # Persist incremental counters to DB after each batch so that
@@ -454,10 +474,11 @@ async def run_import(job_id: str) -> None:
                                 games_imported=job.games_imported,
                             )
                             await session.commit()
-                            batch = []
+                        batch = []
 
-                    # Flush any remaining games
-                    if batch:
+                # Flush any remaining games (trailing batch < _BATCH_SIZE).
+                if batch:
+                    async with async_session_maker() as session:
                         imported = await _flush_batch(session, batch, job.user_id)
                         job.games_imported += imported
                         # Persist incremental counters for the trailing batch as well.
@@ -470,20 +491,20 @@ async def run_import(job_id: str) -> None:
                         )
                         await session.commit()
 
-                # Mark job complete in DB — always advance last_synced_at so that
-                # future syncs start from this point. A no-op sync (0 new games)
-                # still confirms we're caught up — without this, the next sync
-                # would re-fetch everything if the previous completed job had
-                # last_synced_at=NULL (e.g. after a crash recovery re-sync).
-                now = datetime.now(timezone.utc)
-                completion_fields: dict[str, object] = {
-                    "status": "completed",
-                    "games_fetched": job.games_fetched,
-                    "games_imported": job.games_imported,
-                    "completed_at": now,
-                    "last_synced_at": now,
-                }
-
+            # Completion scope: mark job complete — always advance last_synced_at so
+            # that future syncs start from this point. A no-op sync (0 new games)
+            # still confirms we're caught up — without this, the next sync would
+            # re-fetch everything if the previous completed job had
+            # last_synced_at=NULL (e.g. after a crash recovery re-sync).
+            now = datetime.now(timezone.utc)
+            completion_fields: dict[str, object] = {
+                "status": "completed",
+                "games_fetched": job.games_fetched,
+                "games_imported": job.games_imported,
+                "completed_at": now,
+                "last_synced_at": now,
+            }
+            async with async_session_maker() as session:
                 await import_job_repository.update_import_job(
                     session,
                     job_id=job_id,
@@ -539,17 +560,19 @@ async def run_import(job_id: str) -> None:
 async def _make_game_iterator(
     client: httpx.AsyncClient,
     job: JobState,
-    previous_job: Any,
+    previous_last_synced_at: datetime | None,
     on_game_fetched: Any,
 ):
     """Return the appropriate platform async iterator based on job.platform.
 
-    Computes the incremental sync parameter from previous_job.last_synced_at.
+    Bug fix (Phase 90, SEED-018, Pitfall 2): accepts `previous_last_synced_at`
+    as a plain scalar (datetime | None) instead of a `previous_job` ORM instance.
+    The scalar is extracted inside the bootstrap session scope in `run_import`,
+    so no ORM instance crosses the bootstrap-to-batch-loop boundary (eliminating
+    any risk of DetachedInstanceError from cross-scope ORM attribute access).
     """
     if job.platform == "chess.com":
-        since_timestamp = None
-        if previous_job is not None and previous_job.last_synced_at is not None:
-            since_timestamp = previous_job.last_synced_at
+        since_timestamp: datetime | None = previous_last_synced_at
 
         async for game in chesscom_client.fetch_chesscom_games(
             client,
@@ -565,11 +588,11 @@ async def _make_game_iterator(
             # Benchmark ingest path: skip get_latest_for_user_platform entirely.
             # The same lichess user can be imported once per perf_type, and the
             # second run must not inherit the first run's last_synced_at cursor.
-            since_ms = job.since_ms_override
+            since_ms: int | None = job.since_ms_override
         else:
             since_ms = None
-            if previous_job is not None and previous_job.last_synced_at is not None:
-                last_synced = previous_job.last_synced_at
+            if previous_last_synced_at is not None:
+                last_synced = previous_last_synced_at
                 if last_synced.tzinfo is None:
                     last_synced = last_synced.replace(tzinfo=timezone.utc)
                 since_ms = int(last_synced.timestamp() * 1000)

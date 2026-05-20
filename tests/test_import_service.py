@@ -2286,7 +2286,7 @@ class TestRunImportSessionPerBatch:
         ctx.__aexit__.assert_called_once()
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Pending Plan 90-02 Task 2: per-batch session restructure", strict=True)
+
     async def test_one_session_per_batch(self):
         """run_import opens one session for each logical scope: bootstrap + per-batch + completion.
 
@@ -2368,7 +2368,7 @@ class TestRunImportSessionPerBatch:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Pending Plan 90-02 Task 2: per-batch session restructure", strict=True)
+
     async def test_bootstrap_session_closed_before_loop(self):
         """Bootstrap session is closed (via __aexit__) before the first per-batch session opens.
 
@@ -2460,7 +2460,7 @@ class TestRunImportSessionPerBatch:
         _ = bootstrap_open  # used in assertion above via events.index
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Pending Plan 90-02 Task 2: per-batch session restructure", strict=True)
+
     async def test_completion_session_separate_from_batch(self):
         """Completion UPDATE runs on a fresh session, not the last batch's.
 
@@ -2554,7 +2554,7 @@ class TestRunImportSessionPerBatch:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Pending Plan 90-02 Task 2: per-batch session restructure", strict=True)
+
     async def test_run_import_e2e_smoke(self):
         """Smoke test: after Task 2, _make_game_iterator is called with the extracted scalar
         (`previous_last_synced_at: datetime | None`) rather than the ORM ImportJob instance.
@@ -2580,10 +2580,14 @@ class TestRunImportSessionPerBatch:
         call_count = [0]
         mock_maker = self._make_simple_session_maker(call_count)
 
-        captured_make_game_iterator_kwargs: list[dict] = []
+        # Capture positional args passed to _make_game_iterator.
+        # The call site uses positional args: _make_game_iterator(client, job, scalar, on_game_fetched).
+        # arg[2] is the 3rd positional — previous_last_synced_at (datetime | None) after Task 2,
+        # or previous_job (an ORM instance) before Task 2.
+        captured_make_game_iterator_args: list[tuple] = []
 
         async def _mock_make_game_iterator(*args, **kwargs):
-            captured_make_game_iterator_kwargs.append(dict(kwargs))
+            captured_make_game_iterator_args.append(args)
             return
             yield  # pragma: no cover
 
@@ -2614,20 +2618,28 @@ class TestRunImportSessionPerBatch:
 
             await run_import(job_id)
 
-        assert len(captured_make_game_iterator_kwargs) >= 1, (
+        assert len(captured_make_game_iterator_args) >= 1, (
             "_make_game_iterator must have been called (is it still called via run_import?)"
         )
-        kwargs = captured_make_game_iterator_kwargs[0]
-
-        # After Task 2: the new parameter is `previous_last_synced_at` (a scalar).
-        # Currently: the parameter is `previous_job` (an ORM instance).
-        # This assertion fails against current code because `previous_job` is passed, not `previous_last_synced_at`.
-        assert "previous_last_synced_at" in kwargs, (
-            f"After Task 2, _make_game_iterator must be called with `previous_last_synced_at` "
-            f"(a datetime | None scalar), not `previous_job` (an ORM instance). "
-            f"Current kwargs: {list(kwargs.keys())}. "
-            f"The scalar extraction inside the bootstrap scope eliminates DetachedInstanceError risk."
+        # Positional arg layout: (client, job, previous_last_synced_at, on_game_fetched)
+        # arg[2] must be a datetime scalar (or None), not an ORM ImportJob instance.
+        positional_args = captured_make_game_iterator_args[0]
+        assert len(positional_args) >= 3, (
+            f"Expected at least 3 positional args to _make_game_iterator, got: {positional_args!r}"
         )
-        assert kwargs["previous_last_synced_at"] == last_synced, (
-            f"Expected previous_last_synced_at={last_synced!r}, got {kwargs['previous_last_synced_at']!r}"
+        third_arg = positional_args[2]
+        # After Task 2: third arg is `previous_last_synced_at` — a datetime or None scalar.
+        # It must NOT be the previous_job_mock ORM instance.
+        assert third_arg is not previous_job_mock, (
+            f"After Task 2, _make_game_iterator must receive the extracted datetime scalar "
+            f"as its 3rd arg, NOT the ORM instance. Got: {third_arg!r} (same object as "
+            f"previous_job_mock). The scalar extraction inside the bootstrap scope "
+            f"eliminates DetachedInstanceError risk (Pitfall 2, 90-RESEARCH.md)."
+        )
+        assert isinstance(third_arg, (datetime, type(None))), (
+            f"3rd arg to _make_game_iterator must be datetime | None, got {type(third_arg)!r}. "
+            f"Value: {third_arg!r}"
+        )
+        assert third_arg == last_synced, (
+            f"Expected previous_last_synced_at={last_synced!r}, got {third_arg!r}"
         )
