@@ -410,6 +410,81 @@ async def _record_failure_with_retry(
         sentry_sdk.capture_exception(last_exc)
 
 
+async def _bootstrap_import_job(job: JobState, job_id: str) -> datetime | None:
+    """Bootstrap scope: previous-job lookup + job-record creation.
+
+    Extracted from run_import (WR-01: nesting-depth reduction). Owns its own
+    AsyncSession so the bootstrap row is committed and the session is closed
+    before the batch loop begins. Only the plain scalar `previous_last_synced_at`
+    crosses the boundary, avoiding any DetachedInstanceError risk on cross-scope
+    ORM attribute access (Pitfall 2, 90-RESEARCH.md).
+    """
+    async with async_session_maker() as bootstrap_session:
+        previous_job = await import_job_repository.get_latest_for_user_platform(
+            bootstrap_session, job.user_id, job.platform, job.username
+        )
+        # Extract scalar INSIDE the bootstrap scope (Pitfall 2 mitigation, Assumption A2).
+        previous_last_synced_at: datetime | None = (
+            previous_job.last_synced_at if previous_job is not None else None
+        )
+        await import_job_repository.create_import_job(
+            bootstrap_session,
+            job_id=job_id,
+            user_id=job.user_id,
+            platform=job.platform,
+            username=job.username,
+        )
+        await bootstrap_session.commit()
+    return previous_last_synced_at
+
+
+async def _flush_batch_with_progress(
+    batch: list[NormalizedGame], job: JobState, job_id: str
+) -> None:
+    """Per-batch scope: flush rows + bump progress counter in one session.
+
+    Extracted from run_import (WR-01: nesting-depth reduction). Each call
+    opens, commits, and releases a single AsyncSession so per-batch session
+    lifetime is bounded (Phase 90 / SEED-018).
+    """
+    async with async_session_maker() as session:
+        imported = await _flush_batch(session, batch, job.user_id)
+        job.games_imported += imported
+        # Persist incremental counters so orphaned-job cleanup and post-restart
+        # status reads reflect accurate progress (not zero) if the server
+        # crashes mid-import.
+        await import_job_repository.update_import_job(
+            session,
+            job_id=job_id,
+            status="in_progress",
+            games_fetched=job.games_fetched,
+            games_imported=job.games_imported,
+        )
+        await session.commit()
+
+
+async def _complete_import_job(job: JobState, job_id: str) -> None:
+    """Completion scope: mark job complete and advance last_synced_at.
+
+    Extracted from run_import (WR-01: nesting-depth reduction). Always
+    advances last_synced_at so a no-op sync (0 new games) still confirms
+    we're caught up; without this, the next sync would re-fetch everything
+    if the previous completed job had last_synced_at=NULL.
+    """
+    now = datetime.now(timezone.utc)
+    async with async_session_maker() as session:
+        await import_job_repository.update_import_job(
+            session,
+            job_id=job_id,
+            status="completed",
+            games_fetched=job.games_fetched,
+            games_imported=job.games_imported,
+            completed_at=now,
+            last_synced_at=now,
+        )
+        await session.commit()
+
+
 async def run_import(job_id: str) -> None:
     """Background import orchestrator — launched via asyncio.create_task.
 
@@ -433,37 +508,12 @@ async def run_import(job_id: str) -> None:
 
     try:
         async with asyncio.timeout(IMPORT_TIMEOUT_SECONDS):
-            # Bug fix (Phase 90, SEED-018, FLAWCHESS-56 / FLAWCHESS-3Q): three session
-            # scopes (bootstrap / per-batch / completion) instead of one. The old
-            # single-session-for-whole-import pattern was the secondary accumulation
-            # surface alongside the Stage 5 unique-SQL leak fixed in Plan 90-01.
-            # `expire_on_commit=False` keeps loaded scalars accessible after commit,
-            # but we extract `previous_last_synced_at` as a local scalar inside the
-            # bootstrap scope to avoid any risk of DetachedInstanceError from
-            # cross-scope ORM attribute access (Pitfall 2, 90-RESEARCH.md).
-
-            # Bootstrap scope: previous-job lookup + job-record creation.
-            async with async_session_maker() as bootstrap_session:
-                previous_job = await import_job_repository.get_latest_for_user_platform(
-                    bootstrap_session, job.user_id, job.platform, job.username
-                )
-                # Extract scalar INSIDE the bootstrap scope (Pitfall 2 mitigation,
-                # Assumption A2). After the scope closes, bootstrap_session is no
-                # longer valid; only the plain scalar crosses the boundary.
-                previous_last_synced_at: datetime | None = (
-                    previous_job.last_synced_at if previous_job is not None else None
-                )
-                # Create the DB record for this import job.
-                await import_job_repository.create_import_job(
-                    bootstrap_session,
-                    job_id=job_id,
-                    user_id=job.user_id,
-                    platform=job.platform,
-                    username=job.username,
-                )
-                await bootstrap_session.commit()
-            # bootstrap_session is now closed — only `previous_last_synced_at`
-            # (a plain scalar) carries state into the batch loop.
+            # Phase 90 / SEED-018 / WR-01: pipeline reads as a list of stages.
+            # Each helper owns its own AsyncSession scope (bootstrap / per-batch /
+            # completion) so session lifetime is bounded — the old single-session
+            # pattern was the secondary accumulation surface alongside the Stage 5
+            # unique-SQL leak fixed in Plan 90-01.
+            previous_last_synced_at = await _bootstrap_import_job(job, job_id)
 
             def _on_game_fetched() -> None:
                 job.games_fetched += 1
@@ -473,63 +523,16 @@ async def run_import(job_id: str) -> None:
                     client, job, previous_last_synced_at, _on_game_fetched
                 )
                 batch: list[NormalizedGame] = []
-
                 async for game_dict in game_iter:
                     batch.append(game_dict)
                     if len(batch) >= _BATCH_SIZE:
-                        # Per-batch scope: flush + progress update, then release session.
-                        async with async_session_maker() as session:
-                            imported = await _flush_batch(session, batch, job.user_id)
-                            job.games_imported += imported
-                            # Persist incremental counters to DB after each batch so that
-                            # orphaned-job cleanup and post-restart status reads reflect
-                            # accurate progress (not zero) if the server crashes mid-import.
-                            await import_job_repository.update_import_job(
-                                session,
-                                job_id=job_id,
-                                status="in_progress",
-                                games_fetched=job.games_fetched,
-                                games_imported=job.games_imported,
-                            )
-                            await session.commit()
+                        await _flush_batch_with_progress(batch, job, job_id)
                         batch = []
-
-                # Flush any remaining games (trailing batch < _BATCH_SIZE).
                 if batch:
-                    async with async_session_maker() as session:
-                        imported = await _flush_batch(session, batch, job.user_id)
-                        job.games_imported += imported
-                        # Persist incremental counters for the trailing batch as well.
-                        await import_job_repository.update_import_job(
-                            session,
-                            job_id=job_id,
-                            status="in_progress",
-                            games_fetched=job.games_fetched,
-                            games_imported=job.games_imported,
-                        )
-                        await session.commit()
+                    # Trailing batch < _BATCH_SIZE.
+                    await _flush_batch_with_progress(batch, job, job_id)
 
-            # Completion scope: mark job complete — always advance last_synced_at so
-            # that future syncs start from this point. A no-op sync (0 new games)
-            # still confirms we're caught up — without this, the next sync would
-            # re-fetch everything if the previous completed job had
-            # last_synced_at=NULL (e.g. after a crash recovery re-sync).
-            now = datetime.now(timezone.utc)
-            completion_fields: dict[str, object] = {
-                "status": "completed",
-                "games_fetched": job.games_fetched,
-                "games_imported": job.games_imported,
-                "completed_at": now,
-                "last_synced_at": now,
-            }
-            async with async_session_maker() as session:
-                await import_job_repository.update_import_job(
-                    session,
-                    job_id=job_id,
-                    **completion_fields,
-                )
-                await session.commit()
-
+            await _complete_import_job(job, job_id)
             job.status = JobStatus.COMPLETED
 
     except TimeoutError:
