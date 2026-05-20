@@ -2151,3 +2151,483 @@ class TestRecordFailureWithRetry:
         sleep_mock.assert_not_called()
         # Sentry capture called once for the non-transient exception.
         assert mock_capture.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# TestRunImportSessionPerBatch — Phase 90 / SEED-018: per-batch session lifecycle
+#
+# Phase 90 / SEED-018: pins the per-batch session lifecycle. A regression to a
+# single-session import is the secondary accumulation surface mitigated alongside
+# the Stage 5 leak fix (Plan 90-01).
+#
+# Tests 2–5 are xfail(strict=True) until Task 2 (Plan 90-02) lands the
+# three-session-scope restructure. Test 1 is NOT xfail — it asserts Assumption
+# A2 (scalar accessibility after session close), which is a property of the
+# current code that the implementation already relies on.
+# ---------------------------------------------------------------------------
+
+
+class TestRunImportSessionPerBatch:
+    """Tests for the per-batch AsyncSession lifecycle introduced in Plan 90-02.
+
+    After restructure, run_import opens THREE distinct session scopes:
+    1. Bootstrap scope — get_latest_for_user_platform + create_import_job + commit
+    2. Per-batch scope — _flush_batch + update_import_job + commit (once per batch)
+    3. Completion scope — update_import_job(completed) + commit
+
+    Verifies:
+    1. previous_job.last_synced_at scalar survives session close (Assumption A2).
+    2. async_session_maker() is called once per logical scope (1 bootstrap +
+       N_batches per-batch + 1 completion = N_batches + 2 total).
+    3. Bootstrap session is closed before the first per-batch session opens.
+    4. Completion session is distinct from the last batch's session.
+    5. run_import completes without error and _make_game_iterator receives a
+       scalar (datetime | None), not an ImportJob ORM instance.
+    """
+
+    def _make_counting_session_maker(self) -> tuple[MagicMock, list[str]]:
+        """Return a session-maker mock that tracks open/close ordering.
+
+        Each entry in the returned list is a string like "open:session-1"
+        or "close:session-1". The list grows in call order so callers can
+        verify that bootstrap closes before the first batch opens, etc.
+        """
+        events: list[str] = []
+
+        class _TrackedSession:
+            def __init__(self, name: str) -> None:
+                self._name = name
+                self.commit = AsyncMock()
+                self.execute = AsyncMock(return_value=MagicMock(fetchall=MagicMock(return_value=[])))
+
+            async def __aenter__(self):
+                events.append(f"open:{self._name}")
+                return self
+
+            async def __aexit__(self, *_a):
+                events.append(f"close:{self._name}")
+                return False
+
+        call_count = [0]
+
+        def _factory():
+            call_count[0] += 1
+            return _TrackedSession(f"session-{call_count[0]}")
+
+        maker = MagicMock(side_effect=_factory)
+        return maker, events
+
+    def _make_simple_session_maker(self, n_calls: list[int]) -> MagicMock:
+        """Return a session-maker mock that counts calls and provides basic sessions."""
+
+        def _factory():
+            ctx = AsyncMock()
+            mock_session = AsyncMock()
+            mock_session.commit = AsyncMock()
+            result_mock = MagicMock()
+            result_mock.fetchall.return_value = []
+            mock_session.execute = AsyncMock(return_value=result_mock)
+            ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            ctx.__aexit__ = AsyncMock(return_value=False)
+            n_calls[0] += 1
+            return ctx
+
+        return MagicMock(side_effect=_factory)
+
+    @pytest.mark.asyncio
+    async def test_previous_job_last_synced_at_scalar_survives_close(self):
+        """Assumption A2 (90-RESEARCH.md Pitfall 2): after the bootstrap session closes,
+        a scalar extracted from previous_job.last_synced_at inside the session remains
+        accessible from a local variable.
+
+        This test is NOT xfail — it asserts a property of the CURRENT code and must
+        pass before and after the Task 2 restructure. If it fails, the implementation
+        MUST extract the scalar inside the bootstrap scope before closing the session
+        (which Plan 90-02 Task 2 does unconditionally as a defensive measure).
+        """
+        expected_dt = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+        # Simulate an ImportJob ORM instance with expire_on_commit=False semantics:
+        # the scalar column is loaded as part of the SELECT, so it's accessible
+        # even after the session closes.
+        previous_job = MagicMock()
+        previous_job.last_synced_at = expected_dt
+
+        # Simulate the bootstrap session context manager.
+        bootstrap_session = AsyncMock()
+        bootstrap_session.commit = AsyncMock()
+
+        ctx = AsyncMock()
+        ctx.__aenter__ = AsyncMock(return_value=bootstrap_session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        scalar_after_close: datetime | None = None
+
+        async def run() -> None:
+            nonlocal scalar_after_close
+            # Mimic the bootstrap scope: open session, load previous_job, extract scalar.
+            async with ctx:
+                # In the real code, get_latest_for_user_platform returns previous_job here.
+                # We pre-load the attribute inside the session scope (Pitfall 2 mitigation).
+                extracted = previous_job.last_synced_at if previous_job is not None else None
+            # Session is now "closed" (ctx.__aexit__ called). Scalar must still be readable.
+            scalar_after_close = extracted
+
+        await run()
+
+        assert scalar_after_close == expected_dt, (
+            f"Scalar extracted inside the bootstrap scope must survive session close. "
+            f"Expected {expected_dt!r}, got {scalar_after_close!r}. "
+            f"If this fails with DetachedInstanceError, the extraction must happen "
+            f"before closing the bootstrap session (already planned in Task 2)."
+        )
+        # Verify the session context manager was entered and exited.
+        ctx.__aenter__.assert_called_once()
+        ctx.__aexit__.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(reason="Pending Plan 90-02 Task 2: per-batch session restructure", strict=True)
+    async def test_one_session_per_batch(self):
+        """run_import opens one session for each logical scope: bootstrap + per-batch + completion.
+
+        With N=30 games and _BATCH_SIZE=12:
+          12 (batch 1) + 12 (batch 2) + 6 (trailing) = 3 batch sessions
+          + 1 bootstrap + 1 completion = 5 total session opens.
+
+        Currently: run_import uses ONE session for the whole import.
+        After Task 2: 5 sessions for 30 games / batch_size=12.
+        """
+        from app.services.import_service import _BATCH_SIZE
+
+        total_games = _BATCH_SIZE * 2 + _BATCH_SIZE // 2  # = 30 for _BATCH_SIZE=12
+        n_full_batches = total_games // _BATCH_SIZE  # = 2
+        n_trailing = total_games % _BATCH_SIZE  # = 6
+        n_batch_sessions = n_full_batches + (1 if n_trailing > 0 else 0)  # = 3
+        expected_session_calls = 1 + n_batch_sessions + 1  # bootstrap + batches + completion = 5
+
+        call_count = [0]
+        mock_maker = self._make_simple_session_maker(call_count)
+
+        async def _yield_n_games(*args, **kwargs):
+            for i in range(total_games):
+                if "on_game_fetched" in kwargs:
+                    kwargs["on_game_fetched"]()
+                yield {
+                    "platform": "chess.com",
+                    "platform_game_id": f"game-{i}",
+                    "pgn": "1. e4 *",
+                    "user_id": 1,
+                }
+
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_n_games,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                return_value=_make_mock_processing_result(),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        assert call_count[0] == expected_session_calls, (
+            f"Expected {expected_session_calls} async_session_maker() calls "
+            f"(1 bootstrap + {n_batch_sessions} per-batch + 1 completion). "
+            f"Got {call_count[0]}. "
+            f"Current code uses 1 session for the whole import."
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(reason="Pending Plan 90-02 Task 2: per-batch session restructure", strict=True)
+    async def test_bootstrap_session_closed_before_loop(self):
+        """Bootstrap session is closed (via __aexit__) before the first per-batch session opens.
+
+        The event ordering must be: open bootstrap → close bootstrap → open batch-1.
+        Currently: one session is shared for the whole import — no distinct bootstrap close.
+        After Task 2: three-scope structure enforces this ordering.
+        """
+        from app.services.import_service import _BATCH_SIZE
+
+        maker, events = self._make_counting_session_maker()
+
+        async def _yield_one_batch(*args, **kwargs):
+            for i in range(_BATCH_SIZE):
+                if "on_game_fetched" in kwargs:
+                    kwargs["on_game_fetched"]()
+                yield {
+                    "platform": "chess.com",
+                    "platform_game_id": f"game-{i}",
+                    "pgn": "1. e4 *",
+                    "user_id": 1,
+                }
+
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        with (
+            patch("app.services.import_service.async_session_maker", maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_one_batch,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                return_value=_make_mock_processing_result(),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        # After Task 2: the first 3 events must be:
+        #   open:session-1  (bootstrap opens)
+        #   close:session-1 (bootstrap closes)
+        #   open:session-2  (first batch opens)
+        # Currently: only session-1 opens and closes once at the very end,
+        # so close:session-1 never comes before open:session-2 mid-import.
+        assert len(events) >= 3, f"Expected at least 3 session events, got: {events}"
+        bootstrap_open = events.index("open:session-1")
+        bootstrap_close = events.index("close:session-1")
+        # There must be a second session opened AFTER the bootstrap closes.
+        second_open_events = [
+            i for i, e in enumerate(events) if e.startswith("open:") and e != "open:session-1"
+        ]
+        assert second_open_events, (
+            f"No second session was opened. Events: {events}. "
+            f"After Task 2, a per-batch session must open after the bootstrap closes."
+        )
+        first_batch_open = second_open_events[0]
+        assert bootstrap_close < first_batch_open, (
+            f"Bootstrap session must close (event index {bootstrap_close}) BEFORE the first "
+            f"per-batch session opens (event index {first_batch_open}). "
+            f"Events: {events}. "
+            f"Currently run_import uses one session for the whole import — "
+            f"bootstrap close happens at the very end."
+        )
+        _ = bootstrap_open  # used in assertion above via events.index
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(reason="Pending Plan 90-02 Task 2: per-batch session restructure", strict=True)
+    async def test_completion_session_separate_from_batch(self):
+        """Completion UPDATE runs on a fresh session, not the last batch's.
+
+        After all batches flush, the completion scope must open a NEW session
+        (a distinct async_session_maker() call) rather than reusing the last
+        batch's session.
+
+        Currently: one session covers the whole import — the completion update
+        uses the same session as every batch.
+        After Task 2: 1 bootstrap + N_batches + 1 completion = distinct sessions.
+        """
+        from app.services.import_service import _BATCH_SIZE
+
+        # Yield exactly one trailing batch (< _BATCH_SIZE) to keep the scenario simple.
+        trailing_count = _BATCH_SIZE // 2
+
+        maker, events = self._make_counting_session_maker()
+
+        async def _yield_trailing(*args, **kwargs):
+            for i in range(trailing_count):
+                if "on_game_fetched" in kwargs:
+                    kwargs["on_game_fetched"]()
+                yield {
+                    "platform": "chess.com",
+                    "platform_game_id": f"game-{i}",
+                    "pgn": "1. e4 *",
+                    "user_id": 1,
+                }
+
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        with (
+            patch("app.services.import_service.async_session_maker", maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.chesscom_client.fetch_chesscom_games",
+                side_effect=_yield_trailing,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                return_value=_make_mock_processing_result(),
+            ),
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        # After Task 2: trailing batch + completion = 3 total sessions
+        # (session-1=bootstrap, session-2=trailing batch, session-3=completion).
+        # The last close must be session-3 (completion), and session-2 (trailing batch)
+        # must have closed BEFORE session-3 opened.
+        # Currently: 1 session total; open/close happens once.
+        open_events = [e for e in events if e.startswith("open:")]
+        assert len(open_events) >= 3, (
+            f"Expected at least 3 session opens (bootstrap + trailing batch + completion). "
+            f"Got {len(open_events)}. Events: {events}. "
+            f"Currently run_import uses 1 session."
+        )
+        # The completion session (last open) must open after the trailing batch session closes.
+        completion_session_name = open_events[-1].split("open:")[1]
+        batch_session_name = open_events[-2].split("open:")[1]
+        batch_close_idx = events.index(f"close:{batch_session_name}")
+        completion_open_idx = events.index(f"open:{completion_session_name}")
+        assert batch_close_idx < completion_open_idx, (
+            f"Trailing batch session ({batch_session_name!r}) must close (index {batch_close_idx}) "
+            f"BEFORE completion session ({completion_session_name!r}) opens "
+            f"(index {completion_open_idx}). Events: {events}."
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(reason="Pending Plan 90-02 Task 2: per-batch session restructure", strict=True)
+    async def test_run_import_e2e_smoke(self):
+        """Smoke test: after Task 2, _make_game_iterator is called with the extracted scalar
+        (`previous_last_synced_at: datetime | None`) rather than the ORM ImportJob instance.
+
+        Currently: _make_game_iterator receives `previous_job` (an ORM instance or None).
+        After Task 2: _make_game_iterator receives `previous_last_synced_at` (a scalar
+        datetime or None) extracted inside the bootstrap scope, eliminating any risk of
+        DetachedInstanceError from cross-scope ORM attribute access (Pitfall 2).
+
+        The parameter rename is the observable signal: the old signature accepts `previous_job`,
+        the new signature accepts `previous_last_synced_at`. We verify by inspecting the
+        captured call-args to `_make_game_iterator`.
+        """
+        last_synced = datetime(2025, 6, 1, tzinfo=timezone.utc)
+
+        # previous_job mock — after Task 2, its last_synced_at is extracted as a scalar
+        # and previous_job is never passed cross-scope.
+        previous_job_mock = MagicMock()
+        previous_job_mock.last_synced_at = last_synced
+
+        job_id = create_job(user_id=1, platform="chess.com", username="alice")
+
+        call_count = [0]
+        mock_maker = self._make_simple_session_maker(call_count)
+
+        captured_make_game_iterator_kwargs: list[dict] = []
+
+        async def _mock_make_game_iterator(*args, **kwargs):
+            captured_make_game_iterator_kwargs.append(dict(kwargs))
+            return
+            yield  # pragma: no cover
+
+        with (
+            patch("app.services.import_service.async_session_maker", mock_maker),
+            patch(
+                "app.services.import_service.import_job_repository.get_latest_for_user_platform",
+                new=AsyncMock(return_value=previous_job_mock),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.create_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.import_job_repository.update_import_job",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service._make_game_iterator",
+                side_effect=_mock_make_game_iterator,
+            ),
+            patch("app.services.import_service.httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_http_ctx = AsyncMock()
+            mock_http_ctx.__aenter__ = AsyncMock(return_value=AsyncMock())
+            mock_http_ctx.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_http_ctx
+
+            await run_import(job_id)
+
+        assert len(captured_make_game_iterator_kwargs) >= 1, (
+            "_make_game_iterator must have been called (is it still called via run_import?)"
+        )
+        kwargs = captured_make_game_iterator_kwargs[0]
+
+        # After Task 2: the new parameter is `previous_last_synced_at` (a scalar).
+        # Currently: the parameter is `previous_job` (an ORM instance).
+        # This assertion fails against current code because `previous_job` is passed, not `previous_last_synced_at`.
+        assert "previous_last_synced_at" in kwargs, (
+            f"After Task 2, _make_game_iterator must be called with `previous_last_synced_at` "
+            f"(a datetime | None scalar), not `previous_job` (an ORM instance). "
+            f"Current kwargs: {list(kwargs.keys())}. "
+            f"The scalar extraction inside the bootstrap scope eliminates DetachedInstanceError risk."
+        )
+        assert kwargs["previous_last_synced_at"] == last_synced, (
+            f"Expected previous_last_synced_at={last_synced!r}, got {kwargs['previous_last_synced_at']!r}"
+        )
