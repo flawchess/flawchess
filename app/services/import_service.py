@@ -24,11 +24,12 @@ import chess
 import chess.pgn
 import httpx
 import sentry_sdk
+import asyncpg
 from sqlalchemy import bindparam, select, update
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import async_session_maker
+from app.core.database import async_session_maker, engine
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories import game_repository, import_job_repository
@@ -38,6 +39,27 @@ from app.services import chesscom_client, engine as engine_service, lichess_clie
 from app.services.zobrist import PlyData, process_game_pgn
 
 logger = logging.getLogger(__name__)
+
+# UAT 2026-05-20 — a real Postgres-restart outage raises any of these on the
+# next write/connect, and the original `except OperationalError` was too
+# narrow. SQLAlchemy translates query-time asyncpg errors via the dialect's
+# _handle_exception, but the pool's connect-time path can propagate the raw
+# asyncpg exception (e.g. CannotConnectNowError, ConnectionDoesNotExistError)
+# AND the OS-level ConnectionRefusedError without translation. The retry
+# classifier must catch all of them or the helper falls through to the
+# generic `except Exception` fail-fast branch and the job stays in_progress.
+_RETRIABLE_DB_OUTAGE_ERRORS: tuple[type[BaseException], ...] = (
+    OperationalError,
+    InterfaceError,
+    DBAPIError,
+    asyncpg.exceptions.CannotConnectNowError,
+    asyncpg.exceptions.ConnectionDoesNotExistError,
+    asyncpg.exceptions.InterfaceError,
+    asyncpg.exceptions.PostgresConnectionError,
+    ConnectionRefusedError,
+    ConnectionResetError,
+    OSError,
+)
 
 
 def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
@@ -357,7 +379,7 @@ async def _record_failure_with_retry(
             a retry-loop error — variables go via set_context, not inline).
         completed_at: Timestamp to record as the job's completion time.
     """
-    last_exc: OperationalError | None = None
+    last_exc: BaseException | None = None
     for attempt in range(_FAILURE_RECORD_MAX_RETRIES):
         if attempt > 0:
             backoff = min(
@@ -372,6 +394,18 @@ async def _record_failure_with_retry(
                 backoff,
             )
             await asyncio.sleep(backoff)
+            # UAT 2026-05-20 fix: invalidate the pool between retries. After a
+            # Postgres restart, the existing asyncpg connections in SA's pool
+            # are stale — the very next checkout raises InterfaceError ("the
+            # underlying connection is closed"). engine.dispose() drops the
+            # entire pool so the next session opens a brand-new connection.
+            try:
+                await engine.dispose()
+            except Exception:
+                logger.warning(
+                    "engine.dispose() during failure-record retry raised — continuing",
+                    exc_info=True,
+                )
         try:
             async with async_session_maker() as session:
                 await import_job_repository.update_import_job(
@@ -406,7 +440,12 @@ async def _record_failure_with_retry(
                 level="error",
             )
             return
-        except OperationalError as exc:
+        except _RETRIABLE_DB_OUTAGE_ERRORS as exc:
+            # UAT 2026-05-20 — broadened from `except OperationalError` to the
+            # full tuple above. The original narrow catch let real Postgres-
+            # restart outages fall through to the generic Exception branch and
+            # leave jobs stranded in_progress. See _RETRIABLE_DB_OUTAGE_ERRORS
+            # comment for the rationale.
             last_exc = exc
             continue
         except Exception as exc:

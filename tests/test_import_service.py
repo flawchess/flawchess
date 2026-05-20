@@ -1408,7 +1408,12 @@ class TestFlushBatchStage5:
         session = self._make_flush_session(id_pairs)
 
         batch = [
-            {"platform": "chess.com", "platform_game_id": f"gid-{gid}", "pgn": "1. e4 *", "user_id": 1}
+            {
+                "platform": "chess.com",
+                "platform_game_id": f"gid-{gid}",
+                "pgn": "1. e4 *",
+                "user_id": 1,
+            }
             for gid in [101, 102, 103]
         ]
         pgn_results = {
@@ -1434,10 +1439,10 @@ class TestFlushBatchStage5:
             ),
             patch(
                 "app.services.import_service.process_game_pgn",
-                side_effect=lambda pgn: pgn_results.get(
-                    next((pid for pid in pgn_results if pid in pgn), ""), None
-                )
-                or pgn_results["gid-101"],
+                side_effect=lambda pgn: (
+                    pgn_results.get(next((pid for pid in pgn_results if pid in pgn), ""), None)
+                    or pgn_results["gid-101"]
+                ),
             ),
         ):
             result = await _flush_batch(session, cast(list[NormalizedGame], batch), user_id=1)
@@ -1447,7 +1452,9 @@ class TestFlushBatchStage5:
         # Collect UPDATE calls (is_update attribute) from Stage 5.
         execute_calls = session.execute.call_args_list
         update_calls = [
-            call for call in execute_calls if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update
+            call
+            for call in execute_calls
+            if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update
         ]
         assert len(update_calls) >= 1, "Expected at least one Stage 5 UPDATE for move_count"
 
@@ -1470,7 +1477,12 @@ class TestFlushBatchStage5:
         session = self._make_flush_session(id_pairs)
 
         batch = [
-            {"platform": "chess.com", "platform_game_id": f"gid-{gid}", "pgn": "1. e4 *", "user_id": 1}
+            {
+                "platform": "chess.com",
+                "platform_game_id": f"gid-{gid}",
+                "pgn": "1. e4 *",
+                "user_id": 1,
+            }
             for gid in [101, 102, 103]
         ]
         pgn_results = {
@@ -1544,7 +1556,12 @@ class TestFlushBatchStage5:
         session = self._make_flush_session(id_pairs)
 
         batch = [
-            {"platform": "chess.com", "platform_game_id": f"gid-{gid}", "pgn": "1. e4 *", "user_id": 1}
+            {
+                "platform": "chess.com",
+                "platform_game_id": f"gid-{gid}",
+                "pgn": "1. e4 *",
+                "user_id": 1,
+            }
             for gid in [101, 102, 103]
         ]
         # All games parse to result_fen=None.
@@ -1593,7 +1610,12 @@ class TestFlushBatchStage5:
         session = _make_mock_session()
 
         batch = [
-            {"platform": "chess.com", "platform_game_id": "gid-dup-1", "pgn": "1. e4 *", "user_id": 1}
+            {
+                "platform": "chess.com",
+                "platform_game_id": "gid-dup-1",
+                "pgn": "1. e4 *",
+                "user_id": 1,
+            }
         ]
 
         with (
@@ -1674,7 +1696,11 @@ class TestFlushBatchStage5:
             # Collect SQL text from UPDATE execute calls.
             update_sql_texts: list[str] = []
             for call in session.execute.call_args_list:
-                if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update:
+                if (
+                    len(call.args) > 0
+                    and hasattr(call.args[0], "is_update")
+                    and call.args[0].is_update
+                ):
                     compiled = call.args[0].compile(dialect=dialect)
                     update_sql_texts.append(str(compiled))
             return update_sql_texts
@@ -1843,7 +1869,9 @@ class TestFailOrphanedJobsAgeThreshold:
         job_id_recent = str(uuid.uuid4())
         job_id_old = str(uuid.uuid4())
 
-        await self._seed_job(db_session, 9001, job_id_recent, "in_progress", now - timedelta(seconds=10))
+        await self._seed_job(
+            db_session, 9001, job_id_recent, "in_progress", now - timedelta(seconds=10)
+        )
         await self._seed_job(db_session, 9001, job_id_old, "in_progress", now - timedelta(hours=4))
 
         count = await fail_orphaned_jobs(db_session)
@@ -1855,9 +1883,15 @@ class TestFailOrphanedJobsAgeThreshold:
 
         from app.models.import_job import ImportJob
 
-        rows = (await db_session.execute(
-            select(ImportJob).where(ImportJob.id.in_([job_id_recent, job_id_old]))
-        )).scalars().all()
+        rows = (
+            (
+                await db_session.execute(
+                    select(ImportJob).where(ImportJob.id.in_([job_id_recent, job_id_old]))
+                )
+            )
+            .scalars()
+            .all()
+        )
         assert all(j.status == "failed" for j in rows), (
             f"Expected both jobs to be failed, got: {[j.status for j in rows]}"
         )
@@ -1882,7 +1916,9 @@ class TestFailOrphanedJobsAgeThreshold:
         job_id_recent = str(uuid.uuid4())
         job_id_old = str(uuid.uuid4())
 
-        await self._seed_job(db_session, 9002, job_id_recent, "in_progress", now - timedelta(seconds=10))
+        await self._seed_job(
+            db_session, 9002, job_id_recent, "in_progress", now - timedelta(seconds=10)
+        )
         await self._seed_job(db_session, 9002, job_id_old, "in_progress", now - timedelta(hours=4))
 
         count = await fail_orphaned_jobs(
@@ -1893,9 +1929,15 @@ class TestFailOrphanedJobsAgeThreshold:
 
         assert count == 1
 
-        rows = (await db_session.execute(
-            select(ImportJob).where(ImportJob.id.in_([job_id_recent, job_id_old]))
-        )).scalars().all()
+        rows = (
+            (
+                await db_session.execute(
+                    select(ImportJob).where(ImportJob.id.in_([job_id_recent, job_id_old]))
+                )
+            )
+            .scalars()
+            .all()
+        )
         status_by_id = {j.id: j.status for j in rows}
         assert status_by_id[job_id_recent] == "in_progress", (
             "Recent job (10s old) must stay in_progress when threshold=3h"
@@ -1927,9 +1969,11 @@ class TestFailOrphanedJobsAgeThreshold:
         await db_session.commit()
 
         assert count == 1
-        rows = (await db_session.execute(
-            select(ImportJob).where(ImportJob.id == job_id)
-        )).scalars().all()
+        rows = (
+            (await db_session.execute(select(ImportJob).where(ImportJob.id == job_id)))
+            .scalars()
+            .all()
+        )
         assert rows[0].status == "failed"
 
 
@@ -2001,8 +2045,7 @@ class TestPeriodicReaper:
         first_call = received_kwargs[0]
         expected_threshold = timedelta(seconds=IMPORT_TIMEOUT_SECONDS)
         assert first_call.get("orphan_age_threshold") == expected_threshold, (
-            f"Expected orphan_age_threshold={expected_threshold!r}, "
-            f"got: {first_call!r}"
+            f"Expected orphan_age_threshold={expected_threshold!r}, got: {first_call!r}"
         )
 
     @pytest.mark.asyncio
@@ -2089,7 +2132,9 @@ class TestRecordFailureWithRetry:
         sleep_mock = AsyncMock()
 
         monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
-        monkeypatch.setattr("app.services.import_service.import_job_repository.update_import_job", mock_update)
+        monkeypatch.setattr(
+            "app.services.import_service.import_job_repository.update_import_job", mock_update
+        )
         monkeypatch.setattr("app.services.import_service.asyncio.sleep", sleep_mock)
 
         await _record_failure_with_retry(**self._make_failure_kwargs())
@@ -2129,7 +2174,9 @@ class TestRecordFailureWithRetry:
             sleep_calls.append(seconds)
 
         monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
-        monkeypatch.setattr("app.services.import_service.import_job_repository.update_import_job", _mock_update)
+        monkeypatch.setattr(
+            "app.services.import_service.import_job_repository.update_import_job", _mock_update
+        )
         monkeypatch.setattr("app.services.import_service.asyncio.sleep", _mock_sleep)
 
         with patch("app.services.import_service.sentry_sdk.capture_exception") as mock_capture:
@@ -2171,7 +2218,9 @@ class TestRecordFailureWithRetry:
             sleep_calls.append(seconds)
 
         monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
-        monkeypatch.setattr("app.services.import_service.import_job_repository.update_import_job", _mock_update)
+        monkeypatch.setattr(
+            "app.services.import_service.import_job_repository.update_import_job", _mock_update
+        )
         monkeypatch.setattr("app.services.import_service.asyncio.sleep", _mock_sleep)
 
         with patch("app.services.import_service.sentry_sdk.capture_exception") as mock_capture:
@@ -2209,7 +2258,9 @@ class TestRecordFailureWithRetry:
         sleep_mock = AsyncMock()
 
         monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
-        monkeypatch.setattr("app.services.import_service.import_job_repository.update_import_job", _mock_update)
+        monkeypatch.setattr(
+            "app.services.import_service.import_job_repository.update_import_job", _mock_update
+        )
         monkeypatch.setattr("app.services.import_service.asyncio.sleep", sleep_mock)
 
         with patch("app.services.import_service.sentry_sdk.capture_exception") as mock_capture:
@@ -2311,7 +2362,9 @@ class TestRunImportSessionPerBatch:
             def __init__(self, name: str) -> None:
                 self._name = name
                 self.commit = AsyncMock()
-                self.execute = AsyncMock(return_value=MagicMock(fetchall=MagicMock(return_value=[])))
+                self.execute = AsyncMock(
+                    return_value=MagicMock(fetchall=MagicMock(return_value=[]))
+                )
 
             async def __aenter__(self):
                 events.append(f"open:{self._name}")
@@ -2399,7 +2452,6 @@ class TestRunImportSessionPerBatch:
         ctx.__aexit__.assert_called_once()
 
     @pytest.mark.asyncio
-
     async def test_one_session_per_batch(self):
         """run_import opens one session for each logical scope: bootstrap + per-batch + completion.
 
@@ -2481,7 +2533,6 @@ class TestRunImportSessionPerBatch:
         )
 
     @pytest.mark.asyncio
-
     async def test_bootstrap_session_closed_before_loop(self):
         """Bootstrap session is closed (via __aexit__) before the first per-batch session opens.
 
@@ -2573,7 +2624,6 @@ class TestRunImportSessionPerBatch:
         _ = bootstrap_open  # used in assertion above via events.index
 
     @pytest.mark.asyncio
-
     async def test_completion_session_separate_from_batch(self):
         """Completion UPDATE runs on a fresh session, not the last batch's.
 
@@ -2667,7 +2717,6 @@ class TestRunImportSessionPerBatch:
         )
 
     @pytest.mark.asyncio
-
     async def test_run_import_e2e_smoke(self):
         """Smoke test: after Task 2, _make_game_iterator is called with the extracted scalar
         (`previous_last_synced_at: datetime | None`) rather than the ORM ImportJob instance.
@@ -2880,9 +2929,7 @@ class TestFlushBatchStage5RealDb:
         game_ids = await self._seed_user_and_games(db_session, 9502, 2)
 
         bad_stmt = (
-            update(Game)
-            .where(Game.id == bindparam("b_id"))
-            .values(move_count=bindparam("b_mc"))
+            update(Game).where(Game.id == bindparam("b_id")).values(move_count=bindparam("b_mc"))
         )
 
         with pytest.raises(InvalidRequestError, match="bulk synchronize"):
@@ -2890,3 +2937,230 @@ class TestFlushBatchStage5RealDb:
                 bad_stmt,
                 [{"b_id": gid, "b_mc": i} for i, gid in enumerate(game_ids)],
             )
+
+
+class TestRecordFailureWithRetryDbOutage:
+    """Regression tests for the broadened DB-outage classifier in
+    _record_failure_with_retry.
+
+    UAT 2026-05-20 (Postgres-only restart): a real outage raises
+    InterfaceError / DBAPIError / asyncpg.CannotConnectNowError /
+    ConnectionRefusedError on the next session checkout — none of which
+    were caught by the original `except OperationalError`. The helper
+    fell through to the generic Exception fail-fast branch and the job
+    stayed `in_progress`. This class pins the broadened classifier and
+    the engine.dispose() pool-invalidation between retries.
+
+    These tests mock the session+update path to inject each exception
+    type directly; the full live-DB scenario is too heavy for CI but is
+    covered by UAT-2 in 90-HUMAN-UAT.md.
+    """
+
+    def _make_failure_kwargs(self) -> dict:
+        return dict(
+            job_id="test-job-outage",
+            status="failed",
+            games_fetched=10,
+            games_imported=8,
+            error_message="db went away",
+            completed_at=datetime.now(timezone.utc),
+        )
+
+    def _patch_session_path(self, monkeypatch, update_side_effect) -> list[float]:
+        """Wire monkeypatches so update_import_job raises per side_effect and
+        engine.dispose() is observed. Returns the list that sleep calls append to.
+        """
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        session_ctx = AsyncMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_maker = MagicMock(return_value=session_ctx)
+        monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
+        monkeypatch.setattr(
+            "app.services.import_service.import_job_repository.update_import_job",
+            update_side_effect,
+        )
+        sleep_calls: list[float] = []
+
+        async def _mock_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+
+        monkeypatch.setattr("app.services.import_service.asyncio.sleep", _mock_sleep)
+        return sleep_calls
+
+    @pytest.mark.asyncio
+    async def test_retries_on_sqlalchemy_interface_error(self, monkeypatch):
+        """SQLAlchemy InterfaceError ('underlying connection is closed') must be retried.
+
+        This is the exact exception observed in UAT 2026-05-20 for jobs
+        e9466083 and 1466eb6d after Postgres was stopped mid-import.
+        """
+        from sqlalchemy.exc import InterfaceError as SAInterfaceError
+
+        from app.services.import_service import _record_failure_with_retry
+
+        call_count = 0
+
+        async def _update(*args, **kwargs) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise SAInterfaceError(
+                    "cannot call PreparedStatement.fetch(): the underlying connection is closed",
+                    None,
+                    Exception("interface"),
+                )
+
+        sleep_calls = self._patch_session_path(monkeypatch, _update)
+        dispose_mock = AsyncMock()
+        mock_engine = MagicMock()
+        mock_engine.dispose = dispose_mock
+        monkeypatch.setattr("app.services.import_service.engine", mock_engine)
+
+        with patch("app.services.import_service.sentry_sdk.capture_exception") as cap:
+            await _record_failure_with_retry(**self._make_failure_kwargs())
+
+        assert call_count == 3
+        # dispose() called once per retry (i.e. before attempts 2 and 3).
+        assert dispose_mock.await_count == 2
+        assert sleep_calls == [2, 4]
+        cap.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_retries_on_sqlalchemy_dbapi_error(self, monkeypatch):
+        """SQLAlchemy DBAPIError (parent of OperationalError) must be retried.
+
+        Mirrors the asyncpg ConnectionDoesNotExistError observed for job
+        824bce84 in UAT 2026-05-20.
+        """
+        from sqlalchemy.exc import DBAPIError
+
+        from app.services.import_service import _record_failure_with_retry
+
+        call_count = 0
+
+        async def _update(*args, **kwargs) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise DBAPIError(
+                    "connection was closed in the middle of operation",
+                    None,
+                    Exception("dbapi"),
+                )
+
+        self._patch_session_path(monkeypatch, _update)
+        _mock_engine = MagicMock()
+        _mock_engine.dispose = AsyncMock()
+        monkeypatch.setattr("app.services.import_service.engine", _mock_engine)
+
+        await _record_failure_with_retry(**self._make_failure_kwargs())
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retries_on_raw_asyncpg_cannot_connect_now(self, monkeypatch):
+        """Raw asyncpg.CannotConnectNowError (DB shutting down) must be retried.
+
+        This one escapes SA's exception translator because the pool's
+        connect-time path can raise the raw asyncpg exception without
+        going through dialect._handle_exception. UAT 2026-05-20 caught
+        this exact pattern in the second retry attempt.
+        """
+        import asyncpg
+
+        from app.services.import_service import _record_failure_with_retry
+
+        call_count = 0
+
+        async def _update(*args, **kwargs) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise asyncpg.exceptions.CannotConnectNowError(
+                    "the database system is shutting down"
+                )
+
+        self._patch_session_path(monkeypatch, _update)
+        _mock_engine = MagicMock()
+        _mock_engine.dispose = AsyncMock()
+        monkeypatch.setattr("app.services.import_service.engine", _mock_engine)
+
+        await _record_failure_with_retry(**self._make_failure_kwargs())
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retries_on_connection_refused(self, monkeypatch):
+        """Raw ConnectionRefusedError (OS-level, port 5432 down) must be retried.
+
+        asyncpg's _create_ssl_connection raises this from uvloop when the
+        Postgres listener is fully down — observed at the bottom of the
+        UAT 2026-05-20 traceback for job 1466eb6d.
+        """
+        from app.services.import_service import _record_failure_with_retry
+
+        call_count = 0
+
+        async def _update(*args, **kwargs) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ConnectionRefusedError(111, "Connection refused")
+
+        self._patch_session_path(monkeypatch, _update)
+        _mock_engine = MagicMock()
+        _mock_engine.dispose = AsyncMock()
+        monkeypatch.setattr("app.services.import_service.engine", _mock_engine)
+
+        await _record_failure_with_retry(**self._make_failure_kwargs())
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_engine_dispose_called_between_retries(self, monkeypatch):
+        """Pool invalidation must run between retries so the next attempt
+        opens a fresh asyncpg connection rather than reusing a stale one.
+        """
+        from sqlalchemy.exc import InterfaceError as SAInterfaceError
+
+        from app.services.import_service import _record_failure_with_retry
+
+        async def _update(*args, **kwargs) -> None:
+            raise SAInterfaceError("closed", None, Exception("x"))
+
+        self._patch_session_path(monkeypatch, _update)
+        dispose_mock = AsyncMock()
+        mock_engine = MagicMock()
+        mock_engine.dispose = dispose_mock
+        monkeypatch.setattr("app.services.import_service.engine", mock_engine)
+
+        with patch("app.services.import_service.sentry_sdk.capture_exception"):
+            await _record_failure_with_retry(**self._make_failure_kwargs())
+
+        # MAX_RETRIES=5 attempts: 4 retries → 4 dispose() calls.
+        assert dispose_mock.await_count == 4
+
+    @pytest.mark.asyncio
+    async def test_dispose_failure_does_not_break_retry_loop(self, monkeypatch):
+        """If engine.dispose() itself raises, the retry loop must continue
+        rather than fall through to the generic Exception branch.
+        """
+        from sqlalchemy.exc import InterfaceError as SAInterfaceError
+
+        from app.services.import_service import _record_failure_with_retry
+
+        call_count = 0
+
+        async def _update(*args, **kwargs) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise SAInterfaceError("closed", None, Exception("x"))
+
+        self._patch_session_path(monkeypatch, _update)
+        # dispose() raises on every call — must not break the loop.
+        bad_engine = MagicMock()
+        bad_engine.dispose = AsyncMock(side_effect=RuntimeError("dispose blew up"))
+        monkeypatch.setattr("app.services.import_service.engine", bad_engine)
+
+        await _record_failure_with_retry(**self._make_failure_kwargs())
+        assert call_count == 3
