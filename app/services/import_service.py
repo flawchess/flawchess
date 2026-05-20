@@ -24,7 +24,7 @@ import chess
 import chess.pgn
 import httpx
 import sentry_sdk
-from sqlalchemy import case, select, update
+from sqlalchemy import bindparam, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
@@ -541,20 +541,48 @@ async def _flush_batch(
         },
     )
 
-    # Stage 5: bulk UPDATE move_count and result_fen via CASE expressions (D-04).
+    # Bug fix (Phase 90, SEED-018, FLAWCHESS-56 / FLAWCHESS-3Q):
+    # Old code used case(...)+IN whose SQL text varied per batch (game-id set
+    # differs every batch). That grew SQLAlchemy's compile cache and asyncpg's
+    # prepared-statement LRU unboundedly, OOM-killing prod on 2026-03-22 and
+    # 2026-05-16. The two bound-param executemany groups below emit invariant
+    # SQL text — compiled once, prepared once, reused forever.
+    #
+    # Two groups (not one COALESCE) because result_fen must be preserved for
+    # games whose PGN parses to result_fen=None: only update result_fen for
+    # ids where we actually parsed a value. The COALESCE alternative is
+    # fragile (SQLAlchemy issue #9075 drops the expression in some executemany
+    # contexts). See 90-RESEARCH.md Pitfall 1.
+
+    # Stage 5: bulk UPDATE move_count and result_fen via two executemany groups.
     if rows_result.move_counts:
-        # Filter None result_fens — let NULL remain as default for those games.
-        fen_case_map = {gid: fen for gid, fen in rows_result.result_fens.items() if fen is not None}
-        values_dict: dict[str, Any] = {
-            "move_count": case(rows_result.move_counts, value=Game.id),
-        }
-        if fen_case_map:
-            values_dict["result_fen"] = case(fen_case_map, value=Game.id, else_=None)
-        await session.execute(
+        # Group (a): move_count for ALL games in the batch.
+        move_count_stmt = (
             update(Game)
-            .where(Game.id.in_(list(rows_result.move_counts.keys())))
-            .values(**values_dict)
+            .where(Game.id == bindparam("b_id"))
+            .values(move_count=bindparam("b_mc"))
         )
+        move_count_params: list[dict[str, Any]] = [
+            {"b_id": gid, "b_mc": mc}
+            for gid, mc in rows_result.move_counts.items()
+        ]
+        await session.execute(move_count_stmt, move_count_params)
+
+        # Group (b): result_fen ONLY for games where result_fen is not None.
+        # Games without a parsed result_fen keep their prior column value (or
+        # stay NULL if never set) — they are NOT actively overwritten to NULL.
+        fen_params: list[dict[str, Any]] = [
+            {"b_id": gid, "b_rf": fen}
+            for gid, fen in rows_result.result_fens.items()
+            if fen is not None
+        ]
+        if fen_params:
+            fen_stmt = (
+                update(Game)
+                .where(Game.id == bindparam("b_id"))
+                .values(result_fen=bindparam("b_rf"))
+            )
+            await session.execute(fen_stmt, fen_params)
 
     await session.commit()
     return len(rows_result.new_game_ids)

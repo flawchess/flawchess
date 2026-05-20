@@ -1449,17 +1449,6 @@ class TestFlushBatchStage5:
         assert len(update_calls) >= 1, "Expected at least one Stage 5 UPDATE for move_count"
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        reason=(
-            "Pitfall 1 guard: current code emits ONE combined UPDATE (move_count + result_fen "
-            "in a single CASE expression) for ALL batch ids via the WHERE IN clause. This means "
-            "game 102 (None fen) gets result_fen=NULL via CASE else_=None. After Task 2 rewrite "
-            "(two executemany groups), Stage 5 emits EXACTLY 2 UPDATE execute calls and game 102 "
-            "does NOT appear in the fen_params list. strict=False because the current code may "
-            "emit 2 calls in some code paths."
-        ),
-        strict=False,
-    )
     async def test_result_fen_none_preserved(self):
         """A game with result_fen=None must NOT appear in the fen UPDATE params list.
 
@@ -1627,15 +1616,6 @@ class TestFlushBatchStage5:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        reason=(
-            "Leak-prevention regression guard: current Stage 5 uses case()+IN whose SQL text "
-            "varies per batch (the CASE expression has N WHEN clauses per batch, varying by "
-            "batch size). After Task 2 rewrite (two bindparam executemany groups), the SQL "
-            "text is invariant — same placeholder names regardless of batch size or game ids."
-        ),
-        strict=True,  # Must fail on current code; if it somehow passes, that's wrong
-    )
     async def test_stage5_sql_text_invariant_across_batches(self):
         """Stage 5 SQL text must be identical regardless of which game ids are in the batch.
 
