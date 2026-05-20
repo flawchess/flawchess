@@ -66,7 +66,14 @@ Plans:
 **References:** [.planning/seeds/SEED-023-two-lane-import-defer-stockfish.md](seeds/SEED-023-two-lane-import-defer-stockfish.md), [.planning/seeds/SEED-022-import-concurrency-and-postgres-headroom.md](seeds/SEED-022-import-concurrency-and-postgres-headroom.md) (superseded — diagnostic narrative retained for history), [.planning/notes/2026-05-20-import-pipeline-rethink.md](notes/2026-05-20-import-pipeline-rethink.md), [logs/import-stress-20k-each-2026-05-20.log](../logs/import-stress-20k-each-2026-05-20.log).
 
 Plans:
-- [ ] TBD (run `/gsd-plan-phase`)
+- [ ] 91-01-PLAN.md — Schema: add games.evals_completed_at column + partial index + backfill (D-08/D-10)
+- [ ] 91-02-PLAN.md — Cold-lane drain module (run_eval_drain + LIFO pick + gather-outside-session)
+- [ ] 91-03-PLAN.md — Hot-lane refactor: strip eval stages from _flush_batch; add Stage 5c covered-game gate
+- [ ] 91-04-PLAN.md — GET /imports/eval-coverage endpoint + repository + integration tests
+- [ ] 91-05-PLAN.md — Wire run_eval_drain into FastAPI lifespan alongside reaper
+- [ ] 91-06-PLAN.md — useEvalCoverage hook + EvalCoverageHeader component + mount on Endgames + Openings/Stats
+- [ ] 91-07-PLAN.md — Per-metric pending caveat in EvalConfidenceTooltip + MetricStatTooltip bodies (7 Cpu consumers)
+- [ ] 91-08-PLAN.md — Dual-20k stress-test harness (scripts/measure_dual_import_rss.py) + operator-gated run
 
 <details>
 <summary>✅ v1.17 Endgame Stats Card Redesign (Phases 84-88.4) — SHIPPED 2026-05-19</summary>
