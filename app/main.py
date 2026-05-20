@@ -1,8 +1,11 @@
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import sentry_sdk
+
+logger = logging.getLogger(__name__)
 from asyncpg.exceptions import CannotConnectNowError, ConnectionDoesNotExistError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,12 +65,20 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        # WR-03: stop_engine() must always run even if the reaper task raises
+        # a non-CancelledError on shutdown — otherwise the long-lived
+        # Stockfish UCI process leaks across restarts. Wrap the await in an
+        # inner try/finally so the engine shutdown is unconditional.
         reaper_task.cancel()
         try:
-            await reaper_task
-        except asyncio.CancelledError:
-            pass  # expected on shutdown
-        await stop_engine()
+            try:
+                await reaper_task
+            except asyncio.CancelledError:
+                pass  # expected on shutdown
+            except Exception:
+                logger.exception("Periodic reaper task raised on shutdown")
+        finally:
+            await stop_engine()
 
 
 if settings.SENTRY_DSN:
