@@ -2220,6 +2220,51 @@ class TestRecordFailureWithRetry:
         # Sentry capture called once for the non-transient exception.
         assert mock_capture.call_count == 1
 
+    @pytest.mark.asyncio
+    async def test_cancelled_error_propagates_without_retry(self, monkeypatch):
+        """WR-07: CancelledError from asyncio.sleep must propagate immediately.
+
+        Simulates the lifespan shutdown path: an in-flight retry sleep is
+        cancelled, the helper must re-raise CancelledError (not retry, not
+        capture to Sentry). The periodic orphan-job reaper backstops any
+        jobs left in_progress because of this cancellation.
+        """
+        from app.services.import_service import _record_failure_with_retry
+
+        # First update call raises OperationalError so the helper enters the
+        # retry path; sleep then raises CancelledError to simulate shutdown.
+        async def _mock_update(*args, **kwargs) -> None:
+            raise OperationalError("connection refused", None, Exception("transient"))
+
+        mock_session = AsyncMock()
+        mock_session.commit = AsyncMock()
+        session_ctx = AsyncMock()
+        session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_maker = MagicMock(return_value=session_ctx)
+
+        sleep_calls: list[float] = []
+
+        async def _mock_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+            raise asyncio.CancelledError()
+
+        monkeypatch.setattr("app.services.import_service.async_session_maker", mock_maker)
+        monkeypatch.setattr(
+            "app.services.import_service.import_job_repository.update_import_job",
+            _mock_update,
+        )
+        monkeypatch.setattr("app.services.import_service.asyncio.sleep", _mock_sleep)
+
+        with patch("app.services.import_service.sentry_sdk.capture_exception") as mock_capture:
+            with pytest.raises(asyncio.CancelledError):
+                await _record_failure_with_retry(**self._make_failure_kwargs())
+
+        # First sleep was attempted (with backoff=2s) and immediately cancelled.
+        assert sleep_calls == [2], f"Expected one cancelled sleep at 2s, got {sleep_calls}"
+        # No Sentry capture — cancellation is a shutdown signal, not a bug.
+        mock_capture.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # TestRunImportSessionPerBatch — Phase 90 / SEED-018: per-batch session lifecycle

@@ -340,6 +340,14 @@ async def _record_failure_with_retry(
     defensive guard for future tuning. The 2026-05-16 Postgres crash-
     recovery window was ~2s, so 30s is generous.
 
+    Cancellation contract (WR-07): this helper is cancellation-aware. A
+    CancelledError raised during asyncio.sleep (e.g. lifespan shutdown
+    cancelling an in-flight run_import) propagates without retry — it is
+    a BaseException, not Exception, so neither except OperationalError nor
+    except Exception catches it. The periodic orphan-job reaper is the
+    backstop: jobs left in_progress because the failure-state UPDATE was
+    cancelled mid-retry will be reaped on the next reaper tick.
+
     Args:
         job_id: The import job UUID to update.
         status: Always "failed" — typed as Literal to enforce CLAUDE.md no-bare-str rule.
@@ -378,6 +386,10 @@ async def _record_failure_with_retry(
                 )
                 await session.commit()
                 return
+        except asyncio.CancelledError:
+            # WR-07: cancellation contract — propagate, do not retry. The
+            # periodic reaper picks up the stuck job on its next tick.
+            raise
         except ImportJobNotFound:
             # CR-01: bootstrap scope never committed, so no DB row exists. Retrying
             # cannot help — the row truly is missing. Log + capture once, then
