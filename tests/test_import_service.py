@@ -5,11 +5,13 @@ and error handling. All external dependencies are mocked.
 """
 
 from datetime import datetime, timezone
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import app.services.import_service as import_service
+from app.schemas.normalization import NormalizedGame
 from app.services.import_service import (
     JobStatus,
     create_job,
@@ -1312,3 +1314,403 @@ class TestIncrementalProgress:
         incremental = in_progress_updates[0]
         assert incremental["games_imported"] == trailing_count
         assert incremental["games_fetched"] == trailing_count
+
+
+# ---------------------------------------------------------------------------
+# TestFlushBatchStage5 — Wave 0 unit tests for Stage 5 executemany leak fix
+# ---------------------------------------------------------------------------
+
+
+# Phase 90 / SEED-018 / FLAWCHESS-56 / FLAWCHESS-3Q: pins the leak-free
+# invariant — Stage 5 SQL must not include literal game ids that vary per
+# batch, and result_fen must never be silently NULLed.
+class TestFlushBatchStage5:
+    """Unit tests for _flush_batch Stage 5: move_count + result_fen UPDATE.
+
+    Verifies:
+    1. move_count is persisted for every game in the batch.
+    2. result_fen=None for a game does not overwrite a pre-existing result_fen.
+    3. When ALL result_fens are None, no result_fen UPDATE is issued.
+    4. When move_counts is empty, no Stage-5 UPDATEs are issued.
+    5. The compiled SQL text for both UPDATE statements is invariant across batches
+       with different game-id sets (the leak regression guard).
+    """
+
+    def _make_flush_session(self, id_platform_pairs: list[tuple[int, str]]):
+        """Build a mock session where the SELECT returns the given (id, platform_game_id) pairs."""
+        session = AsyncMock()
+        session.commit = AsyncMock()
+
+        # First execute call is the INSERT from bulk_insert_games (mocked separately).
+        # Second execute call is the SELECT(Game.id, Game.platform_game_id).
+        # Subsequent calls are Stage 5 UPDATEs.
+        select_result = MagicMock()
+        select_result.fetchall.return_value = id_platform_pairs
+
+        # Stage 5 UPDATEs return a plain mock result.
+        update_result = MagicMock()
+
+        # Return select_result once (for the SELECT), then update_result for everything else.
+        call_count = 0
+
+        async def _execute_side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return select_result
+            return update_result
+
+        session.execute = AsyncMock(side_effect=_execute_side_effect)
+        return session
+
+    def _make_processing_result(
+        self,
+        result_fen: str | None,
+        move_count: int = 5,
+    ) -> dict:
+        """Build a minimal process_game_pgn result with no eval targets (phase=0)."""
+        return {
+            "result_fen": result_fen,
+            "move_count": move_count,
+            "plies": [
+                {
+                    "ply": 0,
+                    "white_hash": 1,
+                    "black_hash": 2,
+                    "full_hash": 3,
+                    "move_san": "e4",
+                    "clock_seconds": None,
+                    "eval_cp": None,
+                    "eval_mate": None,
+                    "material_count": 7800,
+                    "material_signature": "KQRRBBNNPPPPPPPP_KQRRBBNNPPPPPPPP",
+                    "material_imbalance": 0,
+                    "has_opposite_color_bishops": False,
+                    "piece_count": 14,
+                    "backrank_sparse": False,
+                    "mixedness": 0,
+                    "endgame_class": None,
+                    "phase": 0,
+                }
+            ],
+        }
+
+    @pytest.mark.asyncio
+    async def test_move_count_lands_for_all_games(self):
+        """After _flush_batch, a Stage 5 execute call is issued for move_count for all games."""
+        from app.services.import_service import _flush_batch
+
+        # 3 games, all with valid fens.
+        id_pairs = [(101, "gid-101"), (102, "gid-102"), (103, "gid-103")]
+        session = self._make_flush_session(id_pairs)
+
+        batch = [
+            {"platform": "chess.com", "platform_game_id": f"gid-{gid}", "pgn": "1. e4 *", "user_id": 1}
+            for gid in [101, 102, 103]
+        ]
+        pgn_results = {
+            "gid-101": self._make_processing_result("fen_101", move_count=10),
+            "gid-102": self._make_processing_result("fen_102", move_count=20),
+            "gid-103": self._make_processing_result("fen_103", move_count=30),
+        }
+
+        def _pgn_side_effect(pgn):
+            for pid, result in pgn_results.items():
+                if pid in pgn or pgn == "1. e4 *":
+                    return result
+            return None
+
+        with (
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[101, 102, 103]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                side_effect=lambda pgn: pgn_results.get(
+                    next((pid for pid in pgn_results if pid in pgn), ""), None
+                )
+                or pgn_results["gid-101"],
+            ),
+        ):
+            result = await _flush_batch(session, cast(list[NormalizedGame], batch), user_id=1)
+
+        assert result == 3
+
+        # Collect UPDATE calls (is_update attribute) from Stage 5.
+        execute_calls = session.execute.call_args_list
+        update_calls = [
+            call for call in execute_calls if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update
+        ]
+        assert len(update_calls) >= 1, "Expected at least one Stage 5 UPDATE for move_count"
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason=(
+            "Pitfall 1 guard: current code emits ONE combined UPDATE (move_count + result_fen "
+            "in a single CASE expression) for ALL batch ids via the WHERE IN clause. This means "
+            "game 102 (None fen) gets result_fen=NULL via CASE else_=None. After Task 2 rewrite "
+            "(two executemany groups), Stage 5 emits EXACTLY 2 UPDATE execute calls and game 102 "
+            "does NOT appear in the fen_params list. strict=False because the current code may "
+            "emit 2 calls in some code paths."
+        ),
+        strict=False,
+    )
+    async def test_result_fen_none_preserved(self):
+        """A game with result_fen=None must NOT appear in the fen UPDATE params list.
+
+        Contract:
+        - Exactly 2 UPDATE execute calls: one for move_count (all 3 games), one for fen
+          (only games 101 and 103 which have non-None fens).
+        - Game 102 does NOT appear in the fen UPDATE params.
+
+        With the current CASE+IN code: 1 combined UPDATE → this test fails (xfail).
+        After Task 2 rewrite: 2 separate UPDATE calls → test passes.
+        """
+        from app.services.import_service import _flush_batch
+
+        # 3 games: 101 and 103 have valid fens; 102 has None (e.g. truncated PGN).
+        id_pairs = [(101, "gid-101"), (102, "gid-102"), (103, "gid-103")]
+        session = self._make_flush_session(id_pairs)
+
+        batch = [
+            {"platform": "chess.com", "platform_game_id": f"gid-{gid}", "pgn": "1. e4 *", "user_id": 1}
+            for gid in [101, 102, 103]
+        ]
+        pgn_results = {
+            "gid-101": self._make_processing_result("fen_101", move_count=10),
+            "gid-102": self._make_processing_result(None, move_count=8),  # None fen
+            "gid-103": self._make_processing_result("fen_103", move_count=30),
+        }
+
+        call_index = [0]
+
+        def _pgn_side_effect(pgn: str) -> dict:
+            i = call_index[0]
+            call_index[0] += 1
+            return list(pgn_results.values())[i % len(pgn_results)]
+
+        with (
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[101, 102, 103]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                side_effect=_pgn_side_effect,
+            ),
+        ):
+            await _flush_batch(session, cast(list[NormalizedGame], batch), user_id=1)
+
+        execute_calls = session.execute.call_args_list
+        update_calls = [
+            call
+            for call in execute_calls
+            if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update
+        ]
+
+        # Rewritten code: exactly 2 UPDATE execute calls (move_count group + fen group).
+        # Current code: 1 combined UPDATE (move_count + result_fen in one CASE statement).
+        assert len(update_calls) == 2, (
+            f"Expected exactly 2 Stage 5 UPDATE calls (move_count group + fen group). "
+            f"Got {len(update_calls)}. This assertion fails on current code (1 combined UPDATE)."
+        )
+
+        # The fen UPDATE's params must NOT include game 102.
+        fen_update_game_ids: set[int] = set()
+        for call in update_calls:
+            if len(call.args) >= 2 and isinstance(call.args[1], list):
+                for p in call.args[1]:
+                    if isinstance(p, dict) and "b_rf" in p:
+                        fen_update_game_ids.add(p["b_id"])
+
+        assert 102 not in fen_update_game_ids, (
+            f"Game 102 (result_fen=None) must not appear in fen UPDATE params. "
+            f"Found fen-update game ids: {fen_update_game_ids}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_result_fen_all_none_skips_fen_update(self):
+        """When ALL games have result_fen=None after parse, no result_fen UPDATE is issued.
+
+        Verifies: with the two-group executemany approach, fen_params is empty so
+        the fen execute call is skipped entirely. With current code: fen_case_map is
+        empty so the `if fen_case_map:` guard already prevents the fen update — this
+        test passes on both current and new code.
+        """
+        from app.services.import_service import _flush_batch
+
+        id_pairs = [(101, "gid-101"), (102, "gid-102"), (103, "gid-103")]
+        session = self._make_flush_session(id_pairs)
+
+        batch = [
+            {"platform": "chess.com", "platform_game_id": f"gid-{gid}", "pgn": "1. e4 *", "user_id": 1}
+            for gid in [101, 102, 103]
+        ]
+        # All games parse to result_fen=None.
+        all_none_result = self._make_processing_result(None, move_count=5)
+
+        with (
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[101, 102, 103]),
+            ),
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_positions",
+                new=AsyncMock(),
+            ),
+            patch(
+                "app.services.import_service.process_game_pgn",
+                return_value=all_none_result,
+            ),
+        ):
+            await _flush_batch(session, cast(list[NormalizedGame], batch), user_id=1)
+
+        execute_calls = session.execute.call_args_list
+
+        # No execute call should carry a params list with "b_rf" keys (fen update).
+        fen_update_calls = [
+            call
+            for call in execute_calls
+            if len(call.args) >= 2
+            and isinstance(call.args[1], list)
+            and any(isinstance(p, dict) and "b_rf" in p for p in call.args[1])
+        ]
+        assert len(fen_update_calls) == 0, (
+            f"Expected no fen UPDATE when all result_fens are None. "
+            f"Found {len(fen_update_calls)} fen update call(s)."
+        )
+
+    @pytest.mark.asyncio
+    async def test_empty_move_counts_short_circuits(self):
+        """When rows_result.move_counts is empty, no Stage-5 UPDATE execute calls are made.
+
+        This happens when bulk_insert_games returns no new IDs (all duplicates).
+        """
+        from app.services.import_service import _flush_batch
+
+        # Make bulk_insert_games return empty (all duplicates).
+        session = _make_mock_session()
+
+        batch = [
+            {"platform": "chess.com", "platform_game_id": "gid-dup-1", "pgn": "1. e4 *", "user_id": 1}
+        ]
+
+        with (
+            patch(
+                "app.services.import_service.game_repository.bulk_insert_games",
+                new=AsyncMock(return_value=[]),  # empty — all duplicates
+            ),
+        ):
+            result = await _flush_batch(session, cast(list[NormalizedGame], batch), user_id=1)
+
+        # Short-circuit returns 0 and must not call any UPDATE.
+        assert result == 0
+
+        execute_calls = session.execute.call_args_list
+        update_calls = [
+            call
+            for call in execute_calls
+            if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update
+        ]
+        assert len(update_calls) == 0, (
+            f"Expected no UPDATE calls when move_counts is empty, "
+            f"but found {len(update_calls)} update call(s)."
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason=(
+            "Leak-prevention regression guard: current Stage 5 uses case()+IN whose SQL text "
+            "varies per batch (the CASE expression has N WHEN clauses per batch, varying by "
+            "batch size). After Task 2 rewrite (two bindparam executemany groups), the SQL "
+            "text is invariant — same placeholder names regardless of batch size or game ids."
+        ),
+        strict=True,  # Must fail on current code; if it somehow passes, that's wrong
+    )
+    async def test_stage5_sql_text_invariant_across_batches(self):
+        """Stage 5 SQL text must be identical regardless of which game ids are in the batch.
+
+        This is the memory-leak regression guard (Phase 90 / SEED-018 / FLAWCHESS-56):
+        if the SQL text varies per batch (e.g. via CASE+IN with literal game ids),
+        SQLAlchemy's compile cache and asyncpg's prepared-statement LRU both grow
+        unboundedly, OOM-killing production on large imports.
+
+        Calls _flush_batch twice with two different game-id sets and compares the
+        compiled SQL text of the Stage 5 UPDATE statements captured from each call.
+
+        EXPECTED STATE: xfail against current code (case()+IN SQL embeds literal game ids
+        in the WHERE clause, so the text differs between the two batches).
+        After Task 2 rewrite (bindparam executemany), both batches emit identical SQL.
+        """
+        from sqlalchemy.dialects import postgresql
+
+        from app.services.import_service import _flush_batch
+
+        dialect = postgresql.dialect()
+
+        async def _run_batch_and_capture_update_sql(game_ids: list[int]) -> list[str]:
+            id_pairs = [(gid, f"gid-{gid}") for gid in game_ids]
+            session = self._make_flush_session(id_pairs)
+
+            batch = [
+                {
+                    "platform": "chess.com",
+                    "platform_game_id": f"gid-{gid}",
+                    "pgn": "1. e4 *",
+                    "user_id": 1,
+                }
+                for gid in game_ids
+            ]
+            processing_result = self._make_processing_result("test_fen", move_count=5)
+
+            with (
+                patch(
+                    "app.services.import_service.game_repository.bulk_insert_games",
+                    new=AsyncMock(return_value=game_ids),
+                ),
+                patch(
+                    "app.services.import_service.game_repository.bulk_insert_positions",
+                    new=AsyncMock(),
+                ),
+                patch(
+                    "app.services.import_service.process_game_pgn",
+                    return_value=processing_result,
+                ),
+            ):
+                await _flush_batch(session, cast(list[NormalizedGame], batch), user_id=1)
+
+            # Collect SQL text from UPDATE execute calls.
+            update_sql_texts: list[str] = []
+            for call in session.execute.call_args_list:
+                if len(call.args) > 0 and hasattr(call.args[0], "is_update") and call.args[0].is_update:
+                    compiled = call.args[0].compile(dialect=dialect)
+                    update_sql_texts.append(str(compiled))
+            return update_sql_texts
+
+        # Batch A: games [101, 102, 103]
+        sql_texts_batch_a = await _run_batch_and_capture_update_sql([101, 102, 103])
+        # Batch B: games [201, 202, 203, 204] — different ids AND different count
+        sql_texts_batch_b = await _run_batch_and_capture_update_sql([201, 202, 203, 204])
+
+        assert len(sql_texts_batch_a) > 0, "Expected at least one UPDATE call in batch A"
+        assert len(sql_texts_batch_b) > 0, "Expected at least one UPDATE call in batch B"
+        assert len(sql_texts_batch_a) == len(sql_texts_batch_b), (
+            f"Both batches must emit the same number of UPDATE statements. "
+            f"Batch A: {len(sql_texts_batch_a)}, Batch B: {len(sql_texts_batch_b)}"
+        )
+
+        for i, (sql_a, sql_b) in enumerate(zip(sql_texts_batch_a, sql_texts_batch_b)):
+            assert sql_a == sql_b, (
+                f"Stage 5 UPDATE statement {i} SQL text must be invariant across batches "
+                f"(the memory-leak regression guard). "
+                f"Batch A: {sql_a!r}\nBatch B: {sql_b!r}"
+            )
