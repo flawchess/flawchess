@@ -42,6 +42,30 @@
 **References:** [.planning/seeds/SEED-018-import-statement-cache-memory-leak.md](seeds/SEED-018-import-statement-cache-memory-leak.md), [.planning/seeds/SEED-017-import-resilience-hardening.md](seeds/SEED-017-import-resilience-hardening.md) (closed, superseded), [.planning/debug/import-job-db-conn-closed.md](debug/import-job-db-conn-closed.md), [.planning/notes/v1.18-import-pipeline-fix-scope.md](notes/v1.18-import-pipeline-fix-scope.md).
 
 Plans:
+- [x] All plans completed — see Phase 90 phase dir.
+
+### Phase 91: Two-lane import — defer Stockfish eval to in-process cold drain
+
+**Goal:** Restructure the import pipeline so the hot path (fetch → parse → insert positions → commit) holds no Stockfish work, and a separate in-process cold-drain coroutine evaluates entry plies in the background. Two concurrent 20k-game imports must complete without OOM-killing Postgres (the 2026-05-20 stress-test failure mode), the user must see opening-explorer / raw endgame WDL / flag-rate / time-per-move stats within seconds of import start, and Stockfish-dependent stats (conversion, recovery, score-gap, time-pressure-vs-performance) must fill in over the following minutes with honest per-metric sample-size labels.
+
+**Scope (in):**
+1. **Schema** — add `games.evals_completed_at TIMESTAMPTZ NULL` + partial index `WHERE evals_completed_at IS NULL`. Backfill existing rows to `COALESCE(updated_at, created_at, NOW())` so the cold lane doesn't re-eval the historical corpus.
+2. **Hot-lane refactor** — strip Stages 3a (`_collect_midgame_eval_targets` / `_collect_endgame_span_eval_targets`), 4 (`asyncio.gather` over `engine.evaluate`), and the per-target UPDATE in `_apply_eval_results` out of `_flush_batch`. Add per-game evaluation of "are all entry plies already lichess-`%eval`-covered?" to set `evals_completed_at` in the same write.
+3. **Cold-lane drain** — new `run_eval_drain()` coroutine wired in `app/main.py` lifespan alongside `run_periodic_reaper`. Picks 10 games per tick from `WHERE evals_completed_at IS NULL ORDER BY id LIMIT 10`, derives entry-ply targets, `asyncio.gather` outside any session scope, opens session only as a short write window for the combined UPDATE batch. Runs in parallel with active imports (no admission gate — lanes don't compete once eval is out of the hot tx). Idempotent on crash.
+4. **Frontend header bar** — small `<Cpu /> X% Stockfish analysis complete (N games pending)` indicator driven by per-user `COUNT(*) WHERE evals_completed_at IS NULL`. Hidden when pending == 0. Polled every ~10s while >0.
+5. **Per-metric pending caveat** — extend the existing `EvalConfidenceTooltip` / `MetricStatPopover` body on every Stockfish-dependent stat with a one-line "based on N of M eligible games, K still being evaluated" when pending > 0.
+6. **Tests** — hot-lane RSS plateau under dual-import dev test, cold-lane idempotency on simulated crash mid-batch, schema migration up/down, partial index used by drain query (EXPLAIN check).
+
+**Scope (out):**
+- Concurrent-import admission control (SEED-022 option F) — optional, deferred. Hot-lane batches become too cheap to OOM under realistic concurrent load; revisit if production traffic surfaces a separate bottleneck.
+- Scheduled backend restart cadence (SEED-022 option G) and idempotent `on_game_fetched` (SEED-022 option A′) — small, independent, can land any time as `/gsd-fast`.
+- Profiling phase originally drafted under SEED-022 — **withdrawn**, this phase replaces it. Architecture rewrite addresses the root cause directly; profiling would document a workload that no longer exists.
+
+**Verification:** dev-side re-run of the 2× 20k stress test pattern (lichess + chess.com concurrent on a freshly-cloned account) with `docker stats` + `pg_stat_activity` polling. Acceptance: backend RSS plateaus ≤ 1.6 GB, Postgres anon+shmem ≤ 1.2 GB sustained, swap never exceeds 50 % of allocated swap, both imports complete `status=completed`, eval coverage bar reaches 100 % within N minutes after the second import finishes. Production re-run after deploy on a real ≥10k-game account.
+
+**References:** [.planning/seeds/SEED-023-two-lane-import-defer-stockfish.md](seeds/SEED-023-two-lane-import-defer-stockfish.md), [.planning/seeds/SEED-022-import-concurrency-and-postgres-headroom.md](seeds/SEED-022-import-concurrency-and-postgres-headroom.md) (superseded — diagnostic narrative retained for history), [.planning/notes/2026-05-20-import-pipeline-rethink.md](notes/2026-05-20-import-pipeline-rethink.md), [logs/import-stress-20k-each-2026-05-20.log](../logs/import-stress-20k-each-2026-05-20.log).
+
+Plans:
 - [ ] TBD (run `/gsd-plan-phase`)
 
 <details>

@@ -1,6 +1,9 @@
 ---
 id: SEED-022
-status: dormant
+status: superseded
+superseded_by: SEED-023
+superseded_on: 2026-05-20
+superseded_reason: First-principles re-read during a /gsd-explore session on 2026-05-20 identified the import-time Stockfish eval pass *inside the per-batch transaction* as the structural OOM driver, making this seed's profile-then-mitigate sequence (Phase 91 profiling → Phase 92α/β tuning → Phase 93 admission control) diagnostic-without-payoff. SEED-023 replaces it with the direct architectural fix (two-lane import). The diagnostic narrative below is retained for history.
 planted: 2026-05-20
 planted_during: v1.17 (post-Phase-90 stress test + same-day code/config review)
 trigger_when: before opening signups to a wider audience (concurrent imports become the norm), OR if a production user with a >15k-game account reports a stuck/failed import, OR before the next deliberate growth push. Also reconsider whenever the import pipeline, Stockfish eval pass, or postgres tuning is touched.
