@@ -1679,10 +1679,12 @@ class TestFlushBatchStage5:
                     update_sql_texts.append(str(compiled))
             return update_sql_texts
 
+        ids_a = [101, 102, 103]
+        ids_b = [201, 202, 203, 204]
         # Batch A: games [101, 102, 103]
-        sql_texts_batch_a = await _run_batch_and_capture_update_sql([101, 102, 103])
+        sql_texts_batch_a = await _run_batch_and_capture_update_sql(ids_a)
         # Batch B: games [201, 202, 203, 204] — different ids AND different count
-        sql_texts_batch_b = await _run_batch_and_capture_update_sql([201, 202, 203, 204])
+        sql_texts_batch_b = await _run_batch_and_capture_update_sql(ids_b)
 
         assert len(sql_texts_batch_a) > 0, "Expected at least one UPDATE call in batch A"
         assert len(sql_texts_batch_b) > 0, "Expected at least one UPDATE call in batch B"
@@ -1697,6 +1699,67 @@ class TestFlushBatchStage5:
                 f"(the memory-leak regression guard). "
                 f"Batch A: {sql_a!r}\nBatch B: {sql_b!r}"
             )
+
+        # WR-04: extra regression guard — render with literal_binds and assert
+        # that NO batch game id appears inline in the SQL text. The template
+        # compile above is trivially invariant under bindparam, but a future
+        # regression to case()+IN would embed game ids as literals and this
+        # assertion would catch it.
+        # WR-04: bindparams without supplied values render as NULL under
+        # literal_binds; this is expected and harmless for the assertion below
+        # (we only check that none of the batch game ids appear inline).
+        import warnings as _warnings
+
+        async def _capture_compiled_literal_sql(game_ids: list[int]) -> list[str]:
+            id_pairs = [(gid, f"gid-{gid}") for gid in game_ids]
+            session = self._make_flush_session(id_pairs)
+            batch = [
+                {
+                    "platform": "chess.com",
+                    "platform_game_id": f"gid-{gid}",
+                    "pgn": "1. e4 *",
+                    "user_id": 1,
+                }
+                for gid in game_ids
+            ]
+            processing_result = self._make_processing_result("test_fen", move_count=5)
+            with (
+                patch(
+                    "app.services.import_service.game_repository.bulk_insert_games",
+                    new=AsyncMock(return_value=game_ids),
+                ),
+                patch(
+                    "app.services.import_service.game_repository.bulk_insert_positions",
+                    new=AsyncMock(),
+                ),
+                patch(
+                    "app.services.import_service.process_game_pgn",
+                    return_value=processing_result,
+                ),
+            ):
+                await _flush_batch(session, cast(list[NormalizedGame], batch), user_id=1)
+            literal_sql_texts: list[str] = []
+            for call in session.execute.call_args_list:
+                if (
+                    len(call.args) > 0
+                    and hasattr(call.args[0], "is_update")
+                    and call.args[0].is_update
+                ):
+                    with _warnings.catch_warnings():
+                        _warnings.simplefilter("ignore", category=Warning)
+                        compiled = call.args[0].compile(
+                            dialect=dialect, compile_kwargs={"literal_binds": True}
+                        )
+                    literal_sql_texts.append(str(compiled))
+            return literal_sql_texts
+
+        literal_sql_a = await _capture_compiled_literal_sql(ids_a)
+        for sql_text in literal_sql_a:
+            for gid in ids_a:
+                assert str(gid) not in sql_text, (
+                    f"Game id {gid} appears in literal-rendered SQL — Stage 5 "
+                    f"regressed to inline literals. SQL: {sql_text!r}"
+                )
 
 
 # ---------------------------------------------------------------------------
