@@ -16,6 +16,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useImportTrigger, useImportPolling } from '@/hooks/useImport';
+import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
@@ -206,6 +207,7 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
 
   return (
     <main data-testid="import-page" className="mx-auto w-full max-w-2xl px-4 py-6 md:px-6 space-y-8">
+      <EvalCoverageHeader />
       {profile?.is_guest && (
         <Alert variant="info" icon={DoorOpen} data-testid="import-guest-promo-info" className="mb-4">
           <div>

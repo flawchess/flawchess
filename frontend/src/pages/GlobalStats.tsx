@@ -9,6 +9,7 @@ import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
+import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { RatingChart } from '@/components/stats/RatingChart';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
@@ -127,11 +128,13 @@ export function GlobalStatsPage() {
           activePanel={sidebarOpen}
           onActivePanelChange={setSidebarOpen}
         >
+          <EvalCoverageHeader />
           {content}
         </SidebarLayout>
 
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col gap-4 min-w-0">
+          <EvalCoverageHeader />
           {/* Sticky filter button (top right) */}
           <div className="sticky top-0 z-20 flex justify-end pb-2">
             <Tooltip content="Open filters" side="left">

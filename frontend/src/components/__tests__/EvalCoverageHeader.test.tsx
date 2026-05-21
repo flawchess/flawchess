@@ -28,7 +28,7 @@ describe('EvalCoverageHeader', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders absolute counts ("N of M games analysed") when multiple games are pending', () => {
+  it('renders compact "Stockfish: N / M games" copy when multiple games are pending', () => {
     (useEvalCoverage as Mock).mockReturnValue({
       isPending: true,
       pendingCount: 1432,
@@ -39,13 +39,11 @@ describe('EvalCoverageHeader', () => {
     render(<EvalCoverageHeader />);
     const el = screen.getByTestId('eval-coverage-header');
     expect(el).toBeTruthy();
-    expect(el.textContent).toContain('Stockfish analysis in progress');
     // analysedCount = 11000 - 1432 = 9568
-    expect(el.textContent).toContain('9,568 of 11,000 games analysed');
-    expect(el.textContent).toContain('(1,432 still pending)');
+    expect(el.textContent).toContain('Stockfish: 9,568 / 11,000 games');
   });
 
-  it('handles singular total (1 game total, 1 pending)', () => {
+  it('renders compact copy when only 1 game total', () => {
     (useEvalCoverage as Mock).mockReturnValue({
       isPending: true,
       pendingCount: 1,
@@ -55,8 +53,7 @@ describe('EvalCoverageHeader', () => {
 
     render(<EvalCoverageHeader />);
     const el = screen.getByTestId('eval-coverage-header');
-    expect(el.textContent).toContain('0 of 1 game analysed');
-    expect(el.textContent).toContain('(1 still pending)');
+    expect(el.textContent).toContain('Stockfish: 0 / 1 games');
   });
 
   it('clamps analysed count at 0 when pendingCount > totalCount (defensive race during import)', () => {
@@ -72,7 +69,7 @@ describe('EvalCoverageHeader', () => {
 
     render(<EvalCoverageHeader />);
     const el = screen.getByTestId('eval-coverage-header');
-    expect(el.textContent).toContain('0 of 5 games analysed');
+    expect(el.textContent).toContain('Stockfish: 0 / 5 games');
   });
 
   it('has role="status" and data-testid on root element', () => {

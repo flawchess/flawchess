@@ -1,7 +1,6 @@
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { OpeningInsightFinding } from '@/types/insights';
 import { OpeningInsightsBlock } from '@/components/insights/OpeningInsightsBlock';
-import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 
 type InsightsTabProps = {
   hasOpenings: boolean;
@@ -18,7 +17,6 @@ export function InsightsTab({
 }: InsightsTabProps) {
   return (
     <div className="flex flex-col gap-6">
-      <EvalCoverageHeader />
       {/* Phase 71: dedicated Insights subtab. */}
       {/* Hidden block + friendly empty state when user has no imported games (proxy: mostPlayedData empty). */}
       {hasOpenings ? (
