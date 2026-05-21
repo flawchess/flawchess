@@ -17,15 +17,15 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from collections.abc import AsyncGenerator
 
 import httpx
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.main import app
 from app.models.game import Game
-from app.models.user import User
 
 EVAL_COVERAGE_ENDPOINT = "/api/imports/eval-coverage"
 
@@ -117,7 +117,7 @@ async def _delete_games_for_user(test_engine, user_id: int) -> None:
 
 
 @pytest_asyncio.fixture
-async def user_a_client(test_engine) -> tuple[int, str]:
+async def user_a_client(test_engine) -> AsyncGenerator[tuple[int, str], None]:
     """Register User A and return (user_id, token). Cleanup games on teardown."""
     email = f"eval_cov_a_{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
@@ -126,7 +126,7 @@ async def user_a_client(test_engine) -> tuple[int, str]:
 
 
 @pytest_asyncio.fixture
-async def user_b_client(test_engine) -> tuple[int, str]:
+async def user_b_client(test_engine) -> AsyncGenerator[tuple[int, str], None]:
     """Register User B and return (user_id, token). Cleanup games on teardown."""
     email = f"eval_cov_b_{uuid.uuid4().hex[:8]}@example.com"
     user_id, token = await _register_and_login(email)
