@@ -113,7 +113,7 @@ Plans:
 
 Plans: 6 plans
 
-- [ ] 92-01-PLAN.md — D-19 pre-work: drop recency from bookmark TimeSeriesRequest (both stacks)
+- [x] 92-01-PLAN.md — D-19 pre-work: drop recency from bookmark TimeSeriesRequest (both stacks)
 - [ ] 92-02-PLAN.md — Atomic backend wire-format flip: apply_game_filters + 5 schemas + 3 routers + insights gate + LLM windows
 - [ ] 92-03-PLAN.md — Atomic frontend type/hook migration: Recency→RecencyPreset, recency.ts utility, all 7 hooks, FilterState.customRange
 - [ ] 92-04-PLAN.md — Install shadcn Calendar (with legitimacy checkpoint) + add DrawerNested wrapper
