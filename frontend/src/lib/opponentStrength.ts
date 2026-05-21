@@ -7,17 +7,21 @@ export const SLIDER_MIN = -200;
 export const SLIDER_MAX = 200;
 export const SLIDER_STEP = 50;
 
-// Inclusive threshold defining "stronger" vs "similar" vs "weaker". Matches
-// app/core/opponent_strength.py PRESET_THRESHOLD.
-export const PRESET_THRESHOLD = 50;
+// Inclusive thresholds defining the preset boundaries. PRESET_THRESHOLD
+// bounds Similar (±100); STRONG_WEAK_THRESHOLD bounds Stronger (≥+50) and
+// Weaker (≤-50). Match app/core/opponent_strength.py. Decoupled so Similar
+// can be widened without narrowing the Stronger/Weaker tails — overlap in
+// the 50–100 gap range is intentional.
+export const PRESET_THRESHOLD = 100;
+export const STRONG_WEAK_THRESHOLD = 50;
 
 export const ANY_RANGE: OpponentStrengthRange = { min: null, max: null };
 
 export const PRESET_RANGES: Record<OpponentStrengthPreset, OpponentStrengthRange> = {
   any: ANY_RANGE,
-  stronger: { min: PRESET_THRESHOLD, max: null },
+  stronger: { min: STRONG_WEAK_THRESHOLD, max: null },
   similar: { min: -PRESET_THRESHOLD, max: PRESET_THRESHOLD },
-  weaker: { min: null, max: -PRESET_THRESHOLD },
+  weaker: { min: null, max: -STRONG_WEAK_THRESHOLD },
 };
 
 export const PRESET_LABELS: Record<OpponentStrengthPreset, string> = {
