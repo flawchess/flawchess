@@ -42,3 +42,11 @@ class DeleteGamesResponse(BaseModel):
     """Response for DELETE /imports/games."""
 
     deleted_count: int
+
+
+class EvalCoverageResponse(BaseModel):
+    """Response for GET /imports/eval-coverage."""
+
+    pending_count: int
+    total_count: int
+    pct_complete: int  # 0-100, rounded
