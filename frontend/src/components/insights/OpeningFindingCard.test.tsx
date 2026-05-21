@@ -34,6 +34,12 @@ vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+// useEvalCoverage calls useQuery which requires a QueryClientProvider.
+// Return safe defaults so the component renders without a provider.
+vi.mock('@/hooks/useEvalCoverage', () => ({
+  useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
+}));
+
 import type * as React from 'react';
 
 import { OpeningFindingCard } from './OpeningFindingCard';
