@@ -118,7 +118,7 @@ Plans: 6 plans
 - [x] 92-03-PLAN.md — Atomic frontend type/hook migration: Recency→RecencyPreset, recency.ts utility, all 7 hooks, FilterState.customRange
 - [x] 92-04-PLAN.md — Install shadcn Calendar (with legitimacy checkpoint) + add DrawerNested wrapper
 - [x] 92-05-PLAN.md — FilterPanel UI: 9th SelectItem, desktop Popover anchored to Select, mobile nested Drawer, trigger label
-- [ ] 92-06-PLAN.md — Boundary integration tests + 422 + insights gate test + CHANGELOG + human UAT
+- [x] 92-06-PLAN.md — Boundary integration tests + 422 + insights gate test + CHANGELOG + human UAT
 
 <details>
 <summary>✅ v1.17 Endgame Stats Card Redesign (Phases 84-88.4) — SHIPPED 2026-05-19</summary>
