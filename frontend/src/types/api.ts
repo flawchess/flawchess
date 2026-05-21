@@ -187,3 +187,9 @@ export interface ImportStatusResponse {
   /** Count of other users currently importing from the same platform (D-23) */
   other_importers: number;
 }
+
+export interface EvalCoverageResponse {
+  pending_count: number;
+  total_count: number;
+  pct_complete: number;  // 0–100, rounded
+}

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { MoveExplorer } from '@/components/move-explorer/MoveExplorer';
 import { PositionResultsPanel } from '@/components/charts/PositionResultsPanel';
+import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import type { Color, NextMovesResponse, OpeningsResponse } from '@/types/api';
 import type { HighlightedMove } from './useDeepLinkHighlight';
 
@@ -32,6 +33,7 @@ export function ExplorerTab({
 }: ExplorerTabProps) {
   return (
     <div className="flex flex-col gap-4">
+      <EvalCoverageHeader />
       {gamesData && (
         <PositionResultsPanel
           stats={gamesData.stats}

@@ -17,6 +17,7 @@ import { Cpu, Swords } from 'lucide-react';
 
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
+import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
@@ -89,6 +90,8 @@ export function EndgameMetricCard({
   tileTestId,
   titleTooltip,
 }: EndgameMetricCardProps) {
+  const { isPending, pendingCount } = useEvalCoverage();
+
   const userR = bucket === 'conversion'
     ? row.win_pct / 100
     : bucket === 'recovery'
@@ -240,6 +243,8 @@ export function EndgameMetricCard({
                       }
                       testId={`${tileTestId}-score-gap-info`}
                       ariaLabel={`What is ${BUCKET_DISPLAY_LABELS[bucket]} Score Gap?`}
+                      isPending={isPending}
+                      pendingCount={pendingCount}
                     />
                   }
                 />

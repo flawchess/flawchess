@@ -8,6 +8,15 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- **Two-lane import pipeline** (Phase 91). The import hot path no longer runs Stockfish. Game ingestion (fetch → parse → insert positions → commit) is now eval-free, and a separate in-process cold-drain coroutine (`run_eval_drain`, spawned in the FastAPI lifespan alongside the orphan-job reaper) evaluates entry plies in the background. Opening explorer, raw WDL, endgame type breakdowns, flag rates, and time-per-move are available within seconds of import start; conversion, recovery, score-gap, and time-pressure-vs-performance metrics fill in over the following minutes with honest per-metric sample-size labels. Structurally prevents the 2026-05-16 / 2026-05-20 hot-lane-Stockfish OOM regression — a CI regression guard (`TestHotLaneNoEvalCalls`) fails the build if any future edit reintroduces `engine.evaluate` inside `_flush_batch`.
+
+### Added
+
+- **Eval-coverage banner + per-metric pending caveats** (Phase 91). New `useEvalCoverage` hook polls `GET /api/imports/eval-coverage` every 10 s while Stockfish work is outstanding and stops automatically at 100%. An amber progress banner appears at the top of Endgames Stats, Openings Stats, Openings Explorer, and Openings Insights while engine coverage is incomplete. Stockfish-dependent metric popovers show an AlertTriangle-icon caveat citing the metric's current sample size and the remaining pending count.
+- **Dual-import stress harness** (Phase 91). `scripts/measure_dual_import_rss.py` — dev-only acceptance gate that triggers two concurrent imports, polls Postgres + RSS + swap + coverage every 30 s, and exits non-zero on any bound violation.
+
 ### Fixed
 
 - **Import pipeline OOM root cause** (Phase 90, FLAWCHESS-56 / FLAWCHESS-3Q). The 2026-05-16 production OOM-kill is closed out by eliminating the per-batch unique-SQL leak in `_flush_batch` Stage 5: the old `case()+IN` UPDATE, whose SQL text varied with every game-id set, is replaced by two `bindparam` executemany groups against `Game.__table__` whose SQL text is invariant across batches. SQLAlchemy's compile cache and asyncpg's prepared-statement LRU no longer grow unboundedly during long imports. Locally verified: post-warmup RSS plateau at 577 MB across +1044 games (≈0 MB/game), vs the pre-fix ~0.48 MB/game linear growth.

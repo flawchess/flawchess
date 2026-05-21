@@ -30,6 +30,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 import { formatAbsoluteDate, formatRelativeDate } from '@/lib/relativeDate';
 import type { ConfidenceLevel } from '@/lib/scoreConfidence';
@@ -89,6 +90,11 @@ export interface MetricStatTooltipProps {
    *  rate, so unqualified "strength"/"weakness" overclaims for players whose
    *  absolute scores are uniformly high or low. */
   relative?: boolean;
+  /** When true (and pendingCount > 0), shows a one-line pending-analysis caveat
+   * at the bottom of the tooltip body. Default false — backwards-compatible. */
+  isPending?: boolean;
+  /** Number of games still pending Stockfish analysis. Used in caveat copy. */
+  pendingCount?: number;
 }
 
 function pickVerdict(
@@ -189,6 +195,8 @@ export function MetricStatTooltip({
   methodology,
   lastPlayedAt,
   relative = false,
+  isPending = false,
+  pendingCount = 0,
 }: MetricStatTooltipProps): ReactNode {
   const verdict = pickVerdict(vocabulary, value, neutralLower, neutralUpper);
   const headlineText = headline(level, verdict, baselineLabel, relative);
@@ -216,6 +224,20 @@ export function MetricStatTooltip({
         </p>
       )}
       <p className="opacity-70 italic">{methodology}</p>
+      {isPending === true && (pendingCount ?? 0) > 0 && (
+        <p
+          className="flex items-start gap-1.5 rounded-sm bg-amber-100/60 px-1.5 py-1 text-amber-900"
+          data-testid="eval-pending-caveat"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-700" aria-hidden="true" />
+          <span>
+            Based on <strong>{gameCount.toLocaleString()}</strong> currently-evaluated{' '}
+            {gameCount === 1 ? 'game' : 'games'}. Stockfish is still analysing{' '}
+            <strong>{(pendingCount ?? 0).toLocaleString()}</strong> more across your library — this
+            metric may shift as analysis completes.
+          </span>
+        </p>
+      )}
     </div>
   );
 }

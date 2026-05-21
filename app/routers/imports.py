@@ -16,6 +16,7 @@ from app.models.user import User
 from app.repositories import game_repository, import_job_repository, user_repository
 from app.schemas.imports import (
     DeleteGamesResponse,
+    EvalCoverageResponse,
     ImportRequest,
     ImportStartedResponse,
     ImportStatusResponse,
@@ -121,6 +122,27 @@ async def get_active_imports(
         )
 
     return results
+
+
+@router.get("/eval-coverage", response_model=EvalCoverageResponse)
+async def get_eval_coverage(
+    user: Annotated[User, Depends(current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> EvalCoverageResponse:
+    """Return Stockfish eval coverage for the authenticated user.
+
+    Returns pending_count, total_count, and pct_complete (0-100).
+    Returns pct_complete=100 when the user has no games (avoids division-by-zero).
+
+    Locked by D-01: dedicated endpoint, NOT extending GET /imports/active.
+    Locked by D-04: response keys are pending_count, total_count, pct_complete.
+    """
+    total = await game_repository.count_games_for_user(session, user.id)
+    if total == 0:
+        return EvalCoverageResponse(pending_count=0, total_count=0, pct_complete=100)
+    pending = await game_repository.count_pending_evals(session, user.id)
+    pct = round(100 * (total - pending) / total)
+    return EvalCoverageResponse(pending_count=pending, total_count=total, pct_complete=pct)
 
 
 @router.get("/{job_id}", response_model=ImportStatusResponse)
