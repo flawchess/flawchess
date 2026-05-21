@@ -86,7 +86,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 91-08-PLAN.md — Dual-20k stress-test harness (scripts/measure_dual_import_rss.py) + operator-gated run
+- [x] 91-08-PLAN.md — Dual-20k stress-test harness (scripts/measure_dual_import_rss.py) + operator-gated run
 
 <details>
 <summary>✅ v1.17 Endgame Stats Card Redesign (Phases 84-88.4) — SHIPPED 2026-05-19</summary>
