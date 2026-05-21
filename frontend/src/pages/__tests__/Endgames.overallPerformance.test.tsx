@@ -106,6 +106,18 @@ vi.mock('@/hooks/useImport', () => ({
   useActiveJobs: () => ({ data: [], isLoading: false, isError: false }),
 }));
 
+// Phase 91: EvalCoverageHeader is now mounted in statisticsContent; mock the
+// hook so the test does not need a QueryClientProvider.
+vi.mock('@/hooks/useEvalCoverage', () => ({
+  useEvalCoverage: () => ({
+    pendingCount: 0,
+    totalCount: 0,
+    pct: 100,
+    isPending: false,
+    isLoading: false,
+  }),
+}));
+
 // jsdom shims required by the existing component.
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
