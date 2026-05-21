@@ -63,7 +63,8 @@ def _build_base_query(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     color: str | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
@@ -107,8 +108,10 @@ def _build_base_query(
     elif opponent_type == "bot":
         base = base.where(Game.is_computer_game == True)  # noqa: E712
     # "both" = no filter
-    if recency_cutoff is not None:
-        base = base.where(Game.played_at >= recency_cutoff)
+    if from_date is not None:
+        base = base.where(Game.played_at >= from_date)
+    if to_date is not None:
+        base = base.where(Game.played_at < to_date + datetime.timedelta(days=1))
     if color is not None:
         base = base.where(Game.user_color == color)
     if opponent_gap_min is not None or opponent_gap_max is not None:
@@ -210,7 +213,8 @@ async def query_all_results(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     color: str | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
@@ -230,7 +234,8 @@ async def query_all_results(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=recency_cutoff,
+        from_date=from_date,
+        to_date=to_date,
         color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
@@ -248,7 +253,8 @@ async def query_wdl_counts(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     color: str | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
@@ -278,7 +284,8 @@ async def query_wdl_counts(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=recency_cutoff,
+        from_date=from_date,
+        to_date=to_date,
         color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
@@ -316,7 +323,8 @@ async def query_matching_games(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     color: str | None,
     offset: int,
     limit: int,
@@ -338,7 +346,8 @@ async def query_matching_games(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=recency_cutoff,
+        from_date=from_date,
+        to_date=to_date,
         color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
@@ -359,7 +368,8 @@ async def query_matching_games(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=recency_cutoff,
+        from_date=from_date,
+        to_date=to_date,
         color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
@@ -391,7 +401,8 @@ async def query_next_moves(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     color: str | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
@@ -457,12 +468,13 @@ async def query_next_moves(
 
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
-        color,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -479,7 +491,8 @@ async def query_resulting_position_wdl(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     color: str | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
@@ -549,12 +562,13 @@ async def query_resulting_position_wdl(
 
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
-        color,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -571,7 +585,8 @@ async def query_opening_transitions(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
@@ -670,11 +685,12 @@ async def query_opening_transitions(
     # color=None passed to apply_game_filters because per-color is already explicit above.
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         color=None,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,

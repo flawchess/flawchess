@@ -122,8 +122,7 @@ def _format_pressure_bin_zones() -> str:
     lines: list[str] = []
     for tc, quintile_map in PRESSURE_BIN_SCORE_NEUTRAL_ZONES.items():
         q_entries = ", ".join(
-            f"{q}: {{ min: {band.lower}, max: {band.upper} }}"
-            for q, band in quintile_map.items()
+            f"{q}: {{ min: {band.lower}, max: {band.upper} }}" for q, band in quintile_map.items()
         )
         lines.append(f"  {tc}: {{ {q_entries} }},")
     return "\n".join(lines) + "\n"
@@ -216,9 +215,7 @@ def _render() -> str:
         "export const PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Record<\n"
         "  'bullet' | 'blitz' | 'rapid' | 'classical',\n"
         "  Record<0 | 1 | 2 | 3 | 4, { min: number; max: number }>\n"
-        "> = {\n"
-        + _format_pressure_bin_zones()
-        + "} as const;\n"
+        "> = {\n" + _format_pressure_bin_zones() + "} as const;\n"
         "\n"
         "// Phase 88 D-03 / Phase 88.1 WR-04: gating thresholds shared with backend.\n"
         "// Source of truth: app/services/endgame_zones.py (codegen-mirrored to avoid drift).\n"

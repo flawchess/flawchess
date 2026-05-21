@@ -171,7 +171,8 @@ def _default_call_args(
         "platform": None,
         "rated": None,
         "opponent_type": "both",
-        "recency_cutoff": None,
+        "from_date": None,
+        "to_date": None,
         "opponent_gap_min": None,
         "opponent_gap_max": None,
     }
@@ -671,13 +672,13 @@ async def test_user_color_filter_routes_correct_games(db_session: AsyncSession) 
 
 
 @pytest.mark.asyncio
-async def test_apply_game_filters_recency_narrows_results(db_session: AsyncSession) -> None:
-    """INSIGHT-CORE-01: recency_cutoff correctly limits the game date window.
+async def test_apply_game_filters_from_date_narrows_results(db_session: AsyncSession) -> None:
+    """INSIGHT-CORE-01: from_date correctly limits the game date window.
 
     Seeds 30 games total:
     - 20 recent (within last 7 days)
     - 10 old (30 days ago)
-    With recency_cutoff=now-8days, only the 20 recent games qualify.
+    With from_date=today-8days, only the 20 recent games qualify.
     The returned row should show n=20 (not 30) since all 30 are losses.
     """
     user_id = 10
@@ -686,7 +687,7 @@ async def test_apply_game_filters_recency_narrows_results(db_session: AsyncSessi
     now = datetime.datetime.now(tz=datetime.timezone.utc)
     recent_date = now - datetime.timedelta(days=3)
     old_date = now - datetime.timedelta(days=30)
-    cutoff = now - datetime.timedelta(days=8)
+    from_date = (now - datetime.timedelta(days=8)).date()
 
     # Seed 20 recent loss games. Per zobrist semantics: ply Y move_san is
     # the move played FROM ply Y. ply 3 IS the entry with candidate move "Nc6";
@@ -734,13 +735,14 @@ async def test_apply_game_filters_recency_narrows_results(db_session: AsyncSessi
         platform=None,
         rated=None,
         opponent_type="both",
-        recency_cutoff=None,
+        from_date=None,
+        to_date=None,
     )
     target_all = [r for r in rows_all if r.entry_hash == H_RECENCY_ENTRY]
     assert len(target_all) == 1
     assert target_all[0].n == 30
 
-    # With recency cutoff: only 20 recent games
+    # With from_date filter: only 20 recent games
     rows_recent = await query_opening_transitions(
         db_session,
         user_id=user_id,
@@ -749,7 +751,8 @@ async def test_apply_game_filters_recency_narrows_results(db_session: AsyncSessi
         platform=None,
         rated=None,
         opponent_type="both",
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=None,
     )
     target_recent = [r for r in rows_recent if r.entry_hash == H_RECENCY_ENTRY]
     assert len(target_recent) == 1
@@ -1619,7 +1622,8 @@ class TestQueryResultingPositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,  # compute_insights passes color=None
         )
 
@@ -1657,7 +1661,8 @@ class TestQueryResultingPositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -1717,7 +1722,8 @@ class TestQueryResultingPositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
         assert wdl_all[RPWDL_RESULT_HASH][:3] == (1, 0, 1)
@@ -1732,7 +1738,8 @@ class TestQueryResultingPositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
         assert wdl_rapid[RPWDL_RESULT_HASH][:3] == (1, 0, 0)
@@ -1747,7 +1754,8 @@ class TestQueryResultingPositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
         assert wdl_blitz[RPWDL_RESULT_HASH][:3] == (0, 0, 1)
@@ -1797,7 +1805,8 @@ class TestQueryResultingPositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
         # White game: 1-0 with user_color=white → win
@@ -1814,7 +1823,8 @@ class TestQueryResultingPositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color="white",
         )
         assert wdl_white[RPWDL_RESULT_HASH][:3] == (1, 0, 0)
@@ -1833,7 +1843,8 @@ class TestQueryResultingPositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
         assert wdl == {}

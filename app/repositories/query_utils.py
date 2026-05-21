@@ -15,7 +15,8 @@ def apply_game_filters(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     color: str | None = None,
     *,
     opponent_gap_min: int | None = None,
@@ -29,7 +30,10 @@ def apply_game_filters(
         platform: Filter by platform (chess.com, lichess).
         rated: Filter by rated/unrated. None = no filter.
         opponent_type: "human", "bot", or "all".
-        recency_cutoff: Only include games played after this datetime. None = no filter.
+        from_date: Include games played on or after this date (inclusive). None = no lower bound.
+        to_date: Include games played on or before this date (inclusive, shifted +1 day
+                 in SQL so ``played_at < to_date + 1 day`` covers the whole day).
+                 None = no upper bound.
         color: Filter by user's piece color ("white"/"black"). None = no color filter
                (used by endgame and stats repos where color is not applicable).
         opponent_gap_min: Lower bound (inclusive) on opponent_rating - user_rating.
@@ -40,6 +44,13 @@ def apply_game_filters(
     Notes:
         When either gap bound is set, games with missing white/black ratings
         are excluded.
+
+        Date boundary fuzz: ``played_at`` is a TIMESTAMPTZ column stored in UTC;
+        ``from_date`` / ``to_date`` are plain DATE values without timezone. The
+        comparison uses the server's session timezone (UTC in production), which
+        is correct for UTC-normalised timestamps. Games close to midnight in
+        non-UTC timezones may straddle the boundary by up to ~24 h — this is an
+        accepted trade-off per D-16 (no client_timezone param to avoid scope creep).
 
     Returns:
         The statement with WHERE clauses appended.
@@ -54,8 +65,12 @@ def apply_game_filters(
         stmt = stmt.where(Game.is_computer_game == False)  # noqa: E712
     elif opponent_type == "bot":
         stmt = stmt.where(Game.is_computer_game == True)  # noqa: E712
-    if recency_cutoff is not None:
-        stmt = stmt.where(Game.played_at >= recency_cutoff)
+    # D-10: apply date bounds only when set. to_date is shifted +1 day so the
+    # comparison ``played_at < to_date + 1 day`` covers the full to_date day.
+    if from_date is not None:
+        stmt = stmt.where(Game.played_at >= from_date)
+    if to_date is not None:
+        stmt = stmt.where(Game.played_at < to_date + datetime.timedelta(days=1))
     if color is not None:
         stmt = stmt.where(Game.user_color == color)
     if opponent_gap_min is not None or opponent_gap_max is not None:

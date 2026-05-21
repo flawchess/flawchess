@@ -14,6 +14,7 @@ already disables the button in these cases; the server-side check is a
 defensive safety net against callers that bypass the UI.
 """
 
+import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -56,7 +57,7 @@ def _validate_full_history_filters(filters: FilterContext) -> None:
 
     v8 allows only opponent_strength to vary — it genuinely changes which
     games feed the findings, so it's a legitimate cross-section. All other
-    filters (recency, time controls, platforms, rated) truncate the dataset
+    filters (date range, time controls, platforms, rated) truncate the dataset
     and would produce a partial report that doesn't match the system
     prompt's "your full history" framing.
 
@@ -65,8 +66,8 @@ def _validate_full_history_filters(filters: FilterContext) -> None:
     `color='white'` default has no effect on the report.
     """
     blocking: list[str] = []
-    if filters.recency != "all_time":
-        blocking.append("Switch Recency to All time")
+    if filters.from_date is not None or filters.to_date is not None:
+        blocking.append("Clear Custom date range filter")
     if filters.time_controls:
         blocking.append("Remove Time control filter")
     if filters.platforms:
@@ -94,9 +95,8 @@ async def get_endgame_insights(
     user: Annotated[User, Depends(current_active_user)],
     time_control: list[str] | None = Query(default=None),
     platform: list[str] | None = Query(default=None),
-    recency: Literal[
-        "all_time", "week", "month", "3months", "6months", "year", "3years", "5years"
-    ] = Query(default="all_time"),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
@@ -137,7 +137,8 @@ async def get_endgame_insights(
             },
         )
     filter_context = FilterContext(
-        recency=recency,
+        from_date=from_date,
+        to_date=to_date,
         opponent_strength=preset,
         color=color,
         time_controls=time_control or [],
@@ -179,9 +180,8 @@ async def get_cached_endgame_insights(
     user: Annotated[User, Depends(current_active_user)],
     time_control: list[str] | None = Query(default=None),
     platform: list[str] | None = Query(default=None),
-    recency: Literal[
-        "all_time", "week", "month", "3months", "6months", "year", "3years", "5years"
-    ] = Query(default="all_time"),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
@@ -214,7 +214,8 @@ async def get_cached_endgame_insights(
     # Build a FilterContext purely to keep the param-derivation contract
     # symmetric with POST; the lookup below only consults `preset`.
     _ = FilterContext(
-        recency=recency,
+        from_date=from_date,
+        to_date=to_date,
         opponent_strength=preset,
         color=color,
         time_controls=time_control or [],

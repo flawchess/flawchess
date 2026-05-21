@@ -138,7 +138,7 @@ class TestQueryRatingHistory:
         await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=1600)
 
         rows = await query_rating_history(
-            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", from_date=None, to_date=None
         )
 
         assert len(rows) == 1
@@ -152,7 +152,7 @@ class TestQueryRatingHistory:
         await _seed_game(db_session, platform="chess.com", user_color="white", white_rating=None)
 
         rows = await query_rating_history(
-            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", from_date=None, to_date=None
         )
 
         assert len(rows) == 0
@@ -164,10 +164,10 @@ class TestQueryRatingHistory:
         await _seed_game(db_session, platform="lichess", user_color="white", white_rating=1600)
 
         chesscom_rows = await query_rating_history(
-            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", from_date=None, to_date=None
         )
         lichess_rows = await query_rating_history(
-            db_session, user_id=99999, platform="lichess", recency_cutoff=None
+            db_session, user_id=99999, platform="lichess", from_date=None, to_date=None
         )
 
         assert len(chesscom_rows) == 1
@@ -177,10 +177,12 @@ class TestQueryRatingHistory:
 
     @pytest.mark.asyncio
     async def test_filters_by_recency_cutoff(self, db_session: AsyncSession) -> None:
-        """Games before the recency_cutoff should be excluded."""
+        """Games before the from_date should be excluded."""
         old_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=60)
         recent_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=5)
-        cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+        from_date = (
+            datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+        ).date()
 
         await _seed_game(
             db_session,
@@ -198,7 +200,7 @@ class TestQueryRatingHistory:
         )
 
         rows = await query_rating_history(
-            db_session, user_id=99999, platform="chess.com", recency_cutoff=cutoff
+            db_session, user_id=99999, platform="chess.com", from_date=from_date, to_date=None
         )
 
         assert len(rows) == 1
@@ -224,7 +226,7 @@ class TestQueryRatingHistory:
             )
 
         rows = await query_rating_history(
-            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", from_date=None, to_date=None
         )
 
         actual_ratings = [r[1] for r in rows]
@@ -241,7 +243,7 @@ class TestQueryRatingHistory:
         )
 
         rows = await query_rating_history(
-            db_session, user_id=99999, platform="chess.com", recency_cutoff=None
+            db_session, user_id=99999, platform="chess.com", from_date=None, to_date=None
         )
 
         assert len(rows) == 1
@@ -266,7 +268,9 @@ class TestQueryResultsByTimeControl:
             db_session, time_control_bucket="blitz", result="1/2-1/2", user_color="white"
         )
 
-        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
+        rows = await query_results_by_time_control(
+            db_session, user_id=99999, from_date=None, to_date=None
+        )
 
         assert len(rows) == 1
         bucket, total, wins, draws, losses = rows[0]
@@ -281,7 +285,9 @@ class TestQueryResultsByTimeControl:
         """Games without time_control_bucket should be excluded."""
         await _seed_game(db_session, time_control_bucket=None)
 
-        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
+        rows = await query_results_by_time_control(
+            db_session, user_id=99999, from_date=None, to_date=None
+        )
 
         assert len(rows) == 0
 
@@ -294,7 +300,9 @@ class TestQueryResultsByTimeControl:
             db_session, time_control_bucket="rapid", result="1/2-1/2", user_color="white"
         )
 
-        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
+        rows = await query_results_by_time_control(
+            db_session, user_id=99999, from_date=None, to_date=None
+        )
 
         assert len(rows) == 3
         buckets = {r[0] for r in rows}
@@ -302,15 +310,19 @@ class TestQueryResultsByTimeControl:
 
     @pytest.mark.asyncio
     async def test_filters_by_recency_cutoff(self, db_session: AsyncSession) -> None:
-        """Games before the recency_cutoff should be excluded."""
+        """Games before the from_date should be excluded."""
         old_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=60)
         recent_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=5)
-        cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+        from_date = (
+            datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+        ).date()
 
         await _seed_game(db_session, time_control_bucket="bullet", played_at=old_date)
         await _seed_game(db_session, time_control_bucket="blitz", played_at=recent_date)
 
-        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=cutoff)
+        rows = await query_results_by_time_control(
+            db_session, user_id=99999, from_date=from_date, to_date=None
+        )
 
         assert len(rows) == 1
         assert rows[0][0] == "blitz"
@@ -321,7 +333,9 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, user_id=99999, time_control_bucket="blitz")
         await _seed_game(db_session, user_id=2, time_control_bucket="rapid")
 
-        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
+        rows = await query_results_by_time_control(
+            db_session, user_id=99999, from_date=None, to_date=None
+        )
 
         assert len(rows) == 1
         assert rows[0][0] == "blitz"
@@ -333,7 +347,7 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, platform="lichess", time_control_bucket="rapid")
 
         rows = await query_results_by_time_control(
-            db_session, user_id=99999, recency_cutoff=None, platform="chess.com"
+            db_session, user_id=99999, from_date=None, to_date=None, platform="chess.com"
         )
 
         assert len(rows) == 1
@@ -346,7 +360,7 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, platform="lichess", time_control_bucket="rapid")
 
         rows = await query_results_by_time_control(
-            db_session, user_id=99999, recency_cutoff=None, platform=None
+            db_session, user_id=99999, from_date=None, to_date=None, platform=None
         )
 
         assert len(rows) == 2
@@ -360,7 +374,9 @@ class TestQueryResultsByTimeControl:
         await _seed_game(db_session, time_control_bucket="blitz", result="0-1", user_color="black")
         await _seed_game(db_session, time_control_bucket="blitz", result="1-0", user_color="black")
 
-        rows = await query_results_by_time_control(db_session, user_id=99999, recency_cutoff=None)
+        rows = await query_results_by_time_control(
+            db_session, user_id=99999, from_date=None, to_date=None
+        )
 
         assert len(rows) == 1
         _, total, wins, draws, losses = rows[0]
@@ -386,7 +402,7 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, user_color="white", result="1-0")
         await _seed_game(db_session, user_color="white", result="0-1")
 
-        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None)
+        rows = await query_results_by_color(db_session, user_id=99999, from_date=None, to_date=None)
 
         assert len(rows) == 1
         color, total, wins, draws, losses = rows[0]
@@ -402,7 +418,7 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, user_color="white", result="1-0")
         await _seed_game(db_session, user_color="black", result="0-1")
 
-        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None)
+        rows = await query_results_by_color(db_session, user_id=99999, from_date=None, to_date=None)
 
         assert len(rows) == 2
         colors = {r[0] for r in rows}
@@ -410,15 +426,19 @@ class TestQueryResultsByColor:
 
     @pytest.mark.asyncio
     async def test_filters_by_recency_cutoff(self, db_session: AsyncSession) -> None:
-        """Games before the recency_cutoff should be excluded."""
+        """Games before the from_date should be excluded."""
         old_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=60)
         recent_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=5)
-        cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+        from_date = (
+            datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+        ).date()
 
         await _seed_game(db_session, user_color="white", played_at=old_date)
         await _seed_game(db_session, user_color="black", played_at=recent_date)
 
-        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=cutoff)
+        rows = await query_results_by_color(
+            db_session, user_id=99999, from_date=from_date, to_date=None
+        )
 
         assert len(rows) == 1
         assert rows[0][0] == "black"
@@ -429,7 +449,7 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, user_id=99999, user_color="white")
         await _seed_game(db_session, user_id=2, user_color="black")
 
-        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None)
+        rows = await query_results_by_color(db_session, user_id=99999, from_date=None, to_date=None)
 
         assert len(rows) == 1
         assert rows[0][0] == "white"
@@ -441,7 +461,7 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, platform="lichess", user_color="black")
 
         rows = await query_results_by_color(
-            db_session, user_id=99999, recency_cutoff=None, platform="lichess"
+            db_session, user_id=99999, from_date=None, to_date=None, platform="lichess"
         )
 
         assert len(rows) == 1
@@ -454,7 +474,7 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, platform="lichess", user_color="black")
 
         rows = await query_results_by_color(
-            db_session, user_id=99999, recency_cutoff=None, platform=None
+            db_session, user_id=99999, from_date=None, to_date=None, platform=None
         )
 
         assert len(rows) == 2
@@ -468,7 +488,7 @@ class TestQueryResultsByColor:
         await _seed_game(db_session, user_color="black", result="1-0")
         await _seed_game(db_session, user_color="black", result="1/2-1/2")
 
-        rows = await query_results_by_color(db_session, user_id=99999, recency_cutoff=None)
+        rows = await query_results_by_color(db_session, user_id=99999, from_date=None, to_date=None)
 
         assert len(rows) == 1
         _, total, wins, draws, losses = rows[0]

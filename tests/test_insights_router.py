@@ -576,7 +576,7 @@ class TestFilterPassing:
             cases = [
                 ({"time_control": "blitz"}, "Time control"),
                 ({"platform": "chess.com"}, "Platform"),
-                ({"recency": "3months"}, "Recency"),
+                ({"from_date": "2026-01-01"}, "Custom date range"),
                 ({"rated": "true"}, "Rated"),
             ]
             for params, _label in cases:
@@ -699,7 +699,7 @@ class TestCachedEndpoint:
         ) as client:
             response = await client.get(
                 CACHED_ENDPOINT,
-                params={"time_control": "blitz", "recency": "3months"},
+                params={"time_control": "blitz", "from_date": "2026-01-01"},
                 headers=auth_headers,
             )
         assert response.status_code == 404

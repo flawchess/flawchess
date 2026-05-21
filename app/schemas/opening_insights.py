@@ -3,7 +3,7 @@
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_MIN_GAMES_PER_CANDIDATE,
@@ -26,9 +26,8 @@ class OpeningInsightsRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    recency: (
-        Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None
-    ) = None
+    from_date: datetime.date | None = None
+    to_date: datetime.date | None = None
     time_control: list[Literal["bullet", "blitz", "rapid", "classical"]] | None = None
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
@@ -36,6 +35,16 @@ class OpeningInsightsRequest(BaseModel):
     opponent_gap_min: int | None = None
     opponent_gap_max: int | None = None
     color: Literal["all", "white", "black"] = "all"
+
+    @model_validator(mode="after")
+    def _check_date_range(self) -> "OpeningInsightsRequest":
+        if (
+            self.from_date is not None
+            and self.to_date is not None
+            and self.from_date > self.to_date
+        ):
+            raise ValueError("from_date must be <= to_date")
+        return self
 
 
 class OpeningInsightFinding(BaseModel):

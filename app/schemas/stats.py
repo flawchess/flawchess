@@ -3,7 +3,7 @@
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class RatingDataPoint(BaseModel):
@@ -130,7 +130,18 @@ class BookmarkPhaseEntryRequest(BaseModel):
     opponent_type: str = "human"
     opponent_gap_min: int | None = None
     opponent_gap_max: int | None = None
-    recency: str | None = None  # "30d" / "90d" / "1y" / "all" / None — handled like other endpoints
+    from_date: datetime.date | None = None
+    to_date: datetime.date | None = None
+
+    @model_validator(mode="after")
+    def _check_date_range(self) -> "BookmarkPhaseEntryRequest":
+        if (
+            self.from_date is not None
+            and self.to_date is not None
+            and self.from_date > self.to_date
+        ):
+            raise ValueError("from_date must be <= to_date")
+        return self
 
 
 class BookmarkPhaseEntryResponse(BaseModel):

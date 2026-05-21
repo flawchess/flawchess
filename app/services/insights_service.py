@@ -150,7 +150,8 @@ async def compute_findings(
             platform=filter_context.platforms or None,
             rated=True if filter_context.rated_only else None,
             opponent_type=_OPPONENT_TYPE,
-            recency=None,
+            from_date=None,
+            to_date=None,
             opponent_gap_min=gap_min,
             opponent_gap_max=gap_max,
         )
@@ -161,7 +162,8 @@ async def compute_findings(
             platform=filter_context.platforms or None,
             rated=True if filter_context.rated_only else None,
             opponent_type=_OPPONENT_TYPE,
-            recency="3months",
+            from_date=datetime.date.today() - datetime.timedelta(days=90),
+            to_date=None,
             opponent_gap_min=gap_min,
             opponent_gap_max=gap_max,
         )

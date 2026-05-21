@@ -96,9 +96,7 @@ async def get_all_user_ids(session) -> list[int]:
     return list(result.scalars().all())
 
 
-async def get_platform_jobs_for_user(
-    session, user_id: int
-) -> list[tuple[str, str]]:
+async def get_platform_jobs_for_user(session, user_id: int) -> list[tuple[str, str]]:
     """Return (platform, username) pairs for all completed import jobs for the user.
 
     Returns unique (platform, username) pairs — uses the most recent completed job
@@ -123,7 +121,9 @@ async def get_platform_jobs_for_user(
 
 
 async def reimport_user(
-    session, user_id: int, platform_filter: str | None = None,
+    session,
+    user_id: int,
+    platform_filter: str | None = None,
 ) -> tuple[bool, int]:
     """Delete and re-import games for a single user.
 
@@ -148,15 +148,17 @@ async def reimport_user(
     if platform_filter:
         # Platform-scoped delete: only remove games and jobs for the filtered platform
         game_subq = select(Game.id).where(
-            Game.user_id == user_id, Game.platform == platform_filter,
+            Game.user_id == user_id,
+            Game.platform == platform_filter,
         )
-        await session.execute(
-            delete(GamePosition).where(GamePosition.game_id.in_(game_subq))
-        )
+        await session.execute(delete(GamePosition).where(GamePosition.game_id.in_(game_subq)))
         result = await session.execute(
-            delete(Game).where(
-                Game.user_id == user_id, Game.platform == platform_filter,
-            ).returning(Game.id)
+            delete(Game)
+            .where(
+                Game.user_id == user_id,
+                Game.platform == platform_filter,
+            )
+            .returning(Game.id)
         )
         deleted_count = len(result.fetchall())
 
@@ -184,8 +186,7 @@ async def reimport_user(
         # fixes an older bug where lichess re-imports returned 0 games because the
         # old last_synced_at told the client nothing was new since last import.
         await session.execute(
-            delete(ImportJob)
-            .where(ImportJob.user_id == user_id, ImportJob.status == "completed")
+            delete(ImportJob).where(ImportJob.user_id == user_id, ImportJob.status == "completed")
         )
 
     _log(f"  User {user_id}: deleted {deleted_count} games for {platform_list}.")
@@ -205,9 +206,7 @@ async def reimport_user(
             if job_state is not None:
                 if job_state.status == "completed":
                     total_imported += job_state.games_imported
-                    _log(
-                        f"  Done: {job_state.games_imported} games imported from {platform}."
-                    )
+                    _log(f"  Done: {job_state.games_imported} games imported from {platform}.")
                 else:
                     any_platform_failed = True
                     error_msg = job_state.error or "Unknown error"

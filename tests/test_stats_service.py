@@ -252,7 +252,7 @@ class TestGetRatingHistory:
             played_at=datetime.datetime(2026, 1, 3, tzinfo=datetime.timezone.utc),
         )
 
-        response = await get_rating_history(db_session, uid, recency=None)
+        response = await get_rating_history(db_session, uid, from_date=None, to_date=None)
 
         assert len(response.chess_com) > 0, "Expected chess.com data points"
         assert len(response.lichess) > 0, "Expected lichess data points"
@@ -262,7 +262,9 @@ class TestGetRatingHistory:
         """platform='chess.com' returns chess.com data and an empty lichess list."""
         uid = _USER_RATING
 
-        response = await get_rating_history(db_session, uid, recency=None, platform="chess.com")
+        response = await get_rating_history(
+            db_session, uid, from_date=None, to_date=None, platform="chess.com"
+        )
 
         # lichess must always be empty when filtering for chess.com
         assert response.lichess == []
@@ -275,7 +277,9 @@ class TestGetRatingHistory:
         """platform='lichess' returns lichess data and an empty chess_com list."""
         uid = _USER_RATING
 
-        response = await get_rating_history(db_session, uid, recency=None, platform="lichess")
+        response = await get_rating_history(
+            db_session, uid, from_date=None, to_date=None, platform="lichess"
+        )
 
         # chess.com must always be empty when filtering for lichess
         assert response.chess_com == []
@@ -286,7 +290,7 @@ class TestGetRatingHistory:
         """Each returned RatingDataPoint has date, rating, and time_control_bucket."""
         uid = _USER_RATING
 
-        response = await get_rating_history(db_session, uid, recency=None)
+        response = await get_rating_history(db_session, uid, from_date=None, to_date=None)
 
         for pt in response.chess_com + response.lichess:
             assert isinstance(pt.date, str), "date must be a string"
@@ -330,7 +334,7 @@ class TestGetGlobalStats:
             db_session, user_id=uid, result="0-1", user_color="black", time_control_bucket="rapid"
         )
 
-        response = await get_global_stats(db_session, uid, recency=None)
+        response = await get_global_stats(db_session, uid, from_date=None, to_date=None)
 
         # --- by_time_control ---
         tc_map = {cat.label: cat for cat in response.by_time_control}
@@ -383,7 +387,7 @@ class TestGetGlobalStats:
             db_session, user_id=uid, result="0-1", user_color="white", time_control_bucket="blitz"
         )
 
-        response = await get_global_stats(db_session, uid, recency=None)
+        response = await get_global_stats(db_session, uid, from_date=None, to_date=None)
 
         blitz_cats = [c for c in response.by_time_control if c.label == "Blitz"]
         assert len(blitz_cats) >= 1

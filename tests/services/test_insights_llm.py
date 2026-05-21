@@ -68,7 +68,8 @@ def _sample_report(overview: str = "FlawChess played well overall.") -> EndgameI
 
 def _sample_filter_context(**kwargs: Any) -> FilterContext:
     defaults: dict[str, Any] = {
-        "recency": "all_time",
+        "from_date": None,
+        "to_date": None,
         "opponent_strength": "any",
         "color": "all",
         "time_controls": [],
@@ -729,7 +730,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
 class TestPromptAssembly:
     def test_user_prompt_shape(self) -> None:
         filters = _sample_filter_context(
-            recency="3months", time_controls=["blitz"], platforms=["chess.com"]
+            from_date=datetime.date(2026, 2, 20), time_controls=["blitz"], platforms=["chess.com"]
         )
         non_timeline = SubsectionFinding(
             subsection_id="overall",

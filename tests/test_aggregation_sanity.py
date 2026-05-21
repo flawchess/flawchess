@@ -154,7 +154,9 @@ class TestWDLBlackPerspective:
     async def test_black_win_is_user_win(self, db_session: AsyncSession) -> None:
         await _seed_game(db_session, user_id=_USER_BLACK, result="0-1", user_color="black")
         await db_session.commit()
-        resp = await get_global_stats(db_session, user_id=_USER_BLACK, recency=None, platform=None)
+        resp = await get_global_stats(
+            db_session, user_id=_USER_BLACK, from_date=None, to_date=None, platform=None
+        )
         black = _by_category(resp.by_color, "Black")
         assert black == {"total": 1, "wins": 1, "draws": 0, "losses": 0}
 
@@ -162,7 +164,9 @@ class TestWDLBlackPerspective:
     async def test_black_loss_is_user_loss(self, db_session: AsyncSession) -> None:
         await _seed_game(db_session, user_id=_USER_BLACK, result="1-0", user_color="black")
         await db_session.commit()
-        resp = await get_global_stats(db_session, user_id=_USER_BLACK, recency=None, platform=None)
+        resp = await get_global_stats(
+            db_session, user_id=_USER_BLACK, from_date=None, to_date=None, platform=None
+        )
         black = _by_category(resp.by_color, "Black")
         assert black == {"total": 1, "wins": 0, "draws": 0, "losses": 1}
 
@@ -172,7 +176,9 @@ class TestWDLBlackPerspective:
         for result in ("0-1", "1-0", "1/2-1/2"):
             await _seed_game(db_session, user_id=_USER_BLACK, result=result, user_color="black")
         await db_session.commit()
-        resp = await get_global_stats(db_session, user_id=_USER_BLACK, recency=None, platform=None)
+        resp = await get_global_stats(
+            db_session, user_id=_USER_BLACK, from_date=None, to_date=None, platform=None
+        )
         black = _by_category(resp.by_color, "Black")
         assert black == {"total": 3, "wins": 1, "draws": 1, "losses": 1}
 
@@ -197,7 +203,7 @@ class TestWDLBlackPerspective:
             )
         await db_session.commit()
         resp = await get_global_stats(
-            db_session, user_id=_USER_BOTH_COLORS, recency=None, platform=None
+            db_session, user_id=_USER_BOTH_COLORS, from_date=None, to_date=None, platform=None
         )
         white = _by_category(resp.by_color, "White")
         black = _by_category(resp.by_color, "Black")
@@ -345,7 +351,8 @@ class TestFilterIntersection:
             platform=["chess.com"],
             rated=None,
             opponent_type="human",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         rows = (await db_session.execute(stmt)).scalars().all()
         assert len(rows) == 1, (
@@ -360,17 +367,19 @@ class TestFilterIntersection:
 
 
 class TestRecencyBoundary:
-    """apply_game_filters uses >= for recency_cutoff — boundary is inclusive."""
+    """apply_game_filters uses from_date/to_date — boundaries are date-inclusive."""
 
     @pytest.mark.asyncio
-    async def test_cutoff_is_inclusive_at_boundary(self, db_session: AsyncSession) -> None:
-        cutoff = datetime.datetime(2026, 1, 15, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    async def test_from_date_is_inclusive(self, db_session: AsyncSession) -> None:
+        """Games played on or after from_date (same day) must be included (D-10)."""
+        from_date = datetime.date(2026, 1, 15)
+        played_at = datetime.datetime(2026, 1, 15, 12, 0, 0, tzinfo=datetime.timezone.utc)
         await _seed_game(
             db_session,
             user_id=_USER_RECENCY,
             result="1-0",
             user_color="white",
-            played_at=cutoff,
+            played_at=played_at,
         )
         await db_session.commit()
         stmt = apply_game_filters(
@@ -379,20 +388,23 @@ class TestRecencyBoundary:
             platform=None,
             rated=None,
             opponent_type="human",
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=None,
         )
         rows = (await db_session.execute(stmt)).scalars().all()
-        assert len(rows) == 1, "played_at == recency_cutoff must be inclusive (>=)"
+        assert len(rows) == 1, "game on from_date must be included (>=)"
 
     @pytest.mark.asyncio
-    async def test_cutoff_excludes_one_microsecond_earlier(self, db_session: AsyncSession) -> None:
-        cutoff = datetime.datetime(2026, 2, 15, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    async def test_from_date_excludes_day_before(self, db_session: AsyncSession) -> None:
+        """Games played strictly before from_date must be excluded (D-10)."""
+        from_date = datetime.date(2026, 2, 15)
+        played_at = datetime.datetime(2026, 2, 14, 23, 59, 59, tzinfo=datetime.timezone.utc)
         await _seed_game(
             db_session,
             user_id=_USER_RECENCY,
             result="1-0",
             user_color="white",
-            played_at=cutoff - datetime.timedelta(microseconds=1),
+            played_at=played_at,
         )
         await db_session.commit()
         stmt = apply_game_filters(
@@ -401,10 +413,11 @@ class TestRecencyBoundary:
             platform=None,
             rated=None,
             opponent_type="human",
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=None,
         )
         rows = (await db_session.execute(stmt)).scalars().all()
-        assert len(rows) == 0, "game played 1µs before cutoff must be excluded"
+        assert len(rows) == 0, "game played day before from_date must be excluded"
 
 
 # -----------------------------------------------------------------------------
@@ -494,7 +507,8 @@ class TestEndgameClassTransition:
             platform=None,
             rated=None,
             opponent_type="human",
-            recency=None,
+            from_date=None,
+            to_date=None,
         )
         # Distinct-game count (one game, regardless of multi-class)
         assert resp.performance.endgame_wdl.total == 1
