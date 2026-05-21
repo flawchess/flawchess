@@ -19,6 +19,7 @@ describe('EvalCoverageHeader', () => {
     (useEvalCoverage as Mock).mockReturnValue({
       isPending: false,
       pendingCount: 0,
+      totalCount: 100,
       pct: 100,
     });
 
@@ -27,10 +28,11 @@ describe('EvalCoverageHeader', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders with plural label when multiple games are pending', () => {
+  it('renders absolute counts ("N of M games analysed") when multiple games are pending', () => {
     (useEvalCoverage as Mock).mockReturnValue({
       isPending: true,
       pendingCount: 1432,
+      totalCount: 11000,
       pct: 87,
     });
 
@@ -38,26 +40,46 @@ describe('EvalCoverageHeader', () => {
     const el = screen.getByTestId('eval-coverage-header');
     expect(el).toBeTruthy();
     expect(el.textContent).toContain('Stockfish analysis in progress');
-    expect(el.textContent).toContain('87');
-    expect(el.textContent).toContain('1,432 games still pending');
+    // analysedCount = 11000 - 1432 = 9568
+    expect(el.textContent).toContain('9,568 of 11,000 games analysed');
+    expect(el.textContent).toContain('(1,432 still pending)');
   });
 
-  it('renders with singular label when exactly one game is pending', () => {
+  it('handles singular total (1 game total, 1 pending)', () => {
     (useEvalCoverage as Mock).mockReturnValue({
       isPending: true,
       pendingCount: 1,
-      pct: 99,
+      totalCount: 1,
+      pct: 0,
     });
 
     render(<EvalCoverageHeader />);
     const el = screen.getByTestId('eval-coverage-header');
-    expect(el.textContent).toContain('(1 game still pending)');
+    expect(el.textContent).toContain('0 of 1 game analysed');
+    expect(el.textContent).toContain('(1 still pending)');
+  });
+
+  it('clamps analysed count at 0 when pendingCount > totalCount (defensive race during import)', () => {
+    // During a live import, the GET /eval-coverage response may briefly show
+    // pending > total if the rows are read before the inserts commit. Defensive
+    // floor at 0 prevents a negative count from rendering.
+    (useEvalCoverage as Mock).mockReturnValue({
+      isPending: true,
+      pendingCount: 10,
+      totalCount: 5,
+      pct: 0,
+    });
+
+    render(<EvalCoverageHeader />);
+    const el = screen.getByTestId('eval-coverage-header');
+    expect(el.textContent).toContain('0 of 5 games analysed');
   });
 
   it('has role="status" and data-testid on root element', () => {
     (useEvalCoverage as Mock).mockReturnValue({
       isPending: true,
       pendingCount: 5,
+      totalCount: 10,
       pct: 50,
     });
 
