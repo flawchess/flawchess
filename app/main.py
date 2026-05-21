@@ -18,6 +18,7 @@ from app.routers.insights import router as insights_router
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
 from app.services.engine import start_engine, stop_engine
+from app.services.eval_drain import run_eval_drain
 from app.services.import_service import cleanup_orphaned_jobs, run_periodic_reaper
 from app.services.insights_llm import get_insights_agent
 
@@ -62,14 +63,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # orphans that arise from a Postgres-only restart (backend survives)
     # which the startup-only cleanup_orphaned_jobs() call would miss.
     reaper_task = asyncio.create_task(run_periodic_reaper(), name="periodic-orphan-reaper")
+    # Phase 91 / SEED-023: cold-lane eval drain. Spawned here so it outlives
+    # any individual import job and shuts down cleanly alongside the reaper.
+    # stop_engine() runs AFTER both tasks are awaited so in-flight evaluations
+    # can complete before the EnginePool is torn down (T-91-20 ordering gate).
+    drain_task = asyncio.create_task(run_eval_drain(), name="eval-drain")
     try:
         yield
     finally:
-        # WR-03: stop_engine() must always run even if the reaper task raises
-        # a non-CancelledError on shutdown — otherwise the long-lived
-        # Stockfish UCI process leaks across restarts. Wrap the await in an
-        # inner try/finally so the engine shutdown is unconditional.
+        # WR-03: stop_engine() must always run even if the reaper or drain task
+        # raises a non-CancelledError on shutdown — otherwise the long-lived
+        # Stockfish UCI process leaks across restarts. Cancel both tasks before
+        # awaiting either so they enter cancellation in parallel. Wrap the
+        # awaits in an inner try/finally so the engine shutdown is unconditional.
         reaper_task.cancel()
+        drain_task.cancel()
         try:
             try:
                 await reaper_task
@@ -77,6 +85,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
                 pass  # expected on shutdown
             except Exception:
                 logger.exception("Periodic reaper task raised on shutdown")
+            try:
+                await drain_task
+            except asyncio.CancelledError:
+                pass  # expected on shutdown
+            except Exception:
+                logger.exception("Eval drain task raised on shutdown")
         finally:
             await stop_engine()
 
