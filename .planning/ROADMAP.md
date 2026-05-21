@@ -111,9 +111,14 @@ Plans:
 
 **References:** [.planning/notes/custom-date-range-filter.md](notes/custom-date-range-filter.md), [.planning/todos/pending/2026-05-02-remove-recency-from-bookmark-timeseries.md](todos/pending/2026-05-02-remove-recency-from-bookmark-timeseries.md).
 
-Plans:
+Plans: 6 plans
 
-- [ ] Not yet planned — run `/gsd:plan-phase 92` after discuss.
+- [ ] 92-01-PLAN.md — D-19 pre-work: drop recency from bookmark TimeSeriesRequest (both stacks)
+- [ ] 92-02-PLAN.md — Atomic backend wire-format flip: apply_game_filters + 5 schemas + 3 routers + insights gate + LLM windows
+- [ ] 92-03-PLAN.md — Atomic frontend type/hook migration: Recency→RecencyPreset, recency.ts utility, all 7 hooks, FilterState.customRange
+- [ ] 92-04-PLAN.md — Install shadcn Calendar (with legitimacy checkpoint) + add DrawerNested wrapper
+- [ ] 92-05-PLAN.md — FilterPanel UI: 9th SelectItem, desktop Popover anchored to Select, mobile nested Drawer, trigger label
+- [ ] 92-06-PLAN.md — Boundary integration tests + 422 + insights gate test + CHANGELOG + human UAT
 
 <details>
 <summary>✅ v1.17 Endgame Stats Card Redesign (Phases 84-88.4) — SHIPPED 2026-05-19</summary>
