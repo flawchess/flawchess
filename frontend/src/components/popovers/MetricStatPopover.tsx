@@ -32,6 +32,8 @@ export interface MetricStatPopoverProps extends MetricStatTooltipProps {
   ariaLabel: string;
   /** Extra classes for the trigger span (e.g. positioning). */
   triggerClassName?: string;
+  // isPending and pendingCount are inherited from MetricStatTooltipProps and forwarded
+  // to MetricStatTooltip via the {...tooltipProps} spread (Phase 91 Plan 07).
 }
 
 export function MetricStatPopover({

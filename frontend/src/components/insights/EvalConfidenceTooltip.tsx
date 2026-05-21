@@ -51,6 +51,11 @@ interface EvalConfidenceTooltipProps {
    * 'endgame-entry' = the position where the endgame begins (Endgames Games
    * subtab), matching the Stats-tab "Endgame Entry Eval" metric. */
   evalContext?: 'opening-end' | 'endgame-entry';
+  /** When true (and pendingCount > 0), shows a one-line pending-analysis caveat
+   * at the bottom of the tooltip body. Default false — backwards-compatible. */
+  isPending?: boolean;
+  /** Number of games still pending Stockfish analysis. Used in caveat copy. */
+  pendingCount?: number;
 }
 
 /**
@@ -72,6 +77,8 @@ export function EvalConfidenceTooltip({
   color,
   showBaselineTick = true,
   evalContext = 'opening-end',
+  isPending = false,
+  pendingCount = 0,
 }: EvalConfidenceTooltipProps): ReactNode {
   const baselinePawns =
     color === 'white' ? EVAL_BASELINE_PAWNS_WHITE : EVAL_BASELINE_PAWNS_BLACK;
@@ -103,6 +110,12 @@ export function EvalConfidenceTooltip({
         Test: two-sided Wald z vs 0 pawns.<br />
         Confidence interval: Wald 95% (whiskers).
       </p>
+      {isPending === true && (pendingCount ?? 0) > 0 && (
+        <p className="opacity-70">
+          Based on currently-evaluated games. {(pendingCount ?? 0).toLocaleString()} more being
+          analysed — refresh in a few minutes for updated values.
+        </p>
+      )}
     </div>
   );
 }

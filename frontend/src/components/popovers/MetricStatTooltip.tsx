@@ -89,6 +89,11 @@ export interface MetricStatTooltipProps {
    *  rate, so unqualified "strength"/"weakness" overclaims for players whose
    *  absolute scores are uniformly high or low. */
   relative?: boolean;
+  /** When true (and pendingCount > 0), shows a one-line pending-analysis caveat
+   * at the bottom of the tooltip body. Default false — backwards-compatible. */
+  isPending?: boolean;
+  /** Number of games still pending Stockfish analysis. Used in caveat copy. */
+  pendingCount?: number;
 }
 
 function pickVerdict(
@@ -189,6 +194,8 @@ export function MetricStatTooltip({
   methodology,
   lastPlayedAt,
   relative = false,
+  isPending = false,
+  pendingCount = 0,
 }: MetricStatTooltipProps): ReactNode {
   const verdict = pickVerdict(vocabulary, value, neutralLower, neutralUpper);
   const headlineText = headline(level, verdict, baselineLabel, relative);
@@ -216,6 +223,12 @@ export function MetricStatTooltip({
         </p>
       )}
       <p className="opacity-70 italic">{methodology}</p>
+      {isPending === true && (pendingCount ?? 0) > 0 && (
+        <p className="opacity-70">
+          Based on currently-evaluated games. {(pendingCount ?? 0).toLocaleString()} more being
+          analysed — refresh in a few minutes for updated values.
+        </p>
+      )}
     </div>
   );
 }
