@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: milestone_complete
-last_updated: 2026-05-21T03:43:57.745Z
-last_activity: 2026-05-21 -- Phase 91 execution started
+status: completed
+last_updated: "2026-05-21T17:21:37.910Z"
+last_activity: 2026-05-21 — Quick task 260521-d6o (cold-drain single-walk PGN refactor)
 progress:
-  total_phases: 2
-  completed_phases: 1
+  total_phases: 3
+  completed_phases: 2
   total_plans: 11
   completed_plans: 11
-  percent: 50
-stopped_at: Milestone complete (Phase 91 was final phase)
+  percent: 67
 ---
 
 # Project State: FlawChess
