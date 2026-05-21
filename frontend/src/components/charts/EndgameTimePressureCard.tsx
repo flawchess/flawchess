@@ -256,24 +256,6 @@ export function EndgameTimePressureCard({
         {/* SC-2: top section — 3-column header row + Clock Gap bullet + net flag rate.
             The ClockGapHeaderRow sits ABOVE the bullet, replacing the old label row. */}
         <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
-          <p
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
-            data-testid={`time-pressure-card-${card.tc}-top-zone-subtitle`}
-          >
-            Remaining Time at Endgame Entry
-            <InfoPopover
-              ariaLabel={`${tcLabel} remaining time info`}
-              testId={`time-pressure-card-${card.tc}-top-zone-info`}
-              side="top"
-            >
-              <p>
-                This section is about time management <em>before</em> the
-                endgame: how much clock time you and your opponents have left
-                on average when endgames begin, plus your net flag rate
-                (timeout wins minus flag losses).
-              </p>
-            </InfoPopover>
-          </p>
           <ClockGapHeaderRow gap={gap} card={card} />
           <div
             className="min-w-0 tabular-nums"

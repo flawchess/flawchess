@@ -338,6 +338,17 @@ export function ScoreGapByTimePressureChart({
             dataKey="label"
             type="category"
             padding={{ left: X_AXIS_EDGE_PADDING, right: X_AXIS_EDGE_PADDING }}
+            label={{
+              value: 'Remaining Time at Endgame Entry',
+              position: 'insideBottom',
+              offset: -5,
+              style: {
+                fontSize: 14,
+                fontWeight: 500,
+                fill: 'var(--muted-foreground)',
+              },
+            }}
+            height={44}
           />
           <YAxis
             yAxisId="value"
@@ -412,13 +423,6 @@ export function ScoreGapByTimePressureChart({
           </Line>
         </ComposedChart>
       </ChartContainer>
-      {/* X-axis caption rendered as HTML (not a Recharts SVG <Label>) so it
-          matches the "Clock Gap at Endgame Entry" chart's text-sm caption
-          exactly on every viewport — SVG label text scales with the
-          responsive container and would not match on mobile. */}
-      <p className="text-sm text-muted-foreground text-center mt-1">
-        Remaining Time
-      </p>
     </div>
   );
 }
