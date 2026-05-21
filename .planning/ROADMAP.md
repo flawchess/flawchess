@@ -73,9 +73,9 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 91-01-PLAN.md — Schema: add games.evals_completed_at column + partial index + backfill (D-08/D-10)
-- [ ] 91-04-PLAN.md — GET /imports/eval-coverage endpoint + repository + integration tests
-- [ ] 91-06-PLAN.md — useEvalCoverage hook + EvalCoverageHeader component + mount on Endgames + Openings/Stats
+- [x] 91-01-PLAN.md — Schema: add games.evals_completed_at column + partial index + backfill (D-08/D-10)
+- [x] 91-04-PLAN.md — GET /imports/eval-coverage endpoint + repository + integration tests
+- [x] 91-06-PLAN.md — useEvalCoverage hook + EvalCoverageHeader component + mount on Endgames + Openings/Stats
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
