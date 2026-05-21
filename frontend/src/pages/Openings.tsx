@@ -19,6 +19,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Input } from '@/components/ui/input';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -772,6 +773,7 @@ export function OpeningsPage() {
             </Tooltip>
           }
         >
+          <EvalCoverageHeader />
           <Tabs
             value={activeTab}
             onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }}
@@ -871,7 +873,9 @@ export function OpeningsPage() {
         </SidebarLayout>
 
         {/* Mobile: sticky subnav + non-sticky board (matches Endgames pattern, 71.1-02) */}
-        <Tabs value={activeTab} onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }} className="lg:hidden flex flex-col gap-2 min-w-0">
+        <div className="lg:hidden flex flex-col min-w-0">
+          <EvalCoverageHeader />
+        <Tabs value={activeTab} onValueChange={(val) => { navigate(`/openings/${val}`); window.scrollTo({ top: 0 }); }} className="flex flex-col gap-2 min-w-0">
           {/* Sticky sub-navigation + filter button (D-05, D-11) */}
           {/* z-20 keeps subnav above ToggleGroupItem's focus:z-10 and below SidebarLayout panel z-40 */}
           <div
@@ -1177,6 +1181,7 @@ export function OpeningsPage() {
           <TabsContent value="stats" className="mt-2">{statsTabEl}</TabsContent>
           <TabsContent value="insights" className="mt-2">{insightsTabEl}</TabsContent>
         </Tabs>
+        </div>
       </main>
 
       {/* Bookmark label dialog */}

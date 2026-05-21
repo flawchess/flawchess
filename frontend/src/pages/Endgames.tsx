@@ -358,7 +358,6 @@ export function EndgamesPage() {
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
-      <EvalCoverageHeader />
       <EndgameInsightsBlock
         appliedFilters={appliedFilters}
         rendered={matchingInsights}
@@ -730,6 +729,7 @@ export function EndgamesPage() {
           activePanel={sidebarOpen}
           onActivePanelChange={handleSidebarOpenChange}
         >
+          <EvalCoverageHeader />
           <Tabs value={activeTab} onValueChange={(val) => navigate(`/endgames/${val}`)}>
             <TabsList variant="brand" className="w-full" data-testid="endgames-tabs">
               <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
@@ -766,6 +766,7 @@ export function EndgamesPage() {
 
         {/* Mobile: single column */}
         <div className="md:hidden flex flex-col min-w-0">
+          <EvalCoverageHeader />
           <Tabs value={activeTab} onValueChange={(val) => { navigate(`/endgames/${val}`); window.scrollTo({ top: 0 }); }}>
             {/* Sticky sub-navigation + filter button */}
             <div className="sticky top-0 z-20 flex items-center gap-2 h-[52px] bg-white/20 backdrop-blur-md rounded-md px-1 py-1" data-testid="endgames-mobile-control-row">

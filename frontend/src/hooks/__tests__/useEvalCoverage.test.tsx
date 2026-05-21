@@ -56,7 +56,7 @@ describe('useEvalCoverage', () => {
 
     // Advance 10s to trigger first poll, then flush its promise
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(3_000);
     });
     await act(async () => {
       await Promise.resolve();
@@ -64,7 +64,7 @@ describe('useEvalCoverage', () => {
 
     // Advance 10s to trigger second poll, then flush its promise
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(3_000);
     });
     await act(async () => {
       await Promise.resolve();
@@ -88,7 +88,7 @@ describe('useEvalCoverage', () => {
     const callCountAfterFirst = vi.mocked(apiClient.get).mock.calls.length;
     expect(callCountAfterFirst).toBe(1);
 
-    // Advance 30s — should NOT trigger more polls since pct_complete === 100
+    // Advance 30s — should NOT trigger more polls since pct_complete === 100 AND total_count > 0
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
@@ -97,6 +97,32 @@ describe('useEvalCoverage', () => {
     });
 
     expect(vi.mocked(apiClient.get).mock.calls.length).toBe(1);
+  });
+
+  it('keeps polling when total_count=0 (new user / pre-import lands on /import)', async () => {
+    // Backend short-circuits to pct=100 when the user has no games. Without
+    // continued polling, the header would never appear once an in-flight
+    // import starts landing rows.
+    vi.mocked(apiClient.get).mockResolvedValue({
+      data: { pending_count: 0, total_count: 0, pct_complete: 100 },
+    });
+
+    renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const callCountAfterFirst = vi.mocked(apiClient.get).mock.calls.length;
+    expect(callCountAfterFirst).toBe(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(vi.mocked(apiClient.get).mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it('returns safe default values before first fetch resolves', async () => {
