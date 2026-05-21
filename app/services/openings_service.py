@@ -291,15 +291,14 @@ async def get_time_series(
     ROLLING_WINDOW_SIZE games (or all games so far if fewer than ROLLING_WINDOW_SIZE
     have been played). Partial windows (games 1 to ROLLING_WINDOW_SIZE-1) are
     included from the start.
-    """
-    cutoff = recency_cutoff(request.recency)
-    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
 
+    D-19: no date filtering on the time-series path — the rolling-window chart
+    always covers the full game history so that context games before the window
+    anchor the rolling averages correctly.
+    """
     series: list[BookmarkTimeSeries] = []
     for bkm in request.bookmarks:
         hash_column = HASH_COLUMN_MAP[bkm.match_side]
-        # Fetch all games (no recency filter) so rolling windows are pre-filled.
-        # Other filters (time_control, platform, etc.) still applied.
         rows = await query_time_series(
             session,
             user_id,
@@ -310,7 +309,6 @@ async def get_time_series(
             platform=request.platform,
             rated=request.rated,
             opponent_type=request.opponent_type,
-            recency_cutoff=None,
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
         )
@@ -327,7 +325,6 @@ async def get_time_series(
             outcome = derive_user_result(result, user_color)
             results_so_far.append(outcome)
 
-            # Accumulate overall totals (may be narrowed below by recency filter)
             if outcome == "win":
                 total_wins += 1
             elif outcome == "draw":
@@ -350,24 +347,8 @@ async def get_time_series(
                 window_size=ROLLING_WINDOW_SIZE,
             )
 
-        # Drop early points with too few games in the rolling window
-        # Filter output to recency window (rolling window was computed over full history)
+        # Drop early points with too few games in the rolling window.
         data = [pt for pt in data_by_date.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]
-        if cutoff_str:
-            data = [pt for pt in data if pt.date >= cutoff_str]
-            # Recompute totals from filtered period only
-            total_wins = total_draws = total_losses = 0
-            last_played_at = None
-            for played_at, result, user_color in rows:
-                if played_at.strftime("%Y-%m-%d") >= cutoff_str:
-                    outcome = derive_user_result(result, user_color)
-                    if outcome == "win":
-                        total_wins += 1
-                    elif outcome == "draw":
-                        total_draws += 1
-                    else:
-                        total_losses += 1
-                    last_played_at = played_at  # rows ordered ASC; final assignment wins
 
         total_games = total_wins + total_draws + total_losses
         series.append(

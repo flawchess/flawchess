@@ -141,7 +141,13 @@ class TimeSeriesBookmarkParam(BaseModel):
 
 
 class TimeSeriesRequest(BaseModel):
-    """Request body for POST /openings/time-series."""
+    """Request body for POST /openings/time-series.
+
+    The time-series endpoint does not filter by date — D-19 removed the recency
+    field so the rolling-window chart always covers the full game history.
+    Other game filters (time_control, platform, rated, opponent_type,
+    opponent_gap) still apply to narrow which games contribute to the series.
+    """
 
     bookmarks: list[TimeSeriesBookmarkParam]
 
@@ -150,9 +156,6 @@ class TimeSeriesRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: (
-        Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None
-    ) = None
     opponent_gap_min: int | None = None
     opponent_gap_max: int | None = None
 
@@ -175,9 +178,9 @@ class BookmarkTimeSeries(BaseModel):
     total_draws: int
     total_losses: int
     total_games: int
-    # MAX(games.played_at) across the games visiting this bookmark's target_hash
-    # under the same recency window as the totals. Drives the bookmark card
-    # score-confidence popover's "Last played: <relative>" line.
+    # MAX(games.played_at) across all games visiting this bookmark's target_hash
+    # (no date filter — D-19). Drives the bookmark card score-confidence
+    # popover's "Last played: <relative>" line.
     last_played_at: datetime.datetime | None = None
 
 
