@@ -30,6 +30,7 @@ from app.repositories import game_repository, import_job_repository
 from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, lichess_client
+from app.services.eval_drain import _collect_midgame_eval_targets, _collect_endgame_span_eval_targets  # Phase 91: cross-module use of eval_drain internals is intentional — see SEED-023.
 from app.services.zobrist import PlyData, process_game_pgn
 
 logger = logging.getLogger(__name__)
@@ -745,6 +746,23 @@ async def _flush_batch(
             )
             await session.execute(fen_stmt, fen_params)
 
+    # Stage 5c: mark games whose entry plies are already fully covered (D-08 hot-lane gate).
+    # CONTEXT.md D-08 / SEED-023: A game is "covered" if both _collect_midgame_eval_targets
+    # and _collect_endgame_span_eval_targets return empty for its game_eval_data entry
+    # (all entry plies already have lichess %eval, or the game has no entry plies at all).
+    # These games are set evals_completed_at = NOW() immediately; the cold drain skips them.
+    # Games with pending entry plies keep evals_completed_at = NULL (cold drain will handle them).
+    covered_ids = _collect_covered_game_ids(rows_result.game_eval_data)
+    if covered_ids:
+        now_ts = datetime.now(timezone.utc)
+        stage5c_games_table = Game.__table__
+        covered_stmt = (
+            update(stage5c_games_table)  # ty: ignore[invalid-argument-type]
+            .where(stage5c_games_table.c.id == bindparam("b_id"))
+            .values(evals_completed_at=now_ts)
+        )
+        await session.execute(covered_stmt, [{"b_id": gid} for gid in covered_ids])
+
     # WR-05: caller owns the commit (single transaction per batch).
     return len(rows_result.new_game_ids)
 
@@ -834,3 +852,41 @@ async def _collect_position_rows(
     return out
 
 
+def _collect_covered_game_ids(
+    game_eval_data: list[tuple[int, str, list[PlyData]]],
+) -> list[int]:
+    """Return IDs of games whose entry plies need no further Stockfish evaluation.
+
+    CONTEXT.md D-08 / SEED-023 Stage 5c: a game is "covered" when both
+    _collect_midgame_eval_targets and _collect_endgame_span_eval_targets return
+    empty lists for its game_eval_data entry. This means either:
+      - All entry plies already have lichess %eval populated (T-78-17), or
+      - The game has no midgame or endgame entry plies at all (very short game).
+
+    These games are marked evals_completed_at = NOW() by the hot-lane Stage 5c
+    UPDATE. Games with pending entry plies are left with evals_completed_at = NULL
+    so the cold-drain coroutine run_eval_drain() can pick them up asynchronously.
+
+    Pure function: no session, no engine calls. Delegates to the same helpers
+    used by the cold drain (_collect_midgame_eval_targets,
+    _collect_endgame_span_eval_targets from app.services.eval_drain) so a game
+    marked covered here is by definition one the drain would also find empty
+    targets for — false positives are structurally impossible (T-91-10).
+
+    Args:
+        game_eval_data: List of (game_id, pgn_text, plies_list) tuples as
+            produced by _collect_position_rows into _PositionRowsResult.game_eval_data.
+
+    Returns:
+        List of game IDs for which both target collectors return empty.
+    """
+    covered: list[int] = []
+    for game_id, pgn_text, plies_list in game_eval_data:
+        single_game_data: list[tuple[int, str, list[PlyData]]] = [
+            (game_id, pgn_text, plies_list)
+        ]
+        midgame_targets = _collect_midgame_eval_targets(single_game_data)
+        endgame_targets = _collect_endgame_span_eval_targets(single_game_data)
+        if not midgame_targets and not endgame_targets:
+            covered.append(game_id)
+    return covered
