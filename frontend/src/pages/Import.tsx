@@ -60,12 +60,19 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string
   const isError = data?.status === 'failed';
   const isActive = !!data && !isDone && !isError;
 
-  // Periodically refresh game counts while import is active
+  // Periodically refresh game counts while import is active.
+  // Also invalidates the Stockfish eval-coverage query — its own 3s poll in
+  // useEvalCoverage can stall during heavy concurrent imports (the user then
+  // has to tab away and back to trigger refetchOnWindowFocus). Piggy-backing
+  // on the import-active interval (which we know fires reliably because the
+  // progress bars are visibly updating) guarantees the header appears soon
+  // after the first game is imported.
   useEffect(() => {
     if (!isActive) return;
     const interval = setInterval(() => {
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
       queryClient.invalidateQueries({ queryKey: ['gameCount'] });
+      queryClient.invalidateQueries({ queryKey: ['imports', 'eval-coverage'] });
     }, GAME_COUNT_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [isActive, queryClient]);
@@ -165,6 +172,10 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       const result = await trigger.mutateAsync({ platform, username });
       onImportStarted(result.job_id);
       setJobPlatforms((prev) => new Map(prev).set(result.job_id, platform));
+      // Kick the eval-coverage header to refetch right away so it shows
+      // pending as soon as the first batch of games lands, instead of
+      // waiting for the next refresh tick.
+      queryClient.invalidateQueries({ queryKey: ['imports', 'eval-coverage'] });
     } catch (err) {
       Sentry.captureException(err, {
         tags: { source: 'import' },
