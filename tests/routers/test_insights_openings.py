@@ -151,3 +151,36 @@ async def test_post_openings_endpoint_filter_equivalence(
     assert resp1.status_code == 200
     assert resp2.status_code == 200
     assert resp1.json() == resp2.json()
+
+
+ENDGAME_INSIGHTS_ENDPOINT = "/api/insights/endgame"
+
+
+@pytest.mark.asyncio
+async def test_insights_blocked_when_from_date_set(
+    auth_headers: dict[str, str],
+) -> None:
+    """Phase 92 §Pitfall 3: insights/endgame must block when from_date is set.
+
+    After the recency→from_date/to_date refactor, _validate_full_history_filters
+    gates on ``filters.from_date is not None or filters.to_date is not None``.
+    If that guard is missing or wrong, the LLM would generate a report over a
+    truncated dataset while the system prompt says "your full history". This
+    test is a silent-regression gate (T-92-06-01).
+
+    A fresh user with from_date set must receive HTTP 400 with a blocking message
+    that includes "Clear Custom date range filter". Mirror the pattern used by
+    test_post_openings_endpoint_does_NOT_apply_full_history_gate but for the
+    endgame endpoint which DOES apply the gate.
+    """
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            ENDGAME_INSIGHTS_ENDPOINT,
+            params={"from_date": "2026-03-01"},
+            headers=auth_headers,
+        )
+    assert response.status_code == 400
+    detail = str(response.json())
+    assert "Clear Custom date range filter" in detail
