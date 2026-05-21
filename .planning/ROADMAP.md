@@ -80,8 +80,8 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 91-02-PLAN.md — Cold-lane drain module (run_eval_drain + LIFO pick + gather-outside-session)
-- [ ] 91-03-PLAN.md — Hot-lane refactor: strip eval stages from _flush_batch; add Stage 5c covered-game gate
-- [ ] 91-05-PLAN.md — Wire run_eval_drain into FastAPI lifespan alongside reaper
+- [x] 91-03-PLAN.md — Hot-lane refactor: strip eval stages from _flush_batch; add Stage 5c covered-game gate
+- [x] 91-05-PLAN.md — Wire run_eval_drain into FastAPI lifespan alongside reaper
 - [x] 91-07-PLAN.md — Per-metric pending caveat in EvalConfidenceTooltip + MetricStatTooltip bodies (7 Cpu consumers)
 
 **Wave 3** *(blocked on Wave 2 completion)*
