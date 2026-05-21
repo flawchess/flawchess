@@ -506,3 +506,257 @@ class TestCancellationPropagates:
         drain_task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await drain_task
+
+
+# ─── Test: single-walk per-game target collection (Quick 260521-d6o) ──────────
+
+
+def _make_ply_data(
+    ply: int,
+    *,
+    phase: int = 0,
+    endgame_class: int | None = None,
+    eval_cp: int | None = None,
+    eval_mate: int | None = None,
+) -> dict[str, Any]:
+    """Build a minimal PlyData dict for the single-walk tests.
+
+    The fields used by the target collectors are ply, phase, endgame_class,
+    eval_cp, eval_mate. Other fields are zero/None placeholders (PlyData is a
+    TypedDict, not a dataclass, so the return type is `dict[str, Any]`).
+    """
+    return {
+        "ply": ply,
+        "phase": phase,
+        "endgame_class": endgame_class,
+        "eval_cp": eval_cp,
+        "eval_mate": eval_mate,
+        "white_hash": 0,
+        "black_hash": 0,
+        "full_hash": 0,
+        "move_san": None,
+        "clock_seconds": None,
+        "material_count": 0,
+        "material_signature": "",
+        "material_imbalance": 0,
+        "has_opposite_color_bishops": False,
+        "piece_count": 0,
+        "backrank_sparse": False,
+        "mixedness": 0,
+    }
+
+
+# A 10-move PGN (20 plies) used by the single-walk tests.
+_LONG_PGN: str = (
+    "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 "
+    "6. Re1 b5 7. Bb3 d6 8. c3 O-O 9. h3 Nb8 10. d4 Nbd7 *"
+)
+
+
+class TestSingleWalkTargetCollection:
+    """Quick 260521-d6o: cold-drain target collection must parse each PGN once.
+
+    Locks the single-walk invariant: a game with N entry plies (1 midgame +
+    M endgame spans) triggers AT MOST ONE chess.pgn.read_game per outer
+    collector call (i.e. the per-game helper does not re-parse for each ply).
+    """
+
+    def _install_read_game_counter(self, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+        """Patch chess.pgn.read_game in the eval_drain namespace with a counter wrapper.
+
+        Returns a single-element list so the closure can mutate the counter.
+        """
+        import app.services.eval_drain as drain_module
+
+        original_read_game = drain_module.chess.pgn.read_game
+        counter: list[int] = [0]
+
+        def counting_read_game(*args: Any, **kwargs: Any) -> Any:
+            counter[0] += 1
+            return original_read_game(*args, **kwargs)
+
+        monkeypatch.setattr(drain_module.chess.pgn, "read_game", counting_read_game)
+        return counter
+
+    async def test_single_parse_invariant(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test 1: 1 midgame + 2 endgame span entries → read_game called ≤1 per collector."""
+        from app.services.eval_drain import (
+            _collect_endgame_span_eval_targets,
+            _collect_midgame_eval_targets,
+        )
+
+        # Build plies_list: midgame entry at ply 4, endgame class=1 island at
+        # plies 8-9, endgame class=2 island at plies 10-11.
+        plies_list: list[Any] = [
+            _make_ply_data(2, phase=0),
+            _make_ply_data(4, phase=1),  # midgame entry — needs eval
+            _make_ply_data(8, phase=2, endgame_class=1),  # class=1 island start
+            _make_ply_data(9, phase=2, endgame_class=1),  # class=1 island continued
+            _make_ply_data(10, phase=2, endgame_class=2),  # class=2 island start
+            _make_ply_data(11, phase=2, endgame_class=2),  # class=2 island continued
+        ]
+        game_eval_data: list[Any] = [(1, _LONG_PGN, plies_list)]
+
+        counter = self._install_read_game_counter(monkeypatch)
+        midgame_targets = _collect_midgame_eval_targets(game_eval_data)
+        midgame_parses = counter[0]
+        endgame_targets = _collect_endgame_span_eval_targets(game_eval_data)
+        endgame_parses = counter[0] - midgame_parses
+
+        assert midgame_parses <= 1, (
+            f"midgame collector parsed PGN {midgame_parses} times for a single game"
+        )
+        assert endgame_parses <= 1, (
+            f"endgame collector parsed PGN {endgame_parses} times for a single game"
+        )
+
+        assert len(midgame_targets) == 1
+        assert midgame_targets[0].ply == 4
+        assert midgame_targets[0].eval_kind == "middlegame_entry"
+
+        assert len(endgame_targets) == 2
+        endgame_classes = sorted(t.endgame_class for t in endgame_targets)
+        assert endgame_classes == [1, 2]
+        for t in endgame_targets:
+            assert t.eval_kind == "endgame_span_entry"
+
+    async def test_covered_game_skips_parse(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test 2: all candidate entry plies pre-covered → read_game NEVER invoked."""
+        from app.services.eval_drain import (
+            _collect_endgame_span_eval_targets,
+            _collect_midgame_eval_targets,
+        )
+
+        plies_list: list[Any] = [
+            _make_ply_data(4, phase=1, eval_cp=15),  # midgame pre-covered
+            _make_ply_data(8, phase=2, endgame_class=1, eval_cp=20),
+            _make_ply_data(10, phase=2, endgame_class=2, eval_mate=3),
+        ]
+        game_eval_data: list[Any] = [(1, _LONG_PGN, plies_list)]
+
+        counter = self._install_read_game_counter(monkeypatch)
+        midgame_targets = _collect_midgame_eval_targets(game_eval_data)
+        endgame_targets = _collect_endgame_span_eval_targets(game_eval_data)
+
+        assert midgame_targets == []
+        assert endgame_targets == []
+        assert counter[0] == 0, (
+            f"read_game should not be called when every candidate is covered "
+            f"(was called {counter[0]} times)"
+        )
+
+    async def test_parse_failure_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test 3: unparseable PGN → both collectors return [] without raising."""
+        import app.services.eval_drain as drain_module
+        from app.services.eval_drain import (
+            _collect_endgame_span_eval_targets,
+            _collect_midgame_eval_targets,
+        )
+
+        # Force read_game to return None (simulates unparseable PGN).
+        monkeypatch.setattr(drain_module.chess.pgn, "read_game", lambda *_a, **_kw: None)
+
+        plies_list: list[Any] = [
+            _make_ply_data(4, phase=1),  # midgame entry — needs board
+            _make_ply_data(8, phase=2, endgame_class=1),
+        ]
+        game_eval_data: list[Any] = [(1, "not a valid pgn", plies_list)]
+
+        midgame_targets = _collect_midgame_eval_targets(game_eval_data)
+        endgame_targets = _collect_endgame_span_eval_targets(game_eval_data)
+
+        assert midgame_targets == []
+        assert endgame_targets == []
+
+    async def test_mainline_ends_before_target_ply(self) -> None:
+        """Test 4: unreachable endgame target silently dropped, reachable midgame kept."""
+        from app.services.eval_drain import (
+            _collect_endgame_span_eval_targets,
+            _collect_midgame_eval_targets,
+        )
+
+        # 4-ply PGN (2 full moves).
+        short_pgn = "1. e4 e5 2. Nf3 Nc6 *"
+        plies_list: list[Any] = [
+            _make_ply_data(2, phase=1),  # midgame entry — reachable
+            _make_ply_data(20, phase=2, endgame_class=1),  # unreachable
+        ]
+        game_eval_data: list[Any] = [(1, short_pgn, plies_list)]
+
+        midgame_targets = _collect_midgame_eval_targets(game_eval_data)
+        endgame_targets = _collect_endgame_span_eval_targets(game_eval_data)
+
+        assert len(midgame_targets) == 1
+        assert midgame_targets[0].ply == 2
+        assert endgame_targets == []
+
+    async def test_midgame_covered_endgame_uncovered(self) -> None:
+        """Test 5: midgame entry pre-covered, endgame uncovered → only endgame target."""
+        from app.services.eval_drain import (
+            _collect_endgame_span_eval_targets,
+            _collect_midgame_eval_targets,
+        )
+
+        plies_list: list[Any] = [
+            _make_ply_data(4, phase=1, eval_cp=15),  # midgame pre-covered (lichess)
+            _make_ply_data(8, phase=2, endgame_class=1),  # endgame uncovered
+        ]
+        game_eval_data: list[Any] = [(1, _LONG_PGN, plies_list)]
+
+        midgame_targets = _collect_midgame_eval_targets(game_eval_data)
+        endgame_targets = _collect_endgame_span_eval_targets(game_eval_data)
+
+        assert midgame_targets == []
+        assert len(endgame_targets) == 1
+        assert endgame_targets[0].endgame_class == 1
+        assert endgame_targets[0].ply == 8
+
+    async def test_multiple_islands_same_class(self) -> None:
+        """Test 6: class=1 at [5,6,7], class=2 at [8], class=1 at [9,10] → 3 targets."""
+        from app.services.eval_drain import _collect_endgame_span_eval_targets
+
+        plies_list: list[Any] = [
+            _make_ply_data(5, phase=2, endgame_class=1),
+            _make_ply_data(6, phase=2, endgame_class=1),
+            _make_ply_data(7, phase=2, endgame_class=1),
+            _make_ply_data(8, phase=2, endgame_class=2),
+            _make_ply_data(9, phase=2, endgame_class=1),
+            _make_ply_data(10, phase=2, endgame_class=1),
+        ]
+        game_eval_data: list[Any] = [(1, _LONG_PGN, plies_list)]
+
+        endgame_targets = _collect_endgame_span_eval_targets(game_eval_data)
+
+        # Expect 3 islands: class=1 at ply 5, class=2 at ply 8, class=1 at ply 9.
+        assert len(endgame_targets) == 3
+        by_ply = sorted(endgame_targets, key=lambda t: t.ply)
+        assert (by_ply[0].ply, by_ply[0].endgame_class) == (5, 1)
+        assert (by_ply[1].ply, by_ply[1].endgame_class) == (8, 2)
+        assert (by_ply[2].ply, by_ply[2].endgame_class) == (9, 1)
+
+    async def test_board_snapshot_is_pre_push(self) -> None:
+        """Test 7: midgame entry at ply=2 → board has e4 + e5 played, Nf3 NOT yet pushed."""
+        import chess as chess_lib
+
+        from app.services.eval_drain import _collect_midgame_eval_targets
+
+        pgn = "1. e4 e5 2. Nf3 *"
+        plies_list: list[Any] = [_make_ply_data(2, phase=1)]
+        game_eval_data: list[Any] = [(1, pgn, plies_list)]
+
+        midgame_targets = _collect_midgame_eval_targets(game_eval_data)
+
+        assert len(midgame_targets) == 1
+        board = midgame_targets[0].board
+
+        # Expected: after 1. e4 e5, before 2. Nf3 — white to move, knight on g1.
+        expected = chess_lib.Board()
+        expected.push_san("e4")
+        expected.push_san("e5")
+        assert board.board_fen() == expected.board_fen()
+        assert board.turn == chess_lib.WHITE
+        # Knight still on its starting square.
+        assert board.piece_at(chess_lib.G1) is not None
+        knight = board.piece_at(chess_lib.G1)
+        assert knight is not None
+        assert knight.piece_type == chess_lib.KNIGHT

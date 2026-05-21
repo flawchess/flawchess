@@ -23,6 +23,14 @@ Phase 91 / SEED-023 locks:
     D-11: LIFO id-DESC pick, batch size 10.
     D-12: no per-user fairness at current scale.
     D-13: idle sleep 5s when queue empty.
+
+Quick 260521-d6o follow-up:
+    Target collection is single-walk per game — one chess.pgn.read_game + one
+    mainline traversal yields board snapshots at every target ply, instead of
+    one parse-and-walk per target ply. Public wrappers
+    (_collect_midgame_eval_targets, _collect_endgame_span_eval_targets) keep
+    their original signatures for the hot-lane Stage 5c covered-game gate in
+    import_service.py:_collect_covered_game_ids.
 """
 
 import asyncio
@@ -96,30 +104,145 @@ class _EvalTarget:
     board: chess.Board
 
 
-def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
-    """Replay PGN to the board state at *target_ply* (0-indexed, pre-push).
+# A "target spec" describes one entry ply that needs a Stockfish eval. The
+# per-game helper builds these from PlyData first (no PGN parsing), then in a
+# single mainline walk snapshots board state at each target's ply.
+@dataclass(slots=True, frozen=True)
+class _TargetSpec:
+    ply: int
+    eval_kind: Literal["middlegame_entry", "endgame_span_entry"]
+    endgame_class: int | None
 
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-    The originals in import_service.py are removed in Plan 91-03.
 
-    Phase 78 IMP-01: used by the import-time eval pass to reconstruct the board
-    at a span-entry ply without retaining chess.Board objects in memory during
-    the main PGN walk. Mirrors the backfill script approach (Option A, RESEARCH.md).
+def _collect_target_specs(plies_list: Sequence[PlyData]) -> list[_TargetSpec]:
+    """Pure: derive the (ply, eval_kind, endgame_class) tuples that need eval.
 
-    Returns None if the PGN is unparseable or the game ends before target_ply.
+    Skips plies where lichess %eval already populated eval_cp or eval_mate
+    (T-78-17). At most one middlegame entry per game (D-79-08). Endgame spans
+    are split into contiguous-ply islands per class; each island contributes
+    one entry ply.
     """
+    specs: list[_TargetSpec] = []
+
+    # Midgame entry: MIN(ply) where phase == 1, unless already covered.
+    midgame_entries = [pd for pd in plies_list if pd["phase"] == 1]
+    if midgame_entries:
+        mid_pd = min(midgame_entries, key=lambda p: p["ply"])
+        if mid_pd["eval_cp"] is None and mid_pd["eval_mate"] is None:
+            specs.append(
+                _TargetSpec(
+                    ply=mid_pd["ply"],
+                    eval_kind="middlegame_entry",
+                    endgame_class=None,
+                )
+            )
+
+    # Endgame spans: contiguous-ply islands per endgame_class.
+    class_plies: dict[int, list[PlyData]] = defaultdict(list)
+    for pd in plies_list:
+        ec = pd["endgame_class"]
+        if ec is not None:
+            class_plies[ec].append(pd)
+
+    for ec, pds in class_plies.items():
+        for island in _split_into_contiguous_islands(pds):
+            span_pd = island[0]
+            if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
+                # T-78-17 lichess preservation: do not overwrite.
+                continue
+            specs.append(
+                _TargetSpec(
+                    ply=span_pd["ply"],
+                    eval_kind="endgame_span_entry",
+                    endgame_class=ec,
+                )
+            )
+
+    return specs
+
+
+def _snapshot_boards(pgn_text: str, target_plies: set[int]) -> dict[int, chess.Board]:
+    """Parse PGN once and return board snapshots keyed by ply (0-indexed, pre-push).
+
+    Plies not reached before the mainline ends are silently omitted — no
+    Sentry (parse errors and short games are rare and not urgent).
+    Unparseable PGNs return an empty dict.
+    """
+    if not target_plies:
+        return {}
     try:
         game = chess.pgn.read_game(io.StringIO(pgn_text))
     except Exception:
-        return None
+        return {}
     if game is None:
-        return None
+        return {}
+
     board = game.board()
+    snapshots: dict[int, chess.Board] = {}
+    remaining = set(target_plies)
     for i, node in enumerate(game.mainline()):
-        if i == target_ply:
-            return board
+        if i in remaining:
+            snapshots[i] = board.copy()
+            remaining.discard(i)
+            if not remaining:
+                break
         board.push(node.move)
-    return None
+    return snapshots
+
+
+def _collect_eval_targets_per_game(
+    g_id: int,
+    pgn_text: str,
+    plies_list: Sequence[PlyData],
+) -> list[_EvalTarget]:
+    """Per-game single-walk target builder (Quick 260521-d6o).
+
+    Replaces the previous N-parse pattern where each midgame + endgame span
+    entry triggered its own PGN parse and mainline walk per target ply.
+    The new path:
+
+      1. Derive every target ply up front from PlyData alone (no parsing).
+      2. If no targets, return [] WITHOUT touching the PGN — cold drain
+         covered-game gate goes through zero parses.
+      3. Otherwise parse the PGN once and walk the mainline once, snapshotting
+         `board.copy()` at each target ply (early-break when all targets are
+         filled).
+      4. Assemble _EvalTarget rows. Midgame entry first (matches the previous
+         collector ordering — midgame helper output, then endgame helper
+         output), then endgame targets in ply-ascending order.
+
+    Targets whose ply was unreachable (game ended early) are silently dropped
+    — no Sentry, matching the previous best-effort semantics for short games.
+    """
+    specs = _collect_target_specs(plies_list)
+    if not specs:
+        return []
+
+    snapshots = _snapshot_boards(pgn_text, {s.ply for s in specs})
+    if not snapshots:
+        return []
+
+    midgame_targets: list[_EvalTarget] = []
+    endgame_targets: list[_EvalTarget] = []
+    for spec in specs:
+        board = snapshots.get(spec.ply)
+        if board is None:
+            # Mainline ended before this target ply — silently skip (no Sentry).
+            continue
+        target = _EvalTarget(
+            game_id=g_id,
+            ply=spec.ply,
+            eval_kind=spec.eval_kind,
+            endgame_class=spec.endgame_class,
+            board=board,
+        )
+        if spec.eval_kind == "middlegame_entry":
+            midgame_targets.append(target)
+        else:
+            endgame_targets.append(target)
+
+    endgame_targets.sort(key=lambda t: t.ply)
+    return midgame_targets + endgame_targets
 
 
 def _collect_midgame_eval_targets(
@@ -128,34 +251,22 @@ def _collect_midgame_eval_targets(
     """Phase 79 PHASE-IMP-01: middlegame entry eval — MIN(ply) where phase == 1.
 
     Phase 91: lifted from import_service.py for the cold-drain lane.
-    The originals in import_service.py are removed in Plan 91-03.
 
-    At most one middlegame entry per game (later phase=1 stretches after an
-    endgame are NOT re-evaluated, mirroring lichess Divider's single
-    Division(midGame, endGame) return — D-79-08). Skips plies where lichess
-    %eval already populated the row (T-78-17).
+    Quick 260521-d6o: now a thin filter over the single-walk per-game helper.
+    The hot-lane Stage 5c covered-game gate in import_service.py still imports
+    and calls this with single-game tuples; the signature is preserved. When
+    both collectors are called back-to-back on the same `game_eval_data`, each
+    invocation does its own single mainline walk per game — the production
+    cold-drain path in `_collect_eval_targets_from_db` therefore calls
+    `_collect_eval_targets_per_game` directly to avoid the double walk.
+
+    Skips plies where lichess %eval already populated the row (T-78-17).
+    At most one middlegame entry per game (D-79-08).
     """
     targets: list[_EvalTarget] = []
     for g_id, pgn_text, plies_list in game_eval_data:
-        midgame_entries = [pd for pd in plies_list if pd["phase"] == 1]
-        if not midgame_entries:
-            continue
-        mid_pd = min(midgame_entries, key=lambda p: p["ply"])
-        # T-78-17 lichess preservation: skip if lichess %eval already populated the row.
-        if mid_pd["eval_cp"] is not None or mid_pd["eval_mate"] is not None:
-            continue
-        mid_board = _board_at_ply(pgn_text, mid_pd["ply"])
-        if mid_board is None:
-            continue
-        targets.append(
-            _EvalTarget(
-                game_id=g_id,
-                ply=mid_pd["ply"],
-                eval_kind="middlegame_entry",
-                endgame_class=None,
-                board=mid_board,
-            )
-        )
+        all_targets = _collect_eval_targets_per_game(g_id, pgn_text, plies_list)
+        targets.extend(t for t in all_targets if t.eval_kind == "middlegame_entry")
     return targets
 
 
@@ -165,27 +276,18 @@ def _collect_endgame_span_eval_targets(
     """Phase 78 per-class endgame span entry collection.
 
     Phase 91: lifted from import_service.py for the cold-drain lane.
-    The originals in import_service.py are removed in Plan 91-03.
 
+    Quick 260521-d6o: now a thin filter over the single-walk per-game helper.
+    Same signature-preservation note as `_collect_midgame_eval_targets`.
     Each contiguous run of the same endgame_class within a game is its own
-    span: a class=1 → class=2 → class=1 sequence yields two class=1 entry
-    evals, not one. Spans of any length are evaluated; the repository's
-    ENDGAME_PLY_THRESHOLD is intentionally not enforced here so endgame
-    eval coverage stays uniform across short and long spans. Skips plies
-    where lichess %eval already populated the row (T-78-17).
+    span; a class=1 → class=2 → class=1 sequence yields two class=1 entry
+    evals, not one. Skips plies where lichess %eval already populated the
+    row (T-78-17).
     """
     targets: list[_EvalTarget] = []
     for g_id, pgn_text, plies_list in game_eval_data:
-        # Group plies by endgame_class; only endgame plies have a non-None class.
-        class_plies: dict[int, list[PlyData]] = defaultdict(list)
-        for pd in plies_list:
-            ec = pd["endgame_class"]
-            if ec is not None:
-                class_plies[ec].append(pd)
-
-        for ec, pds in class_plies.items():
-            islands = _split_into_contiguous_islands(pds)
-            targets.extend(_island_eval_targets(g_id, pgn_text, ec, islands))
+        all_targets = _collect_eval_targets_per_game(g_id, pgn_text, plies_list)
+        targets.extend(t for t in all_targets if t.eval_kind == "endgame_span_entry")
     return targets
 
 
@@ -193,7 +295,6 @@ def _split_into_contiguous_islands(pds: Sequence[PlyData]) -> list[list[PlyData]
     """Split per-class plies into contiguous runs ("islands").
 
     Phase 91: lifted from import_service.py for the cold-drain lane.
-    The originals in import_service.py are removed in Plan 91-03.
 
     A new island starts whenever the ply gap to the previous entry is > 1
     — i.e. the class was interrupted by a non-class ply. plies_list is
@@ -210,42 +311,6 @@ def _split_into_contiguous_islands(pds: Sequence[PlyData]) -> list[list[PlyData]
     if current:
         islands.append(current)
     return islands
-
-
-def _island_eval_targets(
-    g_id: int,
-    pgn_text: str,
-    ec: int,
-    islands: Sequence[Sequence[PlyData]],
-) -> list[_EvalTarget]:
-    """Build _EvalTarget rows for each island's entry ply.
-
-    Phase 91: lifted from import_service.py for the cold-drain lane.
-    The originals in import_service.py are removed in Plan 91-03.
-
-    Skips islands where lichess %eval already populated the entry ply
-    (T-78-17) or where _board_at_ply replay fails (rare, no Sentry —
-    parse error is unusual but not urgent).
-    """
-    targets: list[_EvalTarget] = []
-    for island in islands:
-        span_pd = island[0]  # entry ply = first ply of the contiguous run
-        if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
-            # Lichess %eval already populated this ply — do not overwrite (T-78-17).
-            continue
-        span_board = _board_at_ply(pgn_text, span_pd["ply"])
-        if span_board is None:
-            continue
-        targets.append(
-            _EvalTarget(
-                game_id=g_id,
-                ply=span_pd["ply"],
-                eval_kind="endgame_span_entry",
-                endgame_class=ec,
-                board=span_board,
-            )
-        )
-    return targets
 
 
 async def _apply_eval_results(
@@ -329,67 +394,6 @@ async def _load_pgns_for_games(game_ids: Sequence[int]) -> list[tuple[int, str]]
         return [(row[0], row[1]) for row in result.all()]
 
 
-def _collect_eval_targets_for_games(
-    rows: Sequence[tuple[int, str]],
-) -> list[_EvalTarget]:
-    """Pure function: derive eval targets from (id, pgn) rows.
-
-    No session, no engine. Iterates rows, runs _collect_midgame_eval_targets +
-    _collect_endgame_span_eval_targets per game, flattens into a single list.
-
-    The cold drain reads PGNs from the DB (not from import-time memory), so this
-    function re-parses them. The PGNs are already stored without move annotations
-    needing re-processing by process_game_pgn — we only need them for _board_at_ply.
-    """
-    # Build minimal game_eval_data tuples: (game_id, pgn_text, plies_list).
-    # The cold drain does not have pre-parsed PlyData lists, so we derive targets
-    # by re-parsing the PGN. We collect targets per game using full-ply reconstruction
-    # from the stored GamePosition rows — but the helpers expect PlyData lists.
-    # Since we don't have PlyData here, we fall back to the pure PGN-based path:
-    # _board_at_ply is called internally by the helpers when eval_cp/eval_mate are None.
-    # We build minimal PlyData from the stored pgn by replaying the game.
-    targets: list[_EvalTarget] = []
-    for game_id, pgn_text in rows:
-        game_eval_data = _build_game_eval_data_from_pgn(game_id, pgn_text)
-        targets.extend(_collect_midgame_eval_targets(game_eval_data))
-        targets.extend(_collect_endgame_span_eval_targets(game_eval_data))
-    return targets
-
-
-def _build_game_eval_data_from_pgn(
-    game_id: int,
-    pgn_text: str,
-) -> list[tuple[int, str, list[PlyData]]]:
-    """Reconstruct minimal PlyData list from a stored PGN for the cold drain.
-
-    The cold drain stores PGNs in the DB but does not have the original
-    process_game_pgn output in memory. This function re-parses the PGN to
-    rebuild just the fields needed by _collect_midgame_eval_targets and
-    _collect_endgame_span_eval_targets: ply, phase, endgame_class, eval_cp,
-    eval_mate.
-
-    Phase and endgame_class are determined from the GamePosition rows stored
-    during import. However, this function works without a DB session by
-    replaying the PGN. Since GamePosition rows already have the correct phase
-    and endgame_class, we use a simplified heuristic: treat all plies as
-    candidates (phase=1 for the first middlegame ply, phase=2 for endgame).
-    The _collect_*_eval_targets helpers skip plies with eval_cp/eval_mate
-    already populated, so we default those to None.
-
-    In practice, the cold drain does NOT have access to GamePosition metadata
-    without an extra DB query. The correct approach is to load the actual
-    phase/endgame_class from GamePosition rows. This stub delegates to the
-    DB-backed version. The caller (_collect_eval_targets_for_games) should
-    be extended to load phase/endgame_class from GamePosition in a future
-    refactor; for Phase 91, the drain uses the DB-backed helper in run_eval_drain
-    directly (see the comment in run_eval_drain about target collection).
-    """
-    # Return an empty list for now — run_eval_drain loads targets directly
-    # from GamePosition DB rows for correctness. This function exists as a
-    # pure-function stub for testing _collect_eval_targets_for_games signature.
-    return [(game_id, pgn_text, [])]
-
-
 async def _mark_evals_completed(session: AsyncSession, game_ids: Sequence[int]) -> None:
     """Mark all picked games as eval-complete in one executemany UPDATE.
 
@@ -424,11 +428,14 @@ async def _collect_eval_targets_from_db(
     """Load GamePosition metadata for game_ids and derive eval targets.
 
     Loads (game_id, ply, phase, endgame_class, eval_cp, eval_mate) from
-    GamePosition rows, then calls _collect_midgame_eval_targets +
-    _collect_endgame_span_eval_targets with accurate PlyData lists.
+    GamePosition rows, then calls the single-walk per-game target builder.
 
     This is the correct cold-drain path: it avoids re-running process_game_pgn
     and uses the stored phase/endgame_class from the DB.
+
+    Quick 260521-d6o: calls `_collect_eval_targets_per_game` directly (one
+    PGN parse + one mainline walk per game) instead of routing through the
+    two public wrappers (which would walk the mainline twice).
     """
     from app.services.zobrist import PlyData
 
@@ -472,13 +479,11 @@ async def _collect_eval_targets_from_db(
         }
         game_plies[gid].append(ply_data)
 
-    game_eval_data: list[tuple[int, str, list[PlyData]]] = [
-        (gid, pgn_map[gid], plies) for gid, plies in game_plies.items() if gid in pgn_map
-    ]
-
     targets: list[_EvalTarget] = []
-    targets.extend(_collect_midgame_eval_targets(game_eval_data))
-    targets.extend(_collect_endgame_span_eval_targets(game_eval_data))
+    for gid, plies in game_plies.items():
+        if gid not in pgn_map:
+            continue
+        targets.extend(_collect_eval_targets_per_game(gid, pgn_map[gid], plies))
     return targets
 
 

@@ -27,7 +27,7 @@ from app.schemas.normalization import NormalizedGame
 # Module-level test constants (CLAUDE.md: no magic numbers)
 BATCH_SIZE_FOR_HOT_LANE_TEST: int = 2
 
-# Minimal valid PGN for _board_at_ply replay.
+# Minimal valid PGN for cold-drain board-snapshot replay.
 # Short enough that process_game_pgn returns only opening plies (phase=0):
 # piece count stays at 16 (no trades), backrank is always occupied, mixedness~0.
 _SHORT_PGN_COVERED: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. O-O *"
