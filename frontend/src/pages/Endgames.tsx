@@ -32,6 +32,7 @@ import { GameCardList } from '@/components/results/GameCardList';
 import { PositionResultsPanel } from '@/components/charts/PositionResultsPanel';
 import { useEndgameOverview, useEndgameGames } from '@/hooks/useEndgames';
 import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock';
+import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useCachedEndgameInsights, useEndgameInsights } from '@/hooks/useEndgameInsights';
 import { useActiveJobs } from '@/hooks/useImport';
 import type { FilterState } from '@/components/filters/FilterPanel';
@@ -357,6 +358,7 @@ export function EndgamesPage() {
 
   const statisticsContent = (
     <div className="flex flex-col gap-4">
+      <EvalCoverageHeader />
       <EndgameInsightsBlock
         appliedFilters={appliedFilters}
         rendered={matchingInsights}

@@ -1,5 +1,6 @@
 import { BookMarked, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { OpeningStatsSection, type OpeningStatsSectionDescriptor } from '@/components/stats/OpeningStatsSection';
 import { ScoreChart } from '@/components/charts/ScoreChart';
@@ -192,6 +193,7 @@ export function StatsTab({
 
   return (
     <div className="flex flex-col gap-6">
+      <EvalCoverageHeader />
       {/* Empty-state hint when there are no bookmarks at all */}
       {bookmarks.length === 0 && (
         <div className="charcoal-texture rounded-md p-4">
