@@ -169,9 +169,7 @@ class TestLifespanBackgroundTasks:
             await asyncio.sleep(0)
 
         # The exception message must appear in the captured log calls.
-        drain_logged = any(
-            "Eval drain task raised on shutdown" in msg for msg in logged_messages
-        )
+        drain_logged = any("Eval drain task raised on shutdown" in msg for msg in logged_messages)
         assert drain_logged, (
             "Expected 'Eval drain task raised on shutdown' in logger.exception calls. "
             f"Captured: {logged_messages}"

@@ -46,9 +46,7 @@ def _make_alembic_cfg() -> AlembicConfig:
     from app.core.config import settings
 
     cfg = AlembicConfig("alembic.ini")
-    sync_url = settings.TEST_DATABASE_URL.replace(
-        "postgresql+asyncpg://", "postgresql://"
-    )
+    sync_url = settings.TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
     cfg.set_main_option("sqlalchemy.url", sync_url)
     return cfg
 
@@ -231,12 +229,8 @@ async def test_backfill_leaves_no_pending_rows(test_engine) -> None:
 
     # Clean up inserted rows
     async with test_engine.begin() as conn:
-        await conn.execute(
-            text("DELETE FROM games WHERE user_id = :uid"), {"uid": test_user_id}
-        )
-        await conn.execute(
-            text("DELETE FROM users WHERE id = :uid"), {"uid": test_user_id}
-        )
+        await conn.execute(text("DELETE FROM games WHERE user_id = :uid"), {"uid": test_user_id})
+        await conn.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": test_user_id})
 
 
 async def test_downgrade_removes_column_and_index(test_engine) -> None:
@@ -278,9 +272,7 @@ async def test_backfill_uses_now_when_imported_at_null(test_engine) -> None:
         # We drop the NOT NULL constraint, insert the row, and restore it only AFTER
         # the upgrade (when the backfill has already set evals_completed_at = NOW()
         # for this row, making the imported_at column NOT NULL again safe to restore).
-        await conn.execute(
-            text("ALTER TABLE games ALTER COLUMN imported_at DROP NOT NULL")
-        )
+        await conn.execute(text("ALTER TABLE games ALTER COLUMN imported_at DROP NOT NULL"))
         # Ensure test user exists
         await conn.execute(
             text(
@@ -311,14 +303,11 @@ async def test_backfill_uses_now_when_imported_at_null(test_engine) -> None:
     async with test_engine.begin() as conn:
         await conn.execute(
             text(
-                "UPDATE games SET imported_at = NOW() "
-                "WHERE user_id = :uid AND imported_at IS NULL"
+                "UPDATE games SET imported_at = NOW() WHERE user_id = :uid AND imported_at IS NULL"
             ),
             {"uid": test_user_id},
         )
-        await conn.execute(
-            text("ALTER TABLE games ALTER COLUMN imported_at SET NOT NULL")
-        )
+        await conn.execute(text("ALTER TABLE games ALTER COLUMN imported_at SET NOT NULL"))
 
     after_ts = datetime.datetime.now(datetime.timezone.utc)
 
@@ -348,9 +337,5 @@ async def test_backfill_uses_now_when_imported_at_null(test_engine) -> None:
 
     # Clean up
     async with test_engine.begin() as conn:
-        await conn.execute(
-            text("DELETE FROM games WHERE user_id = :uid"), {"uid": test_user_id}
-        )
-        await conn.execute(
-            text("DELETE FROM users WHERE id = :uid"), {"uid": test_user_id}
-        )
+        await conn.execute(text("DELETE FROM games WHERE user_id = :uid"), {"uid": test_user_id})
+        await conn.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": test_user_id})

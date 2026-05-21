@@ -165,9 +165,7 @@ async def test_eval_coverage_zero_games(user_a_client: tuple[int, str]) -> None:
 
 
 @pytest.mark.asyncio
-async def test_eval_coverage_all_complete(
-    user_a_client: tuple[int, str], test_engine
-) -> None:
+async def test_eval_coverage_all_complete(user_a_client: tuple[int, str], test_engine) -> None:
     """User with 5 games all having evals_completed_at set returns pct_complete=100."""
     user_id, token = user_a_client
     headers = {"Authorization": f"Bearer {token}"}
@@ -185,9 +183,7 @@ async def test_eval_coverage_all_complete(
 
 
 @pytest.mark.asyncio
-async def test_eval_coverage_partial(
-    user_a_client: tuple[int, str], test_engine
-) -> None:
+async def test_eval_coverage_partial(user_a_client: tuple[int, str], test_engine) -> None:
     """User with 10 games where 3 are pending returns pending_count=3, pct_complete=70."""
     user_id, token = user_a_client
     headers = {"Authorization": f"Bearer {token}"}
@@ -196,7 +192,9 @@ async def test_eval_coverage_partial(
         _make_game(user_id, evals_completed_at=_NOW)
         for _ in range(PARTIAL_TOTAL_COUNT - PARTIAL_PENDING_COUNT)
     ]
-    pending_games = [_make_game(user_id, evals_completed_at=None) for _ in range(PARTIAL_PENDING_COUNT)]
+    pending_games = [
+        _make_game(user_id, evals_completed_at=None) for _ in range(PARTIAL_PENDING_COUNT)
+    ]
     await _seed_games_for_user(test_engine, user_id, complete_games + pending_games)
 
     async with httpx.AsyncClient(

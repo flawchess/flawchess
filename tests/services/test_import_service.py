@@ -135,7 +135,7 @@ def _make_midgame_needs_eval_processing_result() -> dict[str, Any]:
             "full_hash": 301,
             "move_san": "Nc3",
             "clock_seconds": None,
-            "eval_cp": None,   # no lichess %eval — needs engine evaluation
+            "eval_cp": None,  # no lichess %eval — needs engine evaluation
             "eval_mate": None,
             "material_count": 5000,
             "material_signature": "KQRBN_KQRBN",
@@ -270,7 +270,7 @@ class TestHotLaneCoveredGate:
             "full_hash": 3,
             "move_san": "Nc3",
             "clock_seconds": None,
-            "eval_cp": None,    # no eval — needs Stockfish
+            "eval_cp": None,  # no eval — needs Stockfish
             "eval_mate": None,
             "material_count": 5000,
             "material_signature": "KQ_KQ",
@@ -307,8 +307,8 @@ class TestHotLaneCoveredGate:
 
         game_eval_data: list[tuple[int, str, list[Any]]] = [
             (1001, _SHORT_PGN_COVERED, [midgame_ply_no_eval]),  # needs eval
-            (1002, _SHORT_PGN_COVERED, [opening_ply]),           # opening only — covered
-            (1003, _SHORT_PGN_COVERED, [midgame_ply_with_eval]), # lichess covered
+            (1002, _SHORT_PGN_COVERED, [opening_ply]),  # opening only — covered
+            (1003, _SHORT_PGN_COVERED, [midgame_ply_with_eval]),  # lichess covered
         ]
 
         covered = _collect_covered_game_ids(game_eval_data)
@@ -383,7 +383,7 @@ class TestHotLaneCoveredGate:
         # Order matches the batch order (A first, B second)
         processing_results = [
             _make_midgame_needs_eval_processing_result(),  # Game A: needs eval
-            _make_opening_only_processing_result(),         # Game B: covered (opening only)
+            _make_opening_only_processing_result(),  # Game B: covered (opening only)
         ]
 
         def _pgn_side_effect(pgn: str) -> dict[str, Any]:

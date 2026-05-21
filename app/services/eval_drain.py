@@ -325,9 +325,7 @@ async def _pick_pending_game_ids(limit: int) -> list[int]:
 async def _load_pgns_for_games(game_ids: Sequence[int]) -> list[tuple[int, str]]:
     """Open a short session, load (id, pgn) rows for the given game IDs, close."""
     async with async_session_maker() as session:
-        result = await session.execute(
-            select(Game.id, Game.pgn).where(Game.id.in_(game_ids))
-        )
+        result = await session.execute(select(Game.id, Game.pgn).where(Game.id.in_(game_ids)))
         return [(row[0], row[1]) for row in result.all()]
 
 
@@ -475,9 +473,7 @@ async def _collect_eval_targets_from_db(
         game_plies[gid].append(ply_data)
 
     game_eval_data: list[tuple[int, str, list[PlyData]]] = [
-        (gid, pgn_map[gid], plies)
-        for gid, plies in game_plies.items()
-        if gid in pgn_map
+        (gid, pgn_map[gid], plies) for gid, plies in game_plies.items() if gid in pgn_map
     ]
 
     targets: list[_EvalTarget] = []
@@ -523,9 +519,7 @@ async def run_eval_drain() -> None:
             # Step 3: load GamePosition metadata and derive eval targets
             # (separate short read session, then close).
             async with async_session_maker() as read_session:
-                eval_targets = await _collect_eval_targets_from_db(
-                    read_session, game_ids, pgn_map
-                )
+                eval_targets = await _collect_eval_targets_from_db(read_session, game_ids, pgn_map)
 
             # Step 4: fan out engine evaluations.
             # CLAUDE.md hard rule: asyncio.gather must NEVER run inside an AsyncSession scope

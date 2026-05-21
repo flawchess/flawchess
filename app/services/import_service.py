@@ -30,7 +30,10 @@ from app.repositories import game_repository, import_job_repository
 from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
 from app.services import chesscom_client, lichess_client
-from app.services.eval_drain import _collect_midgame_eval_targets, _collect_endgame_span_eval_targets  # Phase 91: cross-module use of eval_drain internals is intentional — see SEED-023.
+from app.services.eval_drain import (
+    _collect_midgame_eval_targets,
+    _collect_endgame_span_eval_targets,
+)  # Phase 91: cross-module use of eval_drain internals is intentional — see SEED-023.
 from app.services.zobrist import PlyData, process_game_pgn
 
 logger = logging.getLogger(__name__)
@@ -882,9 +885,7 @@ def _collect_covered_game_ids(
     """
     covered: list[int] = []
     for game_id, pgn_text, plies_list in game_eval_data:
-        single_game_data: list[tuple[int, str, list[PlyData]]] = [
-            (game_id, pgn_text, plies_list)
-        ]
+        single_game_data: list[tuple[int, str, list[PlyData]]] = [(game_id, pgn_text, plies_list)]
         midgame_targets = _collect_midgame_eval_targets(single_game_data)
         endgame_targets = _collect_endgame_span_eval_targets(single_game_data)
         if not midgame_targets and not endgame_targets:

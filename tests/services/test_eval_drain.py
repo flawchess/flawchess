@@ -70,9 +70,7 @@ async def drain_test_user(drain_test_session_maker: async_sessionmaker[AsyncSess
     async with drain_test_session_maker() as session:
         from sqlalchemy import select as sa_select
 
-        result = await session.execute(
-            sa_select(User).where(User.id == _TEST_USER_ID)
-        )
+        result = await session.execute(sa_select(User).where(User.id == _TEST_USER_ID))
         if result.scalar_one_or_none() is None:
             session.add(
                 User(
@@ -225,9 +223,7 @@ class TestLifoOrder:
 
             # Expect the 10 highest IDs in descending order (LIFO)
             expected = sorted(all_ids, reverse=True)[:_DRAIN_BATCH_SIZE]
-            assert picked == expected, (
-                f"LIFO pick order wrong: expected {expected}, got {picked}"
-            )
+            assert picked == expected, f"LIFO pick order wrong: expected {expected}, got {picked}"
         finally:
             await _delete_games_by_ids(drain_test_session_maker, all_ids)
 
@@ -473,8 +469,7 @@ class TestPartialIndexUsed:
                 f"is large enough to make the index cost-effective."
             )
             assert "Seq Scan" not in plan_text, (
-                f"Seq Scan found in EXPLAIN plan — partial index not used.\n"
-                f"Plan:\n{plan_text}"
+                f"Seq Scan found in EXPLAIN plan — partial index not used.\nPlan:\n{plan_text}"
             )
         finally:
             await _delete_games_by_ids(drain_test_session_maker, game_ids)
