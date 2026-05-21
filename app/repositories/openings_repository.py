@@ -140,7 +140,6 @@ async def query_time_series(
     platform: Sequence[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
-    recency_cutoff: datetime.datetime | None = None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
@@ -151,6 +150,10 @@ async def query_time_series(
 
     DISTINCT by Game.id prevents games with the target hash at multiple plies
     from being counted more than once.  Games without played_at are excluded.
+
+    D-19: no date filter on this path — the rolling-window chart covers the
+    full game history so that context games before the window anchor rolling
+    averages correctly.
     """
     stmt = (
         select(Game.played_at, Game.result, Game.user_color)
@@ -175,8 +178,6 @@ async def query_time_series(
         stmt = stmt.where(Game.is_computer_game == False)  # noqa: E712
     elif opponent_type == "bot":
         stmt = stmt.where(Game.is_computer_game == True)  # noqa: E712
-    if recency_cutoff is not None:
-        stmt = stmt.where(Game.played_at >= recency_cutoff)
     if opponent_gap_min is not None or opponent_gap_max is not None:
         user_rating = case(
             (Game.user_color == "white", Game.white_rating),
