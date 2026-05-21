@@ -37,8 +37,9 @@ describe('EvalCoverageHeader', () => {
     render(<EvalCoverageHeader />);
     const el = screen.getByTestId('eval-coverage-header');
     expect(el).toBeTruthy();
-    expect(el.textContent).toContain('Stockfish analysis: 87% complete');
-    expect(el.textContent).toContain('1,432 games pending');
+    expect(el.textContent).toContain('Stockfish analysis in progress');
+    expect(el.textContent).toContain('87');
+    expect(el.textContent).toContain('1,432 games still pending');
   });
 
   it('renders with singular label when exactly one game is pending', () => {
@@ -50,7 +51,7 @@ describe('EvalCoverageHeader', () => {
 
     render(<EvalCoverageHeader />);
     const el = screen.getByTestId('eval-coverage-header');
-    expect(el.textContent).toContain('(1 game pending)');
+    expect(el.textContent).toContain('(1 game still pending)');
   });
 
   it('has role="status" and data-testid on root element', () => {

@@ -59,9 +59,10 @@ describe('EvalConfidenceTooltip — pending-analysis caveat', () => {
         pendingCount={1432}
       />,
     );
-    const caveat = screen.getByText(/Based on currently-evaluated games/);
-    expect(caveat.textContent).toMatch(/1,432 more being analysed/);
-    expect(caveat.textContent).toMatch(/refresh in a few minutes for updated values/);
+    const caveat = screen.getByTestId('eval-pending-caveat');
+    expect(caveat.textContent).toMatch(/Based on 50 currently-evaluated games/);
+    expect(caveat.textContent).toMatch(/1,432 more across your library/);
+    expect(caveat.textContent).toMatch(/may shift as analysis completes/);
   });
 
   it('test_caveat_absent_when_not_pending: caveat is absent from the DOM when isPending=false', () => {
@@ -72,7 +73,7 @@ describe('EvalConfidenceTooltip — pending-analysis caveat', () => {
         pendingCount={500}
       />,
     );
-    expect(screen.queryByText(/Based on currently-evaluated games/)).toBeNull();
+    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
   });
 
   it('test_caveat_absent_when_pending_count_zero: caveat is absent when isPending=true but pendingCount=0', () => {
@@ -83,11 +84,11 @@ describe('EvalConfidenceTooltip — pending-analysis caveat', () => {
         pendingCount={0}
       />,
     );
-    expect(screen.queryByText(/Based on currently-evaluated games/)).toBeNull();
+    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
   });
 
   it('caveat is absent when isPending and pendingCount props are omitted (default)', () => {
     render(<EvalConfidenceTooltip {...baseProps} />);
-    expect(screen.queryByText(/Based on currently-evaluated games/)).toBeNull();
+    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
   });
 });

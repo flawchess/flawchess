@@ -30,6 +30,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 import { formatAbsoluteDate, formatRelativeDate } from '@/lib/relativeDate';
 import type { ConfidenceLevel } from '@/lib/scoreConfidence';
@@ -224,9 +225,17 @@ export function MetricStatTooltip({
       )}
       <p className="opacity-70 italic">{methodology}</p>
       {isPending === true && (pendingCount ?? 0) > 0 && (
-        <p className="opacity-70">
-          Based on currently-evaluated games. {(pendingCount ?? 0).toLocaleString()} more being
-          analysed — refresh in a few minutes for updated values.
+        <p
+          className="flex items-start gap-1.5 rounded-sm bg-amber-100/60 px-1.5 py-1 text-amber-900"
+          data-testid="eval-pending-caveat"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-700" aria-hidden="true" />
+          <span>
+            Based on <strong>{gameCount.toLocaleString()}</strong> currently-evaluated{' '}
+            {gameCount === 1 ? 'game' : 'games'}. Stockfish is still analysing{' '}
+            <strong>{(pendingCount ?? 0).toLocaleString()}</strong> more across your library — this
+            metric may shift as analysis completes.
+          </span>
         </p>
       )}
     </div>
