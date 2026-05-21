@@ -39,7 +39,8 @@ const BASE_FILTERS: FilterState = {
   rated: true,
   opponentType: 'human',
   opponentStrength: { min: -50, max: 50 },
-  recency: '90d',
+  recency: 'month',
+  customRange: null,
   color: 'white',
 };
 
@@ -71,15 +72,18 @@ describe('useEndgameInsights', () => {
     expect(url).toBe('/insights/endgame');
     expect(body).toBeNull();
     const params = (config as { params: Record<string, unknown> }).params;
+    // Wire format uses from_date/to_date instead of recency preset.
     expect(params).toMatchObject({
       time_control: ['blitz', 'rapid'],
       platform: ['chess.com'],
-      recency: '90d',
       rated: true,
       opponent_gap_min: -50,
       opponent_gap_max: 50,
       color: 'white',
     });
+    expect(params).not.toHaveProperty('recency');
+    expect(params).toHaveProperty('from_date');
+    expect(params).toHaveProperty('to_date');
   });
 
   it('does NOT pass opponent_type to insights endpoint (Pitfall 1)', async () => {
@@ -124,15 +128,18 @@ describe('useEndgameInsights', () => {
     const [url, config] = vi.mocked(apiClient.get).mock.calls[0]!;
     expect(url).toBe('/insights/endgame/cached');
     const params = (config as { params: Record<string, unknown> }).params;
+    // Wire format uses from_date/to_date instead of recency preset.
     expect(params).toMatchObject({
       time_control: ['blitz', 'rapid'],
       platform: ['chess.com'],
-      recency: '90d',
       rated: true,
       opponent_gap_min: -50,
       opponent_gap_max: 50,
       color: 'white',
     });
+    expect(params).not.toHaveProperty('recency');
+    expect(params).toHaveProperty('from_date');
+    expect(params).toHaveProperty('to_date');
     expect(params).not.toHaveProperty('opponent_type');
   });
 

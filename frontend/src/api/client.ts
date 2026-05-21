@@ -75,7 +75,8 @@ apiClient.interceptors.response.use(
 export function buildFilterParams(params: {
   time_control?: string[] | null;
   platform?: string[] | null;
-  recency?: string | null;
+  from_date?: string | null;
+  to_date?: string | null;
   rated?: boolean | null;
   opponent_type?: string;
   opponent_strength?: OpponentStrengthRange;
@@ -84,7 +85,8 @@ export function buildFilterParams(params: {
   const result: Record<string, string | string[] | number | boolean> = {};
   if (params.time_control) result.time_control = params.time_control;
   if (params.platform) result.platform = params.platform;
-  if (params.recency && params.recency !== 'all') result.recency = params.recency;
+  if (params.from_date) result.from_date = params.from_date;
+  if (params.to_date) result.to_date = params.to_date;
   if (params.rated !== null && params.rated !== undefined) result.rated = params.rated;
   if (params.opponent_type && params.opponent_type !== 'all') result.opponent_type = params.opponent_type;
   if (params.opponent_strength) {
@@ -124,14 +126,14 @@ export const timeSeriesApi = {
 
 export const statsApi = {
   getRatingHistory: (
-    recency: string | null,
+    dateParams: { from_date?: string; to_date?: string },
     platform: string | null,
     opponentType: string,
     opponentStrength: OpponentStrengthRange,
   ) =>
     apiClient.get<RatingHistoryResponse>('/stats/rating-history', {
       params: buildFilterParams({
-        recency,
+        ...dateParams,
         platform: platform ? [platform] : null,
         opponent_type: opponentType,
         opponent_strength: opponentStrength,
@@ -139,14 +141,14 @@ export const statsApi = {
     }).then(r => r.data),
 
   getGlobalStats: (
-    recency: string | null,
+    dateParams: { from_date?: string; to_date?: string },
     platform: string | null,
     opponentType: string,
     opponentStrength: OpponentStrengthRange,
   ) =>
     apiClient.get<GlobalStatsResponse>('/stats/global', {
       params: buildFilterParams({
-        recency,
+        ...dateParams,
         platform: platform ? [platform] : null,
         opponent_type: opponentType,
         opponent_strength: opponentStrength,
@@ -154,7 +156,8 @@ export const statsApi = {
     }).then(r => r.data),
 
   getMostPlayedOpenings: (params?: {
-    recency?: string | null;
+    from_date?: string | null;
+    to_date?: string | null;
     time_control?: string[] | null;
     platform?: string[] | null;
     rated?: boolean | null;
@@ -176,7 +179,8 @@ export const endgameApi = {
   getOverview: (params: {
     time_control?: string[] | null;
     platform?: string[] | null;
-    recency?: string | null;
+    from_date?: string | null;
+    to_date?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
     opponent_strength?: OpponentStrengthRange;
@@ -190,7 +194,8 @@ export const endgameApi = {
     endgame_class: string;
     time_control?: string[] | null;
     platform?: string[] | null;
-    recency?: string | null;
+    from_date?: string | null;
+    to_date?: string | null;
     rated?: boolean | null;
     opponent_type?: string;
     opponent_strength?: OpponentStrengthRange;

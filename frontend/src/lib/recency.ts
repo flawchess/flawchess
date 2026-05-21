@@ -23,6 +23,7 @@ import {
   subYears,
 } from 'date-fns';
 import type { RecencyPreset } from '@/types/api';
+import type { FilterState } from '@/components/filters/FilterPanel';
 
 // Module-level cache: key = "${preset}|${YYYY-MM-DD}", value = date range.
 // Intentionally unbounded — there are at most 8 presets × 1 key per calendar
@@ -114,6 +115,19 @@ export function dateRangeToWireParams(
   return params;
 }
 
-// resolveDateRange is defined in Task 2 after FilterState gains the
-// customRange field. It will be added to this file via Task 2's migration
-// so that all consumers can import it from @/lib/recency.
+/**
+ * Resolve the active date range from a FilterState.
+ *
+ * - When `filters.recency === 'custom'`, returns `filters.customRange ?? {}`
+ *   (the user has selected a custom calendar range — Plan 04 sets this).
+ * - Otherwise, delegates to `presetToDates(filters.recency)` which memoises
+ *   on (preset, today-string) for TanStack Query key stability.
+ */
+export function resolveDateRange(
+  filters: FilterState,
+): { from?: Date; to?: Date } {
+  if (filters.recency === 'custom') {
+    return filters.customRange ?? {};
+  }
+  return presetToDates(filters.recency);
+}
