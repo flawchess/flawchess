@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select,
@@ -6,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover, PopoverAnchor } from '@/components/ui/popover';
 import type { MatchSide, TimeControl, RecencyPreset, Color, Platform, OpponentType, OpponentStrengthRange } from '@/types/api';
 import { cn } from '@/lib/utils';
 import { ANY_RANGE } from '@/lib/opponentStrength';
@@ -13,6 +15,26 @@ import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { Button } from '@/components/ui/button';
 import { OpponentStrengthFilter } from './OpponentStrengthFilter';
+import { CustomRangePopover, formatCustomRangeLabel } from './CustomRangePopover';
+import { CustomRangeDrawer } from './CustomRangeDrawer';
+
+// ─── Mobile breakpoint detection ──────────────────────────────────────────────
+// Same threshold as ScoreChart.tsx (768px = Tailwind `md`).
+const MOBILE_BREAKPOINT_PX = 768;
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 export interface FilterState {
   matchSide: MatchSide;
@@ -147,6 +169,10 @@ export function FilterPanel({
     onChange({ ...filters, ...partial });
   };
 
+  // Custom range popover/drawer state.
+  const [customOpen, setCustomOpen] = useState(false);
+  const isMobile = useIsMobile();
+
   const toggleTimeControl = (tc: TimeControl) => {
     const current = filters.timeControls ?? TIME_CONTROLS;
     if (current.includes(tc)) {
@@ -187,24 +213,68 @@ export function FilterPanel({
       {show('recency') && (
         <div>
           <p className="mb-1 text-xs text-muted-foreground">Recency</p>
-          <Select
-            value={filters.recency ?? 'all'}
-            onValueChange={(v) => update({ recency: v === 'all' ? null : (v as RecencyPreset) })}
-          >
-            <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All time</SelectItem>
-              <SelectItem value="week">Past week</SelectItem>
-              <SelectItem value="month">Past month</SelectItem>
-              <SelectItem value="3months">3 months</SelectItem>
-              <SelectItem value="6months">6 months</SelectItem>
-              <SelectItem value="year">1 year</SelectItem>
-              <SelectItem value="3years">3 years</SelectItem>
-              <SelectItem value="5years">5 years</SelectItem>
-            </SelectContent>
-          </Select>
+          {/*
+            Desktop: Popover anchored to the Select trigger via PopoverAnchor asChild (D-03).
+            Mobile:  Popover is never open; CustomRangeDrawer handles the nested sheet (D-06).
+            queueMicrotask defers setCustomOpen so the Select close animation completes
+            before the popover/drawer open animation begins (RESEARCH.md §Pitfall 6).
+          */}
+          <Popover open={customOpen && !isMobile} onOpenChange={setCustomOpen}>
+            <PopoverAnchor asChild>
+              <Select
+                value={filters.recency === 'custom' ? 'custom' : (filters.recency ?? 'all')}
+                onValueChange={(v) => {
+                  if (v === 'custom') {
+                    // Defer so Select close animation finishes before calendar opens.
+                    queueMicrotask(() => setCustomOpen(true));
+                  } else {
+                    // Any preset clears the custom range (D-08).
+                    update({ recency: v === 'all' ? null : (v as RecencyPreset), customRange: null });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
+                  {/* Render resolved range label when custom is active (D-04); preset label otherwise. */}
+                  {filters.recency === 'custom'
+                    ? formatCustomRangeLabel(filters.customRange)
+                    : <SelectValue />}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All time</SelectItem>
+                  <SelectItem value="week">Past week</SelectItem>
+                  <SelectItem value="month">Past month</SelectItem>
+                  <SelectItem value="3months">3 months</SelectItem>
+                  <SelectItem value="6months">6 months</SelectItem>
+                  <SelectItem value="year">1 year</SelectItem>
+                  <SelectItem value="3years">3 years</SelectItem>
+                  <SelectItem value="5years">5 years</SelectItem>
+                  <SelectItem value="custom" data-testid="filter-recency-custom">Custom range…</SelectItem>
+                </SelectContent>
+              </Select>
+            </PopoverAnchor>
+
+            {/* Desktop: Calendar in a Popover anchored to the Select trigger. */}
+            <CustomRangePopover
+              value={filters.customRange}
+              onChange={(range) => {
+                if (range) update({ recency: 'custom', customRange: range });
+                setCustomOpen(false);
+              }}
+              open={customOpen && !isMobile}
+              onOpenChange={setCustomOpen}
+            />
+          </Popover>
+
+          {/* Mobile: Calendar in a nested Drawer layered over the FilterPanel drawer. */}
+          <CustomRangeDrawer
+            value={filters.customRange}
+            onChange={(range) => {
+              if (range) update({ recency: 'custom', customRange: range });
+              setCustomOpen(false);
+            }}
+            open={customOpen && isMobile}
+            onOpenChange={setCustomOpen}
+          />
         </div>
       )}
 

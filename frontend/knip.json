@@ -4,25 +4,19 @@
   "project": ["src/**/*.{ts,tsx}"],
   "ignoreDependencies": [
     "clsx",
-    "date-fns",
     "tailwind-merge",
     "shadcn",
     "tailwindcss",
     "tailwindcss-safe-area",
-    "tw-animate-css",
-    "react-day-picker"
+    "tw-animate-css"
   ],
   "ignoreExportsUsedInFile": true,
   "ignore": [
-    "src/components/ui/calendar.tsx",
     "src/components/ui/command.tsx",
     "src/components/ui/popover.tsx",
     "src/components/ui/input-group.tsx",
     "src/data/trollOpenings.ts",
     "src/generated/endgameZones.ts"
   ],
-  "ignoreIssues": {
-    "src/components/ui/drawer.tsx": ["exports"]
-  },
   "ignoreBinaries": ["cloudflared"]
 }
