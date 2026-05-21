@@ -23,6 +23,12 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+// useEvalCoverage calls useQuery which requires a QueryClientProvider.
+// Return safe defaults so the component renders without a provider.
+vi.mock('@/hooks/useEvalCoverage', () => ({
+  useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
+}));
+
 vi.mock('@/components/board/LazyMiniBoard', () => ({
   LazyMiniBoard: ({ fen, flipped, size }: { fen: string; flipped: boolean; size: number }) => (
     <div

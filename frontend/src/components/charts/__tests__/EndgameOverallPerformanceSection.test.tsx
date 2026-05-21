@@ -22,6 +22,12 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 
+// useEvalCoverage calls useQuery which requires a QueryClientProvider.
+// Return safe defaults so the component renders without a provider.
+vi.mock('@/hooks/useEvalCoverage', () => ({
+  useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
+}));
+
 import { ZONE_SUCCESS } from '@/lib/theme';
 import type {
   EndgamePerformanceResponse,

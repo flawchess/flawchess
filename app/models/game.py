@@ -1,5 +1,6 @@
 import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import (
     Boolean,
     Enum as SAEnum,
@@ -123,6 +124,13 @@ class Game(Base):
     imported_at: Mapped[datetime.datetime] = mapped_column(
         nullable=False,
         server_default=func.now(),
+    )
+    # Phase 91: tracks per-game Stockfish eval completion. NULL = pending (cold drain
+    # will process), non-NULL = completed. Set by the cold drain after evaluating entry
+    # plies, or immediately by the hot lane for games whose entry plies need no engine work
+    # (e.g. lichess games with pre-supplied evals, or engine returned (None, None) for every ply).
+    evals_completed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
     )
 
     positions: Mapped[list["GamePosition"]] = relationship(  # ty: ignore[unresolved-reference]

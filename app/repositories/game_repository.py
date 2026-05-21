@@ -43,6 +43,16 @@ async def count_games_for_user(session: AsyncSession, user_id: int) -> int:
     return result.scalar_one()
 
 
+async def count_pending_evals(session: AsyncSession, user_id: int) -> int:
+    """Return count of games not yet Stockfish-evaluated for the given user."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(Game)
+        .where(Game.user_id == user_id, Game.evals_completed_at.is_(None))
+    )
+    return result.scalar_one()
+
+
 async def delete_all_games_for_user(session: AsyncSession, user_id: int) -> int:
     """Delete all games and positions for the given user.
 

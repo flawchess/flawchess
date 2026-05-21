@@ -14,6 +14,7 @@ import { Cpu } from 'lucide-react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
+import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import {
   ENTRY_EXPECTED_SCORE_NEUTRAL_MAX,
   ENTRY_EXPECTED_SCORE_NEUTRAL_MIN,
@@ -44,6 +45,8 @@ interface EntryCardProps {
 }
 
 export function EntryCard({ data }: EntryCardProps) {
+  const { isPending, pendingCount } = useEvalCoverage();
+
   // Row 1: entry eval
   const evalLevel = deriveLevel(data.entry_eval_p_value, data.entry_eval_n);
   const evalZoneHex = endgameEntryEvalZoneColor(data.entry_eval_mean_pawns);
@@ -107,6 +110,8 @@ export function EntryCard({ data }: EntryCardProps) {
                 }
                 testId="entry-eval-popover-trigger"
                 ariaLabel="Show eval confidence details"
+                isPending={isPending}
+                pendingCount={pendingCount}
               />
             </span>
             <div className="min-w-0 tabular-nums">
@@ -165,6 +170,8 @@ export function EntryCard({ data }: EntryCardProps) {
                   }
                   testId="popover-trigger-achievable-score"
                   ariaLabel="What is Achievable Score?"
+                  isPending={isPending}
+                  pendingCount={pendingCount}
                 />
               </span>
               <div className="min-w-0 tabular-nums">

@@ -5,6 +5,7 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
+import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { formatCandidateMove } from '@/lib/openingInsights';
 import { sanToSquares } from '@/lib/sanToSquares';
 import {
@@ -43,6 +44,8 @@ export function OpeningFindingCard({
   onFindingClick: (finding: OpeningInsightFinding) => void;
   onOpenGames: (finding: OpeningInsightFinding) => void;
 }) {
+  const { isPending, pendingCount } = useEvalCoverage();
+
   const candidateMoveDisplay = formatCandidateMove(
     finding.entry_san_sequence,
     finding.candidate_move_san,
@@ -219,6 +222,8 @@ export function OpeningFindingCard({
             evalMeanPawns={avgEvalPawns}
             color={finding.color}
             testId={`${cardTestId}-bullet-popover`}
+            isPending={isPending}
+            pendingCount={pendingCount}
           />
         )}
       </span>

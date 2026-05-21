@@ -2,26 +2,27 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: idle
-last_updated: "2026-05-20T19:50:00Z"
-last_activity: 2026-05-20 -- Phase 90 shipped to production (PR #128 squash-merged to main, release PR #129 promoted to production, deploy verified healthy); UAT-3 48h Sentry watch is the only non-blocking item
+status: milestone_complete
+last_updated: 2026-05-21T03:43:57.745Z
+last_activity: 2026-05-21 -- Phase 91 execution started
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_plans: 11
+  completed_plans: 11
+  percent: 50
+stopped_at: Milestone complete (Phase 91 was final phase)
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 90 (import-pipeline-memory-leak-fix-resilience) — ✅ SHIPPED 2026-05-20
-Plan: 3 of 3 (all plans executed, verified, and deployed)
+Phase: 91
+Plan: Not started
 Milestone: v1.17 Endgame Stats Card Redesign — ✅ SHIPPED 2026-05-19 (Phase 90 is a post-v1.17 carryover; v1.18 release tag deferred)
-Status: Phase 90 shipped to production via PR #128 → main, PR #129 → production. Production `/api/health` returns 200; backend container Up (healthy); reaper task spawned without error. Local UAT-1 (RSS plateau), UAT-2 Signal A (retry helper), UAT-2 Signal B (reaper) all PASS. UAT-3 (48h Sentry watch on FLAWCHESS-56 / FLAWCHESS-3Q) is the only outstanding item — non-blocking, manual.
-Last activity: 2026-05-20 -- Phase 90 shipped to production; awaiting 48h Sentry watch
+Status: Milestone complete
+Last activity: 2026-05-21
 
 ## Project Reference
 

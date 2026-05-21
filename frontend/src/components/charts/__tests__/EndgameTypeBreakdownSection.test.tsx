@@ -14,6 +14,12 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
+// useEvalCoverage calls useQuery which requires a QueryClientProvider.
+// Return safe defaults so the component renders without a provider.
+vi.mock('@/hooks/useEvalCoverage', () => ({
+  useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
+}));
+
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type {
   ConversionRecoveryStats,

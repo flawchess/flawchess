@@ -28,12 +28,14 @@
 **Goal:** Eliminate the per-batch unique-SQL leak in `_flush_batch` Stage 5 that OOM-killed prod twice (2026-03-22, 2026-05-16; FLAWCHESS-56 / FLAWCHESS-3Q), and ship the two leak-independent resilience defects carried forward from SEED-017 so a Postgres OOM no longer strands jobs `in_progress` indefinitely.
 
 **Scope (in):**
+
 1. **Primary leak fix** — replace the literal `case()`+`IN` bulk UPDATE in `_flush_batch` Stage 5 with bound-parameter `executemany`, preserving the `result_fen` None-handling (two executemany groups, or COALESCE/keep-existing) so games without a result_fen aren't silently NULLed.
 2. **Defense-in-depth session-recycle** — scope `AsyncSession` per batch inside `run_import`'s loop (currently one session for the whole import at `import_service.py:281`); touches job-record creation, the previous-job/`since` lookup, and per-batch progress commits.
 3. **Scheduled / on-reconnect orphan-job reaper** — `cleanup_orphaned_jobs()` currently runs only at backend startup; add a periodic task and/or on-DB-reconnect hook so a Postgres-only restart doesn't strand `in_progress` jobs.
 4. **Resilient failure-state recording** — bounded retry with backoff around the `except Exception` UPDATE in `run_import` (~386–410) so a still-recovering DB doesn't swallow the `failed` transition.
 
 **Scope (out):**
+
 - Atomic duplicate-import guard (SEED-017 part 1, demoted to optional UX/data-hygiene in SEED-018) — not recurrence-preventing; single import OOMs alone.
 - Automated regression test for the leak — verified manually instead (see Verification).
 
@@ -42,7 +44,49 @@
 **References:** [.planning/seeds/SEED-018-import-statement-cache-memory-leak.md](seeds/SEED-018-import-statement-cache-memory-leak.md), [.planning/seeds/SEED-017-import-resilience-hardening.md](seeds/SEED-017-import-resilience-hardening.md) (closed, superseded), [.planning/debug/import-job-db-conn-closed.md](debug/import-job-db-conn-closed.md), [.planning/notes/v1.18-import-pipeline-fix-scope.md](notes/v1.18-import-pipeline-fix-scope.md).
 
 Plans:
-- [ ] TBD (run `/gsd-plan-phase`)
+
+- [x] All plans completed — see Phase 90 phase dir.
+
+### Phase 91: Two-lane import — defer Stockfish eval to in-process cold drain
+
+**Goal:** Restructure the import pipeline so the hot path (fetch → parse → insert positions → commit) holds no Stockfish work, and a separate in-process cold-drain coroutine evaluates entry plies in the background. Two concurrent 20k-game imports must complete without OOM-killing Postgres (the 2026-05-20 stress-test failure mode), the user must see opening-explorer / raw endgame WDL / flag-rate / time-per-move stats within seconds of import start, and Stockfish-dependent stats (conversion, recovery, score-gap, time-pressure-vs-performance) must fill in over the following minutes with honest per-metric sample-size labels.
+
+**Scope (in):**
+
+1. **Schema** — add `games.evals_completed_at TIMESTAMPTZ NULL` + partial index `WHERE evals_completed_at IS NULL`. Backfill existing rows to `COALESCE(updated_at, created_at, NOW())` so the cold lane doesn't re-eval the historical corpus.
+2. **Hot-lane refactor** — strip Stages 3a (`_collect_midgame_eval_targets` / `_collect_endgame_span_eval_targets`), 4 (`asyncio.gather` over `engine.evaluate`), and the per-target UPDATE in `_apply_eval_results` out of `_flush_batch`. Add per-game evaluation of "are all entry plies already lichess-`%eval`-covered?" to set `evals_completed_at` in the same write.
+3. **Cold-lane drain** — new `run_eval_drain()` coroutine wired in `app/main.py` lifespan alongside `run_periodic_reaper`. Picks 10 games per tick from `WHERE evals_completed_at IS NULL ORDER BY id LIMIT 10`, derives entry-ply targets, `asyncio.gather` outside any session scope, opens session only as a short write window for the combined UPDATE batch. Runs in parallel with active imports (no admission gate — lanes don't compete once eval is out of the hot tx). Idempotent on crash.
+4. **Frontend header bar** — small `<Cpu /> X% Stockfish analysis complete (N games pending)` indicator driven by per-user `COUNT(*) WHERE evals_completed_at IS NULL`. Hidden when pending == 0. Polled every ~10s while >0.
+5. **Per-metric pending caveat** — extend the existing `EvalConfidenceTooltip` / `MetricStatPopover` body on every Stockfish-dependent stat with a one-line "based on N of M eligible games, K still being evaluated" when pending > 0.
+6. **Tests** — hot-lane RSS plateau under dual-import dev test, cold-lane idempotency on simulated crash mid-batch, schema migration up/down, partial index used by drain query (EXPLAIN check).
+
+**Scope (out):**
+
+- Concurrent-import admission control (SEED-022 option F) — optional, deferred. Hot-lane batches become too cheap to OOM under realistic concurrent load; revisit if production traffic surfaces a separate bottleneck.
+- Scheduled backend restart cadence (SEED-022 option G) and idempotent `on_game_fetched` (SEED-022 option A′) — small, independent, can land any time as `/gsd-fast`.
+- Profiling phase originally drafted under SEED-022 — **withdrawn**, this phase replaces it. Architecture rewrite addresses the root cause directly; profiling would document a workload that no longer exists.
+
+**Verification:** dev-side re-run of the 2× 20k stress test pattern (lichess + chess.com concurrent on a freshly-cloned account) with `docker stats` + `pg_stat_activity` polling. Acceptance: backend RSS plateaus ≤ 1.6 GB, Postgres anon+shmem ≤ 1.2 GB sustained, swap never exceeds 50 % of allocated swap, both imports complete `status=completed`, eval coverage bar reaches 100 % within N minutes after the second import finishes. Production re-run after deploy on a real ≥10k-game account.
+
+**References:** [.planning/seeds/SEED-023-two-lane-import-defer-stockfish.md](seeds/SEED-023-two-lane-import-defer-stockfish.md), [.planning/seeds/SEED-022-import-concurrency-and-postgres-headroom.md](seeds/SEED-022-import-concurrency-and-postgres-headroom.md) (superseded — diagnostic narrative retained for history), [.planning/notes/2026-05-20-import-pipeline-rethink.md](notes/2026-05-20-import-pipeline-rethink.md), [logs/import-stress-20k-each-2026-05-20.log](../logs/import-stress-20k-each-2026-05-20.log).
+
+Plans:
+**Wave 1**
+
+- [x] 91-01-PLAN.md — Schema: add games.evals_completed_at column + partial index + backfill (D-08/D-10)
+- [x] 91-04-PLAN.md — GET /imports/eval-coverage endpoint + repository + integration tests
+- [x] 91-06-PLAN.md — useEvalCoverage hook + EvalCoverageHeader component + mount on Endgames + Openings/Stats
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 91-02-PLAN.md — Cold-lane drain module (run_eval_drain + LIFO pick + gather-outside-session)
+- [x] 91-03-PLAN.md — Hot-lane refactor: strip eval stages from _flush_batch; add Stage 5c covered-game gate
+- [x] 91-05-PLAN.md — Wire run_eval_drain into FastAPI lifespan alongside reaper
+- [x] 91-07-PLAN.md — Per-metric pending caveat in EvalConfidenceTooltip + MetricStatTooltip bodies (7 Cpu consumers)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 91-08-PLAN.md — Dual-20k stress-test harness (scripts/measure_dual_import_rss.py) + operator-gated run
 
 <details>
 <summary>✅ v1.17 Endgame Stats Card Redesign (Phases 84-88.4) — SHIPPED 2026-05-19</summary>
@@ -67,7 +111,6 @@ See [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md) for full details.
 
 </details>
 
-
 <details>
 <summary>✅ v1.16 Stockfish Eval Analyses (Phases 80, 80.1, 81, 82, 83) — SHIPPED 2026-05-11</summary>
 
@@ -80,7 +123,6 @@ See [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md) for full details.
 See [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md) for full details.
 
 </details>
-
 
 <details>
 <summary>✅ v1.0 Initial Platform (Phases 1-10) — SHIPPED 2024-03-15</summary>
@@ -306,6 +348,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 **Plans:** 5/6 plans executed
 
 Plans:
+
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
 ### Phase 999.5: Hybrid Stockfish Eval for Conversion/Recovery (BACKLOG)
@@ -315,6 +358,7 @@ Plans:
 **Plans:** 0 plans
 
 Plans:
+
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
 ### Phase 999.4: Position-Based Most Played Openings via game_positions (BACKLOG)
@@ -324,6 +368,7 @@ Plans:
 **Plans:** 0 plans
 
 Plans:
+
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
@@ -334,5 +379,5 @@ Plans:
 **Context:** Moved from v1.10 Advanced Analytics — v1.10 is an endgame-focused milestone and opening risk metrics are a better fit for the upcoming Opening Insights milestone (discovering weaknesses in most-played opening lines). Re-evaluate scope at that time.
 
 Plans:
-- [ ] TBD (promote with /gsd-review-backlog when ready)
 
+- [ ] TBD (promote with /gsd-review-backlog when ready)

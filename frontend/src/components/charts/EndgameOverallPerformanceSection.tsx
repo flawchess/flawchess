@@ -24,6 +24,7 @@
 import { Cpu } from 'lucide-react';
 
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
+import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import {
   ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX,
   ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN,
@@ -60,6 +61,8 @@ export function EndgameOverallPerformanceSection({
   data: EndgamePerformanceResponse;
   scoreGap: ScoreGapMaterialResponse;
 }) {
+  const { isPending, pendingCount } = useEvalCoverage();
+
   const gapPositive = scoreGap.score_difference >= 0;
   const gapFormatted =
     (gapPositive ? '+' : '') + `${Math.round(scoreGap.score_difference * 100)}%`;
@@ -199,6 +202,8 @@ export function EndgameOverallPerformanceSection({
                       }
                       testId="achievable-score-gap-info"
                       ariaLabel="What is Achievable Score Gap?"
+                      isPending={isPending}
+                      pendingCount={pendingCount}
                     />
                   }
                 />
@@ -238,6 +243,8 @@ export function EndgameOverallPerformanceSection({
                       }
                       testId="endgame-score-gap-info"
                       ariaLabel="What is Endgame Score Gap?"
+                      isPending={isPending}
+                      pendingCount={pendingCount}
                     />
                   }
                 />

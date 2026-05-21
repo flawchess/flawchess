@@ -6,6 +6,7 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
+import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
@@ -56,6 +57,8 @@ export function OpeningStatsCard({
   onOpenGames,
   evalBaselinePawns,
 }: OpeningStatsCardProps) {
+  const { isPending, pendingCount } = useEvalCoverage();
+
   const cardTestId = `${testIdPrefix}-${idx}`;
 
   // Mute the whole card when total games are below the opening-row threshold,
@@ -233,6 +236,8 @@ export function OpeningStatsCard({
             evalMeanPawns={opening.avg_eval_pawns}
             color={color}
             testId={`${cardTestId}-bullet-popover`}
+            isPending={isPending}
+            pendingCount={pendingCount}
           />
         )}
       </span>

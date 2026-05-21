@@ -28,6 +28,7 @@ import { Cpu, Swords } from 'lucide-react';
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
+import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -91,6 +92,8 @@ export function EndgameTypeCard({
   onCategorySelect,
   tileTestId,
 }: EndgameTypeCardProps) {
+  const { isPending, pendingCount } = useEvalCoverage();
+
   const slug = ENDGAME_CLASS_TO_SLUG[category.endgame_class];
   const hasGames = category.total > 0;
   const isUnreliable =
@@ -368,6 +371,8 @@ export function EndgameTypeCard({
                 }
                 testId={`${tileTestId}-score-info`}
                 ariaLabel={`What is ${category.label} Endgame Score?`}
+                isPending={isPending}
+                pendingCount={pendingCount}
               />
             </span>
             <div
@@ -434,6 +439,8 @@ export function EndgameTypeCard({
                   }
                   testId={`${tileTestId}-asg-info`}
                   ariaLabel={`What is ${category.label} Score Gap?`}
+                  isPending={isPending}
+                  pendingCount={pendingCount}
                 />
               }
               startSlot={

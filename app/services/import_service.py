@@ -9,19 +9,14 @@ Manages import jobs from chess.com and lichess, including:
 """
 
 import asyncio
-import io
 import logging
-import time
 import uuid
-from collections import defaultdict
 from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Literal
 
-import chess
-import chess.pgn
 import httpx
 import sentry_sdk
 import asyncpg
@@ -31,11 +26,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker, engine
 from app.models.game import Game
-from app.models.game_position import GamePosition
 from app.repositories import game_repository, import_job_repository
 from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
-from app.services import chesscom_client, engine as engine_service, lichess_client
+from app.services import chesscom_client, lichess_client
+from app.services.eval_drain import (
+    _collect_midgame_eval_targets,
+    _collect_endgame_span_eval_targets,
+)  # Phase 91: cross-module use of eval_drain internals is intentional — see SEED-023.
 from app.services.zobrist import PlyData, process_game_pgn
 
 logger = logging.getLogger(__name__)
@@ -62,29 +60,6 @@ _RETRIABLE_DB_OUTAGE_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 
-def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:
-    """Replay PGN to the board state at *target_ply* (0-indexed, pre-push).
-
-    Phase 78 IMP-01: used by the import-time eval pass to reconstruct the board
-    at a span-entry ply without retaining chess.Board objects in memory during
-    the main PGN walk. Mirrors the backfill script approach (Option A, RESEARCH.md).
-
-    Returns None if the PGN is unparseable or the game ends before target_ply.
-    """
-    try:
-        game = chess.pgn.read_game(io.StringIO(pgn_text))
-    except Exception:
-        return None
-    if game is None:
-        return None
-    board = game.board()
-    for i, node in enumerate(game.mainline()):
-        if i == target_ply:
-            return board
-        board.push(node.move)
-    return None
-
-
 # Number of games per DB insert batch. Each game produces ~80 position rows,
 # so batch_size=12 means ~960 position rows per INSERT.
 #
@@ -107,23 +82,6 @@ _FAILURE_RECORD_MAX_RETRIES = 5  # max attempts in failure-state retry loop
 # because 2*2^3 = 16 < 30; it's a safety guard for any future tuning.
 _FAILURE_RECORD_BACKOFF_BASE_SECONDS = 2  # base for exponential backoff
 _FAILURE_RECORD_BACKOFF_CAP_SECONDS = 30  # per-sleep cap (defensive, currently never hit)
-
-
-@dataclass(slots=True)
-class _EvalTarget:
-    """One row scheduled for engine evaluation in the import-time eval pass.
-
-    Collected up-front across all games in an import batch so the per-eval
-    asyncio.gather() can fan out to every Stockfish worker in the module-level
-    pool. Without batching the gather, a multi-worker pool would still serve
-    only one in-flight evaluation at a time.
-    """
-
-    game_id: int
-    ply: int
-    eval_kind: Literal["middlegame_entry", "endgame_span_entry"]
-    endgame_class: int | None  # None for middlegame; int for endgame span entry
-    board: chess.Board
 
 
 @dataclass(slots=True)
@@ -722,47 +680,11 @@ async def _flush_batch(
     if rows_result.position_rows:
         await game_repository.bulk_insert_positions(session, rows_result.position_rows)
 
-    # Stage 3 / 3a: collect engine eval targets (middlegame entries + per-class
-    # endgame span entries). Phase 78 IMP-01 / Phase 79 PHASE-IMP-01 — runs
-    # AFTER bulk_insert_positions (rows exist in DB) and BEFORE the final
-    # session.commit() so all eval UPDATEs land in the same transaction.
-    #
-    # Two-phase to fan out engine work to the EnginePool:
-    #   (a) collect all eval targets across the import batch (no engine, no DB),
-    #   (b) await asyncio.gather(engine.evaluate(...) for each) — concurrency is
-    #       bounded by the pool's internal queue (size = STOCKFISH_POOL_SIZE),
-    #   (c) apply UPDATEs sequentially against the shared session (CLAUDE.md
-    #       constraint: AsyncSession is not safe under asyncio.gather).
-    # With pool size 1 this is equivalent to the previous serial loop. With
-    # pool size N, up to N evaluations run in parallel.
-    eval_pass_start = time.perf_counter()
-    eval_targets: list[_EvalTarget] = []
-    eval_targets.extend(_collect_midgame_eval_targets(rows_result.game_eval_data))
-    eval_targets.extend(_collect_endgame_span_eval_targets(rows_result.game_eval_data))
-
-    # Stage 4: fan out engine evaluations and apply UPDATEs sequentially.
-    # The engine call site stays here in the orchestrator so the asyncio.gather
-    # is colocated with the AsyncSession ownership boundary (CLAUDE.md hard rule).
-    eval_calls_made = 0
-    eval_calls_failed = 0
-    if eval_targets:
-        eval_results = await asyncio.gather(
-            *(engine_service.evaluate(t.board) for t in eval_targets)
-        )
-        eval_calls_made, eval_calls_failed = await _apply_eval_results(
-            session, eval_targets, eval_results
-        )
-
-    eval_pass_ms = (time.perf_counter() - eval_pass_start) * 1000
-    logger.info(
-        "import_eval_pass",
-        extra={
-            "games_in_batch": len(rows_result.game_eval_data),
-            "eval_calls_made": eval_calls_made,
-            "eval_calls_failed": eval_calls_failed,
-            "eval_pass_ms": round(eval_pass_ms, 1),
-        },
-    )
+    # Phase 91 / SEED-023: Stages 3a (target collection) and 4 (asyncio.gather +
+    # _apply_eval_results) have been removed from the hot lane. The eval pass now
+    # runs in the cold-lane coroutine run_eval_drain() (app/services/eval_drain.py).
+    # This eliminates the 20-40 s held-transaction OOM driver identified in the
+    # 2026-05-20 stress test (FLAWCHESS-3Q / SEED-023).
 
     # Bug fix (Phase 90, SEED-018, FLAWCHESS-56 / FLAWCHESS-3Q):
     # Old code used case(...)+IN whose SQL text varied per batch (game-id set
@@ -826,6 +748,23 @@ async def _flush_batch(
                 .values(result_fen=bindparam("b_rf"))
             )
             await session.execute(fen_stmt, fen_params)
+
+    # Stage 5c: mark games whose entry plies are already fully covered (D-08 hot-lane gate).
+    # CONTEXT.md D-08 / SEED-023: A game is "covered" if both _collect_midgame_eval_targets
+    # and _collect_endgame_span_eval_targets return empty for its game_eval_data entry
+    # (all entry plies already have lichess %eval, or the game has no entry plies at all).
+    # These games are set evals_completed_at = NOW() immediately; the cold drain skips them.
+    # Games with pending entry plies keep evals_completed_at = NULL (cold drain will handle them).
+    covered_ids = _collect_covered_game_ids(rows_result.game_eval_data)
+    if covered_ids:
+        now_ts = datetime.now(timezone.utc)
+        stage5c_games_table = Game.__table__
+        covered_stmt = (
+            update(stage5c_games_table)  # ty: ignore[invalid-argument-type]
+            .where(stage5c_games_table.c.id == bindparam("b_id"))
+            .values(evals_completed_at=now_ts)
+        )
+        await session.execute(covered_stmt, [{"b_id": gid} for gid in covered_ids])
 
     # WR-05: caller owns the commit (single transaction per batch).
     return len(rows_result.new_game_ids)
@@ -916,159 +855,39 @@ async def _collect_position_rows(
     return out
 
 
-def _collect_midgame_eval_targets(
-    game_eval_data: Sequence[tuple[int, str, list[PlyData]]],
-) -> list[_EvalTarget]:
-    """Phase 79 PHASE-IMP-01: middlegame entry eval — MIN(ply) where phase == 1.
+def _collect_covered_game_ids(
+    game_eval_data: list[tuple[int, str, list[PlyData]]],
+) -> list[int]:
+    """Return IDs of games whose entry plies need no further Stockfish evaluation.
 
-    At most one middlegame entry per game (later phase=1 stretches after an
-    endgame are NOT re-evaluated, mirroring lichess Divider's single
-    Division(midGame, endGame) return — D-79-08). Skips plies where lichess
-    %eval already populated the row (T-78-17).
+    CONTEXT.md D-08 / SEED-023 Stage 5c: a game is "covered" when both
+    _collect_midgame_eval_targets and _collect_endgame_span_eval_targets return
+    empty lists for its game_eval_data entry. This means either:
+      - All entry plies already have lichess %eval populated (T-78-17), or
+      - The game has no midgame or endgame entry plies at all (very short game).
+
+    These games are marked evals_completed_at = NOW() by the hot-lane Stage 5c
+    UPDATE. Games with pending entry plies are left with evals_completed_at = NULL
+    so the cold-drain coroutine run_eval_drain() can pick them up asynchronously.
+
+    Pure function: no session, no engine calls. Delegates to the same helpers
+    used by the cold drain (_collect_midgame_eval_targets,
+    _collect_endgame_span_eval_targets from app.services.eval_drain) so a game
+    marked covered here is by definition one the drain would also find empty
+    targets for — false positives are structurally impossible (T-91-10).
+
+    Args:
+        game_eval_data: List of (game_id, pgn_text, plies_list) tuples as
+            produced by _collect_position_rows into _PositionRowsResult.game_eval_data.
+
+    Returns:
+        List of game IDs for which both target collectors return empty.
     """
-    targets: list[_EvalTarget] = []
-    for g_id, pgn_text, plies_list in game_eval_data:
-        midgame_entries = [pd for pd in plies_list if pd["phase"] == 1]
-        if not midgame_entries:
-            continue
-        mid_pd = min(midgame_entries, key=lambda p: p["ply"])
-        # T-78-17 lichess preservation: skip if lichess %eval already populated the row.
-        if mid_pd["eval_cp"] is not None or mid_pd["eval_mate"] is not None:
-            continue
-        mid_board = _board_at_ply(pgn_text, mid_pd["ply"])
-        if mid_board is None:
-            continue
-        targets.append(
-            _EvalTarget(
-                game_id=g_id,
-                ply=mid_pd["ply"],
-                eval_kind="middlegame_entry",
-                endgame_class=None,
-                board=mid_board,
-            )
-        )
-    return targets
-
-
-def _collect_endgame_span_eval_targets(
-    game_eval_data: Sequence[tuple[int, str, list[PlyData]]],
-) -> list[_EvalTarget]:
-    """Phase 78 per-class endgame span entry collection.
-
-    Each contiguous run of the same endgame_class within a game is its own
-    span: a class=1 → class=2 → class=1 sequence yields two class=1 entry
-    evals, not one. Spans of any length are evaluated; the repository's
-    ENDGAME_PLY_THRESHOLD is intentionally not enforced here so endgame
-    eval coverage stays uniform across short and long spans. Skips plies
-    where lichess %eval already populated the row (T-78-17).
-    """
-    targets: list[_EvalTarget] = []
-    for g_id, pgn_text, plies_list in game_eval_data:
-        # Group plies by endgame_class; only endgame plies have a non-None class.
-        class_plies: dict[int, list[PlyData]] = defaultdict(list)
-        for pd in plies_list:
-            ec = pd["endgame_class"]
-            if ec is not None:
-                class_plies[ec].append(pd)
-
-        for ec, pds in class_plies.items():
-            islands = _split_into_contiguous_islands(pds)
-            targets.extend(_island_eval_targets(g_id, pgn_text, ec, islands))
-    return targets
-
-
-def _split_into_contiguous_islands(pds: Sequence[PlyData]) -> list[list[PlyData]]:
-    """Split per-class plies into contiguous runs ("islands").
-
-    A new island starts whenever the ply gap to the previous entry is > 1
-    — i.e. the class was interrupted by a non-class ply. plies_list is
-    already in ply order, so pds is too; sort defensively.
-    """
-    pds_sorted = sorted(pds, key=lambda p: p["ply"])
-    islands: list[list[PlyData]] = []
-    current: list[PlyData] = []
-    for pd in pds_sorted:
-        if current and pd["ply"] != current[-1]["ply"] + 1:
-            islands.append(current)
-            current = []
-        current.append(pd)
-    if current:
-        islands.append(current)
-    return islands
-
-
-def _island_eval_targets(
-    g_id: int,
-    pgn_text: str,
-    ec: int,
-    islands: Sequence[Sequence[PlyData]],
-) -> list[_EvalTarget]:
-    """Build _EvalTarget rows for each island's entry ply.
-
-    Skips islands where lichess %eval already populated the entry ply
-    (T-78-17) or where _board_at_ply replay fails (rare, no Sentry —
-    parse error is unusual but not urgent).
-    """
-    targets: list[_EvalTarget] = []
-    for island in islands:
-        span_pd = island[0]  # entry ply = first ply of the contiguous run
-        if span_pd["eval_cp"] is not None or span_pd["eval_mate"] is not None:
-            # Lichess %eval already populated this ply — do not overwrite (T-78-17).
-            continue
-        span_board = _board_at_ply(pgn_text, span_pd["ply"])
-        if span_board is None:
-            continue
-        targets.append(
-            _EvalTarget(
-                game_id=g_id,
-                ply=span_pd["ply"],
-                eval_kind="endgame_span_entry",
-                endgame_class=ec,
-                board=span_board,
-            )
-        )
-    return targets
-
-
-async def _apply_eval_results(
-    session: AsyncSession,
-    eval_targets: Sequence[_EvalTarget],
-    eval_results: Sequence[tuple[int | None, int | None]],
-) -> tuple[int, int]:
-    """Apply engine eval results to GamePosition rows via per-row UPDATE.
-
-    UPDATEs run sequentially against the shared session (CLAUDE.md hard
-    rule: AsyncSession is not safe under asyncio.gather). The session is
-    owned by the caller and the UPDATEs land in its transaction.
-
-    Returns (eval_calls_made, eval_calls_failed).
-    """
-    eval_calls_made = 0
-    eval_calls_failed = 0
-    for target, (eval_cp, eval_mate) in zip(eval_targets, eval_results, strict=True):
-        eval_calls_made += 1
-        if eval_cp is None and eval_mate is None:
-            # D-11: engine error / timeout — skip row, capture to Sentry, continue import.
-            eval_calls_failed += 1
-            # Bounded Sentry context (D-79-04, T-78-18: no PGN/FEN/user_id).
-            ctx: dict[str, Any] = {"game_id": target.game_id, "ply": target.ply}
-            if target.endgame_class is not None:
-                ctx["endgame_class"] = target.endgame_class
-            sentry_sdk.set_context("eval", ctx)
-            sentry_sdk.set_tag("source", "import")
-            sentry_sdk.set_tag("eval_kind", target.eval_kind)
-            sentry_sdk.capture_message("import-time engine returned None tuple", level="warning")
-            continue
-
-        # Build the WHERE clause for this eval kind. Endgame span entries
-        # filter by endgame_class to disambiguate when the same ply could
-        # in principle belong to multiple class spans (defensive — current
-        # schema has at most one row per (game_id, ply)).
-        stmt = update(GamePosition).where(
-            GamePosition.game_id == target.game_id,
-            GamePosition.ply == target.ply,
-        )
-        if target.endgame_class is not None:
-            stmt = stmt.where(GamePosition.endgame_class == target.endgame_class)
-        await session.execute(stmt.values(eval_cp=eval_cp, eval_mate=eval_mate))
-    return eval_calls_made, eval_calls_failed
+    covered: list[int] = []
+    for game_id, pgn_text, plies_list in game_eval_data:
+        single_game_data: list[tuple[int, str, list[PlyData]]] = [(game_id, pgn_text, plies_list)]
+        midgame_targets = _collect_midgame_eval_targets(single_game_data)
+        endgame_targets = _collect_endgame_span_eval_targets(single_game_data)
+        if not midgame_targets and not endgame_targets:
+            covered.append(game_id)
+    return covered
