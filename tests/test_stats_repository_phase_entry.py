@@ -316,7 +316,8 @@ class TestOpeningPhaseEntryMetrics:
             platform=["lichess"],
             rated=True,
             opponent_type="human",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         phase_result = await query_opening_phase_entry_metrics_batch(
             db_session,
@@ -326,7 +327,8 @@ class TestOpeningPhaseEntryMetrics:
             platform=["lichess"],
             rated=True,
             opponent_type="human",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
 
         assert full_hash in wdl_result
@@ -347,7 +349,9 @@ class TestOpeningPhaseEntryMetrics:
         full_hash = 10_014
         old_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=60)
         recent_date = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=5)
-        cutoff = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+        from_date = (
+            datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=30)
+        ).date()
 
         await _make_game_with_phase_entries(
             db_session, full_hash=full_hash, mg_eval_cp=50, played_at=old_date
@@ -357,7 +361,7 @@ class TestOpeningPhaseEntryMetrics:
         )
 
         result = await query_opening_phase_entry_metrics_batch(
-            db_session, _USER_PHASE_ENTRY, [full_hash], recency_cutoff=cutoff
+            db_session, _USER_PHASE_ENTRY, [full_hash], from_date=from_date, to_date=None
         )
 
         assert full_hash in result

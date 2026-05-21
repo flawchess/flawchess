@@ -155,7 +155,8 @@ class TestQueryEndgameEntryRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert rows == []
 
@@ -180,7 +181,8 @@ class TestQueryEndgameEntryRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert rows == []
 
@@ -201,7 +203,8 @@ class TestQueryEndgameEntryRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         # Should return exactly one row for this (game, rook) span
         assert len(rows) == 1
@@ -230,7 +233,8 @@ class TestQueryEndgameEntryRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         # Short span filtered out by HAVING clause
         assert rows == []
@@ -257,7 +261,8 @@ class TestQueryEndgameEntryRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         # Should return two rows: one for rook span, one for pawn span
         assert len(rows) == 2
@@ -297,7 +302,8 @@ class TestQueryEndgameEntryRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert len(rows) == 1
         row = rows[0]
@@ -328,7 +334,8 @@ class TestQueryEndgameEntryRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert len(rows) == 1
         game_ids = [r[0] for r in rows]
@@ -354,7 +361,8 @@ class TestQueryEndgameEntryRows:
             platform=["lichess"],
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert len(rows) == 1
         game_ids = [r[0] for r in rows]
@@ -390,7 +398,8 @@ class TestQueryEndgameEntryRowsNextSpanEval:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert len(rows) == 1
         row = rows[0]
@@ -450,7 +459,8 @@ class TestQueryEndgameEntryRowsNextSpanEval:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert len(rows) == 2
 
@@ -491,7 +501,8 @@ class TestQueryEndgameEntryRowsNextSpanEval:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert len(rows) == 1
         row = rows[0]
@@ -524,7 +535,8 @@ class TestQueryEndgameEntryRowsNextSpanEval:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert len(rows) == 1
         row = rows[0]
@@ -561,7 +573,8 @@ class TestQueryEndgameGames:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             offset=0,
             limit=20,
         )
@@ -588,7 +601,8 @@ class TestQueryEndgameGames:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             offset=0,
             limit=20,
         )
@@ -614,7 +628,8 @@ class TestQueryEndgameTimelineRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert endgame_rows == []
         assert non_endgame_rows == []
@@ -657,7 +672,8 @@ class TestQueryEndgameTimelineRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
 
         # All 6 class slots must be present
@@ -699,7 +715,8 @@ class TestQueryEndgameTimelineRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
 
         rook_rows = per_type_rows[1]
@@ -738,7 +755,8 @@ class TestQueryEndgameTimelineRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
 
         assert len(endgame_rows) == 1
@@ -770,7 +788,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert rows == []
 
@@ -802,7 +821,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
 
         # Short-endgame games no longer appear in bucket_rows — they are routed to the
@@ -832,7 +852,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
 
         assert len(rows) == 1
@@ -864,7 +885,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
 
         assert len(rows) == 1
@@ -927,7 +949,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
             db_session,
@@ -936,7 +959,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
 
         # Only game_a qualifies; game_b (short) and game_c (no endgame) are both "no endgame".
@@ -953,7 +977,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         entry_game_ids = {r[0] for r in entry_rows}
         assert entry_game_ids == bucket_game_ids == {game_a.id}
@@ -986,7 +1011,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         assert len(rows) == 1
         assert rows[0][0] == game_blitz.id
@@ -1028,7 +1054,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
         endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
             db_session,
@@ -1037,7 +1064,8 @@ class TestQueryEndgameBucketRows:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
         )
 
         # Game A in bucket + endgame, Game B only in non_endgame.

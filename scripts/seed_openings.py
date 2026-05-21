@@ -15,6 +15,7 @@ Usage (production):
 
         ssh flawchess "cd /opt/flawchess && docker compose exec backend /app/.venv/bin/python -m scripts.seed_openings"
 """
+
 import asyncio
 import csv
 import io
@@ -74,7 +75,9 @@ async def seed_openings() -> int:
                 name = row["name"]
                 pgn_str = row["pgn"]
                 try:
-                    fen, ply_count, white_hash, black_hash, full_hash = pgn_to_fen_ply_hashes(pgn_str)
+                    fen, ply_count, white_hash, black_hash, full_hash = pgn_to_fen_ply_hashes(
+                        pgn_str
+                    )
                 except Exception:
                     logger.warning("Row %d: failed to parse PGN %r — skipping", row_num, pgn_str)
                     errors += 1
@@ -89,9 +92,14 @@ async def seed_openings() -> int:
                         "white_hash = EXCLUDED.white_hash, black_hash = EXCLUDED.black_hash"
                     ),
                     {
-                        "eco": eco, "name": name, "pgn": pgn_str,
-                        "ply_count": ply_count, "fen": fen,
-                        "full_hash": full_hash, "white_hash": white_hash, "black_hash": black_hash,
+                        "eco": eco,
+                        "name": name,
+                        "pgn": pgn_str,
+                        "ply_count": ply_count,
+                        "fen": fen,
+                        "full_hash": full_hash,
+                        "white_hash": white_hash,
+                        "black_hash": black_hash,
                     },
                 )
                 if result.rowcount > 0:

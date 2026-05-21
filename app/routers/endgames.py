@@ -5,9 +5,10 @@ Endpoints (all mounted under /api/endgames):
 - GET /games: paginated game list filtered by endgame class
 """
 
+import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -30,7 +31,8 @@ async def get_endgame_overview(
     # NO color parameter — per D-02 (no color filter on endgame endpoints)
     time_control: list[str] | None = Query(default=None),
     platform: list[str] | None = Query(default=None),
-    recency: str | None = Query(default=None),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     window: int = Query(default=50, ge=5, le=200),
@@ -46,6 +48,8 @@ async def get_endgame_overview(
 
     No color filter is applied — per D-02 endgame stats cover both colors.
     """
+    if from_date is not None and to_date is not None and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be <= to_date")
     return await endgame_service.get_endgame_overview(
         session,
         user_id=user.id,
@@ -53,7 +57,8 @@ async def get_endgame_overview(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency=recency,
+        from_date=from_date,
+        to_date=to_date,
         window=window,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
@@ -67,7 +72,8 @@ async def get_endgame_games(
     endgame_class: EndgameClass = Query(...),
     time_control: list[str] | None = Query(default=None),
     platform: list[str] | None = Query(default=None),
-    recency: str | None = Query(default=None),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
     rated: bool | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     offset: int = Query(default=0, ge=0),
@@ -84,6 +90,8 @@ async def get_endgame_games(
     Kept as a standalone endpoint because endgame_class changes independently of the
     overview filters (user picks a class from a selector, not a sidebar filter).
     """
+    if from_date is not None and to_date is not None and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be <= to_date")
     return await endgame_service.get_endgame_games(
         session,
         user_id=user.id,
@@ -92,7 +100,8 @@ async def get_endgame_games(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency=recency,
+        from_date=from_date,
+        to_date=to_date,
         offset=offset,
         limit=limit,
         opponent_gap_min=opponent_gap_min,

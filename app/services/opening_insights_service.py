@@ -49,7 +49,6 @@ from app.services.opening_insights_constants import (
     OPENING_INSIGHTS_SCORE_PIVOT as SCORE_PIVOT,
 )
 from app.services.score_confidence import compute_confidence_bucket, wilson_bounds
-from app.services.openings_service import recency_cutoff
 
 # ---------------------------------------------------------------------------
 # Phase 75 thresholds. Score-based effect-size gate (D-03, D-11) and Wilson
@@ -559,7 +558,8 @@ async def _collect_attribution_hashes(
     session: AsyncSession,
     user_id: int,
     request: OpeningInsightsRequest,
-    cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     colors_to_query: Sequence[Literal["white", "black"]],
 ) -> _AttributionContext:
     """Stage 1: query transitions per color, derive Python attrs, resolve direct opening attribution.
@@ -586,7 +586,8 @@ async def _collect_attribution_hashes(
             platform=request.platform,
             rated=request.rated,
             opponent_type=request.opponent_type,
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=to_date,
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
         )
@@ -620,7 +621,8 @@ async def _fetch_position_wdl_per_color(
     session: AsyncSession,
     user_id: int,
     request: OpeningInsightsRequest,
-    cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     colors_to_query: Sequence[Literal["white", "black"]],
     ctx: _AttributionContext,
 ) -> _PipelineContext:
@@ -674,7 +676,8 @@ async def _fetch_position_wdl_per_color(
             platform=request.platform,
             rated=request.rated,
             opponent_type=request.opponent_type,
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=to_date,
             color=color,  # per-color: matches query_opening_transitions' Game.user_color filter
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
@@ -795,7 +798,8 @@ async def _build_sections(
     session: AsyncSession,
     user_id: int,
     request: OpeningInsightsRequest,
-    cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     colors_to_query: Sequence[Literal["white", "black"]],
     ctx: _PipelineContext,
 ) -> dict[str, list[OpeningInsightFinding]]:
@@ -884,7 +888,8 @@ async def _build_sections(
             platform=request.platform,
             rated=request.rated,
             opponent_type=request.opponent_type,
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=to_date,
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
         )
@@ -900,7 +905,8 @@ async def _build_sections(
             platform=request.platform,
             rated=request.rated,
             opponent_type=request.opponent_type,
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=to_date,
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
         )
@@ -948,7 +954,8 @@ async def compute_insights(
     white_strengths, black_strengths — each capped per CONTEXT.md D-08.
     See module docstring for pipeline details.
     """
-    cutoff: datetime.datetime | None = recency_cutoff(request.recency)
+    from_date: datetime.date | None = request.from_date
+    to_date: datetime.date | None = request.to_date
 
     # D-12 optimization: when the user narrows to a single color, skip the
     # off-color SQL query entirely (~50% latency saving).
@@ -963,13 +970,13 @@ async def compute_insights(
     # pure-Python stages also gets the Sentry context + tags.
     try:
         attribution_ctx = await _collect_attribution_hashes(
-            session, user_id, request, cutoff, colors_to_query
+            session, user_id, request, from_date, to_date, colors_to_query
         )
         pipeline_ctx = await _fetch_position_wdl_per_color(
-            session, user_id, request, cutoff, colors_to_query, attribution_ctx
+            session, user_id, request, from_date, to_date, colors_to_query, attribution_ctx
         )
         final_sections = await _build_sections(
-            session, user_id, request, cutoff, colors_to_query, pipeline_ctx
+            session, user_id, request, from_date, to_date, colors_to_query, pipeline_ctx
         )
         return OpeningInsightsResponse(
             white_weaknesses=final_sections["white_weaknesses"],

@@ -328,15 +328,18 @@ class TestEndgameEloTimelineRouter:
         the filter window. Response must be `combos: []` with the window constant
         still present.
         """
+        import datetime as _dt
+
+        from_date_str = (_dt.date.today() - _dt.timedelta(days=7)).isoformat()
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url=_BASE
         ) as client:
-            # recency=week narrows to the past 7 days; seed fixture uses historic
+            # from_date narrows to the past 7 days; seed fixture uses historic
             # dates so nothing qualifies. If the seed is ever changed to use
-            # current-date games, switch to a smaller recency window or add an
+            # current-date games, switch to a smaller date window or add an
             # explicit "fresh user with 0 games" test path here.
             resp = await client.get(
-                "/api/endgames/overview?recency=week",
+                f"/api/endgames/overview?from_date={from_date_str}",
                 headers=seeded_user.auth_headers,
             )
         assert resp.status_code == 200, resp.text

@@ -76,17 +76,16 @@ async def test_post_openings_endpoint_returns_four_section_response(
 
 
 @pytest.mark.asyncio
-async def test_post_openings_endpoint_rejects_invalid_recency_value(
+async def test_post_openings_endpoint_rejects_unknown_field(
     auth_headers: dict[str, str],
 ) -> None:
-    """Pydantic validation: request body with recency='all_time' (invalid per D-11,
-    the accepted recency set uses 'all' not 'all_time') must return 422."""
+    """Pydantic extra='forbid' rejects unknown fields with 422."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.post(
             OPENINGS_ENDPOINT,
-            json={"recency": "all_time"},
+            json={"unknown_field": "some_value"},
             headers=auth_headers,
         )
     assert response.status_code == 422
@@ -126,7 +125,7 @@ async def test_post_openings_endpoint_does_NOT_apply_full_history_gate(
     ) as client:
         response = await client.post(
             OPENINGS_ENDPOINT,
-            json={"recency": "month", "time_control": ["bullet"], "rated": True},
+            json={"from_date": "2026-01-01", "time_control": ["bullet"], "rated": True},
             headers=auth_headers,
         )
     # Must be 200, not 400
@@ -143,7 +142,7 @@ async def test_post_openings_endpoint_filter_equivalence(
     A fresh user has no games, so both calls return empty sections — but
     this verifies the route is deterministic and the response shape is stable.
     """
-    body = {"recency": "month", "color": "white", "opponent_type": "human"}
+    body = {"from_date": "2026-01-01", "color": "white", "opponent_type": "human"}
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:

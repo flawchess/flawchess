@@ -73,7 +73,8 @@ async def count_filtered_games(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> int:
@@ -85,11 +86,12 @@ async def count_filtered_games(
     stmt = select(func.count()).select_from(Game).where(Game.user_id == user_id)
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -104,7 +106,8 @@ async def count_endgame_games(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> int:
@@ -125,11 +128,12 @@ async def count_endgame_games(
     )
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -144,7 +148,8 @@ async def query_endgame_entry_rows(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
@@ -265,11 +270,12 @@ async def query_endgame_entry_rows(
     # Apply standard game filters
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -285,7 +291,8 @@ async def query_endgame_bucket_rows(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
@@ -365,11 +372,12 @@ async def query_endgame_bucket_rows(
 
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -386,7 +394,8 @@ async def query_endgame_games(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     offset: int,
     limit: int,
     opponent_gap_min: int | None = None,
@@ -428,11 +437,12 @@ async def query_endgame_games(
     )
     base_stmt = apply_game_filters(
         base_stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -465,7 +475,8 @@ async def query_endgame_performance_rows(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> tuple[list[Row[Any]], list[Row[Any]]]:
@@ -514,11 +525,12 @@ async def query_endgame_performance_rows(
     )
     endgame_stmt = apply_game_filters(
         endgame_stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -529,11 +541,12 @@ async def query_endgame_performance_rows(
     ).order_by(Game.played_at.asc())
     non_endgame_stmt = apply_game_filters(
         non_endgame_stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -554,7 +567,8 @@ async def query_endgame_timeline_rows(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> tuple[list[Row[Any]], list[Row[Any]], dict[int, list[Row[Any]]]]:
@@ -615,11 +629,12 @@ async def query_endgame_timeline_rows(
     )
     per_class_stmt = apply_game_filters(
         per_class_stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -671,11 +686,12 @@ async def query_endgame_timeline_rows(
     )
     non_endgame_stmt = apply_game_filters(
         non_endgame_stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -693,7 +709,8 @@ async def query_clock_stats_rows(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
@@ -791,11 +808,12 @@ async def query_clock_stats_rows(
 
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -811,7 +829,8 @@ async def query_endgame_elo_timeline_rows(
     platform: Sequence[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> list[Row[Any]]:
@@ -835,13 +854,13 @@ async def query_endgame_elo_timeline_rows(
     Filters:
     - Filter by Game.user_id == user_id at the TOP LEVEL (user scoping).
     - Use apply_game_filters for time_control/platform/rated/opponent_type/
-      recency_cutoff/opponent_gap_{min,max}. Never duplicate filter logic.
+      from_date/to_date/opponent_gap_{min,max}. Never duplicate filter logic.
     - Exclude rows with NULL played_at.
     - Exclude rows where white_rating IS NULL OR black_rating IS NULL (needed
       for per-side Elo math; a game without ratings can't contribute).
     - ORDER BY played_at ASC for chronological walking by the service layer.
 
-    The `recency_cutoff` param is deliberately forwarded to apply_game_filters
+    The from_date/to_date params are deliberately forwarded to apply_game_filters
     but the orchestrator passes None so the rolling window pre-fills (Pitfall 2
     in 57-RESEARCH.md). Callers filter emitted timeline points afterwards.
     """
@@ -864,11 +883,12 @@ async def query_endgame_elo_timeline_rows(
     )
     all_stmt = apply_game_filters(
         all_stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )

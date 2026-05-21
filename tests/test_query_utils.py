@@ -11,7 +11,6 @@ do not yet exist, so they will fail with a TypeError until Task 2 lands.
 
 import datetime
 
-import pytest
 from sqlalchemy import select
 
 from app.models.game import Game
@@ -22,14 +21,14 @@ def _compile_sql(stmt: object) -> str:
     """Compile stmt to a SQL string without literal binds (parameterised form)."""
     from sqlalchemy.dialects import postgresql
 
-    return str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": False}))  # type: ignore[union-attr]
+    return str(stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": False}))  # ty: ignore[unresolved-attribute]
 
 
 def _get_params(stmt: object) -> dict:
     """Return the bind parameters dict from the compiled statement."""
     from sqlalchemy.dialects import postgresql
 
-    compiled = stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": False})  # type: ignore[union-attr]
+    compiled = stmt.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": False})  # ty: ignore[unresolved-attribute]
     return dict(compiled.params)
 
 
@@ -71,7 +70,9 @@ def test_apply_game_filters_from_only() -> None:
     # Upper-bound predicate must NOT appear.
     assert "played_at <" not in sql, f"Unexpected to_date predicate: {sql}"
     # The bind value must match the supplied from_date.
-    from_val = next((v for k, v in params.items() if "from_date" in k or "played_at" in k.lower()), None)
+    from_val = next(
+        (v for k, v in params.items() if "from_date" in k or "played_at" in k.lower()), None
+    )
     assert from_val == datetime.date(2026, 3, 1) or any(
         v == datetime.date(2026, 3, 1) for v in params.values()
     ), f"Expected bind value 2026-03-01 in params: {params}"

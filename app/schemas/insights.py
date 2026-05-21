@@ -125,26 +125,30 @@ class FilterContext(BaseModel):
     3. ``opponent_type`` is hardcoded to ``"human"`` inside
        ``compute_findings``; Phase 63 does not expose bot-filter findings.
 
-    4. ``recency`` is the user's dashboard recency filter — SEPARATE from the
-       two internal windows (``all_time``, ``last_3mo``) that
-       ``compute_findings`` always produces (RESEARCH.md §Pitfall 4).
+    4. ``from_date`` / ``to_date`` are the user's dashboard date range filter —
+       SEPARATE from the two internal windows (``all_time``, ``last_3mo``) that
+       ``compute_findings`` always produces (RESEARCH.md §Pitfall 4). Both
+       default to None, which corresponds to the old ``"all_time"`` semantics
+       (no date filter applied).
     """
 
-    recency: Literal[
-        "all_time",
-        "week",
-        "month",
-        "3months",
-        "6months",
-        "year",
-        "3years",
-        "5years",
-    ] = "all_time"
+    from_date: datetime.date | None = None
+    to_date: datetime.date | None = None
     opponent_strength: Literal["any", "stronger", "similar", "weaker"] = "any"
     color: Literal["all", "white", "black"] = "all"
     time_controls: list[str] = Field(default_factory=list)
     platforms: list[str] = Field(default_factory=list)
     rated_only: bool = False
+
+    @model_validator(mode="after")
+    def _check_date_range(self) -> "FilterContext":
+        if (
+            self.from_date is not None
+            and self.to_date is not None
+            and self.from_date > self.to_date
+        ):
+            raise ValueError("from_date must be <= to_date")
+        return self
 
 
 class SubsectionFinding(BaseModel):

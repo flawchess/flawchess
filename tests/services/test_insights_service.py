@@ -6,7 +6,7 @@ Coverage by requirement:
   `insights_service` imports no repositories and never calls
   `asyncio.gather`, and that `compute_findings` issues exactly two
   sequential calls to `endgame_service.get_endgame_overview`
-  (recency=None then recency="3months").
+  (from_date=None/to_date=None then from_date=today-90d/to_date=None).
 - FIND-04 (trend gate): TestComputeTrend covers count-fail, ratio-fail,
   both-pass (improving / declining), and flat (stable).
 - FIND-05 (hash stability): TestComputeHash covers the 64-char lowercase
@@ -393,8 +393,8 @@ class TestComputeFindingsLayering:
             assert mocked.await_count == 2
 
     @pytest.mark.asyncio
-    async def test_first_call_uses_recency_none(self) -> None:
-        """First call passes recency=None (all_time window)."""
+    async def test_first_call_uses_from_date_none(self) -> None:
+        """First call passes from_date=None, to_date=None (all_time window)."""
         mock_response = EndgameOverviewResponse.model_construct()
         with patch.object(
             insights_module,
@@ -410,11 +410,14 @@ class TestComputeFindingsLayering:
             except Exception:
                 pass
             first_kwargs = mocked.await_args_list[0].kwargs
-            assert first_kwargs["recency"] is None
+            assert first_kwargs["from_date"] is None
+            assert first_kwargs["to_date"] is None
 
     @pytest.mark.asyncio
-    async def test_second_call_uses_recency_3months(self) -> None:
-        """Second call passes recency='3months' (last_3mo window)."""
+    async def test_second_call_uses_last_3mo_window(self) -> None:
+        """Second call passes from_date=today-90d, to_date=None (last_3mo window)."""
+        import datetime
+
         mock_response = EndgameOverviewResponse.model_construct()
         with patch.object(
             insights_module,
@@ -430,7 +433,9 @@ class TestComputeFindingsLayering:
             except Exception:
                 pass
             second_kwargs = mocked.await_args_list[1].kwargs
-            assert second_kwargs["recency"] == "3months"
+            expected_from_date = datetime.date.today() - datetime.timedelta(days=90)
+            assert second_kwargs["from_date"] == expected_from_date
+            assert second_kwargs["to_date"] is None
 
     @pytest.mark.asyncio
     async def test_color_is_not_forwarded_to_endgame_service(self) -> None:
