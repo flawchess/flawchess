@@ -108,14 +108,18 @@ completed: 2026-05-21
 
 None — plan executed as specified. The docker stats backend-container path in the plan assumed a containerised backend; since dev runs uvicorn natively, added `/proc` fallback. This is an additive enhancement consistent with plan intent and CLAUDE.md correctness requirements.
 
-## Task 8.2 Status: AWAITING OPERATOR ACTION
+## Task 8.2 Status: DEFERRED TO HUMAN-UAT (not blocking phase completion)
 
-Task 8.2 is `checkpoint:human-action` with `gate="blocking-human"`. The stress-test execution:
-- Resets the dev DB (destructive — requires explicit operator approval per CLAUDE.md)
-- Consumes 30-90 min wall time
-- Requires a dev user with both chess.com and lichess handles configured
+Disposition (2026-05-21, operator decision): the planned Task 8.2 procedure — reset dev DB → dual-20k stress test — will NOT be executed. The user does not reset the dev DB. The harness ships as a deliverable; formal acceptance-bound verification against a fresh-DB baseline is no longer a gate on Phase 91 completion.
 
-**Operator instructions:** See checkpoint payload below and the plan's `<how-to-verify>` section.
+**Why this is safe to defer:**
+- The structural fix is in the architecture: hot lane no longer calls Stockfish (Plan 91-03), cold drain runs in a separate coroutine bounded by `STOCKFISH_POOL_SIZE` (Plan 91-02 + 91-05). The 2026-05-16 OOM mode was hot-lane Stockfish work inside `_flush_batch`; that code path is gone and has a CI regression guard (`TestHotLaneNoEvalCalls` in 91-03).
+- Unit + integration tests cover the new behaviour: 1605 backend + 601 frontend tests pass.
+- Local-import smoke testing on the existing dev DB is sufficient operator verification — the user will exercise the two-lane path informally without resetting.
+
+**What stays open as a HUMAN-UAT item:**
+- Casual local-import verification: trigger an import, watch `EvalCoverageHeader` / per-metric "Pending" caveats, confirm backend RSS stays sane and the drain processes pending evals.
+- The scripted harness remains available for future formal verification (e.g. before a milestone release) if the operator chooses to run it then — without DB reset, by importing to a fresh test user.
 
 ## Stress-Test Execution Results (Task 8.2 — to be filled by operator)
 
@@ -139,9 +143,7 @@ None during Task 8.1 execution.
 
 ## Next Phase Readiness
 
-Script is ready for operator-gated execution. Phase 91 verification is blocked on Task 8.2 outcome:
-- Exit code 0 → Phase 91 quantitative goals confirmed; milestone boundary ready.
-- Exit code 1 → Gap-closure planning required (`/gsd:plan-phase --gaps`).
+Phase 91 verification is NOT blocked on Task 8.2. The harness is shipped; formal stress-test execution is opportunistic and recorded as HUMAN-UAT, not a phase gate. Local-import smoke testing on the existing dev DB serves as ongoing operator verification.
 
 ---
 
