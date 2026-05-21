@@ -2,16 +2,18 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import type { OpeningInsightsResponse } from '@/types/insights';
 import type {
-  Recency,
   TimeControl,
   Platform,
   OpponentType,
   OpponentStrengthRange,
 } from '@/types/api';
 import { ANY_RANGE, rangeToQueryParams } from '@/lib/opponentStrength';
+import { presetToDates, dateRangeToWireParams } from '@/lib/recency';
+import type { FilterState } from '@/components/filters/FilterPanel';
 
 interface OpeningInsightsFilters {
-  recency: Recency | null;
+  recency: FilterState['recency'];
+  customRange?: FilterState['customRange'];
   timeControls: TimeControl[] | null;
   platforms: Platform[] | null;
   rated: boolean | null;
@@ -27,8 +29,8 @@ interface OpeningInsightsFilters {
  * do NOT add Sentry.captureException here (CLAUDE.md frontend Sentry rules).
  */
 export function useOpeningInsights(filters?: OpeningInsightsFilters) {
-  // Normalize filter inputs (mirrors useMostPlayedOpenings in useStats.ts).
-  const normalizedRecency = filters?.recency === 'all' ? null : (filters?.recency ?? null);
+  const recency = filters?.recency ?? null;
+  const customRange = filters?.customRange ?? null;
   const timeControl = filters?.timeControls ?? null;
   const platform = filters?.platforms ?? null;
   const rated = filters?.rated ?? null;
@@ -36,10 +38,18 @@ export function useOpeningInsights(filters?: OpeningInsightsFilters) {
   const opponentStrength = filters?.opponentStrength ?? ANY_RANGE;
   const gapParams = rangeToQueryParams(opponentStrength);
 
+  // Resolve from_date/to_date from the preset or custom range.
+  const dateRange =
+    recency === 'custom'
+      ? (customRange ?? {})
+      : presetToDates(recency);
+  const dateParams = dateRangeToWireParams(dateRange);
+
   return useQuery<OpeningInsightsResponse>({
     queryKey: [
       'openingInsights',
-      normalizedRecency,
+      dateParams.from_date ?? null,
+      dateParams.to_date ?? null,
       timeControl,
       platform,
       rated,
@@ -50,7 +60,7 @@ export function useOpeningInsights(filters?: OpeningInsightsFilters) {
     queryFn: () =>
       apiClient
         .post<OpeningInsightsResponse>('/insights/openings', {
-          recency: normalizedRecency ?? undefined,
+          ...dateParams,
           time_control: timeControl ?? undefined,
           platform: platform ?? undefined,
           rated: rated ?? undefined,

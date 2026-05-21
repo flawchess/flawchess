@@ -287,6 +287,7 @@ export function OpeningsPage() {
     isError: mostPlayedError,
   } = useMostPlayedOpenings({
     recency: debouncedFilters.recency,
+    customRange: debouncedFilters.customRange,
     timeControls: debouncedFilters.timeControls,
     platforms: debouncedFilters.platforms,
     rated: debouncedFilters.rated,
@@ -319,6 +320,7 @@ export function OpeningsPage() {
     bookmarkMetricsRequest,
     {
       recency: debouncedFilters.recency,
+      customRange: debouncedFilters.customRange,
       timeControls: debouncedFilters.timeControls,
       platforms: debouncedFilters.platforms,
       rated: debouncedFilters.rated,
@@ -348,7 +350,7 @@ export function OpeningsPage() {
       rated: debouncedFilters.rated,
       opponent_type: debouncedFilters.opponentType,
       ...rangeToQueryParams(debouncedFilters.opponentStrength),
-      recency: debouncedFilters.recency === 'all' ? null : debouncedFilters.recency,
+      // D-19: recency field removed from TimeSeriesRequest — time-series covers full history.
     };
   }, [chartBookmarks, debouncedFilters]);
 

@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { MatchSide, TimeControl, Recency, Color, Platform, OpponentType, OpponentStrengthRange } from '@/types/api';
+import type { MatchSide, TimeControl, RecencyPreset, Color, Platform, OpponentType, OpponentStrengthRange } from '@/types/api';
 import { cn } from '@/lib/utils';
 import { ANY_RANGE } from '@/lib/opponentStrength';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
@@ -25,7 +25,9 @@ export interface FilterState {
    * Default `{ min: null, max: null }` = no filter (Any preset).
    */
   opponentStrength: OpponentStrengthRange;
-  recency: Recency | null; // null = all time
+  recency: RecencyPreset | 'custom' | null; // null = all time; 'custom' = look at customRange
+  /** Custom date range set by the user. Non-null only when recency === 'custom'. */
+  customRange: { from?: Date; to?: Date } | null;
   color: Color;
 }
 
@@ -38,6 +40,7 @@ export const DEFAULT_FILTERS: FilterState = {
   opponentType: 'human',
   opponentStrength: ANY_RANGE,
   recency: null,
+  customRange: null,
   color: 'white',
 };
 
@@ -56,6 +59,7 @@ export const FILTER_DOT_FIELDS: ReadonlyArray<keyof FilterState> = [
   'opponentType',
   'opponentStrength',
   'recency',
+  'customRange',
 ] as const;
 
 /**
@@ -84,11 +88,21 @@ export function areFiltersEqual(
       if (!(av as readonly string[]).every((v) => setB.has(v))) return false;
       continue;
     }
-    // opponentStrength is the only object-shaped field; compare structurally.
+    // opponentStrength is an object-shaped field; compare structurally.
     if (key === 'opponentStrength') {
       const ar = av as OpponentStrengthRange;
       const br = bv as OpponentStrengthRange;
       if (ar.min === br.min && ar.max === br.max) continue;
+      return false;
+    }
+    // customRange is an object-shaped field; compare by Date.getTime() to avoid
+    // reference-equality mismatches when the same range is reconstructed.
+    if (key === 'customRange') {
+      const ar = av as FilterState['customRange'];
+      const br = bv as FilterState['customRange'];
+      if (ar === null && br === null) continue;
+      if (ar === null || br === null) return false;
+      if (ar.from?.getTime() === br.from?.getTime() && ar.to?.getTime() === br.to?.getTime()) continue;
       return false;
     }
     return false;
@@ -175,7 +189,7 @@ export function FilterPanel({
           <p className="mb-1 text-xs text-muted-foreground">Recency</p>
           <Select
             value={filters.recency ?? 'all'}
-            onValueChange={(v) => update({ recency: v === 'all' ? null : (v as Recency) })}
+            onValueChange={(v) => update({ recency: v === 'all' ? null : (v as RecencyPreset) })}
           >
             <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
               <SelectValue />
@@ -320,7 +334,7 @@ export function FilterPanel({
           className="w-full min-h-11 sm:min-h-0"
           data-testid="btn-reset-filters"
           onClick={() => {
-            onChange({ ...DEFAULT_FILTERS, color: filters.color });
+            onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
           }}
         >
           Reset Filters

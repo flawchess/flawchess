@@ -35,7 +35,8 @@ export type TimeControl = 'bullet' | 'blitz' | 'rapid' | 'classical';
 export type MatchSide = 'mine' | 'opponent' | 'both';
 /** Backend API representation: white/black/full */
 type ApiMatchSide = 'white' | 'black' | 'full';
-export type Recency = 'week' | 'month' | '3months' | '6months' | 'year' | '3years' | '5years' | 'all';
+/** UI-only preset, not sent to the API. The wire shape uses from_date/to_date instead. */
+export type RecencyPreset = 'week' | 'month' | '3months' | '6months' | 'year' | '3years' | '5years' | 'all';
 export type Color = 'white' | 'black';
 export type OpponentType = 'human' | 'bot' | 'both';
 

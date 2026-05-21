@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { endgameApi } from '@/api/client';
+import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 
 // Extract endgame-relevant filters — no color, no matchSide per D-02.
 function buildEndgameParams(filters: FilterState) {
+  const dateParams = dateRangeToWireParams(resolveDateRange(filters));
   return {
     time_control: filters.timeControls,
     platform: filters.platforms,
-    recency: filters.recency,
+    ...dateParams,
     rated: filters.rated,
     opponent_type: filters.opponentType,
     opponent_strength: filters.opponentStrength,

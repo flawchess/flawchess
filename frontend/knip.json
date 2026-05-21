@@ -4,6 +4,7 @@
   "project": ["src/**/*.{ts,tsx}"],
   "ignoreDependencies": [
     "clsx",
+    "date-fns",
     "tailwind-merge",
     "shadcn",
     "tailwindcss",
