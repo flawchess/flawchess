@@ -71,6 +71,28 @@ gh run watch <run-id>           # Watch a run in progress
 gh pr checks <pr-number>        # Check PR status
 ```
 
+### Pre-PR checklist (MANDATORY before `git push` / `gh pr create`)
+
+Run these locally and resolve all output **before** pushing a branch that will become a PR. CI runs the same gates and will fail the build if any of them are dirty; catching them locally avoids a "fix CI" round-trip commit.
+
+```bash
+uv run ruff format app/ tests/         # apply formatting (not just --check)
+uv run ruff check app/ tests/ --fix    # apply autofixable lint
+uv run ty check app/ tests/            # type check, zero errors required
+uv run pytest -x                       # backend tests, stop on first failure
+( cd frontend && npm run lint && npm test -- --run )  # frontend lint + tests
+```
+
+If any step modifies files, commit the result with a `style(...)` or `chore(...)` prefix before pushing. Never push expecting CI to surface a formatter diff — the formatter is deterministic, so a CI "would reformat" failure is always avoidable locally. This is the single most common preventable CI failure on this project; treat the checklist as part of `git push`, not optional.
+
+**Enforcement via git hook (recommended one-time setup):**
+
+```bash
+bin/install_pre_push_hook.sh    # installs .git/hooks/pre-push
+```
+
+The hook runs `ruff format --check`, `ruff check`, and `ty check` on every `git push`, blocking the push if any gate fails. Pytest is intentionally excluded from the hook to keep pushes fast — run it manually before opening a PR. Bypass for WIP pushes with `git push --no-verify`.
+
 ## Scripts
 
 ### `bin/`
