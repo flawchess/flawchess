@@ -69,9 +69,11 @@ cp .env.example .env  # Edit with your settings
 bin/run_local.sh
 ```
 
-The script starts PostgreSQL (Docker), installs dependencies, runs migrations, seeds the openings reference table, and launches both backend and frontend. The API is at `http://localhost:8000` (docs at `/docs`), frontend at `http://localhost:5173`.
+The script starts PostgreSQL (Docker), installs dependencies, runs migrations, seeds the openings reference table, installs the pinned Stockfish binary (via `bin/install_stockfish.sh` — same release and SHA-256 as the prod Docker image), and launches both backend and frontend. The API is at `http://localhost:8000` (docs at `/docs`), frontend at `http://localhost:5173`.
 
 > **Note:** Google OAuth and Sentry are optional — the app works with email/password auth and without error monitoring. Leave those `.env` values empty to skip them.
+
+> **Stockfish on non-Linux hosts:** `bin/install_stockfish.sh` downloads the Linux x86_64 AVX2 build to match prod. On macOS, install Stockfish manually (`brew install stockfish`) and export `STOCKFISH_PATH=$(command -v stockfish)` before running `bin/run_local.sh`.
 
 ### Running Tests
 
