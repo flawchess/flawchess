@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
 status: executing
-last_updated: "2026-05-20T22:32:17.965Z"
-last_activity: 2026-05-20 -- Phase 91 planning complete
+last_updated: "2026-05-21T01:38:39.107Z"
+last_activity: 2026-05-21 -- Phase 91 execution started
 progress:
   total_phases: 2
   completed_phases: 1
@@ -17,11 +17,11 @@ progress:
 
 ## Current Position
 
-Phase: 90 (import-pipeline-memory-leak-fix-resilience) — ✅ SHIPPED 2026-05-20
-Plan: 3 of 3 (all plans executed, verified, and deployed)
+Phase: 91 (two-lane-import-defer-stockfish-eval-to-in-process-cold-drai) — EXECUTING
+Plan: 1 of 8
 Milestone: v1.17 Endgame Stats Card Redesign — ✅ SHIPPED 2026-05-19 (Phase 90 is a post-v1.17 carryover; v1.18 release tag deferred)
-Status: Ready to execute
-Last activity: 2026-05-20 -- Phase 91 planning complete
+Status: Executing Phase 91
+Last activity: 2026-05-21 -- Phase 91 execution started
 
 ## Project Reference
 
