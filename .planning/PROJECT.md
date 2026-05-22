@@ -135,10 +135,16 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - ✓ Stockfish-baseline predicted endgame score — `eval_cp_to_expected_score` (Lichess sigmoid k=0.00368208) + `eval_mate_to_expected_score`; 5 new `EndgamePerformanceResponse` fields (`entry_expected_score`, `_n`, `_p_value`, `_ci_low`, `_ci_high`); 2x2 grid restructure of Start vs End (Where you start + What you do with it × Stockfish baseline + your achieved); LLM prompt `endgame_v25` → `endgame_v26` narrates achievable-vs-achieved gap as headline diagnostic. Closes SEED-014 — v1.16 Phase 83
 
 - ✓ Endgames page table→card redesign (Sections 1–3 on the WDL + ScoreBullet card pattern); eval-based ΔES Score Gap replacing the degenerate rate-based mirror-bucket peer-diff; hypothesis tests + 95% CIs on Endgame Score Differences; Endgame Skill dropped end-to-end and the timeline rebuilt as Endgame ELO via a logistic stretch around Actual ELO; full Time Pressure rework with benchmark-calibrated zones; inactivity-gap annotations on all 6 ordinal-axis timeline charts — v1.17 Phases 84–88.4 (Phase 89 Polish dropped; 87.3 percentile composite superseded by 87.4→87.6)
+- ✓ Import pipeline memory-leak fix (bound-parameter `executemany` replacing the per-batch unique-SQL `case()`+`IN` leak), per-batch `AsyncSession` recycle, periodic + on-DB-reconnect orphan-job reaper, bounded-retry failure-state recording — v1.18 Phase 90
+- ✓ Two-lane import: hot path holds no Stockfish work, separate `run_eval_drain()` lifespan coroutine evaluates entry plies in the background. `games.evals_completed_at` + partial index, Stockfish-coverage header bar, per-metric "based on N of M eligible games" caveat on every eval-dependent stat — v1.18 Phase 91
+- ✓ Custom date range filter — closed `Recency` string union on the API wire replaced with explicit `from_date` / `to_date` params; 9th "Custom range…" item in the recency dropdown with desktop Popover + mobile nested Drawer (shadcn Calendar); `Recency` → `RecencyPreset` UI-only type — v1.18 Phase 92
 
-### Active (next milestone — TBD)
+### Active (next milestone — v1.19 Endgame Percentiles & LLM Statistical Reasoning)
 
-Defined by the next `/gsd:new-milestone`. v1.17 shipped 2026-05-19.
+Directional scope, refined per-phase via `/gsd:discuss-phase`:
+
+- [ ] Global percentile annotations on Tier-1 / Tier-2 Endgame metrics (SEED-019) — global empirical-CDF benchmark artifact + nullable `{metric}_percentile` field + frontend "top X% / bottom Y%" chip with honest copy on Tier-2 rating-proxy metrics
+- [ ] LLM endgame-insights prompt + payload rework for the v1.17 metric set — pass p-values, confidence interval bounds, and percentiles on the Section 1 Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, and time-pressure hypothesis tests, with explicit prompt guardrails against narrating small-but-significant findings (resolves tension with prior `feedback_llm_significance_signal` decision)
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -156,9 +162,29 @@ Defined by the next `/gsd:new-milestone`. v1.17 shipped 2026-05-19.
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
+## Current Milestone: v1.19 Endgame Percentiles & LLM Statistical Reasoning
+
+**Goal:** Close SEED-019 by surfacing global percentile annotations on Tier-1/Tier-2 Endgame metrics, and rework the endgame-insights LLM prompt + payload so it can reason over the full v1.17 metric set (Endgame Score Gap, Achievable Score, ΔES Score Gap family, time-pressure tests) with explicit p-values, confidence intervals, and percentiles, behind prompt guardrails that prevent narrating small-but-significant findings.
+
+**Target features (directional — refined per-phase via `/gsd:discuss-phase`):**
+
+- Global empirical-CDF benchmark artifact for Tier-1 / Tier-2 Endgame metrics
+- Backend `{metric}_percentile` (nullable, n-gated) wired onto every in-scope metric response
+- Frontend "top X%" / "bottom Y%" annotation chip on the relevant Endgame cards (desktop + mobile), honest copy for Tier-2 rating-proxy metrics
+- Endgame-insights LLM payload extended with p-values, CI bounds, and percentile fields on the v1.17 metric set
+- Endgame-insights prompt rewrite to reason explicitly over CIs + percentiles without re-licensing small-but-significant narration
+
+**Open decisions (deferred to phase discussion):**
+
+- How to reconcile p-value/CI payload exposure with the prior `feedback_llm_significance_signal` decision (tighten cohort bands further, or pass raw stats with prompt guardrails)
+- Whether Tier-4 per-type breakdown percentiles are in-scope or deferred (per-user samples thin)
+- Final scope split into individual phases — backend percentile artifact, frontend chip, LLM payload + prompt are natural seams but the granularity is undecided
+
 ## Current State
 
-v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117. Seventeen milestones complete (v1.0–v1.17), live at flawchess.com. The three table-driven Endgames-page sections (`EndgamePerformanceSection`, `EndgameScoreGapSection`, grouped `EndgameWDLChart`/`EndgameConvRecovChart`) are gone, replaced by the WDL + ScoreBullet card pattern. What began as a layout refactor became a statistical-rigor pass: the rate-based mirror-bucket peer-diff bullet (mathematically degenerate — Conv-Gap ≡ Recov-Gap by mirror symmetry) was retired for an eval-based per-span ΔES Score Gap anchored to the Stockfish baseline; Endgame Score Differences gained two-sample z + paired one-sample z hypothesis tests with 95% CI whiskers; the Endgame Skill concept was dropped entirely and the timeline rebuilt as Endgame ELO via a logistic stretch around Actual ELO (`endgame_elo + non_endgame_elo == 2·actual_elo`, fixing the sigmoid bias and the violated "Actual ELO between the lines" invariant); Time Pressure was reworked with benchmark-calibrated `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` and a zone-banded zero-centered line chart; and all 6 ordinal-axis timeline charts gained inactivity-gap break annotations. Phase 89 (Polish) dropped from scope; 87.3 percentile composite superseded by 87.4→87.6. LLM endgame prompt advanced `endgame_v26` → `endgame_v35` across the milestone.
+v1.18 Import Pipeline Hardening shipped 2026-05-22 — 3 phases (90, 91, 92), 17 plans, 54 commits over 3 days (commit 114211c2 → f5224b4f), delivered via PRs #130, #137, #138 + production hotfix #139 (FLAWCHESS-3Q DB pool / max_connections / container memory caps and Hetzner CPX32 → CPX42). Eighteen milestones complete (v1.0–v1.18), live at flawchess.com. Two prod OOM recurrences in the v1.17 → v1.18 gap drove the milestone: the per-batch unique-SQL leak in `_flush_batch` Stage 5 (`case()` + `IN` against a literal bind set) was replaced with bound-parameter `executemany`; the hot import path now holds no Stockfish work (a separate `run_eval_drain()` lifespan coroutine picks 10 games per tick from a partial index `WHERE evals_completed_at IS NULL` and evaluates outside any session scope); a Stockfish-coverage header bar and per-metric "based on N of M eligible games" caveat on every eval-dependent stat surface the cold lane's progress honestly. The closed `Recency` string union was replaced on the API wire with `from_date` / `to_date` params (Phase 92), with a 9th "Custom range…" entry in the recency dropdown backed by shadcn Calendar (desktop Popover, mobile nested Drawer). Seeds SEED-017 / SEED-018 / SEED-022 / SEED-023 closed in this milestone.
+
+v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117. The three table-driven Endgames-page sections (`EndgamePerformanceSection`, `EndgameScoreGapSection`, grouped `EndgameWDLChart`/`EndgameConvRecovChart`) are gone, replaced by the WDL + ScoreBullet card pattern. What began as a layout refactor became a statistical-rigor pass: the rate-based mirror-bucket peer-diff bullet (mathematically degenerate — Conv-Gap ≡ Recov-Gap by mirror symmetry) was retired for an eval-based per-span ΔES Score Gap anchored to the Stockfish baseline; Endgame Score Differences gained two-sample z + paired one-sample z hypothesis tests with 95% CI whiskers; the Endgame Skill concept was dropped entirely and the timeline rebuilt as Endgame ELO via a logistic stretch around Actual ELO (`endgame_elo + non_endgame_elo == 2·actual_elo`, fixing the sigmoid bias and the violated "Actual ELO between the lines" invariant); Time Pressure was reworked with benchmark-calibrated `PRESSURE_BIN_SCORE_NEUTRAL_ZONES` and a zone-banded zero-centered line chart; and all 6 ordinal-axis timeline charts gained inactivity-gap break annotations. Phase 89 (Polish) dropped from scope; 87.3 percentile composite superseded by 87.4→87.6. LLM endgame prompt advanced `endgame_v26` → `endgame_v35` across the milestone.
 
 v1.16 Stockfish Eval Analyses shipped 2026-05-11 — 5 phases (80, 80.1, 81, 82, 83), 24 plans, 118 commits over 7 days, delivered via PRs #80, #82, #85, #86, #88. 80 phases before v1.17 (+5 inserted: 27.1, 28.1, 41.1, 57.1, 71.1, plus mid-milestone 80.1).
 
@@ -353,7 +379,9 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-19 after v1.17 milestone. v1.17 Endgame Stats Card Redesign shipped — 13 phases (84–88.4), ~54 plans, delivered via PRs #89–#117. Phase 89 (Polish) dropped from scope; Phase 87.3 (percentile composite) superseded by 87.4→87.6. Next: `/gsd:new-milestone`.*
+*Last updated: 2026-05-22 — v1.19 (Endgame Percentiles & LLM Statistical Reasoning) opened. v1.18 Import Pipeline Hardening (Phases 90–92) retroactively tagged on the same day, archived to `milestones/v1.18-ROADMAP.md`. v1.19 directional scope: close SEED-019 with global percentile annotations on Tier-1/Tier-2 Endgame metrics, and rework the endgame-insights LLM prompt + payload (p-values, CIs, percentiles) for the v1.17 metric set. Per-phase scope refined via `/gsd:discuss-phase`. Phase numbering continues from 93.*
+
+*Previous: 2026-05-19 after v1.17 milestone. v1.17 Endgame Stats Card Redesign shipped — 13 phases (84–88.4), ~54 plans, delivered via PRs #89–#117. Phase 89 (Polish) dropped from scope; Phase 87.3 (percentile composite) superseded by 87.4→87.6.*
 
 *Previous: 2026-05-12 — v1.17 (Endgame Stats Card Redesign) opened. Frontend-only refactor (with Phase 84 as the lone backend touch) replacing 3 table-driven sections on the Endgames page with the WDL+ScoreBullet card pattern.*
 

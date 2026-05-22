@@ -1,27 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.17
-milestone_name: Endgame Stats Card Redesign
-status: "Phase 92 shipped — PR #137"
-last_updated: "2026-05-22T09:11:46.339Z"
+milestone: v1.19
+milestone_name: Endgame Percentiles & LLM Statistical Reasoning
+status: planning
+last_updated: "2026-05-22T11:36:41.408Z"
 last_activity: 2026-05-22
 progress:
-  total_phases: 3
-  completed_phases: 2
-  total_plans: 11
-  completed_plans: 11
-  percent: 67
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 91
-Plan: Not started
-Milestone: v1.17 Endgame Stats Card Redesign — ✅ SHIPPED 2026-05-19 (Phase 90 is a post-v1.17 carryover; v1.18 release tag deferred)
-Status: Phase 92 shipped — PR #137
-Last activity: 2026-05-22
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-22 — Milestone v1.19 started
 
 ## Project Reference
 
