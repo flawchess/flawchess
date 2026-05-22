@@ -13,7 +13,7 @@
  *   default `onOpenChange(false)` from an outside tap never calls `onChange`.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { DateRange } from 'react-day-picker';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -48,6 +48,20 @@ export function CustomRangeDrawer({
   const [localRange, setLocalRange] = useState<DateRange | undefined>(
     value ? { from: value.from, to: value.to } : undefined,
   );
+
+  // Resync local in-progress selection whenever the committed value changes
+  // from outside (e.g. Reset Filters in the parent panel clears customRange to
+  // null, or a sibling popover commit races with a mobile/desktop breakpoint
+  // flip). Without this effect the drawer stays mounted (vaul NestedRoot keeps
+  // the subtree alive while open=false), so reopening then tapping Apply would
+  // silently re-commit a stale local selection and override the external
+  // change. Compare on getTime() rather than reference so memoised preset
+  // ranges don't trigger spurious resets. Preserves D-08 backdrop-dismiss
+  // semantics because the effect fires only when the *committed* value
+  // changes, not on every keystroke.
+  useEffect(() => {
+    setLocalRange(value ? { from: value.from, to: value.to } : undefined);
+  }, [value?.from?.getTime(), value?.to?.getTime(), value === null]);
 
   const handleSelect = (range: DateRange | undefined) => {
     setLocalRange(range);
