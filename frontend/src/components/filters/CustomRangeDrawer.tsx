@@ -17,6 +17,11 @@ import { useState } from 'react';
 import type { DateRange } from 'react-day-picker';
 import { Calendar } from '@/components/ui/calendar';
 import {
+  CALENDAR_MIN_DATE,
+  CALENDAR_MAX_DATE,
+  formatCustomRangeLabel,
+} from './CustomRangePopover';
+import {
   DrawerNested,
   DrawerContent,
   DrawerHeader,
@@ -118,17 +123,49 @@ export function CustomRangeDrawer({
             selected={localRange}
             onSelect={handleSelect}
             numberOfMonths={1}
+            // Month/year dropdowns: native <select> on mobile gives a fast
+            // year-jump wheel; bounds keep the year list finite.
+            captionLayout="dropdown"
+            startMonth={CALENDAR_MIN_DATE}
+            endMonth={CALENDAR_MAX_DATE}
+            // See CustomRangePopover for rationale: without this, react-day-picker
+            // sets `to = from` on the first click and the calendar shows a
+            // bogus same-day range until the user clicks again.
+            resetOnSelect
             data-testid="custom-range-calendar"
           />
         </div>
 
-        {/* Apply CTA (D-07): primary action, disabled until at least a `from` bound is set. */}
-        <div className="px-4 pb-6">
+        {/* Live selection readout: mirrors the trigger label format. */}
+        <div className="px-4 pb-2 text-sm text-muted-foreground">
+          <span data-testid="custom-range-selected-label">
+            {formatCustomRangeLabel(
+              localRange ? { from: localRange.from, to: localRange.to } : null,
+            )}
+          </span>
+        </div>
+
+        {/*
+          Apply CTA (D-07): primary action, disabled until at least a `from`
+          bound is set. Clear unsets the in-progress calendar selection without
+          closing the drawer; user must Apply (or backdrop-dismiss) to leave.
+        */}
+        <div className="flex gap-2 px-4 pb-6">
+          <Button
+            type="button"
+            variant="brand-outline"
+            size="lg"
+            className="flex-1 min-h-11 sm:min-h-0"
+            data-testid="btn-clear-custom-range"
+            onClick={() => setLocalRange(undefined)}
+          >
+            Clear
+          </Button>
           <Button
             type="button"
             variant="default"
             size="lg"
-            className="w-full min-h-11 sm:min-h-0"
+            className="flex-1 min-h-11 sm:min-h-0"
             data-testid="btn-apply-custom-range"
             disabled={!localRange?.from}
             onClick={handleApply}

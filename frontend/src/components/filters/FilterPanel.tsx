@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select,
@@ -171,6 +171,40 @@ export function FilterPanel({
 
   // Custom range popover/drawer state.
   const [customOpen, setCustomOpen] = useState(false);
+  // Tracks a pending "custom" pick so we can suppress Select's restore-focus on
+  // close — otherwise focus snaps back to the SelectTrigger right after the
+  // popover opens, and the popover's focusOutside dismiss closes it (UAT bug:
+  // calendar flashed open then disappeared).
+  const pendingCustomRef = useRef(false);
+  // In-progress custom-range edits live here while the popover is open; they
+  // are committed to the filter only when the popover closes (Done button,
+  // outside click, or Escape).
+  const [pendingCustomRange, setPendingCustomRange] = useState<{ from?: Date; to?: Date } | null>(
+    filters.customRange,
+  );
+  // Sync pending → committed each time the popover opens (and on external
+  // changes like Reset Filters). Derive-during-render avoids the useEffect
+  // cascade.
+  const [prevCustomOpen, setPrevCustomOpen] = useState(customOpen);
+  if (prevCustomOpen !== customOpen) {
+    setPrevCustomOpen(customOpen);
+    if (customOpen) setPendingCustomRange(filters.customRange);
+  }
+  // Single handler for both Radix-driven dismiss (outside click, Escape) and
+  // explicit Done click. Radix Popover only fires onOpenChange on internal
+  // dismisses; setting `open=false` externally would skip the commit, so we
+  // route Done through here too.
+  const handleCustomOpenChange = (open: boolean) => {
+    if (!open && customOpen) {
+      // Closing — commit pendingCustomRange. Empty edit reverts recency.
+      if (pendingCustomRange?.from || pendingCustomRange?.to) {
+        update({ recency: 'custom', customRange: pendingCustomRange });
+      } else {
+        update({ recency: null, customRange: null });
+      }
+    }
+    setCustomOpen(open);
+  };
   const isMobile = useIsMobile();
 
   const toggleTimeControl = (tc: TimeControl) => {
@@ -219,14 +253,18 @@ export function FilterPanel({
             queueMicrotask defers setCustomOpen so the Select close animation completes
             before the popover/drawer open animation begins (RESEARCH.md §Pitfall 6).
           */}
-          <Popover open={customOpen && !isMobile} onOpenChange={setCustomOpen}>
+          <Popover
+            open={customOpen && !isMobile}
+            onOpenChange={handleCustomOpenChange}
+          >
             <Select
               value={filters.recency === 'custom' ? 'custom' : (filters.recency ?? 'all')}
               onValueChange={(v) => {
-                if (v === 'custom') {
-                  // Defer so Select close animation finishes before calendar opens.
-                  queueMicrotask(() => setCustomOpen(true));
-                } else {
+                // 'custom' is handled by the SelectItem's onClick below so that
+                // re-clicking "custom" while it's already the active value
+                // still reopens the calendar (Radix Select doesn't fire
+                // onValueChange when the value is unchanged).
+                if (v !== 'custom') {
                   // Any preset clears the custom range (D-08).
                   update({ recency: v === 'all' ? null : (v as RecencyPreset), customRange: null });
                 }
@@ -246,7 +284,22 @@ export function FilterPanel({
                     : <SelectValue />}
                 </SelectTrigger>
               </PopoverAnchor>
-              <SelectContent>
+              <SelectContent
+                // position="popper" anchors the menu below the trigger. The
+                // default "item-aligned" mode aligns the *selected* item with
+                // the trigger, so once "custom" (last item) is selected the
+                // menu opens upward and shifted left next time.
+                position="popper"
+                onCloseAutoFocus={(e) => {
+                  // When the user picked "custom", suppress Select's focus
+                  // restore so it doesn't steal focus from the about-to-open
+                  // popover and trigger Radix's focusOutside dismiss.
+                  if (pendingCustomRef.current) {
+                    e.preventDefault();
+                    pendingCustomRef.current = false;
+                  }
+                }}
+              >
                 <SelectItem value="all">All time</SelectItem>
                 <SelectItem value="week">Past week</SelectItem>
                 <SelectItem value="month">Past month</SelectItem>
@@ -255,27 +308,45 @@ export function FilterPanel({
                 <SelectItem value="year">1 year</SelectItem>
                 <SelectItem value="3years">3 years</SelectItem>
                 <SelectItem value="5years">5 years</SelectItem>
-                <SelectItem value="custom" data-testid="filter-recency-custom">Custom range…</SelectItem>
+                <SelectItem
+                  value="custom"
+                  data-testid="filter-recency-custom"
+                  // Radix triggers selection on pointerup for mouse and on
+                  // click for keyboard/touch — and unmounts the item once
+                  // selection runs, so onClick alone misses mouse clicks.
+                  // Hook both to cover every input type. Idempotent: setting
+                  // the same state twice is a no-op.
+                  onPointerUp={() => {
+                    pendingCustomRef.current = true;
+                    queueMicrotask(() => setCustomOpen(true));
+                  }}
+                  onClick={() => {
+                    pendingCustomRef.current = true;
+                    queueMicrotask(() => setCustomOpen(true));
+                  }}
+                >
+                  Custom range…
+                </SelectItem>
               </SelectContent>
             </Select>
 
-            {/* Desktop: Calendar in a Popover anchored to the Select trigger. */}
+            {/* Desktop: Calendar in a Popover anchored to the Select trigger.
+                Edits pendingCustomRange only; commit happens via
+                handleCustomOpenChange — used for both Radix dismiss paths and
+                the Done button below. */}
             <CustomRangePopover
-              value={filters.customRange}
-              onChange={(range) => {
-                if (range) update({ recency: 'custom', customRange: range });
-                setCustomOpen(false);
-              }}
-              onOpenChange={setCustomOpen}
+              value={pendingCustomRange}
+              onChange={setPendingCustomRange}
+              onOpenChange={handleCustomOpenChange}
             />
           </Popover>
 
-          {/* Mobile: Calendar in a nested Drawer layered over the FilterPanel drawer. */}
+          {/* Mobile: Calendar in a nested Drawer layered over the FilterPanel drawer.
+              The drawer handles its own close via onOpenChange after Apply. */}
           <CustomRangeDrawer
             value={filters.customRange}
             onChange={(range) => {
               if (range) update({ recency: 'custom', customRange: range });
-              setCustomOpen(false);
             }}
             open={customOpen && isMobile}
             onOpenChange={setCustomOpen}

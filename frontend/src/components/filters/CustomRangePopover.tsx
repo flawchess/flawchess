@@ -1,22 +1,35 @@
 /**
- * Desktop custom-range popover (Phase 92 Plan 05 — D-03/D-04/D-05/D-17).
+ * Desktop custom-range popover (Phase 92 Plan 05 — D-03/D-04/D-17 + UAT revision).
  *
  * Renders a Radix `PopoverContent` containing a two-month range Calendar.
  * The Popover itself is controlled from FilterPanel.tsx via the `open`/`onOpenChange`
  * props; FilterPanel wraps the Select in `<PopoverAnchor asChild>` so the content
  * appears anchored to the Select trigger.
  *
- * Auto-close (D-05): when both `from` and `to` are picked, `onChange` is called
- * and `onOpenChange(false)` fires immediately — no explicit Apply button needed.
+ * Commit semantics (revised in UAT, supersedes D-05 auto-close):
+ *   - `value`/`onChange` here drive FilterPanel's *pending* range state. The
+ *     filter is only updated when the popover closes (Done, outside click,
+ *     Escape) — see FilterPanel's `Popover onOpenChange` handler.
+ *   - The calendar stays open after a full range is picked so the user can
+ *     keep correcting until they explicitly dismiss.
  *
- * Single-bound (D-17): the user may pick only `from` or only `to`; the component
- * does not force a full range before committing.
+ * Single-bound (D-17): from-only or to-only ranges are valid commits.
  */
 
 import { format } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { Calendar } from '@/components/ui/calendar';
 import { PopoverContent } from '@/components/ui/popover';
+import { Button } from '@/components/ui/button';
+
+// ─── Calendar bounds ───────────────────────────────────────────────────────────
+
+// Year-dropdown bounds for both desktop popover and mobile drawer. Lower bound
+// is set to 2005 (predates chess.com's 2007 launch and lichess's 2010 launch),
+// so any imported game's year is selectable. Upper bound is "today at app load"
+// — react-day-picker only reads month/year so a stale daily value is harmless.
+export const CALENDAR_MIN_DATE = new Date(2005, 0, 1);
+export const CALENDAR_MAX_DATE = new Date();
 
 // ─── Trigger-label helper ──────────────────────────────────────────────────────
 
@@ -72,10 +85,6 @@ export function CustomRangePopover({
       ? { from: range.from, to: range.to }
       : null;
     onChange(next);
-    // Auto-close (D-05): close as soon as both bounds are confirmed.
-    if (next?.from && next?.to) {
-      onOpenChange(false);
-    }
   };
 
   // Convert FilterState.customRange to DateRange: `from` must be present (even if undefined).
@@ -97,8 +106,46 @@ export function CustomRangePopover({
         selected={selected}
         onSelect={handleSelect}
         numberOfMonths={2}
+        // Month/year dropdowns in the caption let users jump years without
+        // clicking the chevron 12× per year. Bounds keep the year list finite.
+        captionLayout="dropdown"
+        startMonth={CALENDAR_MIN_DATE}
+        endMonth={CALENDAR_MAX_DATE}
+        // With resetOnSelect, click 1 yields { from, to: undefined } (otherwise
+        // addToRange sets to=from on the first click and the calendar shows a
+        // bogus same-day range). Click 2 completes the range; click 3 starts
+        // over.
+        resetOnSelect
         data-testid="custom-range-calendar"
       />
+      <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2">
+        <span
+          className="text-sm text-muted-foreground"
+          data-testid="custom-range-selected-label"
+        >
+          {formatCustomRangeLabel(value)}
+        </span>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="brand-outline"
+            size="sm"
+            data-testid="btn-clear-custom-range"
+            onClick={() => onChange(null)}
+          >
+            Clear
+          </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            data-testid="btn-done-custom-range"
+            onClick={() => onOpenChange(false)}
+          >
+            Done
+          </Button>
+        </div>
+      </div>
     </PopoverContent>
   );
 }
