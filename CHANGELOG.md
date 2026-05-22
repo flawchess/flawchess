@@ -8,6 +8,22 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Custom date range filter** (Phase 92). A 9th "Custom range..." item in the Recency dropdown opens a two-month range Calendar on desktop (Radix Popover anchored to the Select trigger, auto-closes on full range pick) and a single-month Calendar in a nested Vaul bottom sheet on mobile (Apply CTA, backdrop = cancel). The trigger label updates to the resolved date range once both bounds are set.
+
+### Changed
+
+- **API filter shape** (Phase 92). The closed Recency string union (`week` / `month` / `3months` / `6months` / `year` / `3years` / `5years` / `all`) on the wire is replaced by two optional ISO date params `from_date` / `to_date`. The frontend converts preset labels to dates in the user's local timezone via a shared `presetToDates` utility. Internal LLM windowing (`insights_service.py`) preserves existing semantics via fixed date offsets independent of the dashboard filter.
+
+### Removed
+
+- **Bookmark time-series `recency` field** (Phase 92, D-19). The `TimeSeriesRequest` schema and its corresponding frontend type no longer accept a `recency` field. The time-series endpoint always covers the full game history; the field was unused at the UI call boundary.
+
+### Tests
+
+- **Date-filter boundary integration tests** (Phase 92). Seven new tests cover `from_date` inclusive lower bound, `to_date` inclusive-of-full-day upper bound, game exclusion for dates past `to_date`, no-filter pass-through, 422 validation on `from_date > to_date` via the Pydantic body path (POST /openings/positions) and via the inline HTTPException path (GET /stats/global), and the insights LLM gate blocking message "Clear Custom date range filter" when any date filter is active.
+
 ### Changed
 
 - **Production OOM hardening + Hetzner CPX42 upgrade** (hotfix, FLAWCHESS-3Q). SQLAlchemy pool reduced from `pool_size=20, max_overflow=30` (50 max) to `10 + 10` (20 max) in `app/core/database.py`. Postgres `max_connections` capped at 30 (was the upstream default of 100). Host upgraded from Hetzner CPX32 (4 vCPU / 7.6 GB RAM) to CPX42 (8 vCPU / 16 GB RAM); Postgres memory settings retuned accordingly (`shared_buffers=4GB`, `effective_cache_size=12GB`, `work_mem=16MB`, `maintenance_work_mem=512MB`). Backend, db, and umami containers given explicit `mem_limit` (4g / 10g / 384m) with `memswap_limit = mem_limit` on backend and db to disable swap and force a contained OOM-restart (~3 s Postgres auto-recovery) instead of host-wide swap thrash. Root cause of the 2026-05-21 13:42 Postgres OOM (job 72a4ca0d, single chess.com import for user 101) was the post-Phase-91 fetch rate doubling, which let a single uvicorn process fan out to 13 active Postgres backends and exhaust host RAM + 4 GB swap.
