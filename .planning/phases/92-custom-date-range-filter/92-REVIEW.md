@@ -72,7 +72,21 @@ findings:
   warning: 3
   info: 5
   total: 8
-status: issues_found
+status: fixed
+fixes:
+  - id: WR-01
+    status: fixed
+    fix_commits:
+      - 59dce407
+      - fd113a23
+  - id: WR-02
+    status: fixed
+    fix_commits:
+      - 588add37
+  - id: WR-03
+    status: fixed
+    fix_commits:
+      - 71fb6336
 ---
 
 # Phase 92: Code Review Report
@@ -80,7 +94,7 @@ status: issues_found
 **Reviewed:** 2026-05-22T00:00:00Z
 **Depth:** standard
 **Files Reviewed:** 62
-**Status:** issues_found
+**Status:** fixed (all 3 warnings resolved 2026-05-22)
 
 ## Summary
 
@@ -107,6 +121,10 @@ authored.
 ## Warnings
 
 ### WR-01: `CustomRangeDrawer` `localRange` never resyncs to `value` prop
+
+**Status:** fixed (commits 59dce407, fd113a23) — Initial useEffect resync hit
+eslint's `react-hooks/set-state-in-effect`; switched to React's
+adjusting-state-on-prop-change pattern (useState + compare during render).
 
 **File:** `frontend/src/components/filters/CustomRangeDrawer.tsx:48-50`
 
@@ -144,6 +162,10 @@ useEffect(() => {
 memoised ranges don't trigger spurious resets.)
 
 ### WR-02: Stale `recency` / `recency_cutoff` references in service docstrings
+
+**Status:** fixed (commit 588add37) — All flagged docstrings rewritten to refer
+to `from_date`/`to_date`. Internal `Window` literals in `endgame_zones.py`
+and `insights_llm.py` were left alone (legitimate per the finding note).
 
 **File:** `app/services/insights_service.py:132-137`, `app/services/insights_llm.py:421`, `app/services/endgame_service.py:2501`, `app/schemas/openings.py:155`, `app/repositories/stats_repository.py:153,211`
 
@@ -184,6 +206,11 @@ they're the LLM-window concept, distinct from the deleted wire-format
 preset. Leave those alone.)
 
 ### WR-03: `CustomRangePopoverProps.open` declared but unused
+
+**Status:** fixed (commit 71fb6336) — Dropped the `open` prop from the
+interface and removed the `open={customOpen && !isMobile}` line at the
+FilterPanel callsite. The Popover open state remains correctly managed by the
+parent `<Popover open={...}>` wrapper.
 
 **File:** `frontend/src/components/filters/CustomRangePopover.tsx:53,66-70`
 
