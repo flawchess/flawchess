@@ -653,7 +653,7 @@ describe('EndgameEloTimelineSection — info popover content', () => {
       fireEvent.click(trigger);
     });
     expect(
-      await screen.findByText(/your endgame games/i),
+      await screen.findByText(/your Endgame ELO/i),
     ).not.toBeNull();
   });
 

@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.17
 milestone_name: Endgame Stats Card Redesign
-status: completed
-last_updated: "2026-05-21T17:21:37.910Z"
-last_activity: 2026-05-21 — Quick task 260521-d6o (cold-drain single-walk PGN refactor)
+status: "Phase 92 shipped — PR #137"
+last_updated: "2026-05-22T09:11:46.339Z"
+last_activity: 2026-05-22
 progress:
   total_phases: 3
   completed_phases: 2
@@ -20,8 +20,8 @@ progress:
 Phase: 91
 Plan: Not started
 Milestone: v1.17 Endgame Stats Card Redesign — ✅ SHIPPED 2026-05-19 (Phase 90 is a post-v1.17 carryover; v1.18 release tag deferred)
-Status: Milestone complete
-Last activity: 2026-05-21 — Quick task 260521-d6o (cold-drain single-walk PGN refactor)
+Status: Phase 92 shipped — PR #137
+Last activity: 2026-05-22
 
 ## Project Reference
 

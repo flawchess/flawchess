@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { apiClient, buildFilterParams } from '@/api/client';
+import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type {
   EndgameInsightsResponse,
@@ -8,11 +9,12 @@ import type {
 } from '@/types/insights';
 
 function buildInsightsParams(filters: FilterState): Record<string, unknown> {
+  const dateParams = dateRangeToWireParams(resolveDateRange(filters));
   return {
     ...buildFilterParams({
       time_control: filters.timeControls,
       platform: filters.platforms,
-      recency: filters.recency,
+      ...dateParams,
       rated: filters.rated,
       // NOTE: opponent_type intentionally omitted — insights router rejects it.
       opponent_strength: filters.opponentStrength,

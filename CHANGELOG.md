@@ -8,6 +8,22 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Custom date range filter** (Phase 92). A 9th "Custom range..." item in the Recency dropdown opens a two-month range Calendar on desktop (Radix Popover anchored to the Select trigger, auto-closes on full range pick) and a single-month Calendar in a nested Vaul bottom sheet on mobile (Apply CTA, backdrop = cancel). The trigger label updates to the resolved date range once both bounds are set.
+
+### Changed
+
+- **API filter shape** (Phase 92). The closed Recency string union (`week` / `month` / `3months` / `6months` / `year` / `3years` / `5years` / `all`) on the wire is replaced by two optional ISO date params `from_date` / `to_date`. The frontend converts preset labels to dates in the user's local timezone via a shared `presetToDates` utility. Internal LLM windowing (`insights_service.py`) preserves existing semantics via fixed date offsets independent of the dashboard filter.
+
+### Removed
+
+- **Bookmark time-series `recency` field** (Phase 92, D-19). The `TimeSeriesRequest` schema and its corresponding frontend type no longer accept a `recency` field. The time-series endpoint always covers the full game history; the field was unused at the UI call boundary.
+
+### Tests
+
+- **Date-filter boundary integration tests** (Phase 92). Seven new tests cover `from_date` inclusive lower bound, `to_date` inclusive-of-full-day upper bound, game exclusion for dates past `to_date`, no-filter pass-through, 422 validation on `from_date > to_date` via the Pydantic body path (POST /openings/positions) and via the inline HTTPException path (GET /stats/global), and the insights LLM gate blocking message "Clear Custom date range filter" when any date filter is active.
+
 ### Changed
 
 - **Two-lane import pipeline** (Phase 91). The import hot path no longer runs Stockfish. Game ingestion (fetch → parse → insert positions → commit) is now eval-free, and a separate in-process cold-drain coroutine (`run_eval_drain`, spawned in the FastAPI lifespan alongside the orphan-job reaper) evaluates entry plies in the background. Opening explorer, raw WDL, endgame type breakdowns, flag rates, and time-per-move are available within seconds of import start; conversion, recovery, score-gap, and time-pressure-vs-performance metrics fill in over the following minutes with honest per-metric sample-size labels. Structurally prevents the 2026-05-16 / 2026-05-20 hot-lane-Stockfish OOM regression — a CI regression guard (`TestHotLaneNoEvalCalls`) fails the build if any future edit reintroduces `engine.evaluate` inside `_flush_batch`.

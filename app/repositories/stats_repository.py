@@ -82,7 +82,8 @@ async def query_rating_history(
     session: AsyncSession,
     user_id: int,
     platform: str,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     *,
     opponent_type: str = "human",
     opponent_gap_min: int | None = None,
@@ -125,7 +126,8 @@ async def query_rating_history(
         platform=[platform],
         rated=None,
         opponent_type=opponent_type,
-        recency_cutoff=recency_cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -137,7 +139,8 @@ async def query_rating_history(
 async def query_results_by_time_control(
     session: AsyncSession,
     user_id: int,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     platform: str | None = None,
     *,
     opponent_type: str = "human",
@@ -147,7 +150,7 @@ async def query_results_by_time_control(
     """Return (time_control_bucket, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where time_control_bucket is NULL.
-    Optionally filtered by platform, recency, opponent_type, and opponent gap.
+    Optionally filtered by platform, from_date/to_date, opponent_type, and opponent gap.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
@@ -181,7 +184,8 @@ async def query_results_by_time_control(
         platform=[platform] if platform is not None else None,
         rated=None,
         opponent_type=opponent_type,
-        recency_cutoff=recency_cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -193,7 +197,8 @@ async def query_results_by_time_control(
 async def query_results_by_color(
     session: AsyncSession,
     user_id: int,
-    recency_cutoff: datetime.datetime | None,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
     platform: str | None = None,
     *,
     opponent_type: str = "human",
@@ -203,7 +208,7 @@ async def query_results_by_color(
     """Return (user_color, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where user_color is NULL.
-    Optionally filtered by platform, recency, opponent_type, and opponent gap.
+    Optionally filtered by platform, from_date/to_date, opponent_type, and opponent gap.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
@@ -237,7 +242,8 @@ async def query_results_by_color(
         platform=[platform] if platform is not None else None,
         rated=None,
         opponent_type=opponent_type,
-        recency_cutoff=recency_cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -253,7 +259,8 @@ async def query_top_openings_sql_wdl(
     min_games: int,
     limit: int,
     min_ply: int,
-    recency_cutoff: datetime.datetime | None = None,
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
     time_control: Sequence[str] | None = None,
     platform: Sequence[str] | None = None,
     rated: bool | None = None,
@@ -344,11 +351,12 @@ async def query_top_openings_sql_wdl(
 
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -390,7 +398,8 @@ async def query_position_wdl_batch(
     platform: Sequence[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
-    recency_cutoff: datetime.datetime | None = None,
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> dict[int, PositionWDL]:
@@ -442,11 +451,12 @@ async def query_position_wdl_batch(
 
     stmt = apply_game_filters(
         stmt,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -473,7 +483,8 @@ async def query_opening_phase_entry_metrics_batch(
     platform: Sequence[str] | None = None,
     rated: bool | None = None,
     opponent_type: str = "human",
-    recency_cutoff: datetime.datetime | None = None,
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
     hash_column: Literal["full", "white", "black"] = "full",
@@ -539,11 +550,12 @@ async def query_opening_phase_entry_metrics_batch(
         dedup_select = dedup_select.where(Game.user_color == color)
     dedup_select = apply_game_filters(
         dedup_select,
-        time_control,
-        platform,
-        rated,
-        opponent_type,
-        recency_cutoff,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )

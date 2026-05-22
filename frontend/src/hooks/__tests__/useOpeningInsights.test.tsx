@@ -54,9 +54,9 @@ describe('useOpeningInsights', () => {
 
     const [url, body] = (apiClient.post as ReturnType<typeof vi.fn>).mock.calls[0]!;
     expect(url).toBe('/insights/openings');
+    // Wire format: from_date/to_date instead of recency preset.
     expect(body).toMatchObject({
       color: 'all',
-      recency: 'year',
       time_control: ['blitz', 'rapid'],
       platform: ['chess.com'],
       rated: true,
@@ -64,9 +64,12 @@ describe('useOpeningInsights', () => {
       opponent_gap_min: -50,
       opponent_gap_max: 50,
     });
+    expect(body).not.toHaveProperty('recency');
+    expect(body).toHaveProperty('from_date');
+    expect(body).toHaveProperty('to_date');
   });
 
-  it('normalizes recency: "all" to undefined/null in the body', async () => {
+  it('normalizes recency: "all" to no date params in the body', async () => {
     renderHook(
       () =>
         useOpeningInsights({
@@ -85,8 +88,10 @@ describe('useOpeningInsights', () => {
     });
 
     const [, body] = (apiClient.post as ReturnType<typeof vi.fn>).mock.calls[0]!;
-    // recency 'all' must NOT propagate as 'all' (backend doesn't accept 'all' in this field directly via this hook's normalization)
-    expect(body.recency).not.toBe('all');
+    // recency 'all' must NOT produce a recency field or date bounds in the body.
+    expect(body).not.toHaveProperty('recency');
+    expect(body).not.toHaveProperty('from_date');
+    expect(body).not.toHaveProperty('to_date');
   });
 
   it('refetches when filter input changes (query key reactivity)', async () => {

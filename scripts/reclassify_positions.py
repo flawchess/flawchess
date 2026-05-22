@@ -90,15 +90,13 @@ def parse_args() -> argparse.Namespace:
 def _any_classification_null():
     """Build an OR filter: any classification column IS NULL."""
     from sqlalchemy import or_
+
     return or_(*(col.is_(None) for col in _CLASSIFICATION_COLUMNS))
 
 
 async def count_unprocessed(session, user_id: int | None) -> int:
     """Count games with at least one position missing any classification column."""
-    stmt = (
-        select(func.count(distinct(GamePosition.game_id)))
-        .where(_any_classification_null())
-    )
+    stmt = select(func.count(distinct(GamePosition.game_id))).where(_any_classification_null())
     if user_id is not None:
         stmt = stmt.where(GamePosition.user_id == user_id)
     result = await session.execute(stmt)
@@ -114,9 +112,7 @@ async def get_unprocessed_game_ids(
     adding a new field to the dataclass automatically includes it here.
     """
     stmt = (
-        select(distinct(GamePosition.game_id))
-        .where(_any_classification_null())
-        .limit(batch_size)
+        select(distinct(GamePosition.game_id)).where(_any_classification_null()).limit(batch_size)
     )
     if user_id is not None:
         stmt = stmt.where(GamePosition.user_id == user_id)
@@ -231,16 +227,12 @@ async def main() -> None:
 
     while True:
         async with async_session_maker() as session:
-            game_ids = await get_unprocessed_game_ids(
-                session, _BATCH_SIZE, skipped_ids, user_id
-            )
+            game_ids = await get_unprocessed_game_ids(session, _BATCH_SIZE, skipped_ids, user_id)
             if not game_ids:
                 break
 
             # Fetch PGN for this batch
-            result = await session.execute(
-                select(Game.id, Game.pgn).where(Game.id.in_(game_ids))
-            )
+            result = await session.execute(select(Game.id, Game.pgn).where(Game.id.in_(game_ids)))
             id_pgn_pairs = result.fetchall()
 
             for game_id, pgn in id_pgn_pairs:

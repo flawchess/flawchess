@@ -45,6 +45,7 @@ const BASE_FILTERS: FilterState = {
   opponentType: 'human',
   opponentStrength: { min: null, max: null },
   recency: null,
+  customRange: null,
   color: 'white',
 };
 

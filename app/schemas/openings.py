@@ -3,7 +3,7 @@
 import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class OpeningsRequest(BaseModel):
@@ -36,9 +36,8 @@ class OpeningsRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: (
-        Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None
-    ) = None
+    from_date: datetime.date | None = None
+    to_date: datetime.date | None = None
     color: Literal["white", "black"] | None = None
 
     opponent_gap_min: int | None = None
@@ -47,6 +46,16 @@ class OpeningsRequest(BaseModel):
     # Pagination
     offset: Annotated[int, Field(ge=0)] = 0
     limit: Annotated[int, Field(ge=1, le=200)] = 50
+
+    @model_validator(mode="after")
+    def _check_date_range(self) -> "OpeningsRequest":
+        if (
+            self.from_date is not None
+            and self.to_date is not None
+            and self.from_date > self.to_date
+        ):
+            raise ValueError("from_date must be <= to_date")
+        return self
 
 
 class WDLStats(BaseModel):
@@ -141,7 +150,13 @@ class TimeSeriesBookmarkParam(BaseModel):
 
 
 class TimeSeriesRequest(BaseModel):
-    """Request body for POST /openings/time-series."""
+    """Request body for POST /openings/time-series.
+
+    The time-series endpoint does not filter by date (no from_date/to_date
+    fields) — the rolling-window chart always covers the full game history.
+    Other game filters (time_control, platform, rated, opponent_type,
+    opponent_gap) still apply to narrow which games contribute to the series.
+    """
 
     bookmarks: list[TimeSeriesBookmarkParam]
 
@@ -150,9 +165,6 @@ class TimeSeriesRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: (
-        Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None
-    ) = None
     opponent_gap_min: int | None = None
     opponent_gap_max: int | None = None
 
@@ -175,9 +187,9 @@ class BookmarkTimeSeries(BaseModel):
     total_draws: int
     total_losses: int
     total_games: int
-    # MAX(games.played_at) across the games visiting this bookmark's target_hash
-    # under the same recency window as the totals. Drives the bookmark card
-    # score-confidence popover's "Last played: <relative>" line.
+    # MAX(games.played_at) across all games visiting this bookmark's target_hash
+    # (no date filter — D-19). Drives the bookmark card score-confidence
+    # popover's "Last played: <relative>" line.
     last_played_at: datetime.datetime | None = None
 
 
@@ -212,13 +224,22 @@ class NextMovesRequest(BaseModel):
     platform: list[Literal["chess.com", "lichess"]] | None = None
     rated: bool | None = None
     opponent_type: Literal["human", "bot", "both"] = "human"
-    recency: (
-        Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"] | None
-    ) = None
+    from_date: datetime.date | None = None
+    to_date: datetime.date | None = None
     color: Literal["white", "black"] | None = None
     sort_by: Literal["frequency", "win_rate"] = "frequency"
     opponent_gap_min: int | None = None
     opponent_gap_max: int | None = None
+
+    @model_validator(mode="after")
+    def _check_date_range(self) -> "NextMovesRequest":
+        if (
+            self.from_date is not None
+            and self.to_date is not None
+            and self.from_date > self.to_date
+        ):
+            raise ValueError("from_date must be <= to_date")
+        return self
 
 
 class NextMoveEntry(BaseModel):

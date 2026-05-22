@@ -130,11 +130,13 @@ async def compute_findings(
     """Compute deterministic findings for the Endgame tab (Phase 63 FIND-01..05).
 
     Makes two sequential calls to `endgame_service.get_endgame_overview`
-    (all_time window with `recency=None`, then last_3mo window with
-    `recency="3months"`) on the same `AsyncSession` — never concurrent
-    gather, per CLAUDE.md §Critical Constraints. The two-window shape is
-    independent of `filter_context.recency`: the user's dashboard recency
-    filter is a separate concept (RESEARCH.md §Pitfall 4).
+    (all_time window with `from_date=None, to_date=None`, then last_3mo
+    window with `from_date=date.today() - 90d, to_date=None`) on the same
+    `AsyncSession` — never concurrent gather, per CLAUDE.md §Critical
+    Constraints. The two-window shape is independent of the user's
+    dashboard date filter (`filter_context.from_date` / `.to_date`): the
+    user's range is forwarded only to the repositories, not the LLM-window
+    split (RESEARCH.md §Pitfall 4).
 
     Returns an `EndgameTabFindings` whose `findings_hash` excludes `as_of` so
     the cache does not churn daily (FIND-05). `color` from `filter_context`
@@ -150,7 +152,8 @@ async def compute_findings(
             platform=filter_context.platforms or None,
             rated=True if filter_context.rated_only else None,
             opponent_type=_OPPONENT_TYPE,
-            recency=None,
+            from_date=None,
+            to_date=None,
             opponent_gap_min=gap_min,
             opponent_gap_max=gap_max,
         )
@@ -161,7 +164,8 @@ async def compute_findings(
             platform=filter_context.platforms or None,
             rated=True if filter_context.rated_only else None,
             opponent_type=_OPPONENT_TYPE,
-            recency="3months",
+            from_date=datetime.date.today() - datetime.timedelta(days=90),
+            to_date=None,
             opponent_gap_min=gap_min,
             opponent_gap_max=gap_max,
         )

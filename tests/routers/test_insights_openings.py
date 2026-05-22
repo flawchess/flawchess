@@ -76,17 +76,16 @@ async def test_post_openings_endpoint_returns_four_section_response(
 
 
 @pytest.mark.asyncio
-async def test_post_openings_endpoint_rejects_invalid_recency_value(
+async def test_post_openings_endpoint_rejects_unknown_field(
     auth_headers: dict[str, str],
 ) -> None:
-    """Pydantic validation: request body with recency='all_time' (invalid per D-11,
-    the accepted recency set uses 'all' not 'all_time') must return 422."""
+    """Pydantic extra='forbid' rejects unknown fields with 422."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.post(
             OPENINGS_ENDPOINT,
-            json={"recency": "all_time"},
+            json={"unknown_field": "some_value"},
             headers=auth_headers,
         )
     assert response.status_code == 422
@@ -126,7 +125,7 @@ async def test_post_openings_endpoint_does_NOT_apply_full_history_gate(
     ) as client:
         response = await client.post(
             OPENINGS_ENDPOINT,
-            json={"recency": "month", "time_control": ["bullet"], "rated": True},
+            json={"from_date": "2026-01-01", "time_control": ["bullet"], "rated": True},
             headers=auth_headers,
         )
     # Must be 200, not 400
@@ -143,7 +142,7 @@ async def test_post_openings_endpoint_filter_equivalence(
     A fresh user has no games, so both calls return empty sections — but
     this verifies the route is deterministic and the response shape is stable.
     """
-    body = {"recency": "month", "color": "white", "opponent_type": "human"}
+    body = {"from_date": "2026-01-01", "color": "white", "opponent_type": "human"}
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -152,3 +151,36 @@ async def test_post_openings_endpoint_filter_equivalence(
     assert resp1.status_code == 200
     assert resp2.status_code == 200
     assert resp1.json() == resp2.json()
+
+
+ENDGAME_INSIGHTS_ENDPOINT = "/api/insights/endgame"
+
+
+@pytest.mark.asyncio
+async def test_insights_blocked_when_from_date_set(
+    auth_headers: dict[str, str],
+) -> None:
+    """Phase 92 §Pitfall 3: insights/endgame must block when from_date is set.
+
+    After the recency→from_date/to_date refactor, _validate_full_history_filters
+    gates on ``filters.from_date is not None or filters.to_date is not None``.
+    If that guard is missing or wrong, the LLM would generate a report over a
+    truncated dataset while the system prompt says "your full history". This
+    test is a silent-regression gate (T-92-06-01).
+
+    A fresh user with from_date set must receive HTTP 400 with a blocking message
+    that includes "Clear Custom date range filter". Mirror the pattern used by
+    test_post_openings_endpoint_does_NOT_apply_full_history_gate but for the
+    endgame endpoint which DOES apply the gate.
+    """
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            ENDGAME_INSIGHTS_ENDPOINT,
+            params={"from_date": "2026-03-01"},
+            headers=auth_headers,
+        )
+    assert response.status_code == 400
+    detail = str(response.json())
+    assert "Clear Custom date range filter" in detail

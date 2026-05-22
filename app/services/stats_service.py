@@ -32,7 +32,6 @@ from app.services.opening_insights_constants import (
     EVAL_BASELINE_PAWNS_BLACK,
     EVAL_BASELINE_PAWNS_WHITE,
 )
-from app.services.openings_service import recency_cutoff
 
 
 # Minimum number of games required for an opening to appear in top openings.
@@ -67,7 +66,8 @@ class FilterParams(TypedDict):
     platform: list[str] | None
     rated: bool | None
     opponent_type: str
-    recency_cutoff: datetime.datetime | None
+    from_date: datetime.date | None
+    to_date: datetime.date | None
     opponent_gap_min: int | None
     opponent_gap_max: int | None
 
@@ -75,7 +75,8 @@ class FilterParams(TypedDict):
 async def get_rating_history(
     session: AsyncSession,
     user_id: int,
-    recency: str | None,
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
     platform: str | None = None,
     *,
     opponent_type: str = "human",
@@ -84,21 +85,19 @@ async def get_rating_history(
 ) -> RatingHistoryResponse:
     """Return per-platform per-game rating data points.
 
-    Calls recency_cutoff() to resolve the optional recency filter, queries
-    both platforms in sequence, and maps rows to RatingDataPoint lists.
+    Queries both platforms in sequence and maps rows to RatingDataPoint lists.
 
     When platform is "chess.com", only chess.com data is queried; lichess is empty.
     When platform is "lichess", only lichess data is queried; chess.com is empty.
     When platform is None, both platforms are queried.
     """
-    cutoff = recency_cutoff(recency)
-
     if platform == "chess.com":
         chesscom_rows = await query_rating_history(
             session,
             user_id=user_id,
             platform="chess.com",
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=to_date,
             opponent_type=opponent_type,
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
@@ -110,7 +109,8 @@ async def get_rating_history(
             session,
             user_id=user_id,
             platform="lichess",
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=to_date,
             opponent_type=opponent_type,
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
@@ -120,7 +120,8 @@ async def get_rating_history(
             session,
             user_id=user_id,
             platform="chess.com",
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=to_date,
             opponent_type=opponent_type,
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
@@ -129,7 +130,8 @@ async def get_rating_history(
             session,
             user_id=user_id,
             platform="lichess",
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=to_date,
             opponent_type=opponent_type,
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
@@ -197,7 +199,8 @@ def _rows_to_wdl_categories(
 async def get_global_stats(
     session: AsyncSession,
     user_id: int,
-    recency: str | None,
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
     platform: str | None = None,
     *,
     opponent_type: str = "human",
@@ -208,12 +211,11 @@ async def get_global_stats(
 
     Both queries return SQL-aggregated (label, total, wins, draws, losses) rows.
     """
-    cutoff = recency_cutoff(recency)
-
     tc_rows = await query_results_by_time_control(
         session,
         user_id=user_id,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         platform=platform,
         opponent_type=opponent_type,
         opponent_gap_min=opponent_gap_min,
@@ -222,7 +224,8 @@ async def get_global_stats(
     color_rows = await query_results_by_color(
         session,
         user_id=user_id,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         platform=platform,
         opponent_type=opponent_type,
         opponent_gap_min=opponent_gap_min,
@@ -250,7 +253,8 @@ async def get_global_stats(
 async def get_most_played_openings(
     session: AsyncSession,
     user_id: int,
-    recency: str | None = None,
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
     time_control: list[str] | None = None,
     platform: list[str] | None = None,
     rated: bool | None = None,
@@ -268,8 +272,6 @@ async def get_most_played_openings(
     via query_opening_phase_entry_metrics_batch (D-01, D-04, D-05, D-08, D-09).
     Sequential awaits within the same session (CLAUDE.md: AsyncSession not safe for concurrent use).
     """
-    cutoff = recency_cutoff(recency)
-
     white_rows = await query_top_openings_sql_wdl(
         session,
         user_id=user_id,
@@ -277,7 +279,8 @@ async def get_most_played_openings(
         min_games=MIN_GAMES_FOR_OPENING,
         limit=TOP_OPENINGS_LIMIT,
         min_ply=MIN_PLY_WHITE,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         time_control=time_control,
         platform=platform,
         rated=rated,
@@ -292,7 +295,8 @@ async def get_most_played_openings(
         min_games=MIN_GAMES_FOR_OPENING,
         limit=TOP_OPENINGS_LIMIT,
         min_ply=MIN_PLY_BLACK,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         time_control=time_control,
         platform=platform,
         rated=rated,
@@ -310,7 +314,8 @@ async def get_most_played_openings(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -325,7 +330,8 @@ async def get_most_played_openings(
         platform=filter_params["platform"],
         rated=filter_params["rated"],
         opponent_type=filter_params["opponent_type"],
-        recency_cutoff=filter_params["recency_cutoff"],
+        from_date=filter_params["from_date"],
+        to_date=filter_params["to_date"],
         opponent_gap_min=filter_params["opponent_gap_min"],
         opponent_gap_max=filter_params["opponent_gap_max"],
     )
@@ -340,7 +346,8 @@ async def get_most_played_openings(
         platform=filter_params["platform"],
         rated=filter_params["rated"],
         opponent_type=filter_params["opponent_type"],
-        recency_cutoff=filter_params["recency_cutoff"],
+        from_date=filter_params["from_date"],
+        to_date=filter_params["to_date"],
         opponent_gap_min=filter_params["opponent_gap_min"],
         opponent_gap_max=filter_params["opponent_gap_max"],
     )
@@ -353,7 +360,8 @@ async def get_most_played_openings(
         platform=filter_params["platform"],
         rated=filter_params["rated"],
         opponent_type=filter_params["opponent_type"],
-        recency_cutoff=filter_params["recency_cutoff"],
+        from_date=filter_params["from_date"],
+        to_date=filter_params["to_date"],
         opponent_gap_min=filter_params["opponent_gap_min"],
         opponent_gap_max=filter_params["opponent_gap_max"],
     )
@@ -367,7 +375,8 @@ async def get_most_played_openings(
         platform=filter_params["platform"],
         rated=filter_params["rated"],
         opponent_type=filter_params["opponent_type"],
-        recency_cutoff=filter_params["recency_cutoff"],
+        from_date=filter_params["from_date"],
+        to_date=filter_params["to_date"],
         opponent_gap_min=filter_params["opponent_gap_min"],
         opponent_gap_max=filter_params["opponent_gap_max"],
     )
@@ -507,7 +516,8 @@ async def get_bookmark_phase_entry_metrics(
     user_id: int,
     bookmarks: list[BookmarkPhaseEntryQuery],
     *,
-    recency: str | None = None,
+    from_date: datetime.date | None = None,
+    to_date: datetime.date | None = None,
     time_control: list[str] | None = None,
     platform: list[str] | None = None,
     rated: bool | None = None,
@@ -523,8 +533,6 @@ async def get_bookmark_phase_entry_metrics(
     """
     if not bookmarks:
         return BookmarkPhaseEntryResponse(items=[])
-
-    cutoff = recency_cutoff(recency)
 
     # Group by (match_side, color). Bookmarks with the same group share one DB call.
     grouped: dict[
@@ -547,7 +555,8 @@ async def get_bookmark_phase_entry_metrics(
             platform=platform,
             rated=rated,
             opponent_type=opponent_type,
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=to_date,
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
             hash_column=match_side,

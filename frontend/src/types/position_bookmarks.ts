@@ -44,12 +44,11 @@ export interface TimeSeriesBookmarkParam {
 
 export interface TimeSeriesRequest {
   bookmarks: TimeSeriesBookmarkParam[];
-  // Optional global filters
+  // Optional global filters (no date filter — D-19: time-series covers full history)
   time_control?: ('bullet' | 'blitz' | 'rapid' | 'classical')[] | null;
   platform?: ('chess.com' | 'lichess')[] | null;
   rated?: boolean | null;
   opponent_type?: 'human' | 'bot' | 'both';
-  recency?: 'week' | 'month' | '3months' | '6months' | 'year' | '3years' | '5years' | 'all' | null;
   opponent_gap_min?: number;
   opponent_gap_max?: number;
 }
@@ -68,8 +67,8 @@ export interface BookmarkTimeSeries {
   total_draws: number;
   total_losses: number;
   total_games: number;
-  // ISO 8601 (or null when no qualifying games). MAX(played_at) under the
-  // recency window — drives the bookmark card "Last played: <relative>" line.
+  // ISO 8601 (or null when no qualifying games). MAX(played_at) across all
+  // matching games — drives the bookmark card "Last played: <relative>" line.
   last_played_at?: string | null;
 }
 

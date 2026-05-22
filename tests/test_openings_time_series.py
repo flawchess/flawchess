@@ -1,7 +1,7 @@
 """Service-level integration tests for get_time_series (openings service).
 
-This module tests the rolling-window computation logic in openings_service.py
-(lines 182-275), which was previously untested.
+This module tests the rolling-window computation logic in openings_service.py,
+which was previously untested.
 
 Key mechanics under test:
 - query_time_series returns rows ordered by played_at ASC.
@@ -9,13 +9,12 @@ Key mechanics under test:
   the trailing ROLLING_WINDOW_SIZE entries to compute the chess score
   (W + 0.5·D) / N.
 - data_by_date keeps only the LAST game's rolling window per calendar day.
-- The recency filter trims output datapoints (but rolling windows are computed
-  over the full chronological history first).
-- Totals are recomputed from the filtered period when a recency cutoff is set.
+- The time-series endpoint does NOT filter by date (D-19: recency removed from
+  TimeSeriesRequest). Rolling windows are always computed over the full game history.
 
 Coverage:
+- TestTimeSeriesRequestSchema: TimeSeriesRequest has no recency field (D-19)
 - TestRollingWindow: single game, two same-day games, multi-day sequence, empty position
-- TestRecencyFilter: recency trims output; full-history rolling window preserved inside recency window
 - TestMultipleBookmarks: two bookmarks produce two BookmarkTimeSeries
 """
 
@@ -33,14 +32,29 @@ from app.schemas.openings import TimeSeriesBookmarkParam, TimeSeriesRequest
 from app.services.openings_service import MIN_GAMES_FOR_TIMELINE, get_time_series
 
 # ---------------------------------------------------------------------------
+# TestTimeSeriesRequestSchema — D-19: recency field removed from TimeSeriesRequest
+# ---------------------------------------------------------------------------
+
+
+class TestTimeSeriesRequestSchema:
+    """Verify TimeSeriesRequest no longer exposes a recency field (D-19 pre-work)."""
+
+    def test_no_recency_field_in_schema(self) -> None:
+        """TimeSeriesRequest model fields must not include 'recency' (D-19)."""
+        assert "recency" not in TimeSeriesRequest.model_fields, (
+            "TimeSeriesRequest must not have a 'recency' field — D-19 removes it "
+            "so the time-series endpoint is date-filter-free."
+        )
+
+
+# ---------------------------------------------------------------------------
 # User IDs (900-series to avoid collision with other test modules)
 # ---------------------------------------------------------------------------
 
 _USER_ROLLING = 901
-_USER_RECENCY = 902
 _USER_MULTI = 903
 
-_ALL_TEST_USER_IDS = [_USER_ROLLING, _USER_RECENCY, _USER_MULTI]
+_ALL_TEST_USER_IDS = [_USER_ROLLING, _USER_MULTI]
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -116,10 +130,12 @@ def _make_request(
     target_hash: int,
     color: Literal["white", "black"] = "white",
     match_side: Literal["white", "black", "full"] = "full",
-    recency: Literal["week", "month", "3months", "6months", "year", "3years", "5years", "all"]
-    | None = None,
 ) -> TimeSeriesRequest:
-    """Build a minimal TimeSeriesRequest for one bookmark."""
+    """Build a minimal TimeSeriesRequest for one bookmark.
+
+    No recency parameter — D-19 removed recency from TimeSeriesRequest.
+    The time-series endpoint is date-filter-free.
+    """
     return TimeSeriesRequest(
         bookmarks=[
             TimeSeriesBookmarkParam(
@@ -129,7 +145,6 @@ def _make_request(
                 color=color,
             )
         ],
-        recency=recency,
     )
 
 
@@ -304,144 +319,6 @@ class TestRollingWindow:
         assert bts.total_wins == 0
         assert bts.total_draws == 0
         assert bts.total_losses == 0
-
-
-# ---------------------------------------------------------------------------
-# TestRecencyFilter — Recency trimming behaviour
-# ---------------------------------------------------------------------------
-
-
-class TestRecencyFilter:
-    """Verify recency filter trims output while rolling windows use full history."""
-
-    @pytest.mark.asyncio
-    async def test_recency_filter_trims_old_data(self, db_session: AsyncSession) -> None:
-        """Games from >30 days ago are excluded from output when recency='month'.
-
-        Seed: MIN_GAMES_FOR_TIMELINE old games + MIN_GAMES_FOR_TIMELINE recent games.
-        recency='month' (30 days) -> only recent games appear in data.
-        total_games reflects only the recent period.
-        """
-        uid = _USER_RECENCY
-        fh = 9_200_001
-        n = MIN_GAMES_FOR_TIMELINE
-
-        now = datetime.datetime.now(tz=datetime.timezone.utc)
-        old_base = now - datetime.timedelta(days=60)
-        today = now.replace(hour=12, minute=0, second=0, microsecond=0)
-
-        # n old games (losses) on separate days
-        for i in range(n):
-            await _seed_game_with_position(
-                db_session,
-                user_id=uid,
-                result="0-1",
-                user_color="white",
-                played_at=old_base + datetime.timedelta(days=i),
-                full_hash=fh,
-            )
-        # n recent games (wins) on same day
-        for i in range(n):
-            await _seed_game_with_position(
-                db_session,
-                user_id=uid,
-                result="1-0",
-                user_color="white",
-                played_at=today + datetime.timedelta(minutes=i),
-                full_hash=fh,
-            )
-
-        request = TimeSeriesRequest(
-            bookmarks=[
-                TimeSeriesBookmarkParam(
-                    bookmark_id=10,
-                    target_hash=fh,
-                    match_side="full",
-                    color="white",
-                )
-            ],
-            recency="month",
-        )
-        response = await get_time_series(db_session, uid, request)
-
-        bts = response.series[0]
-        # Data points should only include recent dates (not old games)
-        today_str = today.strftime("%Y-%m-%d")
-        for pt in bts.data:
-            assert pt.date >= today_str, f"Expected recent date, got {pt.date}"
-
-        # Totals reflect only the filtered period (n recent wins)
-        assert bts.total_games == n
-        assert bts.total_wins == n
-        assert bts.total_losses == 0
-
-    @pytest.mark.asyncio
-    async def test_rolling_window_uses_full_history_with_recency(
-        self, db_session: AsyncSession
-    ) -> None:
-        """Rolling window for recent games includes old games in its trailing window.
-
-        Seed: MIN_GAMES_FOR_TIMELINE wins from >30 days ago + 1 loss today.
-        With recency='month', only today's datapoint appears in output.
-        But the rolling window for today's game includes all games in its
-        trailing ROLLING_WINDOW_SIZE, so game_count = n+1.
-        """
-        uid = _USER_RECENCY
-        fh = 9_200_002
-        n = MIN_GAMES_FOR_TIMELINE
-
-        now = datetime.datetime.now(tz=datetime.timezone.utc)
-        old_base = now - datetime.timedelta(days=45)
-
-        # n old wins
-        for i in range(n):
-            await _seed_game_with_position(
-                db_session,
-                user_id=uid,
-                result="1-0",
-                user_color="white",
-                played_at=old_base + datetime.timedelta(days=i),
-                full_hash=fh,
-            )
-
-        # 1 recent loss
-        today = now.replace(hour=12, minute=0, second=0, microsecond=0)
-        await _seed_game_with_position(
-            db_session,
-            user_id=uid,
-            result="0-1",
-            user_color="white",
-            played_at=today,
-            full_hash=fh,
-        )
-
-        request = TimeSeriesRequest(
-            bookmarks=[
-                TimeSeriesBookmarkParam(
-                    bookmark_id=11,
-                    target_hash=fh,
-                    match_side="full",
-                    color="white",
-                )
-            ],
-            recency="month",
-        )
-        response = await get_time_series(db_session, uid, request)
-
-        bts = response.series[0]
-        # Only today's datapoint is in the output (recency filter trims the rest)
-        today_str = today.strftime("%Y-%m-%d")
-        today_points = [pt for pt in bts.data if pt.date == today_str]
-        assert len(today_points) >= 1, "Expected at least today's data point"
-
-        pt = today_points[0]
-        # Rolling window includes all n+1 games (n wins, 1 loss) -> score = n/(n+1)
-        assert pt.game_count == n + 1
-        assert pt.score == pytest.approx(n / (n + 1), abs=0.01)
-
-        # Totals are recomputed from the filtered period only (1 recent loss)
-        assert bts.total_losses == 1
-        assert bts.total_wins == 0
 
 
 # ---------------------------------------------------------------------------

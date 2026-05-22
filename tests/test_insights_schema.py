@@ -35,7 +35,8 @@ class TestFilterContext:
     def test_defaults_all_optional(self) -> None:
         """FilterContext() instantiates cleanly — every field has a default."""
         fc = FilterContext()
-        assert fc.recency == "all_time"
+        assert fc.from_date is None
+        assert fc.to_date is None
         assert fc.opponent_strength == "any"
         assert fc.color == "all"
         assert fc.time_controls == []
@@ -45,7 +46,8 @@ class TestFilterContext:
     def test_populated(self) -> None:
         """Caller-provided values round-trip through model_dump."""
         fc = FilterContext(
-            recency="3months",
+            from_date=datetime.date(2026, 1, 1),
+            to_date=datetime.date(2026, 3, 31),
             opponent_strength="stronger",
             color="white",
             time_controls=["blitz", "rapid"],
@@ -54,7 +56,8 @@ class TestFilterContext:
         )
         dumped = fc.model_dump()
         assert dumped == {
-            "recency": "3months",
+            "from_date": datetime.date(2026, 1, 1),
+            "to_date": datetime.date(2026, 3, 31),
             "opponent_strength": "stronger",
             "color": "white",
             "time_controls": ["blitz", "rapid"],
@@ -62,10 +65,13 @@ class TestFilterContext:
             "rated_only": True,
         }
 
-    def test_recency_rejects_unknown_literal(self) -> None:
-        """Pydantic v2 rejects unknown Literal values for recency."""
+    def test_date_range_validator_rejects_invalid_range(self) -> None:
+        """Pydantic v2 model_validator rejects from_date > to_date."""
         with pytest.raises(ValidationError):
-            FilterContext(recency="invalid")  # ty: ignore[invalid-argument-type]
+            FilterContext(
+                from_date=datetime.date(2026, 3, 31),
+                to_date=datetime.date(2026, 1, 1),
+            )
 
     def test_opponent_strength_rejects_unknown_literal(self) -> None:
         with pytest.raises(ValidationError):
@@ -84,7 +90,8 @@ class TestFilterContext:
         a stable input shape to reason about.
         """
         assert list(FilterContext.model_fields.keys()) == [
-            "recency",
+            "from_date",
+            "to_date",
             "opponent_strength",
             "color",
             "time_controls",
@@ -207,7 +214,7 @@ class TestEndgameTabFindings:
         assert findings.findings_hash == ""
 
     def test_populated(self) -> None:
-        fc = FilterContext(recency="3months")
+        fc = FilterContext(from_date=datetime.date(2026, 1, 15), to_date=datetime.date(2026, 4, 15))
         f = self._valid_finding()
         findings = EndgameTabFindings(
             as_of=datetime.datetime(2026, 4, 20, tzinfo=datetime.timezone.utc),
@@ -540,15 +547,15 @@ class TestEndgameInsightsResponse:
         assert resp.status == "fresh"
 
     def test_stale_rate_limited_with_filters(self) -> None:
-        # Use an actually-valid recency literal:
-        filters = FilterContext(recency="3months", opponent_strength="any")
+        from_date = datetime.date(2026, 2, 1)
+        filters = FilterContext(from_date=from_date, opponent_strength="any")
         resp = EndgameInsightsResponse(
             report=self._report(),
             status="stale_rate_limited",
             stale_filters=filters,
         )
         assert resp.stale_filters is not None
-        assert resp.stale_filters.recency == "3months"
+        assert resp.stale_filters.from_date == from_date
 
     def test_status_literal_enforced(self) -> None:
         with pytest.raises(ValidationError):

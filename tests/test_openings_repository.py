@@ -162,7 +162,8 @@ class TestMatchSide:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
             offset=0,
             limit=50,
@@ -185,7 +186,8 @@ class TestMatchSide:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
             offset=0,
             limit=50,
@@ -208,7 +210,8 @@ class TestMatchSide:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
             offset=0,
             limit=50,
@@ -231,7 +234,8 @@ class TestMatchSide:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
             offset=0,
             limit=50,
@@ -267,7 +271,8 @@ class TestFilters:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
             offset=0,
             limit=50,
@@ -292,7 +297,8 @@ class TestFilters:
             platform=None,
             rated=True,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
             offset=0,
             limit=50,
@@ -304,10 +310,10 @@ class TestFilters:
 
     @pytest.mark.asyncio
     async def test_recency_filter(self, db_session: AsyncSession) -> None:
-        """FLT-03: Games played before the cutoff are excluded."""
+        """FLT-03: Games played before the from_date are excluded."""
         now = datetime.datetime.now(tz=datetime.timezone.utc)
         two_years_ago = now - datetime.timedelta(days=730)
-        cutoff = now - datetime.timedelta(days=30)
+        from_date = (now - datetime.timedelta(days=30)).date()
 
         await _seed_game(db_session, played_at=now, full_hash=TARGET_HASH)
         await _seed_game(db_session, played_at=two_years_ago, full_hash=TARGET_HASH)
@@ -321,7 +327,8 @@ class TestFilters:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=cutoff,
+            from_date=from_date,
+            to_date=None,
             color=None,
             offset=0,
             limit=50,
@@ -345,7 +352,8 @@ class TestFilters:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color="white",
             offset=0,
             limit=50,
@@ -400,7 +408,8 @@ class TestFilters:
             platform=None,
             rated=True,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color="white",
             offset=0,
             limit=50,
@@ -464,7 +473,8 @@ class TestDeduplication:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
             offset=0,
             limit=50,
@@ -483,7 +493,8 @@ class TestDeduplication:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
         assert len(rows) == 1
@@ -514,7 +525,8 @@ class TestPagination:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
             offset=2,
             limit=2,
@@ -735,7 +747,8 @@ class TestNextMoves:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -791,7 +804,8 @@ class TestNextMoves:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -862,7 +876,8 @@ class TestNextMovesTranspositions:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -913,7 +928,8 @@ class TestNextMovesFilters:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -955,7 +971,8 @@ class TestNextMovesFilters:
             platform=None,
             rated=True,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -1023,7 +1040,8 @@ class TestTranspositionCounts:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -1044,7 +1062,8 @@ class TestTranspositionCounts:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -1084,7 +1103,8 @@ class TestNextMovesNullMoveExcluded:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -1130,7 +1150,8 @@ class TestQueryWDLCounts:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -1165,7 +1186,8 @@ class TestQueryWDLCounts:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -1212,7 +1234,8 @@ class TestQueryWDLCounts:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color="white",
         )
 
@@ -1236,7 +1259,8 @@ class TestQueryWDLCounts:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -1294,7 +1318,8 @@ class TestQueryWDLCounts:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
 
@@ -1403,7 +1428,8 @@ class TestQueryTranspositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color="white",
         )
 
@@ -1433,7 +1459,8 @@ class TestQueryTranspositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color="white",
         )
 
@@ -1483,7 +1510,8 @@ class TestQueryTranspositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color="white",
         )
         assert wdl_all[TWDL_RESULT_HASH][:3] == (1, 0, 1)
@@ -1497,7 +1525,8 @@ class TestQueryTranspositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color="white",
         )
         assert wdl_rapid[TWDL_RESULT_HASH][:3] == (1, 0, 0)
@@ -1511,7 +1540,8 @@ class TestQueryTranspositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color="white",
         )
         assert wdl_blitz[TWDL_RESULT_HASH][:3] == (0, 0, 1)
@@ -1529,7 +1559,8 @@ class TestQueryTranspositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
         assert wdl == {}
@@ -1558,7 +1589,8 @@ class TestQueryTranspositionWdl:
             platform=None,
             rated=None,
             opponent_type="both",
-            recency_cutoff=None,
+            from_date=None,
+            to_date=None,
             color=None,
         )
         assert wdl == {}

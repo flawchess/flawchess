@@ -1,49 +1,63 @@
 import { useQuery } from '@tanstack/react-query';
 import { statsApi } from '@/api/client';
-import type { Platform, Recency, TimeControl, OpponentType, OpponentStrengthRange } from '@/types/api';
+import type { Platform, TimeControl, OpponentType, OpponentStrengthRange } from '@/types/api';
 import { ANY_RANGE } from '@/lib/opponentStrength';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
+import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
+import type { FilterState } from '@/components/filters/FilterPanel';
 import type { BookmarkPhaseEntryQuery, BookmarkPhaseEntryResponse } from '@/types/stats';
 
 export function useRatingHistory(
-  recency: Recency | null,
+  filters: FilterState,
   platforms: Platform[] | null,
   opponentType: OpponentType,
   opponentStrength: OpponentStrengthRange,
 ) {
-  const normalizedRecency = recency === 'all' ? null : recency;
+  const dateParams = dateRangeToWireParams(resolveDateRange(filters));
   // safe: length === 1 check guarantees index 0 exists
   const platform = platforms && platforms.length === 1 ? platforms[0]! : null;
   return useQuery({
-    queryKey: ['ratingHistory', normalizedRecency, platform, opponentType, opponentStrength.min, opponentStrength.max],
-    queryFn: () => statsApi.getRatingHistory(normalizedRecency, platform, opponentType, opponentStrength),
+    queryKey: ['ratingHistory', dateParams.from_date ?? null, dateParams.to_date ?? null, platform, opponentType, opponentStrength.min, opponentStrength.max],
+    queryFn: () => statsApi.getRatingHistory(dateParams, platform, opponentType, opponentStrength),
   });
 }
 
 export function useGlobalStats(
-  recency: Recency | null,
+  filters: FilterState,
   platforms: Platform[] | null,
   opponentType: OpponentType,
   opponentStrength: OpponentStrengthRange,
 ) {
-  const normalizedRecency = recency === 'all' ? null : recency;
+  const dateParams = dateRangeToWireParams(resolveDateRange(filters));
   // safe: length === 1 check guarantees index 0 exists
   const platform = platforms && platforms.length === 1 ? platforms[0]! : null;
   return useQuery({
-    queryKey: ['globalStats', normalizedRecency, platform, opponentType, opponentStrength.min, opponentStrength.max],
-    queryFn: () => statsApi.getGlobalStats(normalizedRecency, platform, opponentType, opponentStrength),
+    queryKey: ['globalStats', dateParams.from_date ?? null, dateParams.to_date ?? null, platform, opponentType, opponentStrength.min, opponentStrength.max],
+    queryFn: () => statsApi.getGlobalStats(dateParams, platform, opponentType, opponentStrength),
   });
 }
 
 export function useMostPlayedOpenings(filters?: {
-  recency: Recency | null;
+  recency: FilterState['recency'];
+  customRange: FilterState['customRange'];
   timeControls: TimeControl[] | null;
   platforms: Platform[] | null;
   rated: boolean | null;
   opponentType: OpponentType;
   opponentStrength?: OpponentStrengthRange;
 }) {
-  const normalizedRecency = filters?.recency === 'all' ? null : (filters?.recency ?? null);
+  const resolvedFilters: FilterState = {
+    matchSide: 'both',
+    color: 'white',
+    recency: filters?.recency ?? null,
+    customRange: filters?.customRange ?? null,
+    timeControls: filters?.timeControls ?? null,
+    platforms: filters?.platforms ?? null,
+    rated: filters?.rated ?? null,
+    opponentType: filters?.opponentType ?? 'human',
+    opponentStrength: filters?.opponentStrength ?? ANY_RANGE,
+  };
+  const dateParams = dateRangeToWireParams(resolveDateRange(resolvedFilters));
   const timeControl = filters?.timeControls ?? null;
   const platform = filters?.platforms ?? null;
   const rated = filters?.rated ?? null;
@@ -51,9 +65,10 @@ export function useMostPlayedOpenings(filters?: {
   const opponentStrength = filters?.opponentStrength ?? ANY_RANGE;
 
   return useQuery({
-    queryKey: ['mostPlayedOpenings', normalizedRecency, timeControl, platform, rated, opponentType, opponentStrength.min, opponentStrength.max],
+    queryKey: ['mostPlayedOpenings', dateParams.from_date ?? null, dateParams.to_date ?? null, timeControl, platform, rated, opponentType, opponentStrength.min, opponentStrength.max],
     queryFn: () => statsApi.getMostPlayedOpenings({
-      recency: normalizedRecency,
+      from_date: dateParams.from_date,
+      to_date: dateParams.to_date,
       time_control: timeControl,
       platform: platform,
       rated: rated,
@@ -66,7 +81,8 @@ export function useMostPlayedOpenings(filters?: {
 export function useBookmarkPhaseEntryMetrics(
   bookmarks: BookmarkPhaseEntryQuery[],
   filters: {
-    recency: Recency | null;
+    recency: FilterState['recency'];
+    customRange: FilterState['customRange'];
     timeControls: TimeControl[] | null;
     platforms: Platform[] | null;
     rated: boolean | null;
@@ -74,7 +90,19 @@ export function useBookmarkPhaseEntryMetrics(
     opponentStrength: OpponentStrengthRange;
   },
 ) {
-  const normalizedRecency = filters.recency === 'all' ? null : filters.recency;
+  // Resolve from the full FilterState shape needed by resolveDateRange.
+  const resolvedFilters: FilterState = {
+    matchSide: 'both',
+    color: 'white',
+    recency: filters.recency,
+    customRange: filters.customRange,
+    timeControls: filters.timeControls,
+    platforms: filters.platforms,
+    rated: filters.rated,
+    opponentType: filters.opponentType,
+    opponentStrength: filters.opponentStrength,
+  };
+  const dateParams = dateRangeToWireParams(resolveDateRange(resolvedFilters));
   const enabled = bookmarks.length > 0;
   // Sort by target_hash to keep query key stable across reorders.
   const hashKey = bookmarks.map(b => `${b.target_hash}:${b.match_side}:${b.color ?? ''}`).sort().join(',');
@@ -84,7 +112,8 @@ export function useBookmarkPhaseEntryMetrics(
     queryKey: [
       'bookmarkPhaseEntryMetrics',
       hashKey,
-      normalizedRecency,
+      dateParams.from_date ?? null,
+      dateParams.to_date ?? null,
       filters.timeControls,
       filters.platforms,
       filters.rated,
@@ -94,7 +123,8 @@ export function useBookmarkPhaseEntryMetrics(
     ],
     queryFn: () => statsApi.getBookmarkPhaseEntryMetrics({
       bookmarks,
-      recency: normalizedRecency,
+      from_date: dateParams.from_date,
+      to_date: dateParams.to_date,
       time_control: filters.timeControls,
       platform: filters.platforms,
       rated: filters.rated,
