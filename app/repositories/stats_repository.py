@@ -150,7 +150,7 @@ async def query_results_by_time_control(
     """Return (time_control_bucket, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where time_control_bucket is NULL.
-    Optionally filtered by platform, recency, opponent_type, and opponent gap.
+    Optionally filtered by platform, from_date/to_date, opponent_type, and opponent gap.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),
@@ -208,7 +208,7 @@ async def query_results_by_color(
     """Return (user_color, total, wins, draws, losses) via SQL aggregation.
 
     Excludes games where user_color is NULL.
-    Optionally filtered by platform, recency, opponent_type, and opponent gap.
+    Optionally filtered by platform, from_date/to_date, opponent_type, and opponent gap.
     """
     win_cond = or_(
         and_(Game.result == "1-0", Game.user_color == "white"),

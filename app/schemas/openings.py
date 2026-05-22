@@ -152,8 +152,8 @@ class TimeSeriesBookmarkParam(BaseModel):
 class TimeSeriesRequest(BaseModel):
     """Request body for POST /openings/time-series.
 
-    The time-series endpoint does not filter by date — D-19 removed the recency
-    field so the rolling-window chart always covers the full game history.
+    The time-series endpoint does not filter by date (no from_date/to_date
+    fields) — the rolling-window chart always covers the full game history.
     Other game filters (time_control, platform, rated, opponent_type,
     opponent_gap) still apply to narrow which games contribute to the series.
     """

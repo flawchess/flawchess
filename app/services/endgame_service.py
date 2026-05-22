@@ -2498,7 +2498,7 @@ async def get_endgame_elo_timeline(
     D-06 rebuild on Endgame Score Gap).
 
     Fetches per-combo all-game rows for the Actual ELO asof-join (rolling
-    window pre-fill via recency_cutoff=None — Pitfall 2). Derives the
+    window pre-fill via from_date=None — Pitfall 2). Derives the
     per-combo Endgame Score Gap series by partitioning the caller-supplied
     cross-combo ``endgame_rows_all`` / ``non_endgame_rows_all`` (shape
     ``(played_at, result, user_color, platform, time_control_bucket)`` from
