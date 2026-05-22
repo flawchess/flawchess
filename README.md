@@ -50,7 +50,7 @@ A free, open-source chess analysis platform. Import games from chess.com and lic
 | Chess | python-chess (Zobrist hashing), chess.js, react-chessboard |
 | Auth | FastAPI-Users (JWT + Google OAuth) |
 | Monitoring | Sentry |
-| Hosting | Docker Compose, Caddy (auto-TLS), Hetzner VPS |
+| Hosting | Docker Compose, Caddy (auto-TLS), Hetzner Cloud CPX42 (8 vCPU, 16 GB RAM, 160 GB NVMe) |
 
 ## Getting Started
 
