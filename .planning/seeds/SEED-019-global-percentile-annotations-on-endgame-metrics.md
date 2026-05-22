@@ -74,7 +74,7 @@ The artifact is produced by **two complementary mechanisms with distinct roles**
 
 #### Task A — Extend `/benchmarks` SKILL.md with the CDF subchapter
 
-- Add a new subchapter (e.g. §3.5 or a top-level Chapter 4) documenting the methodology: in-scope metrics (the 4 chipped ΔES metrics above), canonical CTE (lichess_username join, `bic.status='completed'`, sparse-cell `(2400, classical)` exclusion, equal-footing filter, game-time ELO bucketing, sub-800 dropped), and the tail-densified breakpoint set (p0.1, p0.5, p1, p2.5, p5, p10..p90, p95, p97.5, p99, p99.5, p99.9).
+- Add a new subchapter (e.g. §3.5 or a top-level Chapter 4) documenting the methodology: in-scope metrics (the 4 chipped ΔES metrics above), canonical CTE (lichess_username join, `bic.status='completed'`, sparse-cell `(2400, classical)` exclusion, equal-footing filter, game-time ELO bucketing, sub-800 dropped), and the breakpoint set **p1, p2.5, p5, p10..p90, p95, p97.5, p99** (tail-bounded at p1/p99 — see Open Decisions for the sample-size rationale; p0.1 / p99.9 are not honestly supported at the current n ≈ 2000 pooled cohort and are out of v1.19 scope).
 - SQL templates per metric (reuse the same patterns the empirical pre-flight at `reports/benchmarks-gap-metrics-percentile-candidacy.md` validated).
 - Output written to `reports/global-percentile-cdf-latest.md` (with the rotation rule applied — archive prior dated report on re-run).
 - The report includes per-metric breakpoint table + per-rating-bucket medians + skew/kurtosis as sanity checks, so the calibrator can eyeball whether the distribution is still well-shaped before locking the artifact.
@@ -133,7 +133,7 @@ This is the **critical** plan — every other plan is cosmetic without it.
 
 ## Open Decisions (defer until Phase 93/94 planning)
 
-- CDF granularity: uniform p0..p100 (simple) vs tail-densified breakpoints (lets "top 0.1%" be honest). Lean tail-densified — extremes are where bragging users look.
+- CDF granularity / tail bounds (**decided 2026-05-22**): bound the breakpoint set at **p1 / p99** rather than p0.1 / p99.9. Rationale: at the current pooled cohort (n ≈ 2000 across the 4 metrics), p0.1 / p99.9 are estimated from ~2 observations each — sampling SE is 5+pp at the very tail, so "top 0.1%" would swing pp-magnitudes based on whether one outlier user is in the pool. p1 / p99 have ~20 observations each and an SE of ~2-3pp, which is honest at chip-rounding granularity. Final breakpoint set: **p1, p2.5, p5, p10..p90, p95, p97.5, p99**. Tighter tails are a future ops task (re-run `select_benchmark_users.py --per-cell 1000`, re-ingest), not a v1.19 scope item.
 - Chip phrasing near the median: "top 51%" / "bottom 49%" both read oddly. Lean toward a neutral "≈ average" band (e.g. p40–p60) instead of a forced top/bottom label.
 - Conversion Score Gap chip — render at all percentiles, or gate to "weak-cohort-only" (e.g. render only when percentile < p50) since the improvement signal is asymmetric (Goal-A relevance drops sharply at the top end)? The honest version renders always; the asymmetric version is less misleading at the right tail but mechanically weird.
 - Skew handling on Conversion ΔES (skew −0.95): "top X%" rounding in the right tail obscures tail asymmetry. Mitigation options: (a) only render percentile when |percentile − 50| ≥ some threshold, (b) cap the displayed percentile at p95 / floor at p05, (c) accept the rounding noise. Decide during Plan 3.

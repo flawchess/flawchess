@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.19
 milestone_name: Endgame Percentiles & LLM Statistical Reasoning
-status: planning
-last_updated: "2026-05-22T11:36:41.408Z"
-last_activity: 2026-05-22
+status: "Roadmap drafted (3 phases: 93, 94, 95) — awaiting `/gsd:discuss-phase 93`"
+last_updated: "2026-05-22T15:25:50.538Z"
+last_activity: 2026-05-22 — v1.19 roadmap drafted (3 phases, 13 requirements mapped)
 progress:
-  total_phases: 3
+  total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0

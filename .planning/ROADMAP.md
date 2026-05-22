@@ -40,7 +40,7 @@
   2. The breakpoint tables are committed at `app/services/global_percentile_cdf.py` as a typed `GLOBAL_PERCENTILE_CDF` registry; the module is Python-only (no TS mirror, no Python→TS drift-guard) — Phase 94's backend interpolates at request time and ships a scalar percentile to the frontend.
   3. The /benchmarks SKILL.md CDF subchapter exists, documenting methodology + SQL templates + expected report shape; running it produces `reports/global-percentile-cdf-latest.md` with per-metric breakpoint tables and per-rating-bucket sanity checks (median + skew/kurtosis), with the rotation rule applied (prior dated report archived).
   4. The artifact uses the canonical CTE verbatim (lichess_username join, `status='completed'`, sparse-cell exclusion, equal-footing filter, game-time ELO bucketing, sub-800 dropped) — verifiable by inspection of the SKILL.md subchapter and `scripts/gen_global_percentile_cdf.py`.
-  5. Tail granularity is sufficient for an honest "top 0.1%" / "bottom 0.1%" annotation at the extremes (per SEED-019 §Open Decisions — tail-densified breakpoints p0.1, p0.5, p1, p2.5, p5, p10..p90, p95, p97.5, p99, p99.5, p99.9; not uniform p0..p100).
+  5. Breakpoint set is **p1, p2.5, p5, p10..p90, p95, p97.5, p99** — tail-bounded at p1 / p99, NOT extended to p0.1 / p99.9. Rationale: at the current pooled cohort (n ≈ 2000 across the 4 metrics) the p0.1 / p99.9 breakpoints have ~5pp sampling SE and would render "top 0.1%" estimates that swing on single outliers. Chip-rendered phrasing is therefore "top 1%" max / "bottom 1%" max; tighter tails are a future ops task (cohort re-selection at higher `--per-cell`), not v1.19 scope.
 **Plans**: TBD
 
 ### Phase 94: Backend & Frontend Percentile Annotations
