@@ -220,38 +220,44 @@ export function FilterPanel({
             before the popover/drawer open animation begins (RESEARCH.md §Pitfall 6).
           */}
           <Popover open={customOpen && !isMobile} onOpenChange={setCustomOpen}>
-            <PopoverAnchor asChild>
-              <Select
-                value={filters.recency === 'custom' ? 'custom' : (filters.recency ?? 'all')}
-                onValueChange={(v) => {
-                  if (v === 'custom') {
-                    // Defer so Select close animation finishes before calendar opens.
-                    queueMicrotask(() => setCustomOpen(true));
-                  } else {
-                    // Any preset clears the custom range (D-08).
-                    update({ recency: v === 'all' ? null : (v as RecencyPreset), customRange: null });
-                  }
-                }}
-              >
+            <Select
+              value={filters.recency === 'custom' ? 'custom' : (filters.recency ?? 'all')}
+              onValueChange={(v) => {
+                if (v === 'custom') {
+                  // Defer so Select close animation finishes before calendar opens.
+                  queueMicrotask(() => setCustomOpen(true));
+                } else {
+                  // Any preset clears the custom range (D-08).
+                  update({ recency: v === 'all' ? null : (v as RecencyPreset), customRange: null });
+                }
+              }}
+            >
+              {/*
+                PopoverAnchor must wrap a real DOM element. Select Root is a virtual
+                Radix primitive (no DOM) — wrapping it leaves the anchor ref null and
+                the popover gets no positioning reference (off-screen/zero-rect).
+                Anchor the SelectTrigger (<button>) instead.
+              */}
+              <PopoverAnchor asChild>
                 <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
                   {/* Render resolved range label when custom is active (D-04); preset label otherwise. */}
                   {filters.recency === 'custom'
                     ? formatCustomRangeLabel(filters.customRange)
                     : <SelectValue />}
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All time</SelectItem>
-                  <SelectItem value="week">Past week</SelectItem>
-                  <SelectItem value="month">Past month</SelectItem>
-                  <SelectItem value="3months">3 months</SelectItem>
-                  <SelectItem value="6months">6 months</SelectItem>
-                  <SelectItem value="year">1 year</SelectItem>
-                  <SelectItem value="3years">3 years</SelectItem>
-                  <SelectItem value="5years">5 years</SelectItem>
-                  <SelectItem value="custom" data-testid="filter-recency-custom">Custom range…</SelectItem>
-                </SelectContent>
-              </Select>
-            </PopoverAnchor>
+              </PopoverAnchor>
+              <SelectContent>
+                <SelectItem value="all">All time</SelectItem>
+                <SelectItem value="week">Past week</SelectItem>
+                <SelectItem value="month">Past month</SelectItem>
+                <SelectItem value="3months">3 months</SelectItem>
+                <SelectItem value="6months">6 months</SelectItem>
+                <SelectItem value="year">1 year</SelectItem>
+                <SelectItem value="3years">3 years</SelectItem>
+                <SelectItem value="5years">5 years</SelectItem>
+                <SelectItem value="custom" data-testid="filter-recency-custom">Custom range…</SelectItem>
+              </SelectContent>
+            </Select>
 
             {/* Desktop: Calendar in a Popover anchored to the Select trigger. */}
             <CustomRangePopover
