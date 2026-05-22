@@ -32,40 +32,58 @@
 ## Phase Details
 
 ### Phase 93: Global Percentile Benchmark Artifact
+
 **Goal**: Produce the global empirical-CDF benchmark artifact that every downstream percentile annotation depends on. Per the SEED-019 empirical refinement (`reports/benchmarks-gap-metrics-percentile-candidacy.md`, 2026-05-22), the in-scope set is the **4 chipped ΔES metrics**: Endgame Score Gap (page-level), Achievable Score Gap (page-level), Parity Score Gap (Section 2), Conversion Score Gap (Section 2). Recovery Score Gap is dropped (opponent-confounded, d=0.95 inverted); raw % gauges get no chips (redundant with the ΔES chip on the same card). Mechanism is split across two tasks: (A) extend `/benchmarks` SKILL.md with a CDF subchapter that documents methodology + SQL templates and writes a human-readable report to `reports/global-percentile-cdf-latest.md`; (B) write `scripts/gen_global_percentile_cdf.py` that runs the canonical CTE deterministically against the benchmark DB and emits committed Python source at `app/services/global_percentile_cdf.py` (NOT `endgame_zones.py` — that file is the ZoneSpec / IQR-band registry; a 25-breakpoint CDF per metric is a different artifact shape). The artifact is Python-only — Phase 94's backend interpolates each user's metric value against `GLOBAL_PERCENTILE_CDF` at request time and emits a scalar `{metric}_percentile` in the API response; the frontend renders a chip from that scalar without needing the CDF on the client. The DB→Python step is a manual recalibration, like `scripts/backfill_eval.py --db benchmark`.
 **Depends on**: Nothing within v1.19 (depends on shipped v1.17 metric set + v1.12 benchmark DB)
 **Requirements**: PCTL-01
 **Success Criteria** (what must be TRUE):
+
   1. Running `scripts/gen_global_percentile_cdf.py` against the current benchmark DB emits a per-metric breakpoint table covering the 4 chipped ΔES metrics: Endgame Score Gap, Achievable Score Gap, Parity Score Gap (Section 2), Conversion Score Gap (Section 2). Recovery Score Gap is intentionally NOT in scope per the empirical pre-flight.
   2. The breakpoint tables are committed at `app/services/global_percentile_cdf.py` as a typed `GLOBAL_PERCENTILE_CDF` registry; the module is Python-only (no TS mirror, no Python→TS drift-guard) — Phase 94's backend interpolates at request time and ships a scalar percentile to the frontend.
   3. The /benchmarks SKILL.md CDF subchapter exists, documenting methodology + SQL templates + expected report shape; running it produces `reports/global-percentile-cdf-latest.md` with per-metric breakpoint tables and per-rating-bucket sanity checks (median + skew/kurtosis), with the rotation rule applied (prior dated report archived).
   4. The artifact uses the canonical CTE verbatim (lichess_username join, `status='completed'`, sparse-cell exclusion, equal-footing filter, game-time ELO bucketing, sub-800 dropped) — verifiable by inspection of the SKILL.md subchapter and `scripts/gen_global_percentile_cdf.py`.
   5. Breakpoint set is **p1, p2.5, p5, p10..p90, p95, p97.5, p99** — tail-bounded at p1 / p99, NOT extended to p0.1 / p99.9. Rationale: at the current pooled cohort (n ≈ 2000 across the 4 metrics) the p0.1 / p99.9 breakpoints have ~5pp sampling SE and would render "top 0.1%" estimates that swing on single outliers. Chip-rendered phrasing is therefore "top 1%" max / "bottom 1%" max; tighter tails are a future ops task (cohort re-selection at higher `--per-cell`), not v1.19 scope.
-**Plans**: TBD
+
+**Plans:** 2 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 93-01-PLAN.md — Extend /benchmarks SKILL.md with Chapter 4 (Global Percentile CDF methodology + SQL templates + report shape)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 93-02-PLAN.md — Write scripts/gen_global_percentile_cdf.py + commit app/services/global_percentile_cdf.py typed registry + interpolate_percentile helper + initial report
 
 ### Phase 94: Backend & Frontend Percentile Annotations
+
 **Goal**: Surface percentile annotations end-to-end on the **4 chipped ΔES rows** (per SEED-019 empirical refinement). Backend interpolates each user's metric value against `GLOBAL_PERCENTILE_CDF`, emits a nullable `{metric}_percentile` field gated by a metric-specific minimum-N reliability floor. Frontend renders a compact "top X% / bottom Y%" chip beside the metric value with desktop + mobile parity, theme-driven colors, and **metric-aware popover copy**: skill-isolating framing for low-d metrics (Endgame Score Gap, Achievable Score Gap, Parity ΔES — d ≤ 0.32); improvement-focus framing for the high-d metric (Conversion ΔES — d=1.37, "tracks rating; if you're in the lower tiers here, this is one of the biggest single improvements available to your ELO"). Raw % gauges (Conv/Parity/Recov) and the Recovery ΔES row keep their existing IQR zone bands but get no chips.
 **Depends on**: Phase 93
 **Requirements**: PCTL-02, PCTL-03, PCTL-04, PCTL-05, PCTL-06
 **Success Criteria** (what must be TRUE):
+
   1. The 4 chipped rows render a percentile chip beside the metric value when the user's sample size clears the per-metric reliability gate; below the gate, no chip renders and no percentile is emitted (PCTL-06). No chip appears on the Recovery ΔES row or on any of the 3 raw % gauges.
   2. Chip phrasing is asymmetric ("top X%" above median, "bottom Y%" below, neutral fallback near p50), rounding is honest (no spurious decimals), and colors come from `theme.ts` (no hard-coded values).
   3. Popover copy is metric-aware: the 3 low-d chips frame the percentile as skill-isolating (separate from rating); the Conversion ΔES chip frames the percentile as improvement-focus (tracks rating, surfaces the biggest single ELO improvement available to weaker players).
   4. Annotations render with full desktop + mobile parity on the 4 affected rows: `EndgameOverallScoreGapRow.tsx` (Endgame Score Gap + Achievable Score Gap rows) and `EndgameMetricCard.tsx` (Parity card ΔES bullet + Conversion card ΔES bullet). Verified at 375px and desktop widths.
   5. API responses include nullable `{metric}_percentile` fields alongside existing value / CI / zone fields without breaking any current consumer.
+
 **Plans**: TBD
 **UI hint**: yes
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
+
 **Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
 **Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
 **Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, LLM-05, LLM-06, LLM-07
 **Success Criteria** (what must be TRUE):
+
   1. The endgame-insights API payload exposes per-metric p-values, confidence interval bounds, and percentile fields on the v1.17 statistical-rigor metric set, additive and non-breaking alongside existing `zone` + `sample_quality` fields.
   2. The endgame-insights system prompt teaches the LLM to reason explicitly over CIs and percentiles in narration (e.g. "your value sits at X with 95% CI [Y, Z], top P% of all players") without re-licensing the small-but-significant narration pattern from `feedback_llm_significance_signal`.
   3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
   4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
   5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
+
 **Plans**: TBD
 
 <details>
