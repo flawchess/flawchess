@@ -10,6 +10,13 @@ services:
       - "-c"
       - "effective_cache_size=6GB"
       - "-c"
+      # Cap at 30 to match the application pool (10 + 10 per uvicorn process,
+      # see app/core/database.py) plus headroom for psql, migrations, and
+      # monitoring. The Postgres default of 100 was the upstream cause of the
+      # 2026-05-21 OOM: each backend reserves per-connection structures and
+      # work_mem ceiling, so an unbounded pool grew Postgres past host RAM.
+      - "max_connections=30"
+      - "-c"
       - "shared_preload_libraries=pg_stat_statements"
       - "-c"
       - "pg_stat_statements.track=all"
@@ -47,6 +54,13 @@ services:
       STOCKFISH_POOL_SIZE: ${STOCKFISH_POOL_SIZE:-4}
     expose:
       - "8000"
+    # memswap_limit = mem_limit disables swap for the backend cgroup, so a
+    # runaway uvicorn + Stockfish footprint gets OOM-killed inside the
+    # container (auto-restarts) instead of dragging the host into the swap
+    # thrash that preceded the 2026-05-20 and 2026-05-21 Postgres OOM-kills.
+    # Sized for the current 8 GB host; revisit after the CPX42 upgrade (16 GB).
+    mem_limit: 2500m
+    memswap_limit: 2500m
     depends_on:
       db:
         condition: service_healthy
@@ -60,6 +74,7 @@ services:
       NODE_OPTIONS: "--max-old-space-size=256"
     expose:
       - "3000"
+    mem_limit: 384m
     depends_on:
       db:
         condition: service_healthy

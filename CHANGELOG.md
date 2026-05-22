@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- **Production OOM hardening** (hotfix, FLAWCHESS-3Q). SQLAlchemy pool reduced from `pool_size=20, max_overflow=30` (50 max) to `10 + 10` (20 max) in `app/core/database.py`. Postgres `max_connections` capped at 30 (was the upstream default of 100) via `docker-compose.yml`. Backend and umami containers given explicit `mem_limit` (2500m / 384m) with `memswap_limit = mem_limit` on backend to disable swap and force a contained OOM-restart instead of host-wide swap thrash. Root cause of the 2026-05-21 Postgres OOM (job 72a4ca0d, single chess.com import for user 101) was the post-Phase-91 fetch rate doubling, which let a single uvicorn process fan out to 13 active Postgres backends and exhaust host RAM + 4 GB swap.
+
 ### Added
 
 - **Custom date range filter** (Phase 92). A 9th "Custom range..." item in the Recency dropdown opens a two-month range Calendar on desktop (Radix Popover anchored to the Select trigger, auto-closes on full range pick) and a single-month Calendar in a nested Vaul bottom sheet on mobile (Apply CTA, backdrop = cancel). The trigger label updates to the resolved date range once both bounds are set.

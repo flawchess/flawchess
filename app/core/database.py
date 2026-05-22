@@ -4,11 +4,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 
+# pool_size + max_overflow cap how many concurrent DB connections one
+# uvicorn process can open. The earlier 20 + 30 = 50 ceiling let a single
+# import (job 72a4ca0d on 2026-05-21) plus the eval drain plus API traffic
+# fan out to 13 active Postgres backends, each holding ~100 MB anon memory.
+# Combined with shared_buffers=2GB and Stockfish workers, this exhausted host
+# RAM + 4 GB swap and OOM-killed Postgres. 10 + 10 = 20 is well above the
+# steady-state need (drain 1-2, import 1-3, API single digits) and bounds
+# the per-process memory footprint.
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DB_ECHO,
-    pool_size=20,
-    max_overflow=30,
+    pool_size=10,
+    max_overflow=10,
     pool_pre_ping=True,
 )
 
