@@ -49,7 +49,7 @@
 Plans:
 **Wave 1**
 
-- [ ] 93-01-PLAN.md — Extend /benchmarks SKILL.md with Chapter 4 (Global Percentile CDF methodology + SQL templates + report shape)
+- [x] 93-01-PLAN.md — Extend /benchmarks SKILL.md with Chapter 4 (Global Percentile CDF methodology + SQL templates + report shape)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -346,7 +346,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 80-83. v1.16 phases | v1.16 | 24/24 | Complete | 2026-05-11 |
 | 84-88.4. v1.17 phases | v1.17 | ~54/~54 | Complete (89 dropped, 87.3 superseded) | 2026-05-19 |
 | 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
-| 93. Global Percentile Benchmark Artifact | v1.19 | 0/TBD | Not started | - |
+| 93. Global Percentile Benchmark Artifact | v1.19 | 1/2 | In Progress|  |
 | 94. Backend & Frontend Percentile Annotations | v1.19 | 0/TBD | Not started | - |
 | 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.19 | 0/TBD | Not started | - |
 
