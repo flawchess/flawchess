@@ -41,7 +41,7 @@
 
 **Verification:** manual import of a real ~5k+ game account in dev, watching backend RSS stay flat across the full import (vs. linear climb today). Repeat in prod after deploy, then resolve Sentry FLAWCHESS-56 (120262007) and FLAWCHESS-3Q (115610288).
 
-**References:** [.planning/seeds/SEED-018-import-statement-cache-memory-leak.md](seeds/SEED-018-import-statement-cache-memory-leak.md), [.planning/seeds/SEED-017-import-resilience-hardening.md](seeds/SEED-017-import-resilience-hardening.md) (closed, superseded), [.planning/debug/import-job-db-conn-closed.md](debug/import-job-db-conn-closed.md), [.planning/notes/v1.18-import-pipeline-fix-scope.md](notes/v1.18-import-pipeline-fix-scope.md).
+**References:** [.planning/seeds/SEED-018-import-statement-cache-memory-leak.md](seeds/closed/SEED-018-import-statement-cache-memory-leak.md), [.planning/seeds/SEED-017-import-resilience-hardening.md](seeds/closed/SEED-017-import-resilience-hardening.md) (closed, superseded), [.planning/debug/import-job-db-conn-closed.md](debug/import-job-db-conn-closed.md), [.planning/notes/v1.18-import-pipeline-fix-scope.md](notes/v1.18-import-pipeline-fix-scope.md).
 
 Plans:
 
@@ -68,7 +68,7 @@ Plans:
 
 **Verification:** dev-side re-run of the 2× 20k stress test pattern (lichess + chess.com concurrent on a freshly-cloned account) with `docker stats` + `pg_stat_activity` polling. Acceptance: backend RSS plateaus ≤ 1.6 GB, Postgres anon+shmem ≤ 1.2 GB sustained, swap never exceeds 50 % of allocated swap, both imports complete `status=completed`, eval coverage bar reaches 100 % within N minutes after the second import finishes. Production re-run after deploy on a real ≥10k-game account.
 
-**References:** [.planning/seeds/SEED-023-two-lane-import-defer-stockfish.md](seeds/SEED-023-two-lane-import-defer-stockfish.md), [.planning/seeds/SEED-022-import-concurrency-and-postgres-headroom.md](seeds/SEED-022-import-concurrency-and-postgres-headroom.md) (superseded — diagnostic narrative retained for history), [.planning/notes/2026-05-20-import-pipeline-rethink.md](notes/2026-05-20-import-pipeline-rethink.md), [logs/import-stress-20k-each-2026-05-20.log](../logs/import-stress-20k-each-2026-05-20.log).
+**References:** [.planning/seeds/SEED-023-two-lane-import-defer-stockfish.md](seeds/closed/SEED-023-two-lane-import-defer-stockfish.md), [.planning/seeds/SEED-022-import-concurrency-and-postgres-headroom.md](seeds/closed/SEED-022-import-concurrency-and-postgres-headroom.md) (superseded — diagnostic narrative retained for history), [.planning/notes/2026-05-20-import-pipeline-rethink.md](notes/2026-05-20-import-pipeline-rethink.md), [logs/import-stress-20k-each-2026-05-20.log](../logs/import-stress-20k-each-2026-05-20.log).
 
 Plans:
 **Wave 1**
