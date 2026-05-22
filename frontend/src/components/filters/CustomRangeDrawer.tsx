@@ -13,7 +13,7 @@
  *   default `onOpenChange(false)` from an outside tap never calls `onChange`.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { DateRange } from 'react-day-picker';
 import { Calendar } from '@/components/ui/calendar';
 import {
@@ -23,6 +23,17 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
+
+// Stable string key for a committed range. Used to detect parent-driven
+// resets in the derive-state-during-render pattern (see useRef block below).
+// Comparing on `getTime()` rather than Date reference ensures memoised preset
+// ranges with identical timestamps don't trigger spurious local resets.
+function serializeRangeKey(
+  range: { from?: Date; to?: Date } | null,
+): string {
+  if (range === null) return 'null';
+  return `${range.from?.getTime() ?? 'x'}|${range.to?.getTime() ?? 'x'}`;
+}
 
 interface CustomRangeDrawerProps {
   /** Currently committed custom range (null = nothing committed yet). */
@@ -52,16 +63,31 @@ export function CustomRangeDrawer({
   // Resync local in-progress selection whenever the committed value changes
   // from outside (e.g. Reset Filters in the parent panel clears customRange to
   // null, or a sibling popover commit races with a mobile/desktop breakpoint
-  // flip). Without this effect the drawer stays mounted (vaul NestedRoot keeps
+  // flip). Without this resync the drawer stays mounted (vaul NestedRoot keeps
   // the subtree alive while open=false), so reopening then tapping Apply would
   // silently re-commit a stale local selection and override the external
-  // change. Compare on getTime() rather than reference so memoised preset
-  // ranges don't trigger spurious resets. Preserves D-08 backdrop-dismiss
-  // semantics because the effect fires only when the *committed* value
-  // changes, not on every keystroke.
-  useEffect(() => {
+  // change.
+  //
+  // We use the "adjusting state on prop change" pattern from the React docs
+  // (https://react.dev/reference/react/useState#storing-information-from-previous-renders)
+  // rather than a useEffect, because:
+  //   (1) eslint's react-hooks/set-state-in-effect blocks the naive useEffect
+  //       form, and
+  //   (2) it avoids the cascading-render cost of useEffect-driven setState
+  //       (React bails out of re-rendering children if setState is called
+  //       during render and only the same component re-renders).
+  // We track the previously-seen committed value via useState and reset
+  // localRange when the bounds' getTime() (or null-ness) change. Comparing on
+  // getTime() rather than reference means memoised preset ranges with the same
+  // timestamps don't trigger spurious resets. D-08 backdrop-dismiss semantics
+  // are preserved because we only reset on a *committed* value change, not on
+  // every Calendar keystroke.
+  const [prevValueKey, setPrevValueKey] = useState<string>(serializeRangeKey(value));
+  const currentKey = serializeRangeKey(value);
+  if (prevValueKey !== currentKey) {
+    setPrevValueKey(currentKey);
     setLocalRange(value ? { from: value.from, to: value.to } : undefined);
-  }, [value?.from?.getTime(), value?.to?.getTime(), value === null]);
+  }
 
   const handleSelect = (range: DateRange | undefined) => {
     setLocalRange(range);
