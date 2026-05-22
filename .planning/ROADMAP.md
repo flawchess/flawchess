@@ -21,8 +21,51 @@
 - ✅ **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82, 83 (shipped 2026-05-11) — see [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md)
 - ✅ **v1.17 Endgame Stats Card Redesign** — Phases 84-88.4 (shipped 2026-05-19; Phase 89 dropped, 87.3 superseded) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 - ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
+- 🔄 **v1.19 Endgame Percentiles & LLM Statistical Reasoning** — Phases 93, 94, 95 (in progress, planning)
 
 ## Phases
+
+- [ ] **Phase 93: Global Percentile Benchmark Artifact** — Per-metric empirical CDF for Tier-1 / Tier-2 endgame metrics, locked into `endgame_zones.py` with TS codegen drift-guard
+- [ ] **Phase 94: Backend & Frontend Percentile Annotations** — Nullable `{metric}_percentile` on endgame responses + "top X% / bottom Y%" chip on cards (desktop + mobile parity, honest Tier-2 copy)
+- [ ] **Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework** — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+
+## Phase Details
+
+### Phase 93: Global Percentile Benchmark Artifact
+**Goal**: Produce the global empirical-CDF benchmark artifact that every downstream percentile annotation depends on. Extend the canonical `/benchmarks` CTE to emit per-metric per-user-value distributions across the benchmark cohort (lichess_username join, `bic.status='completed'`, sparse-cell `(2400, classical)` exclusion, equal-footing opponent filter), lock the breakpoint tables into `app/services/endgame_zones.py`, and regenerate `frontend/src/generated/endgameZones.ts` via the existing codegen path so CI drift-guards both sides in lock-step.
+**Depends on**: Nothing within v1.19 (depends on shipped v1.17 metric set + v1.12 benchmark DB)
+**Requirements**: PCTL-01
+**Success Criteria** (what must be TRUE):
+  1. Running the `/benchmarks` CDF pass against the current benchmark DB emits a per-metric breakpoint table covering every Tier-1 (Skill Score Gap, Achievable Score Gap, Endgame Score Gap, Conversion/Parity/Recovery Score Gap) and Tier-2 (Conversion / Parity / Recovery raw rates) metric in SEED-019.
+  2. The breakpoint tables are committed to `app/services/endgame_zones.py` as a typed `GLOBAL_PERCENTILE_CDF` (or equivalent) registry, with `scripts/gen_endgame_zones_ts.py` regenerating `frontend/src/generated/endgameZones.ts` cleanly and CI drift-guard passing.
+  3. The artifact uses the canonical CTE verbatim (lichess_username join, `status='completed'`, sparse-cell exclusion, equal-footing filter) — verifiable by inspection of the SKILL.md / generation script.
+  4. Tail granularity is sufficient for an honest "top 0.1%" / "bottom 0.1%" annotation at the extremes (per SEED-019 §Open Decisions — tail-densified breakpoints, not uniform p0..p100).
+**Plans**: TBD
+
+### Phase 94: Backend & Frontend Percentile Annotations
+**Goal**: Surface percentile annotations end-to-end on the in-scope Endgame cards. Backend interpolates each user's metric value against `GLOBAL_PERCENTILE_CDF`, emits a nullable `{metric}_percentile` field gated by a metric-specific minimum-N reliability floor, and the frontend renders a compact "top X% / bottom Y%" chip beside the metric value with desktop + mobile parity, theme-driven colors, and honest popover copy distinguishing Tier-1 skill-isolating gap metrics from Tier-2 rating-proxy raw rates.
+**Depends on**: Phase 93
+**Requirements**: PCTL-02, PCTL-03, PCTL-04, PCTL-05, PCTL-06
+**Success Criteria** (what must be TRUE):
+  1. Every in-scope Endgame card renders a percentile chip beside the metric value when the user's sample size clears the per-metric reliability gate; below the gate, no chip renders and no percentile is emitted (PCTL-06).
+  2. Chip phrasing is asymmetric ("top X%" above median, "bottom Y%" below, neutral fallback near p50), rounding is honest (no spurious decimals), and colors come from `theme.ts` (no hard-coded values).
+  3. Tier-2 chip popovers explicitly frame the percentile as bragging context that tracks rating, while Tier-1 chip popovers frame it as skill-isolating because eval-baseline adjustment removes the rating proxy.
+  4. Annotations render with full desktop + mobile parity on every affected card (Endgame Overall Performance, Endgame Score Gap, Section 2 Conv / Parity / Recov, Achievable Score family) verified at 375px and desktop widths.
+  5. API responses include nullable `{metric}_percentile` fields alongside existing value / CI / zone fields without breaking any current consumer.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
+**Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
+**Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
+**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, LLM-05, LLM-06, LLM-07
+**Success Criteria** (what must be TRUE):
+  1. The endgame-insights API payload exposes per-metric p-values, confidence interval bounds, and percentile fields on the v1.17 statistical-rigor metric set, additive and non-breaking alongside existing `zone` + `sample_quality` fields.
+  2. The endgame-insights system prompt teaches the LLM to reason explicitly over CIs and percentiles in narration (e.g. "your value sits at X with 95% CI [Y, Z], top P% of all players") without re-licensing the small-but-significant narration pattern from `feedback_llm_significance_signal`.
+  3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
+  4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
+  5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
+**Plans**: TBD
 
 <details>
 <summary>✅ v1.18 Import Pipeline Hardening (Phases 90-92) — SHIPPED 2026-05-22</summary>
@@ -283,6 +326,10 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
 | 80-83. v1.16 phases | v1.16 | 24/24 | Complete | 2026-05-11 |
 | 84-88.4. v1.17 phases | v1.17 | ~54/~54 | Complete (89 dropped, 87.3 superseded) | 2026-05-19 |
+| 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
+| 93. Global Percentile Benchmark Artifact | v1.19 | 0/TBD | Not started | - |
+| 94. Backend & Frontend Percentile Annotations | v1.19 | 0/TBD | Not started | - |
+| 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.19 | 0/TBD | Not started | - |
 
 ## Backlog
 

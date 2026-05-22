@@ -48,4 +48,20 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 
 ## Traceability
 
-To be filled by `gsd-roadmapper` when the v1.19 roadmap is generated.
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| PCTL-01 | Phase 93 | Pending |
+| PCTL-02 | Phase 94 | Pending |
+| PCTL-03 | Phase 94 | Pending |
+| PCTL-04 | Phase 94 | Pending |
+| PCTL-05 | Phase 94 | Pending |
+| PCTL-06 | Phase 94 | Pending |
+| LLM-01 | Phase 95 | Pending |
+| LLM-02 | Phase 95 | Pending |
+| LLM-03 | Phase 95 | Pending |
+| LLM-04 | Phase 95 | Pending |
+| LLM-05 | Phase 95 | Pending |
+| LLM-06 | Phase 95 | Pending |
+| LLM-07 | Phase 95 | Pending |
+
+**Coverage:** 13/13 v1 requirements mapped (PCTL-01..06 + LLM-01..07). No orphans.

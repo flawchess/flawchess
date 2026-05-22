@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-05-22T11:36:41.408Z"
 last_activity: 2026-05-22
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 93 (Global Percentile Benchmark Artifact) — roadmap drafted, not yet discussed
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-22 — Milestone v1.19 started
+Status: Roadmap drafted (3 phases: 93, 94, 95) — awaiting `/gsd:discuss-phase 93`
+Last activity: 2026-05-22 — v1.19 roadmap drafted (3 phases, 13 requirements mapped)
 
 ## Project Reference
 
@@ -117,6 +117,7 @@ Carried forward from v1.11 close (still relevant):
 
 ### Roadmap Evolution
 
+- 2026-05-22: v1.19 Endgame Percentiles & LLM Statistical Reasoning opened with a 3-phase directional roadmap. Phase 93 (Global Percentile Benchmark Artifact) — global empirical-CDF artifact via the canonical `/benchmarks` CTE locked into `endgame_zones.py` with TS codegen drift-guard (PCTL-01); blocks the rest. Phase 94 (Backend & Frontend Percentile Annotations) — nullable `{metric}_percentile` field + chip on Tier-1 / Tier-2 endgame cards with desktop + mobile parity, honest Tier-2 copy, minimum-N reliability gate (PCTL-02..06). Phase 95 (LLM Endgame-Insights Statistical-Reasoning Rework) — payload extension with p-values + CI bounds + percentiles, prompt rewrite reasoning over CIs / percentiles with guardrails resolving the `feedback_llm_significance_signal` tension, version bump from `endgame_v35`, UAT pass (LLM-01..07). All 13 requirements mapped, no orphans. Per-phase details intentionally directional — refined at `/gsd:discuss-phase` time. Source: SEED-019 §Proposed Scope and recent v1.17 statistical-rigor work (Phases 85.1 / 86 / 87.2 / 87.6 / 88).
 - v1.0–v1.14 shipped (see .planning/MILESTONES.md)
 - v1.14 shipped 2026-04-29 with 3 phases (75, 76, 77), 16 plans, delivered via PRs #69, #70, #71 (inline confidence-mute hotfix), #72, #73 (quick task). INSIGHT-UI-04 descoped per Phase 76 D-04.
 - 2026-05-02: v1.15 opened — single-phase milestone (Phase 78). Source: `reports/conv-recov-validation-2026-05-02.md`. All 16 v1.15 requirements (ENG-01..03, FILL-01..04, IMP-01..02, REFAC-01..05, VAL-01..02) mapped to Phase 78. SEED-010 Library gated until v1.15 ships.
