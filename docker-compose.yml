@@ -1,14 +1,21 @@
 services:
   db:
     image: postgres:18-alpine
+    # Memory settings sized for the Hetzner CPX42 production host (8 vCPU /
+    # 16 GB RAM). shared_buffers ~25% of RAM, effective_cache_size ~75% per
+    # standard tuning. work_mem bounded by max_connections=30 × 16MB = ~480MB
+    # worst case. maintenance_work_mem applies per autovacuum worker (default
+    # autovacuum_max_workers=3) so peak from vacuum is ~1.5 GB.
     command:
       - "postgres"
       - "-c"
-      - "shared_buffers=2GB"
+      - "shared_buffers=4GB"
       - "-c"
-      - "work_mem=8MB"
+      - "work_mem=16MB"
       - "-c"
-      - "effective_cache_size=6GB"
+      - "maintenance_work_mem=512MB"
+      - "-c"
+      - "effective_cache_size=12GB"
       - "-c"
       # Cap at 30 to match the application pool (10 + 10 per uvicorn process,
       # see app/core/database.py) plus headroom for psql, migrations, and
@@ -20,6 +27,12 @@ services:
       - "shared_preload_libraries=pg_stat_statements"
       - "-c"
       - "pg_stat_statements.track=all"
+    # memswap_limit = mem_limit disables swap for the db cgroup. Postgres
+    # paged out to swap is catastrophic for latency anyway; better to get a
+    # contained OOM-kill (~3 s auto-recovery, as observed on 2026-05-20 and
+    # 2026-05-21) than tens of seconds of swap thrash dragging down the host.
+    mem_limit: 10g
+    memswap_limit: 10g
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -58,9 +71,11 @@ services:
     # runaway uvicorn + Stockfish footprint gets OOM-killed inside the
     # container (auto-restarts) instead of dragging the host into the swap
     # thrash that preceded the 2026-05-20 and 2026-05-21 Postgres OOM-kills.
-    # Sized for the current 8 GB host; revisit after the CPX42 upgrade (16 GB).
-    mem_limit: 2500m
-    memswap_limit: 2500m
+    # Sized for the CPX42 host (16 GB) with STOCKFISH_POOL_SIZE up to 6. The
+    # Phase 91 stress test peaked at 1.47 GiB with 4 workers; 6 workers add
+    # roughly 400 MB, leaving ~2 GB headroom under this cap.
+    mem_limit: 4g
+    memswap_limit: 4g
     depends_on:
       db:
         condition: service_healthy
