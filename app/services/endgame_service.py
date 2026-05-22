@@ -18,7 +18,7 @@ import statistics
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from datetime import date as _date
 from enum import IntEnum
 from typing import Any, Literal, cast
@@ -81,7 +81,6 @@ from app.services.openings_service import (
     MIN_GAMES_FOR_TIMELINE,
     _build_wdl_stats,
     derive_user_result,
-    recency_cutoff,
 )
 from app.repositories.stats_repository import EVAL_OUTLIER_TRIM_CP
 from app.services.score_confidence import (
@@ -768,19 +767,18 @@ async def get_endgame_stats(
     platform: list[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency: str | None,
+    from_date: _date | None = None,
+    to_date: _date | None = None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> EndgameStatsResponse:
     """Orchestrate endgame stats query and return EndgameStatsResponse.
 
     Steps:
-    1. Convert recency to cutoff datetime.
-    2. Fetch one row per (game, endgame_class) span meeting the ply threshold.
-    3. Aggregate into per-category stats with conversion/recovery.
-    4. Return sorted categories (by total desc, D-05).
+    1. Fetch one row per (game, endgame_class) span meeting the ply threshold.
+    2. Aggregate into per-category stats with conversion/recovery.
+    3. Return sorted categories (by total desc, D-05).
     """
-    cutoff = recency_cutoff(recency)
     rows = await query_endgame_entry_rows(
         session,
         user_id=user_id,
@@ -788,7 +786,8 @@ async def get_endgame_stats(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -804,7 +803,8 @@ async def get_endgame_stats(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -817,7 +817,8 @@ async def get_endgame_stats(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -837,21 +838,20 @@ async def get_endgame_games(
     platform: list[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency: str | None,
-    offset: int,
-    limit: int,
+    from_date: _date | None = None,
+    to_date: _date | None = None,
+    offset: int = 0,
+    limit: int = 20,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> EndgameGamesResponse:
     """Orchestrate endgame games query and return paginated EndgameGamesResponse.
 
     Steps:
-    1. Convert recency to cutoff datetime.
-    2. Fetch paginated Game objects for the requested endgame class.
-    3. Build GameRecord objects matching the existing analysis schema.
-    4. Return EndgameGamesResponse with pagination metadata.
+    1. Fetch paginated Game objects for the requested endgame class.
+    2. Build GameRecord objects matching the existing analysis schema.
+    3. Return EndgameGamesResponse with pagination metadata.
     """
-    cutoff = recency_cutoff(recency)
     games, matched_count = await _query_endgame_games(
         session,
         user_id=user_id,
@@ -860,7 +860,8 @@ async def get_endgame_games(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         offset=offset,
         limit=limit,
         opponent_gap_min=opponent_gap_min,
@@ -2326,22 +2327,20 @@ async def get_endgame_performance(
     user_id: int,
     time_control: list[str] | None,
     platform: list[str] | None,
-    recency: str | None,
     rated: bool | None,
     opponent_type: str,
+    from_date: _date | None = None,
+    to_date: _date | None = None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
 ) -> EndgamePerformanceResponse:
     """Orchestrate endgame performance query and return EndgamePerformanceResponse.
 
     Steps:
-    1. Convert recency to cutoff datetime.
-    2. Fetch WDL comparison rows and entry rows sequentially.
-    3. Delegate aggregation to _get_endgame_performance_from_rows.
-    4. Return EndgamePerformanceResponse.
+    1. Fetch WDL comparison rows and entry rows sequentially.
+    2. Delegate aggregation to _get_endgame_performance_from_rows.
+    3. Return EndgamePerformanceResponse.
     """
-    cutoff = recency_cutoff(recency)
-
     # Execute sequentially — AsyncSession is not safe for concurrent use from
     # multiple coroutines, and shares a single DB connection anyway.
     endgame_rows, non_endgame_rows = await query_endgame_performance_rows(
@@ -2351,7 +2350,8 @@ async def get_endgame_performance(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -2362,7 +2362,8 @@ async def get_endgame_performance(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -2375,9 +2376,10 @@ async def get_endgame_timeline(
     user_id: int,
     time_control: list[str] | None,
     platform: list[str] | None,
-    recency: str | None,
     rated: bool | None,
     opponent_type: str,
+    from_date: _date | None = None,
+    to_date: _date | None = None,
     window: int = 50,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
@@ -2385,16 +2387,14 @@ async def get_endgame_timeline(
     """Orchestrate endgame timeline query and return EndgameTimelineResponse.
 
     Steps:
-    1. Convert recency to cutoff datetime.
-    2. Fetch ALL rows (no recency filter) so the rolling window is pre-filled
-       with games before the cutoff — avoids cold-start when filtering recent games.
-    3. Compute rolling-window series over full history.
-    4. Filter output to only emit points on or after the recency cutoff.
-    5. Merge overall series by date, build per-type series.
-    6. Return EndgameTimelineResponse.
+    1. Fetch ALL rows (no date filter) so the rolling window is pre-filled
+       with games before the from_date — avoids cold-start when filtering recent games.
+    2. Compute rolling-window series over full history.
+    3. Filter output to only emit points on or after from_date (if set).
+    4. Merge overall series by date, build per-type series.
+    5. Return EndgameTimelineResponse.
     """
-    cutoff = recency_cutoff(recency)
-    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
+    cutoff_str = from_date.isoformat() if from_date else None
 
     # Fetch all games (no recency filter) so rolling windows are pre-filled.
     # Other filters (time_control, platform, etc.) still applied.
@@ -2405,7 +2405,8 @@ async def get_endgame_timeline(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=None,
+        from_date=None,
+        to_date=None,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -2487,7 +2488,7 @@ async def get_endgame_elo_timeline(
     platform: list[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency: str | None,
+    from_date: _date | None,
     endgame_rows_all: Sequence[Row[Any] | tuple[Any, ...]],
     non_endgame_rows_all: Sequence[Row[Any] | tuple[Any, ...]],
     opponent_gap_min: int | None = None,
@@ -2497,7 +2498,7 @@ async def get_endgame_elo_timeline(
     D-06 rebuild on Endgame Score Gap).
 
     Fetches per-combo all-game rows for the Actual ELO asof-join (rolling
-    window pre-fill via recency_cutoff=None — Pitfall 2). Derives the
+    window pre-fill via from_date=None — Pitfall 2). Derives the
     per-combo Endgame Score Gap series by partitioning the caller-supplied
     cross-combo ``endgame_rows_all`` / ``non_endgame_rows_all`` (shape
     ``(played_at, result, user_color, platform, time_control_bucket)`` from
@@ -2515,8 +2516,7 @@ async def get_endgame_elo_timeline(
     Drops combos with zero qualifying points (D-10 tier 2) and returns
     combos ordered per ``_ENDGAME_ELO_COMBO_ORDER``.
     """
-    cutoff = recency_cutoff(recency)
-    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
+    cutoff_str = from_date.isoformat() if from_date else None
 
     all_rows_all = await query_endgame_elo_timeline_rows(
         session,
@@ -2525,7 +2525,8 @@ async def get_endgame_elo_timeline(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=None,  # pre-fill windows; filter output via cutoff_str
+        from_date=None,  # pre-fill windows; filter output via cutoff_str
+        to_date=None,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -2619,7 +2620,8 @@ async def get_endgame_overview(
     platform: list[str] | None,
     rated: bool | None,
     opponent_type: str,
-    recency: str | None,
+    from_date: _date | None = None,
+    to_date: _date | None = None,
     window: int = 50,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
@@ -2634,8 +2636,14 @@ async def get_endgame_overview(
     All queries run sequentially on one AsyncSession — no asyncio.gather.
     See endgame_repository.py for AsyncSession concurrency notes.
     """
-    cutoff = recency_cutoff(recency)
-    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
+    cutoff_str = from_date.isoformat() if from_date else None
+    # For Python-side datetime comparisons against played_at (a timezone-aware datetime),
+    # convert from_date to UTC midnight so offset-aware comparisons work correctly.
+    from_dt = (
+        datetime(from_date.year, from_date.month, from_date.day, tzinfo=timezone.utc)
+        if from_date
+        else None
+    )
 
     # Fetch entry_rows once — shared by stats, performance, and score_gap_material.
     # Previously fetched redundantly by both get_endgame_stats and get_endgame_performance.
@@ -2646,7 +2654,8 @@ async def get_endgame_overview(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -2662,7 +2671,8 @@ async def get_endgame_overview(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -2675,7 +2685,8 @@ async def get_endgame_overview(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -2697,13 +2708,14 @@ async def get_endgame_overview(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=None,
+        from_date=None,
+        to_date=None,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    if cutoff is not None:
-        endgame_rows = [r for r in endgame_rows_all if r[0] is not None and r[0] >= cutoff]
-        non_endgame_rows = [r for r in non_endgame_rows_all if r[0] is not None and r[0] >= cutoff]
+    if from_dt is not None:
+        endgame_rows = [r for r in endgame_rows_all if r[0] is not None and r[0] >= from_dt]
+        non_endgame_rows = [r for r in non_endgame_rows_all if r[0] is not None and r[0] >= from_dt]
     else:
         endgame_rows = list(endgame_rows_all)
         non_endgame_rows = list(non_endgame_rows_all)
@@ -2721,7 +2733,8 @@ async def get_endgame_overview(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=cutoff,
+        from_date=from_date,
+        to_date=to_date,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -2750,9 +2763,10 @@ async def get_endgame_overview(
         user_id=user_id,
         time_control=time_control,
         platform=platform,
-        recency=recency,
         rated=rated,
         opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
         window=window,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
@@ -2768,12 +2782,13 @@ async def get_endgame_overview(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency_cutoff=None,
+        from_date=None,
+        to_date=None,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
-    if cutoff is not None:
-        clock_rows = [r for r in clock_rows_all if r[8] is not None and r[8] >= cutoff]
+    if from_dt is not None:
+        clock_rows = [r for r in clock_rows_all if r[8] is not None and r[8] >= from_dt]
     else:
         clock_rows = list(clock_rows_all)
     # Phase 88.1: Build per-TC time pressure cards from the user's own filtered
@@ -2790,7 +2805,7 @@ async def get_endgame_overview(
     # ``clock_rows_all`` (UNFILTERED by recency) + ``cutoff`` so the rolling
     # window pre-fills from games before the cutoff; the function drops
     # pre-cutoff weeks from the emitted output (REVIEW.md WR-01).
-    clock_diff_timeline = _compute_clock_diff_timeline(clock_rows_all, cutoff=cutoff)
+    clock_diff_timeline = _compute_clock_diff_timeline(clock_rows_all, cutoff=from_dt)
 
     # Phase 57 ELO-05 / Phase 87.5 D-06: paired Endgame ELO + Actual ELO
     # timeline per (platform, TC) combo. Endgame ELO is derived per
@@ -2808,7 +2823,7 @@ async def get_endgame_overview(
         platform=platform,
         rated=rated,
         opponent_type=opponent_type,
-        recency=recency,
+        from_date=from_date,
         endgame_rows_all=endgame_rows_all,
         non_endgame_rows_all=non_endgame_rows_all,
         opponent_gap_min=opponent_gap_min,

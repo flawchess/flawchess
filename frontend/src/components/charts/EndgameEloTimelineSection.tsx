@@ -315,10 +315,10 @@ export function EndgameEloTimelineSection({
     >
       <div className="space-y-2">
         <p>
-          <strong>Endgame ELO Timeline:</strong> what your rating would look
-          like if your whole game played at the level of just your endgame
-          games (dashed line) or just your non-endgame games (dotted line),
-          plotted over time.
+          <strong>Endgame ELO Timeline:</strong> your Endgame ELO (dashed line)
+          and Non-Endgame ELO (dotted line) over time, derived from your
+          Endgame Score Gap. See the "Endgame statistics concepts" section at
+          the top of the page for details.
         </p>
         <p>
           The band between them is your endgame's lift (green) or drag (red).

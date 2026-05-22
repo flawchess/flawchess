@@ -2,7 +2,6 @@
 
 Coverage:
 - ANL-03: derive_user_result for all 6 result × color combinations
-- recency_cutoff: None passthrough, "all", "week", "year" mappings
 - ANL-03: W/D/L stats computed correctly from seeded data
 - RES-01, RES-02: GameRecord includes opponent, result, date, time_control, platform_url
 - RES-03: matched_count reflects total before pagination
@@ -24,7 +23,6 @@ from app.services.openings_service import (
     analyze,
     derive_user_result,
     get_next_moves,
-    recency_cutoff,
 )
 
 
@@ -125,37 +123,6 @@ class TestDeriveUserResult:
 
     def test_draw_black(self) -> None:
         assert derive_user_result("1/2-1/2", "black") == "draw"
-
-
-# ---------------------------------------------------------------------------
-# TestRecencyCutoff
-# ---------------------------------------------------------------------------
-
-
-class TestRecencyCutoff:
-    """Verify recency_cutoff returns correct datetime offsets."""
-
-    def test_none_returns_none(self) -> None:
-        assert recency_cutoff(None) is None
-
-    def test_all_returns_none(self) -> None:
-        assert recency_cutoff("all") is None
-
-    def test_week_returns_recent(self) -> None:
-        before = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=7)
-        result = recency_cutoff("week")
-        after = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=7)
-
-        assert result is not None
-        assert before <= result <= after
-
-    def test_year_returns_past(self) -> None:
-        before = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=365)
-        result = recency_cutoff("year")
-        after = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=365)
-
-        assert result is not None
-        assert before <= result <= after
 
 
 # ---------------------------------------------------------------------------

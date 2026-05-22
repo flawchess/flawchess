@@ -67,6 +67,7 @@ const SECTIONS: SectionMeta[] = [
 export function OpeningInsightsBlock({ debouncedFilters, onFindingClick, onOpenGames }: OpeningInsightsBlockProps) {
   const query = useOpeningInsights({
     recency: debouncedFilters.recency,
+    customRange: debouncedFilters.customRange,
     timeControls: debouncedFilters.timeControls,
     platforms: debouncedFilters.platforms,
     rated: debouncedFilters.rated,

@@ -52,17 +52,6 @@ ROLLING_WINDOW_SIZE = 50
 # Prevents noisy 0%/100% points at the start of a series.
 MIN_GAMES_FOR_TIMELINE = 10
 
-# Maps recency filter strings to timedelta offsets.
-RECENCY_DELTAS: dict[str, datetime.timedelta] = {
-    "week": datetime.timedelta(days=7),
-    "month": datetime.timedelta(days=30),
-    "3months": datetime.timedelta(days=90),
-    "6months": datetime.timedelta(days=180),
-    "year": datetime.timedelta(days=365),
-    "3years": datetime.timedelta(days=365 * 3),
-    "5years": datetime.timedelta(days=365 * 5),
-}
-
 
 def _build_wdl_stats(
     wins: int,
@@ -134,17 +123,6 @@ def derive_user_result(result: str, user_color: str) -> Literal["win", "draw", "
     return "loss"
 
 
-def recency_cutoff(recency: str | None) -> datetime.datetime | None:
-    """Return a UTC datetime cutoff for the given recency filter, or None.
-
-    Returns None for None or "all" (no recency restriction).
-    """
-    if recency is None or recency == "all":
-        return None
-    delta = RECENCY_DELTAS[recency]
-    return datetime.datetime.now(tz=datetime.timezone.utc) - delta
-
-
 async def analyze(
     session: AsyncSession,
     user_id: int,
@@ -154,15 +132,13 @@ async def analyze(
 
     Steps:
     1. Resolve hash column from match_side.
-    2. Compute optional recency cutoff datetime.
-    3. Fetch all (result, user_color) rows for aggregate stats.
-    4. Compute W/D/L counts and percentages.
-    5. Fetch paginated Game objects.
-    6. Build GameRecord list and return OpeningsResponse.
+    2. Fetch all (result, user_color) rows for aggregate stats.
+    3. Compute W/D/L counts and percentages.
+    4. Fetch paginated Game objects.
+    5. Build GameRecord list and return OpeningsResponse.
     """
     # When target_hash is None, skip position filtering entirely
     hash_column = HASH_COLUMN_MAP[request.match_side] if request.target_hash is not None else None
-    cutoff = recency_cutoff(request.recency)
 
     # --- Stats via SQL aggregation (single round-trip, no Python loop) ---
     wdl_row = await query_wdl_counts(
@@ -174,7 +150,8 @@ async def analyze(
         platform=request.platform,
         rated=request.rated,
         opponent_type=request.opponent_type,
-        recency_cutoff=cutoff,
+        from_date=request.from_date,
+        to_date=request.to_date,
         color=request.color,
         opponent_gap_min=request.opponent_gap_min,
         opponent_gap_max=request.opponent_gap_max,
@@ -198,7 +175,8 @@ async def analyze(
             platform=request.platform,
             rated=request.rated,
             opponent_type=request.opponent_type,
-            recency_cutoff=cutoff,
+            from_date=request.from_date,
+            to_date=request.to_date,
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
             hash_column=request.match_side,
@@ -238,7 +216,8 @@ async def analyze(
         platform=request.platform,
         rated=request.rated,
         opponent_type=request.opponent_type,
-        recency_cutoff=cutoff,
+        from_date=request.from_date,
+        to_date=request.to_date,
         color=request.color,
         offset=request.offset,
         limit=request.limit,
@@ -291,15 +270,14 @@ async def get_time_series(
     ROLLING_WINDOW_SIZE games (or all games so far if fewer than ROLLING_WINDOW_SIZE
     have been played). Partial windows (games 1 to ROLLING_WINDOW_SIZE-1) are
     included from the start.
-    """
-    cutoff = recency_cutoff(request.recency)
-    cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff else None
 
+    D-19: no date filtering on the time-series path — the rolling-window chart
+    always covers the full game history so that context games before the window
+    anchor the rolling averages correctly.
+    """
     series: list[BookmarkTimeSeries] = []
     for bkm in request.bookmarks:
         hash_column = HASH_COLUMN_MAP[bkm.match_side]
-        # Fetch all games (no recency filter) so rolling windows are pre-filled.
-        # Other filters (time_control, platform, etc.) still applied.
         rows = await query_time_series(
             session,
             user_id,
@@ -310,7 +288,6 @@ async def get_time_series(
             platform=request.platform,
             rated=request.rated,
             opponent_type=request.opponent_type,
-            recency_cutoff=None,
             opponent_gap_min=request.opponent_gap_min,
             opponent_gap_max=request.opponent_gap_max,
         )
@@ -327,7 +304,6 @@ async def get_time_series(
             outcome = derive_user_result(result, user_color)
             results_so_far.append(outcome)
 
-            # Accumulate overall totals (may be narrowed below by recency filter)
             if outcome == "win":
                 total_wins += 1
             elif outcome == "draw":
@@ -350,24 +326,8 @@ async def get_time_series(
                 window_size=ROLLING_WINDOW_SIZE,
             )
 
-        # Drop early points with too few games in the rolling window
-        # Filter output to recency window (rolling window was computed over full history)
+        # Drop early points with too few games in the rolling window.
         data = [pt for pt in data_by_date.values() if pt.game_count >= MIN_GAMES_FOR_TIMELINE]
-        if cutoff_str:
-            data = [pt for pt in data if pt.date >= cutoff_str]
-            # Recompute totals from filtered period only
-            total_wins = total_draws = total_losses = 0
-            last_played_at = None
-            for played_at, result, user_color in rows:
-                if played_at.strftime("%Y-%m-%d") >= cutoff_str:
-                    outcome = derive_user_result(result, user_color)
-                    if outcome == "win":
-                        total_wins += 1
-                    elif outcome == "draw":
-                        total_draws += 1
-                    else:
-                        total_losses += 1
-                    last_played_at = played_at  # rows ordered ASC; final assignment wins
 
         total_games = total_wins + total_draws + total_losses
         series.append(
@@ -456,17 +416,14 @@ async def get_next_moves(
     """Orchestrate next-move aggregation and return NextMovesResponse.
 
     Steps:
-    1. Compute optional recency cutoff datetime.
-    2. Compute position_stats via query_wdl_counts with full_hash.
-    3. Query aggregated next moves (move_san, result_hash, W/D/L counts).
-    4. Batch-query resulting-position WDL for all result hashes; derive
+    1. Compute position_stats via query_wdl_counts with full_hash.
+    2. Query aggregated next moves (move_san, result_hash, W/D/L counts).
+    3. Batch-query resulting-position WDL for all result hashes; derive
        trans_counts inline from wins+draws+losses (one round trip).
-    5. Compute result_fen for each result_hash via PGN replay.
-    6. Build NextMoveEntry list and apply sort_by ordering.
-    7. Return NextMovesResponse.
+    4. Compute result_fen for each result_hash via PGN replay.
+    5. Build NextMoveEntry list and apply sort_by ordering.
+    6. Return NextMovesResponse.
     """
-    cutoff = recency_cutoff(request.recency)
-
     # --- Position stats via SQL aggregation (single round-trip, no Python loop) ---
     wdl_row = await query_wdl_counts(
         session=session,
@@ -477,7 +434,8 @@ async def get_next_moves(
         platform=request.platform,
         rated=request.rated,
         opponent_type=request.opponent_type,
-        recency_cutoff=cutoff,
+        from_date=request.from_date,
+        to_date=request.to_date,
         color=request.color,
         opponent_gap_min=request.opponent_gap_min,
         opponent_gap_max=request.opponent_gap_max,
@@ -496,7 +454,8 @@ async def get_next_moves(
         platform=request.platform,
         rated=request.rated,
         opponent_type=request.opponent_type,
-        recency_cutoff=cutoff,
+        from_date=request.from_date,
+        to_date=request.to_date,
         color=request.color,
         opponent_gap_min=request.opponent_gap_min,
         opponent_gap_max=request.opponent_gap_max,
@@ -520,7 +479,8 @@ async def get_next_moves(
         platform=request.platform,
         rated=request.rated,
         opponent_type=request.opponent_type,
-        recency_cutoff=cutoff,
+        from_date=request.from_date,
+        to_date=request.to_date,
         color=request.color,
         opponent_gap_min=request.opponent_gap_min,
         opponent_gap_max=request.opponent_gap_max,

@@ -236,7 +236,7 @@ export function EndgameMetricCard({
                       baselineLabel="0%"
                       methodology={
                         <>
-                          Score: per-span exit score minus Stockfish expected score from span entry eval.<br />
+                          Score Gap: Difference between Endgame Sequence start and end score, based on Stockfish evaluations converted to expected score.<br />
                           Test: paired one-sample z-test on per-span Delta-ES values vs 0.<br />
                           Confidence interval: 95% normal-approx on the paired diffs.
                         </>

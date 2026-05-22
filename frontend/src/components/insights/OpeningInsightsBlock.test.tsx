@@ -36,6 +36,7 @@ const DEFAULT_FILTERS: FilterState = {
   color: 'white',
   matchSide: 'both',
   recency: 'year',
+  customRange: null,
   timeControls: null,
   platforms: null,
   rated: null,

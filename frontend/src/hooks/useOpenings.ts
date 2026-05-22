@@ -3,6 +3,7 @@ import { apiClient } from '@/api/client';
 import type { OpeningsResponse } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
+import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
 export function useOpeningsPositionQuery(params: {
@@ -11,6 +12,7 @@ export function useOpeningsPositionQuery(params: {
   offset: number;
   limit: number;
 }) {
+  const dateParams = dateRangeToWireParams(resolveDateRange(params.filters));
   return useQuery<OpeningsResponse>({
     queryKey: ['openingsPosition', params.targetHash, params.filters, params.offset, params.limit],
     queryFn: async () => {
@@ -22,7 +24,7 @@ export function useOpeningsPositionQuery(params: {
         rated: params.filters.rated,
         opponent_type: params.filters.opponentType,
         ...rangeToQueryParams(params.filters.opponentStrength),
-        recency: params.filters.recency,
+        ...dateParams,
         color: params.filters.color,
         offset: params.offset,
         limit: params.limit,

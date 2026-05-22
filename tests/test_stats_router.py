@@ -6,10 +6,10 @@ FastAPI app directly without spinning up a real server.
 Coverage:
 - GET /stats/rating-history: returns 401 without auth
 - GET /stats/rating-history: returns structured per-platform data
-- GET /stats/rating-history?recency=month: filters by recency
+- GET /stats/rating-history?from_date=...: filters by date range
 - GET /stats/global: returns 401 without auth
 - GET /stats/global: returns WDL by time control and color
-- GET /stats/global?recency=year: filters by recency
+- GET /stats/global?from_date=...: filters by date range
 """
 
 import uuid
@@ -88,12 +88,14 @@ class TestGetRatingHistory:
         assert isinstance(data["lichess"], list)
 
     @pytest.mark.asyncio
-    async def test_recency_param_accepted(self, auth_headers: dict[str, str]) -> None:
-        """recency query param is accepted without error."""
+    async def test_from_date_param_accepted(self, auth_headers: dict[str, str]) -> None:
+        """from_date query param is accepted without error."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/api/stats/rating-history?recency=month", headers=auth_headers)
+            resp = await client.get(
+                "/api/stats/rating-history?from_date=2026-01-01", headers=auth_headers
+            )
 
         assert resp.status_code == 200
 
@@ -196,12 +198,12 @@ class TestGetGlobalStats:
         assert isinstance(data["by_color"], list)
 
     @pytest.mark.asyncio
-    async def test_recency_param_accepted(self, auth_headers: dict[str, str]) -> None:
-        """recency query param is accepted without error."""
+    async def test_from_date_param_accepted(self, auth_headers: dict[str, str]) -> None:
+        """from_date query param is accepted without error."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.get("/api/stats/global?recency=year", headers=auth_headers)
+            resp = await client.get("/api/stats/global?from_date=2026-01-01", headers=auth_headers)
 
         assert resp.status_code == 200
 
@@ -325,7 +327,7 @@ class TestGetMostPlayedOpenings:
         ) as client:
             resp = await client.get(
                 "/api/stats/most-played-openings",
-                params={"recency": "month", "time_control": "blitz", "rated": "true"},
+                params={"from_date": "2026-01-01", "time_control": "blitz", "rated": "true"},
                 headers=auth_headers,
             )
 

@@ -17,15 +17,13 @@ export function GlobalStatsPage() {
   // Filter state shared across pages — GlobalStats only uses recency + platforms
   const [filters, setFilters] = useFilterStore();
 
-  // Derive recency and platforms from FilterState for the stats hooks
-  const recency = filters.recency;
   const selectedPlatforms = filters.platforms;
 
   const { data: ratingData, isLoading: ratingLoading } = useRatingHistory(
-    recency, selectedPlatforms, filters.opponentType, filters.opponentStrength,
+    filters, selectedPlatforms, filters.opponentType, filters.opponentStrength,
   );
   const { data: globalStats, isLoading: statsLoading } = useGlobalStats(
-    recency, selectedPlatforms, filters.opponentType, filters.opponentStrength,
+    filters, selectedPlatforms, filters.opponentType, filters.opponentStrength,
   );
 
   const isLoading = ratingLoading || statsLoading;

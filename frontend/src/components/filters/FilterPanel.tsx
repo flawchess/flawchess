@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select,
@@ -6,13 +7,34 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { MatchSide, TimeControl, Recency, Color, Platform, OpponentType, OpponentStrengthRange } from '@/types/api';
+import { Popover, PopoverAnchor } from '@/components/ui/popover';
+import type { MatchSide, TimeControl, RecencyPreset, Color, Platform, OpponentType, OpponentStrengthRange } from '@/types/api';
 import { cn } from '@/lib/utils';
 import { ANY_RANGE } from '@/lib/opponentStrength';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { Button } from '@/components/ui/button';
 import { OpponentStrengthFilter } from './OpponentStrengthFilter';
+import { CustomRangePopover, formatCustomRangeLabel } from './CustomRangePopover';
+import { CustomRangeDrawer } from './CustomRangeDrawer';
+
+// ─── Mobile breakpoint detection ──────────────────────────────────────────────
+// Same threshold as ScoreChart.tsx (768px = Tailwind `md`).
+const MOBILE_BREAKPOINT_PX = 768;
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 export interface FilterState {
   matchSide: MatchSide;
@@ -25,7 +47,9 @@ export interface FilterState {
    * Default `{ min: null, max: null }` = no filter (Any preset).
    */
   opponentStrength: OpponentStrengthRange;
-  recency: Recency | null; // null = all time
+  recency: RecencyPreset | 'custom' | null; // null = all time; 'custom' = look at customRange
+  /** Custom date range set by the user. Non-null only when recency === 'custom'. */
+  customRange: { from?: Date; to?: Date } | null;
   color: Color;
 }
 
@@ -38,6 +62,7 @@ export const DEFAULT_FILTERS: FilterState = {
   opponentType: 'human',
   opponentStrength: ANY_RANGE,
   recency: null,
+  customRange: null,
   color: 'white',
 };
 
@@ -56,6 +81,7 @@ export const FILTER_DOT_FIELDS: ReadonlyArray<keyof FilterState> = [
   'opponentType',
   'opponentStrength',
   'recency',
+  'customRange',
 ] as const;
 
 /**
@@ -84,11 +110,21 @@ export function areFiltersEqual(
       if (!(av as readonly string[]).every((v) => setB.has(v))) return false;
       continue;
     }
-    // opponentStrength is the only object-shaped field; compare structurally.
+    // opponentStrength is an object-shaped field; compare structurally.
     if (key === 'opponentStrength') {
       const ar = av as OpponentStrengthRange;
       const br = bv as OpponentStrengthRange;
       if (ar.min === br.min && ar.max === br.max) continue;
+      return false;
+    }
+    // customRange is an object-shaped field; compare by Date.getTime() to avoid
+    // reference-equality mismatches when the same range is reconstructed.
+    if (key === 'customRange') {
+      const ar = av as FilterState['customRange'];
+      const br = bv as FilterState['customRange'];
+      if (ar === null && br === null) continue;
+      if (ar === null || br === null) return false;
+      if (ar.from?.getTime() === br.from?.getTime() && ar.to?.getTime() === br.to?.getTime()) continue;
       return false;
     }
     return false;
@@ -133,6 +169,44 @@ export function FilterPanel({
     onChange({ ...filters, ...partial });
   };
 
+  // Custom range popover/drawer state.
+  const [customOpen, setCustomOpen] = useState(false);
+  // Tracks a pending "custom" pick so we can suppress Select's restore-focus on
+  // close — otherwise focus snaps back to the SelectTrigger right after the
+  // popover opens, and the popover's focusOutside dismiss closes it (UAT bug:
+  // calendar flashed open then disappeared).
+  const pendingCustomRef = useRef(false);
+  // In-progress custom-range edits live here while the popover is open; they
+  // are committed to the filter only when the popover closes (Done button,
+  // outside click, or Escape).
+  const [pendingCustomRange, setPendingCustomRange] = useState<{ from?: Date; to?: Date } | null>(
+    filters.customRange,
+  );
+  // Sync pending → committed each time the popover opens (and on external
+  // changes like Reset Filters). Derive-during-render avoids the useEffect
+  // cascade.
+  const [prevCustomOpen, setPrevCustomOpen] = useState(customOpen);
+  if (prevCustomOpen !== customOpen) {
+    setPrevCustomOpen(customOpen);
+    if (customOpen) setPendingCustomRange(filters.customRange);
+  }
+  // Single handler for both Radix-driven dismiss (outside click, Escape) and
+  // explicit Done click. Radix Popover only fires onOpenChange on internal
+  // dismisses; setting `open=false` externally would skip the commit, so we
+  // route Done through here too.
+  const handleCustomOpenChange = (open: boolean) => {
+    if (!open && customOpen) {
+      // Closing — commit pendingCustomRange. Empty edit reverts recency.
+      if (pendingCustomRange?.from || pendingCustomRange?.to) {
+        update({ recency: 'custom', customRange: pendingCustomRange });
+      } else {
+        update({ recency: null, customRange: null });
+      }
+    }
+    setCustomOpen(open);
+  };
+  const isMobile = useIsMobile();
+
   const toggleTimeControl = (tc: TimeControl) => {
     const current = filters.timeControls ?? TIME_CONTROLS;
     if (current.includes(tc)) {
@@ -173,24 +247,110 @@ export function FilterPanel({
       {show('recency') && (
         <div>
           <p className="mb-1 text-xs text-muted-foreground">Recency</p>
-          <Select
-            value={filters.recency ?? 'all'}
-            onValueChange={(v) => update({ recency: v === 'all' ? null : (v as Recency) })}
+          {/*
+            Desktop: Popover anchored to the Select trigger via PopoverAnchor asChild (D-03).
+            Mobile:  Popover is never open; CustomRangeDrawer handles the nested sheet (D-06).
+            queueMicrotask defers setCustomOpen so the Select close animation completes
+            before the popover/drawer open animation begins (RESEARCH.md §Pitfall 6).
+          */}
+          <Popover
+            open={customOpen && !isMobile}
+            onOpenChange={handleCustomOpenChange}
           >
-            <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All time</SelectItem>
-              <SelectItem value="week">Past week</SelectItem>
-              <SelectItem value="month">Past month</SelectItem>
-              <SelectItem value="3months">3 months</SelectItem>
-              <SelectItem value="6months">6 months</SelectItem>
-              <SelectItem value="year">1 year</SelectItem>
-              <SelectItem value="3years">3 years</SelectItem>
-              <SelectItem value="5years">5 years</SelectItem>
-            </SelectContent>
-          </Select>
+            <Select
+              value={filters.recency === 'custom' ? 'custom' : (filters.recency ?? 'all')}
+              onValueChange={(v) => {
+                // 'custom' is handled by the SelectItem's onClick below so that
+                // re-clicking "custom" while it's already the active value
+                // still reopens the calendar (Radix Select doesn't fire
+                // onValueChange when the value is unchanged).
+                if (v !== 'custom') {
+                  // Any preset clears the custom range (D-08).
+                  update({ recency: v === 'all' ? null : (v as RecencyPreset), customRange: null });
+                }
+              }}
+            >
+              {/*
+                PopoverAnchor must wrap a real DOM element. Select Root is a virtual
+                Radix primitive (no DOM) — wrapping it leaves the anchor ref null and
+                the popover gets no positioning reference (off-screen/zero-rect).
+                Anchor the SelectTrigger (<button>) instead.
+              */}
+              <PopoverAnchor asChild>
+                <SelectTrigger size="sm" data-testid="filter-recency" className="min-h-11 sm:min-h-0 w-full">
+                  {/* Render resolved range label when custom is active (D-04); preset label otherwise. */}
+                  {filters.recency === 'custom'
+                    ? formatCustomRangeLabel(filters.customRange)
+                    : <SelectValue />}
+                </SelectTrigger>
+              </PopoverAnchor>
+              <SelectContent
+                // position="popper" anchors the menu below the trigger. The
+                // default "item-aligned" mode aligns the *selected* item with
+                // the trigger, so once "custom" (last item) is selected the
+                // menu opens upward and shifted left next time.
+                position="popper"
+                onCloseAutoFocus={(e) => {
+                  // When the user picked "custom", suppress Select's focus
+                  // restore so it doesn't steal focus from the about-to-open
+                  // popover and trigger Radix's focusOutside dismiss.
+                  if (pendingCustomRef.current) {
+                    e.preventDefault();
+                    pendingCustomRef.current = false;
+                  }
+                }}
+              >
+                <SelectItem value="all">All time</SelectItem>
+                <SelectItem value="week">Past week</SelectItem>
+                <SelectItem value="month">Past month</SelectItem>
+                <SelectItem value="3months">3 months</SelectItem>
+                <SelectItem value="6months">6 months</SelectItem>
+                <SelectItem value="year">1 year</SelectItem>
+                <SelectItem value="3years">3 years</SelectItem>
+                <SelectItem value="5years">5 years</SelectItem>
+                <SelectItem
+                  value="custom"
+                  data-testid="filter-recency-custom"
+                  // Radix triggers selection on pointerup for mouse and on
+                  // click for keyboard/touch — and unmounts the item once
+                  // selection runs, so onClick alone misses mouse clicks.
+                  // Hook both to cover every input type. Idempotent: setting
+                  // the same state twice is a no-op.
+                  onPointerUp={() => {
+                    pendingCustomRef.current = true;
+                    queueMicrotask(() => setCustomOpen(true));
+                  }}
+                  onClick={() => {
+                    pendingCustomRef.current = true;
+                    queueMicrotask(() => setCustomOpen(true));
+                  }}
+                >
+                  Custom range…
+                </SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Desktop: Calendar in a Popover anchored to the Select trigger.
+                Edits pendingCustomRange only; commit happens via
+                handleCustomOpenChange — used for both Radix dismiss paths and
+                the Done button below. */}
+            <CustomRangePopover
+              value={pendingCustomRange}
+              onChange={setPendingCustomRange}
+              onOpenChange={handleCustomOpenChange}
+            />
+          </Popover>
+
+          {/* Mobile: Calendar in a nested Drawer layered over the FilterPanel drawer.
+              The drawer handles its own close via onOpenChange after Apply. */}
+          <CustomRangeDrawer
+            value={filters.customRange}
+            onChange={(range) => {
+              if (range) update({ recency: 'custom', customRange: range });
+            }}
+            open={customOpen && isMobile}
+            onOpenChange={setCustomOpen}
+          />
         </div>
       )}
 
@@ -320,7 +480,7 @@ export function FilterPanel({
           className="w-full min-h-11 sm:min-h-0"
           data-testid="btn-reset-filters"
           onClick={() => {
-            onChange({ ...DEFAULT_FILTERS, color: filters.color });
+            onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
           }}
         >
           Reset Filters

@@ -93,7 +93,8 @@ export interface BookmarkPhaseEntryRequest {
   opponent_type?: string;
   opponent_gap_min?: number | null;
   opponent_gap_max?: number | null;
-  recency?: string | null;
+  from_date?: string | null;
+  to_date?: string | null;
 }
 
 export interface BookmarkPhaseEntryResponse {

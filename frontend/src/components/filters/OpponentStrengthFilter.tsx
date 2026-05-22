@@ -61,7 +61,7 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
                     <strong>Stronger</strong>: opponents rated 50+ Elo above you.
                   </p>
                   <p>
-                    <strong>Similar</strong>: opponents within ±50 Elo.
+                    <strong>Similar</strong>: opponents within ±100 Elo.
                   </p>
                   <p>
                     <strong>Weaker</strong>: opponents rated 50+ Elo below you.

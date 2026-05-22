@@ -43,14 +43,13 @@ if [ "$OPENINGS_COUNT" -eq 0 ]; then
   uv run python -m scripts.seed_openings
 fi
 
-# Stockfish binary for local dev (Phase 78). Prod ships the pinned sf_17 AVX2 binary
-# at /usr/local/bin/stockfish via Dockerfile; locally we use ~/.local/stockfish/sf.
+# Stockfish binary for local dev. Prod bakes the pinned sf_18 AVX2 binary into
+# the backend image (see Dockerfile); locally we install the identical binary
+# to ~/.local/stockfish/sf via bin/install_stockfish.sh. The installer is
+# idempotent — once the pinned version is on disk, re-runs are a no-op.
+echo "Ensuring Stockfish is installed..."
+bin/install_stockfish.sh
 export STOCKFISH_PATH="${STOCKFISH_PATH:-$HOME/.local/stockfish/sf}"
-if [ ! -x "$STOCKFISH_PATH" ]; then
-  echo "Error: Stockfish binary not found at $STOCKFISH_PATH"
-  echo "See .planning/milestones/v1.15-phases/78-stockfish-eval-cutover-for-endgame-classification/78-06-SUMMARY.md for install steps."
-  exit 1
-fi
 
 # Start backend
 echo "Starting backend..."

@@ -88,6 +88,38 @@ Plans:
 
 - [x] 91-08-PLAN.md — Dual-20k stress-test harness (scripts/measure_dual_import_rss.py) + operator-gated run
 
+### Phase 92: Custom date range filter (from/to dates replace closed Recency union)
+
+**Goal:** Add a "Custom range…" entry to the existing recency dropdown in `FilterPanel.tsx` that opens a popover with start/end date inputs, and replace the closed `Recency` string union on the API wire with two optional `from`/`to` date params. Users get specific historical windows (tournaments, ranges before/after a coaching change, exclude recent slump) while the 95% preset case remains visually unchanged. Backend stays single-shape: `WHERE played_at BETWEEN start AND end` — no preset translation logic, frontend owns "now" and computes preset dates locally.
+
+**Scope (in):**
+
+1. **Bookmark time-series recency removal** — pre-work from pending todo `2026-05-02-remove-recency-from-bookmark-timeseries.md`: drop `recency` from `TimeSeriesRequest` (`frontend/src/types/position_bookmarks.ts:52`), the matching field in `app/schemas/openings.py` (~line 181, the time-series one only), and any service/repo call site. Done first so the date-range refactor doesn't accidentally extend `from`/`to` into the time-series request.
+2. **API contract** — drop `recency` from the request schemas in `app/schemas/openings.py` for the regular openings and next-moves requests, and from `app/repositories/query_utils.py::apply_game_filters()`. Add two optional `date.date` params `from_date` / `to_date` (param name TBD in discuss) on the wire; `WHERE played_at BETWEEN from AND to`, both omitted = no filter (no `1970-01-01` sentinel).
+3. **Frontend preset → date conversion** — compute `from`/`to` in user-local timezone for each of the 8 existing recency presets, memoized to today's date string so TanStack Query keys don't churn per render. Canonicalize start to `00:00` local and end to `23:59:59` local.
+4. **Custom range UI** — add 9th item "Custom range…" at the bottom of the Select in `FilterPanel.tsx:173-195`. Selecting opens a popover with two date inputs. Trigger label shows resolved range (e.g. `"Mar 1 – Apr 1, 2026"`). Picking any preset clears the custom range. Mobile: popover must work inside the filter drawer.
+5. **Hook + URL param migration** — update `useOpenings`, `useEndgames`, `useEndgameInsights`, `useOpeningInsights`, `useStats`, `useNextMoves` to pass `from`/`to` instead of `recency`. Any URL params currently exposing `recency` switch to `from`/`to`.
+6. **`Recency` → UI-only type** — rename to `RecencyPreset` (or move into FilterPanel-local types) so it's clear the type no longer crosses the API boundary. Final naming TBD in discuss.
+7. **LLM insight prompt audit** — `useEndgameInsights` / `useOpeningInsights` prompts may reference "past month" in human terms. Audit and decide: derive a human label from the date span (`endDate - startDate ≈ 30 days → "past month"`) or pass absolute dates. No silent regression.
+
+**Scope (out):**
+
+- Side-by-side "before vs after" period comparison — captured as a deferred idea in `.planning/notes/custom-date-range-filter.md`; revisit if users request it.
+- Quick-shortcut buttons inside the custom popover ("last 30 days", "this year") — the 8 presets in the dropdown already cover the common cases; popover is for arbitrary windows only.
+
+**Verification:** manual UAT — pick each of the 8 presets and verify WDL counts match pre-refactor for the same user/account; pick "Custom range…", verify popover opens on desktop and inside the filter drawer on mobile; select a known tournament window and verify the dropdown trigger shows the resolved label and stats filter to that window; switch back to a preset and verify the custom range clears; reload the page and verify URL state restores correctly. Backend integration tests cover `from`/`to` boundary behavior and both-omitted = no filter.
+
+**References:** [.planning/notes/custom-date-range-filter.md](notes/custom-date-range-filter.md), [.planning/todos/pending/2026-05-02-remove-recency-from-bookmark-timeseries.md](todos/pending/2026-05-02-remove-recency-from-bookmark-timeseries.md).
+
+Plans: 6 plans
+
+- [x] 92-01-PLAN.md — D-19 pre-work: drop recency from bookmark TimeSeriesRequest (both stacks)
+- [x] 92-02-PLAN.md — Atomic backend wire-format flip: apply_game_filters + 5 schemas + 3 routers + insights gate + LLM windows
+- [x] 92-03-PLAN.md — Atomic frontend type/hook migration: Recency→RecencyPreset, recency.ts utility, all 7 hooks, FilterState.customRange
+- [x] 92-04-PLAN.md — Install shadcn Calendar (with legitimacy checkpoint) + add DrawerNested wrapper
+- [x] 92-05-PLAN.md — FilterPanel UI: 9th SelectItem, desktop Popover anchored to Select, mobile nested Drawer, trigger label
+- [x] 92-06-PLAN.md — Boundary integration tests + 422 + insights gate test + CHANGELOG + human UAT
+
 <details>
 <summary>✅ v1.17 Endgame Stats Card Redesign (Phases 84-88.4) — SHIPPED 2026-05-19</summary>
 

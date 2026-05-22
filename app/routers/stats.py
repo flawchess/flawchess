@@ -1,8 +1,9 @@
 """Stats router: GET /stats/rating-history and GET /stats/global endpoints."""
 
+import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -24,7 +25,8 @@ router = APIRouter(prefix="/stats", tags=["stats"])
 async def get_rating_history(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-    recency: str | None = Query(default=None),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
     platform: str | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     opponent_gap_min: int | None = Query(default=None),
@@ -32,13 +34,16 @@ async def get_rating_history(
 ) -> RatingHistoryResponse:
     """Return per-platform per-game rating data points.
 
-    Optionally filtered by recency, platform, opponent_type, and opponent gap.
+    Optionally filtered by from_date, to_date, platform, opponent_type, and opponent gap.
     """
+    if from_date is not None and to_date is not None and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be <= to_date")
     return await stats_service.get_rating_history(
         session,
         user.id,
-        recency,
-        platform,
+        from_date=from_date,
+        to_date=to_date,
+        platform=platform,
         opponent_type=opponent_type,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
@@ -49,7 +54,8 @@ async def get_rating_history(
 async def get_global_stats(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-    recency: str | None = Query(default=None),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
     platform: str | None = Query(default=None),
     opponent_type: str = Query(default="human"),
     opponent_gap_min: int | None = Query(default=None),
@@ -57,13 +63,16 @@ async def get_global_stats(
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
-    Optionally filtered by recency, platform, opponent_type, and opponent gap.
+    Optionally filtered by from_date, to_date, platform, opponent_type, and opponent gap.
     """
+    if from_date is not None and to_date is not None and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be <= to_date")
     return await stats_service.get_global_stats(
         session,
         user.id,
-        recency,
-        platform,
+        from_date=from_date,
+        to_date=to_date,
+        platform=platform,
         opponent_type=opponent_type,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
@@ -74,7 +83,8 @@ async def get_global_stats(
 async def get_most_played_openings(
     session: Annotated[AsyncSession, Depends(get_async_session)],
     user: Annotated[User, Depends(current_active_user)],
-    recency: str | None = Query(default=None),
+    from_date: datetime.date | None = Query(default=None),
+    to_date: datetime.date | None = Query(default=None),
     time_control: list[str] | None = Query(default=None),
     platform: list[str] | None = Query(default=None),
     rated: bool | None = Query(default=None),
@@ -84,12 +94,15 @@ async def get_most_played_openings(
 ) -> MostPlayedOpeningsResponse:
     """Return top 10 most played openings per color with SQL-side WDL stats.
 
-    Optionally filtered by recency, time_control, platform, rated, opponent_type.
+    Optionally filtered by from_date, to_date, time_control, platform, rated, opponent_type.
     """
+    if from_date is not None and to_date is not None and from_date > to_date:
+        raise HTTPException(status_code=422, detail="from_date must be <= to_date")
     return await stats_service.get_most_played_openings(
         session,
         user.id,
-        recency=recency,
+        from_date=from_date,
+        to_date=to_date,
         time_control=time_control,
         platform=platform,
         rated=rated,
@@ -112,7 +125,8 @@ async def get_bookmark_phase_entry_metrics(
         session,
         user.id,
         request.bookmarks,
-        recency=request.recency,
+        from_date=request.from_date,
+        to_date=request.to_date,
         time_control=request.time_control,
         platform=request.platform,
         rated=request.rated,

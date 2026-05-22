@@ -9,6 +9,17 @@ function Drawer({
   return <DrawerPrimitive.Root data-slot="drawer" {...props} />
 }
 
+/**
+ * Wrapper around vaul's NestedRoot for rendering a nested bottom sheet inside
+ * the FilterPanel drawer. Used by CustomRangeDrawer (Phase 92 Plan 05).
+ * @knipignore — wired in Plan 05; no consumer exists yet in this wave.
+ */
+function DrawerNested({
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.NestedRoot>) {
+  return <DrawerPrimitive.NestedRoot data-slot="drawer-nested" {...props} />
+}
+
 function DrawerPortal({
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Portal>) {
@@ -94,5 +105,6 @@ export {
   DrawerClose,
   DrawerContent,
   DrawerHeader,
+  DrawerNested,
   DrawerTitle,
 }

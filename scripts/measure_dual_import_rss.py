@@ -241,9 +241,7 @@ async def _login(client: httpx.AsyncClient, api_base: str, email: str, password:
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     if resp.status_code != 200:
-        raise RuntimeError(
-            f"Login failed: HTTP {resp.status_code} — {resp.text[:200]}"
-        )
+        raise RuntimeError(f"Login failed: HTTP {resp.status_code} — {resp.text[:200]}")
     data = resp.json()
     token: str | None = data.get("access_token")
     if not token:
@@ -351,7 +349,8 @@ async def _get_eval_coverage(
 
 
 def _resolve_job_status(
-    job_id: str, active_jobs: list[dict]  # type: ignore[type-arg]
+    job_id: str,
+    active_jobs: list[dict],  # type: ignore[type-arg]
 ) -> str:
     """Return the status string for job_id from active_jobs list.
 
@@ -517,9 +516,7 @@ def _evaluate_gates(
         )
 
     if peak_swap_pct is not None and peak_swap_pct > SWAP_USAGE_MAX_PCT:
-        failures.append(
-            f"Swap peak {peak_swap_pct:.1f}% exceeds limit {SWAP_USAGE_MAX_PCT}%"
-        )
+        failures.append(f"Swap peak {peak_swap_pct:.1f}% exceeds limit {SWAP_USAGE_MAX_PCT}%")
 
     if not coverage_reached_100:
         failures.append(
@@ -701,18 +698,12 @@ async def run_harness(args: argparse.Namespace) -> int:
         log.info("Authenticated.")
 
         # Step 2: Start both imports in parallel.
-        log.info(
-            "Starting chess.com import (username=%s) ...", args.chess_com_username
-        )
+        log.info("Starting chess.com import (username=%s) ...", args.chess_com_username)
         log.info("Starting lichess import (username=%s) ...", args.lichess_username)
         try:
             chesscom_job_id, lichess_job_id = await asyncio.gather(
-                _start_import(
-                    client, args.api_base, token, "chess.com", args.chess_com_username
-                ),
-                _start_import(
-                    client, args.api_base, token, "lichess", args.lichess_username
-                ),
+                _start_import(client, args.api_base, token, "chess.com", args.chess_com_username),
+                _start_import(client, args.api_base, token, "lichess", args.lichess_username),
             )
         except RuntimeError as exc:
             print(f"ERROR: failed to start imports: {exc}", file=sys.stderr)
@@ -733,9 +724,7 @@ async def run_harness(args: argparse.Namespace) -> int:
         coverage_reached_100: bool = False
 
         with output_path.open("w", newline="", encoding="utf-8") as csv_file:
-            writer: csv.DictWriter[str] = csv.DictWriter(
-                csv_file, fieldnames=_CSV_HEADER
-            )
+            writer: csv.DictWriter[str] = csv.DictWriter(csv_file, fieldnames=_CSV_HEADER)
             writer.writeheader()
             csv_file.flush()
 
@@ -745,9 +734,7 @@ async def run_harness(args: argparse.Namespace) -> int:
                 ts = datetime.now(timezone.utc).isoformat()
 
                 # Collect system metrics.
-                rss_mb, pg_mb, swap_used_mb, swap_total_mb = _collect_metrics(
-                    args.backend_pid
-                )
+                rss_mb, pg_mb, swap_used_mb, swap_total_mb = _collect_metrics(args.backend_pid)
 
                 swap_pct: float | None = None
                 if swap_used_mb is not None and swap_total_mb is not None and swap_total_mb > 0:
@@ -877,9 +864,21 @@ async def run_harness(args: argparse.Namespace) -> int:
     print(f"  Duration        : {elapsed_total / 60:.1f} min")
     print(f"  chess.com import: {job1_final}")
     print(f"  lichess import  : {job2_final}")
-    print(f"  Peak RSS        : {peak_rss_mb:.1f} MB" if peak_rss_mb is not None else "  Peak RSS        : n/a")
-    print(f"  Peak Postgres   : {peak_pg_mb:.1f} MB" if peak_pg_mb is not None else "  Peak Postgres   : n/a")
-    print(f"  Peak swap       : {peak_swap_pct:.1f}%" if peak_swap_pct is not None else "  Peak swap       : n/a")
+    print(
+        f"  Peak RSS        : {peak_rss_mb:.1f} MB"
+        if peak_rss_mb is not None
+        else "  Peak RSS        : n/a"
+    )
+    print(
+        f"  Peak Postgres   : {peak_pg_mb:.1f} MB"
+        if peak_pg_mb is not None
+        else "  Peak Postgres   : n/a"
+    )
+    print(
+        f"  Peak swap       : {peak_swap_pct:.1f}%"
+        if peak_swap_pct is not None
+        else "  Peak swap       : n/a"
+    )
     print(f"  Coverage 100%%   : {'yes' if coverage_reached_100 else 'no'}")
     print(f"  Log file        : {args.output_log}")
     print()

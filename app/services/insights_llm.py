@@ -418,8 +418,8 @@ def _format_filters_for_prompt(filters: FilterContext) -> list[str]:
     """Emit only the `## Scoping caveat` line when opponent_strength is set.
 
     v9: dropped the always-on `Filters:` header. The router enforces defaults
-    for `recency`, `time_controls`, `platforms`, `rated_only`, and `color`
-    (INS-03 / D-31), so the only filter that can be non-default is
+    for `from_date` / `to_date`, `time_controls`, `platforms`, `rated_only`,
+    and `color` (INS-03 / D-31), so the only filter that can be non-default is
     `opponent_strength`. When it's `any`, no filter context is relevant to
     the LLM and we emit nothing. When it's `stronger` / `similar` / `weaker`,
     we emit the scoping caveat the system prompt tells the LLM to lead the

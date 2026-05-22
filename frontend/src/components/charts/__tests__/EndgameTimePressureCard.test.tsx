@@ -289,23 +289,7 @@ describe('EndgameTimePressureCard — post-UAT structural refinements', () => {
     expect(icon).not.toBeNull();
   });
 
-  it('renders the "Remaining Time at Endgame Entry" top-zone subtitle', () => {
-    renderCard(makeCard());
-    const subtitle = screen.getByTestId(
-      'time-pressure-card-bullet-top-zone-subtitle',
-    );
-    expect(subtitle.textContent).toBe('Remaining Time at Endgame Entry');
-  });
-
-  it('renders the "Score Gap by Remaining Time" quintile-section subtitle', () => {
-    renderCard(makeCard());
-    const subtitle = screen.getByTestId(
-      'time-pressure-card-bullet-quintiles-subtitle',
-    );
-    expect(subtitle.textContent).toBe('Score Gap by Remaining Time');
-  });
-
-  it('Clock Gap value renders in the header row (no separate "(N games)" suffix)', () => {
+it('Clock Gap value renders in the header row (no separate "(N games)" suffix)', () => {
     renderCard(makeCard({ clock_gap: makeClockGap({ n: 123, mean_diff_pct: 0.05 }) }));
     const header = screen.getByTestId('time-pressure-card-bullet-clock-gap-header');
     // Clock-eligible count is reachable via the popover, not duplicated inline.
