@@ -260,7 +260,6 @@ export function FilterPanel({
                 if (range) update({ recency: 'custom', customRange: range });
                 setCustomOpen(false);
               }}
-              open={customOpen && !isMobile}
               onOpenChange={setCustomOpen}
             />
           </Popover>

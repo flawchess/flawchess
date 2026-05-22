@@ -49,8 +49,6 @@ interface CustomRangePopoverProps {
   value: { from?: Date; to?: Date } | null;
   /** Called when the user picks a range (or a partial range on D-17). */
   onChange: (range: { from?: Date; to?: Date } | null) => void;
-  /** Whether the popover is open — controlled externally by FilterPanel. */
-  open: boolean;
   /** Controlled open-change callback. */
   onOpenChange: (open: boolean) => void;
 }
