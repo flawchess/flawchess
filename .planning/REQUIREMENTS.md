@@ -24,6 +24,7 @@ Surfaces global "top X%" annotations on selected Endgame metrics, scoped to the 
 - [ ] **PCTL-07**: The percentile chip is a *trait* of the user, not a *view* of their data — it is computed from a canonical slice of the user's games (status='completed' + ±100 ELO opponent at game time + sparse-cell `(2400, classical)` exclusion + 36-month recency + standard variant, pooled across TCs with no per-TC cap) that mirrors the benchmark cohort CTE, and is independent of UI filter state. Toggling recency / opponent-strength / TC / platform / rated / opponent-type filters does not change the chip. The row's filter-applied metric value continues to display per the existing per-request compute; chip tooltip copy makes the dual-value framing explicit.
 - [ ] **PCTL-08**: Each user's canonical-slice value and percentile per in-scope metric are persisted in a `user_benchmark_percentiles` table keyed by `(user_id, metric)` with columns for `value`, `percentile`, `n_games`, `cdf_snapshot`, and `computed_at`. `cdf_snapshot` records which `GLOBAL_PERCENTILE_CDF` revision the percentile was looked up against, enabling re-lookup without recomputing the value when the benchmark snapshot refreshes.
 - [ ] **PCTL-09**: Canonical-slice values are computed in two stages aligned with the two-lane import pipeline: Stage A computes the eval-independent `score_gap` as a background task at import-job completion (does not extend import latency); Stage B computes the three eval-dependent metrics (`achievable_score_gap`, `section2_score_gap_conv`, `section2_score_gap_parity`) as a background task at Stockfish cold-drain completion. Chips light up incrementally — `score_gap` is available within seconds-to-minutes of import completion, the three eval-dependent chips when cold drain wraps.
+- [ ] **PCTL-10**: A `scripts/backfill_user_percentiles.py` script exists to populate `user_benchmark_percentiles` for existing users on each environment in a single batch — required so the chip lights up for the entire user base on rollout, not just users who import after Phase 94.1 ships. The script takes `--target dev|prod` (mirroring `scripts/import_stress_monitor.py`'s convention — `dev` connects to local Docker on `localhost:5432`, `prod` connects via the `bin/prod_db_tunnel.sh` tunnel on `localhost:15432`), is idempotent under UPSERT semantics, supports `--user-id` / `--metric` narrowing for testing, and emits a per-metric summary (rows upserted / skipped per inclusion-floor reason).
 
 ### LLM Statistical Reasoning (LLM)
 
@@ -59,9 +60,10 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 | PCTL-04 | Phase 94 | Pending |
 | PCTL-05 | Phase 94 | Pending |
 | PCTL-06 | Phase 94 | Pending |
-| PCTL-07 | Phase 94.5 | Pending |
-| PCTL-08 | Phase 94.5 | Pending |
-| PCTL-09 | Phase 94.5 | Pending |
+| PCTL-07 | Phase 94.1 | Pending |
+| PCTL-08 | Phase 94.1 | Pending |
+| PCTL-09 | Phase 94.1 | Pending |
+| PCTL-10 | Phase 94.1 | Pending |
 | LLM-01 | Phase 95 | Pending |
 | LLM-02 | Phase 95 | Pending |
 | LLM-03 | Phase 95 | Pending |
@@ -70,4 +72,4 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 | LLM-06 | Phase 95 | Pending |
 | LLM-07 | Phase 95 | Pending |
 
-**Coverage:** 16/16 v1 requirements mapped (PCTL-01..09 + LLM-01..07). No orphans.
+**Coverage:** 17/17 v1 requirements mapped (PCTL-01..10 + LLM-01..07). No orphans.
