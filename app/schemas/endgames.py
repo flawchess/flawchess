@@ -254,6 +254,15 @@ class EndgamePerformanceResponse(BaseModel):
     """Upper bound of 95% Wald-z CI on achievable_score_gap.
     None when surviving n < 2 (Bessel variance undefined)."""
 
+    # Phase 94 (PCTL-02): cohort percentile of achievable_score_gap vs the
+    # Phase 93 global empirical CDF. Field name mirrors the MetricId literal
+    # "achievable_score_gap" used to key GLOBAL_PERCENTILE_CDF.
+    achievable_score_gap_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of achievable_score_gap vs the Phase 93
+    global empirical CDF (app/services/global_percentile_cdf.py).
+    None when ex_n < PVALUE_RELIABILITY_MIN_N (=10) — same single-N gate as
+    achievable_score_gap_p_value / _ci_*."""
+
 
 class EndgameTimelinePoint(BaseModel):
     """Single data point in the per-type rolling-window time series, sampled weekly.
@@ -428,6 +437,23 @@ class ScoreGapMaterialResponse(BaseModel):
     score_difference_ci_high: float | None = None
     """Upper bound of 95% Wald-z CI on score_difference. None when min(...) < 2."""
 
+    # Phase 94 (PCTL-02): cohort percentile of score_difference (Endgame Score
+    # Gap) vs the Phase 93 global empirical CDF. Field name deliberately
+    # diverges from sibling `score_difference_*` — it mirrors the MetricId
+    # literal "score_gap" used to key GLOBAL_PERCENTILE_CDF (D-11).
+    # DO NOT rename to score_difference_percentile "for consistency": the
+    # field name is the public API and the wire-format frontend mirror
+    # depends on it.
+    score_gap_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of score_difference vs the Phase 93
+    global empirical CDF (app/services/global_percentile_cdf.py).
+    Field-name divergence from sibling score_difference_* is intentional —
+    the name mirrors MetricId "score_gap" (the CDF key), not the wire-format
+    score_difference value (Phase 94 D-11).
+    None when min(endgame_wdl.total, non_endgame_wdl.total) <
+    PVALUE_RELIABILITY_MIN_N (=10) — same dual-N gate as score_difference_p_value
+    / _ci_*."""
+
     # Phase 87.2 (D-06): per-bucket Score Gap fields on the Section 2 response.
     # Flat shape mirrors Phase 87.1's type_achievable_score_gap_* on EndgameCategoryStats.
     # D-01: positive = user outperformed Stockfish baseline; negative = below.
@@ -439,6 +465,14 @@ class ScoreGapMaterialResponse(BaseModel):
     section2_score_gap_conv_p_value: float | None = None
     section2_score_gap_conv_ci_low: float | None = None
     section2_score_gap_conv_ci_high: float | None = None
+    # Phase 94 (PCTL-02): cohort percentile of section2_score_gap_conv_mean
+    # vs the Phase 93 global empirical CDF.
+    section2_score_gap_conv_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of section2_score_gap_conv_mean vs the
+    Phase 93 global empirical CDF.
+    None when section2_score_gap_conv_n < PVALUE_RELIABILITY_MIN_N (=10) or
+    conv_mean is None — same single-N gate as section2_score_gap_conv_p_value
+    / _ci_*."""
 
     # Parity bucket (|eval_entry| <= 1.0 pawn):
     section2_score_gap_parity_mean: float | None = None
@@ -446,6 +480,14 @@ class ScoreGapMaterialResponse(BaseModel):
     section2_score_gap_parity_p_value: float | None = None
     section2_score_gap_parity_ci_low: float | None = None
     section2_score_gap_parity_ci_high: float | None = None
+    # Phase 94 (PCTL-02): cohort percentile of section2_score_gap_parity_mean
+    # vs the Phase 93 global empirical CDF.
+    section2_score_gap_parity_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of section2_score_gap_parity_mean vs the
+    Phase 93 global empirical CDF.
+    None when section2_score_gap_parity_n < PVALUE_RELIABILITY_MIN_N (=10) or
+    parity_mean is None — same single-N gate as section2_score_gap_parity_p_value
+    / _ci_*."""
 
     # Recovery bucket (eval_entry <= -1.0 pawn):
     section2_score_gap_recov_mean: float | None = None
@@ -453,6 +495,10 @@ class ScoreGapMaterialResponse(BaseModel):
     section2_score_gap_recov_p_value: float | None = None
     section2_score_gap_recov_ci_low: float | None = None
     section2_score_gap_recov_ci_high: float | None = None
+    # Phase 94 (D-12): NO section2_score_gap_recov_percentile field.
+    # Recovery is opponent-confounded (d=0.95 inverted) and the Phase 93 CDF
+    # does not ship a recovery breakpoint table. Do not add one here without
+    # revisiting D-12 and the methodology.
 
     # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
     # section2_score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
