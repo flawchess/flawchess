@@ -1333,6 +1333,11 @@ class TestGetEndgamePerformance:
             patch(
                 "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
             ) as mock_bucket,
+            patch(
+                "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_perf.return_value = ([], [])
             mock_bucket.return_value = []
@@ -1366,6 +1371,11 @@ class TestGetEndgamePerformance:
             patch(
                 "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
             ) as mock_bucket,
+            patch(
+                "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_perf.return_value = (endgame_rows, non_endgame_rows)
             mock_bucket.return_value = []
@@ -1683,6 +1693,11 @@ class TestGetEndgameOverview:
             patch(
                 "app.services.endgame_service.get_endgame_elo_timeline", new_callable=AsyncMock
             ) as mock_elo_timeline,
+            patch(
+                "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_entry.return_value = []
             mock_bucket.return_value = []
@@ -1762,6 +1777,11 @@ class TestGetEndgameOverview:
             patch(
                 "app.services.endgame_service.get_endgame_elo_timeline", new_callable=AsyncMock
             ) as mock_elo_timeline,
+            patch(
+                "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_entry.return_value = []
             mock_bucket.return_value = []
@@ -4147,15 +4167,20 @@ class TestEndgameCategoryStatsWdlAlignedFields:
 
 
 class TestPercentileGates:
-    """Phase 94 — reliability-gated percentile emission at the 2 compute sites.
+    """Phase 94 / 94.1 — percentile chip emission at the 2 compute sites.
 
-    The service must call `interpolate_percentile` only when the metric's N
-    clears `PVALUE_RELIABILITY_MIN_N` (=10). Below the floor, the percentile
-    field is `None` on the wire — same gate semantics as the existing
-    `_p_value` / `_ci_*` siblings (D-10).
+    Phase 94.1 D-12 (PCTL-07): the chip is a "trait" sourced from the
+    materialised `user_benchmark_percentiles` table, not a per-request
+    computed value. The compute helpers (_compute_score_gap_material and
+    _get_endgame_performance_from_rows) always return None for chip fields
+    when called without `percentile_rows`. When `percentile_rows` is provided,
+    the chip fields are read directly from the mapping — no per-request
+    `interpolate_percentile` call happens anymore.
 
-    Gate-then-compute pattern (Pitfall 6) — these tests exercise the gate
-    explicitly, not the helper's NaN/unknown-metric edge handling.
+    The "below_floor_is_none" tests still pass unchanged — they confirm None
+    when no percentile_rows are passed. The old "at_floor_is_not_none" tests
+    have been updated to verify the new contract: chip reflects the value in
+    `percentile_rows` rather than a per-request N-gate computation.
     """
 
     # --- Helpers ---------------------------------------------------------
@@ -4211,17 +4236,33 @@ class TestPercentileGates:
         # Gate should suppress the percentile (same shape as _p_value gate).
         assert resp.achievable_score_gap_percentile is None
 
-    def test_achievable_percentile_at_floor_is_not_none(self) -> None:
-        """ex_n = PVALUE_RELIABILITY_MIN_N (=10) -> percentile emitted in [0, 100]."""
+    def test_achievable_percentile_with_percentile_rows_reflects_table_value(self) -> None:
+        """D-12 / PCTL-07: chip is sourced from percentile_rows, not per-request N-gate.
+
+        When percentile_rows is provided with achievable_score_gap, the chip
+        field reflects the table value regardless of ex_n.
+        """
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
+        import datetime
+
         bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        percentile_rows: dict[CdfMetricId, PercentileRow] = {
+            "achievable_score_gap": PercentileRow(
+                value=0.05,
+                percentile=63.0,
+                n_games=40,
+                cdf_snapshot=datetime.date(2026, 3, 31),
+            ),
+        }
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows_white_wins(10),
             non_endgame_rows=[],
             bucket_rows=bucket_rows,
+            percentile_rows=percentile_rows,
         )
         assert resp.entry_expected_score_n == 10
-        assert resp.achievable_score_gap_percentile is not None
-        assert 0.0 <= resp.achievable_score_gap_percentile <= 100.0
+        assert resp.achievable_score_gap_percentile == 63.0
 
     # --- Site B: score_gap_percentile (dual-N gate on endgame + non_endgame) -
 
@@ -4241,14 +4282,30 @@ class TestPercentileGates:
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
         assert result.score_gap_percentile is None
 
-    def test_score_gap_percentile_dual_gate_both_at_floor(self) -> None:
-        """endgame_wdl.total = 10 AND non_endgame_wdl.total = 10 -> percentile
-        emitted in [0, 100]."""
+    def test_score_gap_percentile_with_percentile_rows_reflects_table_value(self) -> None:
+        """D-12 / PCTL-07: score_gap chip is sourced from percentile_rows, not per-request N-gate.
+
+        When percentile_rows is provided with score_gap, the chip field
+        reflects the table value regardless of WDL totals.
+        """
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
+        import datetime
+
         endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
         non_endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
-        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
-        assert result.score_gap_percentile is not None
-        assert 0.0 <= result.score_gap_percentile <= 100.0
+        percentile_rows: dict[CdfMetricId, PercentileRow] = {
+            "score_gap": PercentileRow(
+                value=0.0,
+                percentile=72.5,
+                n_games=40,
+                cdf_snapshot=datetime.date(2026, 3, 31),
+            ),
+        }
+        result = _compute_score_gap_material(
+            endgame_wdl, non_endgame_wdl, [], percentile_rows=percentile_rows
+        )
+        assert result.score_gap_percentile == 72.5
 
     # --- Site B: section2 conv / parity (single-N gates with mean-is-not-None) -
 
@@ -4263,17 +4320,36 @@ class TestPercentileGates:
         assert result.section2_score_gap_conv_n == 9
         assert result.section2_score_gap_conv_percentile is None
 
-    def test_section2_conv_percentile_at_floor_is_not_none(self) -> None:
-        """conv_n = 10 -> conv percentile emitted in [0, 100]."""
+    def test_section2_conv_percentile_with_percentile_rows_reflects_table_value(self) -> None:
+        """D-12 / PCTL-07: conv chip is sourced from percentile_rows, not per-request N-gate.
+
+        When percentile_rows is provided with section2_score_gap_conv, the chip
+        field reflects the table value regardless of conv_n.
+        """
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
+        import datetime
+
         endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         gaps_by_bucket = {"conversion": [0.0] * 10, "parity": [], "recovery": []}
+        percentile_rows: dict[CdfMetricId, PercentileRow] = {
+            "section2_score_gap_conv": PercentileRow(
+                value=0.0,
+                percentile=41.0,
+                n_games=40,
+                cdf_snapshot=datetime.date(2026, 3, 31),
+            ),
+        }
         result = _compute_score_gap_material(
-            endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
+            endgame_wdl,
+            non_endgame_wdl,
+            [],
+            gaps_by_bucket=gaps_by_bucket,
+            percentile_rows=percentile_rows,
         )
         assert result.section2_score_gap_conv_n == 10
-        assert result.section2_score_gap_conv_percentile is not None
-        assert 0.0 <= result.section2_score_gap_conv_percentile <= 100.0
+        assert result.section2_score_gap_conv_percentile == 41.0
 
     def test_section2_parity_percentile_below_floor_is_none(self) -> None:
         """parity_n = 9 -> parity percentile None."""
@@ -4286,17 +4362,36 @@ class TestPercentileGates:
         assert result.section2_score_gap_parity_n == 9
         assert result.section2_score_gap_parity_percentile is None
 
-    def test_section2_parity_percentile_at_floor_is_not_none(self) -> None:
-        """parity_n = 10 -> parity percentile in [0, 100]."""
+    def test_section2_parity_percentile_with_percentile_rows_reflects_table_value(self) -> None:
+        """D-12 / PCTL-07: parity chip is sourced from percentile_rows, not per-request N-gate.
+
+        When percentile_rows is provided with section2_score_gap_parity, the chip
+        field reflects the table value regardless of parity_n.
+        """
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
+        import datetime
+
         endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         gaps_by_bucket = {"conversion": [], "parity": [0.0] * 10, "recovery": []}
+        percentile_rows: dict[CdfMetricId, PercentileRow] = {
+            "section2_score_gap_parity": PercentileRow(
+                value=0.0,
+                percentile=68.0,
+                n_games=40,
+                cdf_snapshot=datetime.date(2026, 3, 31),
+            ),
+        }
         result = _compute_score_gap_material(
-            endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
+            endgame_wdl,
+            non_endgame_wdl,
+            [],
+            gaps_by_bucket=gaps_by_bucket,
+            percentile_rows=percentile_rows,
         )
         assert result.section2_score_gap_parity_n == 10
-        assert result.section2_score_gap_parity_percentile is not None
-        assert 0.0 <= result.section2_score_gap_parity_percentile <= 100.0
+        assert result.section2_score_gap_parity_percentile == 68.0
 
     def test_section2_empty_cohort_mean_none_yields_percentile_none(self) -> None:
         """Empty conv/parity cohorts (mean is None) yield percentile None even
