@@ -123,14 +123,27 @@ def selected_users_cte(*, source: Literal["benchmark", "single_user"]) -> str:
 )"""
     # single_user: no benchmark tables; :user_id is a SQLAlchemy bindparam
     # resolved at the call site via text(...).bindparams(user_id=user_id).
-    # No tc_bucket column: the per-user path pools across all TCs (D-09).
-    # Bug fix (94.1-09): the `:user_id::int` shorthand cast confuses
-    # SQLAlchemy's bindparam tokeniser, which then fails to detect any bound
-    # parameter and raises ArgumentError at .bindparams() time. The explicit
-    # CAST() form is parsed correctly. See `_row_exists` in
-    # `scripts/backfill_user_percentiles.py:471` for the same workaround
-    # applied to the metric bindparam.
-    return "selected_users AS (SELECT CAST(:user_id AS int) AS user_id)"
+    # The per-user path pools across all TCs (D-09), but downstream CTEs
+    # still project `su.tc_bucket AS tc_bucket` so they can carry the bucket
+    # forward into the sparse-cell exclusion `(2400, classical)`. We emit
+    # `NULL::text AS tc_bucket` here so that projection resolves; sparse-cell
+    # exclusion against NULL is trivially satisfied (the row carries each
+    # game's TC indirectly via rating-bucket cohorts).
+    # Bug fixes (94.1-09):
+    # 1. The `:user_id::int` shorthand cast confused SQLAlchemy's bindparam
+    #    tokeniser, which silently dropped the parameter and raised
+    #    ArgumentError at .bindparams() time. The explicit CAST() form is
+    #    parsed correctly. See `_row_exists` in
+    #    `scripts/backfill_user_percentiles.py:471` for the same workaround
+    #    applied to the metric bindparam.
+    # 2. The downstream `su.tc_bucket` projection broke at runtime because
+    #    the column did not exist on the single_user CTE; adding
+    #    `NULL::text AS tc_bucket` here unblocks it without disturbing the
+    #    benchmark consumer (REVIEW.md WR-03).
+    return (
+        "selected_users AS (SELECT CAST(:user_id AS int) AS user_id, "
+        "NULL::text AS tc_bucket)"
+    )
 
 
 def elo_bucket_expr(user_elo_alias: str) -> str:

@@ -349,6 +349,22 @@ class TestSingleUserBindparamRoundTrip:
             "and silently drops the bindparam (VERIFICATION.md gap #1)"
         )
 
+    def test_single_user_cte_emits_tc_bucket_column(self) -> None:
+        """single_user CTE must project tc_bucket so downstream `su.tc_bucket` resolves.
+
+        REVIEW.md WR-03 surfaced the latent bug: downstream per-metric CTEs
+        all reference `su.tc_bucket AS tc_bucket`, but the single_user CTE
+        previously emitted only `user_id`. The fix emits `NULL::text AS
+        tc_bucket` (the per-user path pools across TCs anyway, so no real
+        bucket value is needed; NULL satisfies the sparse-cell exclusion
+        and lets the projection compile).
+        """
+        sql = canonical_slice_sql.selected_users_cte(source="single_user")
+        assert "tc_bucket" in sql, (
+            "single_user CTE must project a tc_bucket column so downstream "
+            "su.tc_bucket references resolve (REVIEW.md WR-03)"
+        )
+
     def test_single_user_cte_bindparam_round_trip_does_not_raise(self) -> None:
         """text(...).bindparams(user_id=42) must NOT raise ArgumentError."""
         from sqlalchemy import text
