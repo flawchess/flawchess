@@ -1264,7 +1264,7 @@ def _compute_score_gap_material(
     non_endgame_wdl: EndgameWDLSummary,
     entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
     *,
-    percentile_rows: Mapping[CdfMetricId, PercentileRow],
+    percentile_rows: Mapping[CdfMetricId, PercentileRow] | None = None,
     gaps_by_bucket: dict[str, list[float]] | None = None,
     timeline: list[ScoreGapTimelinePoint] | None = None,
     timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
@@ -1368,18 +1368,22 @@ def _compute_score_gap_material(
     # The per-request N-gate is removed here: the table's percentile column is
     # already NULL when below the inclusion floor (set during Stage A/B compute).
     # Removing the duplicate N-gate aligns with D-12 "chip is a trait" semantics.
-    _score_gap_row = percentile_rows.get("score_gap")
+    # percentile_rows is None when called without a DB session (e.g., unit tests).
+    _effective_rows: Mapping[CdfMetricId, PercentileRow] = (
+        percentile_rows if percentile_rows is not None else {}
+    )
+    _score_gap_row = _effective_rows.get("score_gap")
     score_gap_percentile: float | None = (
         _score_gap_row.percentile if _score_gap_row is not None else None
     )
 
     # No recovery percentile per D-12 (recovery is opponent-confounded; no
     # CDF table shipped in Phase 93).
-    _conv_row = percentile_rows.get("section2_score_gap_conv")
+    _conv_row = _effective_rows.get("section2_score_gap_conv")
     section2_score_gap_conv_percentile: float | None = (
         _conv_row.percentile if _conv_row is not None else None
     )
-    _parity_row = percentile_rows.get("section2_score_gap_parity")
+    _parity_row = _effective_rows.get("section2_score_gap_parity")
     section2_score_gap_parity_percentile: float | None = (
         _parity_row.percentile if _parity_row is not None else None
     )
