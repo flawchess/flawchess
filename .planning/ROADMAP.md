@@ -120,7 +120,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 94.1-06-PLAN.md — Stage A hook in import_service._complete_import_job + Stage B hook in eval_drain post-commit
+- [x] 94.1-06-PLAN.md — Stage A hook in import_service._complete_import_job + Stage B hook in eval_drain post-commit
 
 **Wave 4** *(blocked on Waves 1 + 3)*
 
