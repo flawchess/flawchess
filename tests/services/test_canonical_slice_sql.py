@@ -307,3 +307,81 @@ def test_per_user_cte_for_apply_floor_toggle(metric_id: str) -> None:
     assert cte_default == cte_with_floor, (
         f"Default apply_floor must equal apply_floor=True for {metric_id}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 8 — single_user bindparam round-trip (Phase 94.1 Plan 09 gap-closure)
+# ---------------------------------------------------------------------------
+
+
+class TestSingleUserBindparamRoundTrip:
+    """Regression guard for the `:user_id::int` parser bug.
+
+    Phase 94.1 Plan 09 closes VERIFICATION.md gap #1: SQLAlchemy's `text()`
+    tokeniser silently fails to recognise `:user_id` when immediately followed
+    by the Postgres `::int` cast operator. The fix uses the explicit
+    `CAST(:user_id AS int)` form so the bindparam IS detected. Without these
+    tests, the next agent who "simplifies" the CAST back to `::int` would
+    re-ship the silent failure.
+    """
+
+    def test_single_user_cte_bindparam_is_detected_by_sqlalchemy(self) -> None:
+        """SQLAlchemy text().compile().params must list `user_id` as a bindparam."""
+        from sqlalchemy import text
+
+        sql = canonical_slice_sql.selected_users_cte(source="single_user")
+        params = list(text(sql).compile().params)
+        assert params == ["user_id"], (
+            f"expected exactly one bindparam 'user_id', got {params!r} "
+            f"(SQLAlchemy did not detect :user_id — the `::int` shorthand "
+            f"cast confuses the tokeniser; use CAST(:user_id AS int))"
+        )
+
+    def test_single_user_cte_uses_cast_form_not_shorthand(self) -> None:
+        """Source must contain CAST(:user_id AS int), never :user_id::int."""
+        sql = canonical_slice_sql.selected_users_cte(source="single_user")
+        assert "CAST(:user_id AS int)" in sql, (
+            "single_user CTE must use the explicit CAST() form so SQLAlchemy's "
+            "text() parser detects the bindparam"
+        )
+        assert ":user_id::int" not in sql, (
+            "the `:user_id::int` shorthand cast confuses SQLAlchemy's tokeniser "
+            "and silently drops the bindparam (VERIFICATION.md gap #1)"
+        )
+
+    def test_single_user_cte_bindparam_round_trip_does_not_raise(self) -> None:
+        """text(...).bindparams(user_id=42) must NOT raise ArgumentError."""
+        from sqlalchemy import text
+
+        sql = canonical_slice_sql.selected_users_cte(source="single_user")
+        wrapped = f"WITH {sql} SELECT user_id FROM selected_users"
+        # If the parser failed to detect the bindparam, this line raises:
+        #   sqlalchemy.exc.ArgumentError: This text() construct doesn't define
+        #   a bound parameter named 'user_id'
+        bound = text(wrapped).bindparams(user_id=42)
+        assert bound is not None
+
+    def test_benchmark_cte_unchanged_regression_guard(self) -> None:
+        """The benchmark branch is byte-identical to its pre-change form.
+
+        Only the single_user branch changes in Plan 09; if a future edit
+        inadvertently disturbs the benchmark CTE (which the byte-identical
+        CDF regression gate in `tests/scripts/test_gen_global_percentile_cdf_unchanged.py`
+        also enforces from the script side), this test catches it earlier.
+        """
+        expected = """selected_users AS (
+  SELECT u.id AS user_id, bsu.tc_bucket,
+         bsu.rating_bucket AS selection_rating_bucket,
+         bsu.median_elo
+  FROM benchmark_selected_users bsu
+  JOIN benchmark_ingest_checkpoints bic
+    ON bic.lichess_username = bsu.lichess_username
+   AND bic.tc_bucket = bsu.tc_bucket
+   AND bic.status = 'completed'
+  JOIN users u ON lower(u.lichess_username) = lower(bsu.lichess_username)
+)"""
+        actual = canonical_slice_sql.selected_users_cte(source="benchmark")
+        assert actual == expected, (
+            "benchmark CTE drifted from its pre-Plan-09 form; only the "
+            "single_user branch is supposed to change in Plan 09"
+        )

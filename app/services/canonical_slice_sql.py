@@ -123,8 +123,14 @@ def selected_users_cte(*, source: Literal["benchmark", "single_user"]) -> str:
 )"""
     # single_user: no benchmark tables; :user_id is a SQLAlchemy bindparam
     # resolved at the call site via text(...).bindparams(user_id=user_id).
-    # No tc_bucket column — the per-user path pools across all TCs (D-09).
-    return "selected_users AS (SELECT :user_id::int AS user_id)"
+    # No tc_bucket column: the per-user path pools across all TCs (D-09).
+    # Bug fix (94.1-09): the `:user_id::int` shorthand cast confuses
+    # SQLAlchemy's bindparam tokeniser, which then fails to detect any bound
+    # parameter and raises ArgumentError at .bindparams() time. The explicit
+    # CAST() form is parsed correctly. See `_row_exists` in
+    # `scripts/backfill_user_percentiles.py:471` for the same workaround
+    # applied to the metric bindparam.
+    return "selected_users AS (SELECT CAST(:user_id AS int) AS user_id)"
 
 
 def elo_bucket_expr(user_elo_alias: str) -> str:
