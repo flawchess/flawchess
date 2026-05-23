@@ -124,9 +124,7 @@ export function PercentileChip({
           style={{ backgroundColor: bandColor, color: CHIP_TEXT_COLOR }}
         >
           {flameCount > 0 && (
-            // Hidden on mobile (<640px) — not enough horizontal space on the
-            // row alongside label, value, tooltip, and chip text.
-            <span className="hidden sm:inline-flex" aria-hidden="true">
+            <span className="inline-flex" aria-hidden="true">
               {Array.from({ length: flameCount }).map((_, i) => (
                 <Flame
                   key={i}

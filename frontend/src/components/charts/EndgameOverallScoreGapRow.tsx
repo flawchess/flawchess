@@ -115,10 +115,13 @@ export function ScoreGapRow({
           {tooltip}
           {chipSlot && (
             // basis-full forces a wrap to its own line on mobile (long labels
-            // would otherwise overflow at 375px). sm:basis-auto restores the
-            // inline single-line layout on desktop. ml-auto right-aligns on
-            // desktop; flex justify-end right-aligns on mobile.
-            <span className="ml-auto basis-full sm:basis-auto flex justify-end">
+            // would otherwise overflow at 375px). order-first puts that line
+            // ABOVE the label/value row on mobile. sm:basis-auto +
+            // sm:order-none restore the inline single-line layout on desktop,
+            // where ml-auto right-aligns the chip at the end of the row.
+            // flex justify-end right-aligns the chip within its full-width
+            // mobile row.
+            <span className="ml-auto basis-full sm:basis-auto order-first sm:order-none flex justify-end">
               {chipSlot}
             </span>
           )}
