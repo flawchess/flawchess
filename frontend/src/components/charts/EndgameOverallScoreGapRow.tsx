@@ -103,7 +103,7 @@ export function ScoreGapRow({
           <div className="flex-1 flex justify-end">{endSlot}</div>
         </div>
       ) : (
-        <span className="flex items-center gap-1 text-sm tabular-nums w-full">
+        <span className="flex flex-wrap sm:flex-nowrap items-center gap-1 text-sm tabular-nums w-full">
           <span className="text-muted-foreground">{label}</span>
           <span
             className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
@@ -113,7 +113,15 @@ export function ScoreGapRow({
             {formatted}
           </span>
           {tooltip}
-          {chipSlot && <span className="ml-auto">{chipSlot}</span>}
+          {chipSlot && (
+            // basis-full forces a wrap to its own line on mobile (long labels
+            // would otherwise overflow at 375px). sm:basis-auto restores the
+            // inline single-line layout on desktop. ml-auto right-aligns on
+            // desktop; flex justify-end right-aligns on mobile.
+            <span className="ml-auto basis-full sm:basis-auto flex justify-end">
+              {chipSlot}
+            </span>
+          )}
         </span>
       )}
       <div className="min-w-0 tabular-nums">
