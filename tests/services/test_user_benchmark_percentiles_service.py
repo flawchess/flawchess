@@ -1,72 +1,94 @@
-"""Wave 0 scaffolding for user_benchmark_percentiles_service tests.
+"""Sentry-mock and zero-game tests for user_benchmark_percentiles_service.
 
-Phase 94.1 Plan 02, Task 1. Tests are skipped (via pytest.importorskip) until
-the implementation modules land in Plans 05/06.
+Phase 94.1 Plan 09 (gap-closure) cleanup:
 
-Covers:
-- compute_stage_a: happy path, below-floor, zero-canonical-games, Sentry non-propagation
-- compute_stage_b: three-metric write, metric-below-floor, Sentry non-propagation
+The 4 heavy-seed scaffold tests previously in this module
+(`test_compute_stage_a_happy_path`, `test_compute_stage_a_below_floor`,
+`test_compute_stage_b_writes_three_metrics`,
+`test_compute_stage_b_metric_below_floor_writes_null_percentile`) were
+`pytest.skip("implementation pending Plans 05/06")` placeholders that masked
+the runtime bug closed in VERIFICATION.md gap #1. They are DELETED, not
+tombstoned: the real assertions live in
+`tests/services/test_user_benchmark_percentiles_service_real_data.py`, which
+seeds a user with canonical-slice-qualifying games and asserts
+`compute_stage_a` / `compute_stage_b` actually persist rows.
+
+What remains here:
+- Zero-canonical-games happy path (real DB, asserts NO row written)
+- Stage A Sentry non-propagation (mocked)
+- Stage B Sentry non-propagation (mocked)
 
 Design decisions exercised:
 - D-04: Stage A/B non-blocking — exceptions swallowed, Sentry captured
-- D-10: per-metric inclusion floors
 - CLAUDE.md Sentry rules: set_context carries user_id, message string does NOT
 - V4 Information Disclosure guard: Sentry context must not leak user_id in message
 """
 
 from __future__ import annotations
 
-import pytest
+import uuid
 
-# ── Skip entire module until implementation modules exist ─────────────────────
-# When Plans 05/06 land, importorskip will succeed and tests will run.
-user_benchmark_percentiles_service = pytest.importorskip(
-    "app.services.user_benchmark_percentiles_service"
+import pytest
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from app.models.user import User
+from app.repositories.user_benchmark_percentiles_repository import fetch_for_user
+from app.services.user_benchmark_percentiles_service import (
+    compute_stage_a,
+    compute_stage_b,
 )
 
 # ── Module-level constants (CLAUDE.md: no magic numbers) ─────────────────────
 _TEST_USER_ID: int = 99200  # unique per module to avoid FK conflicts
-_STAGE_A_FLOOR_ENDGAME: int = 30  # per D-10: score_gap floor
-_STAGE_A_FLOOR_NON_ENDGAME: int = 30
-_STAGE_B_FLOOR_ACHIEVABLE: int = 20  # per D-10: achievable_score_gap floor
-_BELOW_FLOOR_GAME_COUNT: int = 5  # below all inclusion floors
 _SENTRY_CONTEXT_KEY: str = "percentile_compute"
 
 pytestmark = pytest.mark.asyncio
 
 
-# ── Stage A happy path ─────────────────────────────────────────────────────────
-
-
-async def test_compute_stage_a_happy_path(test_engine) -> None:
-    """compute_stage_a writes a row with non-null percentile when the user has
-    >= 30 endgame AND >= 30 non-endgame canonical-slice games.
-
-    Per D-08: row has metric='score_gap', non-null value, non-null percentile,
-    n_games >= 30, cdf_snapshot = date.today() (or non-null).
-    """
-    pytest.skip("implementation pending Plans 05/06")
-
-
-async def test_compute_stage_a_below_floor(test_engine) -> None:
-    """compute_stage_a stores a row with percentile=NULL when the user has data
-    but fewer than 30 canonical-slice games.
-
-    Per CONTEXT discretion: percentile=NULL + value still stored so future floor
-    changes don't require a full recompute. If value itself is computable
-    (a non-zero average score_gap from < 30 games), the row exists.
-    """
-    pytest.skip("implementation pending Plans 05/06")
+# ── Stage A: zero canonical games (real DB) ───────────────────────────────────
 
 
 async def test_compute_stage_a_zero_canonical_games(test_engine) -> None:
-    """compute_stage_a writes NO row when the user has 0 canonical-slice games
-    (e.g., all opponents outside the +-100 ELO band per D-09).
+    """compute_stage_a writes NO row when the user has 0 canonical-slice games.
 
-    Per CONTEXT Claude's Discretion: 'if value itself isn't computable (zero
-    games in slice), no row'.
+    Per CONTEXT Claude's Discretion: "if value itself isn't computable (zero
+    games in slice), no row".
+
+    Real-DB body: builds a transactional session_maker bound to the test
+    engine, creates a fresh User row with no games, calls compute_stage_a,
+    asserts fetch_for_user returns an empty dict, then deletes the user.
     """
-    pytest.skip("implementation pending Plans 05/06")
+    test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    # Create a fresh user with no games. We use a unique email per test run.
+    async with test_session_maker() as session:
+        user = User(
+            email=f"stage-a-zero-{uuid.uuid4()}@example.com",
+            hashed_password="x",
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        user_id = user.id
+
+    try:
+        # Run Stage A — should produce no row (value is None → early exit).
+        await compute_stage_a(user_id, session_maker=test_session_maker)
+
+        async with test_session_maker() as session:
+            rows = await fetch_for_user(session, user_id=user_id)
+        assert rows == {}, (
+            f"compute_stage_a wrote a row for a user with zero canonical-slice "
+            f"games (expected empty dict, got {rows!r})"
+        )
+    finally:
+        async with test_session_maker() as session:
+            await session.execute(delete(User).where(User.id == user_id))
+            await session.commit()
+
+
+# ── Sentry non-propagation tests (mocked) ─────────────────────────────────────
 
 
 async def test_compute_stage_a_swallows_exception_and_captures_sentry(
@@ -95,15 +117,25 @@ async def test_compute_stage_a_swallows_exception_and_captures_sentry(
 
     error_message = "simulated compute failure"
 
+    # Patch _compute_metric_for_user to return a non-None value so we reach
+    # interpolate_percentile (the early-exit path otherwise short-circuits
+    # before any chance of an exception). Then make interpolate_percentile
+    # raise, triggering the Sentry capture path.
+    async def fake_compute(*args, **kwargs):  # noqa: ANN001, ANN201, ARG001
+        return (0.05, 5)
+
     with (
         patch("sentry_sdk.set_context", side_effect=fake_set_context),
         patch("sentry_sdk.capture_exception", side_effect=fake_capture_exception),
+        patch(
+            "app.services.user_benchmark_percentiles_service._compute_metric_for_user",
+            side_effect=fake_compute,
+        ),
         patch(
             "app.services.user_benchmark_percentiles_service.interpolate_percentile",
             side_effect=RuntimeError(error_message),
         ),
     ):
-        compute_stage_a = user_benchmark_percentiles_service.compute_stage_a
         # Must not raise — D-04
         result = await compute_stage_a(_TEST_USER_ID)
         assert result is None
@@ -122,37 +154,12 @@ async def test_compute_stage_a_swallows_exception_and_captures_sentry(
         )
 
 
-# ── Stage B tests ──────────────────────────────────────────────────────────────
-
-
-async def test_compute_stage_b_writes_three_metrics(test_engine) -> None:
-    """compute_stage_b writes exactly 3 rows (achievable_score_gap,
-    section2_score_gap_conv, section2_score_gap_parity) when the user has
-    sufficient eval-bearing canonical-slice games for all 3 metrics.
-
-    Per STAGE_B_METRICS constant in the service.
-    """
-    pytest.skip("implementation pending Plans 05/06")
-
-
-async def test_compute_stage_b_metric_below_floor_writes_null_percentile(
-    test_engine,
-) -> None:
-    """When a user has sufficient achievable_score_gap games but insufficient
-    parity/conversion spans, the row for that metric has percentile=NULL while
-    the achievable_score_gap row has non-null percentile.
-
-    Documents per-metric floor independence per D-10.
-    """
-    pytest.skip("implementation pending Plans 05/06")
-
-
 async def test_compute_stage_b_swallows_exception_and_captures_sentry(
     monkeypatch,
 ) -> None:
     """compute_stage_b returns None (never propagates) when one metric's CTE
-    execution raises. The other 2 metrics still UPSERT. Sentry captures exactly
-    once with set_context("percentile_compute", {"user_id": ..., "stage": "B"}).
+    execution raises. Sentry captures with set_context("percentile_compute",
+    {"user_id": ..., "stage": "B"}).
 
     V4 guard: user_id does NOT appear in the captured exception message string.
     set_context MUST carry {"user_id": ..., "stage": "B"}.
@@ -168,11 +175,26 @@ async def test_compute_stage_b_swallows_exception_and_captures_sentry(
     def fake_capture_exception(exc: Exception) -> None:
         captured_exceptions.append(exc)
 
+    # Same shape as Stage A: ensure we hit a meaningful exception path by
+    # forcing _compute_metric_for_user to return a value, then making
+    # interpolate_percentile raise. Stage B's per-metric inner try/except
+    # captures + continues — every loop iteration trips the same exception
+    # and emits one set_context("...", {"stage": "B", "metric": ...}) call.
+    async def fake_compute(*args, **kwargs):  # noqa: ANN001, ANN201, ARG001
+        return (0.05, 5)
+
     with (
         patch("sentry_sdk.set_context", side_effect=fake_set_context),
         patch("sentry_sdk.capture_exception", side_effect=fake_capture_exception),
+        patch(
+            "app.services.user_benchmark_percentiles_service._compute_metric_for_user",
+            side_effect=fake_compute,
+        ),
+        patch(
+            "app.services.user_benchmark_percentiles_service.interpolate_percentile",
+            side_effect=RuntimeError("simulated stage B failure"),
+        ),
     ):
-        compute_stage_b = user_benchmark_percentiles_service.compute_stage_b
         result = await compute_stage_b(_TEST_USER_ID)
         assert result is None
 
