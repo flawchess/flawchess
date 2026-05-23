@@ -52,11 +52,11 @@ interface ScoreGapRowProps {
    *  EndgameTypeCard to show the End predicted score. Defaults to undefined
    *  (renders nothing) so the 3 other callers remain pixel-identical. */
   endSlot?: ReactNode;
-  /** Optional chip rendered after the value, right-aligned via ml-auto, before
-   *  the existing tooltip. Used by EndgameOverallPerformanceSection (page-level
-   *  rows) and EndgameMetricCard (conv/parity buckets) to surface a
-   *  PercentileChip. Defaults to undefined so EndgameTypeCard + Recovery card
-   *  render pixel-identical. */
+  /** Optional chip rendered after the tooltip, right-aligned via ml-auto so the
+   *  tooltip stays adjacent to the result value. Used by
+   *  EndgameOverallPerformanceSection (page-level rows) and EndgameMetricCard
+   *  (conv/parity buckets) to surface a PercentileChip. Defaults to undefined so
+   *  EndgameTypeCard + Recovery card render pixel-identical. */
   chipSlot?: ReactNode;
 }
 
@@ -97,8 +97,8 @@ export function ScoreGapRow({
             >
               {formatted}
             </span>
-            {chipSlot && <span className="ml-auto">{chipSlot}</span>}
             {tooltip}
+            {chipSlot && <span className="ml-auto">{chipSlot}</span>}
           </span>
           <div className="flex-1 flex justify-end">{endSlot}</div>
         </div>
@@ -112,8 +112,8 @@ export function ScoreGapRow({
           >
             {formatted}
           </span>
-          {chipSlot && <span className="ml-auto">{chipSlot}</span>}
           {tooltip}
+          {chipSlot && <span className="ml-auto">{chipSlot}</span>}
         </span>
       )}
       <div className="min-w-0 tabular-nums">
