@@ -101,7 +101,31 @@ Plans:
   6. A `scripts/backfill_user_percentiles.py` script exists that computes and UPSERTs canonical-slice values + percentiles for all (user, metric) pairs across the chosen DB target. CLI: `--target dev|prod` (mirroring `scripts/import_stress_monitor.py` lines 13-19 — `dev` connects to the local Docker DB on `localhost:5432`; `prod` connects via the `bin/prod_db_tunnel.sh` tunnel on `localhost:15432` and refuses to run if the tunnel is down). Optional `--user-id <id>` flag to backfill a single user for testing. Optional `--metric <id>` to backfill a single metric. The script is idempotent (UPSERT semantics) — re-runs are safe and only update changed rows. Eval-dependent metrics are computed only for users whose cold drain has completed; users with pending eval get a Stage-A-only backfill row (matches Success Criterion 3). The script emits a summary table (users processed / rows upserted / rows skipped per metric per inclusion-floor reason) so operators can spot-check rollout health.
   7. The canonical CTE machinery in `scripts/gen_global_percentile_cdf.py` (per-metric `_per_user_cte_*` builders, `_canonical_selected_users_cte`, `_equal_footing_filter_sql`, `_sparse_exclusion_sql`, `_elo_bucket_expr`) is the source of truth for the canonical slice. Phase 94.1 either extracts these into a shared module that both the benchmark CDF generator and the new per-user compute path import, OR documents an explicit decision (with rationale) to duplicate the SQL templates. Drift between benchmark-cohort methodology and per-user compute methodology is unacceptable — the chosen mechanism must make accidental drift impossible or visibly tracked.
 
-**Plans**: TBD
+**Plans:** 8 plans
+
+Plans:
+**Wave 0** *(test scaffolding — Nyquist)*
+
+- [ ] 94.1-01-PLAN.md — Wave 0 test scaffolding: canonical_slice_sql + alembic + ENUM + repo + gen-script regression
+- [ ] 94.1-02-PLAN.md — Wave 0 test scaffolding: compute-service + hooks + chip-decoupling + backfill + frontend tooltip
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 94.1-03-PLAN.md — Extract shared canonical_slice_sql module; refactor gen_global_percentile_cdf.py consumer (D-11)
+- [ ] 94.1-04-PLAN.md — Alembic migration (benchmark_metric ENUM + user_benchmark_percentiles table) + ORM model + repository
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 94.1-05-PLAN.md — Per-user compute service: compute_stage_a + compute_stage_b with Sentry isolation
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 94.1-06-PLAN.md — Stage A hook in import_service._complete_import_job + Stage B hook in eval_drain post-commit
+
+**Wave 4** *(blocked on Waves 1 + 3)*
+
+- [ ] 94.1-07-PLAN.md — endgame_service chip rewire + PercentileChip tooltip canonical-slice clarifier
+- [ ] 94.1-08-PLAN.md — Backfill script (--target dev|prod) + final phase ship gate (blocking human-verify)
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
 

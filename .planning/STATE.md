@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.19
-milestone_name: milestone
-status: completed
-last_updated: "2026-05-23T09:24:41.349Z"
-last_activity: 2026-05-23 -- Phase 94 marked complete
+milestone_name: Endgame Percentiles & LLM Statistical Reasoning
+status: executing
+last_updated: "2026-05-23T11:26:41.874Z"
+last_activity: 2026-05-23 -- Phase 94.1 planning complete
 progress:
-  total_phases: 7
+  total_phases: 8
   completed_phases: 2
-  total_plans: 5
+  total_plans: 13
   completed_plans: 5
-  percent: 29
+  percent: 25
 ---
 
 # Project State: FlawChess
@@ -19,8 +19,8 @@ progress:
 
 Phase: 94 — COMPLETE
 Plan: 1 of 3
-Status: Phase 94 complete
-Last activity: 2026-05-23 -- Phase 94 marked complete
+Status: Ready to execute
+Last activity: 2026-05-23 -- Phase 94.1 planning complete
 
 ## Project Reference
 
