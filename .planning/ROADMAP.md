@@ -129,8 +129,8 @@ Plans:
 
 **Wave 5** *(gap closure from 94.1-VERIFICATION.md — parallel)*
 
-- [ ] 94.1-09-PLAN.md — CRITICAL: fix selected_users_cte bindparam bug (`:user_id::int` → `CAST(:user_id AS int)`) + lift skipped happy-path & SC-7 parity tests + new real-data integration test + dev backfill HUMAN-UAT (closes VERIFICATION gap #1 + #2)
-- [ ] 94.1-12-PLAN.md — WR-01: collapse eval-drain N+1 to one aggregated `users_with_zero_pending` query + repository helper + unit test
+- [x] 94.1-09-PLAN.md — CRITICAL: fix selected_users_cte bindparam bug (`:user_id::int` → `CAST(:user_id AS int)`) + lift skipped happy-path & SC-7 parity tests + new real-data integration test + dev backfill HUMAN-UAT (closes VERIFICATION gap #1 + #2)
+- [x] 94.1-12-PLAN.md — WR-01: collapse eval-drain N+1 to one aggregated `users_with_zero_pending` query + repository helper + unit test
 
 **Wave 6** *(blocked on Wave 5 — IN-03 classifier fix shares the backfill script)*
 
