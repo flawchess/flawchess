@@ -101,7 +101,7 @@ Plans:
   6. A `scripts/backfill_user_percentiles.py` script exists that computes and UPSERTs canonical-slice values + percentiles for all (user, metric) pairs across the chosen DB target. CLI: `--target dev|prod` (mirroring `scripts/import_stress_monitor.py` lines 13-19 — `dev` connects to the local Docker DB on `localhost:5432`; `prod` connects via the `bin/prod_db_tunnel.sh` tunnel on `localhost:15432` and refuses to run if the tunnel is down). Optional `--user-id <id>` flag to backfill a single user for testing. Optional `--metric <id>` to backfill a single metric. The script is idempotent (UPSERT semantics) — re-runs are safe and only update changed rows. Eval-dependent metrics are computed only for users whose cold drain has completed; users with pending eval get a Stage-A-only backfill row (matches Success Criterion 3). The script emits a summary table (users processed / rows upserted / rows skipped per metric per inclusion-floor reason) so operators can spot-check rollout health.
   7. The canonical CTE machinery in `scripts/gen_global_percentile_cdf.py` (per-metric `_per_user_cte_*` builders, `_canonical_selected_users_cte`, `_equal_footing_filter_sql`, `_sparse_exclusion_sql`, `_elo_bucket_expr`) is the source of truth for the canonical slice. Phase 94.1 either extracts these into a shared module that both the benchmark CDF generator and the new per-user compute path import, OR documents an explicit decision (with rationale) to duplicate the SQL templates. Drift between benchmark-cohort methodology and per-user compute methodology is unacceptable — the chosen mechanism must make accidental drift impossible or visibly tracked.
 
-**Plans:** 8 plans
+**Plans:** 12 plans (8 shipped + 4 gap-closure from 94.1-VERIFICATION.md)
 
 Plans:
 **Wave 0** *(test scaffolding — Nyquist)*
@@ -126,6 +126,19 @@ Plans:
 
 - [x] 94.1-07-PLAN.md — endgame_service chip rewire + PercentileChip tooltip canonical-slice clarifier
 - [x] 94.1-08-PLAN.md — Backfill script (--target dev|prod) + final phase ship gate (blocking human-verify)
+
+**Wave 5** *(gap closure from 94.1-VERIFICATION.md — parallel)*
+
+- [ ] 94.1-09-PLAN.md — CRITICAL: fix selected_users_cte bindparam bug (`:user_id::int` → `CAST(:user_id AS int)`) + lift skipped happy-path & SC-7 parity tests + new real-data integration test + dev backfill HUMAN-UAT (closes VERIFICATION gap #1 + #2)
+- [ ] 94.1-12-PLAN.md — WR-01: collapse eval-drain N+1 to one aggregated `users_with_zero_pending` query + repository helper + unit test
+
+**Wave 6** *(blocked on Wave 5 — IN-03 classifier fix shares the backfill script)*
+
+- [ ] 94.1-10-PLAN.md — IN-03: `_compute_and_count` classifier fix (return False on below-floor; remove dead row_before probe) + unit test driving all three branches
+
+**Wave 7** *(blocked on Wave 5/6 — rename runs after backfill writes real rows)*
+
+- [ ] 94.1-11-PLAN.md — CR-01: rename `n_games` → `n_cells_floor` (reversible Alembic migration + ORM/repository/service/test renames + HUMAN-UAT)
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
 
