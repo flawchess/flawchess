@@ -313,7 +313,6 @@ async def test_compute_stage_a_writes_row_for_qualifying_user(real_data_user) ->
     assert row.cdf_snapshot == datetime.date.today(), (
         f"cdf_snapshot expected date.today() ({datetime.date.today()}), got {row.cdf_snapshot!r}"
     )
-    assert row.n_cells_floor >= 0, f"n_cells_floor must be non-negative, got {row.n_cells_floor!r}"
 
 
 async def test_compute_stage_b_writes_three_rows_for_qualifying_user(
@@ -362,8 +361,8 @@ async def test_compute_stage_b_writes_three_rows_for_qualifying_user(
 async def test_compute_stage_a_idempotent_upsert(real_data_user) -> None:
     """Running compute_stage_a twice updates computed_at without drifting value.
 
-    The second call must UPSERT the same (value, percentile, n_cells_floor) and
-    only advance computed_at on the DB side.
+    The second call must UPSERT the same (value, percentile) and only advance
+    computed_at on the DB side.
     """
     user_id, test_session_maker = real_data_user
     await _seed_canonical_slice_user(
@@ -389,27 +388,22 @@ async def test_compute_stage_a_idempotent_upsert(real_data_user) -> None:
     assert second_row.percentile == first_row.percentile, (
         f"Stage A re-run drifted percentile: {first_row.percentile!r} -> {second_row.percentile!r}"
     )
-    assert second_row.n_cells_floor == first_row.n_cells_floor, (
-        f"Stage A re-run drifted n_cells_floor: {first_row.n_cells_floor!r} -> {second_row.n_cells_floor!r}"
-    )
 
 
-async def test_compute_stage_a_below_floor_writes_null_percentile(
+async def test_compute_stage_a_below_floor_writes_no_row(
     real_data_user,
 ) -> None:
-    """When a user has computable value but below the inclusion floor, the row
-    is written with percentile=NULL (D-10 / CONTEXT discretion).
+    """When a user has zero floor-passing cells, NO row is written (Plan 13).
 
     Seeds 5 endgame games (below the 30-game floor) and 5 non-endgame games.
-    Asserts the score_gap row IS written, value is set, percentile is None.
+    Plan 13 correctness fix: the service now uses a single CTE with
+    apply_floor=True. With 5 endgame games, the CTE returns no rows for the
+    floor-passing query, so no row is written at all. The chip suppresses
+    naturally because fetch_for_user returns an empty dict.
 
-    Note: with only 5 endgame games, the per_user_values CTE may produce no
-    rows for the floor-passing query (n_cells_floor=0), which the service
-    interprets as 'below floor' and forces percentile=None. If the seed also
-    produces no rows on the raw query (e.g., elo_bucket NULL for sub-800),
-    the service writes no row — that would still satisfy the 'no chip
-    rendered' contract, so the test is tolerant of either outcome but the
-    common case (1500 ELO seed) is below-floor with a value.
+    Note: at 1500 ELO the floor-passing query returns no rows because the
+    per-cell game count is below the inclusion floor. The behaviour is the
+    same as "zero canonical-slice games" from the service's POV.
     """
     user_id, test_session_maker = real_data_user
     await _seed_canonical_slice_user(
@@ -424,17 +418,9 @@ async def test_compute_stage_a_below_floor_writes_null_percentile(
     async with test_session_maker() as session:
         result = await fetch_for_user(session, user_id=user_id)
 
-    if STAGE_A_METRIC in result:
-        row = result[STAGE_A_METRIC]
-        # Value is computable from 5+5 games (the avg of any number of games
-        # is defined). Percentile must be None because we're below the floor.
-        assert row.value is not None, (
-            "below-floor row was written but value is None — value should be "
-            "computable even below floor (CONTEXT.md D-10)"
-        )
-        assert row.percentile is None, (
-            f"below-floor row written with non-null percentile "
-            f"({row.percentile!r}) — should be NULL per D-10"
-        )
-    # else: zero canonical-slice cells survived the elo_bucket NULL gate, so
-    # the service correctly wrote no row. Either path is acceptable.
+    # Plan 13: below-floor users must have NO row. The chip suppresses naturally.
+    assert STAGE_A_METRIC not in result, (
+        f"Plan 13: below-floor users must NOT have a row in user_benchmark_percentiles "
+        f"(got {result.get(STAGE_A_METRIC)!r}). The floor-respecting CTE should return "
+        f"no rows when the user has fewer games than the inclusion floor."
+    )

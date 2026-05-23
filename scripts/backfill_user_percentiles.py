@@ -235,17 +235,21 @@ async def _iter_users(
 
 
 class _MetricSummary:
-    """Accumulates upserted / skipped counts for one metric."""
+    """Accumulates upserted / skipped counts for one metric.
+
+    Plan 13: ``skipped_below_floor`` is removed. Below-floor (user, metric)
+    pairs produce no row — they are counted under ``skipped_no_canonical_games``
+    because the floor-respecting CTE returns no rows (same path as zero games).
+    """
 
     def __init__(self) -> None:
         self.upserted: int = 0
-        self.skipped_below_floor: int = 0
         self.skipped_no_canonical_games: int = 0
         self.skipped_no_eval: int = 0
 
     @property
     def total_skipped(self) -> int:
-        return self.skipped_below_floor + self.skipped_no_canonical_games + self.skipped_no_eval
+        return self.skipped_no_canonical_games + self.skipped_no_eval
 
 
 # ---------------------------------------------------------------------------
@@ -328,8 +332,6 @@ async def main(
     for metric_id in all_metrics:
         s = summary[metric_id]
         reasons: list[str] = []
-        if s.skipped_below_floor:
-            reasons.append(f"below_floor={s.skipped_below_floor}")
         if s.skipped_no_canonical_games:
             reasons.append(f"no_canonical_games={s.skipped_no_canonical_games}")
         if s.skipped_no_eval:
@@ -370,12 +372,11 @@ async def _backfill_user(
             stage="A",
             backfill_session_maker=backfill_session_maker,
         )
-        if upserted is None:
-            summary[STAGE_A_METRIC].skipped_no_canonical_games += 1
-        elif upserted:
+        if upserted:
             summary[STAGE_A_METRIC].upserted += 1
         else:
-            summary[STAGE_A_METRIC].skipped_below_floor += 1
+            # None = zero floor-passing cells (no row written).
+            summary[STAGE_A_METRIC].skipped_no_canonical_games += 1
 
     # Stage B: eval-dependent metrics (only if no pending evals).
     for metric_id in STAGE_B_METRICS:
@@ -390,12 +391,11 @@ async def _backfill_user(
             stage="B",
             backfill_session_maker=backfill_session_maker,
         )
-        if upserted is None:
-            summary[metric_id].skipped_no_canonical_games += 1
-        elif upserted:
+        if upserted:
             summary[metric_id].upserted += 1
         else:
-            summary[metric_id].skipped_below_floor += 1
+            # None = zero floor-passing cells (no row written).
+            summary[metric_id].skipped_no_canonical_games += 1
 
 
 async def _compute_and_count(
@@ -407,20 +407,16 @@ async def _compute_and_count(
 ) -> bool | None:
     """Call compute_stage_a or compute_stage_b and classify the outcome.
 
+    Plan 13: collapses to two return values (below-floor rows are no longer
+    written, so the ``False`` branch from Plan 10 is unreachable and removed):
+
     Returns:
-        True  — a row was upserted with a non-null percentile.
-        False — a row exists but its percentile IS NULL (below inclusion floor).
-        None  — no row written (zero canonical-slice games for this user).
+        True  — a row was upserted (user has ≥1 floor-passing cell).
+        None  — no row written (zero floor-passing cells for this user/metric).
 
-    The three return values map 1:1 onto the per-metric summary counters at
-    ``_backfill_user`` (lines 373-378 / 393-398): upserted / skipped_below_floor /
-    skipped_no_canonical_games.
+    The two return values map onto the per-metric summary counters at
+    ``_backfill_user``: upserted / skipped_no_canonical_games.
     """
-    # IN-03 fix (94.1-10): the prior implementation issued a pre-compute
-    # `_row_exists` probe whose result was never used — pure dead code costing
-    # one round-trip per (user, metric) pair. Removed. Insert-vs-update is not
-    # observable from outside the UPSERT, so we no longer distinguish them.
-
     # Call the appropriate stage.
     if stage == "A":
         await compute_stage_a(user_id, session_maker=backfill_session_maker)
@@ -428,30 +424,11 @@ async def _compute_and_count(
         # Stage B computes all 3 metrics; we inspect only the specific one.
         await compute_stage_b(user_id, session_maker=backfill_session_maker)
 
-    # Post-compute probe.
+    # Post-compute probe: row exists iff user had ≥1 floor-passing cell.
     row_after = await _row_exists(user_id, metric, backfill_session_maker)
     if not row_after:
-        # No row at all — zero canonical-slice games (value_raw was None).
+        # No row — zero floor-passing cells (Plan 13: no below-floor rows written).
         return None
-
-    # Row exists. Inspect the percentile to differentiate upserted vs below-floor.
-    async with backfill_session_maker() as session:
-        result = await session.execute(
-            # CAST(:metric AS benchmark_metric) avoids asyncpg VARCHAR→ENUM mismatch.
-            text(
-                "SELECT percentile FROM user_benchmark_percentiles "
-                "WHERE user_id = :uid AND metric = CAST(:metric AS benchmark_metric)"
-            ).bindparams(uid=user_id, metric=metric)
-        )
-        pctl_row = result.fetchone()
-    if pctl_row is None:
-        # Defensive: row_after said True but the row vanished between probes.
-        # Treat as no-row written.
-        return None
-    if pctl_row.percentile is None:
-        # IN-03 fix (94.1-10): below-floor row reaches the skipped_below_floor
-        # counter at _backfill_user:378 / :398. Previously unreachable.
-        return False
     return True
 
 

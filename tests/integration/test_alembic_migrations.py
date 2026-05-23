@@ -58,13 +58,14 @@ def _migration_present() -> bool:
 # ---------------------------------------------------------------------------
 
 # Column names expected in the migrated table.
+# Plan 13 (gap-closure): ``n_cells_floor`` dropped via migration a7f3c9b82e14.
+# Row existence now implies above-floor; the column was write-only.
 _EXPECTED_COLUMNS: frozenset[str] = frozenset(
     {
         "user_id",
         "metric",
         "value",
         "percentile",
-        "n_cells_floor",
         "cdf_snapshot",
         "computed_at",
     }

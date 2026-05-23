@@ -9,6 +9,11 @@ type lifecycle (see ``alembic/versions/20260524_000000_add_user_benchmark_percen
 Phase 94.1 D-05/D-08: persistent home for canonical-slice values + percentiles.
 Composite PK (user_id, metric) — exactly one row per user per metric at any time.
 Recompute is UPSERT (see ``app/repositories/user_benchmark_percentiles_repository.py``).
+
+Phase 94.1 Plan 13 semantics (gap-closure):
+  Row existence implies above-floor. Below-floor (user, metric) pairs produce
+  NO row — the chip suppresses naturally via an empty fetch_for_user result.
+  The ``n_cells_floor`` column was dropped by migration a7f3c9b82e14.
 """
 
 from __future__ import annotations
@@ -41,11 +46,10 @@ class UserBenchmarkPercentile(Base):
     Written by Stage A (score_gap) and Stage B (3 eval-dependent metrics)
     background tasks, and by the one-shot backfill script.
 
-    The ``percentile`` column is NULL when the user has zero
-    ``(elo_bucket, tc_bucket)`` cells passing the per-metric HAVING inclusion
-    floor (D-06 / D-10). The user still has a computable ``value`` but no chip
-    is shown. ``n_cells_floor`` stores that floor-passing cell count; it is
-    NOT a game count. See Phase 94.1 REVIEW.md CR-01 for the rename rationale.
+    Row existence implies above-floor: if a user has zero floor-passing
+    ``(elo_bucket, tc_bucket)`` cells for a metric, no row is written
+    (Plan 13 gap-closure). The chip suppresses naturally when fetch_for_user
+    returns an empty dict for that metric.
     """
 
     __tablename__ = "user_benchmark_percentiles"
@@ -58,7 +62,6 @@ class UserBenchmarkPercentile(Base):
     metric: Mapped[CdfMetricId] = mapped_column(benchmark_metric_enum, primary_key=True)
     value: Mapped[float] = mapped_column(Float, nullable=False)
     percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
-    n_cells_floor: Mapped[int] = mapped_column(Integer, nullable=False)
     cdf_snapshot: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     computed_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),

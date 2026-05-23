@@ -121,8 +121,9 @@ async def test_compute_stage_a_swallows_exception_and_captures_sentry(
     # interpolate_percentile (the early-exit path otherwise short-circuits
     # before any chance of an exception). Then make interpolate_percentile
     # raise, triggering the Sentry capture path.
+    # Plan 13: _compute_metric_for_user returns float | None (not a tuple).
     async def fake_compute(*args, **kwargs):  # noqa: ANN001, ANN201, ARG001
-        return (0.05, 5)
+        return 0.05
 
     with (
         patch("sentry_sdk.set_context", side_effect=fake_set_context),
@@ -180,8 +181,9 @@ async def test_compute_stage_b_swallows_exception_and_captures_sentry(
     # interpolate_percentile raise. Stage B's per-metric inner try/except
     # captures + continues — every loop iteration trips the same exception
     # and emits one set_context("...", {"stage": "B", "metric": ...}) call.
+    # Plan 13: _compute_metric_for_user returns float | None (not a tuple).
     async def fake_compute(*args, **kwargs):  # noqa: ANN001, ANN201, ARG001
-        return (0.05, 5)
+        return 0.05
 
     with (
         patch("sentry_sdk.set_context", side_effect=fake_set_context),
