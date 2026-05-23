@@ -77,7 +77,4 @@ async def test_per_user_value_matches_benchmark_per_user_for_same_user_id(
     need eval_cp / eval_mate values on endgame span entries. The seed helper
     should populate these. If not, the test skips with a "no eval data" note.
     """
-    pytest.skip(
-        f"implementation pending Plan 03 (canonical_slice_sql.py). "
-        f"metric_id={metric_id!r}"
-    )
+    pytest.skip(f"implementation pending Plan 03 (canonical_slice_sql.py). metric_id={metric_id!r}")

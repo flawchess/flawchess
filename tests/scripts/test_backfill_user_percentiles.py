@@ -52,7 +52,7 @@ _TEST_USER_1_ID: int = 99206  # unique per module to avoid FK conflicts
 _TEST_USER_2_ID: int = 99207
 _TEST_USER_3_ID: int = 99208
 _PROD_TUNNEL_PORT: int = 15432  # per CLAUDE.md / bin/prod_db_tunnel.sh
-_DEV_PORT: int = 5432           # per CLAUDE.md dev DB port
+_DEV_PORT: int = 5432  # per CLAUDE.md dev DB port
 _DUMMY_NON_5432_PORT: int = 99999
 
 # Expected summary tokens per metric (from CONTEXT §Specifics backfill output shape)

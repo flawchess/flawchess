@@ -30,9 +30,9 @@ user_benchmark_percentiles_service = pytest.importorskip(
 # ── Module-level constants (CLAUDE.md: no magic numbers) ─────────────────────
 _TEST_USER_A_ID: int = 99202  # unique per module to avoid FK conflicts
 _TEST_USER_B_ID: int = 99203
-_USER_A_TOTAL_GAMES: int = 10   # all drained in one batch -> pending after = 0
+_USER_A_TOTAL_GAMES: int = 10  # all drained in one batch -> pending after = 0
 _USER_B_TOTAL_GAMES: int = 100  # only 10 drained -> pending after = 90
-_DRAIN_BATCH_SIZE: int = 10     # matches eval_drain._DRAIN_BATCH_SIZE
+_DRAIN_BATCH_SIZE: int = 10  # matches eval_drain._DRAIN_BATCH_SIZE
 
 pytestmark = pytest.mark.asyncio
 
