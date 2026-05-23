@@ -53,7 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.game_repository import count_pending_evals, users_with_zero_pending
+from app.repositories.game_repository import users_with_zero_pending
 from app.services import engine as engine_service
 from app.services.user_benchmark_percentiles_service import compute_stage_b
 from app.services.zobrist import PlyData
@@ -560,9 +560,7 @@ async def run_eval_drain() -> None:
                 )
                 affected_user_ids = [row[0] for row in user_id_rows.all()]
                 if affected_user_ids:
-                    zero_pending = await users_with_zero_pending(
-                        read_session, affected_user_ids
-                    )
+                    zero_pending = await users_with_zero_pending(read_session, affected_user_ids)
                     for uid in zero_pending:
                         asyncio.create_task(compute_stage_b(uid))
 

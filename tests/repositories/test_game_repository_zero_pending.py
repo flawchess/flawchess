@@ -13,7 +13,7 @@ import datetime
 import itertools
 
 import pytest
-import sqlalchemy as sa
+from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
@@ -119,9 +119,7 @@ async def test_all_users_have_zero_pending(db_session: AsyncSession) -> None:
         await _seed_game(db_session, uid, evals_completed=True)
         await _seed_game(db_session, uid, evals_completed=True)
 
-    result = await users_with_zero_pending(
-        db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID]
-    )
+    result = await users_with_zero_pending(db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID])
     assert set(result) == {_USER_A_ID, _USER_B_ID, _USER_C_ID}
 
 
@@ -141,9 +139,7 @@ async def test_mixed_pending_counts(db_session: AsyncSession) -> None:
     await _seed_game(db_session, _USER_C_ID, evals_completed=False)
     await _seed_game(db_session, _USER_C_ID, evals_completed=True)
 
-    result = await users_with_zero_pending(
-        db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID]
-    )
+    result = await users_with_zero_pending(db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID])
     assert set(result) == {_USER_A_ID}
 
 
@@ -220,9 +216,7 @@ async def test_users_with_zero_pending_issues_single_query(
 
     statements: list[str] = []
 
-    def _on_exec(
-        conn, cursor, statement, parameters, context, executemany
-    ) -> None:  # noqa: ANN001 — SQLAlchemy event signature
+    def _on_exec(conn, cursor, statement, parameters, context, executemany) -> None:  # noqa: ANN001 — SQLAlchemy event signature
         statements.append(statement)
 
     # Resolve the sync engine via the async connection's sync sibling.
@@ -230,19 +224,15 @@ async def test_users_with_zero_pending_issues_single_query(
     bind = db_session.bind
     sync_engine = bind.sync_engine  # type: ignore[union-attr]
 
-    sa.event.listen(sync_engine, "before_cursor_execute", _on_exec)
+    sa_event.listen(sync_engine, "before_cursor_execute", _on_exec)
     try:
-        result = await users_with_zero_pending(
-            db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID]
-        )
+        result = await users_with_zero_pending(db_session, [_USER_A_ID, _USER_B_ID, _USER_C_ID])
     finally:
-        sa.event.remove(sync_engine, "before_cursor_execute", _on_exec)
+        sa_event.remove(sync_engine, "before_cursor_execute", _on_exec)
 
     # _USER_A_ID and _USER_C_ID are zero-pending; _USER_B_ID has 1 pending.
     assert set(result) == {_USER_A_ID, _USER_C_ID}
 
     # Count actual data-fetching statements; filter out savepoints/begin/commit noise.
     query_count = sum(1 for s in statements if "FROM" in s.upper())
-    assert query_count == 1, (
-        f"expected 1 query, got {query_count}: {statements}"
-    )
+    assert query_count == 1, f"expected 1 query, got {query_count}: {statements}"
