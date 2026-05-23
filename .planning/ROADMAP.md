@@ -116,7 +116,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 94.1-05-PLAN.md — Per-user compute service: compute_stage_a + compute_stage_b with Sentry isolation
+- [x] 94.1-05-PLAN.md — Per-user compute service: compute_stage_a + compute_stage_b with Sentry isolation
 
 **Wave 3** *(blocked on Wave 2)*
 
