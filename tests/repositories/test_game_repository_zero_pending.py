@@ -3,6 +3,10 @@
 Locks the single-query contract: the aggregated helper MUST issue exactly ONE
 SQL statement, and its return set MUST match a per-user count_pending_evals loop.
 
+Phase 94.1 Plan 13 (gap-closure): extends the helper with an active-import gate.
+Users with pending/in_progress import_jobs are excluded even when their pending-eval
+count is zero. Test 7 below pins this contract.
+
 Data isolation: all tests use the rollback-scoped ``db_session`` fixture from
 ``tests/conftest.py`` — no committed rows leak between tests.
 """
@@ -11,12 +15,14 @@ from __future__ import annotations
 
 import datetime
 import itertools
+import uuid
 
 import pytest
 from sqlalchemy import event as sa_event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
+from app.models.import_job import ImportJob
 from app.repositories.game_repository import (
     count_pending_evals,
     users_with_zero_pending,
@@ -29,6 +35,12 @@ _USER_C_ID: int = 99702
 _USER_NO_GAMES_ID: int = 99703
 _MIXED_COHORT_BASE_ID: int = 99800  # 5 users at 99800..99804
 _MIXED_COHORT_SIZE: int = 5
+
+# Additional users for Plan 13 Stage B gate tests (Test 7)
+_IMPORT_GATE_USER_A_ID: int = 99710  # zero pending evals + no active import → returned
+_IMPORT_GATE_USER_B_ID: int = 99711  # zero pending evals + in_progress import → excluded
+_IMPORT_GATE_USER_C_ID: int = 99712  # zero pending evals + pending import → excluded
+_IMPORT_GATE_USER_D_ID: int = 99713  # zero pending evals + completed import → returned
 
 _FIXED_PLAYED_AT: datetime.datetime = datetime.datetime(
     2026, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc
@@ -93,7 +105,13 @@ async def _ensure_test_users(db_session: AsyncSession) -> None:
 
     base_uids = (_USER_A_ID, _USER_B_ID, _USER_C_ID, _USER_NO_GAMES_ID)
     mixed_uids = tuple(_MIXED_COHORT_BASE_ID + i for i in range(_MIXED_COHORT_SIZE))
-    for uid in base_uids + mixed_uids:
+    import_gate_uids = (
+        _IMPORT_GATE_USER_A_ID,
+        _IMPORT_GATE_USER_B_ID,
+        _IMPORT_GATE_USER_C_ID,
+        _IMPORT_GATE_USER_D_ID,
+    )
+    for uid in base_uids + mixed_uids + import_gate_uids:
         await ensure_test_user(db_session, uid)
 
 
@@ -236,3 +254,87 @@ async def test_users_with_zero_pending_issues_single_query(
     # Count actual data-fetching statements; filter out savepoints/begin/commit noise.
     query_count = sum(1 for s in statements if "FROM" in s.upper())
     assert query_count == 1, f"expected 1 query, got {query_count}: {statements}"
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — Plan 13 Stage B gate: users with active imports are excluded
+# ---------------------------------------------------------------------------
+
+
+async def _seed_import_job(
+    db_session: AsyncSession,
+    user_id: int,
+    status: str,
+) -> None:
+    """Insert one ImportJob row for the given user with the given status."""
+    job = ImportJob(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        platform="lichess",
+        username=f"testuser{user_id}",
+        status=status,
+        games_fetched=0,
+        games_imported=0,
+    )
+    db_session.add(job)
+    await db_session.flush()
+
+
+async def test_users_with_active_imports_are_excluded_from_stage_b(
+    db_session: AsyncSession,
+) -> None:
+    """Plan 13 Stage B gate: users with pending/in_progress imports are excluded.
+
+    Seeds 4 users, all with zero pending evals:
+    - User A: zero pending evals + NO active import → returned (should fire Stage B)
+    - User B: zero pending evals + in_progress import → excluded (Stage B deferred)
+    - User C: zero pending evals + pending import → excluded (Stage B deferred)
+    - User D: zero pending evals + completed import → returned (completed = no longer active)
+
+    This pins the Plan 13 correctness requirement: Stage B must NOT fire for users
+    mid-import, even when their pending-eval count is zero. Without this gate,
+    Stage B fires multiple times as eval batches drain, producing transient
+    intermediate values visible on the chip.
+    """
+    # All 4 users: zero pending evals (one completed game each).
+    for uid in (
+        _IMPORT_GATE_USER_A_ID,
+        _IMPORT_GATE_USER_B_ID,
+        _IMPORT_GATE_USER_C_ID,
+        _IMPORT_GATE_USER_D_ID,
+    ):
+        await _seed_game(db_session, uid, evals_completed=True)
+
+    # Seed import_jobs per scenario
+    # User A: no import_job row at all → no active import
+    await _seed_import_job(db_session, _IMPORT_GATE_USER_B_ID, status="in_progress")
+    await _seed_import_job(db_session, _IMPORT_GATE_USER_C_ID, status="pending")
+    await _seed_import_job(db_session, _IMPORT_GATE_USER_D_ID, status="completed")
+
+    result = await users_with_zero_pending(
+        db_session,
+        [
+            _IMPORT_GATE_USER_A_ID,
+            _IMPORT_GATE_USER_B_ID,
+            _IMPORT_GATE_USER_C_ID,
+            _IMPORT_GATE_USER_D_ID,
+        ],
+    )
+
+    result_set = set(result)
+
+    # Users A and D should be returned (no active import)
+    assert _IMPORT_GATE_USER_A_ID in result_set, (
+        "User A (no active import) must be returned to fire Stage B"
+    )
+    assert _IMPORT_GATE_USER_D_ID in result_set, (
+        "User D (completed import) must be returned — completed is not active"
+    )
+
+    # Users B and C must be excluded (active imports)
+    assert _IMPORT_GATE_USER_B_ID not in result_set, (
+        "User B (in_progress import) must be excluded — Stage B must not fire mid-import"
+    )
+    assert _IMPORT_GATE_USER_C_ID not in result_set, (
+        "User C (pending import) must be excluded — Stage B must not fire mid-import"
+    )
