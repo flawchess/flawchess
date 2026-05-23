@@ -390,13 +390,6 @@ _METRIC_IDS: list[str] = sorted(BUILD_METRIC_BREAKPOINT_QUERY_BASELINE.keys())
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(
-    reason=(
-        "Baseline captured 2026-05-23; expected to pass post-Plan-03. "
-        "TODO (Plan 03): remove this skip once gen_global_percentile_cdf.py "
-        "has been refactored to import from app/services/canonical_slice_sql.py."
-    )
-)
 @pytest.mark.parametrize("metric_id", _METRIC_IDS)
 def test_build_metric_breakpoint_query_byte_identical_after_refactor(
     metric_id: str,
