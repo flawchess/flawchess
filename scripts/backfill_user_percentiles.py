@@ -405,36 +405,36 @@ async def _compute_and_count(
     stage: Literal["A", "B"],
     backfill_session_maker: async_sessionmaker[AsyncSession],
 ) -> bool | None:
-    """Call compute_stage_a or compute_stage_b and determine the outcome.
+    """Call compute_stage_a or compute_stage_b and classify the outcome.
 
     Returns:
-        True  — a row was upserted (new or updated).
-        False — a row exists but value was below floor (percentile=NULL row).
+        True  — a row was upserted with a non-null percentile.
+        False — a row exists but its percentile IS NULL (below inclusion floor).
         None  — no row written (zero canonical-slice games for this user).
 
-    Uses a pre/post row-existence probe to distinguish upserted from
-    no-op (compute service returns None for both cases).
+    The three return values map 1:1 onto the per-metric summary counters at
+    ``_backfill_user`` (lines 373-378 / 393-398): upserted / skipped_below_floor /
+    skipped_no_canonical_games.
     """
-    # Pre-compute probe: does the row already exist?
-    row_before = await _row_exists(user_id, metric, backfill_session_maker)
+    # IN-03 fix (94.1-10): the prior implementation issued a pre-compute
+    # `_row_exists` probe whose result was never used — pure dead code costing
+    # one round-trip per (user, metric) pair. Removed. Insert-vs-update is not
+    # observable from outside the UPSERT, so we no longer distinguish them.
 
     # Call the appropriate stage.
     if stage == "A":
         await compute_stage_a(user_id, session_maker=backfill_session_maker)
     else:
-        # Stage B computes all 3 metrics; we check only the specific one.
+        # Stage B computes all 3 metrics; we inspect only the specific one.
         await compute_stage_b(user_id, session_maker=backfill_session_maker)
 
     # Post-compute probe.
     row_after = await _row_exists(user_id, metric, backfill_session_maker)
-
     if not row_after:
         # No row at all — zero canonical-slice games (value_raw was None).
         return None
-    # Row exists after compute. If it wasn't there before, it was inserted.
-    # If it was there before, it was updated (UPSERT advances computed_at).
-    # In both cases we count as "upserted".  The only "skipped_below_floor"
-    # case is when the row exists but percentile IS NULL.
+
+    # Row exists. Inspect the percentile to differentiate upserted vs below-floor.
     async with backfill_session_maker() as session:
         result = await session.execute(
             # CAST(:metric AS benchmark_metric) avoids asyncpg VARCHAR→ENUM mismatch.
@@ -445,11 +445,13 @@ async def _compute_and_count(
         )
         pctl_row = result.fetchone()
     if pctl_row is None:
+        # Defensive: row_after said True but the row vanished between probes.
+        # Treat as no-row written.
         return None
-    if not row_before:
-        # Freshly inserted.
-        return True
-    # Row already existed — treat as upserted (computed_at advanced).
+    if pctl_row.percentile is None:
+        # IN-03 fix (94.1-10): below-floor row reaches the skipped_below_floor
+        # counter at _backfill_user:378 / :398. Previously unreachable.
+        return False
     return True
 
 
