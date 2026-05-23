@@ -22,10 +22,10 @@ Structural differences between the two sources (the ONLY two documented diffs):
     SKILL.md §1. Columns include ``tc_bucket``, ``selection_rating_bucket``,
     ``median_elo``.
 
-  - ``"single_user"``: ``SELECT :user_id::int AS user_id`` — a scalar
-    single-row CTE with a SQLAlchemy bindparam (V5 security mitigation). No
-    ``tc_bucket`` column is emitted, because the per-user path pools across
-    all time controls (D-09: no per-TC cap).
+  - ``"single_user"``: scalar single-row CTE projecting an explicit
+    SQLAlchemy bindparam (V5 security mitigation). The explicit-CAST form
+    is required so SQLAlchemy's ``text()`` tokeniser actually detects the
+    parameter (see Plan 09 fix below).
 
 * Per-TC equality predicate ``g.time_control_bucket::text = su.tc_bucket``:
 
@@ -130,7 +130,7 @@ def selected_users_cte(*, source: Literal["benchmark", "single_user"]) -> str:
     # exclusion against NULL is trivially satisfied (the row carries each
     # game's TC indirectly via rating-bucket cohorts).
     # Bug fixes (94.1-09):
-    # 1. The `:user_id::int` shorthand cast confused SQLAlchemy's bindparam
+    # 1. The Postgres `::` shorthand cast confused SQLAlchemy's bindparam
     #    tokeniser, which silently dropped the parameter and raised
     #    ArgumentError at .bindparams() time. The explicit CAST() form is
     #    parsed correctly. See `_row_exists` in
