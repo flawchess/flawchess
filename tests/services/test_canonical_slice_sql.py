@@ -1,5 +1,10 @@
 """Tests for app.services.canonical_slice_sql — Phase 94.1 Plan 01 Wave 0.
 
+Extended in Plan 03 to cover the ``apply_floor`` dual-mode (RESEARCH Open Q3):
+  ``test_per_user_cte_for_apply_floor_toggle`` asserts that
+  ``apply_floor=True`` (default) retains the per-metric HAVING gate and
+  ``apply_floor=False`` drops it entirely.
+
 These tests define the contract for the shared SQL module that Plan 03 will
 implement. The module does not exist yet; ``pytest.importorskip`` at module
 level causes the entire file to be skipped gracefully until Plan 03 ships it.
@@ -229,4 +234,76 @@ def test_per_user_cte_single_user_drops_tc_bucket_predicate(metric_id: str) -> N
     assert tc_predicate not in single_cte, (
         f"TC-bucket predicate must be ABSENT in single_user CTE for {metric_id} "
         f"(D-09: pooled across TCs, no per-TC cap)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — apply_floor dual-mode: HAVING gate present/absent (added in Plan 03)
+# ---------------------------------------------------------------------------
+
+
+# Per-metric HAVING fragments that uniquely identify the inclusion-floor gate.
+# These are the HAVING clauses on the per-user/per-user-bucket aggregation CTEs,
+# NOT the structural "HAVING count(*) >= 6" clause used in endgame_game_ids /
+# spans which is always present regardless of apply_floor.
+_FLOOR_HAVING_FRAGMENTS: dict[str, str] = {
+    "score_gap": "HAVING count(*) FILTER (WHERE has_endgame)",
+    "achievable_score_gap": "HAVING count(*) FILTER (WHERE d_i IS NOT NULL)",
+    "section2_score_gap_conv": "HAVING count(*) >= 20",
+    "section2_score_gap_parity": "HAVING count(*) >= 20",
+}
+
+
+@pytest.mark.parametrize("metric_id", METRIC_IDS)
+def test_per_user_cte_for_apply_floor_toggle(metric_id: str) -> None:
+    """Inclusion-floor HAVING gate is present with apply_floor=True (default).
+
+    And absent with apply_floor=False — so Plan 05 can emit a row with a
+    value but percentile=NULL for users below the inclusion floor (RESEARCH
+    Open Q3 / D-10 "percentile=NULL + value stored" recommendation).
+
+    Note: structural HAVING clauses (e.g. ``HAVING count(*) >= 6`` inside
+    ``endgame_game_ids`` / ``spans``) are always present — they are data-quality
+    filters on span length, not inclusion-floor gates on per-user sample size.
+    Only the per-user / per-user-bucket HAVING that enforces the inclusion
+    floor (>= 20 or >= 30 games) is toggled by apply_floor.
+    """
+    floor_fragment = _FLOOR_HAVING_FRAGMENTS[metric_id]
+
+    cte_with_floor = canonical_slice_sql.per_user_cte_for(
+        metric_id,
+        source="single_user",  # type: ignore[arg-type]
+        apply_floor=True,
+    )
+    cte_no_floor = canonical_slice_sql.per_user_cte_for(
+        metric_id,
+        source="single_user",  # type: ignore[arg-type]
+        apply_floor=False,
+    )
+
+    # apply_floor=True (default) must contain the inclusion-floor HAVING gate.
+    assert floor_fragment in cte_with_floor, (
+        f"apply_floor=True must include inclusion-floor HAVING gate for {metric_id}: "
+        f"expected fragment {floor_fragment!r}"
+    )
+
+    # apply_floor=False must NOT contain the inclusion-floor HAVING gate.
+    assert floor_fragment not in cte_no_floor, (
+        f"apply_floor=False must drop the inclusion-floor HAVING gate for {metric_id}: "
+        f"fragment {floor_fragment!r} must be absent "
+        f"(RESEARCH Open Q3 / D-10 'percentile=NULL + value stored' path)"
+    )
+
+    # The two variants must differ (the floor HAVING is the only difference).
+    assert cte_with_floor != cte_no_floor, (
+        f"apply_floor=True and apply_floor=False must produce different SQL for {metric_id}"
+    )
+
+    # Also verify the default (no apply_floor arg) matches apply_floor=True.
+    cte_default = canonical_slice_sql.per_user_cte_for(
+        metric_id,
+        source="single_user",  # type: ignore[arg-type]
+    )
+    assert cte_default == cte_with_floor, (
+        f"Default apply_floor must equal apply_floor=True for {metric_id}"
     )
