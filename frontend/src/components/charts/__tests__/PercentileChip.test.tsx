@@ -165,3 +165,52 @@ describe('PercentileChip', () => {
     expect(screen.getByTestId(`${TID}-popover`)).toBeTruthy();
   });
 });
+
+// ── Phase 94.1 Plan 02: canonical-slice tooltip framing tests (D-13) ─────────
+// These tests are skipped until Plan 07 updates PercentileChip.tsx with
+// the canonical-slice clarifier copy. Use it.skip so the suite stays green
+// pre-Plan-07 while the test contracts are committed early (Wave 0 pattern).
+
+// Pitfall 7 guard: popover MUST NOT bloat into a methodology paragraph.
+// The current Phase 94 copy is 1-2 sentences; the D-13 update must add
+// ONE phrase only (feedback_popover_copy_minimalism.md discipline).
+const POPOVER_MAX_CHARS = 280;
+
+describe('PercentileChip — canonical-slice tooltip framing (Phase 94.1 D-13)', () => {
+  it.skip('renders skill-isolating popover with canonical-slice clarifier', () => {
+    // Expect Plan 07 to add a phrase clarifying that the chip reflects
+    // the user's career under canonical conditions (not the current filtered
+    // view). Any of these substrings satisfy the D-13 requirement:
+    //   - "career under matched conditions"
+    //   - "canonical conditions"
+    //   - "not the current filtered view"
+    renderChip(73, 'skill-isolating');
+    fireEvent.click(screen.getByTestId(TID));
+    const popover = screen.getByTestId(`${TID}-popover`);
+    expect(popover.textContent ?? '').toMatch(
+      /career under matched conditions|canonical conditions|not the current filtered view/i,
+    );
+  });
+
+  it.skip('renders improvement-focus popover with canonical-slice clarifier', () => {
+    // Same canonical-slice framing requirement for improvement-focus flavor.
+    renderChip(20, 'improvement-focus');
+    fireEvent.click(screen.getByTestId(TID));
+    const popover = screen.getByTestId(`${TID}-popover`);
+    expect(popover.textContent ?? '').toMatch(
+      /career under matched conditions|canonical conditions|not the current filtered view/i,
+    );
+  });
+
+  it.skip('popover body remains within minimalism budget', () => {
+    // Pitfall 7 guard: popover MUST NOT bloat into a methodology paragraph.
+    // POPOVER_MAX_CHARS = 280 enforces the 1-2 short-sentence discipline.
+    // (feedback_popover_copy_minimalism.md: WHAT + sign convention only,
+    // no jargon, no caveats like "canonical slice", "Wilson", "sigmoid".)
+    renderChip(73, 'skill-isolating');
+    fireEvent.click(screen.getByTestId(TID));
+    const popover = screen.getByTestId(`${TID}-popover`);
+    const bodyText = (popover.textContent ?? '').trim();
+    expect(bodyText.length).toBeLessThanOrEqual(POPOVER_MAX_CHARS);
+  });
+});
