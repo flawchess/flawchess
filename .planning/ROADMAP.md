@@ -106,8 +106,8 @@ Plans:
 Plans:
 **Wave 0** *(test scaffolding — Nyquist)*
 
-- [ ] 94.1-01-PLAN.md — Wave 0 test scaffolding: canonical_slice_sql + alembic + ENUM + repo + gen-script regression
-- [ ] 94.1-02-PLAN.md — Wave 0 test scaffolding: compute-service + hooks + chip-decoupling + backfill + frontend tooltip
+- [x] 94.1-01-PLAN.md — Wave 0 test scaffolding: canonical_slice_sql + alembic + ENUM + repo + gen-script regression
+- [x] 94.1-02-PLAN.md — Wave 0 test scaffolding: compute-service + hooks + chip-decoupling + backfill + frontend tooltip
 
 **Wave 1** *(blocked on Wave 0)*
 
