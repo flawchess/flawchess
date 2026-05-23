@@ -460,10 +460,10 @@ _N_ABOVE_FLOOR: int = 25  # above ACHIEVABLE_MIN_GAMES floor
 #
 # With apply_floor=False (old bug): avg is dragged toward 0.757 (below-floor inflates).
 # With apply_floor=True (Plan 13 fix): only above-floor cell contributes → value ≈ 0.0.
-_ABOVE_FLOOR_EVAL_CP: int = 0      # entry eval near 0 cp → gap ≈ 0
+_ABOVE_FLOOR_EVAL_CP: int = 0  # entry eval near 0 cp → gap ≈ 0
 _ABOVE_FLOOR_RESULT: str = "1/2-1/2"  # draw → score = 0.5
-_BELOW_FLOOR_EVAL_CP: int = -300   # losing position → low expected score
-_BELOW_FLOOR_RESULT: str = "1-0"   # user (white) wins despite low eval → high gap
+_BELOW_FLOOR_EVAL_CP: int = -300  # losing position → low expected score
+_BELOW_FLOOR_RESULT: str = "1-0"  # user (white) wins despite low eval → high gap
 
 
 async def _seed_endgame_games_for_elo(
@@ -529,9 +529,18 @@ async def _seed_endgame_games_for_elo(
                         game_id=game.id,
                         user_id=user_id,
                         ply=_SPAN_START_PLY + offset,
-                        full_hash=80_000_000 + user_elo * 10000 + (base_offset + idx) * 100 + offset,
-                        white_hash=81_000_000 + user_elo * 10000 + (base_offset + idx) * 100 + offset,
-                        black_hash=82_000_000 + user_elo * 10000 + (base_offset + idx) * 100 + offset,
+                        full_hash=80_000_000
+                        + user_elo * 10000
+                        + (base_offset + idx) * 100
+                        + offset,
+                        white_hash=81_000_000
+                        + user_elo * 10000
+                        + (base_offset + idx) * 100
+                        + offset,
+                        black_hash=82_000_000
+                        + user_elo * 10000
+                        + (base_offset + idx) * 100
+                        + offset,
                         material_signature="KR_KR",
                         material_imbalance=0,
                         endgame_class=1,
