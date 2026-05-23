@@ -60,15 +60,23 @@ async def users_with_zero_pending(
     session: AsyncSession,
     user_ids: Sequence[int],
 ) -> list[int]:
-    """Return the subset of ``user_ids`` whose pending-eval count is zero.
+    """Return the subset of ``user_ids`` where:
 
-    Issued as ONE aggregated SQL statement (WR-01 fix, Phase 94.1-12). Replaces
-    the per-user ``count_pending_evals`` loop in ``eval_drain.py`` post-commit
-    Stage B fan-out. Construction: an inline VALUES table over ``user_ids``
+    1. Pending-eval count is zero (no games with evals_completed_at IS NULL), AND
+    2. No active (pending or in_progress) import_jobs row exists for the user.
+
+    Both conditions must hold to fire Stage B (Plan 13 gap-closure). Without
+    condition 2, Stage B fires multiple times during an active import as eval
+    batches drain and the per-user pending-eval count flickers between zero and
+    non-zero. Each re-fire produces a different intermediate value because the
+    canonical-slice CTE input set has grown. User 28's achievable_score_gap was
+    observed to flip between -0.0511 and +0.1204 in a 20-second window due to
+    this re-fire pattern (documented in 94.1-13-PLAN.md gap_source).
+
+    Issued as ONE aggregated SQL statement (WR-01 contract preserved). Construction:
+    an inline VALUES table over ``user_ids``, WHERE NOT EXISTS (active import),
     LEFT JOIN'd to ``games`` on (uid = games.user_id AND
     games.evals_completed_at IS NULL), GROUP BY uid, HAVING count(games.id) = 0.
-    The LEFT JOIN guarantees users with zero rows in ``games`` at all are still
-    returned (the outer count over a NULL games.id evaluates to 0).
 
     Args:
         session: AsyncSession (read-only is fine).
@@ -77,17 +85,32 @@ async def users_with_zero_pending(
             Postgres ``VALUES ()`` syntax error and an unnecessary round-trip).
 
     Returns:
-        List of user_ids (subset of input) where the count of games with
-        ``evals_completed_at IS NULL`` is zero. Order is unspecified.
-        Empty list if no input users have zero pending evals.
+        List of user_ids (subset of input) where both (eval drain done) AND
+        (no active import) conditions hold. Order is unspecified.
+        Empty list if no input users satisfy both conditions.
     """
     if not user_ids:
         return []
 
-    # Inline values-table over the input user_ids. LEFT JOIN preserves users
-    # who have no games at all (count(games.id) IS NULL → 0 via the outer agg).
+    from app.models.import_job import ImportJob
+
     uid_col = sa.column("uid", sa.Integer)
     uids_vt = sa.values(uid_col, name="input_uids").data([(int(u),) for u in user_ids])
+
+    # Plan 13 Stage B gate: exclude users with an active (pending/in_progress) import.
+    # Without this gate, Stage B fires during transient eval-drain states mid-import,
+    # producing partial intermediate values visible on the chip (94.1-13-PLAN.md).
+    active_import_exists = sa.exists(
+        sa.select(sa.literal(1)).where(
+            sa.and_(
+                ImportJob.user_id == uid_col,
+                ImportJob.status.in_(["pending", "in_progress"]),
+            )
+        )
+    )
+
+    # Inline values-table over the input user_ids. LEFT JOIN preserves users
+    # who have no games at all (count(games.id) IS NULL → 0 via the outer agg).
     stmt = (
         sa.select(uid_col)
         .select_from(
@@ -99,6 +122,7 @@ async def users_with_zero_pending(
                 ),
             )
         )
+        .where(sa.not_(active_import_exists))
         .group_by(uid_col)
         .having(sa.func.count(Game.id) == 0)
     )

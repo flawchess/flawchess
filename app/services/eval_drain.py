@@ -552,7 +552,10 @@ async def run_eval_drain() -> None:
             # Phase 94.1 D-01 / Pitfall 1: Stage B fires for users whose pending-eval
             # count just transitioned to zero. Group just-drained game_ids by user_id,
             # then in ONE aggregated query (WR-01 fix, 94.1-12) filter to users whose
-            # pending-eval count is now zero, then fan-out Stage B.
+            # pending-eval count is now zero AND no active import_job exists (Plan 13
+            # Stage B gate). Without the active-import guard, Stage B fires multiple
+            # times as eval batches drain mid-import, producing transient intermediate
+            # values on the chip (user 28 case — see 94.1-13-PLAN.md gap_source).
             # Fresh read session: never share the eval-write session across coroutines.
             async with async_session_maker() as read_session:
                 user_id_rows = await read_session.execute(

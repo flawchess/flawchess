@@ -9,6 +9,9 @@ interpolate_percentile(filter_applied_value). This makes the chip filter-indepen
 Security domain V4 (Information Disclosure):
 - test_chip_percentile_scopes_by_authenticated_user_id: verifies the SELECT
   filters WHERE user_id = current_user.id; user_id is never accepted as a query param.
+
+Plan 13 (gap-closure): ``n_cells_floor`` dropped from PercentileRow and all
+upsert_percentile calls. Row existence now implies above-floor.
 """
 
 from __future__ import annotations
@@ -43,7 +46,6 @@ _KNOWN_ACHIEVABLE_PERCENTILE: float = 55.0
 _KNOWN_CONV_PERCENTILE: float = 41.0
 _KNOWN_PARITY_PERCENTILE: float = 68.0
 _CDF_SNAPSHOT: datetime.date = datetime.date(2026, 3, 31)
-_SEED_N_CELLS_FLOOR: int = 40  # floor-passing (elo_bucket, tc_bucket) cells for seeded rows
 _SEED_VALUE: float = 0.05  # arbitrary canonical-slice metric value
 
 pytestmark = pytest.mark.asyncio
@@ -63,25 +65,21 @@ def _make_percentile_rows(
         "score_gap": PercentileRow(
             value=_SEED_VALUE,
             percentile=score_gap,
-            n_cells_floor=_SEED_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "achievable_score_gap": PercentileRow(
             value=_SEED_VALUE,
             percentile=achievable,
-            n_cells_floor=_SEED_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "section2_score_gap_conv": PercentileRow(
             value=_SEED_VALUE,
             percentile=conv,
-            n_cells_floor=_SEED_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "section2_score_gap_parity": PercentileRow(
             value=_SEED_VALUE,
             percentile=parity,
-            n_cells_floor=_SEED_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
     }
@@ -191,7 +189,6 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
         metric="score_gap",
         value=_SEED_VALUE,
         percentile=_KNOWN_SCORE_GAP_PERCENTILE,
-        n_cells_floor=_SEED_N_CELLS_FLOOR,
         cdf_snapshot=_CDF_SNAPSHOT,
     )
     # Seed user B with a distinct value
@@ -201,7 +198,6 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
         metric="score_gap",
         value=_SEED_VALUE,
         percentile=_USER_B_PERCENTILE,
-        n_cells_floor=_SEED_N_CELLS_FLOOR,
         cdf_snapshot=_CDF_SNAPSHOT,
     )
     await db_session.flush()
@@ -278,38 +274,33 @@ async def test_chip_percentile_is_none_when_no_row_in_table(
 async def test_chip_percentile_is_none_when_percentile_column_is_null(
     db_session: AsyncSession,
 ) -> None:
-    """When a user_benchmark_percentiles row exists with value=X but percentile=NULL
-    (below-floor case per D-10), the API response field is None.
+    """When a user_benchmark_percentiles row exists with value=X but percentile=NULL,
+    the API response field is None.
 
-    This is the 'computed but below inclusion floor' state — the value is stored
-    for future floor-change recompute, but the chip does not render (percentile=NULL
-    emits as None on the wire, chip absent on FE).
+    Plan 13: below-floor users no longer produce rows at all (the service skips
+    the upsert when _compute_metric_for_user returns None). However, the
+    percentile column can still be NULL if the CDF lookup returns None for an
+    out-of-range value. This test verifies the API handles NULL percentile correctly.
     """
-    _BELOW_FLOOR_N_CELLS_FLOOR: int = 5  # below all metric inclusion floors
-
     null_pct_rows: dict[CdfMetricId, PercentileRow] = {
         "score_gap": PercentileRow(
             value=0.01,
             percentile=None,
-            n_cells_floor=_BELOW_FLOOR_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "achievable_score_gap": PercentileRow(
             value=0.02,
             percentile=None,
-            n_cells_floor=_BELOW_FLOOR_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "section2_score_gap_conv": PercentileRow(
             value=0.01,
             percentile=None,
-            n_cells_floor=_BELOW_FLOOR_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "section2_score_gap_parity": PercentileRow(
             value=0.01,
             percentile=None,
-            n_cells_floor=_BELOW_FLOOR_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
     }
@@ -321,7 +312,7 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
         percentile_rows=null_pct_rows,
     )
     assert result.score_gap_percentile is None, (
-        "score_gap_percentile must be None when percentile column is NULL (below floor)"
+        "score_gap_percentile must be None when percentile column is NULL"
     )
     assert result.section2_score_gap_conv_percentile is None, (
         "section2_score_gap_conv_percentile must be None when percentile column is NULL"
@@ -332,5 +323,5 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
 
     perf = _get_endgame_performance_from_rows([], [], [], percentile_rows=null_pct_rows)
     assert perf.achievable_score_gap_percentile is None, (
-        "achievable_score_gap_percentile must be None when percentile column is NULL (below floor)"
+        "achievable_score_gap_percentile must be None when percentile column is NULL"
     )

@@ -3,6 +3,11 @@
 Phase 94.1 Plan 04 — implements the write/read path for materialised
 canonical-slice percentile rows.
 
+Phase 94.1 Plan 13 (gap-closure): ``n_cells_floor`` column dropped.
+Row existence now implies above-floor — no row is written for below-floor
+(user, metric) pairs. ``PercentileRow``, ``upsert_percentile``, and
+``fetch_for_user`` no longer reference ``n_cells_floor``.
+
 V4 Information Disclosure mitigation: ``fetch_for_user`` requires ``user_id``
 as a keyword argument. The caller in Plan 07 passes ``current_user.id`` from
 the FastAPI-Users dependency. Never accept ``user_id`` as a query parameter.
@@ -28,11 +33,13 @@ class PercentileRow:
 
     Used by ``fetch_for_user`` to return structured data with attribute access.
     Frozen dataclass (immutable) per CLAUDE.md internal-structured-data rule.
+
+    Row existence implies above-floor (Plan 13): callers need not check
+    ``n_cells_floor``; if the row is present, the user passed the floor.
     """
 
     value: float
     percentile: float | None
-    n_cells_floor: int
     cdf_snapshot: datetime.date
 
 
@@ -43,7 +50,6 @@ async def upsert_percentile(
     metric: CdfMetricId,
     value: float,
     percentile: float | None,
-    n_cells_floor: int,
     cdf_snapshot: datetime.date,
 ) -> None:
     """Insert or update one (user_id, metric) row in user_benchmark_percentiles.
@@ -52,15 +58,16 @@ async def upsert_percentile(
     operation is atomic and idempotent. The caller is responsible for committing
     the session after all writes in a unit of work are done.
 
+    Only call this function when ``value`` is not None (i.e., the user has at
+    least one floor-passing cell). Below-floor users produce no row — callers
+    must skip the upsert when ``_compute_metric_for_user`` returns None.
+
     Args:
         session: AsyncSession. Caller commits.
         user_id: Internal user PK.
         metric: One of the 4 CdfMetricId values.
-        value: User's canonical-slice metric value (pooled across TCs).
-        percentile: Lookup percentile in [0, 100], or None when below floor (D-06).
-        n_cells_floor: Count of (elo_bucket, tc_bucket) cells that passed the
-            per-metric HAVING inclusion floor at compute time. NOT a game
-            count. See Phase 94.1 REVIEW.md CR-01.
+        value: User's canonical-slice metric value (floor-respecting pooled avg).
+        percentile: Lookup percentile in [0, 100], or None for future use.
         cdf_snapshot: Date of the CDF artifact used for interpolation.
     """
     stmt = pg_insert(UserBenchmarkPercentile).values(
@@ -68,7 +75,6 @@ async def upsert_percentile(
         metric=metric,
         value=value,
         percentile=percentile,
-        n_cells_floor=n_cells_floor,
         cdf_snapshot=cdf_snapshot,
     )
     stmt = stmt.on_conflict_do_update(
@@ -76,7 +82,6 @@ async def upsert_percentile(
         set_={
             "value": stmt.excluded.value,
             "percentile": stmt.excluded.percentile,
-            "n_cells_floor": stmt.excluded.n_cells_floor,
             "cdf_snapshot": stmt.excluded.cdf_snapshot,
             "computed_at": func.now(),  # server-side NOW() refresh on every update
         },
@@ -99,19 +104,21 @@ async def fetch_for_user(
     absent from the dict, not represented as None/empty rows (e.g., Stage A
     has fired but Stage B has not: only ``score_gap`` will be present).
 
+    An absent entry also means the user is below floor for that metric (Plan 13):
+    the chip suppresses naturally when the dict does not contain the metric.
+
     Args:
         session: AsyncSession.
         user_id: Authenticated user's internal PK.
 
     Returns:
-        Dict keyed by CdfMetricId, values are PercentileRow TypedDicts.
+        Dict keyed by CdfMetricId, values are PercentileRow dataclasses.
     """
     result = await session.execute(
         select(
             UserBenchmarkPercentile.metric,
             UserBenchmarkPercentile.value,
             UserBenchmarkPercentile.percentile,
-            UserBenchmarkPercentile.n_cells_floor,
             UserBenchmarkPercentile.cdf_snapshot,
         ).where(UserBenchmarkPercentile.user_id == user_id)
     )
@@ -120,7 +127,6 @@ async def fetch_for_user(
         row.metric: PercentileRow(
             value=row.value,
             percentile=row.percentile,
-            n_cells_floor=row.n_cells_floor,
             cdf_snapshot=row.cdf_snapshot,
         )
         for row in rows
