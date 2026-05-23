@@ -424,3 +424,208 @@ async def test_compute_stage_a_below_floor_writes_no_row(
         f"(got {result.get(STAGE_A_METRIC)!r}). The floor-respecting CTE should return "
         f"no rows when the user has fewer games than the inclusion floor."
     )
+
+
+# ── User-28-shape regression test ─────────────────────────────────────────────
+
+# Constants for the user-28-shape test (Plan 13 correctness regression)
+# ELO bucket boundaries from canonical_slice_sql.py:
+#   [800, 1200) → bucket 800
+#   [1200, 1600) → bucket 1200
+#   [1600, 2000) → bucket 1600
+_ELO_BUCKET_800: int = 900  # resolves to bucket 800
+_ELO_BUCKET_1200: int = 1300  # resolves to bucket 1200
+_ELO_BUCKET_1600: int = 1700  # resolves to bucket 1600
+# ELO offset used in _seed_endgame_games_for_elo: opp_elo = user_elo + this offset.
+# Distinct from the module-level _OPP_ELO_WITHIN_BAND (which is an absolute ELO),
+# to avoid shadowing the existing constant and breaking _make_game.
+_OPP_ELO_OFFSET_WITHIN_BAND: int = 50  # within ±100
+
+# Number of eval games per bucket:
+# ACHIEVABLE_MIN_GAMES = 20, so:
+#   1 below floor, 3 below floor, 25 above floor (≥ 20)
+_N_BELOW_FLOOR_SMALL: int = 1  # simulates user 28's n=1 bucket
+_N_BELOW_FLOOR_MEDIUM: int = 3  # simulates user 28's n=3 bucket
+_N_ABOVE_FLOOR: int = 25  # above ACHIEVABLE_MIN_GAMES floor
+
+# The planned achievable_gap values (set via eval_cp + result):
+# achievable_gap_i = actual_score_i - sigmoid(eval_cp_i * color_sign)
+#
+# Above-floor cell design: draws (score=0.5) with eval_cp=0 → sigmoid(0)=0.5
+#   achievable_gap ≈ 0.5 - 0.5 = 0.0 (very close to zero)
+#
+# Below-floor cell design: wins (score=1.0) with eval_cp=-300 (losing position)
+#   sigmoid(-300 * 1 for white) ≈ 0.243 → achievable_gap ≈ 1.0 - 0.243 = 0.757
+#   (high gap: exceeded expected performance)
+#
+# With apply_floor=False (old bug): avg is dragged toward 0.757 (below-floor inflates).
+# With apply_floor=True (Plan 13 fix): only above-floor cell contributes → value ≈ 0.0.
+_ABOVE_FLOOR_EVAL_CP: int = 0      # entry eval near 0 cp → gap ≈ 0
+_ABOVE_FLOOR_RESULT: str = "1/2-1/2"  # draw → score = 0.5
+_BELOW_FLOOR_EVAL_CP: int = -300   # losing position → low expected score
+_BELOW_FLOOR_RESULT: str = "1-0"   # user (white) wins despite low eval → high gap
+
+
+async def _seed_endgame_games_for_elo(
+    session_maker: async_sessionmaker,
+    *,
+    user_id: int,
+    user_elo: int,
+    n_games: int,
+    base_offset: int,
+    eval_cp: int,
+    game_result: str = "1-0",
+) -> None:
+    """Seed n_games endgame games at user_elo, each with eval_cp on the span entry.
+
+    ELO bucket is determined by user_elo (not by opponent ELO).
+    Opponent ELO is set within ±50 of user_elo to satisfy the canonical slice.
+    User always plays white. ``game_result`` controls the actual outcome.
+    """
+    base_dt = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)
+    async with session_maker() as session:
+        for idx in range(n_games):
+            opp_elo = user_elo + _OPP_ELO_OFFSET_WITHIN_BAND
+            platform_game_id = f"u28-{user_id}-{user_elo}-{base_offset + idx}"
+            game = Game(
+                user_id=user_id,
+                platform="lichess",
+                platform_game_id=platform_game_id,
+                pgn="1. e4 e5 *",
+                result=game_result,
+                user_color="white",
+                time_control_str=f"{_TIME_CONTROL_SECONDS}+0",
+                time_control_bucket=_TC_BUCKET,
+                time_control_seconds=_TIME_CONTROL_SECONDS,
+                base_time_seconds=_TIME_CONTROL_SECONDS,
+                rated=True,
+                is_computer_game=False,
+                white_username="me",
+                black_username="opp",
+                white_rating=user_elo,
+                black_rating=opp_elo,
+            )
+            game.played_at = base_dt + datetime.timedelta(minutes=base_offset + idx)
+            session.add(game)
+            await session.flush()
+
+            # Opening position (ply=0)
+            session.add(
+                GamePosition(
+                    game_id=game.id,
+                    user_id=user_id,
+                    ply=0,
+                    full_hash=5_000_000 + user_elo * 10000 + base_offset + idx,
+                    white_hash=6_000_000 + user_elo * 10000 + base_offset + idx,
+                    black_hash=7_000_000 + user_elo * 10000 + base_offset + idx,
+                    move_san="e4",
+                )
+            )
+
+            # 6-ply endgame span at ply 30 with eval_cp on the entry ply
+            for offset in range(_ENDGAME_PLY_SPAN_LEN):
+                session.add(
+                    GamePosition(
+                        game_id=game.id,
+                        user_id=user_id,
+                        ply=_SPAN_START_PLY + offset,
+                        full_hash=80_000_000 + user_elo * 10000 + (base_offset + idx) * 100 + offset,
+                        white_hash=81_000_000 + user_elo * 10000 + (base_offset + idx) * 100 + offset,
+                        black_hash=82_000_000 + user_elo * 10000 + (base_offset + idx) * 100 + offset,
+                        material_signature="KR_KR",
+                        material_imbalance=0,
+                        endgame_class=1,
+                        eval_cp=eval_cp,
+                        eval_mate=None,
+                    )
+                )
+        await session.commit()
+
+
+async def test_user_28_shape_floor_respecting_value_excludes_below_floor_cells(
+    real_data_user,
+) -> None:
+    """Plan 13 correctness regression: user-28-shape floor-respecting value.
+
+    Reproduces the bug where _compute_metric_for_user used apply_floor=False,
+    causing tiny below-floor cells (n=1, n=3) to drag the reported value far
+    from the floor-passing signal.
+
+    Setup (mirrors user 28's profile):
+    - Bucket 800: 1 eval game — wins with eval_cp=-300 (losing position, still won).
+      achievable_gap_i = 1.0 - sigmoid(-300) ≈ 1.0 - 0.243 = 0.757. Below floor (1 < 20).
+    - Bucket 1200: 3 eval games — same as 800 bucket. Below floor (3 < 20).
+    - Bucket 1600: 25 eval games — draws with eval_cp=0 (even position, drew).
+      achievable_gap_i = 0.5 - sigmoid(0) = 0.5 - 0.5 = 0.0. Above floor (25 ≥ 20).
+
+    With apply_floor=False (old Plan 05-12 behavior): the weighted avg across all
+    cells includes the high-gap below-floor cells → stored value significantly > 0.
+
+    With apply_floor=True (Plan 13): only the 1600-bucket contributes → value ≈ 0.0.
+
+    The test asserts:
+    1. The achievable_score_gap row IS written (1600-bucket passes the floor).
+    2. The stored value is close to 0 (the above-floor cell's contribution only).
+       Threshold: |value| < 0.10 (with 25 draws at eval=0, the avg is exactly 0.0;
+       we allow a small margin for floating-point aggregation).
+    3. The below-floor cells (if incorrectly included) would push value ≫ 0
+       (toward 0.757), so the threshold definitively distinguishes the two paths.
+    """
+    user_id, test_session_maker = real_data_user
+
+    # Seed the three buckets
+    await _seed_endgame_games_for_elo(
+        test_session_maker,
+        user_id=user_id,
+        user_elo=_ELO_BUCKET_800,
+        n_games=_N_BELOW_FLOOR_SMALL,
+        base_offset=0,
+        eval_cp=_BELOW_FLOOR_EVAL_CP,
+        game_result=_BELOW_FLOOR_RESULT,
+    )
+    await _seed_endgame_games_for_elo(
+        test_session_maker,
+        user_id=user_id,
+        user_elo=_ELO_BUCKET_1200,
+        n_games=_N_BELOW_FLOOR_MEDIUM,
+        base_offset=1000,
+        eval_cp=_BELOW_FLOOR_EVAL_CP,
+        game_result=_BELOW_FLOOR_RESULT,
+    )
+    await _seed_endgame_games_for_elo(
+        test_session_maker,
+        user_id=user_id,
+        user_elo=_ELO_BUCKET_1600,
+        n_games=_N_ABOVE_FLOOR,
+        base_offset=2000,
+        eval_cp=_ABOVE_FLOOR_EVAL_CP,
+        game_result=_ABOVE_FLOOR_RESULT,
+    )
+
+    await compute_stage_b(user_id, session_maker=test_session_maker)
+
+    async with test_session_maker() as session:
+        result = await fetch_for_user(session, user_id=user_id)
+
+    # The achievable_score_gap row must be written (1600-bucket passes the floor).
+    assert "achievable_score_gap" in result, (
+        "Plan 13: achievable_score_gap row must be written when ≥1 bucket passes the floor "
+        "(1600-bucket has 25 ≥ ACHIEVABLE_MIN_GAMES=20 eval games)"
+    )
+
+    row = result["achievable_score_gap"]
+    assert row.value is not None, "value must not be None"
+
+    # The value must reflect ONLY the above-floor (1600-bucket) cell.
+    # Above-floor: draws (score=0.5) with eval_cp=0 → gap = 0.5 - sigmoid(0) = 0.0.
+    # Below-floor (if incorrectly included): wins with eval_cp=-300
+    #   → gap = 1.0 - sigmoid(-300) ≈ 0.757. Would pull avg significantly above 0.
+    # apply_floor=True (Plan 13): only above-floor contributes → value ≈ 0.0.
+    _FLOOR_CORRECT_THRESHOLD: float = 0.10
+    assert abs(row.value) < _FLOOR_CORRECT_THRESHOLD, (
+        f"Plan 13 correctness regression: value {row.value:.4f} is not close to 0. "
+        f"With apply_floor=True, only the 1600-bucket (draws, eval_cp=0) should contribute "
+        f"(expected gap ≈ 0.0). The below-floor 800/1200-bucket cells (wins, eval_cp=-300, "
+        f"gap ≈ 0.757) must be excluded. If value > {_FLOOR_CORRECT_THRESHOLD}, the "
+        f"apply_floor=False bug may have regressed."
+    )
