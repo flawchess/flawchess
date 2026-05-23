@@ -32,8 +32,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from scripts import backfill_user_percentiles as bup
-from app.services.global_percentile_cdf import CdfMetricId
+from scripts import backfill_user_percentiles as bup  # noqa: E402 — after sys.path bootstrap
+from app.services.global_percentile_cdf import CdfMetricId  # noqa: E402 — after sys.path bootstrap
 
 pytestmark = pytest.mark.asyncio
 
@@ -169,9 +169,7 @@ async def test_stage_b_routes_to_compute_stage_b() -> None:
 async def test_backfill_user_increments_skipped_below_floor_when_classifier_returns_false() -> None:
     """End-to-end inside _backfill_user: classifier False → skipped_below_floor counter."""
     all_metrics: tuple[CdfMetricId, ...] = (bup.STAGE_A_METRIC, *bup.STAGE_B_METRICS)
-    summary: dict[CdfMetricId, bup._MetricSummary] = {
-        m: bup._MetricSummary() for m in all_metrics
-    }
+    summary: dict[CdfMetricId, bup._MetricSummary] = {m: bup._MetricSummary() for m in all_metrics}
 
     # session_maker is consulted by count_pending_evals; mock that helper.
     fake_session_maker = MagicMock()
