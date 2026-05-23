@@ -52,11 +52,12 @@ interface ScoreGapRowProps {
    *  EndgameTypeCard to show the End predicted score. Defaults to undefined
    *  (renders nothing) so the 3 other callers remain pixel-identical. */
   endSlot?: ReactNode;
-  /** Optional chip rendered after the tooltip, right-aligned via ml-auto so the
-   *  tooltip stays adjacent to the result value. Used by
+  /** Optional chip rendered alongside the row. On mobile the chip drops to its
+   *  own line BELOW the bullet chart, left-aligned. On desktop (>=640px) the
+   *  chip sits inline at the right edge of the label/value row. Used by
    *  EndgameOverallPerformanceSection (page-level rows) and EndgameMetricCard
-   *  (conv/parity buckets) to surface a PercentileChip. Defaults to undefined so
-   *  EndgameTypeCard + Recovery card render pixel-identical. */
+   *  (conv/parity buckets) to surface a PercentileChip. Defaults to undefined
+   *  so EndgameTypeCard + Recovery card render pixel-identical. */
   chipSlot?: ReactNode;
 }
 
@@ -79,13 +80,13 @@ export function ScoreGapRow({
   chipSlot,
 }: ScoreGapRowProps) {
   // quick-260519-ni3: 3-column label line when start/end slots are provided.
-  // When both are undefined the layout collapses to the original single-line
-  // flex row so the 3 other callers (EndgameOverallPerformanceSection x2,
-  // EndgameMetricCard) render pixel-identical to before.
+  // EndgameTypeCard uses this branch (start/end predicted scores around the
+  // center label). chipSlot is never passed here today; if it ever is, it
+  // renders inline at the right edge of the center group.
   const hasSlots = startSlot !== undefined || endSlot !== undefined;
-  return (
-    <div className="flex flex-col gap-2">
-      {hasSlots ? (
+  if (hasSlots) {
+    return (
+      <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1 text-sm tabular-nums w-full">
           <div className="flex-1">{startSlot}</div>
           <span className="flex items-center gap-1 shrink-0">
@@ -102,32 +103,51 @@ export function ScoreGapRow({
           </span>
           <div className="flex-1 flex justify-end">{endSlot}</div>
         </div>
-      ) : (
-        <span className="flex flex-wrap sm:flex-nowrap items-center gap-1 text-sm tabular-nums w-full">
-          <span className="text-muted-foreground">{label}</span>
-          <span
-            className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
-            style={resultColor ? { color: resultColor } : undefined}
-            data-testid={valueTestId}
-          >
-            {formatted}
-          </span>
-          {tooltip}
-          {chipSlot && (
-            // basis-full forces a wrap to its own line on mobile (long labels
-            // would otherwise overflow at 375px). order-first puts that line
-            // ABOVE the label/value row on mobile. sm:basis-auto +
-            // sm:order-none restore the inline single-line layout on desktop,
-            // where ml-auto right-aligns the chip at the end of the row.
-            // flex justify-end right-aligns the chip within its full-width
-            // mobile row.
-            <span className="ml-auto basis-full sm:basis-auto order-first sm:order-none flex justify-end">
-              {chipSlot}
-            </span>
-          )}
+        <div className="min-w-0 tabular-nums">
+          <MiniBulletChart
+            value={value}
+            center={0}
+            neutralMin={neutralMin}
+            neutralMax={neutralMax}
+            domain={domain}
+            barColor="neutral"
+            ariaLabel={ariaLabel}
+            ciLow={ciLow}
+            ciHigh={ciHigh}
+          />
+        </div>
+      </div>
+    );
+  }
+  // Non-hasSlots layout uses CSS Grid so chipSlot can be placed differently on
+  // mobile vs desktop without rendering twice. Three children, two breakpoints:
+  //   Mobile  (<640px):  row 1 = label/value/tooltip (spans both cols)
+  //                      row 2 = bullet chart        (spans both cols)
+  //                      row 3 = chip                (spans both cols, left-aligned)
+  //   Desktop (>=640px): row 1 = label/value/tooltip (col 1)  +  chip (col 2, right-aligned)
+  //                      row 2 = bullet chart        (spans both cols)
+  // The 3 callers that don't pass chipSlot (EndgameTypeCard isn't this branch,
+  // but the wave-3 wiring sites all pass it) collapse cleanly: chip row simply
+  // doesn't render, so mobile is rows 1 + 2 and desktop is row 1 col 1 + row 2.
+  return (
+    <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-2 w-full">
+      <span className="row-start-1 col-span-2 sm:col-span-1 flex items-center gap-1 text-sm tabular-nums min-w-0">
+        <span className="text-muted-foreground">{label}</span>
+        <span
+          className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
+          style={resultColor ? { color: resultColor } : undefined}
+          data-testid={valueTestId}
+        >
+          {formatted}
+        </span>
+        {tooltip}
+      </span>
+      {chipSlot && (
+        <span className="row-start-3 col-span-2 justify-self-start sm:row-start-1 sm:col-start-2 sm:col-span-1 sm:justify-self-end">
+          {chipSlot}
         </span>
       )}
-      <div className="min-w-0 tabular-nums">
+      <div className="row-start-2 col-span-2 min-w-0 tabular-nums">
         <MiniBulletChart
           value={value}
           center={0}
