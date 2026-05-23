@@ -4141,3 +4141,196 @@ class TestEndgameCategoryStatsWdlAlignedFields:
         assert rook.avg_eval_pawns is not None
         assert rook.eval_ci_low_pawns is None
         assert rook.eval_ci_high_pawns is None
+
+
+# --- Phase 94 (PCTL-02 / PCTL-06): percentile gate tests ----------------------
+
+
+class TestPercentileGates:
+    """Phase 94 — reliability-gated percentile emission at the 2 compute sites.
+
+    The service must call `interpolate_percentile` only when the metric's N
+    clears `PVALUE_RELIABILITY_MIN_N` (=10). Below the floor, the percentile
+    field is `None` on the wire — same gate semantics as the existing
+    `_p_value` / `_ci_*` siblings (D-10).
+
+    Gate-then-compute pattern (Pitfall 6) — these tests exercise the gate
+    explicitly, not the helper's NaN/unknown-metric edge handling.
+    """
+
+    # --- Helpers ---------------------------------------------------------
+
+    @staticmethod
+    def _make_wdl(wins: int, draws: int, losses: int) -> EndgameWDLSummary:
+        """Build an EndgameWDLSummary with the requested counts. Mirrors the
+        pattern used by TestComputeScoreGapMaterial._make_wdl."""
+        total = wins + draws + losses
+        if total > 0:
+            win_pct = round(wins / total * 100, 1)
+            draw_pct = round(draws / total * 100, 1)
+            loss_pct = round(losses / total * 100, 1)
+        else:
+            win_pct = draw_pct = loss_pct = 0.0
+        return EndgameWDLSummary(
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            total=total,
+            win_pct=win_pct,
+            draw_pct=draw_pct,
+            loss_pct=loss_pct,
+        )
+
+    @staticmethod
+    def _wdl_rows_white_wins(n: int) -> list[Any]:
+        """Build n white-win WDL rows for endgame_rows / non_endgame_rows."""
+        return [_row("1-0", "white", d) for d in range(n)]
+
+    @staticmethod
+    def _bucket(game_id: int, eval_cp: int = 0) -> _FakeRow:
+        return _FakeRow(
+            game_id=game_id,
+            endgame_class=1,
+            result="1-0",
+            user_color="white",
+            eval_cp=eval_cp,
+            eval_mate=None,
+        )
+
+    # --- Site A: achievable_score_gap_percentile (single-N gate on ex_n) -
+
+    def test_achievable_percentile_below_floor_is_none(self) -> None:
+        """ex_n = PVALUE_RELIABILITY_MIN_N - 1 (=9) -> percentile gated to None."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(9)]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows_white_wins(9),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 9
+        # Gate should suppress the percentile (same shape as _p_value gate).
+        assert resp.achievable_score_gap_percentile is None
+
+    def test_achievable_percentile_at_floor_is_not_none(self) -> None:
+        """ex_n = PVALUE_RELIABILITY_MIN_N (=10) -> percentile emitted in [0, 100]."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows_white_wins(10),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 10
+        assert resp.achievable_score_gap_percentile is not None
+        assert 0.0 <= resp.achievable_score_gap_percentile <= 100.0
+
+    # --- Site B: score_gap_percentile (dual-N gate on endgame + non_endgame) -
+
+    def test_score_gap_percentile_dual_gate_endgame_short(self) -> None:
+        """endgame_wdl.total = 9, non_endgame_wdl.total = 10 -> percentile None
+        (dual-N gate fails on the endgame wing)."""
+        endgame_wdl = self._make_wdl(wins=4, draws=2, losses=3)  # total=9
+        non_endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.score_gap_percentile is None
+
+    def test_score_gap_percentile_dual_gate_non_endgame_short(self) -> None:
+        """endgame_wdl.total = 10, non_endgame_wdl.total = 9 -> percentile None
+        (dual-N gate fails on the non-endgame wing)."""
+        endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
+        non_endgame_wdl = self._make_wdl(wins=4, draws=2, losses=3)  # total=9
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.score_gap_percentile is None
+
+    def test_score_gap_percentile_dual_gate_both_at_floor(self) -> None:
+        """endgame_wdl.total = 10 AND non_endgame_wdl.total = 10 -> percentile
+        emitted in [0, 100]."""
+        endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
+        non_endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.score_gap_percentile is not None
+        assert 0.0 <= result.score_gap_percentile <= 100.0
+
+    # --- Site B: section2 conv / parity (single-N gates with mean-is-not-None) -
+
+    def test_section2_conv_percentile_below_floor_is_none(self) -> None:
+        """conv_n = 9 -> conv percentile gated to None (single-N gate fails)."""
+        endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        gaps_by_bucket = {"conversion": [0.0] * 9, "parity": [], "recovery": []}
+        result = _compute_score_gap_material(
+            endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
+        )
+        assert result.section2_score_gap_conv_n == 9
+        assert result.section2_score_gap_conv_percentile is None
+
+    def test_section2_conv_percentile_at_floor_is_not_none(self) -> None:
+        """conv_n = 10 -> conv percentile emitted in [0, 100]."""
+        endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        gaps_by_bucket = {"conversion": [0.0] * 10, "parity": [], "recovery": []}
+        result = _compute_score_gap_material(
+            endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
+        )
+        assert result.section2_score_gap_conv_n == 10
+        assert result.section2_score_gap_conv_percentile is not None
+        assert 0.0 <= result.section2_score_gap_conv_percentile <= 100.0
+
+    def test_section2_parity_percentile_below_floor_is_none(self) -> None:
+        """parity_n = 9 -> parity percentile None."""
+        endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        gaps_by_bucket = {"conversion": [], "parity": [0.0] * 9, "recovery": []}
+        result = _compute_score_gap_material(
+            endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
+        )
+        assert result.section2_score_gap_parity_n == 9
+        assert result.section2_score_gap_parity_percentile is None
+
+    def test_section2_parity_percentile_at_floor_is_not_none(self) -> None:
+        """parity_n = 10 -> parity percentile in [0, 100]."""
+        endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        gaps_by_bucket = {"conversion": [], "parity": [0.0] * 10, "recovery": []}
+        result = _compute_score_gap_material(
+            endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
+        )
+        assert result.section2_score_gap_parity_n == 10
+        assert result.section2_score_gap_parity_percentile is not None
+        assert 0.0 <= result.section2_score_gap_parity_percentile <= 100.0
+
+    def test_section2_empty_cohort_mean_none_yields_percentile_none(self) -> None:
+        """Empty conv/parity cohorts (mean is None) yield percentile None even
+        when the dual-N gate on Endgame Score Gap clears.
+
+        Guards the explicit `mean is not None` check (D-13 / Pitfall 6 — the
+        helper would crash on None, so the gate is BOTH n-floor AND mean-not-None).
+        """
+        endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        # No gaps in any bucket -> _compute_per_bucket_score_gap returns
+        # mean=None for both conv and parity.
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.section2_score_gap_conv_mean is None
+        assert result.section2_score_gap_parity_mean is None
+        assert result.section2_score_gap_conv_percentile is None
+        assert result.section2_score_gap_parity_percentile is None
+
+    def test_recovery_percentile_never_emitted(self) -> None:
+        """D-12: ScoreGapMaterialResponse exposes NO recovery percentile field.
+
+        Defensive structural guard against future "let's add a recovery
+        percentile to be symmetric" mistakes (Pitfall 5).
+        """
+        from app.schemas.endgames import ScoreGapMaterialResponse
+
+        endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
+        gaps_by_bucket = {"conversion": [], "parity": [], "recovery": [0.0] * 50}
+        result = _compute_score_gap_material(
+            endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
+        )
+        # Structural guard: the response model itself must not declare the field.
+        # (Read from the class, not the instance — Pydantic v2.11 deprecation.)
+        assert "section2_score_gap_recov_percentile" not in ScoreGapMaterialResponse.model_fields
+        # And the computed response must not carry it as a runtime attribute.
+        assert not hasattr(result, "section2_score_gap_recov_percentile")
