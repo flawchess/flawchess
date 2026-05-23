@@ -30,7 +30,7 @@ Source: `npx shadcn info`, `frontend/src/index.css` `@theme inline` block.
 
 ## Spacing Scale
 
-Standard 8-point scale; no new spacing tokens introduced in this phase.
+Standard 8-point scale applies to all new structural spacing introduced by Phase 94.
 
 | Token | Value | Usage |
 |-------|-------|-------|
@@ -42,10 +42,18 @@ Standard 8-point scale; no new spacing tokens introduced in this phase.
 | 2xl | 48px | Major section breaks |
 | 3xl | 64px | Page-level spacing |
 
-Exceptions:
-- Chip vertical padding: `py-0.5` (2px) — tighter than the xs rung because the chip sits inline within a `text-sm` row and must not inflate row height.
-- Chip-to-popover offset: `sideOffset={4}` (4px) — matches the existing `MetricStatPopover` popover shell convention.
-- Popover body padding: `px-3 py-1.5` (12px / 6px) — matches existing `MetricStatPopover` and `InfoPopover` shells.
+**Phase 94 introduces no new layout spacing** beyond what is inherited from existing row layouts. The chip is inserted into existing ScoreGapRow flex layouts using the existing `gap-1` and `ml-auto` conventions already present in the codebase. No new structural spacing tokens are declared.
+
+**Component-internal padding (inherited from existing shadcn primitives — not Phase 94 declarations):**
+
+| Component | Padding | Source |
+|-----------|---------|--------|
+| Chip pill horizontal | `px-2` (8px) | Matches existing shadcn Badge convention |
+| Chip pill vertical | `py-0.5` (2px) | Established shadcn Badge pattern; keeps the chip inline within a `text-sm` row without inflating row height |
+| Popover content | `px-3 py-1.5` (12px / 6px) | Matches existing `MetricStatPopover` and `InfoPopover` shell padding — reused unchanged |
+| Popover-to-trigger offset | `sideOffset={4}` (4px) | Matches existing `MetricStatPopover` popover shell convention — reused unchanged |
+
+These values inherit from existing codebase primitives. Changing them would create inconsistency with the rest of the app. They are documented here for completeness, not as Phase 94 spacing decisions.
 
 ---
 
@@ -58,9 +66,11 @@ Project-wide font-size cascade (from `frontend/src/index.css`):
 | Role | Size | Weight | Line Height | Notes |
 |------|------|--------|-------------|-------|
 | Body / Row text | 16px (`text-sm`) | 400 (regular) | 1.5 | Existing ScoreGapRow body copy |
-| Chip label ("Top X%") | 16px (`text-sm`) | 500 (`font-medium`) | 1.5 | Minimum per CLAUDE.md; `text-xs` forbidden |
+| Chip label ("Top X%") | 16px (`text-sm`) | 400 (regular) | 1.5 | Minimum per CLAUDE.md; `text-xs` forbidden. Visual emphasis comes from the colored background band — extra weight is redundant |
 | Popover body | 14px (`text-xs`) | 400 (regular) | 1.25 | CLAUDE.md popover exception; opt-in, transient |
 | Row metric value | 16px (`text-sm`) | 600 (`font-semibold`) | 1.5 | Existing ScoreGapRow pattern — unchanged |
+
+**Declared weights: 400 (regular) and 600 (semibold).** No intermediate weight (500) is used anywhere in this phase.
 
 Source: CLAUDE.md "Minimum font size is `text-sm`"; RESEARCH.md Open Question 1 resolution; `src/index.css` cascade.
 
@@ -139,7 +149,7 @@ The only new component this phase introduces. Single source for all 4 chip sites
 
 Flames rendered as `<Flame className="h-3 w-3" />` from `lucide-react`, stacked horizontally inline within the pill, `aria-hidden="true"`. Icon size `h-3 w-3` (12px) is consistent with existing inline icon convention in `EndgameMetricCard.tsx` lines 191/210.
 
-**Pill shape:** `rounded-full px-2 py-0.5 text-sm font-medium` — distinct from `Badge` (which uses `text-xs h-5`, too small per CLAUDE.md rule).
+**Pill shape:** `rounded-full px-2 py-0.5 text-sm font-normal` — distinct from `Badge` (which uses `text-xs h-5`, too small per CLAUDE.md rule). Visual emphasis comes from the colored background band, not font weight.
 
 **Popover trigger:** The chip `<span>` itself is the trigger (`role="button" tabIndex={0}`). No adjacent HelpCircle (D-01). Uses Radix `PopoverPrimitive.Trigger asChild`.
 
