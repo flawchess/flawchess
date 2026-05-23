@@ -21,12 +21,13 @@
 - ✅ **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82, 83 (shipped 2026-05-11) — see [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md)
 - ✅ **v1.17 Endgame Stats Card Redesign** — Phases 84-88.4 (shipped 2026-05-19; Phase 89 dropped, 87.3 superseded) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 - ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
-- 🔄 **v1.19 Endgame Percentiles & LLM Statistical Reasoning** — Phases 93, 94, 95 (in progress, planning)
+- 🔄 **v1.19 Endgame Percentiles & LLM Statistical Reasoning** — Phases 93, 94, 94.5, 95 (in progress, planning)
 
 ## Phases
 
 - [ ] **Phase 93: Global Percentile Benchmark Artifact** — Per-metric empirical CDF for the 4 chipped ΔES metrics (Endgame Score Gap, Achievable Score Gap, Parity ΔES, Conversion ΔES), produced via /benchmarks skill subchapter + `scripts/gen_global_percentile_cdf.py`, committed to `app/services/global_percentile_cdf.py` (Python-only artifact — no TS mirror; backend interpolates at request time and emits a scalar percentile)
 - [ ] **Phase 94: Backend & Frontend Percentile Annotations** — Nullable `{metric}_percentile` on endgame responses + "top X%" chip on 4 ΔES rows (desktop + mobile parity, metric-aware popover copy)
+- [ ] **Phase 94.5: Canonical-Slice User Percentile Materialisation** — New `user_benchmark_percentiles` table storing per-(user, metric) canonical-slice value + percentile + cdf_snapshot; two-stage compute hooks (Stage A post-import for `score_gap`, Stage B post-cold-drain for the 3 eval-dependent metrics); chip reads from table (filter-independent), tooltip copy updated to make the canonical-slice framing explicit
 - [ ] **Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework** — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
@@ -85,7 +86,22 @@ Plans:
 
 **UI hint**: yes
 
-### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
+### Phase 94.5: Canonical-Slice User Percentile Materialisation
+
+**Goal**: Resolve the apples-to-oranges comparison shipped in Phase 94 by materialising each user's canonical-slice metric value + percentile in a new `user_benchmark_percentiles` table, decoupling the chip from UI filter state. The Phase 94 chip currently interpolates a *filter-applied* user value against the *filter-fixed* global CDF — invalid both at default (user has no opponent-strength match, benchmark cohort does) and under filtered views (chip moves with slice composition rather than skill change). New contract: the chip is a *trait* of the user, not a *view* of their data — computed once per user per metric from a canonical slice that mirrors the benchmark CTE (status='completed' + ±100 ELO opponent at game time + sparse-cell `(2400, classical)` exclusion + 36-month recency, pooled across TCs with no per-TC cap), stored with the lookup percentile and a `cdf_snapshot` reference, and refreshed via two stages hooked into the existing two-lane import pipeline: Stage A at import completion for the eval-independent `score_gap` metric, Stage B at Stockfish cold-drain completion for the three eval-dependent metrics (`achievable_score_gap`, `section2_score_gap_conv`, `section2_score_gap_parity`). Phase 94's per-request `interpolate_percentile` call site is rewired to read from the table; tooltip copy is updated to make the canonical-slice framing explicit. Detailed design and rejected alternatives captured in `.planning/notes/percentile-chip-canonical-slice.md`.
+**Depends on**: Phase 94 (consumes the chip wiring + popover copy slot; replaces the per-request interpolation seam)
+**Requirements**: PCTL-07, PCTL-08, PCTL-09
+**Success Criteria** (what must be TRUE):
+
+  1. A new `user_benchmark_percentiles` table exists with columns `(user_id, metric, value, percentile, n_games, cdf_snapshot, computed_at)` and composite primary key `(user_id, metric)`, created via an Alembic migration. `user_id` has `ON DELETE CASCADE` to `users.id`. There is exactly one row per `(user_id, metric)` at any time — each recompute UPSERTs (`INSERT ... ON CONFLICT (user_id, metric) DO UPDATE`) so the prior row is overwritten in place, keeping only the most recent computation. No surrogate `id` column.
+  2. The canonical-slice game set for percentile computation matches the benchmark cohort definition: `status='completed'` + ±100 ELO opponent filter at game time + sparse-cell `(2400, classical)` exclusion + 36-month recency + standard variant + the existing per-metric inclusion floor. Verifiable by inspection of the compute service against `.claude/skills/benchmarks/SKILL.md` §1. No per-TC cap is applied (matches benchmark cohort methodology).
+  3. Stage A computes and persists `score_gap` for the importing user as a background task triggered at import job completion, without extending import latency (does not run inside the import transaction). Stage B computes and persists `achievable_score_gap`, `section2_score_gap_conv`, `section2_score_gap_parity` as a background task triggered at Stockfish cold-drain completion. Both stages tolerate partial state — a user whose inclusion floor fails under canonical conditions for a given metric gets `percentile=NULL` (or no row) and no chip; users still pre-cold-drain see only the Stage A chip.
+  4. Phase 94's chip render path reads `(value, percentile)` from `user_benchmark_percentiles` instead of from the per-request `interpolate_percentile` call. The chip is independent of UI filter state — toggling recency / opponent strength / TC / platform / rated / opponent type does not change the chip. The row's filter-applied metric value continues to display from the existing per-request compute; the chip's tooltip explains the dual-value framing (per-row value reflects filters; chip reflects career under canonical conditions). The pre-existing per-request `interpolate_percentile` code path is removed from the request handler once the table-backed read is verified.
+  5. A `cdf_snapshot` column on the table records which benchmark CDF version each percentile was looked up against. When `GLOBAL_PERCENTILE_CDF` is regenerated, a documented re-lookup path updates `percentile` for existing rows without recomputing `value`. (Implementing the re-lookup as a scheduled job is out of scope for this phase; the column + a manual-run script are sufficient.)
+
+**Plans**: TBD
+
+
 
 **Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
 **Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
