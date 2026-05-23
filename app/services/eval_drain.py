@@ -53,7 +53,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.game_repository import count_pending_evals
 from app.services import engine as engine_service
+from app.services.user_benchmark_percentiles_service import compute_stage_b
 from app.services.zobrist import PlyData
 
 logger = logging.getLogger(__name__)
@@ -546,6 +548,20 @@ async def run_eval_drain() -> None:
                 # per D-09 / R-02 — no permanent retry loop.
                 await _mark_evals_completed(session, game_ids)
                 await session.commit()
+
+            # Phase 94.1 D-01 / Pitfall 1: Stage B fires for users whose pending-eval
+            # count just transitioned to zero. Group just-drained game_ids by user_id;
+            # for each affected user, query count_pending_evals; only fire when count == 0.
+            # Fresh read session — never share the eval-write session across coroutines.
+            async with async_session_maker() as read_session:
+                user_id_rows = await read_session.execute(
+                    select(Game.user_id).distinct().where(Game.id.in_(game_ids))
+                )
+                affected_user_ids = [row[0] for row in user_id_rows.all()]
+                for user_id in affected_user_ids:
+                    pending = await count_pending_evals(read_session, user_id)
+                    if pending == 0:
+                        asyncio.create_task(compute_stage_b(user_id))
 
         except asyncio.CancelledError:
             # Lifespan shutdown — propagate without retry (cancellation contract
