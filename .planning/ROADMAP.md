@@ -73,7 +73,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 94-01-PLAN.md — Backend: add 4 nullable `{metric}_percentile` Pydantic fields + gated `interpolate_percentile` calls at the 2 compute sites + schema/gate tests (PCTL-02, PCTL-06)
+- [x] 94-01-PLAN.md — Backend: add 4 nullable `{metric}_percentile` Pydantic fields + gated `interpolate_percentile` calls at the 2 compute sites + schema/gate tests (PCTL-02, PCTL-06)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -361,7 +361,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 84-88.4. v1.17 phases | v1.17 | ~54/~54 | Complete (89 dropped, 87.3 superseded) | 2026-05-19 |
 | 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
 | 93. Global Percentile Benchmark Artifact | v1.19 | 2/2 | Complete    | 2026-05-22 |
-| 94. Backend & Frontend Percentile Annotations | v1.19 | 0/3 | Not started | - |
+| 94. Backend & Frontend Percentile Annotations | v1.19 | 1/3 | In Progress|  |
 | 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.19 | 0/TBD | Not started | - |
 
 ## Backlog
