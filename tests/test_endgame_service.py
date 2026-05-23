@@ -4321,10 +4321,16 @@ class TestPercentileGates:
         Defensive structural guard against future "let's add a recovery
         percentile to be symmetric" mistakes (Pitfall 5).
         """
+        from app.schemas.endgames import ScoreGapMaterialResponse
+
         endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         gaps_by_bucket = {"conversion": [], "parity": [], "recovery": [0.0] * 50}
         result = _compute_score_gap_material(
             endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
         )
-        assert "section2_score_gap_recov_percentile" not in result.model_fields
+        # Structural guard: the response model itself must not declare the field.
+        # (Read from the class, not the instance — Pydantic v2.11 deprecation.)
+        assert "section2_score_gap_recov_percentile" not in ScoreGapMaterialResponse.model_fields
+        # And the computed response must not carry it as a runtime attribute.
+        assert not hasattr(result, "section2_score_gap_recov_percentile")

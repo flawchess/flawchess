@@ -113,6 +113,5 @@ class TestPercentileFieldsPresent:
     def test_performance_response_has_percentile_field(self) -> None:
         keys = set(EndgamePerformanceResponse.model_fields.keys())
         assert "achievable_score_gap_percentile" in keys, (
-            "achievable_score_gap_percentile missing from "
-            "EndgamePerformanceResponse.model_fields"
+            "achievable_score_gap_percentile missing from EndgamePerformanceResponse.model_fields"
         )

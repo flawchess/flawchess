@@ -71,6 +71,7 @@ from app.services.endgame_zones import (
     MIN_GAMES_PER_PRESSURE_BIN,
     MIN_GAMES_PER_TC_CARD,
 )
+from app.services.global_percentile_cdf import interpolate_percentile
 from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.eval_utils import (
     eval_cp_to_expected_score,
@@ -1358,6 +1359,37 @@ def _compute_score_gap_material(
     # gauge driver (quick-260515-wye) were both dropped end-to-end. See
     # .planning/notes/endgame-skill-dropped-conversion-elo.md.
 
+    # Phase 94 (PCTL-02 / D-10): cohort percentiles vs the Phase 93 global
+    # empirical CDF. Gate semantics mirror the existing _p_value / _ci_*
+    # gates on the same metrics — gate-then-compute (Pitfall 6) to avoid an
+    # unnecessary helper call when the floor is missed.
+
+    # Endgame Score Gap — dual-N gate per D-10 (both wings of the gap must
+    # clear the floor). Same gate as score_difference_p_value above.
+    score_gap_percentile: float | None = (
+        interpolate_percentile("score_gap", score_difference)
+        if min(endgame_wdl.total, non_endgame_wdl.total) >= PVALUE_RELIABILITY_MIN_N
+        else None
+    )
+
+    # Section 2 conv / parity — single-N gate on the bucket count, PLUS an
+    # explicit `mean is not None` guard because _compute_per_bucket_score_gap
+    # returns mean=None for empty cohorts and interpolate_percentile would
+    # raise on None (RESEARCH Pitfall 6 — the helper is NaN-safe but not
+    # None-safe).
+    # No recovery percentile per D-12 (recovery is opponent-confounded; no
+    # CDF table shipped in Phase 93).
+    section2_score_gap_conv_percentile: float | None = (
+        interpolate_percentile("section2_score_gap_conv", conv_mean)
+        if conv_mean is not None and conv_n is not None and conv_n >= PVALUE_RELIABILITY_MIN_N
+        else None
+    )
+    section2_score_gap_parity_percentile: float | None = (
+        interpolate_percentile("section2_score_gap_parity", parity_mean)
+        if parity_mean is not None and parity_n is not None and parity_n >= PVALUE_RELIABILITY_MIN_N
+        else None
+    )
+
     return ScoreGapMaterialResponse(
         endgame_score=endgame_score,
         non_endgame_score=non_endgame_score,
@@ -1368,22 +1400,26 @@ def _compute_score_gap_material(
         score_difference_p_value=score_diff_p,
         score_difference_ci_low=score_diff_ci_low,
         score_difference_ci_high=score_diff_ci_high,
+        score_gap_percentile=score_gap_percentile,
         # Phase 87.2 (D-06): per-bucket ΔES Score Gap fields.
         section2_score_gap_conv_mean=conv_mean,
         section2_score_gap_conv_n=conv_n,
         section2_score_gap_conv_p_value=conv_p,
         section2_score_gap_conv_ci_low=conv_ci_lo,
         section2_score_gap_conv_ci_high=conv_ci_hi,
+        section2_score_gap_conv_percentile=section2_score_gap_conv_percentile,
         section2_score_gap_parity_mean=parity_mean,
         section2_score_gap_parity_n=parity_n,
         section2_score_gap_parity_p_value=parity_p,
         section2_score_gap_parity_ci_low=parity_ci_lo,
         section2_score_gap_parity_ci_high=parity_ci_hi,
+        section2_score_gap_parity_percentile=section2_score_gap_parity_percentile,
         section2_score_gap_recov_mean=recov_mean,
         section2_score_gap_recov_n=recov_n,
         section2_score_gap_recov_p_value=recov_p,
         section2_score_gap_recov_ci_low=recov_ci_lo,
         section2_score_gap_recov_ci_high=recov_ci_hi,
+        # Phase 94 (D-12): NO recovery percentile — out of scope.
         # Phase 87.4 (D-05): section2_score_gap_skill_* and
         # endgame_skill_rate_mean kwargs dropped — fields removed from the
         # Pydantic model in app/schemas/endgames.py.
@@ -2299,6 +2335,15 @@ def _get_endgame_performance_from_rows(
         entry_expected_score_ci_low = None
         entry_expected_score_ci_high = None
 
+    # Phase 94 (PCTL-02 / D-10): cohort percentile of achievable_score_gap vs
+    # the Phase 93 global empirical CDF. Same single-N gate as
+    # achievable_score_gap_p_value above (ex_n >= PVALUE_RELIABILITY_MIN_N).
+    achievable_score_gap_percentile: float | None = (
+        interpolate_percentile("achievable_score_gap", achievable_score_gap)
+        if ex_n >= PVALUE_RELIABILITY_MIN_N
+        else None
+    )
+
     return EndgamePerformanceResponse(
         endgame_wdl=endgame_wdl,
         non_endgame_wdl=non_endgame_wdl,
@@ -2319,6 +2364,7 @@ def _get_endgame_performance_from_rows(
         achievable_score_gap_p_value=achievable_p,
         achievable_score_gap_ci_low=achievable_ci_low,
         achievable_score_gap_ci_high=achievable_ci_high,
+        achievable_score_gap_percentile=achievable_score_gap_percentile,
     )
 
 
