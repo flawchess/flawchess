@@ -124,8 +124,8 @@ Plans:
 
 **Wave 4** *(blocked on Waves 1 + 3)*
 
-- [ ] 94.1-07-PLAN.md — endgame_service chip rewire + PercentileChip tooltip canonical-slice clarifier
-- [ ] 94.1-08-PLAN.md — Backfill script (--target dev|prod) + final phase ship gate (blocking human-verify)
+- [x] 94.1-07-PLAN.md — endgame_service chip rewire + PercentileChip tooltip canonical-slice clarifier
+- [x] 94.1-08-PLAN.md — Backfill script (--target dev|prod) + final phase ship gate (blocking human-verify)
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
 
