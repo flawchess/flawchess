@@ -1,5 +1,8 @@
 """Game repository: bulk insert with ON CONFLICT DO NOTHING and position insertion."""
 
+from collections.abc import Sequence
+
+import sqlalchemy as sa
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +54,56 @@ async def count_pending_evals(session: AsyncSession, user_id: int) -> int:
         .where(Game.user_id == user_id, Game.evals_completed_at.is_(None))
     )
     return result.scalar_one()
+
+
+async def users_with_zero_pending(
+    session: AsyncSession,
+    user_ids: Sequence[int],
+) -> list[int]:
+    """Return the subset of ``user_ids`` whose pending-eval count is zero.
+
+    Issued as ONE aggregated SQL statement (WR-01 fix, Phase 94.1-12). Replaces
+    the per-user ``count_pending_evals`` loop in ``eval_drain.py`` post-commit
+    Stage B fan-out. Construction: an inline VALUES table over ``user_ids``
+    LEFT JOIN'd to ``games`` on (uid = games.user_id AND
+    games.evals_completed_at IS NULL), GROUP BY uid, HAVING count(games.id) = 0.
+    The LEFT JOIN guarantees users with zero rows in ``games`` at all are still
+    returned (the outer count over a NULL games.id evaluates to 0).
+
+    Args:
+        session: AsyncSession (read-only is fine).
+        user_ids: Sequence of internal user PKs to check. Empty input
+            short-circuits to ``[]`` without issuing any SQL (avoids a
+            Postgres ``VALUES ()`` syntax error and an unnecessary round-trip).
+
+    Returns:
+        List of user_ids (subset of input) where the count of games with
+        ``evals_completed_at IS NULL`` is zero. Order is unspecified.
+        Empty list if no input users have zero pending evals.
+    """
+    if not user_ids:
+        return []
+
+    # Inline values-table over the input user_ids. LEFT JOIN preserves users
+    # who have no games at all (count(games.id) IS NULL → 0 via the outer agg).
+    uid_col = sa.column("uid", sa.Integer)
+    uids_vt = sa.values(uid_col, name="input_uids").data([(int(u),) for u in user_ids])
+    stmt = (
+        sa.select(uid_col)
+        .select_from(
+            uids_vt.outerjoin(
+                Game,
+                sa.and_(
+                    Game.user_id == uid_col,
+                    Game.evals_completed_at.is_(None),
+                ),
+            )
+        )
+        .group_by(uid_col)
+        .having(sa.func.count(Game.id) == 0)
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
 
 
 async def delete_all_games_for_user(session: AsyncSession, user_id: int) -> int:
