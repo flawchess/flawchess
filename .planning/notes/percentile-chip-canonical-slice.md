@@ -5,11 +5,13 @@ context: Captured during a /gsd-explore session. Phase 93/94 ship a "top X%" per
 related_files:
   - reports/global-percentile-cdf-latest.md
   - app/services/global_percentile_cdf.py
+  - scripts/gen_global_percentile_cdf.py
+  - scripts/import_stress_monitor.py
   - .claude/skills/benchmarks/SKILL.md
   - frontend/src/components/score-gap/PercentileChip.tsx
   - frontend/src/components/score-gap/ScoreGapRow.tsx
   - app/services/endgame_service.py
-related_phases: [93, 94, 95]
+related_phases: [93, 94, 94.1, 95]
 ---
 
 # Percentile chip — canonical-slice user metric
@@ -90,6 +92,22 @@ The chip lights up incrementally — `score_gap` appears within seconds-to-minut
 
 Both stages are background tasks — neither blocks the user, neither extends import latency.
 
+## Initial rollout: backfill script
+
+The Stage A / Stage B hooks only populate the table for users whose import (or cold drain) runs *after* Phase 94.1 ships. To light up the chip for the entire existing user base on rollout — not just users who happen to re-import after the deploy — Phase 94.1 ships a one-shot backfill script:
+
+- Path: `scripts/backfill_user_percentiles.py`
+- CLI: `--target dev|prod` (mirroring the `--target` convention in `scripts/import_stress_monitor.py`)
+  - `dev` connects to the local Docker DB on `localhost:5432`.
+  - `prod` connects via `bin/prod_db_tunnel.sh` on `localhost:15432` and refuses to run if the tunnel is down.
+  - Why not `--db benchmark`? The backfill operates on the *application* DBs (dev / prod) where actual user games live; the benchmark DB is the population pool for the *CDF*, not for FlawChess users. `--db benchmark` is the right flag for `gen_global_percentile_cdf.py`; `--target dev|prod` is the right flag for this backfill.
+- Idempotent under the UPSERT semantics — re-runs only update changed rows, safe to invoke repeatedly during rollout debugging.
+- Optional narrowing flags: `--user-id <id>` for single-user testing, `--metric <id>` for single-metric backfill (useful when iterating on a metric's compute path).
+- Honours the Stage A vs. Stage B split: eval-dependent metrics are computed only for users whose cold drain has completed for the relevant span set; users with pending eval get a Stage-A-only backfill row (matches the steady-state behaviour of the per-import hooks).
+- Emits a summary table at exit: rows upserted / skipped per metric per inclusion-floor reason, so the operator can spot-check rollout health (e.g., "60% of users below score_gap floor — expected for sparse-history accounts").
+
+The backfill is part of the deploy checklist for the Phase 94.1 release: deploy → run `--target prod` once → chips appear for the whole user base. Subsequent imports keep the table fresh via the per-import hooks.
+
 ## Recompute triggers
 
 - **Stage A:** after each successful import job completion.
@@ -113,10 +131,27 @@ The "Top X%" → percentile-format label flip was discussed but **not adopted** 
 - **Store only percentile, not value.** Rejected: value is reusable for tooltips, LLM payload, and future overlays. Recomputing it on read defeats materialisation.
 - **Wide columns on `users`.** Rejected: doesn't scale as more metrics get badges, conflates trait data with derived compute artifacts.
 
+## CTE sharing with `gen_global_percentile_cdf.py` — anti-drift requirement
+
+The canonical CTE machinery in `scripts/gen_global_percentile_cdf.py` is the *source of truth* for the canonical slice: `_canonical_selected_users_cte`, `_per_user_cte_score_gap`, `_per_user_cte_achievable`, `_per_user_cte_section2`, `_equal_footing_filter_sql`, `_sparse_exclusion_sql`, `_elo_bucket_expr`. These templates define what "benchmark-compatible" means at the SQL level — every per-user value in the published CDF was computed through them.
+
+The per-user compute path added in Phase 94.1 (Stage A + Stage B + backfill) must use the *same* templates. The two structural differences:
+
+- **Filter target.** The benchmark CDF iterates over rows in `selected_users` (benchmark cohort); the per-user path filters by a single `user_id` from the application DB. The same CTE structure with a different join target.
+- **Aggregation target.** The benchmark CDF aggregates per-(user, cell) for percentile pooling; the per-user path collapses to one pooled value per user per metric (matching the published CDF's pooled-across-cells shape). The aggregation step differs; the canonical-slice game-set definition does not.
+
+Phase 94.1 must either:
+
+1. **Extract the canonical CTE builders into a shared module** (e.g., `app/services/canonical_slice_sql.py`) that both `scripts/gen_global_percentile_cdf.py` and the new per-user compute service import. Refactor `gen_global_percentile_cdf.py` to consume from the shared module.
+2. **Document a deliberate decision to duplicate**, with explicit rationale, plus a drift-detection mechanism (e.g., a test that compares the two implementations against a fixed user fixture and asserts identical SQL output, or asserts equivalent metric values within float tolerance).
+
+Silent drift between the two methodologies is unacceptable — the chip's validity rests on the per-user value being computed under *exactly* the same definition that produced the CDF. The Phase 94.1 plan must pick a mechanism. Option 1 is the more durable choice; Option 2 is acceptable only if Option 1 has a concrete cost we don't yet see in this design.
+
 ## Open questions deferred to phase planning
 
 - Exact placement of the post-import and post-drain hooks (which function/module).
-- Whether the Stage-A and Stage-B compute paths share a single underlying SQL CTE template (likely yes — the canonical-slice game-set definition is the same; only the metric aggregation differs).
 - Index strategy on `user_benchmark_percentiles` — primary key `(user_id, metric)` covers per-user lookup; whether an additional index on `cdf_snapshot` is needed depends on whether the snapshot-refresh re-lookup job will scan the table or filter by `cdf_snapshot < <new_snapshot>`.
 - LLM payload integration — the Phase 95 prompt rework should read the canonical-slice percentile from the new table rather than recomputing per-request. Worth confirming the Phase 95 plan before its execution.
 - Whether Phase 94's already-shipped per-request `interpolate_percentile` call path is removed cleanly or kept as a fallback during transition.
+- Exact choice between CTE-sharing options (1) and (2) above — depends on how cleanly the `gen_global_percentile_cdf.py` builders extract without rewriting the script's report-generation surface.
+- Backfill operational details: order of users (creation-asc to surface old accounts first? batched commits to bound transaction size?); how to skip users with `n_games=0` for the canonical slice without per-user query overhead.
