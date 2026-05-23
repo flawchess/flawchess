@@ -134,7 +134,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 — IN-03 classifier fix shares the backfill script)*
 
-- [ ] 94.1-10-PLAN.md — IN-03: `_compute_and_count` classifier fix (return False on below-floor; remove dead row_before probe) + unit test driving all three branches
+- [x] 94.1-10-PLAN.md — IN-03: `_compute_and_count` classifier fix (return False on below-floor; remove dead row_before probe) + unit test driving all three branches
 
 **Wave 7** *(blocked on Wave 5/6 — rename runs after backfill writes real rows)*
 
