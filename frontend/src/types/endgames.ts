@@ -113,6 +113,9 @@ export interface EndgamePerformanceResponse {
   achievable_score_gap_p_value: number | null;
   achievable_score_gap_ci_low: number | null;
   achievable_score_gap_ci_high: number | null;
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Achievable Score Gap vs the Phase 93 global CDF.
+   *  null when the endgame-entry span count is below PVALUE_RELIABILITY_MIN_N (=10). */
+  achievable_score_gap_percentile: number | null;
 }
 
 /** Single data point in the per-type weekly win-rate time series.
@@ -202,6 +205,10 @@ export interface ScoreGapMaterialResponse {
   score_difference_p_value: number | null;
   score_difference_ci_low: number | null;
   score_difference_ci_high: number | null;
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Endgame Score Gap vs the Phase 93 global CDF.
+   *  Name mirrors the MetricId (`score_gap`), not the wire sibling `score_difference` (D-11).
+   *  null when min(endgame_wdl.total, non_endgame_wdl.total) < PVALUE_RELIABILITY_MIN_N (=10). */
+  score_gap_percentile: number | null;
   // Phase 87.2 (D-06): 20 eval-baseline Delta-ES Score Gap fields (4 buckets x 5).
   // Replaces the rate-based mirror-bucket peer-bullet (skill, opp_skill, skill_diff_*
   // deleted per D-04). Each cluster: mean per-span Score Gap, sample count,
@@ -217,6 +224,9 @@ export interface ScoreGapMaterialResponse {
   section2_score_gap_conv_p_value: number | null;
   section2_score_gap_conv_ci_low: number | null;
   section2_score_gap_conv_ci_high: number | null;
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Conversion ΔES vs the Phase 93 global CDF.
+   *  null when section2_score_gap_conv_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
+  section2_score_gap_conv_percentile: number | null;
 
   // Parity bucket (entered endgame with eval between -1.0 and +1.0):
   section2_score_gap_parity_mean: number | null;
@@ -224,6 +234,9 @@ export interface ScoreGapMaterialResponse {
   section2_score_gap_parity_p_value: number | null;
   section2_score_gap_parity_ci_low: number | null;
   section2_score_gap_parity_ci_high: number | null;
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Parity ΔES vs the Phase 93 global CDF.
+   *  null when section2_score_gap_parity_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
+  section2_score_gap_parity_percentile: number | null;
 
   // Recovery bucket (entered endgame with eval <= -1.0):
   section2_score_gap_recov_mean: number | null;

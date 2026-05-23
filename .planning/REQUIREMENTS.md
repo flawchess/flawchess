@@ -15,12 +15,15 @@
 
 Surfaces global "top X%" annotations on selected Endgame metrics, scoped to the SEED-019 Tier-1 / Tier-2 set. Always rendered as "top X%" (a user at p1 reads "top 99%", a user at p99 reads "top 1%") — NO "bottom X%" wording. Renders only when the user's sample size clears a metric-specific reliability gate; the raw value always stays — the chip is additive social context, not a replacement metric.
 
-- [ ] **PCTL-01**: A global empirical-CDF benchmark artifact exists for each in-scope Endgame metric — the **4 chipped ΔES metrics** per the SEED-019 empirical refinement (`reports/benchmarks-gap-metrics-percentile-candidacy.md`, 2026-05-22): Endgame Score Gap, Achievable Score Gap, Parity Score Gap (Section 2), Conversion Score Gap (Section 2). Recovery Score Gap and the 3 raw % gauges are intentionally excluded (Recovery is opponent-confounded with inverted rating coupling; raw gauges would be redundant chips on cards whose ΔES row is already chipped). The artifact is produced through the canonical `/benchmarks` CTE (lichess_username join, `bic.status='completed'`, sparse-cell `(2400, classical)` exclusion, equal-footing opponent filter, game-time ELO bucketing) and committed to `app/services/global_percentile_cdf.py` — separate from `endgame_zones.py` (which keeps its ZoneSpec / IQR-band shape). The module is Python-only with no TS mirror; backend interpolates user values against the CDF at request time and emits a scalar percentile in the API response (PCTL-02).
+- [x] **PCTL-01**: A global empirical-CDF benchmark artifact exists for each in-scope Endgame metric — the **4 chipped ΔES metrics** per the SEED-019 empirical refinement (`reports/benchmarks-gap-metrics-percentile-candidacy.md`, 2026-05-22): Endgame Score Gap, Achievable Score Gap, Parity Score Gap (Section 2), Conversion Score Gap (Section 2). Recovery Score Gap and the 3 raw % gauges are intentionally excluded (Recovery is opponent-confounded with inverted rating coupling; raw gauges would be redundant chips on cards whose ΔES row is already chipped). The artifact is produced through the canonical `/benchmarks` CTE (lichess_username join, `bic.status='completed'`, sparse-cell `(2400, classical)` exclusion, equal-footing opponent filter, game-time ELO bucketing) and committed to `app/services/global_percentile_cdf.py` — separate from `endgame_zones.py` (which keeps its ZoneSpec / IQR-band shape). The module is Python-only with no TS mirror; backend interpolates user values against the CDF at request time and emits a scalar percentile in the API response (PCTL-02).
 - [ ] **PCTL-02**: For each in-scope metric, the backend interpolates the user's value against the CDF and emits a nullable `{metric}_percentile` field (0–100) alongside existing value / CI / zone fields. The field is `null` when the user's sample size falls below the metric's reliability gate.
 - [ ] **PCTL-03**: Each chipped row renders a compact percentile chip beside the metric value when `{metric}_percentile != null`. Phrasing always uses the "top X%" form (NO "bottom X%" wording): a user at p1 renders as "top 99%", a user at p99 renders as "top 1%", neutral fallback near the median (e.g. "top 50%"). Rounding is honest (no spurious decimals).
 - [ ] **PCTL-04**: Chip popovers carry **metric-aware framing**: low-d metrics (Endgame Score Gap, Achievable Score Gap, Parity ΔES) frame the percentile as **skill-isolating** ("mostly independent of rating — reveals endgame ability separate from overall strength"); the high-d Conversion ΔES chip frames the percentile as **improvement-focus** ("tracks rating closely — if you're in the lower tiers here, this is one of the biggest single improvements available to your ELO"). Both flavors serve the "what should I focus on to improve?" goal for different segments of the user base.
 - [ ] **PCTL-05**: Percentile annotations render with desktop and mobile parity across every affected card (per CLAUDE.md mobile-parity rule) and use theme-driven colors (no hard-coded colors).
 - [ ] **PCTL-06**: A misleading percentile is worse than none. Every in-scope metric has an explicit minimum-N reliability gate; below the gate, no chip renders and no percentile is emitted to the LLM.
+- [ ] **PCTL-07**: The percentile chip is a *trait* of the user, not a *view* of their data — it is computed from a canonical slice of the user's games (status='completed' + ±100 ELO opponent at game time + sparse-cell `(2400, classical)` exclusion + 36-month recency + standard variant, pooled across TCs with no per-TC cap) that mirrors the benchmark cohort CTE, and is independent of UI filter state. Toggling recency / opponent-strength / TC / platform / rated / opponent-type filters does not change the chip. The row's filter-applied metric value continues to display per the existing per-request compute; chip tooltip copy makes the dual-value framing explicit.
+- [ ] **PCTL-08**: Each user's canonical-slice value and percentile per in-scope metric are persisted in a `user_benchmark_percentiles` table keyed by `(user_id, metric)` with columns for `value`, `percentile`, `n_games`, `cdf_snapshot`, and `computed_at`. `cdf_snapshot` records which `GLOBAL_PERCENTILE_CDF` revision the percentile was looked up against, enabling re-lookup without recomputing the value when the benchmark snapshot refreshes.
+- [ ] **PCTL-09**: Canonical-slice values are computed in two stages aligned with the two-lane import pipeline: Stage A computes the eval-independent `score_gap` as a background task at import-job completion (does not extend import latency); Stage B computes the three eval-dependent metrics (`achievable_score_gap`, `section2_score_gap_conv`, `section2_score_gap_parity`) as a background task at Stockfish cold-drain completion. Chips light up incrementally — `score_gap` is available within seconds-to-minutes of import completion, the three eval-dependent chips when cold drain wraps.
 
 ### LLM Statistical Reasoning (LLM)
 
@@ -50,12 +53,15 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PCTL-01 | Phase 93 | Pending |
+| PCTL-01 | Phase 93 | Complete |
 | PCTL-02 | Phase 94 | Pending |
 | PCTL-03 | Phase 94 | Pending |
 | PCTL-04 | Phase 94 | Pending |
 | PCTL-05 | Phase 94 | Pending |
 | PCTL-06 | Phase 94 | Pending |
+| PCTL-07 | Phase 94.5 | Pending |
+| PCTL-08 | Phase 94.5 | Pending |
+| PCTL-09 | Phase 94.5 | Pending |
 | LLM-01 | Phase 95 | Pending |
 | LLM-02 | Phase 95 | Pending |
 | LLM-03 | Phase 95 | Pending |
@@ -64,4 +70,4 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 | LLM-06 | Phase 95 | Pending |
 | LLM-07 | Phase 95 | Pending |
 
-**Coverage:** 13/13 v1 requirements mapped (PCTL-01..06 + LLM-01..07). No orphans.
+**Coverage:** 16/16 v1 requirements mapped (PCTL-01..09 + LLM-01..07). No orphans.

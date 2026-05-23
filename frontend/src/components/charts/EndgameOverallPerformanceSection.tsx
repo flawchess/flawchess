@@ -41,6 +41,7 @@ import { EndgameCard } from './EndgameOverallCard';
 import { EntryCard } from './EndgameOverallEntryCard';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
 import { deriveLevel } from './EndgameOverallShared';
+import { PercentileChip } from './PercentileChip';
 
 // 260514: Achievable (±5pp) and Endgame (±10pp) Score Gaps now use distinct
 // bands — see reports/benchmarks-latest.md §3.1.5. Helper is parameterized
@@ -179,6 +180,16 @@ export function EndgameOverallPerformanceSection({
                   neutralMax={ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX}
                   ciLow={data.achievable_score_gap_ci_low ?? undefined}
                   ciHigh={data.achievable_score_gap_ci_high ?? undefined}
+                  chipSlot={
+                    data.achievable_score_gap_percentile != null ? (
+                      <PercentileChip
+                        percentile={data.achievable_score_gap_percentile}
+                        flavor="skill-isolating"
+                        metricLabel="Achievable Score Gap"
+                        testId="achievable-score-gap-percentile-chip"
+                      />
+                    ) : undefined
+                  }
                   tooltip={
                     <MetricStatPopover
                       name="Achievable Score Gap"
@@ -219,6 +230,16 @@ export function EndgameOverallPerformanceSection({
                   valueClassName="text-lg"
                   ciLow={scoreGap.score_difference_ci_low ?? undefined}
                   ciHigh={scoreGap.score_difference_ci_high ?? undefined}
+                  chipSlot={
+                    scoreGap.score_gap_percentile != null ? (
+                      <PercentileChip
+                        percentile={scoreGap.score_gap_percentile}
+                        flavor="skill-isolating"
+                        metricLabel="Endgame Score Gap"
+                        testId="endgame-score-gap-percentile-chip"
+                      />
+                    ) : undefined
+                  }
                   tooltip={
                     <MetricStatPopover
                       name="Endgame Score Gap"
