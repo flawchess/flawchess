@@ -313,7 +313,7 @@ async def test_compute_stage_a_writes_row_for_qualifying_user(real_data_user) ->
     assert row.cdf_snapshot == datetime.date.today(), (
         f"cdf_snapshot expected date.today() ({datetime.date.today()}), got {row.cdf_snapshot!r}"
     )
-    assert row.n_games >= 0, f"n_games must be non-negative, got {row.n_games!r}"
+    assert row.n_cells_floor >= 0, f"n_cells_floor must be non-negative, got {row.n_cells_floor!r}"
 
 
 async def test_compute_stage_b_writes_three_rows_for_qualifying_user(
@@ -362,7 +362,7 @@ async def test_compute_stage_b_writes_three_rows_for_qualifying_user(
 async def test_compute_stage_a_idempotent_upsert(real_data_user) -> None:
     """Running compute_stage_a twice updates computed_at without drifting value.
 
-    The second call must UPSERT the same (value, percentile, n_games) and
+    The second call must UPSERT the same (value, percentile, n_cells_floor) and
     only advance computed_at on the DB side.
     """
     user_id, test_session_maker = real_data_user
@@ -389,8 +389,8 @@ async def test_compute_stage_a_idempotent_upsert(real_data_user) -> None:
     assert second_row.percentile == first_row.percentile, (
         f"Stage A re-run drifted percentile: {first_row.percentile!r} -> {second_row.percentile!r}"
     )
-    assert second_row.n_games == first_row.n_games, (
-        f"Stage A re-run drifted n_games: {first_row.n_games!r} -> {second_row.n_games!r}"
+    assert second_row.n_cells_floor == first_row.n_cells_floor, (
+        f"Stage A re-run drifted n_cells_floor: {first_row.n_cells_floor!r} -> {second_row.n_cells_floor!r}"
     )
 
 

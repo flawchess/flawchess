@@ -41,9 +41,11 @@ class UserBenchmarkPercentile(Base):
     Written by Stage A (score_gap) and Stage B (3 eval-dependent metrics)
     background tasks, and by the one-shot backfill script.
 
-    The ``percentile`` column is NULL when the user's canonical-slice game count
-    is below the per-metric inclusion floor (D-06/D-10) — they have a computable
-    ``value`` but no chip is shown.
+    The ``percentile`` column is NULL when the user has zero
+    ``(elo_bucket, tc_bucket)`` cells passing the per-metric HAVING inclusion
+    floor (D-06 / D-10). The user still has a computable ``value`` but no chip
+    is shown. ``n_cells_floor`` stores that floor-passing cell count; it is
+    NOT a game count. See Phase 94.1 REVIEW.md CR-01 for the rename rationale.
     """
 
     __tablename__ = "user_benchmark_percentiles"
@@ -56,7 +58,7 @@ class UserBenchmarkPercentile(Base):
     metric: Mapped[CdfMetricId] = mapped_column(benchmark_metric_enum, primary_key=True)
     value: Mapped[float] = mapped_column(Float, nullable=False)
     percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
-    n_games: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_cells_floor: Mapped[int] = mapped_column(Integer, nullable=False)
     cdf_snapshot: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     computed_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),

@@ -43,7 +43,7 @@ _KNOWN_ACHIEVABLE_PERCENTILE: float = 55.0
 _KNOWN_CONV_PERCENTILE: float = 41.0
 _KNOWN_PARITY_PERCENTILE: float = 68.0
 _CDF_SNAPSHOT: datetime.date = datetime.date(2026, 3, 31)
-_SEED_N_GAMES: int = 40  # canonical-slice game count for seeded rows
+_SEED_N_CELLS_FLOOR: int = 40  # floor-passing (elo_bucket, tc_bucket) cells for seeded rows
 _SEED_VALUE: float = 0.05  # arbitrary canonical-slice metric value
 
 pytestmark = pytest.mark.asyncio
@@ -63,25 +63,25 @@ def _make_percentile_rows(
         "score_gap": PercentileRow(
             value=_SEED_VALUE,
             percentile=score_gap,
-            n_games=_SEED_N_GAMES,
+            n_cells_floor=_SEED_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "achievable_score_gap": PercentileRow(
             value=_SEED_VALUE,
             percentile=achievable,
-            n_games=_SEED_N_GAMES,
+            n_cells_floor=_SEED_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "section2_score_gap_conv": PercentileRow(
             value=_SEED_VALUE,
             percentile=conv,
-            n_games=_SEED_N_GAMES,
+            n_cells_floor=_SEED_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "section2_score_gap_parity": PercentileRow(
             value=_SEED_VALUE,
             percentile=parity,
-            n_games=_SEED_N_GAMES,
+            n_cells_floor=_SEED_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
     }
@@ -191,7 +191,7 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
         metric="score_gap",
         value=_SEED_VALUE,
         percentile=_KNOWN_SCORE_GAP_PERCENTILE,
-        n_games=_SEED_N_GAMES,
+        n_cells_floor=_SEED_N_CELLS_FLOOR,
         cdf_snapshot=_CDF_SNAPSHOT,
     )
     # Seed user B with a distinct value
@@ -201,7 +201,7 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
         metric="score_gap",
         value=_SEED_VALUE,
         percentile=_USER_B_PERCENTILE,
-        n_games=_SEED_N_GAMES,
+        n_cells_floor=_SEED_N_CELLS_FLOOR,
         cdf_snapshot=_CDF_SNAPSHOT,
     )
     await db_session.flush()
@@ -285,31 +285,31 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
     for future floor-change recompute, but the chip does not render (percentile=NULL
     emits as None on the wire, chip absent on FE).
     """
-    _BELOW_FLOOR_N_GAMES: int = 5  # below all metric inclusion floors
+    _BELOW_FLOOR_N_CELLS_FLOOR: int = 5  # below all metric inclusion floors
 
     null_pct_rows: dict[CdfMetricId, PercentileRow] = {
         "score_gap": PercentileRow(
             value=0.01,
             percentile=None,
-            n_games=_BELOW_FLOOR_N_GAMES,
+            n_cells_floor=_BELOW_FLOOR_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "achievable_score_gap": PercentileRow(
             value=0.02,
             percentile=None,
-            n_games=_BELOW_FLOOR_N_GAMES,
+            n_cells_floor=_BELOW_FLOOR_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "section2_score_gap_conv": PercentileRow(
             value=0.01,
             percentile=None,
-            n_games=_BELOW_FLOOR_N_GAMES,
+            n_cells_floor=_BELOW_FLOOR_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
         "section2_score_gap_parity": PercentileRow(
             value=0.01,
             percentile=None,
-            n_games=_BELOW_FLOOR_N_GAMES,
+            n_cells_floor=_BELOW_FLOOR_N_CELLS_FLOOR,
             cdf_snapshot=_CDF_SNAPSHOT,
         ),
     }

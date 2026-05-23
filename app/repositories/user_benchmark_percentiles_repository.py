@@ -32,7 +32,7 @@ class PercentileRow:
 
     value: float
     percentile: float | None
-    n_games: int
+    n_cells_floor: int
     cdf_snapshot: datetime.date
 
 
@@ -43,7 +43,7 @@ async def upsert_percentile(
     metric: CdfMetricId,
     value: float,
     percentile: float | None,
-    n_games: int,
+    n_cells_floor: int,
     cdf_snapshot: datetime.date,
 ) -> None:
     """Insert or update one (user_id, metric) row in user_benchmark_percentiles.
@@ -58,7 +58,9 @@ async def upsert_percentile(
         metric: One of the 4 CdfMetricId values.
         value: User's canonical-slice metric value (pooled across TCs).
         percentile: Lookup percentile in [0, 100], or None when below floor (D-06).
-        n_games: Number of canonical-slice games that contributed to ``value``.
+        n_cells_floor: Count of (elo_bucket, tc_bucket) cells that passed the
+            per-metric HAVING inclusion floor at compute time. NOT a game
+            count. See Phase 94.1 REVIEW.md CR-01.
         cdf_snapshot: Date of the CDF artifact used for interpolation.
     """
     stmt = pg_insert(UserBenchmarkPercentile).values(
@@ -66,7 +68,7 @@ async def upsert_percentile(
         metric=metric,
         value=value,
         percentile=percentile,
-        n_games=n_games,
+        n_cells_floor=n_cells_floor,
         cdf_snapshot=cdf_snapshot,
     )
     stmt = stmt.on_conflict_do_update(
@@ -74,7 +76,7 @@ async def upsert_percentile(
         set_={
             "value": stmt.excluded.value,
             "percentile": stmt.excluded.percentile,
-            "n_games": stmt.excluded.n_games,
+            "n_cells_floor": stmt.excluded.n_cells_floor,
             "cdf_snapshot": stmt.excluded.cdf_snapshot,
             "computed_at": func.now(),  # server-side NOW() refresh on every update
         },
@@ -109,7 +111,7 @@ async def fetch_for_user(
             UserBenchmarkPercentile.metric,
             UserBenchmarkPercentile.value,
             UserBenchmarkPercentile.percentile,
-            UserBenchmarkPercentile.n_games,
+            UserBenchmarkPercentile.n_cells_floor,
             UserBenchmarkPercentile.cdf_snapshot,
         ).where(UserBenchmarkPercentile.user_id == user_id)
     )
@@ -118,7 +120,7 @@ async def fetch_for_user(
         row.metric: PercentileRow(
             value=row.value,
             percentile=row.percentile,
-            n_games=row.n_games,
+            n_cells_floor=row.n_cells_floor,
             cdf_snapshot=row.cdf_snapshot,
         )
         for row in rows

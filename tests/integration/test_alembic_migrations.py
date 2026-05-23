@@ -64,7 +64,7 @@ _EXPECTED_COLUMNS: frozenset[str] = frozenset(
         "metric",
         "value",
         "percentile",
-        "n_games",
+        "n_cells_floor",
         "cdf_snapshot",
         "computed_at",
     }

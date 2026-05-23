@@ -193,7 +193,7 @@ async def compute_stage_a(
                 metric=STAGE_A_METRIC,
                 value=value,
                 percentile=percentile,
-                n_games=n_cells_floor,
+                n_cells_floor=n_cells_floor,
                 cdf_snapshot=date.today(),
             )
             await session.commit()
@@ -247,7 +247,7 @@ async def compute_stage_b(
                         metric=metric_id,
                         value=value,
                         percentile=percentile,
-                        n_games=n_cells_floor,
+                        n_cells_floor=n_cells_floor,
                         cdf_snapshot=date.today(),
                     )
                 except asyncio.CancelledError:
