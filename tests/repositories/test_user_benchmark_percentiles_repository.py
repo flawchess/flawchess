@@ -57,7 +57,7 @@ _ALL_METRICS: tuple[str, ...] = (
 
 _DEFAULT_VALUE: float = 0.05
 _DEFAULT_PERCENTILE: float = 62.3
-_DEFAULT_N_GAMES: int = 45
+_DEFAULT_N_CELLS_FLOOR: int = 45
 _DEFAULT_CDF_SNAPSHOT: datetime.date = datetime.date(2026, 3, 31)
 
 pytestmark = pytest.mark.asyncio
@@ -93,7 +93,7 @@ async def test_upsert_inserts_when_no_row_exists(db_session: AsyncSession) -> No
         metric=_METRIC_SCORE_GAP,
         value=_DEFAULT_VALUE,
         percentile=_DEFAULT_PERCENTILE,
-        n_games=_DEFAULT_N_GAMES,
+        n_cells_floor=_DEFAULT_N_CELLS_FLOOR,
         cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
     )
     await db_session.flush()
@@ -118,7 +118,7 @@ async def test_upsert_inserts_when_no_row_exists(db_session: AsyncSession) -> No
 
 
 async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
-    """Second upsert with new value/percentile/n_games/cdf_snapshot overwrites all."""
+    """Second upsert with new value/percentile/n_cells_floor/cdf_snapshot overwrites all."""
     # Initial insert
     await upsert_percentile(
         db_session,
@@ -126,7 +126,7 @@ async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
         metric=_METRIC_ACHIEVABLE,
         value=0.10,
         percentile=45.0,
-        n_games=25,
+        n_cells_floor=25,
         cdf_snapshot=datetime.date(2026, 1, 1),
     )
     await db_session.flush()
@@ -134,7 +134,7 @@ async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
     # Second upsert with new values
     new_value = 0.25
     new_percentile = 78.5
-    new_n_games = 60
+    new_n_cells_floor = 60
     new_snapshot = datetime.date(2026, 3, 31)
 
     await upsert_percentile(
@@ -143,7 +143,7 @@ async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
         metric=_METRIC_ACHIEVABLE,
         value=new_value,
         percentile=new_percentile,
-        n_games=new_n_games,
+        n_cells_floor=new_n_cells_floor,
         cdf_snapshot=new_snapshot,
     )
     await db_session.flush()
@@ -159,7 +159,7 @@ async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
     assert abs(row.value - new_value) < 1e-9, "value must be updated by UPSERT"
     assert row.percentile is not None
     assert abs(row.percentile - new_percentile) < 1e-9, "percentile must be updated"
-    assert row.n_games == new_n_games, "n_games must be updated"
+    assert row.n_cells_floor == new_n_cells_floor, "n_cells_floor must be updated"
     assert row.cdf_snapshot == new_snapshot, "cdf_snapshot must be updated"
 
 
@@ -180,7 +180,7 @@ async def test_upsert_handles_percentile_null(db_session: AsyncSession) -> None:
         metric=_METRIC_CONV,
         value=0.08,
         percentile=None,
-        n_games=15,  # below floor — no chip, but value is stored
+        n_cells_floor=15,  # below floor: no chip, but value is stored
         cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
     )
     await db_session.flush()
@@ -195,7 +195,7 @@ async def test_upsert_handles_percentile_null(db_session: AsyncSession) -> None:
     row = result[_METRIC_CONV]
     assert row.percentile is None, "percentile must be Python None when stored as SQL NULL (D-06)"
     assert abs(row.value - 0.08) < 1e-9, "value must be stored correctly"
-    assert row.n_games == 15
+    assert row.n_cells_floor == 15
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +221,7 @@ async def test_fk_cascade_on_user_delete(db_session: AsyncSession) -> None:
             metric=metric,
             value=0.05,
             percentile=50.0,
-            n_games=30,
+            n_cells_floor=30,
             cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
         )
     await db_session.flush()
@@ -269,13 +269,13 @@ async def test_pk_rejects_duplicate_metric_for_same_user_via_plain_insert(
     await db_session.execute(
         text(
             "INSERT INTO user_benchmark_percentiles "
-            "(user_id, metric, value, n_games, cdf_snapshot) "
-            "VALUES (:uid, :metric, :value, :n_games, :snapshot)"
+            "(user_id, metric, value, n_cells_floor, cdf_snapshot) "
+            "VALUES (:uid, :metric, :value, :n_cells_floor, :snapshot)"
         ).bindparams(
             uid=_TEST_USER_ID,
             metric=_METRIC_PARITY,
             value=0.03,
-            n_games=22,
+            n_cells_floor=22,
             snapshot=_DEFAULT_CDF_SNAPSHOT,
         )
     )
@@ -286,13 +286,13 @@ async def test_pk_rejects_duplicate_metric_for_same_user_via_plain_insert(
         await db_session.execute(
             text(
                 "INSERT INTO user_benchmark_percentiles "
-                "(user_id, metric, value, n_games, cdf_snapshot) "
-                "VALUES (:uid, :metric, :value, :n_games, :snapshot)"
+                "(user_id, metric, value, n_cells_floor, cdf_snapshot) "
+                "VALUES (:uid, :metric, :value, :n_cells_floor, :snapshot)"
             ).bindparams(
                 uid=_TEST_USER_ID,
                 metric=_METRIC_PARITY,
                 value=0.07,
-                n_games=30,
+                n_cells_floor=30,
                 snapshot=_DEFAULT_CDF_SNAPSHOT,
             )
         )
@@ -320,7 +320,7 @@ async def test_fetch_for_user_returns_dict_keyed_by_metric_id(
         metric=_METRIC_SCORE_GAP,
         value=0.04,
         percentile=55.0,
-        n_games=35,
+        n_cells_floor=35,
         cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
     )
     await upsert_percentile(
@@ -329,7 +329,7 @@ async def test_fetch_for_user_returns_dict_keyed_by_metric_id(
         metric=_METRIC_PARITY,
         value=-0.02,
         percentile=38.0,
-        n_games=28,
+        n_cells_floor=28,
         cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
     )
     await db_session.flush()

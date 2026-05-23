@@ -4251,7 +4251,7 @@ class TestPercentileGates:
             "achievable_score_gap": PercentileRow(
                 value=0.05,
                 percentile=63.0,
-                n_games=40,
+                n_cells_floor=40,
                 cdf_snapshot=datetime.date(2026, 3, 31),
             ),
         }
@@ -4298,7 +4298,7 @@ class TestPercentileGates:
             "score_gap": PercentileRow(
                 value=0.0,
                 percentile=72.5,
-                n_games=40,
+                n_cells_floor=40,
                 cdf_snapshot=datetime.date(2026, 3, 31),
             ),
         }
@@ -4337,7 +4337,7 @@ class TestPercentileGates:
             "section2_score_gap_conv": PercentileRow(
                 value=0.0,
                 percentile=41.0,
-                n_games=40,
+                n_cells_floor=40,
                 cdf_snapshot=datetime.date(2026, 3, 31),
             ),
         }
@@ -4379,7 +4379,7 @@ class TestPercentileGates:
             "section2_score_gap_parity": PercentileRow(
                 value=0.0,
                 percentile=68.0,
-                n_games=40,
+                n_cells_floor=40,
                 cdf_snapshot=datetime.date(2026, 3, 31),
             ),
         }

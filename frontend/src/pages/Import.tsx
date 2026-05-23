@@ -73,6 +73,12 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
       queryClient.invalidateQueries({ queryKey: ['gameCount'] });
       queryClient.invalidateQueries({ queryKey: ['imports', 'eval-coverage'] });
+      // Bug fix (Phase 94.1-11): the percentile background tasks (Stage A on
+      // import-complete, Stage B on eval-drain) write to user_benchmark_percentiles
+      // asynchronously. Without invalidating the endgame overview the 30s
+      // queryClient staleTime serves the stale pre-import response and the
+      // percentile badges only appear after a hard refresh.
+      queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
     }, GAME_COUNT_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [isActive, queryClient]);
@@ -197,6 +203,10 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       queryClient.invalidateQueries({ queryKey: ['games'] });
       queryClient.invalidateQueries({ queryKey: ['gameCount'] });
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      // Bug fix (Phase 94.1-11): delete-all-games leaves the percentile rows
+      // until the next import, but the endgame overview must drop the chip
+      // immediately. Invalidate so the FE refetches and renders the empty state.
+      queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
     } catch (err) {
       Sentry.captureException(err, {
         tags: { source: 'import' },
