@@ -111,8 +111,8 @@ Plans:
 
 **Wave 1** *(blocked on Wave 0)*
 
-- [ ] 94.1-03-PLAN.md — Extract shared canonical_slice_sql module; refactor gen_global_percentile_cdf.py consumer (D-11)
-- [ ] 94.1-04-PLAN.md — Alembic migration (benchmark_metric ENUM + user_benchmark_percentiles table) + ORM model + repository
+- [x] 94.1-03-PLAN.md — Extract shared canonical_slice_sql module; refactor gen_global_percentile_cdf.py consumer (D-11)
+- [x] 94.1-04-PLAN.md — Alembic migration (benchmark_metric ENUM + user_benchmark_percentiles table) + ORM model + repository
 
 **Wave 2** *(blocked on Wave 1)*
 
