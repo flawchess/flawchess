@@ -8,6 +8,14 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Percentile annotations on 4 endgame ΔES rows** (Phase 94). A new "Top X%" chip appears next to four metrics — Endgame Score Gap, Achievable Score Gap, Section 2 Conversion ΔES, Section 2 Parity ΔES — surfacing the user's cohort percentile against the Phase 93 global CDF. Banded color (red <25 / blue 25..75 / green >75), flame tier stack at p≥90 / 95 / 99 (highest tier only), Radix popover with metric-aware copy: skill-isolating framing for the three low-effect metrics (Endgame Score Gap, Achievable Score Gap, Parity ΔES) and improvement-focus framing for Conversion ΔES (the high-effect metric that tracks rating closely). Backend gates each percentile at `n ≥ 10` (the existing `PVALUE_RELIABILITY_MIN_N` reliability floor); chips simply don't render when the field is null. Raw % gauges (Conv/Parity/Recov), Recovery ΔES, per-type cards, and the Time Pressure section deliberately keep their existing IQR zone bands and get no chip.
+
+### Changed
+
+- **`ScoreGapRow` layout** (Phase 94). Non-`hasSlots` callers now render via CSS Grid so the new percentile chip can sit at the right edge of the value row on desktop (≥640 px) and on its own line below the bullet chart, left-aligned, on mobile (<640 px). `EndgameTypeCard`'s 3-column variant (`hasSlots`) is unchanged.
+
 ## [v1.18] Import Pipeline Hardening — 2026-05-22
 
 Reactive milestone driven by two production OOM recurrences after v1.17 (FLAWCHESS-56 on 2026-05-16, FLAWCHESS-3Q on 2026-05-21). Phase 90 eliminated the per-batch unique-SQL leak in `_flush_batch` Stage 5 and shipped DB-recovery retry plus a periodic orphan-job reaper. Phase 91 split the import pipeline into two lanes so Stockfish eval no longer blocks the hot path — users see opening explorer, raw WDL, and flag rates within seconds of import start, with eval-dependent metrics filling in via a background cold-drain coroutine. Phase 92 replaced the closed `Recency` string union on the API wire with explicit `from_date` / `to_date` params and added a Custom range… picker. Hotfix PR #139 capped the SQLAlchemy pool, Postgres `max_connections`, and container memory; the production host was upgraded from Hetzner CPX32 to CPX42 (8 vCPU / 16 GB RAM).
