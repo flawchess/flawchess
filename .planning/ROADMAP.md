@@ -138,7 +138,11 @@ Plans:
 
 **Wave 7** *(blocked on Wave 5/6 — rename runs after backfill writes real rows)*
 
-- [ ] 94.1-11-PLAN.md — CR-01: rename `n_games` → `n_cells_floor` (reversible Alembic migration + ORM/repository/service/test renames + HUMAN-UAT)
+- [x] 94.1-11-PLAN.md — CR-01: rename `n_games` → `n_cells_floor` (reversible Alembic migration + ORM/repository/service/test renames + HUMAN-UAT). HUMAN-UAT superseded by Plan 13 (column being dropped); Task 3 (endgameOverview cache invalidation) remains valid and is preserved.
+
+**Wave 8** *(blocked on Wave 7 — supersedes Plan 11's column rename)*
+
+- [ ] 94.1-13-PLAN.md — Drop `n_cells_floor` column entirely; refactor `_compute_metric_for_user` to single `apply_floor=True` query (fixes pre-floor avg bug; user 28 case: +0.1204 → −0.0322 for achievable_score_gap); add active-import gate to `users_with_zero_pending` (prevents Stage B re-fire mid-import); re-backfill dev DB. Gap surfaced during 94.1-11 HUMAN-UAT.
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
 
