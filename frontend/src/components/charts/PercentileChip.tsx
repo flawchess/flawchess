@@ -73,14 +73,16 @@ function PercentileChipPopoverBody({ flavor }: { flavor: PercentileChipFlavor })
     return (
       <p>
         Where you rank vs all players. Mostly independent of rating, reveals endgame ability separate
-        from overall strength.
+        from overall strength. Reflects your career under matched conditions, not the current filtered
+        view.
       </p>
     );
   }
   return (
     <p>
       Where you rank vs all players. Conversion tracks rating closely. If you're in the lower tiers
-      here, this is one of the biggest single improvements available to your ELO.
+      here, this is one of the biggest single improvements available to your ELO. Reflects your career
+      under matched conditions, not the current filtered view.
     </p>
   );
 }

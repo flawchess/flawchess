@@ -177,8 +177,8 @@ describe('PercentileChip', () => {
 const POPOVER_MAX_CHARS = 280;
 
 describe('PercentileChip — canonical-slice tooltip framing (Phase 94.1 D-13)', () => {
-  it.skip('renders skill-isolating popover with canonical-slice clarifier', () => {
-    // Expect Plan 07 to add a phrase clarifying that the chip reflects
+  it('renders skill-isolating popover with canonical-slice clarifier', () => {
+    // Plan 07 (D-13) added a phrase clarifying that the chip reflects
     // the user's career under canonical conditions (not the current filtered
     // view). Any of these substrings satisfy the D-13 requirement:
     //   - "career under matched conditions"
@@ -192,7 +192,7 @@ describe('PercentileChip — canonical-slice tooltip framing (Phase 94.1 D-13)',
     );
   });
 
-  it.skip('renders improvement-focus popover with canonical-slice clarifier', () => {
+  it('renders improvement-focus popover with canonical-slice clarifier', () => {
     // Same canonical-slice framing requirement for improvement-focus flavor.
     renderChip(20, 'improvement-focus');
     fireEvent.click(screen.getByTestId(TID));
@@ -202,7 +202,7 @@ describe('PercentileChip — canonical-slice tooltip framing (Phase 94.1 D-13)',
     );
   });
 
-  it.skip('popover body remains within minimalism budget', () => {
+  it('popover body remains within minimalism budget', () => {
     // Pitfall 7 guard: popover MUST NOT bloat into a methodology paragraph.
     // POPOVER_MAX_CHARS = 280 enforces the 1-2 short-sentence discipline.
     // (feedback_popover_copy_minimalism.md: WHAT + sign convention only,
