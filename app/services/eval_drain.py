@@ -53,7 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.game_repository import count_pending_evals
+from app.repositories.game_repository import count_pending_evals, users_with_zero_pending
 from app.services import engine as engine_service
 from app.services.user_benchmark_percentiles_service import compute_stage_b
 from app.services.zobrist import PlyData
@@ -550,18 +550,21 @@ async def run_eval_drain() -> None:
                 await session.commit()
 
             # Phase 94.1 D-01 / Pitfall 1: Stage B fires for users whose pending-eval
-            # count just transitioned to zero. Group just-drained game_ids by user_id;
-            # for each affected user, query count_pending_evals; only fire when count == 0.
-            # Fresh read session — never share the eval-write session across coroutines.
+            # count just transitioned to zero. Group just-drained game_ids by user_id,
+            # then in ONE aggregated query (WR-01 fix, 94.1-12) filter to users whose
+            # pending-eval count is now zero, then fan-out Stage B.
+            # Fresh read session: never share the eval-write session across coroutines.
             async with async_session_maker() as read_session:
                 user_id_rows = await read_session.execute(
                     select(Game.user_id).distinct().where(Game.id.in_(game_ids))
                 )
                 affected_user_ids = [row[0] for row in user_id_rows.all()]
-                for user_id in affected_user_ids:
-                    pending = await count_pending_evals(read_session, user_id)
-                    if pending == 0:
-                        asyncio.create_task(compute_stage_b(user_id))
+                if affected_user_ids:
+                    zero_pending = await users_with_zero_pending(
+                        read_session, affected_user_ids
+                    )
+                    for uid in zero_pending:
+                        asyncio.create_task(compute_stage_b(uid))
 
         except asyncio.CancelledError:
             # Lifespan shutdown — propagate without retry (cancellation contract
