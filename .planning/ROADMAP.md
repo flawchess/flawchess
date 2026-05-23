@@ -163,6 +163,24 @@ Plans:
 
 **UI hint**: yes (tooltip copy only — no new UI primitives)
 
+**Plans:** 6 plans (single-PR atomic cutover per D-3a)
+
+Plans:
+**Wave 1** *(atomic cutover — three plans, single PR, no incoherent intermediate state)*
+
+- [ ] 94.2-01-PLAN.md — Refactor canonical_slice_sql.py: collapse per-cell to pooled-per-user; drop apply_floor + n_cells_floor + per-row sparse exclusion; add recent-1000-per-TC cap + 36-month recency + snapshot_date kwarg; dedup benchmark cohort by lichess_username per D-1
+- [ ] 94.2-02-PLAN.md — Rewrite gen_global_percentile_cdf.py:_build_metric_breakpoint_query to consume pooled shape; add --snapshot-date CLI flag; regenerate GLOBAL_PERCENTILE_CDF literal against benchmark DB; archive prior 94.1 report; regenerate byte-identical regression goldens
+- [ ] 94.2-03-PLAN.md — Rewrite _compute_metric_for_user to single pooled query; drop apply_floor; preserve Stage A/B trigger contract; update user_benchmark_percentile.py n_games docstring
+
+**Wave 2** *(blocked on Wave 1 — independent downstream updates, parallel-safe)*
+
+- [ ] 94.2-04-PLAN.md — Rewrite .claude/skills/benchmarks/SKILL.md Chapter 1 + Chapter 4 for pooled-per-user methodology; flag 94.1 per-cell content as superseded
+- [ ] 94.2-05-PLAN.md — Widen PercentileChip flavor enum to 4 metric-named variants; rewrite popover body for D-4 disclosure (benchmark composition + recent-games basis + filter independence + per-metric rating-correlation framing per Cohen'''s d); update 4 call sites in EndgameOverallPerformanceSection.tsx + EndgameMetricCard.tsx
+
+**Wave 3** *(blocked on Wave 1 — DB-touching, HUMAN-UAT on prod step)*
+
+- [ ] 94.2-06-PLAN.md — Update backfill_user_percentiles.py _MetricSummary classification for pooled semantics; run dev backfill; HUMAN-UAT checkpoint for prod backfill via bin/prod_db_tunnel.sh
+
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
 
 **Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
