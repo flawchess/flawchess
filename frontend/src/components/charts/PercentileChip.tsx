@@ -94,12 +94,30 @@ export function PercentileChip({
   const [open, setOpen] = React.useState(false);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Clear any pending hover-open timer on unmount so it can't fire setOpen
+  // on an unmounted component (e.g., user mouses over chip then navigates
+  // away within the 100ms delay window).
+  React.useEffect(() => {
+    return () => {
+      if (hoverTimeout.current) {
+        clearTimeout(hoverTimeout.current);
+        hoverTimeout.current = null;
+      }
+    };
+  }, []);
+
   const handleMouseEnter = (): void => {
+    // Clear any previously-scheduled open so a fast mouseenter→mouseleave→
+    // mouseenter cycle doesn't orphan the first timer.
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
     hoverTimeout.current = setTimeout(() => setOpen(true), HOVER_OPEN_DELAY_MS);
   };
 
   const handleMouseLeave = (): void => {
-    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+    if (hoverTimeout.current) {
+      clearTimeout(hoverTimeout.current);
+      hoverTimeout.current = null;
+    }
     setOpen(false);
   };
 

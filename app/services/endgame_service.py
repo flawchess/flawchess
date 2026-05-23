@@ -1379,14 +1379,17 @@ def _compute_score_gap_material(
     # None-safe).
     # No recovery percentile per D-12 (recovery is opponent-confounded; no
     # CDF table shipped in Phase 93).
+    # conv_n / parity_n come from _compute_per_bucket_score_gap as int (not
+    # int|None), so no None-check is needed on them — only the `mean is not
+    # None` guard is load-bearing here.
     section2_score_gap_conv_percentile: float | None = (
         interpolate_percentile("section2_score_gap_conv", conv_mean)
-        if conv_mean is not None and conv_n is not None and conv_n >= PVALUE_RELIABILITY_MIN_N
+        if conv_mean is not None and conv_n >= PVALUE_RELIABILITY_MIN_N
         else None
     )
     section2_score_gap_parity_percentile: float | None = (
         interpolate_percentile("section2_score_gap_parity", parity_mean)
-        if parity_mean is not None and parity_n is not None and parity_n >= PVALUE_RELIABILITY_MIN_N
+        if parity_mean is not None and parity_n >= PVALUE_RELIABILITY_MIN_N
         else None
     )
 
