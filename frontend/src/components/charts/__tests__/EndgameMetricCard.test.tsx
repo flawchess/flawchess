@@ -88,6 +88,7 @@ const DEFAULT_SCORE_GAP_PROPS = {
   scoreGapPValue: 0.001,
   scoreGapCiLow: 0.05,
   scoreGapCiHigh: 0.15,
+  scoreGapPercentile: null as number | null,
 };
 
 describe('EndgameMetricCard — structural render', () => {
@@ -393,11 +394,120 @@ describe('EndgameMetricCard — empty state', () => {
         scoreGapPValue={null}
         scoreGapCiLow={null}
         scoreGapCiHigh={null}
+        scoreGapPercentile={null}
       />,
     );
     expect(screen.queryByText(/Not enough data yet/)).not.toBeNull();
     // No WDL bar, no score-gap bullet
     expect(screen.queryByTestId('mini-wdl-bar')).toBeNull();
     expect(screen.queryByTestId('tile-conversion-score-gap-bullet')).toBeNull();
+  });
+});
+
+// ── Phase 94 PCTL-03/04/06: percentile chip rendering + bucket-flavor routing
+describe('EndgameMetricCard — percentile chip wiring', () => {
+  it('renders chip with improvement-focus flavor on bucket="conversion" when scoreGapPercentile non-null', () => {
+    render(
+      <EndgameMetricCard
+        bucket="conversion"
+        row={buildRow()}
+        sharePct={45.5}
+        tileTestId="tile-conversion"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.10}
+        scoreGapN={100}
+        scoreGapPValue={0.001}
+        scoreGapCiLow={0.05}
+        scoreGapCiHigh={0.15}
+        scoreGapPercentile={20}
+      />,
+    );
+    const chip = screen.getByTestId('tile-conversion-percentile-chip');
+    expect(chip).not.toBeNull();
+    // Trigger hover to open popover with improvement-focus copy.
+    chip.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    // The popover body uses the "Conversion tracks rating closely" string for
+    // improvement-focus flavor (see PercentileChip.tsx).
+    // Aria label includes "Top X%" (100 - 20 = Top 80%).
+    expect(chip.getAttribute('aria-label')).toMatch(/Conversion Score Gap percentile/);
+  });
+
+  it('renders chip with skill-isolating flavor on bucket="parity" when scoreGapPercentile non-null', () => {
+    render(
+      <EndgameMetricCard
+        bucket="parity"
+        row={buildRow({ bucket: 'parity', score: 0.50 })}
+        sharePct={30}
+        tileTestId="tile-parity"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.08}
+        scoreGapN={50}
+        scoreGapPValue={0.01}
+        scoreGapCiLow={0.02}
+        scoreGapCiHigh={0.14}
+        scoreGapPercentile={73}
+      />,
+    );
+    const chip = screen.getByTestId('tile-parity-percentile-chip');
+    expect(chip).not.toBeNull();
+    expect(chip.getAttribute('aria-label')).toMatch(/Parity Score Gap percentile/);
+  });
+
+  it('does NOT render chip on bucket="recovery" even when scoreGapPercentile is non-null (defensive D-12 / Pitfall 5 guard)', () => {
+    render(
+      <EndgameMetricCard
+        bucket="recovery"
+        row={buildRow({ bucket: 'recovery', win_pct: 30, draw_pct: 20, loss_pct: 50, score: 0.40 })}
+        sharePct={25}
+        tileTestId="tile-recovery"
+        titleTooltip="Test tooltip"
+        scoreGapMean={-0.03}
+        scoreGapN={40}
+        scoreGapPValue={0.3}
+        scoreGapCiLow={-0.10}
+        scoreGapCiHigh={0.04}
+        scoreGapPercentile={42}
+      />,
+    );
+    // Even with a non-null percentile, the recovery card must render no chip.
+    expect(screen.queryByTestId('tile-recovery-percentile-chip')).toBeNull();
+  });
+
+  it('does NOT render chip on bucket="conversion" when scoreGapPercentile is null', () => {
+    render(
+      <EndgameMetricCard
+        bucket="conversion"
+        row={buildRow()}
+        sharePct={45.5}
+        tileTestId="tile-conversion"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.10}
+        scoreGapN={100}
+        scoreGapPValue={0.001}
+        scoreGapCiLow={0.05}
+        scoreGapCiHigh={0.15}
+        scoreGapPercentile={null}
+      />,
+    );
+    expect(screen.queryByTestId('tile-conversion-percentile-chip')).toBeNull();
+  });
+
+  it('does NOT render chip on bucket="parity" when scoreGapPercentile is null', () => {
+    render(
+      <EndgameMetricCard
+        bucket="parity"
+        row={buildRow({ bucket: 'parity', score: 0.50 })}
+        sharePct={30}
+        tileTestId="tile-parity"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.08}
+        scoreGapN={50}
+        scoreGapPValue={0.01}
+        scoreGapCiLow={0.02}
+        scoreGapCiHigh={0.14}
+        scoreGapPercentile={null}
+      />,
+    );
+    expect(screen.queryByTestId('tile-parity-percentile-chip')).toBeNull();
   });
 });

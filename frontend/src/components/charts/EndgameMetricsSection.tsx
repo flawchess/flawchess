@@ -110,6 +110,7 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
           scoreGapPValue={data.section2_score_gap_conv_p_value}
           scoreGapCiLow={data.section2_score_gap_conv_ci_low}
           scoreGapCiHigh={data.section2_score_gap_conv_ci_high}
+          scoreGapPercentile={data.section2_score_gap_conv_percentile}
           tileTestId={TILE_TESTIDS['conversion']}
           titleTooltip={TITLE_TOOLTIPS['conversion']}
         />
@@ -125,6 +126,7 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
           scoreGapPValue={data.section2_score_gap_parity_p_value}
           scoreGapCiLow={data.section2_score_gap_parity_ci_low}
           scoreGapCiHigh={data.section2_score_gap_parity_ci_high}
+          scoreGapPercentile={data.section2_score_gap_parity_percentile}
           tileTestId={TILE_TESTIDS['parity']}
           titleTooltip={TITLE_TOOLTIPS['parity']}
         />
@@ -140,6 +142,10 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
           scoreGapPValue={data.section2_score_gap_recov_p_value}
           scoreGapCiLow={data.section2_score_gap_recov_ci_low}
           scoreGapCiHigh={data.section2_score_gap_recov_ci_high}
+          // Phase 94 D-12: recovery percentile is intentionally `null` — the
+          // recovery CDF is not shipped. EndgameMetricCard ALSO guards on
+          // `bucket !== 'recovery'` defensively (Pitfall 5).
+          scoreGapPercentile={null}
           tileTestId={TILE_TESTIDS['recovery']}
           titleTooltip={TITLE_TOOLTIPS['recovery']}
         />

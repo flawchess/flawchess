@@ -38,6 +38,7 @@ import {
 } from '@/generated/endgameZones';
 import type { MaterialBucket, MaterialRow } from '@/types/endgames';
 
+import { PercentileChip } from './PercentileChip';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
 import { deriveLevel } from './EndgameOverallShared';
 
@@ -70,6 +71,12 @@ interface EndgameMetricCardProps {
   scoreGapPValue: number | null;
   scoreGapCiLow: number | null;
   scoreGapCiHigh: number | null;
+  /** Phase 94 (PCTL-03/04): cohort percentile [0,100] sourced from
+   *  ScoreGapMaterialResponse.section2_score_gap_{conv,parity}_percentile.
+   *  Caller (EndgameMetricsSection) MUST pass `null` for the recovery card —
+   *  the chip-render conditional below ALSO guards on `bucket !== 'recovery'`
+   *  as a defensive second layer (Pitfall 5). */
+  scoreGapPercentile: number | null;
   /** Container data-testid (e.g. "tile-conversion"). Sub-element testids derive
    * from this: `${tileTestId}-score-gap-bullet`, `${tileTestId}-score-gap-value`,
    * `${tileTestId}-score-gap-info`. */
@@ -87,6 +94,7 @@ export function EndgameMetricCard({
   scoreGapPValue,
   scoreGapCiLow,
   scoreGapCiHigh,
+  scoreGapPercentile,
   tileTestId,
   titleTooltip,
 }: EndgameMetricCardProps) {
@@ -220,6 +228,16 @@ export function EndgameMetricCard({
                   neutralMax={displayedNeutralMax}
                   ciLow={scoreGapCiLow != null ? scoreGapCiLow + displayShift : undefined}
                   ciHigh={scoreGapCiHigh != null ? scoreGapCiHigh + displayShift : undefined}
+                  chipSlot={
+                    scoreGapPercentile != null && bucket !== 'recovery' ? (
+                      <PercentileChip
+                        percentile={scoreGapPercentile}
+                        flavor={bucket === 'conversion' ? 'improvement-focus' : 'skill-isolating'}
+                        metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
+                        testId={`${tileTestId}-percentile-chip`}
+                      />
+                    ) : undefined
+                  }
                   tooltip={
                     <MetricStatPopover
                       name={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
