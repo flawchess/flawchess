@@ -36,8 +36,10 @@ from __future__ import annotations
 import datetime
 import uuid
 
+from typing import cast
+
 import pytest
-from sqlalchemy import delete, text
+from sqlalchemy import Table, delete, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.models.benchmark_ingest_checkpoint import BenchmarkIngestCheckpoint
@@ -69,17 +71,11 @@ async def _ensure_benchmark_tables(test_engine) -> None:
     is used by scripts/import_benchmark_users.py:_ensure_checkpoint_table.
     Idempotent (checkfirst=True).
     """
+    selected_table = cast(Table, BenchmarkSelectedUser.__table__)
+    checkpoint_table = cast(Table, BenchmarkIngestCheckpoint.__table__)
     async with test_engine.begin() as conn:
-        await conn.run_sync(
-            lambda sync_conn: BenchmarkSelectedUser.__table__.create(
-                sync_conn, checkfirst=True
-            )
-        )
-        await conn.run_sync(
-            lambda sync_conn: BenchmarkIngestCheckpoint.__table__.create(
-                sync_conn, checkfirst=True
-            )
-        )
+        await conn.run_sync(lambda sync_conn: selected_table.create(sync_conn, checkfirst=True))
+        await conn.run_sync(lambda sync_conn: checkpoint_table.create(sync_conn, checkfirst=True))
 
 
 async def _seed_user_with_canonical_games(
@@ -219,9 +215,7 @@ async def _seed_user_with_canonical_games(
     return user_id
 
 
-async def _seed_benchmark_membership(
-    session_maker, *, lichess_username: str
-) -> None:
+async def _seed_benchmark_membership(session_maker, *, lichess_username: str) -> None:
     """Register the seeded user in benchmark_selected_users + completed checkpoint."""
     async with session_maker() as session:
         session.add(
@@ -286,9 +280,7 @@ async def test_score_gap_per_user_matches_benchmark_aggregation(test_engine) -> 
             )
             seeded_user_ids.append(user_id)
             seeded_usernames.append(uname)
-            await _seed_benchmark_membership(
-                test_session_maker, lichess_username=uname
-            )
+            await _seed_benchmark_membership(test_session_maker, lichess_username=uname)
 
         # The shared CTE block exposes `per_user_values` (with sparse-cell
         # exclusion applied) but the benchmark-source build does NOT carry
@@ -299,9 +291,7 @@ async def test_score_gap_per_user_matches_benchmark_aggregation(test_engine) -> 
         # non_eg_score) and re-apply the sparse-cell exclusion inline so the
         # filter matches per_user_values's WHERE clause exactly.
         su_benchmark = selected_users_cte(source="benchmark")
-        per_user_benchmark = per_user_cte_for(
-            "score_gap", source="benchmark", apply_floor=True
-        )
+        per_user_benchmark = per_user_cte_for("score_gap", source="benchmark", apply_floor=True)
         benchmark_sql = (
             f"WITH {su_benchmark},\n{per_user_benchmark}\n"
             "SELECT user_id, avg(eg_score - non_eg_score)::float AS value\n"
@@ -315,9 +305,7 @@ async def test_score_gap_per_user_matches_benchmark_aggregation(test_engine) -> 
 
         # Single-user path: run per_user_cte_for for each seeded user.
         su_single = selected_users_cte(source="single_user")
-        per_user_single = per_user_cte_for(
-            "score_gap", source="single_user", apply_floor=True
-        )
+        per_user_single = per_user_cte_for("score_gap", source="single_user", apply_floor=True)
         single_sql = (
             f"WITH {su_single},\n{per_user_single}\n"
             "SELECT avg(metric_value)::float AS value\n"
@@ -326,9 +314,7 @@ async def test_score_gap_per_user_matches_benchmark_aggregation(test_engine) -> 
         single_by_uid: dict[int, float | None] = {}
         async with test_session_maker() as session:
             for uid in seeded_user_ids:
-                res = await session.execute(
-                    text(single_sql).bindparams(user_id=uid)
-                )
+                res = await session.execute(text(single_sql).bindparams(user_id=uid))
                 row = res.fetchone()
                 single_by_uid[uid] = row.value if row is not None else None
 
@@ -340,9 +326,7 @@ async def test_score_gap_per_user_matches_benchmark_aggregation(test_engine) -> 
                 f"benchmark path produced no value for user_id={uid} — seed "
                 f"did not land in the benchmark cohort"
             )
-            assert su_val is not None, (
-                f"single_user path produced no value for user_id={uid}"
-            )
+            assert su_val is not None, f"single_user path produced no value for user_id={uid}"
             assert abs(bm_val - su_val) < _FLOAT_EPSILON, (
                 f"score_gap parity violation for user_id={uid}: "
                 f"benchmark={bm_val!r}, single_user={su_val!r}"

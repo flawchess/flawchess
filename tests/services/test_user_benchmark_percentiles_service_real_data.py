@@ -40,7 +40,6 @@ from app.models.user import User
 from app.repositories.user_benchmark_percentiles_repository import fetch_for_user
 from app.services.user_benchmark_percentiles_service import (
     STAGE_A_METRIC,
-    STAGE_B_METRICS,
     compute_stage_a,
     compute_stage_b,
 )
@@ -198,9 +197,7 @@ async def _seed_canonical_slice_user(
                 mod = rel % 10
                 user_won = mod < 3
                 is_draw = mod == 3
-            result = _result_for(
-                user_color=user_color, user_won=user_won, is_draw=is_draw
-            )
+            result = _result_for(user_color=user_color, user_won=user_won, is_draw=is_draw)
             game = _make_game(
                 user_id=user_id,
                 user_color=user_color,
@@ -314,8 +311,7 @@ async def test_compute_stage_a_writes_row_for_qualifying_user(real_data_user) ->
     # fmt: on
     row = result[STAGE_A_METRIC]
     assert row.cdf_snapshot == datetime.date.today(), (
-        f"cdf_snapshot expected date.today() ({datetime.date.today()}), "
-        f"got {row.cdf_snapshot!r}"
+        f"cdf_snapshot expected date.today() ({datetime.date.today()}), got {row.cdf_snapshot!r}"
     )
     assert row.n_games >= 0, f"n_games must be non-negative, got {row.n_games!r}"
 
@@ -391,12 +387,10 @@ async def test_compute_stage_a_idempotent_upsert(real_data_user) -> None:
         f"Stage A re-run drifted value: {first_row.value!r} -> {second_row.value!r}"
     )
     assert second_row.percentile == first_row.percentile, (
-        f"Stage A re-run drifted percentile: "
-        f"{first_row.percentile!r} -> {second_row.percentile!r}"
+        f"Stage A re-run drifted percentile: {first_row.percentile!r} -> {second_row.percentile!r}"
     )
     assert second_row.n_games == first_row.n_games, (
-        f"Stage A re-run drifted n_games: "
-        f"{first_row.n_games!r} -> {second_row.n_games!r}"
+        f"Stage A re-run drifted n_games: {first_row.n_games!r} -> {second_row.n_games!r}"
     )
 
 

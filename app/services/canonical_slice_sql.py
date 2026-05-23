@@ -140,10 +140,7 @@ def selected_users_cte(*, source: Literal["benchmark", "single_user"]) -> str:
     #    the column did not exist on the single_user CTE; adding
     #    `NULL::text AS tc_bucket` here unblocks it without disturbing the
     #    benchmark consumer (REVIEW.md WR-03).
-    return (
-        "selected_users AS (SELECT CAST(:user_id AS int) AS user_id, "
-        "NULL::text AS tc_bucket)"
-    )
+    return "selected_users AS (SELECT CAST(:user_id AS int) AS user_id, NULL::text AS tc_bucket)"
 
 
 def elo_bucket_expr(user_elo_alias: str) -> str:
