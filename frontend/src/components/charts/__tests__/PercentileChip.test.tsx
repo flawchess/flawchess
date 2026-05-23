@@ -82,22 +82,30 @@ describe('PercentileChip', () => {
   });
 
   // ── Band-color dispatch ──
+  // jsdom normalizes `oklch(0.50 ...)` to `oklch(0.5 ...)`, so we extract the
+  // numeric triplet and compare against the theme constant's parsed triplet.
+  function parseOklch(s: string): readonly [number, number, number] | null {
+    const m = s.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)/);
+    if (!m) return null;
+    return [Number(m[1]), Number(m[2]), Number(m[3])] as const;
+  }
+
   it('routes red band background for percentile=10', () => {
     renderChip(10);
     const chip = screen.getByTestId(TID);
-    expect(chip.style.backgroundColor).toBe(ZONE_DANGER);
+    expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_DANGER));
   });
 
   it('routes blue neutral band for percentile=50', () => {
     renderChip(50);
     const chip = screen.getByTestId(TID);
-    expect(chip.style.backgroundColor).toBe(GAUGE_NEUTRAL);
+    expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(GAUGE_NEUTRAL));
   });
 
   it('routes green band for percentile=85', () => {
     renderChip(85);
     const chip = screen.getByTestId(TID);
-    expect(chip.style.backgroundColor).toBe(ZONE_SUCCESS);
+    expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_SUCCESS));
   });
 
   // ── Flame tier dispatch (highest tier only) ──
