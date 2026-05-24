@@ -164,9 +164,7 @@ def test_pooled_per_tc_cte_contains_per_tc_predicate(metric_id: str) -> None:
     """Every per-TC builder output must contain the per-TC predicate (D-10 invariant)."""
     # Derive the expected tc from the metric_id suffix.
     tc = metric_id.rsplit("_", 1)[-1]
-    assert tc in {"bullet", "blitz", "rapid", "classical"}, (
-        f"unexpected tc suffix on {metric_id}"
-    )
+    assert tc in {"bullet", "blitz", "rapid", "classical"}, f"unexpected tc suffix on {metric_id}"
     for source in _SOURCES:
         sql = per_user_cte_for(metric_id, source=source)  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
         assert f"g.time_control_bucket = '{tc}'" in sql, (

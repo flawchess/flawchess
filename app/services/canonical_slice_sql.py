@@ -853,7 +853,5 @@ def per_user_cte_for(
     if metric_id == "net_flag_rate_rapid":
         return per_user_cte_net_flag_rate("rapid", source=source, snapshot_date=snapshot_date)
     if metric_id == "net_flag_rate_classical":
-        return per_user_cte_net_flag_rate(
-            "classical", source=source, snapshot_date=snapshot_date
-        )
+        return per_user_cte_net_flag_rate("classical", source=source, snapshot_date=snapshot_date)
     raise ValueError(f"Unknown metric_id: {metric_id!r}")

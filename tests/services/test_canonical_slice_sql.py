@@ -389,9 +389,7 @@ class TestRecentCappedPerTcCte:
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
     def test_emits_per_tc_predicate(self, tc: TimeControlBucket) -> None:
         sql = _recent_capped_per_tc_cte(snapshot_date=None, tc=tc)
-        assert f"g.time_control_bucket = '{tc}'" in sql, (
-            f"per-TC predicate missing for tc={tc!r}"
-        )
+        assert f"g.time_control_bucket = '{tc}'" in sql, f"per-TC predicate missing for tc={tc!r}"
 
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
     def test_partition_collapses_to_per_user(self, tc: TimeControlBucket) -> None:
@@ -399,13 +397,12 @@ class TestRecentCappedPerTcCte:
         sql = _recent_capped_per_tc_cte(snapshot_date=None, tc=tc)
         normalised = " ".join(sql.split())
         assert (
-            "row_number() OVER (PARTITION BY g.user_id ORDER BY g.played_at DESC)"
-            in normalised
+            "row_number() OVER (PARTITION BY g.user_id ORDER BY g.played_at DESC)" in normalised
         ), f"partition should collapse to per-user for tc={tc!r}"
         # The full per-(user, tc) partition from `_recent_capped_cte` must NOT appear here.
-        assert (
-            "PARTITION BY g.user_id, g.time_control_bucket" not in normalised
-        ), f"per-(user, TC) partition leaked into per-TC variant for tc={tc!r}"
+        assert "PARTITION BY g.user_id, g.time_control_bucket" not in normalised, (
+            f"per-(user, TC) partition leaked into per-TC variant for tc={tc!r}"
+        )
 
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
     def test_cap_present(self, tc: TimeControlBucket) -> None:
@@ -445,12 +442,12 @@ class TestPerTcBuilders:
         sql = per_user_cte_time_pressure_score_gap(tc, source=source)
         normalised = " ".join(sql.split())
         assert f"g.time_control_bucket = '{tc}'" in sql
-        assert (
-            "HAVING count(*) FILTER (WHERE user_clock_pct < 0.40) >= 30" in normalised
-        ), "user-pressured ≥30 HAVING gate missing"
-        assert (
-            "count(*) FILTER (WHERE opp_clock_pct < 0.40) >= 30" in normalised
-        ), "opp-pressured ≥30 HAVING gate missing"
+        assert "HAVING count(*) FILTER (WHERE user_clock_pct < 0.40) >= 30" in normalised, (
+            "user-pressured ≥30 HAVING gate missing"
+        )
+        assert "count(*) FILTER (WHERE opp_clock_pct < 0.40) >= 30" in normalised, (
+            "opp-pressured ≥30 HAVING gate missing"
+        )
         # per_user_values shape
         pv_idx = sql.find("per_user_values")
         assert pv_idx != -1
@@ -481,9 +478,7 @@ class TestPerTcBuilders:
     ) -> None:
         from app.services.canonical_slice_sql import per_user_cte_net_flag_rate
 
-        sql = per_user_cte_net_flag_rate(
-            tc, source=source, snapshot_date=date(2026, 3, 31)
-        )
+        sql = per_user_cte_net_flag_rate(tc, source=source, snapshot_date=date(2026, 3, 31))
         assert f"g.time_control_bucket = '{tc}'" in sql
         assert "DATE '2026-03-31'" in sql, "snapshot_date should be threaded through"
         assert "HAVING count(*) >= 30" in sql
@@ -498,9 +493,7 @@ class TestPerTcDispatcher:
     """``per_user_cte_for`` widened with 12 new dispatch arms (Plan B Task 2)."""
 
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
-    def test_dispatcher_routes_time_pressure_score_gap(
-        self, tc: TimeControlBucket
-    ) -> None:
+    def test_dispatcher_routes_time_pressure_score_gap(self, tc: TimeControlBucket) -> None:
         metric_id = f"time_pressure_score_gap_{tc}"
         sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # 12 new metric IDs are widened in Plan C; Plan B dispatcher matches string literals
         normalised = " ".join(sql.split())
@@ -533,15 +526,11 @@ class TestPerTcDispatcher:
         """Parametrised over all 12 (metric × TC) cells (Plan B Task 2 Test 8)."""
         metric_id = f"{metric_family}_{tc}"
         sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
-        assert f"g.time_control_bucket = '{tc}'" in sql, (
-            f"per-TC predicate missing for {metric_id}"
-        )
+        assert f"g.time_control_bucket = '{tc}'" in sql, f"per-TC predicate missing for {metric_id}"
         # Metric-specific floor signature.
         if metric_family == "time_pressure_score_gap":
             assert "HAVING count(*) FILTER" in sql, (
                 f"per-pressure-cell HAVING missing for {metric_id}"
             )
         else:
-            assert "HAVING count(*) >= 30" in sql, (
-                f"pooled ≥30 HAVING missing for {metric_id}"
-            )
+            assert "HAVING count(*) >= 30" in sql, f"pooled ≥30 HAVING missing for {metric_id}"
