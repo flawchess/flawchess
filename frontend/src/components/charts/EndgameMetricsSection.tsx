@@ -99,7 +99,7 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
           DOM order: Conv -> Parity -> Recov. The Skill card slot + ConnectorArrows
           SVG overlay were deleted in Phase 87.4 D-05; the row sits cleanly in
           a flow grid with no `relative` positioning needed. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-2">
         {/* Conversion card */}
         <EndgameMetricCard
           key="conversion"
