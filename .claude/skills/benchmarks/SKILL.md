@@ -303,6 +303,8 @@ Then for each pair `(a, b)`: `pooled_sd = sqrt(((n_a-1)*var_a + (n_b-1)*var_b) /
 2. **ELO marginal** — 5 rows (800/1200/1600/2000/2400) pooled across TC, excluding the sparse cell. Columns: `n_users / mean / SD / p25 / p50 / p75` (plus `p05 / p95` for distributions with wide tails).
 3. **TC marginal** — 4 rows (bullet/blitz/rapid/classical) pooled across ELO, excluding the sparse cell. Same columns.
 
+Plus a **pooled distribution table** (single row: `n / mean / SD / p05 / p25 / p50 / p75 / p95`) — the one that feeds the cohort-band recommendation. This is the fourth mandatory table for every per-user metric.
+
 Then the collapse verdict block:
 
 ```
@@ -314,6 +316,61 @@ Then the collapse verdict block:
 Score heatmaps render as percent; eval heatmaps render as integer cp (e.g. `+25 / −10 / +18 / +4`); score-gap heatmaps render as `pp` per the display-formatting rules above.
 
 **"Where applicable" exceptions:** subchapters with intrinsically different structure (e.g. 3.4.1 / 3.4.2 / 3.4.3 partition by endgame class; 3.3.2 partitions by time-pressure bucket; 3.2.2 partitions by entry bucket) emit the per-partition equivalent — one p50 cell table + ELO marginal + TC marginal **per partition** (class / bucket / time-bin). The principle is unconditional: the reader must always see the cell-level p50 grid plus both marginals for every metric, just sliced by the subchapter's natural partition. Sub-table suppression for cells below `n_users` floor is fine; skipping marginals entirely is not.
+
+##### Rendering rule — MARKDOWN TABLES, NOT PROSE LISTS (hard rule)
+
+The p50 cell grid, ELO marginal, TC marginal, and pooled distribution MUST be rendered as **GitHub-flavored markdown tables** (pipe-delimited, header + `---` separator row). Do **NOT** collapse them into single-line prose summaries like `ELO marginal (cp): 800 n764 m0 SD88 · 1200 n1093 m+7 SD70 · …`. The middle-dot bullet form is unscannable, defeats column alignment, and silently drops most of the per-level statistics (p25/p75/p05/p95). Every numeric breakdown that has a row/column structure goes into a markdown table — there is no token-budget exception. If the recommendation prose still fits, the tables fit too.
+
+**Canonical templates** (use as drop-in skeletons — copy the column set verbatim, fill in the values):
+
+Pooled distribution (1 row):
+
+```markdown
+| n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2,025 | 52.1% | 7.5% | 38.4% | 46.4% | 51.9% | 57.2% | 66.9% |
+```
+
+ELO marginal (5 rows, sparse-excluded):
+
+```markdown
+| ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 800 | 342 | 51.7% | 6.8% | 40.1% | 47.2% | 51.8% | 56.5% | 64.4% |
+| 1200 | 484 | 51.9% | 7.2% | … | 46.4% | 51.9% | 56.8% | … |
+| 1600 | 501 | 51.7% | 7.0% | … | 45.4% | 51.5% | 56.8% | … |
+| 2000 | 414 | 52.8% | 7.4% | … | 47.1% | 52.3% | 58.4% | … |
+| 2400 | 262 | 52.3% | 7.3% | … | 46.8% | 52.3% | 57.9% | … |
+```
+
+TC marginal (4 rows, sparse-excluded):
+
+```markdown
+| TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 614 | 51.2% | … | … | 46.3% | 51.2% | 56.1% | … |
+| blitz | 611 | 51.7% | … | … | 46.0% | 51.8% | 56.8% | … |
+| rapid | 584 | 52.6% | … | … | 46.7% | 52.2% | 58.1% | … |
+| classical | 194 | 54.4% | … | … | 47.8% | 53.9% | 61.5% | … |
+```
+
+p50 cell grid (5×4 with `p50 (n_users)`):
+
+```markdown
+| ELO \ TC | bullet | blitz | rapid | classical |
+|---:|---:|---:|---:|---:|
+| 800 | 51.0 (137) | 51.5 (126) | 52.1 (162) | 53.0 (140) |
+| 1200 | … | … | … | … |
+| 1600 | … | … | … | … |
+| 2000 | … | … | … | … |
+| 2400 | … | … | … | 53.0 (6)* |
+```
+
+`p05/p95` columns can be omitted from marginal tables for tight-distribution metrics (Cohen's d / score) but MUST be included for wide-tail distributions (eval cp, score gaps in pp). When in doubt, include them.
+
+For multi-metric subchapters (e.g. 3.2.1 Conv/Parity/Recovery — 4 metrics × 3 tables = 12 tables), emit all 12. Prose summaries can accompany the tables, but never replace them. The headline collapse-verdict summary table (chapter end) is a separate deliverable and does NOT substitute for per-subchapter marginals.
+
+**Prose is reserved for** narrative interpretation (what the numbers mean, recommendations, caveats), not for transmitting the numbers themselves. If you find yourself writing `metric (unit): level1 statA · level2 statA · …`, stop and emit a markdown table instead.
 
 ### Equal-footing opponent filter (all subchapters)
 
