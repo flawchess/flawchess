@@ -201,8 +201,9 @@ describe('PercentileChip — D-4 popover disclosure (Phase 94.2)', () => {
     expect(body).toMatch(/most recent 1000 rated games/i);
     expect(body).toMatch(/opponents of similar strength/i);
     expect(body).toMatch(/UI filters do not affect/i);
-    // Paragraph 1 now incorporates metricLabel and a "better than X%" framing.
-    expect(body).toMatch(/Your Endgame Score Gap is better than 73% of/i);
+    // Paragraph 1 now uses the "among the top/bottom X%" framing — at p=73
+    // (above median) the chip reads "top 27%", so the popover does too.
+    expect(body).toMatch(/Your Endgame Score Gap is among the top 27% of/i);
   });
 
   it('flavor=score-gap notes the metric is rating-invariant (no rating-coupling framing)', () => {
@@ -369,14 +370,14 @@ describe('PercentileChip — per-TC popover (Phase 94.3)', () => {
 
   // ── D-13: TC-scoped bullets 1 and 2 for per-TC flavors ──
   it.each(PER_TC_FLAVORS)(
-    'per-TC flavor=$flavor: bullet 1 mentions the TC name in "in $tcLabel, all ratings"',
+    'per-TC flavor=$flavor: bullet 1 mentions the TC name in "in $tcLabel"',
     ({ flavor, tcLabel, metricLabel }) => {
       renderChipFor(40, flavor, metricLabel);
       fireEvent.click(screen.getByTestId(TID));
       const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-      // For lower_is_better the leading prepended line uses TC too; we still
-      // expect "in {tc}, all ratings" to appear in bullet 1 verbatim.
-      expect(body).toContain(`in ${tcLabel}, all ratings`);
+      // Bullet 1 reads "...benchmarked Lichess players in {tc}." — TC scope
+      // must appear verbatim on every per-TC flavor.
+      expect(body).toContain(`benchmarked Lichess players in ${tcLabel}`);
     },
   );
 

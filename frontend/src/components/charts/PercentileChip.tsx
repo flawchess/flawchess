@@ -83,12 +83,21 @@ function recentGamesBasisFor(tc: string | undefined): string {
 }
 
 /**
- * "Better than X%" display number. Mirrors `formatTopXPercent`'s floor so
- * the two phrasings stay consistent: at p=99.9 the chip says "Top 1%" and
- * the popover says "better than 99%" (not "better than 100%").
+ * Returns the "bottom/top X%" framing used in popover bullet 1, mirroring the
+ * chip-face logic in `formatTopXPercent`: pct ≤ 50 → "bottom X%", pct > 50 →
+ * "top (100−X)%" for `higher_is_better`; symmetrically inverted for
+ * `lower_is_better`. Both branches floor at 1% so the popover never reads
+ * "bottom 0%" / "top 0%" at edge percentiles.
  */
-function formatBetterThanPercent(pct: number): string {
-  return `${Math.max(0, Math.min(99, Math.round(pct)))}%`;
+function formatBottomOrTopPhrase(
+  pct: number,
+  direction: PercentileChipDirection,
+): { kind: 'bottom' | 'top'; value: number } {
+  const isLowHalf = pct <= PERCENTILE_MEDIAN;
+  const isBottom =
+    direction === 'higher_is_better' ? isLowHalf : !isLowHalf;
+  const rawValue = isLowHalf ? pct : 100 - pct;
+  return { kind: isBottom ? 'bottom' : 'top', value: Math.max(MIN_PERCENT, Math.round(rawValue)) };
 }
 
 /**
@@ -317,22 +326,20 @@ function PercentileChipPopoverBody({
   const ratingNote = RATING_NOTE_BY_FLAVOR[flavor];
   const tc = tcFromFlavor(flavor);
   const isLowerBetter = direction === 'lower_is_better';
-  // Phase 94.3 CR-01 fix: "cohort outranked" is the single source of truth for
-  // every copy line. Backend `percentile` is the position in ascending sort by
-  // raw value; for lower_is_better metrics the user beats `100 - percentile`
-  // of cohort (a p5 net-flag user beats 95% of cohort, not 5%). Without this
-  // inversion, bullet-1 contradicted the chip face for net_flag_rate chips.
-  const cohortOutranked = isLowerBetter ? 100 - percentile : percentile;
   // Phase 94.3 D-3: Net Flag chips prepend a "Lower is better" line. Only
-  // ever fires for the 4 net_flag_rate_{tc} flavors (the only lower_is_better
-  // flavors); `tc` is always defined alongside.
+  // ever fires for `lower_is_better` flavors (none today after the UAT fix).
   const lowerBetterLine = isLowerBetter && tc !== undefined
-    ? `Lower is better, you have fewer net timeouts than ${formatBetterThanPercent(cohortOutranked)} of ${tc} players.`
+    ? `Lower is better — you have fewer net timeouts than most ${tc} players.`
     : null;
-  // Phase 94.3 D-13: bullet 1 becomes TC-scoped for the 12 per-TC flavors.
-  const bullet1 = tc !== undefined
-    ? `Your ${metricLabel} is better than ${formatBetterThanPercent(cohortOutranked)} of benchmarked Lichess players in ${tc}, all ratings.`
-    : `Your ${metricLabel} is better than ${formatBetterThanPercent(cohortOutranked)} of benchmarked Lichess players of all ELO ratings and time controls.`;
+  // Bullet 1 mirrors the chip face: "bottom X%" below the median, "top X%"
+  // above. The cohort scope reads as "in <tc>" for the 12 per-TC flavors and
+  // "of all ELO ratings and time controls" for the 4 pooled (Phase 94.2)
+  // flavors so the wording stays accurate against what the percentile spans.
+  const phrase = formatBottomOrTopPhrase(percentile, direction);
+  const cohortScope = tc !== undefined
+    ? `the benchmarked Lichess players in ${tc}`
+    : 'the benchmarked Lichess players of all ELO ratings and time controls';
+  const bullet1 = `Your ${metricLabel} is among the ${phrase.kind} ${phrase.value}% of ${cohortScope}.`;
   return (
     <div className="space-y-1.5">
       {lowerBetterLine !== null && <p>{lowerBetterLine}</p>}
