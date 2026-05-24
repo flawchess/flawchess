@@ -1,103 +1,147 @@
-"""Regression gate: gen_global_percentile_cdf._build_metric_breakpoint_query output.
+"""Phase 94.2 canary: ensures ``_build_metric_breakpoint_query`` SQL output is stable.
 
-Phase 94.1 Plan 01 Wave 0.
+Drift here means a downstream consumer (``gen_global_percentile_cdf.py`` /
+``user_benchmark_percentiles_service.py``) will produce inconsistent numbers
+across the two paths. The byte-identical regression test asserts that the
+SQL string emitted by ``_build_metric_breakpoint_query(metric_id,
+snapshot_date=date(2026, 3, 31))`` is bytewise equal to the goldens below
+for every CdfMetricId.
 
-Purpose: After Plan 03 extracts the shared SQL helpers into
-``app/services/canonical_slice_sql.py`` and refactors
-``scripts/gen_global_percentile_cdf.py`` to consume that shared module, the
-output of ``_build_metric_breakpoint_query(metric_id)`` for each of the 4
-CdfMetricId values MUST remain byte-identical to the pre-refactor snapshot
-captured here.
+Regenerating goldens
+--------------------
 
-This test is skipped until Plan 03 ships (see ``@pytest.mark.skip`` below).
-Once Plan 03 lands, remove the skip marker — if the refactor was clean, the
-test will pass immediately.
+When the pooled SQL surface changes intentionally (e.g. a future inclusion
+floor adjustment or recency-window tweak), re-run::
 
-TODO (Plan 03): remove the ``@pytest.mark.skip`` decorator once
-``gen_global_percentile_cdf.py`` has been refactored to import from
-``app/services/canonical_slice_sql.py``.
+    uv run python -c "from datetime import date; \
+      from scripts.gen_global_percentile_cdf import _build_metric_breakpoint_query; \
+      import sys; \
+      [sys.stdout.write(repr(m) + '\\n' + repr(_build_metric_breakpoint_query(m, snapshot_date=date(2026, 3, 31))) + '\\n\\n') for m in ('score_gap','achievable_score_gap','section2_score_gap_conv','section2_score_gap_parity')]"
+
+and paste the four strings back into ``BUILD_METRIC_BREAKPOINT_QUERY_BASELINE``
+below. The structure of the test (one parametrised case per metric,
+byte-equality assertion) is the canary contract — only the fixture content
+moves with intentional methodology changes.
+
+History
+-------
+
+Phase 94.1 Plan 03 captured the original goldens (per-cell stratified SQL).
+Phase 94.2 Plan 02 regenerated them under the pooled-per-user methodology
+(snapshot_date threading, deduped cohort, no per-TC predicate, ≥30-on-pooled
+inclusion floor).
 """
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
-# The pre-refactor SQL strings, captured 2026-05-23 from
-# scripts/gen_global_percentile_cdf._build_metric_breakpoint_query(metric_id)
-# for each of the 4 metric IDs. These are the ground truth; Plan 03's refactor
-# must produce identical strings.
+# Goldens regenerated for Phase 94.2 against
+# scripts.gen_global_percentile_cdf._build_metric_breakpoint_query(metric_id,
+#                                          snapshot_date=date(2026, 3, 31))
 
 BUILD_METRIC_BREAKPOINT_QUERY_BASELINE: dict[str, str] = {
     "score_gap": (
         "WITH selected_users AS (\n"
-        "  SELECT u.id AS user_id, bsu.tc_bucket,\n"
-        "         bsu.rating_bucket AS selection_rating_bucket,\n"
-        "         bsu.median_elo\n"
-        "  FROM benchmark_selected_users bsu\n"
-        "  JOIN benchmark_ingest_checkpoints bic\n"
-        "    ON bic.lichess_username = bsu.lichess_username\n"
-        "   AND bic.tc_bucket = bsu.tc_bucket\n"
-        "   AND bic.status = 'completed'\n"
-        "  JOIN users u ON lower(u.lichess_username) = lower(bsu.lichess_username)\n"
+        "  SELECT u.id AS user_id\n"
+        "  FROM users u\n"
+        "  JOIN (\n"
+        "    SELECT lower(bsu.lichess_username) AS lname\n"
+        "    FROM benchmark_selected_users bsu\n"
+        "    JOIN benchmark_ingest_checkpoints bic\n"
+        "      ON bic.lichess_username = bsu.lichess_username\n"
+        "     AND bic.tc_bucket = bsu.tc_bucket\n"
+        "     AND bic.status = 'completed'\n"
+        "    GROUP BY lower(bsu.lichess_username)\n"
+        "    HAVING bool_or(NOT (bsu.rating_bucket = 2400 AND bsu.tc_bucket = 'classical'))\n"
+        "  ) deduped ON lower(u.lichess_username) = deduped.lname\n"
+        "),\n"
+        "recent_capped AS (\n"
+        "  SELECT g.id, g.user_id, g.user_color, g.result, g.played_at\n"
+        "  FROM (\n"
+        "    SELECT g.*,\n"
+        "           row_number() OVER (PARTITION BY g.user_id, g.time_control_bucket\n"
+        "                              ORDER BY g.played_at DESC) AS rn\n"
+        "    FROM games g\n"
+        "    JOIN selected_users su ON su.user_id = g.user_id\n"
+        "    WHERE g.rated AND NOT g.is_computer_game\n"
+        "      AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL\n"
+        "      AND g.played_at >= DATE '2026-03-31' - INTERVAL '36 months'\n"
+        "      AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100\n"
+        "  ) g\n"
+        "  WHERE g.rn <= 1000\n"
         "),\n"
         "endgame_game_ids AS (\n"
         "  SELECT game_id FROM game_positions\n"
         "  WHERE endgame_class IS NOT NULL\n"
         "  GROUP BY game_id HAVING count(*) >= 6\n"
         "),\n"
-        "rows AS (\n"
+        "scored AS (\n"
         "  SELECT\n"
-        "    g.user_id,\n"
-        "    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,\n"
-        "    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000 ELSE 2400 END) AS elo_bucket,\n"
-        "    su.tc_bucket AS tc_bucket,\n"
+        "    rc.user_id,\n"
         "    CASE\n"
-        "      WHEN (g.result = '1-0' AND g.user_color = 'white')\n"
-        "        OR (g.result = '0-1' AND g.user_color = 'black') THEN 1.0\n"
-        "      WHEN g.result = '1/2-1/2' THEN 0.5\n"
+        "      WHEN (rc.result = '1-0' AND rc.user_color = 'white')\n"
+        "        OR (rc.result = '0-1' AND rc.user_color = 'black') THEN 1.0\n"
+        "      WHEN rc.result = '1/2-1/2' THEN 0.5\n"
         "      ELSE 0.0\n"
         "    END AS score,\n"
         "    (eg.game_id IS NOT NULL) AS has_endgame\n"
-        "  FROM games g\n"
-        "  JOIN selected_users su ON su.user_id = g.user_id\n"
-        "  LEFT JOIN endgame_game_ids eg ON eg.game_id = g.id\n"
-        "  WHERE g.rated AND NOT g.is_computer_game\n"
-        "    AND g.time_control_bucket::text = su.tc_bucket\n"
-        "    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL\n"
-        "    AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100\n"
+        "  FROM recent_capped rc\n"
+        "  LEFT JOIN endgame_game_ids eg ON eg.game_id = rc.id\n"
         "),\n"
         "per_user AS (\n"
         "  SELECT\n"
-        "    user_id, elo_bucket, tc_bucket,\n"
+        "    user_id,\n"
         "    avg(score) FILTER (WHERE has_endgame)     AS eg_score,\n"
-        "    avg(score) FILTER (WHERE NOT has_endgame) AS non_eg_score\n"
-        "  FROM rows\n"
-        "  WHERE elo_bucket IS NOT NULL\n"
-        "  GROUP BY user_id, elo_bucket, tc_bucket\n"
+        "    avg(score) FILTER (WHERE NOT has_endgame) AS non_eg_score,\n"
+        "    count(*)   FILTER (WHERE has_endgame)     AS eg_n\n"
+        "  FROM scored\n"
+        "  GROUP BY user_id\n"
         "  HAVING count(*) FILTER (WHERE has_endgame)     >= 30\n"
         "     AND count(*) FILTER (WHERE NOT has_endgame) >= 30\n"
         "),\n"
         "per_user_values AS (\n"
-        "  SELECT (eg_score - non_eg_score) AS metric_value, elo_bucket, tc_bucket\n"
+        "  SELECT\n"
+        "    (eg_score - non_eg_score) AS metric_value,\n"
+        "    eg_n AS n_games\n"
         "  FROM per_user\n"
-        "  WHERE NOT (elo_bucket = 2400 AND tc_bucket = 'classical')\n"
         ")\n"
         "SELECT\n"
         "  percentile_cont(ARRAY[0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.20, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39, 0.40, 0.41, 0.42, 0.43, 0.44, 0.45, 0.46, 0.47, 0.48, 0.49, 0.50, 0.51, 0.52, 0.53, 0.54, 0.55, 0.56, 0.57, 0.58, 0.59, 0.60, 0.61, 0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69, 0.70, 0.71, 0.72, 0.73, 0.74, 0.75, 0.76, 0.77, 0.78, 0.79, 0.80, 0.81, 0.82, 0.83, 0.84, 0.85, 0.86, 0.87, 0.88, 0.89, 0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99]::double precision[]) WITHIN GROUP (ORDER BY metric_value) AS breakpoints,\n"
         "  count(*) AS n_users\n"
-        "FROM per_user_values"
-    ),
+        "FROM per_user_values\n"
+    ).rstrip("\n"),
     "achievable_score_gap": (
         "WITH selected_users AS (\n"
-        "  SELECT u.id AS user_id, bsu.tc_bucket,\n"
-        "         bsu.rating_bucket AS selection_rating_bucket,\n"
-        "         bsu.median_elo\n"
-        "  FROM benchmark_selected_users bsu\n"
-        "  JOIN benchmark_ingest_checkpoints bic\n"
-        "    ON bic.lichess_username = bsu.lichess_username\n"
-        "   AND bic.tc_bucket = bsu.tc_bucket\n"
-        "   AND bic.status = 'completed'\n"
-        "  JOIN users u ON lower(u.lichess_username) = lower(bsu.lichess_username)\n"
+        "  SELECT u.id AS user_id\n"
+        "  FROM users u\n"
+        "  JOIN (\n"
+        "    SELECT lower(bsu.lichess_username) AS lname\n"
+        "    FROM benchmark_selected_users bsu\n"
+        "    JOIN benchmark_ingest_checkpoints bic\n"
+        "      ON bic.lichess_username = bsu.lichess_username\n"
+        "     AND bic.tc_bucket = bsu.tc_bucket\n"
+        "     AND bic.status = 'completed'\n"
+        "    GROUP BY lower(bsu.lichess_username)\n"
+        "    HAVING bool_or(NOT (bsu.rating_bucket = 2400 AND bsu.tc_bucket = 'classical'))\n"
+        "  ) deduped ON lower(u.lichess_username) = deduped.lname\n"
+        "),\n"
+        "recent_capped AS (\n"
+        "  SELECT g.id, g.user_id, g.user_color, g.result, g.played_at\n"
+        "  FROM (\n"
+        "    SELECT g.*,\n"
+        "           row_number() OVER (PARTITION BY g.user_id, g.time_control_bucket\n"
+        "                              ORDER BY g.played_at DESC) AS rn\n"
+        "    FROM games g\n"
+        "    JOIN selected_users su ON su.user_id = g.user_id\n"
+        "    WHERE g.rated AND NOT g.is_computer_game\n"
+        "      AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL\n"
+        "      AND g.played_at >= DATE '2026-03-31' - INTERVAL '36 months'\n"
+        "      AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100\n"
+        "  ) g\n"
+        "  WHERE g.rn <= 1000\n"
         "),\n"
         "endgame_game_ids AS (\n"
         "  SELECT game_id FROM game_positions\n"
@@ -111,69 +155,81 @@ BUILD_METRIC_BREAKPOINT_QUERY_BASELINE: dict[str, str] = {
         "  JOIN endgame_game_ids eg ON eg.game_id = gp.game_id\n"
         "  WHERE gp.endgame_class IS NOT NULL\n"
         "),\n"
-        "rows AS (\n"
+        "scored AS (\n"
         "  SELECT\n"
-        "    g.user_id,\n"
-        "    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,\n"
-        "    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000 ELSE 2400 END) AS elo_bucket,\n"
-        "    su.tc_bucket AS tc_bucket,\n"
+        "    rc.user_id,\n"
         "    (\n"
         "      CASE\n"
-        "        WHEN (g.result = '1-0' AND g.user_color = 'white')\n"
-        "          OR (g.result = '0-1' AND g.user_color = 'black') THEN 1.0\n"
-        "        WHEN g.result = '1/2-1/2' THEN 0.5\n"
+        "        WHEN (rc.result = '1-0' AND rc.user_color = 'white')\n"
+        "          OR (rc.result = '0-1' AND rc.user_color = 'black') THEN 1.0\n"
+        "        WHEN rc.result = '1/2-1/2' THEN 0.5\n"
         "        ELSE 0.0\n"
         "      END\n"
         "      -\n"
         "      CASE\n"
         "        WHEN er.eval_mate IS NOT NULL AND\n"
-        "             (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0\n"
+        "             (er.eval_mate * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0\n"
         "        WHEN er.eval_mate IS NOT NULL AND\n"
-        "             (er.eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) < 0 THEN 0.0\n"
+        "             (er.eval_mate * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END)) < 0 THEN 0.0\n"
         "        WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < 2000\n"
         "             THEN 1.0 / (1.0 + exp(-0.00368208 *\n"
-        "                  (er.eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))\n"
+        "                  (er.eval_cp * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END))))\n"
         "        ELSE NULL\n"
         "      END\n"
         "    ) AS d_i\n"
-        "  FROM games g\n"
-        "  JOIN selected_users su ON su.user_id = g.user_id\n"
-        "  JOIN entry_rows er ON er.game_id = g.id AND er.rn = 1\n"
-        "  WHERE g.rated AND NOT g.is_computer_game\n"
-        "    AND g.time_control_bucket::text = su.tc_bucket\n"
-        "    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL\n"
-        "    AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100\n"
+        "  FROM recent_capped rc\n"
+        "  JOIN entry_rows er ON er.game_id = rc.id AND er.rn = 1\n"
         "),\n"
         "per_user AS (\n"
-        "  SELECT user_id, elo_bucket, tc_bucket,\n"
-        "         avg(d_i) AS achievable_gap\n"
-        "  FROM rows\n"
-        "  WHERE elo_bucket IS NOT NULL\n"
-        "  GROUP BY user_id, elo_bucket, tc_bucket\n"
-        "  HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= 20\n"
+        "  SELECT\n"
+        "    user_id,\n"
+        "    avg(d_i) AS achievable_gap,\n"
+        "    count(*) FILTER (WHERE d_i IS NOT NULL) AS di_n\n"
+        "  FROM scored\n"
+        "  GROUP BY user_id\n"
+        "  HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= 30\n"
         "),\n"
         "per_user_values AS (\n"
-        "  SELECT achievable_gap AS metric_value, elo_bucket, tc_bucket\n"
+        "  SELECT\n"
+        "    achievable_gap AS metric_value,\n"
+        "    di_n AS n_games\n"
         "  FROM per_user\n"
         "  WHERE achievable_gap IS NOT NULL\n"
-        "    AND NOT (elo_bucket = 2400 AND tc_bucket = 'classical')\n"
         ")\n"
         "SELECT\n"
         "  percentile_cont(ARRAY[0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.20, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39, 0.40, 0.41, 0.42, 0.43, 0.44, 0.45, 0.46, 0.47, 0.48, 0.49, 0.50, 0.51, 0.52, 0.53, 0.54, 0.55, 0.56, 0.57, 0.58, 0.59, 0.60, 0.61, 0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69, 0.70, 0.71, 0.72, 0.73, 0.74, 0.75, 0.76, 0.77, 0.78, 0.79, 0.80, 0.81, 0.82, 0.83, 0.84, 0.85, 0.86, 0.87, 0.88, 0.89, 0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99]::double precision[]) WITHIN GROUP (ORDER BY metric_value) AS breakpoints,\n"
         "  count(*) AS n_users\n"
-        "FROM per_user_values"
-    ),
+        "FROM per_user_values\n"
+    ).rstrip("\n"),
     "section2_score_gap_conv": (
         "WITH selected_users AS (\n"
-        "  SELECT u.id AS user_id, bsu.tc_bucket,\n"
-        "         bsu.rating_bucket AS selection_rating_bucket,\n"
-        "         bsu.median_elo\n"
-        "  FROM benchmark_selected_users bsu\n"
-        "  JOIN benchmark_ingest_checkpoints bic\n"
-        "    ON bic.lichess_username = bsu.lichess_username\n"
-        "   AND bic.tc_bucket = bsu.tc_bucket\n"
-        "   AND bic.status = 'completed'\n"
-        "  JOIN users u ON lower(u.lichess_username) = lower(bsu.lichess_username)\n"
+        "  SELECT u.id AS user_id\n"
+        "  FROM users u\n"
+        "  JOIN (\n"
+        "    SELECT lower(bsu.lichess_username) AS lname\n"
+        "    FROM benchmark_selected_users bsu\n"
+        "    JOIN benchmark_ingest_checkpoints bic\n"
+        "      ON bic.lichess_username = bsu.lichess_username\n"
+        "     AND bic.tc_bucket = bsu.tc_bucket\n"
+        "     AND bic.status = 'completed'\n"
+        "    GROUP BY lower(bsu.lichess_username)\n"
+        "    HAVING bool_or(NOT (bsu.rating_bucket = 2400 AND bsu.tc_bucket = 'classical'))\n"
+        "  ) deduped ON lower(u.lichess_username) = deduped.lname\n"
+        "),\n"
+        "recent_capped AS (\n"
+        "  SELECT g.id, g.user_id, g.user_color, g.result, g.played_at\n"
+        "  FROM (\n"
+        "    SELECT g.*,\n"
+        "           row_number() OVER (PARTITION BY g.user_id, g.time_control_bucket\n"
+        "                              ORDER BY g.played_at DESC) AS rn\n"
+        "    FROM games g\n"
+        "    JOIN selected_users su ON su.user_id = g.user_id\n"
+        "    WHERE g.rated AND NOT g.is_computer_game\n"
+        "      AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL\n"
+        "      AND g.played_at >= DATE '2026-03-31' - INTERVAL '36 months'\n"
+        "      AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100\n"
+        "  ) g\n"
+        "  WHERE g.rn <= 1000\n"
         "),\n"
         "spans AS (\n"
         "  SELECT\n"
@@ -182,13 +238,8 @@ BUILD_METRIC_BREAKPOINT_QUERY_BASELINE: dict[str, str] = {
         "    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,\n"
         "    min(gp.ply) AS span_min_ply\n"
         "  FROM game_positions gp\n"
-        "  JOIN games g           ON g.id = gp.game_id\n"
-        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  JOIN recent_capped rc ON rc.id = gp.game_id\n"
         "  WHERE gp.endgame_class IS NOT NULL\n"
-        "    AND g.rated AND NOT g.is_computer_game\n"
-        "    AND g.time_control_bucket::text = su.tc_bucket\n"
-        "    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL\n"
-        "    AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100\n"
         "  GROUP BY gp.game_id, gp.endgame_class\n"
         "  HAVING count(gp.ply) >= 6\n"
         "),\n"
@@ -201,9 +252,6 @@ BUILD_METRIC_BREAKPOINT_QUERY_BASELINE: dict[str, str] = {
         "gap_rows AS (\n"
         "  SELECT\n"
         "    g.user_id,\n"
-        "    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,\n"
-        "    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000 ELSE 2400 END) AS elo_bucket,\n"
-        "    su.tc_bucket AS tc_bucket,\n"
         "    CASE\n"
         "      WHEN swn.entry_eval_mate IS NOT NULL THEN\n"
         "        CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0\n"
@@ -246,42 +294,60 @@ BUILD_METRIC_BREAKPOINT_QUERY_BASELINE: dict[str, str] = {
         "      END\n"
         "    ) AS gap_span\n"
         "  FROM spans_with_next swn\n"
-        "  JOIN games g           ON g.id = swn.game_id\n"
-        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  JOIN games g ON g.id = swn.game_id\n"
         "  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)\n"
         "    AND (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) >= 800\n"
         "),\n"
         "per_user_bucket AS (\n"
-        "  SELECT user_id, elo_bucket, tc_bucket, bucket,\n"
-        "         avg(gap_span) AS mean_gap\n"
+        "  SELECT user_id, bucket,\n"
+        "         avg(gap_span) AS mean_gap,\n"
+        "         count(*) AS span_n\n"
         "  FROM gap_rows\n"
         "  WHERE gap_span IS NOT NULL\n"
-        "    AND elo_bucket IS NOT NULL\n"
-        "    AND NOT (elo_bucket = 2400 AND tc_bucket = 'classical')\n"
-        "  GROUP BY user_id, elo_bucket, tc_bucket, bucket\n"
-        "  HAVING count(*) >= 20\n"
+        "  GROUP BY user_id, bucket\n"
+        "  HAVING count(*) >= 30\n"
         "),\n"
         "per_user_values AS (\n"
-        "  SELECT mean_gap AS metric_value, elo_bucket, tc_bucket\n"
+        "  SELECT\n"
+        "    mean_gap AS metric_value,\n"
+        "    span_n AS n_games\n"
         "  FROM per_user_bucket\n"
         "  WHERE bucket = 'conversion'\n"
         ")\n"
         "SELECT\n"
         "  percentile_cont(ARRAY[0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.20, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39, 0.40, 0.41, 0.42, 0.43, 0.44, 0.45, 0.46, 0.47, 0.48, 0.49, 0.50, 0.51, 0.52, 0.53, 0.54, 0.55, 0.56, 0.57, 0.58, 0.59, 0.60, 0.61, 0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69, 0.70, 0.71, 0.72, 0.73, 0.74, 0.75, 0.76, 0.77, 0.78, 0.79, 0.80, 0.81, 0.82, 0.83, 0.84, 0.85, 0.86, 0.87, 0.88, 0.89, 0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99]::double precision[]) WITHIN GROUP (ORDER BY metric_value) AS breakpoints,\n"
         "  count(*) AS n_users\n"
-        "FROM per_user_values"
-    ),
+        "FROM per_user_values\n"
+    ).rstrip("\n"),
     "section2_score_gap_parity": (
         "WITH selected_users AS (\n"
-        "  SELECT u.id AS user_id, bsu.tc_bucket,\n"
-        "         bsu.rating_bucket AS selection_rating_bucket,\n"
-        "         bsu.median_elo\n"
-        "  FROM benchmark_selected_users bsu\n"
-        "  JOIN benchmark_ingest_checkpoints bic\n"
-        "    ON bic.lichess_username = bsu.lichess_username\n"
-        "   AND bic.tc_bucket = bsu.tc_bucket\n"
-        "   AND bic.status = 'completed'\n"
-        "  JOIN users u ON lower(u.lichess_username) = lower(bsu.lichess_username)\n"
+        "  SELECT u.id AS user_id\n"
+        "  FROM users u\n"
+        "  JOIN (\n"
+        "    SELECT lower(bsu.lichess_username) AS lname\n"
+        "    FROM benchmark_selected_users bsu\n"
+        "    JOIN benchmark_ingest_checkpoints bic\n"
+        "      ON bic.lichess_username = bsu.lichess_username\n"
+        "     AND bic.tc_bucket = bsu.tc_bucket\n"
+        "     AND bic.status = 'completed'\n"
+        "    GROUP BY lower(bsu.lichess_username)\n"
+        "    HAVING bool_or(NOT (bsu.rating_bucket = 2400 AND bsu.tc_bucket = 'classical'))\n"
+        "  ) deduped ON lower(u.lichess_username) = deduped.lname\n"
+        "),\n"
+        "recent_capped AS (\n"
+        "  SELECT g.id, g.user_id, g.user_color, g.result, g.played_at\n"
+        "  FROM (\n"
+        "    SELECT g.*,\n"
+        "           row_number() OVER (PARTITION BY g.user_id, g.time_control_bucket\n"
+        "                              ORDER BY g.played_at DESC) AS rn\n"
+        "    FROM games g\n"
+        "    JOIN selected_users su ON su.user_id = g.user_id\n"
+        "    WHERE g.rated AND NOT g.is_computer_game\n"
+        "      AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL\n"
+        "      AND g.played_at >= DATE '2026-03-31' - INTERVAL '36 months'\n"
+        "      AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100\n"
+        "  ) g\n"
+        "  WHERE g.rn <= 1000\n"
         "),\n"
         "spans AS (\n"
         "  SELECT\n"
@@ -290,13 +356,8 @@ BUILD_METRIC_BREAKPOINT_QUERY_BASELINE: dict[str, str] = {
         "    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,\n"
         "    min(gp.ply) AS span_min_ply\n"
         "  FROM game_positions gp\n"
-        "  JOIN games g           ON g.id = gp.game_id\n"
-        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  JOIN recent_capped rc ON rc.id = gp.game_id\n"
         "  WHERE gp.endgame_class IS NOT NULL\n"
-        "    AND g.rated AND NOT g.is_computer_game\n"
-        "    AND g.time_control_bucket::text = su.tc_bucket\n"
-        "    AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL\n"
-        "    AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100\n"
         "  GROUP BY gp.game_id, gp.endgame_class\n"
         "  HAVING count(gp.ply) >= 6\n"
         "),\n"
@@ -309,9 +370,6 @@ BUILD_METRIC_BREAKPOINT_QUERY_BASELINE: dict[str, str] = {
         "gap_rows AS (\n"
         "  SELECT\n"
         "    g.user_id,\n"
-        "    (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) AS user_elo_at_game,\n"
-        "    (CASE WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 800 THEN NULL WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1200 THEN 800 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 1600 THEN 1200 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2000 THEN 1600 WHEN (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) < 2400 THEN 2000 ELSE 2400 END) AS elo_bucket,\n"
-        "    su.tc_bucket AS tc_bucket,\n"
         "    CASE\n"
         "      WHEN swn.entry_eval_mate IS NOT NULL THEN\n"
         "        CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0\n"
@@ -354,52 +412,48 @@ BUILD_METRIC_BREAKPOINT_QUERY_BASELINE: dict[str, str] = {
         "      END\n"
         "    ) AS gap_span\n"
         "  FROM spans_with_next swn\n"
-        "  JOIN games g           ON g.id = swn.game_id\n"
-        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  JOIN games g ON g.id = swn.game_id\n"
         "  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)\n"
         "    AND (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END) >= 800\n"
         "),\n"
         "per_user_bucket AS (\n"
-        "  SELECT user_id, elo_bucket, tc_bucket, bucket,\n"
-        "         avg(gap_span) AS mean_gap\n"
+        "  SELECT user_id, bucket,\n"
+        "         avg(gap_span) AS mean_gap,\n"
+        "         count(*) AS span_n\n"
         "  FROM gap_rows\n"
         "  WHERE gap_span IS NOT NULL\n"
-        "    AND elo_bucket IS NOT NULL\n"
-        "    AND NOT (elo_bucket = 2400 AND tc_bucket = 'classical')\n"
-        "  GROUP BY user_id, elo_bucket, tc_bucket, bucket\n"
-        "  HAVING count(*) >= 20\n"
+        "  GROUP BY user_id, bucket\n"
+        "  HAVING count(*) >= 30\n"
         "),\n"
         "per_user_values AS (\n"
-        "  SELECT mean_gap AS metric_value, elo_bucket, tc_bucket\n"
+        "  SELECT\n"
+        "    mean_gap AS metric_value,\n"
+        "    span_n AS n_games\n"
         "  FROM per_user_bucket\n"
         "  WHERE bucket = 'parity'\n"
         ")\n"
         "SELECT\n"
         "  percentile_cont(ARRAY[0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.20, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39, 0.40, 0.41, 0.42, 0.43, 0.44, 0.45, 0.46, 0.47, 0.48, 0.49, 0.50, 0.51, 0.52, 0.53, 0.54, 0.55, 0.56, 0.57, 0.58, 0.59, 0.60, 0.61, 0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69, 0.70, 0.71, 0.72, 0.73, 0.74, 0.75, 0.76, 0.77, 0.78, 0.79, 0.80, 0.81, 0.82, 0.83, 0.84, 0.85, 0.86, 0.87, 0.88, 0.89, 0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99]::double precision[]) WITHIN GROUP (ORDER BY metric_value) AS breakpoints,\n"
         "  count(*) AS n_users\n"
-        "FROM per_user_values"
-    ),
+        "FROM per_user_values\n"
+    ).rstrip("\n"),
 }
+
 
 # The 4 metric IDs, as a sorted list for parametrisation.
 _METRIC_IDS: list[str] = sorted(BUILD_METRIC_BREAKPOINT_QUERY_BASELINE.keys())
-
-
-# ---------------------------------------------------------------------------
-# Regression tests — skipped until Plan 03 refactor lands.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("metric_id", _METRIC_IDS)
 def test_build_metric_breakpoint_query_byte_identical_after_refactor(
     metric_id: str,
 ) -> None:
-    """SQL output is byte-identical to the pre-refactor snapshot after Plan 03.
+    """SQL output is byte-identical to the committed Phase 94.2 goldens.
 
     Imports ``_build_metric_breakpoint_query`` from the script directly
     (no DB required — the function is a pure SQL string builder).
-    Asserts byte-identical equality against the fixture captured before
-    the D-11 extraction refactor.
+    Asserts byte-identical equality against the fixture captured under
+    Phase 94.2's pooled-per-user methodology.
     """
     import sys
     from pathlib import Path
@@ -412,9 +466,12 @@ def test_build_metric_breakpoint_query_byte_identical_after_refactor(
     from scripts.gen_global_percentile_cdf import _build_metric_breakpoint_query
 
     expected = BUILD_METRIC_BREAKPOINT_QUERY_BASELINE[metric_id]
-    actual = _build_metric_breakpoint_query(metric_id)  # ty: ignore[invalid-argument-type]
+    actual = _build_metric_breakpoint_query(metric_id, snapshot_date=date(2026, 3, 31))  # ty: ignore[invalid-argument-type]
     assert actual == expected, (
-        f"SQL output for metric_id={metric_id!r} changed after Plan 03 refactor.\n"
-        f"The D-11 extraction must preserve byte-identical output (ROADMAP SC-7).\n"
-        f"First difference at char {next(i for i, (a, b) in enumerate(zip(actual, expected)) if a != b) if actual != expected else 'length mismatch'}."
+        f"SQL output for metric_id={metric_id!r} drifted from the Phase 94.2 goldens.\n"
+        f"Drift here breaks the canary contract — downstream consumers will produce\n"
+        f"inconsistent numbers across paths. Either revert the SQL change or\n"
+        f"regenerate the goldens (see module docstring).\n"
+        f"First difference at char "
+        f"{next((i for i, (a, b) in enumerate(zip(actual, expected)) if a != b), 'length mismatch')}."
     )
