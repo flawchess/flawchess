@@ -16,6 +16,7 @@
 import { Swords } from 'lucide-react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { PercentileChip, type PercentileChipFlavor } from '@/components/charts/PercentileChip';
 import { ScoreGapByTimePressureChart } from '@/components/charts/ScoreGapByTimePressureChart';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
@@ -42,6 +43,32 @@ const TC_LABELS: Record<'bullet' | 'blitz' | 'rapid' | 'classical', string> = {
   blitz: 'Blitz',
   rapid: 'Rapid',
   classical: 'Classical',
+};
+
+// ── Phase 94.3 Plan 06: typed TC→flavor dispatch dicts ─────────────────────
+// TypeScript cannot infer Literal types from template-literal concatenation
+// (e.g. `\`clock_gap_${card.tc}\``), so a typed map per chip metric keeps the
+// PercentileChip `flavor` prop strictly typed without `as` casts. Mirrors the
+// backend's `_TC_TO_METRIC_KEYS` dispatch pattern in
+// app/services/endgame_service.py.
+type TcKey = TimePressureTcCard['tc'];
+const CLOCK_GAP_FLAVOR_BY_TC: Record<TcKey, PercentileChipFlavor> = {
+  bullet: 'clock_gap_bullet',
+  blitz: 'clock_gap_blitz',
+  rapid: 'clock_gap_rapid',
+  classical: 'clock_gap_classical',
+};
+const NET_FLAG_RATE_FLAVOR_BY_TC: Record<TcKey, PercentileChipFlavor> = {
+  bullet: 'net_flag_rate_bullet',
+  blitz: 'net_flag_rate_blitz',
+  rapid: 'net_flag_rate_rapid',
+  classical: 'net_flag_rate_classical',
+};
+const TIME_PRESSURE_SCORE_GAP_FLAVOR_BY_TC: Record<TcKey, PercentileChipFlavor> = {
+  bullet: 'time_pressure_score_gap_bullet',
+  blitz: 'time_pressure_score_gap_blitz',
+  rapid: 'time_pressure_score_gap_rapid',
+  classical: 'time_pressure_score_gap_classical',
 };
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -147,6 +174,17 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
           testId={`time-pressure-card-${card.tc}-clock-gap-info`}
           ariaLabel="What is Clock Gap?"
         />
+        {/* Phase 94.3 (TPCTL-06): Clock Gap percentile chip. Gated on
+            `!= null` to honor the backend inclusion-floor contract — a null
+            percentile suppresses the chip silently. */}
+        {card.clock_gap_percentile != null && (
+          <PercentileChip
+            percentile={card.clock_gap_percentile}
+            flavor={CLOCK_GAP_FLAVOR_BY_TC[card.tc]}
+            metricLabel="Clock Gap"
+            testId={`time-pressure-card-${card.tc}-clock-gap-chip`}
+          />
+        )}
       </span>
       <span className="text-right" data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
         Opp: <span className="font-semibold">{formatPct(card.opp_avg_pct)}</span>
@@ -189,6 +227,21 @@ function NetFlagRateRow({ card }: { card: TimePressureTcCard }) {
           </p>
         </InfoPopover>
       </span>
+      {/* Phase 94.3 (TPCTL-06): Net Flag Rate percentile chip, right-aligned.
+          `ml-auto` on the wrapping span pushes the chip to the row's right
+          edge inside the parent flex container. Gated on `!= null` so a 0.0
+          percentile (best possible — no net timeouts) still renders, while
+          below-floor (null) suppresses silently — see Pitfall 7. */}
+      {card.net_flag_rate_percentile != null && (
+        <span className="ml-auto">
+          <PercentileChip
+            percentile={card.net_flag_rate_percentile}
+            flavor={NET_FLAG_RATE_FLAVOR_BY_TC[card.tc]}
+            metricLabel="Net Flag Rate"
+            testId={`time-pressure-card-${card.tc}-net-flag-rate-chip`}
+          />
+        </span>
+      )}
     </div>
   );
 }
@@ -282,11 +335,18 @@ export function EndgameTimePressureCard({
         {/* SC-3: Replace the four stacked per-bucket bullet rows with the
             ScoreGapByTimePressureChart (line chart with zone bands). */}
         <div>
-          <p
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
+          {/* Phase 94.3 (TPCTL-06): subtitle changed from inline-flex → flex so
+              the trailing `ml-auto` Time Pressure Score Gap chip slot can push
+              to the right edge. The leading label + InfoPopover still sit
+              side-by-side via `items-center gap-1.5`; the chip wraps on narrow
+              widths (mobile parity verified at 375px). The element changed
+              from <p> to <div> because the chip's Radix popover renders a
+              span[role="button"] which is invalid inside a paragraph. */}
+          <div
+            className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
             data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
           >
-            Score Gap by Remaining Time
+            <span>Score Gap by Remaining Time</span>
             <InfoPopover
               ariaLabel={`${tcLabel} score gap by remaining time info`}
               testId={`time-pressure-card-${card.tc}-quintiles-info`}
@@ -308,7 +368,17 @@ export function EndgameTimePressureCard({
                 </p>
               </div>
             </InfoPopover>
-          </p>
+            {card.time_pressure_score_gap_percentile != null && (
+              <span className="ml-auto">
+                <PercentileChip
+                  percentile={card.time_pressure_score_gap_percentile}
+                  flavor={TIME_PRESSURE_SCORE_GAP_FLAVOR_BY_TC[card.tc]}
+                  metricLabel="Time Pressure Score Gap"
+                  testId={`time-pressure-card-${card.tc}-time-pressure-score-gap-chip`}
+                />
+              </span>
+            )}
+          </div>
           <div data-testid={`time-pressure-card-${card.tc}-score-gap-chart`}>
             <ScoreGapByTimePressureChart quintiles={card.quintiles} tc={card.tc} />
           </div>
