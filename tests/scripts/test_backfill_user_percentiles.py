@@ -9,7 +9,7 @@ Tests cover:
 - --target prod refusal when tunnel is down (Pitfall 6 / SC-6)
 - --target dev refusal when URL lacks port 5432
 - Per-metric summary table emitted to stdout
-- Zero-canonical-games user: no row written, summary reports no_canonical_games=1
+- Below-floor user: no row written, summary reports below_pooled_floor=1
 
 Security domain V4 (Tampering — wrong DB target):
 - test_backfill_target_prod_refuses_when_tunnel_down: _assert_target_safe raises
@@ -25,7 +25,7 @@ Data isolation strategy:
   white_rating / black_rating within 100 ELO.  Most tests use games that do NOT
   meet the ±100 ELO filter (opponent 500+ ELO above user) so value_raw is None
   and no user_benchmark_percentiles row is written — this is intentional and
-  lets us test the "no_canonical_games" path cleanly without fabricating
+  lets us test the "below_pooled_floor" path cleanly without fabricating
   full endgame span data.  Cleanup runs in a finally block via delete-cascade.
 """
 
@@ -393,11 +393,10 @@ async def test_backfill_handles_user_with_zero_canonical_slice_games(
     """When a user has a completed import_job but no games passing the canonical
     slice filter, backfill writes NO row for that user.
 
-    The summary must contain 'no_canonical_games=1' (or the equivalent token)
-    for that user, not a 'below_floor' or 'no_eval' entry.
-
-    Per CONTEXT Claude's Discretion: 'if value itself isn't computable (zero
-    games in slice), no row'.
+    The summary must contain 'below_pooled_floor=1' for that user (Phase 94.2:
+    the pooled CTE emits no row for users below the ≥30 inclusion floor, which
+    includes users with zero canonical-slice games — both map to the same
+    counter).
     """
     session_maker = _make_session_maker(test_engine)
     main = backfill_user_percentiles.main
@@ -415,11 +414,11 @@ async def test_backfill_handles_user_with_zero_canonical_slice_games(
             rows = await _count_pctl_rows(check, _TEST_USER_1_ID)
         assert rows == 0, f"Expected 0 rows for user with zero canonical games, got {rows}"
 
-        # Summary must mention 'no_canonical_games'.
+        # Summary must mention 'below_pooled_floor' (Phase 94.2 pooled semantics).
         captured = capsys.readouterr()
         stdout = captured.out
-        assert "no_canonical_games" in stdout, (
-            "Expected 'no_canonical_games' in summary for user with zero canonical-slice games.\n"
+        assert "below_pooled_floor" in stdout, (
+            "Expected 'below_pooled_floor' in summary for user below pooled inclusion floor.\n"
             f"Got:\n{stdout}"
         )
     finally:

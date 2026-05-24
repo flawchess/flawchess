@@ -2,18 +2,19 @@
 
 Phase 94.1 Plan 10 — closes VERIFICATION.md gap #3 / REVIEW.md IN-03.
 Phase 94.1 Plan 13 — updated to reflect two-state classifier (False branch removed).
+Phase 94.2 Plan 06 — renamed counter to ``skipped_below_pooled_floor`` to match
+the pooled-per-user inclusion floor (RESEARCH §Pitfall 7).
 
 The classifier maps the outcome of compute_stage_a / compute_stage_b into one of
 two return values consumed by the per-user summary counter at ``_backfill_user``:
 
-    True  → row written (user has ≥1 floor-passing cell)   →  summary.upserted += 1
-    None  → no row written (zero floor-passing cells)       →  summary.skipped_no_canonical_games += 1
+    True  → row written (user passed the ≥30 pooled inclusion floor)  →  summary.upserted += 1
+    None  → no row written (user below the pooled inclusion floor)    →  summary.skipped_below_pooled_floor += 1
 
 Plan 13 correctness fix: the ``False`` branch (row exists with NULL percentile)
 is removed. Below-floor users no longer produce rows at all — the service uses
-a single ``apply_floor=True`` CTE which returns no rows for below-floor users.
-Below-floor users are now counted under ``skipped_no_canonical_games`` (same
-path as zero canonical-slice games).
+a single floor-respecting CTE which returns no rows for below-floor users.
+Below-floor users are counted under ``skipped_below_pooled_floor``.
 
 Pure unit tests — no real DB. The compute service and the row-existence helper
 are mocked. Real-DB end-to-end coverage already lands via the integration test
@@ -133,7 +134,7 @@ async def test_stage_b_routes_to_compute_stage_b() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests — _backfill_user consumer maps None → skipped_no_canonical_games
+# Tests — _backfill_user consumer maps None → skipped_below_pooled_floor counter
 # ---------------------------------------------------------------------------
 
 
@@ -162,16 +163,16 @@ async def test_backfill_user_increments_upserted_when_classifier_returns_true() 
     # All 4 metrics are upserted (pending_evals=0, all metrics computed)
     for metric_id in all_metrics:
         assert summary[metric_id].upserted == 1, f"expected upserted=1 for {metric_id}"
-        assert summary[metric_id].skipped_no_canonical_games == 0
+        assert summary[metric_id].skipped_below_pooled_floor == 0
 
 
-async def test_backfill_user_increments_skipped_no_canonical_games_when_classifier_returns_none() -> (
+async def test_backfill_user_increments_skipped_below_pooled_floor_when_classifier_returns_none() -> (
     None
 ):
-    """End-to-end inside _backfill_user: classifier None → skipped_no_canonical_games counter.
+    """End-to-end inside _backfill_user: classifier None → skipped_below_pooled_floor counter.
 
-    Plan 13: both zero-game and below-floor users return None from the classifier
-    (no row written). Both map to skipped_no_canonical_games.
+    Phase 94.2: below-floor users (failing the pooled ≥30 inclusion floor) return
+    None from the classifier (no row written), mapped to skipped_below_pooled_floor.
     """
     all_metrics: tuple[CdfMetricId, ...] = (bup.STAGE_A_METRIC, *bup.STAGE_B_METRICS)
     summary: dict[CdfMetricId, bup._MetricSummary] = {m: bup._MetricSummary() for m in all_metrics}
@@ -195,7 +196,7 @@ async def test_backfill_user_increments_skipped_no_canonical_games_when_classifi
             summary=summary,
         )
 
-    assert summary[bup.STAGE_A_METRIC].skipped_no_canonical_games == 1
+    assert summary[bup.STAGE_A_METRIC].skipped_below_pooled_floor == 1
     assert summary[bup.STAGE_A_METRIC].upserted == 0
     # Stage B skipped due to pending_evals > 0
     for metric_id in bup.STAGE_B_METRICS:

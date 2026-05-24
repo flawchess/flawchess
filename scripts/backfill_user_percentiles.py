@@ -235,21 +235,30 @@ async def _iter_users(
 
 
 class _MetricSummary:
-    """Accumulates upserted / skipped counts for one metric.
+    """Accumulates upserted / skipped counts for one metric under the Phase 94.2 pooled methodology.
 
-    Plan 13: ``skipped_below_floor`` is removed. Below-floor (user, metric)
-    pairs produce no row — they are counted under ``skipped_no_canonical_games``
-    because the floor-respecting CTE returns no rows (same path as zero games).
+    ``skipped_below_pooled_floor`` is the count of users whose recent-1000-per-TC ×
+    36-month pool did not meet the ≥30 inclusion floor for this metric (see
+    ``app/services/canonical_slice_sql.py`` constants ``SCORE_GAP_MIN_ENDGAME_N``,
+    ``ACHIEVABLE_MIN_GAMES``, ``SECTION2_MIN_SPANS_PER_BUCKET``, all =30 in 94.2).
+    Under the pooled model the inclusion floor is a single integer per (user,
+    metric) — not per (elo_bucket, tc_bucket) cell as in 94.1 — so the counter
+    is renamed accordingly (RESEARCH §Pitfall 7). Below-floor users produce no
+    row (the pooled CTE's ``HAVING`` clause emits no row); the chip suppresses
+    naturally.
+
+    ``skipped_no_eval`` is unchanged from 94.1: Stage B users with
+    ``count_pending_evals > 0`` (cold-drain incomplete) are deferred.
     """
 
     def __init__(self) -> None:
         self.upserted: int = 0
-        self.skipped_no_canonical_games: int = 0
+        self.skipped_below_pooled_floor: int = 0
         self.skipped_no_eval: int = 0
 
     @property
     def total_skipped(self) -> int:
-        return self.skipped_no_canonical_games + self.skipped_no_eval
+        return self.skipped_below_pooled_floor + self.skipped_no_eval
 
 
 # ---------------------------------------------------------------------------
@@ -332,8 +341,8 @@ async def main(
     for metric_id in all_metrics:
         s = summary[metric_id]
         reasons: list[str] = []
-        if s.skipped_no_canonical_games:
-            reasons.append(f"no_canonical_games={s.skipped_no_canonical_games}")
+        if s.skipped_below_pooled_floor:
+            reasons.append(f"below_pooled_floor={s.skipped_below_pooled_floor}")
         if s.skipped_no_eval:
             reasons.append(f"no_eval={s.skipped_no_eval}")
         reason_str = f" ({', '.join(reasons)})" if reasons else ""
@@ -375,8 +384,10 @@ async def _backfill_user(
         if upserted:
             summary[STAGE_A_METRIC].upserted += 1
         else:
-            # None = zero floor-passing cells (no row written).
-            summary[STAGE_A_METRIC].skipped_no_canonical_games += 1
+            # None = user below pooled ≥30 inclusion floor (no row written).
+            # Phase 94.2 pooled semantics (RESEARCH §Pitfall 7): a single
+            # integer per (user, metric), not per cell as in 94.1.
+            summary[STAGE_A_METRIC].skipped_below_pooled_floor += 1
 
     # Stage B: eval-dependent metrics (only if no pending evals).
     for metric_id in STAGE_B_METRICS:
@@ -394,8 +405,9 @@ async def _backfill_user(
         if upserted:
             summary[metric_id].upserted += 1
         else:
-            # None = zero floor-passing cells (no row written).
-            summary[metric_id].skipped_no_canonical_games += 1
+            # None = user below pooled ≥30 inclusion floor (no row written).
+            # Phase 94.2 pooled semantics (RESEARCH §Pitfall 7).
+            summary[metric_id].skipped_below_pooled_floor += 1
 
 
 async def _compute_and_count(
@@ -407,15 +419,17 @@ async def _compute_and_count(
 ) -> bool | None:
     """Call compute_stage_a or compute_stage_b and classify the outcome.
 
-    Plan 13: collapses to two return values (below-floor rows are no longer
-    written, so the ``False`` branch from Plan 10 is unreachable and removed):
+    Phase 94.2 pooled semantics: ``_compute_metric_for_user`` returns None when
+    the user's recent-1000-per-TC × 36-month pool does not meet the metric's
+    ≥30 inclusion floor (the pooled CTE's ``HAVING`` clause emits no row).
+    Below-floor users produce no storage row.
 
     Returns:
-        True  — a row was upserted (user has ≥1 floor-passing cell).
-        None  — no row written (zero floor-passing cells for this user/metric).
+        True  — a row was upserted (user passed the pooled inclusion floor).
+        None  — no row written (user below the ≥30 pooled inclusion floor).
 
     The two return values map onto the per-metric summary counters at
-    ``_backfill_user``: upserted / skipped_no_canonical_games.
+    ``_backfill_user``: ``upserted`` / ``skipped_below_pooled_floor``.
     """
     # Call the appropriate stage.
     if stage == "A":
@@ -424,10 +438,10 @@ async def _compute_and_count(
         # Stage B computes all 3 metrics; we inspect only the specific one.
         await compute_stage_b(user_id, session_maker=backfill_session_maker)
 
-    # Post-compute probe: row exists iff user had ≥1 floor-passing cell.
+    # Post-compute probe: row exists iff the user passed the pooled inclusion floor.
     row_after = await _row_exists(user_id, metric, backfill_session_maker)
     if not row_after:
-        # No row — zero floor-passing cells (Plan 13: no below-floor rows written).
+        # No row — user below the pooled ≥30 inclusion floor (Phase 94.2).
         return None
     return True
 
