@@ -207,7 +207,7 @@ function NetFlagRateRow({ card }: { card: TimePressureTcCard }) {
   const tint = tintForNetTimeoutRate(card.net_timeout_rate);
   return (
     <div
-      className="flex text-sm text-muted-foreground tabular-nums mt-3"
+      className="flex flex-wrap text-sm text-muted-foreground tabular-nums mt-3"
       data-testid={`time-pressure-card-${card.tc}-net-flag-rate-row`}
     >
       <span
@@ -237,14 +237,28 @@ function NetFlagRateRow({ card }: { card: TimePressureTcCard }) {
           `ml-auto` on the wrapping span pushes the chip to the row's right
           edge inside the parent flex container. Gated on `!= null` so a 0.0
           percentile (best possible — no net timeouts) still renders, while
-          below-floor (null) suppresses silently — see Pitfall 7. */}
+          below-floor (null) suppresses silently — see Pitfall 7. Hidden on
+          mobile; the mobile twin renders below the row, left-aligned. */}
       {card.net_flag_rate_percentile != null && (
-        <span className="ml-auto">
+        <span className="ml-auto hidden sm:inline-flex">
           <PercentileChip
             percentile={card.net_flag_rate_percentile}
             flavor={NET_FLAG_RATE_FLAVOR_BY_TC[card.tc]}
             metricLabel="Net Flag Rate"
             testId={`time-pressure-card-${card.tc}-net-flag-rate-chip`}
+          />
+        </span>
+      )}
+      {/* Mobile-only Net Flag Rate chip — drops to a left-aligned row
+          beneath the label on <sm widths. Distinct testid keeps "lives
+          inside row" assertion valid against the desktop slot. */}
+      {card.net_flag_rate_percentile != null && (
+        <span className="basis-full mt-2 flex justify-start sm:hidden">
+          <PercentileChip
+            percentile={card.net_flag_rate_percentile}
+            flavor={NET_FLAG_RATE_FLAVOR_BY_TC[card.tc]}
+            metricLabel="Net Flag Rate"
+            testId={`time-pressure-card-${card.tc}-net-flag-rate-chip-mobile`}
           />
         </span>
       )}
@@ -338,7 +352,7 @@ export function EndgameTimePressureCard({
               narrow widths. Distinct testid keeps "lives inside header"
               assertions valid. */}
           {card.clock_gap_percentile != null && (
-            <div className="flex justify-end mt-2 sm:hidden">
+            <div className="flex justify-start mt-2 sm:hidden">
               <PercentileChip
                 percentile={card.clock_gap_percentile}
                 flavor={CLOCK_GAP_FLAVOR_BY_TC[card.tc]}
@@ -408,7 +422,7 @@ export function EndgameTimePressureCard({
               narrow widths. Distinct testid keeps "lives inside subtitle"
               assertions valid. */}
           {card.time_pressure_score_gap_percentile != null && (
-            <div className="flex justify-end mb-2 sm:hidden">
+            <div className="flex justify-start mb-2 sm:hidden">
               <PercentileChip
                 percentile={card.time_pressure_score_gap_percentile}
                 flavor={TIME_PRESSURE_SCORE_GAP_FLAVOR_BY_TC[card.tc]}
