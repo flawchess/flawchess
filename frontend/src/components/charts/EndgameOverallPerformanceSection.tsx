@@ -184,7 +184,7 @@ export function EndgameOverallPerformanceSection({
                     data.achievable_score_gap_percentile != null ? (
                       <PercentileChip
                         percentile={data.achievable_score_gap_percentile}
-                        flavor="skill-isolating"
+                        flavor="achievable"
                         metricLabel="Achievable Score Gap"
                         testId="achievable-score-gap-percentile-chip"
                       />
@@ -234,7 +234,7 @@ export function EndgameOverallPerformanceSection({
                     scoreGap.score_gap_percentile != null ? (
                       <PercentileChip
                         percentile={scoreGap.score_gap_percentile}
-                        flavor="skill-isolating"
+                        flavor="score-gap"
                         metricLabel="Endgame Score Gap"
                         testId="endgame-score-gap-percentile-chip"
                       />
