@@ -59,7 +59,6 @@ import shutil
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Literal
 from urllib.parse import urlparse, urlunparse
 
 import sentry_sdk
@@ -74,15 +73,25 @@ from app.core.config import settings  # noqa: E402
 # Canonical-slice CTE builders extracted to `app.services.canonical_slice_sql`
 # per Phase 94.1 D-11 and rewritten under Phase 94.2 (pooled-per-user). Single
 # source of truth — both this script and the per-user compute service consume
-# the same module.
+# the same module. Phase 94.3 adds the per-TC inclusion-floor constants for
+# the new time-management metric family.
 from app.services.canonical_slice_sql import (  # noqa: E402
     ACHIEVABLE_MIN_GAMES,
+    CLOCK_GAP_MIN_POOL_N,
+    NET_FLAG_RATE_MIN_POOL_N,
     SCORE_GAP_MIN_ENDGAME_N,
     SCORE_GAP_MIN_NON_ENDGAME_N,
     SECTION2_MIN_SPANS_PER_BUCKET,
+    TIME_PRESSURE_CLOCK_PCT_THRESHOLD,
+    TIME_PRESSURE_MIN_PRESSURED_N,
     per_user_cte_for,
     selected_users_cte,
 )
+
+# Re-export ``CdfMetricId`` from the service module so the script and the
+# service share a single source of truth (RESEARCH §Pattern 3 lines 222-225 —
+# drift-impossibility). Any future widening of the Literal lands in one place.
+from app.services.global_percentile_cdf import CdfMetricId  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants — no magic numbers in function bodies.
@@ -138,20 +147,30 @@ BENCHMARK_DB_SNAPSHOT_MONTH: str = "2026-03"
 FLOAT_PRECISION: int = 4
 SKEW_KURT_PRECISION: int = 4
 
-# In-scope metric IDs (D-02). Order matters: registry literal emission walks
-# this tuple so two runs produce byte-identical Python source.
-CdfMetricId = Literal[
-    "score_gap",
-    "achievable_score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
-]
-
+# In-scope metric IDs. Order matters: registry literal emission walks this
+# tuple so two runs produce byte-identical Python source. Grouped by metric
+# family for grep-ability (and to make the 4 + 12 split immediately legible).
+# ``CdfMetricId`` is imported from ``app.services.global_percentile_cdf``
+# above; widening the Literal there propagates here automatically.
 IN_SCOPE_METRICS: tuple[CdfMetricId, ...] = (
+    # Phase 93 / 94.1 / 94.2 — original 4 (pooled across all TCs).
     "score_gap",
     "achievable_score_gap",
     "section2_score_gap_conv",
     "section2_score_gap_parity",
+    # Phase 94.3 (SEED-025 / TPCTL-03) — per-TC time-management family.
+    "time_pressure_score_gap_bullet",
+    "time_pressure_score_gap_blitz",
+    "time_pressure_score_gap_rapid",
+    "time_pressure_score_gap_classical",
+    "clock_gap_bullet",
+    "clock_gap_blitz",
+    "clock_gap_rapid",
+    "clock_gap_classical",
+    "net_flag_rate_bullet",
+    "net_flag_rate_blitz",
+    "net_flag_rate_rapid",
+    "net_flag_rate_classical",
 )
 
 # Game-time ELO rating buckets for the per-bucket sanity-check table (SKILL.md
@@ -444,6 +463,33 @@ def _registry_entry_comment(metric_id: CdfMetricId) -> str:
             f"section2_score_gap_parity — inclusion floor "
             f"≥{INCLUSION_FLOOR_SECTION2_PER_BUCKET} spans in Equal-entry-eval bucket (pooled)."
         )
+    # Phase 94.3 per-TC time-management family. ``metric_id`` is structurally
+    # ``{base}_{tc}`` for base in {time_pressure_score_gap, clock_gap,
+    # net_flag_rate}; we split rather than redeclare 12 string-equal arms so
+    # the body stays compact and the per-base wording is single-site.
+    base, _, tc = metric_id.rpartition("_")
+    if base == "time_pressure_score_gap":
+        return (
+            f"{metric_id} — inclusion floor "
+            f"≥{TIME_PRESSURE_MIN_PRESSURED_N} pressured-cell games per user "
+            f"on BOTH user side AND opponent side "
+            f"(clock_pct < {TIME_PRESSURE_CLOCK_PCT_THRESHOLD:.2f} at endgame "
+            f"entry; pooled within {tc})."
+        )
+    if base == "clock_gap":
+        return (
+            f"{metric_id} — inclusion floor "
+            f"≥{CLOCK_GAP_MIN_POOL_N} endgame-entry games per user with "
+            f"non-null user and opponent clock (pooled within {tc}; metric is "
+            f"avg((user_clock − opp_clock) / base_time_seconds))."
+        )
+    if base == "net_flag_rate":
+        return (
+            f"{metric_id} — inclusion floor "
+            f"≥{NET_FLAG_RATE_MIN_POOL_N} endgame games per user "
+            f"(pooled within {tc}; metric is "
+            f"(timeout_wins − timeout_losses) / total_endgame_games)."
+        )
     raise ValueError(f"Unknown metric_id: {metric_id!r}")
 
 
@@ -500,14 +546,29 @@ def _write_module(metric_results: dict[CdfMetricId, MetricResult]) -> None:
 # ---------------------------------------------------------------------------
 
 
+_PER_TC_DISPLAY_BASE: dict[str, str] = {
+    "time_pressure_score_gap": "Time Pressure Score Gap",
+    "clock_gap": "Clock Gap",
+    "net_flag_rate": "Net Flag Rate",
+}
+
+
 def _metric_display_name(metric_id: CdfMetricId) -> str:
     """Human-readable metric label for report headings."""
-    return {
+    static_names: dict[str, str] = {
         "score_gap": "Endgame Score Gap",
         "achievable_score_gap": "Achievable Score Gap",
         "section2_score_gap_conv": "Section 2 Conversion ΔES",
         "section2_score_gap_parity": "Section 2 Parity ΔES",
-    }[metric_id]
+    }
+    if metric_id in static_names:
+        return static_names[metric_id]
+    # Phase 94.3 per-TC family — split on the trailing TC bucket and render
+    # ``"<base> (<tc>)"``.
+    base, _, tc = metric_id.rpartition("_")
+    if base in _PER_TC_DISPLAY_BASE and tc in ("bullet", "blitz", "rapid", "classical"):
+        return f"{_PER_TC_DISPLAY_BASE[base]} ({tc})"
+    raise KeyError(metric_id)
 
 
 def _emit_breakpoint_table(breakpoints: list[float]) -> str:

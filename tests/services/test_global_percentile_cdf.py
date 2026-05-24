@@ -268,7 +268,9 @@ def test_cdf_metric_id_literal_has_16_entries() -> None:
     from app.services.global_percentile_cdf import CdfMetricId
 
     members = set(get_args(CdfMetricId))
-    assert len(members) == 16, f"Expected 16 CdfMetricId entries, got {len(members)}: {sorted(members)}"
+    assert len(members) == 16, (
+        f"Expected 16 CdfMetricId entries, got {len(members)}: {sorted(members)}"
+    )
     assert members == EXPECTED_METRIC_KEYS
 
 

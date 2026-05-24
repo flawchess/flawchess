@@ -152,7 +152,9 @@ def test_in_scope_metrics_has_16_entries() -> None:
 
 def test_cdf_metric_id_re_exported_from_service() -> None:
     """Script imports ``CdfMetricId`` from the service (single source of truth — RESEARCH §Pattern 3)."""
-    script_path = Path(__file__).resolve().parent.parent.parent / "scripts" / "gen_global_percentile_cdf.py"
+    script_path = (
+        Path(__file__).resolve().parent.parent.parent / "scripts" / "gen_global_percentile_cdf.py"
+    )
     src = script_path.read_text()
     assert "from app.services.global_percentile_cdf import" in src and "CdfMetricId" in src, (
         "scripts/gen_global_percentile_cdf.py must re-export CdfMetricId from the service "
@@ -168,7 +170,9 @@ def test_registry_entry_comment_time_pressure_mentions_pressured(tc: str) -> Non
     metric_id = f"time_pressure_score_gap_{tc}"
     comment = _registry_entry_comment(metric_id)  # ty: ignore[invalid-argument-type]
     assert isinstance(comment, str) and comment
-    assert "pressured" in comment.lower(), f"comment for {metric_id} missing 'pressured': {comment!r}"
+    assert "pressured" in comment.lower(), (
+        f"comment for {metric_id} missing 'pressured': {comment!r}"
+    )
 
 
 @pytest.mark.parametrize("tc", ("bullet", "blitz", "rapid", "classical"))

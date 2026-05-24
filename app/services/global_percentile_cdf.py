@@ -61,16 +61,39 @@ BREAKPOINT_PERCENTILES: Final[tuple[float, ...]] = tuple(float(i) for i in range
 _LEFT_TAIL_CLAMP: Final[float] = 0.0
 _RIGHT_TAIL_CLAMP: Final[float] = 100.0
 
-# Narrower Literal alias over the in-scope Phase 93 subset (D-02). The
-# registry uses this as the key type so the 4-metric scope is grep-able and
+# Narrower Literal alias over the chip-eligible MetricId subset (D-02). The
+# registry uses this as the key type so the scope is grep-able and
 # type-checkable. `interpolate_percentile` accepts the broader `MetricId`
 # (caller convenience: Phase 94 iterates over all metrics on the response)
 # and returns None when the key is not in `GLOBAL_PERCENTILE_CDF`.
+#
+# Phase 94.3 (SEED-025 / TPCTL-03) — widened from 4 to 16 entries:
+#   - 4 existing pre-94.3 entries (unchanged, pooled across all TCs);
+#   - 12 new per-(metric × TC) entries for the time-management chip family
+#     (time_pressure_score_gap, clock_gap, net_flag_rate × bullet/blitz/
+#     rapid/classical). These are pooled per-user but restricted to one TC
+#     bucket inside the canonical-slice CTE (see
+#     ``app.services.canonical_slice_sql`` Phase 94.3 builders).
+#
+# This Literal is the single source of truth — ``scripts/gen_global_percentile_cdf.py``
+# re-exports it (drift-impossibility per RESEARCH §Pattern 3).
 CdfMetricId = Literal[
     "score_gap",
     "achievable_score_gap",
     "section2_score_gap_conv",
     "section2_score_gap_parity",
+    "time_pressure_score_gap_bullet",
+    "time_pressure_score_gap_blitz",
+    "time_pressure_score_gap_rapid",
+    "time_pressure_score_gap_classical",
+    "clock_gap_bullet",
+    "clock_gap_blitz",
+    "clock_gap_rapid",
+    "clock_gap_classical",
+    "net_flag_rate_bullet",
+    "net_flag_rate_blitz",
+    "net_flag_rate_rapid",
+    "net_flag_rate_classical",
 ]
 
 
@@ -589,23 +612,31 @@ def _interpolate_with_table(table: CdfTable, value: float) -> float | None:
     return lo_pct + frac * (hi_pct - lo_pct)
 
 
-def interpolate_percentile(metric_id: MetricId, value: float) -> float | None:
+def interpolate_percentile(metric_id: MetricId | CdfMetricId, value: float) -> float | None:
     """Linear-interpolate `value` against the metric's CDF; return percentile in [0, 100] or None.
 
     Phase 94 hand-off shape — backend imports this helper and emits the result
     as a nullable `{metric}_percentile` field on the endgame API response.
 
+    Accepts the union ``MetricId | CdfMetricId`` for caller convenience:
+      - ``MetricId`` (broad endgame_zones Literal) — Phase 94 callers iterate
+        over every metric on the endgame response and pass each id through;
+        ones outside ``GLOBAL_PERCENTILE_CDF`` return None.
+      - ``CdfMetricId`` (Phase 94.3 widened to 16) — the chip-eligible set
+        including the 12 new per-(metric × TC) time-management entries.
+        These IDs are NOT members of ``MetricId`` (the per-TC family is new
+        in Phase 94.3 and lives in the CDF registry only), so the union here
+        is required to keep ``user_benchmark_percentiles_service`` type-clean.
+
     Returns None when:
-      - `metric_id` is not in GLOBAL_PERCENTILE_CDF (metric is not chip-eligible
-        under D-02 — e.g. Recovery, raw % gauges, anything outside the 4 in-scope
-        ΔES metrics).
+      - `metric_id` is not in GLOBAL_PERCENTILE_CDF (metric is not chip-eligible).
       - `value` is NaN.
 
     Clamps:
       - value <= breakpoints[0]  (p1)  -> 0.0   (left tail beyond resolved range)
       - value >= breakpoints[-1] (p99) -> 100.0 (right tail beyond resolved range)
     """
-    table = GLOBAL_PERCENTILE_CDF.get(metric_id)  # ty: ignore[invalid-argument-type]  # MetricId is wider than CdfMetricId by design
+    table = GLOBAL_PERCENTILE_CDF.get(metric_id)  # ty: ignore[invalid-argument-type]  # union is wider than CdfMetricId by design
     if table is None:
         return None
     return _interpolate_with_table(table, value)
