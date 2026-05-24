@@ -403,11 +403,11 @@ export function PercentileChip({
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           className={cn(
-            // min-w-[5.5rem] is the rendered width of "Bottom 50%" at text-sm
-            // plus px-2 padding — the longest possible label. justify-center
-            // keeps shorter labels (e.g. "Top 1%") visually balanced inside
-            // the chip. With flames the chip naturally expands beyond min-w.
-            'inline-flex items-center justify-center gap-1 rounded-full px-2 py-0.5 text-sm font-normal cursor-pointer min-w-[5.5rem]',
+            // min-w-[6.5rem] sized so the longest label ("Bottom 50%") fits
+            // comfortably at text-sm. justify-center keeps shorter labels
+            // (e.g. "Top 1%") visually balanced inside the chip. With flames
+            // the chip naturally expands beyond min-w.
+            'inline-flex items-center justify-center gap-1 rounded-full px-2 py-0.5 text-sm font-normal cursor-pointer min-w-[6.5rem]',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
           style={{ backgroundColor: bandColor, color: CHIP_TEXT_COLOR }}
