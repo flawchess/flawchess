@@ -214,7 +214,7 @@ Plans:
 
 **Wave 2** *(parallel-safe after Wave 1 merges to main)*
 
-- [ ] 94.3-05-PLAN.md — `scripts/backfill_user_percentiles.py`: widen `--metric` argparse choices to 16; dev rerun (autonomous); prod rerun gated by blocking HUMAN-UAT checkpoint via `bin/prod_db_tunnel.sh`
+- [x] 94.3-05-PLAN.md — `scripts/backfill_user_percentiles.py`: widen `--metric` argparse choices to 16; dev rerun (autonomous); prod rerun gated by blocking HUMAN-UAT checkpoint via `bin/prod_db_tunnel.sh`
 - [x] 94.3-06-PLAN.md — Frontend: `PercentileChip` flavor widening (4 → 16) + `DIRECTION_BY_FLAVOR` map + direction-branched rendering helpers + Net Flag "Lower is better" prepended popover line + TC-scoped popover bullets 1 + 2 + 3 chip slots wired on each of the 4 `TimePressureTcCard` instances + ≥ 25 new Vitest cases + mobile-parity audit at 375px
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
