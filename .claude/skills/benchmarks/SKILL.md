@@ -5,6 +5,8 @@ description: Generate FlawChess endgame population benchmarks from the benchmark
 
 # Benchmarks
 
+> **Phase 94.2 callout:** This SKILL describes the per-cohort analytical methodology used for `/benchmarks` reports — distribution exploration, neutral-zone calibration, "what's typical" breakdowns by (TC × ELO) bucket. The **production percentile chip uses a different methodology** since Phase 94.2: a pooled-per-user model (recent 1000/TC across all played TCs, 36-month window, single ≥30 floor on the pooled set, single globally pooled CDF). See `app/services/canonical_slice_sql.py` for the chip's SQL builders, `app/services/global_percentile_cdf.py` for the committed CDF literal, and `.planning/phases/94.2-pooled-per-user-percentile-redesign/94.2-CONTEXT.md` for the design rationale. The per-cohort stratification described below remains correct for analytical purposes — it just no longer mirrors what the production chip computes.
+
 Generate population-level benchmarks for FlawChess from the benchmark DB. The headline deliverable is a **per-metric collapse verdict** answering: does this metric need cell-specific zones across (TC × ELO), or can it use a single global zone?
 
 The skill is organized into three chapters that mirror the FlawChess UI: **Chapter 1 — Stratified Sample** holds the cell-coverage methodology that every metric depends on; **Chapter 2 — Openings** holds calibrations that feed the Openings page; **Chapter 3 — Endgames** holds calibrations that feed the Endgames → Stats page, with subchapters in the same display order as the page's H2 sections (Overall Performance → Metrics and ELO → Time Pressure → Type Breakdown).
