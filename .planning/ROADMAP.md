@@ -209,7 +209,7 @@ Plans:
 **Wave 1** *(atomic cutover — three plans, single PR, three sequential commits; no incoherent intermediate state on `main`)*
 
 - [x] 94.3-02-PLAN.md — `canonical_slice_sql.py`: add 3 new per-TC pooled-aggregate SQL builder families (`per_user_cte_time_pressure_score_gap`, `per_user_cte_clock_gap`, `per_user_cte_net_flag_rate`) parameterised by `tc: TimeControlBucket`; widen `per_user_cte_for` dispatcher with 12 new arms; pytest goldens + parity tests for all 12 (metric × TC) cells
-- [ ] 94.3-03-PLAN.md — `scripts/gen_global_percentile_cdf.py` + `app/services/global_percentile_cdf.py`: widen `CdfMetricId` + `IN_SCOPE_METRICS` from 4 to 16; widen `_registry_entry_comment` / `_metric_display_name`; regenerate `GLOBAL_PERCENTILE_CDF` literal + byte-identical regression goldens + fresh `reports/global-percentile-cdf-latest.md`
+- [x] 94.3-03-PLAN.md — `scripts/gen_global_percentile_cdf.py` + `app/services/global_percentile_cdf.py`: widen `CdfMetricId` + `IN_SCOPE_METRICS` from 4 to 16; widen `_registry_entry_comment` / `_metric_display_name`; regenerate `GLOBAL_PERCENTILE_CDF` literal + byte-identical regression goldens + fresh `reports/global-percentile-cdf-latest.md`
 - [ ] 94.3-04-PLAN.md — Alembic ENUM extension migration (12 new values, downgrade no-op stub per RESEARCH §Pattern 2) + Stage B compute widening (`STAGE_B_METRICS` 3 → 15) + `TimePressureTcCard` schema (3 new nullable fields) + `endgame_service._compute_time_pressure_cards` percentile attach + frontend type codegen
 
 **Wave 2** *(parallel-safe after Wave 1 merges to main)*
