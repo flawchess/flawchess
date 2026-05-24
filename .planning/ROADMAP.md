@@ -29,7 +29,7 @@
 - [ ] **Phase 94: Backend & Frontend Percentile Annotations** — Nullable `{metric}_percentile` on endgame responses + "top X%" chip on 4 ΔES rows (desktop + mobile parity, metric-aware popover copy)
 - [ ] **Phase 94.1: Canonical-Slice User Percentile Materialisation** — New `user_benchmark_percentiles` table storing per-(user, metric) canonical-slice value + percentile + cdf_snapshot; two-stage compute hooks (Stage A post-import for `score_gap`, Stage B post-cold-drain for the 3 eval-dependent metrics); backfill script with `--target dev|prod` for one-shot population of existing users; chip reads from table (filter-independent), tooltip copy updated to make the canonical-slice framing explicit
 - [x] **Phase 94.2: Pooled-Per-User Percentile Redesign** — Replace per-cell stratified methodology with one-point-per-user pooled model on both CDF construction and per-user lookup sides; recent 1000 games per TC, ≤36 months, pooled across TCs; single ≥30-games inclusion floor on the pool; regenerate `GLOBAL_PERCENTILE_CDF` against new methodology; re-run backfill; SKILL.md methodology chapter refresh (completed 2026-05-24)
-- [ ] **Phase 94.3: Per-TC Percentile Chips on Time Pressure Cards** *(INSERTED — SEED-025)* — Extend the Phase 94.2 pooled-per-user contract to per-TC surfaces. 12 new metrics added to `user_benchmark_percentiles` ENUM (Time Pressure Score Gap, Clock Gap, Net Flag Rate × {bullet, blitz, rapid, classical}) reusing the pooled-per-user methodology parameterised by TC; new per-TC pooled-aggregate SQL builders in `canonical_slice_sql.py`; 12 new keys in `GLOBAL_PERCENTILE_CDF`; chips wired to `TimePressureTcCard` headers (3 chips per card) via the existing `PercentileChip` component; backfill extended for one-shot population. No schema change.
+- [x] **Phase 94.3: Per-TC Percentile Chips on Time Pressure Cards** *(INSERTED — SEED-025)* — Extend the Phase 94.2 pooled-per-user contract to per-TC surfaces. 12 new metrics added to `user_benchmark_percentiles` ENUM (Time Pressure Score Gap, Clock Gap, Net Flag Rate × {bullet, blitz, rapid, classical}) reusing the pooled-per-user methodology parameterised by TC; new per-TC pooled-aggregate SQL builders in `canonical_slice_sql.py`; 12 new keys in `GLOBAL_PERCENTILE_CDF`; chips wired to `TimePressureTcCard` headers (3 chips per card) via the existing `PercentileChip` component; backfill extended for one-shot population. No schema change. (completed 2026-05-24)
 - [ ] **Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework** — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
@@ -199,7 +199,7 @@ Plans:
 
 **UI hint**: yes (3 new chip slots × 4 cards = 12 chip placements; per-quintile bullet chart unchanged; tooltip copy is new prose per chip variant)
 
-**Plans:** 6 plans
+**Plans:** 6/6 plans complete
 
 Plans:
 **Wave 0** *(research-time candidacy extension)*
