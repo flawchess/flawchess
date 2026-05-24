@@ -22,7 +22,7 @@ import type { TimePressureCardsResponse } from '@/types/endgames';
 // single-column layout holds well into desktop widths before flipping.
 const GRID_ONE_CARD = 'w-full lg:w-1/2 mt-2';
 const GRID_TWO_CARDS = 'grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2';
-const GRID_THREE_CARDS = 'grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2';
+const GRID_THREE_CARDS = 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 mt-2';
 const GRID_FOUR_CARDS = 'grid grid-cols-1 xl:grid-cols-2 gap-4 mt-2';
 
 export function EndgameTimePressureSection({

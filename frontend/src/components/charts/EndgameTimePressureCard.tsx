@@ -399,6 +399,13 @@ export function EndgameTimePressureCard({
                   outscored you.
                 </p>
                 <p>
+                  Each x-axis label is the <em>center</em> of a 20%-wide
+                  bucket: 10% pools all endgames entered with 0-20% of your
+                  clock left, 30% pools 20-40%, 50% pools 40-60%, and 70% pools
+                  60-80%. The 80-100% bucket is dropped (little time pressure
+                  to measure).
+                </p>
+                <p>
                   Each marker is sized by how many of that time bucket's games were
                   yours versus your opponents'. A bigger dot means you were in this
                   time pressure situation more often than your opponents.
