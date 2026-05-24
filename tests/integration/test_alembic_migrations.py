@@ -59,13 +59,16 @@ def _migration_present() -> bool:
 
 # Column names expected in the migrated table.
 # Plan 13 (gap-closure): ``n_cells_floor`` dropped via migration a7f3c9b82e14.
-# Row existence now implies above-floor; the column was write-only.
+# Row existence implies above-floor.
+# Phase 94.2 (D-9-amend): ``n_games`` re-added by migration b8f4d92c1e25 under
+# pooled-per-user semantics (one count per user per metric on the pooled set).
 _EXPECTED_COLUMNS: frozenset[str] = frozenset(
     {
         "user_id",
         "metric",
         "value",
         "percentile",
+        "n_games",
         "cdf_snapshot",
         "computed_at",
     }
