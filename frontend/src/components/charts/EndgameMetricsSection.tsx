@@ -94,11 +94,12 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
         How do you score from winning, balanced, and losing endgames?
       </p>
 
-      {/* Phase 87.4: 3-column card grid on lg+, single-column stacked below.
+      {/* Phase 87.4: 3-col / 2-col / 1-col staircase (lg → md → mobile) so the
+          Conv/Parity/Recov cards mirror the time-pressure cards' progression.
           DOM order: Conv -> Parity -> Recov. The Skill card slot + ConnectorArrows
-          SVG overlay were deleted in Phase 87.4 D-05; the row sits cleanly in a
-          3-col grid with no `relative` positioning needed. */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2">
+          SVG overlay were deleted in Phase 87.4 D-05; the row sits cleanly in
+          a flow grid with no `relative` positioning needed. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
         {/* Conversion card */}
         <EndgameMetricCard
           key="conversion"
