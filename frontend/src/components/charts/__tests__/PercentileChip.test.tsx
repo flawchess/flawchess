@@ -1,13 +1,25 @@
 // @vitest-environment jsdom
 /**
- * Phase 94 Plan 02 Task 2: PercentileChip component tests.
+ * Phase 94.2 Plan 05: PercentileChip component tests.
+ *
+ * Updated for the 4-flavor metric-named enum
+ * (score-gap | achievable | parity | conversion).
  *
  * Covers:
  *  - Label formatter `Top X%` (rounding, p=0 literal, p=99.9 floor at 1)
  *  - Band-color dispatch (red < 25, neutral 25..75, green > 75)
  *  - Flame tier dispatch (highest tier only — 0 / 1 / 2 / 3)
- *  - Popover open + flavor-routed copy (skill-isolating vs improvement-focus)
- *  - aria-label + data-testid contract
+ *  - Popover body discloses 4 D-4 bullets per flavor — benchmark composition,
+ *    recent-games basis, filter independence, per-metric rating-correlation
+ *    framing (calibrated per Cohen's d in
+ *    reports/benchmarks-gap-metrics-percentile-candidacy.md).
+ *  - aria-label + data-testid contract.
+ *
+ * The Phase 94.1 "minimalism budget" guard (POPOVER_MAX_CHARS) is intentionally
+ * removed here: the percentile chip popover is the sanctioned exception to
+ * feedback_popover_copy_minimalism (see feedback_percentile_chip_tooltip_disclosure
+ * project memory). It MUST disclose all four bullets; a length cap would re-trip
+ * the prior under-disclosure bug D-4 was filed to fix.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -41,12 +53,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-import { PercentileChip } from '../PercentileChip';
+import { PercentileChip, type PercentileChipFlavor } from '../PercentileChip';
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 
 const TID = 'test-pctl-chip';
 
-function renderChip(percentile: number, flavor: 'skill-isolating' | 'improvement-focus' = 'skill-isolating') {
+function renderChip(percentile: number, flavor: PercentileChipFlavor = 'score-gap') {
   return render(
     <PercentileChip
       percentile={percentile}
@@ -133,22 +145,6 @@ describe('PercentileChip', () => {
     expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(3);
   });
 
-  // ── Popover flavor routing ──
-  it('opens popover with skill-isolating copy when flavor="skill-isolating"', () => {
-    renderChip(73, 'skill-isolating');
-    // Tap toggles popover on mobile path via onOpenChange — simulate via click.
-    fireEvent.click(screen.getByTestId(TID));
-    const popover = screen.getByTestId(`${TID}-popover`);
-    expect(popover.textContent ?? '').toMatch(/Mostly independent of rating/i);
-  });
-
-  it('opens popover with improvement-focus copy when flavor="improvement-focus"', () => {
-    renderChip(20, 'improvement-focus');
-    fireEvent.click(screen.getByTestId(TID));
-    const popover = screen.getByTestId(`${TID}-popover`);
-    expect(popover.textContent ?? '').toMatch(/Conversion tracks rating closely/i);
-  });
-
   // ── Accessibility / contract ──
   it('chip trigger has aria-label including metricLabel and the rendered percentile label', () => {
     renderChip(73);
@@ -166,51 +162,74 @@ describe('PercentileChip', () => {
   });
 });
 
-// ── Phase 94.1 Plan 02: canonical-slice tooltip framing tests (D-13) ─────────
-// These tests are skipped until Plan 07 updates PercentileChip.tsx with
-// the canonical-slice clarifier copy. Use it.skip so the suite stays green
-// pre-Plan-07 while the test contracts are committed early (Wave 0 pattern).
+// ── Phase 94.2 Plan 05 (D-4): popover body discloses 4 bullets per metric ─────
+//
+// The four content blocks every flavor's popover MUST render:
+//   1. Benchmark composition  — "benchmarked Lichess players"
+//   2. Recent-games basis     — "most recent 1000 games"
+//   3. Filter independence    — "UI filters do not affect"
+//   4. Per-metric rating-correlation framing — differs per flavor (see below)
+//
+// Per-metric rating-correlation framing (per Cohen's d from
+// reports/benchmarks-gap-metrics-percentile-candidacy.md):
+//   score-gap   (d=0.19) — "mostly independent of rating" (rating-invariant)
+//   achievable  (d=0.32) — "mildly correlates with rating"
+//   parity      (d=0.30) — "mildly correlates with rating"
+//   conversion  (d=1.37) — "tracks rating strongly"
 
-// Pitfall 7 guard: popover MUST NOT bloat into a methodology paragraph.
-// The current Phase 94 copy is 1-2 sentences; the D-13 update must add
-// ONE phrase only (feedback_popover_copy_minimalism.md discipline).
-const POPOVER_MAX_CHARS = 280;
+const FLAVORS_WITH_SOFT_RATING_NOTE: ReadonlyArray<PercentileChipFlavor> = [
+  'achievable',
+  'parity',
+];
 
-describe('PercentileChip — canonical-slice tooltip framing (Phase 94.1 D-13)', () => {
-  it('renders skill-isolating popover with canonical-slice clarifier', () => {
-    // Plan 07 (D-13) added a phrase clarifying that the chip reflects
-    // the user's career under canonical conditions (not the current filtered
-    // view). Any of these substrings satisfy the D-13 requirement:
-    //   - "career under matched conditions"
-    //   - "canonical conditions"
-    //   - "not the current filtered view"
-    renderChip(73, 'skill-isolating');
+const ALL_FLAVORS: ReadonlyArray<PercentileChipFlavor> = [
+  'score-gap',
+  'achievable',
+  'parity',
+  'conversion',
+];
+
+describe('PercentileChip — D-4 popover disclosure (Phase 94.2)', () => {
+  it.each(ALL_FLAVORS)('flavor=%s discloses benchmark composition, recent-games basis, and filter independence', (flavor) => {
+    renderChip(73, flavor);
     fireEvent.click(screen.getByTestId(TID));
     const popover = screen.getByTestId(`${TID}-popover`);
-    expect(popover.textContent ?? '').toMatch(
-      /career under matched conditions|canonical conditions|not the current filtered view/i,
-    );
+    const body = popover.textContent ?? '';
+    expect(body).toMatch(/benchmarked Lichess players/i);
+    expect(body).toMatch(/most recent 1000 games/i);
+    expect(body).toMatch(/UI filters do not affect/i);
   });
 
-  it('renders improvement-focus popover with canonical-slice clarifier', () => {
-    // Same canonical-slice framing requirement for improvement-focus flavor.
-    renderChip(20, 'improvement-focus');
+  it('flavor=score-gap notes the metric is rating-invariant (no rating-coupling framing)', () => {
+    renderChip(73, 'score-gap');
     fireEvent.click(screen.getByTestId(TID));
     const popover = screen.getByTestId(`${TID}-popover`);
-    expect(popover.textContent ?? '').toMatch(
-      /career under matched conditions|canonical conditions|not the current filtered view/i,
-    );
+    const body = popover.textContent ?? '';
+    // score-gap (d=0.19) should NOT carry the soft "mildly correlates" or the
+    // heavy "tracks rating strongly" framing. The rating note is either absent
+    // or it explicitly says the metric is rating-invariant.
+    expect(body).not.toMatch(/mildly correlates with rating/i);
+    expect(body).not.toMatch(/tracks rating strongly/i);
+    expect(body).toMatch(/mostly independent of rating|independent of rating/i);
   });
 
-  it('popover body remains within minimalism budget', () => {
-    // Pitfall 7 guard: popover MUST NOT bloat into a methodology paragraph.
-    // POPOVER_MAX_CHARS = 280 enforces the 1-2 short-sentence discipline.
-    // (feedback_popover_copy_minimalism.md: WHAT + sign convention only,
-    // no jargon, no caveats like "canonical slice", "Wilson", "sigmoid".)
-    renderChip(73, 'skill-isolating');
+  it.each(FLAVORS_WITH_SOFT_RATING_NOTE)('flavor=%s carries a soft rating-coupling mention', (flavor) => {
+    renderChip(73, flavor);
     fireEvent.click(screen.getByTestId(TID));
     const popover = screen.getByTestId(`${TID}-popover`);
-    const bodyText = (popover.textContent ?? '').trim();
-    expect(bodyText.length).toBeLessThanOrEqual(POPOVER_MAX_CHARS);
+    const body = popover.textContent ?? '';
+    expect(body).toMatch(/mildly correlates with rating/i);
+    // and NOT the heavy framing
+    expect(body).not.toMatch(/tracks rating strongly/i);
+  });
+
+  it('flavor=conversion carries honest "tracks rating strongly" framing', () => {
+    renderChip(73, 'conversion');
+    fireEvent.click(screen.getByTestId(TID));
+    const popover = screen.getByTestId(`${TID}-popover`);
+    const body = popover.textContent ?? '';
+    expect(body).toMatch(/tracks rating strongly/i);
+    // and NOT the soft mild framing
+    expect(body).not.toMatch(/mildly correlates with rating/i);
   });
 });
