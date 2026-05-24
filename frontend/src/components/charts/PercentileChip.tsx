@@ -53,11 +53,18 @@ const CHIP_TEXT_COLOR = 'oklch(0.98 0 0)';
 // Three always-present blocks (benchmark composition, recent-games basis,
 // filter independence) + one per-metric rating-correlation block calibrated
 // per Cohen's d from reports/benchmarks-gap-metrics-percentile-candidacy.md.
-const COPY_BENCHMARK_COMPOSITION =
-  'Compared against benchmarked Lichess players of all ratings and time controls.';
 const COPY_RECENT_GAMES_BASIS =
-  'Uses your most recent 1000 rated games per time control played, last 36 months.';
+  'Uses your most recent 1000 rated games per time control, played against opponents of similar strength (+/-100 ELO) over the last 3 years.';
 const COPY_FILTER_INDEPENDENCE = 'UI filters do not affect this percentile.';
+
+/**
+ * "Better than X%" display number. Mirrors `formatTopXPercent`'s floor so
+ * the two phrasings stay consistent: at p=99.9 the chip says "Top 1%" and
+ * the popover says "better than 99%" (not "better than 100%").
+ */
+function formatBetterThanPercent(pct: number): string {
+  return `${Math.max(0, Math.min(99, Math.round(pct)))}%`;
+}
 
 // Per-metric rating-correlation framing (lower Cohen's d → more rating-invariant).
 const COPY_RATING_NOTE_SCORE_GAP =
@@ -116,11 +123,22 @@ function formatTopXPercent(pct: number): string {
   return `Top ${Math.max(MIN_TOP_PERCENT, Math.round(100 - pct))}%`;
 }
 
-function PercentileChipPopoverBody({ flavor }: { flavor: PercentileChipFlavor }): React.ReactElement {
+function PercentileChipPopoverBody({
+  flavor,
+  metricLabel,
+  percentile,
+}: {
+  flavor: PercentileChipFlavor;
+  metricLabel: string;
+  percentile: number;
+}): React.ReactElement {
   const ratingNote = RATING_NOTE_BY_FLAVOR[flavor];
   return (
     <div className="space-y-1.5">
-      <p>{COPY_BENCHMARK_COMPOSITION}</p>
+      <p>
+        Your {metricLabel} is better than {formatBetterThanPercent(percentile)} of benchmarked
+        Lichess players of all ELO ratings and time controls.
+      </p>
       <p>{COPY_RECENT_GAMES_BASIS}</p>
       <p>{COPY_FILTER_INDEPENDENCE}</p>
       <p>{ratingNote}</p>
@@ -217,7 +235,11 @@ export function PercentileChip({
             'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
           )}
         >
-          <PercentileChipPopoverBody flavor={flavor} />
+          <PercentileChipPopoverBody
+            flavor={flavor}
+            metricLabel={metricLabel}
+            percentile={percentile}
+          />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>

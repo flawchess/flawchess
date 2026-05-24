@@ -197,7 +197,10 @@ describe('PercentileChip — D-4 popover disclosure (Phase 94.2)', () => {
     const body = popover.textContent ?? '';
     expect(body).toMatch(/benchmarked Lichess players/i);
     expect(body).toMatch(/most recent 1000 rated games/i);
+    expect(body).toMatch(/opponents of similar strength/i);
     expect(body).toMatch(/UI filters do not affect/i);
+    // Paragraph 1 now incorporates metricLabel and a "better than X%" framing.
+    expect(body).toMatch(/Your Endgame Score Gap is better than 73% of/i);
   });
 
   it('flavor=score-gap notes the metric is rating-invariant (no rating-coupling framing)', () => {
