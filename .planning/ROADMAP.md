@@ -174,12 +174,12 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 — independent downstream updates, parallel-safe)*
 
-- [ ] 94.2-04-PLAN.md — Rewrite .claude/skills/benchmarks/SKILL.md Chapter 1 + Chapter 4 for pooled-per-user methodology; flag 94.1 per-cell content as superseded
-- [ ] 94.2-05-PLAN.md — Widen PercentileChip flavor enum to 4 metric-named variants; rewrite popover body for D-4 disclosure (benchmark composition + recent-games basis + filter independence + per-metric rating-correlation framing per Cohen'''s d); update 4 call sites in EndgameOverallPerformanceSection.tsx + EndgameMetricCard.tsx
+- [x] 94.2-04-PLAN.md — Rewrite .claude/skills/benchmarks/SKILL.md Chapter 1 + Chapter 4 for pooled-per-user methodology; flag 94.1 per-cell content as superseded
+- [x] 94.2-05-PLAN.md — Widen PercentileChip flavor enum to 4 metric-named variants; rewrite popover body for D-4 disclosure (benchmark composition + recent-games basis + filter independence + per-metric rating-correlation framing per Cohen'''s d); update 4 call sites in EndgameOverallPerformanceSection.tsx + EndgameMetricCard.tsx
 
 **Wave 3** *(blocked on Wave 1 — DB-touching, HUMAN-UAT on prod step)*
 
-- [ ] 94.2-06-PLAN.md — Update backfill_user_percentiles.py _MetricSummary classification for pooled semantics; run dev backfill; HUMAN-UAT checkpoint for prod backfill via bin/prod_db_tunnel.sh
+- [x] 94.2-06-PLAN.md — Update backfill_user_percentiles.py _MetricSummary classification for pooled semantics; run dev backfill; HUMAN-UAT checkpoint for prod backfill via bin/prod_db_tunnel.sh
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
 
