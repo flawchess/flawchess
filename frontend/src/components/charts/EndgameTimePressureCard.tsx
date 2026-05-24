@@ -330,6 +330,8 @@ export function EndgameTimePressureCard({
               barColor="neutral"
             />
           </div>
+          {/* Visual separator between Clock Gap bullet and Net flag rate row. */}
+          <div className="border-t border-border/40 mt-3" aria-hidden="true" />
           <NetFlagRateRow card={card} />
         </div>
 
