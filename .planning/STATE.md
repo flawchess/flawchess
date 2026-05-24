@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.19
 milestone_name: Endgame Percentiles & LLM Statistical Reasoning
 status: "Phase 94.2 shipped — PR #142"
-last_updated: "2026-05-24T08:27:35.304Z"
+last_updated: "2026-05-24T14:43:37.619Z"
 last_activity: 2026-05-24
 progress:
-  total_phases: 9
-  completed_phases: 3
+  total_phases: 10
+  completed_phases: 4
   total_plans: 24
   completed_plans: 24
-  percent: 33
+  percent: 40
 ---
 
 # Project State: FlawChess
@@ -131,6 +131,7 @@ Carried forward from v1.11 close (still relevant):
 - Phase 87.3 inserted after Phase 87.2: Endgame Skill v2 — Conv+Parity percentile composite (Recovery dropped, opponent-confounded per benchmark spike) (URGENT)
 - Phase 88.3 inserted after Phase 88: Endgame Stats viz refinements (timeline inactivity annotations, ELO default series, Overall Performance 2-col card restructure) — from /gsd-explore chart-quality review (URGENT)
 - Phase 88.4 inserted after Phase 88.3: Time Pressure card layout refactor (responsive grid, 3-stat header row over Clock Gap bullet, Score-Gap bullets → one zone-banded line chart w/ whiskers + tooltip stats, neutral zone TC-collapsed per §3.3.3) — from user layout review of screenshots/tc-cards.png; frontend-only
+- Phase 94.3 inserted after Phase 94.2: Per-TC percentile chips on Time Pressure cards (SEED-025) — extends 94.2 pooled-per-user contract by TC; 12 new metrics; no schema change
 
 ### Pending Todos
 
