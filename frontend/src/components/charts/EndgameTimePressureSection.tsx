@@ -17,13 +17,13 @@ import type { TimePressureCardsResponse } from '@/types/endgames';
 
 // SC-1: Named grid class constants — no magic strings in the ternary.
 // Mobile-first: every layout collapses to a single stacked column below the
-// multi-col breakpoint so TC cards stack on phones AND narrow tablets.
-// Breakpoints raised one step (sm→md, md→lg) so the single-column layout
-// holds a bit longer before flipping to multi-col.
-const GRID_ONE_CARD = 'w-full md:w-1/2 mt-2';
-const GRID_TWO_CARDS = 'grid grid-cols-1 md:grid-cols-2 gap-4 mt-2';
-const GRID_THREE_CARDS = 'grid grid-cols-1 md:grid-cols-3 gap-4 mt-2';
-const GRID_FOUR_CARDS = 'grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2';
+// multi-col breakpoint so TC cards stack on phones AND tablets. Breakpoints
+// raised two steps from the Phase 88 originals (sm→lg / md→xl) so the
+// single-column layout holds well into desktop widths before flipping.
+const GRID_ONE_CARD = 'w-full lg:w-1/2 mt-2';
+const GRID_TWO_CARDS = 'grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2';
+const GRID_THREE_CARDS = 'grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2';
+const GRID_FOUR_CARDS = 'grid grid-cols-1 xl:grid-cols-2 gap-4 mt-2';
 
 export function EndgameTimePressureSection({
   data,
