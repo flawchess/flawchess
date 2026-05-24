@@ -204,7 +204,7 @@ Plans:
 Plans:
 **Wave 0** *(research-time candidacy extension)*
 
-- [ ] 94.3-01-PLAN.md — Extend `reports/benchmarks-gap-metrics-percentile-candidacy.md` with a 12-cell (metric × TC) Cohen's d candidacy table; feeds Plan 06's per-chip tooltip 4th-bullet copy
+- [x] 94.3-01-PLAN.md — Extend `reports/benchmarks-gap-metrics-percentile-candidacy.md` with a 12-cell (metric × TC) Cohen's d candidacy table; feeds Plan 06's per-chip tooltip 4th-bullet copy
 
 **Wave 1** *(atomic cutover — three plans, single PR, three sequential commits; no incoherent intermediate state on `main`)*
 

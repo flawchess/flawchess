@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.19
 milestone_name: Endgame Percentiles & LLM Statistical Reasoning
-status: "Phase 94.2 shipped — PR #142"
-last_updated: "2026-05-24T14:43:37.619Z"
-last_activity: 2026-05-24
+status: executing
+last_updated: "2026-05-24T15:43:23.239Z"
+last_activity: 2026-05-24 -- Phase 94.3 execution started
 progress:
   total_phases: 10
   completed_phases: 4
-  total_plans: 24
+  total_plans: 30
   completed_plans: 24
   percent: 40
 ---
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 95
-Plan: Not started
-Status: Phase 94.2 shipped — PR #142
-Last activity: 2026-05-24
+Phase: 94.3 (per-tc-percentile-chips-time-pressure) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 94.3
+Last activity: 2026-05-24 -- Phase 94.3 execution started
 
 ## Project Reference
 
