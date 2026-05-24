@@ -4,9 +4,9 @@
  *                  Phase 94.3 Plan 06 (TPCTL-06 / TPCTL-07).
  *
  * Inline pill chip that surfaces a user's cohort percentile against the
- * global CDF on the chipped metric rows. Banded color from theme.ts, lucide
- * Flame stack for the top 10% / 5% / 1% tiers, Radix popover shell
- * (hover + tap) with one popover body per metric-named flavor.
+ * global CDF on the chipped metric rows. Banded color from theme.ts and a
+ * Radix popover shell (hover + tap) with one popover body per metric-named
+ * flavor.
  *
  * Phase 94.2 (D-4): popover body discloses 4 bullets per metric —
  *   1. benchmark composition,
@@ -37,7 +37,6 @@
 
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { Flame } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
@@ -46,21 +45,12 @@ const HOVER_OPEN_DELAY_MS = 100;
 const PERCENTILE_BAND_LOW = 25;
 const PERCENTILE_BAND_HIGH = 75;
 const PERCENTILE_MEDIAN = 50; // ≤ → "Bottom X%", > → "Top X%"
-const FLAME_TIER_1 = 80; // top 20% (higher_is_better)
-const FLAME_TIER_2 = 90; // top 10% (higher_is_better)
-const FLAME_TIER_3 = 95; // top 5%  (higher_is_better)
-// Lower-is-better tier thresholds — symmetric mirror of the higher-is-better
-// thresholds across p50. p5/p10/p20 = top 5% / 10% / 20% of "lowest values".
-const FLAME_TIER_1_LOW = 20;
-const FLAME_TIER_2_LOW = 10;
-const FLAME_TIER_3_LOW = 5;
 const MIN_PERCENT = 1; // floor for label formatter — prevents "Top 0%" / "Bottom 0%" at edge percentiles
-const FLAME_ICON_SIZE_CLASS = 'h-3 w-3'; // matches existing inline-icon convention in EndgameMetricCard
 
-// Sole hard-coded color in this component. Justification: the chip's text and
-// flame icons render in near-white on top of all three band colors (red /
-// blue / green). It is a chip-internal "text-on-fill" convention, not a
-// semantic theme token, so it does not earn a theme.ts entry.
+// Sole hard-coded color in this component. Justification: the chip's text
+// renders in near-white on top of all three band colors (red / blue / green).
+// It is a chip-internal "text-on-fill" convention, not a semantic theme token,
+// so it does not earn a theme.ts entry.
 const CHIP_TEXT_COLOR = 'oklch(0.98 0 0)';
 
 // ── D-4 popover-body copy constants ────────────────────────────────────────
@@ -127,7 +117,7 @@ export type PercentileChipFlavor =
   | 'net_flag_rate_classical';
 
 /** Phase 94.3 D-2: chip direction axis. `lower_is_better` flips text
- *  formatter, band color, and flame trigger. */
+ *  formatter and band color. */
 export type PercentileChipDirection = 'higher_is_better' | 'lower_is_better';
 
 // Canonical user-facing metric labels per flavor. Single source of truth so the
@@ -285,20 +275,6 @@ function deriveBandColor(pct: number, direction: PercentileChipDirection): strin
   return GAUGE_NEUTRAL;
 }
 
-function deriveFlameCount(pct: number, direction: PercentileChipDirection): 0 | 1 | 2 | 3 {
-  if (direction === 'lower_is_better') {
-    if (pct <= FLAME_TIER_3_LOW) return 3; // p1   — top 1% (fewest flags)
-    if (pct <= FLAME_TIER_2_LOW) return 2; // p5   — top 5%
-    if (pct <= FLAME_TIER_1_LOW) return 1; // p10  — top 10%
-    return 0;
-  }
-  // higher_is_better — Phase 94.2 logic preserved verbatim.
-  if (pct >= FLAME_TIER_3) return 3;
-  if (pct >= FLAME_TIER_2) return 2;
-  if (pct >= FLAME_TIER_1) return 1;
-  return 0;
-}
-
 function formatTopXPercent(pct: number, direction: PercentileChipDirection): string {
   if (direction === 'lower_is_better') {
     // Raw percentile is position in ascending sort by raw value — for
@@ -390,7 +366,6 @@ export function PercentileChip({
   const direction = DIRECTION_BY_FLAVOR[flavor];
   const label = formatTopXPercent(percentile, direction);
   const bandColor = deriveBandColor(percentile, direction);
-  const flameCount = deriveFlameCount(percentile, direction);
 
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
@@ -405,24 +380,12 @@ export function PercentileChip({
           className={cn(
             // min-w-[6.5rem] sized so the longest label ("Bottom 50%") fits
             // comfortably at text-sm. justify-center keeps shorter labels
-            // (e.g. "Top 1%") visually balanced inside the chip. With flames
-            // the chip naturally expands beyond min-w.
+            // (e.g. "Top 1%") visually balanced inside the chip.
             'inline-flex items-center justify-center gap-1 rounded-full px-2 py-0.5 text-sm font-normal cursor-pointer min-w-[6.5rem]',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
           style={{ backgroundColor: bandColor, color: CHIP_TEXT_COLOR }}
         >
-          {flameCount > 0 && (
-            <span className="inline-flex" aria-hidden="true">
-              {Array.from({ length: flameCount }).map((_, i) => (
-                <Flame
-                  key={i}
-                  className={FLAME_ICON_SIZE_CLASS}
-                  data-testid={`${testId}-flame`}
-                />
-              ))}
-            </span>
-          )}
           <span>{label}</span>
         </span>
       </PopoverPrimitive.Trigger>

@@ -8,7 +8,6 @@
  * Covers:
  *  - Label formatter `Top X%` (rounding, p=0 literal, p=99.9 floor at 1)
  *  - Band-color dispatch (red < 25, neutral 25..75, green > 75)
- *  - Flame tier dispatch (highest tier only — 0 / 1 / 2 / 3)
  *  - Popover body discloses 4 D-4 bullets per flavor — benchmark composition,
  *    recent-games basis, filter independence, per-metric rating-correlation
  *    framing (calibrated per Cohen's d in
@@ -23,7 +22,7 @@
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -120,31 +119,6 @@ describe('PercentileChip', () => {
     renderChip(85);
     const chip = screen.getByTestId(TID);
     expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_SUCCESS));
-  });
-
-  // ── Flame tier dispatch (highest tier only) ──
-  it('renders 0 flame icons for percentile=79 (below 1-flame threshold)', () => {
-    renderChip(79);
-    const chip = screen.getByTestId(TID);
-    expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(0);
-  });
-
-  it('renders 1 flame icon for percentile=80', () => {
-    renderChip(80);
-    const chip = screen.getByTestId(TID);
-    expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(1);
-  });
-
-  it('renders 2 flame icons for percentile=90', () => {
-    renderChip(90);
-    const chip = screen.getByTestId(TID);
-    expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(2);
-  });
-
-  it('renders 3 flame icons for percentile=95 (highest tier only — NOT 6 from 1+2+3)', () => {
-    renderChip(95);
-    const chip = screen.getByTestId(TID);
-    expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(3);
   });
 
   // ── Accessibility / contract ──
@@ -323,23 +297,11 @@ describe('PercentileChip — per-TC popover (Phase 94.3)', () => {
     expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_DANGER));
   });
 
-  it('net_flag_rate flavor renders 3 flames at percentile=99 (top tier)', () => {
-    renderChipFor(99, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
-    const chip = screen.getByTestId(TID);
-    expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(3);
-  });
-
   // ── Higher-is-better regression for new per-TC variants ──
   it('higher_is_better per-TC flavor renders "Top 27%" at percentile=73 (clock_gap_blitz)', () => {
     renderChipFor(73, 'clock_gap_blitz', 'Clock Gap (blitz)');
     const txt = screen.getByTestId(TID).textContent ?? '';
     expect(txt).toContain('Top 27%');
-  });
-
-  it('higher_is_better per-TC flavor renders 3 flames at percentile=99 (time_pressure_score_gap_bullet)', () => {
-    renderChipFor(99, 'time_pressure_score_gap_bullet', 'Time Pressure Score Gap (bullet)');
-    const chip = screen.getByTestId(TID);
-    expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(3);
   });
 
   // ── No flavor includes the "Lower is better" line (post-UAT regression) ──
