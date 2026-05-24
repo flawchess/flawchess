@@ -80,7 +80,6 @@ async def test_returns_true_when_row_written() -> None:
         result = await bup._compute_and_count(
             user_id=_TEST_USER_ID,
             metric=_STAGE_A_METRIC,
-            stage="A",
             backfill_session_maker=session_maker,
         )
 
@@ -104,7 +103,6 @@ async def test_returns_none_when_no_row_written() -> None:
         result = await bup._compute_and_count(
             user_id=_TEST_USER_ID,
             metric=_STAGE_A_METRIC,
-            stage="A",
             backfill_session_maker=session_maker,
         )
 
@@ -112,25 +110,43 @@ async def test_returns_none_when_no_row_written() -> None:
     mock_stage_a.assert_awaited_once()
 
 
-async def test_stage_b_routes_to_compute_stage_b() -> None:
-    """Stage='B' calls compute_stage_b, not compute_stage_a."""
-    session_maker = _make_session_maker()
+async def test_stage_b_compute_called_once_per_user_not_per_metric() -> None:
+    """Phase 94.3 WR-01 regression: compute_stage_b runs ONCE per user.
 
+    Prior bug: `_backfill_user` called `_compute_and_count(stage="B", ...)`
+    inside a per-metric loop, which invoked `compute_stage_b` 15 times even
+    though `compute_stage_b` itself iterates STAGE_B_METRICS internally.
+    Net: 15 × 15 = 225 CTE executions/user. The fix moves `compute_stage_b`
+    out of the per-metric loop and uses `_row_exists` per metric to classify.
+    """
+    all_metrics: tuple[CdfMetricId, ...] = (bup.STAGE_A_METRIC, *bup.STAGE_B_METRICS)
+    summary: dict[CdfMetricId, bup._MetricSummary] = {m: bup._MetricSummary() for m in all_metrics}
+
+    fake_session_maker = MagicMock()
+    fake_session_maker.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+    fake_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    target: Literal["dev", "prod"] = "dev"
     with (
+        patch.object(bup, "count_pending_evals", AsyncMock(return_value=0)),
+        patch.object(bup, "_compute_and_count", AsyncMock(return_value=True)),
+        patch.object(bup, "compute_stage_b", AsyncMock(return_value=None)) as mock_stage_b,
         patch.object(bup, "_row_exists", AsyncMock(return_value=True)),
-        patch.object(bup, "compute_stage_a", AsyncMock(return_value=None)) as mock_a,
-        patch.object(bup, "compute_stage_b", AsyncMock(return_value=None)) as mock_b,
     ):
-        result = await bup._compute_and_count(
+        await bup._backfill_user(
             user_id=_TEST_USER_ID,
-            metric=_STAGE_B_METRIC,
-            stage="B",
-            backfill_session_maker=session_maker,
+            target=target,
+            metric_filter=None,
+            backfill_session_maker=fake_session_maker,
+            summary=summary,
         )
 
-    assert result is True
-    mock_b.assert_awaited_once()
-    mock_a.assert_not_awaited()
+    # The fix: compute_stage_b is called exactly once per user, regardless of
+    # how many STAGE_B_METRICS exist.
+    assert mock_stage_b.await_count == 1, (
+        f"expected compute_stage_b to be called exactly once per user, "
+        f"got {mock_stage_b.await_count}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -147,10 +163,15 @@ async def test_backfill_user_increments_upserted_when_classifier_returns_true() 
     fake_session_maker.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
     fake_session_maker.return_value.__aexit__ = AsyncMock(return_value=None)
 
+    # Phase 94.3 WR-01: Stage B no longer routes through `_compute_and_count`.
+    # Patch the underlying compute_stage_b + _row_exists used by the new
+    # one-call-per-user path. _compute_and_count is still mocked for Stage A.
     target: Literal["dev", "prod"] = "dev"
     with (
         patch.object(bup, "count_pending_evals", AsyncMock(return_value=0)),
         patch.object(bup, "_compute_and_count", AsyncMock(return_value=True)),
+        patch.object(bup, "compute_stage_b", AsyncMock(return_value=None)),
+        patch.object(bup, "_row_exists", AsyncMock(return_value=True)),
     ):
         await bup._backfill_user(
             user_id=_TEST_USER_ID,
@@ -160,7 +181,7 @@ async def test_backfill_user_increments_upserted_when_classifier_returns_true() 
             summary=summary,
         )
 
-    # All 4 metrics are upserted (pending_evals=0, all metrics computed)
+    # All 16 metrics are upserted (pending_evals=0, all metrics computed)
     for metric_id in all_metrics:
         assert summary[metric_id].upserted == 1, f"expected upserted=1 for {metric_id}"
         assert summary[metric_id].skipped_below_pooled_floor == 0

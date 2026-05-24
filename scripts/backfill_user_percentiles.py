@@ -378,7 +378,6 @@ async def _backfill_user(
         upserted = await _compute_and_count(
             user_id=user_id,
             metric=STAGE_A_METRIC,
-            stage="A",
             backfill_session_maker=backfill_session_maker,
         )
         if upserted:
@@ -390,34 +389,36 @@ async def _backfill_user(
             summary[STAGE_A_METRIC].skipped_below_pooled_floor += 1
 
     # Stage B: eval-dependent metrics (only if no pending evals).
-    for metric_id in STAGE_B_METRICS:
-        if metric_filter is not None and metric_filter != metric_id:
-            continue
-        if pending_evals > 0:
+    # Phase 94.3 WR-01 fix: call compute_stage_b ONCE per user. It iterates
+    # STAGE_B_METRICS internally and writes rows for all 15 metrics in one
+    # session. The prior per-metric loop (15 iterations × 15 internal metrics
+    # = 225 CTE executions/user) was a 15× overcompute introduced when the
+    # registry widened from 3 to 15. After the single compute call, probe each
+    # metric's row to classify the summary counter.
+    if pending_evals > 0:
+        for metric_id in STAGE_B_METRICS:
+            if metric_filter is not None and metric_filter != metric_id:
+                continue
             summary[metric_id].skipped_no_eval += 1
-            continue
-        upserted = await _compute_and_count(
-            user_id=user_id,
-            metric=metric_id,
-            stage="B",
-            backfill_session_maker=backfill_session_maker,
-        )
-        if upserted:
-            summary[metric_id].upserted += 1
-        else:
-            # None = user below pooled ≥30 inclusion floor (no row written).
-            # Phase 94.2 pooled semantics (RESEARCH §Pitfall 7).
-            summary[metric_id].skipped_below_pooled_floor += 1
+    else:
+        await compute_stage_b(user_id, session_maker=backfill_session_maker)
+        for metric_id in STAGE_B_METRICS:
+            if metric_filter is not None and metric_filter != metric_id:
+                continue
+            if await _row_exists(user_id, metric_id, backfill_session_maker):
+                summary[metric_id].upserted += 1
+            else:
+                # Phase 94.2 pooled semantics (RESEARCH §Pitfall 7).
+                summary[metric_id].skipped_below_pooled_floor += 1
 
 
 async def _compute_and_count(
     *,
     user_id: int,
     metric: CdfMetricId,
-    stage: Literal["A", "B"],
     backfill_session_maker: async_sessionmaker[AsyncSession],
 ) -> bool | None:
-    """Call compute_stage_a or compute_stage_b and classify the outcome.
+    """Call compute_stage_a and classify the outcome.
 
     Phase 94.2 pooled semantics: ``_compute_metric_for_user`` returns None when
     the user's recent-1000-per-TC × 36-month pool does not meet the metric's
@@ -431,14 +432,7 @@ async def _compute_and_count(
     The two return values map onto the per-metric summary counters at
     ``_backfill_user``: ``upserted`` / ``skipped_below_pooled_floor``.
     """
-    # Call the appropriate stage.
-    if stage == "A":
-        await compute_stage_a(user_id, session_maker=backfill_session_maker)
-    else:
-        # Stage B computes all 3 metrics; we inspect only the specific one.
-        await compute_stage_b(user_id, session_maker=backfill_session_maker)
-
-    # Post-compute probe: row exists iff the user passed the pooled inclusion floor.
+    await compute_stage_a(user_id, session_maker=backfill_session_maker)
     row_after = await _row_exists(user_id, metric, backfill_session_maker)
     if not row_after:
         # No row — user below the pooled ≥30 inclusion floor (Phase 94.2).
