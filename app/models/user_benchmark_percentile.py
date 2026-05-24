@@ -13,7 +13,10 @@ Recompute is UPSERT (see ``app/repositories/user_benchmark_percentiles_repositor
 Phase 94.1 Plan 13 semantics (gap-closure):
   Row existence implies above-floor. Below-floor (user, metric) pairs produce
   NO row — the chip suppresses naturally via an empty fetch_for_user result.
-  The ``n_cells_floor`` column was dropped by migration a7f3c9b82e14.
+
+The ``n_games`` column was added by Phase 94.2 (re-introduced after the
+per-cell ``n_cells_floor`` was dropped in 94.1-13). Under the pooled-per-user
+model, ``n_games`` carries per-metric semantics — see the class docstring.
 """
 
 from __future__ import annotations
@@ -50,6 +53,18 @@ class UserBenchmarkPercentile(Base):
     ``(elo_bucket, tc_bucket)`` cells for a metric, no row is written
     (Plan 13 gap-closure). The chip suppresses naturally when fetch_for_user
     returns an empty dict for that metric.
+
+    Phase 94.2 (D-9-amend): the ``n_games`` column carries per-metric meaning
+    under the pooled-per-user model.
+
+    - ``score_gap`` → count of endgame games on the user's pool (the binding
+      floor; paired non-endgame count is in the backfill log only, not the table).
+    - ``achievable_score_gap`` → count of endgame-entry games with non-null
+      ``d_i`` on the pool.
+    - ``section2_score_gap_conv`` → count of spans classified into the
+      conversion bucket on the pool.
+    - ``section2_score_gap_parity`` → count of spans classified into the
+      parity bucket on the pool.
     """
 
     __tablename__ = "user_benchmark_percentiles"
@@ -62,6 +77,7 @@ class UserBenchmarkPercentile(Base):
     metric: Mapped[CdfMetricId] = mapped_column(benchmark_metric_enum, primary_key=True)
     value: Mapped[float] = mapped_column(Float, nullable=False)
     percentile: Mapped[float | None] = mapped_column(Float, nullable=True)
+    n_games: Mapped[int] = mapped_column(Integer, nullable=False)
     cdf_snapshot: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     computed_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
