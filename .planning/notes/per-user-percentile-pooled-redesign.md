@@ -54,6 +54,24 @@ Percentile now answers: *"Of all Lichess players we benchmarked, where do I curr
 
 **Acknowledged tradeoff: rating-correlated metrics will systematically favour high-rated players.** Achievable score gap, conversion gap, and parity gap all correlate with playing strength. Under the new model, a 2400 player will tend to read higher percentiles than a 1200 player on these metrics. This is intentional — the chip honestly says "where you stand among all chess players," which is closer to the question users actually have. The alternative (ELO-conditioned CDF) was considered and rejected: a 1200 reading "Top 5% at your level" on conversion gap conveys less than a 1200 reading "Top 30% overall" because the latter is rooted in absolute skill.
 
+## Known unaddressed risk: TC-mix heterogeneity
+
+The pooled value for a user mixes their games across all TCs they play (bullet + blitz + rapid + classical), weighted by volume. A user who plays 95% bullet + 5% classical produces a pooled value dominated by their bullet behavior; a user with the opposite split produces a value dominated by their classical behavior. Both are then compared against the same global CDF — whose own TC-mix reflects the cohort's aggregate TC distribution, not either user's.
+
+This is a real interpretation problem for users with extreme TC concentration:
+
+- A heavy-bullet player's pooled value reflects time-pressure-heavy decisions; comparing them to a cohort that includes slow-classical games inflates or deflates depending on how the metric responds to time pressure.
+- A user's rating in different TCs can differ by hundreds of ELO points (1800 rapid + 1200 bullet is common). Their pooled value averages over two different skill modes presented as one.
+- The cohort CDF itself has the same mix problem, but the cohort's mix is the population's mix — not the individual's.
+
+Not addressed in 94.2. Mitigations considered and deferred:
+
+- **Per-TC CDFs** — one CDF per metric per TC bucket. Cleaner conceptually but multiplies the surface (4 metrics × 4 TCs = 16 CDFs), forces a TC selector into the chip UI, and shrinks each CDF's cohort by ~4×. Probably the right long-term answer if the heterogeneity bites in practice.
+- **Disclose user's TC mix in the tooltip** — surface the pooled-set composition ("70% bullet / 25% blitz / 5% classical") so the user can mentally weight the chip. Cheaper, doesn't fix the math but flags it.
+- **Restrict the pool to the user's primary TC** — pick the TC with the most games and drop the rest. Loses the "pooled across all play" framing the chip was designed around.
+
+Flag for revisit if user feedback surfaces "my chip doesn't match my rating mode" complaints, or for a future phase when per-TC CDFs are in scope.
+
 ## Code impact
 
 The redesign supersedes most of Phase 94.1's per-cell stratification machinery:
