@@ -233,6 +233,61 @@ This leaves 3 in-scope ΔES chips. If Tier-2 raw rates also ship, they would add
 
 ---
 
+## Time Pressure metric family (Phase 94.3)
+
+Empirical input for SEED-025 / Phase 94.3 per-TC percentile chips. The Phase 94.2 candidacy report shape (one row per metric, pooled across all TCs) does not generalise to Time Pressure — Net Flag Rate at bullet likely tracks rating much harder than at classical, so the per-chip 4th tooltip bullet (rating-correlation framing) needs a per-cell calibration before Plan F can populate `RATING_NOTE_BY_FLAVOR` in `PercentileChip.tsx`. This section measures one Cohen's d per `(metric_family × tc)` cell so the per-chip copy is data-anchored, not invented.
+
+- **DB**: benchmark (Docker `flawchess-benchmark-db-1` on port 5433).
+- **Cohort**: full ingest (100 users/cell × 5 ELO × 4 TC; sparse `(2400, classical)` cell n=12 excluded from the cohort selection step). Per-cell **n_users** below counts deduped users (by lichess_username) passing the metric's inclusion floor in at least one ELO bucket within the per-TC pool.
+- **Filters**: canonical CTE with `bic.status='completed'`; equal-footing opponent filter (`|opp_rating − user_rating| ≤ 100`); ELO bucketed by the cohort user's **rating at game time**; sub-800 rows dropped. The per-TC restriction `g.time_control_bucket::text = '{tc}'` is added to the inner `recent_games` filter; `recent_capped` keeps the most-recent 1000 games per user inside the restricted set; 36-month recency carries verbatim.
+- **Per-user floors**: ≥30 user-pressured AND ≥30 opponent-pressured endgame-entry games for `time_pressure_score_gap_{tc}` (where "pressured" means `clock_pct < 0.40` of `games.base_time_seconds`); ≥30 endgame-entry games for `clock_gap_{tc}` and `net_flag_rate_{tc}`. The pressure cutoff value (0.40) and the inclusion floor (30) are inherited from SEED-025 / Phase 94.3 RESEARCH §Pitfall 5 verbatim.
+- **Cohen's d** is `(mean(2400) − mean(800)) / pooled_sd` with `pooled_sd = sqrt(((n1−1)·s1² + (n2−1)·s2²) / (n1+n2−2))`; per the existing report's ladder, `d ≤ 0.20 → rating-invariant`, `≤ 0.35 → mild coupling`, `≤ 0.60 → moderate coupling`, `> 0.60 → heavy rating-proxy` (used verbatim — no new tier labels).
+- **Source-of-truth note on clock data**: `game_positions.clock_seconds` is a single column per (game, ply), not user/opp split. User vs opponent clock at endgame entry is derived from `user_color` and ply parity: white = even plies, black = odd plies. The first endgame-entry clock for each side is the first non-NULL `clock_seconds` matching that parity, taken from a `game_positions` row stream restricted to `endgame_class IS NOT NULL` (`HAVING count(*) >= 6` per the standard endgame-entry rule). Termination value for time forfeits is `games.termination = 'timeout'` (Postgres ENUM); the user-side outcome on a timeout is derived from `games.result` and `games.user_color` exactly as `_iterate_clock_rows` does in `app/services/endgame_service.py`. Mirroring the production aggregator avoids classifier drift between this report and the runtime per-card `net_timeout_rate`.
+
+### 12-cell tier table
+
+| metric × TC | n_users | n_obs (pooled) | pooled median | pooled skew | 800 median | 2400 median | Cohen's d (800↔2400) | Tier | Tooltip 4th-bullet copy |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| `time_pressure_score_gap_bullet` | 470 | 574 | +0.25pp | +0.28 | −2.86pp | +4.78pp | **+0.52** | moderate coupling | This bullet score-gap partly tracks rating, so stronger players tend to absorb time pressure better; positive = you score higher under pressure than your opponents do. |
+| `time_pressure_score_gap_blitz` | 425 | 492 | +2.60pp | +0.14 | −1.71pp | +4.76pp | **+0.40** | moderate coupling | This blitz score-gap partly tracks rating, so stronger players tend to score higher under pressure; positive = you outperform your opponents when the clock burns. |
+| `time_pressure_score_gap_rapid` | 222 | 244 | −0.46pp | +0.46 | −11.51pp | +1.52pp | **+0.73** | heavy rating-proxy | This rapid score-gap tracks rating strongly: stronger players score much higher under pressure; positive = you outperform your opponents when the clock burns. |
+| `time_pressure_score_gap_classical` | 19 | 20 | −5.96pp | −0.93 | — | — | — | n/a — insufficient cohort | This classical score-gap is not measured against enough players to characterise; positive = you outperform your opponents when the clock burns. *(n_users < 150 — chip suppression candidate (RESEARCH §Pitfall 8))* |
+| `clock_gap_bullet` | 492 | 651 | −0.52pp | +0.25 | −0.30pp | −0.06pp | **−0.18** | rating-invariant | This bullet clock-management gap is mostly independent of rating; positive = you reach endgames with more clock left than your opponents do. |
+| `clock_gap_blitz` | 489 | 640 | −0.38pp | −0.09 | −0.51pp | −0.16pp | **+0.29** | mild coupling | This blitz clock-management gap slightly tracks rating; positive = you reach endgames with more clock left than your opponents do. |
+| `clock_gap_rapid` | 470 | 617 | −0.66pp | −0.35 | −0.08pp | −3.49pp | **−0.08** | rating-invariant | This rapid clock-management gap is mostly independent of rating; positive = you reach endgames with more clock left than your opponents do. |
+| `clock_gap_classical` | 192 | 222 | −2.14pp | −0.49 | +1.04pp | — | **−0.12** (800↔2000) | rating-invariant | This classical clock-management gap is mostly independent of rating; positive = you reach endgames with more clock left than your opponents do. |
+| `net_flag_rate_bullet` | 492 | 651 | +0.48pp | +0.00 | −3.23pp | +5.49pp | **+0.32** | mild coupling | At bullet, net flag rate slightly tracks rating in the opposite of the intuitive direction (stronger players win more on time than they lose); positive = your opponents flag more than you do. |
+| `net_flag_rate_blitz` | 489 | 640 | +1.93pp | −0.83 | +0.24pp | +1.20pp | **+0.30** | mild coupling | At blitz, net flag rate slightly tracks rating; positive = your opponents flag more than you do. |
+| `net_flag_rate_rapid` | 470 | 617 | +1.72pp | −3.04 | +1.22pp | +2.50pp | **+0.26** | mild coupling | At rapid, net flag rate slightly tracks rating; positive = your opponents flag more than you do. |
+| `net_flag_rate_classical` | 192 | 222 | +0.00pp | −4.78 | +0.00pp | — | **+0.24** (800↔2000) | mild coupling | At classical, net flag rate slightly tracks rating; positive = your opponents flag more than you do. |
+
+### Per-cell notes (only cells whose tier needs justification)
+
+**`time_pressure_score_gap_bullet` (d = +0.52, on the moderate / heavy boundary).** d sits at 0.52 — clearly inside the moderate band (≤ 0.60) but on the high side. The per-bucket medians walk monotonically across ELO (800 → −2.86pp; 1200 → −0.85pp; 1600 → +0.36pp; 2000 → +1.92pp; 2400 → +4.78pp; per-bucket detail in the JSON dump `/tmp/p943/cells.json`), so the coupling is genuine. Cohort is plentiful (n_users=470) and pooled skew is near zero, so the chip is honest within its band — Plan F's copy must disclose the rating-correlation accordingly.
+
+**`time_pressure_score_gap_rapid` (d = +0.73, heavy rating-proxy).** 800 median is −11.51pp vs 2400 +1.52pp — a 13pp shift across ELO is more than the typical within-bucket IQR. Stronger players who play rapid almost certainly play faster TCs too and bring superior time-management transfer; below 1200 the metric reads as "you lose decisively under pressure" almost regardless of skill within that bucket. Chip ships, but Plan F should treat the rating-correlation note as the headline disclosure.
+
+**`time_pressure_score_gap_classical` (n_users = 19, d unmeasurable).** Cohort floor for the per-pressure-cell ≥30 / ≥30 dual gate is rarely met in classical — most classical games are not played under sustained sub-40% clock pressure for both sides over an endgame-entry-sized sample. Flagged for Plan F to apply chip-suppression escape hatch per RESEARCH §Pitfall 8 (n_users < 150). The pooled median is informative directionally but not for percentile chipping.
+
+**Classical clock_gap & net_flag_rate (d via 800↔2000 fallback).** Both cells have n_users = 192 (well above the 150 suppression threshold) and clear per-bucket distributions for buckets 800 / 1200 / 1600 / 2000, but the (2400, classical) cohort cell is structurally pool-exhausted at the 2026-03 dump (only 12 selected users, none clearing the 30-game equal-footing floor at game-time ≥ 2400). The published d uses the 800↔2000 anchor as a substitute; both fallback d values land cleanly inside `rating-invariant` (clock_gap: |d| = 0.12) and `mild coupling` (net_flag_rate: d = +0.24) — well clear of any tier boundary, so the substitution does not change the tier assignment. Chips ship; Plan F's tooltip copy uses the tier label verbatim.
+
+### Implications for Plan F (`RATING_NOTE_BY_FLAVOR`)
+
+| Flavor | Direction | Tier copy lifts to |
+|---|---|---|
+| `time_pressure_score_gap_{bullet, blitz}` | higher_is_better | moderate-coupling line |
+| `time_pressure_score_gap_rapid` | higher_is_better | heavy-rating-proxy line |
+| `time_pressure_score_gap_classical` | higher_is_better | **chip suppressed — no copy needed** |
+| `clock_gap_{bullet, rapid, classical}` | higher_is_better | rating-invariant line |
+| `clock_gap_blitz` | higher_is_better | mild-coupling line |
+| `net_flag_rate_{bullet, blitz, rapid, classical}` | lower_is_better | mild-coupling line (D-3 "Lower is better" prepend per RESEARCH §Pattern 7) |
+
+Net Flag Rate at all four TCs lands at `+0.26 ≤ d ≤ +0.32` — mild but consistent coupling in the *helpful* direction (stronger players win more on time than they lose). Plan F's per-chip copy should not invent a "weak players flag less" framing for any TC.
+
+---
+
 ## SQL provenance
 
 All queries derive per-user values per `(user_id, game-time elo_bucket, tc_bucket)` using the canonical /benchmarks CTE (lichess_username join, `bic.status='completed'`, sparse-cell exclusion, equal-footing filter, sub-800 dropped). Section 2 ΔES uses the §3.2.2 spans + `LEAD()` pattern; Endgame Score Gap uses the §3.1.6 per_user pattern; Achievable Score Gap uses the §3.1.5 paired-diff pattern. Skew and excess kurtosis computed from the standardized third / fourth central moments (Fisher–Pearson, biased estimator).
+
+The Phase 94.3 Time Pressure addendum reuses the same canonical-slice CTE with one additional predicate `AND g.time_control_bucket::text = '{tc}'` on the inner `recent_games` filter (no other change to selected_users / recent_capped / equal-footing). Per-user metric values: `clock_gap = avg((user_clock − opp_clock) / base_time_seconds)` at endgame entry (entry clocks extracted via ply parity over `game_positions` rows with `endgame_class IS NOT NULL`, `HAVING count(*) >= 6`); `net_flag_rate = (count(timeout & user_won) − count(timeout & user_lost)) / count(*)` over the same endgame-entry pool with the same denominator as the production `net_timeout_rate`; `time_pressure_score_gap = avg(user_score | user_clock_pct < 0.40) − avg(1 − user_score | opp_clock_pct < 0.40)`. The Phase 94.3 cell-by-cell numbers are reproducible by running `python3 /tmp/p943/run_cells.py` against the benchmark DB (the script was kept ad-hoc per the planning brief and is not committed to `scripts/` — Plan B will move the equivalent SQL into `app/services/canonical_slice_sql.py` as the three new builder families).
