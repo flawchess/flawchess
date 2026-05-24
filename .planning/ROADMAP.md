@@ -28,7 +28,7 @@
 - [ ] **Phase 93: Global Percentile Benchmark Artifact** — Per-metric empirical CDF for the 4 chipped ΔES metrics (Endgame Score Gap, Achievable Score Gap, Parity ΔES, Conversion ΔES), produced via /benchmarks skill subchapter + `scripts/gen_global_percentile_cdf.py`, committed to `app/services/global_percentile_cdf.py` (Python-only artifact — no TS mirror; backend interpolates at request time and emits a scalar percentile)
 - [ ] **Phase 94: Backend & Frontend Percentile Annotations** — Nullable `{metric}_percentile` on endgame responses + "top X%" chip on 4 ΔES rows (desktop + mobile parity, metric-aware popover copy)
 - [ ] **Phase 94.1: Canonical-Slice User Percentile Materialisation** — New `user_benchmark_percentiles` table storing per-(user, metric) canonical-slice value + percentile + cdf_snapshot; two-stage compute hooks (Stage A post-import for `score_gap`, Stage B post-cold-drain for the 3 eval-dependent metrics); backfill script with `--target dev|prod` for one-shot population of existing users; chip reads from table (filter-independent), tooltip copy updated to make the canonical-slice framing explicit
-- [ ] **Phase 94.2: Pooled-Per-User Percentile Redesign** — Replace per-cell stratified methodology with one-point-per-user pooled model on both CDF construction and per-user lookup sides; recent 1000 games per TC, ≤36 months, pooled across TCs; single ≥30-games inclusion floor on the pool; regenerate `GLOBAL_PERCENTILE_CDF` against new methodology; re-run backfill; SKILL.md methodology chapter refresh
+- [x] **Phase 94.2: Pooled-Per-User Percentile Redesign** — Replace per-cell stratified methodology with one-point-per-user pooled model on both CDF construction and per-user lookup sides; recent 1000 games per TC, ≤36 months, pooled across TCs; single ≥30-games inclusion floor on the pool; regenerate `GLOBAL_PERCENTILE_CDF` against new methodology; re-run backfill; SKILL.md methodology chapter refresh (completed 2026-05-24)
 - [ ] **Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework** — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
@@ -163,7 +163,7 @@ Plans:
 
 **UI hint**: yes (tooltip copy only — no new UI primitives)
 
-**Plans:** 6 plans (single-PR atomic cutover per D-3a)
+**Plans:** 6/6 plans complete
 
 Plans:
 **Wave 1** *(atomic cutover — three plans, single PR, no incoherent intermediate state)*
