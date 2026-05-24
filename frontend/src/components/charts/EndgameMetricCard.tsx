@@ -232,7 +232,7 @@ export function EndgameMetricCard({
                     scoreGapPercentile != null && bucket !== 'recovery' ? (
                       <PercentileChip
                         percentile={scoreGapPercentile}
-                        flavor={bucket === 'conversion' ? 'improvement-focus' : 'skill-isolating'}
+                        flavor={bucket === 'conversion' ? 'conversion' : 'parity'}
                         metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
                         testId={`${tileTestId}-percentile-chip`}
                       />
