@@ -562,13 +562,16 @@ def _parse_archived_breakpoints(archive_path: Path) -> dict[CdfMetricId, dict[in
         return {}
     out: dict[CdfMetricId, dict[int, float]] = {}
     for metric_id in IN_SCOPE_METRICS:
-        # Section anchor: "## {DisplayName} (`{metric_id}`)"
-        anchor = f"(`{metric_id}`)"
-        idx = text_blob.find(anchor)
-        if idx < 0:
+        # Section anchor: a section heading line "## ... (`{metric_id}`)" — the
+        # leading "## " prefix is required so the cohort-listing line that
+        # also mentions `(`{metric_id}`)` is not picked up first.
+        anchor_re = re.compile(r"^## [^\n]*\(`" + re.escape(metric_id) + r"`\)", flags=re.MULTILINE)
+        anchor_match = anchor_re.search(text_blob)
+        if anchor_match is None:
             continue
+        idx = anchor_match.start()
         # Slice until the next "## " heading (or EOF).
-        next_section = text_blob.find("\n## ", idx + len(anchor))
+        next_section = text_blob.find("\n## ", anchor_match.end())
         section = text_blob[idx : next_section if next_section > 0 else len(text_blob)]
         # Match "| pN | +X.YYpp |" or "| pN | -X.YYpp |".
         row_re = re.compile(r"\|\s*p(\d+)\s*\|\s*([+-]?\d+\.\d+)pp\s*\|")
