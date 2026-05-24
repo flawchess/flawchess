@@ -168,9 +168,9 @@ Plans:
 Plans:
 **Wave 1** *(atomic cutover — three plans, single PR, no incoherent intermediate state)*
 
-- [ ] 94.2-01-PLAN.md — Refactor canonical_slice_sql.py: collapse per-cell to pooled-per-user; drop apply_floor + n_cells_floor + per-row sparse exclusion; add recent-1000-per-TC cap + 36-month recency + snapshot_date kwarg; dedup benchmark cohort by lichess_username per D-1
-- [ ] 94.2-02-PLAN.md — Rewrite gen_global_percentile_cdf.py:_build_metric_breakpoint_query to consume pooled shape; add --snapshot-date CLI flag; regenerate GLOBAL_PERCENTILE_CDF literal against benchmark DB; archive prior 94.1 report; regenerate byte-identical regression goldens
-- [ ] 94.2-03-PLAN.md — Rewrite _compute_metric_for_user to single pooled query; drop apply_floor; preserve Stage A/B trigger contract; update user_benchmark_percentile.py n_games docstring
+- [x] 94.2-01-PLAN.md — Refactor canonical_slice_sql.py: collapse per-cell to pooled-per-user; drop apply_floor + n_cells_floor + per-row sparse exclusion; add recent-1000-per-TC cap + 36-month recency + snapshot_date kwarg; dedup benchmark cohort by lichess_username per D-1
+- [x] 94.2-02-PLAN.md — Rewrite gen_global_percentile_cdf.py:_build_metric_breakpoint_query to consume pooled shape; add --snapshot-date CLI flag; regenerate GLOBAL_PERCENTILE_CDF literal against benchmark DB; archive prior 94.1 report; regenerate byte-identical regression goldens
+- [x] 94.2-03-PLAN.md — Rewrite _compute_metric_for_user to single pooled query; drop apply_floor; preserve Stage A/B trigger contract; update user_benchmark_percentile.py n_games docstring
 
 **Wave 2** *(blocked on Wave 1 — independent downstream updates, parallel-safe)*
 
