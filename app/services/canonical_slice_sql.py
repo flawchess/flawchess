@@ -86,9 +86,13 @@ into SQL has no injection vector. Never f-string ``user_id`` here.
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from app.services.global_percentile_cdf import CdfMetricId
+
+# Per-TC bucket identifier — used by Phase 94.3 per-TC builders so the leading
+# positional argument is type-checked (CLAUDE.md type-safety rule per D-8).
+TimeControlBucket: TypeAlias = Literal["bullet", "blitz", "rapid", "classical"]
 
 # ---------------------------------------------------------------------------
 # Module-level constants (CLAUDE.md no-magic-numbers).
@@ -103,6 +107,17 @@ SECTION2_MIN_SPANS_PER_BUCKET: int = 30
 # Pooled-window shape (D-5).
 RECENT_GAMES_PER_TC_CAP: int = 1000
 RECENCY_WINDOW_MONTHS: int = 36
+
+# Phase 94.3 per-TC time-pressure builder thresholds (CONTEXT D-6).
+# `TIME_PRESSURE_CLOCK_PCT_THRESHOLD` defines the "under time pressure"
+# cutoff applied to each side's clock fraction at endgame entry: clock_pct
+# < 0.40 = pressured. The remaining three constants are the inclusion
+# floors gated via HAVING on the pooled per-user aggregate (≥30 mirrors
+# Phase 94.2 D-6 for every other metric in this module).
+TIME_PRESSURE_CLOCK_PCT_THRESHOLD: float = 0.40
+TIME_PRESSURE_MIN_PRESSURED_N: int = 30
+CLOCK_GAP_MIN_POOL_N: int = 30
+NET_FLAG_RATE_MIN_POOL_N: int = 30
 
 # Shared SQL constants.
 _EQUAL_FOOTING_TOL: int = 100
@@ -254,6 +269,41 @@ def _recent_capped_cte(snapshot_date: date | None) -> str:
       AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
       AND g.played_at >= {recency}
       AND {equal_footing_filter_sql()}
+  ) g
+  WHERE g.rn <= {RECENT_GAMES_PER_TC_CAP}
+)"""
+
+
+def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket) -> str:
+    """Phase 94.3 per-TC sibling of ``_recent_capped_cte`` (PATTERNS.md lines 120-147).
+
+    Restricts the canonical slice to a single ``time_control_bucket`` so the
+    per-TC percentile chips can be computed against a per-TC pooled set.
+
+    Two structural differences from ``_recent_capped_cte``:
+
+    1. ``AND g.time_control_bucket = '{tc}'`` is added to the inner WHERE.
+       Safe to f-string because ``tc`` is constrained to four literal values
+       by ``TimeControlBucket``; no SQL-injection vector.
+    2. ``ROW_NUMBER() OVER (PARTITION BY g.user_id ...)`` — the per-(user, TC)
+       partition collapses to per-user because the inner set is already
+       restricted to one TC. The 1000-cap then means "most recent 1000 games
+       of this TC per user" (RESEARCH §Pattern 1).
+    """
+    recency = _recency_window_sql(snapshot_date)
+    return f"""recent_capped AS (
+  SELECT g.id, g.user_id, g.user_color, g.result, g.played_at
+  FROM (
+    SELECT g.*,
+           row_number() OVER (PARTITION BY g.user_id
+                              ORDER BY g.played_at DESC) AS rn
+    FROM games g
+    JOIN selected_users su ON su.user_id = g.user_id
+    WHERE g.rated AND NOT g.is_computer_game
+      AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+      AND g.played_at >= {recency}
+      AND {equal_footing_filter_sql()}
+      AND g.time_control_bucket = '{tc}'
   ) g
   WHERE g.rn <= {RECENT_GAMES_PER_TC_CAP}
 )"""
