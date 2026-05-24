@@ -182,9 +182,11 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
       {/* Phase 94.3 (TPCTL-06): Clock Gap percentile chip, right-aligned.
           `ml-auto` pushes the chip to the row's right edge. Gated on
           `!= null` to honor the backend inclusion-floor contract — a null
-          percentile suppresses the chip silently. */}
+          percentile suppresses the chip silently. Hidden on mobile —
+          the mobile twin renders below the bullet chart for better
+          breathing room (see top-zone). */}
       {card.clock_gap_percentile != null && (
-        <span className="ml-auto">
+        <span className="ml-auto hidden sm:inline-flex">
           <PercentileChip
             percentile={card.clock_gap_percentile}
             flavor={CLOCK_GAP_FLAVOR_BY_TC[card.tc]}
@@ -330,6 +332,21 @@ export function EndgameTimePressureCard({
               barColor="neutral"
             />
           </div>
+          {/* Mobile-only Clock Gap chip slot — desktop renders the chip
+              inline-right inside the header row. Below `sm` the chip drops
+              to its own line under the bullet for better readability on
+              narrow widths. Distinct testid keeps "lives inside header"
+              assertions valid. */}
+          {card.clock_gap_percentile != null && (
+            <div className="flex justify-end mt-2 sm:hidden">
+              <PercentileChip
+                percentile={card.clock_gap_percentile}
+                flavor={CLOCK_GAP_FLAVOR_BY_TC[card.tc]}
+                metricLabel="Clock Gap"
+                testId={`time-pressure-card-${card.tc}-clock-gap-chip-mobile`}
+              />
+            </div>
+          )}
           {/* Visual separator between Clock Gap bullet and Net flag rate row. */}
           <div className="border-t border-border/40 mt-3" aria-hidden="true" />
           <NetFlagRateRow card={card} />
@@ -375,7 +392,7 @@ export function EndgameTimePressureCard({
               </div>
             </InfoPopover>
             {card.time_pressure_score_gap_percentile != null && (
-              <span className="ml-auto">
+              <span className="ml-auto hidden sm:inline-flex">
                 <PercentileChip
                   percentile={card.time_pressure_score_gap_percentile}
                   flavor={TIME_PRESSURE_SCORE_GAP_FLAVOR_BY_TC[card.tc]}
@@ -385,6 +402,21 @@ export function EndgameTimePressureCard({
               </span>
             )}
           </div>
+          {/* Mobile-only Time Pressure Score Gap chip — desktop renders it
+              inline-right inside the subtitle. Below `sm` the chip drops
+              to its own line under the label for better readability on
+              narrow widths. Distinct testid keeps "lives inside subtitle"
+              assertions valid. */}
+          {card.time_pressure_score_gap_percentile != null && (
+            <div className="flex justify-end mb-2 sm:hidden">
+              <PercentileChip
+                percentile={card.time_pressure_score_gap_percentile}
+                flavor={TIME_PRESSURE_SCORE_GAP_FLAVOR_BY_TC[card.tc]}
+                metricLabel="Time Pressure Score Gap"
+                testId={`time-pressure-card-${card.tc}-time-pressure-score-gap-chip-mobile`}
+              />
+            </div>
+          )}
           <div data-testid={`time-pressure-card-${card.tc}-score-gap-chart`}>
             <ScoreGapByTimePressureChart quintiles={card.quintiles} tc={card.tc} />
           </div>
