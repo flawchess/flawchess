@@ -284,6 +284,13 @@ export interface ClockGapBullet {
  * fractions / absolute seconds depending on the suffix; net_timeout_rate is a
  * fraction (0.005 = 0.5%) consistent with clock_gap.mean_diff_pct's convention.
  * Averages are null when no game in this TC has clock data (legacy imports).
+ *
+ * Phase 94.3 (CONTEXT.md D-1): three per-(metric × TC) chip percentile fields
+ * for the per-TC chip slots. null when the user is below the pooled >=30
+ * inclusion floor for that metric × TC combo, when Stage B has not yet computed
+ * (race window after import + cold-drain), or when the field is not yet
+ * populated by the backend (back-compat default). Frontend gates chip rendering
+ * on `!= null`.
  */
 export interface TimePressureTcCard {
   tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
@@ -296,6 +303,11 @@ export interface TimePressureTcCard {
   net_timeout_rate: number;         // (timeout_wins - timeout_losses) / total, fraction (0.005 = 0.5%)
   clock_gap: ClockGapBullet;
   quintiles: PressureQuintileBullet[]; // always 5, ordered Q0..Q4
+  // Phase 94.3: per-(metric × TC) percentile annotations (optional for
+  // back-compat — older fixtures and pre-94.3 server responses don't set these).
+  time_pressure_score_gap_percentile?: number | null;
+  clock_gap_percentile?: number | null;
+  net_flag_rate_percentile?: number | null;
 }
 
 /** Replaces ClockPressureResponse + TimePressureChartResponse (Phase 88). */

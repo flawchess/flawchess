@@ -1,17 +1,20 @@
 """Postgres ENUM label introspection test for benchmark_metric.
 
-Phase 94.1 Plan 01 Wave 0.
+Phase 94.1 Plan 01 Wave 0 (initial 4-value set).
+Phase 94.3 Plan 04 (CONTEXT.md D-7): widened to 16 values — the original 4
+Phase 94.x score-gap metrics plus 12 per-(metric × TC) time-pressure metrics
+({time_pressure_score_gap, clock_gap, net_flag_rate} × {bullet, blitz, rapid,
+classical}).
 
-Asserts that after migration, the ``benchmark_metric`` Postgres ENUM type
-contains EXACTLY the 4 expected labels in alphabetical order.
+Asserts that after migrations, the ``benchmark_metric`` Postgres ENUM type
+contains EXACTLY the 16 expected labels in alphabetical order.
 
 This test catches:
-- Pitfall 3 (RESEARCH): ENUM rejects valid values if labels drift
-- Discretion item (CONTEXT.md): "assert ENUM contains exactly 4 values"
-- T-94.1-02 (threat model): ENUM enforces 4 metric values at DB layer
+- Pitfall 3 (RESEARCH 94.1): ENUM rejects valid values if labels drift
+- T-94.1-02 (threat model): ENUM enforces the locked metric set at DB layer
 
 Guarded by ``pytest.importorskip`` + ``_migration_present()`` so CI stays
-green until Plan 04 ships the migration.
+green until the migrations land.
 """
 
 from __future__ import annotations
@@ -52,15 +55,28 @@ def _migration_present() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Expected ENUM labels (from D-05 / CONTEXT.md)
+# Expected ENUM labels (from D-05 / CONTEXT.md and Phase 94.3 CONTEXT.md D-7)
 # ---------------------------------------------------------------------------
 
 # Alphabetically sorted (the ORDER BY enumlabel query returns them this way).
+# 4 original Phase 94.x score-gap metrics + 12 Phase 94.3 per-(metric × TC).
 EXPECTED_ENUM_LABELS: list[str] = [
     "achievable_score_gap",
+    "clock_gap_blitz",
+    "clock_gap_bullet",
+    "clock_gap_classical",
+    "clock_gap_rapid",
+    "net_flag_rate_blitz",
+    "net_flag_rate_bullet",
+    "net_flag_rate_classical",
+    "net_flag_rate_rapid",
     "score_gap",
     "section2_score_gap_conv",
     "section2_score_gap_parity",
+    "time_pressure_score_gap_blitz",
+    "time_pressure_score_gap_bullet",
+    "time_pressure_score_gap_classical",
+    "time_pressure_score_gap_rapid",
 ]
 
 pytestmark = pytest.mark.asyncio
@@ -81,7 +97,10 @@ pytestmark = pytest.mark.asyncio
 async def test_benchmark_metric_enum_has_exactly_four_labels(
     test_engine: AsyncEngine,
 ) -> None:
-    """After migration, benchmark_metric ENUM has exactly the 4 expected labels.
+    """After migrations, benchmark_metric ENUM has exactly the 16 expected labels.
+
+    (Test name retained from Phase 94.1 for git-blame stability; the assertion
+    now covers 16 labels per Phase 94.3 Plan 04.)
 
     Query shape: SELECT enumlabel FROM pg_enum e
                  JOIN pg_type t ON e.enumtypid = t.oid
@@ -89,12 +108,13 @@ async def test_benchmark_metric_enum_has_exactly_four_labels(
                  ORDER BY enumlabel
 
     Asserts:
-    - Exactly 4 labels returned (not more, not fewer)
-    - Labels match the locked D-05 set (alphabetical order)
-    - No label drift between the migration and CdfMetricId Literal in global_percentile_cdf.py
+    - Exactly 16 labels returned (not more, not fewer)
+    - Labels match the locked Phase 94.1 D-05 + Phase 94.3 D-7 set
+    - No label drift between the migrations and CdfMetricId Literal in
+      global_percentile_cdf.py
 
     Threat T-94.1-02 mitigation: downstream code that inserts ``metric`` values
-    outside this 4-value set will fail with a Postgres ENUM rejection error,
+    outside this 16-value set will fail with a Postgres ENUM rejection error,
     not a silent data corruption. This test is the CI-time guard that the ENUM
     contract has not drifted.
     """
