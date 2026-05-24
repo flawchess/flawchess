@@ -555,6 +555,237 @@ per_user_values AS (
 )"""
 
 
+def _endgame_entry_clocks_cte() -> str:
+    """Per-game endgame-entry clock derivation for the three Phase 94.3 per-TC builders.
+
+    Mirrors the Python ``_extract_entry_clocks`` logic (``app/services/endgame_service.py``
+    lines 1626-1647): for each game that reached an endgame phase (≥6 endgame
+    plies under the whole-game rule, quick-260414-pv4), aggregate the first
+    non-null ``clock_seconds`` per ply parity:
+
+    - white_entry_clock = first non-null clock at an even ply (white just moved)
+    - black_entry_clock = first non-null clock at an odd ply (black just moved)
+
+    The user/opp assignment then collapses by ``rc.user_color`` in the
+    consumer's ``joined`` CTE. Centralised here because all three Phase 94.3
+    per-TC builders need the identical derivation.
+    """
+    return """endgame_entry_clocks AS (
+  SELECT
+    gp.game_id,
+    (array_agg(gp.clock_seconds ORDER BY gp.ply ASC)
+       FILTER (WHERE gp.clock_seconds IS NOT NULL AND gp.ply % 2 = 0))[1] AS white_entry_clock,
+    (array_agg(gp.clock_seconds ORDER BY gp.ply ASC)
+       FILTER (WHERE gp.clock_seconds IS NOT NULL AND gp.ply % 2 = 1))[1] AS black_entry_clock
+  FROM game_positions gp
+  WHERE gp.endgame_class IS NOT NULL
+  GROUP BY gp.game_id
+  HAVING count(gp.ply) >= 6
+)"""
+
+
+def per_user_cte_time_pressure_score_gap(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Pooled ``per_user_values(metric_value, n_games)`` for ``time_pressure_score_gap_{tc}``.
+
+    Per-TC version of the SEED-025 / D-6 time-pressure score gap. Restricted
+    to one ``time_control_bucket`` via ``_recent_capped_per_tc_cte`` and gated
+    on a *dual* ≥30 floor: both ≥30 endgame-entry games where the USER hit
+    clock_pct < 0.40 AND ≥30 endgame-entry games where the OPPONENT hit
+    clock_pct < 0.40.
+
+    ``metric_value`` = ``user_pressured_score - opp_pressured_score`` where
+    each side's "pressured score" is the average user-side game score on the
+    cell whose clock dropped below the 0.40 threshold (opponent score is
+    mirrored via ``1.0 - user_score``).
+
+    ``n_games`` = ``least(user_pressured_n, opp_pressured_n)`` — the binding
+    floor on the dual-HAVING gate.
+
+    No per-row sparse-cell exclusion (D-1); cohort dedup lives in
+    ``selected_users_cte("benchmark")``. ``source`` is accepted for API
+    symmetry but does not alter the pooled body (D-10).
+
+    Security: ``tc`` is constrained to a 4-value ``Literal`` so the f-string
+    interpolation has no injection vector; ``snapshot_date.isoformat()``
+    emits only digits and dashes. Bindparams are confined to ``:user_id``
+    inside ``selected_users_cte("single_user")``.
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+{_endgame_entry_clocks_cte()},
+joined AS (
+  SELECT
+    rc.user_id,
+    rc.user_color,
+    rc.result,
+    g.base_time_seconds,
+    CASE WHEN rc.user_color = 'white' THEN ee.white_entry_clock
+         ELSE ee.black_entry_clock END::float
+      / NULLIF(g.base_time_seconds, 0) AS user_clock_pct,
+    CASE WHEN rc.user_color = 'white' THEN ee.black_entry_clock
+         ELSE ee.white_entry_clock END::float
+      / NULLIF(g.base_time_seconds, 0) AS opp_clock_pct,
+    CASE
+      WHEN (rc.result='1-0' AND rc.user_color='white')
+        OR (rc.result='0-1' AND rc.user_color='black') THEN 1.0
+      WHEN rc.result='1/2-1/2' THEN 0.5
+      ELSE 0.0
+    END AS user_score
+  FROM recent_capped rc
+  JOIN games g ON g.id = rc.id
+  JOIN endgame_entry_clocks ee ON ee.game_id = rc.id
+  WHERE g.base_time_seconds IS NOT NULL AND g.base_time_seconds > 0
+),
+per_user AS (
+  SELECT
+    user_id,
+    avg(user_score)
+      FILTER (WHERE user_clock_pct < {TIME_PRESSURE_CLOCK_PCT_THRESHOLD:.2f}) AS user_pressured_score,
+    avg(1.0 - user_score)
+      FILTER (WHERE opp_clock_pct < {TIME_PRESSURE_CLOCK_PCT_THRESHOLD:.2f}) AS opp_pressured_score,
+    count(*)
+      FILTER (WHERE user_clock_pct < {TIME_PRESSURE_CLOCK_PCT_THRESHOLD:.2f}) AS user_pressured_n,
+    count(*)
+      FILTER (WHERE opp_clock_pct < {TIME_PRESSURE_CLOCK_PCT_THRESHOLD:.2f}) AS opp_pressured_n
+  FROM joined
+  WHERE user_clock_pct IS NOT NULL AND opp_clock_pct IS NOT NULL
+  GROUP BY user_id
+  HAVING count(*) FILTER (WHERE user_clock_pct < {TIME_PRESSURE_CLOCK_PCT_THRESHOLD:.2f}) >= {TIME_PRESSURE_MIN_PRESSURED_N}
+     AND count(*) FILTER (WHERE opp_clock_pct < {TIME_PRESSURE_CLOCK_PCT_THRESHOLD:.2f}) >= {TIME_PRESSURE_MIN_PRESSURED_N}
+),
+per_user_values AS (
+  SELECT
+    (user_pressured_score - opp_pressured_score) AS metric_value,
+    least(user_pressured_n, opp_pressured_n)::int AS n_games
+  FROM per_user
+)"""
+
+
+def per_user_cte_clock_gap(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Pooled ``per_user_values(metric_value, n_games)`` for ``clock_gap_{tc}``.
+
+    Per-game endgame-entry clock advantage as a fraction of the base clock:
+    ``(user_clock - opp_clock) / base_time_seconds`` averaged across the
+    user's per-TC pooled endgame-entry games.
+
+    ``metric_value`` = ``avg((user_clock - opp_clock) / base_time_seconds)``
+    over endgame-entry games in the restricted TC.
+    ``n_games`` = pooled-set count (the binding floor per ``CLOCK_GAP_MIN_POOL_N``).
+
+    No per-row sparse-cell exclusion (D-1); cohort dedup lives in
+    ``selected_users_cte("benchmark")``. ``source`` is accepted for API
+    symmetry but does not alter the pooled body (D-10).
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+{_endgame_entry_clocks_cte()},
+joined AS (
+  SELECT
+    rc.user_id,
+    (
+      (CASE WHEN rc.user_color = 'white' THEN ee.white_entry_clock
+            ELSE ee.black_entry_clock END)
+      - (CASE WHEN rc.user_color = 'white' THEN ee.black_entry_clock
+              ELSE ee.white_entry_clock END)
+    )::float / NULLIF(g.base_time_seconds, 0) AS clock_gap_frac
+  FROM recent_capped rc
+  JOIN games g ON g.id = rc.id
+  JOIN endgame_entry_clocks ee ON ee.game_id = rc.id
+  WHERE g.base_time_seconds IS NOT NULL AND g.base_time_seconds > 0
+    AND ee.white_entry_clock IS NOT NULL
+    AND ee.black_entry_clock IS NOT NULL
+),
+per_user AS (
+  SELECT
+    user_id,
+    avg(clock_gap_frac) AS clock_gap_frac_avg,
+    count(*) AS pool_n
+  FROM joined
+  WHERE clock_gap_frac IS NOT NULL
+  GROUP BY user_id
+  HAVING count(*) >= {CLOCK_GAP_MIN_POOL_N}
+),
+per_user_values AS (
+  SELECT
+    clock_gap_frac_avg AS metric_value,
+    pool_n AS n_games
+  FROM per_user
+)"""
+
+
+def per_user_cte_net_flag_rate(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Pooled ``per_user_values(metric_value, n_games)`` for ``net_flag_rate_{tc}``.
+
+    Per-game timeout-outcome rate on endgame-entry games in the restricted TC.
+    A user "wins on time" when the opponent flagged (``termination='timeout'``
+    and user is the winner); a user "loses on time" when the user flagged.
+
+    ``metric_value`` = ``(timeout_wins - timeout_losses) / total_endgame_games``
+    averaged per user; mirrors the existing ``net_timeout_rate`` field on
+    ``TimePressureTcCard`` (``app/services/endgame_service.py`` lines 1941-1956).
+    ``n_games`` = pooled endgame-entry count (the binding floor per
+    ``NET_FLAG_RATE_MIN_POOL_N``).
+
+    Verified column: ``games.termination`` is an ENUM whose time-forfeit value
+    is the string literal ``'timeout'`` (per 94.3-01 SUMMARY "Verified column
+    names"; NOT ``'time forfeit'`` as the RESEARCH sketch suggested).
+
+    No per-row sparse-cell exclusion (D-1); cohort dedup lives in
+    ``selected_users_cte("benchmark")``. ``source`` is accepted for API
+    symmetry but does not alter the pooled body (D-10).
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+{_endgame_entry_clocks_cte()},
+joined AS (
+  SELECT
+    rc.user_id,
+    g.termination,
+    CASE
+      WHEN (rc.result='1-0' AND rc.user_color='white')
+        OR (rc.result='0-1' AND rc.user_color='black') THEN 'win'
+      WHEN rc.result='1/2-1/2' THEN 'draw'
+      ELSE 'loss'
+    END AS user_outcome
+  FROM recent_capped rc
+  JOIN games g ON g.id = rc.id
+  JOIN endgame_entry_clocks ee ON ee.game_id = rc.id
+),
+per_user AS (
+  SELECT
+    user_id,
+    (
+      count(*) FILTER (WHERE termination::text = 'timeout' AND user_outcome = 'win')::float
+      - count(*) FILTER (WHERE termination::text = 'timeout' AND user_outcome = 'loss')::float
+    ) / NULLIF(count(*), 0) AS net_flag_rate,
+    count(*) AS pool_n
+  FROM joined
+  GROUP BY user_id
+  HAVING count(*) >= {NET_FLAG_RATE_MIN_POOL_N}
+),
+per_user_values AS (
+  SELECT
+    net_flag_rate AS metric_value,
+    pool_n AS n_games
+  FROM per_user
+)"""
+
+
 def per_user_cte_for(
     metric_id: CdfMetricId,
     *,
@@ -586,5 +817,43 @@ def per_user_cte_for(
     if metric_id == "section2_score_gap_parity":
         return per_user_cte_section2(
             bucket_label="parity", source=source, snapshot_date=snapshot_date
+        )
+    # Phase 94.3 Plan B — 12 new dispatcher arms for the per-(metric × TC)
+    # percentile chips. The CdfMetricId Literal is widened to 16 entries by
+    # Plan C; here we match string literals directly so this plan can land
+    # before the Literal expansion (D-10 atomic-cutover trio B → C → D).
+    if metric_id == "time_pressure_score_gap_bullet":
+        return per_user_cte_time_pressure_score_gap(
+            "bullet", source=source, snapshot_date=snapshot_date
+        )
+    if metric_id == "time_pressure_score_gap_blitz":
+        return per_user_cte_time_pressure_score_gap(
+            "blitz", source=source, snapshot_date=snapshot_date
+        )
+    if metric_id == "time_pressure_score_gap_rapid":
+        return per_user_cte_time_pressure_score_gap(
+            "rapid", source=source, snapshot_date=snapshot_date
+        )
+    if metric_id == "time_pressure_score_gap_classical":
+        return per_user_cte_time_pressure_score_gap(
+            "classical", source=source, snapshot_date=snapshot_date
+        )
+    if metric_id == "clock_gap_bullet":
+        return per_user_cte_clock_gap("bullet", source=source, snapshot_date=snapshot_date)
+    if metric_id == "clock_gap_blitz":
+        return per_user_cte_clock_gap("blitz", source=source, snapshot_date=snapshot_date)
+    if metric_id == "clock_gap_rapid":
+        return per_user_cte_clock_gap("rapid", source=source, snapshot_date=snapshot_date)
+    if metric_id == "clock_gap_classical":
+        return per_user_cte_clock_gap("classical", source=source, snapshot_date=snapshot_date)
+    if metric_id == "net_flag_rate_bullet":
+        return per_user_cte_net_flag_rate("bullet", source=source, snapshot_date=snapshot_date)
+    if metric_id == "net_flag_rate_blitz":
+        return per_user_cte_net_flag_rate("blitz", source=source, snapshot_date=snapshot_date)
+    if metric_id == "net_flag_rate_rapid":
+        return per_user_cte_net_flag_rate("rapid", source=source, snapshot_date=snapshot_date)
+    if metric_id == "net_flag_rate_classical":
+        return per_user_cte_net_flag_rate(
+            "classical", source=source, snapshot_date=snapshot_date
         )
     raise ValueError(f"Unknown metric_id: {metric_id!r}")

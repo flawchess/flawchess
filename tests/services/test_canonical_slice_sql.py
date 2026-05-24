@@ -443,12 +443,13 @@ class TestPerTcBuilders:
         from app.services.canonical_slice_sql import per_user_cte_time_pressure_score_gap
 
         sql = per_user_cte_time_pressure_score_gap(tc, source=source)
+        normalised = " ".join(sql.split())
         assert f"g.time_control_bucket = '{tc}'" in sql
         assert (
-            "HAVING count(*) FILTER (WHERE user_clock_pct < 0.40) >= 30" in sql
+            "HAVING count(*) FILTER (WHERE user_clock_pct < 0.40) >= 30" in normalised
         ), "user-pressured ≥30 HAVING gate missing"
         assert (
-            "count(*) FILTER (WHERE opp_clock_pct < 0.40) >= 30" in sql
+            "count(*) FILTER (WHERE opp_clock_pct < 0.40) >= 30" in normalised
         ), "opp-pressured ≥30 HAVING gate missing"
         # per_user_values shape
         pv_idx = sql.find("per_user_values")
@@ -502,8 +503,9 @@ class TestPerTcDispatcher:
     ) -> None:
         metric_id = f"time_pressure_score_gap_{tc}"
         sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # 12 new metric IDs are widened in Plan C; Plan B dispatcher matches string literals
+        normalised = " ".join(sql.split())
         assert f"g.time_control_bucket = '{tc}'" in sql
-        assert "HAVING count(*) FILTER (WHERE user_clock_pct < 0.40) >= 30" in sql
+        assert "HAVING count(*) FILTER (WHERE user_clock_pct < 0.40) >= 30" in normalised
 
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
     def test_dispatcher_routes_clock_gap(self, tc: TimeControlBucket) -> None:
