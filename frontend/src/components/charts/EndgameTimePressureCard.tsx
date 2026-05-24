@@ -112,9 +112,9 @@ function tintForNetTimeoutRate(rate: number): string | undefined {
 }
 
 /**
- * SC-2: Three-column header row rendered ABOVE the Clock Gap bullet.
- * Left: You (user avg pct + seconds). Center: Gap value + MetricStatPopover.
- * Right: Opp (opp avg pct + seconds).
+ * Header row rendered ABOVE the Clock Gap bullet.
+ * Single left-aligned inline stat: "You: x% • Opp: y% • Gap: z% <info>"
+ * with the Clock Gap percentile chip pushed to the right edge.
  * Preserves the triple-gate font-tinting from the old ClockGapRow.
  */
 function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePressureTcCard }) {
@@ -135,14 +135,19 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
 
   return (
     <div
-      className="grid grid-cols-3 items-center text-sm tabular-nums mb-2"
+      className="flex items-center gap-1 text-sm tabular-nums mb-2"
       data-testid={`time-pressure-card-${card.tc}-clock-gap-header`}
     >
-      <span className="text-left" data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
+      <span data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
         You: <span className="font-semibold">{formatPct(card.user_avg_pct)}</span>
       </span>
-      <span className="text-center flex items-center justify-center gap-1">
-        <span className="text-muted-foreground">Gap:</span>
+      <span className="text-muted-foreground">•</span>
+      <span data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
+        Opp: <span className="font-semibold">{formatPct(card.opp_avg_pct)}</span>
+      </span>
+      <span className="text-muted-foreground">•</span>
+      <span>
+        Gap:{' '}
         <span
           className="font-semibold"
           style={fontColor ? { color: fontColor } : undefined}
@@ -150,45 +155,44 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
         >
           {formattedGapValue}
         </span>
-        {/* MetricStatPopover migrated verbatim from ClockGapRow. */}
-        <MetricStatPopover
-          name="Clock Gap"
-          explanation="Your average clock advantage over your opponent when the endgame begins, as a share of the starting time. Positive means you entered the endgame with more time on your clock."
-          value={gap.mean_diff_pct}
-          baseline={0}
-          unit="percent"
-          gameCount={gap.n}
-          level={level}
-          pValue={gap.p_value}
-          vocabulary="score"
-          neutralLower={neutralMin}
-          neutralUpper={neutralMax}
-          baselineLabel="0%"
-          methodology={
-            <>
-              Mean of (user_clock − opp_clock) / base_clock at endgame entry.<br />
-              Test: one-sample z-test vs 0.<br />
-              Confidence interval: 95% normal-approx.
-            </>
-          }
-          testId={`time-pressure-card-${card.tc}-clock-gap-info`}
-          ariaLabel="What is Clock Gap?"
-        />
-        {/* Phase 94.3 (TPCTL-06): Clock Gap percentile chip. Gated on
-            `!= null` to honor the backend inclusion-floor contract — a null
-            percentile suppresses the chip silently. */}
-        {card.clock_gap_percentile != null && (
+      </span>
+      <MetricStatPopover
+        name="Clock Gap"
+        explanation="Your average clock advantage over your opponent when the endgame begins, as a share of the starting time. Positive means you entered the endgame with more time on your clock."
+        value={gap.mean_diff_pct}
+        baseline={0}
+        unit="percent"
+        gameCount={gap.n}
+        level={level}
+        pValue={gap.p_value}
+        vocabulary="score"
+        neutralLower={neutralMin}
+        neutralUpper={neutralMax}
+        baselineLabel="0%"
+        methodology={
+          <>
+            Mean of (user_clock − opp_clock) / base_clock at endgame entry.<br />
+            Test: one-sample z-test vs 0.<br />
+            Confidence interval: 95% normal-approx.
+          </>
+        }
+        testId={`time-pressure-card-${card.tc}-clock-gap-info`}
+        ariaLabel="What is Clock Gap?"
+      />
+      {/* Phase 94.3 (TPCTL-06): Clock Gap percentile chip, right-aligned.
+          `ml-auto` pushes the chip to the row's right edge. Gated on
+          `!= null` to honor the backend inclusion-floor contract — a null
+          percentile suppresses the chip silently. */}
+      {card.clock_gap_percentile != null && (
+        <span className="ml-auto">
           <PercentileChip
             percentile={card.clock_gap_percentile}
             flavor={CLOCK_GAP_FLAVOR_BY_TC[card.tc]}
             metricLabel="Clock Gap"
             testId={`time-pressure-card-${card.tc}-clock-gap-chip`}
           />
-        )}
-      </span>
-      <span className="text-right" data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
-        Opp: <span className="font-semibold">{formatPct(card.opp_avg_pct)}</span>
-      </span>
+        </span>
+      )}
     </div>
   );
 }

@@ -19,16 +19,16 @@
  *
  * Phase 94.3 (D-2, D-3, D-13): flavor enum widened from 4 to 16 variants
  * (12 per-(metric × TC) chips for Time Pressure family). A flavor-bound
- * DIRECTION_BY_FLAVOR map drives a direction axis:
- *   - higher_is_better (12 flavors): existing behavior preserved verbatim
- *     (Top X% = round(100 - pct), red at low pct, flame thresholds p90/p95/p99).
- *   - lower_is_better (4 net_flag_rate_{tc} flavors only): formatter, band
- *     color, and flame trigger all flip (Top X% = round(pct), green at low
- *     pct, flame thresholds p1/p5/p10). The popover body also prepends a
- *     "Lower is better — ..." line per D-3.
- * For per-TC flavors (any flavor with a TC suffix), bullets 1 and 2 become
- * TC-scoped per D-13; bullet 4 carries per-(metric × TC) copy lifted
- * verbatim from Plan A's candidacy report.
+ * DIRECTION_BY_FLAVOR map drives a direction axis (`higher_is_better` is the
+ * only direction used today — the `lower_is_better` plumbing is kept intact
+ * for future inverse-metric chips). For per-TC flavors (any flavor with a
+ * TC suffix), bullets 1 and 2 become TC-scoped per D-13; bullet 4 carries
+ * per-(metric × TC) copy lifted verbatim from Plan A's candidacy report.
+ *
+ * Phase 94.3 UAT correction: net_flag_rate was originally mapped to
+ * `lower_is_better` but the metric is (timeout_wins − timeout_losses) / total,
+ * so higher IS better. The DB percentile was correct all along; only the
+ * chip direction map was wrong. Now all 16 flavors are `higher_is_better`.
  *
  * Trigger is the chip itself (D-01) — no adjacent HelpCircle. Popover shell
  * mechanics mirror MetricStatPopover (HOVER_OPEN_DELAY_MS=100, identical
@@ -177,7 +177,7 @@ const COPY_RATING_NOTE_CLOCK_RAPID =
 const COPY_RATING_NOTE_CLOCK_CLASSICAL =
   'This classical clock-management gap is mostly independent of rating; positive = you reach endgames with more clock left than your opponents do.';
 const COPY_RATING_NOTE_NFR_BULLET =
-  'At bullet, net flag rate slightly tracks rating in the opposite of the intuitive direction (stronger players win more on time than they lose); positive = your opponents flag more than you do.';
+  'At bullet, net flag rate slightly tracks rating (stronger players win more on time than they lose); positive = your opponents flag more than you do.';
 const COPY_RATING_NOTE_NFR_BLITZ =
   'At blitz, net flag rate slightly tracks rating; positive = your opponents flag more than you do.';
 const COPY_RATING_NOTE_NFR_RAPID =
@@ -208,12 +208,11 @@ const RATING_NOTE_BY_FLAVOR = {
 } as const satisfies Record<PercentileChipFlavor, string>;
 
 /**
- * Phase 94.3 D-2: direction axis per flavor. The 4 `net_flag_rate_{tc}`
- * flavors are the only `lower_is_better` chips on the surface (lower raw
- * percentile = fewer net timeouts = better). All other 12 flavors stay
- * `higher_is_better`. `satisfies Record<...>` is non-negotiable per
- * RESEARCH §Pitfall 3 — without it a future flavor addition could silently
- * miss the map.
+ * Phase 94.3 D-2: direction axis per flavor. Post-UAT correction: all 16
+ * flavors map to `higher_is_better` (net_flag_rate was incorrectly flipped
+ * to `lower_is_better` in the original plan; see file-top docstring).
+ * `satisfies Record<...>` is non-negotiable per RESEARCH §Pitfall 3 —
+ * without it a future flavor addition could silently miss the map.
  */
 export const DIRECTION_BY_FLAVOR = {
   'score-gap': 'higher_is_better',
@@ -228,10 +227,15 @@ export const DIRECTION_BY_FLAVOR = {
   clock_gap_blitz: 'higher_is_better',
   clock_gap_rapid: 'higher_is_better',
   clock_gap_classical: 'higher_is_better',
-  net_flag_rate_bullet: 'lower_is_better',
-  net_flag_rate_blitz: 'lower_is_better',
-  net_flag_rate_rapid: 'lower_is_better',
-  net_flag_rate_classical: 'lower_is_better',
+  // Phase 94.3 UAT correction: net_flag_rate is `higher_is_better`. The
+  // metric is (timeout_wins − timeout_losses) / total_endgame_games, so a
+  // positive (higher) value means the user wins more on time than they lose.
+  // The percentile stored in the DB is already correct (ascending sort);
+  // the original Plan-F direction flip was the bug.
+  net_flag_rate_bullet: 'higher_is_better',
+  net_flag_rate_blitz: 'higher_is_better',
+  net_flag_rate_rapid: 'higher_is_better',
+  net_flag_rate_classical: 'higher_is_better',
 } as const satisfies Record<PercentileChipFlavor, PercentileChipDirection>;
 
 /**

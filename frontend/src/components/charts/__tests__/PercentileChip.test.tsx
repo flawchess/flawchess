@@ -237,17 +237,13 @@ describe('PercentileChip — D-4 popover disclosure (Phase 94.2)', () => {
   });
 });
 
-// ── Phase 94.3: direction inversion + per-TC popover (Plan F) ────────────────
+// ── Phase 94.3: per-TC popover (Plan F) ──────────────────────────────────────
 //
-// 12 new flavors (3 metric families × 4 TCs) extend the chip surface. The 4
-// `net_flag_rate_{tc}` flavors map to `lower_is_better`:
-//   - Top X% label uses raw `Math.round(pct)` instead of `Math.round(100 - pct)`.
-//   - Band color: green at low pct, red at high pct.
-//   - Flame thresholds: p1 / p5 / p10 (instead of p99 / p95 / p90).
-//   - Popover prepends "Lower is better — you have fewer net timeouts than
-//     X% of {tc} players." line (CONTEXT.md D-3).
-// All other 12 flavors (4 originals + 4 time_pressure_score_gap_{tc} + 4
-// clock_gap_{tc}) stay `higher_is_better` (regression-covered above).
+// 12 new flavors (3 metric families × 4 TCs) extend the chip surface. Phase
+// 94.3 UAT correction: all 16 flavors are `higher_is_better` — the original
+// Plan-F flip of `net_flag_rate_{tc}` to `lower_is_better` was a mistake;
+// net_flag_rate = (timeout_wins − timeout_losses) / total, so higher IS
+// better. Tests below now cover the unified direction + per-TC popover wiring.
 
 import { DIRECTION_BY_FLAVOR } from '../PercentileChip';
 
@@ -287,77 +283,47 @@ function parseOklch(s: string): readonly [number, number, number] | null {
   return [Number(m[1]), Number(m[2]), Number(m[3])] as const;
 }
 
-describe('PercentileChip — direction inversion + per-TC popover (Phase 94.3)', () => {
+describe('PercentileChip — per-TC popover (Phase 94.3)', () => {
   // ── Exhaustiveness ──
   it('DIRECTION_BY_FLAVOR has exactly 16 entries', () => {
     expect(Object.keys(DIRECTION_BY_FLAVOR).length).toBe(16);
   });
 
-  it('DIRECTION_BY_FLAVOR maps exactly 4 net_flag_rate_{tc} flavors to lower_is_better', () => {
+  it('DIRECTION_BY_FLAVOR maps ALL 16 flavors to higher_is_better (post-UAT correction)', () => {
     const lowerEntries = Object.entries(DIRECTION_BY_FLAVOR).filter(
       ([, dir]) => dir === 'lower_is_better',
     );
-    expect(lowerEntries.length).toBe(4);
-    const flavors = lowerEntries.map(([f]) => f).sort();
-    expect(flavors).toEqual([
-      'net_flag_rate_blitz',
-      'net_flag_rate_bullet',
-      'net_flag_rate_classical',
-      'net_flag_rate_rapid',
-    ]);
+    expect(lowerEntries.length).toBe(0);
+    const higherEntries = Object.entries(DIRECTION_BY_FLAVOR).filter(
+      ([, dir]) => dir === 'higher_is_better',
+    );
+    expect(higherEntries.length).toBe(16);
   });
 
-  // ── Direction inversion: Top X% formatter ──
-  it('lower_is_better flavor renders "Top 5%" at percentile=5 (not "Top 95%")', () => {
-    renderChipFor(5, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
+  // ── Net Flag Rate is higher_is_better (regression for the post-UAT flip) ──
+  it('net_flag_rate flavor renders "Top 5%" at percentile=95 (higher_is_better)', () => {
+    renderChipFor(95, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
     const txt = screen.getByTestId(TID).textContent ?? '';
     expect(txt).toContain('Top 5%');
     expect(txt).not.toContain('Top 95%');
   });
 
-  it('lower_is_better flavor floors at "Top 1%" for percentile=0 (no "Top 0%")', () => {
-    renderChipFor(0, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
-    const txt = screen.getByTestId(TID).textContent ?? '';
-    expect(txt).toContain('Top 1%');
-    expect(txt).not.toContain('Top 0%');
-  });
-
-  // ── Direction inversion: band color ──
-  it('lower_is_better flavor band is green (ZONE_SUCCESS) at percentile=5', () => {
-    renderChipFor(5, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
+  it('net_flag_rate flavor band is green (ZONE_SUCCESS) at percentile=95', () => {
+    renderChipFor(95, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
     const chip = screen.getByTestId(TID);
     expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_SUCCESS));
   });
 
-  it('lower_is_better flavor band is red (ZONE_DANGER) at percentile=99', () => {
-    renderChipFor(99, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
+  it('net_flag_rate flavor band is red (ZONE_DANGER) at percentile=5', () => {
+    renderChipFor(5, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
     const chip = screen.getByTestId(TID);
     expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_DANGER));
   });
 
-  // ── Direction inversion: flame tiers ──
-  it('lower_is_better flavor renders 3 flames at percentile=1 (p1 → tier 3)', () => {
-    renderChipFor(1, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
+  it('net_flag_rate flavor renders 3 flames at percentile=99 (top tier)', () => {
+    renderChipFor(99, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
     const chip = screen.getByTestId(TID);
     expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(3);
-  });
-
-  it('lower_is_better flavor renders 2 flames at percentile=5 (p5 → tier 2)', () => {
-    renderChipFor(5, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
-    const chip = screen.getByTestId(TID);
-    expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(2);
-  });
-
-  it('lower_is_better flavor renders 1 flame at percentile=10 (p10 → tier 1)', () => {
-    renderChipFor(10, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
-    const chip = screen.getByTestId(TID);
-    expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(1);
-  });
-
-  it('lower_is_better flavor renders 0 flames at percentile=50', () => {
-    renderChipFor(50, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
-    const chip = screen.getByTestId(TID);
-    expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(0);
   });
 
   // ── Higher-is-better regression for new per-TC variants ──
@@ -373,19 +339,15 @@ describe('PercentileChip — direction inversion + per-TC popover (Phase 94.3)',
     expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(3);
   });
 
-  // ── D-3: Net Flag "Lower is better" prepended popover line ──
+  // ── No flavor includes the "Lower is better" line (post-UAT regression) ──
   it.each(['bullet', 'blitz', 'rapid', 'classical'] as const)(
-    'Net Flag chip prepends "Lower is better" line for tc=%s with the correct TC token',
+    'Net Flag chip does NOT include the "Lower is better" line for tc=%s',
     (tc) => {
       const flavor = `net_flag_rate_${tc}` as PercentileChipFlavor;
       renderChipFor(20, flavor, `Net Flag Rate (${tc})`);
       fireEvent.click(screen.getByTestId(TID));
       const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-      // Phase 94.3 CR-01: percentile=20 for lower_is_better means user beats
-      // cohortOutranked = 100 - 20 = 80% of cohort. Both this line and bullet-1
-      // now share that single source of truth (previously bullet-1 said "5%"
-      // here while this line said "80%" — contradictory).
-      expect(body).toContain(`Lower is better, you have fewer net timeouts than 80% of ${tc} players.`);
+      expect(body).not.toMatch(/Lower is better/i);
     },
   );
 
@@ -442,7 +404,7 @@ describe('PercentileChip — direction inversion + per-TC popover (Phase 94.3)',
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'At bullet, net flag rate slightly tracks rating in the opposite of the intuitive direction',
+      'At bullet, net flag rate slightly tracks rating (stronger players win more on time than they lose)',
     );
   });
 

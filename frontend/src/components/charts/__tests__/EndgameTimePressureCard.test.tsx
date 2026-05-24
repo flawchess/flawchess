@@ -399,9 +399,10 @@ describe('EndgameTimePressureCard — Phase 94.3 chip slots', () => {
     ).toBeNull();
   });
 
-  // Pitfall 7: net_flag_rate_percentile === 0 is a VALID percentile (the user
-  // has the best possible net flag rate in the cohort). The chip MUST render —
-  // gate is `!= null`, not falsy.
+  // Pitfall 7: net_flag_rate_percentile === 0 is a VALID percentile (the
+  // worst end of the cohort under higher_is_better). The chip MUST render —
+  // gate is `!= null`, not falsy. Post-UAT: direction is higher_is_better, so
+  // p=0 renders as "Top 100%" (the chip label uses 100 − pct for higher_is_better).
   it('renders the Net Flag chip when net_flag_rate_percentile === 0 (NOT null)', () => {
     renderCard(
       makeCard({
@@ -412,8 +413,7 @@ describe('EndgameTimePressureCard — Phase 94.3 chip slots', () => {
     );
     const chip = screen.getByTestId('time-pressure-card-bullet-net-flag-rate-chip');
     expect(chip).not.toBeNull();
-    // The chip label clamps at MIN_TOP_PERCENT — "Top 1%", never "Top 0%".
-    expect(chip.textContent).toContain('Top 1%');
+    expect(chip.textContent).toContain('Top 100%');
   });
 
   // Per-TC placement parity — confirm the testid template substitutes the TC
