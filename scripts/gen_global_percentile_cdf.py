@@ -685,14 +685,19 @@ def _emit_drift_table(
 # Report assembly.
 # ---------------------------------------------------------------------------
 
-# Verbatim banner — the regen-report acceptance criterion in PLAN.md asserts
-# this exact string is present at the top of the new report.
+# Methodology banner — header content for the regen report. The pooled-per-user
+# methodology is unchanged from Phase 94.2; Phase 94.3 widens the registry
+# from 4 to 16 entries (12 new per-(metric × TC) entries for the time-
+# management chip family) while preserving the existing 4 entries' SQL.
 _METHODOLOGY_BANNER: str = (
-    "**Methodology change (Phase 94.2):** Each CDF point is now one deduped "
-    "cohort user (pooled across TCs played, capped at 1000 games/TC, ≤36 months "
-    "from snapshot). Breakpoint values shift materially from prior reports; the "
-    "per-rating-bucket sanity table below is a distribution-shape diagnostic and "
-    "does NOT correspond to what the production CDF measures."
+    "**Methodology (Phase 94.2 pooled-per-user, Phase 94.3 widened to 16 entries):** "
+    "Each CDF point is one deduped cohort user (pooled across TCs played, capped "
+    "at 1000 games/TC, ≤36 months from snapshot). The original 4 metrics pool "
+    "across all TCs; the 12 new Phase 94.3 entries are restricted to a single TC "
+    "bucket inside ``canonical_slice_sql`` builders, so each per-TC chip "
+    "compares the user against the same-TC benchmark cohort. The per-rating-"
+    "bucket sanity table below is a distribution-shape diagnostic and does NOT "
+    "correspond to what the production CDF measures."
 )
 
 # Verbatim per-table callout — emitted above every per-rating-bucket sanity
@@ -710,7 +715,7 @@ def _emit_report(
     """Compose the markdown text of ``reports/global-percentile-cdf-latest.md``."""
     date_str = snapshot_iso[:10]
     header = (
-        f"# Global Percentile CDF — Pooled-Per-User Methodology (Phase 94.2)\n\n"
+        f"# Global Percentile CDF — Pooled-Per-User Methodology (Phase 94.3)\n\n"
         f"{_METHODOLOGY_BANNER}\n\n"
         f"- **DB**: benchmark (Docker on localhost:5433, flawchess_benchmark)\n"
         f"- **Report generated**: {snapshot_iso}\n"
@@ -765,18 +770,39 @@ def _emit_report(
     return header + "\n".join(cohort_lines) + "\n\n" + "\n".join(sections) + drift_block
 
 
+def _detect_prior_phase_tag(prior_path: Path) -> str:
+    """Parse the prior report header to extract the phase tag (e.g. ``94.2``).
+
+    The header is structured as ``# Global Percentile CDF — ... (Phase XX.Y)``;
+    we extract the ``XX.Y`` tag for archival filename clarity. Falls back to
+    ``"unknown"`` if the header doesn't match — the archive still happens, the
+    filename is just slightly less informative.
+    """
+    try:
+        head = prior_path.read_text().splitlines()[0]
+    except (OSError, IndexError):
+        return "unknown"
+    m = re.search(r"\(Phase (\d+(?:\.\d+)*)\)", head)
+    return m.group(1) if m else "unknown"
+
+
 def _archive_prior_report(today: date) -> Path | None:
-    """Copy the prior 94.1 report (if any) into ``reports/archive/`` before overwrite.
+    """Copy the prior report (if any) into ``reports/archive/`` before overwrite.
 
     Returns the archive path that was written (or that already existed). Idempotent:
     if the dated archive destination already exists, logs a warning and returns
-    the existing path without copying.
+    the existing path without copying. The archive filename embeds the prior
+    report's phase tag (parsed from the file's top-of-document heading) so
+    successive regenerations across phases produce non-colliding archive names.
     """
     if not OUTPUT_REPORT_PATH.exists():
         _log(f"No prior {OUTPUT_REPORT_PATH} to archive; skipping archive step.")
         return None
     OUTPUT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    archive_path = OUTPUT_ARCHIVE_DIR / f"global-percentile-cdf-94.1-{today.isoformat()}.md"
+    phase_tag = _detect_prior_phase_tag(OUTPUT_REPORT_PATH)
+    archive_path = (
+        OUTPUT_ARCHIVE_DIR / f"global-percentile-cdf-{today.isoformat()}-phase-{phase_tag}.md"
+    )
     if archive_path.exists():
         _log(f"Archive already exists: {archive_path}; not overwriting.")
         return archive_path
