@@ -381,8 +381,11 @@ describe('PercentileChip — direction inversion + per-TC popover (Phase 94.3)',
       renderChipFor(20, flavor, `Net Flag Rate (${tc})`);
       fireEvent.click(screen.getByTestId(TID));
       const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-      // 100 - 20 = 80, formatBetterThanPercent(80) = "80%"
-      expect(body).toContain(`Lower is better — you have fewer net timeouts than 80% of ${tc} players.`);
+      // Phase 94.3 CR-01: percentile=20 for lower_is_better means user beats
+      // cohortOutranked = 100 - 20 = 80% of cohort. Both this line and bullet-1
+      // now share that single source of truth (previously bullet-1 said "5%"
+      // here while this line said "80%" — contradictory).
+      expect(body).toContain(`Lower is better, you have fewer net timeouts than 80% of ${tc} players.`);
     },
   );
 
