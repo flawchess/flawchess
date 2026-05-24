@@ -56,7 +56,7 @@ const CHIP_TEXT_COLOR = 'oklch(0.98 0 0)';
 const COPY_BENCHMARK_COMPOSITION =
   'Compared against benchmarked Lichess players of all ratings and time controls.';
 const COPY_RECENT_GAMES_BASIS =
-  'Uses your most recent 1000 games per time control played, last 36 months.';
+  'Uses your most recent 1000 rated games per time control played, last 36 months.';
 const COPY_FILTER_INDEPENDENCE = 'UI filters do not affect this percentile.';
 
 // Per-metric rating-correlation framing (lower Cohen's d → more rating-invariant).

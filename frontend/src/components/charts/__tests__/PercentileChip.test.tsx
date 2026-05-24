@@ -166,7 +166,7 @@ describe('PercentileChip', () => {
 //
 // The four content blocks every flavor's popover MUST render:
 //   1. Benchmark composition  — "benchmarked Lichess players"
-//   2. Recent-games basis     — "most recent 1000 games"
+//   2. Recent-games basis     — "most recent 1000 rated games"
 //   3. Filter independence    — "UI filters do not affect"
 //   4. Per-metric rating-correlation framing — differs per flavor (see below)
 //
@@ -196,7 +196,7 @@ describe('PercentileChip — D-4 popover disclosure (Phase 94.2)', () => {
     const popover = screen.getByTestId(`${TID}-popover`);
     const body = popover.textContent ?? '';
     expect(body).toMatch(/benchmarked Lichess players/i);
-    expect(body).toMatch(/most recent 1000 games/i);
+    expect(body).toMatch(/most recent 1000 rated games/i);
     expect(body).toMatch(/UI filters do not affect/i);
   });
 
