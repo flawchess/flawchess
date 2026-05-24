@@ -511,14 +511,12 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--metric",
-        choices=list(
-            (
-                "score_gap",
-                "achievable_score_gap",
-                "section2_score_gap_conv",
-                "section2_score_gap_parity",
-            )
-        ),
+        # Phase 94.3 (Plan 05): track STAGE_A_METRIC + STAGE_B_METRICS dynamically so
+        # the argparse choices cannot drift from the service-layer tuple as new
+        # metric IDs are added (RESEARCH §Pattern 6). Widens from 4 entries
+        # (pre-94.3) to 16 entries (1 Stage A + 15 Stage B) once Plan D's
+        # STAGE_B_METRICS widening flows through.
+        choices=list((STAGE_A_METRIC, *STAGE_B_METRICS)),
         default=None,
         help="Process only this metric (optional; default: all metrics).",
     )
