@@ -120,7 +120,7 @@ describe('EndgameMetricsSection — full-rendering case (Phase 87.4: 3 cards)', 
     expect(screen.queryByTestId('tile-endgame-skill')).toBeNull();
     expect(
       screen.getByText(
-        'How do you score from winning, balanced, and losing endgames compared to a strong 2300+ rated player?',
+        'How do you score from winning, balanced, and losing endgames?',
       ),
     ).not.toBeNull();
   });

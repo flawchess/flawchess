@@ -91,7 +91,7 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
   return (
     <section data-testid="endgame-metrics-section">
       <p className="text-sm text-muted-foreground">
-        How do you score from winning, balanced, and losing endgames compared to a strong 2300+ rated player?
+        How do you score from winning, balanced, and losing endgames?
       </p>
 
       {/* Phase 87.4: 3-column card grid on lg+, single-column stacked on mobile.
