@@ -49,6 +49,7 @@ async def upsert_percentile(
     user_id: int,
     metric: CdfMetricId,
     value: float,
+    n_games: int,
     percentile: float | None,
     cdf_snapshot: datetime.date,
 ) -> None:
@@ -58,15 +59,22 @@ async def upsert_percentile(
     operation is atomic and idempotent. The caller is responsible for committing
     the session after all writes in a unit of work are done.
 
-    Only call this function when ``value`` is not None (i.e., the user has at
-    least one floor-passing cell). Below-floor users produce no row — callers
+    Only call this function when ``value`` is not None (i.e., the user is above
+    the pooled inclusion floor). Below-floor users produce no row — callers
     must skip the upsert when ``_compute_metric_for_user`` returns None.
+
+    Phase 94.2 (D-9-amend): the ``n_games`` parameter is required. Under the
+    pooled-per-user model it carries per-metric meaning — see the
+    ``UserBenchmarkPercentile`` class docstring for the per-metric mapping. The
+    parameter participates in both the insert values and the on-conflict update
+    so refreshed UPSERTs replace the prior count.
 
     Args:
         session: AsyncSession. Caller commits.
         user_id: Internal user PK.
         metric: One of the 4 CdfMetricId values.
-        value: User's canonical-slice metric value (floor-respecting pooled avg).
+        value: User's pooled metric value (above-floor by construction).
+        n_games: Per-metric pooled count (binding inclusion-floor count).
         percentile: Lookup percentile in [0, 100], or None for future use.
         cdf_snapshot: Date of the CDF artifact used for interpolation.
     """
@@ -74,6 +82,7 @@ async def upsert_percentile(
         user_id=user_id,
         metric=metric,
         value=value,
+        n_games=n_games,
         percentile=percentile,
         cdf_snapshot=cdf_snapshot,
     )
@@ -81,6 +90,7 @@ async def upsert_percentile(
         index_elements=["user_id", "metric"],
         set_={
             "value": stmt.excluded.value,
+            "n_games": stmt.excluded.n_games,
             "percentile": stmt.excluded.percentile,
             "cdf_snapshot": stmt.excluded.cdf_snapshot,
             "computed_at": func.now(),  # server-side NOW() refresh on every update

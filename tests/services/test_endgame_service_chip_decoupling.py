@@ -188,6 +188,7 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
         user_id=_TEST_USER_A_ID,
         metric="score_gap",
         value=_SEED_VALUE,
+        n_games=42,
         percentile=_KNOWN_SCORE_GAP_PERCENTILE,
         cdf_snapshot=_CDF_SNAPSHOT,
     )
@@ -197,6 +198,7 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
         user_id=_TEST_USER_B_ID,
         metric="score_gap",
         value=_SEED_VALUE,
+        n_games=42,
         percentile=_USER_B_PERCENTILE,
         cdf_snapshot=_CDF_SNAPSHOT,
     )

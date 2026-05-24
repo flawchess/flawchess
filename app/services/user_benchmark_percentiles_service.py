@@ -1,11 +1,20 @@
-"""Per-user canonical-slice percentile compute service.
+"""Per-user pooled percentile compute service.
 
-Phase 94.1 Plan 05 — PCTL-08 / PCTL-09 / D-03 / D-04 / ROADMAP SC 3.
+Phase 94.2 (supersedes Phase 94.1 Plan 13): the per-user compute consumes
+the pooled-per-user CTE from ``app/services/canonical_slice_sql.py``. Each
+``(user_id, metric_id)`` lookup runs a single SQL query that emits either
+one row (``metric_value``, ``n_games``) or zero rows (user below the ≥30
+floor on the pooled set). The Plan 13 dual-query / dual-floor mechanism and
+the ``apply_floor`` argument are gone — no cells, no averaging.
 
-Two public entry points:
+The compute helper returns ``tuple[float, int] | None``; Stage A/B
+destructure ``(value, n_games)`` and pass both to ``upsert_percentile`` per
+D-9-amend.
+
+Stage A/B trigger contract preserved verbatim from 94.1 (PCTL-09):
 
 - ``compute_stage_a(user_id)`` — eval-independent; computes ``score_gap``
-  from the canonical slice and UPSERTs one row. Hooked by
+  from the pooled per-user CTE and UPSERTs one row. Hooked by
   ``_complete_import_job`` in ``app/services/import_service.py`` (D-03) via
   ``asyncio.create_task``, AFTER the import transaction commits.
 
@@ -15,41 +24,27 @@ Two public entry points:
   pending-eval count reaches zero (D-01). Same fire-and-forget pattern.
 
 Both stages do NOT run inside the import transaction (ROADMAP success
-criterion 3).  Both are non-blocking — exceptions are captured to Sentry and
+criterion 3). Both are non-blocking — exceptions are captured to Sentry and
 swallowed (D-04); neither propagates back to the import worker or drain
 coroutine.
 
-Floor convention (Plan 13 gap-closure):
-  ``_compute_metric_for_user`` uses a single CTE query with ``apply_floor=True``.
-  If the user has zero floor-passing cells, the CTE returns no rows → the
-  function returns ``None``. The caller skips the upsert entirely, so no row is
-  written. Row absence is the new below-floor signal — the chip suppresses
-  naturally. The dual-query / dual-floor approach from Plans 05-12 is removed.
-
-  Correctness bug fixed (Plan 13): the prior implementation ran two queries —
-  one with ``apply_floor=False`` for ``value_raw`` and one with
-  ``apply_floor=True`` for ``n_cells_floor``. The stored ``value`` was the
-  unfiltered average, meaning tiny below-floor cells (n=1, n=3) dragged the
-  value far from the floor-passing signal. User 28's ``achievable_score_gap``
-  reported Top 6% when the floor-respecting value indicated Top 71%.
-
 Stage A / Stage B race-condition non-issue (RESEARCH Pitfall 2):
   The 4 metrics are partitioned between stages: Stage A owns ``score_gap``,
-  Stage B owns the other 3.  Each stage writes disjoint ``(user_id, metric)``
-  PK rows.  Even when both stages race on a first import, they never conflict.
+  Stage B owns the other 3. Each stage writes disjoint ``(user_id, metric)``
+  PK rows. Even when both stages race on a first import, they never conflict.
 
-Security (V5 — T-94.1-10):
+Security (V5 — T-94.2-03-01):
   ``user_id`` flows through the query via a SQLAlchemy named bindparam
-  (``:user_id``) on a static SQL template.  It is never f-stringed into the
+  (``:user_id``) on a static SQL template. It is never f-stringed into the
   query string.
 
 Session discipline (CLAUDE.md hard rule):
   Each ``compute_stage_*`` opens its own session via the resolved
-  ``session_maker`` factory.  The session is never shared with the trigger
+  ``session_maker`` factory. The session is never shared with the trigger
   site (D-04).
 
-``session_maker`` keyword parameter (enables Plan 08 backfill):
-  Both entry points accept an optional ``session_maker`` kwarg.  When None,
+``session_maker`` keyword parameter (enables Plan 06 backfill):
+  Both entry points accept an optional ``session_maker`` kwarg. When None,
   they fall back to ``app.core.database.async_session_maker`` (the app DB).
   When provided, they use the injected factory — this lets the backfill
   script target a different DB URL (e.g., prod via the tunnel) without
@@ -94,38 +89,39 @@ async def _compute_metric_for_user(
     session: AsyncSession,
     user_id: int,
     metric_id: CdfMetricId,
-) -> float | None:
-    """Run the canonical-slice CTE for one user and one metric.
+) -> tuple[float, int] | None:
+    """Run the pooled-per-user CTE for one user and one metric (Phase 94.2).
 
-    Uses a single SQL query with ``apply_floor=True``. Only floor-passing
-    ``(elo_bucket, tc_bucket)`` cells contribute to the returned value.
+    Returns ``(metric_value, n_games)`` from the single row of
+    ``per_user_values``, or ``None`` if the user is below the metric's ≥30
+    inclusion floor (the CTE's HAVING clause emits no row).
 
-    Returns the floor-respecting ``avg(metric_value)`` across the user's
-    floor-passing cells, or ``None`` if the user has zero floor-passing cells
-    for this metric (CTE returns no rows).
+    Phase 94.2 supersedes the 94.1 Plan 13 single-query-with-``apply_floor=True``
+    path: under the pooled model there are no per-(elo_bucket, tc_bucket) cells
+    to average, so the prior ``avg(metric_value)`` wrapper is gone. One row
+    per user → SELECT (value, n_games) directly.
 
-    Plan 13 correctness fix: the prior dual-query approach averaged ALL cells
-    (including tiny n=1, n=3 below-floor cells) into ``value``, while the
-    benchmark CDF was built from floor-passing cells only. This caused user 28's
-    ``achievable_score_gap`` to read Top 6% when the floor-respecting value
-    indicated Top 71% (+0.1204 raw vs -0.0322 floor-respecting). Using a single
-    ``apply_floor=True`` query ensures the stored value matches the CDF input.
+    Return-type widening to ``tuple[float, int] | None`` (from 94.1's
+    ``float | None``) is per CONTEXT.md Amendment 2026-05-24 (D-9-amend):
+    ``n_games`` is re-added to the storage table and must thread from the CTE
+    to the UPSERT.
 
     Security (V5): ``user_id`` is bound via SQLAlchemy ``.bindparams()``,
     never f-stringed into the query text.
     """
     su_cte = selected_users_cte(source="single_user")
-    floor_cte = per_user_cte_for(metric_id, source="single_user", apply_floor=True)
+    pooled_cte = per_user_cte_for(metric_id, source="single_user", snapshot_date=None)
     sql = (
-        f"WITH {su_cte},\n{floor_cte}\n"
-        f"SELECT avg(metric_value)::float AS value\n"
-        f"FROM per_user_values"
+        f"WITH {su_cte},\n{pooled_cte}\n"
+        f"SELECT metric_value::float AS value, n_games::int AS n_games\n"
+        f"FROM per_user_values\n"
+        f"LIMIT 1"
     )
     result = await session.execute(text(sql).bindparams(user_id=user_id))
     row = result.fetchone()
-    if row is None or row.value is None:
+    if row is None or row.value is None or row.n_games is None:
         return None
-    return float(row.value)
+    return (float(row.value), int(row.n_games))
 
 
 # ---------------------------------------------------------------------------
@@ -141,25 +137,28 @@ async def compute_stage_a(
     """Compute and UPSERT the ``score_gap`` percentile for one user.
 
     Background task — never propagates exceptions back to the trigger site
-    (D-04 / ROADMAP SC-3).  Called by ``_complete_import_job`` via
+    (D-04 / ROADMAP SC-3). Called by ``_complete_import_job`` via
     ``asyncio.create_task`` after the import transaction commits.
 
-    Floor convention (Plan 13): if ``_compute_metric_for_user`` returns None
-    (zero floor-passing cells), no row is written. The chip suppresses naturally.
+    Floor convention (Phase 94.2): if ``_compute_metric_for_user`` returns
+    None (user below ≥30 pooled floor), no row is written. The chip
+    suppresses naturally.
     """
     maker = session_maker if session_maker is not None else _default_session_maker
     try:
         async with maker() as session:
-            value = await _compute_metric_for_user(session, user_id, STAGE_A_METRIC)
-            # If value is None (zero floor-passing cells): no row, early exit.
-            if value is None:
+            result = await _compute_metric_for_user(session, user_id, STAGE_A_METRIC)
+            # If result is None (below pooled floor): no row, early exit.
+            if result is None:
                 return
+            value, n_games = result
             percentile: float | None = interpolate_percentile(STAGE_A_METRIC, value)
             await upsert_percentile(
                 session,
                 user_id=user_id,
                 metric=STAGE_A_METRIC,
                 value=value,
+                n_games=n_games,
                 percentile=percentile,
                 cdf_snapshot=date.today(),
             )
@@ -186,15 +185,15 @@ async def compute_stage_b(
     Plan 13 Stage B gate — see ``users_with_zero_pending`` in game_repository.py).
 
     A single session is opened for all 3 metrics (halves session-open overhead
-    vs per-metric sessions).  Per-metric errors are isolated: an inner
+    vs per-metric sessions). Per-metric errors are isolated: an inner
     try/except wraps each metric's compute + UPSERT so a failure in one metric
-    does not prevent the others from being written.  All 3 are committed in one
+    does not prevent the others from being written. All 3 are committed in one
     ``session.commit()`` at the end; if an individual metric fails its inner
     try/except catches and reports it to Sentry, and the loop continues.
 
-    Floor convention (Plan 13): if ``_compute_metric_for_user`` returns None
-    for a metric, no row is written for that metric. The loop simply continues
-    to the next metric.
+    Floor convention (Phase 94.2): if ``_compute_metric_for_user`` returns
+    None for a metric, no row is written for that metric. The loop simply
+    continues to the next metric.
 
     Stage A / Stage B race: the 4 metrics are disjoint across the two stages,
     so concurrent UPSERTs for the same user never collide (RESEARCH Pitfall 2).
@@ -204,16 +203,18 @@ async def compute_stage_b(
         async with maker() as session:
             for metric_id in STAGE_B_METRICS:
                 try:
-                    value = await _compute_metric_for_user(session, user_id, metric_id)
-                    if value is None:
-                        # Zero floor-passing cells for this metric → no row.
+                    result = await _compute_metric_for_user(session, user_id, metric_id)
+                    if result is None:
+                        # Below pooled floor for this metric → no row.
                         continue
+                    value, n_games = result
                     percentile: float | None = interpolate_percentile(metric_id, value)
                     await upsert_percentile(
                         session,
                         user_id=user_id,
                         metric=metric_id,
                         value=value,
+                        n_games=n_games,
                         percentile=percentile,
                         cdf_snapshot=date.today(),
                     )

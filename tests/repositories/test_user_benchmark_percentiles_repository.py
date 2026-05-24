@@ -61,6 +61,7 @@ _ALL_METRICS: tuple[str, ...] = (
 _DEFAULT_VALUE: float = 0.05
 _DEFAULT_PERCENTILE: float = 62.3
 _DEFAULT_CDF_SNAPSHOT: datetime.date = datetime.date(2026, 3, 31)
+_DEFAULT_N_GAMES: int = 42  # arbitrary pooled count — n_games is required (Phase 94.2)
 
 pytestmark = pytest.mark.asyncio
 
@@ -94,6 +95,7 @@ async def test_upsert_inserts_when_no_row_exists(db_session: AsyncSession) -> No
         user_id=_TEST_USER_ID,
         metric=_METRIC_SCORE_GAP,
         value=_DEFAULT_VALUE,
+        n_games=_DEFAULT_N_GAMES,
         percentile=_DEFAULT_PERCENTILE,
         cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
     )
@@ -126,6 +128,7 @@ async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
         user_id=_TEST_USER_ID,
         metric=_METRIC_ACHIEVABLE,
         value=0.10,
+        n_games=35,
         percentile=45.0,
         cdf_snapshot=datetime.date(2026, 1, 1),
     )
@@ -135,12 +138,14 @@ async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
     new_value = 0.25
     new_percentile = 78.5
     new_snapshot = datetime.date(2026, 3, 31)
+    new_n_games = 90
 
     await upsert_percentile(
         db_session,
         user_id=_TEST_USER_ID,
         metric=_METRIC_ACHIEVABLE,
         value=new_value,
+        n_games=new_n_games,
         percentile=new_percentile,
         cdf_snapshot=new_snapshot,
     )
@@ -178,6 +183,7 @@ async def test_upsert_handles_percentile_null(db_session: AsyncSession) -> None:
         user_id=_TEST_USER_ID,
         metric=_METRIC_CONV,
         value=0.08,
+        n_games=_DEFAULT_N_GAMES,
         percentile=None,
         cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
     )
@@ -217,6 +223,7 @@ async def test_fk_cascade_on_user_delete(db_session: AsyncSession) -> None:
             user_id=_SECOND_USER_ID,
             metric=metric,
             value=0.05,
+            n_games=_DEFAULT_N_GAMES,
             percentile=50.0,
             cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
         )
@@ -313,6 +320,7 @@ async def test_fetch_for_user_returns_dict_keyed_by_metric_id(
         user_id=_TEST_USER_ID,
         metric=_METRIC_SCORE_GAP,
         value=0.04,
+        n_games=_DEFAULT_N_GAMES,
         percentile=55.0,
         cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
     )
@@ -321,6 +329,7 @@ async def test_fetch_for_user_returns_dict_keyed_by_metric_id(
         user_id=_TEST_USER_ID,
         metric=_METRIC_PARITY,
         value=-0.02,
+        n_games=_DEFAULT_N_GAMES,
         percentile=38.0,
         cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
     )
