@@ -4,7 +4,7 @@
  *
  * Inline pill chip that surfaces a user's cohort percentile against the
  * global CDF on the 4 in-scope ΔES rows (Endgame Score Gap, Achievable Score
- * Gap, Section 2 Parity ΔES, Section 2 Conversion ΔES). Banded color from
+ * Gap, Parity Score Gap, Conversion Score Gap). Banded color from
  * theme.ts, lucide Flame stack for the top 10% / 5% / 1% tiers, Radix popover
  * shell (hover + tap) with one popover body per metric-named flavor.
  *
@@ -66,15 +66,6 @@ function formatBetterThanPercent(pct: number): string {
   return `${Math.max(0, Math.min(99, Math.round(pct)))}%`;
 }
 
-// Per-metric rating-correlation framing (lower Cohen's d → more rating-invariant).
-const COPY_RATING_NOTE_SCORE_GAP =
-  'Endgame Score Gap is mostly independent of rating, so this reflects endgame ability separate from overall strength.';
-const COPY_RATING_NOTE_ACHIEVABLE =
-  'Achievable Score Gap mildly correlates with rating.';
-const COPY_RATING_NOTE_PARITY = 'Parity ΔES mildly correlates with rating.';
-const COPY_RATING_NOTE_CONVERSION =
-  'Conversion ΔES tracks rating strongly: stronger players tend to score higher here because they blunder less when up material.';
-
 /**
  * 4 metric-named flavor variants matching the four chipped metric IDs:
  *   'score-gap'  → score_gap                  (d = 0.19, rating-invariant)
@@ -84,6 +75,25 @@ const COPY_RATING_NOTE_CONVERSION =
  * Names map 1:1 to backend metric IDs for grep-ability.
  */
 export type PercentileChipFlavor = 'score-gap' | 'achievable' | 'parity' | 'conversion';
+
+// Canonical user-facing metric labels per flavor. Single source of truth so the
+// rating-note copy below cannot drift from the names rendered in card headers,
+// tooltips, and aria labels.
+export const PERCENTILE_METRIC_LABELS = {
+  'score-gap': 'Endgame Score Gap',
+  achievable: 'Achievable Score Gap',
+  parity: 'Parity Score Gap',
+  conversion: 'Conversion Score Gap',
+} as const satisfies Record<PercentileChipFlavor, string>;
+
+// Per-metric rating-correlation framing (lower Cohen's d → more rating-invariant).
+const COPY_RATING_NOTE_SCORE_GAP =
+  `${PERCENTILE_METRIC_LABELS['score-gap']} is mostly independent of rating, so this reflects endgame ability separate from overall strength.`;
+const COPY_RATING_NOTE_ACHIEVABLE =
+  `${PERCENTILE_METRIC_LABELS.achievable} mildly correlates with rating.`;
+const COPY_RATING_NOTE_PARITY = `${PERCENTILE_METRIC_LABELS.parity} mildly correlates with rating.`;
+const COPY_RATING_NOTE_CONVERSION =
+  `${PERCENTILE_METRIC_LABELS.conversion} tracks rating strongly: stronger players tend to score higher here because they blunder less when up material.`;
 
 // Exhaustive flavor → rating-note lookup. `satisfies` gives a compile-time
 // guarantee every variant has a copy string; adding a fifth flavor without
