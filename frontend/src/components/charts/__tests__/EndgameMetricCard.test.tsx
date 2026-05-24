@@ -428,7 +428,7 @@ describe('EndgameMetricCard — percentile chip wiring', () => {
     chip.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
     // The popover body uses the "Conversion tracks rating closely" string for
     // improvement-focus flavor (see PercentileChip.tsx).
-    // Aria label includes "Top X%" (100 - 20 = Top 80%).
+    // Aria label includes "Bottom X%" — at p=20 (below median) the chip reads "Bottom 20%".
     expect(chip.getAttribute('aria-label')).toMatch(/Conversion Score Gap percentile/);
   });
 

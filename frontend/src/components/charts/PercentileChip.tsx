@@ -45,15 +45,16 @@ import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 const HOVER_OPEN_DELAY_MS = 100;
 const PERCENTILE_BAND_LOW = 25;
 const PERCENTILE_BAND_HIGH = 75;
-const FLAME_TIER_1 = 90; // top 10% (higher_is_better)
-const FLAME_TIER_2 = 95; // top 5%  (higher_is_better)
-const FLAME_TIER_3 = 99; // top 1%  (higher_is_better)
+const PERCENTILE_MEDIAN = 50; // ≤ → "Bottom X%", > → "Top X%"
+const FLAME_TIER_1 = 80; // top 20% (higher_is_better)
+const FLAME_TIER_2 = 90; // top 10% (higher_is_better)
+const FLAME_TIER_3 = 95; // top 5%  (higher_is_better)
 // Lower-is-better tier thresholds — symmetric mirror of the higher-is-better
-// thresholds across p50. p1/p5/p10 = top 1% / 5% / 10% of "lowest values".
-const FLAME_TIER_1_LOW = 10;
-const FLAME_TIER_2_LOW = 5;
-const FLAME_TIER_3_LOW = 1;
-const MIN_TOP_PERCENT = 1; // floor for label formatter — prevents "Top 0%" at p99.9 (Pitfall 7)
+// thresholds across p50. p5/p10/p20 = top 5% / 10% / 20% of "lowest values".
+const FLAME_TIER_1_LOW = 20;
+const FLAME_TIER_2_LOW = 10;
+const FLAME_TIER_3_LOW = 5;
+const MIN_PERCENT = 1; // floor for label formatter — prevents "Top 0%" / "Bottom 0%" at edge percentiles
 const FLAME_ICON_SIZE_CLASS = 'h-3 w-3'; // matches existing inline-icon convention in EndgameMetricCard
 
 // Sole hard-coded color in this component. Justification: the chip's text and
@@ -291,11 +292,16 @@ function deriveFlameCount(pct: number, direction: PercentileChipDirection): 0 | 
 
 function formatTopXPercent(pct: number, direction: PercentileChipDirection): string {
   if (direction === 'lower_is_better') {
-    // Raw percentile — a user at p5 (fewer flags than 95% of cohort) reads "Top 5%".
-    return `Top ${Math.max(MIN_TOP_PERCENT, Math.round(pct))}%`;
+    // Raw percentile is position in ascending sort by raw value — for
+    // lower_is_better, low pct = top of cohort. So pct ≤ 50 → "Top pct%",
+    // pct > 50 → "Bottom (100−pct)%".
+    if (pct <= PERCENTILE_MEDIAN) return `Top ${Math.max(MIN_PERCENT, Math.round(pct))}%`;
+    return `Bottom ${Math.max(MIN_PERCENT, Math.round(100 - pct))}%`;
   }
-  // higher_is_better — Phase 94.2 logic preserved verbatim.
-  return `Top ${Math.max(MIN_TOP_PERCENT, Math.round(100 - pct))}%`;
+  // higher_is_better — pct is the user's rank. pct ≤ 50 → user is in the
+  // bottom half ("Bottom pct%"); pct > 50 → user is in the top (100−pct)%.
+  if (pct <= PERCENTILE_MEDIAN) return `Bottom ${Math.max(MIN_PERCENT, Math.round(pct))}%`;
+  return `Top ${Math.max(MIN_PERCENT, Math.round(100 - pct))}%`;
 }
 
 function PercentileChipPopoverBody({

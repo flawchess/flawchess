@@ -76,14 +76,16 @@ describe('PercentileChip', () => {
     expect(screen.getByTestId(TID).textContent ?? '').toContain('Top 27%');
   });
 
-  it('renders "Top 50%" for percentile=50 (literal near median per D-07)', () => {
+  it('renders "Bottom 50%" for percentile=50 (median crossover — ≤50 reads as Bottom)', () => {
     renderChip(50);
-    expect(screen.getByTestId(TID).textContent ?? '').toContain('Top 50%');
+    expect(screen.getByTestId(TID).textContent ?? '').toContain('Bottom 50%');
   });
 
-  it('renders "Top 100%" for percentile=0 (honest literal lower edge per D-06)', () => {
+  it('renders "Bottom 1%" for percentile=0 (floored — no "Bottom 0%")', () => {
     renderChip(0);
-    expect(screen.getByTestId(TID).textContent ?? '').toContain('Top 100%');
+    const txt = screen.getByTestId(TID).textContent ?? '';
+    expect(txt).toContain('Bottom 1%');
+    expect(txt).not.toContain('Bottom 0%');
   });
 
   it('floors at "Top 1%" for percentile=99.9 (no "Top 0%" per Pitfall 7)', () => {
@@ -121,26 +123,26 @@ describe('PercentileChip', () => {
   });
 
   // ── Flame tier dispatch (highest tier only) ──
-  it('renders 0 flame icons for percentile=89', () => {
-    renderChip(89);
+  it('renders 0 flame icons for percentile=79 (below 1-flame threshold)', () => {
+    renderChip(79);
     const chip = screen.getByTestId(TID);
     expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(0);
   });
 
-  it('renders 1 flame icon for percentile=90', () => {
-    renderChip(90);
+  it('renders 1 flame icon for percentile=80', () => {
+    renderChip(80);
     const chip = screen.getByTestId(TID);
     expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(1);
   });
 
-  it('renders 2 flame icons for percentile=95', () => {
-    renderChip(95);
+  it('renders 2 flame icons for percentile=90', () => {
+    renderChip(90);
     const chip = screen.getByTestId(TID);
     expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(2);
   });
 
-  it('renders 3 flame icons for percentile=99 (highest tier only — NOT 6 from 1+2+3)', () => {
-    renderChip(99);
+  it('renders 3 flame icons for percentile=95 (highest tier only — NOT 6 from 1+2+3)', () => {
+    renderChip(95);
     const chip = screen.getByTestId(TID);
     expect(within(chip).queryAllByTestId(`${TID}-flame`)).toHaveLength(3);
   });
