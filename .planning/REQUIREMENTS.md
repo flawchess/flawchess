@@ -26,6 +26,18 @@ Surfaces global "top X%" annotations on selected Endgame metrics, scoped to the 
 - [x] **PCTL-09**: Canonical-slice values are computed in two stages aligned with the two-lane import pipeline: Stage A computes the eval-independent `score_gap` as a background task at import-job completion (does not extend import latency); Stage B computes the three eval-dependent metrics (`achievable_score_gap`, `section2_score_gap_conv`, `section2_score_gap_parity`) as a background task at Stockfish cold-drain completion. Chips light up incrementally — `score_gap` is available within seconds-to-minutes of import completion, the three eval-dependent chips when cold drain wraps.
 - [ ] **PCTL-10**: A `scripts/backfill_user_percentiles.py` script exists to populate `user_benchmark_percentiles` for existing users on each environment in a single batch — required so the chip lights up for the entire user base on rollout, not just users who import after Phase 94.1 ships. The script takes `--target dev|prod` (mirroring `scripts/import_stress_monitor.py`'s convention — `dev` connects to local Docker on `localhost:5432`, `prod` connects via the `bin/prod_db_tunnel.sh` tunnel on `localhost:15432`), is idempotent under UPSERT semantics, supports `--user-id` / `--metric` narrowing for testing, and emits a per-metric summary (rows upserted / skipped per inclusion-floor reason).
 
+### Per-TC Percentile Annotations on Time Pressure Cards (TPCTL — Phase 94.3)
+
+Extends the Phase 94.2 pooled-per-user contract to the Time Pressure section where the card structure is per-TC by construction. 12 new metrics (`{time_pressure_score_gap, clock_gap, net_flag_rate}_{bullet, blitz, rapid, classical}`) computed via the pooled-per-user methodology parameterised by TC. All 12 chips reuse the `PercentileChip` component verbatim with a flavor-bound direction default for Net Flag (lower-is-better). Source: SEED-025.
+
+- [ ] **TPCTL-01**: `app/services/canonical_slice_sql.py` exposes three new per-TC pooled-aggregate SQL builder families — `per_user_cte_time_pressure_score_gap(tc, ...)`, `per_user_cte_clock_gap(tc, ...)`, `per_user_cte_net_flag_rate(tc, ...)` — each parameterised by `tc: Literal["bullet", "blitz", "rapid", "classical"]`. Each builder restricts the canonical slice to one TC and otherwise reuses verbatim the Phase 94.2 universal-filter / equal-footing / 36-month-recency / 1000/TC-cap pipeline. Both `scripts/gen_global_percentile_cdf.py` (CDF construction) and `app/services/user_benchmark_percentiles_service.py` (per-user lookup) consume the same shared builder for each metric — drift is structurally impossible. (ROADMAP SC-1)
+- [ ] **TPCTL-02**: The `benchmark_metric` ENUM in the `user_benchmark_percentiles` table is extended with 12 new values (`{metric_base}_{tc}` for the 3 metric families × 4 TCs) via a single Alembic migration. The migration's `downgrade()` is a documented no-op stub: Postgres does not support `DROP VALUE` on an ENUM without a table-rewrite procedure. The Phase 94.2 row shape (`value`, `percentile`, `n_games`, `cdf_snapshot`, `computed_at`) is reused verbatim — no other schema change. (ROADMAP SC-2)
+- [ ] **TPCTL-03**: `app/services/global_percentile_cdf.py:GLOBAL_PERCENTILE_CDF` gains 12 new entries — one CDF per `(metric_base, tc)` pair, p1..p99 breakpoints (matching Phase 94 chip resolution). `interpolate_percentile(metric_id, value)` dispatches on the metric ENUM verbatim — no signature change. (ROADMAP SC-3)
+- [ ] **TPCTL-04**: All 12 per-user computations run in Stage B (post-cold-drain). Time Pressure Score Gap and Clock Gap both require Stockfish-eval-derived endgame-entry detection; Net Flag Rate bundles with Stage B for hook simplicity despite being outcome-only. `STAGE_A_METRIC == "score_gap"` is unchanged. (ROADMAP SC-4)
+- [ ] **TPCTL-05**: `scripts/backfill_user_percentiles.py` is extended with the 12 new metrics and re-run against dev (and prod via tunnel after sign-off). Backfill summary shows users-included / floor-rejected counts per (metric × TC). (ROADMAP SC-5)
+- [ ] **TPCTL-06**: Each `TimePressureTcCard` header renders three `PercentileChip` instances (Clock Gap on `ClockGapHeaderRow`, Net Flag Rate on `NetFlagRateRow`, Time Pressure Score Gap on the Quintiles subtitle line), gated on inclusion-floor reliability — below floor, no chip renders. Mobile + desktop parity at 375px. Per-quintile bullet chart beneath each chip is unchanged. The 4-bullet tooltip disclosure (per `feedback_percentile_chip_tooltip_disclosure`) is satisfied with the first two bullets TC-scoped and the fourth bullet (rating-correlation framing) populated from the per-(metric × TC) Cohen's d candidacy extension. Net Flag Rate chips prepend a "Lower is better — you have fewer net timeouts than X% of {tc} players." line per CONTEXT.md D-3. The `PercentileChip` component grows a flavor-bound `direction` axis: `net_flag_rate_{tc}` flavors auto-bind `lower_is_better` (text formatter, band color, flame trigger all flip); the other 12 flavors remain `higher_is_better`. (ROADMAP SC-6, SEED-025 §"Phase 94.2 Integration", `feedback_percentile_chip_tooltip_disclosure`)
+- [ ] **TPCTL-07**: A per-(metric × TC) Cohen's d candidacy extension exists in `reports/benchmarks-gap-metrics-percentile-candidacy.md` with 12 new cells (3 metric families × 4 TCs), tier classifications per the existing ladder (rating-invariant d ≤ 0.20, mild d ≤ 0.35, moderate d ≤ 0.60, heavy d > 0.60), and per-(metric × TC) tooltip 4th-bullet copy strings. The cells include `n_users` per (metric × TC) so the planner / executor can detect classical-TC cohort thinness as a runtime signal (per RESEARCH §Pitfall 8). (ROADMAP SC-6 / SC-7, CONTEXT.md D-5)
+
 ### LLM Statistical Reasoning (LLM)
 
 Reworks the endgame-insights LLM payload + prompt so the model can reason over the v1.17 statistical-rigor metric set (Endgame Score Gap, Achievable Score Gap, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence intervals, and the new percentile annotations, while preserving the prior decision that the cohort `zone` field — not significance — gates whether a metric is narrated.
@@ -49,6 +61,8 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 - Per-user-ELO-cell comparison pools for percentile annotations — SEED-019 deliberately ships global-only comparison; the bragging-rights framing is the explicit product call.
 - A separate "verdict" field on LLM payloads alongside `zone` — prior decision (`feedback_llm_significance_signal.md`) stands. The LLM phase resolves the tension via prompt guardrails on raw CIs/p-values, not via a parallel verdict signal.
 - Tactics / per-move-quality narration — gated on client-side Stockfish or eval coverage expansion (SEED-012), out of v1.19 scope.
+- Per-(TC, ELO) percentile cells on Time Pressure cards — rejected at Phase 94.3 discuss step (D-14). Rating correlation is accepted as honest and disclosed in the chip tooltip's 4th bullet, mirroring the Phase 94.2 stance.
+- Per-(TC, quintile) decomposition of Time Pressure Score Gap — rejected at Phase 94.3 discuss step (D-15). The chip is the headline trait (binary collapse at `clock_pct < 40%`); the per-quintile bullet chart beneath the chip is unchanged.
 
 ## Traceability
 
@@ -64,6 +78,13 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 | PCTL-08 | Phase 94.1 | Complete |
 | PCTL-09 | Phase 94.1 | Complete |
 | PCTL-10 | Phase 94.1 | Pending |
+| TPCTL-01 | Phase 94.3 | Pending |
+| TPCTL-02 | Phase 94.3 | Pending |
+| TPCTL-03 | Phase 94.3 | Pending |
+| TPCTL-04 | Phase 94.3 | Pending |
+| TPCTL-05 | Phase 94.3 | Pending |
+| TPCTL-06 | Phase 94.3 | Pending |
+| TPCTL-07 | Phase 94.3 | Pending |
 | LLM-01 | Phase 95 | Pending |
 | LLM-02 | Phase 95 | Pending |
 | LLM-03 | Phase 95 | Pending |
@@ -72,4 +93,6 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 | LLM-06 | Phase 95 | Pending |
 | LLM-07 | Phase 95 | Pending |
 
-**Coverage:** 17/17 v1 requirements mapped (PCTL-01..10 + LLM-01..07). No orphans.
+**Coverage:** 24/24 v1 requirements mapped (PCTL-01..10 + TPCTL-01..07 + LLM-01..07). No orphans.
+
+**SEED traceability:** SEED-025 (Per-TC Percentile Chips on Time Pressure Cards) → TPCTL-01..07 (Phase 94.3).

@@ -186,7 +186,7 @@ Plans:
 
 **Goal**: Extend the Phase 94.2 pooled-per-user percentile contract to the Time Pressure section, where the card structure is per-TC by construction (bullet / blitz / rapid / classical) and the user-meaningful comparison is "top X% of *bullet* players", not "top X% of all players". Add 12 new metrics to the `user_benchmark_percentiles` ENUM — `{time_pressure_score_gap, clock_gap, net_flag_rate}_{bullet, blitz, rapid, classical}` — each computed via the existing pooled-per-user methodology *parameterised by TC* (the per-TC CDF restricts the pool to one TC, all other knobs verbatim from 94.2: universal filters, ±100 equal-footing, 36-month recency, 1000/TC cap). Time Pressure Score Gap is a *binary collapse* of the existing per-quintile bullet chart — `score(user-pressured games) − score(opp-pressured games)` where pressured = `clock_pct < 40%` at endgame entry — chosen over a per-(TC, quintile) decomposition to avoid mixed-construct CDFs from inclusion-floor variance. Three new per-TC pooled-aggregate SQL builder families added to `app/services/canonical_slice_sql.py`, consumed by both `scripts/gen_global_percentile_cdf.py` (12 new CDF keys) and `app/services/user_benchmark_percentiles_service.py` (12 new compute calls). All 12 metrics run in **Stage B** (post-cold-drain) because Time Pressure Score Gap + Clock Gap both depend on Stockfish eval for endgame-entry detection (Net Flag Rate could be Stage A but bundles with Stage B to avoid a special-case hook). Backfill script extended for one-shot population. Frontend reuses `PercentileChip` verbatim — three chip slots on each of the 4 `TimePressureTcCard` headers, tooltip copy follows the 4-bullet disclosure mandate per `feedback_percentile_chip_tooltip_disclosure` with the first two bullets TC-scoped. No schema change. Per-quintile bullet chart beneath the chip is unchanged. Detailed design, rejected alternatives, open design questions, and tier rationale captured in `.planning/seeds/SEED-025-per-tc-percentile-annotations-time-pressure.md`.
 **Depends on**: Phase 94.2 (consumes pooled-per-user methodology, `canonical_slice_sql.py` shared builders, `user_benchmark_percentiles` storage contract, Stage A/B trigger pattern, backfill harness, `PercentileChip` component + tooltip disclosure contract); Phase 88/88.4 (`TimePressureTcCard` schema + per-quintile bullet chart)
-**Requirements**: SEED-025 (no new top-level requirement IDs yet — discuss step to allocate)
+**Requirements**: SEED-025, TPCTL-01, TPCTL-02, TPCTL-03, TPCTL-04, TPCTL-05, TPCTL-06, TPCTL-07
 **Success Criteria** (what must be TRUE):
 
   1. `app/services/canonical_slice_sql.py` exposes three new per-TC pooled-aggregate SQL builder families (`time_pressure_score_gap`, `clock_gap`, `net_flag_rate`) parameterised by TC. Each builder restricts the pool to one TC and otherwise reuses verbatim the 94.2 universal-filter / equal-footing / 36-month-recency / 1000/TC-cap pipeline. Both `scripts/gen_global_percentile_cdf.py` (CDF construction) and `app/services/user_benchmark_percentiles_service.py` (per-user lookup) consume the same shared builder for each metric — drift is structurally impossible.
@@ -199,7 +199,23 @@ Plans:
 
 **UI hint**: yes (3 new chip slots × 4 cards = 12 chip placements; per-quintile bullet chart unchanged; tooltip copy is new prose per chip variant)
 
-**Plans:** TBD (run `/gsd-plan-phase 94.3` to break down)
+**Plans:** 6 plans
+
+Plans:
+**Wave 0** *(research-time candidacy extension)*
+
+- [ ] 94.3-01-PLAN.md — Extend `reports/benchmarks-gap-metrics-percentile-candidacy.md` with a 12-cell (metric × TC) Cohen's d candidacy table; feeds Plan 06's per-chip tooltip 4th-bullet copy
+
+**Wave 1** *(atomic cutover — three plans, single PR, three sequential commits; no incoherent intermediate state on `main`)*
+
+- [ ] 94.3-02-PLAN.md — `canonical_slice_sql.py`: add 3 new per-TC pooled-aggregate SQL builder families (`per_user_cte_time_pressure_score_gap`, `per_user_cte_clock_gap`, `per_user_cte_net_flag_rate`) parameterised by `tc: TimeControlBucket`; widen `per_user_cte_for` dispatcher with 12 new arms; pytest goldens + parity tests for all 12 (metric × TC) cells
+- [ ] 94.3-03-PLAN.md — `scripts/gen_global_percentile_cdf.py` + `app/services/global_percentile_cdf.py`: widen `CdfMetricId` + `IN_SCOPE_METRICS` from 4 to 16; widen `_registry_entry_comment` / `_metric_display_name`; regenerate `GLOBAL_PERCENTILE_CDF` literal + byte-identical regression goldens + fresh `reports/global-percentile-cdf-latest.md`
+- [ ] 94.3-04-PLAN.md — Alembic ENUM extension migration (12 new values, downgrade no-op stub per RESEARCH §Pattern 2) + Stage B compute widening (`STAGE_B_METRICS` 3 → 15) + `TimePressureTcCard` schema (3 new nullable fields) + `endgame_service._compute_time_pressure_cards` percentile attach + frontend type codegen
+
+**Wave 2** *(parallel-safe after Wave 1 merges to main)*
+
+- [ ] 94.3-05-PLAN.md — `scripts/backfill_user_percentiles.py`: widen `--metric` argparse choices to 16; dev rerun (autonomous); prod rerun gated by blocking HUMAN-UAT checkpoint via `bin/prod_db_tunnel.sh`
+- [ ] 94.3-06-PLAN.md — Frontend: `PercentileChip` flavor widening (4 → 16) + `DIRECTION_BY_FLAVOR` map + direction-branched rendering helpers + Net Flag "Lower is better" prepended popover line + TC-scoped popover bullets 1 + 2 + 3 chip slots wired on each of the 4 `TimePressureTcCard` instances + ≥ 25 new Vitest cases + mobile-parity audit at 375px
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
 
