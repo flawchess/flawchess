@@ -26,8 +26,14 @@ import pytest
 from sqlalchemy import text
 
 from app.services.canonical_slice_sql import (
+    CLOCK_GAP_MIN_POOL_N,
+    NET_FLAG_RATE_MIN_POOL_N,
     RECENCY_WINDOW_MONTHS,
     RECENT_GAMES_PER_TC_CAP,
+    TIME_PRESSURE_CLOCK_PCT_THRESHOLD,
+    TIME_PRESSURE_MIN_PRESSURED_N,
+    TimeControlBucket,
+    _recent_capped_per_tc_cte,
     elo_bucket_expr,
     equal_footing_filter_sql,
     per_user_cte_for,
@@ -342,3 +348,198 @@ class TestExportedHelpers:
             assert ";" not in result
             assert "union" not in lowered
             assert "drop" not in lowered
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.3 Plan 02 — per-TC pooled-aggregate builders.
+# ---------------------------------------------------------------------------
+
+_TIME_PRESSURE_TCS: tuple[TimeControlBucket, ...] = (
+    "bullet",
+    "blitz",
+    "rapid",
+    "classical",
+)
+_PER_TC_METRIC_FAMILIES: tuple[str, ...] = (
+    "time_pressure_score_gap",
+    "clock_gap",
+    "net_flag_rate",
+)
+
+
+class TestPerTcConstants:
+    """Module-level constants for per-TC builders (Plan B Task 1; CONTEXT D-6)."""
+
+    def test_time_pressure_clock_pct_threshold_is_locked_to_040(self) -> None:
+        assert TIME_PRESSURE_CLOCK_PCT_THRESHOLD == 0.40
+
+    def test_time_pressure_min_pressured_n_is_30(self) -> None:
+        assert TIME_PRESSURE_MIN_PRESSURED_N == 30
+
+    def test_clock_gap_min_pool_n_is_30(self) -> None:
+        assert CLOCK_GAP_MIN_POOL_N == 30
+
+    def test_net_flag_rate_min_pool_n_is_30(self) -> None:
+        assert NET_FLAG_RATE_MIN_POOL_N == 30
+
+
+class TestRecentCappedPerTcCte:
+    """The per-TC variant of ``_recent_capped_cte`` (Plan B Task 1)."""
+
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_emits_per_tc_predicate(self, tc: TimeControlBucket) -> None:
+        sql = _recent_capped_per_tc_cte(snapshot_date=None, tc=tc)
+        assert f"g.time_control_bucket = '{tc}'" in sql, (
+            f"per-TC predicate missing for tc={tc!r}"
+        )
+
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_partition_collapses_to_per_user(self, tc: TimeControlBucket) -> None:
+        """When restricted to one TC, ROW_NUMBER PARTITION simplifies to (user_id)."""
+        sql = _recent_capped_per_tc_cte(snapshot_date=None, tc=tc)
+        normalised = " ".join(sql.split())
+        assert (
+            "row_number() OVER (PARTITION BY g.user_id ORDER BY g.played_at DESC)"
+            in normalised
+        ), f"partition should collapse to per-user for tc={tc!r}"
+        # The full per-(user, tc) partition from `_recent_capped_cte` must NOT appear here.
+        assert (
+            "PARTITION BY g.user_id, g.time_control_bucket" not in normalised
+        ), f"per-(user, TC) partition leaked into per-TC variant for tc={tc!r}"
+
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_cap_present(self, tc: TimeControlBucket) -> None:
+        sql = _recent_capped_per_tc_cte(snapshot_date=None, tc=tc)
+        assert f"WHERE g.rn <= {RECENT_GAMES_PER_TC_CAP}" in sql
+
+    def test_classical_tc_string_substitution(self) -> None:
+        sql = _recent_capped_per_tc_cte(snapshot_date=None, tc="classical")
+        assert "g.time_control_bucket = 'classical'" in sql
+        assert "g.time_control_bucket = 'bullet'" not in sql
+
+    def test_snapshot_date_default_renders_now(self) -> None:
+        sql = _recent_capped_per_tc_cte(snapshot_date=None, tc="bullet")
+        assert f"NOW() - INTERVAL '{RECENCY_WINDOW_MONTHS} months'" in sql
+
+    def test_snapshot_date_explicit_renders_iso_date(self) -> None:
+        sql = _recent_capped_per_tc_cte(snapshot_date=date(2026, 3, 31), tc="bullet")
+        assert f"DATE '2026-03-31' - INTERVAL '{RECENCY_WINDOW_MONTHS} months'" in sql
+        assert "NOW() - INTERVAL" not in sql
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.3 Plan 02 — per-TC builders + dispatcher widening.
+# ---------------------------------------------------------------------------
+
+
+class TestPerTcBuilders:
+    """The three new per-TC builder families (Plan B Task 2)."""
+
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    @pytest.mark.parametrize("source", _SOURCES)
+    def test_time_pressure_score_gap_emits_per_tc_predicate_and_dual_having(
+        self, tc: TimeControlBucket, source: Literal["benchmark", "single_user"]
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_time_pressure_score_gap
+
+        sql = per_user_cte_time_pressure_score_gap(tc, source=source)
+        assert f"g.time_control_bucket = '{tc}'" in sql
+        assert (
+            "HAVING count(*) FILTER (WHERE user_clock_pct < 0.40) >= 30" in sql
+        ), "user-pressured ≥30 HAVING gate missing"
+        assert (
+            "count(*) FILTER (WHERE opp_clock_pct < 0.40) >= 30" in sql
+        ), "opp-pressured ≥30 HAVING gate missing"
+        # per_user_values shape
+        pv_idx = sql.find("per_user_values")
+        assert pv_idx != -1
+        block = sql[pv_idx:]
+        assert "metric_value" in block
+        assert "n_games" in block
+
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    @pytest.mark.parametrize("source", _SOURCES)
+    def test_clock_gap_emits_per_tc_predicate_and_pool_having(
+        self, tc: TimeControlBucket, source: Literal["benchmark", "single_user"]
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_clock_gap
+
+        sql = per_user_cte_clock_gap(tc, source=source)
+        assert f"g.time_control_bucket = '{tc}'" in sql
+        assert "HAVING count(*) >= 30" in sql
+        pv_idx = sql.find("per_user_values")
+        assert pv_idx != -1
+        block = sql[pv_idx:]
+        assert "metric_value" in block
+        assert "n_games" in block
+
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    @pytest.mark.parametrize("source", _SOURCES)
+    def test_net_flag_rate_emits_per_tc_predicate_and_pool_having(
+        self, tc: TimeControlBucket, source: Literal["benchmark", "single_user"]
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_net_flag_rate
+
+        sql = per_user_cte_net_flag_rate(
+            tc, source=source, snapshot_date=date(2026, 3, 31)
+        )
+        assert f"g.time_control_bucket = '{tc}'" in sql
+        assert "DATE '2026-03-31'" in sql, "snapshot_date should be threaded through"
+        assert "HAVING count(*) >= 30" in sql
+        pv_idx = sql.find("per_user_values")
+        assert pv_idx != -1
+        block = sql[pv_idx:]
+        assert "metric_value" in block
+        assert "n_games" in block
+
+
+class TestPerTcDispatcher:
+    """``per_user_cte_for`` widened with 12 new dispatch arms (Plan B Task 2)."""
+
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_dispatcher_routes_time_pressure_score_gap(
+        self, tc: TimeControlBucket
+    ) -> None:
+        metric_id = f"time_pressure_score_gap_{tc}"
+        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # 12 new metric IDs are widened in Plan C; Plan B dispatcher matches string literals
+        assert f"g.time_control_bucket = '{tc}'" in sql
+        assert "HAVING count(*) FILTER (WHERE user_clock_pct < 0.40) >= 30" in sql
+
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_dispatcher_routes_clock_gap(self, tc: TimeControlBucket) -> None:
+        metric_id = f"clock_gap_{tc}"
+        sql = per_user_cte_for(metric_id, source="benchmark")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+        assert f"g.time_control_bucket = '{tc}'" in sql
+        assert "HAVING count(*) >= 30" in sql
+
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_dispatcher_routes_net_flag_rate(self, tc: TimeControlBucket) -> None:
+        metric_id = f"net_flag_rate_{tc}"
+        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+        assert f"g.time_control_bucket = '{tc}'" in sql
+        assert "HAVING count(*) >= 30" in sql
+
+    def test_dispatcher_raises_on_unknown_metric(self) -> None:
+        with pytest.raises(ValueError, match=r"^Unknown metric_id:"):
+            per_user_cte_for("does_not_exist_metric", source="single_user")  # ty: ignore[invalid-argument-type]  # negative assertion: arbitrary unknown ID
+
+    @pytest.mark.parametrize("metric_family", _PER_TC_METRIC_FAMILIES)
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_dispatcher_emits_per_tc_predicate_for_every_cell(
+        self, metric_family: str, tc: TimeControlBucket
+    ) -> None:
+        """Parametrised over all 12 (metric × TC) cells (Plan B Task 2 Test 8)."""
+        metric_id = f"{metric_family}_{tc}"
+        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+        assert f"g.time_control_bucket = '{tc}'" in sql, (
+            f"per-TC predicate missing for {metric_id}"
+        )
+        # Metric-specific floor signature.
+        if metric_family == "time_pressure_score_gap":
+            assert "HAVING count(*) FILTER" in sql, (
+                f"per-pressure-cell HAVING missing for {metric_id}"
+            )
+        else:
+            assert "HAVING count(*) >= 30" in sql, (
+                f"pooled ≥30 HAVING missing for {metric_id}"
+            )
