@@ -379,7 +379,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 — v1.19 (Endgame Percentiles & LLM Statistical Reasoning) opened. v1.18 Import Pipeline Hardening (Phases 90–92) retroactively tagged on the same day, archived to `milestones/v1.18-ROADMAP.md`. v1.19 directional scope: close SEED-019 with global percentile annotations on Tier-1/Tier-2 Endgame metrics, and rework the endgame-insights LLM prompt + payload (p-values, CIs, percentiles) for the v1.17 metric set. Per-phase scope refined via `/gsd:discuss-phase`. Phase numbering continues from 93.*
+*Last updated: 2026-05-24 — v1.19 in progress; Phase 94.2 (Pooled-Per-User Percentile Redesign) complete. Replaced Phase 94.1's per-cell stratified methodology with a one-point-per-user pooled CDF (D-5 / D-9-amend): canonical_slice_sql.py now emits a single aggregate per user over the recent-1000-per-TC × 36-month equal-footing window, gen_global_percentile_cdf.py regenerates GLOBAL_PERCENTILE_CDF against this surface, and PercentileChip widens to 4 metric-named flavors carrying the D-4 disclosure bullets. Prod backfill rerun deferred as a release-time HUMAN-UAT (todo at .planning/todos/pending/2026-05-24-phase-94.2-prod-backfill-rerun.md). Next phase: 95 (LLM endgame-insights statistical-reasoning rework).*
 
 *Previous: 2026-05-19 after v1.17 milestone. v1.17 Endgame Stats Card Redesign shipped — 13 phases (84–88.4), ~54 plans, delivered via PRs #89–#117. Phase 89 (Polish) dropped from scope; Phase 87.3 (percentile composite) superseded by 87.4→87.6.*
 

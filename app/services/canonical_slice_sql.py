@@ -1,0 +1,540 @@
+"""Pooled-per-user CTE builders for Phase 94.2.
+
+Phase 94.2 (this module's current state) replaces the per-cell stratified
+methodology from Phase 94.1 with a *one-point-per-user pooled* model. Each
+subject (a cohort user during CDF construction; an app user during per-user
+lookup) contributes a single ``metric_value`` and ``n_games`` aggregate to
+the output, computed over their recent-1000-per-TC × 36-month game window
+pooled across all time controls.
+
+Methodology source-of-truth:
+``.planning/notes/per-user-percentile-pooled-redesign.md`` and the locked
+decisions in ``.planning/phases/94.2-pooled-per-user-percentile-redesign/
+94.2-CONTEXT.md`` (D-1, D-5, D-6, D-8, D-10).
+
+Consumers (call into the same builders to keep the CDF and per-user lookup
+structurally aligned — D-10 "drift remains structurally impossible"):
+
+1. ``scripts/gen_global_percentile_cdf.py`` — benchmark CDF generation.
+   Calls every builder with ``source="benchmark"`` and a CLI-supplied
+   ``snapshot_date`` so the 36-month recency window anchors to the dump
+   month (not the operator's clock).
+
+2. ``app/services/user_benchmark_percentiles_service.py`` —
+   per-user canonical-slice compute service. Calls with
+   ``source="single_user"`` and ``snapshot_date=None`` so the recency
+   window anchors to ``NOW()``.
+
+Structural diff between the two sources (the ONLY documented diff):
+
+* ``selected_users`` CTE shape:
+
+  - ``"benchmark"``: deduped cohort. Joins ``benchmark_selected_users``
+    grouped by ``lower(lichess_username)`` (one row per username) and
+    drops users whose ONLY selection slot is ``(rating_bucket=2400,
+    tc_bucket='classical')`` per D-1. Emits ``user_id`` only — downstream
+    pooled CTEs no longer need ``tc_bucket`` / ``selection_rating_bucket``
+    / ``median_elo`` projections.
+
+  - ``"single_user"``: scalar single-row CTE projecting an explicit
+    SQLAlchemy bindparam ``CAST(:user_id AS int)`` (V5 security mitigation).
+    The explicit-CAST form is required so SQLAlchemy's ``text()`` tokeniser
+    actually detects the parameter (94.1 Plan 09 fix — preserved load-bearing).
+
+Pooled-aggregate shape (identical on both sources, per D-5):
+
+* ``recent_capped``: per-(user, TC) ``ROW_NUMBER() OVER … ORDER BY
+  played_at DESC <= 1000`` with the universal filter (rated, non-computer,
+  both ratings non-null, equal-footing ±100) and the 36-month recency
+  predicate.
+
+* Metric-specific aggregation (endgame/non-endgame split, span derivation,
+  bucket gating) over ``recent_capped``.
+
+* ``per_user``: ``GROUP BY user_id`` (no ``elo_bucket`` / ``tc_bucket``
+  projection per D-5) with a ``HAVING`` inclusion-floor gate of ≥30 of the
+  metric-relevant unit (D-6).
+
+* ``per_user_values``: emits exactly ``(metric_value, n_games)``.
+  ``n_games`` is the metric-relevant count on the pooled set per the
+  amendment to D-9 (endgame games for ``score_gap``; eval'd entry games
+  for ``achievable_score_gap``; bucket spans for ``section2_*``).
+
+Removed in 94.2:
+
+* The ``apply_floor`` dual-mode argument (D-8). Below-floor → CTE emits no
+  row → caller stores no row → chip suppressed. The 94.1 ``percentile=NULL +
+  value stored`` rationale is moot because the cell-based model that
+  motivated it is gone.
+
+* Per-row ``sparse_exclusion_sql`` invocations inside ``per_user_cte_*``
+  (D-1). Sparse-cell exclusion is now a cohort-selection concern, applied
+  by ``selected_users_cte(source="benchmark")`` only. The helper is still
+  exported because ``tests/services/test_canonical_slice_sql.py`` still
+  references it for column-substitution coverage.
+
+Security note (V5 — T-94.2-01-01 / T-94.2-01-02):
+
+All SQL fragments contain STATIC SQL plus one bindparam (``:user_id``) and
+one Python-formatted ISO date string (``snapshot_date``). The bindparam
+seam is preserved verbatim from 94.1. The ``snapshot_date`` parameter is a
+build-time ``date | None`` controlled by Plan 02's CLI; Python's
+``date.isoformat()`` produces only ``YYYY-MM-DD`` digits, so the f-string
+into SQL has no injection vector. Never f-string ``user_id`` here.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from typing import Literal
+
+from app.services.global_percentile_cdf import CdfMetricId
+
+# ---------------------------------------------------------------------------
+# Module-level constants (CLAUDE.md no-magic-numbers).
+# ---------------------------------------------------------------------------
+
+# Per-metric inclusion floors on the pooled set (D-6 — all 4 metrics ≥30).
+SCORE_GAP_MIN_ENDGAME_N: int = 30
+SCORE_GAP_MIN_NON_ENDGAME_N: int = 30
+ACHIEVABLE_MIN_GAMES: int = 30
+SECTION2_MIN_SPANS_PER_BUCKET: int = 30
+
+# Pooled-window shape (D-5).
+RECENT_GAMES_PER_TC_CAP: int = 1000
+RECENCY_WINDOW_MONTHS: int = 36
+
+# Shared SQL constants.
+_EQUAL_FOOTING_TOL: int = 100
+_SPARSE_CELL_ELO: int = 2400
+_SPARSE_CELL_TC: str = "classical"
+_SUB_800_FLOOR: int = 800
+
+
+# ---------------------------------------------------------------------------
+# Helper: user ELO at game time (internal — not exported; callers embed via
+# the exported builders).
+# ---------------------------------------------------------------------------
+
+
+def _user_elo_at_game_expr() -> str:
+    """SQL expression for the cohort user's rating at game time (SKILL.md §1)."""
+    return "(CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END)"
+
+
+def _recency_window_sql(snapshot_date: date | None) -> str:
+    """Render the lower bound of the 36-month recency window.
+
+    ``None`` → ``NOW() - INTERVAL '36 months'`` (per-user lookup path, anchored
+    at the caller's clock).
+    Explicit ``date`` → ``DATE 'YYYY-MM-DD' - INTERVAL '36 months'`` (CDF
+    construction path, anchored at the benchmark DB snapshot month so the
+    window does not slide with the operator's clock).
+
+    Security note (T-94.2-01-02): ``snapshot_date.isoformat()`` emits only
+    digits and dashes — no SQL-injection surface. Use this rendering instead
+    of a SQLAlchemy bindparam because the snapshot date is a build-time
+    artifact, not user input (consistent with how ``BENCHMARK_DB_SNAPSHOT_MONTH``
+    is f-stringed into SQL by ``scripts/gen_global_percentile_cdf.py``).
+    """
+    if snapshot_date is None:
+        return f"NOW() - INTERVAL '{RECENCY_WINDOW_MONTHS} months'"
+    return f"DATE '{snapshot_date.isoformat()}' - INTERVAL '{RECENCY_WINDOW_MONTHS} months'"
+
+
+# ---------------------------------------------------------------------------
+# Exported builders — public API.
+# ---------------------------------------------------------------------------
+
+
+def selected_users_cte(*, source: Literal["benchmark", "single_user"]) -> str:
+    """Return the ``selected_users`` CTE block.
+
+    ``source="benchmark"`` → deduped cohort (D-1). Groups
+    ``benchmark_selected_users`` by ``lower(lichess_username)`` and keeps
+    only usernames that have at least one non-``(2400, classical)``
+    selection slot. Joins to ``users`` for the surrogate ``user_id`` the
+    pooled aggregates need.
+
+    ``source="single_user"`` → scalar SELECT with ``CAST(:user_id AS int)``
+    bindparam (V5 — load-bearing per 94.1 Plan 09 fix).
+    """
+    if source == "benchmark":
+        return f"""selected_users AS (
+  SELECT u.id AS user_id
+  FROM users u
+  JOIN (
+    SELECT lower(bsu.lichess_username) AS lname
+    FROM benchmark_selected_users bsu
+    JOIN benchmark_ingest_checkpoints bic
+      ON bic.lichess_username = bsu.lichess_username
+     AND bic.tc_bucket = bsu.tc_bucket
+     AND bic.status = 'completed'
+    GROUP BY lower(bsu.lichess_username)
+    HAVING bool_or(NOT (bsu.rating_bucket = {_SPARSE_CELL_ELO} AND bsu.tc_bucket = '{_SPARSE_CELL_TC}'))
+  ) deduped ON lower(u.lichess_username) = deduped.lname
+)"""
+    # single_user: scalar bindparam; pools across all TCs (D-5). The explicit
+    # CAST() form is load-bearing — see 94.1 Plan 09 — SQLAlchemy's text()
+    # tokeniser silently drops `:user_id::int` and raises ArgumentError at
+    # .bindparams() time. CAST(:user_id AS int) is parsed correctly.
+    return "selected_users AS (SELECT CAST(:user_id AS int) AS user_id)"
+
+
+def elo_bucket_expr(user_elo_alias: str) -> str:
+    """SQL CASE WHEN expression to bucket ``user_elo_alias`` into 5 canonical anchors.
+
+    Returns NULL for sub-800 ratings (callers gate with
+    ``WHERE user_elo_at_game >= 800``).
+
+    Retained for ``scripts/gen_global_percentile_cdf.py:_build_per_bucket_sanity_query``
+    (a diagnostic over the per-cell shape) and tests; NOT invoked by the
+    pooled ``per_user_cte_*`` builders.
+    """
+    return (
+        f"(CASE WHEN {user_elo_alias} < {_SUB_800_FLOOR} THEN NULL "
+        f"WHEN {user_elo_alias} < 1200 THEN 800 "
+        f"WHEN {user_elo_alias} < 1600 THEN 1200 "
+        f"WHEN {user_elo_alias} < 2000 THEN 1600 "
+        f"WHEN {user_elo_alias} < 2400 THEN 2000 "
+        f"ELSE 2400 END)"
+    )
+
+
+def equal_footing_filter_sql() -> str:
+    """Equal-footing opponent filter clause (SKILL.md §1, universal).
+
+    Used in every pooled per-user CTE prelude.
+    """
+    return (
+        f"abs("
+        f"(CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END)"
+        f" - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)"
+        f") <= {_EQUAL_FOOTING_TOL}"
+    )
+
+
+# D-1: NO LONGER invoked in per_user_cte_*; retained for the per-bucket sanity
+# diagnostic and the column-substitution test reference. Sparse-cell exclusion
+# under the pooled methodology lives in selected_users_cte("benchmark") only.
+def sparse_exclusion_sql(elo_col: str, tc_col: str) -> str:
+    """SQL fragment to exclude the sparse ``(2400, classical)`` cell.
+
+    Retained for ``_build_per_bucket_sanity_query`` (a per-cell diagnostic
+    in the regen report) and for ``tests/services/test_canonical_slice_sql.py
+    ::test_sparse_exclusion_sql_parametrises_columns``.
+
+    Column names are SQL identifiers provided by the caller (never user input).
+    """
+    return f"NOT ({elo_col} = {_SPARSE_CELL_ELO} AND {tc_col} = '{_SPARSE_CELL_TC}')"
+
+
+# ---------------------------------------------------------------------------
+# Pooled per-user CTE builders (D-5 / D-6 / D-8).
+# ---------------------------------------------------------------------------
+
+
+def _recent_capped_cte(snapshot_date: date | None) -> str:
+    """Shared ``recent_capped`` CTE — recent-1000-per-TC + 36-month window.
+
+    Identical on benchmark and single_user paths (the per-TC predicate goes
+    away on BOTH sources per D-5). The cohort difference lives entirely
+    inside ``selected_users``.
+    """
+    recency = _recency_window_sql(snapshot_date)
+    return f"""recent_capped AS (
+  SELECT g.id, g.user_id, g.user_color, g.result, g.played_at
+  FROM (
+    SELECT g.*,
+           row_number() OVER (PARTITION BY g.user_id, g.time_control_bucket
+                              ORDER BY g.played_at DESC) AS rn
+    FROM games g
+    JOIN selected_users su ON su.user_id = g.user_id
+    WHERE g.rated AND NOT g.is_computer_game
+      AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
+      AND g.played_at >= {recency}
+      AND {equal_footing_filter_sql()}
+  ) g
+  WHERE g.rn <= {RECENT_GAMES_PER_TC_CAP}
+)"""
+
+
+def per_user_cte_score_gap(
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``score_gap``.
+
+    ``metric_value`` = ``eg_score - non_eg_score`` over the user's pooled
+    36-month / 1000-per-TC window. ``n_games`` = endgame-game count on the
+    pooled set (the binding floor per CONTEXT.md "Claude's Discretion —
+    n_games"; the paired non-endgame count goes in the backfill summary
+    log, not the row).
+
+    HAVING gates on BOTH ``count(*) FILTER (WHERE has_endgame) >= 30`` and
+    ``count(*) FILTER (WHERE NOT has_endgame) >= 30`` per D-6. Below-floor
+    users contribute no row.
+
+    No per-TC predicate, no per-row sparse-cell exclusion (D-1, D-5).
+    ``source`` parameter is accepted for API symmetry with the cohort CTE
+    but does not alter the pooled SQL body — the cohort difference lives
+    entirely in ``selected_users``.
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    return f"""{_recent_capped_cte(snapshot_date)},
+endgame_game_ids AS (
+  SELECT game_id FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+scored AS (
+  SELECT
+    rc.user_id,
+    CASE
+      WHEN (rc.result = '1-0' AND rc.user_color = 'white')
+        OR (rc.result = '0-1' AND rc.user_color = 'black') THEN 1.0
+      WHEN rc.result = '1/2-1/2' THEN 0.5
+      ELSE 0.0
+    END AS score,
+    (eg.game_id IS NOT NULL) AS has_endgame
+  FROM recent_capped rc
+  LEFT JOIN endgame_game_ids eg ON eg.game_id = rc.id
+),
+per_user AS (
+  SELECT
+    user_id,
+    avg(score) FILTER (WHERE has_endgame)     AS eg_score,
+    avg(score) FILTER (WHERE NOT has_endgame) AS non_eg_score,
+    count(*)   FILTER (WHERE has_endgame)     AS eg_n
+  FROM scored
+  GROUP BY user_id
+  HAVING count(*) FILTER (WHERE has_endgame)     >= {SCORE_GAP_MIN_ENDGAME_N}
+     AND count(*) FILTER (WHERE NOT has_endgame) >= {SCORE_GAP_MIN_NON_ENDGAME_N}
+),
+per_user_values AS (
+  SELECT
+    (eg_score - non_eg_score) AS metric_value,
+    eg_n AS n_games
+  FROM per_user
+)"""
+
+
+def per_user_cte_achievable(
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``achievable_score_gap``.
+
+    ``metric_value`` = ``avg(d_i)`` over endgame-entry rows with non-null
+    ``d_i`` (the score-vs-Lichess-sigmoid gap at endgame entry).
+    ``n_games`` = count of endgame-entry games with non-null ``d_i`` (the
+    binding floor per D-6).
+
+    HAVING ≥30 on ``count(*) FILTER (WHERE d_i IS NOT NULL)`` per D-6.
+
+    No per-TC predicate, no per-row sparse-cell exclusion (D-1, D-5).
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    return f"""{_recent_capped_cte(snapshot_date)},
+endgame_game_ids AS (
+  SELECT game_id FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+entry_rows AS (
+  SELECT gp.game_id, gp.eval_cp, gp.eval_mate,
+         ROW_NUMBER() OVER (PARTITION BY gp.game_id ORDER BY gp.ply ASC) AS rn
+  FROM game_positions gp
+  JOIN endgame_game_ids eg ON eg.game_id = gp.game_id
+  WHERE gp.endgame_class IS NOT NULL
+),
+scored AS (
+  SELECT
+    rc.user_id,
+    (
+      CASE
+        WHEN (rc.result = '1-0' AND rc.user_color = 'white')
+          OR (rc.result = '0-1' AND rc.user_color = 'black') THEN 1.0
+        WHEN rc.result = '1/2-1/2' THEN 0.5
+        ELSE 0.0
+      END
+      -
+      CASE
+        WHEN er.eval_mate IS NOT NULL AND
+             (er.eval_mate * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0
+        WHEN er.eval_mate IS NOT NULL AND
+             (er.eval_mate * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END)) < 0 THEN 0.0
+        WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < 2000
+             THEN 1.0 / (1.0 + exp(-0.00368208 *
+                  (er.eval_cp * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE NULL
+      END
+    ) AS d_i
+  FROM recent_capped rc
+  JOIN entry_rows er ON er.game_id = rc.id AND er.rn = 1
+),
+per_user AS (
+  SELECT
+    user_id,
+    avg(d_i) AS achievable_gap,
+    count(*) FILTER (WHERE d_i IS NOT NULL) AS di_n
+  FROM scored
+  GROUP BY user_id
+  HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= {ACHIEVABLE_MIN_GAMES}
+),
+per_user_values AS (
+  SELECT
+    achievable_gap AS metric_value,
+    di_n AS n_games
+  FROM per_user
+  WHERE achievable_gap IS NOT NULL
+)"""
+
+
+def per_user_cte_section2(
+    *,
+    bucket_label: Literal["conversion", "parity"],
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``section2_score_gap_{conv,parity}``.
+
+    ``bucket_label`` filters spans by entry-eval bucket (``'conversion'`` =
+    Up-entry-eval; ``'parity'`` = Equal-entry-eval).
+
+    ``metric_value`` = per-user ``avg(gap_span)`` on spans in the selected
+    bucket. ``n_games`` = span count in the selected bucket (the binding
+    floor per D-6).
+
+    HAVING ≥30 on ``count(*)`` inside the per-user/per-bucket aggregation
+    per D-6.
+
+    The ``>= _SUB_800_FLOOR`` user-rating gate inside ``gap_rows`` is kept —
+    it defends against missing rating data, independent of any bucketing
+    scheme.
+
+    No per-TC predicate, no per-row sparse-cell exclusion (D-1, D-5).
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    ueag = _user_elo_at_game_expr()
+    return f"""{_recent_capped_cte(snapshot_date)},
+spans AS (
+  SELECT
+    gp.game_id, gp.endgame_class,
+    (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
+    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,
+    min(gp.ply) AS span_min_ply
+  FROM game_positions gp
+  JOIN recent_capped rc ON rc.id = gp.game_id
+  WHERE gp.endgame_class IS NOT NULL
+  GROUP BY gp.game_id, gp.endgame_class
+  HAVING count(gp.ply) >= 6
+),
+spans_with_next AS (
+  SELECT s.*,
+         lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,
+         lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate
+  FROM spans s
+),
+gap_rows AS (
+  SELECT
+    g.user_id,
+    CASE
+      WHEN swn.entry_eval_mate IS NOT NULL THEN
+        CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
+          THEN 'conversion' ELSE 'recovery' END
+      WHEN swn.entry_eval_cp IS NOT NULL THEN
+        CASE
+          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) >= 100
+            THEN 'conversion'
+          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) <= -100
+            THEN 'recovery'
+          ELSE 'parity'
+        END
+      ELSE 'parity'
+    END AS bucket,
+    (
+      CASE
+        WHEN swn.next_eval_mate IS NOT NULL
+          THEN CASE WHEN (swn.next_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
+                    THEN 1.0 ELSE 0.0 END
+        WHEN swn.next_eval_cp IS NOT NULL
+          THEN 1.0 / (1.0 + exp(-0.00368208 *
+                 (swn.next_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE
+          CASE
+            WHEN (g.result='1-0' AND g.user_color='white')
+              OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+            WHEN g.result='1/2-1/2' THEN 0.5
+            ELSE 0.0
+          END
+      END
+    ) - (
+      CASE
+        WHEN swn.entry_eval_mate IS NOT NULL
+          THEN CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
+                    THEN 1.0 ELSE 0.0 END
+        WHEN swn.entry_eval_cp IS NOT NULL
+          THEN 1.0 / (1.0 + exp(-0.00368208 *
+                 (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE NULL
+      END
+    ) AS gap_span
+  FROM spans_with_next swn
+  JOIN games g ON g.id = swn.game_id
+  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)
+    AND {ueag} >= {_SUB_800_FLOOR}
+),
+per_user_bucket AS (
+  SELECT user_id, bucket,
+         avg(gap_span) AS mean_gap,
+         count(*) AS span_n
+  FROM gap_rows
+  WHERE gap_span IS NOT NULL
+  GROUP BY user_id, bucket
+  HAVING count(*) >= {SECTION2_MIN_SPANS_PER_BUCKET}
+),
+per_user_values AS (
+  SELECT
+    mean_gap AS metric_value,
+    span_n AS n_games
+  FROM per_user_bucket
+  WHERE bucket = '{bucket_label}'
+)"""
+
+
+def per_user_cte_for(
+    metric_id: CdfMetricId,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Dispatch to the metric-specific pooled ``per_user_values`` CTE block.
+
+    ``source`` selects the cohort definition (handled by ``selected_users_cte``;
+    the pooled aggregate body is identical on both paths per D-10).
+
+    ``snapshot_date`` controls the recency anchor:
+      - ``None`` → ``NOW()`` (per-user lookup path).
+      - explicit ``date`` → that date (CDF construction path; passed by
+        ``scripts/gen_global_percentile_cdf.py``).
+
+    Note: the ``apply_floor`` argument from 94.1 is removed (D-8). Passing
+    it raises ``TypeError`` (the inclusion floor is always applied; below-floor
+    → no row emitted → no row stored → chip suppressed).
+    """
+    if metric_id == "score_gap":
+        return per_user_cte_score_gap(source=source, snapshot_date=snapshot_date)
+    if metric_id == "achievable_score_gap":
+        return per_user_cte_achievable(source=source, snapshot_date=snapshot_date)
+    if metric_id == "section2_score_gap_conv":
+        return per_user_cte_section2(
+            bucket_label="conversion", source=source, snapshot_date=snapshot_date
+        )
+    if metric_id == "section2_score_gap_parity":
+        return per_user_cte_section2(
+            bucket_label="parity", source=source, snapshot_date=snapshot_date
+        )
+    raise ValueError(f"Unknown metric_id: {metric_id!r}")

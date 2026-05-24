@@ -28,6 +28,7 @@
 - [ ] **Phase 93: Global Percentile Benchmark Artifact** — Per-metric empirical CDF for the 4 chipped ΔES metrics (Endgame Score Gap, Achievable Score Gap, Parity ΔES, Conversion ΔES), produced via /benchmarks skill subchapter + `scripts/gen_global_percentile_cdf.py`, committed to `app/services/global_percentile_cdf.py` (Python-only artifact — no TS mirror; backend interpolates at request time and emits a scalar percentile)
 - [ ] **Phase 94: Backend & Frontend Percentile Annotations** — Nullable `{metric}_percentile` on endgame responses + "top X%" chip on 4 ΔES rows (desktop + mobile parity, metric-aware popover copy)
 - [ ] **Phase 94.1: Canonical-Slice User Percentile Materialisation** — New `user_benchmark_percentiles` table storing per-(user, metric) canonical-slice value + percentile + cdf_snapshot; two-stage compute hooks (Stage A post-import for `score_gap`, Stage B post-cold-drain for the 3 eval-dependent metrics); backfill script with `--target dev|prod` for one-shot population of existing users; chip reads from table (filter-independent), tooltip copy updated to make the canonical-slice framing explicit
+- [x] **Phase 94.2: Pooled-Per-User Percentile Redesign** — Replace per-cell stratified methodology with one-point-per-user pooled model on both CDF construction and per-user lookup sides; recent 1000 games per TC, ≤36 months, pooled across TCs; single ≥30-games inclusion floor on the pool; regenerate `GLOBAL_PERCENTILE_CDF` against new methodology; re-run backfill; SKILL.md methodology chapter refresh (completed 2026-05-24)
 - [ ] **Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework** — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
@@ -101,7 +102,84 @@ Plans:
   6. A `scripts/backfill_user_percentiles.py` script exists that computes and UPSERTs canonical-slice values + percentiles for all (user, metric) pairs across the chosen DB target. CLI: `--target dev|prod` (mirroring `scripts/import_stress_monitor.py` lines 13-19 — `dev` connects to the local Docker DB on `localhost:5432`; `prod` connects via the `bin/prod_db_tunnel.sh` tunnel on `localhost:15432` and refuses to run if the tunnel is down). Optional `--user-id <id>` flag to backfill a single user for testing. Optional `--metric <id>` to backfill a single metric. The script is idempotent (UPSERT semantics) — re-runs are safe and only update changed rows. Eval-dependent metrics are computed only for users whose cold drain has completed; users with pending eval get a Stage-A-only backfill row (matches Success Criterion 3). The script emits a summary table (users processed / rows upserted / rows skipped per metric per inclusion-floor reason) so operators can spot-check rollout health.
   7. The canonical CTE machinery in `scripts/gen_global_percentile_cdf.py` (per-metric `_per_user_cte_*` builders, `_canonical_selected_users_cte`, `_equal_footing_filter_sql`, `_sparse_exclusion_sql`, `_elo_bucket_expr`) is the source of truth for the canonical slice. Phase 94.1 either extracts these into a shared module that both the benchmark CDF generator and the new per-user compute path import, OR documents an explicit decision (with rationale) to duplicate the SQL templates. Drift between benchmark-cohort methodology and per-user compute methodology is unacceptable — the chosen mechanism must make accidental drift impossible or visibly tracked.
 
-**Plans**: TBD
+**Plans:** 12 plans (8 shipped + 4 gap-closure from 94.1-VERIFICATION.md)
+
+Plans:
+**Wave 0** *(test scaffolding — Nyquist)*
+
+- [x] 94.1-01-PLAN.md — Wave 0 test scaffolding: canonical_slice_sql + alembic + ENUM + repo + gen-script regression
+- [x] 94.1-02-PLAN.md — Wave 0 test scaffolding: compute-service + hooks + chip-decoupling + backfill + frontend tooltip
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [x] 94.1-03-PLAN.md — Extract shared canonical_slice_sql module; refactor gen_global_percentile_cdf.py consumer (D-11)
+- [x] 94.1-04-PLAN.md — Alembic migration (benchmark_metric ENUM + user_benchmark_percentiles table) + ORM model + repository
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 94.1-05-PLAN.md — Per-user compute service: compute_stage_a + compute_stage_b with Sentry isolation
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 94.1-06-PLAN.md — Stage A hook in import_service._complete_import_job + Stage B hook in eval_drain post-commit
+
+**Wave 4** *(blocked on Waves 1 + 3)*
+
+- [x] 94.1-07-PLAN.md — endgame_service chip rewire + PercentileChip tooltip canonical-slice clarifier
+- [x] 94.1-08-PLAN.md — Backfill script (--target dev|prod) + final phase ship gate (blocking human-verify)
+
+**Wave 5** *(gap closure from 94.1-VERIFICATION.md — parallel)*
+
+- [x] 94.1-09-PLAN.md — CRITICAL: fix selected_users_cte bindparam bug (`:user_id::int` → `CAST(:user_id AS int)`) + lift skipped happy-path & SC-7 parity tests + new real-data integration test + dev backfill HUMAN-UAT (closes VERIFICATION gap #1 + #2)
+- [x] 94.1-12-PLAN.md — WR-01: collapse eval-drain N+1 to one aggregated `users_with_zero_pending` query + repository helper + unit test
+
+**Wave 6** *(blocked on Wave 5 — IN-03 classifier fix shares the backfill script)*
+
+- [x] 94.1-10-PLAN.md — IN-03: `_compute_and_count` classifier fix (return False on below-floor; remove dead row_before probe) + unit test driving all three branches
+
+**Wave 7** *(blocked on Wave 5/6 — rename runs after backfill writes real rows)*
+
+- [x] 94.1-11-PLAN.md — CR-01: rename `n_games` → `n_cells_floor` (reversible Alembic migration + ORM/repository/service/test renames + HUMAN-UAT). HUMAN-UAT superseded by Plan 13 (column being dropped); Task 3 (endgameOverview cache invalidation) remains valid and is preserved.
+
+**Wave 8** *(blocked on Wave 7 — supersedes Plan 11's column rename)*
+
+- [x] 94.1-13-PLAN.md — Drop `n_cells_floor` column entirely; refactor `_compute_metric_for_user` to single `apply_floor=True` query (fixes pre-floor avg bug; user 28 case: +0.1204 → −0.0322 for achievable_score_gap); add active-import gate to `users_with_zero_pending` (prevents Stage B re-fire mid-import); re-backfill dev DB. Gap surfaced during 94.1-11 HUMAN-UAT.
+
+### Phase 94.2: Pooled-Per-User Percentile Redesign
+
+**Goal**: Replace Phase 94.1's per-cell stratified methodology with a one-point-per-user pooled model on both the CDF construction side and the per-user lookup side. For every subject (cohort user during CDF generation; app user at lookup time), pool their games across all TCs played, capped at the most recent 1000 games per TC and ≤36 months old, then compute the metric once on that pool. Build the CDF as `percentile_cont` over those one-point-per-user values — a single globally pooled CDF per metric, representing the whole benchmark cohort's *current* state rather than an average across each user's rating journey. The app user looks up their pooled value against this same global CDF, so the chip answers "where I stand among all chess players, on my recent play" rather than today's "average across the (elo_bucket, tc_bucket) cells I've ever played in." Inclusion floor is a single ≥30-games threshold on the pooled set (≥30 endgame + ≥30 non-endgame for `score_gap`; ≥30 entry-eval games for `achievable_score_gap`; ≥30 spans/bucket for `section2_score_gap_conv` / `_parity`). Acknowledged tradeoff: percentile correlates with rating because the underlying metrics correlate with rating — chosen intentionally so the chip honestly reads as "where you stand," not "where you stand controlled for your level." Phase 94.1's apply_floor=True per-cell behaviour is superseded but remains a valid intermediate state through the redesign rollout. Detailed design rationale, code touchpoints, and the rejected ELO-conditioned alternative captured in `.planning/notes/per-user-percentile-pooled-redesign.md`.
+**Depends on**: Phase 94.1 (consumes `user_benchmark_percentiles` table + Stage A/B trigger pattern + backfill script harness; replaces the per-cell `_compute_metric_for_user` implementation and `gen_global_percentile_cdf.py` CDF construction query)
+**Requirements**: PCTL-08, PCTL-09 (methodology refresh — value/percentile semantics shift)
+**Success Criteria** (what must be TRUE):
+
+  1. The canonical-slice CTE machinery (`app/services/canonical_slice_sql.py`) produces a single pooled aggregate per subject rather than one row per `(user_id, elo_bucket, tc_bucket)` cell. The recent-1000-per-TC cap and ≤36-month recency filter are applied identically on the benchmark and single_user code paths. `apply_floor` dual-mode is removed; a single inclusion-floor gate (≥30 of the metric-relevant unit) is applied on the pool. Drift between the two paths remains structurally impossible — the same shared SQL builder is used by both `scripts/gen_global_percentile_cdf.py` and `app/services/user_benchmark_percentiles_service.py`.
+  2. `scripts/gen_global_percentile_cdf.py:_build_metric_breakpoint_query` builds the CDF from one row per cohort user (deduped across `(rating_bucket, tc_bucket)` selection slots), not one row per cell. The `n_users` label in `global_percentile_cdf.CdfTable` now accurately reflects the distinct-user count. The byte-identical regression test (`tests/scripts/test_gen_global_percentile_cdf_unchanged.py`) is regenerated against the new goldens — the prior cell-based goldens are no longer authoritative.
+  3. `app/services/user_benchmark_percentiles_service._compute_metric_for_user` runs a single pooled query and stores the pooled value. The `n_cells_floor` concept and the `apply_floor` argument are removed from the codebase. The Plan 13 correctness fix (single floor-passing query) is moot under the new model because there are no cells to average — verified by inspection.
+  4. `app/services/global_percentile_cdf.py:GLOBAL_PERCENTILE_CDF` is regenerated against the new methodology and committed. The numeric breakpoints will shift materially from the Phase 93 / 94.1 values — that drift is expected and documented in the regen report.
+  5. The backfill script `scripts/backfill_user_percentiles.py` is updated to use the new compute path and is re-run against dev (and prod via tunnel after sign-off) so existing users' stored `(value, percentile)` rows reflect the new methodology. The summary table emitted by the backfill script shows users-included / floor-rejected counts per metric.
+  6. `.claude/skills/benchmarks/SKILL.md` methodology chapter is updated to describe the one-point-per-user pooled model. The Chapter 4 cohort-construction description, the per-metric inclusion-floor table, and any diagrams referencing per-cell stratification are revised. Cross-references from Phase 94.1's CONTEXT.md / PLAN.md remain valid as historical context but are flagged as superseded methodology where they describe per-cell behaviour.
+  7. The `PercentileChip` tooltip copy is reviewed against the new semantics — the "canonical-slice career" framing becomes "your recent play vs the whole cohort." Any UI copy that previously hinted at per-bucket averaging is corrected. No frontend logic changes (the chip still reads from `user_benchmark_percentiles.percentile`); only copy.
+  8. An open-question investigation is captured during planning: after collapsing the benchmark cohort to one row per `lichess_username`, what is the distinct-user count per metric and how do the tails (`p1` / `p99`) behave? If a metric's deduped cohort drops below a stability threshold (TBD during planning), surface it as a planning blocker rather than shipping an unstable CDF.
+
+**UI hint**: yes (tooltip copy only — no new UI primitives)
+
+**Plans:** 6/6 plans complete
+
+Plans:
+**Wave 1** *(atomic cutover — three plans, single PR, no incoherent intermediate state)*
+
+- [x] 94.2-01-PLAN.md — Refactor canonical_slice_sql.py: collapse per-cell to pooled-per-user; drop apply_floor + n_cells_floor + per-row sparse exclusion; add recent-1000-per-TC cap + 36-month recency + snapshot_date kwarg; dedup benchmark cohort by lichess_username per D-1
+- [x] 94.2-02-PLAN.md — Rewrite gen_global_percentile_cdf.py:_build_metric_breakpoint_query to consume pooled shape; add --snapshot-date CLI flag; regenerate GLOBAL_PERCENTILE_CDF literal against benchmark DB; archive prior 94.1 report; regenerate byte-identical regression goldens
+- [x] 94.2-03-PLAN.md — Rewrite _compute_metric_for_user to single pooled query; drop apply_floor; preserve Stage A/B trigger contract; update user_benchmark_percentile.py n_games docstring
+
+**Wave 2** *(blocked on Wave 1 — independent downstream updates, parallel-safe)*
+
+- [x] 94.2-04-PLAN.md — Rewrite .claude/skills/benchmarks/SKILL.md Chapter 1 + Chapter 4 for pooled-per-user methodology; flag 94.1 per-cell content as superseded
+- [x] 94.2-05-PLAN.md — Widen PercentileChip flavor enum to 4 metric-named variants; rewrite popover body for D-4 disclosure (benchmark composition + recent-games basis + filter independence + per-metric rating-correlation framing per Cohen'''s d); update 4 call sites in EndgameOverallPerformanceSection.tsx + EndgameMetricCard.tsx
+
+**Wave 3** *(blocked on Wave 1 — DB-touching, HUMAN-UAT on prod step)*
+
+- [x] 94.2-06-PLAN.md — Update backfill_user_percentiles.py _MetricSummary classification for pooled semantics; run dev backfill; HUMAN-UAT checkpoint for prod backfill via bin/prod_db_tunnel.sh
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
 

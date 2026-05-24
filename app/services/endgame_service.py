@@ -16,7 +16,7 @@ import bisect
 import math
 import statistics
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from datetime import date as _date
@@ -71,7 +71,9 @@ from app.services.endgame_zones import (
     MIN_GAMES_PER_PRESSURE_BIN,
     MIN_GAMES_PER_TC_CARD,
 )
-from app.services.global_percentile_cdf import interpolate_percentile
+from app.repositories import user_benchmark_percentiles_repository
+from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+from app.services.global_percentile_cdf import CdfMetricId
 from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.eval_utils import (
     eval_cp_to_expected_score,
@@ -1262,6 +1264,7 @@ def _compute_score_gap_material(
     non_endgame_wdl: EndgameWDLSummary,
     entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
     *,
+    percentile_rows: Mapping[CdfMetricId, PercentileRow] | None = None,
     gaps_by_bucket: dict[str, list[float]] | None = None,
     timeline: list[ScoreGapTimelinePoint] | None = None,
     timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
@@ -1359,38 +1362,30 @@ def _compute_score_gap_material(
     # gauge driver (quick-260515-wye) were both dropped end-to-end. See
     # .planning/notes/endgame-skill-dropped-conversion-elo.md.
 
-    # Phase 94 (PCTL-02 / D-10): cohort percentiles vs the Phase 93 global
-    # empirical CDF. Gate semantics mirror the existing _p_value / _ci_*
-    # gates on the same metrics — gate-then-compute (Pitfall 6) to avoid an
-    # unnecessary helper call when the floor is missed.
-
-    # Endgame Score Gap — dual-N gate per D-10 (both wings of the gap must
-    # clear the floor). Same gate as score_difference_p_value above.
+    # Phase 94.1 D-12 / PCTL-07: chip is a trait, not a view. Read materialised
+    # (value, percentile) per metric from user_benchmark_percentiles; scoped by
+    # current_user.id (V4 — never accept user_id as query param).
+    # The per-request N-gate is removed here: the table's percentile column is
+    # already NULL when below the inclusion floor (set during Stage A/B compute).
+    # Removing the duplicate N-gate aligns with D-12 "chip is a trait" semantics.
+    # percentile_rows is None when called without a DB session (e.g., unit tests).
+    _effective_rows: Mapping[CdfMetricId, PercentileRow] = (
+        percentile_rows if percentile_rows is not None else {}
+    )
+    _score_gap_row = _effective_rows.get("score_gap")
     score_gap_percentile: float | None = (
-        interpolate_percentile("score_gap", score_difference)
-        if min(endgame_wdl.total, non_endgame_wdl.total) >= PVALUE_RELIABILITY_MIN_N
-        else None
+        _score_gap_row.percentile if _score_gap_row is not None else None
     )
 
-    # Section 2 conv / parity — single-N gate on the bucket count, PLUS an
-    # explicit `mean is not None` guard because _compute_per_bucket_score_gap
-    # returns mean=None for empty cohorts and interpolate_percentile would
-    # raise on None (RESEARCH Pitfall 6 — the helper is NaN-safe but not
-    # None-safe).
     # No recovery percentile per D-12 (recovery is opponent-confounded; no
     # CDF table shipped in Phase 93).
-    # conv_n / parity_n come from _compute_per_bucket_score_gap as int (not
-    # int|None), so no None-check is needed on them — only the `mean is not
-    # None` guard is load-bearing here.
+    _conv_row = _effective_rows.get("section2_score_gap_conv")
     section2_score_gap_conv_percentile: float | None = (
-        interpolate_percentile("section2_score_gap_conv", conv_mean)
-        if conv_mean is not None and conv_n >= PVALUE_RELIABILITY_MIN_N
-        else None
+        _conv_row.percentile if _conv_row is not None else None
     )
+    _parity_row = _effective_rows.get("section2_score_gap_parity")
     section2_score_gap_parity_percentile: float | None = (
-        interpolate_percentile("section2_score_gap_parity", parity_mean)
-        if parity_mean is not None and parity_n >= PVALUE_RELIABILITY_MIN_N
-        else None
+        _parity_row.percentile if _parity_row is not None else None
     )
 
     return ScoreGapMaterialResponse(
@@ -2182,6 +2177,7 @@ def _get_endgame_performance_from_rows(
     endgame_rows: list[Row[Any]],
     non_endgame_rows: list[Row[Any]],
     bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    percentile_rows: Mapping[CdfMetricId, PercentileRow] | None = None,
 ) -> EndgamePerformanceResponse:
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 
@@ -2338,13 +2334,16 @@ def _get_endgame_performance_from_rows(
         entry_expected_score_ci_low = None
         entry_expected_score_ci_high = None
 
-    # Phase 94 (PCTL-02 / D-10): cohort percentile of achievable_score_gap vs
-    # the Phase 93 global empirical CDF. Same single-N gate as
-    # achievable_score_gap_p_value above (ex_n >= PVALUE_RELIABILITY_MIN_N).
+    # Phase 94.1 D-12 / PCTL-07: chip is a trait, not a view. Read materialised
+    # (value, percentile) per metric from user_benchmark_percentiles; scoped by
+    # current_user.id (V4 — never accept user_id as query param).
+    # The per-request N-gate is removed: the table's percentile column is already
+    # NULL when below the inclusion floor (set during Stage A/B compute).
+    _achievable_row = (
+        percentile_rows.get("achievable_score_gap") if percentile_rows is not None else None
+    )
     achievable_score_gap_percentile: float | None = (
-        interpolate_percentile("achievable_score_gap", achievable_score_gap)
-        if ex_n >= PVALUE_RELIABILITY_MIN_N
-        else None
+        _achievable_row.percentile if _achievable_row is not None else None
     )
 
     return EndgamePerformanceResponse(
@@ -2416,8 +2415,15 @@ async def get_endgame_performance(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
+    # Phase 94.1 D-12 / PCTL-07: fetch materialised percentile rows.
+    # Scoped WHERE user_id = user_id (V4 — from FastAPI-Users dep, not a param).
+    percentile_rows = await user_benchmark_percentiles_repository.fetch_for_user(
+        session, user_id=user_id
+    )
 
-    return _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, bucket_rows)
+    return _get_endgame_performance_from_rows(
+        endgame_rows, non_endgame_rows, bucket_rows, percentile_rows=percentile_rows
+    )
 
 
 async def get_endgame_timeline(
@@ -2788,7 +2794,17 @@ async def get_endgame_overview(
         opponent_gap_max=opponent_gap_max,
     )
 
-    performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, bucket_rows)
+    # Phase 94.1 D-12 / PCTL-07: fetch materialised percentile rows once per request.
+    # One SELECT round-trip fetches all 4 metrics. Scoped WHERE user_id = user_id
+    # (V4 — user_id is the authenticated user's PK from the FastAPI-Users dep,
+    # never sourced from a query/path param).
+    percentile_rows = await user_benchmark_percentiles_repository.fetch_for_user(
+        session, user_id=user_id
+    )
+
+    performance = _get_endgame_performance_from_rows(
+        endgame_rows, non_endgame_rows, bucket_rows, percentile_rows=percentile_rows
+    )
     # Build score-gap timeline from unfiltered rows so the rolling 100-game
     # window per side is pre-filled with games before the cutoff; then drop
     # output points dated before the cutoff via cutoff_str.
@@ -2802,6 +2818,7 @@ async def get_endgame_overview(
         performance.endgame_wdl,
         performance.non_endgame_wdl,
         bucket_rows,
+        percentile_rows=percentile_rows,
         gaps_by_bucket=gaps_by_bucket,
         timeline=score_gap_timeline,
         timeline_window=SCORE_GAP_TIMELINE_WINDOW,

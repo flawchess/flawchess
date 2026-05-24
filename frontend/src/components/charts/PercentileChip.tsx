@@ -1,19 +1,30 @@
 /**
- * PercentileChip — Phase 94 (PCTL-03 / PCTL-04 / PCTL-05).
+ * PercentileChip — Phase 94 (PCTL-03 / PCTL-04 / PCTL-05),
+ *                  Phase 94.2 Plan 05 (PCTL-08 / PCTL-09).
  *
- * Inline pill chip that surfaces a user's cohort percentile against the Phase 93
+ * Inline pill chip that surfaces a user's cohort percentile against the
  * global CDF on the 4 in-scope ΔES rows (Endgame Score Gap, Achievable Score
  * Gap, Section 2 Parity ΔES, Section 2 Conversion ΔES). Banded color from
  * theme.ts, lucide Flame stack for the top 10% / 5% / 1% tiers, Radix popover
- * shell (hover + tap) with two metric-aware copy flavors.
+ * shell (hover + tap) with one popover body per metric-named flavor.
+ *
+ * Phase 94.2 (D-4): popover body discloses 4 bullets per metric —
+ *   1. benchmark composition,
+ *   2. recent-games basis,
+ *   3. filter independence,
+ *   4. per-metric rating-correlation framing calibrated per Cohen's d
+ *      (see reports/benchmarks-gap-metrics-percentile-candidacy.md).
+ * This is the sanctioned exception to feedback_popover_copy_minimalism —
+ * see feedback_percentile_chip_tooltip_disclosure (project memory).
+ *
+ * Phase 94.2 (D-14): chip rendering logic (deriveBandColor, deriveFlameCount,
+ * formatTopXPercent, hover/tap mechanics, trigger styling) is unchanged.
+ * Only the flavor enum widened (2 → 4 metric-named variants) and the popover
+ * body copy moved.
  *
  * Trigger is the chip itself (D-01) — no adjacent HelpCircle. Popover shell
  * mechanics mirror MetricStatPopover (HOVER_OPEN_DELAY_MS=100, identical
  * Portal + Content side="top" sideOffset={4} + animation classes).
- *
- * Wired into rows by Plan 94-03 — until then this export is intentionally
- * unused; knip will flag it as dead code in the Wave-2-only snapshot, but the
- * import lands together with Wave 3 in the same PR.
  */
 
 import * as React from 'react';
@@ -38,12 +49,56 @@ const FLAME_ICON_SIZE_CLASS = 'h-3 w-3'; // matches existing inline-icon convent
 // semantic theme token, so it does not earn a theme.ts entry.
 const CHIP_TEXT_COLOR = 'oklch(0.98 0 0)';
 
-export type PercentileChipFlavor = 'skill-isolating' | 'improvement-focus';
+// ── D-4 popover-body copy constants ────────────────────────────────────────
+// Three always-present blocks (benchmark composition, recent-games basis,
+// filter independence) + one per-metric rating-correlation block calibrated
+// per Cohen's d from reports/benchmarks-gap-metrics-percentile-candidacy.md.
+const COPY_RECENT_GAMES_BASIS =
+  'Uses your most recent 1000 rated games per time control, played against opponents of similar strength (+/-100 ELO) over the last 3 years.';
+const COPY_FILTER_INDEPENDENCE = 'UI filters do not affect this percentile.';
+
+/**
+ * "Better than X%" display number. Mirrors `formatTopXPercent`'s floor so
+ * the two phrasings stay consistent: at p=99.9 the chip says "Top 1%" and
+ * the popover says "better than 99%" (not "better than 100%").
+ */
+function formatBetterThanPercent(pct: number): string {
+  return `${Math.max(0, Math.min(99, Math.round(pct)))}%`;
+}
+
+// Per-metric rating-correlation framing (lower Cohen's d → more rating-invariant).
+const COPY_RATING_NOTE_SCORE_GAP =
+  'Endgame Score Gap is mostly independent of rating, so this reflects endgame ability separate from overall strength.';
+const COPY_RATING_NOTE_ACHIEVABLE =
+  'Achievable Score Gap mildly correlates with rating.';
+const COPY_RATING_NOTE_PARITY = 'Parity ΔES mildly correlates with rating.';
+const COPY_RATING_NOTE_CONVERSION =
+  'Conversion ΔES tracks rating strongly: stronger players tend to score higher here because they blunder less when up material.';
+
+/**
+ * 4 metric-named flavor variants matching the four chipped metric IDs:
+ *   'score-gap'  → score_gap                  (d = 0.19, rating-invariant)
+ *   'achievable' → achievable_score_gap       (d = 0.32, mild coupling)
+ *   'parity'     → section2_score_gap_parity  (d = 0.30, small effect)
+ *   'conversion' → section2_score_gap_conv    (d = 1.37, heavy rating-proxy)
+ * Names map 1:1 to backend metric IDs for grep-ability.
+ */
+export type PercentileChipFlavor = 'score-gap' | 'achievable' | 'parity' | 'conversion';
+
+// Exhaustive flavor → rating-note lookup. `satisfies` gives a compile-time
+// guarantee every variant has a copy string; adding a fifth flavor without
+// a copy entry would fail tsc.
+const RATING_NOTE_BY_FLAVOR = {
+  'score-gap': COPY_RATING_NOTE_SCORE_GAP,
+  achievable: COPY_RATING_NOTE_ACHIEVABLE,
+  parity: COPY_RATING_NOTE_PARITY,
+  conversion: COPY_RATING_NOTE_CONVERSION,
+} as const satisfies Record<PercentileChipFlavor, string>;
 
 export interface PercentileChipProps {
   /** Backend cohort percentile in [0, 100]. Callers gate on `!= null` before rendering. */
   percentile: number;
-  /** Routes the popover copy. */
+  /** Routes the popover copy. One value per chipped metric. */
   flavor: PercentileChipFlavor;
   /** Used in aria-label and (optionally) popover heading. */
   metricLabel: string;
@@ -68,20 +123,26 @@ function formatTopXPercent(pct: number): string {
   return `Top ${Math.max(MIN_TOP_PERCENT, Math.round(100 - pct))}%`;
 }
 
-function PercentileChipPopoverBody({ flavor }: { flavor: PercentileChipFlavor }): React.ReactElement {
-  if (flavor === 'skill-isolating') {
-    return (
-      <p>
-        Where you rank vs all players. Mostly independent of rating, reveals endgame ability separate
-        from overall strength.
-      </p>
-    );
-  }
+function PercentileChipPopoverBody({
+  flavor,
+  metricLabel,
+  percentile,
+}: {
+  flavor: PercentileChipFlavor;
+  metricLabel: string;
+  percentile: number;
+}): React.ReactElement {
+  const ratingNote = RATING_NOTE_BY_FLAVOR[flavor];
   return (
-    <p>
-      Where you rank vs all players. Conversion tracks rating closely. If you're in the lower tiers
-      here, this is one of the biggest single improvements available to your ELO.
-    </p>
+    <div className="space-y-1.5">
+      <p>
+        Your {metricLabel} is better than {formatBetterThanPercent(percentile)} of benchmarked
+        Lichess players of all ELO ratings and time controls.
+      </p>
+      <p>{COPY_RECENT_GAMES_BASIS}</p>
+      <p>{COPY_FILTER_INDEPENDENCE}</p>
+      <p>{ratingNote}</p>
+    </div>
   );
 }
 
@@ -165,6 +226,8 @@ export function PercentileChip({
           onMouseLeave={handleMouseLeave}
           data-testid={`${testId}-popover`}
           className={cn(
+            // text-xs justified by CLAUDE.md exception for hover/tap-activated
+            // info tooltips (PercentileChip is the explicit reference example).
             'z-50 max-w-xs rounded-md border-0 outline-none bg-foreground px-3 py-1.5 text-xs text-background',
             'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
             'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
@@ -172,7 +235,11 @@ export function PercentileChip({
             'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
           )}
         >
-          <PercentileChipPopoverBody flavor={flavor} />
+          <PercentileChipPopoverBody
+            flavor={flavor}
+            metricLabel={metricLabel}
+            percentile={percentile}
+          />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>

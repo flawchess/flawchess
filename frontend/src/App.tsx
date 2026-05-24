@@ -539,6 +539,13 @@ function AppRoutes() {
     queryClient.invalidateQueries({ queryKey: ['games'] });
     queryClient.invalidateQueries({ queryKey: ['gameCount'] });
     queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+    // Bug fix (Phase 94.1-11): the percentile background tasks (Stage A on
+    // import-complete, Stage B on eval-drain) write to user_benchmark_percentiles
+    // asynchronously after the job completes. Without invalidating endgameOverview
+    // here, the 30s queryClient staleTime serves the stale pre-import response and
+    // percentile badges only appear on /endgames after a hard refresh. Partial-match
+    // on ['endgameOverview'] invalidates every cached (params, window) variant.
+    queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
   }, [queryClient]);
 
   // Called when user dismisses a completed progress bar
