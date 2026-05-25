@@ -77,6 +77,25 @@ STAGE_B_METRICS: tuple[CdfMetricId, ...] = (
     "achievable_score_gap",
     "section2_score_gap_conv",
     "section2_score_gap_parity",
+    # Phase 94.3 per-(metric × TC) time-pressure additions (CONTEXT.md D-7/D-10).
+    # All 12 cells compute in Stage B (post-cold-drain): Time Pressure Score Gap
+    # and Clock Gap both depend on Stockfish-eval-derived endgame-entry detection;
+    # Net Flag Rate is outcome-only and could be Stage A, but bundles with Stage B
+    # to avoid a special-case hook. Order mirrors the IN_SCOPE_METRICS tuple in
+    # scripts/gen_global_percentile_cdf.py and the benchmark_metric ENUM (post
+    # 20260524_170733 migration).
+    "time_pressure_score_gap_bullet",
+    "time_pressure_score_gap_blitz",
+    "time_pressure_score_gap_rapid",
+    "time_pressure_score_gap_classical",
+    "clock_gap_bullet",
+    "clock_gap_blitz",
+    "clock_gap_rapid",
+    "clock_gap_classical",
+    "net_flag_rate_bullet",
+    "net_flag_rate_blitz",
+    "net_flag_rate_rapid",
+    "net_flag_rate_classical",
 )
 
 

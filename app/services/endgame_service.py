@@ -1886,8 +1886,44 @@ def _build_quintile_bullets(
     return bullets
 
 
+# Phase 94.3: per-TC chip flavor → CdfMetricId key mapping. Used by
+# _compute_time_pressure_cards to look up the 3 per-(metric × TC) percentiles
+# in the materialised percentile_rows mapping. The triple is ordered
+# (time_pressure_score_gap, clock_gap, net_flag_rate) — same as the field order
+# on TimePressureTcCard. Building the mapping as a typed dict avoids the need
+# for an "assignment" ignore on f-string Literal inference (PATTERNS.md
+# §_compute_time_pressure_cards lines 540-544).
+_TC_TO_METRIC_KEYS: dict[
+    Literal["bullet", "blitz", "rapid", "classical"],
+    tuple[CdfMetricId, CdfMetricId, CdfMetricId],
+] = {
+    "bullet": (
+        "time_pressure_score_gap_bullet",
+        "clock_gap_bullet",
+        "net_flag_rate_bullet",
+    ),
+    "blitz": (
+        "time_pressure_score_gap_blitz",
+        "clock_gap_blitz",
+        "net_flag_rate_blitz",
+    ),
+    "rapid": (
+        "time_pressure_score_gap_rapid",
+        "clock_gap_rapid",
+        "net_flag_rate_rapid",
+    ),
+    "classical": (
+        "time_pressure_score_gap_classical",
+        "clock_gap_classical",
+        "net_flag_rate_classical",
+    ),
+}
+
+
 def _compute_time_pressure_cards(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    *,
+    percentile_rows: Mapping[CdfMetricId, PercentileRow] | None = None,
 ) -> TimePressureCardsResponse:
     """Compute per-TC time pressure cards from clock_rows.
 
@@ -1895,11 +1931,21 @@ def _compute_time_pressure_cards(
     cohort-reference parameter was removed when the cohort layer was retired
     (REVIEW.md CR-01, 88-CONTEXT.md D-07).
 
+    Phase 94.3 (CONTEXT.md D-1, D-12): the ``percentile_rows`` kwarg threads
+    materialised per-(metric × TC) percentiles from
+    ``user_benchmark_percentiles_repository.fetch_for_user`` onto each per-TC
+    card. Three nullable fields per card — ``time_pressure_score_gap_percentile``,
+    ``clock_gap_percentile``, ``net_flag_rate_percentile`` — render None when
+    (a) no row exists for the (user, metric × TC) cell (user below the pooled
+    ≥30 floor for that TC), or (b) ``percentile_rows`` is None (unit tests that
+    don't open a DB session).
+
     One card per TC where total endgame games >= MIN_GAMES_PER_TC_CARD.
     Each card carries:
     - ClockGapBullet: paired (user-opp)/base clock diff test via compute_paired_difference_test.
     - 5 PressureQuintileBullet entries (Q0=max pressure .. Q4=min pressure)
       computed from the same-game opp-quintile split (see _build_quintile_bullets).
+    - 3 per-(metric × TC) percentile annotations (Phase 94.3).
 
     Returns cards in fixed order: bullet -> blitz -> rapid -> classical.
     """
@@ -1910,6 +1956,13 @@ def _compute_time_pressure_cards(
         tc_opp_quintile_wdl,
         tc_clock_agg,
     ) = _iterate_clock_rows(clock_rows)
+
+    # Mirror the _compute_score_gap_material pattern (lines 1371-1389): an
+    # empty mapping when percentile_rows is None lets .get() return None
+    # uniformly without per-call None-guards.
+    _effective_rows: Mapping[CdfMetricId, PercentileRow] = (
+        percentile_rows if percentile_rows is not None else {}
+    )
 
     cards: list[TimePressureTcCard] = []
     for tc in _TIME_CONTROL_ORDER:
@@ -1944,9 +1997,18 @@ def _compute_time_pressure_cards(
             else 0.0
         )
 
+        # Phase 94.3: per-(metric × TC) percentile lookup. _TC_TO_METRIC_KEYS
+        # gives back the 3 typed CdfMetricId keys for this TC; each row may be
+        # absent (None) when the user is below the pooled ≥30 floor on that TC.
+        tc_literal = cast(Literal["bullet", "blitz", "rapid", "classical"], tc)
+        tps_key, cg_key, nf_key = _TC_TO_METRIC_KEYS[tc_literal]
+        tps_row = _effective_rows.get(tps_key)
+        cg_row = _effective_rows.get(cg_key)
+        nf_row = _effective_rows.get(nf_key)
+
         cards.append(
             TimePressureTcCard(
-                tc=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+                tc=tc_literal,
                 total=total,
                 user_avg_pct=user_avg_pct,
                 user_avg_seconds=user_avg_seconds,
@@ -1956,6 +2018,11 @@ def _compute_time_pressure_cards(
                 net_timeout_rate=net_timeout_rate,
                 clock_gap=clock_gap,
                 quintiles=quintiles,
+                time_pressure_score_gap_percentile=(
+                    tps_row.percentile if tps_row is not None else None
+                ),
+                clock_gap_percentile=(cg_row.percentile if cg_row is not None else None),
+                net_flag_rate_percentile=(nf_row.percentile if nf_row is not None else None),
             )
         )
     return TimePressureCardsResponse(cards=cards)
@@ -2862,7 +2929,14 @@ async def get_endgame_overview(
     # the per-quintile delta now compares the user's score in a quintile against
     # the opponent's score in the matching opponent-clock quintile of the same
     # game-set (see _iterate_clock_rows + _build_quintile_bullets).
-    time_pressure_cards = _compute_time_pressure_cards(clock_rows)
+    # Phase 94.3 (CONTEXT.md D-1): thread the materialised percentile_rows
+    # fetched above (line ~2801) through to attach per-(metric × TC) chip
+    # percentiles on each card. The 12 new ENUM keys flow through the existing
+    # fetch_for_user dict automatically; no new repository call.
+    time_pressure_cards = _compute_time_pressure_cards(
+        clock_rows,
+        percentile_rows=percentile_rows,
+    )
 
     # Plan 88-15 (CONTEXT §2 A-2): Build the per-ISO-week rolling clock-diff
     # timeline for the restored Average Clock Difference over Time line chart.

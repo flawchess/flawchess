@@ -20,13 +20,28 @@ from app.services.global_percentile_cdf import (
     interpolate_percentile,
 )
 
-# In-scope MetricId literals for Phase 93 (D-02 / D-03).
+# In-scope MetricId literals for Phase 94.3 (D-02 / D-03 + per-TC time-pressure
+# widening to 16 entries: 4 existing + 12 new per-(metric × TC) cells).
 EXPECTED_METRIC_KEYS: frozenset[str] = frozenset(
     {
+        # Phase 93 / 94.1 / 94.2 — original 4.
         "score_gap",
         "achievable_score_gap",
         "section2_score_gap_conv",
         "section2_score_gap_parity",
+        # Phase 94.3 — 12 new per-TC time-pressure metric cells.
+        "time_pressure_score_gap_bullet",
+        "time_pressure_score_gap_blitz",
+        "time_pressure_score_gap_rapid",
+        "time_pressure_score_gap_classical",
+        "clock_gap_bullet",
+        "clock_gap_blitz",
+        "clock_gap_rapid",
+        "clock_gap_classical",
+        "net_flag_rate_bullet",
+        "net_flag_rate_blitz",
+        "net_flag_rate_rapid",
+        "net_flag_rate_classical",
     }
 )
 
@@ -66,7 +81,26 @@ def test_breakpoint_labels_are_p1_through_p99() -> None:
 
 
 def test_global_percentile_cdf_keys_match_in_scope_metrics() -> None:
-    """GLOBAL_PERCENTILE_CDF is keyed by exactly the 4 Phase 93 in-scope MetricIds."""
+    """GLOBAL_PERCENTILE_CDF is keyed by a subset of the 16 chip-eligible MetricIds.
+
+    Phase 94.3 Plan 03 widens ``CdfMetricId`` and ``IN_SCOPE_METRICS`` to 16 entries
+    in Task 1, then Task 2 regenerates the registry against the benchmark DB.
+    Between Task 1 and Task 2 the registry may contain a strict subset (the
+    pre-94.3 four). After Task 2 the registry equals ``EXPECTED_METRIC_KEYS``.
+    Both states are valid; the equality check happens in
+    ``test_global_percentile_cdf_registry_filled_with_16_entries`` below, which
+    is enabled once the regen has run.
+    """
+    assert set(GLOBAL_PERCENTILE_CDF.keys()).issubset(set(EXPECTED_METRIC_KEYS))
+
+
+def test_global_percentile_cdf_registry_filled_with_16_entries() -> None:
+    """After Task 2 regen, the registry MUST be populated with all 16 in-scope metrics.
+
+    Until Task 2 of Plan 94.3-03 runs the regeneration script, the committed
+    registry still has 4 entries from Phase 94.2 — this test is EXPECTED RED in
+    that intermediate state and turns GREEN once the regen commit lands.
+    """
     assert set(GLOBAL_PERCENTILE_CDF.keys()) == set(EXPECTED_METRIC_KEYS)
 
 
@@ -217,6 +251,41 @@ def test_module_imports_without_db_or_io() -> None:
 
 
 def test_interpolate_percentile_returns_none_for_unregistered_metric() -> None:
-    """A MetricId outside the 4 Phase 93 keys returns None."""
+    """A MetricId outside the 16 Phase 94.3 keys returns None."""
     # `endgame_score` is a valid MetricId but is NOT chip-eligible (D-02 scope).
     assert interpolate_percentile("endgame_score", 0.5) is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.3 — CdfMetricId Literal widening to 16 entries
+# ---------------------------------------------------------------------------
+
+
+def test_cdf_metric_id_literal_has_16_entries() -> None:
+    """`CdfMetricId` Literal exposes exactly 16 string values (4 existing + 12 new)."""
+    from typing import get_args
+
+    from app.services.global_percentile_cdf import CdfMetricId
+
+    members = set(get_args(CdfMetricId))
+    assert len(members) == 16, (
+        f"Expected 16 CdfMetricId entries, got {len(members)}: {sorted(members)}"
+    )
+    assert members == EXPECTED_METRIC_KEYS
+
+
+def test_cdf_metric_id_includes_all_12_per_tc_entries() -> None:
+    """All 12 per-(metric × TC) literals are present in `CdfMetricId`."""
+    from typing import get_args
+
+    from app.services.global_percentile_cdf import CdfMetricId
+
+    members = set(get_args(CdfMetricId))
+    expected_new = {
+        f"{base}_{tc}"
+        for base in ("time_pressure_score_gap", "clock_gap", "net_flag_rate")
+        for tc in ("bullet", "blitz", "rapid", "classical")
+    }
+    assert expected_new.issubset(members), (
+        f"Missing per-TC CdfMetricId members: {expected_new - members}"
+    )

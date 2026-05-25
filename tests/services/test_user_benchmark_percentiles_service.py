@@ -308,7 +308,8 @@ async def test_compute_stage_b_calls_upsert_once_per_metric(monkeypatch) -> None
 
     await compute_stage_b(_TEST_USER_ID, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]  # fake_maker mirrors async_sessionmaker protocol for unit-test isolation
 
-    assert upsert_mock.call_count == len(STAGE_B_METRICS) == 3
+    # Phase 94.3: STAGE_B_METRICS widened from 3 to 15 (existing 3 + 12 per-TC).
+    assert upsert_mock.call_count == len(STAGE_B_METRICS) == 15
     upserted_metrics = {call.kwargs["metric"] for call in upsert_mock.call_args_list}
     assert upserted_metrics == set(STAGE_B_METRICS)
     # Every call threads n_games through.
@@ -334,7 +335,11 @@ async def test_compute_stage_b_skips_metric_returning_none(monkeypatch) -> None:
     await compute_stage_b(_TEST_USER_ID, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]  # fake_maker mirrors async_sessionmaker protocol for unit-test isolation
 
     upserted_metrics = {call.kwargs["metric"] for call in upsert_mock.call_args_list}
-    assert upserted_metrics == {"achievable_score_gap", "section2_score_gap_conv"}
+    # Phase 94.3: STAGE_B_METRICS widened to 15. The single metric that returns
+    # None is skipped; everything else is upserted.
+    expected = set(STAGE_B_METRICS) - {"section2_score_gap_parity"}
+    assert upserted_metrics == expected
+    assert len(expected) == 14
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -503,3 +508,58 @@ async def test_compute_stage_b_swallows_exception_and_captures_sentry(
         assert str(_TEST_USER_ID) not in str(exc), (
             f"user_id {_TEST_USER_ID} leaked into Sentry exception message (V4 violation)"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 94.3 Plan 04 — STAGE_B_METRICS widening (CONTEXT.md D-7, D-10)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_stage_a_metric_unchanged_phase_94_3() -> None:
+    """STAGE_A_METRIC stays ``score_gap`` across the Phase 94.3 widening.
+
+    The 12 per-(metric × TC) cells are Stage B only — Stage A keeps its single
+    eval-independent score_gap (RESEARCH §Pitfall 9 / CONTEXT.md D-10).
+    """
+    from app.services.user_benchmark_percentiles_service import STAGE_A_METRIC
+
+    assert STAGE_A_METRIC == "score_gap"
+
+
+def test_stage_b_metrics_widened_to_15_phase_94_3() -> None:
+    """STAGE_B_METRICS contains 15 entries (3 existing + 12 per-TC additions)."""
+    assert isinstance(STAGE_B_METRICS, tuple)
+    assert len(STAGE_B_METRICS) == 15
+
+
+def test_stage_b_metrics_contains_existing_three() -> None:
+    """The pre-94.3 Stage B metrics are still present (order preserved)."""
+    assert STAGE_B_METRICS[:3] == (
+        "achievable_score_gap",
+        "section2_score_gap_conv",
+        "section2_score_gap_parity",
+    )
+
+
+def test_stage_b_metrics_contains_12_new_per_tc_ids() -> None:
+    """All 12 Phase 94.3 per-(metric × TC) IDs appear in STAGE_B_METRICS."""
+    expected_new: set[str] = {
+        f"{base}_{tc}"
+        for base in ("time_pressure_score_gap", "clock_gap", "net_flag_rate")
+        for tc in ("bullet", "blitz", "rapid", "classical")
+    }
+    assert expected_new.issubset(set(STAGE_B_METRICS))
+    assert len(expected_new) == 12
+
+
+def test_stage_a_metric_not_among_new_per_tc_ids() -> None:
+    """None of the 12 new per-(metric × TC) IDs collide with the Stage A metric."""
+    from app.services.user_benchmark_percentiles_service import STAGE_A_METRIC
+
+    new_ids: set[str] = {
+        f"{base}_{tc}"
+        for base in ("time_pressure_score_gap", "clock_gap", "net_flag_rate")
+        for tc in ("bullet", "blitz", "rapid", "classical")
+    }
+    for mid in new_ids:
+        assert STAGE_A_METRIC != mid, f"STAGE_A_METRIC must not collide with per-TC ID {mid!r}"

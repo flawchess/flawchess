@@ -3,8 +3,13 @@
 This is FlawChess's first new Postgres ENUM type since the 2026-04-08
 enum-conversion migration. The ``benchmark_metric_enum`` mirrors the
 ``CdfMetricId`` Literal in ``app/services/global_percentile_cdf.py``
-(4-value tight set). ``create_type=False`` means Alembic controls the
-type lifecycle (see ``alembic/versions/20260524_000000_add_user_benchmark_percentiles.py``).
+(16-value set after Phase 94.3 widening: 4 Phase 94.x score-gap metrics
+plus 12 per-(metric × TC) time-pressure entries). ``create_type=False``
+means Alembic controls the type lifecycle — see
+``alembic/versions/20260524_000000_add_user_benchmark_percentiles.py`` for
+the initial CREATE TYPE and
+``alembic/versions/20260524_170733_fd5b551f381c_extend_benchmark_metric_for_tc_pressure.py``
+for the Phase 94.3 ADD VALUE extension.
 
 Phase 94.1 D-05/D-08: persistent home for canonical-slice values + percentiles.
 Composite PK (user_id, metric) — exactly one row per user per metric at any time.
@@ -38,6 +43,21 @@ benchmark_metric_enum = SAEnum(
     "achievable_score_gap",
     "section2_score_gap_conv",
     "section2_score_gap_parity",
+    # Phase 94.3 per-(metric × TC) time-pressure additions (CONTEXT.md D-7).
+    # Order mirrors STAGE_B_METRICS in user_benchmark_percentiles_service.py
+    # and the _NEW_VALUES tuple in the 20260524_170733 migration.
+    "time_pressure_score_gap_bullet",
+    "time_pressure_score_gap_blitz",
+    "time_pressure_score_gap_rapid",
+    "time_pressure_score_gap_classical",
+    "clock_gap_bullet",
+    "clock_gap_blitz",
+    "clock_gap_rapid",
+    "clock_gap_classical",
+    "net_flag_rate_bullet",
+    "net_flag_rate_blitz",
+    "net_flag_rate_rapid",
+    "net_flag_rate_classical",
     name="benchmark_metric",
     create_type=False,
 )

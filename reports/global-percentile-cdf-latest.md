@@ -1,9 +1,9 @@
-# Global Percentile CDF — Pooled-Per-User Methodology (Phase 94.2)
+# Global Percentile CDF — Pooled-Per-User Methodology (Phase 94.3)
 
-**Methodology change (Phase 94.2):** Each CDF point is now one deduped cohort user (pooled across TCs played, capped at 1000 games/TC, ≤36 months from snapshot). Breakpoint values shift materially from prior reports; the per-rating-bucket sanity table below is a distribution-shape diagnostic and does NOT correspond to what the production CDF measures.
+**Methodology (Phase 94.2 pooled-per-user, Phase 94.3 widened to 16 entries):** Each CDF point is one deduped cohort user (pooled across TCs played, capped at 1000 games/TC, ≤36 months from snapshot). The original 4 metrics pool across all TCs; the 12 new Phase 94.3 entries are restricted to a single TC bucket inside ``canonical_slice_sql`` builders, so each per-TC chip compares the user against the same-TC benchmark cohort. The per-rating-bucket sanity table below is a distribution-shape diagnostic and does NOT correspond to what the production CDF measures.
 
 - **DB**: benchmark (Docker on localhost:5433, flawchess_benchmark)
-- **Report generated**: 2026-05-24T03:58:03Z
+- **Report generated**: 2026-05-24T16:56:25Z
 - **Snapshot anchor (recency window)**: 2026-03-31 (36-month window: ≥ 2026-03-31 − INTERVAL '36 months')
 - **Benchmark DB snapshot month**: 2026-03
 - **Methodology source**: `app/services/canonical_slice_sql.py` (pooled-per-user, D-1 / D-5 / D-6 / D-8 / D-11).
@@ -17,6 +17,18 @@
   - **Achievable Score Gap** (`achievable_score_gap`): n_users = 1786
   - **Section 2 Conversion ΔES** (`section2_score_gap_conv`): n_users = 1642
   - **Section 2 Parity ΔES** (`section2_score_gap_parity`): n_users = 1419
+  - **Time Pressure Score Gap (bullet)** (`time_pressure_score_gap_bullet`): n_users = 478
+  - **Time Pressure Score Gap (blitz)** (`time_pressure_score_gap_blitz`): n_users = 434
+  - **Time Pressure Score Gap (rapid)** (`time_pressure_score_gap_rapid`): n_users = 250
+  - **Time Pressure Score Gap (classical)** (`time_pressure_score_gap_classical`): n_users = 24
+  - **Clock Gap (bullet)** (`clock_gap_bullet`): n_users = 494
+  - **Clock Gap (blitz)** (`clock_gap_blitz`): n_users = 501
+  - **Clock Gap (rapid)** (`clock_gap_rapid`): n_users = 637
+  - **Clock Gap (classical)** (`clock_gap_classical`): n_users = 218
+  - **Net Flag Rate (bullet)** (`net_flag_rate_bullet`): n_users = 496
+  - **Net Flag Rate (blitz)** (`net_flag_rate_blitz`): n_users = 501
+  - **Net Flag Rate (rapid)** (`net_flag_rate_rapid`): n_users = 637
+  - **Net Flag Rate (classical)** (`net_flag_rate_classical`): n_users = 220
 
 ## Endgame Score Gap (`score_gap`)
 
@@ -506,6 +518,1470 @@
 | 2000 (game-time) | — | — | — | — |
 | 2400 (game-time) | — | — | — | — |
 
+## Time Pressure Score Gap (bullet) (`time_pressure_score_gap_bullet`)
+
+- **Cohort size**: n_users = 478
+- **Inclusion floor**: time_pressure_score_gap_bullet — inclusion floor ≥30 pressured-cell games per user on BOTH user side AND opponent side (clock_pct < 0.40 at endgame entry; pooled within bullet).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -25.1pp |
+| p2 | -23.0pp |
+| p3 | -21.2pp |
+| p4 | -20.5pp |
+| p5 | -20.1pp |
+| p6 | -19.5pp |
+| p7 | -18.2pp |
+| p8 | -16.9pp |
+| p9 | -16.2pp |
+| p10 | -15.6pp |
+| p11 | -14.9pp |
+| p12 | -14.0pp |
+| p13 | -13.6pp |
+| p14 | -13.0pp |
+| p15 | -12.0pp |
+| p16 | -11.8pp |
+| p17 | -11.5pp |
+| p18 | -11.2pp |
+| p19 | -10.7pp |
+| p20 | -10.3pp |
+| p21 | -10.2pp |
+| p22 | -9.7pp |
+| p23 | -9.3pp |
+| p24 | -8.8pp |
+| p25 | -8.4pp |
+| p26 | -7.6pp |
+| p27 | -7.4pp |
+| p28 | -6.8pp |
+| p29 | -6.6pp |
+| p30 | -6.3pp |
+| p31 | -5.9pp |
+| p32 | -5.6pp |
+| p33 | -5.2pp |
+| p34 | -5.0pp |
+| p35 | -4.2pp |
+| p36 | -4.0pp |
+| p37 | -3.7pp |
+| p38 | -3.4pp |
+| p39 | -3.3pp |
+| p40 | -2.9pp |
+| p41 | -2.4pp |
+| p42 | -2.0pp |
+| p43 | -1.6pp |
+| p44 | -1.3pp |
+| p45 | -1.1pp |
+| p46 | -0.6pp |
+| p47 | -0.3pp |
+| p48 | -0.1pp |
+| p49 | +0.2pp |
+| p50 | +0.6pp |
+| p51 | +0.8pp |
+| p52 | +1.2pp |
+| p53 | +1.8pp |
+| p54 | +2.1pp |
+| p55 | +2.4pp |
+| p56 | +2.9pp |
+| p57 | +3.1pp |
+| p58 | +3.3pp |
+| p59 | +3.6pp |
+| p60 | +4.1pp |
+| p61 | +4.3pp |
+| p62 | +4.8pp |
+| p63 | +4.9pp |
+| p64 | +5.1pp |
+| p65 | +5.4pp |
+| p66 | +6.1pp |
+| p67 | +6.5pp |
+| p68 | +7.5pp |
+| p69 | +7.8pp |
+| p70 | +8.8pp |
+| p71 | +9.0pp |
+| p72 | +9.1pp |
+| p73 | +9.6pp |
+| p74 | +10.4pp |
+| p75 | +10.8pp |
+| p76 | +10.9pp |
+| p77 | +11.2pp |
+| p78 | +11.4pp |
+| p79 | +11.8pp |
+| p80 | +12.3pp |
+| p81 | +12.8pp |
+| p82 | +13.3pp |
+| p83 | +14.1pp |
+| p84 | +15.2pp |
+| p85 | +15.8pp |
+| p86 | +16.4pp |
+| p87 | +17.2pp |
+| p88 | +18.0pp |
+| p89 | +19.0pp |
+| p90 | +19.6pp |
+| p91 | +20.3pp |
+| p92 | +21.6pp |
+| p93 | +22.8pp |
+| p94 | +24.7pp |
+| p95 | +25.6pp |
+| p96 | +28.6pp |
+| p97 | +32.8pp |
+| p98 | +34.4pp |
+| p99 | +38.1pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Time Pressure Score Gap (blitz) (`time_pressure_score_gap_blitz`)
+
+- **Cohort size**: n_users = 434
+- **Inclusion floor**: time_pressure_score_gap_blitz — inclusion floor ≥30 pressured-cell games per user on BOTH user side AND opponent side (clock_pct < 0.40 at endgame entry; pooled within blitz).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -28.6pp |
+| p2 | -26.8pp |
+| p3 | -25.0pp |
+| p4 | -23.5pp |
+| p5 | -22.2pp |
+| p6 | -19.2pp |
+| p7 | -18.7pp |
+| p8 | -18.1pp |
+| p9 | -17.5pp |
+| p10 | -16.7pp |
+| p11 | -15.4pp |
+| p12 | -14.0pp |
+| p13 | -13.7pp |
+| p14 | -13.0pp |
+| p15 | -12.8pp |
+| p16 | -11.5pp |
+| p17 | -11.0pp |
+| p18 | -10.3pp |
+| p19 | -9.9pp |
+| p20 | -9.3pp |
+| p21 | -8.9pp |
+| p22 | -8.4pp |
+| p23 | -8.2pp |
+| p24 | -7.4pp |
+| p25 | -7.0pp |
+| p26 | -6.8pp |
+| p27 | -6.3pp |
+| p28 | -5.5pp |
+| p29 | -5.0pp |
+| p30 | -4.7pp |
+| p31 | -4.2pp |
+| p32 | -4.0pp |
+| p33 | -3.7pp |
+| p34 | -3.2pp |
+| p35 | -2.7pp |
+| p36 | -2.5pp |
+| p37 | -2.2pp |
+| p38 | -2.0pp |
+| p39 | -1.9pp |
+| p40 | -1.3pp |
+| p41 | -1.0pp |
+| p42 | -0.7pp |
+| p43 | -0.2pp |
+| p44 | +0.1pp |
+| p45 | +0.4pp |
+| p46 | +1.1pp |
+| p47 | +1.3pp |
+| p48 | +1.6pp |
+| p49 | +2.0pp |
+| p50 | +2.3pp |
+| p51 | +2.7pp |
+| p52 | +3.1pp |
+| p53 | +3.6pp |
+| p54 | +4.0pp |
+| p55 | +4.5pp |
+| p56 | +4.6pp |
+| p57 | +5.0pp |
+| p58 | +5.2pp |
+| p59 | +5.5pp |
+| p60 | +6.1pp |
+| p61 | +7.3pp |
+| p62 | +7.6pp |
+| p63 | +7.7pp |
+| p64 | +7.9pp |
+| p65 | +8.3pp |
+| p66 | +8.5pp |
+| p67 | +9.2pp |
+| p68 | +9.8pp |
+| p69 | +9.9pp |
+| p70 | +10.8pp |
+| p71 | +11.5pp |
+| p72 | +12.0pp |
+| p73 | +12.6pp |
+| p74 | +13.1pp |
+| p75 | +13.7pp |
+| p76 | +14.2pp |
+| p77 | +15.0pp |
+| p78 | +15.7pp |
+| p79 | +16.2pp |
+| p80 | +16.8pp |
+| p81 | +17.8pp |
+| p82 | +19.1pp |
+| p83 | +19.7pp |
+| p84 | +20.1pp |
+| p85 | +21.1pp |
+| p86 | +21.6pp |
+| p87 | +22.1pp |
+| p88 | +22.6pp |
+| p89 | +23.4pp |
+| p90 | +24.0pp |
+| p91 | +24.9pp |
+| p92 | +25.7pp |
+| p93 | +26.5pp |
+| p94 | +27.8pp |
+| p95 | +28.6pp |
+| p96 | +29.9pp |
+| p97 | +31.6pp |
+| p98 | +33.9pp |
+| p99 | +36.6pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Time Pressure Score Gap (rapid) (`time_pressure_score_gap_rapid`)
+
+- **Cohort size**: n_users = 250
+- **Inclusion floor**: time_pressure_score_gap_rapid — inclusion floor ≥30 pressured-cell games per user on BOTH user side AND opponent side (clock_pct < 0.40 at endgame entry; pooled within rapid).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -35.5pp |
+| p2 | -30.2pp |
+| p3 | -26.3pp |
+| p4 | -25.7pp |
+| p5 | -25.5pp |
+| p6 | -24.9pp |
+| p7 | -22.6pp |
+| p8 | -20.7pp |
+| p9 | -19.9pp |
+| p10 | -19.3pp |
+| p11 | -18.9pp |
+| p12 | -18.1pp |
+| p13 | -17.7pp |
+| p14 | -17.1pp |
+| p15 | -16.2pp |
+| p16 | -15.2pp |
+| p17 | -14.3pp |
+| p18 | -13.7pp |
+| p19 | -13.0pp |
+| p20 | -12.6pp |
+| p21 | -12.2pp |
+| p22 | -11.8pp |
+| p23 | -11.6pp |
+| p24 | -11.5pp |
+| p25 | -10.8pp |
+| p26 | -10.5pp |
+| p27 | -10.2pp |
+| p28 | -9.0pp |
+| p29 | -8.3pp |
+| p30 | -7.9pp |
+| p31 | -7.5pp |
+| p32 | -7.1pp |
+| p33 | -6.6pp |
+| p34 | -6.2pp |
+| p35 | -6.0pp |
+| p36 | -5.6pp |
+| p37 | -5.1pp |
+| p38 | -4.6pp |
+| p39 | -4.3pp |
+| p40 | -3.6pp |
+| p41 | -3.2pp |
+| p42 | -2.9pp |
+| p43 | -2.5pp |
+| p44 | -1.5pp |
+| p45 | -0.8pp |
+| p46 | -0.5pp |
+| p47 | -0.3pp |
+| p48 | +0.3pp |
+| p49 | +1.1pp |
+| p50 | +1.4pp |
+| p51 | +1.6pp |
+| p52 | +2.5pp |
+| p53 | +2.7pp |
+| p54 | +3.1pp |
+| p55 | +3.5pp |
+| p56 | +3.7pp |
+| p57 | +4.0pp |
+| p58 | +4.4pp |
+| p59 | +5.5pp |
+| p60 | +5.7pp |
+| p61 | +5.8pp |
+| p62 | +6.1pp |
+| p63 | +6.5pp |
+| p64 | +6.8pp |
+| p65 | +7.0pp |
+| p66 | +7.5pp |
+| p67 | +8.5pp |
+| p68 | +8.8pp |
+| p69 | +9.1pp |
+| p70 | +9.5pp |
+| p71 | +9.9pp |
+| p72 | +10.3pp |
+| p73 | +10.5pp |
+| p74 | +11.1pp |
+| p75 | +11.5pp |
+| p76 | +12.1pp |
+| p77 | +12.5pp |
+| p78 | +13.3pp |
+| p79 | +13.6pp |
+| p80 | +15.2pp |
+| p81 | +15.3pp |
+| p82 | +15.6pp |
+| p83 | +16.6pp |
+| p84 | +17.5pp |
+| p85 | +18.2pp |
+| p86 | +19.2pp |
+| p87 | +19.3pp |
+| p88 | +19.7pp |
+| p89 | +20.2pp |
+| p90 | +21.0pp |
+| p91 | +22.0pp |
+| p92 | +23.4pp |
+| p93 | +24.2pp |
+| p94 | +24.5pp |
+| p95 | +26.7pp |
+| p96 | +27.3pp |
+| p97 | +32.8pp |
+| p98 | +34.1pp |
+| p99 | +41.1pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Time Pressure Score Gap (classical) (`time_pressure_score_gap_classical`)
+
+- **Cohort size**: n_users = 24
+- **Inclusion floor**: time_pressure_score_gap_classical — inclusion floor ≥30 pressured-cell games per user on BOTH user side AND opponent side (clock_pct < 0.40 at endgame entry; pooled within classical).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -52.8pp |
+| p2 | -52.0pp |
+| p3 | -51.2pp |
+| p4 | -50.5pp |
+| p5 | -49.7pp |
+| p6 | -48.8pp |
+| p7 | -48.0pp |
+| p8 | -47.2pp |
+| p9 | -44.9pp |
+| p10 | -39.0pp |
+| p11 | -33.2pp |
+| p12 | -27.4pp |
+| p13 | -21.5pp |
+| p14 | -21.2pp |
+| p15 | -21.1pp |
+| p16 | -21.0pp |
+| p17 | -20.9pp |
+| p18 | -20.0pp |
+| p19 | -18.6pp |
+| p20 | -17.2pp |
+| p21 | -15.8pp |
+| p22 | -14.7pp |
+| p23 | -14.3pp |
+| p24 | -14.0pp |
+| p25 | -13.6pp |
+| p26 | -13.3pp |
+| p27 | -12.2pp |
+| p28 | -11.0pp |
+| p29 | -9.8pp |
+| p30 | -8.7pp |
+| p31 | -8.0pp |
+| p32 | -7.6pp |
+| p33 | -7.2pp |
+| p34 | -6.8pp |
+| p35 | -6.6pp |
+| p36 | -6.6pp |
+| p37 | -6.5pp |
+| p38 | -6.5pp |
+| p39 | -6.5pp |
+| p40 | -6.5pp |
+| p41 | -6.5pp |
+| p42 | -6.5pp |
+| p43 | -6.5pp |
+| p44 | -6.4pp |
+| p45 | -6.4pp |
+| p46 | -6.3pp |
+| p47 | -6.3pp |
+| p48 | -6.2pp |
+| p49 | -6.1pp |
+| p50 | -5.9pp |
+| p51 | -5.8pp |
+| p52 | -5.6pp |
+| p53 | -4.6pp |
+| p54 | -3.4pp |
+| p55 | -2.2pp |
+| p56 | -1.0pp |
+| p57 | -0.1pp |
+| p58 | +0.4pp |
+| p59 | +1.0pp |
+| p60 | +1.5pp |
+| p61 | +2.0pp |
+| p62 | +2.3pp |
+| p63 | +2.5pp |
+| p64 | +2.8pp |
+| p65 | +3.1pp |
+| p66 | +3.6pp |
+| p67 | +4.2pp |
+| p68 | +4.9pp |
+| p69 | +5.5pp |
+| p70 | +6.0pp |
+| p71 | +6.3pp |
+| p72 | +6.5pp |
+| p73 | +6.8pp |
+| p74 | +7.1pp |
+| p75 | +7.6pp |
+| p76 | +8.0pp |
+| p77 | +8.5pp |
+| p78 | +9.0pp |
+| p79 | +10.5pp |
+| p80 | +12.3pp |
+| p81 | +14.1pp |
+| p82 | +15.9pp |
+| p83 | +17.1pp |
+| p84 | +17.4pp |
+| p85 | +17.7pp |
+| p86 | +18.0pp |
+| p87 | +18.2pp |
+| p88 | +18.5pp |
+| p89 | +18.7pp |
+| p90 | +19.0pp |
+| p91 | +19.2pp |
+| p92 | +19.4pp |
+| p93 | +19.5pp |
+| p94 | +19.6pp |
+| p95 | +19.7pp |
+| p96 | +20.4pp |
+| p97 | +22.2pp |
+| p98 | +24.1pp |
+| p99 | +25.9pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Clock Gap (bullet) (`clock_gap_bullet`)
+
+- **Cohort size**: n_users = 494
+- **Inclusion floor**: clock_gap_bullet — inclusion floor ≥30 endgame-entry games per user with non-null user and opponent clock (pooled within bullet; metric is avg((user_clock − opp_clock) / base_time_seconds)).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -13.5pp |
+| p2 | -11.8pp |
+| p3 | -9.9pp |
+| p4 | -9.3pp |
+| p5 | -8.9pp |
+| p6 | -8.6pp |
+| p7 | -8.3pp |
+| p8 | -7.6pp |
+| p9 | -7.1pp |
+| p10 | -7.0pp |
+| p11 | -6.5pp |
+| p12 | -6.1pp |
+| p13 | -6.0pp |
+| p14 | -5.9pp |
+| p15 | -5.7pp |
+| p16 | -5.4pp |
+| p17 | -5.3pp |
+| p18 | -5.1pp |
+| p19 | -5.0pp |
+| p20 | -4.9pp |
+| p21 | -4.7pp |
+| p22 | -4.6pp |
+| p23 | -4.4pp |
+| p24 | -4.2pp |
+| p25 | -3.9pp |
+| p26 | -3.7pp |
+| p27 | -3.6pp |
+| p28 | -3.4pp |
+| p29 | -3.2pp |
+| p30 | -3.0pp |
+| p31 | -2.9pp |
+| p32 | -2.8pp |
+| p33 | -2.7pp |
+| p34 | -2.6pp |
+| p35 | -2.4pp |
+| p36 | -2.2pp |
+| p37 | -2.1pp |
+| p38 | -2.0pp |
+| p39 | -1.8pp |
+| p40 | -1.7pp |
+| p41 | -1.6pp |
+| p42 | -1.5pp |
+| p43 | -1.4pp |
+| p44 | -1.2pp |
+| p45 | -1.2pp |
+| p46 | -1.1pp |
+| p47 | -1.0pp |
+| p48 | -0.9pp |
+| p49 | -0.6pp |
+| p50 | -0.3pp |
+| p51 | -0.2pp |
+| p52 | -0.1pp |
+| p53 | -0.1pp |
+| p54 | +0.1pp |
+| p55 | +0.2pp |
+| p56 | +0.3pp |
+| p57 | +0.4pp |
+| p58 | +0.5pp |
+| p59 | +0.6pp |
+| p60 | +0.8pp |
+| p61 | +0.9pp |
+| p62 | +1.1pp |
+| p63 | +1.2pp |
+| p64 | +1.3pp |
+| p65 | +1.5pp |
+| p66 | +1.8pp |
+| p67 | +1.8pp |
+| p68 | +2.0pp |
+| p69 | +2.1pp |
+| p70 | +2.2pp |
+| p71 | +2.3pp |
+| p72 | +2.4pp |
+| p73 | +2.5pp |
+| p74 | +2.7pp |
+| p75 | +2.8pp |
+| p76 | +3.1pp |
+| p77 | +3.3pp |
+| p78 | +3.5pp |
+| p79 | +3.8pp |
+| p80 | +4.2pp |
+| p81 | +4.4pp |
+| p82 | +4.5pp |
+| p83 | +4.6pp |
+| p84 | +4.7pp |
+| p85 | +4.9pp |
+| p86 | +5.1pp |
+| p87 | +5.6pp |
+| p88 | +6.0pp |
+| p89 | +6.4pp |
+| p90 | +6.6pp |
+| p91 | +7.1pp |
+| p92 | +7.4pp |
+| p93 | +8.2pp |
+| p94 | +9.0pp |
+| p95 | +9.3pp |
+| p96 | +11.3pp |
+| p97 | +12.9pp |
+| p98 | +15.5pp |
+| p99 | +17.9pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Clock Gap (blitz) (`clock_gap_blitz`)
+
+- **Cohort size**: n_users = 501
+- **Inclusion floor**: clock_gap_blitz — inclusion floor ≥30 endgame-entry games per user with non-null user and opponent clock (pooled within blitz; metric is avg((user_clock − opp_clock) / base_time_seconds)).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -26.4pp |
+| p2 | -21.7pp |
+| p3 | -19.3pp |
+| p4 | -18.5pp |
+| p5 | -17.7pp |
+| p6 | -17.1pp |
+| p7 | -16.5pp |
+| p8 | -15.3pp |
+| p9 | -14.1pp |
+| p10 | -13.7pp |
+| p11 | -12.5pp |
+| p12 | -12.2pp |
+| p13 | -11.9pp |
+| p14 | -11.4pp |
+| p15 | -10.9pp |
+| p16 | -10.5pp |
+| p17 | -10.1pp |
+| p18 | -9.9pp |
+| p19 | -9.2pp |
+| p20 | -8.8pp |
+| p21 | -8.4pp |
+| p22 | -8.3pp |
+| p23 | -8.0pp |
+| p24 | -7.6pp |
+| p25 | -7.1pp |
+| p26 | -6.8pp |
+| p27 | -6.5pp |
+| p28 | -6.3pp |
+| p29 | -5.9pp |
+| p30 | -5.5pp |
+| p31 | -5.2pp |
+| p32 | -5.0pp |
+| p33 | -4.8pp |
+| p34 | -4.6pp |
+| p35 | -4.2pp |
+| p36 | -4.1pp |
+| p37 | -3.9pp |
+| p38 | -3.6pp |
+| p39 | -3.3pp |
+| p40 | -3.1pp |
+| p41 | -2.8pp |
+| p42 | -2.7pp |
+| p43 | -2.6pp |
+| p44 | -2.4pp |
+| p45 | -2.2pp |
+| p46 | -2.0pp |
+| p47 | -1.6pp |
+| p48 | -1.3pp |
+| p49 | -0.9pp |
+| p50 | -0.8pp |
+| p51 | -0.4pp |
+| p52 | -0.3pp |
+| p53 | +0.0pp |
+| p54 | +0.4pp |
+| p55 | +0.5pp |
+| p56 | +0.8pp |
+| p57 | +0.9pp |
+| p58 | +1.1pp |
+| p59 | +1.4pp |
+| p60 | +1.5pp |
+| p61 | +1.7pp |
+| p62 | +1.9pp |
+| p63 | +2.1pp |
+| p64 | +2.3pp |
+| p65 | +2.4pp |
+| p66 | +2.8pp |
+| p67 | +2.9pp |
+| p68 | +3.2pp |
+| p69 | +3.4pp |
+| p70 | +3.6pp |
+| p71 | +3.8pp |
+| p72 | +4.1pp |
+| p73 | +4.4pp |
+| p74 | +4.6pp |
+| p75 | +4.7pp |
+| p76 | +4.9pp |
+| p77 | +5.2pp |
+| p78 | +5.6pp |
+| p79 | +5.9pp |
+| p80 | +6.1pp |
+| p81 | +6.4pp |
+| p82 | +6.5pp |
+| p83 | +6.6pp |
+| p84 | +7.2pp |
+| p85 | +7.9pp |
+| p86 | +8.1pp |
+| p87 | +8.3pp |
+| p88 | +8.6pp |
+| p89 | +9.1pp |
+| p90 | +9.5pp |
+| p91 | +10.0pp |
+| p92 | +10.7pp |
+| p93 | +11.1pp |
+| p94 | +11.6pp |
+| p95 | +11.9pp |
+| p96 | +13.3pp |
+| p97 | +14.5pp |
+| p98 | +16.8pp |
+| p99 | +19.0pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Clock Gap (rapid) (`clock_gap_rapid`)
+
+- **Cohort size**: n_users = 637
+- **Inclusion floor**: clock_gap_rapid — inclusion floor ≥30 endgame-entry games per user with non-null user and opponent clock (pooled within rapid; metric is avg((user_clock − opp_clock) / base_time_seconds)).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -61.9pp |
+| p2 | -34.4pp |
+| p3 | -29.5pp |
+| p4 | -24.2pp |
+| p5 | -21.1pp |
+| p6 | -20.1pp |
+| p7 | -19.6pp |
+| p8 | -18.2pp |
+| p9 | -17.5pp |
+| p10 | -16.2pp |
+| p11 | -15.7pp |
+| p12 | -14.6pp |
+| p13 | -13.9pp |
+| p14 | -13.3pp |
+| p15 | -12.7pp |
+| p16 | -11.9pp |
+| p17 | -11.8pp |
+| p18 | -11.0pp |
+| p19 | -10.6pp |
+| p20 | -10.3pp |
+| p21 | -10.2pp |
+| p22 | -9.7pp |
+| p23 | -9.6pp |
+| p24 | -9.3pp |
+| p25 | -9.1pp |
+| p26 | -8.7pp |
+| p27 | -8.1pp |
+| p28 | -7.6pp |
+| p29 | -7.2pp |
+| p30 | -6.9pp |
+| p31 | -6.6pp |
+| p32 | -6.4pp |
+| p33 | -6.0pp |
+| p34 | -5.6pp |
+| p35 | -5.4pp |
+| p36 | -4.6pp |
+| p37 | -4.5pp |
+| p38 | -4.3pp |
+| p39 | -4.0pp |
+| p40 | -3.7pp |
+| p41 | -3.6pp |
+| p42 | -3.3pp |
+| p43 | -3.1pp |
+| p44 | -2.9pp |
+| p45 | -2.5pp |
+| p46 | -2.3pp |
+| p47 | -1.9pp |
+| p48 | -1.4pp |
+| p49 | -1.2pp |
+| p50 | -0.6pp |
+| p51 | -0.3pp |
+| p52 | -0.1pp |
+| p53 | -0.0pp |
+| p54 | +0.2pp |
+| p55 | +0.5pp |
+| p56 | +0.9pp |
+| p57 | +1.3pp |
+| p58 | +1.6pp |
+| p59 | +1.9pp |
+| p60 | +2.2pp |
+| p61 | +2.6pp |
+| p62 | +2.7pp |
+| p63 | +2.9pp |
+| p64 | +3.1pp |
+| p65 | +3.2pp |
+| p66 | +3.4pp |
+| p67 | +3.6pp |
+| p68 | +3.9pp |
+| p69 | +4.2pp |
+| p70 | +4.4pp |
+| p71 | +4.8pp |
+| p72 | +5.0pp |
+| p73 | +5.1pp |
+| p74 | +5.3pp |
+| p75 | +5.7pp |
+| p76 | +6.0pp |
+| p77 | +6.2pp |
+| p78 | +6.4pp |
+| p79 | +6.7pp |
+| p80 | +6.9pp |
+| p81 | +7.2pp |
+| p82 | +7.4pp |
+| p83 | +7.7pp |
+| p84 | +8.2pp |
+| p85 | +8.6pp |
+| p86 | +8.9pp |
+| p87 | +9.2pp |
+| p88 | +9.5pp |
+| p89 | +10.0pp |
+| p90 | +10.6pp |
+| p91 | +11.4pp |
+| p92 | +11.9pp |
+| p93 | +12.3pp |
+| p94 | +12.9pp |
+| p95 | +13.8pp |
+| p96 | +14.5pp |
+| p97 | +16.5pp |
+| p98 | +19.1pp |
+| p99 | +21.6pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Clock Gap (classical) (`clock_gap_classical`)
+
+- **Cohort size**: n_users = 218
+- **Inclusion floor**: clock_gap_classical — inclusion floor ≥30 endgame-entry games per user with non-null user and opponent clock (pooled within classical; metric is avg((user_clock − opp_clock) / base_time_seconds)).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -62.6pp |
+| p2 | -43.4pp |
+| p3 | -40.8pp |
+| p4 | -37.8pp |
+| p5 | -35.9pp |
+| p6 | -33.9pp |
+| p7 | -32.7pp |
+| p8 | -31.7pp |
+| p9 | -30.8pp |
+| p10 | -29.1pp |
+| p11 | -26.7pp |
+| p12 | -25.2pp |
+| p13 | -24.6pp |
+| p14 | -23.3pp |
+| p15 | -21.5pp |
+| p16 | -21.2pp |
+| p17 | -20.8pp |
+| p18 | -20.2pp |
+| p19 | -17.7pp |
+| p20 | -17.2pp |
+| p21 | -16.7pp |
+| p22 | -16.2pp |
+| p23 | -16.0pp |
+| p24 | -15.0pp |
+| p25 | -14.4pp |
+| p26 | -13.7pp |
+| p27 | -13.2pp |
+| p28 | -12.6pp |
+| p29 | -12.4pp |
+| p30 | -12.1pp |
+| p31 | -11.4pp |
+| p32 | -10.9pp |
+| p33 | -10.2pp |
+| p34 | -9.4pp |
+| p35 | -8.8pp |
+| p36 | -8.4pp |
+| p37 | -8.1pp |
+| p38 | -7.6pp |
+| p39 | -7.5pp |
+| p40 | -7.2pp |
+| p41 | -6.6pp |
+| p42 | -6.4pp |
+| p43 | -6.1pp |
+| p44 | -5.3pp |
+| p45 | -5.0pp |
+| p46 | -4.8pp |
+| p47 | -4.6pp |
+| p48 | -4.4pp |
+| p49 | -3.6pp |
+| p50 | -3.3pp |
+| p51 | -3.0pp |
+| p52 | -1.6pp |
+| p53 | -0.8pp |
+| p54 | -0.4pp |
+| p55 | -0.1pp |
+| p56 | +0.2pp |
+| p57 | +0.9pp |
+| p58 | +1.0pp |
+| p59 | +1.2pp |
+| p60 | +2.1pp |
+| p61 | +2.5pp |
+| p62 | +3.1pp |
+| p63 | +3.3pp |
+| p64 | +3.5pp |
+| p65 | +4.1pp |
+| p66 | +4.3pp |
+| p67 | +4.4pp |
+| p68 | +4.7pp |
+| p69 | +5.0pp |
+| p70 | +5.2pp |
+| p71 | +5.3pp |
+| p72 | +5.7pp |
+| p73 | +6.0pp |
+| p74 | +6.2pp |
+| p75 | +6.7pp |
+| p76 | +7.9pp |
+| p77 | +8.2pp |
+| p78 | +8.3pp |
+| p79 | +9.1pp |
+| p80 | +9.8pp |
+| p81 | +10.3pp |
+| p82 | +10.6pp |
+| p83 | +10.9pp |
+| p84 | +11.8pp |
+| p85 | +12.4pp |
+| p86 | +13.2pp |
+| p87 | +14.0pp |
+| p88 | +14.3pp |
+| p89 | +14.6pp |
+| p90 | +16.0pp |
+| p91 | +16.9pp |
+| p92 | +17.4pp |
+| p93 | +18.1pp |
+| p94 | +19.2pp |
+| p95 | +20.2pp |
+| p96 | +26.8pp |
+| p97 | +28.6pp |
+| p98 | +30.6pp |
+| p99 | +32.3pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Net Flag Rate (bullet) (`net_flag_rate_bullet`)
+
+- **Cohort size**: n_users = 496
+- **Inclusion floor**: net_flag_rate_bullet — inclusion floor ≥30 endgame games per user (pooled within bullet; metric is (timeout_wins − timeout_losses) / total_endgame_games).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -33.3pp |
+| p2 | -31.0pp |
+| p3 | -28.9pp |
+| p4 | -27.1pp |
+| p5 | -26.8pp |
+| p6 | -25.3pp |
+| p7 | -23.2pp |
+| p8 | -22.3pp |
+| p9 | -20.9pp |
+| p10 | -19.9pp |
+| p11 | -19.0pp |
+| p12 | -18.1pp |
+| p13 | -17.6pp |
+| p14 | -17.2pp |
+| p15 | -16.8pp |
+| p16 | -16.4pp |
+| p17 | -15.3pp |
+| p18 | -14.8pp |
+| p19 | -14.6pp |
+| p20 | -14.1pp |
+| p21 | -13.6pp |
+| p22 | -13.1pp |
+| p23 | -12.1pp |
+| p24 | -11.9pp |
+| p25 | -11.2pp |
+| p26 | -10.4pp |
+| p27 | -9.7pp |
+| p28 | -9.2pp |
+| p29 | -8.8pp |
+| p30 | -8.4pp |
+| p31 | -7.9pp |
+| p32 | -7.2pp |
+| p33 | -6.9pp |
+| p34 | -6.4pp |
+| p35 | -6.0pp |
+| p36 | -5.4pp |
+| p37 | -4.9pp |
+| p38 | -4.5pp |
+| p39 | -4.1pp |
+| p40 | -3.6pp |
+| p41 | -2.8pp |
+| p42 | -2.5pp |
+| p43 | -2.0pp |
+| p44 | -1.5pp |
+| p45 | -1.3pp |
+| p46 | -1.0pp |
+| p47 | -0.1pp |
+| p48 | +0.5pp |
+| p49 | +1.2pp |
+| p50 | +1.8pp |
+| p51 | +2.3pp |
+| p52 | +2.6pp |
+| p53 | +2.8pp |
+| p54 | +3.1pp |
+| p55 | +3.6pp |
+| p56 | +3.9pp |
+| p57 | +4.4pp |
+| p58 | +4.7pp |
+| p59 | +5.5pp |
+| p60 | +6.0pp |
+| p61 | +6.3pp |
+| p62 | +6.6pp |
+| p63 | +6.8pp |
+| p64 | +7.1pp |
+| p65 | +7.5pp |
+| p66 | +8.0pp |
+| p67 | +8.6pp |
+| p68 | +9.0pp |
+| p69 | +9.2pp |
+| p70 | +9.4pp |
+| p71 | +9.8pp |
+| p72 | +10.2pp |
+| p73 | +10.7pp |
+| p74 | +11.1pp |
+| p75 | +11.5pp |
+| p76 | +12.0pp |
+| p77 | +12.3pp |
+| p78 | +12.6pp |
+| p79 | +14.0pp |
+| p80 | +14.2pp |
+| p81 | +14.8pp |
+| p82 | +15.3pp |
+| p83 | +15.9pp |
+| p84 | +16.4pp |
+| p85 | +16.6pp |
+| p86 | +17.4pp |
+| p87 | +18.2pp |
+| p88 | +18.5pp |
+| p89 | +19.1pp |
+| p90 | +20.1pp |
+| p91 | +20.7pp |
+| p92 | +21.3pp |
+| p93 | +22.2pp |
+| p94 | +22.7pp |
+| p95 | +24.6pp |
+| p96 | +25.9pp |
+| p97 | +27.3pp |
+| p98 | +28.6pp |
+| p99 | +35.0pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Net Flag Rate (blitz) (`net_flag_rate_blitz`)
+
+- **Cohort size**: n_users = 501
+- **Inclusion floor**: net_flag_rate_blitz — inclusion floor ≥30 endgame games per user (pooled within blitz; metric is (timeout_wins − timeout_losses) / total_endgame_games).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -31.7pp |
+| p2 | -28.3pp |
+| p3 | -25.5pp |
+| p4 | -24.0pp |
+| p5 | -22.1pp |
+| p6 | -20.1pp |
+| p7 | -19.1pp |
+| p8 | -18.0pp |
+| p9 | -16.9pp |
+| p10 | -16.4pp |
+| p11 | -15.5pp |
+| p12 | -14.3pp |
+| p13 | -13.3pp |
+| p14 | -11.7pp |
+| p15 | -10.6pp |
+| p16 | -10.0pp |
+| p17 | -9.3pp |
+| p18 | -9.0pp |
+| p19 | -8.5pp |
+| p20 | -7.7pp |
+| p21 | -7.5pp |
+| p22 | -7.2pp |
+| p23 | -6.7pp |
+| p24 | -6.4pp |
+| p25 | -6.0pp |
+| p26 | -5.6pp |
+| p27 | -5.2pp |
+| p28 | -4.8pp |
+| p29 | -4.5pp |
+| p30 | -4.2pp |
+| p31 | -3.7pp |
+| p32 | -3.1pp |
+| p33 | -2.9pp |
+| p34 | -2.2pp |
+| p35 | -2.0pp |
+| p36 | -1.6pp |
+| p37 | -1.2pp |
+| p38 | -1.1pp |
+| p39 | -0.8pp |
+| p40 | -0.6pp |
+| p41 | -0.5pp |
+| p42 | -0.4pp |
+| p43 | -0.2pp |
+| p44 | +0.0pp |
+| p45 | +0.2pp |
+| p46 | +0.6pp |
+| p47 | +0.7pp |
+| p48 | +0.9pp |
+| p49 | +1.0pp |
+| p50 | +1.2pp |
+| p51 | +1.8pp |
+| p52 | +2.1pp |
+| p53 | +2.5pp |
+| p54 | +3.0pp |
+| p55 | +3.1pp |
+| p56 | +3.2pp |
+| p57 | +3.4pp |
+| p58 | +4.1pp |
+| p59 | +4.2pp |
+| p60 | +4.3pp |
+| p61 | +4.6pp |
+| p62 | +4.8pp |
+| p63 | +4.9pp |
+| p64 | +5.2pp |
+| p65 | +5.6pp |
+| p66 | +5.9pp |
+| p67 | +6.1pp |
+| p68 | +6.3pp |
+| p69 | +6.4pp |
+| p70 | +6.6pp |
+| p71 | +6.7pp |
+| p72 | +7.1pp |
+| p73 | +7.2pp |
+| p74 | +7.5pp |
+| p75 | +7.8pp |
+| p76 | +7.9pp |
+| p77 | +8.0pp |
+| p78 | +8.3pp |
+| p79 | +8.7pp |
+| p80 | +9.1pp |
+| p81 | +9.3pp |
+| p82 | +9.4pp |
+| p83 | +9.8pp |
+| p84 | +10.2pp |
+| p85 | +10.5pp |
+| p86 | +11.1pp |
+| p87 | +11.5pp |
+| p88 | +11.8pp |
+| p89 | +12.2pp |
+| p90 | +12.6pp |
+| p91 | +12.8pp |
+| p92 | +13.4pp |
+| p93 | +14.1pp |
+| p94 | +14.5pp |
+| p95 | +14.8pp |
+| p96 | +15.2pp |
+| p97 | +16.7pp |
+| p98 | +17.2pp |
+| p99 | +18.2pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Net Flag Rate (rapid) (`net_flag_rate_rapid`)
+
+- **Cohort size**: n_users = 637
+- **Inclusion floor**: net_flag_rate_rapid — inclusion floor ≥30 endgame games per user (pooled within rapid; metric is (timeout_wins − timeout_losses) / total_endgame_games).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -21.2pp |
+| p2 | -18.5pp |
+| p3 | -16.6pp |
+| p4 | -13.6pp |
+| p5 | -12.2pp |
+| p6 | -11.4pp |
+| p7 | -9.8pp |
+| p8 | -9.0pp |
+| p9 | -7.8pp |
+| p10 | -7.0pp |
+| p11 | -6.3pp |
+| p12 | -6.1pp |
+| p13 | -5.5pp |
+| p14 | -5.3pp |
+| p15 | -4.8pp |
+| p16 | -4.5pp |
+| p17 | -4.3pp |
+| p18 | -4.0pp |
+| p19 | -3.6pp |
+| p20 | -3.5pp |
+| p21 | -3.0pp |
+| p22 | -2.8pp |
+| p23 | -2.4pp |
+| p24 | -2.2pp |
+| p25 | -1.9pp |
+| p26 | -1.7pp |
+| p27 | -1.6pp |
+| p28 | -1.3pp |
+| p29 | -1.1pp |
+| p30 | -0.9pp |
+| p31 | -0.8pp |
+| p32 | -0.4pp |
+| p33 | -0.0pp |
+| p34 | +0.0pp |
+| p35 | +0.0pp |
+| p36 | +0.0pp |
+| p37 | +0.0pp |
+| p38 | +0.0pp |
+| p39 | +0.0pp |
+| p40 | +0.0pp |
+| p41 | +0.0pp |
+| p42 | +0.0pp |
+| p43 | +0.1pp |
+| p44 | +0.3pp |
+| p45 | +0.5pp |
+| p46 | +0.7pp |
+| p47 | +0.9pp |
+| p48 | +1.0pp |
+| p49 | +1.1pp |
+| p50 | +1.2pp |
+| p51 | +1.3pp |
+| p52 | +1.4pp |
+| p53 | +1.5pp |
+| p54 | +1.5pp |
+| p55 | +1.6pp |
+| p56 | +1.7pp |
+| p57 | +1.7pp |
+| p58 | +1.8pp |
+| p59 | +1.8pp |
+| p60 | +1.9pp |
+| p61 | +2.0pp |
+| p62 | +2.1pp |
+| p63 | +2.1pp |
+| p64 | +2.2pp |
+| p65 | +2.3pp |
+| p66 | +2.4pp |
+| p67 | +2.5pp |
+| p68 | +2.6pp |
+| p69 | +2.7pp |
+| p70 | +2.7pp |
+| p71 | +2.9pp |
+| p72 | +3.0pp |
+| p73 | +3.1pp |
+| p74 | +3.2pp |
+| p75 | +3.3pp |
+| p76 | +3.5pp |
+| p77 | +3.6pp |
+| p78 | +3.7pp |
+| p79 | +3.8pp |
+| p80 | +3.9pp |
+| p81 | +4.1pp |
+| p82 | +4.2pp |
+| p83 | +4.3pp |
+| p84 | +4.5pp |
+| p85 | +4.6pp |
+| p86 | +4.7pp |
+| p87 | +4.9pp |
+| p88 | +5.1pp |
+| p89 | +5.4pp |
+| p90 | +5.5pp |
+| p91 | +5.9pp |
+| p92 | +6.1pp |
+| p93 | +6.8pp |
+| p94 | +7.3pp |
+| p95 | +8.1pp |
+| p96 | +8.5pp |
+| p97 | +9.5pp |
+| p98 | +10.2pp |
+| p99 | +11.8pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
+## Net Flag Rate (classical) (`net_flag_rate_classical`)
+
+- **Cohort size**: n_users = 220
+- **Inclusion floor**: net_flag_rate_classical — inclusion floor ≥30 endgame games per user (pooled within classical; metric is (timeout_wins − timeout_losses) / total_endgame_games).
+- **Sparse cell** `(2400, classical)` excluded at cohort selection (D-1).
+
+### Breakpoint table (p1..p99)
+
+| percentile | value (pp) |
+|---:|---:|
+| p1 | -29.1pp |
+| p2 | -11.9pp |
+| p3 | -11.0pp |
+| p4 | -8.7pp |
+| p5 | -7.1pp |
+| p6 | -6.1pp |
+| p7 | -5.3pp |
+| p8 | -4.8pp |
+| p9 | -4.1pp |
+| p10 | -3.3pp |
+| p11 | -2.8pp |
+| p12 | -2.5pp |
+| p13 | -2.2pp |
+| p14 | -2.1pp |
+| p15 | -2.0pp |
+| p16 | -2.0pp |
+| p17 | -1.7pp |
+| p18 | -1.5pp |
+| p19 | -1.3pp |
+| p20 | -1.1pp |
+| p21 | -1.0pp |
+| p22 | -0.4pp |
+| p23 | -0.3pp |
+| p24 | +0.0pp |
+| p25 | +0.0pp |
+| p26 | +0.0pp |
+| p27 | +0.0pp |
+| p28 | +0.0pp |
+| p29 | +0.0pp |
+| p30 | +0.0pp |
+| p31 | +0.0pp |
+| p32 | +0.0pp |
+| p33 | +0.0pp |
+| p34 | +0.0pp |
+| p35 | +0.0pp |
+| p36 | +0.0pp |
+| p37 | +0.0pp |
+| p38 | +0.0pp |
+| p39 | +0.0pp |
+| p40 | +0.0pp |
+| p41 | +0.0pp |
+| p42 | +0.0pp |
+| p43 | +0.0pp |
+| p44 | +0.0pp |
+| p45 | +0.0pp |
+| p46 | +0.0pp |
+| p47 | +0.0pp |
+| p48 | +0.0pp |
+| p49 | +0.0pp |
+| p50 | +0.0pp |
+| p51 | +0.0pp |
+| p52 | +0.0pp |
+| p53 | +0.0pp |
+| p54 | +0.1pp |
+| p55 | +0.5pp |
+| p56 | +0.6pp |
+| p57 | +0.7pp |
+| p58 | +0.8pp |
+| p59 | +0.8pp |
+| p60 | +0.9pp |
+| p61 | +0.9pp |
+| p62 | +1.0pp |
+| p63 | +1.0pp |
+| p64 | +1.1pp |
+| p65 | +1.1pp |
+| p66 | +1.2pp |
+| p67 | +1.3pp |
+| p68 | +1.3pp |
+| p69 | +1.4pp |
+| p70 | +1.5pp |
+| p71 | +1.5pp |
+| p72 | +1.5pp |
+| p73 | +1.6pp |
+| p74 | +1.7pp |
+| p75 | +1.7pp |
+| p76 | +1.8pp |
+| p77 | +1.9pp |
+| p78 | +1.9pp |
+| p79 | +1.9pp |
+| p80 | +2.0pp |
+| p81 | +2.1pp |
+| p82 | +2.1pp |
+| p83 | +2.2pp |
+| p84 | +2.3pp |
+| p85 | +2.4pp |
+| p86 | +2.4pp |
+| p87 | +2.5pp |
+| p88 | +2.6pp |
+| p89 | +2.7pp |
+| p90 | +3.0pp |
+| p91 | +3.2pp |
+| p92 | +3.4pp |
+| p93 | +3.6pp |
+| p94 | +3.8pp |
+| p95 | +4.2pp |
+| p96 | +4.4pp |
+| p97 | +4.9pp |
+| p98 | +5.1pp |
+| p99 | +5.6pp |
+
+### Per-rating-bucket sanity check (diagnostic only)
+
+> This per-cell distribution no longer reflects the production CDF.
+
+| rating bucket | n_users | median (pp) | skew | excess kurt |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | — | — | — | — |
+| 1200 (game-time) | — | — | — | — |
+| 1600 (game-time) | — | — | — | — |
+| 2000 (game-time) | — | — | — | — |
+| 2400 (game-time) | — | — | — | — |
+
 ## Drift vs Phase 94.1
 
 Side-by-side breakpoint values for the previous (per-cell) and current (pooled-per-user) methodologies. Δ is **(94.2 − 94.1)** in pp.
@@ -514,47 +1990,191 @@ Side-by-side breakpoint values for the previous (per-cell) and current (pooled-p
 
 | percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
 |---:|---:|---:|---:|
-| p1 | -31.5pp | -30.3pp | +1.2pp |
-| p10 | -17.4pp | -17.1pp | +0.3pp |
-| p25 | -10.1pp | -10.3pp | -0.2pp |
-| p50 | -1.2pp | -1.3pp | -0.1pp |
-| p75 | +7.8pp | +7.4pp | -0.4pp |
+| p1 | -30.3pp | -30.3pp | -0.0pp |
+| p10 | -17.1pp | -17.1pp | +0.0pp |
+| p25 | -10.3pp | -10.3pp | +0.0pp |
+| p50 | -1.3pp | -1.3pp | +0.0pp |
+| p75 | +7.4pp | +7.4pp | +0.0pp |
 | p90 | +15.9pp | +15.9pp | -0.0pp |
-| p99 | +29.2pp | +27.9pp | -1.3pp |
+| p99 | +27.9pp | +27.9pp | -0.0pp |
 
 ### Achievable Score Gap (`achievable_score_gap`)
 
 | percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
 |---:|---:|---:|---:|
-| p1 | -21.8pp | -21.3pp | +0.5pp |
-| p10 | -9.3pp | -8.4pp | +0.9pp |
-| p25 | -4.0pp | -3.7pp | +0.3pp |
+| p1 | -21.3pp | -21.3pp | -0.0pp |
+| p10 | -8.4pp | -8.4pp | -0.0pp |
+| p25 | -3.7pp | -3.7pp | +0.0pp |
 | p50 | +0.6pp | +0.6pp | -0.0pp |
-| p75 | +5.0pp | +4.6pp | -0.4pp |
-| p90 | +9.6pp | +8.9pp | -0.7pp |
-| p99 | +20.8pp | +18.8pp | -2.0pp |
+| p75 | +4.6pp | +4.6pp | +0.0pp |
+| p90 | +8.9pp | +8.9pp | +0.0pp |
+| p99 | +18.8pp | +18.8pp | +0.0pp |
 
 ### Section 2 Conversion ΔES (`section2_score_gap_conv`)
 
 | percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
 |---:|---:|---:|---:|
-| p1 | -34.6pp | -34.1pp | +0.5pp |
-| p10 | -19.2pp | -18.1pp | +1.1pp |
-| p25 | -11.3pp | -10.6pp | +0.7pp |
-| p50 | -5.0pp | -4.7pp | +0.3pp |
+| p1 | -34.1pp | -34.1pp | -0.0pp |
+| p10 | -18.1pp | -18.1pp | +0.0pp |
+| p25 | -10.6pp | -10.6pp | +0.0pp |
+| p50 | -4.7pp | -4.7pp | +0.0pp |
 | p75 | +0.1pp | +0.1pp | +0.0pp |
-| p90 | +4.3pp | +4.1pp | -0.2pp |
-| p99 | +10.5pp | +10.1pp | -0.4pp |
+| p90 | +4.1pp | +4.1pp | -0.0pp |
+| p99 | +10.1pp | +10.1pp | -0.0pp |
 
 ### Section 2 Parity ΔES (`section2_score_gap_parity`)
 
 | percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
 |---:|---:|---:|---:|
-| p1 | -17.0pp | -15.2pp | +1.8pp |
-| p10 | -8.1pp | -7.0pp | +1.1pp |
-| p25 | -3.6pp | -3.4pp | +0.2pp |
+| p1 | -15.2pp | -15.2pp | +0.0pp |
+| p10 | -7.0pp | -7.0pp | +0.0pp |
+| p25 | -3.4pp | -3.4pp | +0.0pp |
 | p50 | +0.3pp | +0.3pp | +0.0pp |
-| p75 | +4.0pp | +3.6pp | -0.4pp |
-| p90 | +7.5pp | +6.6pp | -0.9pp |
-| p99 | +16.6pp | +13.8pp | -2.8pp |
+| p75 | +3.6pp | +3.6pp | +0.0pp |
+| p90 | +6.6pp | +6.6pp | -0.0pp |
+| p99 | +13.8pp | +13.8pp | +0.0pp |
+
+### Time Pressure Score Gap (bullet) (`time_pressure_score_gap_bullet`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -25.1pp | — |
+| p10 | — | -15.6pp | — |
+| p25 | — | -8.4pp | — |
+| p50 | — | +0.6pp | — |
+| p75 | — | +10.8pp | — |
+| p90 | — | +19.6pp | — |
+| p99 | — | +38.1pp | — |
+
+### Time Pressure Score Gap (blitz) (`time_pressure_score_gap_blitz`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -28.6pp | — |
+| p10 | — | -16.7pp | — |
+| p25 | — | -7.0pp | — |
+| p50 | — | +2.3pp | — |
+| p75 | — | +13.7pp | — |
+| p90 | — | +24.0pp | — |
+| p99 | — | +36.6pp | — |
+
+### Time Pressure Score Gap (rapid) (`time_pressure_score_gap_rapid`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -35.5pp | — |
+| p10 | — | -19.3pp | — |
+| p25 | — | -10.8pp | — |
+| p50 | — | +1.4pp | — |
+| p75 | — | +11.5pp | — |
+| p90 | — | +21.0pp | — |
+| p99 | — | +41.1pp | — |
+
+### Time Pressure Score Gap (classical) (`time_pressure_score_gap_classical`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -52.8pp | — |
+| p10 | — | -39.0pp | — |
+| p25 | — | -13.6pp | — |
+| p50 | — | -5.9pp | — |
+| p75 | — | +7.6pp | — |
+| p90 | — | +19.0pp | — |
+| p99 | — | +25.9pp | — |
+
+### Clock Gap (bullet) (`clock_gap_bullet`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -13.5pp | — |
+| p10 | — | -7.0pp | — |
+| p25 | — | -3.9pp | — |
+| p50 | — | -0.3pp | — |
+| p75 | — | +2.8pp | — |
+| p90 | — | +6.6pp | — |
+| p99 | — | +17.9pp | — |
+
+### Clock Gap (blitz) (`clock_gap_blitz`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -26.4pp | — |
+| p10 | — | -13.7pp | — |
+| p25 | — | -7.1pp | — |
+| p50 | — | -0.8pp | — |
+| p75 | — | +4.7pp | — |
+| p90 | — | +9.5pp | — |
+| p99 | — | +19.0pp | — |
+
+### Clock Gap (rapid) (`clock_gap_rapid`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -61.9pp | — |
+| p10 | — | -16.2pp | — |
+| p25 | — | -9.1pp | — |
+| p50 | — | -0.6pp | — |
+| p75 | — | +5.7pp | — |
+| p90 | — | +10.6pp | — |
+| p99 | — | +21.6pp | — |
+
+### Clock Gap (classical) (`clock_gap_classical`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -62.6pp | — |
+| p10 | — | -29.1pp | — |
+| p25 | — | -14.4pp | — |
+| p50 | — | -3.3pp | — |
+| p75 | — | +6.7pp | — |
+| p90 | — | +16.0pp | — |
+| p99 | — | +32.3pp | — |
+
+### Net Flag Rate (bullet) (`net_flag_rate_bullet`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -33.3pp | — |
+| p10 | — | -19.9pp | — |
+| p25 | — | -11.2pp | — |
+| p50 | — | +1.8pp | — |
+| p75 | — | +11.5pp | — |
+| p90 | — | +20.1pp | — |
+| p99 | — | +35.0pp | — |
+
+### Net Flag Rate (blitz) (`net_flag_rate_blitz`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -31.7pp | — |
+| p10 | — | -16.4pp | — |
+| p25 | — | -6.0pp | — |
+| p50 | — | +1.2pp | — |
+| p75 | — | +7.8pp | — |
+| p90 | — | +12.6pp | — |
+| p99 | — | +18.2pp | — |
+
+### Net Flag Rate (rapid) (`net_flag_rate_rapid`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -21.2pp | — |
+| p10 | — | -7.0pp | — |
+| p25 | — | -1.9pp | — |
+| p50 | — | +1.2pp | — |
+| p75 | — | +3.3pp | — |
+| p90 | — | +5.5pp | — |
+| p99 | — | +11.8pp | — |
+
+### Net Flag Rate (classical) (`net_flag_rate_classical`)
+
+| percentile | 94.1 (pp) | 94.2 (pp) | Δ (pp) |
+|---:|---:|---:|---:|
+| p1 | — | -29.1pp | — |
+| p10 | — | -3.3pp | — |
+| p25 | — | +0.0pp | — |
+| p50 | — | +0.0pp | — |
+| p75 | — | +1.7pp | — |
+| p90 | — | +3.0pp | — |
+| p99 | — | +5.6pp | — |
 

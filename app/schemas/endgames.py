@@ -791,6 +791,16 @@ class TimePressureTcCard(BaseModel):
     net_timeout_rate: float = 0.0
     clock_gap: ClockGapBullet
     quintiles: list[PressureQuintileBullet]  # always 5, ordered Q0..Q4
+    # Phase 94.3: per-(metric × TC) percentile annotations.
+    # None when: (a) user below pooled >=30 inclusion floor for the metric × TC
+    # combo, (b) Stage B has not yet computed (race window after import +
+    # cold-drain), (c) the metric is not yet supported by the CDF.
+    # Frontend gates chip rendering on `!= null`. Defaults preserve the B-2 lock
+    # (existing test fixtures that build TimePressureTcCard keyword-style without
+    # these args do not break).
+    time_pressure_score_gap_percentile: float | None = None
+    clock_gap_percentile: float | None = None
+    net_flag_rate_percentile: float | None = None
 
 
 class TimePressureCardsResponse(BaseModel):

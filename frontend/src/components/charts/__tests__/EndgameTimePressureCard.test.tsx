@@ -316,3 +316,162 @@ it('Clock Gap value renders in the header row (no separate "(N games)" suffix)',
     expect(total.textContent).not.toMatch(/Games: \d+%/);
   });
 });
+
+// ─── Phase 94.3 Plan 06: per-(metric × TC) chip slots (TPCTL-06 / TPCTL-07) ──
+//
+// 3 chips per card × 4 TCs = 12 placements. Each chip is gated on the
+// corresponding `<...>_percentile != null` field; below-floor (null) suppresses
+// the chip silently. The `time_pressure_score_gap_classical` cell is flagged
+// in Plan A as a chip-suppression candidate (n_users=24 < 150 floor), but the
+// backend handles the gate by returning null; the frontend gates uniformly on
+// `!= null` so no per-TC special-case is needed in the component.
+
+const TC_CASES = ['bullet', 'blitz', 'rapid', 'classical'] as const;
+
+describe('EndgameTimePressureCard — Phase 94.3 chip slots', () => {
+  it('renders all 3 chips when all 3 percentile fields are non-null (tc=bullet)', () => {
+    renderCard(
+      makeCard({
+        tc: 'bullet',
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).not.toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).not.toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).not.toBeNull();
+  });
+
+  it('suppresses ONLY the Clock Gap chip when clock_gap_percentile is null', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: null,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).not.toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).not.toBeNull();
+  });
+
+  it('suppresses ONLY the Net Flag chip when net_flag_rate_percentile is null', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: null,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).not.toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).not.toBeNull();
+  });
+
+  it('suppresses ONLY the Time Pressure Score Gap chip when its percentile is null', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: null,
+      }),
+    );
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).not.toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).not.toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).toBeNull();
+  });
+
+  it('suppresses all 3 chips when all 3 percentile fields are null (default)', () => {
+    renderCard(makeCard()); // defaults leave all 3 fields undefined → no chip
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).toBeNull();
+  });
+
+  // Pitfall 7: net_flag_rate_percentile === 0 is a VALID percentile (the
+  // worst end of the cohort under higher_is_better). The chip MUST render —
+  // gate is `!= null`, not falsy. Post-UAT: direction is higher_is_better, so
+  // p=0 renders as "Bottom 1%" (chip label is floored at 1% to avoid "Bottom 0%").
+  it('renders the Net Flag chip when net_flag_rate_percentile === 0 (NOT null)', () => {
+    renderCard(
+      makeCard({
+        net_flag_rate_percentile: 0,
+        clock_gap_percentile: null,
+        time_pressure_score_gap_percentile: null,
+      }),
+    );
+    const chip = screen.getByTestId('time-pressure-card-bullet-net-flag-rate-chip');
+    expect(chip).not.toBeNull();
+    expect(chip.textContent).toContain('Bottom 1%');
+  });
+
+  // Per-TC placement parity — confirm the testid template substitutes the TC
+  // name correctly for all 4 cards. 12 assertions (3 chips × 4 TCs).
+  it.each(TC_CASES)('renders all 3 chips for tc=%s when percentiles are non-null', (tc) => {
+    renderCard(
+      makeCard({
+        tc,
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    expect(screen.queryByTestId(`time-pressure-card-${tc}-clock-gap-chip`)).not.toBeNull();
+    expect(screen.queryByTestId(`time-pressure-card-${tc}-net-flag-rate-chip`)).not.toBeNull();
+    expect(
+      screen.queryByTestId(`time-pressure-card-${tc}-time-pressure-score-gap-chip`),
+    ).not.toBeNull();
+  });
+
+  // Chip slots structurally placed near their owning labels.
+  it('Clock Gap chip lives inside the ClockGapHeaderRow', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    const header = screen.getByTestId('time-pressure-card-bullet-clock-gap-header');
+    expect(header.querySelector('[data-testid="time-pressure-card-bullet-clock-gap-chip"]')).not.toBeNull();
+  });
+
+  it('Net Flag chip lives inside the NetFlagRateRow', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    const row = screen.getByTestId('time-pressure-card-bullet-net-flag-rate-row');
+    expect(row.querySelector('[data-testid="time-pressure-card-bullet-net-flag-rate-chip"]')).not.toBeNull();
+  });
+
+  it('Time Pressure Score Gap chip lives inside the quintiles subtitle', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    const subtitle = screen.getByTestId('time-pressure-card-bullet-quintiles-subtitle');
+    expect(
+      subtitle.querySelector(
+        '[data-testid="time-pressure-card-bullet-time-pressure-score-gap-chip"]',
+      ),
+    ).not.toBeNull();
+  });
+});
