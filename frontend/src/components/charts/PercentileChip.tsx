@@ -213,6 +213,9 @@ const RATING_NOTE_BY_FLAVOR = {
  * to `lower_is_better` in the original plan; see file-top docstring).
  * `satisfies Record<...>` is non-negotiable per RESEARCH §Pitfall 3 —
  * without it a future flavor addition could silently miss the map.
+ * Consumers MUST bind through `PercentileChipDirection` (not infer) so the
+ * `lower_is_better` branches remain reachable at the type level — see
+ * `PercentileChipPopoverBody` and the chip body for the explicit annotation.
  */
 export const DIRECTION_BY_FLAVOR = {
   'score-gap': 'higher_is_better',
@@ -298,7 +301,10 @@ function PercentileChipPopoverBody({
   metricLabel: string;
   percentile: number;
 }): React.ReactElement {
-  const direction = DIRECTION_BY_FLAVOR[flavor];
+  // Cast widens the `as const`-narrowed map value to the full direction union
+  // so the `lower_is_better` branch below stays type-reachable while every
+  // flavor currently maps to `higher_is_better`. See `DIRECTION_BY_FLAVOR`.
+  const direction = DIRECTION_BY_FLAVOR[flavor] as PercentileChipDirection;
   const ratingNote = RATING_NOTE_BY_FLAVOR[flavor];
   const tc = tcFromFlavor(flavor);
   const isLowerBetter = direction === 'lower_is_better';
