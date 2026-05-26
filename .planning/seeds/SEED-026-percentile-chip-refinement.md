@@ -70,10 +70,12 @@ Implementation: extend `scripts/gen_global_percentile_cdf.py` to emit per-(metri
 
 ### Conversion table
 
-ChessGoals publishes **two** tables on the same page (https://chessgoals.com/rating-comparison/), both from the same ~10k-profile study, fit by the same methodology. We snapshot both and compose them for non-Blitz chess.com inputs:
+ChessGoals publishes **two** tables on the same page (https://chessgoals.com/rating-comparison/), both from the same ~10k-profile study:
 
-- **Table 1** — intra-chess.com TC offsets at anchor rows (e.g. 1500 chess.com Blitz ≈ 1400 chess.com Bullet ≈ 1655 chess.com Rapid).
+- **Table 1** — chess.com Blitz → {Bullet, Rapid}, at anchor rows (e.g. 1500 Blitz ≈ 1400 Bullet ≈ 1655 Rapid). Forward fit on Blitz as the pivot.
 - **Table 2** — chess.com Blitz → Lichess (Bullet / Blitz / Rapid / Classical) at the same anchor rows.
+
+For non-Blitz chess.com inputs (Bullet, Rapid) we **invert Table 1** to estimate the chess.com Blitz equivalent, then look up in Table 2. Inversion is statistically biased — `E[Blitz | Bullet=y] ≠ Inverse(E[Bullet | Blitz=x])` by the regression-toward-mean asymmetry — but the bias is small (~10-30 Elo) because intra-player rating correlations across TCs are high (ρ ≈ 0.9-0.95). Accepted as a known approximation; documented in the error budget below.
 
 Snapshot the values into a hardcoded Python module (e.g. `app/services/chesscom_to_lichess.py`):
 
@@ -103,9 +105,15 @@ CHESSCOM_BLITZ_TO_LICHESS: Final[Mapping[int, Mapping[LichessTC, int]]] = {
 2. If `source_tc in ("bullet", "rapid")`: invert `CHESSCOM_INTRA_TC` to find the chess.com Blitz equivalent of `rating` in `source_tc`, then proceed as in step 1.
 3. If `source_tc == "daily"`: no published mapping; return None and let the caller suppress the chip for that (user, TC) combination. chess.com Daily is uncommon in the prod population; revisit when usage justifies it.
 
-**Error budget honesty:** all empirical cross-platform converters carry ±100-200 Elo of inherent noise (community estimates and Lichess's own statement that "ratings from different servers cannot be directly compared"). The two-step path adds ~30-50 Elo on top — but since Table 1 and Table 2 are from one consistent dataset, the composed error stays in the same ballpark, not 2× worse. At 50-Elo cohort granularity, a chess.com-primary user's chip may be computed against a cohort 2-4 anchors off from their true peer group. Tolerable for diagnostic-grade signal; surfaced honestly in the tooltip rather than hidden.
+**Error budget honesty:**
 
-Snapshot refresh is manual: when prod gains enough dual-platform users to support FlawChess-internal refit (see Trigger conditions), regenerate. No CI gate.
+- **Baseline ±100-200 Elo** — inherent cross-platform noise that all empirical converters share (community estimates, plus Lichess's own statement that "ratings from different servers cannot be directly compared"). Unavoidable without true bidirectional dual-platform calibration.
+- **+10-30 Elo for inverted Table 1 lookups** (chess.com Bullet/Rapid sources only) — regression-toward-mean asymmetry from using a forward fit in reverse direction. Small relative to baseline because intra-player TC correlations are high.
+- **At 50-Elo cohort granularity**, a chess.com-primary user's chip may be computed against a cohort 2-4 anchors off from their true peer group. Tolerable for diagnostic-grade signal; surfaced honestly in the tooltip rather than hidden.
+
+A cleaner long-term fix would be to refit the intra-chess.com TC offset table from FlawChess prod data directly (we likely have enough chess.com multi-TC users for a forward fit on each pair), eliminating the inversion bias. Deferred to the refit trigger condition; not blocking v2 ship.
+
+Snapshot refresh is manual: when prod gains enough dual-platform users to support FlawChess-internal cross-platform refit (see Trigger conditions), regenerate. Intra-chess.com forward-fit refit can land independently. No CI gate.
 
 ### Per-TC sub-percentile aggregation for currently-TC-aggregated metrics
 
@@ -225,6 +233,7 @@ Promote when **any** of the following:
 - Mobile usability feedback specifically flags the chip size as a problem.
 - A request lands for percentile chips on metrics currently dropped by v1 (Conversion / Recovery / Endgame Score Gap) — v2 rescues these and the promotion becomes net positive.
 
-**Future refit trigger (independent of promotion):**
+**Future refit triggers (independent of promotion):**
 
-- FlawChess prod gains ≥30 dual-platform users per (TC, 200-Elo rating band) — refit `CHESSCOM_TO_LICHESS_TABLE` against internal data, replacing the ChessGoals snapshot. Tracks as a `/gsd-quick` task whenever the prod population hits that threshold.
+- **Cross-platform refit** — FlawChess prod gains ≥30 dual-platform users per (TC, 200-Elo rating band) — refit `CHESSCOM_BLITZ_TO_LICHESS` against internal data, replacing the ChessGoals Table 2 snapshot. Tracks as a `/gsd-quick` task whenever the prod population hits that threshold.
+- **Intra-chess.com forward-fit refit** — at any time prod has enough chess.com multi-TC users to fit forward regressions (Bullet → Blitz, Rapid → Blitz) directly, replace the inverted ChessGoals Table 1 with the forward FlawChess fit. Eliminates the ~10-30 Elo inversion bias. Almost certainly viable now; bundled into the v2 phase only if planning capacity allows, otherwise its own `/gsd-quick` follow-up.
