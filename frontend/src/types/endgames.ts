@@ -244,6 +244,13 @@ export interface ScoreGapMaterialResponse {
   section2_score_gap_recov_p_value: number | null;
   section2_score_gap_recov_ci_low: number | null;
   section2_score_gap_recov_ci_high: number | null;
+  /** Phase 94.4 D-05a: Recovery Score Gap chip RESCUED under peer-relative.
+   *  Replaces Phase 94 D-12 suppression — same-rated cohort comparison
+   *  normalises the opponent-rating confound that drove the v1 drop.
+   *  Field name mirrors the MetricId literal `recovery_score_gap` (D-13
+   *  ENUM). null when Stage B wrote no row for any above-floor TC, or
+   *  when every per-TC PercentileRow has null percentile. */
+  recovery_score_gap_percentile: number | null;
 
   // Phase 87.4 (D-05): the 6 Skill fields (section2_score_gap_skill_* and
   // endgame_skill_rate_mean) were hard-deleted alongside EndgameSkillCard.
@@ -335,6 +342,35 @@ export interface ClockDiffTimelineResponse {
   points: ClockDiffTimelinePoint[];
 }
 
+/** Phase 94.4 D-07 bullet 4 + RESEARCH Open Question 4 — per-TC
+ *  rating-anchor disclosure for the percentile chip tooltip. Renders
+ *  as the tooltip's 4th bullet, e.g.:
+ *
+ *    "Anchored on your Lichess blitz (1430, last 1000 games / 36 months)."
+ *
+ *  or for chess.com sources:
+ *
+ *    "Anchored on your chess.com blitz (1330 → 1656 Lichess-equivalent,
+ *     last 1000 games / 36 months)."
+ *
+ *  Fields:
+ *  - `anchor_rating`: always Lichess-equivalent. For chess.com sources
+ *    this is the POST-conversion value (the cohort CDF is Lichess-keyed).
+ *  - `source_platform`: which platform's games produced the anchor.
+ *    Drives the conversion-clause toggle in the tooltip copy.
+ *  - `chesscom_raw_rating`: when `source_platform === 'chesscom'`, the
+ *    PRE-conversion chess.com median; null for Lichess sources. Plan 05b
+ *    captures this during `compute_anchors_for_user` so the tooltip can
+ *    disclose the raw value without recomputing.
+ *  - `n_games`: count of games used to compute the median anchor (>=
+ *    MEDIAN_ANCHOR_MIN_GAMES = 30). Drives sample-size copy. */
+export interface RatingAnchorOut {
+  anchor_rating: number;
+  source_platform: 'lichess' | 'chesscom';
+  chesscom_raw_rating: number | null;
+  n_games: number;
+}
+
 export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
@@ -343,6 +379,12 @@ export interface EndgameOverviewResponse {
   time_pressure_cards: TimePressureCardsResponse; // Phase 88 (replaces clock_pressure + time_pressure_chart)
   clock_diff_timeline: ClockDiffTimelineResponse; // Plan 88-15 (CONTEXT §2 A-2): restored line chart payload
   endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57 (rebuilt Phase 87.5)
+  /** Phase 94.4 D-07 bullet 4: top-level rating-anchor disclosure block.
+   *  Keyed by time control. Missing-TC keys are absent (Partial<Record>);
+   *  Plan 07's tooltip picks the dominant TC's anchor. Missing keys mean
+   *  the user is below the inclusion floor for that TC or (for chess.com
+   *  sources) the conversion returned null. */
+  rating_anchors: Partial<Record<'bullet' | 'blitz' | 'rapid' | 'classical', RatingAnchorOut>>;
 }
 
 // ── Phase 87.5: Endgame ELO Timeline (rebuilt on Endgame Score Gap) ──
