@@ -70,22 +70,40 @@ Implementation: extend `scripts/gen_global_percentile_cdf.py` to emit per-(metri
 
 ### Conversion table
 
-Snapshot the ChessGoals Table 2 values into a hardcoded Python module constant:
+ChessGoals publishes **two** tables on the same page (https://chessgoals.com/rating-comparison/), both from the same ~10k-profile study, fit by the same methodology. We snapshot both and compose them for non-Blitz chess.com inputs:
+
+- **Table 1** — intra-chess.com TC offsets at anchor rows (e.g. 1500 chess.com Blitz ≈ 1400 chess.com Bullet ≈ 1655 chess.com Rapid).
+- **Table 2** — chess.com Blitz → Lichess (Bullet / Blitz / Rapid / Classical) at the same anchor rows.
+
+Snapshot the values into a hardcoded Python module (e.g. `app/services/chesscom_to_lichess.py`):
 
 ```python
 CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT: Final[str] = "2026-05-26"
 CHESSCOM_TO_LICHESS_SOURCE: Final[str] = "https://chessgoals.com/rating-comparison/"
-# ChessGoals Table 2: chess.com Blitz rating → Lichess (bullet/blitz/rapid/classical) at
-# 100-Elo intervals from 500 to 3000. Linear interpolation between rows at lookup time.
-CHESSCOM_BLITZ_TO_LICHESS: Final[Mapping[int, Mapping[TimeControlBucket, int]]] = {
+
+# ChessGoals Table 1: chess.com cross-TC alignment at 100-Elo Blitz anchors.
+CHESSCOM_INTRA_TC: Final[Mapping[int, Mapping[ChessComTC, int]]] = {
+    # blitz_rating -> {bullet, blitz, rapid}
+    500: ...,
+    # ...
+    3000: ...,
+}
+
+# ChessGoals Table 2: chess.com Blitz -> Lichess (per Lichess TC).
+CHESSCOM_BLITZ_TO_LICHESS: Final[Mapping[int, Mapping[LichessTC, int]]] = {
     500: {"bullet": ..., "blitz": ..., "rapid": ..., "classical": ...},
-    600: ...,
     # ...
     3000: ...,
 }
 ```
 
-For chess.com inputs in non-blitz time controls (chess.com Bullet or Rapid), apply chess.com's intra-platform offsets first to estimate the chess.com Blitz equivalent, then pivot through the table. Empirical offsets (chess.com Bullet ≈ chess.com Blitz − 50, chess.com Rapid ≈ chess.com Blitz + 100 at mid-rating) are themselves a small Python constant — minor accuracy loss but unavoidable since ChessGoals pivots from chess.com Blitz only.
+`convert_chesscom_to_lichess(rating, source_tc, target_tc)` algorithm:
+
+1. If `source_tc == "blitz"`: look up `rating` in `CHESSCOM_BLITZ_TO_LICHESS[target_tc]` (linear interp between 100-Elo rows).
+2. If `source_tc in ("bullet", "rapid")`: invert `CHESSCOM_INTRA_TC` to find the chess.com Blitz equivalent of `rating` in `source_tc`, then proceed as in step 1.
+3. If `source_tc == "daily"`: no published mapping; return None and let the caller suppress the chip for that (user, TC) combination. chess.com Daily is uncommon in the prod population; revisit when usage justifies it.
+
+**Error budget honesty:** all empirical cross-platform converters carry ±100-200 Elo of inherent noise (community estimates and Lichess's own statement that "ratings from different servers cannot be directly compared"). The two-step path adds ~30-50 Elo on top — but since Table 1 and Table 2 are from one consistent dataset, the composed error stays in the same ballpark, not 2× worse. At 50-Elo cohort granularity, a chess.com-primary user's chip may be computed against a cohort 2-4 anchors off from their true peer group. Tolerable for diagnostic-grade signal; surfaced honestly in the tooltip rather than hidden.
 
 Snapshot refresh is manual: when prod gains enough dual-platform users to support FlawChess-internal refit (see Trigger conditions), regenerate. No CI gate.
 
