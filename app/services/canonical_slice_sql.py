@@ -666,7 +666,9 @@ per_user AS (
      AND count(*) FILTER (WHERE opp_clock_pct < {TIME_PRESSURE_CLOCK_PCT_THRESHOLD:.2f}) >= {TIME_PRESSURE_MIN_PRESSURED_N}
 ),
 per_user_values AS (
+  -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
   SELECT
+    user_id,
     (user_pressured_score - opp_pressured_score) AS metric_value,
     least(user_pressured_n, opp_pressured_n)::int AS n_games
   FROM per_user
@@ -723,7 +725,9 @@ per_user AS (
   HAVING count(*) >= {CLOCK_GAP_MIN_POOL_N}
 ),
 per_user_values AS (
+  -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
   SELECT
+    user_id,
     clock_gap_frac_avg AS metric_value,
     pool_n AS n_games
   FROM per_user
@@ -786,7 +790,9 @@ per_user AS (
   HAVING count(*) >= {NET_FLAG_RATE_MIN_POOL_N}
 ),
 per_user_values AS (
+  -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
   SELECT
+    user_id,
     net_flag_rate AS metric_value,
     pool_n AS n_games
   FROM per_user
