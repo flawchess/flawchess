@@ -691,7 +691,7 @@ def _render_regen_report(
         "is where the operator records the chosen option.\n"
     )
 
-    return intro + table_header + table_body + "".join(coverage_lines) + guidance
+    return intro + table_header + table_body + "\n".join(coverage_lines) + guidance
 
 
 def _archive_prior_report(report_path: Path) -> Path | None:

@@ -1082,7 +1082,15 @@ Per-cell rows for all 8 metrics × 33 anchors × 4 TCs = 1,056 cells. Sorted by 
 | net_flag_rate | 2400 | classical | Y | window_too_wide | 662 | 200 |
 
 ## Per-metric coverage
-- **Endgame Score Gap** (`score_gap`): 22/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 22/33, classical 0/33- **Achievable Score Gap** (`achievable_score_gap`): 22/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 22/33, classical 0/33- **Section 2 Conversion ΔES** (`section2_score_gap_conv`): 15/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 15/33, classical 0/33- **Section 2 Parity ΔES** (`section2_score_gap_parity`): 1/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 1/33, classical 0/33- **Recovery Score Gap** (`recovery_score_gap`): 8/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 8/33, classical 0/33- **Time Pressure Score Gap** (`time_pressure_score_gap`): 0/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 0/33, classical 0/33- **Clock Gap** (`clock_gap`): 23/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 23/33, classical 0/33- **Net Flag Rate** (`net_flag_rate`): 23/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 23/33, classical 0/33
+
+- **Endgame Score Gap** (`score_gap`): 22/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 22/33, classical 0/33
+- **Achievable Score Gap** (`achievable_score_gap`): 22/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 22/33, classical 0/33
+- **Section 2 Conversion ΔES** (`section2_score_gap_conv`): 15/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 15/33, classical 0/33
+- **Section 2 Parity ΔES** (`section2_score_gap_parity`): 1/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 1/33, classical 0/33
+- **Recovery Score Gap** (`recovery_score_gap`): 8/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 8/33, classical 0/33
+- **Time Pressure Score Gap** (`time_pressure_score_gap`): 0/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 0/33, classical 0/33
+- **Clock Gap** (`clock_gap`): 23/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 23/33, classical 0/33
+- **Net Flag Rate** (`net_flag_rate`): 23/132 cells non-suppressed; bullet 0/33, blitz 0/33, rapid 23/33, classical 0/33
 
 ## Relaxation guidance
 
