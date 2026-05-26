@@ -187,3 +187,113 @@ def test_pooled_per_tc_cte_emits_per_user_values_with_metric_value_and_n_games(
             f"metric_value missing in per_user_values for {label}/{metric_id}"
         )
         assert "n_games" in block, f"n_games missing in per_user_values for {label}/{metric_id}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.4 Plan 03 Task 3 — source-mode parity for the 4 new per-TC ΔES
+# builders. Each new builder is called directly here (not through
+# per_user_cte_for) because the dispatcher widening to expose them via the
+# CdfMetricId Literal lands in Plan 04 (atomic-cutover sequence).
+# ---------------------------------------------------------------------------
+
+_PLAN_03_NEW_TCS: tuple[Literal["bullet", "blitz", "rapid", "classical"], ...] = (
+    "bullet",
+    "blitz",
+    "rapid",
+    "classical",
+)
+_PLAN_03_SECTION2_BUCKETS: tuple[Literal["conversion", "parity", "recovery"], ...] = (
+    "conversion",
+    "parity",
+    "recovery",
+)
+
+
+@pytest.mark.parametrize("tc", _PLAN_03_NEW_TCS)
+def test_score_gap_tc_pooled_body_byte_identical_across_sources(
+    tc: Literal["bullet", "blitz", "rapid", "classical"],
+) -> None:
+    """``per_user_cte_score_gap_tc`` emits identical pooled body across sources.
+
+    Source-mode parity for the new Task 2 per-TC builder. The pooled body
+    after the selected_users CTE switch must be byte-identical between
+    benchmark and single_user (D-10 invariant; the cohort difference lives
+    entirely in ``selected_users_cte``).
+    """
+    from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
+
+    bm = per_user_cte_score_gap_tc(tc, source="benchmark", snapshot_date=date(2026, 3, 31))
+    su = per_user_cte_score_gap_tc(tc, source="single_user", snapshot_date=date(2026, 3, 31))
+    assert _normalise_whitespace(bm) == _normalise_whitespace(su), (
+        f"per_user_cte_score_gap_tc({tc}) pooled body diverged between sources"
+    )
+
+
+@pytest.mark.parametrize("tc", _PLAN_03_NEW_TCS)
+def test_achievable_tc_pooled_body_byte_identical_across_sources(
+    tc: Literal["bullet", "blitz", "rapid", "classical"],
+) -> None:
+    """``per_user_cte_achievable_tc`` emits identical pooled body across sources."""
+    from app.services.canonical_slice_sql import per_user_cte_achievable_tc
+
+    bm = per_user_cte_achievable_tc(tc, source="benchmark", snapshot_date=date(2026, 3, 31))
+    su = per_user_cte_achievable_tc(tc, source="single_user", snapshot_date=date(2026, 3, 31))
+    assert _normalise_whitespace(bm) == _normalise_whitespace(su), (
+        f"per_user_cte_achievable_tc({tc}) pooled body diverged between sources"
+    )
+
+
+@pytest.mark.parametrize("tc", _PLAN_03_NEW_TCS)
+@pytest.mark.parametrize("bucket_label", _PLAN_03_SECTION2_BUCKETS)
+def test_section2_tc_pooled_body_byte_identical_across_sources(
+    tc: Literal["bullet", "blitz", "rapid", "classical"],
+    bucket_label: Literal["conversion", "parity", "recovery"],
+) -> None:
+    """``per_user_cte_section2_tc`` emits identical pooled body across sources.
+
+    Parametrised over all 12 (tc × bucket_label) cells.
+    """
+    from app.services.canonical_slice_sql import per_user_cte_section2_tc
+
+    bm = per_user_cte_section2_tc(
+        tc, source="benchmark", snapshot_date=date(2026, 3, 31), bucket_label=bucket_label
+    )
+    su = per_user_cte_section2_tc(
+        tc, source="single_user", snapshot_date=date(2026, 3, 31), bucket_label=bucket_label
+    )
+    assert _normalise_whitespace(bm) == _normalise_whitespace(su), (
+        f"per_user_cte_section2_tc({tc}, {bucket_label}) pooled body diverged across sources"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.4 Plan 03 Task 3 — regression for existing 94.3 per-TC builders
+# after the Pitfall 1 user_id widening (Task 1). The widening is applied
+# uniformly to both source modes, so parity must continue to hold.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("metric_id", _PER_TC_METRIC_IDS)
+def test_existing_94_3_per_tc_pooled_body_byte_identical_after_pitfall_1(
+    metric_id: str,
+) -> None:
+    """After the Pitfall 1 widening (Task 1) the 3 existing per-TC builders
+    must STILL show source-mode parity — the widening is applied equally
+    to both source modes (the per_user_values projection is in the shared
+    pooled body, not in the cohort-specific preamble).
+
+    Parametrised over 3 builders × 4 TCs = 12 cells.
+    """
+    bm = per_user_cte_for(metric_id, source="benchmark", snapshot_date=date(2026, 3, 31))  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+    su = per_user_cte_for(metric_id, source="single_user", snapshot_date=date(2026, 3, 31))  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+    assert _normalise_whitespace(bm) == _normalise_whitespace(su), (
+        f"existing 94.3 per-TC builder {metric_id} lost source-mode parity after Pitfall 1 widening"
+    )
+    # And both sides expose user_id in per_user_values.
+    for sql, label in ((bm, "benchmark"), (su, "single_user")):
+        pv_idx = sql.find("per_user_values AS")
+        assert pv_idx != -1
+        block = sql[pv_idx:]
+        assert re.search(r"SELECT\s+user_id\s*,", block), (
+            f"user_id projection missing on {label} for {metric_id} (Pitfall 1)"
+        )
