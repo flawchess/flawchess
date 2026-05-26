@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.19
 milestone_name: Endgame Percentiles & LLM Statistical Reasoning
-status: "Phase 94.3 shipped — PR #143"
-last_updated: "2026-05-25T11:51:41.570Z"
-last_activity: 2026-05-25
+status: Phase 94.4 inserted from SEED-026 v2 — peer-relative cohort pivot
+last_updated: "2026-05-26T18:37:57.205Z"
+last_activity: 2026-05-26
 progress:
-  total_phases: 10
-  completed_phases: 4
+  total_phases: 11
+  completed_phases: 5
   total_plans: 30
   completed_plans: 30
-  percent: 40
+  percent: 45
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 95
+Phase: 94.4
 Plan: Not started
-Status: Phase 94.3 shipped — PR #143
-Last activity: 2026-05-25
+Status: Phase 94.4 inserted from SEED-026 v2 — peer-relative cohort pivot
+Last activity: 2026-05-26
 
 ## Project Reference
 
@@ -132,6 +132,7 @@ Carried forward from v1.11 close (still relevant):
 - Phase 88.3 inserted after Phase 88: Endgame Stats viz refinements (timeline inactivity annotations, ELO default series, Overall Performance 2-col card restructure) — from /gsd-explore chart-quality review (URGENT)
 - Phase 88.4 inserted after Phase 88.3: Time Pressure card layout refactor (responsive grid, 3-stat header row over Clock Gap bullet, Score-Gap bullets → one zone-banded line chart w/ whiskers + tooltip stats, neutral zone TC-collapsed per §3.3.3) — from user layout review of screenshots/tc-cards.png; frontend-only
 - Phase 94.3 inserted after Phase 94.2: Per-TC percentile chips on Time Pressure cards (SEED-025) — extends 94.2 pooled-per-user contract by TC; 12 new metrics; no schema change
+- Phase 94.4 inserted after Phase 94.3: Peer-relative percentile chip refinement (SEED-026 v2): pivot from global-pool to per-(metric, ELO anchor, TC) cohort CDFs via 50-Elo sliding windows (K=200), per-(user, TC) rating anchor with ChessGoals Table 2 chess.com→Lichess conversion, chip UX shrink to pill, tooltip cohort framing, rescue Conversion/Recovery/Endgame Score Gap chips dropped in v1. (URGENT)
 
 ### Pending Todos
 
