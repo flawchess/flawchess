@@ -1,21 +1,26 @@
 services:
   db:
     image: postgres:18-alpine
-    # Memory settings sized for the Hetzner CPX42 production host (8 vCPU /
-    # 16 GB RAM). shared_buffers ~25% of RAM, effective_cache_size ~75% per
-    # standard tuning. work_mem bounded by max_connections=30 × 16MB = ~480MB
-    # worst case. maintenance_work_mem applies per autovacuum worker (default
-    # autovacuum_max_workers=3) so peak from vacuum is ~1.5 GB.
+    # Memory settings sized for the db CONTAINER budget (mem_limit below), NOT
+    # the 16 GB host. Earlier tuning used host-sized values (shared_buffers=4GB,
+    # effective_cache_size=12GB) which left only ~6 GB of the 10 GB cgroup cap
+    # for per-backend work and triggered another Postgres OOM-kill on 2026-05-26
+    # during a concurrent dual-platform import for user 109. Lowering
+    # shared_buffers + raising the cap restores headroom. effective_cache_size
+    # must be <= what the container can actually access. work_mem bounded by
+    # max_connections=30 x 16MB = ~480MB worst case. maintenance_work_mem
+    # applies per autovacuum worker (default autovacuum_max_workers=3) so peak
+    # from vacuum is ~1.5 GB.
     command:
       - "postgres"
       - "-c"
-      - "shared_buffers=4GB"
+      - "shared_buffers=2GB"
       - "-c"
       - "work_mem=16MB"
       - "-c"
       - "maintenance_work_mem=512MB"
       - "-c"
-      - "effective_cache_size=12GB"
+      - "effective_cache_size=8GB"
       - "-c"
       # Cap at 30 to match the application pool (10 + 10 per uvicorn process,
       # see app/core/database.py) plus headroom for psql, migrations, and
@@ -31,8 +36,8 @@ services:
     # paged out to swap is catastrophic for latency anyway; better to get a
     # contained OOM-kill (~3 s auto-recovery, as observed on 2026-05-20 and
     # 2026-05-21) than tens of seconds of swap thrash dragging down the host.
-    mem_limit: 10g
-    memswap_limit: 10g
+    mem_limit: 12g
+    memswap_limit: 12g
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
