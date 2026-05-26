@@ -61,6 +61,7 @@ from app.schemas.endgames import (
     MaterialBucket,
     MaterialRow,
     PressureQuintileBullet,
+    RatingAnchorOut,
     ScoreGapMaterialResponse,
     ScoreGapTimelinePoint,
     TimePressureCardsResponse,
@@ -73,6 +74,10 @@ from app.services.endgame_zones import (
 )
 from app.repositories import user_benchmark_percentiles_repository
 from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+from app.repositories.user_rating_anchors_repository import (
+    fetch_anchors_for_user,
+)
+from app.models.user_rating_anchors import TimeControlBucket
 from app.services.global_percentile_cdf import CdfMetricId
 from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.eval_utils import (
@@ -1259,12 +1264,65 @@ def _compute_per_bucket_score_gap(
 # .planning/notes/endgame-skill-dropped-conversion-elo.md.
 
 
+def _aggregate_per_tc_percentile(
+    per_tc_rows: Mapping[TimeControlBucket, PercentileRow] | None,
+) -> float | None:
+    """Game-count-weighted mean across per-TC percentiles for a single metric.
+
+    Phase 94.4 CONTEXT D-08 / D-08b: the per-(metric, TC) rows materialised by
+    Stage A/B share a single page-level chip — one scalar percentile is what
+    the frontend renders for the headline ΔES chips (Endgame Score Gap,
+    Achievable Score Gap, Parity ΔES, Conversion ΔES, Recovery Score Gap).
+    The aggregation is weighted by ``n_games`` per TC so a TC the user plays
+    often dominates the chip value.
+
+    D-08a: below-floor TCs (no row → entry absent from ``per_tc_rows``) carry
+    an implicit zero weight. The dict is built upstream by
+    ``user_benchmark_percentiles_repository.fetch_for_user`` which only
+    includes TCs the user passed the inclusion floor for; this helper does
+    not need to re-check the floor.
+
+    Time Pressure family chips bypass this helper per D-08 — they use the
+    per-TC percentile directly (see ``_compute_time_pressure_cards`` per-TC
+    lookup) because each TC's card renders an independent chip.
+
+    Args:
+        per_tc_rows: Inner dict from the Plan 05a nested
+            ``fetch_for_user`` shape ``dict[CdfMetricId,
+            dict[TimeControlBucket, PercentileRow]]``. May be None when the
+            outer metric key is absent (user below floor on every TC for
+            this metric) or an empty dict (defensive).
+
+    Returns:
+        Weighted-mean percentile in [0, 100], or None when:
+        - ``per_tc_rows`` is None or empty (no above-floor TCs),
+        - every TC row has ``percentile is None`` (CDF out-of-range for the
+          user's value on every TC),
+        - the surviving weight sum is zero.
+    """
+    if per_tc_rows is None or not per_tc_rows:
+        return None
+    weighted_sum = 0.0
+    weight_sum = 0
+    for tc_row in per_tc_rows.values():
+        # D-08a: percentile-None TCs are dropped from both numerator and
+        # denominator; ignoring n_games of the None row preserves the
+        # implicit-zero-weight semantics.
+        if tc_row.percentile is None:
+            continue
+        weighted_sum += tc_row.percentile * tc_row.n_games
+        weight_sum += tc_row.n_games
+    if weight_sum == 0:
+        return None
+    return weighted_sum / weight_sum
+
+
 def _compute_score_gap_material(
     endgame_wdl: EndgameWDLSummary,
     non_endgame_wdl: EndgameWDLSummary,
     entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
     *,
-    percentile_rows: Mapping[CdfMetricId, PercentileRow] | None = None,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
     gaps_by_bucket: dict[str, list[float]] | None = None,
     timeline: list[ScoreGapTimelinePoint] | None = None,
     timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
@@ -1369,23 +1427,31 @@ def _compute_score_gap_material(
     # already NULL when below the inclusion floor (set during Stage A/B compute).
     # Removing the duplicate N-gate aligns with D-12 "chip is a trait" semantics.
     # percentile_rows is None when called without a DB session (e.g., unit tests).
-    _effective_rows: Mapping[CdfMetricId, PercentileRow] = (
+    # Phase 94.4 D-08 / D-08b: percentile_rows is now nested
+    # (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]); aggregate
+    # via the game-count-weighted mean helper to produce the page-level chip
+    # scalar.
+    _effective_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] = (
         percentile_rows if percentile_rows is not None else {}
     )
-    _score_gap_row = _effective_rows.get("score_gap")
-    score_gap_percentile: float | None = (
-        _score_gap_row.percentile if _score_gap_row is not None else None
+    score_gap_percentile: float | None = _aggregate_per_tc_percentile(
+        _effective_rows.get("score_gap")
     )
 
-    # No recovery percentile per D-12 (recovery is opponent-confounded; no
-    # CDF table shipped in Phase 93).
-    _conv_row = _effective_rows.get("section2_score_gap_conv")
-    section2_score_gap_conv_percentile: float | None = (
-        _conv_row.percentile if _conv_row is not None else None
+    section2_score_gap_conv_percentile: float | None = _aggregate_per_tc_percentile(
+        _effective_rows.get("section2_score_gap_conv")
     )
-    _parity_row = _effective_rows.get("section2_score_gap_parity")
-    section2_score_gap_parity_percentile: float | None = (
-        _parity_row.percentile if _parity_row is not None else None
+    section2_score_gap_parity_percentile: float | None = _aggregate_per_tc_percentile(
+        _effective_rows.get("section2_score_gap_parity")
+    )
+    # Phase 94.4 D-05a: Recovery Score Gap chip RESCUED under peer-relative.
+    # The earlier D-12 "NO recovery percentile" suppression (Phase 94 global)
+    # is replaced — same-rated cohort comparison normalises the opponent-
+    # rating confound that drove the v1 drop. Wire the same aggregation as
+    # the other Section 2 ΔES chips; the residual opponent-selection
+    # confound reads honestly in the tooltip framing.
+    recovery_score_gap_percentile: float | None = _aggregate_per_tc_percentile(
+        _effective_rows.get("recovery_score_gap")
     )
 
     return ScoreGapMaterialResponse(
@@ -1417,7 +1483,11 @@ def _compute_score_gap_material(
         section2_score_gap_recov_p_value=recov_p,
         section2_score_gap_recov_ci_low=recov_ci_lo,
         section2_score_gap_recov_ci_high=recov_ci_hi,
-        # Phase 94 (D-12): NO recovery percentile — out of scope.
+        # Phase 94.4 D-05a: Recovery Score Gap chip RESCUED — see field
+        # docstring on ScoreGapMaterialResponse.recovery_score_gap_percentile
+        # for the peer-relative rationale that overrides the earlier Phase
+        # 94 global-CDF suppression.
+        recovery_score_gap_percentile=recovery_score_gap_percentile,
         # Phase 87.4 (D-05): section2_score_gap_skill_* and
         # endgame_skill_rate_mean kwargs dropped — fields removed from the
         # Pydantic model in app/schemas/endgames.py.
@@ -1886,48 +1956,19 @@ def _build_quintile_bullets(
     return bullets
 
 
-# Phase 94.3: per-TC chip flavor → CdfMetricId key mapping. Used by
-# _compute_time_pressure_cards to look up the 3 per-(metric × TC) percentiles
-# in the materialised percentile_rows mapping. The triple is ordered
-# (time_pressure_score_gap, clock_gap, net_flag_rate) — same as the field order
-# on TimePressureTcCard. Building the mapping as a typed dict avoids the need
-# for an "assignment" ignore on f-string Literal inference (PATTERNS.md
-# §_compute_time_pressure_cards lines 540-544).
-# TODO Plan 05 (94.4-05): cut over to per-(family × TC) lookup keying. Plan 04
-# collapsed CdfMetricId 16 → 8 — the TC-suffixed string literals below are no
-# longer members of CdfMetricId. Widen the tuple element type to ``str`` as a
-# transient stub until Plan 05 replaces this dict with the new shape.
-_TC_TO_METRIC_KEYS: dict[
-    Literal["bullet", "blitz", "rapid", "classical"],
-    tuple[str, str, str],
-] = {
-    "bullet": (
-        "time_pressure_score_gap_bullet",
-        "clock_gap_bullet",
-        "net_flag_rate_bullet",
-    ),
-    "blitz": (
-        "time_pressure_score_gap_blitz",
-        "clock_gap_blitz",
-        "net_flag_rate_blitz",
-    ),
-    "rapid": (
-        "time_pressure_score_gap_rapid",
-        "clock_gap_rapid",
-        "net_flag_rate_rapid",
-    ),
-    "classical": (
-        "time_pressure_score_gap_classical",
-        "clock_gap_classical",
-        "net_flag_rate_classical",
-    ),
-}
+# Phase 94.4 D-08 / RESEARCH line 1117: Time Pressure family chips BYPASS the
+# per-page aggregation helper. Each TC card renders an independent chip, so
+# the per-(metric, tc) row is read directly from the nested fetch_for_user
+# dict (Plan 05a shape: dict[CdfMetricId, dict[TimeControlBucket,
+# PercentileRow]]). The legacy ``_TC_TO_METRIC_KEYS`` lookup table is gone —
+# the 8-value CdfMetricId ENUM (D-13) no longer carries TC-suffixed members,
+# and dimensionality moved into the inner-dict TC key.
 
 
 def _compute_time_pressure_cards(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
     *,
-    percentile_rows: Mapping[CdfMetricId, PercentileRow] | None = None,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
 ) -> TimePressureCardsResponse:
     """Compute per-TC time pressure cards from clock_rows.
 
@@ -1961,10 +2002,11 @@ def _compute_time_pressure_cards(
         tc_clock_agg,
     ) = _iterate_clock_rows(clock_rows)
 
-    # Mirror the _compute_score_gap_material pattern (lines 1371-1389): an
-    # empty mapping when percentile_rows is None lets .get() return None
-    # uniformly without per-call None-guards.
-    _effective_rows: Mapping[CdfMetricId, PercentileRow] = (
+    # Phase 94.4 D-08: nested per-(metric, TC) shape. Mirror the
+    # _compute_score_gap_material pattern: an empty mapping when
+    # percentile_rows is None lets .get() return None uniformly without
+    # per-call None-guards.
+    _effective_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] = (
         percentile_rows if percentile_rows is not None else {}
     )
 
@@ -2001,17 +2043,19 @@ def _compute_time_pressure_cards(
             else 0.0
         )
 
-        # Phase 94.3: per-(metric × TC) percentile lookup. _TC_TO_METRIC_KEYS
-        # gives back the 3 typed CdfMetricId keys for this TC; each row may be
-        # absent (None) when the user is below the pooled ≥30 floor on that TC.
+        # Phase 94.4 D-08 / RESEARCH line 1117: per-(metric × TC) percentile
+        # lookup BYPASSES the page-level _aggregate_per_tc_percentile helper.
+        # Each TC card renders its own independent chip, so we read the
+        # per-TC PercentileRow directly from the nested dict
+        # (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]). The
+        # legacy TC-suffixed CdfMetricId keys (time_pressure_score_gap_bullet,
+        # clock_gap_blitz, etc.) are gone — Plan 05a collapsed the ENUM to 8
+        # family-level values and moved TC dimensionality into the inner key.
         tc_literal = cast(Literal["bullet", "blitz", "rapid", "classical"], tc)
-        tps_key, cg_key, nf_key = _TC_TO_METRIC_KEYS[tc_literal]
-        # TODO Plan 05 (94.4-05): cut over to per-(family × TC) lookup keying.
-        # The keys here carry the legacy TC-suffixed names which are no longer
-        # members of CdfMetricId; cast through the broader Mapping API surface.
-        tps_row = _effective_rows.get(tps_key)  # ty: ignore[invalid-argument-type]
-        cg_row = _effective_rows.get(cg_key)  # ty: ignore[invalid-argument-type]
-        nf_row = _effective_rows.get(nf_key)  # ty: ignore[invalid-argument-type]
+        tc_bucket: TimeControlBucket = tc_literal
+        tps_row = _effective_rows.get("time_pressure_score_gap", {}).get(tc_bucket)
+        cg_row = _effective_rows.get("clock_gap", {}).get(tc_bucket)
+        nf_row = _effective_rows.get("net_flag_rate", {}).get(tc_bucket)
 
         cards.append(
             TimePressureTcCard(
@@ -2251,7 +2295,7 @@ def _get_endgame_performance_from_rows(
     endgame_rows: list[Row[Any]],
     non_endgame_rows: list[Row[Any]],
     bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
-    percentile_rows: Mapping[CdfMetricId, PercentileRow] | None = None,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
 ) -> EndgamePerformanceResponse:
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 
@@ -2413,11 +2457,12 @@ def _get_endgame_performance_from_rows(
     # current_user.id (V4 — never accept user_id as query param).
     # The per-request N-gate is removed: the table's percentile column is already
     # NULL when below the inclusion floor (set during Stage A/B compute).
-    _achievable_row = (
+    # Phase 94.4 D-08 / D-08b: percentile_rows is nested
+    # (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]); aggregate
+    # via the game-count-weighted mean helper to produce the page-level chip
+    # scalar for Achievable Score Gap.
+    achievable_score_gap_percentile: float | None = _aggregate_per_tc_percentile(
         percentile_rows.get("achievable_score_gap") if percentile_rows is not None else None
-    )
-    achievable_score_gap_percentile: float | None = (
-        _achievable_row.percentile if _achievable_row is not None else None
     )
 
     return EndgamePerformanceResponse(
@@ -2977,6 +3022,35 @@ async def get_endgame_overview(
         opponent_gap_max=opponent_gap_max,
     )
 
+    # Phase 94.4 D-07 bullet 4: populate the top-level rating_anchors block
+    # so the percentile chip tooltip can render its 4th bullet (provenance:
+    # which TC's anchor drove the chip, and for chess.com sources, the raw
+    # pre-conversion rating). The repository call is V4-scoped — user_id is
+    # the authenticated user's PK from the FastAPI-Users dep, never sourced
+    # from a query/path param. `chesscom_raw_rating` is populated on the
+    # underlying RatingAnchorRow at compute time by
+    # compute_anchors_for_user (Plan 05b — captures the raw chess.com
+    # median PRE-conversion); we project it through unchanged here.
+    #
+    # W4 deferral (multi-TC footnote): for aggregated page-level chips, the
+    # dominant-TC anchor approach lives at the frontend (Plan 07 picks the
+    # dominant TC's anchor from this dict). The "+ N other TCs" footnote is
+    # intentionally DEFERRED to a v1.1 of the tooltip — current scope ships
+    # the dominant-TC disclosure with the aggregated framing of bullet 1
+    # ("Compared to other ~{anchor}-rated players, aggregated across the
+    # time controls you play.") covering honesty. See Plan 07's tooltip
+    # body builder for the consumption side.
+    anchors = await fetch_anchors_for_user(session, user_id=user_id)
+    rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = {
+        tc: RatingAnchorOut(
+            anchor_rating=row.anchor_rating,
+            source_platform=row.source_platform,
+            chesscom_raw_rating=row.chesscom_raw_rating,
+            n_games=row.n_games,
+        )
+        for tc, row in anchors.items()
+    }
+
     return EndgameOverviewResponse(
         stats=stats,
         performance=performance,
@@ -2985,4 +3059,5 @@ async def get_endgame_overview(
         time_pressure_cards=time_pressure_cards,
         clock_diff_timeline=clock_diff_timeline,
         endgame_elo_timeline=endgame_elo_timeline,
+        rating_anchors=rating_anchors,
     )

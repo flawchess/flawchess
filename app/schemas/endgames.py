@@ -9,12 +9,43 @@ Provides response models for:
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.openings import GameRecord
 
 EndgameClass = Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"]
 EndgameLabel = Literal["Rook", "Minor Piece", "Pawn", "Queen", "Mixed", "Pawnless"]
+
+# Phase 94.4 D-07 bullet 4: time-control union used as the key type for the
+# rating_anchors block on EndgameOverviewResponse. Inline string union matches
+# the existing `tc: 'bullet' | 'blitz' | 'rapid' | 'classical'` pattern used on
+# TimePressureTcCard and EndgameEloTimelineCombo — no separate Literal alias is
+# defined elsewhere in this module.
+TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
+
+
+class RatingAnchorOut(BaseModel):
+    """Per-time-control rating anchor disclosure for the percentile chip tooltip.
+
+    Phase 94.4 D-07 bullet 4 surface — when `source_platform == 'chesscom'`,
+    `chesscom_raw_rating` is the user's pre-conversion chess.com rating; the
+    tooltip renders inline as e.g. "Anchored on your chess.com {tc}
+    ({chesscom_raw_rating} → {anchor_rating} Lichess-equivalent ...)". When
+    `source_platform == 'lichess'`, `chesscom_raw_rating` is None and the
+    tooltip drops the conversion clause. `anchor_rating` is always the
+    Lichess-equivalent (post-conversion for chess.com sources) since the cohort
+    CDF is keyed on Lichess ratings (RESEARCH Open Question 4, Plan 02 B3).
+
+    Provenance: populated from the `user_rating_anchors` row written by
+    `app/services/user_benchmark_percentiles_service.py::compute_anchors_for_user`
+    (Plan 05b — captures `chesscom_raw_rating` PRE-conversion when source is
+    chess.com).
+    """
+
+    anchor_rating: int
+    source_platform: Literal["lichess", "chesscom"]
+    chesscom_raw_rating: int | None = None
+    n_games: int
 
 
 class ConversionRecoveryStats(BaseModel):
@@ -495,10 +526,22 @@ class ScoreGapMaterialResponse(BaseModel):
     section2_score_gap_recov_p_value: float | None = None
     section2_score_gap_recov_ci_low: float | None = None
     section2_score_gap_recov_ci_high: float | None = None
-    # Phase 94 (D-12): NO recovery percentile field is emitted for the
-    # recovery bucket. Recovery is opponent-confounded (d=0.95 inverted) and
-    # the Phase 93 CDF does not ship a recovery breakpoint table. Do not add
-    # one here without revisiting D-12 and the methodology.
+    # Phase 94.4 D-05a (RESCUES Phase 94 D-12 suppression): Recovery Score
+    # Gap chip slot is restored under peer-relative. Under global, Recovery's
+    # d=0.95 inverted + opponent-confounded drove the v1 drop. Under
+    # peer-relative same-rated cohort comparison, the rating component of
+    # opponent strength normalises naturally; residual opponent-selection
+    # confound (challenging up vs farming down) is disclosed honestly via the
+    # tooltip's cohort-relative framing.
+    # Field name mirrors the MetricId literal "recovery_score_gap" used to
+    # key the per-(metric, TC) percentile rows in
+    # user_benchmark_percentiles.
+    recovery_score_gap_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of section2_score_gap_recov_mean vs the
+    Phase 94.4 per-(rating cohort, TC) CDF for the rescued recovery metric
+    (D-05a). None when (a) Stage B has not computed a row for any of the
+    user's TCs, or (b) every above-floor TC's percentile is None (CDF out of
+    range)."""
 
     # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
     # section2_score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
@@ -829,3 +872,14 @@ class EndgameOverviewResponse(BaseModel):
     time_pressure_cards: TimePressureCardsResponse  # Phase 88: per-TC time pressure cards
     clock_diff_timeline: ClockDiffTimelineResponse  # Plan 88-15 (CONTEXT §2 A-2): restored Average Clock Difference over Time line chart payload
     endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.5 D-06: paired Endgame ELO + Actual ELO series per (platform, TC) via additive K · eg_score_gap
+    # Phase 94.4 D-07 bullet 4 + RESEARCH Open Question 4: top-level
+    # rating-anchor disclosure block, keyed by time control. The percentile
+    # chip tooltip's 4th bullet renders one entry per TC the user has an
+    # anchor for; missing TCs (below the inclusion floor or conversion
+    # suppressed) are absent from the dict, not None. The structure is a
+    # top-level block — NOT embedded per-chip — so all chips on the page can
+    # read from the same shared map without duplicating the anchor across
+    # response sub-payloads. Default factory keeps existing constructor call
+    # sites (older tests that build EndgameOverviewResponse keyword-style
+    # without this arg) working.
+    rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = Field(default_factory=dict)

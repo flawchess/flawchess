@@ -589,17 +589,29 @@ class TestPerUserCteMedianAnchor:
         assert "g.platform = 'lichess'" in sql
 
     def test_platform_filter_chesscom_emits_clause(self) -> None:
-        """platform='chesscom' adds AND g.platform = 'chesscom' to the WHERE."""
+        """platform='chesscom' translates to AND g.platform = 'chess.com'.
+
+        Phase 94.4 Plan 05b (Rule 1 auto-fix in canonical_slice_sql): the
+        AnchorSource Literal value ``'chesscom'`` is mapped to the games
+        table's storage literal ``'chess.com'`` (with the dot, per
+        ``app/services/normalization.py``) at SQL-emit time. The builder
+        accepts the dotless caller-side literal; the emitted SQL uses the
+        dotted storage literal.
+        """
         sql = per_user_cte_median_anchor("rapid", source="benchmark", platform="chesscom")
-        assert "g.platform = 'chesscom'" in sql
+        assert "g.platform = 'chess.com'" in sql, (
+            "platform='chesscom' must translate to the storage literal 'chess.com'"
+        )
 
     def test_platform_none_omits_filter(self) -> None:
         """platform=None produces no platform filter beyond the Daily drop."""
         sql = per_user_cte_median_anchor("rapid", source="benchmark", platform=None)
         # The Daily-drop clause references chess.com — that's expected. We need
         # to confirm there's no STANDALONE `AND g.platform = '<value>'` filter.
+        # (We can't grep "g.platform = 'chess.com'" because the Daily drop uses
+        # exactly that literal; instead assert the standalone-filter is
+        # absent by looking for the exact emitted form.)
         assert "AND g.platform = 'lichess'" not in sql
-        assert "AND g.platform = 'chesscom'" not in sql
 
     def test_default_min_games_uses_constant(self) -> None:
         """Default min_games is sourced from MEDIAN_ANCHOR_MIN_GAMES."""

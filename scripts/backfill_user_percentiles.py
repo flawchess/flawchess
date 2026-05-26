@@ -91,10 +91,20 @@ from app.repositories.game_repository import count_pending_evals  # noqa: E402
 from app.services.global_percentile_cdf import CdfMetricId  # noqa: E402
 from app.services.user_benchmark_percentiles_service import (  # noqa: E402
     STAGE_A_METRIC,
-    STAGE_B_METRICS,
+    STAGE_B_METRIC_FAMILIES,
     compute_stage_a,
     compute_stage_b,
 )
+
+# Phase 94.4 Plan 05b cutover: STAGE_B_METRICS (legacy 12-tuple of
+# TC-suffixed names) was retired when CdfMetricId collapsed 16 → 8 and TC
+# dimensionality moved into user_benchmark_percentiles.time_control_bucket.
+# Existing call sites + tests still refer to the legacy name; alias it to
+# the new 7-tuple ``STAGE_B_METRIC_FAMILIES`` so this script stays a
+# drop-in until a follow-up scoped phase rewrites it for per-(family, TC)
+# summary keying. The semantic shift is: each entry no longer carries
+# inline TC dimensionality.
+STAGE_B_METRICS = STAGE_B_METRIC_FAMILIES
 
 # ---------------------------------------------------------------------------
 # Constants (CLAUDE.md: no magic numbers)
