@@ -57,6 +57,9 @@ def test_chesscom_blitz_to_lichess_blitz_exact_anchor() -> None:
 def test_chesscom_blitz_to_lichess_blitz_linear_interpolation() -> None:
     low = CHESSCOM_BLITZ_TO_LICHESS[1500]["blitz"]  # 1780
     high = CHESSCOM_BLITZ_TO_LICHESS[1550]["blitz"]  # 1815
+    # Narrow: Lichess Blitz column has no None entries in Table 2 (only
+    # `classical` does, at chess.com Blitz 2900/3000).
+    assert low is not None and high is not None
     result = convert_chesscom_to_lichess(1525, "blitz", "blitz")
     assert result is not None
     # Must lie strictly between the two endpoints (interpolation, not clamp).
@@ -203,14 +206,17 @@ def test_snapshot_constants() -> None:
 @pytest.mark.parametrize(
     ("accessor", "rating", "expected"),
     [
+        # Exact-anchor reads.
         (lookup_uscf_from_chesscom_blitz, 500, 715),
         (lookup_fide_from_chesscom_blitz, 500, 600),
-        (lookup_uscf_from_lichess_blitz, 1500, 1240),  # interpolated; see note
+        # Interpolated read: Lichess Blitz 1500 sits between anchors 1475
+        # (USCF=1280) and 1525 (USCF=1325). Linear interpolation: 1280 +
+        # (25/50)*(1325-1280) = 1280 + 22.5 ≈ 1302 (round-half-to-even).
+        (lookup_uscf_from_lichess_blitz, 1500, 1302),
     ],
 )
 def test_accessor_mid_range_hits(accessor, rating: int, expected: int) -> None:
     result = accessor(rating)
-    # The interpolation row note: Lichess Blitz 1500 is not an anchor (anchors
-    # jump from 1475 → 1525 around 1500). Allow ±5 Elo tolerance for interp.
+    # ±2 tolerance to absorb the rounding-direction ambiguity at .5 boundary.
     assert result is not None
-    assert abs(result - expected) <= 10
+    assert abs(result - expected) <= 2
