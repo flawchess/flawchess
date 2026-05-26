@@ -1322,8 +1322,7 @@ def _compute_score_gap_material(
     non_endgame_wdl: EndgameWDLSummary,
     entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
     *,
-    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]]
-    | None = None,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
     gaps_by_bucket: dict[str, list[float]] | None = None,
     timeline: list[ScoreGapTimelinePoint] | None = None,
     timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
@@ -1969,8 +1968,7 @@ def _build_quintile_bullets(
 def _compute_time_pressure_cards(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
     *,
-    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]]
-    | None = None,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
 ) -> TimePressureCardsResponse:
     """Compute per-TC time pressure cards from clock_rows.
 
@@ -2297,8 +2295,7 @@ def _get_endgame_performance_from_rows(
     endgame_rows: list[Row[Any]],
     non_endgame_rows: list[Row[Any]],
     bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
-    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]]
-    | None = None,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
 ) -> EndgamePerformanceResponse:
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 

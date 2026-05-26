@@ -53,7 +53,9 @@ _OPP_ELO_WITHIN_BAND: int = 1550  # within ±100 of _TEST_USER_ELO
 # without widening to str.
 from app.models.user_rating_anchors import TimeControlBucket as _TimeControlBucket  # noqa: E402
 
-_TC_BUCKET: _TimeControlBucket = "blitz"  # NOT classical — avoids any (2400, classical) intersection
+_TC_BUCKET: _TimeControlBucket = (
+    "blitz"  # NOT classical — avoids any (2400, classical) intersection
+)
 _TIME_CONTROL_SECONDS: int = 180  # blitz: <600s
 _ENDGAME_GAMES_ABOVE_FLOOR: int = 35  # > score_gap floor of 30
 _NON_ENDGAME_GAMES_ABOVE_FLOOR: int = 35  # > score_gap floor of 30

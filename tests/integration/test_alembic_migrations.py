@@ -62,10 +62,13 @@ def _migration_present() -> bool:
 # Row existence implies above-floor.
 # Phase 94.2 (D-9-amend): ``n_games`` re-added by migration b8f4d92c1e25 under
 # pooled-per-user semantics (one count per user per metric on the pooled set).
+# Phase 94.4 D-01 (Plan 05a migration 1945ae56aa20): the PK widens to include
+# ``time_control_bucket`` and the column is added to the table.
 _EXPECTED_COLUMNS: frozenset[str] = frozenset(
     {
         "user_id",
         "metric",
+        "time_control_bucket",
         "value",
         "percentile",
         "n_games",
@@ -81,7 +84,8 @@ _NULLABLE_COLUMNS: frozenset[str] = frozenset({"percentile"})
 _NOT_NULL_COLUMNS: frozenset[str] = _EXPECTED_COLUMNS - _NULLABLE_COLUMNS
 
 # The composite PK columns (order matters for the PRIMARY KEY constraint).
-_PK_COLUMNS: frozenset[str] = frozenset({"user_id", "metric"})
+# Phase 94.4 D-01: PK widens from 2 columns to 3 (Plan 05a migration).
+_PK_COLUMNS: frozenset[str] = frozenset({"user_id", "metric", "time_control_bucket"})
 
 pytestmark = pytest.mark.asyncio
 
@@ -185,7 +189,8 @@ async def test_user_benchmark_percentiles_upgrade(test_engine: AsyncEngine) -> N
         )
         pk_cols = {r[0] for r in pk_rows.fetchall()}
         assert pk_cols == _PK_COLUMNS, (
-            f"Primary key must be composite on (user_id, metric). Got {pk_cols}"
+            f"Primary key must be composite on (user_id, metric, time_control_bucket) "
+            f"per Phase 94.4 D-01. Got {pk_cols}"
         )
 
 

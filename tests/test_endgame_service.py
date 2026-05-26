@@ -4474,10 +4474,7 @@ class TestPercentileGates:
         assert result.recovery_score_gap_percentile is None
         # The legacy section2_* name remains absent — D-05a renames to
         # match the CdfMetricId literal.
-        assert (
-            "section2_score_gap_recov_percentile"
-            not in ScoreGapMaterialResponse.model_fields
-        )
+        assert "section2_score_gap_recov_percentile" not in ScoreGapMaterialResponse.model_fields
 
 
 # ── Phase 94.4 Plan 05c Task 2: _aggregate_per_tc_percentile helper ───────────
