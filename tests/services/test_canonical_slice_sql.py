@@ -27,6 +27,7 @@ from sqlalchemy import text
 
 from app.services.canonical_slice_sql import (
     CLOCK_GAP_MIN_POOL_N,
+    MEDIAN_ANCHOR_MIN_GAMES,
     NET_FLAG_RATE_MIN_POOL_N,
     RECENCY_WINDOW_MONTHS,
     RECENT_GAMES_PER_TC_CAP,
@@ -37,6 +38,7 @@ from app.services.canonical_slice_sql import (
     elo_bucket_expr,
     equal_footing_filter_sql,
     per_user_cte_for,
+    per_user_cte_median_anchor,
     selected_users_cte,
     sparse_exclusion_sql,
 )
@@ -534,3 +536,97 @@ class TestPerTcDispatcher:
             )
         else:
             assert "HAVING count(*) >= 30" in sql, f"pooled ≥30 HAVING missing for {metric_id}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.4 Plan 02 — per_user_cte_median_anchor SQL builder.
+# ---------------------------------------------------------------------------
+
+
+_MEDIAN_ANCHOR_TCS: tuple[TimeControlBucket, ...] = ("bullet", "blitz", "rapid", "classical")
+
+
+class TestPerUserCteMedianAnchor:
+    """Phase 94.4 D-04 / RESEARCH Pattern 6 — per-(user, TC) median rating anchor."""
+
+    def test_median_anchor_min_games_constant_is_30(self) -> None:
+        """MEDIAN_ANCHOR_MIN_GAMES constant locked to 30 per D-04."""
+        assert MEDIAN_ANCHOR_MIN_GAMES == 30
+
+    @pytest.mark.parametrize("tc", _MEDIAN_ANCHOR_TCS)
+    def test_median_anchor_emits_per_user_anchor_cte(self, tc: TimeControlBucket) -> None:
+        """Output includes a per_user_anchor CTE for every TC."""
+        sql = per_user_cte_median_anchor(tc, source="benchmark")
+        assert "per_user_anchor AS" in sql, f"per_user_anchor CTE missing for tc={tc!r}"
+
+    @pytest.mark.parametrize("tc", _MEDIAN_ANCHOR_TCS)
+    def test_median_anchor_uses_percentile_cont(self, tc: TimeControlBucket) -> None:
+        """SQL uses percentile_cont(0.5) WITHIN GROUP (RESEARCH Pattern 6)."""
+        sql = per_user_cte_median_anchor(tc, source="benchmark")
+        assert "percentile_cont(0.5)" in sql, f"median aggregate missing for tc={tc!r}"
+        assert "WITHIN GROUP" in sql, f"WITHIN GROUP clause missing for tc={tc!r}"
+
+    @pytest.mark.parametrize("tc", _MEDIAN_ANCHOR_TCS)
+    def test_daily_classical_drop_present_for_all_tcs(self, tc: TimeControlBucket) -> None:
+        """Daily-classical drop (RESEARCH Pitfall 11) is unconditional on tc.
+
+        The drop runs symmetrically for ALL 4 TCs: chess.com Daily games are
+        bucketed `classical` by the import pipeline but the median anchor
+        excludes them everywhere for structural symmetry (Pitfall 2).
+        """
+        sql = per_user_cte_median_anchor(tc, source="benchmark")
+        assert "g.platform = 'chess.com'" in sql, f"Daily drop chess.com clause missing for tc={tc!r}"
+        assert "time_control_str LIKE '1/%'" in sql, (
+            f"Daily LIKE '1/%' clause missing for tc={tc!r}"
+        )
+
+    def test_platform_filter_lichess_emits_clause(self) -> None:
+        """platform='lichess' adds AND g.platform = 'lichess' to the WHERE."""
+        sql = per_user_cte_median_anchor("rapid", source="benchmark", platform="lichess")
+        assert "g.platform = 'lichess'" in sql
+
+    def test_platform_filter_chesscom_emits_clause(self) -> None:
+        """platform='chesscom' adds AND g.platform = 'chesscom' to the WHERE."""
+        sql = per_user_cte_median_anchor("rapid", source="benchmark", platform="chesscom")
+        assert "g.platform = 'chesscom'" in sql
+
+    def test_platform_none_omits_filter(self) -> None:
+        """platform=None produces no platform filter beyond the Daily drop."""
+        sql = per_user_cte_median_anchor("rapid", source="benchmark", platform=None)
+        # The Daily-drop clause references chess.com — that's expected. We need
+        # to confirm there's no STANDALONE `AND g.platform = '<value>'` filter.
+        assert "AND g.platform = 'lichess'" not in sql
+        assert "AND g.platform = 'chesscom'" not in sql
+
+    def test_default_min_games_uses_constant(self) -> None:
+        """Default min_games is sourced from MEDIAN_ANCHOR_MIN_GAMES."""
+        sql = per_user_cte_median_anchor("rapid", source="benchmark")
+        assert f"HAVING count(*) >= {MEDIAN_ANCHOR_MIN_GAMES}" in sql
+        assert "HAVING count(*) >= 30" in sql  # belt-and-braces: also locked to 30
+
+    def test_min_games_override_substitutes_in_having(self) -> None:
+        """Explicit min_games override is f-stringed into the HAVING clause."""
+        sql = per_user_cte_median_anchor("rapid", source="benchmark", min_games=50)
+        assert "HAVING count(*) >= 50" in sql
+        assert "HAVING count(*) >= 30" not in sql, "Override must replace the default 30"
+
+    @pytest.mark.parametrize("tc", _MEDIAN_ANCHOR_TCS)
+    def test_emits_required_projection_columns(self, tc: TimeControlBucket) -> None:
+        """per_user_anchor projects user_id, anchor_rating, n_games for the JOIN."""
+        sql = per_user_cte_median_anchor(tc, source="benchmark")
+        # Locate the per_user_anchor block.
+        anchor_idx = sql.find("per_user_anchor AS")
+        assert anchor_idx != -1
+        block = sql[anchor_idx:]
+        assert "user_id" in block, f"user_id projection missing for tc={tc!r}"
+        assert "anchor_rating" in block, f"anchor_rating projection missing for tc={tc!r}"
+        assert "n_games" in block, f"n_games projection missing for tc={tc!r}"
+
+    def test_source_param_does_not_change_pooled_body(self) -> None:
+        """source='benchmark' vs source='single_user' emits identical pooled body."""
+        sql_bench = per_user_cte_median_anchor("rapid", source="benchmark")
+        sql_single = per_user_cte_median_anchor("rapid", source="single_user")
+        assert sql_bench == sql_single, (
+            "source parameter must not alter the pooled body — cohort difference "
+            "is exclusively in selected_users_cte (D-10)"
+        )
