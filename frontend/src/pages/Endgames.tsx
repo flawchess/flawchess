@@ -493,7 +493,11 @@ export function EndgamesPage() {
               </Accordion>
               <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Overall Performance</h2>
               {scoreGapData && (
-                <EndgameOverallPerformanceSection data={perfData} scoreGap={scoreGapData} />
+                <EndgameOverallPerformanceSection
+                  data={perfData}
+                  scoreGap={scoreGapData}
+                  ratingAnchors={overviewData?.rating_anchors}
+                />
               )}
               {scoreGapData && scoreGapData.timeline.length > 0 && (
                 <div className="charcoal-texture rounded-md p-4">
@@ -525,7 +529,10 @@ export function EndgamesPage() {
                   <h2 className="text-lg font-semibold text-foreground mt-2">
                     Endgame Metrics
                   </h2>
-                  <EndgameMetricsSection data={scoreGapData} />
+                  <EndgameMetricsSection
+                    data={scoreGapData}
+                    ratingAnchors={overviewData?.rating_anchors}
+                  />
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}
@@ -548,7 +555,10 @@ export function EndgamesPage() {
                   <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
                 </div>
               )}
-              <EndgameTimePressureSection data={timePressureCardsData} />
+              <EndgameTimePressureSection
+                data={timePressureCardsData}
+                ratingAnchors={overviewData?.rating_anchors}
+              />
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}

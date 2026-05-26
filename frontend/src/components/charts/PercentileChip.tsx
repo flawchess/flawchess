@@ -1,34 +1,35 @@
 /**
- * PercentileChip — Phase 94 (PCTL-03 / PCTL-04 / PCTL-05),
- *                  Phase 94.2 Plan 05 (PCTL-08 / PCTL-09),
- *                  Phase 94.3 Plan 06 (TPCTL-06 / TPCTL-07).
+ * PercentileChip — Phase 94.4 peer-relative rewrite.
  *
- * Inline pill chip that surfaces a user's cohort percentile against the
- * global CDF on the chipped metric rows. Banded color from theme.ts and a
- * Radix popover shell (hover + tap) with one popover body per metric-named
- * flavor.
+ * Per CONTEXT D-06: chip face renders the bare `p23` form. NO direction word
+ * (no "Top X%" / "Bottom X%"). NO flame icons. Color band (red < p25 / neutral
+ * p25-p75 / green > p75) carries direction. `MIN_PERCENT = 1` floor and p99
+ * ceiling preserved per D-06a. `aria-label` preserves a direction word for
+ * screen readers per D-06b.
  *
- * Phase 94.2 (D-4): popover body discloses 4 bullets per metric —
- *   1. benchmark composition,
- *   2. recent-games basis,
- *   3. filter independence,
- *   4. per-metric rating-correlation framing calibrated per Cohen's d
- *      (see reports/benchmarks-gap-metrics-percentile-candidacy.md).
- * This is the sanctioned exception to feedback_popover_copy_minimalism —
- * see feedback_percentile_chip_tooltip_disclosure (project memory).
+ * Per CONTEXT D-07: tooltip body is 4 bullets per chip:
+ *   1. Cohort framing (anchor + TC, inline; per-TC vs aggregated phrasing).
+ *   2. Recent-games basis (TC-scoped per Plan 05; vs +/-100 Elo opponents).
+ *   3. Filter independence (kept verbatim from 94.3, `COPY_FILTER_INDEPENDENCE`).
+ *   4. Rating-anchor disclosure (Lichess vs chess.com source; chess.com sources
+ *      with `chesscomRawRating` get the ChessGoals-snapshot conversion form).
  *
- * Phase 94.3 (D-2, D-3, D-13): flavor enum widened from 4 to 16 variants
- * (12 per-(metric × TC) chips for Time Pressure family). A flavor-bound
- * DIRECTION_BY_FLAVOR map drives a direction axis (`higher_is_better` is the
- * only direction used today — the `lower_is_better` plumbing is kept intact
- * for future inverse-metric chips). For per-TC flavors (any flavor with a
- * TC suffix), bullets 1 and 2 become TC-scoped per D-13; bullet 4 carries
- * per-(metric × TC) copy lifted verbatim from Plan A's candidacy report.
+ * Per CONTEXT D-07a: the 16-variant flavor enum collapses to 8 (5 page-level
+ * aggregated + 3 per-TC families). All 8 flavors are `higher_is_better`
+ * post-94.4 — `DIRECTION_BY_FLAVOR`, `RATING_NOTE_BY_FLAVOR`, all 12
+ * `COPY_RATING_NOTE_*` constants, and `formatTopXPercent` retire. Net Flag
+ * Rate's inversion is handled at the data layer (Plan 04) — its CDF is
+ * already inverted so the chip stays `higher_is_better`.
  *
- * Phase 94.3 UAT correction: net_flag_rate was originally mapped to
- * `lower_is_better` but the metric is (timeout_wins − timeout_losses) / total,
- * so higher IS better. The DB percentile was correct all along; only the
- * chip direction map was wrong. Now all 16 flavors are `higher_is_better`.
+ * Per CONTEXT D-05a: Recovery Score Gap chip is RESCUED under peer-relative
+ * (same-rated cohort comparison normalises the opponent-rating confound that
+ * drove the v1 drop). A new `recovery` flavor is added.
+ *
+ * HARD CONSTRAINT — NO FLAME ICON. `Flame` from `lucide-react` MUST NOT be
+ * imported here. No tier thresholds (no `TIER_BREAKPOINTS`, no `p90`/`p95`/`p99`
+ * icon overlays). Flame logic was removed in commit `6766898c` and remains
+ * forbidden. Vitest Test 9 explicitly asserts NO flame icon at every
+ * percentile in [1, 23, 50, 75, 90, 95, 99] as the regression guard.
  *
  * Trigger is the chip itself (D-01) — no adjacent HelpCircle. Popover shell
  * mechanics mirror MetricStatPopover (HOVER_OPEN_DELAY_MS=100, identical
@@ -44,8 +45,9 @@ import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 const HOVER_OPEN_DELAY_MS = 100;
 const PERCENTILE_BAND_LOW = 25;
 const PERCENTILE_BAND_HIGH = 75;
-const PERCENTILE_MEDIAN = 50; // ≤ → "Bottom X%", > → "Top X%"
-const MIN_PERCENT = 1; // floor for label formatter — prevents "Top 0%" / "Bottom 0%" at edge percentiles
+const PERCENTILE_MEDIAN = 50; // < → "bottom" in aria-label; >= → "top"
+const MIN_PERCENT = 1; // floor — no "p0"
+const MAX_PERCENT = 99; // ceiling — no "p100"
 
 // Sole hard-coded color in this component. Justification: the chip's text
 // renders in near-white on top of all three band colors (red / blue / green).
@@ -53,289 +55,144 @@ const MIN_PERCENT = 1; // floor for label formatter — prevents "Top 0%" / "Bot
 // so it does not earn a theme.ts entry.
 const CHIP_TEXT_COLOR = 'oklch(0.98 0 0)';
 
-// ── D-4 popover-body copy constants ────────────────────────────────────────
-// Three always-present blocks (benchmark composition, recent-games basis,
-// filter independence) + one per-metric rating-correlation block calibrated
-// per Cohen's d from reports/benchmarks-gap-metrics-percentile-candidacy.md.
-const COPY_RECENT_GAMES_BASIS =
-  'Uses your most recent 1000 rated games per time control, played against opponents of similar strength (+/-100 ELO) over the last 3 years.';
+// Phase 94.3 D-3: kept verbatim from the post-94.3 module — preserves the
+// existing UI filter-independence promise on the chip's 3rd bullet.
 const COPY_FILTER_INDEPENDENCE = 'UI filters do not affect this percentile.';
 
-/**
- * Phase 94.3 D-13: per-TC variant of `COPY_RECENT_GAMES_BASIS`. When called
- * with a TC name, returns the TC-scoped wording for bullet 2; called with
- * `undefined`, returns the original pooled-across-TC wording. Keeps both
- * call paths grep-able under one helper.
- */
-function recentGamesBasisFor(tc: string | undefined): string {
-  if (tc === undefined) return COPY_RECENT_GAMES_BASIS;
-  return `Uses your most recent 1000 rated games in ${tc} (last 36 months), played against opponents of similar strength (+/-100 ELO).`;
-}
+// Phase 94.4 D-07 bullet 4: ChessGoals-snapshot conversion disclosure. The
+// snapshot date is the date the rating conversion table was captured; it ships
+// frozen with this build. Updating it is a CHIP_TEXT-style content change.
+// Reads in the rendered bullet 4 as: "... via ChessGoals snapshot 2026-05-26."
+const CHESSGOALS_SNAPSHOT_DATE = '2026-05-26';
 
 /**
- * Returns the "bottom/top X%" framing used in popover bullet 1, mirroring the
- * chip-face logic in `formatTopXPercent`: pct ≤ 50 → "bottom X%", pct > 50 →
- * "top (100−X)%" for `higher_is_better`; symmetrically inverted for
- * `lower_is_better`. Both branches floor at 1% so the popover never reads
- * "bottom 0%" / "top 0%" at edge percentiles.
+ * Time-control bucket Literal — mirrors the backend `TimeControlBucket` Literal
+ * (`Literal["bullet", "blitz", "rapid", "classical"]`) so chip callers can
+ * pass values from `EndgameOverviewResponse.rating_anchors` keys directly.
  */
-function formatBottomOrTopPhrase(
-  pct: number,
-  direction: PercentileChipDirection,
-): { kind: 'bottom' | 'top'; value: number } {
-  const isLowHalf = pct <= PERCENTILE_MEDIAN;
-  const isBottom =
-    direction === 'higher_is_better' ? isLowHalf : !isLowHalf;
-  const rawValue = isLowHalf ? pct : 100 - pct;
-  return { kind: isBottom ? 'bottom' : 'top', value: Math.max(MIN_PERCENT, Math.round(rawValue)) };
-}
+export type TimeControlBucket = 'bullet' | 'blitz' | 'rapid' | 'classical';
 
 /**
- * 16 metric-named flavor variants. The original 4 (kebab-case) map 1:1 to
- * Phase 94.2 ΔES chips; the 12 new (snake_case) map 1:1 to backend metric
- * IDs for the Phase 94.3 per-TC Time Pressure family. The case mismatch is
- * intentional (RESEARCH §Pattern 7): backend↔flavor grep stays trivial for
- * the new variants without churning the existing 4.
+ * 8-value flavor enum per CONTEXT D-07a + RESEARCH Pattern 7. The 12
+ * composite TC-suffixed flavors (post-94.3) RETIRED. Per-TC chips now thread
+ * the TC through an optional `tc` prop; the flavor names the metric family.
  */
 export type PercentileChipFlavor =
   | 'score-gap'
   | 'achievable'
   | 'parity'
   | 'conversion'
-  // Phase 94.3 per-(metric × TC) flavors (CONTEXT.md D-7).
-  | 'time_pressure_score_gap_bullet'
-  | 'time_pressure_score_gap_blitz'
-  | 'time_pressure_score_gap_rapid'
-  | 'time_pressure_score_gap_classical'
-  | 'clock_gap_bullet'
-  | 'clock_gap_blitz'
-  | 'clock_gap_rapid'
-  | 'clock_gap_classical'
-  | 'net_flag_rate_bullet'
-  | 'net_flag_rate_blitz'
-  | 'net_flag_rate_rapid'
-  | 'net_flag_rate_classical';
-
-/** Phase 94.3 D-2: chip direction axis. `lower_is_better` flips text
- *  formatter and band color. */
-export type PercentileChipDirection = 'higher_is_better' | 'lower_is_better';
-
-// Canonical user-facing metric labels per flavor. Single source of truth so the
-// rating-note copy below cannot drift from the names rendered in card headers,
-// tooltips, and aria labels.
-export const PERCENTILE_METRIC_LABELS = {
-  'score-gap': 'Endgame Score Gap',
-  achievable: 'Achievable Score Gap',
-  parity: 'Parity Score Gap',
-  conversion: 'Conversion Score Gap',
-  // Phase 94.3 per-TC labels — user-readable, mirror the parent metric name
-  // with the TC suffix in parens.
-  time_pressure_score_gap_bullet: 'Time Pressure Score Gap (bullet)',
-  time_pressure_score_gap_blitz: 'Time Pressure Score Gap (blitz)',
-  time_pressure_score_gap_rapid: 'Time Pressure Score Gap (rapid)',
-  time_pressure_score_gap_classical: 'Time Pressure Score Gap (classical)',
-  clock_gap_bullet: 'Clock Gap (bullet)',
-  clock_gap_blitz: 'Clock Gap (blitz)',
-  clock_gap_rapid: 'Clock Gap (rapid)',
-  clock_gap_classical: 'Clock Gap (classical)',
-  net_flag_rate_bullet: 'Net Flag Rate (bullet)',
-  net_flag_rate_blitz: 'Net Flag Rate (blitz)',
-  net_flag_rate_rapid: 'Net Flag Rate (rapid)',
-  net_flag_rate_classical: 'Net Flag Rate (classical)',
-} as const satisfies Record<PercentileChipFlavor, string>;
-
-// Per-metric rating-correlation framing (lower Cohen's d → more rating-invariant).
-// Phase 94.2 originals:
-const COPY_RATING_NOTE_SCORE_GAP =
-  `${PERCENTILE_METRIC_LABELS['score-gap']} is mostly independent of rating, so this reflects endgame ability separate from overall strength.`;
-const COPY_RATING_NOTE_ACHIEVABLE =
-  `${PERCENTILE_METRIC_LABELS.achievable} mildly correlates with rating.`;
-const COPY_RATING_NOTE_PARITY = `${PERCENTILE_METRIC_LABELS.parity} mildly correlates with rating.`;
-const COPY_RATING_NOTE_CONVERSION =
-  `${PERCENTILE_METRIC_LABELS.conversion} tracks rating strongly: stronger players tend to score higher here because they blunder less when up material.`;
-
-// Phase 94.3 per-(metric × TC) rating-correlation copy. Lifted verbatim from
-// reports/benchmarks-gap-metrics-percentile-candidacy.md §"Time Pressure
-// metric family (Phase 94.3)" → "12-cell tier table" → "Tooltip 4th-bullet
-// copy" column. Per the candidacy report, all 4 net_flag_rate_{tc} cells land
-// in the same "mild coupling" tier (d ∈ [0.24, 0.32]); copy varies only in
-// the TC token and the per-TC nuance noted in the report.
-const COPY_RATING_NOTE_TPSG_BULLET =
-  'This bullet score-gap partly tracks rating, so stronger players tend to absorb time pressure better; positive = you score higher under pressure than your opponents do.';
-const COPY_RATING_NOTE_TPSG_BLITZ =
-  'This blitz score-gap partly tracks rating, so stronger players tend to score higher under pressure; positive = you outperform your opponents when the clock burns.';
-const COPY_RATING_NOTE_TPSG_RAPID =
-  'This rapid score-gap tracks rating strongly: stronger players score much higher under pressure; positive = you outperform your opponents when the clock burns.';
-const COPY_RATING_NOTE_TPSG_CLASSICAL =
-  'This classical score-gap is not measured against enough players to characterise; positive = you outperform your opponents when the clock burns.';
-const COPY_RATING_NOTE_CLOCK_BULLET =
-  'This bullet clock-management gap is mostly independent of rating; positive = you reach endgames with more clock left than your opponents do.';
-const COPY_RATING_NOTE_CLOCK_BLITZ =
-  'This blitz clock-management gap slightly tracks rating; positive = you reach endgames with more clock left than your opponents do.';
-const COPY_RATING_NOTE_CLOCK_RAPID =
-  'This rapid clock-management gap is mostly independent of rating; positive = you reach endgames with more clock left than your opponents do.';
-const COPY_RATING_NOTE_CLOCK_CLASSICAL =
-  'This classical clock-management gap is mostly independent of rating; positive = you reach endgames with more clock left than your opponents do.';
-const COPY_RATING_NOTE_NFR_BULLET =
-  'At bullet, net flag rate slightly tracks rating (stronger players win more on time than they lose); positive = your opponents flag more than you do.';
-const COPY_RATING_NOTE_NFR_BLITZ =
-  'At blitz, net flag rate slightly tracks rating; positive = your opponents flag more than you do.';
-const COPY_RATING_NOTE_NFR_RAPID =
-  'At rapid, net flag rate slightly tracks rating; positive = your opponents flag more than you do.';
-const COPY_RATING_NOTE_NFR_CLASSICAL =
-  'At classical, net flag rate slightly tracks rating; positive = your opponents flag more than you do.';
-
-// Exhaustive flavor → rating-note lookup. `satisfies` gives a compile-time
-// guarantee every variant has a copy string; adding a 17th flavor without
-// a copy entry would fail tsc.
-const RATING_NOTE_BY_FLAVOR = {
-  'score-gap': COPY_RATING_NOTE_SCORE_GAP,
-  achievable: COPY_RATING_NOTE_ACHIEVABLE,
-  parity: COPY_RATING_NOTE_PARITY,
-  conversion: COPY_RATING_NOTE_CONVERSION,
-  time_pressure_score_gap_bullet: COPY_RATING_NOTE_TPSG_BULLET,
-  time_pressure_score_gap_blitz: COPY_RATING_NOTE_TPSG_BLITZ,
-  time_pressure_score_gap_rapid: COPY_RATING_NOTE_TPSG_RAPID,
-  time_pressure_score_gap_classical: COPY_RATING_NOTE_TPSG_CLASSICAL,
-  clock_gap_bullet: COPY_RATING_NOTE_CLOCK_BULLET,
-  clock_gap_blitz: COPY_RATING_NOTE_CLOCK_BLITZ,
-  clock_gap_rapid: COPY_RATING_NOTE_CLOCK_RAPID,
-  clock_gap_classical: COPY_RATING_NOTE_CLOCK_CLASSICAL,
-  net_flag_rate_bullet: COPY_RATING_NOTE_NFR_BULLET,
-  net_flag_rate_blitz: COPY_RATING_NOTE_NFR_BLITZ,
-  net_flag_rate_rapid: COPY_RATING_NOTE_NFR_RAPID,
-  net_flag_rate_classical: COPY_RATING_NOTE_NFR_CLASSICAL,
-} as const satisfies Record<PercentileChipFlavor, string>;
-
-/**
- * Phase 94.3 D-2: direction axis per flavor. Post-UAT correction: all 16
- * flavors map to `higher_is_better` (net_flag_rate was incorrectly flipped
- * to `lower_is_better` in the original plan; see file-top docstring).
- * `satisfies Record<...>` is non-negotiable per RESEARCH §Pitfall 3 —
- * without it a future flavor addition could silently miss the map.
- * Consumers MUST bind through `PercentileChipDirection` (not infer) so the
- * `lower_is_better` branches remain reachable at the type level — see
- * `PercentileChipPopoverBody` and the chip body for the explicit annotation.
- */
-export const DIRECTION_BY_FLAVOR = {
-  'score-gap': 'higher_is_better',
-  achievable: 'higher_is_better',
-  parity: 'higher_is_better',
-  conversion: 'higher_is_better',
-  time_pressure_score_gap_bullet: 'higher_is_better',
-  time_pressure_score_gap_blitz: 'higher_is_better',
-  time_pressure_score_gap_rapid: 'higher_is_better',
-  time_pressure_score_gap_classical: 'higher_is_better',
-  clock_gap_bullet: 'higher_is_better',
-  clock_gap_blitz: 'higher_is_better',
-  clock_gap_rapid: 'higher_is_better',
-  clock_gap_classical: 'higher_is_better',
-  // Phase 94.3 UAT correction: net_flag_rate is `higher_is_better`. The
-  // metric is (timeout_wins − timeout_losses) / total_endgame_games, so a
-  // positive (higher) value means the user wins more on time than they lose.
-  // The percentile stored in the DB is already correct (ascending sort);
-  // the original Plan-F direction flip was the bug.
-  net_flag_rate_bullet: 'higher_is_better',
-  net_flag_rate_blitz: 'higher_is_better',
-  net_flag_rate_rapid: 'higher_is_better',
-  net_flag_rate_classical: 'higher_is_better',
-} as const satisfies Record<PercentileChipFlavor, PercentileChipDirection>;
-
-/**
- * Extracts the TC suffix from a per-TC flavor (e.g. `clock_gap_bullet` →
- * `'bullet'`). Returns `undefined` for the 4 original Phase 94.2 flavors so
- * callers can branch on per-TC vs pooled-across-TC framing.
- */
-function tcFromFlavor(flavor: PercentileChipFlavor): string | undefined {
-  const suffixes = ['bullet', 'blitz', 'rapid', 'classical'] as const;
-  for (const tc of suffixes) {
-    if (flavor.endsWith(`_${tc}`)) return tc;
-  }
-  return undefined;
-}
+  | 'recovery' // NEW — rescued under peer-relative per CONTEXT D-05a
+  | 'time-pressure-score-gap'
+  | 'clock-gap'
+  | 'net-flag-rate';
 
 export interface PercentileChipProps {
-  /** Backend cohort percentile in [0, 100]. Callers gate on `!= null` before rendering. */
+  /** Backend cohort percentile in [0, 100]. Caller gates on `!= null` before rendering. */
   percentile: number;
-  /** Routes the popover copy + direction axis. One value per chipped metric. */
+  /** Routes popover copy. One value per chipped metric family. */
   flavor: PercentileChipFlavor;
-  /** Used in aria-label and (optionally) popover heading. */
+  /** Required for per-TC chips (`time-pressure-score-gap`, `clock-gap`, `net-flag-rate`).
+   *  Page-level aggregated chips (`score-gap`, `achievable`, `parity`, `conversion`,
+   *  `recovery`) omit this prop — the chip is aggregated across TCs and the tooltip
+   *  frames as multi-TC. */
+  tc?: TimeControlBucket;
+  /** Anchor rating disclosed in popover bullet 4. Always the Lichess-equivalent
+   *  (post-conversion for chess.com sources). */
+  anchorRating: number;
+  /** Which platform's games produced the anchor — drives bullet 4's wording. */
+  anchorSource: 'lichess' | 'chesscom';
+  /** Raw chess.com rating pre-conversion; populated when `anchorSource === 'chesscom'`.
+   *  When omitted on a chess.com source, bullet 4 falls back to the simpler form. */
+  chesscomRawRating?: number;
+  /** User-facing metric label used in aria-label. */
   metricLabel: string;
   /** Becomes data-testid on the trigger; popover Content uses `${testId}-popover`. */
   testId: string;
 }
 
-function deriveBandColor(pct: number, direction: PercentileChipDirection): string {
-  if (direction === 'lower_is_better') {
-    // Low raw pct = fewer net timeouts = good (green); high raw pct = bad (red).
-    if (pct < PERCENTILE_BAND_LOW) return ZONE_SUCCESS;
-    if (pct > PERCENTILE_BAND_HIGH) return ZONE_DANGER;
-    return GAUGE_NEUTRAL;
-  }
-  // higher_is_better — Phase 94.2 logic preserved verbatim.
+/**
+ * Bare chip-face formatter — `p${rounded}` clamped to `[MIN_PERCENT, MAX_PERCENT]`.
+ * Replaces the post-94.3 `formatTopXPercent` (which carried a direction word).
+ */
+function formatBarePercentile(pct: number): string {
+  const rounded = Math.max(MIN_PERCENT, Math.min(MAX_PERCENT, Math.round(pct)));
+  return `p${rounded}`;
+}
+
+/**
+ * Single-branch band-color resolver. All 8 flavors are `higher_is_better`
+ * post-94.4 per CONTEXT D-07a (Net Flag Rate's inversion is handled at the
+ * Plan 04 CDF-gen layer — its cohort CDF is already inverted, so smaller raw
+ * values map to higher percentiles).
+ */
+function deriveBandColor(pct: number): string {
   if (pct < PERCENTILE_BAND_LOW) return ZONE_DANGER;
   if (pct > PERCENTILE_BAND_HIGH) return ZONE_SUCCESS;
   return GAUGE_NEUTRAL;
 }
 
-function formatTopXPercent(pct: number, direction: PercentileChipDirection): string {
-  if (direction === 'lower_is_better') {
-    // Raw percentile is position in ascending sort by raw value — for
-    // lower_is_better, low pct = top of cohort. So pct ≤ 50 → "Top pct%",
-    // pct > 50 → "Bottom (100−pct)%".
-    if (pct <= PERCENTILE_MEDIAN) return `Top ${Math.max(MIN_PERCENT, Math.round(pct))}%`;
-    return `Bottom ${Math.max(MIN_PERCENT, Math.round(100 - pct))}%`;
-  }
-  // higher_is_better — pct is the user's rank. pct ≤ 50 → user is in the
-  // bottom half ("Bottom pct%"); pct > 50 → user is in the top (100−pct)%.
-  if (pct <= PERCENTILE_MEDIAN) return `Bottom ${Math.max(MIN_PERCENT, Math.round(pct))}%`;
-  return `Top ${Math.max(MIN_PERCENT, Math.round(100 - pct))}%`;
+interface PopoverBodyProps {
+  tc: TimeControlBucket | undefined;
+  anchorRating: number;
+  anchorSource: 'lichess' | 'chesscom';
+  chesscomRawRating: number | undefined;
 }
 
 function PercentileChipPopoverBody({
-  flavor,
-  metricLabel,
-  percentile,
-}: {
-  flavor: PercentileChipFlavor;
-  metricLabel: string;
-  percentile: number;
-}): React.ReactElement {
-  // Cast widens the `as const`-narrowed map value to the full direction union
-  // so the `lower_is_better` branch below stays type-reachable while every
-  // flavor currently maps to `higher_is_better`. See `DIRECTION_BY_FLAVOR`.
-  const direction = DIRECTION_BY_FLAVOR[flavor] as PercentileChipDirection;
-  const ratingNote = RATING_NOTE_BY_FLAVOR[flavor];
-  const tc = tcFromFlavor(flavor);
-  const isLowerBetter = direction === 'lower_is_better';
-  // Phase 94.3 D-3: Net Flag chips prepend a "Lower is better" line. Only
-  // ever fires for `lower_is_better` flavors (none today after the UAT fix).
-  const lowerBetterLine = isLowerBetter && tc !== undefined
-    ? `Lower is better — you have fewer net timeouts than most ${tc} players.`
-    : null;
-  // Bullet 1 mirrors the chip face: "bottom X%" below the median, "top X%"
-  // above. The cohort scope reads as "in <tc>" for the 12 per-TC flavors and
-  // "of all ELO ratings and time controls" for the 4 pooled (Phase 94.2)
-  // flavors so the wording stays accurate against what the percentile spans.
-  const phrase = formatBottomOrTopPhrase(percentile, direction);
-  const cohortScope = tc !== undefined
-    ? `the benchmarked Lichess players in ${tc}`
-    : 'the benchmarked Lichess players of all ELO ratings and time controls';
-  const bullet1 = `Your ${metricLabel} is among the ${phrase.kind} ${phrase.value}% of ${cohortScope}.`;
+  tc,
+  anchorRating,
+  anchorSource,
+  chesscomRawRating,
+}: PopoverBodyProps): React.ReactElement {
+  // Per-TC chips use `${tc}` inline; aggregated chips use the multi-TC framing
+  // from CONTEXT D-07b ("aggregated across the time controls you play").
+  const bullet1 =
+    tc !== undefined
+      ? `Compared to other ~${anchorRating}-rated players in ${tc}.`
+      : `Compared to other ~${anchorRating}-rated players, aggregated across the time controls you play.`;
+  const bullet2 =
+    tc !== undefined
+      ? `Based on your most recent 1000 rated games in ${tc} over the last 36 months, vs opponents within +/-100 Elo.`
+      : `Based on your most recent 1000 rated games per time control over the last 36 months, vs opponents within +/-100 Elo.`;
+  const bullet3 = COPY_FILTER_INDEPENDENCE;
+  // CONTEXT D-07 bullet 4: dominant-TC anchor disclosure. For aggregated chips
+  // (`tc === undefined`), the bullet still names the dominant TC's anchor inline;
+  // bullet 1's "aggregated across the time controls you play" carries the
+  // honest multi-TC framing. See Plan 05c W4 deferral — the "+ N other TCs"
+  // footnote is deferred to a v1.1 tooltip rev.
+  const tcOrAgg = tc ?? 'rating per time control';
+  let bullet4: string;
+  if (anchorSource === 'lichess') {
+    bullet4 = `Anchored on your Lichess ${tcOrAgg} (${anchorRating}).`;
+  } else if (chesscomRawRating !== undefined) {
+    bullet4 = `Anchored on your chess.com ${tcOrAgg} (${chesscomRawRating} -> ${anchorRating} Lichess-equivalent via ChessGoals snapshot ${CHESSGOALS_SNAPSHOT_DATE}).`;
+  } else {
+    bullet4 = `Anchored on your chess.com ${tcOrAgg} (${anchorRating}).`;
+  }
   return (
     <div className="space-y-1.5">
-      {lowerBetterLine !== null && <p>{lowerBetterLine}</p>}
       <p>{bullet1}</p>
-      <p>{recentGamesBasisFor(tc)}</p>
-      <p>{COPY_FILTER_INDEPENDENCE}</p>
-      <p>{ratingNote}</p>
+      <p>{bullet2}</p>
+      <p>{bullet3}</p>
+      <p>{bullet4}</p>
     </div>
   );
 }
 
 export function PercentileChip({
   percentile,
-  flavor,
+  // `flavor` stays on PercentileChipProps as part of the typed API contract
+  // (consumers pass it so type narrowing at call sites is meaningful and the
+  // chip enum collapse stays grep-able from outside). It is intentionally NOT
+  // destructured here: post-94.4 the 4 popover bullets are identical across
+  // all 8 flavors (per CONTEXT D-07a — the per-metric rating-correlation
+  // copy retired), so the body has nothing to dispatch on. Reserved for
+  // future per-flavor copy variants without an API churn.
+  tc,
+  anchorRating,
+  anchorSource,
+  chesscomRawRating,
   metricLabel,
   testId,
 }: PercentileChipProps): React.ReactElement {
@@ -355,7 +212,7 @@ export function PercentileChip({
   }, []);
 
   const handleMouseEnter = (): void => {
-    // Clear any previously-scheduled open so a fast mouseenter→mouseleave→
+    // Clear any previously-scheduled open so a fast mouseenter->mouseleave->
     // mouseenter cycle doesn't orphan the first timer.
     if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
     hoverTimeout.current = setTimeout(() => setOpen(true), HOVER_OPEN_DELAY_MS);
@@ -369,9 +226,15 @@ export function PercentileChip({
     setOpen(false);
   };
 
-  const direction = DIRECTION_BY_FLAVOR[flavor];
-  const label = formatTopXPercent(percentile, direction);
-  const bandColor = deriveBandColor(percentile, direction);
+  const label = formatBarePercentile(percentile);
+  const bandColor = deriveBandColor(percentile);
+  // aria-label preserves a direction word for screen readers per CONTEXT D-06b.
+  // The rounded value uses the same clamp as the chip face so the aria-label and
+  // visible text agree on edge percentiles (no "p100" / "p0" drift).
+  const ariaRounded = Math.max(MIN_PERCENT, Math.min(MAX_PERCENT, Math.round(percentile)));
+  const directionWord = ariaRounded < PERCENTILE_MEDIAN ? 'bottom' : 'top';
+  const tcFragment = tc !== undefined ? ` in ${tc}` : '';
+  const ariaLabel = `${metricLabel} percentile: p${ariaRounded}${tcFragment}, ${directionWord} of cohort`;
 
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
@@ -379,15 +242,15 @@ export function PercentileChip({
         <span
           role="button"
           tabIndex={0}
-          aria-label={`${metricLabel} percentile: ${label}`}
+          aria-label={ariaLabel}
           data-testid={testId}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           className={cn(
-            // min-w-[6.5rem] sized so the longest label ("Bottom 50%") fits
-            // comfortably at text-sm. justify-center keeps shorter labels
-            // (e.g. "Top 1%") visually balanced inside the chip.
-            'inline-flex items-center justify-center gap-1 rounded-full px-2 py-0.5 text-sm font-normal cursor-pointer min-w-[6.5rem]',
+            // The bare-percentile form ("p23", up to "p99") is shorter than the
+            // pre-94.4 "Bottom 50%" form; min-w-[3rem] keeps the chip visually
+            // balanced without over-padding. text-sm is the CLAUDE.md minimum.
+            'inline-flex items-center justify-center gap-1 rounded-full px-2 py-0.5 text-sm font-normal cursor-pointer min-w-[3rem]',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
           style={{ backgroundColor: bandColor, color: CHIP_TEXT_COLOR }}
@@ -415,9 +278,10 @@ export function PercentileChip({
           )}
         >
           <PercentileChipPopoverBody
-            flavor={flavor}
-            metricLabel={metricLabel}
-            percentile={percentile}
+            tc={tc}
+            anchorRating={anchorRating}
+            anchorSource={anchorSource}
+            chesscomRawRating={chesscomRawRating}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
