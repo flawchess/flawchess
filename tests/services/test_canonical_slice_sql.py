@@ -750,3 +750,304 @@ class TestPitfall1UserIdWideningExistingBuilders:
         wrapped = f"WITH {preamble},\n{sql}\nSELECT user_id FROM per_user_values"
         compiled = text(wrapped).bindparams(user_id=42).compile()
         assert compiled is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.4 Plan 03 Task 2 — 4 new per-TC ΔES builders + section2 bucket_label
+# extension to include 'recovery'. RESEARCH Pattern 6 lines 569-669.
+# ---------------------------------------------------------------------------
+
+
+_NEW_PER_TC_TCS: tuple[TimeControlBucket, ...] = ("bullet", "blitz", "rapid", "classical")
+_SECTION2_BUCKETS: tuple[Literal["conversion", "parity", "recovery"], ...] = (
+    "conversion",
+    "parity",
+    "recovery",
+)
+
+
+class TestPerUserCteScoreGapTc:
+    """``per_user_cte_score_gap_tc(tc, *, source, snapshot_date)`` (Task 2.1)."""
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    @pytest.mark.parametrize("source", _SOURCES)
+    def test_emits_per_tc_predicate(
+        self, tc: TimeControlBucket, source: Literal["benchmark", "single_user"]
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
+
+        sql = per_user_cte_score_gap_tc(tc, source=source)
+        assert f"g.time_control_bucket = '{tc}'" in sql, (
+            f"per-TC predicate missing for tc={tc!r}/source={source!r}"
+        )
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    def test_per_user_values_projects_user_id_metric_value_n_games(
+        self, tc: TimeControlBucket
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
+
+        sql = per_user_cte_score_gap_tc(tc, source="benchmark")
+        block = _per_user_values_block(sql)
+        assert re.search(r"SELECT\s+user_id\s*,", block), (
+            f"per_user_values must project user_id for score_gap_tc({tc}) (Pitfall 1)"
+        )
+        assert "metric_value" in block
+        assert "n_games" in block
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    def test_metric_value_formula_matches_non_per_tc_analog(
+        self, tc: TimeControlBucket
+    ) -> None:
+        """metric_value formula mirrors per_user_cte_score_gap: eg_score - non_eg_score."""
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
+
+        sql = per_user_cte_score_gap_tc(tc, source="benchmark")
+        assert "(eg_score - non_eg_score) AS metric_value" in sql, (
+            f"score_gap metric_value formula divergent for tc={tc!r}"
+        )
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    def test_having_floors_match_non_per_tc_analog(self, tc: TimeControlBucket) -> None:
+        """HAVING gates both ≥30 (endgame + non-endgame) per D-6."""
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
+
+        sql = per_user_cte_score_gap_tc(tc, source="benchmark")
+        assert "HAVING count(*) FILTER (WHERE has_endgame)     >= 30" in sql
+        assert "AND count(*) FILTER (WHERE NOT has_endgame) >= 30" in sql
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    def test_pitfall_1_comment_present(self, tc: TimeControlBucket) -> None:
+        """Per-TC builders emitted in Task 2 also carry the Pitfall 1 comment."""
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
+
+        sql = per_user_cte_score_gap_tc(tc, source="benchmark")
+        block = _per_user_values_block(sql)
+        assert "user_id widened per Phase 94.4 Pitfall 1" in block
+
+    def test_source_mode_pooled_body_byte_identical(self) -> None:
+        """source='benchmark' vs source='single_user' emit identical pooled body."""
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
+
+        bm = per_user_cte_score_gap_tc("blitz", source="benchmark")
+        su = per_user_cte_score_gap_tc("blitz", source="single_user")
+        assert bm == su, (
+            "source parameter must not alter the pooled body for score_gap_tc "
+            "(D-10 byte-identical guarantee)"
+        )
+
+
+class TestPerUserCteAchievableTc:
+    """``per_user_cte_achievable_tc(tc, *, source, snapshot_date)`` (Task 2.2)."""
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    @pytest.mark.parametrize("source", _SOURCES)
+    def test_emits_per_tc_predicate(
+        self, tc: TimeControlBucket, source: Literal["benchmark", "single_user"]
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_achievable_tc
+
+        sql = per_user_cte_achievable_tc(tc, source=source)
+        assert f"g.time_control_bucket = '{tc}'" in sql
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    def test_per_user_values_projects_user_id_metric_value_n_games(
+        self, tc: TimeControlBucket
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_achievable_tc
+
+        sql = per_user_cte_achievable_tc(tc, source="benchmark")
+        block = _per_user_values_block(sql)
+        assert re.search(r"SELECT\s+user_id\s*,", block), (
+            f"per_user_values must project user_id for achievable_tc({tc}) (Pitfall 1)"
+        )
+        assert "metric_value" in block
+        assert "n_games" in block
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    def test_having_floor_matches_non_per_tc_analog(self, tc: TimeControlBucket) -> None:
+        """HAVING gate ≥30 on count(d_i IS NOT NULL) per D-6."""
+        from app.services.canonical_slice_sql import per_user_cte_achievable_tc
+
+        sql = per_user_cte_achievable_tc(tc, source="benchmark")
+        assert "HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= 30" in sql
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    def test_pitfall_1_comment_present(self, tc: TimeControlBucket) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_achievable_tc
+
+        sql = per_user_cte_achievable_tc(tc, source="benchmark")
+        block = _per_user_values_block(sql)
+        assert "user_id widened per Phase 94.4 Pitfall 1" in block
+
+    def test_source_mode_pooled_body_byte_identical(self) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_achievable_tc
+
+        bm = per_user_cte_achievable_tc("rapid", source="benchmark")
+        su = per_user_cte_achievable_tc("rapid", source="single_user")
+        assert bm == su
+
+
+class TestPerUserCteSection2Tc:
+    """``per_user_cte_section2_tc(tc, *, source, snapshot_date, bucket_label)`` (Task 2.4)."""
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    @pytest.mark.parametrize("source", _SOURCES)
+    def test_emits_per_tc_predicate_for_all_buckets(
+        self,
+        tc: TimeControlBucket,
+        bucket_label: Literal["conversion", "parity", "recovery"],
+        source: Literal["benchmark", "single_user"],
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+
+        sql = per_user_cte_section2_tc(tc, source=source, bucket_label=bucket_label)
+        assert f"g.time_control_bucket = '{tc}'" in sql
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    def test_per_user_values_projects_user_id_metric_value_n_games(
+        self,
+        tc: TimeControlBucket,
+        bucket_label: Literal["conversion", "parity", "recovery"],
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+
+        sql = per_user_cte_section2_tc(tc, source="benchmark", bucket_label=bucket_label)
+        block = _per_user_values_block(sql)
+        assert re.search(r"SELECT\s+user_id\s*,", block), (
+            f"per_user_values must project user_id for section2_tc({tc}, {bucket_label})"
+        )
+        assert "metric_value" in block
+        assert "n_games" in block
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    def test_emits_bucket_where_dispatch(
+        self,
+        tc: TimeControlBucket,
+        bucket_label: Literal["conversion", "parity", "recovery"],
+    ) -> None:
+        """``WHERE bucket = '{bucket_label}'`` dispatch is f-stringed correctly."""
+        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+
+        sql = per_user_cte_section2_tc(tc, source="benchmark", bucket_label=bucket_label)
+        assert f"WHERE bucket = '{bucket_label}'" in sql
+
+    def test_recovery_branch_returns_non_empty_sql(self) -> None:
+        """bucket_label='recovery' on per_user_cte_section2_tc emits valid SQL.
+
+        The recovery rows are produced by the existing gap_rows CASE
+        classification (entry_eval_mate < 0 user-color signed OR
+        entry_eval_cp * sign <= -100). The widening is purely at the Literal
+        type level + the bucket WHERE-clause dispatch.
+        """
+        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+
+        sql = per_user_cte_section2_tc("blitz", source="benchmark", bucket_label="recovery")
+        assert sql
+        assert "WHERE bucket = 'recovery'" in sql
+
+    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    def test_source_mode_pooled_body_byte_identical(
+        self, bucket_label: Literal["conversion", "parity", "recovery"]
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+
+        bm = per_user_cte_section2_tc("blitz", source="benchmark", bucket_label=bucket_label)
+        su = per_user_cte_section2_tc("blitz", source="single_user", bucket_label=bucket_label)
+        assert bm == su
+
+
+class TestPerUserCteSection2RecoveryWidening:
+    """The existing (non-per-TC) ``per_user_cte_section2`` accepts ``bucket_label='recovery'``.
+
+    Task 2.3 — the widening is purely at the Literal type level. The existing
+    ``gap_rows`` CASE already classifies recovery rows (lines 502-512 of
+    canonical_slice_sql.py): entry_eval_mate < 0 signed by user_color, OR
+    entry_eval_cp * sign <= -100. The downstream WHERE clause selects rows
+    where bucket = bucket_label, so 'recovery' just flips the dispatch.
+    """
+
+    def test_section2_accepts_recovery_bucket_label(self) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_section2
+
+        sql = per_user_cte_section2(source="benchmark", bucket_label="recovery")
+        assert sql
+        assert "WHERE bucket = 'recovery'" in sql
+
+    def test_section2_recovery_preserves_existing_conversion_parity_behavior(self) -> None:
+        """The existing conversion / parity dispatch is byte-identical post-widening."""
+        from app.services.canonical_slice_sql import per_user_cte_section2
+
+        sql_conv = per_user_cte_section2(source="benchmark", bucket_label="conversion")
+        sql_par = per_user_cte_section2(source="benchmark", bucket_label="parity")
+        assert "WHERE bucket = 'conversion'" in sql_conv
+        assert "WHERE bucket = 'parity'" in sql_par
+        # And the conversion/parity bodies still pool by user_id.
+        assert "GROUP BY user_id, bucket" in sql_conv
+        assert "GROUP BY user_id, bucket" in sql_par
+
+    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    def test_section2_source_mode_byte_identical_for_all_buckets(
+        self, bucket_label: Literal["conversion", "parity", "recovery"]
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_section2
+
+        bm = per_user_cte_section2(source="benchmark", bucket_label=bucket_label)
+        su = per_user_cte_section2(source="single_user", bucket_label=bucket_label)
+        assert bm == su
+
+    def test_section2_recovery_per_user_values_widening_optional(self) -> None:
+        """The non-per-TC ``per_user_cte_section2`` is NOT touched by Plan 03 Pitfall 1.
+
+        Pitfall 1 widening is scoped to per-TC builders only (Plan 04's cohort-CDF
+        JOIN consumes per-TC builders, not the non-per-TC family). The non-per-TC
+        section2 builder's per_user_values is allowed to omit user_id under Plan 03.
+        Plan 05 may revisit this when per-user service consumption is wired.
+        """
+        from app.services.canonical_slice_sql import per_user_cte_section2
+
+        sql = per_user_cte_section2(source="benchmark", bucket_label="recovery")
+        block = _per_user_values_block(sql)
+        # No Pitfall 1 comment — non-per-TC builder is out of Task 1/2 scope.
+        assert "user_id widened per Phase 94.4 Pitfall 1" not in block
+
+
+class TestPitfall1UserIdWideningNewBuilders:
+    """The 4 new Task 2 per-TC builders all project user_id (Pitfall 1).
+
+    This class covers the new builders explicitly so a regression in any
+    one is caught even if the per-builder test classes above are restructured.
+    Parametrized: 4 new builders × 4 TCs = 16 cells.
+    """
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    def test_score_gap_tc_user_id(self, tc: TimeControlBucket) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
+
+        sql = per_user_cte_score_gap_tc(tc, source="benchmark")
+        block = _per_user_values_block(sql)
+        assert re.search(r"SELECT\s+user_id\s*,", block)
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    def test_achievable_tc_user_id(self, tc: TimeControlBucket) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_achievable_tc
+
+        sql = per_user_cte_achievable_tc(tc, source="benchmark")
+        block = _per_user_values_block(sql)
+        assert re.search(r"SELECT\s+user_id\s*,", block)
+
+    @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
+    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    def test_section2_tc_user_id(
+        self,
+        tc: TimeControlBucket,
+        bucket_label: Literal["conversion", "parity", "recovery"],
+    ) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+
+        sql = per_user_cte_section2_tc(tc, source="benchmark", bucket_label=bucket_label)
+        block = _per_user_values_block(sql)
+        assert re.search(r"SELECT\s+user_id\s*,", block)
