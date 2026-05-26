@@ -105,8 +105,8 @@ def test_build_per_user_with_anchor_query_byte_identical_after_refactor(
     """
     expected = _load_golden(metric_id, tc)
     actual = _build_per_user_with_anchor_query(
-        metric_id,  # type: ignore[arg-type]
-        tc,  # type: ignore[arg-type]
+        metric_id,  # ty: ignore[invalid-argument-type]
+        tc,  # ty: ignore[invalid-argument-type]
         snapshot_date=_SNAPSHOT_DATE,
     )
     assert actual == expected, (
@@ -131,4 +131,6 @@ def test_fixture_directory_covers_all_in_scope_cells() -> None:
     missing = in_scope - fixture_names
     extra = fixture_names - in_scope
     assert not missing, f"Missing golden fixtures for: {sorted(missing)}"
-    assert not extra, f"Stale golden fixtures (not in IN_SCOPE_METRICS × ALL_TIME_CONTROLS): {sorted(extra)}"
+    assert not extra, (
+        f"Stale golden fixtures (not in IN_SCOPE_METRICS × ALL_TIME_CONTROLS): {sorted(extra)}"
+    )

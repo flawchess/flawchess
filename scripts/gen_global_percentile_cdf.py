@@ -319,10 +319,10 @@ def _build_per_user_with_anchor_query(
     # "recent_capped" specified more than once``. Rename the anchor block's
     # local CTEs to a unique prefix — they're internal to that block and only
     # the final ``per_user_anchor`` name is referenced by the outer SELECT.
-    anchor_block_renamed = anchor_block.replace(
-        "recent_capped AS (", "recent_capped_anchor AS ("
-    ).replace("recent_capped_no_daily", "recent_capped_anchor_no_daily").replace(
-        "FROM recent_capped rc", "FROM recent_capped_anchor rc"
+    anchor_block_renamed = (
+        anchor_block.replace("recent_capped AS (", "recent_capped_anchor AS (")
+        .replace("recent_capped_no_daily", "recent_capped_anchor_no_daily")
+        .replace("FROM recent_capped rc", "FROM recent_capped_anchor rc")
     )
     return f"""
 WITH {selected_users_cte(source="benchmark")},
