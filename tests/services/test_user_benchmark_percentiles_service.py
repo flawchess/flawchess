@@ -1,37 +1,43 @@
-"""Unit + Sentry-mock tests for user_benchmark_percentiles_service (Phase 94.2).
+"""Unit + real-DB tests for user_benchmark_percentiles_service (Phase 94.4 Plan 05b).
 
-Phase 94.2 (D-3a wave-1 cutover):
+Phase 94.4 Plan 05b rewrites the service to consume the cohort CDF artifact
+(``COHORT_PERCENTILE_CDF`` via ``interpolate_cohort_percentile``) and the
+per-(user, TC) median rating anchor (``user_rating_anchors``). The post-94.3
+``STAGE_B_METRICS`` 12-tuple retires; Stage B now iterates the 7-tuple
+``STAGE_B_METRIC_FAMILIES`` × the user's above-floor TCs.
 
-The 94.1 ``apply_floor`` dual-mode tests are gone — the pooled CTE has an
-unconditional ≥30 HAVING clause, so the parameter no longer exists. These
-tests cover the pooled-per-user compute path:
+Test coverage (10 behaviors per Plan 05b Task 2):
 
-- Pure-unit tests (mocked ``session.execute``) verify the SQL shape (single
-  query, no ``apply_floor`` kwarg, no ``avg(metric_value)`` wrapper) and the
-  return-type widening to ``tuple[float, int] | None``.
-- ``compute_stage_a`` / ``compute_stage_b`` public signatures are pinned via
-  ``inspect.signature`` so the Stage A/B trigger contract stays byte-identical
-  (PCTL-09).
-- Stage A/B fan-out tests assert ``upsert_percentile`` is called exactly the
-  right number of times and that ``n_games`` is threaded through correctly.
-- The real-DB zero-canonical-games happy path is preserved (asserts NO row
-  written when ``_compute_metric_for_user`` returns None).
-- Sentry-mock tests confirm exceptions are swallowed and ``set_context`` is
-  invoked with ``{"user_id": ..., "stage": "A" | "B"}`` (D-04, V4).
-
-Design decisions exercised:
-
-- D-04: Stage A/B non-blocking — exceptions swallowed, Sentry captured
-- D-9-amend: ``tuple[float, int] | None`` return contract
-- CLAUDE.md Sentry rules: ``set_context`` carries ``user_id``, message string
-  does NOT
-- V4 Information Disclosure guard: Sentry context must not leak user_id in
-  message
+  T1.  Stage A on a Lichess-only user (rapid) → anchor with
+       ``source_platform='lichess'`` and ``chesscom_raw_rating=None``.
+  T2.  Stage A on a chess.com-only user (blitz) → anchor with
+       ``source_platform='chesscom'``, ``chesscom_raw_rating`` populated
+       PRE-conversion, and ``anchor_rating`` set to the Lichess-equivalent
+       (D-07 bullet 4 + D-12).
+  T3.  Stage A on a mixed-platform user (rapid) → anchor with
+       ``source_platform='lichess'`` (D-12 Lichess-precedence).
+  T4.  Stage A on a chess.com-only Daily user (classical bucket) → NO
+       classical anchor row (chess.com Daily has no ChessGoals mapping;
+       convert_chesscom_to_lichess returns None, chip suppresses).
+  T5.  Stage A computes score_gap percentile ONLY for TCs where an anchor
+       exists.
+  T6.  Stage B fans out across STAGE_B_METRIC_FAMILIES (7-tuple) × the
+       user's anchored TCs.
+  T7.  ``upsert_percentile`` is called with the new 3-column PK tuple
+       (user_id, metric, time_control_bucket).
+  T8.  When ``interpolate_cohort_percentile`` returns None (suppressed
+       cell), the row still upserts with ``percentile=None`` and
+       ``value`` + ``n_games`` populated.
+  T9.  Sentry ``capture_exception`` fires on a metric-compute failure;
+       ``set_context`` carries the variable data per CLAUDE.md.
+  T10. ``chesscom_raw_rating`` round-trip — the persisted anchor's
+       ``chesscom_raw_rating`` matches the chess.com median BEFORE the
+       ChessGoals conversion (chess.com path) or is None (Lichess path).
 """
 
 from __future__ import annotations
 
-import inspect
+import datetime
 import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -40,193 +46,85 @@ import pytest
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.models.game import Game
 from app.models.user import User
-from app.repositories.user_benchmark_percentiles_repository import fetch_for_user
+from app.models.user_rating_anchors import TimeControlBucket
+from app.repositories.user_rating_anchors_repository import fetch_anchors_for_user
 from app.services import user_benchmark_percentiles_service as svc
+from app.services.chesscom_to_lichess import convert_chesscom_to_lichess
 from app.services.user_benchmark_percentiles_service import (
-    STAGE_B_METRICS,
-    _compute_metric_for_user,
+    STAGE_A_METRIC,
+    STAGE_B_METRIC_FAMILIES,
+    compute_anchors_for_user,
     compute_stage_a,
     compute_stage_b,
 )
 
-# ── Module-level constants (CLAUDE.md: no magic numbers) ─────────────────────
-_TEST_USER_ID: int = 99200  # unique per module to avoid FK conflicts
+# ── Module-level constants (CLAUDE.md no-magic-numbers) ──────────────────────
+
 _SENTRY_CONTEXT_KEY: str = "percentile_compute"
 _FAKE_VALUE: float = 0.05
 _FAKE_N_GAMES: int = 42
 
-# asyncio_mode = "auto" in pyproject.toml — async tests pick it up automatically.
-# We avoid module-level `pytestmark = pytest.mark.asyncio` so the sync signature
-# / introspection tests below do not emit "marked async but not async" warnings.
+# Median-anchor floor is 30 games (MEDIAN_ANCHOR_MIN_GAMES per
+# canonical_slice_sql). Seed comfortably above for the platform-mode tests.
+_ANCHOR_FLOOR_GAMES: int = 35
+_USER_RATING_LICHESS_RAPID: int = 1620
+_USER_RATING_CHESSCOM_BLITZ: int = 1330
+_OPP_RATING_OFFSET: int = 30  # within ±100 equal-footing tolerance
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helpers for the unit tests.
+# Test 6 / signature-preservation unit tests (no DB)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _make_mock_session_with_row(
-    value: float | None, n_games: int | None
-) -> tuple[MagicMock, AsyncMock]:
-    """Return (session_mock, execute_mock) where session.execute returns a row.
+def test_stage_a_metric_is_score_gap() -> None:
+    """Plan 05b: STAGE_A_METRIC stays ``score_gap`` (eval-independent)."""
+    assert STAGE_A_METRIC == "score_gap"
 
-    If ``value`` or ``n_games`` is None we return that None for the
-    corresponding attribute so the helper's ``row.value is None`` /
-    ``row.n_games is None`` guards exercise the early-return branch.
+
+def test_stage_b_metric_families_is_7_tuple() -> None:
+    """STAGE_B_METRIC_FAMILIES is the 7-tuple per CONTEXT D-13."""
+    assert isinstance(STAGE_B_METRIC_FAMILIES, tuple)
+    assert len(STAGE_B_METRIC_FAMILIES) == 7
+    assert STAGE_B_METRIC_FAMILIES == (
+        "achievable_score_gap",
+        "section2_score_gap_conv",
+        "section2_score_gap_parity",
+        "recovery_score_gap",
+        "time_pressure_score_gap",
+        "clock_gap",
+        "net_flag_rate",
+    )
+
+
+def test_stage_b_metric_families_excludes_score_gap() -> None:
+    """``score_gap`` is owned by Stage A — never iterated in Stage B."""
+    assert STAGE_A_METRIC not in STAGE_B_METRIC_FAMILIES
+
+
+def test_legacy_stage_b_metrics_constant_removed() -> None:
+    """Plan 05b retires the post-94.3 12-tuple ``STAGE_B_METRICS`` constant.
+
+    Acceptance criterion: ``grep STAGE_B_METRICS\\b`` returns 0 hits in the
+    service. Mirror the criterion at the Python level.
     """
-    row = MagicMock()
-    row.value = value
-    row.n_games = n_games
-
-    result = MagicMock()
-    result.fetchone.return_value = row
-
-    execute_mock = AsyncMock(return_value=result)
-    session = MagicMock()
-    session.execute = execute_mock
-    return session, execute_mock
-
-
-def _make_mock_session_with_no_row() -> tuple[MagicMock, AsyncMock]:
-    """Return (session_mock, execute_mock) where session.execute returns no row."""
-    result = MagicMock()
-    result.fetchone.return_value = None
-
-    execute_mock = AsyncMock(return_value=result)
-    session = MagicMock()
-    session.execute = execute_mock
-    return session, execute_mock
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Test 1 / Test 2: single query, no apply_floor / no per-cell averaging
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-async def test_compute_metric_runs_single_query() -> None:
-    """_compute_metric_for_user runs exactly one session.execute call."""
-    session, execute_mock = _make_mock_session_with_row(_FAKE_VALUE, _FAKE_N_GAMES)
-    await _compute_metric_for_user(session, _TEST_USER_ID, "score_gap")
-    assert execute_mock.call_count == 1, (
-        f"_compute_metric_for_user must run one query; got {execute_mock.call_count}"
-    )
-
-
-async def test_compute_metric_sql_omits_apply_floor_and_elo_bucket() -> None:
-    """The SQL passed to session.execute contains no apply_floor / elo_bucket."""
-    session, execute_mock = _make_mock_session_with_row(_FAKE_VALUE, _FAKE_N_GAMES)
-    await _compute_metric_for_user(session, _TEST_USER_ID, "score_gap")
-
-    # First positional arg to execute is the SQLAlchemy TextClause; render its text.
-    call_args = execute_mock.call_args
-    text_clause = call_args[0][0]
-    sql_text = str(text_clause)
-
-    assert "apply_floor" not in sql_text, "pooled compute must NOT reference apply_floor"
-    # `elo_bucket` must not appear inside the per_user_values projection.
-    # The pooled model groups by user_id only — any elo_bucket reference would
-    # indicate a regression to the 94.1 per-cell shape.
-    assert "elo_bucket" not in sql_text, (
-        "pooled compute must NOT project elo_bucket inside per_user_values"
-    )
-    assert "avg(metric_value)" not in sql_text, (
-        "pooled compute must NOT wrap metric_value in avg() — one row per user"
+    assert not hasattr(svc, "STAGE_B_METRICS"), (
+        "Legacy STAGE_B_METRICS constant must not be re-exported by the service module"
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Test 3 / Test 4: return-type widening + None on no row
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-async def test_compute_metric_returns_tuple_when_row_present() -> None:
-    """Returns ``tuple[float, int]`` (NOT a bare float) per D-9-amend."""
-    session, _ = _make_mock_session_with_row(_FAKE_VALUE, _FAKE_N_GAMES)
-    result = await _compute_metric_for_user(session, _TEST_USER_ID, "score_gap")
-
-    assert result is not None
-    assert isinstance(result, tuple), f"expected tuple, got {type(result).__name__}"
-    assert len(result) == 2
-    value, n_games = result
-    assert isinstance(value, float)
-    assert isinstance(n_games, int)
-    assert n_games >= 0
-    assert value == pytest.approx(_FAKE_VALUE)
-    assert n_games == _FAKE_N_GAMES
-
-
-async def test_compute_metric_returns_none_when_no_row() -> None:
-    """Returns None when the CTE emits no row (user below ≥30 pooled floor)."""
-    session, _ = _make_mock_session_with_no_row()
-    result = await _compute_metric_for_user(session, _TEST_USER_ID, "score_gap")
-    assert result is None
-
-
-async def test_compute_metric_returns_none_when_n_games_null() -> None:
-    """Returns None if the CTE emits a row with NULL n_games (defensive guard)."""
-    session, _ = _make_mock_session_with_row(_FAKE_VALUE, None)
-    result = await _compute_metric_for_user(session, _TEST_USER_ID, "score_gap")
-    assert result is None
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Test 5: Stage A / Stage B signatures preserved byte-for-byte (PCTL-09)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-def test_compute_stage_a_signature_preserved() -> None:
-    sig = inspect.signature(compute_stage_a)
-    params = list(sig.parameters.values())
-    assert params[0].name == "user_id"
-    assert params[0].kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert params[1].name == "session_maker"
-    assert params[1].kind == inspect.Parameter.KEYWORD_ONLY
-    assert params[1].default is None
-    assert sig.return_annotation is None or sig.return_annotation == "None"
-
-
-def test_compute_stage_b_signature_preserved() -> None:
-    sig = inspect.signature(compute_stage_b)
-    params = list(sig.parameters.values())
-    assert params[0].name == "user_id"
-    assert params[0].kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
-    assert params[1].name == "session_maker"
-    assert params[1].kind == inspect.Parameter.KEYWORD_ONLY
-    assert params[1].default is None
-    assert sig.return_annotation is None or sig.return_annotation == "None"
-
-
-def test_compute_metric_return_annotation_is_tuple_float_int_optional() -> None:
-    """_compute_metric_for_user return annotation widened to tuple[float, int] | None."""
-    sig = inspect.signature(_compute_metric_for_user)
-    ann = str(sig.return_annotation)
-    assert "tuple" in ann.lower() or "Tuple" in ann, (
-        f"return annotation must mention tuple; got {ann!r}"
-    )
-
-
-def test_compute_metric_apply_floor_kwarg_is_gone() -> None:
-    """Calling _compute_metric_for_user with apply_floor= raises TypeError.
-
-    Regression guard: the 94.1 ``apply_floor`` parameter is removed.
-    """
-    # We invoke synchronously to inspect parameter binding — TypeError is raised
-    # before any await happens because Python validates kwargs at call time.
-    sig = inspect.signature(_compute_metric_for_user)
-    assert "apply_floor" not in sig.parameters
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Test 6 / Test 7 / Test 8: Stage A/B fan-out + n_games threading
+# Mocked-fan-out tests for Stage A / Stage B (Test 5, T6, T7, T8, T9).
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 class _FakeSessionMaker:
-    """Minimal async-context-manager-yielding factory for stage tests.
+    """Minimal async-context-manager-yielding factory.
 
-    Returns a MagicMock session whose ``commit`` is an AsyncMock so the
-    ``await session.commit()`` in the production code resolves cleanly.
+    Returns a MagicMock session whose ``commit`` and ``execute`` are
+    AsyncMocks so the production code's awaits resolve cleanly.
     """
 
     def __init__(self) -> None:
@@ -249,317 +147,554 @@ class _FakeSessionMakerCM:
         return None
 
 
-async def test_compute_stage_a_calls_upsert_once_on_value(monkeypatch) -> None:  # noqa: ANN001
-    """Stage A calls upsert_percentile exactly once when the helper returns a tuple."""
+def _make_anchor_row(
+    *,
+    tc: TimeControlBucket = "blitz",
+    anchor_rating: int = 1700,
+    source_platform: str = "lichess",
+    chesscom_raw_rating: int | None = None,
+    n_games: int = _ANCHOR_FLOOR_GAMES,
+) -> Any:
+    """Construct a RatingAnchorRow with sensible defaults."""
+    from app.repositories.user_rating_anchors_repository import RatingAnchorRow
+
+    return RatingAnchorRow(
+        anchor_rating=anchor_rating,
+        source_platform=source_platform,  # ty: ignore[invalid-argument-type]
+        chesscom_raw_rating=chesscom_raw_rating,
+        n_games=n_games,
+    )
+
+
+async def test_compute_stage_a_score_gap_only_runs_for_anchored_tcs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T5: Stage A's score_gap percentile loop runs ONLY for TCs with anchors."""
     fake_maker = _FakeSessionMaker()
+    test_user_id = 99500
+
+    # Two anchors only — bullet + rapid (no blitz, no classical).
+    fake_anchors = {
+        "bullet": _make_anchor_row(tc="bullet", anchor_rating=1800),
+        "rapid": _make_anchor_row(tc="rapid", anchor_rating=1700),
+    }
+
+    async def fake_compute_anchors(session: Any, user_id: int) -> dict[Any, Any]:
+        return fake_anchors
+
     upsert_mock = AsyncMock(return_value=None)
     interp_mock = MagicMock(return_value=72.5)
 
-    async def fake_compute(*args: Any, **kwargs: Any) -> tuple[float, int]:
+    async def fake_compute_metric(
+        session: Any, user_id: int, family: Any, tc: Any
+    ) -> tuple[float, int]:
         return (_FAKE_VALUE, _FAKE_N_GAMES)
 
-    monkeypatch.setattr(svc, "_compute_metric_for_user", fake_compute)
+    monkeypatch.setattr(svc, "compute_anchors_for_user", fake_compute_anchors)
+    monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", fake_compute_metric)
     monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
-    monkeypatch.setattr(svc, "interpolate_percentile", interp_mock)
+    monkeypatch.setattr(svc, "interpolate_cohort_percentile", interp_mock)
 
-    await compute_stage_a(_TEST_USER_ID, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]  # fake_maker mirrors async_sessionmaker protocol for unit-test isolation
+    await compute_stage_a(test_user_id, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
 
-    assert upsert_mock.call_count == 1
-    kwargs = upsert_mock.call_args.kwargs
-    assert kwargs["n_games"] == _FAKE_N_GAMES, "n_games must be threaded into the UPSERT"
-    assert kwargs["value"] == pytest.approx(_FAKE_VALUE)
-    assert kwargs["metric"] == "score_gap"
-    assert kwargs["user_id"] == _TEST_USER_ID
+    # Exactly 2 upsert calls — one per anchored TC.
+    assert upsert_mock.call_count == 2
+    upserted_tcs = {call.kwargs["time_control_bucket"] for call in upsert_mock.call_args_list}
+    assert upserted_tcs == {"bullet", "rapid"}
+    # Every upsert is for score_gap (T7: 3-column PK tuple).
+    for call in upsert_mock.call_args_list:
+        assert call.kwargs["metric"] == "score_gap"
+        assert call.kwargs["user_id"] == test_user_id
+        assert "time_control_bucket" in call.kwargs
 
 
-async def test_compute_stage_a_skips_upsert_on_none(monkeypatch) -> None:  # noqa: ANN001
-    """Stage A calls upsert_percentile zero times when the helper returns None."""
+async def test_compute_stage_b_fans_out_across_families_and_anchored_tcs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T6: Stage B iterates STAGE_B_METRIC_FAMILIES × anchored TCs.
+
+    Setup: 2 anchored TCs (bullet, blitz). Expected:
+      len(STAGE_B_METRIC_FAMILIES) × 2 = 7 × 2 = 14 upsert calls.
+    """
     fake_maker = _FakeSessionMaker()
+    test_user_id = 99501
+
+    fake_anchors = {
+        "bullet": _make_anchor_row(tc="bullet", anchor_rating=1800),
+        "blitz": _make_anchor_row(tc="blitz", anchor_rating=1750),
+    }
+
+    async def fake_fetch_anchors(session: Any, *, user_id: int) -> dict[Any, Any]:
+        return fake_anchors
+
     upsert_mock = AsyncMock(return_value=None)
+    interp_mock = MagicMock(return_value=50.0)
 
-    async def fake_compute(*args: Any, **kwargs: Any) -> None:
-        return None
+    async def fake_compute_metric(
+        session: Any, user_id: int, family: Any, tc: Any
+    ) -> tuple[float, int]:
+        return (_FAKE_VALUE, _FAKE_N_GAMES)
 
-    monkeypatch.setattr(svc, "_compute_metric_for_user", fake_compute)
+    monkeypatch.setattr(svc, "fetch_anchors_for_user", fake_fetch_anchors)
+    monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", fake_compute_metric)
+    monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
+    monkeypatch.setattr(svc, "interpolate_cohort_percentile", interp_mock)
+
+    await compute_stage_b(test_user_id, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
+
+    expected_calls = len(STAGE_B_METRIC_FAMILIES) * len(fake_anchors)
+    assert upsert_mock.call_count == expected_calls == 14
+
+    upserted_metrics = {call.kwargs["metric"] for call in upsert_mock.call_args_list}
+    assert upserted_metrics == set(STAGE_B_METRIC_FAMILIES)
+
+    for call in upsert_mock.call_args_list:
+        assert call.kwargs["time_control_bucket"] in fake_anchors
+        assert call.kwargs["n_games"] == _FAKE_N_GAMES
+        assert "user_id" in call.kwargs
+
+
+async def test_compute_stage_b_noop_when_no_anchors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stage B exits early when ``fetch_anchors_for_user`` returns empty dict."""
+    fake_maker = _FakeSessionMaker()
+    test_user_id = 99502
+
+    async def fake_fetch_anchors(session: Any, *, user_id: int) -> dict[Any, Any]:
+        return {}
+
+    upsert_mock = AsyncMock(return_value=None)
+    monkeypatch.setattr(svc, "fetch_anchors_for_user", fake_fetch_anchors)
     monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
 
-    await compute_stage_a(_TEST_USER_ID, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]  # fake_maker mirrors async_sessionmaker protocol for unit-test isolation
+    await compute_stage_b(test_user_id, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
 
     assert upsert_mock.call_count == 0
 
 
-async def test_compute_stage_b_calls_upsert_once_per_metric(monkeypatch) -> None:  # noqa: ANN001
-    """Stage B iterates STAGE_B_METRICS and upserts each metric that returns a value.
-
-    Also pins the per-metric isolation contract: the inner try/except is still in
-    place, and a tuple-returning helper for every metric yields ``len(STAGE_B_METRICS)``
-    upsert calls.
-    """
+async def test_upsert_called_with_3_column_pk_tuple(monkeypatch: pytest.MonkeyPatch) -> None:
+    """T7: ``upsert_percentile`` invocation includes user_id + metric + time_control_bucket."""
     fake_maker = _FakeSessionMaker()
+    test_user_id = 99503
+
+    async def fake_compute_anchors(session: Any, user_id: int) -> dict[Any, Any]:
+        return {"rapid": _make_anchor_row(tc="rapid", anchor_rating=1700)}
+
     upsert_mock = AsyncMock(return_value=None)
     interp_mock = MagicMock(return_value=50.0)
 
-    async def fake_compute(*args: Any, **kwargs: Any) -> tuple[float, int]:
+    async def fake_compute_metric(
+        session: Any, user_id: int, family: Any, tc: Any
+    ) -> tuple[float, int]:
         return (_FAKE_VALUE, _FAKE_N_GAMES)
 
-    monkeypatch.setattr(svc, "_compute_metric_for_user", fake_compute)
+    monkeypatch.setattr(svc, "compute_anchors_for_user", fake_compute_anchors)
+    monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", fake_compute_metric)
     monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
-    monkeypatch.setattr(svc, "interpolate_percentile", interp_mock)
+    monkeypatch.setattr(svc, "interpolate_cohort_percentile", interp_mock)
 
-    await compute_stage_b(_TEST_USER_ID, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]  # fake_maker mirrors async_sessionmaker protocol for unit-test isolation
+    await compute_stage_a(test_user_id, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
 
-    # Phase 94.3: STAGE_B_METRICS widened from 3 to 15 (existing 3 + 12 per-TC).
-    assert upsert_mock.call_count == len(STAGE_B_METRICS) == 15
-    upserted_metrics = {call.kwargs["metric"] for call in upsert_mock.call_args_list}
-    assert upserted_metrics == set(STAGE_B_METRICS)
-    # Every call threads n_games through.
-    for call in upsert_mock.call_args_list:
-        assert call.kwargs["n_games"] == _FAKE_N_GAMES
-
-
-async def test_compute_stage_b_skips_metric_returning_none(monkeypatch) -> None:  # noqa: ANN001
-    """Stage B skips upsert for a metric whose helper returns None, keeps the rest."""
-    fake_maker = _FakeSessionMaker()
-    upsert_mock = AsyncMock(return_value=None)
-    interp_mock = MagicMock(return_value=50.0)
-
-    async def fake_compute(session: Any, user_id: int, metric_id: str) -> tuple[float, int] | None:
-        if metric_id == "section2_score_gap_parity":
-            return None
-        return (_FAKE_VALUE, _FAKE_N_GAMES)
-
-    monkeypatch.setattr(svc, "_compute_metric_for_user", fake_compute)
-    monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
-    monkeypatch.setattr(svc, "interpolate_percentile", interp_mock)
-
-    await compute_stage_b(_TEST_USER_ID, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]  # fake_maker mirrors async_sessionmaker protocol for unit-test isolation
-
-    upserted_metrics = {call.kwargs["metric"] for call in upsert_mock.call_args_list}
-    # Phase 94.3: STAGE_B_METRICS widened to 15. The single metric that returns
-    # None is skipped; everything else is upserted.
-    expected = set(STAGE_B_METRICS) - {"section2_score_gap_parity"}
-    assert upserted_metrics == expected
-    assert len(expected) == 14
+    assert upsert_mock.call_count == 1
+    kwargs = upsert_mock.call_args.kwargs
+    assert kwargs["user_id"] == test_user_id
+    assert kwargs["metric"] == "score_gap"
+    assert kwargs["time_control_bucket"] == "rapid"
+    assert kwargs["value"] == pytest.approx(_FAKE_VALUE)
+    assert kwargs["n_games"] == _FAKE_N_GAMES
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Stage A: zero canonical games (real DB) — preserved from 94.1
-# ─────────────────────────────────────────────────────────────────────────────
+async def test_upsert_runs_with_percentile_none_for_suppressed_cell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T8: When the cohort CDF cell is absent (interpolate returns None) the row
+    is still upserted with percentile=None and value + n_games populated.
 
-
-async def test_compute_stage_a_zero_canonical_games(test_engine) -> None:  # noqa: ANN001
-    """compute_stage_a writes NO row when the user has 0 canonical-slice games.
-
-    Per CONTEXT Claude's Discretion: "if value itself isn't computable (zero
-    games in slice), no row".
-
-    Real-DB body: builds a transactional session_maker bound to the test
-    engine, creates a fresh User row with no games, calls compute_stage_a,
-    asserts fetch_for_user returns an empty dict, then deletes the user.
+    Suppression at the cohort-CDF lookup must NOT short-circuit the upsert —
+    the API shaper consumes ``value`` even when no peer-relative percentile
+    can be assigned.
     """
-    test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    fake_maker = _FakeSessionMaker()
+    test_user_id = 99504
 
-    # Create a fresh user with no games. We use a unique email per test run.
-    async with test_session_maker() as session:
+    async def fake_compute_anchors(session: Any, user_id: int) -> dict[Any, Any]:
+        return {"blitz": _make_anchor_row(tc="blitz", anchor_rating=1750)}
+
+    upsert_mock = AsyncMock(return_value=None)
+    interp_mock = MagicMock(return_value=None)  # ← suppressed cell
+
+    async def fake_compute_metric(
+        session: Any, user_id: int, family: Any, tc: Any
+    ) -> tuple[float, int]:
+        return (_FAKE_VALUE, _FAKE_N_GAMES)
+
+    monkeypatch.setattr(svc, "compute_anchors_for_user", fake_compute_anchors)
+    monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", fake_compute_metric)
+    monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
+    monkeypatch.setattr(svc, "interpolate_cohort_percentile", interp_mock)
+
+    await compute_stage_a(test_user_id, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
+
+    assert upsert_mock.call_count == 1
+    kwargs = upsert_mock.call_args.kwargs
+    assert kwargs["percentile"] is None
+    assert kwargs["value"] == pytest.approx(_FAKE_VALUE)
+    assert kwargs["n_games"] == _FAKE_N_GAMES
+
+
+async def test_compute_stage_a_sentry_capture_on_metric_compute_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T9: When the per-TC metric compute raises, Sentry captures with set_context.
+
+    CLAUDE.md Sentry rules: variable data flows into set_context (user_id,
+    stage, metric, tc) — NOT into the exception message string. The
+    per-TC try/except catches the error and Stage A keeps processing
+    other TCs.
+    """
+    captured_contexts: list[dict] = []
+    captured_exceptions: list[Exception] = []
+
+    def fake_set_context(key: str, value: dict) -> None:
+        captured_contexts.append({"key": key, "value": value})
+
+    def fake_capture_exception(exc: Exception) -> None:
+        captured_exceptions.append(exc)
+
+    fake_maker = _FakeSessionMaker()
+    test_user_id = 99505
+
+    async def fake_compute_anchors(session: Any, user_id: int) -> dict[Any, Any]:
+        return {"blitz": _make_anchor_row(tc="blitz", anchor_rating=1750)}
+
+    async def raising_compute_metric(
+        session: Any, user_id: int, family: Any, tc: Any
+    ) -> tuple[float, int]:
+        raise RuntimeError("simulated per-TC compute failure")
+
+    monkeypatch.setattr(svc, "compute_anchors_for_user", fake_compute_anchors)
+    monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", raising_compute_metric)
+
+    with (
+        patch("sentry_sdk.set_context", side_effect=fake_set_context),
+        patch("sentry_sdk.capture_exception", side_effect=fake_capture_exception),
+    ):
+        result = await compute_stage_a(test_user_id, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
+        assert result is None  # never propagates
+
+    # Sentry captured the metric-compute failure.
+    assert len(captured_exceptions) >= 1
+    # set_context carried the variable dimensions (stage A, metric, tc).
+    assert any(
+        ctx["key"] == _SENTRY_CONTEXT_KEY
+        and ctx["value"].get("stage") == "A"
+        and ctx["value"].get("metric") == "score_gap"
+        and ctx["value"].get("tc") == "blitz"
+        for ctx in captured_contexts
+    ), "set_context must carry stage='A', metric='score_gap', tc='blitz'"
+
+    # V4 guard: user_id NEVER appears inside the exception message.
+    for exc in captured_exceptions:
+        assert str(test_user_id) not in str(exc), (
+            f"user_id {test_user_id} leaked into Sentry exception message (V4 violation)"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Real-DB tests for compute_anchors_for_user (T1, T2, T3, T4, T10).
+#
+# pytest-asyncio is configured in ``asyncio_mode = "auto"`` (pyproject.toml)
+# so async tests pick the marker up automatically; we avoid a module-level
+# ``pytestmark = pytest.mark.asyncio`` because it triggers a "marked async
+# but not async" warning on the sync signature/introspection tests above.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _create_user(session_maker: async_sessionmaker[Any]) -> int:
+    """Create a fresh User with unique email; return user_id."""
+    async with session_maker() as session:
         user = User(
-            email=f"stage-a-zero-{uuid.uuid4()}@example.com",
+            email=f"plan-05b-{uuid.uuid4()}@example.com",
             hashed_password="x",
         )
         session.add(user)
         await session.commit()
         await session.refresh(user)
-        user_id = user.id
+        return user.id
+
+
+async def _delete_user(session_maker: async_sessionmaker[Any], user_id: int) -> None:
+    """Delete a user; CASCADE wipes games, anchors, percentile rows."""
+    async with session_maker() as session:
+        await session.execute(delete(User).where(User.id == user_id))
+        await session.commit()
+
+
+def _make_game_for_anchor_test(
+    *,
+    user_id: int,
+    user_color: str,
+    platform: str,
+    platform_game_id: str,
+    time_control_bucket: TimeControlBucket,
+    user_rating: int,
+    base_dt: datetime.datetime,
+    minutes_offset: int,
+    is_chesscom_daily: bool = False,
+) -> Game:
+    """Build a canonical-slice-qualifying Game row for anchor compute tests.
+
+    The Game must satisfy ``_recent_capped_per_tc_cte`` (rated, not a
+    computer game, both ratings populated, equal-footing band, within
+    the recency window) for ``per_user_cte_median_anchor`` to count it.
+    """
+    opp_rating = user_rating + _OPP_RATING_OFFSET
+    if user_color == "white":
+        white_rating, black_rating = user_rating, opp_rating
+        white_username, black_username = "me", "opp"
+    else:
+        white_rating, black_rating = opp_rating, user_rating
+        white_username, black_username = "opp", "me"
+
+    if time_control_bucket == "bullet":
+        base_seconds: int = 60
+    elif time_control_bucket == "blitz":
+        base_seconds = 180
+    elif time_control_bucket == "rapid":
+        base_seconds = 600
+    else:
+        base_seconds = 1800
+
+    # chess.com Daily games are bucketed `classical` by the import pipeline
+    # but their time_control_str starts with "1/" (RESEARCH Pitfall 11).
+    if is_chesscom_daily:
+        tc_str = "1/86400"
+    else:
+        tc_str = f"{base_seconds}+0"
+
+    game = Game(
+        user_id=user_id,
+        platform=platform,
+        platform_game_id=platform_game_id,
+        pgn="1. e4 e5 *",
+        result="1-0" if user_color == "white" else "0-1",
+        user_color=user_color,
+        time_control_str=tc_str,
+        time_control_bucket=time_control_bucket,
+        time_control_seconds=base_seconds,
+        base_time_seconds=base_seconds,
+        rated=True,
+        is_computer_game=False,
+        white_username=white_username,
+        black_username=black_username,
+        white_rating=white_rating,
+        black_rating=black_rating,
+    )
+    game.played_at = base_dt + datetime.timedelta(minutes=minutes_offset)
+    return game
+
+
+async def _seed_anchor_games(
+    session_maker: async_sessionmaker[Any],
+    *,
+    user_id: int,
+    n_games: int,
+    platform: str,
+    time_control_bucket: TimeControlBucket,
+    user_rating: int,
+    is_chesscom_daily: bool = False,
+) -> None:
+    """Insert ``n_games`` qualifying games for the (platform, TC) cell."""
+    base_dt = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)
+    async with session_maker() as session:
+        for idx in range(n_games):
+            user_color = "white" if idx % 2 == 0 else "black"
+            game = _make_game_for_anchor_test(
+                user_id=user_id,
+                user_color=user_color,
+                platform=platform,
+                platform_game_id=f"{platform}-{user_id}-{time_control_bucket}-{idx}",
+                time_control_bucket=time_control_bucket,
+                user_rating=user_rating,
+                base_dt=base_dt,
+                minutes_offset=idx,
+                is_chesscom_daily=is_chesscom_daily,
+            )
+            session.add(game)
+        await session.commit()
+
+
+async def test_compute_anchors_lichess_only_user_rapid(test_engine) -> None:  # noqa: ANN001
+    """T1: Lichess-only user (rapid) → source_platform='lichess', chesscom_raw_rating=None."""
+    test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    user_id = await _create_user(test_session_maker)
 
     try:
-        # Run Stage A — should produce no row (helper returns None → early exit).
-        await compute_stage_a(user_id, session_maker=test_session_maker)
+        await _seed_anchor_games(
+            test_session_maker,
+            user_id=user_id,
+            n_games=_ANCHOR_FLOOR_GAMES,
+            platform="lichess",
+            time_control_bucket="rapid",
+            user_rating=_USER_RATING_LICHESS_RAPID,
+        )
 
         async with test_session_maker() as session:
-            rows = await fetch_for_user(session, user_id=user_id)
-        assert rows == {}, (
-            f"compute_stage_a wrote a row for a user with zero canonical-slice "
-            f"games (expected empty dict, got {rows!r})"
-        )
-    finally:
-        async with test_session_maker() as session:
-            await session.execute(delete(User).where(User.id == user_id))
+            anchors = await compute_anchors_for_user(session, user_id)
             await session.commit()
 
+        assert "rapid" in anchors, "Lichess-only user must have a rapid anchor"
+        anchor = anchors["rapid"]
+        assert anchor.source_platform == "lichess"
+        assert anchor.chesscom_raw_rating is None, (
+            "Lichess-direct anchor must not carry a chesscom_raw_rating"
+        )
+        assert anchor.n_games >= _ANCHOR_FLOOR_GAMES
+        # No chess.com games — bullet/blitz/classical have no anchor rows.
+        assert "bullet" not in anchors
+        assert "blitz" not in anchors
+        assert "classical" not in anchors
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Sentry non-propagation tests (mocked) — preserved from 94.1, updated for
-# the tuple-return contract.
-# ─────────────────────────────────────────────────────────────────────────────
+        # Verify persistence round-trip.
+        async with test_session_maker() as session:
+            persisted = await fetch_anchors_for_user(session, user_id=user_id)
+        assert persisted["rapid"].source_platform == "lichess"
+        assert persisted["rapid"].chesscom_raw_rating is None
+    finally:
+        await _delete_user(test_session_maker, user_id)
 
 
-async def test_compute_stage_a_swallows_exception_and_captures_sentry(
-    monkeypatch,  # noqa: ANN001
-) -> None:
-    """compute_stage_a returns None (never propagates) when an internal helper
-    raises. Sentry captures the exception with set_context("percentile_compute",
-    {"user_id": ..., "stage": "A"}).
-
-    V4 Information Disclosure guard: assert the captured exception message does
-    NOT contain the user_id string (only set_context carries it).
-
-    Per D-04: Stage A errors must not propagate to the import worker.
-    CLAUDE.md Backend Rules: sentry_sdk.set_context + capture_exception.
+async def test_compute_anchors_chesscom_only_user_blitz_captures_raw_rating(test_engine) -> None:  # noqa: ANN001
+    """T2 + T10: chess.com-only user (blitz) — anchor uses Lichess-equivalent for
+    anchor_rating; chesscom_raw_rating holds the PRE-conversion chess.com median
+    (D-07 bullet 4 + D-12 fall-through).
     """
-    captured_contexts: list[dict] = []
-    captured_exceptions: list[Exception] = []
+    test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    user_id = await _create_user(test_session_maker)
 
-    def fake_set_context(key: str, value: dict) -> None:
-        captured_contexts.append({"key": key, "value": value})
-
-    def fake_capture_exception(exc: Exception) -> None:
-        captured_exceptions.append(exc)
-
-    error_message = "simulated compute failure"
-
-    # Patch _compute_metric_for_user to return a (value, n_games) tuple so we
-    # reach interpolate_percentile (the early-exit path otherwise short-circuits
-    # before any chance of an exception). Then make interpolate_percentile
-    # raise, triggering the Sentry capture path.
-    # Phase 94.2: _compute_metric_for_user returns tuple[float, int] | None.
-    async def fake_compute(*args: Any, **kwargs: Any) -> tuple[float, int]:
-        return (_FAKE_VALUE, _FAKE_N_GAMES)
-
-    with (
-        patch("sentry_sdk.set_context", side_effect=fake_set_context),
-        patch("sentry_sdk.capture_exception", side_effect=fake_capture_exception),
-        patch(
-            "app.services.user_benchmark_percentiles_service._compute_metric_for_user",
-            side_effect=fake_compute,
-        ),
-        patch(
-            "app.services.user_benchmark_percentiles_service.interpolate_percentile",
-            side_effect=RuntimeError(error_message),
-        ),
-    ):
-        # Must not raise — D-04
-        result = await compute_stage_a(_TEST_USER_ID)
-        assert result is None
-
-    # Sentry must have been called with the correct context
-    assert len(captured_exceptions) >= 1
-    assert any(
-        ctx["key"] == _SENTRY_CONTEXT_KEY and ctx["value"].get("stage") == "A"
-        for ctx in captured_contexts
-    ), "set_context('percentile_compute', {..., 'stage': 'A'}) not called"
-
-    # V4 guard: user_id must NOT appear in the exception message string
-    for exc in captured_exceptions:
-        assert str(_TEST_USER_ID) not in str(exc), (
-            f"user_id {_TEST_USER_ID} leaked into Sentry exception message (V4 violation)"
+    try:
+        await _seed_anchor_games(
+            test_session_maker,
+            user_id=user_id,
+            n_games=_ANCHOR_FLOOR_GAMES,
+            platform="chess.com",
+            time_control_bucket="blitz",
+            user_rating=_USER_RATING_CHESSCOM_BLITZ,
         )
 
+        async with test_session_maker() as session:
+            anchors = await compute_anchors_for_user(session, user_id)
+            await session.commit()
 
-async def test_compute_stage_b_swallows_exception_and_captures_sentry(
-    monkeypatch,  # noqa: ANN001
-) -> None:
-    """compute_stage_b returns None (never propagates) when one metric's CTE
-    execution raises. Sentry captures with set_context("percentile_compute",
-    {"user_id": ..., "stage": "B"}).
+        assert "blitz" in anchors
+        anchor = anchors["blitz"]
+        assert anchor.source_platform == "chesscom"
+        assert anchor.chesscom_raw_rating is not None, (
+            "chess.com anchor MUST capture the raw rating per D-07 bullet 4"
+        )
+        # Round-trip: chesscom_raw_rating reads back as the median of the
+        # seeded chess.com ratings (all rows share user_rating, so the
+        # median equals user_rating).
+        assert anchor.chesscom_raw_rating == _USER_RATING_CHESSCOM_BLITZ
 
-    V4 guard: user_id does NOT appear in the captured exception message string.
-    set_context MUST carry {"user_id": ..., "stage": "B"}.
-    """
-    captured_contexts: list[dict] = []
-    captured_exceptions: list[Exception] = []
-
-    def fake_set_context(key: str, value: dict) -> None:
-        captured_contexts.append({"key": key, "value": value})
-
-    def fake_capture_exception(exc: Exception) -> None:
-        captured_exceptions.append(exc)
-
-    # Same shape as Stage A: ensure we hit a meaningful exception path by
-    # forcing _compute_metric_for_user to return a value, then making
-    # interpolate_percentile raise. Stage B's per-metric inner try/except
-    # captures + continues — every loop iteration trips the same exception
-    # and emits one set_context("...", {"stage": "B", "metric": ...}) call.
-    # Phase 94.2: _compute_metric_for_user returns tuple[float, int] | None.
-    async def fake_compute(*args: Any, **kwargs: Any) -> tuple[float, int]:
-        return (_FAKE_VALUE, _FAKE_N_GAMES)
-
-    with (
-        patch("sentry_sdk.set_context", side_effect=fake_set_context),
-        patch("sentry_sdk.capture_exception", side_effect=fake_capture_exception),
-        patch(
-            "app.services.user_benchmark_percentiles_service._compute_metric_for_user",
-            side_effect=fake_compute,
-        ),
-        patch(
-            "app.services.user_benchmark_percentiles_service.interpolate_percentile",
-            side_effect=RuntimeError("simulated stage B failure"),
-        ),
-    ):
-        result = await compute_stage_b(_TEST_USER_ID)
-        assert result is None
-
-    # Verify set_context was called with stage B
-    assert any(
-        ctx["key"] == _SENTRY_CONTEXT_KEY and ctx["value"].get("stage") == "B"
-        for ctx in captured_contexts
-    ), "set_context('percentile_compute', {..., 'stage': 'B'}) not called"
-
-    # V4 guard: user_id must NOT appear in the exception message string
-    for exc in captured_exceptions:
-        assert str(_TEST_USER_ID) not in str(exc), (
-            f"user_id {_TEST_USER_ID} leaked into Sentry exception message (V4 violation)"
+        # anchor_rating is the Lichess-equivalent — distinct from the raw
+        # chess.com median (D-12 conversion path).
+        expected_lichess_equiv = convert_chesscom_to_lichess(
+            _USER_RATING_CHESSCOM_BLITZ, source_tc="blitz", target_tc="blitz"
+        )
+        assert expected_lichess_equiv is not None
+        assert anchor.anchor_rating == expected_lichess_equiv
+        assert anchor.anchor_rating != anchor.chesscom_raw_rating, (
+            "Lichess-equivalent must differ from raw chess.com median for this fixture"
         )
 
+        # T10 round-trip via fetch_anchors_for_user.
+        async with test_session_maker() as session:
+            persisted = await fetch_anchors_for_user(session, user_id=user_id)
+        assert persisted["blitz"].source_platform == "chesscom"
+        assert persisted["blitz"].chesscom_raw_rating == _USER_RATING_CHESSCOM_BLITZ
+    finally:
+        await _delete_user(test_session_maker, user_id)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Phase 94.3 Plan 04 — STAGE_B_METRICS widening (CONTEXT.md D-7, D-10)
-# ─────────────────────────────────────────────────────────────────────────────
 
+async def test_compute_anchors_mixed_user_lichess_precedence_d12(test_engine) -> None:  # noqa: ANN001
+    """T3: Mixed-platform user (rapid) — Lichess precedence wins.
 
-def test_stage_a_metric_unchanged_phase_94_3() -> None:
-    """STAGE_A_METRIC stays ``score_gap`` across the Phase 94.3 widening.
-
-    The 12 per-(metric × TC) cells are Stage B only — Stage A keeps its single
-    eval-independent score_gap (RESEARCH §Pitfall 9 / CONTEXT.md D-10).
+    Even with BOTH Lichess and chess.com games in rapid, the anchor must
+    carry ``source_platform='lichess'`` and ``chesscom_raw_rating=None``
+    (D-12 — Lichess wins, the chess.com pool is not consulted).
     """
-    from app.services.user_benchmark_percentiles_service import STAGE_A_METRIC
+    test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    user_id = await _create_user(test_session_maker)
 
-    assert STAGE_A_METRIC == "score_gap"
+    try:
+        # Both platforms have enough games to clear the anchor floor.
+        await _seed_anchor_games(
+            test_session_maker,
+            user_id=user_id,
+            n_games=_ANCHOR_FLOOR_GAMES,
+            platform="lichess",
+            time_control_bucket="rapid",
+            user_rating=_USER_RATING_LICHESS_RAPID,
+        )
+        await _seed_anchor_games(
+            test_session_maker,
+            user_id=user_id,
+            n_games=_ANCHOR_FLOOR_GAMES,
+            platform="chess.com",
+            time_control_bucket="rapid",
+            user_rating=_USER_RATING_CHESSCOM_BLITZ + 100,
+        )
+
+        async with test_session_maker() as session:
+            anchors = await compute_anchors_for_user(session, user_id)
+            await session.commit()
+
+        assert "rapid" in anchors
+        anchor = anchors["rapid"]
+        assert anchor.source_platform == "lichess", (
+            "D-12 precedence: any Lichess games in TC must win"
+        )
+        assert anchor.chesscom_raw_rating is None
+    finally:
+        await _delete_user(test_session_maker, user_id)
 
 
-def test_stage_b_metrics_widened_to_15_phase_94_3() -> None:
-    """STAGE_B_METRICS contains 15 entries (3 existing + 12 per-TC additions)."""
-    assert isinstance(STAGE_B_METRICS, tuple)
-    assert len(STAGE_B_METRICS) == 15
+async def test_compute_anchors_chesscom_daily_classical_suppressed(test_engine) -> None:  # noqa: ANN001
+    """T4: chess.com Daily-only user → NO classical anchor.
 
+    The median-anchor SQL drops chess.com Daily games (RESEARCH Pitfall 11),
+    AND ``convert_chesscom_to_lichess(..., source_tc='daily')`` returns None.
+    Either branch alone suppresses the anchor; both branches together make
+    suppression mandatory. The chip suppresses naturally for this user.
+    """
+    test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    user_id = await _create_user(test_session_maker)
 
-def test_stage_b_metrics_contains_existing_three() -> None:
-    """The pre-94.3 Stage B metrics are still present (order preserved)."""
-    assert STAGE_B_METRICS[:3] == (
-        "achievable_score_gap",
-        "section2_score_gap_conv",
-        "section2_score_gap_parity",
-    )
+    try:
+        await _seed_anchor_games(
+            test_session_maker,
+            user_id=user_id,
+            n_games=_ANCHOR_FLOOR_GAMES,
+            platform="chess.com",
+            time_control_bucket="classical",
+            user_rating=1700,
+            is_chesscom_daily=True,
+        )
 
+        async with test_session_maker() as session:
+            anchors = await compute_anchors_for_user(session, user_id)
+            await session.commit()
 
-def test_stage_b_metrics_contains_12_new_per_tc_ids() -> None:
-    """All 12 Phase 94.3 per-(metric × TC) IDs appear in STAGE_B_METRICS."""
-    expected_new: set[str] = {
-        f"{base}_{tc}"
-        for base in ("time_pressure_score_gap", "clock_gap", "net_flag_rate")
-        for tc in ("bullet", "blitz", "rapid", "classical")
-    }
-    assert expected_new.issubset(set(STAGE_B_METRICS))
-    assert len(expected_new) == 12
+        assert "classical" not in anchors, (
+            "chess.com Daily-only user must have NO classical anchor "
+            "(per_user_cte_median_anchor drops 1/% time_control_str rows)"
+        )
+        # No other TC has games either.
+        assert anchors == {}
 
-
-def test_stage_a_metric_not_among_new_per_tc_ids() -> None:
-    """None of the 12 new per-(metric × TC) IDs collide with the Stage A metric."""
-    from app.services.user_benchmark_percentiles_service import STAGE_A_METRIC
-
-    new_ids: set[str] = {
-        f"{base}_{tc}"
-        for base in ("time_pressure_score_gap", "clock_gap", "net_flag_rate")
-        for tc in ("bullet", "blitz", "rapid", "classical")
-    }
-    for mid in new_ids:
-        assert STAGE_A_METRIC != mid, f"STAGE_A_METRIC must not collide with per-TC ID {mid!r}"
+        # Persistence: nothing written.
+        async with test_session_maker() as session:
+            persisted = await fetch_anchors_for_user(session, user_id=user_id)
+        assert persisted == {}
+    finally:
+        await _delete_user(test_session_maker, user_id)

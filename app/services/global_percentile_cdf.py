@@ -46,12 +46,9 @@ from __future__ import annotations
 
 import bisect
 import math
-import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final, Literal
-
-from app.services.endgame_zones import MetricId
 
 # ``TimeControlBucket`` is duplicated inline here (rather than imported from
 # ``app.services.canonical_slice_sql``) to break a circular import:
@@ -12225,40 +12222,8 @@ def interpolate_cohort_percentile(
     return _interpolate_with_table(table, value)
 
 
-# ---------------------------------------------------------------------------
-# Legacy stub — interpolate_percentile (retired in Plan 05).
-# ---------------------------------------------------------------------------
-#
-# Plan 04 retires the flat ``GLOBAL_PERCENTILE_CDF`` registry and the 2-arg
-# ``interpolate_percentile`` helper. Plan 05 (94.4-05) finishes the cutover
-# at every call site (``user_benchmark_percentiles_service.py``,
-# ``endgame_service.py``, tests). Between Plan 04 and Plan 05, leaving the
-# old name a hard ImportError would break the wider test suite and bury the
-# cutover signal. Instead the name is preserved as a stub returning ``None``
-# with a one-shot ``DeprecationWarning`` per import.
-
-
-def interpolate_percentile(
-    metric_id: MetricId | CdfMetricId | str,
-    value: float,  # noqa: ARG001 — preserved for caller signature compatibility
-) -> float | None:
-    """DEPRECATED (Phase 94.4 Plan 04 stub) — use ``interpolate_cohort_percentile``.
-
-    Returns ``None`` unconditionally. The flat ``GLOBAL_PERCENTILE_CDF``
-    registry retired in Phase 94.4 Plan 04 (CONTEXT D-09) in favour of the
-    cohort-keyed ``COHORT_PERCENTILE_CDF`` and the 4-arg
-    ``interpolate_cohort_percentile(metric, value, anchor, tc)`` helper.
-
-    This stub exists ONLY to keep the module importable while Plan 05
-    (94.4-05) finishes the cutover at every call site. Once those call
-    sites are gone, the stub is removed.
-    """
-    warnings.warn(
-        "interpolate_percentile is deprecated and returns None; "
-        "use interpolate_cohort_percentile(metric, value, anchor, tc) "
-        "from Phase 94.4 Plan 04 onwards.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    _ = metric_id  # signature-only; the stub never reads either arg
-    return None
+# Legacy ``interpolate_percentile`` stub retired in Phase 94.4 Plan 05b — every
+# call site now uses ``interpolate_cohort_percentile``. Re-introducing a stub
+# would mask future regressions (it returned None unconditionally), so the
+# name is gone outright; an ImportError from any straggler is the desired
+# signal.

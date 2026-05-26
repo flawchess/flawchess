@@ -1143,7 +1143,19 @@ def per_user_cte_median_anchor(
     ``%``-style formatting, so no ``%%`` doubling is required.
     """
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
-    platform_filter = "" if platform is None else f"AND g.platform = '{platform}'"
+    # ``platform`` is the AnchorSource Literal ('lichess' | 'chesscom') used by
+    # the user_rating_anchors model, but the games table stores the chess.com
+    # platform string with a dot (``platform='chess.com'``). Translate before
+    # emitting the SQL filter so the (AnchorSource) → (games.platform) mapping
+    # is the only place we paper over the discrepancy. Bug found in Plan 05b
+    # (#94.4-05b-Rule1): the benchmark DB is Lichess-only so the chess.com path
+    # was never exercised by Plan 02's tests.
+    if platform is None:
+        platform_filter = ""
+    elif platform == "chesscom":
+        platform_filter = "AND g.platform = 'chess.com'"
+    else:
+        platform_filter = f"AND g.platform = '{platform}'"
     return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
 recent_capped_no_daily AS (
   SELECT rc.*
