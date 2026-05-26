@@ -9,12 +9,43 @@ Provides response models for:
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.openings import GameRecord
 
 EndgameClass = Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"]
 EndgameLabel = Literal["Rook", "Minor Piece", "Pawn", "Queen", "Mixed", "Pawnless"]
+
+# Phase 94.4 D-07 bullet 4: time-control union used as the key type for the
+# rating_anchors block on EndgameOverviewResponse. Inline string union matches
+# the existing `tc: 'bullet' | 'blitz' | 'rapid' | 'classical'` pattern used on
+# TimePressureTcCard and EndgameEloTimelineCombo — no separate Literal alias is
+# defined elsewhere in this module.
+TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
+
+
+class RatingAnchorOut(BaseModel):
+    """Per-time-control rating anchor disclosure for the percentile chip tooltip.
+
+    Phase 94.4 D-07 bullet 4 surface — when `source_platform == 'chesscom'`,
+    `chesscom_raw_rating` is the user's pre-conversion chess.com rating; the
+    tooltip renders inline as e.g. "Anchored on your chess.com {tc}
+    ({chesscom_raw_rating} → {anchor_rating} Lichess-equivalent ...)". When
+    `source_platform == 'lichess'`, `chesscom_raw_rating` is None and the
+    tooltip drops the conversion clause. `anchor_rating` is always the
+    Lichess-equivalent (post-conversion for chess.com sources) since the cohort
+    CDF is keyed on Lichess ratings (RESEARCH Open Question 4, Plan 02 B3).
+
+    Provenance: populated from the `user_rating_anchors` row written by
+    `app/services/user_benchmark_percentiles_service.py::compute_anchors_for_user`
+    (Plan 05b — captures `chesscom_raw_rating` PRE-conversion when source is
+    chess.com).
+    """
+
+    anchor_rating: int
+    source_platform: Literal["lichess", "chesscom"]
+    chesscom_raw_rating: int | None = None
+    n_games: int
 
 
 class ConversionRecoveryStats(BaseModel):
@@ -829,3 +860,14 @@ class EndgameOverviewResponse(BaseModel):
     time_pressure_cards: TimePressureCardsResponse  # Phase 88: per-TC time pressure cards
     clock_diff_timeline: ClockDiffTimelineResponse  # Plan 88-15 (CONTEXT §2 A-2): restored Average Clock Difference over Time line chart payload
     endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.5 D-06: paired Endgame ELO + Actual ELO series per (platform, TC) via additive K · eg_score_gap
+    # Phase 94.4 D-07 bullet 4 + RESEARCH Open Question 4: top-level
+    # rating-anchor disclosure block, keyed by time control. The percentile
+    # chip tooltip's 4th bullet renders one entry per TC the user has an
+    # anchor for; missing TCs (below the inclusion floor or conversion
+    # suppressed) are absent from the dict, not None. The structure is a
+    # top-level block — NOT embedded per-chip — so all chips on the page can
+    # read from the same shared map without duplicating the anchor across
+    # response sub-payloads. Default factory keeps existing constructor call
+    # sites (older tests that build EndgameOverviewResponse keyword-style
+    # without this arg) working.
+    rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = Field(default_factory=dict)
