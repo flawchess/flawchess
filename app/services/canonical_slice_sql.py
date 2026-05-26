@@ -86,7 +86,7 @@ into SQL has no injection vector. Never f-string ``user_id`` here.
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal, TypeAlias
+from typing import Final, Literal, TypeAlias
 
 from app.services.global_percentile_cdf import CdfMetricId
 
@@ -118,6 +118,13 @@ TIME_PRESSURE_CLOCK_PCT_THRESHOLD: float = 0.40
 TIME_PRESSURE_MIN_PRESSURED_N: int = 30
 CLOCK_GAP_MIN_POOL_N: int = 30
 NET_FLAG_RATE_MIN_POOL_N: int = 30
+
+# Phase 94.4 D-04: per-(user, TC) median rating anchor inclusion floor.
+# 30 games is the lower bound for a stable per-TC median on the recent-1000
+# pool (CLAUDE.md no-magic-numbers); tighter floors should be planner-tuned
+# post-Plan-04 regen report. Used as the default `min_games` in
+# `per_user_cte_median_anchor` below.
+MEDIAN_ANCHOR_MIN_GAMES: Final[int] = 30
 
 # Shared SQL constants.
 _EQUAL_FOOTING_TOL: int = 100
@@ -783,6 +790,88 @@ per_user_values AS (
     net_flag_rate AS metric_value,
     pool_n AS n_games
   FROM per_user
+)"""
+
+
+def per_user_cte_median_anchor(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+    platform: Literal["lichess", "chesscom"] | None = None,
+    min_games: int = MEDIAN_ANCHOR_MIN_GAMES,
+) -> str:
+    """Per-(user, TC) median rating anchor over the recent-1000-per-TC × 36-month pool.
+
+    Phase 94.4 D-04 / RESEARCH Pattern 6 (lines 622-666). Substrate for the
+    peer-relative percentile chip lookup: the median anchor per (user, TC) is
+    persisted in ``user_rating_anchors`` and later joined against the cohort
+    CDF artifact to read the percentile (Plan 04 benchmark-side; Plan 05
+    single-user-side).
+
+    Output CTE: ``per_user_anchor(user_id, anchor_rating INT, n_games INT)``.
+    ``anchor_rating`` is ``percentile_cont(0.5) WITHIN GROUP (ORDER BY ...)::int``
+    over the user's rating at game time (white_rating / black_rating, whichever
+    side the user played); ``n_games`` is the count of games used (HAVING
+    >= ``min_games``).
+
+    Daily-classical drop (RESEARCH Pitfall 11): chess.com Daily games are
+    bucketed ``classical`` by the import pipeline but are excluded from the
+    median anchor via ``WHERE NOT (g.platform = 'chess.com' AND
+    g.time_control_str LIKE '1/%')``. The drop is unconditional on ``tc`` for
+    structural symmetry — Daily games are filtered out everywhere, not just
+    when ``tc='classical'`` (RESEARCH Pitfall 2). As a result, classical
+    anchors may be absent for users who play only chess.com Daily, and the
+    chip suppresses naturally for that (user, classical) cell (D-04
+    suppression semantics).
+
+    The ``platform`` parameter restricts the join to a single platform:
+
+    * ``None`` → no platform filter (both Lichess and chess.com games
+      contribute to the median; the cohort CDF generator in Plan 04 uses
+      this form on the benchmark DB which is Lichess-only by construction).
+    * ``'lichess'`` / ``'chesscom'`` → emit ``AND g.platform = '<value>'``.
+      The Plan 05 Python wrapper drives the Lichess-precedence policy
+      (D-12) by calling this builder first with ``platform='lichess'`` and
+      falling back to ``platform='chesscom'`` only if the Lichess result
+      misses the floor — the policy is intentionally NOT in this SQL builder.
+
+    The ``source`` parameter is accepted for API symmetry with the other
+    pooled builders (the cohort difference lives entirely in
+    ``selected_users_cte``); the pooled body is identical on both paths
+    (D-10 "drift remains structurally impossible").
+
+    Security: ``tc`` and ``platform`` are ``Literal`` parameters constrained
+    by ty + Pydantic to the closed value set (4-value × 3-value matrix of
+    known strings), so the f-string interpolation has no SQL-injection
+    surface (T-94.4-02-01 / T-94.4-02-02). ``min_games`` is an ``int``,
+    safe to embed directly. ``snapshot_date.isoformat()`` emits only digits
+    and dashes via the existing ``_recency_window_sql`` helper.
+
+    f-string ``%`` convention: ``time_control_str LIKE '1/%'`` uses a single
+    ``%`` — this module's builders return raw SQL passed to asyncpg via
+    SQLAlchemy ``text()`` with ``:name``-style bindparams, NOT with Python
+    ``%``-style formatting, so no ``%%`` doubling is required.
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    platform_filter = "" if platform is None else f"AND g.platform = '{platform}'"
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+recent_capped_no_daily AS (
+  SELECT rc.*
+  FROM recent_capped rc
+  JOIN games g ON g.id = rc.id
+  WHERE NOT (g.platform = 'chess.com' AND g.time_control_str LIKE '1/%')
+    {platform_filter}
+),
+per_user_anchor AS (
+  SELECT
+    rc.user_id,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY {_user_elo_at_game_expr()})::int AS anchor_rating,
+    count(*) AS n_games
+  FROM recent_capped_no_daily rc
+  JOIN games g ON g.id = rc.id
+  GROUP BY rc.user_id
+  HAVING count(*) >= {min_games}
 )"""
 
 
