@@ -14,7 +14,12 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 
-import type { ClockGapBullet, PressureQuintileBullet, TimePressureTcCard } from '@/types/endgames';
+import type {
+  ClockGapBullet,
+  PressureQuintileBullet,
+  RatingAnchorOut,
+  TimePressureTcCard,
+} from '@/types/endgames';
 
 // Constants match the component — reference symbolically, not as magic numbers.
 const MIN_GAMES_PER_TC_CARD = 20;
@@ -105,8 +110,22 @@ function makeCard(overrides?: Partial<TimePressureTcCard>): TimePressureTcCard {
   };
 }
 
-function renderCard(card: TimePressureTcCard) {
-  return render(<EndgameTimePressureCard card={card} />);
+// Phase 94.4 Plan 07: chip slots require both a non-null percentile AND a
+// rating anchor for the popover's 4th-bullet disclosure. The default fixture
+// supplies a Lichess anchor so chips render whenever their percentile field
+// is non-null.
+const DEFAULT_RATING_ANCHOR: RatingAnchorOut = {
+  anchor_rating: 1600,
+  source_platform: 'lichess',
+  chesscom_raw_rating: null,
+  n_games: 1000,
+};
+
+function renderCard(
+  card: TimePressureTcCard,
+  ratingAnchor: RatingAnchorOut | undefined = DEFAULT_RATING_ANCHOR,
+) {
+  return render(<EndgameTimePressureCard card={card} ratingAnchor={ratingAnchor} />);
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -401,8 +420,10 @@ describe('EndgameTimePressureCard — Phase 94.3 chip slots', () => {
 
   // Pitfall 7: net_flag_rate_percentile === 0 is a VALID percentile (the
   // worst end of the cohort under higher_is_better). The chip MUST render —
-  // gate is `!= null`, not falsy. Post-UAT: direction is higher_is_better, so
-  // p=0 renders as "Bottom 1%" (chip label is floored at 1% to avoid "Bottom 0%").
+  // gate is `!= null`, not falsy. Phase 94.4 chip face is the bare `p1` form
+  // (MIN_PERCENT floor at 1 to avoid "p0"); direction is higher_is_better
+  // throughout (Net Flag Rate's inversion is handled at the Plan 04 CDF-gen
+  // layer, so a low chip value still reads as "bottom of cohort").
   it('renders the Net Flag chip when net_flag_rate_percentile === 0 (NOT null)', () => {
     renderCard(
       makeCard({
@@ -413,7 +434,7 @@ describe('EndgameTimePressureCard — Phase 94.3 chip slots', () => {
     );
     const chip = screen.getByTestId('time-pressure-card-bullet-net-flag-rate-chip');
     expect(chip).not.toBeNull();
-    expect(chip.textContent).toContain('Bottom 1%');
+    expect(chip.textContent).toContain('p1');
   });
 
   // Per-TC placement parity — confirm the testid template substitutes the TC

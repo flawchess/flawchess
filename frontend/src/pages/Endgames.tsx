@@ -548,7 +548,10 @@ export function EndgamesPage() {
                   <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
                 </div>
               )}
-              <EndgameTimePressureSection data={timePressureCardsData} />
+              <EndgameTimePressureSection
+                data={timePressureCardsData}
+                ratingAnchors={overviewData?.rating_anchors}
+              />
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}

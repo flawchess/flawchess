@@ -13,6 +13,7 @@
  */
 
 import { EndgameTimePressureCard } from '@/components/charts/EndgameTimePressureCard';
+import type { RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import type { TimePressureCardsResponse } from '@/types/endgames';
 
 // SC-1: Named grid class constants — no magic strings in the ternary.
@@ -27,9 +28,18 @@ const GRID_FOUR_CARDS = 'grid grid-cols-1 xl:grid-cols-2 gap-4 mt-2';
 
 export function EndgameTimePressureSection({
   data,
+  ratingAnchors,
 }: {
   data: TimePressureCardsResponse;
+  /** Phase 94.4 Plan 07: per-TC rating anchors from
+   *  EndgameOverviewResponse.rating_anchors. Threaded into per-TC chip slots
+   *  on each EndgameTimePressureCard. Cards without a matching anchor (TC
+   *  below the inclusion floor) suppress their chip silently. Defaults to
+   *  an empty object so legacy fixtures and pre-94.4 server responses still
+   *  render the section (chips just don't appear). */
+  ratingAnchors?: RatingAnchorsByTc;
 }) {
+  const anchors = ratingAnchors ?? {};
   return (
     <section
       data-testid="time-pressure-cards-section"
@@ -71,6 +81,7 @@ export function EndgameTimePressureSection({
                   key={card.tc}
                   card={card}
                   grandTotal={grandTotal}
+                  ratingAnchor={anchors[card.tc]}
                 />
               ))}
             </div>
