@@ -303,8 +303,12 @@ async def main(
         )
 
     # Initialize per-metric summary counters.
-    all_metrics: tuple[CdfMetricId, ...] = (STAGE_A_METRIC, *STAGE_B_METRICS)
-    summary: dict[CdfMetricId, _MetricSummary] = {m: _MetricSummary() for m in all_metrics}
+    # TODO Plan 05 (94.4-05): cut over to per-(family, TC) summary keying.
+    # CdfMetricId collapsed 16 → 8 in Plan 04, but STAGE_B_METRICS still uses
+    # the legacy 16-entry TC-suffixed name set as a transient stub. Widen the
+    # tuple element type to ``str`` here to satisfy ty.
+    all_metrics: tuple[str, ...] = (STAGE_A_METRIC, *STAGE_B_METRICS)
+    summary: dict[str, _MetricSummary] = {m: _MetricSummary() for m in all_metrics}
 
     # Track failed user_ids for exit-code reporting.
     failed_user_ids: list[int] = []
@@ -359,7 +363,7 @@ async def _backfill_user(
     target: Literal["dev", "prod"],
     metric_filter: CdfMetricId | None,
     backfill_session_maker: async_sessionmaker[AsyncSession],
-    summary: dict[CdfMetricId, _MetricSummary],
+    summary: dict[str, _MetricSummary],
 ) -> None:
     """Run Stage A + Stage B for a single user and update summary counters.
 
@@ -442,7 +446,7 @@ async def _compute_and_count(
 
 async def _row_exists(
     user_id: int,
-    metric: CdfMetricId,
+    metric: str,  # TODO Plan 05 (94.4-05): retighten to CdfMetricId after STAGE_B_METRICS cutover
     session_maker: async_sessionmaker[AsyncSession],
 ) -> bool:
     """Return True if a row exists in user_benchmark_percentiles for (user_id, metric).
