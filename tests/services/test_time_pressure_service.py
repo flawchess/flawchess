@@ -1256,35 +1256,55 @@ class TestComputeTimePressureCardsPercentileAttach:
     def test_percentile_rows_populates_per_tc_lookup_correctly(self) -> None:
         """Mixed percentile_rows: partial coverage attaches to the right card.
 
+        Phase 94.4 D-08: the shape is now nested
+        (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]); each
+        TC card reads its own per-(metric, tc) row directly (no aggregation
+        per RESEARCH line 1117).
+
         Bullet card receives time_pressure_score_gap=42.0 and clock_gap=88.0;
-        net_flag_rate_bullet is intentionally omitted so the bullet card's
+        net_flag_rate.bullet is intentionally omitted so the bullet card's
         net_flag_rate_percentile is None. Classical card receives only
-        net_flag_rate=3.0. Blitz and rapid have no rows so all 3 are None.
+        net_flag_rate.classical=3.0. Blitz and rapid have no rows so all 3
+        are None.
         """
+        from app.models.user_rating_anchors import TimeControlBucket
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
 
         rows = self._all_tc_rows()
-        percentile_rows: dict[str, PercentileRow] = {
-            "time_pressure_score_gap_bullet": PercentileRow(
-                value=0.05,
-                percentile=42.0,
-                cdf_snapshot=datetime.date(2026, 5, 24),
-            ),
-            "clock_gap_bullet": PercentileRow(
-                value=0.04,
-                percentile=88.0,
-                cdf_snapshot=datetime.date(2026, 5, 24),
-            ),
-            "net_flag_rate_classical": PercentileRow(
-                value=0.01,
-                percentile=3.0,
-                cdf_snapshot=datetime.date(2026, 5, 24),
-            ),
+        # Phase 94.4 D-08: TC dimensionality moved from the CdfMetricId key
+        # (legacy _bullet / _classical / etc. suffixes) into the inner-dict
+        # TimeControlBucket key.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "time_pressure_score_gap": {
+                "bullet": PercentileRow(
+                    value=0.05,
+                    percentile=42.0,
+                    cdf_snapshot=datetime.date(2026, 5, 24),
+                    n_games=42,
+                ),
+            },
+            "clock_gap": {
+                "bullet": PercentileRow(
+                    value=0.04,
+                    percentile=88.0,
+                    cdf_snapshot=datetime.date(2026, 5, 24),
+                    n_games=42,
+                ),
+            },
+            "net_flag_rate": {
+                "classical": PercentileRow(
+                    value=0.01,
+                    percentile=3.0,
+                    cdf_snapshot=datetime.date(2026, 5, 24),
+                    n_games=42,
+                ),
+            },
         }
 
         result = _compute_time_pressure_cards(
             rows,
-            percentile_rows=percentile_rows,  # ty: ignore[invalid-argument-type]
+            percentile_rows=percentile_rows,
         )
         # All 4 TC cards present (each TC padded to MIN_GAMES_PER_TC_CARD).
         cards_by_tc = {card.tc: card for card in result.cards}
@@ -1312,19 +1332,25 @@ class TestComputeTimePressureCardsPercentileAttach:
 
     def test_percentile_rows_with_null_percentile_value_propagates_null(self) -> None:
         """PercentileRow.percentile may itself be None (CDF returned None). Attach as None."""
+        from app.models.user_rating_anchors import TimeControlBucket
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
 
         rows = self._bullet_rows()
-        percentile_rows: dict[str, PercentileRow] = {
-            "clock_gap_bullet": PercentileRow(
-                value=0.04,
-                percentile=None,
-                cdf_snapshot=datetime.date(2026, 5, 24),
-            ),
+        # Phase 94.4 D-08: nested per-(metric, TC) shape.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "clock_gap": {
+                "bullet": PercentileRow(
+                    value=0.04,
+                    percentile=None,
+                    cdf_snapshot=datetime.date(2026, 5, 24),
+                    n_games=42,
+                ),
+            },
         }
         result = _compute_time_pressure_cards(
             rows,
-            percentile_rows=percentile_rows,  # ty: ignore[invalid-argument-type]
+            percentile_rows=percentile_rows,
         )
         bullet = result.cards[0]
         # Row exists but its percentile is None -> field is None (not raise, not skip).

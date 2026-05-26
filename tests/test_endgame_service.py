@@ -1698,6 +1698,14 @@ class TestGetEndgameOverview:
                 new_callable=AsyncMock,
                 return_value={},
             ),
+            # Phase 94.4 D-07: rating_anchors block fetched from
+            # user_rating_anchors via fetch_anchors_for_user. Patch to an
+            # empty dict so the mock session never executes a real query.
+            patch(
+                "app.services.endgame_service.fetch_anchors_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_entry.return_value = []
             mock_bucket.return_value = []
@@ -1779,6 +1787,12 @@ class TestGetEndgameOverview:
             ) as mock_elo_timeline,
             patch(
                 "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            # Phase 94.4 D-07: see test_overview_composes_all_payloads.
+            patch(
+                "app.services.endgame_service.fetch_anchors_for_user",
                 new_callable=AsyncMock,
                 return_value={},
             ),
@@ -4244,15 +4258,24 @@ class TestPercentileGates:
         """
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
         from app.services.global_percentile_cdf import CdfMetricId
+        from app.models.user_rating_anchors import TimeControlBucket
         import datetime
 
         bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
-        percentile_rows: dict[CdfMetricId, PercentileRow] = {
-            "achievable_score_gap": PercentileRow(
-                value=0.05,
-                percentile=63.0,
-                cdf_snapshot=datetime.date(2026, 3, 31),
-            ),
+        # Phase 94.4 D-08: percentile_rows is now nested
+        # (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]); the
+        # _aggregate_per_tc_percentile helper produces the page-level chip
+        # scalar. Single-TC row -> aggregator returns that row's percentile
+        # unchanged.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "achievable_score_gap": {
+                "blitz": PercentileRow(
+                    value=0.05,
+                    percentile=63.0,
+                    cdf_snapshot=datetime.date(2026, 3, 31),
+                    n_games=42,
+                ),
+            },
         }
         resp = _get_endgame_performance_from_rows(
             endgame_rows=self._wdl_rows_white_wins(10),
@@ -4289,16 +4312,22 @@ class TestPercentileGates:
         """
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
         from app.services.global_percentile_cdf import CdfMetricId
+        from app.models.user_rating_anchors import TimeControlBucket
         import datetime
 
         endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
         non_endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
-        percentile_rows: dict[CdfMetricId, PercentileRow] = {
-            "score_gap": PercentileRow(
-                value=0.0,
-                percentile=72.5,
-                cdf_snapshot=datetime.date(2026, 3, 31),
-            ),
+        # Phase 94.4 D-08: nested shape; single-TC row -> aggregator returns
+        # that row's percentile unchanged.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "score_gap": {
+                "blitz": PercentileRow(
+                    value=0.0,
+                    percentile=72.5,
+                    cdf_snapshot=datetime.date(2026, 3, 31),
+                    n_games=42,
+                ),
+            },
         }
         result = _compute_score_gap_material(
             endgame_wdl, non_endgame_wdl, [], percentile_rows=percentile_rows
@@ -4326,17 +4355,22 @@ class TestPercentileGates:
         """
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
         from app.services.global_percentile_cdf import CdfMetricId
+        from app.models.user_rating_anchors import TimeControlBucket
         import datetime
 
         endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         gaps_by_bucket = {"conversion": [0.0] * 10, "parity": [], "recovery": []}
-        percentile_rows: dict[CdfMetricId, PercentileRow] = {
-            "section2_score_gap_conv": PercentileRow(
-                value=0.0,
-                percentile=41.0,
-                cdf_snapshot=datetime.date(2026, 3, 31),
-            ),
+        # Phase 94.4 D-08: nested shape.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "section2_score_gap_conv": {
+                "blitz": PercentileRow(
+                    value=0.0,
+                    percentile=41.0,
+                    cdf_snapshot=datetime.date(2026, 3, 31),
+                    n_games=42,
+                ),
+            },
         }
         result = _compute_score_gap_material(
             endgame_wdl,
@@ -4367,17 +4401,22 @@ class TestPercentileGates:
         """
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
         from app.services.global_percentile_cdf import CdfMetricId
+        from app.models.user_rating_anchors import TimeControlBucket
         import datetime
 
         endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         gaps_by_bucket = {"conversion": [], "parity": [0.0] * 10, "recovery": []}
-        percentile_rows: dict[CdfMetricId, PercentileRow] = {
-            "section2_score_gap_parity": PercentileRow(
-                value=0.0,
-                percentile=68.0,
-                cdf_snapshot=datetime.date(2026, 3, 31),
-            ),
+        # Phase 94.4 D-08: nested shape.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "section2_score_gap_parity": {
+                "blitz": PercentileRow(
+                    value=0.0,
+                    percentile=68.0,
+                    cdf_snapshot=datetime.date(2026, 3, 31),
+                    n_games=42,
+                ),
+            },
         }
         result = _compute_score_gap_material(
             endgame_wdl,
@@ -4406,11 +4445,19 @@ class TestPercentileGates:
         assert result.section2_score_gap_conv_percentile is None
         assert result.section2_score_gap_parity_percentile is None
 
-    def test_recovery_percentile_never_emitted(self) -> None:
-        """D-12: ScoreGapMaterialResponse exposes NO recovery percentile field.
+    def test_recovery_percentile_is_emitted_per_d05a(self) -> None:
+        """Phase 94.4 D-05a: Recovery Score Gap chip is RESCUED under peer-relative.
 
-        Defensive structural guard against future "let's add a recovery
-        percentile to be symmetric" mistakes (Pitfall 5).
+        Under global the d=0.95-inverted + opponent-confounded properties drove
+        the v1 drop (Phase 94 D-12 suppression). Under peer-relative the
+        rating component of opponent strength normalises naturally inside a
+        same-rated cohort, so the field is restored.
+
+        The legacy section2_score_gap_recov_percentile field name (mirroring
+        the section2 prefix used for conv/parity) is intentionally NOT used.
+        The rescued chip lives at ``recovery_score_gap_percentile`` to mirror
+        the CdfMetricId literal ``recovery_score_gap`` (D-13 ENUM) used to
+        key the per-(metric, TC) percentile rows.
         """
         from app.schemas.endgames import ScoreGapMaterialResponse
 
@@ -4420,8 +4467,113 @@ class TestPercentileGates:
         result = _compute_score_gap_material(
             endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
         )
-        # Structural guard: the response model itself must not declare the field.
-        # (Read from the class, not the instance — Pydantic v2.11 deprecation.)
-        assert "section2_score_gap_recov_percentile" not in ScoreGapMaterialResponse.model_fields
-        # And the computed response must not carry it as a runtime attribute.
-        assert not hasattr(result, "section2_score_gap_recov_percentile")
+        # The rescued field is present on the model.
+        assert "recovery_score_gap_percentile" in ScoreGapMaterialResponse.model_fields
+        # When no percentile_rows are passed the chip is None (same suppression
+        # semantics as score_gap_percentile et al. without a DB-fed mapping).
+        assert result.recovery_score_gap_percentile is None
+        # The legacy section2_* name remains absent — D-05a renames to
+        # match the CdfMetricId literal.
+        assert (
+            "section2_score_gap_recov_percentile"
+            not in ScoreGapMaterialResponse.model_fields
+        )
+
+
+# ── Phase 94.4 Plan 05c Task 2: _aggregate_per_tc_percentile helper ───────────
+
+
+class TestAggregatePerTcPercentile:
+    """Phase 94.4 D-08 / D-08a / D-08b — page-level chip aggregator.
+
+    The helper computes a game-count-weighted mean across the per-TC
+    PercentileRow entries returned by Plan 05a's nested fetch_for_user
+    shape. Below-floor TCs (no row -> absent from the inner dict) carry an
+    implicit zero weight (D-08a). All-None-percentile rows yield None
+    (no signal to surface). Single-TC dicts pass through unchanged.
+    """
+
+    @staticmethod
+    def _row(percentile: float | None, n_games: int) -> Any:
+        """Build a PercentileRow with the requested fields."""
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+
+        return PercentileRow(
+            value=0.0,
+            percentile=percentile,
+            cdf_snapshot=datetime.date(2026, 5, 27),
+            n_games=n_games,
+        )
+
+    def test_empty_dict_returns_none(self) -> None:
+        """D-08a: empty per-TC dict (user passed no TC's inclusion floor)."""
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        empty: dict[TimeControlBucket, PercentileRow] = {}
+        assert _aggregate_per_tc_percentile(empty) is None
+
+    def test_none_input_returns_none(self) -> None:
+        """Defensive: outer .get() miss returns None (no metric key at all)."""
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        assert _aggregate_per_tc_percentile(None) is None
+
+    def test_weighted_mean_three_tcs(self) -> None:
+        """D-08: game-count weighted mean of 20/40/60 with weights 30/20/50.
+
+        (20*30 + 40*20 + 60*50) / (30 + 20 + 50)
+          = (600 + 800 + 3000) / 100
+          = 4400 / 100 = 44.0
+        """
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        per_tc: dict[TimeControlBucket, PercentileRow] = {
+            "bullet": self._row(percentile=20.0, n_games=30),
+            "blitz": self._row(percentile=40.0, n_games=20),
+            "rapid": self._row(percentile=60.0, n_games=50),
+        }
+        result = _aggregate_per_tc_percentile(per_tc)
+        assert result == pytest.approx(44.0)
+
+    def test_all_none_percentiles_returns_none(self) -> None:
+        """All-None percentile rows -> no signal -> None."""
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        per_tc: dict[TimeControlBucket, PercentileRow] = {
+            "bullet": self._row(percentile=None, n_games=30),
+            "blitz": self._row(percentile=None, n_games=20),
+        }
+        assert _aggregate_per_tc_percentile(per_tc) is None
+
+    def test_mixed_none_and_valid_drops_none_rows(self) -> None:
+        """D-08a: None-percentile rows drop out of both numerator and denominator;
+        a single surviving row's percentile passes through unchanged."""
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        per_tc: dict[TimeControlBucket, PercentileRow] = {
+            "bullet": self._row(percentile=None, n_games=30),
+            "blitz": self._row(percentile=50.0, n_games=20),
+        }
+        # Only the blitz row contributes -> 50.0 (n_games of the bullet row is
+        # ignored per the implicit-zero-weight rule).
+        assert _aggregate_per_tc_percentile(per_tc) == pytest.approx(50.0)
+
+    def test_single_row_dict_returns_percentile_unchanged(self) -> None:
+        """Single-TC dict (e.g. user only plays rapid) -> aggregator passes
+        the percentile through verbatim regardless of n_games."""
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        per_tc: dict[TimeControlBucket, PercentileRow] = {
+            "rapid": self._row(percentile=37.5, n_games=100)
+        }
+        assert _aggregate_per_tc_percentile(per_tc) == pytest.approx(37.5)

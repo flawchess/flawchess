@@ -526,10 +526,22 @@ class ScoreGapMaterialResponse(BaseModel):
     section2_score_gap_recov_p_value: float | None = None
     section2_score_gap_recov_ci_low: float | None = None
     section2_score_gap_recov_ci_high: float | None = None
-    # Phase 94 (D-12): NO recovery percentile field is emitted for the
-    # recovery bucket. Recovery is opponent-confounded (d=0.95 inverted) and
-    # the Phase 93 CDF does not ship a recovery breakpoint table. Do not add
-    # one here without revisiting D-12 and the methodology.
+    # Phase 94.4 D-05a (RESCUES Phase 94 D-12 suppression): Recovery Score
+    # Gap chip slot is restored under peer-relative. Under global, Recovery's
+    # d=0.95 inverted + opponent-confounded drove the v1 drop. Under
+    # peer-relative same-rated cohort comparison, the rating component of
+    # opponent strength normalises naturally; residual opponent-selection
+    # confound (challenging up vs farming down) is disclosed honestly via the
+    # tooltip's cohort-relative framing.
+    # Field name mirrors the MetricId literal "recovery_score_gap" used to
+    # key the per-(metric, TC) percentile rows in
+    # user_benchmark_percentiles.
+    recovery_score_gap_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of section2_score_gap_recov_mean vs the
+    Phase 94.4 per-(rating cohort, TC) CDF for the rescued recovery metric
+    (D-05a). None when (a) Stage B has not computed a row for any of the
+    user's TCs, or (b) every above-floor TC's percentile is None (CDF out of
+    range)."""
 
     # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
     # section2_score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
