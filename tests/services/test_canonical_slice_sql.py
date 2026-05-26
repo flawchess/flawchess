@@ -796,9 +796,7 @@ class TestPerUserCteScoreGapTc:
         assert "n_games" in block
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
-    def test_metric_value_formula_matches_non_per_tc_analog(
-        self, tc: TimeControlBucket
-    ) -> None:
+    def test_metric_value_formula_matches_non_per_tc_analog(self, tc: TimeControlBucket) -> None:
         """metric_value formula mirrors per_user_cte_score_gap: eg_score - non_eg_score."""
         from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
 
