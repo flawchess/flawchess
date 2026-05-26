@@ -1893,9 +1893,13 @@ def _build_quintile_bullets(
 # on TimePressureTcCard. Building the mapping as a typed dict avoids the need
 # for an "assignment" ignore on f-string Literal inference (PATTERNS.md
 # §_compute_time_pressure_cards lines 540-544).
+# TODO Plan 05 (94.4-05): cut over to per-(family × TC) lookup keying. Plan 04
+# collapsed CdfMetricId 16 → 8 — the TC-suffixed string literals below are no
+# longer members of CdfMetricId. Widen the tuple element type to ``str`` as a
+# transient stub until Plan 05 replaces this dict with the new shape.
 _TC_TO_METRIC_KEYS: dict[
     Literal["bullet", "blitz", "rapid", "classical"],
-    tuple[CdfMetricId, CdfMetricId, CdfMetricId],
+    tuple[str, str, str],
 ] = {
     "bullet": (
         "time_pressure_score_gap_bullet",
@@ -2002,9 +2006,12 @@ def _compute_time_pressure_cards(
         # absent (None) when the user is below the pooled ≥30 floor on that TC.
         tc_literal = cast(Literal["bullet", "blitz", "rapid", "classical"], tc)
         tps_key, cg_key, nf_key = _TC_TO_METRIC_KEYS[tc_literal]
-        tps_row = _effective_rows.get(tps_key)
-        cg_row = _effective_rows.get(cg_key)
-        nf_row = _effective_rows.get(nf_key)
+        # TODO Plan 05 (94.4-05): cut over to per-(family × TC) lookup keying.
+        # The keys here carry the legacy TC-suffixed names which are no longer
+        # members of CdfMetricId; cast through the broader Mapping API surface.
+        tps_row = _effective_rows.get(tps_key)  # ty: ignore[invalid-argument-type]
+        cg_row = _effective_rows.get(cg_key)  # ty: ignore[invalid-argument-type]
+        nf_row = _effective_rows.get(nf_key)  # ty: ignore[invalid-argument-type]
 
         cards.append(
             TimePressureTcCard(

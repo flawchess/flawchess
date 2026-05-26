@@ -72,8 +72,13 @@ from app.services.global_percentile_cdf import CdfMetricId, interpolate_percenti
 # Module-level constants (CLAUDE.md: no magic numbers; mirrors CONTEXT D-10).
 # ---------------------------------------------------------------------------
 
+# TODO Plan 05 (94.4-05): cut over to interpolate_cohort_percentile + per-TC
+# STAGE_B_METRIC_FAMILIES (8-value CdfMetricId × outer-key TC). Plan 04
+# (94.4-04) collapsed CdfMetricId from 16 → 8 (CONTEXT D-13), so the old
+# TC-suffixed entries below are no longer members of CdfMetricId. They are
+# typed ``str`` here as a transient stub until Plan 05 finishes the cutover.
 STAGE_A_METRIC: CdfMetricId = "score_gap"
-STAGE_B_METRICS: tuple[CdfMetricId, ...] = (
+STAGE_B_METRICS: tuple[str, ...] = (
     "achievable_score_gap",
     "section2_score_gap_conv",
     "section2_score_gap_parity",
@@ -220,7 +225,14 @@ async def compute_stage_b(
     maker = session_maker if session_maker is not None else _default_session_maker
     try:
         async with maker() as session:
-            for metric_id in STAGE_B_METRICS:
+            for metric_id_raw in STAGE_B_METRICS:
+                # TODO Plan 05 (94.4-05): cut over to interpolate_cohort_percentile +
+                # per-TC STAGE_B_METRIC_FAMILIES. CdfMetricId collapsed 16 → 8 in
+                # Plan 04, so the legacy TC-suffixed names in STAGE_B_METRICS are
+                # not members of the new Literal — cast through CdfMetricId here
+                # as a transient stub so the loop compiles. Plan 05 replaces
+                # this entire loop with the per-(family × TC) iteration.
+                metric_id: CdfMetricId = metric_id_raw  # ty: ignore[invalid-assignment]
                 try:
                     result = await _compute_metric_for_user(session, user_id, metric_id)
                     if result is None:

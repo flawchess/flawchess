@@ -119,8 +119,8 @@ async def test_stage_b_compute_called_once_per_user_not_per_metric() -> None:
     Net: 15 × 15 = 225 CTE executions/user. The fix moves `compute_stage_b`
     out of the per-metric loop and uses `_row_exists` per metric to classify.
     """
-    all_metrics: tuple[CdfMetricId, ...] = (bup.STAGE_A_METRIC, *bup.STAGE_B_METRICS)
-    summary: dict[CdfMetricId, bup._MetricSummary] = {m: bup._MetricSummary() for m in all_metrics}
+    all_metrics: tuple[str, ...] = (bup.STAGE_A_METRIC, *bup.STAGE_B_METRICS)
+    summary: dict[str, bup._MetricSummary] = {m: bup._MetricSummary() for m in all_metrics}
 
     fake_session_maker = MagicMock()
     fake_session_maker.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
@@ -156,8 +156,8 @@ async def test_stage_b_compute_called_once_per_user_not_per_metric() -> None:
 
 async def test_backfill_user_increments_upserted_when_classifier_returns_true() -> None:
     """End-to-end inside _backfill_user: classifier True → upserted counter."""
-    all_metrics: tuple[CdfMetricId, ...] = (bup.STAGE_A_METRIC, *bup.STAGE_B_METRICS)
-    summary: dict[CdfMetricId, bup._MetricSummary] = {m: bup._MetricSummary() for m in all_metrics}
+    all_metrics: tuple[str, ...] = (bup.STAGE_A_METRIC, *bup.STAGE_B_METRICS)
+    summary: dict[str, bup._MetricSummary] = {m: bup._MetricSummary() for m in all_metrics}
 
     fake_session_maker = MagicMock()
     fake_session_maker.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
@@ -195,8 +195,8 @@ async def test_backfill_user_increments_skipped_below_pooled_floor_when_classifi
     Phase 94.2: below-floor users (failing the pooled ≥30 inclusion floor) return
     None from the classifier (no row written), mapped to skipped_below_pooled_floor.
     """
-    all_metrics: tuple[CdfMetricId, ...] = (bup.STAGE_A_METRIC, *bup.STAGE_B_METRICS)
-    summary: dict[CdfMetricId, bup._MetricSummary] = {m: bup._MetricSummary() for m in all_metrics}
+    all_metrics: tuple[str, ...] = (bup.STAGE_A_METRIC, *bup.STAGE_B_METRICS)
+    summary: dict[str, bup._MetricSummary] = {m: bup._MetricSummary() for m in all_metrics}
 
     fake_session_maker = MagicMock()
     fake_session_maker.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
