@@ -575,7 +575,9 @@ class TestPerUserCteMedianAnchor:
         excludes them everywhere for structural symmetry (Pitfall 2).
         """
         sql = per_user_cte_median_anchor(tc, source="benchmark")
-        assert "g.platform = 'chess.com'" in sql, f"Daily drop chess.com clause missing for tc={tc!r}"
+        assert "g.platform = 'chess.com'" in sql, (
+            f"Daily drop chess.com clause missing for tc={tc!r}"
+        )
         assert "time_control_str LIKE '1/%'" in sql, (
             f"Daily LIKE '1/%' clause missing for tc={tc!r}"
         )
