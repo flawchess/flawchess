@@ -4,7 +4,7 @@ status: planted
 planted: 2026-05-25
 last_updated: 2026-05-26
 planted_during: /gsd-explore session — reflecting on shipped percentile chips (Phases 93/94.2/94.3) after observing the mobile chip is too large and that low-percentile chips on elite users may undermine credibility. Triggered re-examination of SEED-019's global-pool decision against the Lichess Tutor cohort-based alternative; the cross-platform rating-scale constraint reaffirmed global-pool and shifted the refinement to UX + metric eligibility instead of cohort restructuring.
-updated_during: /gsd-explore session 2026-05-26 — (a) steelmanned the case for peer-relative percentiles and inverted the previous rejection; the "global percentile ≈ what the zone band already shows" insight is the load-bearing flip; cross-platform rating-scale concerns addressed via Lichess-precedence + chessgrandmonkey-style chess.com → Lichess conversion at ±100-Elo accuracy; sample-size concerns addressed via 200-user/cell selection (up from 100) + 50-Elo interpolation between anchors; latency was never a real constraint (we precompute at import). (b) Unified the TC-aggregated-metric cohort handling with the TC-stratified-metric handling — both now use per-(metric, ELO, TC) cohort CDFs and per-TC user scalars; the TC-aggregated chip becomes a game-count-weighted average of per-TC sub-percentiles. Removes the cross-TC-rating-anchor question by not needing one.
+updated_during: /gsd-explore session 2026-05-26 — (a) steelmanned the case for peer-relative percentiles and inverted the previous rejection; the "global percentile ≈ what the zone band already shows" insight is the load-bearing flip; cross-platform rating-scale concerns addressed via Lichess-precedence + ChessGoals empirical per-TC conversion table for chess.com inputs; sample-size concerns addressed via 200-user/cell selection (up from 100); latency was never a real constraint (we precompute at import). (b) Unified the TC-aggregated-metric cohort handling with the TC-stratified-metric handling — both now use per-(metric, ELO, TC) cohort CDFs and per-TC user scalars; the TC-aggregated chip becomes a game-count-weighted average of per-TC sub-percentiles. Removes the cross-TC-rating-anchor question by not needing one. (c) Replaced 400-wide bucket + 50-Elo linear-interpolation cohort lookup with native 50-Elo sliding-window cohorts (K=200 floor-passing users per anchor, ±150-Elo max window). Removes the interpolation step entirely — the live user's anchor rounds to nearest 50-Elo and looks up directly. (d) Locked conversion source: ChessGoals Table 2 (https://chessgoals.com/rating-comparison/) snapshot-dated as a hardcoded Python constant. FlawChess prod's dual-platform user sample is currently too thin for internal calibration; refit-from-prod is a future trigger condition.
 scope: phase (single, ~2-3 plans) — build per-cohort CDF family, add rating-anchor lookup at import time, rework chip UX (shrink + tooltip), revisit metric eligibility under the new framing
 depends_on: SEED-019 phases shipped (93 CDF artifact, 94.2 chip rendering, 94.3 per-TC TimePressure chips). Production data on real elite users would sharpen the credibility evidence but isn't a hard prerequisite. Validating a chess.com → Lichess conversion table at FlawChess's ELO buckets is a research-question prerequisite before locking the rating-anchor logic.
 supersedes_decisions_in: SEED-019 § "Final Tier-1 chip set" — the empirical tier table needs revisiting under peer-relative semantics; metrics previously dropped for ELO coupling (Conversion, Recovery, Time Pressure at rapid) may rescue under peer-relative since within-cohort comparison removes the rating-echo failure mode. Also supersedes this seed's own prior global-pool-preserving stance (see "Why global-pool percentiles are now rejected" below).
@@ -12,7 +12,7 @@ supersedes_decisions_in: SEED-019 § "Final Tier-1 chip set" — the empirical t
 
 # SEED-026: Percentile chip refinement — peer-relative pivot
 
-> **One-line summary (v2, 2026-05-26):** The chip pivots from global-pool ("vs all FlawChess benchmark users") to peer-relative ("vs same-rated-cohort users"), because global percentile is largely redundant with what the zone band already shows visually, while peer-relative carries information not visible elsewhere on the page. Cohort assignment uses a single rating anchor *per (user, TC)* — median rating over the user's latest ~1000 games at that TC, Lichess rating wins precedence over chess.com (chess.com gets converted via a published Elo-conversion table where Lichess data is absent). All metrics — TC-stratified and previously-TC-aggregated alike — use per-(metric, ELO, TC) cohort CDFs with 50-Elo interpolation between 400-wide ELO bucket centers. For previously-TC-aggregated metrics (`score_gap`, `achievable_score_gap`, the two Section-2 metrics), the chip is a game-count-weighted average of per-TC sub-percentiles; per-TC scalars are looked up against per-TC cohort CDFs and aggregated user-side. Chip UX (shrink to `23%`/`p23` pill, tooltip-only, drop ambiguous-direction metrics) survives unchanged from v1. Metric eligibility is re-opened — peer-relative may rescue Conversion / Recovery / Endgame Score Gap chips that the v1 framing dropped.
+> **One-line summary (v2, 2026-05-26):** The chip pivots from global-pool ("vs all FlawChess benchmark users") to peer-relative ("vs same-rated-cohort users"), because global percentile is largely redundant with what the zone band already shows visually, while peer-relative carries information not visible elsewhere on the page. Cohort assignment uses a single rating anchor *per (user, TC)* — median rating over the user's latest ~1000 games at that TC, Lichess rating wins precedence over chess.com (chess.com gets converted via the ChessGoals empirical per-TC table where Lichess data is absent). Cohort CDFs are precomputed at 50-Elo anchors (800, 850, ..., 2400) as sliding windows of K=200 floor-passing benchmark users per (metric, anchor, TC), ranked by user-anchor distance. All metrics — TC-stratified and previously-TC-aggregated alike — use this same per-(metric, anchor, TC) shape. For previously-TC-aggregated metrics (`score_gap`, `achievable_score_gap`, the two Section-2 metrics), the chip is a game-count-weighted average of per-TC sub-percentiles; per-TC scalars are looked up against per-TC cohort CDFs and aggregated user-side. Chip UX (shrink to `23%`/`p23` pill, tooltip-only, drop ambiguous-direction metrics) survives unchanged from v1. Metric eligibility is re-opened — peer-relative may rescue Conversion / Recovery / Endgame Score Gap chips that the v1 framing dropped.
 >
 > **One-line summary (v1, 2026-05-25, superseded):** The chip's job narrows from "verdict on skill" to "diagnostic hint that surfaces anomalies worth investigating." Metrics that fail an ELO-coupling sanity check lose their chip; surviving chips shrink to a small `23%`/`p23` pill with tooltip-only explanation; tooltip copy acknowledges global-pool framing with rating-correlation honesty per metric. Cohort-based ("vs same-rating peers") percentiles are explicitly *not* adopted — the cross-platform rating-scale constraint kills that architecture for FlawChess.
 
@@ -29,11 +29,11 @@ The v1 seed's rejection of peer-relative cited five reasons. v2 addresses each:
 
 | v1 rejection reason | v2 resolution |
 |---|---|
-| Cross-platform rating-scale incompatibility | Lichess rating wins precedence per TC when both platforms have games; chess.com → Lichess-equivalent conversion via a published table (e.g. chessgrandmonkey-style). Conversion accuracy of ±100 Elo is sufficient at 50-Elo interpolation between anchors. |
+| Cross-platform rating-scale incompatibility | Lichess rating wins precedence per TC when both platforms have games. For chess.com-only inputs we apply the **ChessGoals Table 2** empirical per-TC conversion (https://chessgoals.com/rating-comparison/). Research-decisive finding: no principled closed-form chess.com ↔ Lichess formula exists (Glicko-1 vs Glicko-2, different implementations, different starting pools per Lichess's own rating-systems page); all viable converters are empirical fits. ChessGoals publishes its methodology (linear/polynomial fits, outlier removal across ~10k profiles) and per-TC tables; competitor converters (ChessDojo, chessratings.org, chessgrandmonkey) either lack per-TC granularity, are opaque widgets, or are closed JS. Conversion accuracy of ±100 Elo is sufficient at 50-Elo cohort granularity. |
 | No bulk chess.com benchmark data | Restated honestly: this is "we picked Lichess because their PGN dumps include Stockfish evals," not "no bulk endpoint exists." Either way the consequence is the same — Lichess is canonical. Going peer-relative locks that assumption in more visibly, but global-pool already had the same assumption baked in invisibly. |
-| Sparse cells at 2400 | 200 users/cell now (up from 100), and the 2400-classical cell stays suppressed as it already is. Mid-buckets carry ~150-280 users per (ELO, TC) cell which is comfortable for CDF estimation. |
+| Sparse cells at 2400 | 200 users/cell now (up from 100). With sliding-window cohorts (K=200 per 50-Elo anchor), the 2400-classical cell suppresses naturally if no window within ±150 Elo collects K users; mid-anchors carry comfortable populations. |
 | Latency | Never a real constraint — we precompute at import time and store the scalar percentile. Cohort lookup is one extra dict access per (user, metric) at compute time. |
-| Smaller benchmark population than Lichess Tutor | True, but Tutor recomputes at request time over a 5,000-game peer sample. We're precomputing against a fixed cohort CDF of ~150-280 users. Different operating regime; the n still supports stable CDF estimation. |
+| Smaller benchmark population than Lichess Tutor | True, but Tutor recomputes at request time over a 5,000-game peer sample. We're precomputing against a fixed cohort CDF of K=200 floor-passing users. Different operating regime; the n still supports stable integer-percentile CDF estimation. |
 
 ## What's load-bearing in v2
 
@@ -55,16 +55,39 @@ Under v2, a 2400 user landing at `p15` on Endgame Score Gap reads as "even compa
 **Single anchor per (user, TC)**, computed at import time (or recomputed when the user re-imports). The same rule applies to every metric — there is no TC-aggregated special case:
 
 - For each TC the user has games in: median rating over the user's latest ~1000 games at that TC, Lichess rating wins precedence over chess.com.
-- For chess.com-only TCs: convert chess.com rating to Lichess-equivalent via a published conversion table (chessgrandmonkey-style, validated at FlawChess's ELO buckets — see open research question).
+- For chess.com-only TCs: convert chess.com rating to Lichess-equivalent via the **ChessGoals Table 2** empirical per-TC table (snapshot-dated Python constant, see "Conversion table" section below).
 - TCs below the per-metric games floor: skipped silently for that metric (graceful degradation, same as how chips suppress today below floor).
 
 This collapses the entire "what rating to use" question to a single per-TC rule.
 
-### Cohort CDF family
+### Cohort CDF family — native 50-Elo sliding windows
 
-Replaces `GLOBAL_PERCENTILE_CDF` (one 99-breakpoint table per metric) with a family indexed by `(metric, ELO anchor, TC)` — the same shape for every chip-eligible metric, including the four currently-TC-aggregated metrics (`score_gap`, `achievable_score_gap`, `section2_score_gap_conv`, `section2_score_gap_parity`). ELO anchors at the 5 benchmark bucket centers (800/1200/1600/2000/2400), with 50-Elo linear interpolation between adjacent anchors at lookup time along the ELO axis; no interpolation across TCs. The user's per-TC anchor rating slots into the nearest two bucket centers; the per-TC percentile is a weighted blend of the two cohort-CDF lookups.
+Replaces `GLOBAL_PERCENTILE_CDF` (one 99-breakpoint table per metric) with a family indexed by `(metric, ELO anchor, TC)` — the same shape for every chip-eligible metric, including the four currently-TC-aggregated metrics.
 
-Implementation: regenerate the CDF artifact (or add a parallel one) where each metric carries up to 5 × 4 = 20 CdfTable instances (one per (ELO anchor, TC) cell, minus sparse / below-floor cells). Same `interpolate_percentile` shape, two additional dimensions to the registry. The 2400-classical sparse cell stays suppressed exactly as today — the CDF at (metric, 2400, classical) is just absent, lookups for users at that anchor return None for that TC, and the metric falls back to whatever per-TC sub-percentiles do meet the floor.
+ELO anchors are at 50-Elo granularity natively: 800, 850, 900, ..., 2400 (33 anchors per TC). For each (metric, anchor, TC), the cohort is built as a sliding window: take the K=200 floor-passing benchmark users (those whose per-(user, TC) games meet the metric's existing floor — ≥30 endgame games for `score_gap`, etc.) whose median per-TC game-time rating is closest to the anchor. If the window has to widen beyond ±150 Elo to collect K users, the anchor suppresses (chip goes blank for users mapping there). No interpolation step at lookup time — the live user's per-TC anchor rounds to nearest 50 and looks up directly.
+
+Implementation: extend `scripts/gen_global_percentile_cdf.py` to emit per-(metric, anchor, TC) CDF tables under this sliding-window protocol. Approximate count: ~16 chip-eligible metrics × ~33 anchors × 4 TCs ≈ ~2,000 CdfTable instances, minus suppressed anchors at extremes. Each table is 99 floats; total memory footprint is trivial.
+
+### Conversion table
+
+Snapshot the ChessGoals Table 2 values into a hardcoded Python module constant:
+
+```python
+CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT: Final[str] = "2026-05-26"
+CHESSCOM_TO_LICHESS_SOURCE: Final[str] = "https://chessgoals.com/rating-comparison/"
+# ChessGoals Table 2: chess.com Blitz rating → Lichess (bullet/blitz/rapid/classical) at
+# 100-Elo intervals from 500 to 3000. Linear interpolation between rows at lookup time.
+CHESSCOM_BLITZ_TO_LICHESS: Final[Mapping[int, Mapping[TimeControlBucket, int]]] = {
+    500: {"bullet": ..., "blitz": ..., "rapid": ..., "classical": ...},
+    600: ...,
+    # ...
+    3000: ...,
+}
+```
+
+For chess.com inputs in non-blitz time controls (chess.com Bullet or Rapid), apply chess.com's intra-platform offsets first to estimate the chess.com Blitz equivalent, then pivot through the table. Empirical offsets (chess.com Bullet ≈ chess.com Blitz − 50, chess.com Rapid ≈ chess.com Blitz + 100 at mid-rating) are themselves a small Python constant — minor accuracy loss but unavoidable since ChessGoals pivots from chess.com Blitz only.
+
+Snapshot refresh is manual: when prod gains enough dual-platform users to support FlawChess-internal refit (see Trigger conditions), regenerate. No CI gate.
 
 ### Per-TC sub-percentile aggregation for currently-TC-aggregated metrics
 
@@ -82,9 +105,18 @@ This keeps `user_benchmark_percentiles` storage shape unchanged — still one sc
 
 ### 1. Cohort CDF generation script update
 
-Extend `scripts/gen_global_percentile_cdf.py` (or add a sibling `gen_cohort_percentile_cdf.py`) to emit per-(metric, ELO anchor, TC) CDF tables computed from the same canonical-slice CTE, partitioned by game-time ELO bucket × `tc_bucket`. Currently-TC-aggregated metrics gain the TC dimension; currently-TC-stratified metrics keep their existing TC dimension. Sample floors per anchor stay at the existing ≥30 / ≥20 thresholds; cells below the floor (and the 2400-classical sparse cell) are absent from the table.
+Extend `scripts/gen_global_percentile_cdf.py` (or add a sibling `gen_cohort_percentile_cdf.py`) to emit per-(metric, anchor, TC) CDF tables under the sliding-window protocol described above. Per metric per TC, the script computes:
 
-Approximate CDF count after this change: ~16 chip-eligible metrics × 5 ELO anchors × 4 TCs, minus sparse / below-floor cells — order ~250-300 CdfTable instances total. Each table is a tuple of 99 floats; memory and load-time impact is trivial.
+1. Drop benchmark users below the per-metric games floor.
+2. For each 50-Elo anchor (800, 850, ..., 2400): rank remaining users by absolute distance from anchor on their per-(user, TC) median game-time rating; take closest K=200.
+3. If the K-th closest user's distance exceeds 150 Elo, suppress that anchor entirely (no CDF emitted).
+4. Otherwise, compute the 99-breakpoint CDF from the K scalars and emit it.
+
+Approximate CDF count: ~16 chip-eligible metrics × ~33 anchors × 4 TCs ≈ ~2,000 CdfTable instances, minus suppressed anchors at the rating extremes. Each table is 99 floats; total memory and load-time impact is trivial.
+
+### 1b. Conversion table snapshot
+
+Add a Python module (e.g. `app/services/chesscom_to_lichess.py`) with the ChessGoals Table 2 snapshot, intra-chess.com TC offsets, and a `convert_chesscom_to_lichess(rating, source_tc, target_tc)` helper. Pure Python, no DB, no I/O. Snapshot date in a module constant.
 
 ### 2. Rating-anchor compute at import time
 
@@ -150,7 +182,7 @@ Mark SEED-019 § "Final Tier-1 chip set" as superseded by this seed once v2 land
 
 ## Open questions
 
-1. **Does the chess.com → Lichess Elo conversion table hold across our ELO buckets?** The chessgrandmonkey-style published tables are approximations. Pre-planning research: take a sample of dual-platform users (chess.com + Lichess accounts linked), compute observed per-TC rating offsets, compare against the published table. If the table is within ±100 Elo at the bucket centers and ±150 Elo at the tails, ship it. If it drifts to ±300+ at the tails, build a FlawChess-specific calibration. This is the one factual unknown that should land *before* the implementation phase.
+1. ~~Does the chess.com → Lichess Elo conversion table hold across our ELO buckets?~~ **Resolved 2026-05-26.** No principled closed-form conversion exists (different rating systems, implementations, starting pools — per Lichess's own rating-systems page). ChessGoals Table 2 is the most rigorous published empirical converter (per-TC granularity, transparent methodology, ~10k-profile fit). Locked as the v2 source. Refit-from-FlawChess-prod-data is a future trigger condition once dual-platform N is sufficient (currently too thin).
 2. **What N for the "latest games" rating anchor?** 1000 per TC is a guess. Could be 500 (more recent / less stable) or 2000 (more stable / more historical). The recent-capped CTE already uses a cap; align with that.
 3. **Where to store the per-TC rating anchors?** Options: (a) a small `user_rating_anchors` table keyed by `(user_id, tc_bucket)`; (b) extend `user_benchmark_percentiles` with an `elo_anchor` column (denormalized across rows of the same user); (c) compute transiently and only store the resolved percentile. Tooltip wants to disclose the anchor so the user can see why their chip is what it is — argues for (a) or (b). Lean: (a).
 4. **Aggregation weight choice for previously-TC-aggregated metrics.** "Game-count weighted by the per-TC floor's N" is the proposal — but the floor N differs per metric (endgame games for `score_gap`, span counts for Section-2). Two sub-questions: (i) is that the right weight per metric, or should we use raw game count uniformly? (ii) Does the weighted mean of per-TC percentiles materially differ from the global-pool result on real data? Worth a small empirical pass during planning to sanity-check.
@@ -170,8 +202,11 @@ Mark SEED-019 § "Final Tier-1 chip set" as superseded by this seed once v2 land
 
 Promote when **any** of the following:
 
-- The chess.com → Lichess rating conversion validation lands and confirms ±100-Elo accuracy at the bucket centers (the one prerequisite research question — see Open Questions #1).
 - A real elite user (≥2200 on Lichess or ≥2050 on chess.com) reports the credibility concern in feedback.
 - A v1.20 (or later) milestone with capacity for endgame-page polish opens.
 - Mobile usability feedback specifically flags the chip size as a problem.
 - A request lands for percentile chips on metrics currently dropped by v1 (Conversion / Recovery / Endgame Score Gap) — v2 rescues these and the promotion becomes net positive.
+
+**Future refit trigger (independent of promotion):**
+
+- FlawChess prod gains ≥30 dual-platform users per (TC, 200-Elo rating band) — refit `CHESSCOM_TO_LICHESS_TABLE` against internal data, replacing the ChessGoals snapshot. Tracks as a `/gsd-quick` task whenever the prod population hits that threshold.
