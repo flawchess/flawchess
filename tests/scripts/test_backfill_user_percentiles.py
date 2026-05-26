@@ -56,14 +56,18 @@ _PROD_TUNNEL_PORT: int = 15432  # per CLAUDE.md / bin/prod_db_tunnel.sh
 _DEV_PORT: int = 5432  # per CLAUDE.md dev DB port
 _DUMMY_NON_5432_PORT: int = 99999
 
-# Expected summary tokens per metric (from CONTEXT §Specifics backfill output shape)
+# Expected summary tokens per metric. Phase 94.4 Plan 06 cohort-CDF cutover
+# rewrote the summary shape from per-metric (``{metric} upserted=X, skipped=Y``)
+# to per-(metric × TC) (``{metric} {tc} {included} {floor_rej} {suppressed}``)
+# plus a separate per-(TC × source_platform) anchor table. The metric labels
+# continue to appear; the token shape changed.
 _EXPECTED_METRIC_LABELS: list[str] = [
     "score_gap",
     "achievable_score_gap",
     "section2_score_gap_conv",
     "section2_score_gap_parity",
 ]
-_EXPECTED_SUMMARY_TOKENS: list[str] = ["upserted=", "skipped="]
+_EXPECTED_SUMMARY_TOKENS: list[str] = ["included", "floor_rej", "suppressed"]
 
 pytestmark = pytest.mark.asyncio
 
@@ -393,10 +397,11 @@ async def test_backfill_handles_user_with_zero_canonical_slice_games(
     """When a user has a completed import_job but no games passing the canonical
     slice filter, backfill writes NO row for that user.
 
-    The summary must contain 'below_pooled_floor=1' for that user (Phase 94.2:
-    the pooled CTE emits no row for users below the ≥30 inclusion floor, which
-    includes users with zero canonical-slice games — both map to the same
-    counter).
+    The summary must contain 'floor_rej' counts > 0 for that user (Phase 94.4
+    Plan 06: per-(metric, TC) pooled CTE emits no row for users below the
+    inclusion floor, including users with zero canonical-slice games — both
+    map to the floor-rejected counter in the new per-(metric × TC) summary
+    table).
     """
     session_maker = _make_session_maker(test_engine)
     main = backfill_user_percentiles.main
@@ -414,11 +419,13 @@ async def test_backfill_handles_user_with_zero_canonical_slice_games(
             rows = await _count_pctl_rows(check, _TEST_USER_1_ID)
         assert rows == 0, f"Expected 0 rows for user with zero canonical games, got {rows}"
 
-        # Summary must mention 'below_pooled_floor' (Phase 94.2 pooled semantics).
+        # Summary must mention 'floor_rej' (Phase 94.4 Plan 06 cohort-CDF
+        # per-(metric × TC) summary column header replacing the legacy
+        # 'below_pooled_floor' phrase).
         captured = capsys.readouterr()
         stdout = captured.out
-        assert "below_pooled_floor" in stdout, (
-            "Expected 'below_pooled_floor' in summary for user below pooled inclusion floor.\n"
+        assert "floor_rej" in stdout, (
+            "Expected 'floor_rej' in summary for user below per-(metric, TC) inclusion floor.\n"
             f"Got:\n{stdout}"
         )
     finally:
