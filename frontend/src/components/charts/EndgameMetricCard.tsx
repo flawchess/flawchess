@@ -20,6 +20,7 @@ import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { pickDominantTcAnchor, type RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import {
   BUCKET_DISPLAY_LABELS,
@@ -71,12 +72,18 @@ interface EndgameMetricCardProps {
   scoreGapPValue: number | null;
   scoreGapCiLow: number | null;
   scoreGapCiHigh: number | null;
-  /** Phase 94 (PCTL-03/04): cohort percentile [0,100] sourced from
-   *  ScoreGapMaterialResponse.section2_score_gap_{conv,parity}_percentile.
-   *  Caller (EndgameMetricsSection) MUST pass `null` for the recovery card —
-   *  the chip-render conditional below ALSO guards on `bucket !== 'recovery'`
-   *  as a defensive second layer (Pitfall 5). */
+  /** Phase 94 (PCTL-03/04) + Phase 94.4 D-05a: cohort percentile [0,100]
+   *  sourced from ScoreGapMaterialResponse.section2_score_gap_{conv,parity}_percentile
+   *  for conversion/parity, and `recovery_score_gap_percentile` (CdfMetricId-mirror
+   *  rescue field) for recovery. Pre-94.4 the recovery slot was hard-suppressed —
+   *  D-05a rescues it under the peer-relative cohort framing (same-rated
+   *  comparison normalises the opponent-rating confound). */
   scoreGapPercentile: number | null;
+  /** Phase 94.4 Plan 07: per-TC rating anchors (whole map). The card picks
+   *  the dominant-TC anchor for the chip's 4th-bullet disclosure. Aggregated
+   *  page-level chips omit the `tc` prop on PercentileChip — bullet 1 frames
+   *  them as multi-TC. Optional so legacy fixtures still render the card body. */
+  ratingAnchors?: RatingAnchorsByTc;
   /** Container data-testid (e.g. "tile-conversion"). Sub-element testids derive
    * from this: `${tileTestId}-score-gap-bullet`, `${tileTestId}-score-gap-value`,
    * `${tileTestId}-score-gap-info`. */
@@ -95,10 +102,16 @@ export function EndgameMetricCard({
   scoreGapCiLow,
   scoreGapCiHigh,
   scoreGapPercentile,
+  ratingAnchors,
   tileTestId,
   titleTooltip,
 }: EndgameMetricCardProps) {
   const { isPending, pendingCount } = useEvalCoverage();
+  // Phase 94.4 Plan 07: aggregated chip uses the dominant-TC anchor for the
+  // popover's 4th bullet. When no anchors are available, the chip suppresses
+  // entirely (`pickDominantTcAnchor` returns undefined → conditional below
+  // resolves to undefined chipSlot).
+  const dominantAnchor = pickDominantTcAnchor(ratingAnchors ?? {});
 
   const userR = bucket === 'conversion'
     ? row.win_pct / 100
@@ -229,10 +242,25 @@ export function EndgameMetricCard({
                   ciLow={scoreGapCiLow != null ? scoreGapCiLow + displayShift : undefined}
                   ciHigh={scoreGapCiHigh != null ? scoreGapCiHigh + displayShift : undefined}
                   chipSlot={
-                    scoreGapPercentile != null && bucket !== 'recovery' ? (
+                    // Phase 94.4 D-05a: recovery rescued under peer-relative.
+                    // All 3 buckets now render a chip when percentile + anchor
+                    // are both present. Bucket-to-flavor map uses kebab-case
+                    // matching the new flavor enum.
+                    scoreGapPercentile != null && dominantAnchor !== undefined ? (
                       <PercentileChip
                         percentile={scoreGapPercentile}
-                        flavor={bucket === 'conversion' ? 'conversion' : 'parity'}
+                        flavor={
+                          bucket === 'conversion'
+                            ? 'conversion'
+                            : bucket === 'parity'
+                              ? 'parity'
+                              : 'recovery'
+                        }
+                        anchorRating={dominantAnchor.anchor_rating}
+                        anchorSource={dominantAnchor.source_platform}
+                        chesscomRawRating={
+                          dominantAnchor.chesscom_raw_rating ?? undefined
+                        }
                         metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
                         testId={`${tileTestId}-percentile-chip`}
                       />

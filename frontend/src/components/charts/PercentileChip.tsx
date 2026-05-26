@@ -133,18 +133,14 @@ function deriveBandColor(pct: number): string {
 }
 
 interface PopoverBodyProps {
-  flavor: PercentileChipFlavor;
   tc: TimeControlBucket | undefined;
-  metricLabel: string;
   anchorRating: number;
   anchorSource: 'lichess' | 'chesscom';
   chesscomRawRating: number | undefined;
 }
 
 function PercentileChipPopoverBody({
-  flavor: _flavor,
   tc,
-  metricLabel: _metricLabel,
   anchorRating,
   anchorSource,
   chesscomRawRating,
@@ -186,7 +182,13 @@ function PercentileChipPopoverBody({
 
 export function PercentileChip({
   percentile,
-  flavor,
+  // `flavor` stays on PercentileChipProps as part of the typed API contract
+  // (consumers pass it so type narrowing at call sites is meaningful and the
+  // chip enum collapse stays grep-able from outside). It is intentionally NOT
+  // destructured here: post-94.4 the 4 popover bullets are identical across
+  // all 8 flavors (per CONTEXT D-07a — the per-metric rating-correlation
+  // copy retired), so the body has nothing to dispatch on. Reserved for
+  // future per-flavor copy variants without an API churn.
   tc,
   anchorRating,
   anchorSource,
@@ -276,9 +278,7 @@ export function PercentileChip({
           )}
         >
           <PercentileChipPopoverBody
-            flavor={flavor}
             tc={tc}
-            metricLabel={metricLabel}
             anchorRating={anchorRating}
             anchorSource={anchorSource}
             chesscomRawRating={chesscomRawRating}

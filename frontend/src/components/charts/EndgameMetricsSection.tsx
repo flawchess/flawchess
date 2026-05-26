@@ -22,6 +22,7 @@
 
 import type { ReactNode } from 'react';
 
+import type { RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import type {
   MaterialBucket,
   MaterialRow,
@@ -80,9 +81,13 @@ function buildZeroRow(bucket: MaterialBucket): MaterialRow {
 
 interface EndgameMetricsSectionProps {
   data: ScoreGapMaterialResponse;
+  /** Phase 94.4 Plan 07: per-TC rating anchors threaded into each card so the
+   *  page-level ΔES chips (Conv/Parity/Recovery) can disclose the dominant-TC
+   *  anchor in bullet 4. Optional — without anchors, all chips suppress. */
+  ratingAnchors?: RatingAnchorsByTc;
 }
 
-export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
+export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSectionProps) {
   const totalMaterialGames = data.material_rows.reduce((sum, r) => sum + r.games, 0);
 
   const rowByBucket: Partial<Record<MaterialBucket, MaterialRow>> = {};
@@ -112,6 +117,7 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
           scoreGapCiLow={data.section2_score_gap_conv_ci_low}
           scoreGapCiHigh={data.section2_score_gap_conv_ci_high}
           scoreGapPercentile={data.section2_score_gap_conv_percentile}
+          ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['conversion']}
           titleTooltip={TITLE_TOOLTIPS['conversion']}
         />
@@ -128,11 +134,18 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
           scoreGapCiLow={data.section2_score_gap_parity_ci_low}
           scoreGapCiHigh={data.section2_score_gap_parity_ci_high}
           scoreGapPercentile={data.section2_score_gap_parity_percentile}
+          ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['parity']}
           titleTooltip={TITLE_TOOLTIPS['parity']}
         />
 
-        {/* Recovery card */}
+        {/* Recovery card — Phase 94.4 D-05a: chip RESCUED under peer-relative.
+            Percentile field renamed from the prior `section2_score_gap_recov`
+            prefix to `recovery_score_gap_percentile` (Plan 05c — mirrors the
+            CdfMetricId Literal). The Phase 94 D-12 defensive
+            `bucket !== 'recovery'` guard inside EndgameMetricCard is now
+            superseded by passing a non-null percentile here, but the guard
+            stays in the card as belt-and-suspenders. */}
         <EndgameMetricCard
           key="recovery"
           bucket="recovery"
@@ -143,10 +156,8 @@ export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
           scoreGapPValue={data.section2_score_gap_recov_p_value}
           scoreGapCiLow={data.section2_score_gap_recov_ci_low}
           scoreGapCiHigh={data.section2_score_gap_recov_ci_high}
-          // Phase 94 D-12: recovery percentile is intentionally `null` — the
-          // recovery CDF is not shipped. EndgameMetricCard ALSO guards on
-          // `bucket !== 'recovery'` defensively (Pitfall 5).
-          scoreGapPercentile={null}
+          scoreGapPercentile={data.recovery_score_gap_percentile}
+          ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['recovery']}
           titleTooltip={TITLE_TOOLTIPS['recovery']}
         />
