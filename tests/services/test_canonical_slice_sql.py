@@ -19,6 +19,7 @@ matching is enforced separately by
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Literal
 
@@ -632,3 +633,120 @@ class TestPerUserCteMedianAnchor:
             "source parameter must not alter the pooled body — cohort difference "
             "is exclusively in selected_users_cte (D-10)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.4 Plan 03 Task 1 — Pitfall 1 user_id widening on EXISTING 94.3
+# per-TC builders. The cohort-CDF JOIN in Plan 04 requires user_id on the
+# per_user_values projection of every per-TC builder so the (user_id) JOIN
+# with per_user_anchor stays well-defined.
+# ---------------------------------------------------------------------------
+
+
+_PITFALL_1_EXISTING_94_3_BUILDERS: tuple[str, ...] = (
+    "time_pressure_score_gap",
+    "clock_gap",
+    "net_flag_rate",
+)
+
+
+def _per_user_values_block(sql: str) -> str:
+    """Return the substring starting at the ``per_user_values AS`` CTE.
+
+    Used by the Pitfall 1 assertions to scope the ``SELECT user_id,`` probe
+    to the metric-emitting CTE rather than upstream CTEs (which may project
+    ``user_id`` for unrelated reasons such as the per_user GROUP BY).
+    """
+    idx = sql.find("per_user_values AS")
+    assert idx != -1, "per_user_values AS marker missing"
+    return sql[idx:]
+
+
+class TestPitfall1UserIdWideningExistingBuilders:
+    """Phase 94.4 Plan 03 Task 1 — widen the 3 existing 94.3 per-TC builders.
+
+    RESEARCH Pitfall 1 (lines 1168-1177): the cohort-CDF JOIN (Plan 04) joins
+    ``per_user_values`` against ``per_user_anchor`` on ``user_id``. Without
+    ``user_id`` exposed in ``per_user_values``, the JOIN loses user identity
+    and the K=200 ranking by anchor distance is undefined.
+
+    The widening is mechanical: prepend ``user_id,`` to the SELECT projection
+    of ``per_user_values`` inside the 3 existing 94.3 per-TC builders
+    (``per_user_cte_time_pressure_score_gap``, ``per_user_cte_clock_gap``,
+    ``per_user_cte_net_flag_rate``). The upstream ``per_user`` CTE already
+    GROUP BYs user_id (it's a per-user aggregate by construction) so no
+    upstream change is needed.
+    """
+
+    @pytest.mark.parametrize("builder_family", _PITFALL_1_EXISTING_94_3_BUILDERS)
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_per_user_values_projects_user_id_for_existing_per_tc_builders(
+        self, builder_family: str, tc: TimeControlBucket
+    ) -> None:
+        """``per_user_values`` projects ``user_id`` on every (existing-family × TC) cell.
+
+        Parametrised: 3 existing 94.3 builders × 4 TCs = 12 cases.
+        """
+        metric_id = f"{builder_family}_{tc}"
+        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+        block = _per_user_values_block(sql)
+        # Tolerant probe: accepts ``SELECT user_id,`` or ``SELECT\n  user_id,``
+        # (multi-line emission). Use re.search with whitespace tolerance.
+        assert re.search(r"SELECT\s+user_id\s*,", block), (
+            f"per_user_values must project user_id for {metric_id} "
+            f"(Pitfall 1 — cohort-CDF JOIN requirement). Block was:\n{block[:400]}"
+        )
+
+    @pytest.mark.parametrize("builder_family", _PITFALL_1_EXISTING_94_3_BUILDERS)
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_per_user_values_has_pitfall_1_comment_for_existing_builders(
+        self, builder_family: str, tc: TimeControlBucket
+    ) -> None:
+        """Each widened ``per_user_values`` body carries a Pitfall 1 provenance comment.
+
+        The comment is grep-able so future readers can trace the user_id
+        projection to its source decision (RESEARCH Pitfall 1).
+        """
+        metric_id = f"{builder_family}_{tc}"
+        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+        block = _per_user_values_block(sql)
+        assert "user_id widened per Phase 94.4 Pitfall 1" in block, (
+            f"Pitfall 1 provenance comment missing in per_user_values for {metric_id}; "
+            f"block:\n{block[:400]}"
+        )
+
+    def test_non_per_tc_builders_are_not_touched_by_pitfall_1(self) -> None:
+        """The 4 non-per-TC builders are NOT widened by Task 1 (scope guard).
+
+        Task 1 is scoped to the 3 existing 94.3 per-TC builders. The original
+        pooled builders (``per_user_cte_score_gap`` / ``per_user_cte_achievable``
+        / ``per_user_cte_section2``) are widened in Task 2 only — Task 1 must
+        leave them untouched so we can detect a scope leak.
+        """
+        for metric_id in _METRICS:
+            sql = per_user_cte_for(metric_id, source="single_user")
+            block = _per_user_values_block(sql)
+            assert "user_id widened per Phase 94.4 Pitfall 1" not in block, (
+                f"Pitfall 1 comment leaked into non-per-TC builder {metric_id} during Task 1; "
+                f"that widening is Task 2 territory."
+            )
+
+    @pytest.mark.parametrize("builder_family", _PITFALL_1_EXISTING_94_3_BUILDERS)
+    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
+    def test_widened_sql_parses_via_sqlalchemy_text(
+        self, builder_family: str, tc: TimeControlBucket
+    ) -> None:
+        """SQLAlchemy ``text()`` accepts the widened SQL shape (parse-level smoke).
+
+        Wraps the builder output in a minimal ``SELECT user_id FROM per_user_values``
+        and asserts ``text(sql).compile()`` does not raise. This is a parser
+        smoke test, not a DB-execution test — it catches malformed SQL emitted
+        by the widening edit (e.g. trailing comma, dangling SELECT).
+        """
+        metric_id = f"{builder_family}_{tc}"
+        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+        # Prepend the single_user `selected_users` preamble so the WITH chain is complete.
+        preamble = selected_users_cte(source="single_user")
+        wrapped = f"WITH {preamble},\n{sql}\nSELECT user_id FROM per_user_values"
+        compiled = text(wrapped).bindparams(user_id=42).compile()
+        assert compiled is not None
