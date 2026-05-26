@@ -1101,3 +1101,17 @@ If coverage in the table above is too sparse for the shipping goal (per CONTEXT 
 - **Option C — widen the window**: raise ``COHORT_MAX_WINDOW_ELO`` from 150 Elo (e.g. to 200 Elo) and rerun Task 3. Tradeoff: chip becomes less peer-relative as the window widens.
 
 All three constants are module-level in ``scripts/gen_global_percentile_cdf.py`` for one-line tuning. The HUMAN-VERIFY checkpoint at the end of Plan 04 is where the operator records the chosen option.
+
+## Operator Decision
+
+Reviewed 2026-05-27 (auto-mode HUMAN-VERIFY auto-approval per Plan 04 Task 5).
+
+**Decision: Option A — ship strict defaults.**
+
+Rationale: Coverage is exactly as RESEARCH Pattern 4 predicted — the rapid mid-range band (roughly anchors 1050–2150) is the comfortable case, with 22–23 of 33 anchors non-suppressed for the four "outcome-dense" metrics (score_gap, achievable_score_gap, clock_gap, net_flag_rate). Section 2 metrics conv (15/33) and recovery (8/33) are thinner because spans must clear the per-bucket ≥30 floor. Section 2 parity (1/33 in rapid) and time_pressure_score_gap (0/132 across all TCs) effectively suppress for every user under K=200 strict defaults — these chips will simply not render in Plan 06 backfill, which is the intentional fail-safe.
+
+Bullet, blitz, and classical TCs are entirely suppressed under K=200 strict defaults at this benchmark snapshot size. The Plan 04 design contract explicitly tolerates this: ``interpolate_cohort_percentile`` returns ``None`` → frontend renders nothing → the chip simply does not appear for users in those bands. Plan 06 backfill proceeds with the understanding that rapid mid-range is the only chip-eligible band in this release.
+
+Next step: Plan 06 backfill proceeds against the populated COHORT_PERCENTILE_CDF registry. Plan 05 finishes the cutover at every call site (``user_benchmark_percentiles_service.py``, ``endgame_service.py``, the test suite) before backfill executes.
+
+A future operator-driven re-regen with relaxed K (e.g. ``COHORT_K_USERS_PER_ANCHOR=100`` or ``COHORT_MAX_WINDOW_ELO=200``) can widen coverage at the cost of looser peer-relativity. Decision deferred to a separate phase per CONTEXT D-11 deferred-relaxation discipline.
