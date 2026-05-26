@@ -246,7 +246,7 @@ Plans:
 - [x] 94.4-04-PLAN.md — cohort CDF regen (8 metrics × ~33 anchors × 4 TCs) + suppression-flag report + HUMAN-VERIFY checkpoint per D-11
 - [x] 94.4-05a-PLAN.md — user_benchmark_percentiles schema reshape (drop/recreate per D-02) + 8-value ENUM + 3-column PK + repository nested-dict fetch
 - [x] 94.4-05b-PLAN.md — Stage A/B service rewrite (compute_anchors_for_user + chesscom_raw_rating capture per D-07 bullet 4) + legacy-stub retirement
-- [ ] 94.4-05c-PLAN.md — API shaper _aggregate_per_tc_percentile per D-08/D-08b + RatingAnchorOut schema + frontend type regen + terminal Pre-PR sweep
+- [x] 94.4-05c-PLAN.md — API shaper _aggregate_per_tc_percentile per D-08/D-08b + RatingAnchorOut schema + frontend type regen + terminal Pre-PR sweep
 - [ ] 94.4-06-PLAN.md — backfill script extension + dev rerun + prod rerun via tunnel after HUMAN-UAT (PRPCR-09 credibility check)
 - [ ] 94.4-07-PLAN.md — PercentileChip rewrite (p23 face, NO flame, 8 flavors + tc prop, 4-bullet peer-relative popover) + 4 component reshapes
 - [ ] 94.4-08-PLAN.md — SEED-019 supersession banner + feedback_percentile_chip_tooltip_disclosure amendment + CHANGELOG
