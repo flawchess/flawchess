@@ -452,14 +452,24 @@ per_user_values AS (
 
 def per_user_cte_section2(
     *,
-    bucket_label: Literal["conversion", "parity"],
+    bucket_label: Literal["conversion", "parity", "recovery"],
     source: Literal["benchmark", "single_user"],
     snapshot_date: date | None = None,
 ) -> str:
-    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``section2_score_gap_{conv,parity}``.
+    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``section2_score_gap_{conv,parity,recovery}``.
 
-    ``bucket_label`` filters spans by entry-eval bucket (``'conversion'`` =
-    Up-entry-eval; ``'parity'`` = Equal-entry-eval).
+    ``bucket_label`` filters spans by entry-eval bucket:
+    - ``'conversion'`` — user up material at endgame entry
+      (entry_eval_cp * user_color_sign >= 100, or entry_eval_mate > 0 signed).
+    - ``'parity'`` — equal at entry (|entry_eval_cp * sign| < 100,
+      or entry_eval_mate IS NULL AND entry_eval_cp IS NULL).
+    - ``'recovery'`` — user down material at entry
+      (entry_eval_cp * user_color_sign <= -100, or entry_eval_mate < 0 signed).
+      Added in Phase 94.4 Plan 03 Task 2 per RESEARCH Open Question 3 — the
+      widening is purely at the Literal type level + the bucket WHERE dispatch.
+      The existing ``gap_rows`` CASE classification (below) already emits
+      ``'recovery'`` rows; the WHERE clause in ``per_user_values`` simply
+      selects them when ``bucket_label='recovery'``.
 
     ``metric_value`` = per-user ``avg(gap_span)`` on spans in the selected
     bucket. ``n_games`` = span count in the selected bucket (the binding
@@ -796,6 +806,279 @@ per_user_values AS (
     net_flag_rate AS metric_value,
     pool_n AS n_games
   FROM per_user
+)"""
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.4 Plan 03 Task 2 — 4 new per-TC ΔES builders.
+#
+# These mirror the Phase 94.3 per-TC builder pattern (above) for the 4
+# page-level ΔES metric families previously only available pooled across
+# all TCs. The cohort CDF (Plan 04) builds at (metric, anchor, tc) granularity
+# so every metric family must be available per-TC.
+#
+# All 4 new builders project user_id in per_user_values (Pitfall 1 — the
+# cohort-CDF JOIN against per_user_anchor needs user identity).
+# ---------------------------------------------------------------------------
+
+
+def per_user_cte_score_gap_tc(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``score_gap``.
+
+    Per-TC version of ``per_user_cte_score_gap``. Restricted to one
+    ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The metric_value
+    formula and HAVING gates are byte-identical to the non-per-TC analog
+    (``eg_score - non_eg_score`` projection; dual ≥30 floor on
+    endgame / non-endgame game counts).
+
+    ``n_games`` = endgame-game count on the per-TC pooled set.
+
+    Security: ``tc`` is constrained to a 4-value ``Literal`` so the f-string
+    interpolation has no injection vector (the closed value set is enforced
+    by ty at every call site). ``snapshot_date.isoformat()`` emits only
+    digits and dashes via ``_recency_window_sql``. Bindparams are confined
+    to ``:user_id`` inside ``selected_users_cte("single_user")``.
+
+    Source-mode parity (D-10): the pooled body is byte-identical between
+    ``source='benchmark'`` and ``source='single_user'``. The cohort
+    difference lives entirely inside ``selected_users_cte``.
+
+    Pitfall 1 (RESEARCH lines 1168-1177): ``per_user_values`` projects
+    ``user_id`` so the cohort-CDF JOIN (Plan 04) against ``per_user_anchor``
+    can locate users by ID.
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+endgame_game_ids AS (
+  SELECT game_id FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+scored AS (
+  SELECT
+    rc.user_id,
+    CASE
+      WHEN (rc.result = '1-0' AND rc.user_color = 'white')
+        OR (rc.result = '0-1' AND rc.user_color = 'black') THEN 1.0
+      WHEN rc.result = '1/2-1/2' THEN 0.5
+      ELSE 0.0
+    END AS score,
+    (eg.game_id IS NOT NULL) AS has_endgame
+  FROM recent_capped rc
+  LEFT JOIN endgame_game_ids eg ON eg.game_id = rc.id
+),
+per_user AS (
+  SELECT
+    user_id,
+    avg(score) FILTER (WHERE has_endgame)     AS eg_score,
+    avg(score) FILTER (WHERE NOT has_endgame) AS non_eg_score,
+    count(*)   FILTER (WHERE has_endgame)     AS eg_n
+  FROM scored
+  GROUP BY user_id
+  HAVING count(*) FILTER (WHERE has_endgame)     >= {SCORE_GAP_MIN_ENDGAME_N}
+     AND count(*) FILTER (WHERE NOT has_endgame) >= {SCORE_GAP_MIN_NON_ENDGAME_N}
+),
+per_user_values AS (
+  -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
+  SELECT
+    user_id,
+    (eg_score - non_eg_score) AS metric_value,
+    eg_n AS n_games
+  FROM per_user
+)"""
+
+
+def per_user_cte_achievable_tc(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``achievable_score_gap``.
+
+    Per-TC version of ``per_user_cte_achievable``. Restricted to one
+    ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The metric_value
+    formula (``avg(d_i)`` where d_i is the per-game score-vs-Lichess-sigmoid
+    gap at endgame entry) and HAVING gate (≥30 d_i-non-null games per D-6)
+    are byte-identical to the non-per-TC analog.
+
+    Security and source-mode parity identical to ``per_user_cte_score_gap_tc``.
+    Pitfall 1 user_id widening applied.
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+endgame_game_ids AS (
+  SELECT game_id FROM game_positions
+  WHERE endgame_class IS NOT NULL
+  GROUP BY game_id HAVING count(*) >= 6
+),
+entry_rows AS (
+  SELECT gp.game_id, gp.eval_cp, gp.eval_mate,
+         ROW_NUMBER() OVER (PARTITION BY gp.game_id ORDER BY gp.ply ASC) AS rn
+  FROM game_positions gp
+  JOIN endgame_game_ids eg ON eg.game_id = gp.game_id
+  WHERE gp.endgame_class IS NOT NULL
+),
+scored AS (
+  SELECT
+    rc.user_id,
+    (
+      CASE
+        WHEN (rc.result = '1-0' AND rc.user_color = 'white')
+          OR (rc.result = '0-1' AND rc.user_color = 'black') THEN 1.0
+        WHEN rc.result = '1/2-1/2' THEN 0.5
+        ELSE 0.0
+      END
+      -
+      CASE
+        WHEN er.eval_mate IS NOT NULL AND
+             (er.eval_mate * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0
+        WHEN er.eval_mate IS NOT NULL AND
+             (er.eval_mate * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END)) < 0 THEN 0.0
+        WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < 2000
+             THEN 1.0 / (1.0 + exp(-0.00368208 *
+                  (er.eval_cp * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE NULL
+      END
+    ) AS d_i
+  FROM recent_capped rc
+  JOIN entry_rows er ON er.game_id = rc.id AND er.rn = 1
+),
+per_user AS (
+  SELECT
+    user_id,
+    avg(d_i) AS achievable_gap,
+    count(*) FILTER (WHERE d_i IS NOT NULL) AS di_n
+  FROM scored
+  GROUP BY user_id
+  HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= {ACHIEVABLE_MIN_GAMES}
+),
+per_user_values AS (
+  -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
+  SELECT
+    user_id,
+    achievable_gap AS metric_value,
+    di_n AS n_games
+  FROM per_user
+  WHERE achievable_gap IS NOT NULL
+)"""
+
+
+def per_user_cte_section2_tc(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+    bucket_label: Literal["conversion", "parity", "recovery"],
+) -> str:
+    """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``section2_score_gap_{conv,parity,recovery}``.
+
+    Per-TC version of ``per_user_cte_section2`` — restricted to one
+    ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The ``gap_rows``
+    bucket classification (conversion / parity / recovery — see lines 502-512
+    of the non-per-TC builder) and per-bucket HAVING ≥30 floor are
+    byte-identical to the non-per-TC analog.
+
+    The ``bucket_label`` Literal includes ``'recovery'`` (Phase 94.4 Plan 03
+    Task 2) for the recovery-rescue cohort: rows where the user entered the
+    endgame down material (entry_eval signed by user_color <= -100 cp, or
+    entry_eval_mate < 0 signed).
+
+    Security and source-mode parity identical to ``per_user_cte_score_gap_tc``.
+    Pitfall 1 user_id widening applied.
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    ueag = _user_elo_at_game_expr()
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+spans AS (
+  SELECT
+    gp.game_id, gp.endgame_class,
+    (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
+    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,
+    min(gp.ply) AS span_min_ply
+  FROM game_positions gp
+  JOIN recent_capped rc ON rc.id = gp.game_id
+  WHERE gp.endgame_class IS NOT NULL
+  GROUP BY gp.game_id, gp.endgame_class
+  HAVING count(gp.ply) >= 6
+),
+spans_with_next AS (
+  SELECT s.*,
+         lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,
+         lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate
+  FROM spans s
+),
+gap_rows AS (
+  SELECT
+    g.user_id,
+    CASE
+      WHEN swn.entry_eval_mate IS NOT NULL THEN
+        CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
+          THEN 'conversion' ELSE 'recovery' END
+      WHEN swn.entry_eval_cp IS NOT NULL THEN
+        CASE
+          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) >= 100
+            THEN 'conversion'
+          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) <= -100
+            THEN 'recovery'
+          ELSE 'parity'
+        END
+      ELSE 'parity'
+    END AS bucket,
+    (
+      CASE
+        WHEN swn.next_eval_mate IS NOT NULL
+          THEN CASE WHEN (swn.next_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
+                    THEN 1.0 ELSE 0.0 END
+        WHEN swn.next_eval_cp IS NOT NULL
+          THEN 1.0 / (1.0 + exp(-0.00368208 *
+                 (swn.next_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE
+          CASE
+            WHEN (g.result='1-0' AND g.user_color='white')
+              OR (g.result='0-1' AND g.user_color='black') THEN 1.0
+            WHEN g.result='1/2-1/2' THEN 0.5
+            ELSE 0.0
+          END
+      END
+    ) - (
+      CASE
+        WHEN swn.entry_eval_mate IS NOT NULL
+          THEN CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
+                    THEN 1.0 ELSE 0.0 END
+        WHEN swn.entry_eval_cp IS NOT NULL
+          THEN 1.0 / (1.0 + exp(-0.00368208 *
+                 (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
+        ELSE NULL
+      END
+    ) AS gap_span
+  FROM spans_with_next swn
+  JOIN games g ON g.id = swn.game_id
+  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)
+    AND {ueag} >= {_SUB_800_FLOOR}
+),
+per_user_bucket AS (
+  SELECT user_id, bucket,
+         avg(gap_span) AS mean_gap,
+         count(*) AS span_n
+  FROM gap_rows
+  WHERE gap_span IS NOT NULL
+  GROUP BY user_id, bucket
+  HAVING count(*) >= {SECTION2_MIN_SPANS_PER_BUCKET}
+),
+per_user_values AS (
+  -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
+  SELECT
+    user_id,
+    mean_gap AS metric_value,
+    span_n AS n_games
+  FROM per_user_bucket
+  WHERE bucket = '{bucket_label}'
 )"""
 
 
