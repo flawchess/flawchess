@@ -408,9 +408,12 @@ export function EndgamesPage() {
                     </p>
                     <ol className="list-decimal pl-6 space-y-1">
                       <li>
-                        <strong>Anchor your rating per time control.</strong> Your median rating in that time
-                        control (bullet/blitz/rapid/classical) is computed from your imported games. chess.com
-                        ratings are converted to Lichess-equivalent so everyone is compared on the same scale.
+                        <strong>Anchor your rating per time control.</strong> For each time control
+                        (bullet/blitz/rapid/classical) we take your most recent 1000 rated games in that time
+                        control over the last 36 months (the same pool used to compute your metrics in step 3,
+                        excluding chess.com Daily), then compute the median of your rating at game time across
+                        those games. chess.com ratings are converted to Lichess-equivalent so everyone is
+                        compared on the same scale.
                       </li>
                       <li>
                         <strong>Pick the matching peer cohort.</strong> From the FlawChess Benchmark, we select
