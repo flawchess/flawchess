@@ -58,7 +58,7 @@ def test_chesscom_blitz_to_lichess_blitz_linear_interpolation() -> None:
     low = CHESSCOM_BLITZ_TO_LICHESS[1500]["blitz"]  # 1780
     high = CHESSCOM_BLITZ_TO_LICHESS[1550]["blitz"]  # 1815
     # Narrow: Lichess Blitz column has no None entries in Table 2 (only
-    # `classical` does, at chess.com Blitz 2900/3000).
+    # `classical` does, at chess.com Blitz 2800/2900/3000).
     assert low is not None and high is not None
     result = convert_chesscom_to_lichess(1525, "blitz", "blitz")
     assert result is not None
@@ -70,17 +70,14 @@ def test_chesscom_blitz_to_lichess_blitz_linear_interpolation() -> None:
 
 
 # -----------------------------------------------------------------------------
-# Test 3: chess.com Bullet 1500 → Lichess Bullet.
-# Inversion chain: find chess.com Blitz row whose bullet column ≈ 1500.
-# Re-fetched Table 1: chess.com Blitz 1500 has bullet=1500 exactly (irregularity
-# at 1100/1150 fixed in re-fetch). So inversion yields Blitz≈1500, then look up
-# Table 2[1500]["bullet"] = 1770.
+# Test 3: chess.com Bullet → Lichess Bullet via Table 1 inversion → Table 2.
+# 2026-05-27 re-fetched Table 1: chess.com Blitz 1500 has bullet=1400. So a
+# chess.com Bullet input of 1400 inverts exactly to Blitz=1500, which then
+# chains into Table 2[1500]["bullet"] = 1770.
 # -----------------------------------------------------------------------------
 def test_chesscom_bullet_to_lichess_bullet_via_table_inversion() -> None:
-    # CHESSCOM_INTRA_TC[1500]["bullet"] == 1500 (the re-fetched canonical row).
-    assert CHESSCOM_INTRA_TC[1500]["bullet"] == 1500
-    result = convert_chesscom_to_lichess(1500, "bullet", "bullet")
-    # Chain: invert Table 1 (1500 → chesscom_blitz 1500) → Table 2[1500]["bullet"]=1770.
+    assert CHESSCOM_INTRA_TC[1500]["bullet"] == 1400
+    result = convert_chesscom_to_lichess(1400, "bullet", "bullet")
     assert result == CHESSCOM_BLITZ_TO_LICHESS[1500]["bullet"]
     assert result == 1770
 
@@ -163,8 +160,8 @@ def test_lookup_fide_from_lichess_blitz_mid_range() -> None:
 # -----------------------------------------------------------------------------
 # Test 12: All four USCF/FIDE accessors return None for below-min + above-max.
 # chess.com Blitz table: [500, 3000]. Lichess Blitz table: [1030, 2850].
-# Plus: lookup_fide_from_lichess_blitz returns None for the 6 below-1475 rows
-# where the FIDE column is None in the snapshot (Lichess Blitz 1030..1420).
+# Plus: lookup_fide_from_lichess_blitz returns None for the 5 below-1420 rows
+# where the FIDE column is None in the snapshot (Lichess Blitz 1030..1335).
 # -----------------------------------------------------------------------------
 @pytest.mark.parametrize(
     ("accessor", "rating"),
@@ -185,7 +182,7 @@ def test_accessors_return_none_at_edges(accessor, rating: int) -> None:
     assert accessor(rating) is None
 
 
-# Snapshot-Null rows: Lichess Blitz <= 1420 has FIDE = None in the source.
+# Snapshot-Null rows: Lichess Blitz <= 1335 has FIDE = None in the source.
 def test_lookup_fide_from_lichess_blitz_returns_none_in_null_region() -> None:
     # Lichess Blitz 1030 has FIDE=None per snapshot.
     assert lookup_fide_from_lichess_blitz(1030) is None
@@ -195,7 +192,7 @@ def test_lookup_fide_from_lichess_blitz_returns_none_in_null_region() -> None:
 # Test 13: Snapshot constants present and correct.
 # -----------------------------------------------------------------------------
 def test_snapshot_constants() -> None:
-    assert CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT == "2026-05-26"
+    assert CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT == "2026-05-27"
     assert CHESSCOM_TO_LICHESS_SOURCE == "https://chessgoals.com/rating-comparison/"
 
 
@@ -208,7 +205,9 @@ def test_snapshot_constants() -> None:
     [
         # Exact-anchor reads.
         (lookup_uscf_from_chesscom_blitz, 500, 715),
-        (lookup_fide_from_chesscom_blitz, 500, 600),
+        # chess.com Blitz 1000 is the lowest FIDE-mapped row (2026-05-27 snapshot;
+        # 500-900 are None).
+        (lookup_fide_from_chesscom_blitz, 1000, 1450),
         # Interpolated read: Lichess Blitz 1500 sits between anchors 1475
         # (USCF=1280) and 1525 (USCF=1325). Linear interpolation: 1280 +
         # (25/50)*(1325-1280) = 1280 + 22.5 ≈ 1302 (round-half-to-even).
@@ -220,3 +219,15 @@ def test_accessor_mid_range_hits(accessor, rating: int, expected: int) -> None:
     # ±2 tolerance to absorb the rounding-direction ambiguity at .5 boundary.
     assert result is not None
     assert abs(result - expected) <= 2
+
+
+# -----------------------------------------------------------------------------
+# Snapshot-Null rows on the chess.com Blitz side: FIDE is None for the 500-900
+# anchors per the 2026-05-27 re-fetch (no FIDE-rated profiles in the source
+# below the 1000 cohort). USCF remains populated across the full range.
+# -----------------------------------------------------------------------------
+@pytest.mark.parametrize("rating", [500, 600, 700, 800, 900])
+def test_lookup_fide_from_chesscom_blitz_returns_none_in_null_region(
+    rating: int,
+) -> None:
+    assert lookup_fide_from_chesscom_blitz(rating) is None

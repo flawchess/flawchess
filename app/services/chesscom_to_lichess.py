@@ -1,7 +1,7 @@
 """ChessGoals chess.com ↔ Lichess + USCF/FIDE empirical rating conversion (Phase 94.4).
 
 Snapshot source: https://chessgoals.com/rating-comparison/ (source page "Last
-Updated: July 2025"; data re-fetched into this module on 2026-05-26).
+Updated: July 2025"; data re-fetched into this module on 2026-05-27).
 
 Pure Python — no DB, no I/O. The three tables are the ChessGoals study output
 (N=~10k profiles, per-TC empirical fit).
@@ -40,7 +40,7 @@ from typing import Final, Literal, Mapping
 # (Plan 07). Refresh tracked as a future trigger (SEED-026 §"Trigger conditions").
 # ---------------------------------------------------------------------------
 
-CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT: Final[str] = "2026-05-26"
+CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT: Final[str] = "2026-05-27"
 CHESSCOM_TO_LICHESS_SOURCE: Final[str] = "https://chessgoals.com/rating-comparison/"
 
 
@@ -56,49 +56,58 @@ LichessIntraTC = Literal["bullet", "rapid", "classical", "uscf", "fide"]
 
 # ---------------------------------------------------------------------------
 # Table 1 — chess.com Blitz → chess.com Bullet / Rapid + USCF + FIDE.
-# Canonical re-fetched 2026-05-26 snapshot (supersedes the earlier draft that
-# had a copy-paste irregularity at 1050/1150). RESEARCH Pattern 8b, lines
-# 927-960. N values from source: USCF (~130), FIDE (~85), chess.com Bullet
-# (~130), chess.com Rapid (~115).
+# Canonical re-fetched 2026-05-27 snapshot. Supersedes the 2026-05-26 draft
+# which had two errors: (1) the Bullet column was effectively the identity of
+# the Blitz key on most rows (copy-paste artifact), and (2) the FIDE column
+# was shifted at the low end (rows 500-900 had bogus values, rows 1000-1100
+# were off by one). Re-fetched directly from the ChessGoals "Table 1" panel
+# and re-verified row-by-row against the published snapshot. RESEARCH Pattern
+# 8b, lines 927-960. N values from source: USCF (~130), FIDE (~85), chess.com
+# Bullet (~130), chess.com Rapid (~115).
+#
+# FIDE is None on chess.com Blitz rows 500-900 (no published mapping; the
+# ChessGoals study has no FIDE-rated profiles below the 1000 Blitz cohort).
 #
 # DO NOT edit numerics here. The snapshot is locked at the value level; any
 # refit triggers a new module-level constant + a new module version.
 # ---------------------------------------------------------------------------
 
-CHESSCOM_INTRA_TC: Final[Mapping[int, Mapping[ChessComIntraTC, int]]] = {
-    500: {"bullet": 445, "rapid": 735, "uscf": 715, "fide": 600},
-    600: {"bullet": 600, "rapid": 835, "uscf": 775, "fide": 700},
-    700: {"bullet": 700, "rapid": 945, "uscf": 860, "fide": 800},
-    800: {"bullet": 800, "rapid": 1035, "uscf": 930, "fide": 900},
-    900: {"bullet": 900, "rapid": 1130, "uscf": 1055, "fide": 1000},
-    1000: {"bullet": 1000, "rapid": 1230, "uscf": 1155, "fide": 1100},
-    1100: {"bullet": 1150, "rapid": 1320, "uscf": 1280, "fide": 1450},
-    1150: {"bullet": 1150, "rapid": 1365, "uscf": 1325, "fide": 1540},
-    1200: {"bullet": 1200, "rapid": 1405, "uscf": 1350, "fide": 1555},
-    1250: {"bullet": 1250, "rapid": 1450, "uscf": 1390, "fide": 1570},
-    1300: {"bullet": 1300, "rapid": 1500, "uscf": 1435, "fide": 1610},
-    1350: {"bullet": 1350, "rapid": 1540, "uscf": 1480, "fide": 1625},
-    1400: {"bullet": 1400, "rapid": 1575, "uscf": 1530, "fide": 1650},
-    1450: {"bullet": 1450, "rapid": 1610, "uscf": 1570, "fide": 1690},
-    1500: {"bullet": 1500, "rapid": 1655, "uscf": 1595, "fide": 1710},
-    1550: {"bullet": 1550, "rapid": 1695, "uscf": 1640, "fide": 1720},
-    1600: {"bullet": 1600, "rapid": 1730, "uscf": 1675, "fide": 1735},
-    1700: {"bullet": 1700, "rapid": 1810, "uscf": 1750, "fide": 1770},
-    1800: {"bullet": 1800, "rapid": 1890, "uscf": 1815, "fide": 1810},
-    1850: {"bullet": 1850, "rapid": 1940, "uscf": 1850, "fide": 1840},
-    1900: {"bullet": 1900, "rapid": 1990, "uscf": 1880, "fide": 1880},
-    1950: {"bullet": 1950, "rapid": 2010, "uscf": 1910, "fide": 1910},
-    2000: {"bullet": 2000, "rapid": 2035, "uscf": 1940, "fide": 1925},
-    2100: {"bullet": 2100, "rapid": 2080, "uscf": 2005, "fide": 1990},
-    2200: {"bullet": 2200, "rapid": 2135, "uscf": 2085, "fide": 2055},
-    2300: {"bullet": 2300, "rapid": 2190, "uscf": 2185, "fide": 2135},
-    2400: {"bullet": 2400, "rapid": 2235, "uscf": 2210, "fide": 2210},
-    2500: {"bullet": 2500, "rapid": 2290, "uscf": 2260, "fide": 2275},
-    2600: {"bullet": 2600, "rapid": 2355, "uscf": 2315, "fide": 2350},
-    2700: {"bullet": 2700, "rapid": 2425, "uscf": 2435, "fide": 2415},
-    2800: {"bullet": 2800, "rapid": 2480, "uscf": 2500, "fide": 2470},
-    2900: {"bullet": 2900, "rapid": 2545, "uscf": 2575, "fide": 2535},
-    3000: {"bullet": 3000, "rapid": 2625, "uscf": 2685, "fide": 2590},
+CHESSCOM_INTRA_TC: Final[Mapping[int, Mapping[ChessComIntraTC, int | None]]] = {
+    500: {"bullet": 445, "rapid": 735, "uscf": 715, "fide": None},
+    600: {"bullet": 530, "rapid": 835, "uscf": 775, "fide": None},
+    700: {"bullet": 620, "rapid": 945, "uscf": 860, "fide": None},
+    800: {"bullet": 725, "rapid": 1035, "uscf": 930, "fide": None},
+    900: {"bullet": 825, "rapid": 1130, "uscf": 1055, "fide": None},
+    1000: {"bullet": 920, "rapid": 1230, "uscf": 1155, "fide": 1450},
+    1100: {"bullet": 1020, "rapid": 1320, "uscf": 1280, "fide": 1490},
+    1150: {"bullet": 1070, "rapid": 1365, "uscf": 1325, "fide": 1540},
+    1200: {"bullet": 1115, "rapid": 1405, "uscf": 1350, "fide": 1555},
+    1250: {"bullet": 1165, "rapid": 1450, "uscf": 1390, "fide": 1570},
+    1300: {"bullet": 1205, "rapid": 1500, "uscf": 1435, "fide": 1610},
+    1350: {"bullet": 1260, "rapid": 1540, "uscf": 1480, "fide": 1625},
+    1400: {"bullet": 1305, "rapid": 1575, "uscf": 1530, "fide": 1650},
+    1450: {"bullet": 1355, "rapid": 1610, "uscf": 1570, "fide": 1690},
+    1500: {"bullet": 1400, "rapid": 1655, "uscf": 1595, "fide": 1710},
+    1550: {"bullet": 1450, "rapid": 1695, "uscf": 1640, "fide": 1720},
+    1600: {"bullet": 1510, "rapid": 1730, "uscf": 1675, "fide": 1735},
+    1650: {"bullet": 1575, "rapid": 1780, "uscf": 1710, "fide": 1745},
+    1700: {"bullet": 1615, "rapid": 1810, "uscf": 1750, "fide": 1770},
+    1750: {"bullet": 1665, "rapid": 1850, "uscf": 1790, "fide": 1795},
+    1800: {"bullet": 1715, "rapid": 1890, "uscf": 1815, "fide": 1810},
+    1850: {"bullet": 1780, "rapid": 1940, "uscf": 1850, "fide": 1840},
+    1900: {"bullet": 1825, "rapid": 1990, "uscf": 1880, "fide": 1880},
+    1950: {"bullet": 1880, "rapid": 2010, "uscf": 1910, "fide": 1910},
+    2000: {"bullet": 1930, "rapid": 2035, "uscf": 1940, "fide": 1925},
+    2100: {"bullet": 2035, "rapid": 2080, "uscf": 2005, "fide": 1990},
+    2200: {"bullet": 2155, "rapid": 2135, "uscf": 2085, "fide": 2055},
+    2300: {"bullet": 2255, "rapid": 2190, "uscf": 2185, "fide": 2135},
+    2400: {"bullet": 2355, "rapid": 2235, "uscf": 2210, "fide": 2210},
+    2500: {"bullet": 2465, "rapid": 2290, "uscf": 2260, "fide": 2275},
+    2600: {"bullet": 2570, "rapid": 2355, "uscf": 2315, "fide": 2350},
+    2700: {"bullet": 2670, "rapid": 2425, "uscf": 2435, "fide": 2415},
+    2800: {"bullet": 2785, "rapid": 2480, "uscf": 2500, "fide": 2470},
+    2900: {"bullet": 2875, "rapid": 2545, "uscf": 2575, "fide": 2535},
+    3000: {"bullet": 2985, "rapid": 2625, "uscf": 2685, "fide": 2590},
 }
 
 
@@ -147,7 +156,7 @@ CHESSCOM_BLITZ_TO_LICHESS: Final[Mapping[int, Mapping[LichessTC, int | None]]] =
     2500: {"bullet": 2560, "blitz": 2445, "rapid": 2445, "classical": 2360},
     2600: {"bullet": 2700, "blitz": 2560, "rapid": 2510, "classical": 2435},
     2700: {"bullet": 2765, "blitz": 2625, "rapid": 2595, "classical": 2500},
-    2800: {"bullet": 2870, "blitz": 2695, "rapid": 2630, "classical": 2500},
+    2800: {"bullet": 2870, "blitz": 2695, "rapid": 2630, "classical": None},
     2900: {"bullet": 3005, "blitz": 2780, "rapid": 2705, "classical": None},
     3000: {"bullet": 3090, "blitz": 2850, "rapid": 2735, "classical": None},
 }
@@ -172,7 +181,7 @@ LICHESS_BLITZ_INTRA_TC: Final[Mapping[int, Mapping[LichessIntraTC, int | None]]]
     1145: {"bullet": 1075, "rapid": 1340, "classical": 1495, "uscf": 860, "fide": None},
     1200: {"bullet": 1115, "rapid": 1400, "classical": 1555, "uscf": 930, "fide": None},
     1335: {"bullet": 1200, "rapid": 1515, "classical": 1625, "uscf": 1055, "fide": None},
-    1420: {"bullet": 1295, "rapid": 1615, "classical": 1715, "uscf": 1155, "fide": None},
+    1420: {"bullet": 1295, "rapid": 1615, "classical": 1715, "uscf": 1155, "fide": 1450},
     1475: {"bullet": 1385, "rapid": 1690, "classical": 1770, "uscf": 1280, "fide": 1490},
     1525: {"bullet": 1435, "rapid": 1730, "classical": 1795, "uscf": 1325, "fide": 1540},
     1565: {"bullet": 1475, "rapid": 1765, "classical": 1810, "uscf": 1350, "fide": 1555},
@@ -199,9 +208,9 @@ LICHESS_BLITZ_INTRA_TC: Final[Mapping[int, Mapping[LichessIntraTC, int | None]]]
     2445: {"bullet": 2560, "rapid": 2445, "classical": 2360, "uscf": 2260, "fide": 2275},
     2560: {"bullet": 2700, "rapid": 2510, "classical": 2435, "uscf": 2315, "fide": 2350},
     2625: {"bullet": 2765, "rapid": 2595, "classical": 2500, "uscf": 2435, "fide": 2415},
-    2695: {"bullet": 2870, "rapid": 2630, "classical": None, "uscf": 2575, "fide": 2535},
-    2780: {"bullet": 3005, "rapid": 2705, "classical": None, "uscf": 2685, "fide": 2590},
-    2850: {"bullet": 3090, "rapid": 2735, "classical": None, "uscf": None, "fide": None},
+    2695: {"bullet": 2870, "rapid": 2630, "classical": None, "uscf": 2500, "fide": 2470},
+    2780: {"bullet": 3005, "rapid": 2705, "classical": None, "uscf": 2575, "fide": 2535},
+    2850: {"bullet": 3090, "rapid": 2735, "classical": None, "uscf": 2685, "fide": 2590},
 }
 
 
@@ -316,21 +325,25 @@ def _invert_intra_tc(
 ) -> int | None:
     """Find chess.com Blitz anchor whose Table 1 `source_tc` column ≈ `rating`.
 
-    Table 1 columns are monotone non-decreasing in chess.com Blitz (modulo the
-    one tied row at 1100/1150 in the Bullet column — both equal 1150). We scan
-    sorted by Blitz key and find the bracket of two adjacent rows whose
-    `source_tc` values straddle `rating`, then linear-interpolate the Blitz key
-    between them. Returns None outside the published range or when the column
-    is non-monotone in the bracket (cannot invert deterministically).
+    Table 1 Bullet and Rapid columns are strictly monotone in chess.com Blitz
+    (post 2026-05-27 re-fetch). We scan sorted by Blitz key and find the bracket
+    of two adjacent rows whose `source_tc` values straddle `rating`, then
+    linear-interpolate the Blitz key between them. Returns None outside the
+    published range. Only Bullet/Rapid columns are invertible — USCF/FIDE have
+    None entries at the low end (Table 1 type allows None) and are not
+    supported as source_tc.
     """
     # Build the source_tc column projected against the Blitz anchor keys.
-    column_values: list[int] = [
-        # Both columns ('bullet', 'rapid') are typed int in Table 1 (never None).
-        # The cast below is safe because CHESSCOM_INTRA_TC's value type is
-        # Mapping[..., int] (no None entries in Table 1).
-        CHESSCOM_INTRA_TC[anchor][source_tc]
-        for anchor in _CHESSCOM_INTRA_KEYS
-    ]
+    # Bullet and Rapid columns are guaranteed non-None across all rows by the
+    # snapshot invariant; assert at module-load to surface any future drift.
+    column_values: list[int] = []
+    for anchor in _CHESSCOM_INTRA_KEYS:
+        value = CHESSCOM_INTRA_TC[anchor][source_tc]
+        assert value is not None, (
+            f"Table 1 column {source_tc!r} unexpectedly None at Blitz anchor "
+            f"{anchor} — Bullet/Rapid columns must be fully populated."
+        )
+        column_values.append(value)
     if rating < column_values[0] or rating > column_values[-1]:
         return None
     # Linear scan for the first index where column_values[i] >= rating.
@@ -349,9 +362,11 @@ def _invert_intra_tc(
     lo_blitz = _CHESSCOM_INTRA_KEYS[idx - 1]
     hi_blitz = _CHESSCOM_INTRA_KEYS[idx]
     if hi_col == lo_col:
-        # Tied column values (e.g. Bullet at 1100/1150 both = 1150). Fall back
-        # to the lower anchor — the inversion is ambiguous and we prefer the
-        # lower Blitz reading per the SEED-026 conservative-estimate principle.
+        # Defensive: the 2026-05-27 re-fetch made Bullet and Rapid columns
+        # strictly monotone, so this branch is unreachable for the current
+        # snapshot. Kept in case a future refit reintroduces a tied row — fall
+        # back to the lower Blitz anchor per the SEED-026 conservative-estimate
+        # principle.
         return lo_blitz
     frac = (rating - lo_col) / (hi_col - lo_col)
     return round(lo_blitz + frac * (hi_blitz - lo_blitz))
