@@ -1,4 +1,6 @@
-# Requirements: FlawChess — v1.19 Endgame Percentiles & LLM Statistical Reasoning
+# Requirements: FlawChess — v1.19 Endgame Percentiles + v1.20 LLM Statistical Reasoning
+
+> **Milestone split (2026-05-27):** Phase 95 (LLM Statistical Reasoning) moved to its own **v1.20** milestone. v1.19 closes at Phase 94.4. The LLM-* requirements below ship in v1.20.
 
 **Defined:** 2026-05-22
 **Core Value:** Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
@@ -53,7 +55,7 @@ Pivots the percentile chip from global-pool to peer-relative (vs same-rated-coho
 - [ ] **PRPCR-08**: `.planning/seeds/SEED-019-global-percentile-annotations-on-endgame-metrics.md` carries a `## Superseded by SEED-026 v2` banner; the "Final Tier-1 chip set" section is marked superseded. The `feedback_percentile_chip_tooltip_disclosure.md` user-memory file is amended to reflect the new 4-bullet contract (rating-anchor disclosure replaces per-metric rating-correlation copy). Historical Cohen's d / Spearman ρ analysis is preserved as context, no longer load-bearing — cohort absorbs coupling. (ROADMAP SC-8)
 - [ ] **PRPCR-09**: A blocking HUMAN-UAT step on the prod backfill confirms credibility-recovery on elite users: a 2400-rated user landing at `p15` Endgame Score Gap reads as cohort-relative ("even compared to other 2400s, your endgame is unusually unbalanced") rather than "FlawChess thinks I'm bad at chess." Mobile + desktop parity at 375px and desktop widths confirmed in the same UAT session. (ROADMAP SC-9)
 
-### LLM Statistical Reasoning (LLM)
+### LLM Statistical Reasoning (LLM) — v1.20
 
 Reworks the endgame-insights LLM payload + prompt so the model can reason over the v1.17 statistical-rigor metric set (Endgame Score Gap, Achievable Score Gap, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence intervals, and the new percentile annotations, while preserving the prior decision that the cohort `zone` field — not significance — gates whether a metric is narrated.
 

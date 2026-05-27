@@ -21,7 +21,8 @@
 - ✅ **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82, 83 (shipped 2026-05-11) — see [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md)
 - ✅ **v1.17 Endgame Stats Card Redesign** — Phases 84-88.4 (shipped 2026-05-19; Phase 89 dropped, 87.3 superseded) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 - ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
-- 🔄 **v1.19 Endgame Percentiles & LLM Statistical Reasoning** — Phases 93, 94, 94.1, 94.2, 94.3, 95 (in progress, planning)
+- 🔄 **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (in progress; Phase 94.4 shipped 2026-05-27 — PR #145)
+- 🔜 **v1.20 LLM Statistical Reasoning** — Phase 95 (not started)
 
 ## Phases
 
@@ -31,7 +32,7 @@
 - [x] **Phase 94.2: Pooled-Per-User Percentile Redesign** — Replace per-cell stratified methodology with one-point-per-user pooled model on both CDF construction and per-user lookup sides; recent 1000 games per TC, ≤36 months, pooled across TCs; single ≥30-games inclusion floor on the pool; regenerate `GLOBAL_PERCENTILE_CDF` against new methodology; re-run backfill; SKILL.md methodology chapter refresh (completed 2026-05-24)
 - [x] **Phase 94.3: Per-TC Percentile Chips on Time Pressure Cards** *(INSERTED — SEED-025)* — Extend the Phase 94.2 pooled-per-user contract to per-TC surfaces. 12 new metrics added to `user_benchmark_percentiles` ENUM (Time Pressure Score Gap, Clock Gap, Net Flag Rate × {bullet, blitz, rapid, classical}) reusing the pooled-per-user methodology parameterised by TC; new per-TC pooled-aggregate SQL builders in `canonical_slice_sql.py`; 12 new keys in `GLOBAL_PERCENTILE_CDF`; chips wired to `TimePressureTcCard` headers (3 chips per card) via the existing `PercentileChip` component; backfill extended for one-shot population. No schema change. (completed 2026-05-24)
 - [x] **Phase 94.4: Peer-Relative Percentile Chip Refinement** *(INSERTED — SEED-026 v2)* — Pivot the chip from global-pool ("vs all benchmark users") to peer-relative ("vs same-rated-cohort users"). Per-(user, TC) rating anchor (median over latest ~1000 games per TC; Lichess wins precedence, chess.com converted via hardcoded ChessGoals Table 2 snapshot). Replace `GLOBAL_PERCENTILE_CDF` with a per-(metric, ELO anchor, TC) cohort CDF family built as 50-Elo sliding windows of K=200 floor-passing users (±150 Elo max, suppress otherwise). TC-aggregated metrics (`score_gap`, `achievable_score_gap`, the 2 Section-2 metrics) compute per-TC sub-percentiles aggregated via game-count-weighted mean. Chip UX shrinks to `p23` pill + tooltip-only; tooltip leads with cohort framing + rating-anchor disclosure. Metric eligibility re-opened — Conversion / Recovery / Endgame Score Gap rescued under peer-relative framing (~7-12 chip surface, up from ~3-5). Storage shape on `user_benchmark_percentiles` unchanged (still one scalar percentile per (user, metric)). (completed 2026-05-27 — amended 2026-05-27 with D-12 reversal (game-weighted blended anchor); see CONTEXT §Amendment + `.planning/notes/percentile-anchor-d12-reversal.md`)
-- [ ] **Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework** — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+- [ ] **Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
 
@@ -533,7 +534,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
 | 93. Global Percentile Benchmark Artifact | v1.19 | 2/2 | Complete    | 2026-05-22 |
 | 94. Backend & Frontend Percentile Annotations | v1.19 | 3/3 | Complete   | 2026-05-23 |
-| 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.19 | 0/TBD | Not started | - |
+| 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.20 | 0/TBD | Not started | - |
 
 ## Backlog
 
