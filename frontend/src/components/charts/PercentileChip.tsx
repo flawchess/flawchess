@@ -145,6 +145,7 @@ function deriveBandColor(pct: number): string {
 
 interface PopoverBodyProps {
   percentile: number;
+  flavor: PercentileChipFlavor;
   metricLabel: string;
   tc: TimeControlBucket | undefined;
   anchorRating: number;
@@ -156,6 +157,7 @@ interface PopoverBodyProps {
 
 function PercentileChipPopoverBody({
   percentile,
+  flavor,
   metricLabel,
   tc,
   anchorRating,
@@ -188,6 +190,15 @@ function PercentileChipPopoverBody({
     tc !== undefined
       ? `Based on your most recent 3000 rated games in ${tc} over the last 36 months, vs opponents within +/-100 Elo.`
       : `Based on your most recent 3000 rated games per time control over the last 36 months, vs opponents within +/-100 Elo.`;
+  // Time-Pressure Score Gap only: a brief note explaining that the metric is
+  // computed from the two leftmost datapoints on the adjacent chart (the 10%
+  // and 30% buckets, i.e. endgames entered with under 40% of the starting
+  // clock). Anchors the chip percentile to the visible chart so the user can
+  // see what raw values fed the percentile rank.
+  const bulletMetricNote =
+    flavor === 'time-pressure-score-gap'
+      ? "Computed from the chart's 10% and 30% datapoints (endgames entered with under 40% of your clock): your average score in those buckets minus your opponents' average score when they were under the same pressure."
+      : null;
   const bullet3 = COPY_FILTER_INDEPENDENCE;
   // D-12 Reversal Amendment (2026-05-27): bullet 4 blended-composition disclosure.
   // 4 branches per the amendment contract (locked by Plan 11 Vitest C1-C6):
@@ -210,6 +221,7 @@ function PercentileChipPopoverBody({
   return (
     <div className="space-y-1.5">
       <p>{bullet1}</p>
+      {bulletMetricNote !== null && <p>{bulletMetricNote}</p>}
       <p>{bullet2}</p>
       <p>{bullet3}</p>
       {bullet4 !== '' && <p>{bullet4}</p>}
@@ -219,13 +231,10 @@ function PercentileChipPopoverBody({
 
 export function PercentileChip({
   percentile,
-  // `flavor` stays on PercentileChipProps as part of the typed API contract
-  // (consumers pass it so type narrowing at call sites is meaningful and the
-  // chip enum collapse stays grep-able from outside). It is intentionally NOT
-  // destructured here: post-94.4 the 4 popover bullets are identical across
-  // all 8 flavors (per CONTEXT D-07a — the per-metric rating-correlation
-  // copy retired), so the body has nothing to dispatch on. Reserved for
-  // future per-flavor copy variants without an API churn.
+  // `flavor` routes the optional per-metric note (currently only
+  // `time-pressure-score-gap` opts in to explain the 10%/30% bucket
+  // derivation). All other flavors render the standard 4-bullet body.
+  flavor,
   tc,
   anchorRating,
   nChesscomGames,
@@ -324,6 +333,7 @@ export function PercentileChip({
         >
           <PercentileChipPopoverBody
             percentile={percentile}
+            flavor={flavor}
             metricLabel={metricLabel}
             tc={tc}
             anchorRating={anchorRating}
