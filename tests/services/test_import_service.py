@@ -17,6 +17,7 @@ Phase 91 / SEED-023:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -436,3 +437,156 @@ class TestHotLaneCoveredGate:
             "Game B has only opening plies (no entry plies needing eval) and must be "
             f"marked covered by Stage 5c (evals_completed_at != NULL). Got: {rows[platform_id_b]}"
         )
+
+
+# ── Stage B import-complete trigger (quick-260527-u3u) ───────────────────────
+#
+# These tests pin the new Stage B trigger inside _complete_import_job that
+# closes the gap where all-Stage-5c-covered incremental imports never tick the
+# cold drain — leaving Stage B percentiles stale vs Stage A. The cold-drain
+# trigger at eval_drain.py:566-568 is preserved and untouched; both sites are
+# idempotent.
+
+_TEST_USER_ID_STAGE_B: int = 99204
+_TEST_JOB_ID_STAGE_B: str = "test-stage-b-import-job-001"
+
+
+def _make_stage_b_session() -> MagicMock:
+    """Minimal AsyncSession mock for _complete_import_job — async context manager + commit."""
+    session = AsyncMock()
+    session.commit = AsyncMock()
+    return session
+
+
+def _make_stage_b_session_maker(session: MagicMock) -> MagicMock:
+    """Callable returning a session as async context manager. Each call yields the same session."""
+    ctx = AsyncMock()
+    ctx.__aenter__ = AsyncMock(return_value=session)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    maker = MagicMock()
+    maker.return_value = ctx
+    return maker
+
+
+def _make_job_state() -> Any:
+    """Construct a minimal JobState for _complete_import_job."""
+    from app.services.import_service import JobState
+
+    return JobState(
+        job_id=_TEST_JOB_ID_STAGE_B,
+        user_id=_TEST_USER_ID_STAGE_B,
+        platform="lichess",
+        username="test_user_u3u",
+    )
+
+
+@pytest.mark.asyncio
+async def test_stage_b_fires_on_import_complete_when_zero_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stage B is scheduled exactly once when users_with_zero_pending returns [user_id].
+
+    Also confirms Stage A continues to be scheduled (no regression).
+    """
+    from app.services import import_service
+
+    session = _make_stage_b_session()
+    monkeypatch.setattr(import_service, "async_session_maker", _make_stage_b_session_maker(session))
+
+    spy_a = MagicMock(side_effect=lambda *_a, **_kw: asyncio.sleep(0))
+    spy_b = MagicMock(side_effect=lambda *_a, **_kw: asyncio.sleep(0))
+    monkeypatch.setattr(import_service, "compute_stage_a", spy_a)
+    monkeypatch.setattr(import_service, "compute_stage_b", spy_b)
+
+    async def _fake_gate(_session: Any, user_ids: Any) -> list[int]:
+        return list(user_ids)
+
+    monkeypatch.setattr(import_service.game_repository, "users_with_zero_pending", _fake_gate)
+    monkeypatch.setattr(import_service.import_job_repository, "update_import_job", AsyncMock())
+
+    job = _make_job_state()
+    await import_service._complete_import_job(job, _TEST_JOB_ID_STAGE_B)
+
+    assert spy_a.call_count == 1, "Stage A must still be scheduled exactly once"
+    assert spy_a.call_args.args == (_TEST_USER_ID_STAGE_B,)
+    assert spy_b.call_count == 1, "Stage B must fire when pending count is zero"
+    assert spy_b.call_args.args == (_TEST_USER_ID_STAGE_B,)
+
+
+@pytest.mark.asyncio
+async def test_stage_b_does_not_fire_when_pending_remains(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stage B is NOT scheduled when users_with_zero_pending returns [].
+
+    Stage A must still be scheduled (gate only applies to Stage B).
+    """
+    from app.services import import_service
+
+    session = _make_stage_b_session()
+    monkeypatch.setattr(import_service, "async_session_maker", _make_stage_b_session_maker(session))
+
+    spy_a = MagicMock(side_effect=lambda *_a, **_kw: asyncio.sleep(0))
+    spy_b = MagicMock(side_effect=lambda *_a, **_kw: asyncio.sleep(0))
+    monkeypatch.setattr(import_service, "compute_stage_a", spy_a)
+    monkeypatch.setattr(import_service, "compute_stage_b", spy_b)
+
+    async def _fake_gate_empty(_session: Any, _user_ids: Any) -> list[int]:
+        return []
+
+    monkeypatch.setattr(import_service.game_repository, "users_with_zero_pending", _fake_gate_empty)
+    monkeypatch.setattr(import_service.import_job_repository, "update_import_job", AsyncMock())
+
+    job = _make_job_state()
+    await import_service._complete_import_job(job, _TEST_JOB_ID_STAGE_B)
+
+    assert spy_a.call_count == 1, "Stage A must still be scheduled (gate is Stage-B-only)"
+    assert spy_b.call_count == 0, (
+        "Stage B must NOT fire when pending evals remain or another import is active"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stage_b_gate_exception_is_swallowed_and_captured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A gate-query exception is captured to Sentry and does NOT propagate.
+
+    The import worker must keep running; compute_stage_b is NOT scheduled when
+    the gate fails. Stage A still fires (the new block is downstream of it).
+    """
+    from app.services import import_service
+
+    session = _make_stage_b_session()
+    monkeypatch.setattr(import_service, "async_session_maker", _make_stage_b_session_maker(session))
+
+    spy_a = MagicMock(side_effect=lambda *_a, **_kw: asyncio.sleep(0))
+    spy_b = MagicMock(side_effect=lambda *_a, **_kw: asyncio.sleep(0))
+    monkeypatch.setattr(import_service, "compute_stage_a", spy_a)
+    monkeypatch.setattr(import_service, "compute_stage_b", spy_b)
+
+    boom = RuntimeError("boom")
+
+    async def _fake_gate_raises(_session: Any, _user_ids: Any) -> list[int]:
+        raise boom
+
+    monkeypatch.setattr(
+        import_service.game_repository, "users_with_zero_pending", _fake_gate_raises
+    )
+    monkeypatch.setattr(import_service.import_job_repository, "update_import_job", AsyncMock())
+
+    capture_spy = MagicMock()
+    monkeypatch.setattr(import_service.sentry_sdk, "capture_exception", capture_spy)
+    # set_context is also called on the failure path — make it a no-op spy.
+    monkeypatch.setattr(import_service.sentry_sdk, "set_context", MagicMock())
+
+    job = _make_job_state()
+    # MUST NOT raise — the new block swallows non-CancelledError exceptions.
+    await import_service._complete_import_job(job, _TEST_JOB_ID_STAGE_B)
+
+    assert spy_a.call_count == 1, "Stage A must still fire — it runs before the Stage B gate"
+    assert spy_b.call_count == 0, "Stage B must NOT be scheduled when the gate raises"
+    assert capture_spy.call_count == 1, "Gate exception must be captured to Sentry exactly once"
+    assert capture_spy.call_args.args == (boom,), (
+        "Sentry capture must receive the raised RuntimeError"
+    )

@@ -2458,14 +2458,15 @@ class TestRunImportSessionPerBatch:
 
     @pytest.mark.asyncio
     async def test_one_session_per_batch(self):
-        """run_import opens one session for each logical scope: bootstrap + per-batch + completion.
+        """run_import opens one session for each logical scope: bootstrap + per-batch + completion + Stage-B gate.
 
         With N=30 games and _BATCH_SIZE=12:
           12 (batch 1) + 12 (batch 2) + 6 (trailing) = 3 batch sessions
-          + 1 bootstrap + 1 completion = 5 total session opens.
+          + 1 bootstrap + 1 completion + 1 Stage-B gate read session (quick-260527-u3u) = 6 total session opens.
 
-        Currently: run_import uses ONE session for the whole import.
-        After Task 2: 5 sessions for 30 games / batch_size=12.
+        The trailing +1 is the fresh read session opened inside _complete_import_job to
+        evaluate users_with_zero_pending before firing compute_stage_b — see
+        app/services/import_service.py around line 510.
         """
         from app.services.import_service import _BATCH_SIZE
 
@@ -2473,7 +2474,8 @@ class TestRunImportSessionPerBatch:
         n_full_batches = total_games // _BATCH_SIZE  # = 2
         n_trailing = total_games % _BATCH_SIZE  # = 6
         n_batch_sessions = n_full_batches + (1 if n_trailing > 0 else 0)  # = 3
-        expected_session_calls = 1 + n_batch_sessions + 1  # bootstrap + batches + completion = 5
+        # bootstrap + batches + completion + Stage-B gate read session = 6
+        expected_session_calls = 1 + n_batch_sessions + 1 + 1
 
         call_count = [0]
         mock_maker = self._make_simple_session_maker(call_count)
@@ -2532,9 +2534,8 @@ class TestRunImportSessionPerBatch:
 
         assert call_count[0] == expected_session_calls, (
             f"Expected {expected_session_calls} async_session_maker() calls "
-            f"(1 bootstrap + {n_batch_sessions} per-batch + 1 completion). "
-            f"Got {call_count[0]}. "
-            f"Current code uses 1 session for the whole import."
+            f"(1 bootstrap + {n_batch_sessions} per-batch + 1 completion + 1 Stage-B gate). "
+            f"Got {call_count[0]}."
         )
 
     @pytest.mark.asyncio
