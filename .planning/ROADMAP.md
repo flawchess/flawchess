@@ -22,15 +22,33 @@
 - ✅ **v1.17 Endgame Stats Card Redesign** — Phases 84-88.4 (shipped 2026-05-19; Phase 89 dropped, 87.3 superseded) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 - ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
 - ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split into v1.20 before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
-- 🔄 **v1.20 LLM Statistical Reasoning** — Phase 95 (not started)
+- 🔄 **v1.20 LLM Statistical Reasoning** — Phase 96 (not started)
 
 ## Phases
 
-- [ ] **Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+- [ ] **Phase 95: asyncpg COPY for `bulk_insert_positions`** *(standalone hardening, no milestone)* — Switch the heaviest INSERT in the import pipeline from parameterized `INSERT … VALUES(...)` to asyncpg `copy_records_to_table` (binary COPY) to cut per-backend memory pressure during dual-platform imports. Follow-up to SEED-027 Thread A (PR #144 container budget hotfix).
+- [ ] **Phase 96: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
 
-### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
+### Phase 95: asyncpg COPY for `bulk_insert_positions`
+
+**Goal**: Switch `bulk_insert_positions` in `app/repositories/game_repository.py` from SQLAlchemy `insert(GamePosition).values(chunk)` to asyncpg's binary `Connection.copy_records_to_table` to reduce per-backend Postgres memory during the import hot-lane burst. SEED-027 Thread A (container memory budget) shipped 2026-05-26 via hotfix PR #144 — Thread B remains and is the subject of this phase. `bulk_insert_games` stays on `pg_insert(...).values(...)` because it relies on `ON CONFLICT DO NOTHING` (COPY can't express that). Atomicity vs `bulk_insert_games` is preserved by enrolling the COPY in the active SQLAlchemy session transaction. No feature flag — rollback is a single revert away. Verify under a dual-platform stress test mirroring Phase 91's setup; acceptance is no `ConnectionDoesNotExistError` and lower peak `flawchess-db-1` cgroup memory than the pre-COPY baseline.
+**Depends on**: none (Thread A already deployed at prod SHA 65511c9)
+**Requirements**: standalone — no requirement IDs (hardening / bugfix follow-up to FLAWCHESS-3Q)
+**Success Criteria** (what must be TRUE):
+
+  1. `bulk_insert_positions` uses `asyncpg.Connection.copy_records_to_table` for the inner write path; no `INSERT … VALUES(...)` remains in the function body for the position table.
+  2. Column order passed to COPY matches `GamePosition.__table__.columns` exactly, including nullable columns (`eval_cp`, `eval_mate`, `endgame_class`, `piece_count`, …), with `None` for absent values; mapper coverage is asserted in a unit test.
+  3. The COPY runs inside the existing SQLAlchemy session transaction (rolls back atomically with `bulk_insert_games` on failure); proven by a test that triggers a post-COPY exception and asserts both tables are empty afterwards.
+  4. `bulk_insert_games` is untouched and still uses `pg_insert(...).values(...)` with `ON CONFLICT DO NOTHING`.
+  5. Dual-platform stress test on local dev DB (seeded with user 109's import workload, or a 7k+ game multi-platform user) completes with both jobs `status='completed'`, `games_imported == games_fetched`, and no `ConnectionDoesNotExistError` in either job's `error_message`. Peak `flawchess-db-1` cgroup memory stays under 9 GB (75% of the 12 GB cap shipped in PR #144).
+  6. Existing import unit + integration tests pass unchanged. New tests cover: column-order parity with `GamePosition` model, transaction rollback atomicity, empty-batch no-op, NULL handling for the eval columns.
+  7. `pg_stat_statements` top-20 mean-time check (dev DB before/after) shows no analytics-query regression > 20%. Sanity only — write-path change shouldn't affect read latency, but cheap to verify.
+
+**Plans**: TBD
+
+### Phase 96: LLM Endgame-Insights Statistical-Reasoning Rework
 
 **Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
 **Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
@@ -307,7 +325,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
 | 93. Global Percentile Benchmark Artifact | v1.19 | 2/2 | Complete    | 2026-05-22 |
 | 94. Backend & Frontend Percentile Annotations | v1.19 | 3/3 | Complete   | 2026-05-23 |
-| 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.20 | 0/TBD | Not started | - |
+| 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.20 | 1/2 | In Progress|  |
 
 ## Backlog
 

@@ -1,9 +1,14 @@
+import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import type { EvalCoverageResponse } from '@/types/api';
 
 const EVAL_COVERAGE_POLL_INTERVAL_MS = 3_000;
 const EVAL_COVERAGE_STALE_TIME_MS = 3_000;
+
+// Module-level guard so the reload only fires once across all hook consumers
+// in a single page lifetime. Reset implicitly when the page reloads.
+let evalCompletionReloadFired = false;
 
 /** Poll GET /imports/eval-coverage every 10s while Stockfish analysis is pending.
  *
@@ -35,11 +40,35 @@ export function useEvalCoverage() {
   });
 
   const data = query.data;
+  const isPending = (data?.pct_complete ?? 100) < 100;
+
+  // Reload the page once Stockfish finishes so eval-dependent stats
+  // (Conversion/Parity/Recovery, etc.) refresh without manual reload.
+  // Only triggers on a true pending→complete transition observed in this
+  // session — never on initial load when eval is already at 100%.
+  const wasPendingRef = useRef(false);
+  useEffect(() => {
+    if (isPending) {
+      wasPendingRef.current = true;
+      return;
+    }
+    if (
+      wasPendingRef.current &&
+      !evalCompletionReloadFired &&
+      data &&
+      data.total_count > 0 &&
+      data.pct_complete === 100
+    ) {
+      evalCompletionReloadFired = true;
+      window.location.reload();
+    }
+  }, [isPending, data]);
+
   return {
     pendingCount: data?.pending_count ?? 0,
     totalCount: data?.total_count ?? 0,
     pct: data?.pct_complete ?? 100,
-    isPending: (data?.pct_complete ?? 100) < 100,
+    isPending,
     isLoading: query.isLoading,
   };
 }
