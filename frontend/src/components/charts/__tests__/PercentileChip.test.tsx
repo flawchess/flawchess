@@ -17,7 +17,7 @@
  *   9. NO flame icon at any percentile (regression guard for commit-6766898c).
  *  10. Lichess-anchored bullet 4 reads "Anchored on your Lichess {tc} ({anchor})."
  *  11. chess.com-anchored bullet 4 with chesscomRawRating includes the
- *      "{raw} -> {anchor} Lichess-equivalent via ChessGoals snapshot 2026-05-26" form.
+ *      "{raw} -> {anchor} Lichess-equivalent" conversion form.
  *  12. chess.com-anchored bullet 4 WITHOUT chesscomRawRating uses simpler form.
  *  13. Bullet 3 (filter independence) is COPY_FILTER_INDEPENDENCE verbatim.
  *
@@ -224,7 +224,7 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
   });
 
   // Test 11: chess.com-anchored bullet 4 WITH chesscomRawRating
-  it('chess.com-anchored bullet 4 with chesscomRawRating uses ChessGoals snapshot 2026-05-26 form', () => {
+  it('chess.com-anchored bullet 4 with chesscomRawRating shows raw -> Lichess-equivalent conversion', () => {
     renderChip(40, {
       flavor: 'clock-gap',
       tc: 'blitz',
@@ -234,9 +234,8 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).toContain(
-      'Anchored on your chess.com blitz (1830 -> 1920 Lichess-equivalent via ChessGoals snapshot 2026-05-26).',
-    );
+    expect(body).toContain('Anchored on your chess.com blitz (1830 -> 1920 Lichess-equivalent).');
+    expect(body).not.toContain('ChessGoals');
   });
 
   // Test 12: chess.com-anchored bullet 4 WITHOUT chesscomRawRating

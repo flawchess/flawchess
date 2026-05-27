@@ -15,7 +15,7 @@
  *   2. Recent-games basis (TC-scoped per Plan 05; vs +/-100 Elo opponents).
  *   3. Filter independence (kept verbatim from 94.3, `COPY_FILTER_INDEPENDENCE`).
  *   4. Rating-anchor disclosure (Lichess vs chess.com source; chess.com sources
- *      with `chesscomRawRating` get the ChessGoals-snapshot conversion form).
+ *      with `chesscomRawRating` show the raw -> Lichess-equivalent conversion).
  *
  * Per CONTEXT D-07a: the 16-variant flavor enum collapses to 8 (5 page-level
  * aggregated + 3 per-TC families). All 8 flavors are `higher_is_better`
@@ -63,12 +63,6 @@ const CHIP_TEXT_COLOR = 'oklch(0.98 0 0)';
 // Phase 94.3 D-3: kept verbatim from the post-94.3 module — preserves the
 // existing UI filter-independence promise on the chip's 3rd bullet.
 const COPY_FILTER_INDEPENDENCE = 'UI filters do not affect this percentile.';
-
-// Phase 94.4 D-07 bullet 4: ChessGoals-snapshot conversion disclosure. The
-// snapshot date is the date the rating conversion table was captured; it ships
-// frozen with this build. Updating it is a CHIP_TEXT-style content change.
-// Reads in the rendered bullet 4 as: "... via ChessGoals snapshot 2026-05-26."
-const CHESSGOALS_SNAPSHOT_DATE = '2026-05-26';
 
 /**
  * Time-control bucket Literal — mirrors the backend `TimeControlBucket` Literal
@@ -186,7 +180,7 @@ function PercentileChipPopoverBody({
   if (anchorSource === 'lichess') {
     bullet4 = `Anchored on your Lichess ${tcOrAgg} (${anchorRating}).`;
   } else if (chesscomRawRating !== undefined) {
-    bullet4 = `Anchored on your chess.com ${tcOrAgg} (${chesscomRawRating} -> ${anchorRating} Lichess-equivalent via ChessGoals snapshot ${CHESSGOALS_SNAPSHOT_DATE}).`;
+    bullet4 = `Anchored on your chess.com ${tcOrAgg} (${chesscomRawRating} -> ${anchorRating} Lichess-equivalent).`;
   } else {
     bullet4 = `Anchored on your chess.com ${tcOrAgg} (${anchorRating}).`;
   }
