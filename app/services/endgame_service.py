@@ -3022,15 +3022,16 @@ async def get_endgame_overview(
         opponent_gap_max=opponent_gap_max,
     )
 
-    # Phase 94.4 D-07 bullet 4: populate the top-level rating_anchors block
-    # so the percentile chip tooltip can render its 4th bullet (provenance:
-    # which TC's anchor drove the chip, and for chess.com sources, the raw
-    # pre-conversion rating). The repository call is V4-scoped — user_id is
-    # the authenticated user's PK from the FastAPI-Users dep, never sourced
-    # from a query/path param. `chesscom_raw_rating` is populated on the
-    # underlying RatingAnchorRow at compute time by
-    # compute_anchors_for_user (Plan 05b — captures the raw chess.com
-    # median PRE-conversion); we project it through unchanged here.
+    # Phase 94.4 D-07 bullet 4 / D-12 Reversal Amendment (2026-05-27):
+    # populate the top-level rating_anchors block so the percentile chip
+    # tooltip can render its 4th bullet. The repository call is V4-scoped —
+    # user_id is the authenticated user's PK from the FastAPI-Users dep,
+    # never sourced from a query/path param.
+    #
+    # Per-platform game counts + native medians come from the blended anchor
+    # compute (`compute_anchors_for_user`, Plan 10) — they exist purely to
+    # support tooltip composition disclosure. V4 mitigation: `user_id` flows
+    # through the FastAPI-Users dep, never as a query parameter.
     #
     # W4 deferral (multi-TC footnote): for aggregated page-level chips, the
     # dominant-TC anchor approach lives at the frontend (Plan 07 picks the
@@ -3038,15 +3039,15 @@ async def get_endgame_overview(
     # intentionally DEFERRED to a v1.1 of the tooltip — current scope ships
     # the dominant-TC disclosure with the aggregated framing of bullet 1
     # ("Compared to other ~{anchor}-rated players, aggregated across the
-    # time controls you play.") covering honesty. See Plan 07's tooltip
-    # body builder for the consumption side.
+    # time controls you play.") covering honesty.
     anchors = await fetch_anchors_for_user(session, user_id=user_id)
     rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = {
         tc: RatingAnchorOut(
             anchor_rating=row.anchor_rating,
-            source_platform=row.source_platform,
-            chesscom_raw_rating=row.chesscom_raw_rating,
-            n_games=row.n_games,
+            n_chesscom_games=row.n_chesscom_games,
+            n_lichess_games=row.n_lichess_games,
+            chesscom_median_native=row.chesscom_median_native,
+            lichess_median_native=row.lichess_median_native,
         )
         for tc, row in anchors.items()
     }
