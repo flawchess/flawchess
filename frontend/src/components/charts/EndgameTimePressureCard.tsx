@@ -188,8 +188,10 @@ function ClockGapHeaderRow({
             flavor="clock-gap"
             tc={card.tc}
             anchorRating={ratingAnchor.anchor_rating}
-            anchorSource={ratingAnchor.source_platform}
-            chesscomRawRating={ratingAnchor.chesscom_raw_rating ?? undefined}
+            nChesscomGames={ratingAnchor.n_chesscom_games}
+            nLichessGames={ratingAnchor.n_lichess_games}
+            chesscomMedianNative={ratingAnchor.chesscom_median_native ?? undefined}
+            lichessMedianNative={ratingAnchor.lichess_median_native ?? undefined}
             metricLabel="Clock Gap"
             testId={`time-pressure-card-${card.tc}-clock-gap-chip`}
           />
@@ -255,8 +257,10 @@ function NetFlagRateRow({
             flavor="net-flag-rate"
             tc={card.tc}
             anchorRating={ratingAnchor.anchor_rating}
-            anchorSource={ratingAnchor.source_platform}
-            chesscomRawRating={ratingAnchor.chesscom_raw_rating ?? undefined}
+            nChesscomGames={ratingAnchor.n_chesscom_games}
+            nLichessGames={ratingAnchor.n_lichess_games}
+            chesscomMedianNative={ratingAnchor.chesscom_median_native ?? undefined}
+            lichessMedianNative={ratingAnchor.lichess_median_native ?? undefined}
             metricLabel="Net Flag Rate"
             testId={`time-pressure-card-${card.tc}-net-flag-rate-chip`}
           />
@@ -411,8 +415,10 @@ export function EndgameTimePressureCard({
                   flavor="time-pressure-score-gap"
                   tc={card.tc}
                   anchorRating={ratingAnchor.anchor_rating}
-                  anchorSource={ratingAnchor.source_platform}
-                  chesscomRawRating={ratingAnchor.chesscom_raw_rating ?? undefined}
+                  nChesscomGames={ratingAnchor.n_chesscom_games}
+                  nLichessGames={ratingAnchor.n_lichess_games}
+                  chesscomMedianNative={ratingAnchor.chesscom_median_native ?? undefined}
+                  lichessMedianNative={ratingAnchor.lichess_median_native ?? undefined}
                   metricLabel="Time Pressure Score Gap"
                   testId={`time-pressure-card-${card.tc}-time-pressure-score-gap-chip`}
                 />

@@ -26,6 +26,9 @@ export type RatingAnchorsByTc = Partial<Record<TimeControlBucket, RatingAnchorOu
  * (Stage A hasn't run, or every TC is below the inclusion floor) — caller
  * MUST suppress the chip in that case.
  *
+ * D-12 Reversal Amendment (2026-05-27): dominance computed via total game count
+ * `n_chesscom_games + n_lichess_games` (the old `n_games` field is gone).
+ *
  * Ties are broken deterministically by TC priority order
  * (bullet → blitz → rapid → classical), matching the volume-weighted
  * ordering most players follow.
@@ -38,7 +41,9 @@ export function pickDominantTcAnchor(
   for (const tc of tcOrder) {
     const candidate = anchors[tc];
     if (candidate === undefined) continue;
-    if (best === undefined || candidate.n_games > best.n_games) {
+    const candidateTotal = candidate.n_chesscom_games + candidate.n_lichess_games;
+    const bestTotal = best !== undefined ? best.n_chesscom_games + best.n_lichess_games : -1;
+    if (best === undefined || candidateTotal > bestTotal) {
       best = candidate;
     }
   }

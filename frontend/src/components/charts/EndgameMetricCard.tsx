@@ -257,10 +257,10 @@ export function EndgameMetricCard({
                               : 'recovery'
                         }
                         anchorRating={dominantAnchor.anchor_rating}
-                        anchorSource={dominantAnchor.source_platform}
-                        chesscomRawRating={
-                          dominantAnchor.chesscom_raw_rating ?? undefined
-                        }
+                        nChesscomGames={dominantAnchor.n_chesscom_games}
+                        nLichessGames={dominantAnchor.n_lichess_games}
+                        chesscomMedianNative={dominantAnchor.chesscom_median_native ?? undefined}
+                        lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
                         metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
                         testId={`${tileTestId}-percentile-chip`}
                       />

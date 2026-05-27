@@ -197,10 +197,10 @@ export function EndgameOverallPerformanceSection({
                         percentile={data.achievable_score_gap_percentile}
                         flavor="achievable"
                         anchorRating={dominantAnchor.anchor_rating}
-                        anchorSource={dominantAnchor.source_platform}
-                        chesscomRawRating={
-                          dominantAnchor.chesscom_raw_rating ?? undefined
-                        }
+                        nChesscomGames={dominantAnchor.n_chesscom_games}
+                        nLichessGames={dominantAnchor.n_lichess_games}
+                        chesscomMedianNative={dominantAnchor.chesscom_median_native ?? undefined}
+                        lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
                         metricLabel="Achievable Score Gap"
                         testId="achievable-score-gap-percentile-chip"
                       />
@@ -253,10 +253,10 @@ export function EndgameOverallPerformanceSection({
                         percentile={scoreGap.score_gap_percentile}
                         flavor="score-gap"
                         anchorRating={dominantAnchor.anchor_rating}
-                        anchorSource={dominantAnchor.source_platform}
-                        chesscomRawRating={
-                          dominantAnchor.chesscom_raw_rating ?? undefined
-                        }
+                        nChesscomGames={dominantAnchor.n_chesscom_games}
+                        nLichessGames={dominantAnchor.n_lichess_games}
+                        chesscomMedianNative={dominantAnchor.chesscom_median_native ?? undefined}
+                        lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
                         metricLabel="Endgame Score Gap"
                         testId="endgame-score-gap-percentile-chip"
                       />
