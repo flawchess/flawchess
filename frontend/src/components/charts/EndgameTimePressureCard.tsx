@@ -200,6 +200,8 @@ function ClockGapHeaderRow({
             lichessMedianNative={ratingAnchor.lichess_median_native ?? undefined}
             metricLabel="Clock Gap"
             testId={`time-pressure-card-${card.tc}-clock-gap-chip`}
+            nGames={card.clock_gap_n_games}
+            value={card.clock_gap_value}
           />
         </span>
       )}
@@ -269,6 +271,8 @@ function NetFlagRateRow({
             lichessMedianNative={ratingAnchor.lichess_median_native ?? undefined}
             metricLabel="Net Flag Rate"
             testId={`time-pressure-card-${card.tc}-net-flag-rate-chip`}
+            nGames={card.net_flag_rate_n_games}
+            value={card.net_flag_rate_value}
           />
         </span>
       )}
@@ -427,6 +431,8 @@ export function EndgameTimePressureCard({
                   lichessMedianNative={ratingAnchor.lichess_median_native ?? undefined}
                   metricLabel="Time Pressure Score Gap"
                   testId={`time-pressure-card-${card.tc}-time-pressure-score-gap-chip`}
+                  nGames={card.time_pressure_score_gap_n_games}
+                  value={card.time_pressure_score_gap_value}
                 />
               </span>
             )}

@@ -55,6 +55,39 @@ class RatingAnchorOut(BaseModel):
     lichess_median_native: int | None = None
 
 
+class PerTcBreakdownOut(BaseModel):
+    """One per-TC line for the percentile chip tooltip bullet 2.
+
+    Quick task 260527-q0b: aggregated chips (score-gap, achievable, parity,
+    conversion, recovery) expose a per-TC breakdown so users see concrete game
+    counts + per-TC value + per-TC percentile instead of the misleading "3000
+    games per time control" copy.
+
+    Branch semantics (frontend renders per-line accordingly):
+      - `value != None && percentile != None`: above floor with percentile;
+        renders `<tc>: <value> over <n_games> games -> <percentile> percentile`.
+      - `value != None && percentile == None`: above floor but CDF out-of-range;
+        backend emits, frontend DROPS the line. Backend stays honest about
+        wire shape; frontend is the renderer.
+      - `value == None && n_games > 0`: below the per-(metric, TC) inclusion
+        floor; renders `<tc>: insufficient games`.
+      - `n_games == 0`: backend SHOULD NOT emit; defensive frontend drop.
+
+    Fields:
+      tc: time-control bucket (matches TimeControlBucket Literal).
+      value: chip-cohort value (PercentileRow.value) for this TC; None when
+        below the inclusion floor.
+      n_games: user's game count in this TC (>= 0; 0 entries are NOT emitted).
+      percentile: per-TC cohort percentile in [0, 100]; None when above floor
+        but the CDF is out of range for the user's value.
+    """
+
+    tc: TimeControlBucket
+    value: float | None
+    n_games: int
+    percentile: float | None
+
+
 class ConversionRecoveryStats(BaseModel):
     """Inline conversion/recovery stats for one endgame category (D-06, D-08, D-09).
 
@@ -301,6 +334,10 @@ class EndgamePerformanceResponse(BaseModel):
     None when ex_n < PVALUE_RELIABILITY_MIN_N (=10) — same single-N gate as
     achievable_score_gap_p_value / _ci_*."""
 
+    # Quick task 260527-q0b: per-TC breakdown for the percentile chip tooltip
+    # bullet 2. Default [] for back-compat with existing test fixtures.
+    achievable_score_gap_per_tc: list[PerTcBreakdownOut] = []
+
 
 class EndgameTimelinePoint(BaseModel):
     """Single data point in the per-type rolling-window time series, sampled weekly.
@@ -492,6 +529,10 @@ class ScoreGapMaterialResponse(BaseModel):
     PVALUE_RELIABILITY_MIN_N (=10) — same dual-N gate as score_difference_p_value
     / _ci_*."""
 
+    # Quick task 260527-q0b: per-TC breakdown for bullet 2 of the chip tooltip.
+    # Default [] preserves back-compat with constructor call sites in older tests.
+    score_gap_per_tc: list[PerTcBreakdownOut] = []
+
     # Phase 87.2 (D-06): per-bucket Score Gap fields on the Section 2 response.
     # Flat shape mirrors Phase 87.1's type_achievable_score_gap_* on EndgameCategoryStats.
     # D-01: positive = user outperformed Stockfish baseline; negative = below.
@@ -512,6 +553,9 @@ class ScoreGapMaterialResponse(BaseModel):
     conv_mean is None — same single-N gate as score_gap_conv_p_value
     / _ci_*."""
 
+    # Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
+    score_gap_conv_per_tc: list[PerTcBreakdownOut] = []
+
     # Parity bucket (|eval_entry| <= 1.0 pawn):
     score_gap_parity_mean: float | None = None
     score_gap_parity_n: int | None = None
@@ -526,6 +570,9 @@ class ScoreGapMaterialResponse(BaseModel):
     None when score_gap_parity_n < PVALUE_RELIABILITY_MIN_N (=10) or
     parity_mean is None — same single-N gate as score_gap_parity_p_value
     / _ci_*."""
+
+    # Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
+    score_gap_parity_per_tc: list[PerTcBreakdownOut] = []
 
     # Recovery bucket (eval_entry <= -1.0 pawn):
     score_gap_recov_mean: float | None = None
@@ -549,6 +596,9 @@ class ScoreGapMaterialResponse(BaseModel):
     (D-05a). None when (a) Stage B has not computed a row for any of the
     user's TCs, or (b) every above-floor TC's percentile is None (CDF out of
     range)."""
+
+    # Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
+    recovery_score_gap_per_tc: list[PerTcBreakdownOut] = []
 
     # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
     # score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
@@ -851,6 +901,18 @@ class TimePressureTcCard(BaseModel):
     time_pressure_score_gap_percentile: float | None = None
     clock_gap_percentile: float | None = None
     net_flag_rate_percentile: float | None = None
+    # Quick task 260527-q0b: per-TC chip tooltip bullet 2 simplified framing.
+    # The 3 (n_games, value) pairs are sourced from the PercentileRow consumed
+    # at endgame_service.py per-TC lookup (`tps_row` / `cg_row` / `nf_row`).
+    # `value` is the chip-cohort value (PercentileRow.value), which can differ
+    # from the card's headline number (CONTEXT — render the percentile basis,
+    # not the headline). Defaults preserve B-2 lock for older fixtures.
+    time_pressure_score_gap_n_games: int | None = None
+    time_pressure_score_gap_value: float | None = None
+    clock_gap_n_games: int | None = None
+    clock_gap_value: float | None = None
+    net_flag_rate_n_games: int | None = None
+    net_flag_rate_value: float | None = None
 
 
 class TimePressureCardsResponse(BaseModel):

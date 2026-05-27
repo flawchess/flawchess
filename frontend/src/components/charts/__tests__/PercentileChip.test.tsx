@@ -56,6 +56,7 @@ afterEach(() => {
 
 import { PercentileChip, type PercentileChipFlavor } from '../PercentileChip';
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import type { PerTcBreakdownOut } from '@/types/endgames';
 
 const TID = 'test-pctl-chip';
 
@@ -68,6 +69,9 @@ type RenderOpts = {
   chesscomMedianNative?: number;
   lichessMedianNative?: number;
   metricLabel?: string;
+  perTcBreakdown?: PerTcBreakdownOut[];
+  nGames?: number | null;
+  value?: number | null;
 };
 
 function renderChip(percentile: number, opts: RenderOpts = {}) {
@@ -83,6 +87,9 @@ function renderChip(percentile: number, opts: RenderOpts = {}) {
       lichessMedianNative={opts.lichessMedianNative ?? 1600}
       metricLabel={opts.metricLabel ?? 'Endgame Score Gap'}
       testId={TID}
+      perTcBreakdown={opts.perTcBreakdown}
+      nGames={opts.nGames}
+      value={opts.value}
     />,
   );
 }
@@ -243,19 +250,148 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
     expect(body).toContain('UI filters do not affect this percentile.');
   });
 
-  // Bullet 2 (recent-games basis) — per-TC + aggregated forms
-  it('per-TC bullet 2 mentions "most recent 3000 rated games in bullet over the last 36 months"', () => {
+  // Quick task 260527-q0b: bullet 2 rewrite. The previous prose ("most recent
+  // 3000 rated games") is now a fallback only — the real surface shows
+  // concrete per-TC n_games + value + percentile (aggregated chips) or a
+  // single-line n_games + value (per-TC chips).
+
+  // Per-TC chip bullet 2 — concrete n_games + value framing.
+  it('per-TC bullet 2 renders "Based on <n> of your recent <tc> games" with "Your value: <value>"', () => {
     renderChip(40, {
       flavor: 'time-pressure-score-gap',
       tc: 'bullet',
+      nGames: 137,
+      value: 0.04,
     });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain('Based on 137 of your recent bullet games');
+    expect(body).toContain('over the last 36 months');
+    expect(body).toContain('+/-100 Elo');
+    expect(body).toContain('Your value: +0.04');
+  });
+
+  // Per-TC clock-gap chip uses the integer-percent formatter.
+  it('per-TC clock-gap bullet 2 renders the value as signed integer percent', () => {
+    renderChip(60, {
+      flavor: 'clock-gap',
+      tc: 'blitz',
+      nGames: 320,
+      value: 0.05,
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain('Based on 320 of your recent blitz games');
+    expect(body).toContain('Your value: +5%');
+  });
+
+  // Per-TC net-flag-rate chip also uses the integer-percent formatter.
+  it('per-TC net-flag-rate bullet 2 renders the value as signed integer percent', () => {
+    renderChip(70, {
+      flavor: 'net-flag-rate',
+      tc: 'rapid',
+      nGames: 210,
+      value: -0.02,
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain('Based on 210 of your recent rapid games');
+    expect(body).toContain('Your value: -2%');
+  });
+
+  // Per-TC fallback when caller has not threaded the new fields (legacy fixture).
+  it('per-TC bullet 2 falls back to the legacy single-line copy when nGames/value are missing', () => {
+    renderChip(40, { flavor: 'time-pressure-score-gap', tc: 'bullet' });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain('most recent 3000 rated games in bullet over the last 36 months');
     expect(body).toContain('+/-100 Elo');
   });
 
-  it('aggregated bullet 2 mentions "most recent 3000 rated games per time control over the last 36 months"', () => {
+  // Aggregated bullet 2 — concrete per-TC list. Covers all 4 branches at once:
+  //   (a) above-floor with percentile → full line with value + n_games + percentile.
+  //   (b) above-floor with null percentile → DROP the line entirely.
+  //   (c) below-floor with games > 0 → "insufficient games".
+  //   (d) zero-games entries → omitted upstream (covered by C6 suppression).
+  it('aggregated bullet 2 renders a per-TC list with all 4 branch semantics', () => {
+    renderChip(50, {
+      flavor: 'score-gap',
+      metricLabel: 'Endgame Score Gap',
+      perTcBreakdown: [
+        { tc: 'bullet', value: 0.05, n_games: 137, percentile: 62.3 },
+        { tc: 'blitz', value: -0.02, n_games: 410, percentile: 38.0 },
+        { tc: 'rapid', value: null, n_games: 12, percentile: null },
+        // classical above floor (value != null) but percentile null → DROPPED.
+        { tc: 'classical', value: 0.1, n_games: 200, percentile: null },
+      ],
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain('weighted average of Endgame Score Gap percentiles');
+    expect(body).toContain('3000 games per time control');
+    expect(body).toContain('+/-100 Elo');
+    // Branch (a): above-floor with percentile → full line.
+    expect(body).toContain('bullet: +0.05 over 137 games');
+    expect(body).toContain('62 percentile');
+    expect(body).toContain('blitz: -0.02 over 410 games');
+    expect(body).toContain('38 percentile');
+    // Branch (c): below-floor → "insufficient games" line.
+    expect(body).toContain('rapid: insufficient games');
+    // Branch (b): null-percentile-above-floor → line DROPPED. Guard against a
+    // single-branch fallback silently passing by asserting "classical:" is
+    // absent from the per-TC list.
+    expect(body).not.toMatch(/classical:/);
+  });
+
+  // Per-flavor coverage of the new bullet-2 framing across the 5 aggregated +
+  // 3 per-TC flavors. Each row asserts the framing-specific signature so an
+  // implementation that drops a flavor would fail loudly.
+  it.each([
+    ['score-gap', 'Endgame Score Gap'],
+    ['achievable', 'Achievable Score Gap'],
+    ['parity', 'Parity Score Gap'],
+    ['conversion', 'Conversion Score Gap'],
+    ['recovery', 'Recovery Score Gap'],
+  ] as Array<[PercentileChipFlavor, string]>)(
+    'aggregated bullet 2 renders the per-TC list for flavor=%s',
+    (flavor, label) => {
+      renderChip(50, {
+        flavor,
+        metricLabel: label,
+        perTcBreakdown: [{ tc: 'blitz', value: 0.03, n_games: 200, percentile: 55.0 }],
+      });
+      fireEvent.click(screen.getByTestId(TID));
+      const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+      expect(body).toContain(`weighted average of ${label} percentiles`);
+      expect(body).toContain('blitz: +0.03 over 200 games');
+      expect(body).toContain('55 percentile');
+    },
+  );
+
+  it.each([
+    ['time-pressure-score-gap', 'Time Pressure Score Gap', 'bullet' as const],
+    ['clock-gap', 'Clock Gap', 'blitz' as const],
+    ['net-flag-rate', 'Net Flag Rate', 'rapid' as const],
+  ] as Array<[PercentileChipFlavor, string, 'bullet' | 'blitz' | 'rapid' | 'classical']>)(
+    'per-TC bullet 2 renders the simplified single-line framing for flavor=%s',
+    (flavor, label, tc) => {
+      renderChip(50, {
+        flavor,
+        tc,
+        metricLabel: label,
+        nGames: 150,
+        value: 0.04,
+      });
+      fireEvent.click(screen.getByTestId(TID));
+      const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+      expect(body).toContain(`Based on 150 of your recent ${tc} games`);
+      expect(body).toContain('over the last 36 months');
+    },
+  );
+
+  // Aggregated fallback: when caller passes no perTcBreakdown (legacy fixture)
+  // bullet 2 keeps the old single-line copy so older callers don't break.
+  it('aggregated bullet 2 falls back to the legacy single-line copy when perTcBreakdown is missing', () => {
     renderChip(40, { flavor: 'score-gap' });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';

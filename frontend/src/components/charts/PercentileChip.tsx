@@ -50,6 +50,7 @@ import { BadgePercent } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
+import type { PerTcBreakdownOut } from '@/types/endgames';
 
 const HOVER_OPEN_DELAY_MS = 100;
 const PERCENTILE_BAND_LOW = 25;
@@ -118,6 +119,38 @@ export interface PercentileChipProps {
   metricLabel: string;
   /** Becomes data-testid on the trigger; popover Content uses `${testId}-popover`. */
   testId: string;
+  /** Quick task 260527-q0b: aggregated chips (tc === undefined) thread the
+   *  per-TC breakdown for bullet 2 of the tooltip. Each entry renders as one
+   *  line; null-percentile-above-floor entries are dropped on render. */
+  perTcBreakdown?: PerTcBreakdownOut[];
+  /** Quick task 260527-q0b: per-TC chips (tc !== undefined) thread the
+   *  chip-cohort n_games for bullet 2's simplified framing. */
+  nGames?: number | null;
+  /** Quick task 260527-q0b: per-TC chips thread the chip-cohort value
+   *  (PercentileRow.value) for bullet 2. May differ from the card's
+   *  headline number — disclosure of the percentile basis. */
+  value?: number | null;
+}
+
+// Quick task 260527-q0b: value formatter dispatcher. Two output formats:
+//   - clock-gap / net-flag-rate: signed integer percent ("+5%", "-3%").
+//   - all other flavors: signed score with 2 decimals ("+0.04", "-0.12").
+// The percent formatter multiplies the raw fraction by 100 and rounds; the
+// score formatter preserves chart precision for the ΔES family.
+function formatChipValue(flavor: PercentileChipFlavor, v: number): string {
+  if (flavor === 'clock-gap' || flavor === 'net-flag-rate') {
+    const pct = Math.round(v * 100);
+    return `${pct >= 0 ? '+' : ''}${pct}%`;
+  }
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+}
+
+// Quick task 260527-q0b: clamp a raw percentile float to the same integer
+// range the chip face uses (MIN_PERCENT..MAX_PERCENT), matching the rounding
+// applied by `formatPercentileValue` so the per-TC list entries cannot show
+// "100 percentile" or "0 percentile".
+function clampPercentInt(p: number): number {
+  return Math.max(MIN_PERCENT, Math.min(MAX_PERCENT, Math.round(p)));
 }
 
 /**
@@ -153,6 +186,9 @@ interface PopoverBodyProps {
   nLichessGames: number;
   chesscomMedianNative: number | undefined;
   lichessMedianNative: number | undefined;
+  perTcBreakdown: PerTcBreakdownOut[] | undefined;
+  nGames: number | null | undefined;
+  value: number | null | undefined;
 }
 
 function PercentileChipPopoverBody({
@@ -165,6 +201,9 @@ function PercentileChipPopoverBody({
   nLichessGames,
   chesscomMedianNative,
   lichessMedianNative,
+  perTcBreakdown,
+  nGames,
+  value,
 }: PopoverBodyProps): React.ReactElement {
   // Bullet 1 phrases the chip's percentile as a direct statement using the
   // chip face value verbatim (no 100-pct flip), so the tooltip number always
@@ -188,10 +227,68 @@ function PercentileChipPopoverBody({
       {cohortSuffix}.
     </>
   );
-  const bullet2 =
-    tc !== undefined
-      ? `Based on your most recent 3000 rated games in ${tc} over the last 36 months, vs opponents within +/-100 Elo.`
-      : `Based on your most recent 3000 rated games per time control over the last 36 months, vs opponents within +/-100 Elo.`;
+  // Quick task 260527-q0b: bullet 2 rewrite. Two code paths:
+  //   - tc === undefined (aggregated chip): render a leading line + per-TC list.
+  //     Each per-TC entry obeys the 4 branches documented on PerTcBreakdownOut.
+  //   - tc !== undefined (per-TC chip): render a single line with the chip-cohort
+  //     n_games + value framed as "Your value: <value>".
+  // Fall back to the prior single-line copy when the caller did not thread the
+  // new fields so older fixtures + test harnesses keep rendering.
+  const bullet2 = ((): React.ReactElement => {
+    if (tc !== undefined) {
+      if (nGames != null && value != null) {
+        return (
+          <>
+            Based on {nGames} of your recent {tc} games over the last 36 months, vs opponents
+            within +/-100 Elo. Your value: {formatChipValue(flavor, value)}.
+          </>
+        );
+      }
+      return (
+        <>
+          Based on your most recent 3000 rated games in {tc} over the last 36 months, vs
+          opponents within +/-100 Elo.
+        </>
+      );
+    }
+    // Aggregated path. Drop entries where percentile is null but value is
+    // present (CDF out-of-range — backend honest, frontend dropping per
+    // CONTEXT). Defensive drop on n_games == 0.
+    const renderable = (perTcBreakdown ?? []).filter((entry) => {
+      if (entry.n_games <= 0) return false;
+      if (entry.value != null && entry.percentile == null) return false;
+      return true;
+    });
+    if (renderable.length === 0) {
+      return (
+        <>
+          Based on your most recent 3000 rated games per time control over the last 36 months,
+          vs opponents within +/-100 Elo.
+        </>
+      );
+    }
+    return (
+      <>
+        Based on a weighted average of {metricLabel} percentiles from up to 3000 games per time
+        control over the last 36 months. Only games vs opponents within +/-100 Elo are used:
+        <ul className="mt-1 list-disc pl-4">
+          {renderable.map((entry) => {
+            if (entry.value == null) {
+              return <li key={entry.tc}>{entry.tc}: insufficient games</li>;
+            }
+            // value != null && percentile != null (other case dropped above)
+            const pInt = entry.percentile != null ? clampPercentInt(entry.percentile) : 0;
+            return (
+              <li key={entry.tc}>
+                {entry.tc}: {formatChipValue(flavor, entry.value)} over {entry.n_games} games -&gt;{' '}
+                {pInt} percentile
+              </li>
+            );
+          })}
+        </ul>
+      </>
+    );
+  })();
   // Time-Pressure Score Gap only: a brief note explaining that the metric is
   // computed from the two leftmost datapoints on the adjacent chart (the 10%
   // and 30% buckets, i.e. endgames entered with under 40% of the starting
@@ -224,7 +321,7 @@ function PercentileChipPopoverBody({
     <div className="space-y-1.5">
       <p>{bullet1}</p>
       {bulletMetricNote !== null && <p>{bulletMetricNote}</p>}
-      <p>{bullet2}</p>
+      <div>{bullet2}</div>
       <p>{bullet3}</p>
       {bullet4 !== '' && <p>{bullet4}</p>}
     </div>
@@ -245,6 +342,9 @@ export function PercentileChip({
   lichessMedianNative,
   metricLabel,
   testId,
+  perTcBreakdown,
+  nGames,
+  value,
 }: PercentileChipProps): React.ReactElement {
   const [open, setOpen] = React.useState(false);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -343,6 +443,9 @@ export function PercentileChip({
             nLichessGames={nLichessGames}
             chesscomMedianNative={chesscomMedianNative}
             lichessMedianNative={lichessMedianNative}
+            perTcBreakdown={perTcBreakdown}
+            nGames={nGames}
+            value={value}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
