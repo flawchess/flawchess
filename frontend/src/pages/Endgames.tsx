@@ -412,8 +412,16 @@ export function EndgamesPage() {
                         (bullet/blitz/rapid/classical) we take your most recent 1000 rated games in that time
                         control over the last 36 months (the same pool used to compute your metrics in step 3,
                         excluding chess.com Daily), then compute the median of your rating at game time across
-                        those games. chess.com ratings are converted to Lichess-equivalent so everyone is
-                        compared on the same scale.
+                        those games. chess.com ratings are converted to Lichess-equivalent via the{' '}
+                        <a
+                          href="https://chessgoals.com/rating-comparison"
+                          className="text-primary underline-offset-4 hover:underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          ChessGoals rating conversion tables
+                        </a>
+                        {' '}so everyone is compared on the same scale.
                       </li>
                       <li>
                         <strong>Pick the matching peer cohort.</strong> From the FlawChess Benchmark, we select
