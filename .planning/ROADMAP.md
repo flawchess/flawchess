@@ -250,11 +250,11 @@ Plans:
 - [x] 94.4-06-PLAN.md — backfill script extension + dev rerun + prod rerun via tunnel after HUMAN-UAT (PRPCR-09 credibility check)
 - [x] 94.4-07-PLAN.md — PercentileChip rewrite (p23 face, NO flame, 8 flavors + tc prop, 4-bullet peer-relative popover) + 4 component reshapes
 - [x] 94.4-08-PLAN.md — SEED-019 supersession banner + feedback_percentile_chip_tooltip_disclosure amendment + CHANGELOG
-- [ ] 94.4-09-PLAN.md — D-12 reversal: schema reshape (drop source_platform/chesscom_raw_rating; add per-platform game counts + native medians) + ORM + repository + Alembic migration + TRUNCATE UBP+URA
-- [ ] 94.4-10-PLAN.md — D-12 reversal: per-game ChessGoals conversion + pooled-median SQL builder (blend=True mode) + compute_anchors_for_user rewrite
-- [ ] 94.4-11-PLAN.md — D-12 reversal: RatingAnchorOut Pydantic schema + frontend TS type + PercentileChip tooltip body composition disclosure (3 prose branches)
-- [ ] 94.4-12-PLAN.md — D-12 reversal: backfill harness extension (composition-typed summary) + dev rerun + prod rerun via tunnel + mixed-platform HUMAN-UAT
-- [ ] 94.4-13-PLAN.md — D-12 reversal: documentation closure (REQUIREMENTS.md PRPCR-03/PRPCR-07 + ROADMAP note + CHANGELOG + memory amendment)
+- [x] 94.4-09-PLAN.md — D-12 reversal: schema reshape (drop source_platform/chesscom_raw_rating; add per-platform game counts + native medians) + ORM + repository + Alembic migration + TRUNCATE UBP+URA
+- [x] 94.4-10-PLAN.md — D-12 reversal: per-game ChessGoals conversion + pooled-median SQL builder (blend=True mode) + compute_anchors_for_user rewrite
+- [x] 94.4-11-PLAN.md — D-12 reversal: RatingAnchorOut Pydantic schema + frontend TS type + PercentileChip tooltip body composition disclosure (3 prose branches)
+- [x] 94.4-12-PLAN.md — D-12 reversal: backfill harness extension (composition-typed summary) + dev rerun + prod rerun via tunnel + mixed-platform HUMAN-UAT
+- [x] 94.4-13-PLAN.md — D-12 reversal: documentation closure (REQUIREMENTS.md PRPCR-03/PRPCR-07 + ROADMAP note + CHANGELOG + memory amendment)
 
 ### Phase 95: LLM Endgame-Insights Statistical-Reasoning Rework
 
