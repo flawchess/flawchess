@@ -267,7 +267,15 @@ async def _sample_docker(
             }
         )
         return mem_bytes
-    except Exception:
+    except FileNotFoundError:
+        # WR-03 fix: missing `docker` binary is fatal — re-raise so the run
+        # aborts immediately rather than silently producing 0-byte traces.
+        raise
+    except Exception as exc:
+        # WR-03 fix: surface the failure to stderr so the operator sees why
+        # the CSV trace has gaps. Previously this `except Exception: pass`
+        # made sampler failures invisible until the final summary.
+        print(f"[sampler] docker sample failed: {exc!r}", file=sys.stderr)
         return 0
 
 
@@ -304,8 +312,12 @@ async def _sample_pg_activity(
                     "query_excerpt": (row.query_excerpt or "").replace("\n", " "),
                 }
             )
-    except Exception:
-        pass
+    except Exception as exc:
+        # WR-03 fix: surface sampler failures to stderr instead of silently
+        # swallowing them. A pg disconnect or query timeout would otherwise
+        # leave the verdict report with peak_connection_count=0 and no clue
+        # why.
+        print(f"[sampler] pg_stat_activity sample failed: {exc!r}", file=sys.stderr)
     return conn_count
 
 
