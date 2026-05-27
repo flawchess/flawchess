@@ -16,13 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.game_repository import bulk_insert_games, bulk_insert_positions
+from app.repositories.game_repository import (
+    _POSITION_CHUNK_SIZE,
+    bulk_insert_games,
+    bulk_insert_positions,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-_CHUNK_SIZE = 1700
 
 
 def _make_game_row(user_id: int) -> dict:
@@ -283,7 +285,7 @@ async def test_bulk_insert_positions_chunking_across_chunk_size(
     game_ids = await bulk_insert_games(db_session, [_make_game_row(user_id)])
     game_id = game_ids[0]
 
-    n_rows = _CHUNK_SIZE + 1  # 1701 — spans exactly two chunks
+    n_rows = _POSITION_CHUNK_SIZE + 1  # 1701 — spans exactly two chunks
     # Use values within signed int64 range: 0x7F00000000000000 | ply is safe.
     rows = [
         {

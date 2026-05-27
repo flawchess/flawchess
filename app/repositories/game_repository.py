@@ -16,6 +16,12 @@ from app.models.game_position import GamePosition
 # functional contract: each row tuple is built by iterating over this tuple, so
 # if a future column is added to GamePosition without updating this constant the
 # CI test will fail and surfaced as a column-drift error before any data is written.
+# IN-01 fix: promote the chunk size to a module-level constant so the test file
+# can import it instead of duplicating the literal (`_CHUNK_SIZE = 1700` in
+# tests/test_game_repository_bulk_insert_positions.py). Keeps the chunking
+# boundary test honest if this value is ever tuned.
+_POSITION_CHUNK_SIZE: int = 1700
+
 _POSITION_COPY_COLUMNS: tuple[str, ...] = (
     "game_id",
     "user_id",
@@ -201,7 +207,7 @@ async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]
     so it participates in the session's active transaction. A session-level rollback
     after a successful COPY will undo the inserted rows.
 
-    Chunking at chunk_size=1700 is retained to bound peak Python-side list memory
+    Chunking at _POSITION_CHUNK_SIZE (1700) is retained to bound peak Python-side list memory
     and to give asyncio a yield point between chunks. The 32k-bound-parameter
     ceiling of INSERT ... VALUES does not apply to COPY.
 
@@ -220,9 +226,8 @@ async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]
     raw_conn = raw_wrapper.driver_connection
     assert raw_conn is not None, "asyncpg driver_connection must not be None"
 
-    chunk_size = 1700
-    for i in range(0, len(position_rows), chunk_size):
-        chunk = position_rows[i : i + chunk_size]
+    for i in range(0, len(position_rows), _POSITION_CHUNK_SIZE):
+        chunk = position_rows[i : i + _POSITION_CHUNK_SIZE]
         records = [tuple(row.get(col) for col in _POSITION_COPY_COLUMNS) for row in chunk]
         await raw_conn.copy_records_to_table(
             "game_positions",
