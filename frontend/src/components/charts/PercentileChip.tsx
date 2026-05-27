@@ -10,7 +10,8 @@
  * legacy `p23` token for screen readers per D-06b.
  *
  * Per CONTEXT D-07: tooltip body is 4 bullets per chip:
- *   1. Cohort framing (anchor + TC, inline; per-TC vs aggregated phrasing).
+ *   1. Direct percentile statement ("Your {metric} is in the top/bottom X% of
+ *      ~{rating}-rated players{ in {tc} | , aggregated across...}.").
  *   2. Recent-games basis (TC-scoped per Plan 05; vs +/-100 Elo opponents).
  *   3. Filter independence (kept verbatim from 94.3, `COPY_FILTER_INDEPENDENCE`).
  *   4. Rating-anchor disclosure (Lichess vs chess.com source; chess.com sources
@@ -139,6 +140,8 @@ function deriveBandColor(pct: number): string {
 }
 
 interface PopoverBodyProps {
+  percentile: number;
+  metricLabel: string;
   tc: TimeControlBucket | undefined;
   anchorRating: number;
   anchorSource: 'lichess' | 'chesscom';
@@ -146,17 +149,28 @@ interface PopoverBodyProps {
 }
 
 function PercentileChipPopoverBody({
+  percentile,
+  metricLabel,
   tc,
   anchorRating,
   anchorSource,
   chesscomRawRating,
 }: PopoverBodyProps): React.ReactElement {
-  // Per-TC chips use `${tc}` inline; aggregated chips use the multi-TC framing
-  // from CONTEXT D-07b ("aggregated across the time controls you play").
-  const bullet1 =
+  // Bullet 1 phrases the chip's percentile as a direct "top/bottom X% of
+  // ~{rating}-rated players" statement. Same clamp as the chip face so the
+  // copy never reads "top 0%" or "bottom 0%". For pct >= 50, "top" uses
+  // (100 - pct); for pct < 50, "bottom" uses pct directly. Per-TC chips
+  // append "in {tc}"; aggregated chips append the multi-TC framing from
+  // CONTEXT D-07b.
+  const clampedPct = Math.max(MIN_PERCENT, Math.min(MAX_PERCENT, Math.round(percentile)));
+  const isTop = clampedPct >= PERCENTILE_MEDIAN;
+  const directionWord = isTop ? 'top' : 'bottom';
+  const percentForCopy = isTop ? 100 - clampedPct : clampedPct;
+  const cohortSuffix =
     tc !== undefined
-      ? `Compared to other ~${anchorRating}-rated players in ${tc}.`
-      : `Compared to other ~${anchorRating}-rated players, aggregated across the time controls you play.`;
+      ? ` in ${tc}`
+      : ', aggregated across the time controls you play';
+  const bullet1 = `Your ${metricLabel} is in the ${directionWord} ${percentForCopy}% of ~${anchorRating}-rated players${cohortSuffix}.`;
   const bullet2 =
     tc !== undefined
       ? `Based on your most recent 1000 rated games in ${tc} over the last 36 months, vs opponents within +/-100 Elo.`
@@ -290,6 +304,8 @@ export function PercentileChip({
           )}
         >
           <PercentileChipPopoverBody
+            percentile={percentile}
+            metricLabel={metricLabel}
             tc={tc}
             anchorRating={anchorRating}
             anchorSource={anchorSource}

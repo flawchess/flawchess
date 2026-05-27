@@ -167,25 +167,46 @@ describe('PercentileChip — chip face (Phase 94.4)', () => {
 });
 
 describe('PercentileChip — popover bullets (Phase 94.4)', () => {
-  // Test 7: per-TC bullet 1
-  it('per-TC popover bullet 1 reads "Compared to other ~1600-rated players in bullet."', () => {
+  // Test 7: per-TC bullet 1 — direct percentile statement
+  it('per-TC popover bullet 1 reads "Your {metric} is in the bottom 23% of ~1600-rated players in bullet."', () => {
     renderChip(23, {
       flavor: 'time-pressure-score-gap',
       tc: 'bullet',
       anchorRating: 1600,
+      metricLabel: 'Time-Pressure Score Gap',
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).toContain('Compared to other ~1600-rated players in bullet.');
+    expect(body).toContain(
+      'Your Time-Pressure Score Gap is in the bottom 23% of ~1600-rated players in bullet.',
+    );
   });
 
-  // Test 8: aggregated bullet 1
-  it('aggregated popover bullet 1 reads "Compared to other ~1600-rated players, aggregated across the time controls you play."', () => {
-    renderChip(23, { flavor: 'score-gap', anchorRating: 1600 });
+  // Test 8: aggregated bullet 1 — direct percentile statement
+  it('aggregated popover bullet 1 reads "Your {metric} is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play."', () => {
+    renderChip(23, {
+      flavor: 'score-gap',
+      anchorRating: 1600,
+      metricLabel: 'Endgame Score Gap',
+    });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'Compared to other ~1600-rated players, aggregated across the time controls you play.',
+      'Your Endgame Score Gap is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play.',
+    );
+  });
+
+  // Test 8b: "top X%" form when percentile >= 50 (pct=90 → top 10%)
+  it('high-percentile bullet 1 uses "top {100-pct}%" form (pct=90 → top 10%)', () => {
+    renderChip(90, {
+      flavor: 'score-gap',
+      anchorRating: 1600,
+      metricLabel: 'Endgame Score Gap',
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain(
+      'Your Endgame Score Gap is in the top 10% of ~1600-rated players, aggregated across the time controls you play.',
     );
   });
 
