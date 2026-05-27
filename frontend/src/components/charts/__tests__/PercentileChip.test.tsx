@@ -372,7 +372,7 @@ describe('PercentileChip — bullet 4 composition branches (D-12 Reversal Amendm
     expect(body).toContain('1500');
     expect(body).toContain('1830');
     expect(body.toLowerCase()).toContain('converted');
-    expect(body).toContain('ChessGoals snapshot 2026-05-26');
+    // ChessGoals snapshot detail intentionally dropped from copy (f70592ef).
     // MUST NOT APPEAR (branch-differentiation guard)
     expect(body).not.toMatch(/lichess games/i);
   });
