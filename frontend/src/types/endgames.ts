@@ -342,33 +342,41 @@ export interface ClockDiffTimelineResponse {
   points: ClockDiffTimelinePoint[];
 }
 
-/** Phase 94.4 D-07 bullet 4 + RESEARCH Open Question 4 — per-TC
- *  rating-anchor disclosure for the percentile chip tooltip. Renders
- *  as the tooltip's 4th bullet, e.g.:
+/** D-12 Reversal Amendment (CONTEXT 2026-05-27) — per-TC blended rating-anchor
+ *  disclosure for the percentile chip tooltip. The anchor is the game-weighted
+ *  median of converted-chess.com + native-lichess ratings. The per-platform
+ *  game-count and native-median fields support the four disclosure branches:
  *
- *    "Anchored on your Lichess blitz (1430, last 3000 games / 36 months)."
+ *    (a) Mixed user (n_chesscom_games > 0 AND n_lichess_games > 0):
+ *        "Anchored at ~{anchor_rating} Elo, blending {n_chesscom_games}
+ *         chess.com games (median {chesscom_median_native}, converted) with
+ *         {n_lichess_games} lichess games (median {lichess_median_native})."
  *
- *  or for chess.com sources:
+ *    (b) Pure-lichess (n_chesscom_games == 0):
+ *        "Anchored at ~{anchor_rating} Elo from {n_lichess_games} lichess
+ *         games (native rating)."
  *
- *    "Anchored on your chess.com blitz (1330 → 1656 Lichess-equivalent,
- *     last 3000 games / 36 months)."
+ *    (c) Pure-chess.com (n_lichess_games == 0):
+ *        "Anchored at ~{anchor_rating} Elo from {n_chesscom_games} chess.com
+ *         games (median {chesscom_median_native}, converted to
+ *         Lichess-equivalent via ChessGoals snapshot 2026-05-26)."
+ *
+ *    (d) Suppression (both counts == 0): chip suppresses at the caller.
  *
  *  Fields:
- *  - `anchor_rating`: always Lichess-equivalent. For chess.com sources
- *    this is the POST-conversion value (the cohort CDF is Lichess-keyed).
- *  - `source_platform`: which platform's games produced the anchor.
- *    Drives the conversion-clause toggle in the tooltip copy.
- *  - `chesscom_raw_rating`: when `source_platform === 'chesscom'`, the
- *    PRE-conversion chess.com median; null for Lichess sources. Plan 05b
- *    captures this during `compute_anchors_for_user` so the tooltip can
- *    disclose the raw value without recomputing.
- *  - `n_games`: count of games used to compute the median anchor (>=
- *    MEDIAN_ANCHOR_MIN_GAMES = 30). Drives sample-size copy. */
+ *  - `anchor_rating`: blended Lichess-equivalent (post-conversion for
+ *    chess.com games; native for lichess games).
+ *  - `n_chesscom_games`: chess.com games used in the anchor (0 for pure-lichess).
+ *  - `n_lichess_games`: lichess games used in the anchor (0 for pure-chess.com).
+ *  - `chesscom_median_native`: PRE-conversion chess.com median; null when
+ *    n_chesscom_games == 0.
+ *  - `lichess_median_native`: native lichess median; null when n_lichess_games == 0. */
 export interface RatingAnchorOut {
   anchor_rating: number;
-  source_platform: 'lichess' | 'chesscom';
-  chesscom_raw_rating: number | null;
-  n_games: number;
+  n_chesscom_games: number;
+  n_lichess_games: number;
+  chesscom_median_native: number | null;
+  lichess_median_native: number | null;
 }
 
 export interface EndgameOverviewResponse {
