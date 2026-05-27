@@ -3,12 +3,40 @@
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
+
+# Explicit column list for asyncpg copy_records_to_table. Must be set-equal to
+# {c.name for c in GamePosition.__table__.columns if c.name != "id"} — enforced
+# by test_bulk_insert_positions_column_coverage. The ordering here is the
+# functional contract: each row tuple is built by iterating over this tuple, so
+# if a future column is added to GamePosition without updating this constant the
+# CI test will fail and surfaced as a column-drift error before any data is written.
+_POSITION_COPY_COLUMNS: tuple[str, ...] = (
+    "game_id",
+    "user_id",
+    "ply",
+    "full_hash",
+    "white_hash",
+    "black_hash",
+    "move_san",
+    "clock_seconds",
+    "material_count",
+    "material_signature",
+    "material_imbalance",
+    "has_opposite_color_bishops",
+    "piece_count",
+    "backrank_sparse",
+    "mixedness",
+    "phase",
+    "eval_cp",
+    "eval_mate",
+    "endgame_class",
+)
 
 
 async def bulk_insert_games(session: AsyncSession, game_rows: list[dict]) -> list[int]:
@@ -159,29 +187,46 @@ async def count_games_by_platform(session: AsyncSession, user_id: int) -> dict[s
 
 
 async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]) -> None:
-    """Bulk insert GamePosition rows for the given game.
+    """Bulk insert GamePosition rows via asyncpg's binary COPY protocol.
 
     Should only be called for game IDs returned by bulk_insert_games (new games only).
     No conflict handling — positions are only inserted for newly inserted games.
 
+    Uses asyncpg's copy_records_to_table, which streams rows as a binary blob
+    and runs with roughly constant per-backend Postgres parser/executor memory
+    regardless of row count — unlike INSERT ... VALUES which materialises up to
+    rows × columns bound parameters in Postgres memory.
+
+    The COPY runs on the asyncpg Connection underlying the SQLAlchemy AsyncSession,
+    so it participates in the session's active transaction. A session-level rollback
+    after a successful COPY will undo the inserted rows.
+
+    Chunking at chunk_size=1700 is retained to bound peak Python-side list memory
+    and to give asyncio a yield point between chunks. The 32k-bound-parameter
+    ceiling of INSERT ... VALUES does not apply to COPY.
+
     Args:
         session: AsyncSession to use for the insert.
-        position_rows: List of dicts with keys: game_id, user_id, ply,
-                       full_hash, white_hash, black_hash, move_san, clock_seconds,
-                       and optionally: material_count, material_signature,
-                       material_imbalance, has_opposite_color_bishops,
-                       eval_cp, eval_mate, endgame_class, piece_count.
+        position_rows: List of dicts with keys matching _POSITION_COPY_COLUMNS.
+                       Missing optional keys default to None.
     """
     if not position_rows:
         return
 
-    # PostgreSQL asyncpg limits query arguments to 32,767.
-    # Each position row has 19 columns (8 original + 5 position metadata + 2 phase detection + 2 eval + 1 endgame_class + 1 piece_count),
-    # so max rows per chunk = 32767 / 19 = 1724.
-    # Use 1700 for safety margin.
+    sa_conn = await session.connection()
+    raw_wrapper = await sa_conn.get_raw_connection()
+    # driver_connection is the asyncpg.Connection inside SQLAlchemy's async wrapper.
+    # It is always set after get_raw_connection() when using the asyncpg dialect.
+    raw_conn = raw_wrapper.driver_connection
+    assert raw_conn is not None, "asyncpg driver_connection must not be None"
+
     chunk_size = 1700
     for i in range(0, len(position_rows), chunk_size):
         chunk = position_rows[i : i + chunk_size]
-        stmt = insert(GamePosition).values(chunk)
-        await session.execute(stmt)
+        records = [tuple(row.get(col) for col in _POSITION_COPY_COLUMNS) for row in chunk]
+        await raw_conn.copy_records_to_table(
+            "game_positions",
+            records=records,
+            columns=_POSITION_COPY_COLUMNS,
+        )
     await session.flush()
