@@ -116,6 +116,9 @@ export interface EndgamePerformanceResponse {
   /** Phase 94 (PCTL-02): cohort percentile [0,100] for Achievable Score Gap vs the Phase 93 global CDF.
    *  null when the endgame-entry span count is below PVALUE_RELIABILITY_MIN_N (=10). */
   achievable_score_gap_percentile: number | null;
+  /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
+   *  Backend defaults to [] so the field is always serialised. */
+  achievable_score_gap_per_tc: PerTcBreakdownOut[];
 }
 
 /** Single data point in the per-type weekly win-rate time series.
@@ -209,6 +212,8 @@ export interface ScoreGapMaterialResponse {
    *  Name mirrors the MetricId (`score_gap`), not the wire sibling `score_difference` (D-11).
    *  null when min(endgame_wdl.total, non_endgame_wdl.total) < PVALUE_RELIABILITY_MIN_N (=10). */
   score_gap_percentile: number | null;
+  /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2. */
+  score_gap_per_tc: PerTcBreakdownOut[];
   // Phase 87.2 (D-06): 20 eval-baseline Delta-ES Score Gap fields (4 buckets x 5).
   // Replaces the rate-based mirror-bucket peer-bullet (skill, opp_skill, skill_diff_*
   // deleted per D-04). Each cluster: mean per-span Score Gap, sample count,
@@ -227,6 +232,8 @@ export interface ScoreGapMaterialResponse {
   /** Phase 94 (PCTL-02): cohort percentile [0,100] for Conversion ΔES vs the Phase 93 global CDF.
    *  null when score_gap_conv_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
   score_gap_conv_percentile: number | null;
+  /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2. */
+  score_gap_conv_per_tc: PerTcBreakdownOut[];
 
   // Parity bucket (entered endgame with eval between -1.0 and +1.0):
   score_gap_parity_mean: number | null;
@@ -237,6 +244,8 @@ export interface ScoreGapMaterialResponse {
   /** Phase 94 (PCTL-02): cohort percentile [0,100] for Parity ΔES vs the Phase 93 global CDF.
    *  null when score_gap_parity_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
   score_gap_parity_percentile: number | null;
+  /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2. */
+  score_gap_parity_per_tc: PerTcBreakdownOut[];
 
   // Recovery bucket (entered endgame with eval <= -1.0):
   score_gap_recov_mean: number | null;
@@ -251,6 +260,8 @@ export interface ScoreGapMaterialResponse {
    *  ENUM). null when Stage B wrote no row for any above-floor TC, or
    *  when every per-TC PercentileRow has null percentile. */
   recovery_score_gap_percentile: number | null;
+  /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2. */
+  recovery_score_gap_per_tc: PerTcBreakdownOut[];
 
   // Phase 87.4 (D-05): the 6 Skill fields (score_gap_skill_* and
   // endgame_skill_rate_mean) were hard-deleted alongside EndgameSkillCard.
@@ -315,6 +326,15 @@ export interface TimePressureTcCard {
   time_pressure_score_gap_percentile?: number | null;
   clock_gap_percentile?: number | null;
   net_flag_rate_percentile?: number | null;
+  // Quick task 260527-q0b: per-TC chip tooltip bullet 2 simplified framing —
+  // chip-cohort (n_games, value) from the PercentileRow. Optional for
+  // back-compat with older fixtures that build TimePressureTcCard without these.
+  time_pressure_score_gap_n_games?: number | null;
+  time_pressure_score_gap_value?: number | null;
+  clock_gap_n_games?: number | null;
+  clock_gap_value?: number | null;
+  net_flag_rate_n_games?: number | null;
+  net_flag_rate_value?: number | null;
 }
 
 /** Replaces ClockPressureResponse + TimePressureChartResponse (Phase 88). */
@@ -377,6 +397,25 @@ export interface RatingAnchorOut {
   n_lichess_games: number;
   chesscom_median_native: number | null;
   lichess_median_native: number | null;
+}
+
+/** Quick task 260527-q0b: mirrors backend PerTcBreakdownOut.
+ *  One per-TC entry for the PercentileChip tooltip bullet 2 (aggregated chips).
+ *
+ *  Branch semantics on render:
+ *    - value != null && percentile != null: above floor with percentile →
+ *      render `<tc>: <value> over <n_games> games -> <percentile> percentile`.
+ *    - value != null && percentile == null: above floor but CDF out-of-range →
+ *      DROP the line entirely (backend stays honest about wire shape).
+ *    - value == null && n_games > 0: below floor → render `<tc>: insufficient games`.
+ *    - n_games == 0: backend should not emit; defensive frontend drop.
+ *
+ *  TCs ordered bullet → blitz → rapid → classical by the backend builder. */
+export interface PerTcBreakdownOut {
+  tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
+  value: number | null;
+  n_games: number;
+  percentile: number | null;
 }
 
 export interface EndgameOverviewResponse {
