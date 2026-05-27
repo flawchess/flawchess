@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.20
 milestone_name: LLM Statistical Reasoning
-status: "v1.19 shipped — milestone archived; v1.20 not started"
-last_updated: "2026-05-27T15:30:00.000Z"
-last_activity: 2026-05-27
+status: executing
+last_updated: "2026-05-27T17:53:37.935Z"
+last_activity: 2026-05-27 -- Phase 95 execution started
 progress:
-  total_phases: 2
+  total_phases: 6
   completed_phases: 0
-  total_plans: 0
+  total_plans: 2
   completed_plans: 0
   percent: 0
 ---
@@ -17,10 +17,10 @@ progress:
 
 ## Current Position
 
-Phase: 95 (standalone hardening — asyncpg COPY for `bulk_insert_positions`; SEED-027 Thread B)
-Plan: Not started
-Status: v1.19 shipped 2026-05-27; v1.20 LLM Statistical Reasoning Phase 96 not started. Phase 95 inserted 2026-05-27 as a standalone import-hardening phase before v1.20 kicks off — the prior Phase 95 (LLM rework) was renumbered to 96.
-Last activity: 2026-05-27
+Phase: 95 (asyncpg-copy-positions) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 95
+Last activity: 2026-05-27 -- Phase 95 execution started
 
 ## Project Reference
 

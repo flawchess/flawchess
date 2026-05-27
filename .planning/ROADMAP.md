@@ -325,7 +325,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
 | 93. Global Percentile Benchmark Artifact | v1.19 | 2/2 | Complete    | 2026-05-22 |
 | 94. Backend & Frontend Percentile Annotations | v1.19 | 3/3 | Complete   | 2026-05-23 |
-| 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.20 | 0/TBD | Not started | - |
+| 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.20 | 1/2 | In Progress|  |
 
 ## Backlog
 
