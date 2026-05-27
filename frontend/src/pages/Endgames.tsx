@@ -381,9 +381,9 @@ export function EndgamesPage() {
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground space-y-2">
                     <p>
-                      <strong>Color Zones and FlawChess Benchmark:</strong> the blue band on each gauge and chart marks the typical range,
-                      defined by the middle 50% of players (interquartile range). Values inside the blue zone are typical, while red and green zones flag below- and
-                      above-average performance. Zone bounds are calibrated from the latest {' '}
+                      <strong>FlawChess Benchmark:</strong> a stratified sample of Lichess players across rating
+                      and time control buckets, used to calibrate the typical range for each metric. The latest
+                      run is published as the {' '}
                       <a
                         href="https://github.com/flawchess/flawchess/blob/main/reports/benchmarks-latest.md"
                         className="text-primary underline-offset-4 hover:underline"
@@ -392,9 +392,50 @@ export function EndgamesPage() {
                       >
                         FlawChess Benchmark
                       </a>
-                      , which provides metric distributions from a stratified sample of Lichess players across rating
-                      and time control buckets.
+                      {' '}report and powers both the color zones on gauges/charts and the percentile badges shown
+                      next to individual metrics.
                     </p>
+                    <p>
+                      <strong>Color Zones:</strong> the blue band on each gauge and chart marks the typical range,
+                      defined by the middle 50% of benchmark players (interquartile range). Values inside the blue
+                      zone are typical, while red and green zones flag below- and above-average performance relative
+                      to the benchmark cohort.
+                    </p>
+                    <p>
+                      <strong>Percentile Badges:</strong> the small badge next to a metric (e.g. a blue "23" or
+                      green "82") shows where you rank against a peer cohort of benchmark players at your rating
+                      and time control. Red ({'<'} 25), neutral (25-75), green ({'>'} 75). Computed in five steps:
+                    </p>
+                    <ol className="list-decimal pl-6 space-y-1">
+                      <li>
+                        <strong>Anchor your rating per time control.</strong> Your median rating in that time
+                        control (bullet/blitz/rapid/classical) is computed from your imported games. chess.com
+                        ratings are converted to Lichess-equivalent so everyone is compared on the same scale.
+                      </li>
+                      <li>
+                        <strong>Pick the matching peer cohort.</strong> From the FlawChess Benchmark, we select
+                        all Lichess players within +/-200 Elo of your anchor in the same time control. A cell
+                        only qualifies if at least 100 benchmark users fall in that window, otherwise the badge
+                        is suppressed.
+                      </li>
+                      <li>
+                        <strong>Compute your recent metric value.</strong> Your most recent 1000 rated games
+                        per time control over the last 36 months, vs opponents within +/-100 Elo, are used to
+                        compute the same metric (Endgame Score Gap, Conversion, Recovery, Achievable Score Gap,
+                        etc.) the same way it is computed for each benchmark user.
+                      </li>
+                      <li>
+                        <strong>Look up your percentile in the cohort distribution.</strong> The benchmark cell
+                        stores 99 precomputed percentile breakpoints for that metric. Your value is interpolated
+                        against those breakpoints to produce a percentile in [1, 99].
+                      </li>
+                      <li>
+                        <strong>Color and display.</strong> The integer percentile is rendered on the badge with
+                        the red/neutral/green band described above. UI filters (color, opponent strength, recency)
+                        do not affect the badge: it always reflects the standardized "recent rated games vs
+                        near-peers" basis from step 3, so the comparison stays apples-to-apples.
+                      </li>
+                    </ol>
                     <p>
                       <strong>Endgame Phase:</strong> positions where the total count of major and minor pieces
                       (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
