@@ -224,7 +224,17 @@ async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]
     # driver_connection is the asyncpg.Connection inside SQLAlchemy's async wrapper.
     # It is always set after get_raw_connection() when using the asyncpg dialect.
     raw_conn = raw_wrapper.driver_connection
-    assert raw_conn is not None, "asyncpg driver_connection must not be None"
+    # IN-03 fix: explicit runtime check (not `assert`) so the guard survives
+    # `python -O` / `PYTHONOPTIMIZE=1`, which strips asserts. Under -O the
+    # original `assert` would silently call `.copy_records_to_table` on None
+    # and raise an unhelpful AttributeError. This branch should be unreachable
+    # in practice (SQLAlchemy's asyncpg adapter always sets driver_connection
+    # after get_raw_connection()), but if the adapter ever changes we get a
+    # specific, debuggable error instead.
+    if raw_conn is None:
+        raise RuntimeError(
+            "asyncpg driver_connection is None — SQLAlchemy adapter changed"
+        )
 
     for i in range(0, len(position_rows), _POSITION_CHUNK_SIZE):
         chunk = position_rows[i : i + _POSITION_CHUNK_SIZE]
