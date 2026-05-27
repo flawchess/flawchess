@@ -11,6 +11,12 @@ depends_on: v1.17 shipped (Endgame Stats Card Redesign — Phases 84–88.4, inc
 
 # SEED-019: Global percentile annotations on Endgame metrics
 
+> **⚠ Superseded by [SEED-026 v2](./SEED-026-percentile-chip-refinement.md) (Phase 94.4, shipped 2026-05-27).**
+>
+> Phase 94.4 pivoted the chip from global-pool to peer-relative cohort framing. The "Final Tier-1 chip set" section below (rendered here as `### Ship (4 chips)`) is superseded — Recovery Score Gap and Conversion Score Gap are rescued from the v1 drop list under peer-relative framing (per CONTEXT D-05 / D-05a). The Cohen's d / Spearman ρ analysis is preserved as historical context but is no longer load-bearing — the cohort comparison absorbs the rating coupling the candidacy table was designed to flag.
+>
+> For the current Phase 94.4 design source-of-truth, see SEED-026 v2.
+
 > **Refinement note (2026-05-22):** Seed planted alongside the retracted Phase 87.3 (Endgame Skill percentile composite). Phase 87.4 removed the Endgame Skill concept end-to-end (`EndgameSkillCard.tsx`, `endgame_skill_*` fields, ZoneSpec — all hard-deleted). Phase 87.5/87.6 shipped the Endgame ELO Timeline (logistic stretch from Endgame Score Gap, not a percentile transform). Phase 88/88.x shipped the Time Pressure card grid. v1.17 shipped 2026-05-19. This seed has since been promoted to v1.19 as Phases 93/94/95.
 >
 > **Phase 93 discuss refinement (2026-05-22):** The TS codegen mirror (`scripts/gen_endgame_zones_ts.py` extension + `frontend/src/generated/` artifact + CI Python→TS drift-guard) is **dropped from Phase 93 scope**. The CDF table has no frontend consumer in v1.19: Phase 94 backend interpolates the user's value against `GLOBAL_PERCENTILE_CDF` at request time and ships a scalar `{metric}_percentile`; the chip + popover render from that scalar. The TS mirror was a pattern-match against `endgame_zones.py`, which needs a TS mirror because gauge band painting happens client-side; the CDF is server-side-only. If a future phase ships a client-side CDF viz (sparkline, "what value puts me in the top X%" widget), the codegen mirror is added then. See `.planning/phases/93-global-percentile-benchmark-artifact/93-CONTEXT.md` for the locked decision.
@@ -43,6 +49,8 @@ Decision factors: (1) single number, not a curve — a chip can't annotate a tre
 Full data in `reports/benchmarks-gap-metrics-percentile-candidacy.md`.
 
 ### Ship (4 chips) — all on ΔES rows, none on raw % gauges
+
+> **SUPERSEDED 2026-05-27 (Phase 94.4):** the 4-chip set recommended in this section was computed under global-pool framing. Phase 94.4 ships 8 chip families under peer-relative framing — Endgame Score Gap, Achievable Score Gap, Parity ΔES, Conversion ΔES, **Recovery ΔES (rescued)**, plus per-TC Time Pressure family (Time Pressure Score Gap, Clock Gap, Net Flag Rate). See SEED-026 v2 for current design.
 
 | Metric | Card / row | d (800↔2400) | Popover framing | Notes |
 |---|---|---:|---|---|
