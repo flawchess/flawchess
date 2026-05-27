@@ -409,7 +409,7 @@ export function EndgamesPage() {
                     <ol className="list-decimal pl-6 space-y-1">
                       <li>
                         <strong>Anchor your rating per time control.</strong> For each time control
-                        (bullet/blitz/rapid/classical) we take your most recent 1000 rated games in that time
+                        (bullet/blitz/rapid/classical) we take your most recent 3000 rated games in that time
                         control over the last 36 months (the same pool used to compute your metrics in step 3,
                         excluding chess.com Daily), then compute the median of your rating at game time across
                         those games. chess.com ratings are converted to Lichess-equivalent via the{' '}
@@ -430,7 +430,7 @@ export function EndgamesPage() {
                         is suppressed.
                       </li>
                       <li>
-                        <strong>Compute your recent metric value.</strong> Your most recent 1000 rated games
+                        <strong>Compute your recent metric value.</strong> Your most recent 3000 rated games
                         per time control over the last 36 months, vs opponents within +/-100 Elo, are used to
                         compute the same metric (Endgame Score Gap, Conversion, Recovery, Achievable Score Gap,
                         etc.) the same way it is computed for each benchmark user.

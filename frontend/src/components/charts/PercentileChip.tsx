@@ -173,8 +173,8 @@ function PercentileChipPopoverBody({
   );
   const bullet2 =
     tc !== undefined
-      ? `Based on your most recent 1000 rated games in ${tc} over the last 36 months, vs opponents within +/-100 Elo.`
-      : `Based on your most recent 1000 rated games per time control over the last 36 months, vs opponents within +/-100 Elo.`;
+      ? `Based on your most recent 3000 rated games in ${tc} over the last 36 months, vs opponents within +/-100 Elo.`
+      : `Based on your most recent 3000 rated games per time control over the last 36 months, vs opponents within +/-100 Elo.`;
   const bullet3 = COPY_FILTER_INDEPENDENCE;
   // CONTEXT D-07 bullet 4: dominant-TC anchor disclosure. For aggregated chips
   // (`tc === undefined`), the bullet still names the dominant TC's anchor inline;

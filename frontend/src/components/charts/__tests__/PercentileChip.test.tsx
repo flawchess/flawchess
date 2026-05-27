@@ -271,22 +271,22 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
   });
 
   // Bullet 2 (recent-games basis) — per-TC + aggregated forms
-  it('per-TC bullet 2 mentions "most recent 1000 rated games in bullet over the last 36 months"', () => {
+  it('per-TC bullet 2 mentions "most recent 3000 rated games in bullet over the last 36 months"', () => {
     renderChip(40, {
       flavor: 'time-pressure-score-gap',
       tc: 'bullet',
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).toContain('most recent 1000 rated games in bullet over the last 36 months');
+    expect(body).toContain('most recent 3000 rated games in bullet over the last 36 months');
     expect(body).toContain('+/-100 Elo');
   });
 
-  it('aggregated bullet 2 mentions "most recent 1000 rated games per time control over the last 36 months"', () => {
+  it('aggregated bullet 2 mentions "most recent 3000 rated games per time control over the last 36 months"', () => {
     renderChip(40, { flavor: 'score-gap' });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).toContain('most recent 1000 rated games per time control over the last 36 months');
+    expect(body).toContain('most recent 3000 rated games per time control over the last 36 months');
     expect(body).toContain('+/-100 Elo');
   });
 });

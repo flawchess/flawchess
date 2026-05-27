@@ -346,12 +346,12 @@ export interface ClockDiffTimelineResponse {
  *  rating-anchor disclosure for the percentile chip tooltip. Renders
  *  as the tooltip's 4th bullet, e.g.:
  *
- *    "Anchored on your Lichess blitz (1430, last 1000 games / 36 months)."
+ *    "Anchored on your Lichess blitz (1430, last 3000 games / 36 months)."
  *
  *  or for chess.com sources:
  *
  *    "Anchored on your chess.com blitz (1330 → 1656 Lichess-equivalent,
- *     last 1000 games / 36 months)."
+ *     last 3000 games / 36 months)."
  *
  *  Fields:
  *  - `anchor_rating`: always Lichess-equivalent. For chess.com sources
