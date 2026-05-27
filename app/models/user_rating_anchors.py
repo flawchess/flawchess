@@ -1,73 +1,63 @@
 """ORM model for user_rating_anchors table.
 
-Phase 94.4 D-04: per-(user, TC) median rating anchor used by the peer-relative
-percentile chip lookup. Composite PK ``(user_id, time_control_bucket)`` — at
-most one row per user per TC at all times. Recompute is UPSERT (see
-``app/repositories/user_rating_anchors_repository.py``).
+D-12 Reversal Amendment (2026-05-27) -- see CONTEXT.md §Amendment and
+``.planning/notes/percentile-anchor-d12-reversal.md`` for the standalone
+design-decision record.
 
-Write path (Stage A — wired in Plan 05): the per-user anchor compute service
-calls ``per_user_cte_median_anchor`` (this plan, Task 5) over the user's
-recent-3000-per-TC × 36-month pool, evaluates the median anchor per
-``time_control_bucket``, and UPSERTs into this table. The live chip lookup
-later joins ``user_rating_anchors`` to the cohort CDF artifact via
-``(anchor_rating, time_control_bucket)`` to read the percentile.
+The original D-12 rule (Lichess-precedence: "any Lichess games in TC =>
+Lichess source") is SUPERSEDED. The new algorithm is game-weighted blended
+anchor (CONTEXT §Amendment §"Schema reshape" + §"Risk profile"):
 
-Suppression semantics: no row → no anchor → chip suppresses naturally. A user
-who has not yet reached the per-TC inclusion floor (``MEDIAN_ANCHOR_MIN_GAMES =
-30`` games on the recent-3000 pool) produces no row for that TC, and the chip
-disappears for that (user, TC) without any null-handling at the API layer.
+  1. For each game in the canonical slice (per-TC, recent-3000-capped,
+     36-month window, status=completed, ±100 opp filter):
+       - Lichess game -> use rating_at_game_time as-is (native Lichess).
+       - Chess.com game (non-Daily) -> convert rating_at_game_time to
+         Lichess-equivalent via the per-TC ChessGoals snapshot
+         (``app/services/rating_conversion.py``).
+       - Chess.com Daily -> contributes weight 0 (conversion undefined).
+  2. Pool the converted chess.com ratings with the native Lichess ratings.
+  3. Take the median of the pool -> that is ``anchor_rating``.
 
-Lichess-precedence rule (D-12): when a user has games on both platforms, the
-Python wrapper in Plan 05 (``user_benchmark_percentiles_service.py``) computes
-the Lichess-only median first and writes ``source_platform='lichess'`` /
-``chesscom_raw_rating=NULL``. If the user has fewer than 30 Lichess games on a
-TC, the wrapper falls back to chess.com, converts the raw chess.com rating to
-the equivalent Lichess rating via ``app/services/chesscom_to_lichess.py``
-(ChessGoals snapshot), and writes ``source_platform='chesscom'`` with the
-pre-conversion rating preserved in ``chesscom_raw_rating`` so the tooltip can
-disclose the conversion provenance (D-07 bullet 4). The precedence rule lives
-in the Python wrapper, NOT in the SQL builder — the builder takes
-``platform`` as a parameter so both call paths (Plan 04 benchmark-side + Plan
-05 single-user-side) reuse the same builder.
+Per-game conversion (not per-user) handles within-window rating drift
+naturally. ``anchor_rating`` is always Lichess-equivalent regardless of
+the user's platform mix.
 
-Daily-classical suppression (RESEARCH Pitfall 11): chess.com Daily games
-(``time_control_str LIKE '1/%'``) are bucketed as ``classical`` by the import
-pipeline but the median-anchor builder drops them with an unconditional WHERE
-clause. As a result, classical anchors may be absent for users who play only
-chess.com Daily — the chip suppresses for that (user, ``classical``) cell.
+Tooltip-disclosure columns (CONTEXT §Amendment §"Tooltip disclosure update"):
+  - ``n_chesscom_games`` / ``chesscom_median_native``: number of non-Daily
+    chess.com games used and their median RAW (pre-conversion) chess.com rating.
+  - ``n_lichess_games`` / ``lichess_median_native``: number of Lichess games
+    used and their median native Lichess rating.
+These are surfaced in the percentile-chip tooltip (D-07 bullet 4, amended) so
+the user can see what the blended anchor blends.
 
-``anchor_source`` Postgres ENUM has exactly two values (``lichess`` /
-``chesscom``); ``create_type=False`` because Alembic owns the lifecycle (see
-``alembic/versions/{TS}_add_user_rating_anchors.py``).
+Suppression rule (CONTEXT §Amendment §"Suppression rule"): a user with
+``n_chesscom_games == 0`` AND ``n_lichess_games == 0`` has no anchor row for
+that TC and the chip suppresses naturally. This is rare (chess.com-Daily-only
+users) and matches existing chip-suppression behavior.
+
+Risk profile by user type (CONTEXT §Amendment §"Risk profile"):
+  - Pure-Lichess users: unchanged (no conversion in play).
+  - Pure-chess.com users: nearly identical anchors (median commutes with the
+    ChessGoals monotonic mapping within a single piecewise segment).
+  - Mixed-platform users: anchor shifts toward the platform contributing more
+    games -- the surgical fix the amendment targets.
+
+``time_control_bucket_enum`` is cross-imported from ``app/models/game.py`` to
+keep the Postgres ENUM single-source-of-truth. ``create_type=False`` on both
+sides ensures Alembic (not SQLAlchemy) owns the type lifecycle.
 """
 
 from __future__ import annotations
 
 import datetime
-from typing import Literal
 
-from sqlalchemy import DateTime, Enum as SAEnum, ForeignKey, Integer
+from sqlalchemy import DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
+from typing import Literal
 
 from app.models.base import Base
 from app.models.game import time_control_bucket_enum
-
-# ---------------------------------------------------------------------------
-# anchor_source Postgres ENUM type descriptor.
-# create_type=False: Alembic owns the lifecycle; SQLAlchemy must never attempt
-# to CREATE or DROP this type itself. Project precedent:
-# app/models/user_benchmark_percentile.py:38-63 and app/models/game.py:20-40.
-# ---------------------------------------------------------------------------
-
-AnchorSource = Literal["lichess", "chesscom"]
-
-anchor_source_enum = SAEnum(
-    "lichess",
-    "chesscom",
-    name="anchor_source",
-    create_type=False,
-)
 
 
 # Re-export the TC bucket type for callers that only import from this module.
@@ -75,32 +65,32 @@ TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
 
 
 class UserRatingAnchor(Base):
-    """One median-rating-anchor row per (user_id, time_control_bucket).
+    """One blended-anchor row per (user_id, time_control_bucket).
 
-    Phase 94.4 D-04: substrate for the peer-relative percentile chip lookup.
-    Written by Stage A at import time (Plan 05) and by the one-shot backfill.
+    Phase 94.4 D-12 Reversal Amendment (2026-05-27): game-weighted blended
+    anchor replaces the original Lichess-precedence rule. See module docstring
+    for the full algorithm description and risk profile.
 
-    See module docstring for write path, suppression semantics,
-    Lichess-precedence rule (D-12), Daily-classical suppression (RESEARCH
-    Pitfall 11), and the chesscom_raw_rating tooltip-disclosure source
-    (D-07 bullet 4).
+    Written by Stage A at import time (Plan 10) and by the one-shot backfill
+    (Plan 12). Read by the percentile chip service and the tooltip payload.
 
     Columns:
       user_id (PK): FK to users.id with ON DELETE CASCADE.
       time_control_bucket (PK): one of bullet/blitz/rapid/classical.
-      anchor_rating: median rating over the user's recent-3000-per-TC pool;
-        for source_platform='chesscom' this is the POST-conversion
-        (Lichess-equivalent) rating produced by app.services.chesscom_to_lichess.
-      source_platform: 'lichess' wins per D-12 precedence; 'chesscom' only
-        when the user has fewer than MEDIAN_ANCHOR_MIN_GAMES on Lichess for
-        that TC.
-      chesscom_raw_rating: nullable. Populated only when source_platform =
-        'chesscom' — holds the user's pre-conversion chess.com rating so
-        the tooltip can disclose conversion provenance (D-07 bullet 4).
-        NULL when source_platform = 'lichess'.
-      n_games: count of games used to compute the median anchor; floor is
-        MEDIAN_ANCHOR_MIN_GAMES (30) per D-04 / RESEARCH Pattern 6.
+      anchor_rating: median of the pooled converted-chess.com + native-Lichess
+        ratings; Lichess-equivalent regardless of the user's platform mix.
+        >= MEDIAN_ANCHOR_MIN_GAMES games required; no row produced otherwise.
+      n_chesscom_games: count of non-Daily chess.com games used. >= 0.
+        A user with no chess.com games in this TC gets 0, not NULL.
+      n_lichess_games: count of Lichess games used. >= 0.
+        A user with no Lichess games in this TC gets 0, not NULL.
+      chesscom_median_native: median of the user's RAW chess.com ratings in
+        this TC BEFORE ChessGoals conversion. None when n_chesscom_games == 0.
+        Tooltip-disclosure source (D-07 bullet 4, amendment-revised).
+      lichess_median_native: median of the user's native Lichess ratings in
+        this TC. None when n_lichess_games == 0. Tooltip-disclosure source.
       computed_at: server-default NOW() on insert; refreshed by UPSERT.
+        Not exposed via RatingAnchorRow; readable via raw SELECT for tests.
     """
 
     __tablename__ = "user_rating_anchors"
@@ -115,12 +105,10 @@ class UserRatingAnchor(Base):
         primary_key=True,
     )
     anchor_rating: Mapped[int] = mapped_column(Integer, nullable=False)
-    source_platform: Mapped[AnchorSource] = mapped_column(
-        anchor_source_enum,
-        nullable=False,
-    )
-    chesscom_raw_rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    n_games: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_chesscom_games: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_lichess_games: Mapped[int] = mapped_column(Integer, nullable=False)
+    chesscom_median_native: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    lichess_median_native: Mapped[int | None] = mapped_column(Integer, nullable=True)
     computed_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -128,4 +116,4 @@ class UserRatingAnchor(Base):
     )
 
 
-__all__ = ["UserRatingAnchor", "AnchorSource", "anchor_source_enum", "TimeControlBucket"]
+__all__ = ["UserRatingAnchor", "TimeControlBucket"]

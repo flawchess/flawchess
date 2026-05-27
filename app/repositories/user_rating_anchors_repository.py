@@ -1,20 +1,26 @@
 """Repository for user_rating_anchors: UPSERT + per-user SELECT.
 
-Phase 94.4 Plan 02 — implements the write/read path for materialised
-per-(user, TC) median rating anchors used by the peer-relative percentile
-chip lookup (D-04).
+D-12 Reversal Amendment (2026-05-27) -- see CONTEXT.md §Amendment and
+``.planning/notes/percentile-anchor-d12-reversal.md`` for the standalone
+design-decision record.
+
+Phase 94.4 Plan 09 (reshaped from Plan 02) -- implements the write/read path
+for materialised per-(user, TC) game-weighted blended rating anchors used by
+the peer-relative percentile chip lookup.
+
+The blended anchor pools per-game converted chess.com ratings with native
+Lichess ratings and takes the median of the pool (see module docstring of
+``app/models/user_rating_anchors.py``). The original Lichess-precedence rule
+(D-12) is superseded; this repository is now platform-agnostic -- it stores
+counts + native medians for both platforms and the blended anchor.
 
 V4 Information Disclosure mitigation: both ``upsert_anchor`` and
 ``fetch_anchors_for_user`` require ``user_id`` as a keyword argument. The
-caller in Plan 05 (and downstream consumers) must pass ``current_user.id``
+caller in Plan 10 (and downstream consumers) must pass ``current_user.id``
 from the FastAPI-Users dependency. Never accept ``user_id`` as a query
 parameter from the client. This pattern mirrors
-``app/repositories/user_benchmark_percentiles_repository.py:102-126`` per
+``app/repositories/user_benchmark_percentiles_repository.py:134-136`` per
 Phase 94.4 PATTERNS line 140 / 813.
-
-Lichess-precedence (D-12) is implemented in the Python wrapper that calls
-``upsert_anchor`` (Plan 05) — this repository is platform-agnostic and
-takes ``source_platform`` + ``chesscom_raw_rating`` as direct arguments.
 """
 
 from __future__ import annotations
@@ -27,7 +33,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from app.models.user_rating_anchors import (
-    AnchorSource,
     TimeControlBucket,
     UserRatingAnchor,
 )
@@ -41,15 +46,28 @@ class RatingAnchorRow:
     attribute access. Frozen (immutable) per CLAUDE.md internal-structured-
     data rule.
 
-    ``chesscom_raw_rating`` is None when ``source_platform == 'lichess'``;
-    populated with the user's pre-conversion chess.com rating when
-    ``source_platform == 'chesscom'`` (D-07 bullet 4 tooltip disclosure).
+    Fields:
+      anchor_rating: Blended median rating (Lichess-equivalent). Always
+        populated when a row exists.
+      n_chesscom_games: Count of non-Daily chess.com games used. >= 0.
+      n_lichess_games: Count of Lichess games used. >= 0.
+      chesscom_median_native: Median of the user's RAW (pre-conversion)
+        chess.com ratings in this TC. None when n_chesscom_games == 0.
+        Tooltip-disclosure source (D-07 bullet 4, amendment-revised).
+      lichess_median_native: Median of the user's native Lichess ratings
+        in this TC. None when n_lichess_games == 0. Tooltip-disclosure source.
+
+    Note: ``computed_at`` is intentionally NOT exposed here -- it is a
+    server-side timestamp refreshed on every UPSERT and is only needed for
+    tests that read raw ORM rows (see test_user_rating_anchors_repository.py
+    Test 7).
     """
 
     anchor_rating: int
-    source_platform: AnchorSource
-    chesscom_raw_rating: int | None
-    n_games: int
+    n_chesscom_games: int
+    n_lichess_games: int
+    chesscom_median_native: int | None
+    lichess_median_native: int | None
 
 
 async def upsert_anchor(
@@ -58,9 +76,10 @@ async def upsert_anchor(
     user_id: int,
     time_control_bucket: TimeControlBucket,
     anchor_rating: int,
-    source_platform: AnchorSource,
-    chesscom_raw_rating: int | None,
-    n_games: int,
+    n_chesscom_games: int,
+    n_lichess_games: int,
+    chesscom_median_native: int | None,
+    lichess_median_native: int | None,
 ) -> None:
     """Insert or update one (user_id, time_control_bucket) row.
 
@@ -76,32 +95,32 @@ async def upsert_anchor(
         session: AsyncSession. Caller commits.
         user_id: Internal user PK (V4: from authenticated dep, never user input).
         time_control_bucket: One of bullet/blitz/rapid/classical.
-        anchor_rating: Median rating over the user's recent pool. For
-            ``source_platform='chesscom'`` this is the POST-conversion
-            (Lichess-equivalent) rating per D-12.
-        source_platform: 'lichess' wins per D-12 precedence; 'chesscom'
-            only when the user has < MEDIAN_ANCHOR_MIN_GAMES on Lichess.
-        chesscom_raw_rating: pre-conversion chess.com rating when
-            source_platform='chesscom'; None when source_platform='lichess'
-            (D-07 bullet 4 tooltip provenance).
-        n_games: Count of games used to compute the median anchor (must be
-            >= MEDIAN_ANCHOR_MIN_GAMES per D-04).
+        anchor_rating: Blended median (Lichess-equivalent) per the D-12 Reversal
+            Amendment algorithm.
+        n_chesscom_games: Count of non-Daily chess.com games used. >= 0.
+        n_lichess_games: Count of Lichess games used. >= 0.
+        chesscom_median_native: Pre-conversion chess.com median when
+            n_chesscom_games > 0; None otherwise (D-07 bullet 4 tooltip).
+        lichess_median_native: Native Lichess median when n_lichess_games > 0;
+            None otherwise (D-07 bullet 4 tooltip).
     """
     stmt = pg_insert(UserRatingAnchor).values(
         user_id=user_id,
         time_control_bucket=time_control_bucket,
         anchor_rating=anchor_rating,
-        source_platform=source_platform,
-        chesscom_raw_rating=chesscom_raw_rating,
-        n_games=n_games,
+        n_chesscom_games=n_chesscom_games,
+        n_lichess_games=n_lichess_games,
+        chesscom_median_native=chesscom_median_native,
+        lichess_median_native=lichess_median_native,
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["user_id", "time_control_bucket"],
         set_={
             "anchor_rating": stmt.excluded.anchor_rating,
-            "source_platform": stmt.excluded.source_platform,
-            "chesscom_raw_rating": stmt.excluded.chesscom_raw_rating,
-            "n_games": stmt.excluded.n_games,
+            "n_chesscom_games": stmt.excluded.n_chesscom_games,
+            "n_lichess_games": stmt.excluded.n_lichess_games,
+            "chesscom_median_native": stmt.excluded.chesscom_median_native,
+            "lichess_median_native": stmt.excluded.lichess_median_native,
             "computed_at": func.now(),  # server-side NOW() refresh on every update
         },
     )
@@ -120,10 +139,10 @@ async def fetch_anchors_for_user(
     ``user_id`` as a query parameter from the client (Phase 94.4 PATTERNS
     line 813).
 
-    Returns only the TCs that have anchors — missing TCs are absent from
+    Returns only the TCs that have anchors -- missing TCs are absent from
     the dict, not represented as None placeholders. An absent entry means
-    the user is below the per-TC inclusion floor for that TC (D-04
-    suppression semantics: no row → no anchor → chip suppresses).
+    the user is below the per-TC inclusion floor for that TC (suppression
+    semantics: no row => no anchor => chip suppresses naturally).
 
     Args:
         session: AsyncSession.
@@ -131,23 +150,27 @@ async def fetch_anchors_for_user(
 
     Returns:
         Dict keyed by TimeControlBucket, values are RatingAnchorRow dataclasses.
+        Empty dict when the user has no anchor rows (e.g. newly imported user
+        whose Stage A has not yet run, or below-floor on all TCs).
     """
     result = await session.execute(
         select(
             UserRatingAnchor.time_control_bucket,
             UserRatingAnchor.anchor_rating,
-            UserRatingAnchor.source_platform,
-            UserRatingAnchor.chesscom_raw_rating,
-            UserRatingAnchor.n_games,
+            UserRatingAnchor.n_chesscom_games,
+            UserRatingAnchor.n_lichess_games,
+            UserRatingAnchor.chesscom_median_native,
+            UserRatingAnchor.lichess_median_native,
         ).where(UserRatingAnchor.user_id == user_id)
     )
     rows = result.fetchall()
     return {
         row.time_control_bucket: RatingAnchorRow(
             anchor_rating=row.anchor_rating,
-            source_platform=row.source_platform,
-            chesscom_raw_rating=row.chesscom_raw_rating,
-            n_games=row.n_games,
+            n_chesscom_games=row.n_chesscom_games,
+            n_lichess_games=row.n_lichess_games,
+            chesscom_median_native=row.chesscom_median_native,
+            lichess_median_native=row.lichess_median_native,
         )
         for row in rows
     }
