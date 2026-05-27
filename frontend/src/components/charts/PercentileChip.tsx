@@ -256,10 +256,12 @@ export function PercentileChip({
             // Icon + bare integer (e.g. "[%] 23") replaces the pre-94.4
             // "Bottom 50%" form; min-w-[3rem] keeps the chip visually balanced
             // across 1- and 2-digit values. text-sm is the CLAUDE.md minimum.
-            // py-0.5 + leading-none gives chip height ≈ icon height + 4px
-            // breathing room (~18px) — still below the original ~24px form
-            // (which used py-0.5 with default leading-normal).
-            'inline-flex items-center justify-center gap-0.5 rounded-full px-2 py-0.5 text-sm font-normal leading-none cursor-pointer min-w-[3rem]',
+            // Fixed h-5 (= 20px = text-sm default line-height) so the chip
+            // occupies exactly one line of text-sm. This keeps any row that
+            // hosts the chip the same height as a chip-less row — preventing
+            // misalignment of charts below adjacent (chipped vs un-chipped)
+            // rows in side-by-side metric tiles.
+            'inline-flex items-center justify-center gap-0.5 rounded-full px-2 h-5 text-sm font-normal leading-none cursor-pointer min-w-[3rem]',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
           style={{ backgroundColor: bandColor, color: CHIP_TEXT_COLOR }}

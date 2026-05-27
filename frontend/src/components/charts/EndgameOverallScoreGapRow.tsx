@@ -126,7 +126,12 @@ export function ScoreGapRow({
   // simply empty.
   return (
     <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-2 w-full">
-      <span className="row-start-1 col-start-1 flex items-center gap-1 text-sm tabular-nums min-w-0">
+      {/* min-h-5 reserves the chip's height (20px) on the label row whether
+          or not chipSlot is rendered. Without this, a chip-less row collapses
+          to text-sm leading-normal (20px anyway, so visually identical), but
+          we set it explicitly so future leading/padding tweaks on the chip
+          don't desync row heights across adjacent chipped/un-chipped tiles. */}
+      <span className="row-start-1 col-start-1 min-h-5 flex items-center gap-1 text-sm tabular-nums min-w-0">
         <span className="text-muted-foreground">{label}</span>
         <span
           className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
