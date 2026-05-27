@@ -331,10 +331,10 @@ async def run_stress_test(
     user_id: int,
     chesscom_username: str,
     lichess_username: str,
+    output_tag: str,
     sample_interval_s: float = DEFAULT_SAMPLE_INTERVAL_S,
     db_container_name: str = DEFAULT_DB_CONTAINER,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
-    output_tag: str,
 ) -> StressTestResult:
     """Orchestrate dual-platform import + metric capture for one tagged run.
 
