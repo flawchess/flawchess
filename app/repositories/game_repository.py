@@ -22,7 +22,7 @@ from app.models.game_position import GamePosition
 # boundary test honest if this value is ever tuned.
 _POSITION_CHUNK_SIZE: int = 1700
 
-_POSITION_COPY_COLUMNS: tuple[str, ...] = (
+POSITION_COPY_COLUMNS: tuple[str, ...] = (
     "game_id",
     "user_id",
     "ply",
@@ -213,7 +213,7 @@ async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]
 
     Args:
         session: AsyncSession to use for the insert.
-        position_rows: List of dicts with keys matching _POSITION_COPY_COLUMNS.
+        position_rows: List of dicts with keys matching POSITION_COPY_COLUMNS.
                        Missing optional keys default to None.
     """
     if not position_rows:
@@ -228,10 +228,10 @@ async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]
 
     for i in range(0, len(position_rows), _POSITION_CHUNK_SIZE):
         chunk = position_rows[i : i + _POSITION_CHUNK_SIZE]
-        records = [tuple(row.get(col) for col in _POSITION_COPY_COLUMNS) for row in chunk]
+        records = [tuple(row.get(col) for col in POSITION_COPY_COLUMNS) for row in chunk]
         await raw_conn.copy_records_to_table(
             "game_positions",
             records=records,
-            columns=_POSITION_COPY_COLUMNS,
+            columns=POSITION_COPY_COLUMNS,
         )
     await session.flush()

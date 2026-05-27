@@ -96,20 +96,20 @@ def _make_required_only_row(game_id: int, user_id: int, ply: int) -> dict:
 
 @pytest.mark.asyncio
 async def test_bulk_insert_positions_column_coverage() -> None:
-    """The _POSITION_COPY_COLUMNS tuple must exactly match GamePosition non-id columns."""
+    """The POSITION_COPY_COLUMNS tuple must exactly match GamePosition non-id columns."""
     import app.repositories.game_repository as repo_module
 
-    assert hasattr(repo_module, "_POSITION_COPY_COLUMNS"), (
-        "_POSITION_COPY_COLUMNS must be a module-level constant in game_repository"
+    assert hasattr(repo_module, "POSITION_COPY_COLUMNS"), (
+        "POSITION_COPY_COLUMNS must be a module-level constant in game_repository"
     )
-    columns = repo_module._POSITION_COPY_COLUMNS  # noqa: SLF001
+    columns = repo_module.POSITION_COPY_COLUMNS
     model_columns = {c.name for c in GamePosition.__table__.columns if c.name != "id"}
     assert set(columns) == model_columns, (
-        f"_POSITION_COPY_COLUMNS is missing or has extra columns.\n"
+        f"POSITION_COPY_COLUMNS is missing or has extra columns.\n"
         f"  In tuple only: {set(columns) - model_columns}\n"
         f"  In model only: {model_columns - set(columns)}"
     )
-    assert "id" not in columns, "id must NOT be in _POSITION_COPY_COLUMNS"
+    assert "id" not in columns, "id must NOT be in POSITION_COPY_COLUMNS"
 
 
 @pytest.mark.asyncio
@@ -136,7 +136,7 @@ async def test_bulk_insert_positions_round_trip(db_session: AsyncSession) -> Non
 
     assert len(db_rows) == 3, f"Expected 3 rows, got {len(db_rows)}"
     for expected, actual in zip(rows, db_rows, strict=True):
-        for col in repo_module._POSITION_COPY_COLUMNS:  # noqa: SLF001
+        for col in repo_module.POSITION_COPY_COLUMNS:
             exp_val = expected.get(col)
             act_val = getattr(actual, col)
             # Float comparison: clock_seconds stored as REAL (4-byte float)
