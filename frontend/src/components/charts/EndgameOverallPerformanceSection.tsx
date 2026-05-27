@@ -31,6 +31,7 @@ import {
   SCORE_GAP_NEUTRAL_MAX,
   SCORE_GAP_NEUTRAL_MIN,
 } from '@/generated/endgameZones';
+import { pickDominantTcAnchor, type RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type {
   EndgamePerformanceResponse,
@@ -58,11 +59,20 @@ function gapZoneColor(value: number, neutralMin: number, neutralMax: number): st
 export function EndgameOverallPerformanceSection({
   data,
   scoreGap,
+  ratingAnchors,
 }: {
   data: EndgamePerformanceResponse;
   scoreGap: ScoreGapMaterialResponse;
+  /** Phase 94.4 Plan 07: per-TC rating anchors from
+   *  EndgameOverviewResponse.rating_anchors. The page-level ΔES chips on this
+   *  section are aggregated across TCs, so they use the dominant-TC anchor
+   *  (highest game count) for the popover's 4th-bullet disclosure. When no
+   *  anchors are available (Stage A hasn't run / all TCs below the inclusion
+   *  floor), all chips suppress. Optional so legacy fixtures still render. */
+  ratingAnchors?: RatingAnchorsByTc;
 }) {
   const { isPending, pendingCount } = useEvalCoverage();
+  const dominantAnchor = pickDominantTcAnchor(ratingAnchors ?? {});
 
   const gapPositive = scoreGap.score_difference >= 0;
   const gapFormatted =
@@ -181,10 +191,16 @@ export function EndgameOverallPerformanceSection({
                   ciLow={data.achievable_score_gap_ci_low ?? undefined}
                   ciHigh={data.achievable_score_gap_ci_high ?? undefined}
                   chipSlot={
-                    data.achievable_score_gap_percentile != null ? (
+                    data.achievable_score_gap_percentile != null &&
+                    dominantAnchor !== undefined ? (
                       <PercentileChip
                         percentile={data.achievable_score_gap_percentile}
                         flavor="achievable"
+                        anchorRating={dominantAnchor.anchor_rating}
+                        nChesscomGames={dominantAnchor.n_chesscom_games}
+                        nLichessGames={dominantAnchor.n_lichess_games}
+                        chesscomMedianNative={dominantAnchor.chesscom_median_native ?? undefined}
+                        lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
                         metricLabel="Achievable Score Gap"
                         testId="achievable-score-gap-percentile-chip"
                       />
@@ -231,10 +247,16 @@ export function EndgameOverallPerformanceSection({
                   ciLow={scoreGap.score_difference_ci_low ?? undefined}
                   ciHigh={scoreGap.score_difference_ci_high ?? undefined}
                   chipSlot={
-                    scoreGap.score_gap_percentile != null ? (
+                    scoreGap.score_gap_percentile != null &&
+                    dominantAnchor !== undefined ? (
                       <PercentileChip
                         percentile={scoreGap.score_gap_percentile}
                         flavor="score-gap"
+                        anchorRating={dominantAnchor.anchor_rating}
+                        nChesscomGames={dominantAnchor.n_chesscom_games}
+                        nLichessGames={dominantAnchor.n_lichess_games}
+                        chesscomMedianNative={dominantAnchor.chesscom_median_native ?? undefined}
+                        lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
                         metricLabel="Endgame Score Gap"
                         testId="endgame-score-gap-percentile-chip"
                       />

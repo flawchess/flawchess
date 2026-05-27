@@ -52,12 +52,12 @@ interface ScoreGapRowProps {
    *  EndgameTypeCard to show the End predicted score. Defaults to undefined
    *  (renders nothing) so the 3 other callers remain pixel-identical. */
   endSlot?: ReactNode;
-  /** Optional chip rendered alongside the row. On mobile the chip drops to its
-   *  own line BELOW the bullet chart, left-aligned. On desktop (>=640px) the
-   *  chip sits inline at the right edge of the label/value row. Used by
-   *  EndgameOverallPerformanceSection (page-level rows) and EndgameMetricCard
-   *  (conv/parity buckets) to surface a PercentileChip. Defaults to undefined
-   *  so EndgameTypeCard + Recovery card render pixel-identical. */
+  /** Optional chip rendered alongside the row. Sits inline at the right edge of
+   *  the label/value row on all widths (the compact icon + integer form fits
+   *  inline at 375px). Used by EndgameOverallPerformanceSection (page-level
+   *  rows) and EndgameMetricCard (conv/parity buckets) to surface a
+   *  PercentileChip. Defaults to undefined so EndgameTypeCard + Recovery card
+   *  render pixel-identical. */
   chipSlot?: ReactNode;
 }
 
@@ -119,19 +119,19 @@ export function ScoreGapRow({
       </div>
     );
   }
-  // Non-hasSlots layout uses CSS Grid so chipSlot can be placed differently on
-  // mobile vs desktop without rendering twice. Three children, two breakpoints:
-  //   Mobile  (<640px):  row 1 = label/value/tooltip (spans both cols)
-  //                      row 2 = bullet chart        (spans both cols)
-  //                      row 3 = chip                (spans both cols, left-aligned)
-  //   Desktop (>=640px): row 1 = label/value/tooltip (col 1)  +  chip (col 2, right-aligned)
-  //                      row 2 = bullet chart        (spans both cols)
-  // The 3 callers that don't pass chipSlot (EndgameTypeCard isn't this branch,
-  // but the wave-3 wiring sites all pass it) collapse cleanly: chip row simply
-  // doesn't render, so mobile is rows 1 + 2 and desktop is row 1 col 1 + row 2.
+  // Non-hasSlots layout uses CSS Grid. Two rows on both mobile and desktop:
+  //   row 1 = label/value/tooltip (col 1)  +  chip (col 2, right-aligned)
+  //   row 2 = bullet chart        (spans both cols)
+  // Callers that don't pass chipSlot collapse cleanly — col 2 of row 1 is
+  // simply empty.
   return (
     <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-2 w-full">
-      <span className="row-start-1 col-span-2 sm:col-span-1 flex items-center gap-1 text-sm tabular-nums min-w-0">
+      {/* min-h-5 reserves the chip's height (20px) on the label row whether
+          or not chipSlot is rendered. Without this, a chip-less row collapses
+          to text-sm leading-normal (20px anyway, so visually identical), but
+          we set it explicitly so future leading/padding tweaks on the chip
+          don't desync row heights across adjacent chipped/un-chipped tiles. */}
+      <span className="row-start-1 col-start-1 min-h-5 flex items-center gap-1 text-sm tabular-nums min-w-0">
         <span className="text-muted-foreground">{label}</span>
         <span
           className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
@@ -143,9 +143,7 @@ export function ScoreGapRow({
         {tooltip}
       </span>
       {chipSlot && (
-        <span className="row-start-3 col-span-2 justify-self-start sm:row-start-1 sm:col-start-2 sm:col-span-1 sm:justify-self-end">
-          {chipSlot}
-        </span>
+        <span className="row-start-1 col-start-2 justify-self-end">{chipSlot}</span>
       )}
       <div className="row-start-2 col-span-2 min-w-0 tabular-nums">
         <MiniBulletChart

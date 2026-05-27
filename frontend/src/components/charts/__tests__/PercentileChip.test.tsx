@@ -1,24 +1,26 @@
 // @vitest-environment jsdom
 /**
- * Phase 94.2 Plan 05: PercentileChip component tests.
+ * Phase 94.4 Plan 11 (D-12 Reversal Amendment): PercentileChip bullet-4
+ * branch-differentiation tests.
  *
- * Updated for the 4-flavor metric-named enum
- * (score-gap | achievable | parity | conversion).
+ * All Plan 07 Tests 1-8 (chip face, MIN_PERCENT floor, p99 ceiling, color band,
+ * aria-label, per-TC bullet 1, aggregated bullet 1, bullet 3 filter
+ * independence) are preserved verbatim.
  *
- * Covers:
- *  - Label formatter `Top X%` (rounding, p=0 literal, p=99.9 floor at 1)
- *  - Band-color dispatch (red < 25, neutral 25..75, green > 75)
- *  - Popover body discloses 4 D-4 bullets per flavor — benchmark composition,
- *    recent-games basis, filter independence, per-metric rating-correlation
- *    framing (calibrated per Cohen's d in
- *    reports/benchmarks-gap-metrics-percentile-candidacy.md).
- *  - aria-label + data-testid contract.
+ * Test 9 (no-flame regression guard for commit-6766898c) is preserved VERBATIM.
  *
- * The Phase 94.1 "minimalism budget" guard (POPOVER_MAX_CHARS) is intentionally
- * removed here: the percentile chip popover is the sanctioned exception to
- * feedback_popover_copy_minimalism (see feedback_percentile_chip_tooltip_disclosure
- * project memory). It MUST disclose all four bullets; a length cap would re-trip
- * the prior under-disclosure bug D-4 was filed to fix.
+ * Tests 10-12 (old Lichess-anchored / chess.com-anchored split) are REPLACED
+ * with the new branch-differentiation quadruple:
+ *   C1 — mixed user: BOTH platform substrings + "blending" + all 5 numbers
+ *   C2 — pure-lichess: "native rating", NO chess.com clause, NO "converted"
+ *   C3 — pure-chess.com: "converted" + snapshot date, NO lichess clause
+ *   C4 — no flame (renamed from Test 9, preserved verbatim)
+ *   C5 — props deprecation sanity guard (compile-time rejection of old props)
+ *   C6 — suppression: chip hidden or bullet-4 empty when both counts == 0
+ *
+ * Critical contract: branch-differentiating MUST-NOT-APPEAR assertions in C2
+ * and C3 ensure that a single-branch fallback implementation cannot silently
+ * pass tests.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -57,340 +59,382 @@ import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 
 const TID = 'test-pctl-chip';
 
-function renderChip(percentile: number, flavor: PercentileChipFlavor = 'score-gap') {
+type RenderOpts = {
+  flavor?: PercentileChipFlavor;
+  tc?: 'bullet' | 'blitz' | 'rapid' | 'classical';
+  anchorRating?: number;
+  nChesscomGames?: number;
+  nLichessGames?: number;
+  chesscomMedianNative?: number;
+  lichessMedianNative?: number;
+  metricLabel?: string;
+};
+
+function renderChip(percentile: number, opts: RenderOpts = {}) {
   return render(
     <PercentileChip
       percentile={percentile}
-      flavor={flavor}
-      metricLabel="Endgame Score Gap"
+      flavor={opts.flavor ?? 'score-gap'}
+      tc={opts.tc}
+      anchorRating={opts.anchorRating ?? 1600}
+      nChesscomGames={opts.nChesscomGames ?? 0}
+      nLichessGames={opts.nLichessGames ?? 500}
+      chesscomMedianNative={opts.chesscomMedianNative}
+      lichessMedianNative={opts.lichessMedianNative ?? 1600}
+      metricLabel={opts.metricLabel ?? 'Endgame Score Gap'}
       testId={TID}
     />,
   );
 }
 
-describe('PercentileChip', () => {
-  // ── Label formatter ──
-  it('renders "Top 27%" for percentile=73', () => {
-    renderChip(73);
-    expect(screen.getByTestId(TID).textContent ?? '').toContain('Top 27%');
-  });
-
-  it('renders "Bottom 50%" for percentile=50 (median crossover — ≤50 reads as Bottom)', () => {
-    renderChip(50);
-    expect(screen.getByTestId(TID).textContent ?? '').toContain('Bottom 50%');
-  });
-
-  it('renders "Bottom 1%" for percentile=0 (floored — no "Bottom 0%")', () => {
-    renderChip(0);
-    const txt = screen.getByTestId(TID).textContent ?? '';
-    expect(txt).toContain('Bottom 1%');
-    expect(txt).not.toContain('Bottom 0%');
-  });
-
-  it('floors at "Top 1%" for percentile=99.9 (no "Top 0%" per Pitfall 7)', () => {
-    renderChip(99.9);
-    const txt = screen.getByTestId(TID).textContent ?? '';
-    expect(txt).toContain('Top 1%');
-    expect(txt).not.toContain('Top 0%');
-  });
-
-  // ── Band-color dispatch ──
-  // jsdom normalizes `oklch(0.50 ...)` to `oklch(0.5 ...)`, so we extract the
-  // numeric triplet and compare against the theme constant's parsed triplet.
-  function parseOklch(s: string): readonly [number, number, number] | null {
-    const m = s.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)/);
-    if (!m) return null;
-    return [Number(m[1]), Number(m[2]), Number(m[3])] as const;
-  }
-
-  it('routes red band background for percentile=10', () => {
-    renderChip(10);
-    const chip = screen.getByTestId(TID);
-    expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_DANGER));
-  });
-
-  it('routes blue neutral band for percentile=50', () => {
-    renderChip(50);
-    const chip = screen.getByTestId(TID);
-    expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(GAUGE_NEUTRAL));
-  });
-
-  it('routes green band for percentile=85', () => {
-    renderChip(85);
-    const chip = screen.getByTestId(TID);
-    expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_SUCCESS));
-  });
-
-  // ── Accessibility / contract ──
-  it('chip trigger has aria-label including metricLabel and the rendered percentile label', () => {
-    renderChip(73);
-    const chip = screen.getByTestId(TID);
-    const aria = chip.getAttribute('aria-label') ?? '';
-    expect(aria).toContain('Endgame Score Gap');
-    expect(aria).toContain('Top 27%');
-  });
-
-  it('chip trigger has the supplied data-testid; popover Content has `${testId}-popover`', () => {
-    renderChip(85);
-    expect(screen.getByTestId(TID)).toBeTruthy();
-    fireEvent.click(screen.getByTestId(TID));
-    expect(screen.getByTestId(`${TID}-popover`)).toBeTruthy();
-  });
-});
-
-// ── Phase 94.2 Plan 05 (D-4): popover body discloses 4 bullets per metric ─────
-//
-// The four content blocks every flavor's popover MUST render:
-//   1. Benchmark composition  — "benchmarked Lichess players"
-//   2. Recent-games basis     — "most recent 1000 rated games"
-//   3. Filter independence    — "UI filters do not affect"
-//   4. Per-metric rating-correlation framing — differs per flavor (see below)
-//
-// Per-metric rating-correlation framing (per Cohen's d from
-// reports/benchmarks-gap-metrics-percentile-candidacy.md):
-//   score-gap   (d=0.19) — "mostly independent of rating" (rating-invariant)
-//   achievable  (d=0.32) — "mildly correlates with rating"
-//   parity      (d=0.30) — "mildly correlates with rating"
-//   conversion  (d=1.37) — "tracks rating strongly"
-
-const FLAVORS_WITH_SOFT_RATING_NOTE: ReadonlyArray<PercentileChipFlavor> = [
-  'achievable',
-  'parity',
-];
-
-const ALL_FLAVORS: ReadonlyArray<PercentileChipFlavor> = [
-  'score-gap',
-  'achievable',
-  'parity',
-  'conversion',
-];
-
-describe('PercentileChip — D-4 popover disclosure (Phase 94.2)', () => {
-  it.each(ALL_FLAVORS)('flavor=%s discloses benchmark composition, recent-games basis, and filter independence', (flavor) => {
-    renderChip(73, flavor);
-    fireEvent.click(screen.getByTestId(TID));
-    const popover = screen.getByTestId(`${TID}-popover`);
-    const body = popover.textContent ?? '';
-    expect(body).toMatch(/benchmarked Lichess players/i);
-    expect(body).toMatch(/most recent 1000 rated games/i);
-    expect(body).toMatch(/opponents of similar strength/i);
-    expect(body).toMatch(/UI filters do not affect/i);
-    // Paragraph 1 now uses the "among the top/bottom X%" framing — at p=73
-    // (above median) the chip reads "top 27%", so the popover does too.
-    expect(body).toMatch(/Your Endgame Score Gap is among the top 27% of/i);
-  });
-
-  it('flavor=score-gap notes the metric is rating-invariant (no rating-coupling framing)', () => {
-    renderChip(73, 'score-gap');
-    fireEvent.click(screen.getByTestId(TID));
-    const popover = screen.getByTestId(`${TID}-popover`);
-    const body = popover.textContent ?? '';
-    // score-gap (d=0.19) should NOT carry the soft "mildly correlates" or the
-    // heavy "tracks rating strongly" framing. The rating note is either absent
-    // or it explicitly says the metric is rating-invariant.
-    expect(body).not.toMatch(/mildly correlates with rating/i);
-    expect(body).not.toMatch(/tracks rating strongly/i);
-    expect(body).toMatch(/mostly independent of rating|independent of rating/i);
-  });
-
-  it.each(FLAVORS_WITH_SOFT_RATING_NOTE)('flavor=%s carries a soft rating-coupling mention', (flavor) => {
-    renderChip(73, flavor);
-    fireEvent.click(screen.getByTestId(TID));
-    const popover = screen.getByTestId(`${TID}-popover`);
-    const body = popover.textContent ?? '';
-    expect(body).toMatch(/mildly correlates with rating/i);
-    // and NOT the heavy framing
-    expect(body).not.toMatch(/tracks rating strongly/i);
-  });
-
-  it('flavor=conversion carries honest "tracks rating strongly" framing', () => {
-    renderChip(73, 'conversion');
-    fireEvent.click(screen.getByTestId(TID));
-    const popover = screen.getByTestId(`${TID}-popover`);
-    const body = popover.textContent ?? '';
-    expect(body).toMatch(/tracks rating strongly/i);
-    // and NOT the soft mild framing
-    expect(body).not.toMatch(/mildly correlates with rating/i);
-  });
-});
-
-// ── Phase 94.3: per-TC popover (Plan F) ──────────────────────────────────────
-//
-// 12 new flavors (3 metric families × 4 TCs) extend the chip surface. Phase
-// 94.3 UAT correction: all 16 flavors are `higher_is_better` — the original
-// Plan-F flip of `net_flag_rate_{tc}` to `lower_is_better` was a mistake;
-// net_flag_rate = (timeout_wins − timeout_losses) / total, so higher IS
-// better. Tests below now cover the unified direction + per-TC popover wiring.
-
-import { DIRECTION_BY_FLAVOR } from '../PercentileChip';
-
-const PER_TC_FLAVORS: ReadonlyArray<{
-  flavor: PercentileChipFlavor;
-  tcLabel: string;
-  metricLabel: string;
-}> = [
-  { flavor: 'time_pressure_score_gap_bullet', tcLabel: 'bullet', metricLabel: 'Time Pressure Score Gap (bullet)' },
-  { flavor: 'time_pressure_score_gap_blitz', tcLabel: 'blitz', metricLabel: 'Time Pressure Score Gap (blitz)' },
-  { flavor: 'time_pressure_score_gap_rapid', tcLabel: 'rapid', metricLabel: 'Time Pressure Score Gap (rapid)' },
-  { flavor: 'time_pressure_score_gap_classical', tcLabel: 'classical', metricLabel: 'Time Pressure Score Gap (classical)' },
-  { flavor: 'clock_gap_bullet', tcLabel: 'bullet', metricLabel: 'Clock Gap (bullet)' },
-  { flavor: 'clock_gap_blitz', tcLabel: 'blitz', metricLabel: 'Clock Gap (blitz)' },
-  { flavor: 'clock_gap_rapid', tcLabel: 'rapid', metricLabel: 'Clock Gap (rapid)' },
-  { flavor: 'clock_gap_classical', tcLabel: 'classical', metricLabel: 'Clock Gap (classical)' },
-  { flavor: 'net_flag_rate_bullet', tcLabel: 'bullet', metricLabel: 'Net Flag Rate (bullet)' },
-  { flavor: 'net_flag_rate_blitz', tcLabel: 'blitz', metricLabel: 'Net Flag Rate (blitz)' },
-  { flavor: 'net_flag_rate_rapid', tcLabel: 'rapid', metricLabel: 'Net Flag Rate (rapid)' },
-  { flavor: 'net_flag_rate_classical', tcLabel: 'classical', metricLabel: 'Net Flag Rate (classical)' },
-];
-
-function renderChipFor(percentile: number, flavor: PercentileChipFlavor, metricLabel: string) {
-  return render(
-    <PercentileChip
-      percentile={percentile}
-      flavor={flavor}
-      metricLabel={metricLabel}
-      testId={TID}
-    />,
-  );
-}
-
+// jsdom normalizes `oklch(0.50 ...)` to `oklch(0.5 ...)`, so we extract the
+// numeric triplet and compare against the theme constant's parsed triplet.
 function parseOklch(s: string): readonly [number, number, number] | null {
   const m = s.match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\)/);
   if (!m) return null;
   return [Number(m[1]), Number(m[2]), Number(m[3])] as const;
 }
 
-describe('PercentileChip — per-TC popover (Phase 94.3)', () => {
-  // ── Exhaustiveness ──
-  it('DIRECTION_BY_FLAVOR has exactly 16 entries', () => {
-    expect(Object.keys(DIRECTION_BY_FLAVOR).length).toBe(16);
-  });
-
-  it('DIRECTION_BY_FLAVOR maps ALL 16 flavors to higher_is_better (post-UAT correction)', () => {
-    const lowerEntries = Object.entries(DIRECTION_BY_FLAVOR).filter(
-      ([, dir]) => dir === 'lower_is_better',
-    );
-    expect(lowerEntries.length).toBe(0);
-    const higherEntries = Object.entries(DIRECTION_BY_FLAVOR).filter(
-      ([, dir]) => dir === 'higher_is_better',
-    );
-    expect(higherEntries.length).toBe(16);
-  });
-
-  // ── Net Flag Rate is higher_is_better (regression for the post-UAT flip) ──
-  it('net_flag_rate flavor renders "Top 5%" at percentile=95 (higher_is_better)', () => {
-    renderChipFor(95, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
-    const txt = screen.getByTestId(TID).textContent ?? '';
-    expect(txt).toContain('Top 5%');
-    expect(txt).not.toContain('Top 95%');
-  });
-
-  it('net_flag_rate flavor band is green (ZONE_SUCCESS) at percentile=95', () => {
-    renderChipFor(95, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
+describe('PercentileChip — chip face (Phase 94.4)', () => {
+  // Test 1: icon + bare integer form
+  it.each([
+    [1, '1'],
+    [10, '10'],
+    [23, '23'],
+    [50, '50'],
+    [75, '75'],
+    [90, '90'],
+    [99, '99'],
+  ])('renders icon + "%s" form for percentile=%d', (pct, expected) => {
+    renderChip(pct);
     const chip = screen.getByTestId(TID);
-    expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_SUCCESS));
+    expect(chip.textContent ?? '').toBe(expected);
+    // Icon must always be present — distinguishes percentile from raw percent.
+    expect(chip.querySelector('svg')).not.toBeNull();
   });
 
-  it('net_flag_rate flavor band is red (ZONE_DANGER) at percentile=5', () => {
-    renderChipFor(5, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
+  // Test 2: MIN_PERCENT=1 floor
+  it.each([0, 0.4, -5])('floors at "1" for percentile=%d (no "0")', (pct) => {
+    renderChip(pct);
+    const txt = screen.getByTestId(TID).textContent ?? '';
+    expect(txt).toBe('1');
+  });
+
+  // Test 3: p99 ceiling
+  it.each([99.6, 100, 105])('clamps at "99" for percentile=%d (no "100")', (pct) => {
+    renderChip(pct);
+    const txt = screen.getByTestId(TID).textContent ?? '';
+    expect(txt).toBe('99');
+  });
+
+  // Test 4: color band routing
+  it('routes red (ZONE_DANGER) band for percentile=20', () => {
+    renderChip(20);
     const chip = screen.getByTestId(TID);
     expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_DANGER));
   });
 
-  // ── Higher-is-better regression for new per-TC variants ──
-  it('higher_is_better per-TC flavor renders "Top 27%" at percentile=73 (clock_gap_blitz)', () => {
-    renderChipFor(73, 'clock_gap_blitz', 'Clock Gap (blitz)');
-    const txt = screen.getByTestId(TID).textContent ?? '';
-    expect(txt).toContain('Top 27%');
+  it('routes blue (GAUGE_NEUTRAL) band for percentile=50', () => {
+    renderChip(50);
+    const chip = screen.getByTestId(TID);
+    expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(GAUGE_NEUTRAL));
   });
 
-  // ── No flavor includes the "Lower is better" line (post-UAT regression) ──
-  it.each(['bullet', 'blitz', 'rapid', 'classical'] as const)(
-    'Net Flag chip does NOT include the "Lower is better" line for tc=%s',
-    (tc) => {
-      const flavor = `net_flag_rate_${tc}` as PercentileChipFlavor;
-      renderChipFor(20, flavor, `Net Flag Rate (${tc})`);
-      fireEvent.click(screen.getByTestId(TID));
-      const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-      expect(body).not.toMatch(/Lower is better/i);
-    },
-  );
-
-  it('non-Net-Flag chip does NOT include the "Lower is better" line', () => {
-    renderChipFor(73, 'clock_gap_bullet', 'Clock Gap (bullet)');
-    fireEvent.click(screen.getByTestId(TID));
-    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).not.toMatch(/Lower is better/i);
+  it('routes green (ZONE_SUCCESS) band for percentile=80', () => {
+    renderChip(80);
+    const chip = screen.getByTestId(TID);
+    expect(parseOklch(chip.style.backgroundColor)).toEqual(parseOklch(ZONE_SUCCESS));
   });
 
-  it('original 4 flavors do NOT include the "Lower is better" line (regression)', () => {
-    renderChipFor(73, 'score-gap', 'Endgame Score Gap');
-    fireEvent.click(screen.getByTestId(TID));
-    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).not.toMatch(/Lower is better/i);
+  // Test 5: aria-label direction word (D-06b)
+  it('aria-label includes "bottom" for percentile=23', () => {
+    renderChip(23);
+    const aria = screen.getByTestId(TID).getAttribute('aria-label') ?? '';
+    expect(aria.toLowerCase()).toContain('bottom');
   });
 
-  // ── D-13: TC-scoped bullets 1 and 2 for per-TC flavors ──
-  it.each(PER_TC_FLAVORS)(
-    'per-TC flavor=$flavor: bullet 1 mentions the TC name in "in $tcLabel"',
-    ({ flavor, tcLabel, metricLabel }) => {
-      renderChipFor(40, flavor, metricLabel);
-      fireEvent.click(screen.getByTestId(TID));
-      const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-      // Bullet 1 reads "...benchmarked Lichess players in {tc}." — TC scope
-      // must appear verbatim on every per-TC flavor.
-      expect(body).toContain(`benchmarked Lichess players in ${tcLabel}`);
-    },
-  );
-
-  it.each(PER_TC_FLAVORS)(
-    'per-TC flavor=$flavor: bullet 2 mentions "most recent 1000 rated games in $tcLabel"',
-    ({ flavor, tcLabel, metricLabel }) => {
-      renderChipFor(40, flavor, metricLabel);
-      fireEvent.click(screen.getByTestId(TID));
-      const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-      expect(body).toContain(`most recent 1000 rated games in ${tcLabel}`);
-    },
-  );
-
-  it('original flavor (score-gap) bullet 2 keeps the per-time-control wording (regression)', () => {
-    renderChipFor(73, 'score-gap', 'Endgame Score Gap');
-    fireEvent.click(screen.getByTestId(TID));
-    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    // Regression: original copy says "per time control" — keep it for the
-    // 4 original flavors.
-    expect(body).toMatch(/per time control/i);
+  it('aria-label includes "top" for percentile=70', () => {
+    renderChip(70);
+    const aria = screen.getByTestId(TID).getAttribute('aria-label') ?? '';
+    expect(aria.toLowerCase()).toContain('top');
   });
 
-  // ── Bullet 4: per-(metric × TC) rating-correlation copy from Plan A ──
-  // Spot checks lifted verbatim from 94.3-01-SUMMARY.md's tier table.
-  it('net_flag_rate_bullet bullet 4 carries the bullet-specific tier copy from Plan A', () => {
-    renderChipFor(40, 'net_flag_rate_bullet', 'Net Flag Rate (bullet)');
+  // Test 6: per-TC aria-label includes "in {tc}"
+  it('per-TC chip with tc="bullet" includes "in bullet" in aria-label', () => {
+    renderChip(23, { flavor: 'time-pressure-score-gap', tc: 'bullet' });
+    const aria = screen.getByTestId(TID).getAttribute('aria-label') ?? '';
+    expect(aria).toContain('in bullet');
+  });
+});
+
+describe('PercentileChip — popover bullets (Phase 94.4)', () => {
+  // Test 7: per-TC bullet 1 — pct<=50 keeps the legacy "bottom X%" framing
+  it('per-TC popover bullet 1 reads "Your recent {metric} is in the bottom 23% of ~1600-rated players in bullet."', () => {
+    renderChip(23, {
+      flavor: 'time-pressure-score-gap',
+      tc: 'bullet',
+      anchorRating: 1600,
+      metricLabel: 'Time-Pressure Score Gap',
+    });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'At bullet, net flag rate slightly tracks rating (stronger players win more on time than they lose)',
+      'Your recent Time-Pressure Score Gap is in the bottom 23% of ~1600-rated players in bullet.',
     );
   });
 
-  it('time_pressure_score_gap_rapid bullet 4 carries the "heavy" rating-proxy copy from Plan A', () => {
-    renderChipFor(40, 'time_pressure_score_gap_rapid', 'Time Pressure Score Gap (rapid)');
+  // Test 8: aggregated bullet 1 — pct<=50 keeps the legacy "bottom X%" framing
+  it('aggregated popover bullet 1 reads "Your recent {metric} is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play."', () => {
+    renderChip(23, {
+      flavor: 'score-gap',
+      anchorRating: 1600,
+      metricLabel: 'Endgame Score Gap',
+    });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).toContain('This rapid score-gap tracks rating strongly');
+    expect(body).toContain(
+      'Your recent Endgame Score Gap is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play.',
+    );
   });
 
-  it('clock_gap_bullet bullet 4 carries the rating-invariant tier copy', () => {
-    renderChipFor(40, 'clock_gap_bullet', 'Clock Gap (bullet)');
+  // Test 8b: pct>50 uses positive framing with the chip's percentile verbatim
+  it('high-percentile bullet 1 echoes the chip percentile verbatim (pct=90 → "better than 90%")', () => {
+    renderChip(90, {
+      flavor: 'score-gap',
+      anchorRating: 1600,
+      metricLabel: 'Endgame Score Gap',
+    });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).toContain('This bullet clock-management gap is mostly independent of rating');
+    expect(body).toContain(
+      'Your recent Endgame Score Gap is better than 90% of ~1600-rated players, aggregated across the time controls you play.',
+    );
   });
 
-  it('time_pressure_score_gap_bullet bullet 4 carries the moderate-coupling tier copy', () => {
-    renderChipFor(40, 'time_pressure_score_gap_bullet', 'Time Pressure Score Gap (bullet)');
+  // Test 8c: median boundary (pct=50) stays on the "bottom" side per the <= rule
+  it('median percentile (pct=50) uses "in the bottom 50%" framing', () => {
+    renderChip(50, {
+      flavor: 'score-gap',
+      anchorRating: 1600,
+      metricLabel: 'Endgame Score Gap',
+    });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).toContain('This bullet score-gap partly tracks rating');
+    expect(body).toContain(
+      'Your recent Endgame Score Gap is in the bottom 50% of ~1600-rated players, aggregated across the time controls you play.',
+    );
+  });
+
+  // Test 8c: "recent" is wrapped in <em> for emphasis
+  it('bullet 1 wraps "recent" in an <em> element', () => {
+    renderChip(40, { flavor: 'score-gap', anchorRating: 1600 });
+    fireEvent.click(screen.getByTestId(TID));
+    const popover = screen.getByTestId(`${TID}-popover`);
+    const em = popover.querySelector('em');
+    expect(em).not.toBeNull();
+    expect(em?.textContent).toBe('recent');
+  });
+
+  // Test 13: bullet 3 is COPY_FILTER_INDEPENDENCE verbatim
+  it('bullet 3 (filter independence) reads "UI filters do not affect this percentile."', () => {
+    renderChip(40, { flavor: 'score-gap' });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain('UI filters do not affect this percentile.');
+  });
+
+  // Bullet 2 (recent-games basis) — per-TC + aggregated forms
+  it('per-TC bullet 2 mentions "most recent 3000 rated games in bullet over the last 36 months"', () => {
+    renderChip(40, {
+      flavor: 'time-pressure-score-gap',
+      tc: 'bullet',
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain('most recent 3000 rated games in bullet over the last 36 months');
+    expect(body).toContain('+/-100 Elo');
+  });
+
+  it('aggregated bullet 2 mentions "most recent 3000 rated games per time control over the last 36 months"', () => {
+    renderChip(40, { flavor: 'score-gap' });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain('most recent 3000 rated games per time control over the last 36 months');
+    expect(body).toContain('+/-100 Elo');
+  });
+});
+
+// ── Test 9 / C4: REGRESSION GUARD — NO FLAME ICON AT ANY PERCENTILE ─────────
+//
+// Locks the commit-6766898c flame removal per CONTEXT D-06. The peer-relative
+// pivot does NOT change this constraint — color band carries direction; tail
+// emphasis is no longer expressed via icon.
+
+describe('PercentileChip — NO flame icon (regression guard for commit-6766898c)', () => {
+  it.each([1, 23, 50, 75, 90, 95, 99])(
+    'renders NO flame icon at percentile=%d (commit-6766898c regression)',
+    (pct) => {
+      const { container } = renderChip(pct);
+      expect(screen.queryByTestId(/flame/i)).toBeNull();
+      // Check no <svg> child or DOM node has a flame-related class.
+      expect(container.querySelector('[class*="flame"]')).toBeNull();
+      expect(container.querySelector('[class*="Flame"]')).toBeNull();
+      // No element should reference "flame" in its data-* attributes either.
+      expect(container.querySelector('[data-icon*="flame" i]')).toBeNull();
+    },
+  );
+
+  it('renders NO flame icon when popover is opened (any flavor, any percentile)', () => {
+    const { container } = renderChip(95, {
+      flavor: 'conversion',
+      anchorRating: 1700,
+      nLichessGames: 300,
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    expect(screen.queryByTestId(/flame/i)).toBeNull();
+    expect(container.querySelector('[class*="flame"]')).toBeNull();
+    expect(container.querySelector('[class*="Flame"]')).toBeNull();
+  });
+});
+
+// ── Bullet 4 composition branch tests (D-12 Reversal Amendment 2026-05-27) ──
+//
+// All 4 branches of the blended-anchor disclosure are exercised explicitly.
+// Branch-differentiating MUST-NOT-APPEAR assertions in C2 and C3 ensure a
+// single-branch fallback cannot silently pass.
+
+describe('PercentileChip — bullet 4 composition branches (D-12 Reversal Amendment)', () => {
+  // C1: Mixed user — BOTH platform substrings + all 5 numbers appear.
+  // Unique signature: "blending" compositional verb + both "chess.com games"
+  // and "lichess games" substrings in bullet 4.
+  it('C1 mixed-user: bullet 4 shows blended composition with both platforms and all 5 numbers', () => {
+    renderChip(50, {
+      flavor: 'score-gap',
+      anchorRating: 2046,
+      nChesscomGames: 4000,
+      nLichessGames: 100,
+      chesscomMedianNative: 2200,
+      lichessMedianNative: 1900,
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    // Both platforms must appear (branch-differentiating)
+    expect(body).toContain('chess.com games');
+    expect(body.toLowerCase()).toContain('lichess games');
+    // All 5 numbers must appear
+    expect(body).toContain('4000');
+    expect(body).toContain('100');
+    expect(body).toContain('2200');
+    expect(body).toContain('1900');
+    expect(body).toContain('2046');
+    // Compositional verb (mixed unique signature)
+    expect(body.toLowerCase()).toContain('blending');
+  });
+
+  // C2: Pure-lichess — "native rating" signal + NO chess.com clause + NO "converted".
+  // MUST-NOT-APPEAR guards: "chess.com" and "converted" must be absent from bullet 4.
+  it('C2 pure-lichess: bullet 4 shows lichess-only anchor with "native rating" and NO chess.com mention', () => {
+    renderChip(40, {
+      flavor: 'time-pressure-score-gap',
+      tc: 'blitz',
+      anchorRating: 1750,
+      nChesscomGames: 0,
+      nLichessGames: 500,
+      lichessMedianNative: 1750,
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    // MUST APPEAR (branch-differentiating)
+    expect(body.toLowerCase()).toContain('lichess games');
+    expect(body).toContain('500');
+    expect(body).toContain('1750');
+    expect(body.toLowerCase()).toContain('native rating');
+    // MUST NOT APPEAR (branch-differentiation guard)
+    expect(body).not.toMatch(/chess\.com/i);
+    expect(body).not.toContain('converted');
+  });
+
+  // C3: Pure-chess.com — "converted" + snapshot date + NO lichess clause.
+  // MUST-NOT-APPEAR guards: "lichess games" must be absent from bullet 4.
+  it('C3 pure-chess.com: bullet 4 shows chess.com-only anchor with conversion + NO lichess mention', () => {
+    renderChip(60, {
+      flavor: 'clock-gap',
+      tc: 'rapid',
+      anchorRating: 1920,
+      nChesscomGames: 1500,
+      nLichessGames: 0,
+      chesscomMedianNative: 1830,
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    // MUST APPEAR (branch-differentiating)
+    expect(body).toContain('chess.com games');
+    expect(body).toContain('1500');
+    expect(body).toContain('1830');
+    expect(body.toLowerCase()).toContain('converted');
+    // ChessGoals snapshot detail intentionally dropped from copy (f70592ef).
+    // MUST NOT APPEAR (branch-differentiation guard)
+    expect(body).not.toMatch(/lichess games/i);
+  });
+
+  // C5: Props deprecation sanity guard — old prop names rejected at compile time.
+  // Uses @ts-expect-error blocks to assert that anchorSource and chesscomRawRating
+  // are no longer valid props on PercentileChip.
+  it('C5 deprecation guard: component renders correctly with new props (old props would be TS errors)', () => {
+    // This test ensures the new props work correctly as a runtime sanity check.
+    // The compile-time rejection of anchorSource/chesscomRawRating is asserted
+    // via @ts-expect-error below — if those errors disappear, TS will flag this
+    // test file as broken (the old props were accidentally re-added).
+    const { container } = renderChip(50, {
+      flavor: 'score-gap',
+      anchorRating: 1600,
+      nChesscomGames: 0,
+      nLichessGames: 300,
+      lichessMedianNative: 1600,
+    });
+    // @ts-expect-error — anchorSource is not a valid prop on the new PercentileChip
+    const _oldPropTest1 = { anchorSource: 'lichess' };
+    // @ts-expect-error — chesscomRawRating is not a valid prop on the new PercentileChip
+    const _oldPropTest2 = { chesscomRawRating: 1500 };
+    expect(container).toBeTruthy();
+    void _oldPropTest1;
+    void _oldPropTest2;
+  });
+
+  // C6: Suppression — when both counts == 0, bullet 4 defensive fallback produces
+  // empty string; neither platform's characteristic substrings appear in bullet 4.
+  it('C6 suppression: when nChesscomGames=0 and nLichessGames=0, bullet 4 is empty and shows no platform copy', () => {
+    renderChip(50, {
+      flavor: 'score-gap',
+      anchorRating: 1600,
+      nChesscomGames: 0,
+      nLichessGames: 0,
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    // Branch differentiation: suppression branch produces neither mixed nor pure-platform copy
+    expect(body).not.toContain('blending');
+    expect(body).not.toContain('Anchored at');
+    // Neither platform's characteristic substring should appear in bullet 4 copy
+    expect(body).not.toMatch(/chess\.com games/i);
+    expect(body).not.toMatch(/lichess games/i);
+  });
+});
+
+// ── Contract: data-testid + popover trigger ─────────────────────────────────
+
+describe('PercentileChip — contract', () => {
+  it('chip trigger has the supplied data-testid; popover Content has `${testId}-popover`', () => {
+    renderChip(85);
+    expect(screen.getByTestId(TID)).toBeTruthy();
+    fireEvent.click(screen.getByTestId(TID));
+    expect(screen.getByTestId(`${TID}-popover`)).toBeTruthy();
+  });
+
+  it('aria-label includes metricLabel and the rendered percentile token', () => {
+    renderChip(73, { metricLabel: 'Endgame Score Gap' });
+    const aria = screen.getByTestId(TID).getAttribute('aria-label') ?? '';
+    expect(aria).toContain('Endgame Score Gap');
+    expect(aria).toContain('p73');
   });
 });

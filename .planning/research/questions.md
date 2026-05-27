@@ -99,3 +99,29 @@ We need a real number on prod: across imported lichess games, what fraction have
 **Why deferred:** sizes the eventual tactical-filter feature. If coverage is <10% across users, tactical filters need the client-side engine pipeline before they're useful. If coverage is 30%+ for engaged users, an "evals-only" tactical filter could ship without the engine pipeline.
 
 **Resolved:** _(open)_
+
+---
+
+## Q-006: DataFrame + plotting lib choice for the `analysis/` marimo environment
+
+**Asked:** 2026-05-27 (during `/gsd-explore` on analysis environment setup)
+
+**Context:** SEED-028 sets up an `analysis/` uv workspace member with marimo notebooks for data exploration against the three Postgres instances (dev/benchmark/prod). Two open library choices block "writing the first real notebook":
+
+1. **DataFrame:** polars vs pandas
+2. **Plotting:** plotly vs altair vs matplotlib
+
+Current leanings (not validated):
+- **polars** — faster on large benchmark queries (1.3M games, 95M positions), `pl.read_database` reads directly from a connection string, lazy frames are well-suited to "filter cohort → aggregate → chart" pipelines. Downside: less ecosystem (no native sklearn/seaborn integration), and the polars API differs enough from pandas that muscle memory transfers poorly.
+- **plotly** — interactive HTML out of the box, marimo renders plotly figures natively (`mo.ui.plotly` etc.), good for "scrub a slider, see the chart update" workflows. Downside: heavyweight (~3MB JS), and the API is verbose for simple charts.
+- **altair** — declarative grammar-of-graphics, marimo docs use altair in many examples, integrates with `mo.ui.altair_chart` for selections-as-state. Downside: Vega-Lite renderer can be slow on >10k points; no easy escape hatch to matplotlib quality.
+
+**How to answer:** When SEED-028 germinates, spike a 30-min comparison:
+1. Write the same chart (e.g. "distribution of conversion-rate scores per ELO bucket, faceted by TC") three ways: polars+plotly, polars+altair, pandas+plotly.
+2. Compare: lines of code, render speed on the full benchmark dataset, how natural the marimo reactive bindings feel.
+3. Pick one combo as the default; document in `analysis/README.md`.
+
+**Why deferred:** No analysis notebook exists yet to drive the decision. Pre-emptive lib choice without a real workload risks optimizing the wrong axis (e.g. picking polars for speed when the actual workload is plot-iteration time, not query time).
+
+**Resolved:** _(open)_
+

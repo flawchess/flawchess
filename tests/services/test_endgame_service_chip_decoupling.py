@@ -26,6 +26,7 @@ user_benchmark_percentiles_repository = pytest.importorskip(
     "app.repositories.user_benchmark_percentiles_repository"
 )
 
+from app.models.user_rating_anchors import TimeControlBucket  # noqa: E402
 from app.repositories.user_benchmark_percentiles_repository import (  # noqa: E402
     PercentileRow,
     fetch_for_user,
@@ -47,6 +48,8 @@ _KNOWN_CONV_PERCENTILE: float = 41.0
 _KNOWN_PARITY_PERCENTILE: float = 68.0
 _CDF_SNAPSHOT: datetime.date = datetime.date(2026, 3, 31)
 _SEED_VALUE: float = 0.05  # arbitrary canonical-slice metric value
+_SEED_N_GAMES: int = 42  # Phase 94.4 D-08: pooled n_games per (metric, TC) cell
+_SEED_TC: TimeControlBucket = "blitz"  # canonical-slice fixtures all use blitz
 
 pytestmark = pytest.mark.asyncio
 
@@ -59,29 +62,50 @@ def _make_percentile_rows(
     achievable: float | None = _KNOWN_ACHIEVABLE_PERCENTILE,
     conv: float | None = _KNOWN_CONV_PERCENTILE,
     parity: float | None = _KNOWN_PARITY_PERCENTILE,
-) -> dict[CdfMetricId, PercentileRow]:
-    """Build a percentile_rows dict for direct injection into service functions."""
+) -> dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]:
+    """Build a nested percentile_rows dict for direct injection into service
+    functions.
+
+    Phase 94.4 D-08: the shape is dict[CdfMetricId, dict[TimeControlBucket,
+    PercentileRow]]; the page-level chip aggregator
+    ``_aggregate_per_tc_percentile`` reduces the per-TC inner dict to a single
+    weighted-mean scalar. A single-TC entry passes the percentile through
+    unchanged, so seeding ``{_SEED_TC: PercentileRow(...)}`` per metric keeps
+    the chip values byte-identical to the pre-94.4 single-row contract.
+    """
     return {
-        "score_gap": PercentileRow(
-            value=_SEED_VALUE,
-            percentile=score_gap,
-            cdf_snapshot=_CDF_SNAPSHOT,
-        ),
-        "achievable_score_gap": PercentileRow(
-            value=_SEED_VALUE,
-            percentile=achievable,
-            cdf_snapshot=_CDF_SNAPSHOT,
-        ),
-        "section2_score_gap_conv": PercentileRow(
-            value=_SEED_VALUE,
-            percentile=conv,
-            cdf_snapshot=_CDF_SNAPSHOT,
-        ),
-        "section2_score_gap_parity": PercentileRow(
-            value=_SEED_VALUE,
-            percentile=parity,
-            cdf_snapshot=_CDF_SNAPSHOT,
-        ),
+        "score_gap": {
+            _SEED_TC: PercentileRow(
+                value=_SEED_VALUE,
+                percentile=score_gap,
+                cdf_snapshot=_CDF_SNAPSHOT,
+                n_games=_SEED_N_GAMES,
+            ),
+        },
+        "achievable_score_gap": {
+            _SEED_TC: PercentileRow(
+                value=_SEED_VALUE,
+                percentile=achievable,
+                cdf_snapshot=_CDF_SNAPSHOT,
+                n_games=_SEED_N_GAMES,
+            ),
+        },
+        "score_gap_conv": {
+            _SEED_TC: PercentileRow(
+                value=_SEED_VALUE,
+                percentile=conv,
+                cdf_snapshot=_CDF_SNAPSHOT,
+                n_games=_SEED_N_GAMES,
+            ),
+        },
+        "score_gap_parity": {
+            _SEED_TC: PercentileRow(
+                value=_SEED_VALUE,
+                percentile=parity,
+                cdf_snapshot=_CDF_SNAPSHOT,
+                n_games=_SEED_N_GAMES,
+            ),
+        },
     }
 
 
@@ -154,10 +178,10 @@ async def test_chip_percentile_unchanged_across_filter_toggles(
     # But the chip is invariant (D-12 / PCTL-07)
     assert result_a.score_gap_percentile == _KNOWN_SCORE_GAP_PERCENTILE
     assert result_b.score_gap_percentile == _KNOWN_SCORE_GAP_PERCENTILE
-    assert result_a.section2_score_gap_conv_percentile == _KNOWN_CONV_PERCENTILE
-    assert result_b.section2_score_gap_conv_percentile == _KNOWN_CONV_PERCENTILE
-    assert result_a.section2_score_gap_parity_percentile == _KNOWN_PARITY_PERCENTILE
-    assert result_b.section2_score_gap_parity_percentile == _KNOWN_PARITY_PERCENTILE
+    assert result_a.score_gap_conv_percentile == _KNOWN_CONV_PERCENTILE
+    assert result_b.score_gap_conv_percentile == _KNOWN_CONV_PERCENTILE
+    assert result_a.score_gap_parity_percentile == _KNOWN_PARITY_PERCENTILE
+    assert result_b.score_gap_parity_percentile == _KNOWN_PARITY_PERCENTILE
 
 
 # ── Test 2 — V4 cross-user scope ──────────────────────────────────────────────
@@ -182,11 +206,13 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
     await ensure_test_user(db_session, _TEST_USER_A_ID)
     await ensure_test_user(db_session, _TEST_USER_B_ID)
 
-    # Seed user A with the known value
+    # Seed user A with the known value (Phase 94.4 D-01: PK widens to include
+    # time_control_bucket; canonical-slice fixtures all use blitz).
     await upsert_percentile(
         db_session,
         user_id=_TEST_USER_A_ID,
         metric="score_gap",
+        time_control_bucket=_SEED_TC,
         value=_SEED_VALUE,
         n_games=42,
         percentile=_KNOWN_SCORE_GAP_PERCENTILE,
@@ -197,6 +223,7 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
         db_session,
         user_id=_TEST_USER_B_ID,
         metric="score_gap",
+        time_control_bucket=_SEED_TC,
         value=_SEED_VALUE,
         n_games=42,
         percentile=_USER_B_PERCENTILE,
@@ -204,10 +231,13 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
     )
     await db_session.flush()
 
-    # Fetch as user A — must return user A's percentile, NOT user B's
+    # Fetch as user A — must return user A's percentile, NOT user B's. Phase
+    # 94.4 D-08 nested shape: result["score_gap"][_SEED_TC] is the
+    # PercentileRow; the outer key holds the per-TC inner dict.
     rows_a = await fetch_for_user(db_session, user_id=_TEST_USER_A_ID)
     assert "score_gap" in rows_a, "user A must have a score_gap row"
-    row_a = rows_a["score_gap"]
+    assert _SEED_TC in rows_a["score_gap"], "user A must have a blitz row"
+    row_a = rows_a["score_gap"][_SEED_TC]
     assert row_a.percentile is not None
     assert abs(row_a.percentile - _KNOWN_SCORE_GAP_PERCENTILE) < 1e-9, (
         "user A's percentile must match the planted value (V4 guard)"
@@ -219,7 +249,8 @@ async def test_chip_percentile_scopes_by_authenticated_user_id(
     # Fetch as user B — must return user B's percentile, NOT user A's
     rows_b = await fetch_for_user(db_session, user_id=_TEST_USER_B_ID)
     assert "score_gap" in rows_b, "user B must have a score_gap row"
-    row_b = rows_b["score_gap"]
+    assert _SEED_TC in rows_b["score_gap"], "user B must have a blitz row"
+    row_b = rows_b["score_gap"][_SEED_TC]
     assert row_b.percentile is not None
     assert abs(row_b.percentile - _USER_B_PERCENTILE) < 1e-9, (
         "user B's percentile must match their planted value (V4 guard)"
@@ -239,8 +270,9 @@ async def test_chip_percentile_is_none_when_no_row_in_table(
     This is the "not yet computed" state for new users who have not yet gone
     through Stage A / Stage B.
     """
-    # Empty percentile_rows — user has no materialised rows yet
-    empty_rows: dict[CdfMetricId, PercentileRow] = {}
+    # Empty percentile_rows — user has no materialised rows yet (Phase 94.4
+    # D-08 nested shape).
+    empty_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {}
 
     result = _compute_score_gap_material(
         _zero_wdl(),
@@ -251,11 +283,11 @@ async def test_chip_percentile_is_none_when_no_row_in_table(
     assert result.score_gap_percentile is None, (
         "score_gap_percentile must be None when no materialised row exists"
     )
-    assert result.section2_score_gap_conv_percentile is None, (
-        "section2_score_gap_conv_percentile must be None when no materialised row exists"
+    assert result.score_gap_conv_percentile is None, (
+        "score_gap_conv_percentile must be None when no materialised row exists"
     )
-    assert result.section2_score_gap_parity_percentile is None, (
-        "section2_score_gap_parity_percentile must be None when no materialised row exists"
+    assert result.score_gap_parity_percentile is None, (
+        "score_gap_parity_percentile must be None when no materialised row exists"
     )
 
     perf = _get_endgame_performance_from_rows([], [], [], percentile_rows=empty_rows)
@@ -284,27 +316,42 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
     percentile column can still be NULL if the CDF lookup returns None for an
     out-of-range value. This test verifies the API handles NULL percentile correctly.
     """
-    null_pct_rows: dict[CdfMetricId, PercentileRow] = {
-        "score_gap": PercentileRow(
-            value=0.01,
-            percentile=None,
-            cdf_snapshot=_CDF_SNAPSHOT,
-        ),
-        "achievable_score_gap": PercentileRow(
-            value=0.02,
-            percentile=None,
-            cdf_snapshot=_CDF_SNAPSHOT,
-        ),
-        "section2_score_gap_conv": PercentileRow(
-            value=0.01,
-            percentile=None,
-            cdf_snapshot=_CDF_SNAPSHOT,
-        ),
-        "section2_score_gap_parity": PercentileRow(
-            value=0.01,
-            percentile=None,
-            cdf_snapshot=_CDF_SNAPSHOT,
-        ),
+    # Phase 94.4 D-08: nested shape; below-floor or out-of-range cells
+    # have ``percentile=None`` on the PercentileRow and the aggregator drops
+    # them, so the page-level chip surfaces as None per D-08a.
+    null_pct_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+        "score_gap": {
+            _SEED_TC: PercentileRow(
+                value=0.01,
+                percentile=None,
+                cdf_snapshot=_CDF_SNAPSHOT,
+                n_games=_SEED_N_GAMES,
+            ),
+        },
+        "achievable_score_gap": {
+            _SEED_TC: PercentileRow(
+                value=0.02,
+                percentile=None,
+                cdf_snapshot=_CDF_SNAPSHOT,
+                n_games=_SEED_N_GAMES,
+            ),
+        },
+        "score_gap_conv": {
+            _SEED_TC: PercentileRow(
+                value=0.01,
+                percentile=None,
+                cdf_snapshot=_CDF_SNAPSHOT,
+                n_games=_SEED_N_GAMES,
+            ),
+        },
+        "score_gap_parity": {
+            _SEED_TC: PercentileRow(
+                value=0.01,
+                percentile=None,
+                cdf_snapshot=_CDF_SNAPSHOT,
+                n_games=_SEED_N_GAMES,
+            ),
+        },
     }
 
     result = _compute_score_gap_material(
@@ -316,11 +363,11 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
     assert result.score_gap_percentile is None, (
         "score_gap_percentile must be None when percentile column is NULL"
     )
-    assert result.section2_score_gap_conv_percentile is None, (
-        "section2_score_gap_conv_percentile must be None when percentile column is NULL"
+    assert result.score_gap_conv_percentile is None, (
+        "score_gap_conv_percentile must be None when percentile column is NULL"
     )
-    assert result.section2_score_gap_parity_percentile is None, (
-        "section2_score_gap_parity_percentile must be None when percentile column is NULL"
+    assert result.score_gap_parity_percentile is None, (
+        "score_gap_parity_percentile must be None when percentile column is NULL"
     )
 
     perf = _get_endgame_performance_from_rows([], [], [], percentile_rows=null_pct_rows)

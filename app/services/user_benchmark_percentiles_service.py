@@ -1,42 +1,68 @@
 """Per-user pooled percentile compute service.
 
-Phase 94.2 (supersedes Phase 94.1 Plan 13): the per-user compute consumes
-the pooled-per-user CTE from ``app/services/canonical_slice_sql.py``. Each
-``(user_id, metric_id)`` lookup runs a single SQL query that emits either
-one row (``metric_value``, ``n_games``) or zero rows (user below the ≥30
-floor on the pooled set). The Plan 13 dual-query / dual-floor mechanism and
-the ``apply_floor`` argument are gone — no cells, no averaging.
+Phase 94.4 Plan 05b — cohort-keyed percentile cutover
+-----------------------------------------------------
 
-The compute helper returns ``tuple[float, int] | None``; Stage A/B
-destructure ``(value, n_games)`` and pass both to ``upsert_percentile`` per
-D-9-amend.
+Rewrite of the post-94.3 service to consume the new cohort CDF artifact
+(``COHORT_PERCENTILE_CDF`` via ``interpolate_cohort_percentile``) and the
+per-(user, TC) median rating anchor (``user_rating_anchors``). The old
+flat 12-name TC-suffixed Stage B metric tuple retires; Stage B now iterates
+``STAGE_B_METRIC_FAMILIES`` (7-tuple) × the user's above-floor TCs and
+the legacy 2-arg ``interpolate_percentile`` helper is no longer called.
 
-Stage A/B trigger contract preserved verbatim from 94.1 (PCTL-09):
+Stage A (eval-independent — wired into import completion per D-03):
 
-- ``compute_stage_a(user_id)`` — eval-independent; computes ``score_gap``
-  from the pooled per-user CTE and UPSERTs one row. Hooked by
-  ``_complete_import_job`` in ``app/services/import_service.py`` (D-03) via
-  ``asyncio.create_task``, AFTER the import transaction commits.
+  1. Compute and UPSERT per-(user, TC) median rating anchors via the
+     ``compute_anchors_for_user`` helper. Anchors come FIRST (RESEARCH
+     Pitfall 9 backfill ordering) so the per-TC ``score_gap`` percentile
+     lookup downstream can read the anchor's ``anchor_rating`` to key
+     into ``COHORT_PERCENTILE_CDF[(anchor, tc)]``.
+  2. For each TC where an anchor exists, run
+     ``per_user_cte_score_gap_tc(tc, source='single_user', ...)`` to read
+     the user's per-TC ``score_gap``, then interpolate against the
+     cohort CDF at ``(metric='score_gap', anchor=<lichess-equivalent>,
+     tc=<bucket>)`` and UPSERT one
+     ``user_benchmark_percentiles(user_id, metric, time_control_bucket)``
+     row.
 
-- ``compute_stage_b(user_id)`` — eval-dependent; computes 3 metrics
-  (``achievable_score_gap``, ``section2_score_gap_conv``,
-  ``section2_score_gap_parity``). Hooked by ``eval_drain.py`` when a user's
-  pending-eval count reaches zero (D-01). Same fire-and-forget pattern.
+Stage B (eval-dependent — wired into eval drain per D-01): for each
+metric family in ``STAGE_B_METRIC_FAMILIES`` × each TC with an above-floor
+anchor, dispatch to the matching per-TC builder, interpolate against the
+cohort CDF, and UPSERT one row per (family, tc).
 
-Both stages do NOT run inside the import transaction (ROADMAP success
-criterion 3). Both are non-blocking — exceptions are captured to Sentry and
+Game-weighted blended anchor (D-12 Reversal Amendment, 2026-05-27):
+
+  ``compute_anchors_for_user`` implements the blended anchor per the
+  D-12 Reversal Amendment. Per-game conversion is done SQL-side via the
+  ``chesscom_conversion_lookup`` VALUES CTE in
+  ``per_user_cte_median_anchor(blend=True)``:
+
+  - chess.com (non-Daily) games: converted per-game to lichess-equivalent
+    via the nearest anchor in ``CHESSCOM_BLITZ_TO_LICHESS``.
+  - Lichess games: pass through native rating unchanged.
+  - The per-user median of the combined pool is the blended anchor.
+  - Per-platform game counts and native medians are persisted alongside
+    the blended anchor for tooltip disclosure (D-07 bullet 4, amended).
+  - Suppression rule: skip TC if pooled count < MEDIAN_ANCHOR_MIN_GAMES.
+
+  The original Lichess-precedence rule (D-12 original) and the
+  ``_compute_median_anchor_for_platform`` / ``_user_has_lichess_games_in_tc``
+  helpers are retired. Design-decision record:
+  ``.planning/notes/percentile-anchor-d12-reversal.md``.
+
+Both stages remain non-blocking — exceptions are captured to Sentry and
 swallowed (D-04); neither propagates back to the import worker or drain
 coroutine.
 
-Stage A / Stage B race-condition non-issue (RESEARCH Pitfall 2):
-  The 4 metrics are partitioned between stages: Stage A owns ``score_gap``,
-  Stage B owns the other 3. Each stage writes disjoint ``(user_id, metric)``
-  PK rows. Even when both stages race on a first import, they never conflict.
+Sentry pattern (CLAUDE.md Backend Rules):
+  Variables flow into ``sentry_sdk.set_context("percentile_compute",
+  {...})`` (user_id, stage, metric, tc) BEFORE
+  ``sentry_sdk.capture_exception(exc)``. No variables in error messages —
+  preserves Sentry issue grouping per CLAUDE.md.
 
-Security (V5 — T-94.2-03-01):
-  ``user_id`` flows through the query via a SQLAlchemy named bindparam
-  (``:user_id``) on a static SQL template. It is never f-stringed into the
-  query string.
+Security (V5 — T-94.2-03-01 / preserved):
+  ``user_id`` flows through every CTE via the SQLAlchemy named bindparam
+  ``:user_id`` on static SQL templates (no f-stringed user input).
 
 Session discipline (CLAUDE.md hard rule):
   Each ``compute_stage_*`` opens its own session via the resolved
@@ -44,11 +70,16 @@ Session discipline (CLAUDE.md hard rule):
   site (D-04).
 
 ``session_maker`` keyword parameter (enables Plan 06 backfill):
-  Both entry points accept an optional ``session_maker`` kwarg. When None,
-  they fall back to ``app.core.database.async_session_maker`` (the app DB).
+  Both entry points accept an optional ``session_maker`` kwarg. When
+  None, they fall back to ``app.core.database.async_session_maker``.
   When provided, they use the injected factory — this lets the backfill
-  script target a different DB URL (e.g., prod via the tunnel) without
-  mutating module-level state.
+  script target a different DB URL without mutating module-level state.
+
+Stage A / Stage B race-condition non-issue (RESEARCH Pitfall 2):
+  Stage A owns ``(score_gap, *)`` percentile rows + ALL anchor rows.
+  Stage B owns the other 7 metric families × {bullet, blitz, rapid,
+  classical}. The PK is now ``(user_id, metric, time_control_bucket)``
+  so disjoint writes never collide.
 """
 
 from __future__ import annotations
@@ -61,75 +92,124 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import async_session_maker as _default_session_maker
+from app.models.user_rating_anchors import TimeControlBucket
 from app.repositories.user_benchmark_percentiles_repository import upsert_percentile
+from app.repositories.user_rating_anchors_repository import (
+    RatingAnchorRow,
+    fetch_anchors_for_user,
+    upsert_anchor,
+)
 from app.services.canonical_slice_sql import (
-    per_user_cte_for,
+    MEDIAN_ANCHOR_MIN_GAMES,
+    per_user_cte_achievable_tc,
+    per_user_cte_clock_gap,
+    per_user_cte_median_anchor,
+    per_user_cte_net_flag_rate,
+    per_user_cte_score_gap_tc,
+    per_user_cte_score_gap_bucket_tc,
+    per_user_cte_time_pressure_score_gap,
     selected_users_cte,
 )
-from app.services.global_percentile_cdf import CdfMetricId, interpolate_percentile
+from app.services.global_percentile_cdf import CdfMetricId, interpolate_cohort_percentile
 
 # ---------------------------------------------------------------------------
-# Module-level constants (CLAUDE.md: no magic numbers; mirrors CONTEXT D-10).
+# Module-level constants (CLAUDE.md: no magic numbers).
 # ---------------------------------------------------------------------------
 
+# Sweep order — canonical bullet → blitz → rapid → classical. Matches
+# ``ALL_TIME_CONTROLS`` in ``scripts/gen_global_percentile_cdf.py`` so two
+# sides of the percentile pipeline iterate TCs in identical order.
+_ALL_TIME_CONTROLS: tuple[TimeControlBucket, ...] = (
+    "bullet",
+    "blitz",
+    "rapid",
+    "classical",
+)
+
+
+# Stage A metric — eval-independent, runs at import-completion time.
 STAGE_A_METRIC: CdfMetricId = "score_gap"
-STAGE_B_METRICS: tuple[CdfMetricId, ...] = (
+
+# Stage B metric families (7-tuple) — eval-dependent, runs at cold-drain
+# time. Each family is computed per the user's above-floor TCs; the legacy
+# 12-tuple of TC-suffixed names retires (CONTEXT D-13 — the 8-value
+# CdfMetricId Literal lifts TC out of the metric name into the
+# COHORT_PERCENTILE_CDF outer key).
+STAGE_B_METRIC_FAMILIES: tuple[CdfMetricId, ...] = (
     "achievable_score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
-    # Phase 94.3 per-(metric × TC) time-pressure additions (CONTEXT.md D-7/D-10).
-    # All 12 cells compute in Stage B (post-cold-drain): Time Pressure Score Gap
-    # and Clock Gap both depend on Stockfish-eval-derived endgame-entry detection;
-    # Net Flag Rate is outcome-only and could be Stage A, but bundles with Stage B
-    # to avoid a special-case hook. Order mirrors the IN_SCOPE_METRICS tuple in
-    # scripts/gen_global_percentile_cdf.py and the benchmark_metric ENUM (post
-    # 20260524_170733 migration).
-    "time_pressure_score_gap_bullet",
-    "time_pressure_score_gap_blitz",
-    "time_pressure_score_gap_rapid",
-    "time_pressure_score_gap_classical",
-    "clock_gap_bullet",
-    "clock_gap_blitz",
-    "clock_gap_rapid",
-    "clock_gap_classical",
-    "net_flag_rate_bullet",
-    "net_flag_rate_blitz",
-    "net_flag_rate_rapid",
-    "net_flag_rate_classical",
+    "score_gap_conv",
+    "score_gap_parity",
+    "recovery_score_gap",
+    "time_pressure_score_gap",
+    "clock_gap",
+    "net_flag_rate",
 )
 
 
 # ---------------------------------------------------------------------------
-# Internal helper.
+# Internal helpers.
 # ---------------------------------------------------------------------------
 
 
-async def _compute_metric_for_user(
+def _per_user_cte_for_family_and_tc(
+    family: CdfMetricId,
+    tc: TimeControlBucket,
+) -> str:
+    """Dispatch to the per-TC ``per_user_values`` CTE builder for one family.
+
+    Mirrors ``scripts/gen_global_percentile_cdf.py::_per_user_cte_for_metric_and_tc``
+    so the benchmark-side and single-user-side compute consume byte-identical
+    SQL pooled bodies (D-10 source-mode parity). The dispatch covers all 8
+    CdfMetricId values; Stage A passes ``family='score_gap'`` and Stage B
+    passes one of the other 7 families.
+    """
+    if family == "score_gap":
+        return per_user_cte_score_gap_tc(tc, source="single_user", snapshot_date=None)
+    if family == "achievable_score_gap":
+        return per_user_cte_achievable_tc(tc, source="single_user", snapshot_date=None)
+    if family == "score_gap_conv":
+        return per_user_cte_score_gap_bucket_tc(
+            tc, source="single_user", snapshot_date=None, bucket_label="conversion"
+        )
+    if family == "score_gap_parity":
+        return per_user_cte_score_gap_bucket_tc(
+            tc, source="single_user", snapshot_date=None, bucket_label="parity"
+        )
+    if family == "recovery_score_gap":
+        return per_user_cte_score_gap_bucket_tc(
+            tc, source="single_user", snapshot_date=None, bucket_label="recovery"
+        )
+    if family == "time_pressure_score_gap":
+        return per_user_cte_time_pressure_score_gap(tc, source="single_user", snapshot_date=None)
+    if family == "clock_gap":
+        return per_user_cte_clock_gap(tc, source="single_user", snapshot_date=None)
+    if family == "net_flag_rate":
+        return per_user_cte_net_flag_rate(tc, source="single_user", snapshot_date=None)
+    # Defensive — the CdfMetricId Literal closes the value set; an unhandled
+    # branch indicates a missed dispatcher arm rather than user input.
+    raise ValueError(f"Unknown CdfMetricId for per-TC dispatch: {family!r}")
+
+
+async def _compute_metric_for_user_per_tc(
     session: AsyncSession,
     user_id: int,
-    metric_id: CdfMetricId,
+    family: CdfMetricId,
+    tc: TimeControlBucket,
 ) -> tuple[float, int] | None:
-    """Run the pooled-per-user CTE for one user and one metric (Phase 94.2).
+    """Run the per-TC pooled CTE for one user, one metric family, one TC.
 
     Returns ``(metric_value, n_games)`` from the single row of
-    ``per_user_values``, or ``None`` if the user is below the metric's ≥30
-    inclusion floor (the CTE's HAVING clause emits no row).
+    ``per_user_values``, or ``None`` if the user is below the metric's
+    per-TC ≥30 inclusion floor (the CTE's HAVING clause emits no row).
 
-    Phase 94.2 supersedes the 94.1 Plan 13 single-query-with-``apply_floor=True``
-    path: under the pooled model there are no per-(elo_bucket, tc_bucket) cells
-    to average, so the prior ``avg(metric_value)`` wrapper is gone. One row
-    per user → SELECT (value, n_games) directly.
-
-    Return-type widening to ``tuple[float, int] | None`` (from 94.1's
-    ``float | None``) is per CONTEXT.md Amendment 2026-05-24 (D-9-amend):
-    ``n_games`` is re-added to the storage table and must thread from the CTE
-    to the UPSERT.
-
-    Security (V5): ``user_id`` is bound via SQLAlchemy ``.bindparams()``,
-    never f-stringed into the query text.
+    The metric-family-to-builder dispatch is delegated to
+    ``_per_user_cte_for_family_and_tc``; this function only handles the
+    SQL composition (selected_users_cte + per_user_values block) and row
+    materialisation. ``user_id`` is bound via ``.bindparams()``; never
+    f-stringed (V5).
     """
     su_cte = selected_users_cte(source="single_user")
-    pooled_cte = per_user_cte_for(metric_id, source="single_user", snapshot_date=None)
+    pooled_cte = _per_user_cte_for_family_and_tc(family, tc)
     sql = (
         f"WITH {su_cte},\n{pooled_cte}\n"
         f"SELECT metric_value::float AS value, n_games::int AS n_games\n"
@@ -144,6 +224,100 @@ async def _compute_metric_for_user(
 
 
 # ---------------------------------------------------------------------------
+# compute_anchors_for_user — D-12 Reversal Amendment: blended anchor.
+# ---------------------------------------------------------------------------
+
+
+async def compute_anchors_for_user(
+    session: AsyncSession,
+    user_id: int,
+) -> dict[TimeControlBucket, RatingAnchorRow]:
+    """Compute per-(user, TC) blended anchors and UPSERT them.
+
+    D-12 Reversal Amendment (CONTEXT 2026-05-27). Per-game conversion +
+    pooled median: chess.com (non-Daily) games convert via the ChessGoals
+    snapshot to lichess-equivalent; lichess games pass through native;
+    the per-user median of the pooled set is the anchor. Per-platform
+    game counts and native medians are emitted alongside for tooltip
+    composition disclosure (D-07 bullet 4 amendment-revised; rendered by
+    Plan 11's PercentileChip tooltip body).
+
+    See ``.planning/notes/percentile-anchor-d12-reversal.md`` for the
+    design-decision record (rationale, risk profile, why D-12 was walked
+    back).
+
+    Suppression rule: if the pooled count (n_chesscom_games +
+    n_lichess_games) < MEDIAN_ANCHOR_MIN_GAMES for a TC, no anchor row is
+    produced for that TC and the chip suppresses naturally.
+
+    Sentry pattern (CLAUDE.md):
+      Per-TC exceptions trip an inner try/except; ``set_context`` carries
+      ``user_id``, ``stage='anchor'``, ``tc`` BEFORE ``capture_exception``.
+      No variables in error messages (V4 / CLAUDE.md Backend Rules).
+    """
+    anchors: dict[TimeControlBucket, RatingAnchorRow] = {}
+    for tc in _ALL_TIME_CONTROLS:
+        try:
+            su_cte = selected_users_cte(source="single_user")
+            anchor_cte = per_user_cte_median_anchor(
+                tc,
+                source="single_user",
+                snapshot_date=None,
+                blend=True,
+                min_games=MEDIAN_ANCHOR_MIN_GAMES,
+            )
+            sql = (
+                f"WITH {su_cte},\n{anchor_cte}\n"
+                f"SELECT anchor_rating::int AS anchor_rating, "
+                f"n_chesscom_games::int AS n_chesscom_games, "
+                f"n_lichess_games::int AS n_lichess_games, "
+                f"chesscom_median_native AS chesscom_median_native, "
+                f"lichess_median_native AS lichess_median_native "
+                f"FROM per_user_anchor LIMIT 1"
+            )
+            result = await session.execute(text(sql).bindparams(user_id=user_id))
+            row = result.fetchone()
+            if row is None or row.anchor_rating is None:
+                # Below MEDIAN_ANCHOR_MIN_GAMES on the pooled count, OR
+                # the user has zero non-Daily games — chip suppresses
+                # for that (user, TC) per amendment §Suppression rule.
+                continue
+            chesscom_median = (
+                int(row.chesscom_median_native) if row.chesscom_median_native is not None else None
+            )
+            lichess_median = (
+                int(row.lichess_median_native) if row.lichess_median_native is not None else None
+            )
+            await upsert_anchor(
+                session,
+                user_id=user_id,
+                time_control_bucket=tc,
+                anchor_rating=int(row.anchor_rating),
+                n_chesscom_games=int(row.n_chesscom_games),
+                n_lichess_games=int(row.n_lichess_games),
+                chesscom_median_native=chesscom_median,
+                lichess_median_native=lichess_median,
+            )
+            anchors[tc] = RatingAnchorRow(
+                anchor_rating=int(row.anchor_rating),
+                n_chesscom_games=int(row.n_chesscom_games),
+                n_lichess_games=int(row.n_lichess_games),
+                chesscom_median_native=chesscom_median,
+                lichess_median_native=lichess_median,
+            )
+        except asyncio.CancelledError:
+            raise  # lifespan shutdown contract
+        except Exception as exc:
+            # Per-TC capture: other TCs keep computing.
+            sentry_sdk.set_context(
+                "percentile_compute",
+                {"user_id": user_id, "stage": "anchor", "tc": tc},
+            )
+            sentry_sdk.capture_exception(exc)
+    return anchors
+
+
+# ---------------------------------------------------------------------------
 # Public entry points.
 # ---------------------------------------------------------------------------
 
@@ -153,38 +327,63 @@ async def compute_stage_a(
     *,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    """Compute and UPSERT the ``score_gap`` percentile for one user.
+    """Compute anchors + per-TC ``score_gap`` percentiles for one user.
 
     Background task — never propagates exceptions back to the trigger site
     (D-04 / ROADMAP SC-3). Called by ``_complete_import_job`` via
     ``asyncio.create_task`` after the import transaction commits.
 
-    Floor convention (Phase 94.2): if ``_compute_metric_for_user`` returns
-    None (user below ≥30 pooled floor), no row is written. The chip
-    suppresses naturally.
+    Backfill ordering (RESEARCH Pitfall 9): anchors are computed FIRST,
+    then per-TC ``score_gap`` percentiles are interpolated against the
+    cohort CDF at ``(anchor_rating, tc)``. If the user has no above-floor
+    anchors (all TCs below floor or all chess.com anchors out-of-range),
+    no percentile rows are written and the chip suppresses naturally.
     """
     maker = session_maker if session_maker is not None else _default_session_maker
     try:
         async with maker() as session:
-            result = await _compute_metric_for_user(session, user_id, STAGE_A_METRIC)
-            # If result is None (below pooled floor): no row, early exit.
-            if result is None:
-                return
-            value, n_games = result
-            percentile: float | None = interpolate_percentile(STAGE_A_METRIC, value)
-            await upsert_percentile(
-                session,
-                user_id=user_id,
-                metric=STAGE_A_METRIC,
-                value=value,
-                n_games=n_games,
-                percentile=percentile,
-                cdf_snapshot=date.today(),
-            )
+            anchors = await compute_anchors_for_user(session, user_id)
+            for tc, anchor in anchors.items():
+                try:
+                    result = await _compute_metric_for_user_per_tc(
+                        session, user_id, STAGE_A_METRIC, tc
+                    )
+                    if result is None:
+                        # Below per-TC floor for score_gap → no row.
+                        continue
+                    value, n_games = result
+                    percentile: float | None = interpolate_cohort_percentile(
+                        STAGE_A_METRIC, value, anchor.anchor_rating, tc
+                    )
+                    await upsert_percentile(
+                        session,
+                        user_id=user_id,
+                        metric=STAGE_A_METRIC,
+                        time_control_bucket=tc,
+                        value=value,
+                        n_games=n_games,
+                        percentile=percentile,
+                        cdf_snapshot=date.today(),
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    # Per-TC capture: other TCs continue.
+                    sentry_sdk.set_context(
+                        "percentile_compute",
+                        {
+                            "user_id": user_id,
+                            "stage": "A",
+                            "metric": STAGE_A_METRIC,
+                            "tc": tc,
+                        },
+                    )
+                    sentry_sdk.capture_exception(exc)
             await session.commit()
     except asyncio.CancelledError:
-        raise  # lifespan shutdown contract (eval_drain.py:550-554)
+        raise  # lifespan shutdown contract
     except Exception as exc:
+        # Top-level capture for session-open / commit / anchor-compute failures.
         # CLAUDE.md Backend Rules: variables via set_context, NEVER in message.
         sentry_sdk.set_context("percentile_compute", {"user_id": user_id, "stage": "A"})
         sentry_sdk.capture_exception(exc)
@@ -196,60 +395,76 @@ async def compute_stage_b(
     *,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    """Compute and UPSERT the 3 eval-dependent percentiles for one user.
+    """Compute the 7 eval-dependent metric families × user's above-floor TCs.
 
     Background task — never propagates exceptions (D-04 / ROADMAP SC-3).
-    Called by ``eval_drain.py`` via ``asyncio.create_task`` once the user's
-    pending-eval count reaches zero AND no active import is in progress (D-01 /
-    Plan 13 Stage B gate — see ``users_with_zero_pending`` in game_repository.py).
+    Called by ``eval_drain.py`` via ``asyncio.create_task`` once the
+    user's pending-eval count reaches zero AND no active import is in
+    progress (D-01 / Plan 13 Stage B gate).
 
-    A single session is opened for all 3 metrics (halves session-open overhead
-    vs per-metric sessions). Per-metric errors are isolated: an inner
-    try/except wraps each metric's compute + UPSERT so a failure in one metric
-    does not prevent the others from being written. All 3 are committed in one
-    ``session.commit()`` at the end; if an individual metric fails its inner
-    try/except catches and reports it to Sentry, and the loop continues.
+    Reads anchors from ``user_rating_anchors`` via
+    ``fetch_anchors_for_user`` — Stage A is the canonical writer, so by
+    the time Stage B runs the user's anchors are persisted. If no anchors
+    exist (Stage A failed, all TCs below floor, etc.), Stage B is a
+    no-op — the chip suppresses naturally for the user.
 
-    Floor convention (Phase 94.2): if ``_compute_metric_for_user`` returns
-    None for a metric, no row is written for that metric. The loop simply
-    continues to the next metric.
+    Per-(family, tc) errors are isolated: an inner try/except wraps each
+    cell's compute + UPSERT so a failure in one cell does not prevent
+    the others from being written. All cells are committed in one
+    ``session.commit()`` at the end.
 
-    Stage A / Stage B race: the 4 metrics are disjoint across the two stages,
-    so concurrent UPSERTs for the same user never collide (RESEARCH Pitfall 2).
+    Stage A / Stage B race: PK is now ``(user_id, metric,
+    time_control_bucket)`` and Stage A writes only ``score_gap`` rows;
+    Stage B writes the other 7 families. Disjoint write sets never
+    conflict (RESEARCH Pitfall 2).
     """
     maker = session_maker if session_maker is not None else _default_session_maker
     try:
         async with maker() as session:
-            for metric_id in STAGE_B_METRICS:
-                try:
-                    result = await _compute_metric_for_user(session, user_id, metric_id)
-                    if result is None:
-                        # Below pooled floor for this metric → no row.
-                        continue
-                    value, n_games = result
-                    percentile: float | None = interpolate_percentile(metric_id, value)
-                    await upsert_percentile(
-                        session,
-                        user_id=user_id,
-                        metric=metric_id,
-                        value=value,
-                        n_games=n_games,
-                        percentile=percentile,
-                        cdf_snapshot=date.today(),
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    # Per-metric capture: other metrics continue (plan spec).
-                    sentry_sdk.set_context(
-                        "percentile_compute",
-                        {"user_id": user_id, "stage": "B", "metric": metric_id},
-                    )
-                    sentry_sdk.capture_exception(exc)
+            anchors = await fetch_anchors_for_user(session, user_id=user_id)
+            if not anchors:
+                # No above-floor anchors — Stage A wrote nothing, Stage B has
+                # no per-TC cohort key to interpolate against; no-op.
+                return
+            for family in STAGE_B_METRIC_FAMILIES:
+                for tc, anchor in anchors.items():
+                    try:
+                        result = await _compute_metric_for_user_per_tc(session, user_id, family, tc)
+                        if result is None:
+                            # Below per-TC floor for this (family, tc) → no row.
+                            continue
+                        value, n_games = result
+                        percentile: float | None = interpolate_cohort_percentile(
+                            family, value, anchor.anchor_rating, tc
+                        )
+                        await upsert_percentile(
+                            session,
+                            user_id=user_id,
+                            metric=family,
+                            time_control_bucket=tc,
+                            value=value,
+                            n_games=n_games,
+                            percentile=percentile,
+                            cdf_snapshot=date.today(),
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:
+                        # Per-(family, tc) capture: other cells continue.
+                        sentry_sdk.set_context(
+                            "percentile_compute",
+                            {
+                                "user_id": user_id,
+                                "stage": "B",
+                                "metric": family,
+                                "tc": tc,
+                            },
+                        )
+                        sentry_sdk.capture_exception(exc)
             await session.commit()
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        # Top-level capture for session-open or commit failures.
+        # Top-level capture for session-open / commit / anchor-fetch failures.
         sentry_sdk.set_context("percentile_compute", {"user_id": user_id, "stage": "B"})
         sentry_sdk.capture_exception(exc)

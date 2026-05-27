@@ -62,11 +62,11 @@ _ENTRY_XS_SPEC = ZONE_REGISTRY["entry_expected_score"]
 # Phase 87.2 (D-02): per-bucket Section 2 ΔES Score Gap neutral bands.
 # Each bucket gets its own ZoneSpec from ZONE_REGISTRY; placeholder ±5pp bands
 # until /benchmarks §3.4.4 Cohen's-d calibration updates them.
-_SECTION2_SCORE_GAP_CONV_SPEC = ZONE_REGISTRY["section2_score_gap_conv"]
-_SECTION2_SCORE_GAP_PARITY_SPEC = ZONE_REGISTRY["section2_score_gap_parity"]
-_SECTION2_SCORE_GAP_RECOV_SPEC = ZONE_REGISTRY["section2_score_gap_recov"]
-# Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_SPEC dropped alongside the
-# section2_score_gap_skill ZoneSpec deletion.
+_SCORE_GAP_CONV_SPEC = ZONE_REGISTRY["score_gap_conv"]
+_SCORE_GAP_PARITY_SPEC = ZONE_REGISTRY["score_gap_parity"]
+_SCORE_GAP_RECOV_SPEC = ZONE_REGISTRY["score_gap_recov"]
+# Phase 87.4 (D-05): SCORE_GAP_SKILL_SPEC dropped alongside the
+# score_gap_skill ZoneSpec deletion.
 
 # Phase 88: clock_gap_pct scalar zone spec for the Clock Gap bullet.
 # PLACEHOLDER band until benchmarks §3.3.1 clock-gap-% runs calibrate it.
@@ -168,13 +168,13 @@ def _render() -> str:
         f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_upper};\n"
         "// Phase 87.2 (D-02): per-bucket Section 2 ΔES Score Gap neutral bands.\n"
-        f"export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_CONV_SPEC.typical_lower};\n"
-        f"export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_CONV_SPEC.typical_upper};\n"
-        f"export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_PARITY_SPEC.typical_lower};\n"
-        f"export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_PARITY_SPEC.typical_upper};\n"
-        f"export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_RECOV_SPEC.typical_lower};\n"
-        f"export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_RECOV_SPEC.typical_upper};\n"
-        "// Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_NEUTRAL_* emission dropped\n"
+        f"export const SCORE_GAP_CONV_NEUTRAL_MIN = {_SCORE_GAP_CONV_SPEC.typical_lower};\n"
+        f"export const SCORE_GAP_CONV_NEUTRAL_MAX = {_SCORE_GAP_CONV_SPEC.typical_upper};\n"
+        f"export const SCORE_GAP_PARITY_NEUTRAL_MIN = {_SCORE_GAP_PARITY_SPEC.typical_lower};\n"
+        f"export const SCORE_GAP_PARITY_NEUTRAL_MAX = {_SCORE_GAP_PARITY_SPEC.typical_upper};\n"
+        f"export const SCORE_GAP_RECOV_NEUTRAL_MIN = {_SCORE_GAP_RECOV_SPEC.typical_lower};\n"
+        f"export const SCORE_GAP_RECOV_NEUTRAL_MAX = {_SCORE_GAP_RECOV_SPEC.typical_upper};\n"
+        "// Phase 87.4 (D-05): SCORE_GAP_SKILL_NEUTRAL_* emission dropped\n"
         "// alongside the Endgame Skill concept retirement.\n"
         "\n"
         "// Phase 83 D-14/D-17: per-user entry_expected_score cohort band.\n"

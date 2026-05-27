@@ -547,7 +547,7 @@ class TestComputeFindingsReturnContract:
 # bucket (conversion -> conversion_win_pct, parity -> parity_score_pct,
 # recovery -> recovery_save_pct). Phase 87.4 (D-05): the aggregate
 # ``endgame_skill`` finding was removed end-to-end. Total emitted = N bucket
-# rate findings + 3 section2_score_gap_* findings (Phase 87.2 D-09 minus the
+# rate findings + 3 score_gap_* findings (Phase 87.2 D-09 minus the
 # retired "skill" bucket).
 # ---------------------------------------------------------------------------
 
@@ -596,7 +596,7 @@ class TestFindingsEndgameMetrics:
         )
 
     def test_emits_exactly_one_finding_per_non_empty_bucket(self) -> None:
-        """3 non-zero MaterialRows -> 3 bucket rate findings + 3 section2_score_gap
+        """3 non-zero MaterialRows -> 3 bucket rate findings + 3 score_gap_bucket
         findings (Phase 87.2 D-09 minus the retired Skill bucket per Phase 87.4 D-05)
         = 6 total. The aggregate ``endgame_skill`` finding was removed in 87.4."""
         from app.services.insights_service import _findings_endgame_metrics
@@ -631,14 +631,14 @@ class TestFindingsEndgameMetrics:
             "recovery": "recovery_save_pct",
         }
 
-        # Three section2_score_gap_* findings (Phase 87.2 D-09 minus retired skill).
-        section2_metrics = sorted(
-            f.metric for f in findings if f.metric.startswith("section2_score_gap_")
+        # Three score_gap_* findings (Phase 87.2 D-09 minus retired skill).
+        score_gap_bucket_metrics = sorted(
+            f.metric for f in findings if f.metric.startswith("score_gap_")
         )
-        assert section2_metrics == [
-            "section2_score_gap_conv",
-            "section2_score_gap_parity",
-            "section2_score_gap_recov",
+        assert score_gap_bucket_metrics == [
+            "score_gap_conv",
+            "score_gap_parity",
+            "score_gap_recov",
         ]
 
     def test_no_cross_bucket_fan_out(self) -> None:
@@ -662,7 +662,7 @@ class TestFindingsEndgameMetrics:
 
         for f in findings:
             if f.dimension is None:
-                # Phase 87.4 (D-05): section2_score_gap_* findings have no
+                # Phase 87.4 (D-05): score_gap_* findings have no
                 # bucket dim (they live on the response as scalars, not
                 # per-MaterialBucket). The aggregate endgame_skill finding
                 # was retired so the dimension==None branch now covers only
@@ -679,7 +679,7 @@ class TestFindingsEndgameMetrics:
     def test_empty_bucket_emits_one_empty_finding(self) -> None:
         """A MaterialRow with games=0 emits ONE empty finding for the matching metric.
 
-        Phase 87.2 (D-09): 4 section2_score_gap_* findings are always emitted alongside
+        Phase 87.2 (D-09): 4 score_gap_* findings are always emitted alongside
         the rate findings, so the bucket-only assertions filter on dimension presence.
         """
         from app.services.insights_service import _findings_endgame_metrics
@@ -694,11 +694,11 @@ class TestFindingsEndgameMetrics:
 
         # Phase 87.4 (D-05): no aggregate endgame_skill finding.
         # 3 rate bucket findings (2 empty + 1 normal) +
-        # 3 section2_score_gap_* findings (D-09 minus retired skill bucket).
+        # 3 score_gap_* findings (D-09 minus retired skill bucket).
         assert len(findings) == 6
 
         # Rate bucket findings only — filter by metric, not by dimension, because
-        # section2_score_gap_* findings have dimension=None.
+        # score_gap_* findings have dimension=None.
         bucket_findings = [
             f
             for f in findings

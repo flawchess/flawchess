@@ -42,9 +42,9 @@ MetricId = Literal[
     # MetricIds (not a bucket-dispatched parent) because dispatch here is eval-entry-
     # bucket-keyed, not class-keyed like PER_CLASS_GAUGE_ZONES. See BucketedMetricId
     # note below.
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
-    "section2_score_gap_recov",
+    "score_gap_conv",
+    "score_gap_parity",
+    "score_gap_recov",
     "entry_eval_pawns",  # Phase 82 D-04: new endgame_start_vs_end Tile 1
     "entry_expected_score",  # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",  # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
@@ -93,7 +93,7 @@ SubsectionId = Literal[
 # added to BucketedMetricId — it is per-class only (via PER_CLASS_GAUGE_ZONES),
 # not per-(class × material-axis). If benchmark §3.4.2 later requires per-rating-
 # bucket bands, add it then in a follow-up.
-# Phase 87.2 (D-02): the 3 Section 2 per-bucket ΔES MetricIds (`section2_score_gap_*`)
+# Phase 87.2 (D-02): the 3 Section 2 per-bucket ΔES MetricIds (`score_gap_*`)
 # are also NOT added here. They use 3 scalar MetricIds in ZONE_REGISTRY (option (a)),
 # not a bucket-dispatched parent. The existing bucket-dispatch shape is class-keyed
 # (PER_CLASS_GAUGE_ZONES), not eval-entry-bucket-keyed, so a new dispatch shape would
@@ -228,22 +228,22 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     # band is drawn offset where the calibration says it sits. The
     # MiniBulletChart asymmetric rendering contract is locked in by tests
     # added in quick task 260516-0ax.
-    "section2_score_gap_conv": ZoneSpec(
+    "score_gap_conv": ZoneSpec(
         typical_lower=-0.11,
         typical_upper=0.00,
         direction="higher_is_better",
     ),
-    "section2_score_gap_parity": ZoneSpec(
+    "score_gap_parity": ZoneSpec(
         typical_lower=-0.04,
         typical_upper=0.04,
         direction="higher_is_better",
     ),
-    "section2_score_gap_recov": ZoneSpec(
+    "score_gap_recov": ZoneSpec(
         typical_lower=0.01,
         typical_upper=0.11,
         direction="higher_is_better",
     ),
-    # Phase 87.4 (D-05): section2_score_gap_skill ZoneSpec deleted. The Skill
+    # Phase 87.4 (D-05): score_gap_skill ZoneSpec deleted. The Skill
     # composite was retracted — no composite definition survived scrutiny on
     # cohort de-confounding, individual interpretation, temporal stability, or
     # the Phase 57 median-coincide invariant. See

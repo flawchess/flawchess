@@ -49,8 +49,8 @@ _TEST_USER_ID: int = 9001
 _SECOND_USER_ID: int = 9002
 _METRIC_SCORE_GAP: str = "score_gap"
 _METRIC_ACHIEVABLE: str = "achievable_score_gap"
-_METRIC_CONV: str = "section2_score_gap_conv"
-_METRIC_PARITY: str = "section2_score_gap_parity"
+_METRIC_CONV: str = "score_gap_conv"
+_METRIC_PARITY: str = "score_gap_parity"
 _ALL_METRICS: tuple[str, ...] = (
     _METRIC_SCORE_GAP,
     _METRIC_ACHIEVABLE,
@@ -62,6 +62,12 @@ _DEFAULT_VALUE: float = 0.05
 _DEFAULT_PERCENTILE: float = 62.3
 _DEFAULT_CDF_SNAPSHOT: datetime.date = datetime.date(2026, 3, 31)
 _DEFAULT_N_GAMES: int = 42  # arbitrary pooled count — n_games is required (Phase 94.2)
+# Phase 94.4 D-01: PK widens to include time_control_bucket. Tests use a
+# single canonical TC unless they exercise the per-TC dimensionality
+# directly. ``blitz`` mirrors the canonical-slice test seeds elsewhere.
+from app.models.user_rating_anchors import TimeControlBucket as _TimeControlBucket  # noqa: E402
+
+_DEFAULT_TC: _TimeControlBucket = "blitz"
 
 pytestmark = pytest.mark.asyncio
 
@@ -90,10 +96,14 @@ async def _ensure_test_users(db_session: AsyncSession) -> None:
 
 async def test_upsert_inserts_when_no_row_exists(db_session: AsyncSession) -> None:
     """upsert_percentile creates a row that SELECT can retrieve."""
+    # Phase 94.4 D-01 / D-08: PK widens to (user_id, metric,
+    # time_control_bucket); fetch_for_user returns nested dict
+    # dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]].
     await upsert_percentile(
         db_session,
         user_id=_TEST_USER_ID,
         metric=_METRIC_SCORE_GAP,
+        time_control_bucket=_DEFAULT_TC,
         value=_DEFAULT_VALUE,
         n_games=_DEFAULT_N_GAMES,
         percentile=_DEFAULT_PERCENTILE,
@@ -109,7 +119,10 @@ async def test_upsert_inserts_when_no_row_exists(db_session: AsyncSession) -> No
         result = rows
 
     assert _METRIC_SCORE_GAP in result, "upserted metric must appear in fetch_for_user result"
-    row = result[_METRIC_SCORE_GAP]
+    assert _DEFAULT_TC in result[_METRIC_SCORE_GAP], (
+        "upserted (metric, tc) cell must appear in the nested dict"
+    )
+    row = result[_METRIC_SCORE_GAP][_DEFAULT_TC]
     assert abs(row.value - _DEFAULT_VALUE) < 1e-9
     assert row.percentile is not None
     assert abs(row.percentile - _DEFAULT_PERCENTILE) < 1e-9
@@ -127,6 +140,7 @@ async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
         db_session,
         user_id=_TEST_USER_ID,
         metric=_METRIC_ACHIEVABLE,
+        time_control_bucket=_DEFAULT_TC,
         value=0.10,
         n_games=35,
         percentile=45.0,
@@ -144,6 +158,7 @@ async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
         db_session,
         user_id=_TEST_USER_ID,
         metric=_METRIC_ACHIEVABLE,
+        time_control_bucket=_DEFAULT_TC,
         value=new_value,
         n_games=new_n_games,
         percentile=new_percentile,
@@ -158,7 +173,8 @@ async def test_upsert_overwrites_existing_row(db_session: AsyncSession) -> None:
         result = rows
 
     assert _METRIC_ACHIEVABLE in result
-    row = result[_METRIC_ACHIEVABLE]
+    assert _DEFAULT_TC in result[_METRIC_ACHIEVABLE]
+    row = result[_METRIC_ACHIEVABLE][_DEFAULT_TC]
     assert abs(row.value - new_value) < 1e-9, "value must be updated by UPSERT"
     assert row.percentile is not None
     assert abs(row.percentile - new_percentile) < 1e-9, "percentile must be updated"
@@ -182,6 +198,7 @@ async def test_upsert_handles_percentile_null(db_session: AsyncSession) -> None:
         db_session,
         user_id=_TEST_USER_ID,
         metric=_METRIC_CONV,
+        time_control_bucket=_DEFAULT_TC,
         value=0.08,
         n_games=_DEFAULT_N_GAMES,
         percentile=None,
@@ -196,7 +213,8 @@ async def test_upsert_handles_percentile_null(db_session: AsyncSession) -> None:
         result = rows
 
     assert _METRIC_CONV in result, "row must be present even with NULL percentile"
-    row = result[_METRIC_CONV]
+    assert _DEFAULT_TC in result[_METRIC_CONV]
+    row = result[_METRIC_CONV][_DEFAULT_TC]
     assert row.percentile is None, "percentile must be Python None when stored as SQL NULL (D-06)"
     assert abs(row.value - 0.08) < 1e-9, "value must be stored correctly"
 
@@ -222,6 +240,7 @@ async def test_fk_cascade_on_user_delete(db_session: AsyncSession) -> None:
             db_session,
             user_id=_SECOND_USER_ID,
             metric=metric,
+            time_control_bucket=_DEFAULT_TC,
             value=0.05,
             n_games=_DEFAULT_N_GAMES,
             percentile=50.0,
@@ -263,8 +282,13 @@ async def test_pk_rejects_duplicate_metric_for_same_user_via_plain_insert(
 ) -> None:
     """A plain INSERT without ON CONFLICT fails with IntegrityError on duplicate PK.
 
+    Phase 94.4 D-01: the PK widens to (user_id, metric, time_control_bucket).
+    A duplicate (user, metric, tc) plain INSERT/INSERT still violates the
+    PK; a SAME (user, metric) on a DIFFERENT tc is now legal (each TC has
+    its own row).
+
     This confirms that UPSERT via ``on_conflict_do_update`` is the ONLY safe
-    write path — naive INSERT/INSERT will violate the ``(user_id, metric)`` PK.
+    write path — naive INSERT/INSERT will violate the 3-column PK.
     """
     from sqlalchemy import text
 
@@ -272,28 +296,32 @@ async def test_pk_rejects_duplicate_metric_for_same_user_via_plain_insert(
     await db_session.execute(
         text(
             "INSERT INTO user_benchmark_percentiles "
-            "(user_id, metric, value, cdf_snapshot) "
-            "VALUES (:uid, :metric, :value, :snapshot)"
+            "(user_id, metric, time_control_bucket, value, n_games, cdf_snapshot) "
+            "VALUES (:uid, :metric, CAST(:tc AS timecontrolbucket), :value, :n, :snapshot)"
         ).bindparams(
             uid=_TEST_USER_ID,
             metric=_METRIC_PARITY,
+            tc=_DEFAULT_TC,
             value=0.03,
+            n=_DEFAULT_N_GAMES,
             snapshot=_DEFAULT_CDF_SNAPSHOT,
         )
     )
     await db_session.flush()
 
-    # Second plain INSERT must fail with IntegrityError
+    # Second plain INSERT on SAME (user, metric, tc) must fail with IntegrityError
     with pytest.raises(IntegrityError):
         await db_session.execute(
             text(
                 "INSERT INTO user_benchmark_percentiles "
-                "(user_id, metric, value, cdf_snapshot) "
-                "VALUES (:uid, :metric, :value, :snapshot)"
+                "(user_id, metric, time_control_bucket, value, n_games, cdf_snapshot) "
+                "VALUES (:uid, :metric, CAST(:tc AS timecontrolbucket), :value, :n, :snapshot)"
             ).bindparams(
                 uid=_TEST_USER_ID,
                 metric=_METRIC_PARITY,
+                tc=_DEFAULT_TC,
                 value=0.07,
+                n=_DEFAULT_N_GAMES,
                 snapshot=_DEFAULT_CDF_SNAPSHOT,
             )
         )
@@ -319,6 +347,7 @@ async def test_fetch_for_user_returns_dict_keyed_by_metric_id(
         db_session,
         user_id=_TEST_USER_ID,
         metric=_METRIC_SCORE_GAP,
+        time_control_bucket=_DEFAULT_TC,
         value=0.04,
         n_games=_DEFAULT_N_GAMES,
         percentile=55.0,
@@ -328,6 +357,7 @@ async def test_fetch_for_user_returns_dict_keyed_by_metric_id(
         db_session,
         user_id=_TEST_USER_ID,
         metric=_METRIC_PARITY,
+        time_control_bucket=_DEFAULT_TC,
         value=-0.02,
         n_games=_DEFAULT_N_GAMES,
         percentile=38.0,
@@ -346,12 +376,12 @@ async def test_fetch_for_user_returns_dict_keyed_by_metric_id(
         "missing metrics must not appear as None/empty rows"
     )
 
-    sg = result[_METRIC_SCORE_GAP]
+    sg = result[_METRIC_SCORE_GAP][_DEFAULT_TC]
     assert abs(sg.value - 0.04) < 1e-9
     assert sg.percentile is not None
     assert abs(sg.percentile - 55.0) < 1e-9
 
-    par = result[_METRIC_PARITY]
+    par = result[_METRIC_PARITY][_DEFAULT_TC]
     assert abs(par.value - (-0.02)) < 1e-9
     assert par.percentile is not None
     assert abs(par.percentile - 38.0) < 1e-9

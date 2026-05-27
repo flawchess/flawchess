@@ -399,19 +399,19 @@ Interpret each metric using the definitions below. These match the user-facing i
 The four per-card Score Gap metrics on Section 2 (Endgame Metrics) cards each measure
 average per-span expected-score delta restricted to that card's eval-entry bucket.
 
-- **Conversion Score Gap** (`section2_score_gap_conv`): average per-span Score Gap on
+- **Conversion Score Gap** (`score_gap_conv`): average per-span Score Gap on
   spans where the user entered the endgame with eval >= +1.0 (user ahead). Positive =
   user converted advantages above the Stockfish baseline; negative = bled away.
 
-- **Parity Score Gap** (`section2_score_gap_parity`): same metric on spans entered with
+- **Parity Score Gap** (`score_gap_parity`): same metric on spans entered with
   |eval| <= 1.0 (roughly balanced). Positive = user outperformed baseline from balanced;
   negative = underperformed.
 
-- **Recovery Score Gap** (`section2_score_gap_recov`): same metric on spans entered with
+- **Recovery Score Gap** (`score_gap_recov`): same metric on spans entered with
   eval <= -1.0 (user behind). Positive = user salvaged disadvantages above expectation;
   negative = position deteriorated further than expected.
 
-- **Skill Score Gap** (`section2_score_gap_skill`): equal-weighted mean of the three
+- **Skill Score Gap** (`score_gap_skill`): equal-weighted mean of the three
   per-bucket Score Gaps above. One-number summary of overall endgame performance vs
   Stockfish expectations, independent of which entry-eval bucket your endgames cluster
   in. Buckets with fewer than 10 spans are dropped from the average.

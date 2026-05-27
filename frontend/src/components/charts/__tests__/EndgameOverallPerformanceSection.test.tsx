@@ -28,7 +28,20 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
   useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
 }));
 
+import type { RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import { ZONE_SUCCESS } from '@/lib/theme';
+
+// Phase 94.4 Plan 07: page-level ΔES chips require both a non-null percentile
+// AND a rating anchor (for the popover's 4th-bullet disclosure). Tests that
+// exercise chip rendering pass `DEFAULT_RATING_ANCHORS`.
+const DEFAULT_RATING_ANCHORS: RatingAnchorsByTc = {
+  blitz: {
+    anchor_rating: 1600,
+    source_platform: 'lichess',
+    chesscom_raw_rating: null,
+    n_games: 1000,
+  },
+};
 import type {
   EndgamePerformanceResponse,
   EndgameWDLSummary,
@@ -157,8 +170,8 @@ function makeScoreGap(
     score_difference_ci_low: null,
     score_difference_ci_high: null,
     score_gap_percentile: null,
-    section2_score_gap_conv_percentile: null,
-    section2_score_gap_parity_percentile: null,
+    score_gap_conv_percentile: null,
+    score_gap_parity_percentile: null,
     ...overrides,
   };
 }
@@ -586,6 +599,7 @@ describe('EndgameOverallPerformanceSection', () => {
       <EndgameOverallPerformanceSection
         data={makeData()}
         scoreGap={makeScoreGap({ score_gap_percentile: 73 })}
+        ratingAnchors={DEFAULT_RATING_ANCHORS}
       />,
     );
     expect(screen.getByTestId('endgame-score-gap-percentile-chip')).toBeTruthy();
@@ -606,6 +620,7 @@ describe('EndgameOverallPerformanceSection', () => {
       <EndgameOverallPerformanceSection
         data={makeData({ achievable_score_gap_percentile: 88 })}
         scoreGap={makeScoreGap()}
+        ratingAnchors={DEFAULT_RATING_ANCHORS}
       />,
     );
     expect(screen.getByTestId('achievable-score-gap-percentile-chip')).toBeTruthy();
