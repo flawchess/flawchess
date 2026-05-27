@@ -26,6 +26,7 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
   useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
 }));
 
+import type { RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type { MaterialRow } from '@/types/endgames';
 
@@ -83,11 +84,24 @@ function buildRow(overrides?: Partial<MaterialRow>): MaterialRow {
 
 // Default Score Gap props for a positive, confident, outside-neutral-band scenario.
 const DEFAULT_SCORE_GAP_PROPS = {
-  scoreGapMean: 0.10,   // +10%, well above SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX (0.00)
+  scoreGapMean: 0.10,   // +10%, well above SCORE_GAP_CONV_NEUTRAL_MAX (0.00)
   scoreGapN: 100,
   scoreGapPValue: 0.001,
   scoreGapCiLow: 0.05,
   scoreGapCiHigh: 0.15,
+  scoreGapPercentile: null as number | null,
+};
+
+// Phase 94.4 Plan 07: page-level ΔES chips require both a non-null
+// percentile AND a rating anchor (for the popover's 4th-bullet disclosure).
+// Tests that exercise chip rendering pass `DEFAULT_RATING_ANCHORS`.
+const DEFAULT_RATING_ANCHORS: RatingAnchorsByTc = {
+  blitz: {
+    anchor_rating: 1600,
+    source_platform: 'lichess',
+    chesscom_raw_rating: null,
+    n_games: 1000,
+  },
 };
 
 describe('EndgameMetricCard — structural render', () => {
@@ -226,7 +240,7 @@ describe('EndgameMetricCard — sign convention (zone-only tint, no sig-gate)', 
         sharePct={45.5}
         tileTestId="tile-conversion"
         titleTooltip="Test tooltip"
-        scoreGapMean={0.10}   // above SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX (0.00)
+        scoreGapMean={0.10}   // above SCORE_GAP_CONV_NEUTRAL_MAX (0.00)
         scoreGapN={100}
         scoreGapPValue={0.5}  // weak p-value: zone-only means color is still applied
         scoreGapCiLow={null}
@@ -245,7 +259,7 @@ describe('EndgameMetricCard — sign convention (zone-only tint, no sig-gate)', 
         sharePct={45.5}
         tileTestId="tile-conversion"
         titleTooltip="Test tooltip"
-        scoreGapMean={-0.20}  // below SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN (-0.11)
+        scoreGapMean={-0.20}  // below SCORE_GAP_CONV_NEUTRAL_MIN (-0.11)
         scoreGapN={100}
         scoreGapPValue={0.5}
         scoreGapCiLow={null}
@@ -393,11 +407,149 @@ describe('EndgameMetricCard — empty state', () => {
         scoreGapPValue={null}
         scoreGapCiLow={null}
         scoreGapCiHigh={null}
+        scoreGapPercentile={null}
       />,
     );
     expect(screen.queryByText(/Not enough data yet/)).not.toBeNull();
     // No WDL bar, no score-gap bullet
     expect(screen.queryByTestId('mini-wdl-bar')).toBeNull();
     expect(screen.queryByTestId('tile-conversion-score-gap-bullet')).toBeNull();
+  });
+});
+
+// ── Phase 94 PCTL-03/04/06: percentile chip rendering + bucket-flavor routing
+describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', () => {
+  it('renders chip with flavor="conversion" on bucket="conversion" when percentile + anchors non-null', () => {
+    render(
+      <EndgameMetricCard
+        bucket="conversion"
+        row={buildRow()}
+        sharePct={45.5}
+        tileTestId="tile-conversion"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.10}
+        scoreGapN={100}
+        scoreGapPValue={0.001}
+        scoreGapCiLow={0.05}
+        scoreGapCiHigh={0.15}
+        scoreGapPercentile={20}
+        ratingAnchors={DEFAULT_RATING_ANCHORS}
+      />,
+    );
+    const chip = screen.getByTestId('tile-conversion-percentile-chip');
+    expect(chip).not.toBeNull();
+    expect(chip.getAttribute('aria-label')).toMatch(/Conversion Score Gap percentile/);
+    // p=20 → chip face "20" (with SquarePercent icon); aria-label "p20" + "bottom".
+    expect(chip.textContent).toBe('20');
+    expect(chip.getAttribute('aria-label')).toContain('p20');
+    expect(chip.getAttribute('aria-label')).toContain('bottom');
+  });
+
+  it('renders chip with flavor="parity" on bucket="parity" when percentile + anchors non-null', () => {
+    render(
+      <EndgameMetricCard
+        bucket="parity"
+        row={buildRow({ bucket: 'parity', score: 0.50 })}
+        sharePct={30}
+        tileTestId="tile-parity"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.08}
+        scoreGapN={50}
+        scoreGapPValue={0.01}
+        scoreGapCiLow={0.02}
+        scoreGapCiHigh={0.14}
+        scoreGapPercentile={73}
+        ratingAnchors={DEFAULT_RATING_ANCHORS}
+      />,
+    );
+    const chip = screen.getByTestId('tile-parity-percentile-chip');
+    expect(chip).not.toBeNull();
+    expect(chip.getAttribute('aria-label')).toMatch(/Parity Score Gap percentile/);
+  });
+
+  // Phase 94.4 D-05a: recovery chip RESCUED under peer-relative cohort
+  // framing. The Phase 94 D-12 defensive guard ("recovery never renders")
+  // is superseded — when the recovery percentile is non-null AND anchors are
+  // available, the chip MUST render with flavor="recovery".
+  it('renders chip with flavor="recovery" on bucket="recovery" when percentile + anchors non-null (D-05a rescue)', () => {
+    render(
+      <EndgameMetricCard
+        bucket="recovery"
+        row={buildRow({ bucket: 'recovery', win_pct: 30, draw_pct: 20, loss_pct: 50, score: 0.40 })}
+        sharePct={25}
+        tileTestId="tile-recovery"
+        titleTooltip="Test tooltip"
+        scoreGapMean={-0.03}
+        scoreGapN={40}
+        scoreGapPValue={0.3}
+        scoreGapCiLow={-0.10}
+        scoreGapCiHigh={0.04}
+        scoreGapPercentile={42}
+        ratingAnchors={DEFAULT_RATING_ANCHORS}
+      />,
+    );
+    const chip = screen.getByTestId('tile-recovery-percentile-chip');
+    expect(chip).not.toBeNull();
+    expect(chip.getAttribute('aria-label')).toMatch(/Recovery Score Gap percentile/);
+  });
+
+  it('does NOT render chip on bucket="conversion" when scoreGapPercentile is null', () => {
+    render(
+      <EndgameMetricCard
+        bucket="conversion"
+        row={buildRow()}
+        sharePct={45.5}
+        tileTestId="tile-conversion"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.10}
+        scoreGapN={100}
+        scoreGapPValue={0.001}
+        scoreGapCiLow={0.05}
+        scoreGapCiHigh={0.15}
+        scoreGapPercentile={null}
+        ratingAnchors={DEFAULT_RATING_ANCHORS}
+      />,
+    );
+    expect(screen.queryByTestId('tile-conversion-percentile-chip')).toBeNull();
+  });
+
+  it('does NOT render chip on bucket="parity" when scoreGapPercentile is null', () => {
+    render(
+      <EndgameMetricCard
+        bucket="parity"
+        row={buildRow({ bucket: 'parity', score: 0.50 })}
+        sharePct={30}
+        tileTestId="tile-parity"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.08}
+        scoreGapN={50}
+        scoreGapPValue={0.01}
+        scoreGapCiLow={0.02}
+        scoreGapCiHigh={0.14}
+        scoreGapPercentile={null}
+        ratingAnchors={DEFAULT_RATING_ANCHORS}
+      />,
+    );
+    expect(screen.queryByTestId('tile-parity-percentile-chip')).toBeNull();
+  });
+
+  it('does NOT render chip when ratingAnchors is omitted (anchor required for bullet 4 disclosure)', () => {
+    render(
+      <EndgameMetricCard
+        bucket="conversion"
+        row={buildRow()}
+        sharePct={45.5}
+        tileTestId="tile-conversion"
+        titleTooltip="Test tooltip"
+        scoreGapMean={0.10}
+        scoreGapN={100}
+        scoreGapPValue={0.001}
+        scoreGapCiLow={0.05}
+        scoreGapCiHigh={0.15}
+        scoreGapPercentile={20}
+        // ratingAnchors intentionally omitted
+      />,
+    );
+    expect(screen.queryByTestId('tile-conversion-percentile-chip')).toBeNull();
   });
 });

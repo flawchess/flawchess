@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_async_session
 from app.models.import_job import ImportJob
 from app.models.user import User
+from app.models.user_benchmark_percentile import UserBenchmarkPercentile
+from app.models.user_rating_anchors import UserRatingAnchor
 from app.repositories import game_repository, import_job_repository, user_repository
 from app.schemas.imports import (
     DeleteGamesResponse,
@@ -191,11 +193,16 @@ async def delete_all_games(
     user: Annotated[User, Depends(current_active_user)],
     session: Annotated[AsyncSession, Depends(get_async_session)],
 ) -> DeleteGamesResponse:
-    """Delete all games, positions, and import jobs for the authenticated user.
+    """Delete all games, positions, import jobs, benchmark percentiles, and
+    rating anchors for the authenticated user.
 
     Returns the count of deleted games.
     """
     deleted_count = await game_repository.delete_all_games_for_user(session, user.id)
     await session.execute(delete(ImportJob).where(ImportJob.user_id == user.id))
+    await session.execute(
+        delete(UserBenchmarkPercentile).where(UserBenchmarkPercentile.user_id == user.id)
+    )
+    await session.execute(delete(UserRatingAnchor).where(UserRatingAnchor.user_id == user.id))
     await session.commit()
     return DeleteGamesResponse(deleted_count=deleted_count)

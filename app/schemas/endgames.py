@@ -9,12 +9,50 @@ Provides response models for:
 import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.openings import GameRecord
 
 EndgameClass = Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"]
 EndgameLabel = Literal["Rook", "Minor Piece", "Pawn", "Queen", "Mixed", "Pawnless"]
+
+# Phase 94.4 D-07 bullet 4: time-control union used as the key type for the
+# rating_anchors block on EndgameOverviewResponse. Inline string union matches
+# the existing `tc: 'bullet' | 'blitz' | 'rapid' | 'classical'` pattern used on
+# TimePressureTcCard and EndgameEloTimelineCombo — no separate Literal alias is
+# defined elsewhere in this module.
+TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
+
+
+class RatingAnchorOut(BaseModel):
+    """Blended anchor + per-platform composition for the percentile chip tooltip.
+
+    D-12 Reversal Amendment (CONTEXT 2026-05-27). The anchor is the
+    game-weighted median of converted-chess.com + native-lichess ratings.
+    See: .planning/notes/percentile-anchor-d12-reversal.md (rationale, risk profile).
+
+    `anchor_rating` is the blended Lichess-equivalent (post-conversion for
+    chess.com games; native for lichess games). The per-platform game-count and
+    native-median fields exist solely to support the four tooltip-disclosure
+    branches in `PercentileChipPopoverBody`:
+      (a) Mixed user (n_chesscom_games > 0 AND n_lichess_games > 0): blended
+          composition prose — names both platforms with their native medians.
+      (b) Pure-lichess user (n_chesscom_games == 0): drops the chess.com clause;
+          flags "native rating" so the user knows no conversion was applied.
+      (c) Pure-chess.com user (n_lichess_games == 0): drops the lichess clause;
+          discloses the ChessGoals snapshot conversion.
+      (d) Suppression (both counts == 0): chip suppresses entirely at the caller.
+
+    Provenance: populated from the `user_rating_anchors` row written by
+    `app/services/user_benchmark_percentiles_service.py::compute_anchors_for_user`
+    (Plan 10 blended-anchor rewrite).
+    """
+
+    anchor_rating: int
+    n_chesscom_games: int
+    n_lichess_games: int
+    chesscom_median_native: int | None = None
+    lichess_median_native: int | None = None
 
 
 class ConversionRecoveryStats(BaseModel):
@@ -254,6 +292,15 @@ class EndgamePerformanceResponse(BaseModel):
     """Upper bound of 95% Wald-z CI on achievable_score_gap.
     None when surviving n < 2 (Bessel variance undefined)."""
 
+    # Phase 94 (PCTL-02): cohort percentile of achievable_score_gap vs the
+    # Phase 93 global empirical CDF. Field name mirrors the MetricId literal
+    # "achievable_score_gap" used to key GLOBAL_PERCENTILE_CDF.
+    achievable_score_gap_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of achievable_score_gap vs the Phase 93
+    global empirical CDF (app/services/global_percentile_cdf.py).
+    None when ex_n < PVALUE_RELIABILITY_MIN_N (=10) — same single-N gate as
+    achievable_score_gap_p_value / _ci_*."""
+
 
 class EndgameTimelinePoint(BaseModel):
     """Single data point in the per-type rolling-window time series, sampled weekly.
@@ -395,7 +442,7 @@ class ScoreGapMaterialResponse(BaseModel):
     skill_diff_p_value, skill_diff_ci_low, skill_diff_ci_high on this response;
     opponent_score, opponent_games, diff_p_value, diff_ci_low, diff_ci_high on
     MaterialRow) have been deleted and replaced by the 20 eval-baseline Delta-ES
-    Score Gap fields below (section2_score_gap_{conv,parity,recov,skill}_{mean,n,
+    Score Gap fields below (score_gap_{conv,parity,recov,skill}_{mean,n,
     p_value,ci_low,ci_high}). The rate-based peer-bullet was mathematically
     degenerate; see Phase 87.2 CONTEXT D-05.
 
@@ -428,34 +475,83 @@ class ScoreGapMaterialResponse(BaseModel):
     score_difference_ci_high: float | None = None
     """Upper bound of 95% Wald-z CI on score_difference. None when min(...) < 2."""
 
+    # Phase 94 (PCTL-02): cohort percentile of score_difference (Endgame Score
+    # Gap) vs the Phase 93 global empirical CDF. Field name deliberately
+    # diverges from sibling `score_difference_*` — it mirrors the MetricId
+    # literal "score_gap" used to key GLOBAL_PERCENTILE_CDF (D-11).
+    # DO NOT rename to score_difference_percentile "for consistency": the
+    # field name is the public API and the wire-format frontend mirror
+    # depends on it.
+    score_gap_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of score_difference vs the Phase 93
+    global empirical CDF (app/services/global_percentile_cdf.py).
+    Field-name divergence from sibling score_difference_* is intentional —
+    the name mirrors MetricId "score_gap" (the CDF key), not the wire-format
+    score_difference value (Phase 94 D-11).
+    None when min(endgame_wdl.total, non_endgame_wdl.total) <
+    PVALUE_RELIABILITY_MIN_N (=10) — same dual-N gate as score_difference_p_value
+    / _ci_*."""
+
     # Phase 87.2 (D-06): per-bucket Score Gap fields on the Section 2 response.
     # Flat shape mirrors Phase 87.1's type_achievable_score_gap_* on EndgameCategoryStats.
     # D-01: positive = user outperformed Stockfish baseline; negative = below.
     # Defaults are None for backward compat with existing constructor call sites.
 
     # Conversion bucket (eval_entry >= +1.0 pawn, user perspective):
-    section2_score_gap_conv_mean: float | None = None
-    section2_score_gap_conv_n: int | None = None
-    section2_score_gap_conv_p_value: float | None = None
-    section2_score_gap_conv_ci_low: float | None = None
-    section2_score_gap_conv_ci_high: float | None = None
+    score_gap_conv_mean: float | None = None
+    score_gap_conv_n: int | None = None
+    score_gap_conv_p_value: float | None = None
+    score_gap_conv_ci_low: float | None = None
+    score_gap_conv_ci_high: float | None = None
+    # Phase 94 (PCTL-02): cohort percentile of score_gap_conv_mean
+    # vs the Phase 93 global empirical CDF.
+    score_gap_conv_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of score_gap_conv_mean vs the
+    Phase 93 global empirical CDF.
+    None when score_gap_conv_n < PVALUE_RELIABILITY_MIN_N (=10) or
+    conv_mean is None — same single-N gate as score_gap_conv_p_value
+    / _ci_*."""
 
     # Parity bucket (|eval_entry| <= 1.0 pawn):
-    section2_score_gap_parity_mean: float | None = None
-    section2_score_gap_parity_n: int | None = None
-    section2_score_gap_parity_p_value: float | None = None
-    section2_score_gap_parity_ci_low: float | None = None
-    section2_score_gap_parity_ci_high: float | None = None
+    score_gap_parity_mean: float | None = None
+    score_gap_parity_n: int | None = None
+    score_gap_parity_p_value: float | None = None
+    score_gap_parity_ci_low: float | None = None
+    score_gap_parity_ci_high: float | None = None
+    # Phase 94 (PCTL-02): cohort percentile of score_gap_parity_mean
+    # vs the Phase 93 global empirical CDF.
+    score_gap_parity_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of score_gap_parity_mean vs the
+    Phase 93 global empirical CDF.
+    None when score_gap_parity_n < PVALUE_RELIABILITY_MIN_N (=10) or
+    parity_mean is None — same single-N gate as score_gap_parity_p_value
+    / _ci_*."""
 
     # Recovery bucket (eval_entry <= -1.0 pawn):
-    section2_score_gap_recov_mean: float | None = None
-    section2_score_gap_recov_n: int | None = None
-    section2_score_gap_recov_p_value: float | None = None
-    section2_score_gap_recov_ci_low: float | None = None
-    section2_score_gap_recov_ci_high: float | None = None
+    score_gap_recov_mean: float | None = None
+    score_gap_recov_n: int | None = None
+    score_gap_recov_p_value: float | None = None
+    score_gap_recov_ci_low: float | None = None
+    score_gap_recov_ci_high: float | None = None
+    # Phase 94.4 D-05a (RESCUES Phase 94 D-12 suppression): Recovery Score
+    # Gap chip slot is restored under peer-relative. Under global, Recovery's
+    # d=0.95 inverted + opponent-confounded drove the v1 drop. Under
+    # peer-relative same-rated cohort comparison, the rating component of
+    # opponent strength normalises naturally; residual opponent-selection
+    # confound (challenging up vs farming down) is disclosed honestly via the
+    # tooltip's cohort-relative framing.
+    # Field name mirrors the MetricId literal "recovery_score_gap" used to
+    # key the per-(metric, TC) percentile rows in
+    # user_benchmark_percentiles.
+    recovery_score_gap_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of score_gap_recov_mean vs the
+    Phase 94.4 per-(rating cohort, TC) CDF for the rescued recovery metric
+    (D-05a). None when (a) Stage B has not computed a row for any of the
+    user's TCs, or (b) every above-floor TC's percentile is None (CDF out of
+    range)."""
 
     # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
-    # section2_score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
+    # score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
     # the three bucket means) and endgame_skill_rate_mean (rate composite for
     # the gauge) were deleted. See .planning/notes/endgame-skill-dropped-
     # conversion-elo.md for rationale (no composite definition survived
@@ -745,6 +841,16 @@ class TimePressureTcCard(BaseModel):
     net_timeout_rate: float = 0.0
     clock_gap: ClockGapBullet
     quintiles: list[PressureQuintileBullet]  # always 5, ordered Q0..Q4
+    # Phase 94.3: per-(metric × TC) percentile annotations.
+    # None when: (a) user below pooled >=30 inclusion floor for the metric × TC
+    # combo, (b) Stage B has not yet computed (race window after import +
+    # cold-drain), (c) the metric is not yet supported by the CDF.
+    # Frontend gates chip rendering on `!= null`. Defaults preserve the B-2 lock
+    # (existing test fixtures that build TimePressureTcCard keyword-style without
+    # these args do not break).
+    time_pressure_score_gap_percentile: float | None = None
+    clock_gap_percentile: float | None = None
+    net_flag_rate_percentile: float | None = None
 
 
 class TimePressureCardsResponse(BaseModel):
@@ -773,3 +879,14 @@ class EndgameOverviewResponse(BaseModel):
     time_pressure_cards: TimePressureCardsResponse  # Phase 88: per-TC time pressure cards
     clock_diff_timeline: ClockDiffTimelineResponse  # Plan 88-15 (CONTEXT §2 A-2): restored Average Clock Difference over Time line chart payload
     endgame_elo_timeline: EndgameEloTimelineResponse  # Phase 57 / 87.5 D-06: paired Endgame ELO + Actual ELO series per (platform, TC) via additive K · eg_score_gap
+    # Phase 94.4 D-07 bullet 4 + RESEARCH Open Question 4: top-level
+    # rating-anchor disclosure block, keyed by time control. The percentile
+    # chip tooltip's 4th bullet renders one entry per TC the user has an
+    # anchor for; missing TCs (below the inclusion floor or conversion
+    # suppressed) are absent from the dict, not None. The structure is a
+    # top-level block — NOT embedded per-chip — so all chips on the page can
+    # read from the same shared map without duplicating the anchor across
+    # response sub-payloads. Default factory keeps existing constructor call
+    # sites (older tests that build EndgameOverviewResponse keyword-style
+    # without this arg) working.
+    rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = Field(default_factory=dict)

@@ -28,7 +28,20 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
   useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
 }));
 
+import type { RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import { ZONE_SUCCESS } from '@/lib/theme';
+
+// Phase 94.4 Plan 07: page-level ΔES chips require both a non-null percentile
+// AND a rating anchor (for the popover's 4th-bullet disclosure). Tests that
+// exercise chip rendering pass `DEFAULT_RATING_ANCHORS`.
+const DEFAULT_RATING_ANCHORS: RatingAnchorsByTc = {
+  blitz: {
+    anchor_rating: 1600,
+    source_platform: 'lichess',
+    chesscom_raw_rating: null,
+    n_games: 1000,
+  },
+};
 import type {
   EndgamePerformanceResponse,
   EndgameWDLSummary,
@@ -138,6 +151,7 @@ function makeData(
     achievable_score_gap_p_value: null,
     achievable_score_gap_ci_low: null,
     achievable_score_gap_ci_high: null,
+    achievable_score_gap_percentile: null,
     ...overrides,
   };
 }
@@ -155,6 +169,9 @@ function makeScoreGap(
     score_difference_p_value: null,
     score_difference_ci_low: null,
     score_difference_ci_high: null,
+    score_gap_percentile: null,
+    score_gap_conv_percentile: null,
+    score_gap_parity_percentile: null,
     ...overrides,
   };
 }
@@ -573,5 +590,49 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(
       within(screen.getByTestId('tile-at-endgame-entry')).queryByText('Win/Draw/Loss'),
     ).toBeNull();
+  });
+
+  // ── Phase 94 PCTL-03/04/06: percentile chip rendering ─────────────────────
+
+  it('renders Endgame Score Gap percentile chip when score_gap_percentile is non-null', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData()}
+        scoreGap={makeScoreGap({ score_gap_percentile: 73 })}
+        ratingAnchors={DEFAULT_RATING_ANCHORS}
+      />,
+    );
+    expect(screen.getByTestId('endgame-score-gap-percentile-chip')).toBeTruthy();
+  });
+
+  it('does NOT render Endgame Score Gap percentile chip when score_gap_percentile is null', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData()}
+        scoreGap={makeScoreGap({ score_gap_percentile: null })}
+      />,
+    );
+    expect(screen.queryByTestId('endgame-score-gap-percentile-chip')).toBeNull();
+  });
+
+  it('renders Achievable Score Gap percentile chip when achievable_score_gap_percentile is non-null', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData({ achievable_score_gap_percentile: 88 })}
+        scoreGap={makeScoreGap()}
+        ratingAnchors={DEFAULT_RATING_ANCHORS}
+      />,
+    );
+    expect(screen.getByTestId('achievable-score-gap-percentile-chip')).toBeTruthy();
+  });
+
+  it('does NOT render Achievable Score Gap percentile chip when achievable_score_gap_percentile is null', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData({ achievable_score_gap_percentile: null })}
+        scoreGap={makeScoreGap()}
+      />,
+    );
+    expect(screen.queryByTestId('achievable-score-gap-percentile-chip')).toBeNull();
   });
 });

@@ -1707,11 +1707,14 @@ class TestFlushBatchStage5:
                     update_sql_texts.append(str(compiled))
             return update_sql_texts
 
-        ids_a = [101, 102, 103]
-        ids_b = [201, 202, 203, 204]
-        # Batch A: games [101, 102, 103]
+        # Use 7-digit ids so they cannot appear as a substring of a 6-digit
+        # microsecond fraction in a literal-rendered timestamp (e.g. the
+        # `evals_completed_at` value the bindparam-less literal_binds compile
+        # below produces). Earlier 3-digit ids like 101/102 flaked CI when a
+        # microsecond happened to start with the same digits.
+        ids_a = [9000001, 9000002, 9000003]
+        ids_b = [9000004, 9000005, 9000006, 9000007]
         sql_texts_batch_a = await _run_batch_and_capture_update_sql(ids_a)
-        # Batch B: games [201, 202, 203, 204] — different ids AND different count
         sql_texts_batch_b = await _run_batch_and_capture_update_sql(ids_b)
 
         assert len(sql_texts_batch_a) > 0, "Expected at least one UPDATE call in batch A"

@@ -381,9 +381,9 @@ export function EndgamesPage() {
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground space-y-2">
                     <p>
-                      <strong>Color Zones and FlawChess Benchmark:</strong> the blue band on each gauge and chart marks the typical range,
-                      defined by the middle 50% of players (interquartile range). Values inside the blue zone are typical, while red and green zones flag below- and
-                      above-average performance. Zone bounds are calibrated from the latest {' '}
+                      <strong>FlawChess Benchmark:</strong> a stratified sample of Lichess players across rating
+                      and time control buckets, used to calibrate the typical range for each metric. The latest
+                      run is published as the {' '}
                       <a
                         href="https://github.com/flawchess/flawchess/blob/main/reports/benchmarks-latest.md"
                         className="text-primary underline-offset-4 hover:underline"
@@ -392,9 +392,67 @@ export function EndgamesPage() {
                       >
                         FlawChess Benchmark
                       </a>
-                      , which provides metric distributions from a stratified sample of Lichess players across rating
-                      and time control buckets.
+                      {' '}report and powers both the color zones on gauges/charts and the percentile badges shown
+                      next to individual metrics.
                     </p>
+                    <p>
+                      <strong>Color Zones:</strong> the blue band on each gauge and chart marks the typical range,
+                      defined by the middle 50% of benchmark players (interquartile range). Values inside the blue
+                      zone are typical, while red and green zones flag below- and above-average performance relative
+                      to the benchmark cohort.
+                    </p>
+                    <p>
+                      <strong>Percentile Badges:</strong> the small badge next to a metric (e.g. a blue "23" or
+                      green "82") shows where you rank against a peer cohort of benchmark players at your rating
+                      and time control. Red ({'<'} 25), neutral (25-75), green ({'>'} 75). Computed in five steps:
+                    </p>
+                    <ol className="list-decimal pl-6 space-y-1">
+                      <li>
+                        <strong>Anchor your rating per time control.</strong> For each time control
+                        (bullet/blitz/rapid/classical) we take your most recent 3000 rated games in that time
+                        control over the last 36 months (the same pool used to compute your metrics in step 3,
+                        excluding chess.com Daily), then compute the median of your rating at game time across
+                        those games. chess.com ratings are converted to Lichess-equivalent via the{' '}
+                        <a
+                          href="https://chessgoals.com/rating-comparison"
+                          className="text-primary underline-offset-4 hover:underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          ChessGoals rating conversion tables
+                        </a>
+                        {' '}so everyone is compared on the same scale.
+                      </li>
+                      <li>
+                        <strong>Pick the matching peer cohort.</strong> From the FlawChess Benchmark, we select
+                        all Lichess players within +/-200 Elo of your anchor in the same time control. A cell
+                        only qualifies if at least 100 benchmark users fall in that window, otherwise the badge
+                        is suppressed.
+                      </li>
+                      <li>
+                        <strong>Compute your recent metric value.</strong> Your most recent 3000 rated games
+                        per time control over the last 36 months, vs opponents within +/-100 Elo, are used to
+                        compute the same metric (Endgame Score Gap, Conversion, Recovery, Achievable Score Gap,
+                        etc.) the same way it is computed for each benchmark user.
+                      </li>
+                      <li>
+                        <strong>Look up your percentile in the cohort distribution, per time control.</strong>
+                        {' '}Steps 1-3 are performed independently for each time control you play. For each TC,
+                        the benchmark cell stores 99 precomputed percentile breakpoints for that metric; your
+                        per-TC value is interpolated against those breakpoints to produce a per-TC percentile.
+                        For page-level chips that span time controls (Endgame Score Gap, Achievable Score Gap,
+                        Conversion, Parity, Recovery), the per-TC percentiles are then combined into a single
+                        chip value via a game-count-weighted mean, so the time controls you play most weigh
+                        most heavily. Per-TC chips on the Time Pressure cards skip this aggregation step and
+                        render their own TC's percentile directly.
+                      </li>
+                      <li>
+                        <strong>Color and display.</strong> The integer percentile is rendered on the badge with
+                        the red/neutral/green band described above. UI filters (color, opponent strength, recency)
+                        do not affect the badge: it always reflects the standardized "recent rated games vs
+                        near-peers" basis from step 3, so the comparison stays apples-to-apples.
+                      </li>
+                    </ol>
                     <p>
                       <strong>Endgame Phase:</strong> positions where the total count of major and minor pieces
                       (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
@@ -493,7 +551,11 @@ export function EndgamesPage() {
               </Accordion>
               <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Overall Performance</h2>
               {scoreGapData && (
-                <EndgameOverallPerformanceSection data={perfData} scoreGap={scoreGapData} />
+                <EndgameOverallPerformanceSection
+                  data={perfData}
+                  scoreGap={scoreGapData}
+                  ratingAnchors={overviewData?.rating_anchors}
+                />
               )}
               {scoreGapData && scoreGapData.timeline.length > 0 && (
                 <div className="charcoal-texture rounded-md p-4">
@@ -525,7 +587,10 @@ export function EndgamesPage() {
                   <h2 className="text-lg font-semibold text-foreground mt-2">
                     Endgame Metrics
                   </h2>
-                  <EndgameMetricsSection data={scoreGapData} />
+                  <EndgameMetricsSection
+                    data={scoreGapData}
+                    ratingAnchors={overviewData?.rating_anchors}
+                  />
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}
@@ -548,7 +613,10 @@ export function EndgamesPage() {
                   <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
                 </div>
               )}
-              <EndgameTimePressureSection data={timePressureCardsData} />
+              <EndgameTimePressureSection
+                data={timePressureCardsData}
+                ratingAnchors={overviewData?.rating_anchors}
+              />
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}

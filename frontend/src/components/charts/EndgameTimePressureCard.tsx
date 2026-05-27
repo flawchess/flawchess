@@ -16,6 +16,7 @@
 import { Swords } from 'lucide-react';
 
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
+import { PercentileChip } from '@/components/charts/PercentileChip';
 import { ScoreGapByTimePressureChart } from '@/components/charts/ScoreGapByTimePressureChart';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
@@ -30,7 +31,7 @@ import {
 import { CLOCK_GAP_DOMAIN, clampDeltaCi } from '@/lib/pressureBulletConfig';
 import { isConfident } from '@/lib/significance';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
-import type { ClockGapBullet, TimePressureTcCard } from '@/types/endgames';
+import type { ClockGapBullet, RatingAnchorOut, TimePressureTcCard } from '@/types/endgames';
 import { deriveLevel } from './EndgameOverallShared';
 
 // MIN_GAMES_PER_TC_CARD and MIN_GAMES_PER_PRESSURE_BIN are imported from
@@ -43,6 +44,14 @@ const TC_LABELS: Record<'bullet' | 'blitz' | 'rapid' | 'classical', string> = {
   rapid: 'Rapid',
   classical: 'Classical',
 };
+
+// ── Phase 94.4 Plan 07 ─────────────────────────────────────────────────────
+// The 94.3 TC-suffixed flavor dispatch maps (CLOCK_GAP_FLAVOR_BY_TC, etc.)
+// are GONE — the chip's flavor enum collapsed to 8 family-level names with an
+// optional `tc` prop. Call sites pass `flavor="clock-gap" tc={card.tc}`
+// directly, matching the backend's new family-level CdfMetricId ENUM.
+// Anchor props are sourced from the optional `ratingAnchor` prop threaded in
+// from EndgameTimePressureSection.
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -85,12 +94,24 @@ function tintForNetTimeoutRate(rate: number): string | undefined {
 }
 
 /**
- * SC-2: Three-column header row rendered ABOVE the Clock Gap bullet.
- * Left: You (user avg pct + seconds). Center: Gap value + MetricStatPopover.
- * Right: Opp (opp avg pct + seconds).
+ * Header row rendered ABOVE the Clock Gap bullet.
+ * Single left-aligned inline stat: "You: x% • Opp: y% • Gap: z% <info>"
+ * with the Clock Gap percentile chip pushed to the right edge.
  * Preserves the triple-gate font-tinting from the old ClockGapRow.
+ *
+ * Phase 94.4 Plan 07: `ratingAnchor` carries the per-TC anchor disclosed in
+ * the chip popover's 4th bullet. When undefined, the chip suppresses (the
+ * user is below the inclusion floor for this TC).
  */
-function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePressureTcCard }) {
+function ClockGapHeaderRow({
+  gap,
+  card,
+  ratingAnchor,
+}: {
+  gap: ClockGapBullet;
+  card: TimePressureTcCard;
+  ratingAnchor: RatingAnchorOut | undefined;
+}) {
   // Preserve font-tinting logic from ClockGapRow (triple-gate).
   const level = deriveLevel(gap.p_value, gap.n);
   const neutralMin = CLOCK_GAP_NEUTRAL_MIN;
@@ -108,14 +129,11 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
 
   return (
     <div
-      className="grid grid-cols-3 items-center text-sm tabular-nums mb-2"
+      className="flex items-center gap-1 text-sm tabular-nums mb-2"
       data-testid={`time-pressure-card-${card.tc}-clock-gap-header`}
     >
-      <span className="text-left" data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
-        You: <span className="font-semibold">{formatPct(card.user_avg_pct)}</span>
-      </span>
-      <span className="text-center flex items-center justify-center gap-1">
-        <span className="text-muted-foreground">Gap:</span>
+      <span>
+        Clock Gap:{' '}
         <span
           className="font-semibold"
           style={fontColor ? { color: fontColor } : undefined}
@@ -123,34 +141,68 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
         >
           {formattedGapValue}
         </span>
-        {/* MetricStatPopover migrated verbatim from ClockGapRow. */}
-        <MetricStatPopover
-          name="Clock Gap"
-          explanation="Your average clock advantage over your opponent when the endgame begins, as a share of the starting time. Positive means you entered the endgame with more time on your clock."
-          value={gap.mean_diff_pct}
-          baseline={0}
-          unit="percent"
-          gameCount={gap.n}
-          level={level}
-          pValue={gap.p_value}
-          vocabulary="score"
-          neutralLower={neutralMin}
-          neutralUpper={neutralMax}
-          baselineLabel="0%"
-          methodology={
-            <>
-              Mean of (user_clock − opp_clock) / base_clock at endgame entry.<br />
-              Test: one-sample z-test vs 0.<br />
-              Confidence interval: 95% normal-approx.
-            </>
-          }
-          testId={`time-pressure-card-${card.tc}-clock-gap-info`}
-          ariaLabel="What is Clock Gap?"
-        />
       </span>
-      <span className="text-right" data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
-        Opp: <span className="font-semibold">{formatPct(card.opp_avg_pct)}</span>
-      </span>
+      <MetricStatPopover
+        name="Clock Gap"
+        explanation={
+          <>
+            Your average clock advantage over your opponent when the endgame
+            begins, as a share of the starting time. Positive means you
+            entered the endgame with more time on your clock. You averaged{' '}
+            <strong data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
+              {formatPct(card.user_avg_pct)}
+            </strong>{' '}
+            of your clock; opponents averaged{' '}
+            <strong data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
+              {formatPct(card.opp_avg_pct)}
+            </strong>
+            .
+          </>
+        }
+        value={gap.mean_diff_pct}
+        baseline={0}
+        unit="percent"
+        gameCount={gap.n}
+        level={level}
+        pValue={gap.p_value}
+        vocabulary="score"
+        neutralLower={neutralMin}
+        neutralUpper={neutralMax}
+        baselineLabel="0%"
+        methodology={
+          <>
+            Mean of (user_clock − opp_clock) / base_clock at endgame entry.<br />
+            Test: one-sample z-test vs 0.<br />
+            Confidence interval: 95% normal-approx.
+          </>
+        }
+        testId={`time-pressure-card-${card.tc}-clock-gap-info`}
+        ariaLabel="What is Clock Gap?"
+      />
+      {/* Phase 94.4 Plan 07: Clock Gap percentile chip, right-aligned.
+          `ml-auto` pushes the chip to the row's right edge. Gated on
+          `!= null` to honor the backend inclusion-floor contract — a null
+          percentile suppresses the chip silently. Also gated on
+          `ratingAnchor !== undefined` because bullet 4 of the popover MUST
+          disclose the anchor; without it we cannot honestly render the
+          tooltip per CONTEXT D-07 bullet 4. Inline on all widths — the icon
+          + integer chip face fits at 375px without wrapping. */}
+      {card.clock_gap_percentile != null && ratingAnchor !== undefined && (
+        <span className="ml-auto inline-flex">
+          <PercentileChip
+            percentile={card.clock_gap_percentile}
+            flavor="clock-gap"
+            tc={card.tc}
+            anchorRating={ratingAnchor.anchor_rating}
+            nChesscomGames={ratingAnchor.n_chesscom_games}
+            nLichessGames={ratingAnchor.n_lichess_games}
+            chesscomMedianNative={ratingAnchor.chesscom_median_native ?? undefined}
+            lichessMedianNative={ratingAnchor.lichess_median_native ?? undefined}
+            metricLabel="Clock Gap"
+            testId={`time-pressure-card-${card.tc}-clock-gap-chip`}
+          />
+        </span>
+      )}
     </div>
   );
 }
@@ -158,12 +210,20 @@ function ClockGapHeaderRow({ gap, card }: { gap: ClockGapBullet; card: TimePress
 /**
  * SC-2: Slim row holding only the surviving "Net flag rate:" stat.
  * Extracted from the old ThreeStatRow; the You/Opp stats moved to ClockGapHeaderRow.
+ *
+ * Phase 94.4 Plan 07: takes the per-TC anchor for the chip's bullet-4 disclosure.
  */
-function NetFlagRateRow({ card }: { card: TimePressureTcCard }) {
+function NetFlagRateRow({
+  card,
+  ratingAnchor,
+}: {
+  card: TimePressureTcCard;
+  ratingAnchor: RatingAnchorOut | undefined;
+}) {
   const tint = tintForNetTimeoutRate(card.net_timeout_rate);
   return (
     <div
-      className="flex text-sm text-muted-foreground tabular-nums mt-3"
+      className="flex flex-wrap text-sm text-muted-foreground tabular-nums mt-3"
       data-testid={`time-pressure-card-${card.tc}-net-flag-rate-row`}
     >
       <span
@@ -189,6 +249,29 @@ function NetFlagRateRow({ card }: { card: TimePressureTcCard }) {
           </p>
         </InfoPopover>
       </span>
+      {/* Phase 94.4 Plan 07: Net Flag Rate percentile chip, right-aligned.
+          Gated on `!= null` so a 0.0 percentile (best possible — no net
+          timeouts) still renders, while below-floor (null) suppresses
+          silently. Also gated on `ratingAnchor !== undefined` so bullet 4
+          can disclose the anchor honestly. Inline on all widths. Per
+          CONTEXT D-07a + Plan 04, all 8 flavors are higher_is_better —
+          Net Flag Rate's inversion is handled at the data layer (CDF gen). */}
+      {card.net_flag_rate_percentile != null && ratingAnchor !== undefined && (
+        <span className="ml-auto inline-flex">
+          <PercentileChip
+            percentile={card.net_flag_rate_percentile}
+            flavor="net-flag-rate"
+            tc={card.tc}
+            anchorRating={ratingAnchor.anchor_rating}
+            nChesscomGames={ratingAnchor.n_chesscom_games}
+            nLichessGames={ratingAnchor.n_lichess_games}
+            chesscomMedianNative={ratingAnchor.chesscom_median_native ?? undefined}
+            lichessMedianNative={ratingAnchor.lichess_median_native ?? undefined}
+            metricLabel="Net Flag Rate"
+            testId={`time-pressure-card-${card.tc}-net-flag-rate-chip`}
+          />
+        </span>
+      )}
     </div>
   );
 }
@@ -198,6 +281,7 @@ function NetFlagRateRow({ card }: { card: TimePressureTcCard }) {
 export function EndgameTimePressureCard({
   card,
   grandTotal,
+  ratingAnchor,
 }: {
   card: TimePressureTcCard;
   /**
@@ -208,6 +292,13 @@ export function EndgameTimePressureCard({
    * computes this once and passes it down.
    */
   grandTotal?: number;
+  /**
+   * Phase 94.4 Plan 07: per-TC rating anchor for the chip popover's 4th-bullet
+   * disclosure. When undefined (user below the inclusion floor for this TC),
+   * all 3 chip slots on this card suppress silently. Optional so legacy
+   * fixtures still render the card body (chips just don't appear).
+   */
+  ratingAnchor?: RatingAnchorOut;
 }) {
   // TC-level hide: not enough games to show any meaningful data for this TC.
   if (card.total < MIN_GAMES_PER_TC_CARD) return null;
@@ -256,7 +347,7 @@ export function EndgameTimePressureCard({
         {/* SC-2: top section — 3-column header row + Clock Gap bullet + net flag rate.
             The ClockGapHeaderRow sits ABOVE the bullet, replacing the old label row. */}
         <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
-          <ClockGapHeaderRow gap={gap} card={card} />
+          <ClockGapHeaderRow gap={gap} card={card} ratingAnchor={ratingAnchor} />
           <div
             className="min-w-0 tabular-nums"
             data-testid={`time-pressure-card-${card.tc}-clock-gap-bullet`}
@@ -273,7 +364,9 @@ export function EndgameTimePressureCard({
               barColor="neutral"
             />
           </div>
-          <NetFlagRateRow card={card} />
+          {/* Visual separator between Clock Gap bullet and Net flag rate row. */}
+          <div className="border-t border-border/40 mt-3" aria-hidden="true" />
+          <NetFlagRateRow card={card} ratingAnchor={ratingAnchor} />
         </div>
 
         {/* Visual separator between top section and score-gap chart. */}
@@ -282,11 +375,17 @@ export function EndgameTimePressureCard({
         {/* SC-3: Replace the four stacked per-bucket bullet rows with the
             ScoreGapByTimePressureChart (line chart with zone bands). */}
         <div>
-          <p
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
+          {/* Phase 94.3 (TPCTL-06): subtitle changed from inline-flex → flex so
+              the trailing `ml-auto` Time Pressure Score Gap chip slot can push
+              to the right edge. The leading label + InfoPopover sit side-by-
+              side via `items-center gap-1.5`. The element changed from <p>
+              to <div> because the chip's Radix popover renders a
+              span[role="button"] which is invalid inside a paragraph. */}
+          <div
+            className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
             data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
           >
-            Score Gap by Remaining Time
+            <span>Score Gap by Remaining Time</span>
             <InfoPopover
               ariaLabel={`${tcLabel} score gap by remaining time info`}
               testId={`time-pressure-card-${card.tc}-quintiles-info`}
@@ -302,13 +401,36 @@ export function EndgameTimePressureCard({
                   outscored you.
                 </p>
                 <p>
+                  Each x-axis label is the <em>center</em> of a 20%-wide
+                  bucket: 10% pools all endgames entered with 0-20% of your
+                  clock left, 30% pools 20-40%, 50% pools 40-60%, and 70% pools
+                  60-80%. The 80-100% bucket is dropped (little time pressure
+                  to measure).
+                </p>
+                <p>
                   Each marker is sized by how many of that time bucket's games were
                   yours versus your opponents'. A bigger dot means you were in this
                   time pressure situation more often than your opponents.
                 </p>
               </div>
             </InfoPopover>
-          </p>
+            {card.time_pressure_score_gap_percentile != null && ratingAnchor !== undefined && (
+              <span className="ml-auto inline-flex">
+                <PercentileChip
+                  percentile={card.time_pressure_score_gap_percentile}
+                  flavor="time-pressure-score-gap"
+                  tc={card.tc}
+                  anchorRating={ratingAnchor.anchor_rating}
+                  nChesscomGames={ratingAnchor.n_chesscom_games}
+                  nLichessGames={ratingAnchor.n_lichess_games}
+                  chesscomMedianNative={ratingAnchor.chesscom_median_native ?? undefined}
+                  lichessMedianNative={ratingAnchor.lichess_median_native ?? undefined}
+                  metricLabel="Time Pressure Score Gap"
+                  testId={`time-pressure-card-${card.tc}-time-pressure-score-gap-chip`}
+                />
+              </span>
+            )}
+          </div>
           <div data-testid={`time-pressure-card-${card.tc}-score-gap-chart`}>
             <ScoreGapByTimePressureChart quintiles={card.quintiles} tc={card.tc} />
           </div>

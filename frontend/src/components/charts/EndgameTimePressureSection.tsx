@@ -13,21 +13,33 @@
  */
 
 import { EndgameTimePressureCard } from '@/components/charts/EndgameTimePressureCard';
+import type { RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import type { TimePressureCardsResponse } from '@/types/endgames';
 
 // SC-1: Named grid class constants — no magic strings in the ternary.
-// Mobile-first: every layout collapses to a single stacked column below `sm`
-// so TC cards stack on top of each other on phones (post-UAT 88.4).
-const GRID_ONE_CARD = 'w-full sm:w-1/2 mt-2';
-const GRID_TWO_CARDS = 'grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2';
-const GRID_THREE_CARDS = 'grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2';
-const GRID_FOUR_CARDS = 'grid grid-cols-1 md:grid-cols-2 gap-4 mt-2';
+// Mobile-first: every layout collapses to a single stacked column below the
+// multi-col breakpoint so TC cards stack on phones AND tablets. Breakpoints
+// raised two steps from the Phase 88 originals (sm→lg / md→xl) so the
+// single-column layout holds well into desktop widths before flipping.
+const GRID_ONE_CARD = 'w-full md:w-1/2 mt-2';
+const GRID_TWO_CARDS = 'grid grid-cols-1 md:grid-cols-2 gap-4 mt-2';
+const GRID_THREE_CARDS = 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-2';
+const GRID_FOUR_CARDS = 'grid grid-cols-1 lg:grid-cols-2 gap-4 mt-2';
 
 export function EndgameTimePressureSection({
   data,
+  ratingAnchors,
 }: {
   data: TimePressureCardsResponse;
+  /** Phase 94.4 Plan 07: per-TC rating anchors from
+   *  EndgameOverviewResponse.rating_anchors. Threaded into per-TC chip slots
+   *  on each EndgameTimePressureCard. Cards without a matching anchor (TC
+   *  below the inclusion floor) suppress their chip silently. Defaults to
+   *  an empty object so legacy fixtures and pre-94.4 server responses still
+   *  render the section (chips just don't appear). */
+  ratingAnchors?: RatingAnchorsByTc;
 }) {
+  const anchors = ratingAnchors ?? {};
   return (
     <section
       data-testid="time-pressure-cards-section"
@@ -69,6 +81,7 @@ export function EndgameTimePressureSection({
                   key={card.tc}
                   card={card}
                   grandTotal={grandTotal}
+                  ratingAnchor={anchors[card.tc]}
                 />
               ))}
             </div>

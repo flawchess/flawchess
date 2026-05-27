@@ -1,5 +1,25 @@
 # Milestones: FlawChess
 
+## v1.18 Import Pipeline Hardening (Shipped: 2026-05-22)
+
+**Phases completed:** 3 phases (90, 91, 92), 17 plans, delivered via PRs #130, #137, #138 (plus the production-branch hotfix #139 capping DB pool / max_connections / container memory for FLAWCHESS-3Q).
+**Stats:** 240 files changed, +30,193 / -9,406 lines, 54 commits over 3 days (2026-05-19 → 2026-05-22) since v1.17 (commit 114211c2 → f5224b4f).
+**Source:** Two prod-side OOM recurrences after v1.17 (FLAWCHESS-56 2026-05-16, FLAWCHESS-3Q 2026-05-21) — single-import RSS climbing linearly under heavy fetch, Postgres OOM-killed when one uvicorn process fanned out to 13 active backends. Seeds SEED-017/018/022/023 captured the diagnostic; this milestone retired all four.
+
+**Key accomplishments:**
+
+- **Phase 90 — Import pipeline memory leak fix + resilience** (PR #130): replaced the literal `case()`+`IN` bulk UPDATE in `_flush_batch` Stage 5 with bound-parameter `executemany` (root cause of the linear RSS climb — a per-batch unique SQL statement that the prepared-statement cache kept forever). Scoped `AsyncSession` per batch in `run_import`. Promoted `cleanup_orphaned_jobs()` from a startup-only call to a periodic + on-DB-reconnect reaper so a Postgres-only restart no longer strands jobs `in_progress`. Bounded-retry-with-backoff around the failure-state UPDATE.
+- **Phase 91 — Two-lane import: defer Stockfish eval to in-process cold drain** (PR #137 + follow-on #134/#135): added `games.evals_completed_at` + partial index. Hot path now does fetch → parse → insert positions → commit with no Stockfish work; a separate `run_eval_drain()` lifespan coroutine picks 10 games per tick from the partial index and evaluates outside any session scope. Frontend Stockfish-coverage header bar + per-metric "based on N of M eligible games" caveat on every eval-dependent stat. Dual-20k stress-test harness in `scripts/measure_dual_import_rss.py`.
+- **Phase 92 — Custom date range filter** (PR #138): replaced the closed `Recency` string union on the API wire with `from_date` / `to_date` params; added a 9th "Custom range…" entry to the recency dropdown with a desktop Popover + mobile nested Drawer, shadcn Calendar component installed. `Recency` → `RecencyPreset` UI-only type. LLM insights prompts derive human window labels from absolute dates. Closes a pending bookmark-timeseries cleanup todo (`2026-05-02-remove-recency-from-bookmark-timeseries`).
+- **Hotfix PR #139 (FLAWCHESS-3Q)**: SQLAlchemy pool 20+30 → 10+10, Postgres `max_connections` 100 → 30, backend/db container `mem_limit` + `memswap_limit` set, Hetzner CPX32 → CPX42 (4→8 vCPU, 7.6→16 GB RAM). Postgres tuned for the 16 GB host (`shared_buffers=4GB`, `effective_cache_size=12GB`, `work_mem=16MB`).
+
+**Tech debt (carried forward, informational):**
+
+- SEED-024 (`ProcessPoolExecutor` for chess.com fetch lane) planted but deferred — pure throughput win, blocked on per-worker RSS measurement after the CPX42 RAM upgrade.
+- Concurrent-import admission control (SEED-022 option F), scheduled backend-restart cadence (option G), and idempotent `on_game_fetched` (option A′) intentionally not shipped — hot-lane batches now too cheap to OOM under realistic concurrent load.
+
+---
+
 ## v1.17 Endgame Stats Card Redesign (Shipped: 2026-05-19)
 
 **Phases completed:** 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans. Phase 87.3 superseded by 87.4; Phase 89 (Polish) dropped from scope. Delivered via PRs #89–#117.

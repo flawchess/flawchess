@@ -6,11 +6,11 @@
  *
  * Phase 87.2: updated fixtures to reflect schema changes:
  * - MaterialRow: removed opponent_score, opponent_games, diff_p_value, diff_ci_low, diff_ci_high
- * - ScoreGapMaterialResponse: removed skill, opp_skill, skill_diff_*; added 20 section2_score_gap_* fields
+ * - ScoreGapMaterialResponse: removed skill, opp_skill, skill_diff_*; added 20 score_gap_* fields
  * - Section copy updated to Stockfish-baseline framing (D-08)
  * Phase 87.4: EndgameSkillCard / tile-endgame-skill / endgameWdl prop /
  * ConnectorArrows / 6 skill fields all deleted. Bullets now display-shifted
- * uniformly via SECTION2_DISPLAY_SHIFT.
+ * uniformly via SCORE_GAP_BUCKET_DISPLAY_SHIFT.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -87,23 +87,23 @@ function buildScoreGapResponse(
     score_difference_p_value: 0.001,
     score_difference_ci_low: 0.02,
     score_difference_ci_high: 0.08,
-    // Phase 87.2: 15 section2_score_gap_* fields (3 buckets × 5). Skill fields
+    // Phase 87.2: 15 score_gap_* fields (3 buckets × 5). Skill fields
     // were deleted in Phase 87.4 D-05.
-    section2_score_gap_conv_mean: 0.08,
-    section2_score_gap_conv_n: 100,
-    section2_score_gap_conv_p_value: 0.001,
-    section2_score_gap_conv_ci_low: 0.03,
-    section2_score_gap_conv_ci_high: 0.13,
-    section2_score_gap_parity_mean: 0.03,
-    section2_score_gap_parity_n: 100,
-    section2_score_gap_parity_p_value: 0.15,
-    section2_score_gap_parity_ci_low: -0.02,
-    section2_score_gap_parity_ci_high: 0.08,
-    section2_score_gap_recov_mean: -0.04,
-    section2_score_gap_recov_n: 100,
-    section2_score_gap_recov_p_value: 0.25,
-    section2_score_gap_recov_ci_low: -0.09,
-    section2_score_gap_recov_ci_high: 0.01,
+    score_gap_conv_mean: 0.08,
+    score_gap_conv_n: 100,
+    score_gap_conv_p_value: 0.001,
+    score_gap_conv_ci_low: 0.03,
+    score_gap_conv_ci_high: 0.13,
+    score_gap_parity_mean: 0.03,
+    score_gap_parity_n: 100,
+    score_gap_parity_p_value: 0.15,
+    score_gap_parity_ci_low: -0.02,
+    score_gap_parity_ci_high: 0.08,
+    score_gap_recov_mean: -0.04,
+    score_gap_recov_n: 100,
+    score_gap_recov_p_value: 0.25,
+    score_gap_recov_ci_low: -0.09,
+    score_gap_recov_ci_high: 0.01,
     ...overrides,
   };
 }
@@ -120,7 +120,7 @@ describe('EndgameMetricsSection — full-rendering case (Phase 87.4: 3 cards)', 
     expect(screen.queryByTestId('tile-endgame-skill')).toBeNull();
     expect(
       screen.getByText(
-        'How do you score from winning, balanced, and losing endgames compared to a strong 2300+ rated player?',
+        'How do you score from winning, balanced, and losing endgames?',
       ),
     ).not.toBeNull();
   });
@@ -136,14 +136,14 @@ describe('EndgameMetricsSection — full-rendering case (Phase 87.4: 3 cards)', 
 });
 
 describe('EndgameMetricsSection — display-shift wiring (Phase 87.4 D-03/D-04)', () => {
-  it('applies SECTION2_DISPLAY_SHIFT to the Conversion bullet value', () => {
+  it('applies SCORE_GAP_BUCKET_DISPLAY_SHIFT to the Conversion bullet value', () => {
     // Conv raw = PIVOT (-0.0474) → shifted = -0.0474 + -0.055 = -0.1024 → rounded -10%.
     // The card renders the shifted value as a signed percent.
     const data = buildScoreGapResponse({
-      section2_score_gap_conv_mean: -0.0474,
-      section2_score_gap_conv_n: 100,
-      section2_score_gap_conv_ci_low: -0.10,
-      section2_score_gap_conv_ci_high: 0.0,
+      score_gap_conv_mean: -0.0474,
+      score_gap_conv_n: 100,
+      score_gap_conv_ci_low: -0.10,
+      score_gap_conv_ci_high: 0.0,
     });
 
     render(<EndgameMetricsSection data={data} />);
@@ -155,10 +155,10 @@ describe('EndgameMetricsSection — display-shift wiring (Phase 87.4 D-03/D-04)'
 
   it('Parity bullet is unshifted (shift = 0)', () => {
     const data = buildScoreGapResponse({
-      section2_score_gap_parity_mean: 0.03,
-      section2_score_gap_parity_n: 100,
-      section2_score_gap_parity_ci_low: -0.02,
-      section2_score_gap_parity_ci_high: 0.08,
+      score_gap_parity_mean: 0.03,
+      score_gap_parity_n: 100,
+      score_gap_parity_ci_low: -0.02,
+      score_gap_parity_ci_high: 0.08,
     });
 
     render(<EndgameMetricsSection data={data} />);
@@ -171,10 +171,10 @@ describe('EndgameMetricsSection — display-shift wiring (Phase 87.4 D-03/D-04)'
   it('Recovery bullet is shifted by +0.06', () => {
     // Recov raw = -0.04 → shifted = -0.04 + 0.06 = +0.02 → rounded +2%.
     const data = buildScoreGapResponse({
-      section2_score_gap_recov_mean: -0.04,
-      section2_score_gap_recov_n: 100,
-      section2_score_gap_recov_ci_low: -0.09,
-      section2_score_gap_recov_ci_high: 0.01,
+      score_gap_recov_mean: -0.04,
+      score_gap_recov_n: 100,
+      score_gap_recov_ci_low: -0.09,
+      score_gap_recov_ci_high: 0.01,
     });
 
     render(<EndgameMetricsSection data={data} />);

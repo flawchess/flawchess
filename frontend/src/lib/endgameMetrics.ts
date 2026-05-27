@@ -68,7 +68,7 @@ export const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
 // gapColor on EndgameMetricCard continues to read raw (unshifted) values so
 // zone tinting is unaffected — only the rendered value + neutral band shift.
 // See .planning/notes/endgame-skill-dropped-conversion-elo.md for rationale.
-export const SECTION2_DISPLAY_SHIFT: Record<MaterialBucket, number> = {
+export const SCORE_GAP_BUCKET_DISPLAY_SHIFT: Record<MaterialBucket, number> = {
   conversion: -0.055,
   parity: 0,
   recovery: 0.06,

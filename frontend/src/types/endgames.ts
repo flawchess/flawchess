@@ -113,6 +113,9 @@ export interface EndgamePerformanceResponse {
   achievable_score_gap_p_value: number | null;
   achievable_score_gap_ci_low: number | null;
   achievable_score_gap_ci_high: number | null;
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Achievable Score Gap vs the Phase 93 global CDF.
+   *  null when the endgame-entry span count is below PVALUE_RELIABILITY_MIN_N (=10). */
+  achievable_score_gap_percentile: number | null;
 }
 
 /** Single data point in the per-type weekly win-rate time series.
@@ -202,6 +205,10 @@ export interface ScoreGapMaterialResponse {
   score_difference_p_value: number | null;
   score_difference_ci_low: number | null;
   score_difference_ci_high: number | null;
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Endgame Score Gap vs the Phase 93 global CDF.
+   *  Name mirrors the MetricId (`score_gap`), not the wire sibling `score_difference` (D-11).
+   *  null when min(endgame_wdl.total, non_endgame_wdl.total) < PVALUE_RELIABILITY_MIN_N (=10). */
+  score_gap_percentile: number | null;
   // Phase 87.2 (D-06): 20 eval-baseline Delta-ES Score Gap fields (4 buckets x 5).
   // Replaces the rate-based mirror-bucket peer-bullet (skill, opp_skill, skill_diff_*
   // deleted per D-04). Each cluster: mean per-span Score Gap, sample count,
@@ -212,27 +219,40 @@ export interface ScoreGapMaterialResponse {
   // in user-facing labels — the abbreviated form is shorter and consistent with backend.
 
   // Conversion bucket (entered endgame with eval >= +1.0):
-  section2_score_gap_conv_mean: number | null;
-  section2_score_gap_conv_n: number | null;
-  section2_score_gap_conv_p_value: number | null;
-  section2_score_gap_conv_ci_low: number | null;
-  section2_score_gap_conv_ci_high: number | null;
+  score_gap_conv_mean: number | null;
+  score_gap_conv_n: number | null;
+  score_gap_conv_p_value: number | null;
+  score_gap_conv_ci_low: number | null;
+  score_gap_conv_ci_high: number | null;
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Conversion ΔES vs the Phase 93 global CDF.
+   *  null when score_gap_conv_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
+  score_gap_conv_percentile: number | null;
 
   // Parity bucket (entered endgame with eval between -1.0 and +1.0):
-  section2_score_gap_parity_mean: number | null;
-  section2_score_gap_parity_n: number | null;
-  section2_score_gap_parity_p_value: number | null;
-  section2_score_gap_parity_ci_low: number | null;
-  section2_score_gap_parity_ci_high: number | null;
+  score_gap_parity_mean: number | null;
+  score_gap_parity_n: number | null;
+  score_gap_parity_p_value: number | null;
+  score_gap_parity_ci_low: number | null;
+  score_gap_parity_ci_high: number | null;
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Parity ΔES vs the Phase 93 global CDF.
+   *  null when score_gap_parity_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
+  score_gap_parity_percentile: number | null;
 
   // Recovery bucket (entered endgame with eval <= -1.0):
-  section2_score_gap_recov_mean: number | null;
-  section2_score_gap_recov_n: number | null;
-  section2_score_gap_recov_p_value: number | null;
-  section2_score_gap_recov_ci_low: number | null;
-  section2_score_gap_recov_ci_high: number | null;
+  score_gap_recov_mean: number | null;
+  score_gap_recov_n: number | null;
+  score_gap_recov_p_value: number | null;
+  score_gap_recov_ci_low: number | null;
+  score_gap_recov_ci_high: number | null;
+  /** Phase 94.4 D-05a: Recovery Score Gap chip RESCUED under peer-relative.
+   *  Replaces Phase 94 D-12 suppression — same-rated cohort comparison
+   *  normalises the opponent-rating confound that drove the v1 drop.
+   *  Field name mirrors the MetricId literal `recovery_score_gap` (D-13
+   *  ENUM). null when Stage B wrote no row for any above-floor TC, or
+   *  when every per-TC PercentileRow has null percentile. */
+  recovery_score_gap_percentile: number | null;
 
-  // Phase 87.4 (D-05): the 6 Skill fields (section2_score_gap_skill_* and
+  // Phase 87.4 (D-05): the 6 Skill fields (score_gap_skill_* and
   // endgame_skill_rate_mean) were hard-deleted alongside EndgameSkillCard.
   // No composite definition survived scrutiny on all four axes; see
   // .planning/notes/endgame-skill-dropped-conversion-elo.md.
@@ -271,6 +291,13 @@ export interface ClockGapBullet {
  * fractions / absolute seconds depending on the suffix; net_timeout_rate is a
  * fraction (0.005 = 0.5%) consistent with clock_gap.mean_diff_pct's convention.
  * Averages are null when no game in this TC has clock data (legacy imports).
+ *
+ * Phase 94.3 (CONTEXT.md D-1): three per-(metric × TC) chip percentile fields
+ * for the per-TC chip slots. null when the user is below the pooled >=30
+ * inclusion floor for that metric × TC combo, when Stage B has not yet computed
+ * (race window after import + cold-drain), or when the field is not yet
+ * populated by the backend (back-compat default). Frontend gates chip rendering
+ * on `!= null`.
  */
 export interface TimePressureTcCard {
   tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
@@ -283,6 +310,11 @@ export interface TimePressureTcCard {
   net_timeout_rate: number;         // (timeout_wins - timeout_losses) / total, fraction (0.005 = 0.5%)
   clock_gap: ClockGapBullet;
   quintiles: PressureQuintileBullet[]; // always 5, ordered Q0..Q4
+  // Phase 94.3: per-(metric × TC) percentile annotations (optional for
+  // back-compat — older fixtures and pre-94.3 server responses don't set these).
+  time_pressure_score_gap_percentile?: number | null;
+  clock_gap_percentile?: number | null;
+  net_flag_rate_percentile?: number | null;
 }
 
 /** Replaces ClockPressureResponse + TimePressureChartResponse (Phase 88). */
@@ -310,6 +342,43 @@ export interface ClockDiffTimelineResponse {
   points: ClockDiffTimelinePoint[];
 }
 
+/** D-12 Reversal Amendment (CONTEXT 2026-05-27) — per-TC blended rating-anchor
+ *  disclosure for the percentile chip tooltip. The anchor is the game-weighted
+ *  median of converted-chess.com + native-lichess ratings. The per-platform
+ *  game-count and native-median fields support the four disclosure branches:
+ *
+ *    (a) Mixed user (n_chesscom_games > 0 AND n_lichess_games > 0):
+ *        "Anchored at ~{anchor_rating} Elo, blending {n_chesscom_games}
+ *         chess.com games (median {chesscom_median_native}, converted) with
+ *         {n_lichess_games} lichess games (median {lichess_median_native})."
+ *
+ *    (b) Pure-lichess (n_chesscom_games == 0):
+ *        "Anchored at ~{anchor_rating} Elo from {n_lichess_games} lichess
+ *         games (native rating)."
+ *
+ *    (c) Pure-chess.com (n_lichess_games == 0):
+ *        "Anchored at ~{anchor_rating} Elo from {n_chesscom_games} chess.com
+ *         games (median {chesscom_median_native}, converted to
+ *         Lichess-equivalent via ChessGoals snapshot 2026-05-26)."
+ *
+ *    (d) Suppression (both counts == 0): chip suppresses at the caller.
+ *
+ *  Fields:
+ *  - `anchor_rating`: blended Lichess-equivalent (post-conversion for
+ *    chess.com games; native for lichess games).
+ *  - `n_chesscom_games`: chess.com games used in the anchor (0 for pure-lichess).
+ *  - `n_lichess_games`: lichess games used in the anchor (0 for pure-chess.com).
+ *  - `chesscom_median_native`: PRE-conversion chess.com median; null when
+ *    n_chesscom_games == 0.
+ *  - `lichess_median_native`: native lichess median; null when n_lichess_games == 0. */
+export interface RatingAnchorOut {
+  anchor_rating: number;
+  n_chesscom_games: number;
+  n_lichess_games: number;
+  chesscom_median_native: number | null;
+  lichess_median_native: number | null;
+}
+
 export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
@@ -318,6 +387,12 @@ export interface EndgameOverviewResponse {
   time_pressure_cards: TimePressureCardsResponse; // Phase 88 (replaces clock_pressure + time_pressure_chart)
   clock_diff_timeline: ClockDiffTimelineResponse; // Plan 88-15 (CONTEXT §2 A-2): restored line chart payload
   endgame_elo_timeline: EndgameEloTimelineResponse; // Phase 57 (rebuilt Phase 87.5)
+  /** Phase 94.4 D-07 bullet 4: top-level rating-anchor disclosure block.
+   *  Keyed by time control. Missing-TC keys are absent (Partial<Record>);
+   *  Plan 07's tooltip picks the dominant TC's anchor. Missing keys mean
+   *  the user is below the inclusion floor for that TC or (for chess.com
+   *  sources) the conversion returned null. */
+  rating_anchors: Partial<Record<'bullet' | 'blitz' | 'rapid' | 'classical', RatingAnchorOut>>;
 }
 
 // ── Phase 87.5: Endgame ELO Timeline (rebuilt on Endgame Score Gap) ──

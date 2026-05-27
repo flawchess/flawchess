@@ -34,6 +34,7 @@ from app.services.eval_drain import (
     _collect_midgame_eval_targets,
     _collect_endgame_span_eval_targets,
 )  # Phase 91: cross-module use of eval_drain internals is intentional — see SEED-023.
+from app.services.user_benchmark_percentiles_service import compute_stage_a
 from app.services.zobrist import PlyData, process_game_pgn
 
 logger = logging.getLogger(__name__)
@@ -497,6 +498,10 @@ async def _complete_import_job(job: JobState, job_id: str) -> None:
             last_synced_at=now,
         )
         await session.commit()
+    # Phase 94.1 D-03 / ROADMAP SC 3: Stage A fires AFTER commit, NOT inside the
+    # import transaction. Fire-and-forget — errors are captured to Sentry inside
+    # compute_stage_a; never propagated.
+    asyncio.create_task(compute_stage_a(job.user_id))
 
 
 async def run_import(job_id: str) -> None:

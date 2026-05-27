@@ -14,6 +14,7 @@ import { ANY_RANGE } from '@/lib/opponentStrength';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { Button } from '@/components/ui/button';
+import { ChevronDown } from 'lucide-react';
 import { OpponentStrengthFilter } from './OpponentStrengthFilter';
 import { CustomRangePopover, formatCustomRangeLabel } from './CustomRangePopover';
 import { CustomRangeDrawer } from './CustomRangeDrawer';
@@ -207,6 +208,8 @@ export function FilterPanel({
   };
   const isMobile = useIsMobile();
 
+  const [moreOpen, setMoreOpen] = useState(false);
+
   const toggleTimeControl = (tc: TimeControl) => {
     const current = filters.timeControls ?? TIME_CONTROLS;
     if (current.includes(tc)) {
@@ -240,6 +243,7 @@ export function FilterPanel({
   };
 
   const show = (field: FilterField) => visibleFilters.includes(field);
+  const showMoreSection = show('opponent') || show('rated');
 
   return (
     <div className="space-y-3">
@@ -420,49 +424,68 @@ export function FilterPanel({
         />
       )}
 
-      {/* Opponent Type */}
-      {show('opponent') && (
-        <div className="pt-3 border-t border-border/40">
-          <p className="mb-1 text-xs text-muted-foreground">Opponent Type</p>
-          <ToggleGroup
-            type="single"
-            value={filters.opponentType}
-            onValueChange={(v) => {
-              if (!v) return;
-              update({ opponentType: v as OpponentType });
-            }}
-            variant="outline"
-            size="sm"
-            data-testid="filter-opponent"
-            className="w-full"
-          >
-            <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1">Human</ToggleGroupItem>
-            <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1">Bot</ToggleGroupItem>
-            <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1">Both</ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-      )}
-
-      {/* Rated */}
-      {show('rated') && (
+      {/* More: Opponent Type + Rated */}
+      {showMoreSection && (
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Rated</p>
-          <ToggleGroup
-            type="single"
-            value={filters.rated === null ? 'all' : filters.rated ? 'rated' : 'casual'}
-            onValueChange={(v) => {
-              if (!v) return;
-              update({ rated: v === 'all' ? null : v === 'rated' });
-            }}
-            variant="outline"
-            size="sm"
-            data-testid="filter-rated"
-            className="w-full"
+          <button
+            type="button"
+            onClick={() => setMoreOpen((v) => !v)}
+            aria-expanded={moreOpen}
+            data-testid="filter-more-toggle"
+            className="flex w-full items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1">All</ToggleGroupItem>
-            <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1">Rated</ToggleGroupItem>
-            <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1">Casual</ToggleGroupItem>
-          </ToggleGroup>
+            <ChevronDown
+              className={cn('h-3.5 w-3.5 transition-transform', moreOpen && 'rotate-180')}
+            />
+            More
+          </button>
+          {moreOpen && (
+            <div className="mt-2 space-y-3">
+              {show('opponent') && (
+                <div>
+                  <p className="mb-1 text-xs text-muted-foreground">Opponent Type</p>
+                  <ToggleGroup
+                    type="single"
+                    value={filters.opponentType}
+                    onValueChange={(v) => {
+                      if (!v) return;
+                      update({ opponentType: v as OpponentType });
+                    }}
+                    variant="outline"
+                    size="sm"
+                    data-testid="filter-opponent"
+                    className="w-full"
+                  >
+                    <ToggleGroupItem value="human" data-testid="filter-opponent-human" className="min-h-11 sm:min-h-0 flex-1">Human</ToggleGroupItem>
+                    <ToggleGroupItem value="bot" data-testid="filter-opponent-bot" className="min-h-11 sm:min-h-0 flex-1">Bot</ToggleGroupItem>
+                    <ToggleGroupItem value="both" data-testid="filter-opponent-both" className="min-h-11 sm:min-h-0 flex-1">Both</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              )}
+
+              {show('rated') && (
+                <div>
+                  <p className="mb-1 text-xs text-muted-foreground">Rated</p>
+                  <ToggleGroup
+                    type="single"
+                    value={filters.rated === null ? 'all' : filters.rated ? 'rated' : 'casual'}
+                    onValueChange={(v) => {
+                      if (!v) return;
+                      update({ rated: v === 'all' ? null : v === 'rated' });
+                    }}
+                    variant="outline"
+                    size="sm"
+                    data-testid="filter-rated"
+                    className="w-full"
+                  >
+                    <ToggleGroupItem value="all" data-testid="filter-rated-all" className="min-h-11 sm:min-h-0 flex-1">All</ToggleGroupItem>
+                    <ToggleGroupItem value="rated" data-testid="filter-rated-rated" className="min-h-11 sm:min-h-0 flex-1">Rated</ToggleGroupItem>
+                    <ToggleGroupItem value="casual" data-testid="filter-rated-casual" className="min-h-11 sm:min-h-0 flex-1">Casual</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

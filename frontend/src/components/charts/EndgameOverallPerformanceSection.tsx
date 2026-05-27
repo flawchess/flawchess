@@ -31,6 +31,7 @@ import {
   SCORE_GAP_NEUTRAL_MAX,
   SCORE_GAP_NEUTRAL_MIN,
 } from '@/generated/endgameZones';
+import { pickDominantTcAnchor, type RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type {
   EndgamePerformanceResponse,
@@ -41,6 +42,7 @@ import { EndgameCard } from './EndgameOverallCard';
 import { EntryCard } from './EndgameOverallEntryCard';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
 import { deriveLevel } from './EndgameOverallShared';
+import { PercentileChip } from './PercentileChip';
 
 // 260514: Achievable (±5pp) and Endgame (±10pp) Score Gaps now use distinct
 // bands — see reports/benchmarks-latest.md §3.1.5. Helper is parameterized
@@ -57,11 +59,20 @@ function gapZoneColor(value: number, neutralMin: number, neutralMax: number): st
 export function EndgameOverallPerformanceSection({
   data,
   scoreGap,
+  ratingAnchors,
 }: {
   data: EndgamePerformanceResponse;
   scoreGap: ScoreGapMaterialResponse;
+  /** Phase 94.4 Plan 07: per-TC rating anchors from
+   *  EndgameOverviewResponse.rating_anchors. The page-level ΔES chips on this
+   *  section are aggregated across TCs, so they use the dominant-TC anchor
+   *  (highest game count) for the popover's 4th-bullet disclosure. When no
+   *  anchors are available (Stage A hasn't run / all TCs below the inclusion
+   *  floor), all chips suppress. Optional so legacy fixtures still render. */
+  ratingAnchors?: RatingAnchorsByTc;
 }) {
   const { isPending, pendingCount } = useEvalCoverage();
+  const dominantAnchor = pickDominantTcAnchor(ratingAnchors ?? {});
 
   const gapPositive = scoreGap.score_difference >= 0;
   const gapFormatted =
@@ -179,6 +190,22 @@ export function EndgameOverallPerformanceSection({
                   neutralMax={ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX}
                   ciLow={data.achievable_score_gap_ci_low ?? undefined}
                   ciHigh={data.achievable_score_gap_ci_high ?? undefined}
+                  chipSlot={
+                    data.achievable_score_gap_percentile != null &&
+                    dominantAnchor !== undefined ? (
+                      <PercentileChip
+                        percentile={data.achievable_score_gap_percentile}
+                        flavor="achievable"
+                        anchorRating={dominantAnchor.anchor_rating}
+                        nChesscomGames={dominantAnchor.n_chesscom_games}
+                        nLichessGames={dominantAnchor.n_lichess_games}
+                        chesscomMedianNative={dominantAnchor.chesscom_median_native ?? undefined}
+                        lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
+                        metricLabel="Achievable Score Gap"
+                        testId="achievable-score-gap-percentile-chip"
+                      />
+                    ) : undefined
+                  }
                   tooltip={
                     <MetricStatPopover
                       name="Achievable Score Gap"
@@ -219,6 +246,22 @@ export function EndgameOverallPerformanceSection({
                   valueClassName="text-lg"
                   ciLow={scoreGap.score_difference_ci_low ?? undefined}
                   ciHigh={scoreGap.score_difference_ci_high ?? undefined}
+                  chipSlot={
+                    scoreGap.score_gap_percentile != null &&
+                    dominantAnchor !== undefined ? (
+                      <PercentileChip
+                        percentile={scoreGap.score_gap_percentile}
+                        flavor="score-gap"
+                        anchorRating={dominantAnchor.anchor_rating}
+                        nChesscomGames={dominantAnchor.n_chesscom_games}
+                        nLichessGames={dominantAnchor.n_lichess_games}
+                        chesscomMedianNative={dominantAnchor.chesscom_median_native ?? undefined}
+                        lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
+                        metricLabel="Endgame Score Gap"
+                        testId="endgame-score-gap-percentile-chip"
+                      />
+                    ) : undefined
+                  }
                   tooltip={
                     <MetricStatPopover
                       name="Endgame Score Gap"

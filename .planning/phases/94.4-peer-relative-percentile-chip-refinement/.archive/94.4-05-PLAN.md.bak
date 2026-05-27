@@ -1,0 +1,559 @@
+---
+phase: 94.4-peer-relative-percentile-chip-refinement
+plan: 05
+type: execute
+wave: 2
+depends_on: [94.4-01, 94.4-02, 94.4-04]
+files_modified:
+  - alembic/versions/(NEW migration — reshape_user_benchmark_percentiles)
+  - app/models/user_benchmark_percentile.py
+  - app/repositories/user_benchmark_percentiles_repository.py
+  - app/services/user_benchmark_percentiles_service.py
+  - app/schemas/endgames.py
+  - app/services/endgame_service.py
+  - frontend/src/types/endgames.ts
+  - tests/services/test_user_benchmark_percentiles_service.py
+  - tests/services/test_endgame_service.py
+autonomous: true
+requirements: [PRPCR-03, PRPCR-04, PRPCR-05]
+
+must_haves:
+  truths:
+    - "Destructive Alembic migration `alembic/versions/{TS}_reshape_user_benchmark_percentiles.py` drops the existing `user_benchmark_percentiles` table + `benchmark_metric` ENUM via `DROP TYPE ... CASCADE` per CONTEXT D-02 (no in-place migration discipline; backfill is the canonical recovery path) and recreates both with the new shape: PK `(user_id, metric, time_control_bucket)`; `benchmark_metric` ENUM has exactly 8 values per CONTEXT D-13 (`score_gap`, `achievable_score_gap`, `section2_score_gap_conv`, `section2_score_gap_parity`, `recovery_score_gap`, `time_pressure_score_gap`, `clock_gap`, `net_flag_rate`). The 12 Phase 94.3 composite TC-suffixed values retire. Migration docstring opens with a 'DESTRUCTIVE — backfill required' banner per RESEARCH Pitfall 7. `downgrade()` is a no-op stub per CONTEXT D-02 (forward-only; reverse via backfill rerun)."
+    - "`app/models/user_benchmark_percentile.py` ENUM descriptor reshapes from the 16-value 94.3 form to the 8-value form per D-13. Composite PK widens by adding `time_control_bucket: Mapped[str] = mapped_column(time_control_bucket_enum, primary_key=True)` (cross-imported from `app/models/game.py`). `Recovery Score Gap` is rescued from the v1 drop list (CONTEXT D-05 / D-05a) — visible in the ENUM by `recovery_score_gap`."
+    - "`app/repositories/user_benchmark_percentiles_repository.py` widens: (a) `PercentileRow` dataclass gains `n_games: int` field per RESEARCH Pattern 9 (Plan F aggregation in API shaper needs n_games for weighted-mean math); (b) `upsert_percentile` adds `time_control_bucket: TimeControlBucket` keyword param + widens `index_elements` to `[\"user_id\", \"metric\", \"time_control_bucket\"]`; (c) `fetch_for_user(session, *, user_id) -> dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]` returns nested dict per RESEARCH Pattern 5 Option B. V4 mitigation (user_id keyword-only) preserved verbatim."
+    - "`app/services/user_benchmark_percentiles_service.py` rewrites: Stage A extension computes anchors FIRST then per-TC `score_gap` percentiles per RESEARCH Pitfall 9 ordering. `STAGE_B_METRICS` 12-tuple (post-94.3) retires; replaced by `STAGE_B_METRIC_FAMILIES` 7-tuple per PATTERNS lines 419-425 (achievable_score_gap, section2_score_gap_conv, section2_score_gap_parity, recovery_score_gap, time_pressure_score_gap, clock_gap, net_flag_rate); iteration is `for family in families: for tc in user_tcs: _compute_metric_for_user_per_tc(session, user_id, family, tc); interpolate_cohort_percentile(family, value, anchor.anchor_rating, tc); upsert_percentile(...)`. Lichess-precedence rule (CONTEXT D-12) lives in the new `compute_anchors_for_user(session, user_id)` helper: select source_platform='lichess' if user has any Lichess games in TC, else source_platform='chesscom' and call `convert_chesscom_to_lichess` (Plan 01 module) on the per-TC chess.com rating. Sentry context-not-message pattern preserved per CLAUDE.md + PATTERNS line 822."
+    - "`app/schemas/endgames.py` adds `RatingAnchorOut` (anchor_rating, source_platform, chesscom_raw_rating optional, n_games) and a top-level `rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = Field(default_factory=dict)` field on `EndgameOverviewResponse` per RESEARCH Open Question 4. Existing `*_percentile` fields on `EndgameOverviewStats` / `TimePressureTcCard` stay shape-compatible (page-level chips ship the aggregated scalar; per-TC chips ship the direct scalar)."
+    - "`app/services/endgame_service.py` adds `_aggregate_per_tc_percentile(per_tc_rows: Mapping[TimeControlBucket, PercentileRow] | None) -> float | None` helper per CONTEXT D-08 / D-08b + PATTERNS lines 511-532. Game-count-weighted mean across per-TC rows; below-floor TCs drop (no row → implicit zero weight per D-08a). Call sites: `_compute_score_gap_material` + the equivalent per-metric API shapers for Achievable / Parity / Conversion / Recovery all wrap their `fetch_for_user` results with `_aggregate_per_tc_percentile` for the page-level chip scalar. Time Pressure family chips bypass aggregation — read per-TC directly: `rows.get('time_pressure_score_gap', {}).get(tc)`."
+    - "Frontend type codegen runs after schema changes — `frontend/src/types/endgames.ts` regenerated; verified that existing `*_percentile` nullable field types stay shape-compatible (RESEARCH Pitfall 10) so Plan 07 has zero merge conflicts on the type file."
+    - "`interpolate_percentile` legacy stub from Plan 04 is fully removed in this plan — `grep -rn 'interpolate_percentile\\b' app/ tests/ scripts/` returns ONLY references to `interpolate_cohort_percentile`. Same for `GLOBAL_PERCENTILE_CDF` — grep returns ONLY references to `COHORT_PERCENTILE_CDF`. (Plan 04 left stubs; this plan retires them.)"
+    - "pytest coverage: `tests/services/test_user_benchmark_percentiles_service.py` rewrites assertions for per-(metric, tc) lookup pattern + Stage A anchor compute extension (covering Lichess-precedence rule for users with both platforms; chesscom-only-path covering Daily-suppression via Plan 01's `convert_chesscom_to_lichess` returning None). `tests/services/test_endgame_service.py` extends with `_aggregate_per_tc_percentile` tests: weighted-mean correctness (3 rows: bullet 30 games, blitz 20 games, rapid 50 games with percentiles 20/40/60 → weighted mean = (20*30 + 40*20 + 60*50) / 100 = 50); empty dict returns None; all-None-percentile rows return None; single-row dict returns that row's percentile unchanged."
+    - "Migration upgrades cleanly on dev (`uv run alembic upgrade head` succeeds; `user_benchmark_percentiles` table is empty; ENUM has 8 values; PK is (user_id, metric, time_control_bucket)). Backfill rerun is Plan 06 — table starts empty after this migration."
+  artifacts:
+    - path: alembic/versions/(NEW reshape)
+      provides: Destructive reshape of user_benchmark_percentiles + benchmark_metric ENUM
+      contains: "DROP TYPE.*benchmark_metric.*CASCADE\\|recovery_score_gap"
+      min_lines: 50
+    - path: app/models/user_benchmark_percentile.py
+      provides: 8-value ENUM + widened PK
+      contains: "recovery_score_gap\\|time_control_bucket.*primary_key=True"
+      min_lines: 80
+    - path: app/repositories/user_benchmark_percentiles_repository.py
+      provides: PercentileRow gains n_games; upsert_percentile widens; fetch_for_user nested dict
+      contains: "n_games: int\\|time_control_bucket\\|dict\\[TimeControlBucket"
+      min_lines: 150
+    - path: app/services/user_benchmark_percentiles_service.py
+      provides: Stage A anchor compute + Stage B per-(family × tc) iteration + Lichess-precedence rule
+      contains: "compute_anchors_for_user\\|STAGE_B_METRIC_FAMILIES\\|interpolate_cohort_percentile"
+      min_lines: 300
+    - path: app/services/endgame_service.py
+      provides: _aggregate_per_tc_percentile + 5 page-level ΔES call-site wraps
+      contains: "_aggregate_per_tc_percentile"
+      min_lines: 50
+    - path: app/schemas/endgames.py
+      provides: RatingAnchorOut + rating_anchors block on EndgameOverviewResponse
+      contains: "RatingAnchorOut\\|rating_anchors"
+      min_lines: 30
+    - path: frontend/src/types/endgames.ts
+      provides: regenerated types reflecting RatingAnchorOut + rating_anchors
+      contains: "RatingAnchorOut\\|rating_anchors\\|ratingAnchors"
+      min_lines: 30
+  key_links:
+    - from: app/services/user_benchmark_percentiles_service.py compute_anchors_for_user
+      to: app/services/chesscom_to_lichess.py convert_chesscom_to_lichess (Plan 01)
+      via: chess.com-anchored TCs convert raw rating to Lichess-equivalent (D-12)
+      pattern: "convert_chesscom_to_lichess"
+    - from: app/services/user_benchmark_percentiles_service.py compute_anchors_for_user
+      to: app/repositories/user_rating_anchors_repository.py upsert_anchor (Plan 02)
+      via: persisted anchor for tooltip disclosure
+      pattern: "upsert_anchor"
+    - from: app/services/endgame_service.py _aggregate_per_tc_percentile
+      to: app/schemas/endgames.py EndgameOverviewStats (existing *_percentile fields)
+      via: page-level ΔES chip scalar
+      pattern: "_aggregate_per_tc_percentile"
+---
+
+<objective>
+Third commit in the Wave 2 atomic-cutover quartet. Land the user_benchmark_percentiles schema reshape (PK widens to `(user_id, metric, time_control_bucket)`; ENUM reshapes to exactly 8 values per CONTEXT D-13; Recovery Score Gap rescues from v1 drop list per D-05a), rewrite the per-user percentile service to consume Plan 04's `COHORT_PERCENTILE_CDF` via Plan 02's anchors and Plan 03's per-TC builders, add the page-level ΔES chip aggregation helper at the API shaper layer per CONTEXT D-08 / D-08b, extend the API schema for anchor disclosure per RESEARCH Open Question 4, and retire the legacy `interpolate_percentile` + `GLOBAL_PERCENTILE_CDF` stubs that Plan 04 left in place.
+
+Purpose: This plan is where the peer-relative architecture lights up end-to-end inside the backend. Plan 04 generated the COHORT_PERCENTILE_CDF and the helper; this plan wires per-user lookups against it, populates `user_rating_anchors` from Stage A via Plan 02's storage + Plan 01's conversion module, reshapes the per-user storage to match the new (user_id, metric, tc) granularity, and aggregates per-TC sub-percentiles into the page-level scalar that the API ships. After this plan, the backend is ready for Plan 06 to backfill the entire user base.
+
+Output: 9 file changes (1 NEW migration, 2 model/repo reshapes, 3 service rewrites/extensions, 1 schema extension, 1 type regen, 2 test rewrites/extensions). After this plan, Plan 06 backfills against the new shape; Plan 07 (frontend) lights up the chip + tooltip rewrite consuming the new types.
+</objective>
+
+<execution_context>
+@$HOME/.claude/get-shit-done/workflows/execute-plan.md
+@$HOME/.claude/get-shit-done/templates/summary.md
+</execution_context>
+
+<context>
+@.planning/PROJECT.md
+@.planning/ROADMAP.md
+@.planning/STATE.md
+@.planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-CONTEXT.md
+@.planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-RESEARCH.md
+@.planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-PATTERNS.md
+@app/services/user_benchmark_percentiles_service.py
+@app/repositories/user_benchmark_percentiles_repository.py
+@app/models/user_benchmark_percentile.py
+@app/services/endgame_service.py
+@app/schemas/endgames.py
+@alembic/versions/20260524_000000_add_user_benchmark_percentiles.py
+@app/services/chesscom_to_lichess.py
+@app/services/global_percentile_cdf.py
+@app/services/canonical_slice_sql.py
+@CLAUDE.md
+
+<interfaces>
+<!-- Verified anchors:
+     - PATTERNS lines 179-216: drop/recreate migration recipe
+     - PATTERNS lines 429-501: model + repository reshape
+     - PATTERNS lines 372-426: service rewrite (Stage A/B compute loop)
+     - PATTERNS lines 505-557: endgame_service aggregation helper + Pydantic schema extension
+     - app/services/user_benchmark_percentiles_service.py:75-76 — STAGE_A_METRIC + STAGE_B_METRICS
+     - app/services/user_benchmark_percentiles_service.py:151-194 — compute_stage_a / compute_stage_b -->
+
+Migration recipe (PATTERNS lines 183-213):
+  def upgrade() -> None:
+      op.drop_table("user_benchmark_percentiles")
+      op.execute("DROP CAST IF EXISTS (varchar AS benchmark_metric)")
+      op.execute("DROP TYPE IF EXISTS benchmark_metric CASCADE")
+      new_benchmark_metric = postgresql.ENUM(
+          "score_gap", "achievable_score_gap", "section2_score_gap_conv",
+          "section2_score_gap_parity", "recovery_score_gap",
+          "time_pressure_score_gap", "clock_gap", "net_flag_rate",
+          name="benchmark_metric", create_type=False,
+      )
+      new_benchmark_metric.create(op.get_bind(), checkfirst=True)
+      op.execute("CREATE CAST (varchar AS benchmark_metric) WITH INOUT AS IMPLICIT")
+      op.create_table(
+          "user_benchmark_percentiles",
+          sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+          sa.Column("metric", new_benchmark_metric, nullable=False),
+          sa.Column("time_control_bucket", time_control_bucket_enum, nullable=False),
+          sa.Column("value", sa.Float(), nullable=False),
+          sa.Column("n_games", sa.Integer(), nullable=False),
+          sa.Column("percentile", sa.Float(), nullable=True),
+          sa.Column("cdf_snapshot", sa.Date(), nullable=False),
+          sa.Column("computed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+          sa.PrimaryKeyConstraint("user_id", "metric", "time_control_bucket"),
+      )
+
+  def downgrade() -> None:
+      pass  # Per D-02: no-op stub; backfill is the canonical recovery path.
+
+Service rewrite (PATTERNS lines 400-414, RESEARCH Pitfall 9):
+  async def compute_stage_a(user_id, *, session_maker=None) -> None:
+      async with maker() as session:
+          # 1. Compute and upsert per-(user, TC) anchors FIRST (Pitfall 9 ordering).
+          anchors = await compute_anchors_for_user(session, user_id)
+          # 2. For each TC with an anchor, compute per-TC score_gap percentile.
+          for tc, anchor in anchors.items():
+              result = await _compute_metric_for_user_per_tc(session, user_id, "score_gap", tc)
+              if result is None: continue
+              value, n_games = result
+              percentile = interpolate_cohort_percentile("score_gap", value, anchor.anchor_rating, tc)
+              await upsert_percentile(session, user_id=user_id, metric="score_gap",
+                                      time_control_bucket=tc, value=value, n_games=n_games,
+                                      percentile=percentile, cdf_snapshot=date.today())
+          await session.commit()
+
+Stage B iteration (PATTERNS lines 419-425):
+  STAGE_B_METRIC_FAMILIES: tuple[CdfMetricId, ...] = (
+      "achievable_score_gap", "section2_score_gap_conv", "section2_score_gap_parity",
+      "recovery_score_gap", "time_pressure_score_gap", "clock_gap", "net_flag_rate",
+  )
+
+Lichess-precedence (CONTEXT D-12, RESEARCH Pitfall 5):
+  async def compute_anchors_for_user(session, user_id) -> dict[TimeControlBucket, RatingAnchorRow]:
+      # For each TC:
+      # 1. Query: does this user have ANY Lichess games in TC?
+      # 2. If yes: source_platform = 'lichess', call per_user_cte_median_anchor(tc, source='single_user', platform='lichess')
+      # 3. If no: source_platform = 'chesscom', call per_user_cte_median_anchor(tc, source='single_user', platform='chesscom'),
+      #    then convert chess.com rating to Lichess-equivalent via convert_chesscom_to_lichess
+      # 4. Upsert via upsert_anchor (Plan 02)
+      # 5. Returns dict for the percentile compute loop
+
+Aggregation helper (PATTERNS lines 510-532, CONTEXT D-08 / D-08b):
+  def _aggregate_per_tc_percentile(
+      per_tc_rows: Mapping[TimeControlBucket, PercentileRow] | None,
+  ) -> float | None:
+      """Game-count-weighted mean per CONTEXT D-08."""
+      if per_tc_rows is None or not per_tc_rows:
+          return None
+      weighted_sum = 0.0
+      weight_sum = 0
+      for tc_row in per_tc_rows.values():
+          if tc_row.percentile is None: continue
+          weighted_sum += tc_row.percentile * tc_row.n_games
+          weight_sum += tc_row.n_games
+      if weight_sum == 0: return None
+      return weighted_sum / weight_sum
+
+Schema extension (PATTERNS lines 546-554, RESEARCH Open Question 4):
+  class RatingAnchorOut(BaseModel):
+      anchor_rating: int
+      source_platform: Literal["lichess", "chesscom"]
+      chesscom_raw_rating: int | None = None
+      n_games: int
+
+  # On EndgameOverviewResponse:
+  rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = Field(default_factory=dict)
+</interfaces>
+</context>
+
+<tasks>
+
+<task type="auto">
+  <name>Task 1: Create destructive Alembic migration reshape_user_benchmark_percentiles per CONTEXT D-02 + D-13</name>
+  <files>alembic/versions/(NEW)</files>
+  <read_first>
+    - alembic/versions/20260524_000000_add_user_benchmark_percentiles.py (in full — analog for the 3-step migration pattern; the destructive variant in this task adds drop steps before recreate)
+    - .planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-PATTERNS.md (lines 179-216 — destructive drop/recreate recipe)
+    - .planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-RESEARCH.md (Pitfall 7 lines 1247-1256 — destructive migration banner requirement)
+  </read_first>
+  <action>
+    Generate the migration: `uv run alembic revision -m "reshape_user_benchmark_percentiles"`. Set `down_revision` to the head of `alembic/versions/` after Plan 02's `add_user_rating_anchors` lands (run `uv run alembic heads` to confirm). Module docstring opens with a banner: `"""DESTRUCTIVE — backfill required. Drops user_benchmark_percentiles + benchmark_metric ENUM and recreates with PK (user_id, metric, time_control_bucket) and 8-value ENUM per Phase 94.4 D-02 + D-13. Recovery via scripts/backfill_user_percentiles.py rerun (Plan 06)."""`. 
+    
+    `upgrade()` body follows PATTERNS lines 183-213 verbatim: (1) `op.drop_table("user_benchmark_percentiles")`; (2) `op.execute("DROP CAST IF EXISTS (varchar AS benchmark_metric)")`; (3) `op.execute("DROP TYPE IF EXISTS benchmark_metric CASCADE")`; (4) module-level descriptor `new_benchmark_metric = postgresql.ENUM("score_gap", "achievable_score_gap", "section2_score_gap_conv", "section2_score_gap_parity", "recovery_score_gap", "time_pressure_score_gap", "clock_gap", "net_flag_rate", name="benchmark_metric", create_type=False)`; (5) `new_benchmark_metric.create(op.get_bind(), checkfirst=True)`; (6) `op.execute("CREATE CAST (varchar AS benchmark_metric) WITH INOUT AS IMPLICIT")`; (7) `op.create_table("user_benchmark_percentiles", ...)` with the 8-column shape per `<interfaces>` block + `PrimaryKeyConstraint("user_id", "metric", "time_control_bucket")`. Cross-import `time_control_bucket_enum` via `postgresql.ENUM(name="time_control_bucket", create_type=False)` and do NOT recreate (it's owned by an earlier migration).
+    
+    `downgrade()` is a no-op stub: `pass  # Per D-02: forward-only; backfill is the recovery path.` Add a `# noqa` if pylint/ruff complains.
+    
+    The 8 ENUM values list MUST appear verbatim and in the order shown above (it matches CONTEXT D-13 ordering exactly).
+  </action>
+  <verify>
+    <automated>uv run alembic upgrade head && uv run python -c "from sqlalchemy import create_engine, text; import os; eng = create_engine(os.environ['DATABASE_URL'].replace('+asyncpg','')); print(sorted(r[0] for r in eng.execute(text(\"SELECT unnest(enum_range(NULL::benchmark_metric))\"))))"</automated>
+  </verify>
+  <acceptance_criteria>
+    - Migration file exists in `alembic/versions/` with `*_reshape_user_benchmark_percentiles.py` glob.
+    - `grep -c "DROP TYPE IF EXISTS benchmark_metric CASCADE" alembic/versions/*_reshape_user_benchmark_percentiles.py` is ≥ 1.
+    - `grep -c "recovery_score_gap" alembic/versions/*_reshape_user_benchmark_percentiles.py` is ≥ 1 (the rescued metric is in the ENUM).
+    - `grep -c "score_gap\|achievable_score_gap\|section2_score_gap_conv\|section2_score_gap_parity\|recovery_score_gap\|time_pressure_score_gap\|clock_gap\|net_flag_rate" alembic/versions/*_reshape_user_benchmark_percentiles.py` is ≥ 8 (all 8 values present).
+    - The ENUM has no 12 composite TC-suffixed values (`grep -c "_bullet\|_blitz\|_rapid\|_classical" alembic/versions/*_reshape_user_benchmark_percentiles.py` is 0 — confirming the 94.3 composite values retired).
+    - `grep -c "PrimaryKeyConstraint(\"user_id\", \"metric\", \"time_control_bucket\")" alembic/versions/*_reshape_user_benchmark_percentiles.py` is 1.
+    - `grep -c "DESTRUCTIVE" alembic/versions/*_reshape_user_benchmark_percentiles.py` is ≥ 1 (the banner).
+    - `uv run alembic upgrade head` runs cleanly; psql `SELECT unnest(enum_range(NULL::benchmark_metric))` returns exactly the 8 values.
+  </acceptance_criteria>
+  <done>Destructive migration upgrades; `user_benchmark_percentiles` exists empty with widened PK; ENUM has exactly 8 values per D-13.</done>
+</task>
+
+<task type="auto">
+  <name>Task 2: Reshape app/models/user_benchmark_percentile.py — 8-value ENUM + widened PK</name>
+  <files>app/models/user_benchmark_percentile.py</files>
+  <read_first>
+    - app/models/user_benchmark_percentile.py (in full — the current post-94.3 16-value form)
+    - .planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-PATTERNS.md (lines 429-456 — model self-reshape pattern)
+    - app/models/game.py (lines 30-40 — confirm time_control_bucket_enum import path)
+  </read_first>
+  <action>
+    Edit `app/models/user_benchmark_percentile.py`:
+    1. `benchmark_metric_enum = SAEnum(...)` reshapes from 16 values to exactly 8 per CONTEXT D-13. Order: `"score_gap", "achievable_score_gap", "section2_score_gap_conv", "section2_score_gap_parity", "recovery_score_gap", "time_pressure_score_gap", "clock_gap", "net_flag_rate"`. The 12 composite TC-suffixed values are deleted.
+    2. The `CdfMetricId` Literal type (if redefined here — it's primarily in `global_percentile_cdf.py`) is consistent with the 8-value set.
+    3. PK widens by adding `time_control_bucket: Mapped[TimeControlBucket] = mapped_column(time_control_bucket_enum, primary_key=True, nullable=False)`. Import `time_control_bucket_enum` from `app.models.game` (and the `TimeControlBucket` type alias). Cross-imported with `create_type=False` (Alembic owns the lifecycle).
+    4. Existing columns (`value`, `n_games`, `percentile`, `cdf_snapshot`, `computed_at`) stay — `n_games` was added in Phase 94.1 and is preserved.
+    5. Class docstring updates: cite CONTEXT D-01 (PK widening) + D-13 (8-value ENUM) + D-05a (Recovery rescue). Note that `Recovery Score Gap` is rescued from the v1 drop list under peer-relative framing.
+  </action>
+  <verify>
+    <automated>uv run ty check app/models/user_benchmark_percentile.py && uv run python -c "from app.models.user_benchmark_percentile import UserBenchmarkPercentile; print([c.name for c in UserBenchmarkPercentile.__table__.primary_key.columns])"</automated>
+  </verify>
+  <acceptance_criteria>
+    - The Python one-liner prints `['user_id', 'metric', 'time_control_bucket']` in some order (PK has 3 columns).
+    - `grep -c "primary_key=True" app/models/user_benchmark_percentile.py` is ≥ 3.
+    - `grep -c "\"score_gap\"\|\"achievable_score_gap\"\|\"section2_score_gap_conv\"\|\"section2_score_gap_parity\"\|\"recovery_score_gap\"\|\"time_pressure_score_gap\"\|\"clock_gap\"\|\"net_flag_rate\"" app/models/user_benchmark_percentile.py` is ≥ 8.
+    - No composite TC-suffixed value remains: `grep -c "_bullet\"\|_blitz\"\|_rapid\"\|_classical\"" app/models/user_benchmark_percentile.py | grep -v '^#'` is 0.
+    - `grep -c "time_control_bucket_enum" app/models/user_benchmark_percentile.py` is ≥ 1 (cross-import).
+    - Docstring cites D-01 + D-13 + D-05a.
+    - `uv run ty check app/models/user_benchmark_percentile.py` returns zero errors.
+  </acceptance_criteria>
+  <done>Model reshape complete; 8-value ENUM + 3-column PK + Recovery rescue documented.</done>
+</task>
+
+<task type="auto">
+  <name>Task 3: Extend app/repositories/user_benchmark_percentiles_repository.py — PercentileRow gains n_games; upsert_percentile widens; fetch_for_user returns nested dict</name>
+  <files>app/repositories/user_benchmark_percentiles_repository.py</files>
+  <read_first>
+    - app/repositories/user_benchmark_percentiles_repository.py (in full — current post-94.3 form)
+    - .planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-PATTERNS.md (lines 460-501 — repository extension pattern; V4 mitigation lines 808-813)
+  </read_first>
+  <action>
+    Edit `app/repositories/user_benchmark_percentiles_repository.py`:
+    1. `PercentileRow` dataclass gains `n_games: int` field per PATTERNS lines 464-471. Order: `value: float`, `percentile: float | None`, `cdf_snapshot: datetime.date`, `n_games: int`. (If `n_games` was already on the dataclass post-94.3, verify and leave; PATTERNS line 472 explicitly says "NEW: required by _aggregate_per_tc_percentile per D-08" so add if missing.)
+    2. `upsert_percentile` signature widens per PATTERNS lines 476-491. Add `time_control_bucket: TimeControlBucket` keyword param (cross-import `TimeControlBucket` from `app.models.game`). Update `pg_insert(...).values(...)` to include `time_control_bucket=time_control_bucket`. Update `on_conflict_do_update(index_elements=["user_id", "metric", "time_control_bucket"], set_={..., "n_games": stmt.excluded.n_games, "computed_at": func.now()})` — the new index_elements widen to 3 columns.
+    3. `fetch_for_user` return shape changes per PATTERNS lines 495-499: `async def fetch_for_user(session, *, user_id) -> dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]`. Build the nested dict from the SELECT result. Pattern: `result: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {}; for row in rows: result.setdefault(row.metric, {})[row.time_control_bucket] = PercentileRow(value=row.value, percentile=row.percentile, cdf_snapshot=row.cdf_snapshot, n_games=row.n_games)`.
+    4. V4 mitigation preserved: `user_id` keyword-only on both functions.
+    5. Class/module docstrings update to cite CONTEXT D-01 (PK widening) + RESEARCH Pattern 5 (Option B nested dict).
+  </action>
+  <verify>
+    <automated>uv run ty check app/repositories/user_benchmark_percentiles_repository.py</automated>
+  </verify>
+  <acceptance_criteria>
+    - `grep -c "n_games: int" app/repositories/user_benchmark_percentiles_repository.py` is ≥ 1 (PercentileRow gains the field).
+    - `grep -c "time_control_bucket: TimeControlBucket\|time_control_bucket: Literal" app/repositories/user_benchmark_percentiles_repository.py` is ≥ 1 (upsert signature widens).
+    - `grep -c "index_elements=\[\"user_id\", \"metric\", \"time_control_bucket\"\]" app/repositories/user_benchmark_percentiles_repository.py` is ≥ 1.
+    - `grep -c "dict\[CdfMetricId, dict\[TimeControlBucket" app/repositories/user_benchmark_percentiles_repository.py` is ≥ 1 (nested return type).
+    - V4 mitigation preserved: both `upsert_percentile` and `fetch_for_user` have `user_id` after `*,`.
+    - `uv run ty check app/repositories/user_benchmark_percentiles_repository.py` returns zero errors.
+  </acceptance_criteria>
+  <done>Repository widening complete; nested-dict fetch shape ready for Plan 05 service consumption.</done>
+</task>
+
+<task type="auto">
+  <name>Task 4: Rewrite app/services/user_benchmark_percentiles_service.py — compute_anchors_for_user + Stage A anchor compute + Stage B per-(family × tc) iteration; retire interpolate_percentile stub from Plan 04</name>
+  <files>app/services/user_benchmark_percentiles_service.py</files>
+  <read_first>
+    - app/services/user_benchmark_percentiles_service.py (in full — current post-94.3 form, especially lines 75-194)
+    - .planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-PATTERNS.md (lines 372-426 — full rewrite blueprint)
+    - app/services/chesscom_to_lichess.py (Plan 01 — `convert_chesscom_to_lichess` signature)
+    - app/repositories/user_rating_anchors_repository.py (Plan 02 — `upsert_anchor` + `RatingAnchorRow`)
+    - app/services/canonical_slice_sql.py (Plan 02 — `per_user_cte_median_anchor`; Plan 03 — `per_user_cte_*_tc` builders)
+    - app/services/global_percentile_cdf.py (Plan 04 — `interpolate_cohort_percentile`)
+    - CLAUDE.md §"Error Handling & Sentry"
+  </read_first>
+  <action>
+    Major rewrite of `app/services/user_benchmark_percentiles_service.py`. Preserve from the existing service: import boilerplate, `_default_session_maker`, async/await discipline, `STAGE_A_METRIC: CdfMetricId = "score_gap"` constant. REPLACE the 12-tuple `STAGE_B_METRICS` with the 7-tuple `STAGE_B_METRIC_FAMILIES` per PATTERNS lines 419-424.
+    
+    **Add `compute_anchors_for_user(session, user_id) -> dict[TimeControlBucket, RatingAnchorRow]`** implementing the Lichess-precedence rule per CONTEXT D-12 + RESEARCH Pitfall 5:
+    ```python
+    async def compute_anchors_for_user(session, user_id) -> dict[TimeControlBucket, RatingAnchorRow]:
+        """Compute per-(user, TC) anchors, Lichess-precedence rule (D-12).
+        
+        For each TC:
+        1. Query: does user have ANY Lichess games in this TC? (single existence query)
+        2. If yes: source='lichess', call per_user_cte_median_anchor(tc, source='single_user', platform='lichess').
+        3. If no: source='chesscom', call per_user_cte_median_anchor(tc, source='single_user', platform='chesscom'),
+           then convert via convert_chesscom_to_lichess(raw_anchor, tc_chesscom, tc_lichess).
+        4. If chess.com Daily (returns None) or below min_games HAVING floor, skip.
+        5. upsert_anchor via Plan 02's repository.
+        6. Return dict for Stage A's score_gap percentile loop.
+        """
+        from app.services.canonical_slice_sql import per_user_cte_median_anchor, MEDIAN_ANCHOR_MIN_GAMES
+        from app.services.chesscom_to_lichess import convert_chesscom_to_lichess
+        from app.repositories.user_rating_anchors_repository import upsert_anchor, RatingAnchorRow
+        ...
+    ```
+    Implementation: for each TC in `("bullet", "blitz", "rapid", "classical")`: (a) execute a Lichess-existence query (`SELECT 1 FROM games WHERE user_id=:user_id AND platform='lichess' AND time_control_bucket=:tc LIMIT 1`); (b) dispatch to per-platform anchor compute via `per_user_cte_median_anchor(tc, source='single_user', snapshot_date=date.today(), platform='lichess' or 'chesscom')`; (c) if chess.com path, take the raw median rating result then call `convert_chesscom_to_lichess(raw_rating, source_tc=tc_chesscom, target_tc=tc)` — Daily-classical detection lives in the SQL builder (Plan 02), so the converter receives the chess.com-blitz-equivalent rating; if `convert_chesscom_to_lichess` returns None, skip the anchor (chip suppresses for this user/TC); (d) call `upsert_anchor(session, user_id=user_id, time_control_bucket=tc, anchor_rating=..., source_platform=..., n_games=...)`; (e) build the return dict.
+    
+    **Rewrite `compute_stage_a`** per PATTERNS lines 400-414: compute anchors FIRST then per-TC `score_gap` percentiles. For each TC with an anchor: (1) `_compute_metric_for_user_per_tc(session, user_id, "score_gap", tc)` returns `(value, n_games) | None`; (2) `percentile = interpolate_cohort_percentile("score_gap", value, anchor.anchor_rating, tc)`; (3) `upsert_percentile(session, user_id=user_id, metric="score_gap", time_control_bucket=tc, value=value, n_games=n_games, percentile=percentile, cdf_snapshot=date.today())`. Sentry context-not-message pattern: `sentry_sdk.set_context("percentile_compute", {"user_id": user_id, "stage": "A", "metric": "score_gap", "tc": tc})` + `sentry_sdk.capture_exception(exc)` inside `except Exception as exc:`.
+    
+    **Rewrite `compute_stage_b`** per PATTERNS lines 419-425: iterate `for family in STAGE_B_METRIC_FAMILIES: for tc in anchors.keys(): _compute_metric_for_user_per_tc(session, user_id, family, tc); interpolate_cohort_percentile(family, value, anchor.anchor_rating, tc); upsert_percentile(...)`. The anchors are fetched once at the top via `fetch_anchors_for_user(session, user_id=user_id)` (Plan 02's helper); if no anchors exist (Stage A hasn't run yet, or all TCs suppressed), return early. Same Sentry pattern.
+    
+    **Add `_compute_metric_for_user_per_tc(session, user_id, family, tc) -> tuple[float, int] | None`**: dispatches `family` to the right per-TC builder via the same dispatch table Plan 04's gen script uses. Executes the SQL against `session` (single-user CTE source), reads the first row, returns `(metric_value, n_games)` or None.
+    
+    **Retire legacy stubs**: delete the `interpolate_percentile` stub Plan 04 left in `app/services/global_percentile_cdf.py` AS PART OF THIS TASK if no remaining caller exists after the rewrite. Run `grep -rn 'interpolate_percentile\b' app/ tests/ scripts/` and replace each non-stub usage with `interpolate_cohort_percentile`. Same for `GLOBAL_PERCENTILE_CDF`. Both legacy names must return ZERO matches outside of comments after this task.
+    
+    Sentry rules per CLAUDE.md: no new capture sites beyond what the existing Stage A/B already had — same Sentry shape, same context keys, just the new `tc` dimension added to `set_context`.
+  </action>
+  <verify>
+    <automated>uv run ty check app/services/user_benchmark_percentiles_service.py && uv run pytest tests/services/test_user_benchmark_percentiles_service.py -x 2>&1 | tail -15</automated>
+  </verify>
+  <acceptance_criteria>
+    - `grep -c "async def compute_anchors_for_user" app/services/user_benchmark_percentiles_service.py` is exactly 1.
+    - `grep -c "STAGE_B_METRIC_FAMILIES" app/services/user_benchmark_percentiles_service.py` is ≥ 2 (declaration + use).
+    - `grep -c "STAGE_B_METRICS\b" app/services/user_benchmark_percentiles_service.py | grep -v '^#'` is 0 (legacy retired).
+    - `grep -c "interpolate_cohort_percentile" app/services/user_benchmark_percentiles_service.py` is ≥ 2.
+    - `grep -c "convert_chesscom_to_lichess" app/services/user_benchmark_percentiles_service.py` is ≥ 1 (Plan 01 imported and called).
+    - `grep -c "upsert_anchor" app/services/user_benchmark_percentiles_service.py` is ≥ 1 (Plan 02 imported and called).
+    - `grep -c "per_user_cte_median_anchor" app/services/user_benchmark_percentiles_service.py` is ≥ 1 (Plan 02 imported).
+    - `grep -rn "interpolate_percentile\b\|GLOBAL_PERCENTILE_CDF\b" app/ tests/ scripts/ | grep -v "interpolate_cohort_percentile\|COHORT_PERCENTILE_CDF\|^\s*#\|\.md:"` returns ZERO lines (no legacy callers remain).
+    - `uv run ty check app/services/user_benchmark_percentiles_service.py` returns zero errors.
+    - Sentry pattern preserved: `grep -c "sentry_sdk.set_context\|sentry_sdk.capture_exception" app/services/user_benchmark_percentiles_service.py` is ≥ 4 (Stage A + Stage B except blocks, anchor compute except blocks).
+  </acceptance_criteria>
+  <done>Service rewrite complete; Lichess-precedence + Stage A/B iteration + legacy retirement all landed.</done>
+</task>
+
+<task type="auto">
+  <name>Task 5: Add RatingAnchorOut + rating_anchors to app/schemas/endgames.py; regenerate frontend/src/types/endgames.ts</name>
+  <files>app/schemas/endgames.py, frontend/src/types/endgames.ts</files>
+  <read_first>
+    - app/schemas/endgames.py (in full — find `EndgameOverviewResponse` and its sibling schemas; the patterns map points to lines 230-510 + 700-830 for the existing chip-bearing schemas)
+    - .planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-PATTERNS.md (lines 541-557 — schema extension pattern)
+    - .planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-RESEARCH.md (Open Question 4 lines 1446-1452 — top-level rating_anchors block)
+    - frontend/src/types/endgames.ts (current — confirm how it's generated; if there's a codegen script in `package.json`, this is the trigger to regenerate)
+  </read_first>
+  <action>
+    Edit `app/schemas/endgames.py`:
+    1. Add `class RatingAnchorOut(BaseModel)` per PATTERNS lines 546-552:
+       ```
+       class RatingAnchorOut(BaseModel):
+           anchor_rating: int
+           source_platform: Literal["lichess", "chesscom"]
+           chesscom_raw_rating: int | None = None
+           n_games: int
+       ```
+    2. Add `rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = Field(default_factory=dict)` to `EndgameOverviewResponse` (or whichever top-level response schema the dashboard reads — search via grep `class EndgameOverviewResponse` in the file). Add a docstring on the field citing CONTEXT D-07 (tooltip body bullet 4 uses this) + RESEARCH Open Question 4 (top-level block, not embedded per-chip).
+    3. Existing `*_percentile` fields on `EndgameOverviewStats` (or wherever the page-level ΔES scalars ship) stay shape-compatible — they're already `float | None` since 94.3.
+    
+    Regenerate frontend types: run the codegen mechanism (likely `npm run gen-types` or similar — check `package.json`; the existing 94.3 plans likely document this). If no codegen script exists, edit `frontend/src/types/endgames.ts` manually to add the matching TypeScript interface:
+    ```typescript
+    export interface RatingAnchorOut {
+      anchor_rating: number;
+      source_platform: 'lichess' | 'chesscom';
+      chesscom_raw_rating: number | null;
+      n_games: number;
+    }
+    // EndgameOverviewResponse gains:
+    rating_anchors: Partial<Record<TimeControlBucket, RatingAnchorOut>>;
+    ```
+    Ensure the TS field is `Partial<Record<...>>` (or `Record<TimeControlBucket, RatingAnchorOut | undefined>`) so missing-TC keys are properly typed as undefined.
+    
+    Existing `*_percentile` typing should already be `number | null` — verify no drift (RESEARCH Pitfall 10).
+  </action>
+  <verify>
+    <automated>uv run ty check app/schemas/endgames.py && ( cd frontend && npx tsc --noEmit )</automated>
+  </verify>
+  <acceptance_criteria>
+    - `grep -c "class RatingAnchorOut\|RatingAnchorOut(BaseModel)" app/schemas/endgames.py` is ≥ 1.
+    - `grep -c "rating_anchors.*dict\[TimeControlBucket, RatingAnchorOut\]" app/schemas/endgames.py` is ≥ 1.
+    - `grep -c "RatingAnchorOut\|ratingAnchors\|rating_anchors" frontend/src/types/endgames.ts` is ≥ 2.
+    - `uv run ty check app/schemas/endgames.py` returns zero errors.
+    - `( cd frontend && npx tsc --noEmit )` is clean (no TS errors after the type regen).
+  </acceptance_criteria>
+  <done>Schema extension + type regen complete; Plan 07 has zero merge conflicts on the type file.</done>
+</task>
+
+<task type="auto" tdd="true">
+  <name>Task 6: Add _aggregate_per_tc_percentile helper to app/services/endgame_service.py; wire 5 page-level ΔES call sites; bypass aggregation for Time Pressure family</name>
+  <files>app/services/endgame_service.py, tests/services/test_endgame_service.py</files>
+  <read_first>
+    - app/services/endgame_service.py (in full — particularly `_compute_score_gap_material` ~lines 1366-1424 per RESEARCH Sources; the 94.3 percentile-attach pattern in `_compute_time_pressure_cards` around lines 1455-1957)
+    - app/repositories/user_benchmark_percentiles_repository.py (Task 3 just modified — nested-dict fetch shape)
+    - .planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-PATTERNS.md (lines 505-537 — aggregation helper + call-site changes)
+  </read_first>
+  <behavior>
+    - Test 1: `_aggregate_per_tc_percentile({})` returns None (empty dict).
+    - Test 2: `_aggregate_per_tc_percentile(None)` returns None.
+    - Test 3: `_aggregate_per_tc_percentile({"bullet": PercentileRow(value=0.0, percentile=20.0, cdf_snapshot=date.today(), n_games=30), "blitz": PercentileRow(value=0.0, percentile=40.0, cdf_snapshot=date.today(), n_games=20), "rapid": PercentileRow(value=0.0, percentile=60.0, cdf_snapshot=date.today(), n_games=50)})` returns `(20*30 + 40*20 + 60*50) / 100 = 44.0` (weighted mean).
+    - Test 4: All-None percentiles return None: `_aggregate_per_tc_percentile({"bullet": PercentileRow(value=0.0, percentile=None, cdf_snapshot=date.today(), n_games=30), "blitz": PercentileRow(value=0.0, percentile=None, cdf_snapshot=date.today(), n_games=20)})` returns None.
+    - Test 5: Mixed None + valid: `{"bullet": PercentileRow(value=0.0, percentile=None, ...), "blitz": PercentileRow(value=0.0, percentile=50.0, ..., n_games=20)}` returns 50.0 (only the non-None row contributes; n_games of the None row is ignored — D-08a implicit zero weight).
+    - Test 6: Single-row dict returns that row's percentile unchanged: `{"rapid": PercentileRow(value=0.0, percentile=37.5, ..., n_games=100)}` returns 37.5.
+  </behavior>
+  <action>
+    Add `_aggregate_per_tc_percentile(per_tc_rows: Mapping[TimeControlBucket, PercentileRow] | None) -> float | None` to `app/services/endgame_service.py` per PATTERNS lines 510-532 verbatim. Cite CONTEXT D-08 + D-08a + D-08b in the docstring.
+    
+    Wire the 5 page-level ΔES call sites per PATTERNS line 535-537:
+    - In `_compute_score_gap_material` (or whatever shaper handles the headline Endgame Score Gap): replace `effective_rows.get("score_gap")` (which was a single PercentileRow under the 94.3 flat dict shape) with `_aggregate_per_tc_percentile(effective_rows.get("score_gap", {}))` (now a `dict[TimeControlBucket, PercentileRow]` under the Task 3 nested-dict shape). The result is one scalar `float | None` which becomes the page-level chip's percentile value.
+    - Same wrap for Achievable Score Gap.
+    - Same wrap for Parity ΔES (`section2_score_gap_parity`).
+    - Same wrap for Conversion ΔES (`section2_score_gap_conv`).
+    - Same wrap for Recovery ΔES (`recovery_score_gap`) — NEW chip slot rescued per CONTEXT D-05a.
+    
+    Time Pressure family chips BYPASS aggregation per CONTEXT D-08 + RESEARCH line 1117. In `_compute_time_pressure_cards`, read per-TC directly: `effective_rows.get("time_pressure_score_gap", {}).get(tc)` returns a `PercentileRow | None`; the chip's percentile = `.percentile` of that row (or None). Same for `clock_gap` and `net_flag_rate`. No `_aggregate_per_tc_percentile` call for these.
+    
+    Also add a `rating_anchors` field population: read `fetch_anchors_for_user(session, user_id=current_user.id)` (Plan 02's repository) and pass the dict into `EndgameOverviewResponse(rating_anchors={tc: RatingAnchorOut(anchor_rating=row.anchor_rating, source_platform=row.source_platform, chesscom_raw_rating=None if row.source_platform == 'lichess' else <raw>, n_games=row.n_games) for tc, row in anchors.items()}, ...)`. The `chesscom_raw_rating` is populated by reading the user's per-TC chess.com median rating BEFORE conversion — this requires re-querying (or, simpler, storing the raw chess.com rating on `user_rating_anchors` as an optional column; if that's not on Plan 02's schema, just leave `chesscom_raw_rating=None` and the tooltip displays the lichess-equivalent only; planner's call — RECOMMEND the latter for scope, with a comment that the raw is omitted in this phase).
+    
+    Add the 6 behavior tests to `tests/services/test_endgame_service.py` extending the existing test file. Use the existing pytest fixtures + style.
+  </action>
+  <verify>
+    <automated>uv run pytest tests/services/test_endgame_service.py -x -k aggregate -v</automated>
+  </verify>
+  <acceptance_criteria>
+    - `grep -c "def _aggregate_per_tc_percentile" app/services/endgame_service.py` is exactly 1.
+    - `grep -c "_aggregate_per_tc_percentile(" app/services/endgame_service.py` is ≥ 6 (1 definition + 5 page-level ΔES call sites).
+    - Recovery Score Gap chip slot present: `grep -c "recovery_score_gap" app/services/endgame_service.py` is ≥ 1.
+    - Time Pressure family does NOT wrap with `_aggregate_per_tc_percentile`: `grep -B 1 -A 1 "time_pressure_score_gap" app/services/endgame_service.py | grep -c "_aggregate_per_tc_percentile"` is 0 (or at most a comment annotation).
+    - All 6 behavior tests pass.
+    - `grep -c "rating_anchors" app/services/endgame_service.py` is ≥ 1 (population of the new schema field).
+    - `uv run ty check app/services/endgame_service.py` returns zero errors.
+  </acceptance_criteria>
+  <done>Aggregation helper + 5 wrap sites + Time Pressure bypass + rating_anchors population complete; 6 tests green.</done>
+</task>
+
+<task type="auto" tdd="true">
+  <name>Task 7: Rewrite tests/services/test_user_benchmark_percentiles_service.py — per-(metric, tc) lookup + Lichess-precedence cases</name>
+  <files>tests/services/test_user_benchmark_percentiles_service.py</files>
+  <read_first>
+    - tests/services/test_user_benchmark_percentiles_service.py (in full — current post-94.3 assertions; understand the fixture shape, mock patterns, existing test discipline)
+    - app/services/user_benchmark_percentiles_service.py (just rewritten in Task 4)
+    - .planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-PATTERNS.md (lines 372-426 — the service rewrite the tests verify)
+  </read_first>
+  <behavior>
+    - Test 1: Stage A run on a user with only Lichess games in rapid creates an anchor with `source_platform='lichess'` for rapid.
+    - Test 2: Stage A run on a user with only chess.com games in blitz creates an anchor with `source_platform='chesscom'` for blitz and the `anchor_rating` is the Lichess-equivalent (via `convert_chesscom_to_lichess`).
+    - Test 3: Stage A run on a user with BOTH Lichess and chess.com games in rapid creates an anchor with `source_platform='lichess'` (Lichess-precedence rule D-12).
+    - Test 4: Stage A run on a user with only chess.com Daily games (no other TC) creates NO classical anchor (the SQL drops Daily; chip suppresses).
+    - Test 5: Stage A computes score_gap percentile only for TCs where an anchor exists.
+    - Test 6: Stage B run on a user with anchors in {bullet, blitz} computes per-(family, tc) percentiles for each (family ∈ STAGE_B_METRIC_FAMILIES) × {bullet, blitz}.
+    - Test 7: `upsert_percentile` called with the new 3-column PK tuple (user_id, metric, time_control_bucket).
+    - Test 8: When `interpolate_cohort_percentile` returns None (suppressed cell), the row still upserts with `percentile=None` and `value` + `n_games` populated.
+    - Test 9: Sentry capture_exception is called on metric-compute failure (Sentry-context-not-message pattern per CLAUDE.md).
+  </behavior>
+  <action>
+    Rewrite `tests/services/test_user_benchmark_percentiles_service.py` against the new service shape. The 94.3 test assertions on `STAGE_B_METRICS` (12-tuple) retire; replace with `STAGE_B_METRIC_FAMILIES` (7-tuple). Use the existing async DB fixtures + the user-creation helper. Add the 9 behavior cases above. For Tests 1-4, set up game fixtures (chess.com games in some TCs, Lichess games in others) — the existing test file likely has a `_create_game(user_id, platform, time_control_bucket, ...)` helper; if not, mirror the conftest pattern. For Test 9, monkey-patch `sentry_sdk.capture_exception` and assert it's called when `_compute_metric_for_user_per_tc` raises.
+  </action>
+  <verify>
+    <automated>uv run pytest tests/services/test_user_benchmark_percentiles_service.py -x -v</automated>
+  </verify>
+  <acceptance_criteria>
+    - All 9 behavior cases pass.
+    - `grep -c "def test_" tests/services/test_user_benchmark_percentiles_service.py` is ≥ 9.
+    - At least one test exercises chess.com-Daily-suppression (Test 4).
+    - At least one test exercises Lichess-precedence on mixed-platform user (Test 3).
+    - At least one test monkey-patches sentry and asserts capture_exception is called (Test 9).
+    - `STAGE_B_METRIC_FAMILIES` referenced in at least one test.
+    - `uv run ty check tests/services/test_user_benchmark_percentiles_service.py` returns zero errors.
+  </acceptance_criteria>
+  <done>Service tests rewritten; 9 cases cover Lichess-precedence, Daily-suppression, per-(family, tc) Stage B iteration, suppression-bypass UPSERT, Sentry capture.</done>
+</task>
+
+<task type="auto">
+  <name>Task 8: Pre-PR checklist for Plan 05 — ruff format, ruff check, ty check, full pytest suite</name>
+  <files>(no file modified — verification only)</files>
+  <read_first>
+    - CLAUDE.md §"Pre-PR checklist"
+  </read_first>
+  <action>
+    Run the full pre-PR sequence (this plan is large; all gates must be GREEN before Plan 06 backfill): `uv run ruff format app/ tests/`, then `uv run ruff check app/ tests/ --fix`, then `uv run ty check app/ tests/` (must be zero errors), then `uv run pytest -x` (full backend suite; expect green now that legacy stubs are retired and the byte-identical regen test is green from Plan 04), then `( cd frontend && npm run lint && npm test -- --run )`. If any gate fails, fix in-plan; this is the atomic-cutover linchpin — no broken commits allowed once Plan 06 starts backfilling.
+  </action>
+  <verify>
+    <automated>uv run ruff format --check app/ tests/ && uv run ruff check app/ tests/ && uv run ty check app/ tests/ && uv run pytest -x && ( cd frontend && npm run lint && npm test -- --run )</automated>
+  </verify>
+  <acceptance_criteria>
+    - ruff format check clean across `app/` + `tests/`.
+    - ruff check clean.
+    - ty check zero errors across `app/` + `tests/`.
+    - Full backend pytest green.
+    - Frontend lint + tests green (no chip changes in Plan 05; Plan 07 owns the chip rewrite — frontend tests should pass against unchanged chip code).
+  </acceptance_criteria>
+  <done>All gates green; schema reshape + service rewrite + aggregation + schema extension + type regen all coherent; Plan 06 ready to backfill.</done>
+</task>
+
+</tasks>
+
+<threat_model>
+## Trust Boundaries
+
+| Boundary | Description |
+|----------|-------------|
+| API → service → repository | Authenticated `current_user.id` from FastAPI-Users dep is the sole `user_id` source; never accepted as a query/path parameter (V4 mitigation, preserved). |
+| Python → Postgres | Static SQL + bindparams + `Literal`-typed parameters preserve injection safety from Plan 03. |
+| Service → external snapshot (ChessGoals) | `convert_chesscom_to_lichess` is a pure-Python lookup against the locked snapshot (Plan 01); no live HTTP call. |
+
+## STRIDE Threat Register
+
+| Threat ID | Category | Component | Disposition | Mitigation Plan |
+|-----------|----------|-----------|-------------|-----------------|
+| T-94.4-05-01 | Tampering | ENUM value injection via API | mitigate | All metric IDs and TC values produced by backend code; `fetch_for_user` filters by `user_id` only. New `RatingAnchorOut.source_platform` Literal-typed at the wire. |
+| T-94.4-05-02 | Information disclosure | `fetch_anchors_for_user(user_id=...)` requires authenticated `user_id` per V4 | mitigate | `user_id` keyword-only; sourced from FastAPI-Users `current_user.id` dep. Same as Phase 94.1 / 94.2 / 94.3. |
+| T-94.4-05-03 | Tampering | Destructive migration on prod loses data without recovery path | accept | Per CONTEXT D-02: `user_benchmark_percentiles` is non-critical product surface; `scripts/backfill_user_percentiles.py` (Plan 06) is the canonical recovery path. Migration docstring carries DESTRUCTIVE banner. PR description documents the recovery sequence. |
+| T-94.4-05-04 | Tampering | Sentry message embeds variable data fragmenting issue grouping | mitigate | CLAUDE.md Sentry rule preserved: `sentry_sdk.set_context("percentile_compute", {"user_id": ..., "stage": "A/B", "metric": ..., "tc": ...})` followed by `sentry_sdk.capture_exception(exc)`. No variables in error messages. |
+| T-94.4-05-SC | Tampering | npm/pip installs | accept | No new packages introduced in this plan; all dependencies (numpy, sqlalchemy, asyncpg, alembic, pydantic) already in `pyproject.toml`. |
+</threat_model>
+
+<verification>
+- `uv run alembic upgrade head` on dev DB cleanly runs both Plan 02's `add_user_rating_anchors` AND this plan's `reshape_user_benchmark_percentiles`; `psql -c '\d user_benchmark_percentiles'` shows 3-column PK + 8-value ENUM.
+- `uv run pytest -x` is green (full backend suite).
+- `uv run ty check app/ tests/` reports zero errors.
+- `grep -rn "interpolate_percentile\b\|GLOBAL_PERCENTILE_CDF\b" app/ tests/ scripts/ | grep -v "interpolate_cohort_percentile\|COHORT_PERCENTILE_CDF\|^\s*#\|\.md:"` returns ZERO lines (legacy callers fully retired).
+- `app/services/endgame_service.py::_aggregate_per_tc_percentile` exists, is called by 5 page-level ΔES shapers, and is NOT called by Time Pressure family shapers.
+- `app/schemas/endgames.py` exposes `RatingAnchorOut` and `EndgameOverviewResponse.rating_anchors`.
+- `frontend/src/types/endgames.ts` reflects the new `RatingAnchorOut` interface and `rating_anchors` field; `npx tsc --noEmit` is clean.
+- Frontend lint + tests green.
+</verification>
+
+<success_criteria>
+PRPCR-03 fully implemented (Stage A anchor compute + Lichess-precedence rule live). PRPCR-04 fully implemented (interpolate_cohort_percentile wired in per-user service; aggregation at API shaper; per-TC ΔES builders consumed). PRPCR-05 implemented (8-value ENUM + widened PK + Recovery rescue + drop/recreate migration). Page-level chips ship aggregated weighted-mean scalar per CONTEXT D-08 / D-08b. Time Pressure chips bypass aggregation per CONTEXT D-08. Legacy `interpolate_percentile` + `GLOBAL_PERCENTILE_CDF` fully retired. Backend is end-to-end ready for Plan 06's backfill against the new shape.
+</success_criteria>
+
+<output>
+Create `.planning/phases/94.4-peer-relative-percentile-chip-refinement/94.4-05-SUMMARY.md` when done. Record: migration revision IDs (Plan 02's + this plan's); confirm `psql -c "SELECT unnest(enum_range(NULL::benchmark_metric))"` returns exactly 8 values; backend test count delta; final grep snapshot confirming no legacy `interpolate_percentile` / `GLOBAL_PERCENTILE_CDF` references remain.
+</output>

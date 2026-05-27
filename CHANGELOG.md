@@ -8,50 +8,54 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
-### Added
+## [v1.19] Endgame Percentiles — 2026-05-27
 
-- **Custom date range filter** (Phase 92). A 9th "Custom range..." item in the Recency dropdown opens a two-month range Calendar on desktop (Radix Popover anchored to the Select trigger, auto-closes on full range pick) and a single-month Calendar in a nested Vaul bottom sheet on mobile (Apply CTA, backdrop = cancel). The trigger label updates to the resolved date range once both bounds are set.
-
-### Changed
-
-- **API filter shape** (Phase 92). The closed Recency string union (`week` / `month` / `3months` / `6months` / `year` / `3years` / `5years` / `all`) on the wire is replaced by two optional ISO date params `from_date` / `to_date`. The frontend converts preset labels to dates in the user's local timezone via a shared `presetToDates` utility. Internal LLM windowing (`insights_service.py`) preserves existing semantics via fixed date offsets independent of the dashboard filter.
-
-### Removed
-
-- **Bookmark time-series `recency` field** (Phase 92, D-19). The `TimeSeriesRequest` schema and its corresponding frontend type no longer accept a `recency` field. The time-series endpoint always covers the full game history; the field was unused at the UI call boundary.
-
-### Tests
-
-- **Date-filter boundary integration tests** (Phase 92). Seven new tests cover `from_date` inclusive lower bound, `to_date` inclusive-of-full-day upper bound, game exclusion for dates past `to_date`, no-filter pass-through, 422 validation on `from_date > to_date` via the Pydantic body path (POST /openings/positions) and via the inline HTTPException path (GET /stats/global), and the insights LLM gate blocking message "Clear Custom date range filter" when any date filter is active.
-
-### Changed
-
-- **Production OOM hardening + Hetzner CPX42 upgrade** (hotfix, FLAWCHESS-3Q). SQLAlchemy pool reduced from `pool_size=20, max_overflow=30` (50 max) to `10 + 10` (20 max) in `app/core/database.py`. Postgres `max_connections` capped at 30 (was the upstream default of 100). Host upgraded from Hetzner CPX32 (4 vCPU / 7.6 GB RAM) to CPX42 (8 vCPU / 16 GB RAM); Postgres memory settings retuned accordingly (`shared_buffers=4GB`, `effective_cache_size=12GB`, `work_mem=16MB`, `maintenance_work_mem=512MB`). Backend, db, and umami containers given explicit `mem_limit` (4g / 10g / 384m) with `memswap_limit = mem_limit` on backend and db to disable swap and force a contained OOM-restart (~3 s Postgres auto-recovery) instead of host-wide swap thrash. Root cause of the 2026-05-21 13:42 Postgres OOM (job 72a4ca0d, single chess.com import for user 101) was the post-Phase-91 fetch rate doubling, which let a single uvicorn process fan out to 13 active Postgres backends and exhaust host RAM + 4 GB swap.
+The first peer-relative percentile chips on the Endgames page. The chip compares each user against same-rated-cohort peers (per-(metric, ELO anchor, TC) cohort CDFs built from the Phase 93 / 94.2 pooled benchmark cohort), making the percentile a stable *trait* of the user rather than a *view* of their currently-filtered data. Phases 93 + 94 shipped the underlying CDF + chip primitive (initial global-pool framing); Phase 94.1 made the chip filter-independent via a materialized `user_benchmark_percentiles` table; Phase 94.2 collapsed the per-cell stratified methodology into a one-point-per-user pooled model; Phase 94.3 extended chips to the Time Pressure cards (12 per-TC chips); Phase 94.4 pivoted the framing from global-pool to peer-relative cohort with rating-anchor disclosure and rescued Recovery Score Gap from the v1 drop list.
 
 ### Added
 
-- **Custom date range filter** (Phase 92). A 9th "Custom range..." item in the Recency dropdown opens a two-month range Calendar on desktop (Radix Popover anchored to the Select trigger, auto-closes on full range pick) and a single-month Calendar in a nested Vaul bottom sheet on mobile (Apply CTA, backdrop = cancel). The trigger label updates to the resolved date range once both bounds are set.
+- **Recovery Score Gap chip slot on the Endgames page** (Phase 94.4). Rescued from the v1 drop list under peer-relative framing. Cohort comparison normalises the opponent-rating selection bias that drove the v1 drop, surfacing how a user recovers from material deficit vs other same-rated players.
+- **Rating-anchor disclosure in the chip tooltip** (Phase 94.4). Tooltip bullet 4 discloses the per-platform anchor composition: mixed-platform users see "blending N chess.com games (median X, converted) with M lichess games (median Y)"; pure-platform users see a shortened single-platform form. chess.com ratings are converted to Lichess-equivalent via a hardcoded ChessGoals snapshot (2026-05-26).
+- **Per-TC percentile chips on Time Pressure cards** (Phase 94.3). Each `TimePressureTcCard` (bullet / blitz / rapid / classical) now renders three chips on its header: Clock Gap, Net Flag Rate, and Time Pressure Score Gap. 12 new per-TC metrics added to `user_benchmark_percentiles` with the pooled-per-user methodology parameterised by TC. Net Flag Rate chips bind a `lower_is_better` direction (fewer net timeouts → higher percentile band).
+- **Percentile annotations on 4 endgame ΔES rows** (Phase 94). A "Top X%" chip appears next to four metrics: Endgame Score Gap, Achievable Score Gap, Section 2 Conversion ΔES, Section 2 Parity ΔES. Banded color (red <25 / blue 25..75 / green >75), Radix popover with metric-aware copy. Backend gates each percentile at `n ≥ 10` (existing `PVALUE_RELIABILITY_MIN_N` reliability floor); chips don't render when the field is null. Raw % gauges (Conv/Parity/Recov), per-type cards, and any row below the floor keep their existing IQR zone bands and get no chip.
+- **Global empirical-CDF benchmark artifact** (Phase 93). `app/services/global_percentile_cdf.py` ships the underlying CDF tables (p1..p99 breakpoints per metric) produced by `scripts/gen_global_percentile_cdf.py` against the benchmark DB. `/benchmarks` SKILL.md gains Chapter 4 documenting the methodology + SQL templates + report shape. Phase 94.4 later replaces the pooled `GLOBAL_PERCENTILE_CDF` with a per-(metric, ELO anchor, TC) `COHORT_PERCENTILE_CDF` family (~1,050 CdfTable instances under 50-Elo sliding-window protocol).
+- **Materialized `user_benchmark_percentiles` table + two-stage compute** (Phase 94.1, 94.2). Each user's canonical-slice value and percentile per in-scope metric are persisted (PK widened to `(user_id, metric, time_control_bucket)` at Phase 94.4). Stage A computes the eval-independent `score_gap` at import-job completion (background task); Stage B computes the eval-dependent metrics (`achievable_score_gap`, `score_gap_conv`, `score_gap_parity`, `recovery_score_gap`, the 3 Time Pressure metrics × 4 TCs) at Stockfish cold-drain completion. Chips light up incrementally — `score_gap` is available within seconds-to-minutes of import completion, eval-dependent chips when cold drain wraps. `scripts/backfill_user_percentiles.py --target dev|prod` populates existing users on rollout.
+- **`user_rating_anchors` table** (Phase 94.4). Per-(user, TC) rating anchor used to look up the user's cohort CDF cell. Anchor is the game-weighted blended median over the union of converted-chess.com + native-lichess game ratings, with full per-platform game counts and per-platform medians stored for tooltip disclosure. chess.com Daily games dropped at the SQL level.
 
 ### Changed
 
-- **API filter shape** (Phase 92). The closed Recency string union (`week` / `month` / `3months` / `6months` / `year` / `3years` / `5years` / `all`) on the wire is replaced by two optional ISO date params `from_date` / `to_date`. The frontend converts preset labels to dates in the user's local timezone via a shared `presetToDates` utility. Internal LLM windowing (`insights_service.py`) preserves existing semantics via fixed date offsets independent of the dashboard filter.
+- **Endgame percentile chip pivoted from global-pool to peer-relative cohort framing** (Phase 94.4). The chip now compares each user against same-rated-cohort peers (per-(metric, ELO anchor, TC) cohort CDFs, K=200 sliding windows at 50-Elo anchors). Chip face shrinks to a bare `p23` pill (no flame icons, no direction word); color band (red <25 / neutral / green >75) carries direction. 2400-rated users no longer see globally-low percentiles that misframe honest skill; the percentile is now relative to other 2400s. Tooltip rewrites to a 4-bullet peer-relative form including rating-anchor disclosure.
+- **Percentile chip is a trait, not a view** (Phase 94.1). Toggling Recency / Opponent Strength / TC / Platform / Rated / Opponent Type filters no longer changes the chip — it reflects the user's canonical-slice value computed once per Stage A/B trigger from a fixed cohort definition (status='completed' + ±100 ELO opponent at game time + sparse-cell exclusion + 36-month recency + standard variant). The row's filter-applied metric value continues to display per the existing per-request compute; the chip stays still.
+- **Pooled-per-user methodology** (Phase 94.2). Phase 94.1's per-cell stratified methodology is replaced with a one-point-per-user pooled model on both the CDF construction side and the per-user lookup side. Games are pooled across TCs (cap 1000/TC, ≤36 months) and the metric is computed once per user; the CDF is `percentile_cont` over those values. Single ≥30-games inclusion floor on the pool.
+- **Percentile chip anchor: game-weighted blended median for mixed-platform users** (Phase 94.4 amendment, D-12 reversal). Per-game ChessGoals conversion for chess.com + native passthrough for lichess, pooled median over the union. Mixed-platform users now see an anchor that reflects their full play distribution, not just their lichess ladder position. Pure-platform users are unaffected (median commutativity within the ChessGoals snapshot). See `.planning/notes/percentile-anchor-d12-reversal.md` for the rationale.
+- **`ScoreGapRow` layout** (Phase 94). Non-`hasSlots` callers now render via CSS Grid so the new percentile chip can sit at the right edge of the value row on desktop (≥640 px) and on its own line below the bullet chart, left-aligned, on mobile (<640 px). `EndgameTypeCard`'s 3-column variant (`hasSlots`) is unchanged.
 
-### Removed
+### Fixed
 
-- **Bookmark time-series `recency` field** (Phase 92, D-19). The `TimeSeriesRequest` schema and its corresponding frontend type no longer accept a `recency` field. The time-series endpoint always covers the full game history; the field was unused at the UI call boundary.
+- **Postgres container memory budget** (hotfix PR #144, FLAWCHESS-3Q recurrence). Third post-v1.18 occurrence of the same OOM family: user 109's concurrent chess.com + lichess import on 2026-05-26 14:18-14:24 UTC OOM-killed Postgres inside its 10 GB container cgroup. Root cause was a docker-compose misalignment introduced by PR #139, Postgres remained tuned for the 16 GB host (`shared_buffers=4GB`, `effective_cache_size=12GB`) while the container was capped at 10 GB, leaving only ~6 GB of cgroup budget for per-backend work. With 20 active backends during the dual-platform bulk INSERT burst, that budget was exhausted. Hotfix re-tunes Postgres to the container budget and raises the cap: `shared_buffers` 4GB → 2GB, `effective_cache_size` 12GB → 8GB, `mem_limit` / `memswap_limit` 10g → 12g. Per-backend anon-rss headroom grows from ~6 GB to ~10 GB. Also bumps `starlette` 0.52.1 → 1.1.0 to clear PYSEC-2026-161 (transitive dep, surfaced by the CI pip-audit gate). See SEED-027 for Thread B (asyncpg COPY for bulk position insert), which addresses the per-backend pressure side directly and ships as a parallel small phase.
 
-### Tests
+## [v1.18] Import Pipeline Hardening — 2026-05-22
 
-- **Date-filter boundary integration tests** (Phase 92). Seven new tests cover `from_date` inclusive lower bound, `to_date` inclusive-of-full-day upper bound, game exclusion for dates past `to_date`, no-filter pass-through, 422 validation on `from_date > to_date` via the Pydantic body path (POST /openings/positions) and via the inline HTTPException path (GET /stats/global), and the insights LLM gate blocking message "Clear Custom date range filter" when any date filter is active.
+Reactive milestone driven by two production OOM recurrences after v1.17 (FLAWCHESS-56 on 2026-05-16, FLAWCHESS-3Q on 2026-05-21). Phase 90 eliminated the per-batch unique-SQL leak in `_flush_batch` Stage 5 and shipped DB-recovery retry plus a periodic orphan-job reaper. Phase 91 split the import pipeline into two lanes so Stockfish eval no longer blocks the hot path — users see opening explorer, raw WDL, and flag rates within seconds of import start, with eval-dependent metrics filling in via a background cold-drain coroutine. Phase 92 replaced the closed `Recency` string union on the API wire with explicit `from_date` / `to_date` params and added a Custom range… picker. Hotfix PR #139 capped the SQLAlchemy pool, Postgres `max_connections`, and container memory; the production host was upgraded from Hetzner CPX32 to CPX42 (8 vCPU / 16 GB RAM).
+
+### Added
+
+- **Custom date range filter** (Phase 92). A 9th "Custom range..." item in the Recency dropdown opens a two-month range Calendar on desktop (Radix Popover anchored to the Select trigger, auto-closes on full range pick) and a single-month Calendar in a nested Vaul bottom sheet on mobile (Apply CTA, backdrop = cancel). The trigger label updates to the resolved date range once both bounds are set.
+- **Eval-coverage banner + per-metric pending caveats** (Phase 91). New `useEvalCoverage` hook polls `GET /api/imports/eval-coverage` every 10 s while Stockfish work is outstanding and stops automatically at 100%. An amber progress banner appears at the top of Endgames Stats, Openings Stats, Openings Explorer, and Openings Insights while engine coverage is incomplete. Stockfish-dependent metric popovers show an AlertTriangle-icon caveat citing the metric's current sample size and the remaining pending count.
+- **Dual-import stress harness** (Phase 91). `scripts/measure_dual_import_rss.py` — dev-only acceptance gate that triggers two concurrent imports, polls Postgres + RSS + swap + coverage every 30 s, and exits non-zero on any bound violation.
+- Openings and Endgames *Games* subtabs now show the Score and Eval bullet charts below the WDL chart, matching the move explorer's "Results played as" panel. The Endgames Games subtab reports per-category Wilson score and the eval at endgame entry.
+- Endgame Type Breakdown cards now show per-type Start and End predicted scores flanking the Gap row (Start on the left with a Cpu icon, Gap centered with its info popover, End on the right). End − Start reconciles exactly with the Gap.
 
 ### Changed
 
 - **Two-lane import pipeline** (Phase 91). The import hot path no longer runs Stockfish. Game ingestion (fetch → parse → insert positions → commit) is now eval-free, and a separate in-process cold-drain coroutine (`run_eval_drain`, spawned in the FastAPI lifespan alongside the orphan-job reaper) evaluates entry plies in the background. Opening explorer, raw WDL, endgame type breakdowns, flag rates, and time-per-move are available within seconds of import start; conversion, recovery, score-gap, and time-pressure-vs-performance metrics fill in over the following minutes with honest per-metric sample-size labels. Structurally prevents the 2026-05-16 / 2026-05-20 hot-lane-Stockfish OOM regression — a CI regression guard (`TestHotLaneNoEvalCalls`) fails the build if any future edit reintroduces `engine.evaluate` inside `_flush_batch`.
-
-### Added
-
-- **Eval-coverage banner + per-metric pending caveats** (Phase 91). New `useEvalCoverage` hook polls `GET /api/imports/eval-coverage` every 10 s while Stockfish work is outstanding and stops automatically at 100%. An amber progress banner appears at the top of Endgames Stats, Openings Stats, Openings Explorer, and Openings Insights while engine coverage is incomplete. Stockfish-dependent metric popovers show an AlertTriangle-icon caveat citing the metric's current sample size and the remaining pending count.
-- **Dual-import stress harness** (Phase 91). `scripts/measure_dual_import_rss.py` — dev-only acceptance gate that triggers two concurrent imports, polls Postgres + RSS + swap + coverage every 30 s, and exits non-zero on any bound violation.
+- **API filter shape** (Phase 92). The closed Recency string union (`week` / `month` / `3months` / `6months` / `year` / `3years` / `5years` / `all`) on the wire is replaced by two optional ISO date params `from_date` / `to_date`. The frontend converts preset labels to dates in the user's local timezone via a shared `presetToDates` utility. Internal LLM windowing (`insights_service.py`) preserves existing semantics via fixed date offsets independent of the dashboard filter.
+- **Production OOM hardening + Hetzner CPX42 upgrade** (hotfix, FLAWCHESS-3Q). SQLAlchemy pool reduced from `pool_size=20, max_overflow=30` (50 max) to `10 + 10` (20 max) in `app/core/database.py`. Postgres `max_connections` capped at 30 (was the upstream default of 100). Host upgraded from Hetzner CPX32 (4 vCPU / 7.6 GB RAM) to CPX42 (8 vCPU / 16 GB RAM); Postgres memory settings retuned accordingly (`shared_buffers=4GB`, `effective_cache_size=12GB`, `work_mem=16MB`, `maintenance_work_mem=512MB`). Backend, db, and umami containers given explicit `mem_limit` (4g / 10g / 384m) with `memswap_limit = mem_limit` on backend and db to disable swap and force a contained OOM-restart (~3 s Postgres auto-recovery) instead of host-wide swap thrash. Root cause of the 2026-05-21 13:42 Postgres OOM (job 72a4ca0d, single chess.com import for user 101) was the post-Phase-91 fetch rate doubling, which let a single uvicorn process fan out to 13 active Postgres backends and exhaust host RAM + 4 GB swap.
+- The Eval popover on the Endgames Games subtab now reads "average Stockfish eval at the position where the endgame begins" (instead of the openings phrasing), matching the Stats-tab "Endgame Entry Eval" metric.
+- **Score Gap by Remaining Time tooltip splits You/Opp game counts** (post-v1.17 polish). The per-bucket hover tooltip now shows your score and your opponents' score on two separate lines, each with its own game count (`You: 38.0% (40 games)` / `Opp: 55.0% (37 games)`). The two figures come from independent clock-pressure splits of the same game-set, so the counts can legitimately differ; the previous single line showed only one count.
+- **Time Pressure card help moved to per-section info popovers** (post-v1.17 polish). The single card-title info popover is gone. Each of the two sections now carries its own info trigger next to its subtitle: "Remaining Time at Endgame Entry" explains the pre-endgame time-management stats and net flag rate; "Score Gap by Remaining Time" explains the same-pressure opponent comparison and what the marker size encodes (how many of the bucket's games were yours).
+- **Score Gap by Remaining Time markers scale with your sample size** (post-v1.17 polish). Each datapoint dot is now sized by the user/opponent game-count ratio (`n / n_opp`), clamped to a capped range. A bigger marker means more of that bucket's games were yours, so the user-side score is the better-sampled side of the comparison.
+- **Endgame chart axis/tooltip label consistency** (post-v1.17 polish). The "Score Gap by Remaining Time" x-axis caption now renders as an HTML caption matching the "Clock Gap at Endgame Entry" chart, so it is the same size on mobile. The Clock Gap chart's datapoint tooltip label was renamed "Avg clock diff" → "Clock Gap" to match the metric name used elsewhere.
 
 ### Fixed
 
@@ -60,6 +64,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 - **DB-recovery window no longer strands import jobs** (Phase 90). Adds a bounded-retry helper (`_record_failure_with_retry`, 5 attempts, 2/4/8/16 s backoff with `engine.dispose()` pool invalidation between retries) so a brief Postgres restart no longer leaves a job stuck `in_progress`. The retriable-error classifier covers `sqlalchemy.exc.OperationalError`, `InterfaceError`, `DBAPIError`, raw asyncpg `CannotConnectNowError` / `ConnectionDoesNotExistError`, and OS-level `ConnectionRefusedError`. Sentry capture fires only on final exhaustion (last-attempt rule).
 - **Periodic orphan-job reaper** (Phase 90). A new background task (`run_periodic_reaper`, 5-minute tick, 3-hour age threshold) wired into the FastAPI lifespan picks up any `in_progress` job left stranded by an outage longer than the retry budget. `fail_orphaned_jobs` accepts an `orphan_age_threshold` so the reaper does not touch live healthy imports; the startup-time call is unchanged (no threshold).
 
+### Removed
+
+- **Bookmark time-series `recency` field** (Phase 92, D-19). The `TimeSeriesRequest` schema and its corresponding frontend type no longer accept a `recency` field. The time-series endpoint always covers the full game history; the field was unused at the UI call boundary.
+
 ### Security
 
 - Bumped transitive dependency `idna` 3.11 → 3.15 to clear CVE-2026-45409 (flagged by the CI `pip-audit --strict` gate). Lockfile-only; no behavior change.
@@ -67,19 +75,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Tests
 
 - **Real-DB regression coverage for the import pipeline** (Phase 90). New `TestFlushBatchStage5RealDb` (rollback-scoped `db_session` fixture) pins the Stage 5 Table-level executemany contract against actual SQLAlchemy execution; the previous mock-only tests could not catch the ORM bulk-update fragility this PR resolves. New `TestRecordFailureWithRetryDbOutage` (6 tests) pins each retriable exception class plus the pool-invalidation and dispose-failure-resilience contracts.
-
-### Added
-
-- Openings and Endgames *Games* subtabs now show the Score and Eval bullet charts below the WDL chart, matching the move explorer's "Results played as" panel. The Endgames Games subtab reports per-category Wilson score and the eval at endgame entry.
-- Endgame Type Breakdown cards now show per-type Start and End predicted scores flanking the Gap row (Start on the left with a Cpu icon, Gap centered with its info popover, End on the right). End − Start reconciles exactly with the Gap.
-
-### Changed
-
-- The Eval popover on the Endgames Games subtab now reads "average Stockfish eval at the position where the endgame begins" (instead of the openings phrasing), matching the Stats-tab "Endgame Entry Eval" metric.
-- **Score Gap by Remaining Time tooltip splits You/Opp game counts** (post-v1.17 polish). The per-bucket hover tooltip now shows your score and your opponents' score on two separate lines, each with its own game count (`You: 38.0% (40 games)` / `Opp: 55.0% (37 games)`). The two figures come from independent clock-pressure splits of the same game-set, so the counts can legitimately differ; the previous single line showed only one count.
-- **Time Pressure card help moved to per-section info popovers** (post-v1.17 polish). The single card-title info popover is gone. Each of the two sections now carries its own info trigger next to its subtitle: "Remaining Time at Endgame Entry" explains the pre-endgame time-management stats and net flag rate; "Score Gap by Remaining Time" explains the same-pressure opponent comparison and what the marker size encodes (how many of the bucket's games were yours).
-- **Score Gap by Remaining Time markers scale with your sample size** (post-v1.17 polish). Each datapoint dot is now sized by the user/opponent game-count ratio (`n / n_opp`), clamped to a capped range. A bigger marker means more of that bucket's games were yours, so the user-side score is the better-sampled side of the comparison.
-- **Endgame chart axis/tooltip label consistency** (post-v1.17 polish). The "Score Gap by Remaining Time" x-axis caption now renders as an HTML caption matching the "Clock Gap at Endgame Entry" chart, so it is the same size on mobile. The Clock Gap chart's datapoint tooltip label was renamed "Avg clock diff" → "Clock Gap" to match the metric name used elsewhere.
+- **Date-filter boundary integration tests** (Phase 92). Seven new tests cover `from_date` inclusive lower bound, `to_date` inclusive-of-full-day upper bound, game exclusion for dates past `to_date`, no-filter pass-through, 422 validation on `from_date > to_date` via the Pydantic body path (POST /openings/positions) and via the inline HTTPException path (GET /stats/global), and the insights LLM gate blocking message "Clear Custom date range filter" when any date filter is active.
 
 ## [v1.17] Endgame Stats Card Redesign — 2026-05-19
 
@@ -612,7 +608,9 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.17...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.19...HEAD
+[v1.19]: https://github.com/flawchess/flawchess/compare/v1.18...v1.19
+[v1.18]: https://github.com/flawchess/flawchess/compare/v1.17...v1.18
 [v1.17]: https://github.com/flawchess/flawchess/compare/v1.16...v1.17
 [v1.16]: https://github.com/flawchess/flawchess/compare/v1.15...v1.16
 [v1.15]: https://github.com/flawchess/flawchess/compare/v1.14...v1.15

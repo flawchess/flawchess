@@ -5,6 +5,8 @@ description: Generate FlawChess endgame population benchmarks from the benchmark
 
 # Benchmarks
 
+> **Phase 94.2 callout:** This SKILL describes the per-cohort analytical methodology used for `/benchmarks` reports — distribution exploration, neutral-zone calibration, "what's typical" breakdowns by (TC × ELO) bucket. The **production percentile chip uses a different methodology** since Phase 94.2: a pooled-per-user model (recent 1000/TC across all played TCs, 36-month window, single ≥30 floor on the pooled set, single globally pooled CDF). See `app/services/canonical_slice_sql.py` for the chip's SQL builders, `app/services/global_percentile_cdf.py` for the committed CDF literal, and `.planning/phases/94.2-pooled-per-user-percentile-redesign/94.2-CONTEXT.md` for the design rationale. The per-cohort stratification described below remains correct for analytical purposes — it just no longer mirrors what the production chip computes.
+
 Generate population-level benchmarks for FlawChess from the benchmark DB. The headline deliverable is a **per-metric collapse verdict** answering: does this metric need cell-specific zones across (TC × ELO), or can it use a single global zone?
 
 The skill is organized into three chapters that mirror the FlawChess UI: **Chapter 1 — Stratified Sample** holds the cell-coverage methodology that every metric depends on; **Chapter 2 — Openings** holds calibrations that feed the Openings page; **Chapter 3 — Endgames** holds calibrations that feed the Endgames → Stats page, with subchapters in the same display order as the page's H2 sections (Overall Performance → Metrics and ELO → Time Pressure → Type Breakdown).
@@ -303,6 +305,8 @@ Then for each pair `(a, b)`: `pooled_sd = sqrt(((n_a-1)*var_a + (n_b-1)*var_b) /
 2. **ELO marginal** — 5 rows (800/1200/1600/2000/2400) pooled across TC, excluding the sparse cell. Columns: `n_users / mean / SD / p25 / p50 / p75` (plus `p05 / p95` for distributions with wide tails).
 3. **TC marginal** — 4 rows (bullet/blitz/rapid/classical) pooled across ELO, excluding the sparse cell. Same columns.
 
+Plus a **pooled distribution table** (single row: `n / mean / SD / p05 / p25 / p50 / p75 / p95`) — the one that feeds the cohort-band recommendation. This is the fourth mandatory table for every per-user metric.
+
 Then the collapse verdict block:
 
 ```
@@ -314,6 +318,61 @@ Then the collapse verdict block:
 Score heatmaps render as percent; eval heatmaps render as integer cp (e.g. `+25 / −10 / +18 / +4`); score-gap heatmaps render as `pp` per the display-formatting rules above.
 
 **"Where applicable" exceptions:** subchapters with intrinsically different structure (e.g. 3.4.1 / 3.4.2 / 3.4.3 partition by endgame class; 3.3.2 partitions by time-pressure bucket; 3.2.2 partitions by entry bucket) emit the per-partition equivalent — one p50 cell table + ELO marginal + TC marginal **per partition** (class / bucket / time-bin). The principle is unconditional: the reader must always see the cell-level p50 grid plus both marginals for every metric, just sliced by the subchapter's natural partition. Sub-table suppression for cells below `n_users` floor is fine; skipping marginals entirely is not.
+
+##### Rendering rule — MARKDOWN TABLES, NOT PROSE LISTS (hard rule)
+
+The p50 cell grid, ELO marginal, TC marginal, and pooled distribution MUST be rendered as **GitHub-flavored markdown tables** (pipe-delimited, header + `---` separator row). Do **NOT** collapse them into single-line prose summaries like `ELO marginal (cp): 800 n764 m0 SD88 · 1200 n1093 m+7 SD70 · …`. The middle-dot bullet form is unscannable, defeats column alignment, and silently drops most of the per-level statistics (p25/p75/p05/p95). Every numeric breakdown that has a row/column structure goes into a markdown table — there is no token-budget exception. If the recommendation prose still fits, the tables fit too.
+
+**Canonical templates** (use as drop-in skeletons — copy the column set verbatim, fill in the values):
+
+Pooled distribution (1 row):
+
+```markdown
+| n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2,025 | 52.1% | 7.5% | 38.4% | 46.4% | 51.9% | 57.2% | 66.9% |
+```
+
+ELO marginal (5 rows, sparse-excluded):
+
+```markdown
+| ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 800 | 342 | 51.7% | 6.8% | 40.1% | 47.2% | 51.8% | 56.5% | 64.4% |
+| 1200 | 484 | 51.9% | 7.2% | … | 46.4% | 51.9% | 56.8% | … |
+| 1600 | 501 | 51.7% | 7.0% | … | 45.4% | 51.5% | 56.8% | … |
+| 2000 | 414 | 52.8% | 7.4% | … | 47.1% | 52.3% | 58.4% | … |
+| 2400 | 262 | 52.3% | 7.3% | … | 46.8% | 52.3% | 57.9% | … |
+```
+
+TC marginal (4 rows, sparse-excluded):
+
+```markdown
+| TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 614 | 51.2% | … | … | 46.3% | 51.2% | 56.1% | … |
+| blitz | 611 | 51.7% | … | … | 46.0% | 51.8% | 56.8% | … |
+| rapid | 584 | 52.6% | … | … | 46.7% | 52.2% | 58.1% | … |
+| classical | 194 | 54.4% | … | … | 47.8% | 53.9% | 61.5% | … |
+```
+
+p50 cell grid (5×4 with `p50 (n_users)`):
+
+```markdown
+| ELO \ TC | bullet | blitz | rapid | classical |
+|---:|---:|---:|---:|---:|
+| 800 | 51.0 (137) | 51.5 (126) | 52.1 (162) | 53.0 (140) |
+| 1200 | … | … | … | … |
+| 1600 | … | … | … | … |
+| 2000 | … | … | … | … |
+| 2400 | … | … | … | 53.0 (6)* |
+```
+
+`p05/p95` columns can be omitted from marginal tables for tight-distribution metrics (Cohen's d / score) but MUST be included for wide-tail distributions (eval cp, score gaps in pp). When in doubt, include them.
+
+For multi-metric subchapters (e.g. 3.2.1 Conv/Parity/Recovery — 4 metrics × 3 tables = 12 tables), emit all 12. Prose summaries can accompany the tables, but never replace them. The headline collapse-verdict summary table (chapter end) is a separate deliverable and does NOT substitute for per-subchapter marginals.
+
+**Prose is reserved for** narrative interpretation (what the numbers mean, recommendations, caveats), not for transmitting the numbers themselves. If you find yourself writing `metric (unit): level1 statA · level2 statA · …`, stop and emit a markdown table instead.
 
 ### Equal-footing opponent filter (all subchapters)
 
@@ -2957,6 +3016,140 @@ For the §3.4.3 block in `reports/benchmarks-latest.md`:
 **Note on IQR-derived zones:** zone bands are self-derived from the cohort, so the analysis is independent of any placeholder in `endgame_zones.py` / `scoreBulletConfig.ts`. If §3.4.2 later calibrates `PER_CLASS_GAUGE_ZONES[cls].achievable_score_gap` to the same IQR edges this query produces, the live zone classification will match this benchmark's classification exactly. If the live bands deviate (e.g. tightened editorially), strict-agreement and strong-disagreement in the live UI will differ from this benchmark; Pearson r and sign-agreement remain band-independent and stable across regimes.
 
 **Scope note:** This subchapter exists to inform the chart-inventory decision on `EndgameTypeCard.tsx` raised during /gsd-explore on 2026-05-15. It does not calibrate any code constants directly.
+
+---
+
+## 4. Global Percentile CDF
+
+> **Correspondence with the production CDF changed in Phase 94.2 (see top-of-file callout).** This chapter describes the **per-cohort empirical CDF methodology** that produced the Phase 93 v1 `GLOBAL_PERCENTILE_CDF` artifact: one per-(user, game-time elo_bucket, tc) value pooled across the sparse-excluded (TC × ELO) grid. **As of Phase 94.2, the production CDF in `app/services/global_percentile_cdf.py` is no longer this distribution** — Plan 02 of 94.2 regenerated it under pooled-per-user methodology (recent 1000/TC across all played TCs, 36-month window, single ≥30 floor on the pooled set, one row per user; see `app/services/canonical_slice_sql.py` for the authoritative builders and `.planning/phases/94.2-pooled-per-user-percentile-redesign/` for the rationale). The numbers in `scripts/gen_global_percentile_cdf.py` were regenerated then too, so the breakpoint array on this chapter's SQL no longer matches the committed `GLOBAL_PERCENTILE_CDF` array. The per-cohort, per-rating-bucket sanity-check methodology below remains a **valid analytical breakdown** (same role as `_build_per_bucket_sanity_query` after 94.2 Plan 02) — it is just no longer the production-chip distribution. When this chapter mentions "the chip" / "Phase 94 backend interpolation" / "the committed artifact" / "GLOBAL_PERCENTILE_CDF", treat those references as **historical** to Phase 93 v1 and consult `app/services/canonical_slice_sql.py` for current production behaviour.
+
+This chapter produces per-metric empirical CDFs (cumulative distribution functions) over the four chipped ΔES metrics, **globally pooled** across the (TC × ELO) grid. The committed artifact lives at `app/services/global_percentile_cdf.py` (a sibling of `app/services/endgame_zones.py`, NOT a graft into it — the CDF tables have a different artifact shape than ZoneSpec). Mechanization is `scripts/gen_global_percentile_cdf.py` (Plan 02 — DB → Python regen is a manual recalibration step, mirroring `scripts/backfill_eval.py --db benchmark`; no CI gate, no auto-regen). The report deliverable is `reports/global-percentile-cdf-latest.md`, with the same rotation rule as `reports/benchmarks-latest.md` (see §"Report file layout").
+
+The downstream consumer is **Phase 94 backend only**: it interpolates the user's per-metric value against `GLOBAL_PERCENTILE_CDF` at request time and emits a scalar `{metric}_percentile` field on the endgame response schemas, which the chip + popover render from. Phase 93 ships **no client-side code, no TS mirror, no Python→TS codegen, no CI drift-guard** (D-01) — unlike `endgame_zones.py` whose IQR bands are painted client-side, the CDF output is a single scalar computed server-side. A future client-side viz (sparkline of the user's position on the global distribution, "what value puts me in the top X%" widget, offline what-if calculator) is the trigger to add a TS mirror; it is not pre-built here.
+
+**Out of scope (explicit — D-02 rationale):**
+- **Recovery Score Gap percentiles** (`section2_score_gap_recov`) — opponent-confounded with Cohen's d ≈ 0.95 inverted rating coupling per `reports/benchmarks-gap-metrics-percentile-candidacy.md` (2026-05-22). Defer until Recovery is repaired or re-framed.
+- **Raw % gauge percentiles** (Conversion / Parity / Recovery rate gauges — `conversion_win_pct`, `parity_score_pct`, `recovery_save_pct`) — redundant chips on cards whose ΔES row is already chipped.
+- **Per-(TC, ELO)-cell CDFs** — SEED-019 deliberately ships global-only comparison. The bragging-rights "top X% of all players" framing is the explicit product call; per-cell CDFs are not in v1.19 scope.
+- **Tier-4 per-endgame-class CDFs** — per-class samples too thin (~8 rook conversion spans per user is noise); deferred per `REQUIREMENTS.md` §Future Requirements.
+- **Opening insights percentile annotations** — candidate for a future Opening Insights v2 milestone.
+- **TS mirror / client-side codegen / Python→TS drift-guard** — D-01; add when a client-side CDF consumer ships.
+
+### In-scope metrics
+
+The artifact ships exactly **4** `MetricId` literals from `app/schemas/endgames.py` (no new IDs introduced — D-03):
+
+- **`score_gap`** — page-level Endgame Score Gap (`eg_score − non_eg_score`); see §3.1.6. Per-user inclusion floor: **≥30 endgame AND ≥30 non-endgame games** per user in their selected TC (matches the §3.1.6 cohort-band floor).
+- **`achievable_score_gap`** — page-level Achievable Score Gap (paired per-game `actual − expected` against the Stockfish-baseline expected score); see §3.1.5. Per-user inclusion floor: **≥20 endgame-entry games** per user with a paired (actual, expected) score (matches the §3.1.5 floor).
+- **`section2_score_gap_parity`** — Section 2 Parity ΔES Score Gap (per-span `exit_score − ES_entry`, partitioned to spans whose entry-eval bucket is `parity`); see §3.2.2. Per-user inclusion floor: **≥20 qualifying spans per user in the parity bucket** (matches the §3.2.2 span floor).
+- **`section2_score_gap_conv`** — Section 2 Conversion ΔES Score Gap (per-span `exit_score − ES_entry`, partitioned to spans whose entry-eval bucket is `conversion`); see §3.2.2. Per-user inclusion floor: **≥20 qualifying spans per user in the conversion bucket** (matches the §3.2.2 span floor).
+
+Per-metric floors are kept from the pre-flight (rather than unified) to preserve continuity with `reports/benchmarks-gap-metrics-percentile-candidacy.md` (Claude's Discretion item #2 from CONTEXT.md).
+
+### Canonical CTE — inherited verbatim from §1
+
+The CDF query uses the Chapter 1 building blocks unchanged — **do not duplicate the SQL here** (the authoritative SQL lives in `scripts/gen_global_percentile_cdf.py`; the illustrative snippet at the end of this chapter is a composition example, not a substitute):
+
+- **Standard CTE — `selected_users`** (§1) — `benchmark_selected_users ⋈ benchmark_ingest_checkpoints` on `lichess_username + tc_bucket` with `bic.status = 'completed'`, joined to `users` on `lower(lichess_username)`. Bypassing the canonical CTE produces a wrong global distribution and therefore wrong percentiles for every user; the CDF tails are more sensitive to CTE drift than the IQR zone bands are (D-05).
+- **Sparse-cell exclusion** (§1) — `(elo_bucket = 2400 AND tc_bucket = 'classical')` is dropped from the pooled distribution (n=12 completed users, ~55 games/user, pool exhausted). Same rule applied to TC marginals, ELO marginals, and Cohen's d throughout Chapters 2–3.
+- **Equal-footing opponent filter** (§1) — `abs(opp_rating − user_rating) ≤ 100` (both ratings `NOT NULL`). Universal across every per-metric subchapter as of 2026-05-03; the CDF inherits it so the global distribution represents skill at equal footing, not skill at typical Lichess matchmaking.
+- **Rating-lag selection bias — game-time ELO bucketing** (§1, "Rating-lag selection bias (game-time bucketing)" and "user_elo_at_game / elo_bucket" in Shared SQL building blocks) — every per-user row is bucketed by the cohort user's **rating at game time** (`games.white_rating` / `games.black_rating`), NOT by `benchmark_selected_users.rating_bucket`. Sub-800 rows are dropped (`elo_bucket IS NULL`). A single user spans 2–3 game-time ELO buckets across their career; per-user metric values are computed per `(user_id, elo_bucket, tc)`.
+
+The pooled distribution is **global** (pooled across all `(elo_bucket, tc_bucket)` cells except the sparse `(2400, classical)` cell) — not per-cell. The chip phrasing "top X% of all players" requires a single global CDF, not per-(TC, ELO) CDFs. The per-rating-bucket tables in the next subsection are sanity checks on the pooled distribution, not separate CDFs.
+
+### Breakpoint set
+
+The locked breakpoint set is **every integer percentile from p1 through p99** — 99 breakpoints total (`p1, p2, p3, ..., p97, p98, p99`), no sub-percent steps. Per `ROADMAP.md` Phase 93 success criterion #5.
+
+**Rationale for the bounded tails (p1/p99, NOT extreme-tail extensions):** at the current pooled cohort size (n ≈ 2000 across the 4 metrics) the deep-tail breakpoints have approximately ±5pp sampling SE and would swing on single outliers — the bounded p1..p99 range deliberately keeps such extreme-tail breakpoints **out of scope**. Tighter tails are a future ops task — cohort re-selection at a higher `--per-cell` from `scripts/select_benchmark_users.py` — deferred until that cohort exists.
+
+**Rationale for integer-only steps (no sub-percent intermediates):** chip-rendered phrasing operates on whole-percent precision ("top 3%", not "top 2.5%"). Half-percent shoulders are **out of scope** because they would be stored but never rendered.
+
+**Chip phrasing convention:** all chip copy uses the **"top X%"** form (NEVER "bottom X%"). A user at p3 renders as "top 97%"; a user at p97 renders as "top 3%". The CDF table stores the empirical percentile; the renderer (Phase 94) converts to the top-X% framing.
+
+> **Superseded breakpoint sets** (earlier drafts, kept here for audit trail only — do not implement): an earlier 19-breakpoint *tail-densified* set (including p0.1, p0.5, p99.5, p99.9 and the `p2.5 / p97.5` half-percent shoulders) was proposed in `SEED-019` and an intermediate 15-breakpoint p1..p99-with-half-steps draft followed in CONTEXT.md D-06. Both are out of scope as of 2026-05-22 (CONTEXT.md D-06 revised to match ROADMAP success criterion #5); any incidental mention of `p0.1` / `p99.9` / `p2.5` / `p97.5` / `p0.5` / `p99.5` should appear only inside this superseded / out-of-scope footnote or an earlier-draft callout.
+
+### Per-rating-bucket sanity-check methodology
+
+For each of the 4 metrics, the report includes a per-rating-bucket table showing:
+
+| rating bucket | n_users | median | skew | kurtosis |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | ... | ... | ... | ... |
+| 1200 (game-time) | ... | ... | ... | ... |
+| 1600 (game-time) | ... | ... | ... | ... |
+| 2000 (game-time) | ... | ... | ... | ... |
+| 2400 (game-time) | ... | ... | ... | ... |
+
+This mirrors `reports/benchmarks-gap-metrics-percentile-candidacy.md` (2026-05-22). Purpose: verify that the pooled distribution behaves reasonably across rating strata. Conversion ΔES is known to have skew ≈ −0.95 and excess kurtosis ≈ +1.42 per the pre-flight (sigmoid-asymmetry artifact, ceiling at 1.0); sanity-check tables document this is expected, not a data bug. The sparse `(2400, classical)` cell is excluded from these marginals per §1 rules.
+
+Rating buckets follow the §1 canonical anchors `800 / 1200 / 1600 / 2000 / 2400` (game-time, 400-wide, sub-800 dropped).
+
+### Expected report shape
+
+`reports/global-percentile-cdf-latest.md` MUST contain, at minimum (slim format — Claude's Discretion item #3):
+
+1. **Header block** — DB provenance (benchmark, localhost:5433, flawchess_benchmark), snapshot ISO timestamp, `BENCHMARK_DB_SNAPSHOT_MONTH` (currently `"2026-03"`), per-metric n_users, the canonical-CTE inheritance note, and the same sparse-cell + equal-footing + game-time-bucketing methodology notes as `reports/benchmarks-latest.md`.
+2. **Per-metric breakpoint table** — 99 rows × value columns: percentile label (`p1, p2, ..., p99`) and value at that percentile. Values rendered in pp with one decimal (`−2.3pp`) per the §1 Display formatting rule (`max(|p25|, |p75|)` family). The CDF stores raw 0–1 score-difference values internally; the report renders them in pp.
+3. **Per-metric per-rating-bucket sanity-check table** — 5 rows × 4 columns (`n_users / median / skew / kurtosis`) as shown above. One table per metric. Sparse `(2400, classical)` excluded.
+4. **Per-metric n_users header line** — explicit cohort size after the per-user inclusion floor is applied, so the reader can verify the cohort matches the pre-flight expectations (~2000 users per metric ±200 depending on per-metric floors).
+
+The slim format is sufficient for `ROADMAP.md` Phase 93 success criterion #3. The richer pre-flight-style layout (full per-bucket distribution percentiles + per-axis ELO collapse verdicts) is not required — those live in `reports/benchmarks-latest.md` already and are not re-derived here.
+
+### Mechanization & rotation rule
+
+Methodology is mechanized by `scripts/gen_global_percentile_cdf.py` (Plan 02). The script:
+
+- Reuses the `--db benchmark` safety guard pattern from `scripts/backfill_eval.py`: refuses to run unless `DATABASE_URL` contains both `flawchess_benchmark` AND `:5433`, preventing accidental writes against dev/prod.
+- Runs the canonical CTE (§1) per metric, projects the 99 integer percentiles via `percentile_cont(ARRAY[0.01, 0.02, ..., 0.99]) WITHIN GROUP (ORDER BY <metric>)`, and emits the result as committed Python source at `app/services/global_percentile_cdf.py` (typed `Mapping[MetricId, CdfTable]` registry, dataclass shape mirroring `endgame_zones.ZONE_REGISTRY` — Claude's Discretion item #4).
+- Embeds two audit-trail constants in the committed Python source (Claude's Discretion item #4): `BENCHMARK_DB_SNAPSHOT_MONTH = "2026-03"` (str) and a per-metric `n_users: int` field on each `CdfTable`. Both also appear in the report header so a future recalibration session can verify what cohort the live chips were trained against.
+- DB → Python regen is a **manual recalibration step**. Re-run on demand (new benchmark snapshot month, metric floor change, methodology fix). No CI gate, no auto-regen, no scheduled job.
+
+**Report rotation rule (D-07).** On each run:
+1. If `reports/global-percentile-cdf-latest.md` exists, read the date from its first-line header (`# FlawChess Global Percentile CDF — YYYY-MM-DD`).
+2. Rename it to `reports/global-percentile-cdf-YYYY-MM-DD.md`. If that dated archive already exists, leave the archive alone and overwrite `reports/global-percentile-cdf-latest.md` in place (same convention as `reports/benchmarks-latest.md`).
+3. Write the new snapshot to `reports/global-percentile-cdf-latest.md`.
+
+Never mutate an existing dated archive.
+
+### Illustrative SQL snippet (composition example — not authoritative)
+
+The authoritative SQL is in `scripts/gen_global_percentile_cdf.py`. The snippet below illustrates how the 99-breakpoint `percentile_cont` composes onto the canonical CTE for a single metric (`achievable_score_gap`); the script generalizes this across all 4 in-scope metrics with their per-metric floors:
+
+```sql
+WITH selected_users AS (
+  -- §1 Standard CTE — selected_users (status='completed', sub-800 dropped via game-time bucketing below)
+  -- ... see §1 "Standard CTE — selected_users" for the verbatim block ...
+),
+per_user AS (
+  -- §3.1.5 Achievable Score Gap per-user (paired d_i = actual − expected; mate included, |eval_cp| < 2000)
+  -- with §1 "user_elo_at_game / elo_bucket" + universal equal-footing filter abs(opp - user) <= 100
+  -- HAVING count(d_i) >= 20  (per-metric inclusion floor)
+  -- ... see §3.1.5 query for the verbatim block ...
+),
+per_user_excl_sparse AS (
+  SELECT * FROM per_user WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
+)
+SELECT
+  percentile_cont(
+    ARRAY[
+      0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10,
+      0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.20,
+      0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.30,
+      0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39, 0.40,
+      0.41, 0.42, 0.43, 0.44, 0.45, 0.46, 0.47, 0.48, 0.49, 0.50,
+      0.51, 0.52, 0.53, 0.54, 0.55, 0.56, 0.57, 0.58, 0.59, 0.60,
+      0.61, 0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69, 0.70,
+      0.71, 0.72, 0.73, 0.74, 0.75, 0.76, 0.77, 0.78, 0.79, 0.80,
+      0.81, 0.82, 0.83, 0.84, 0.85, 0.86, 0.87, 0.88, 0.89, 0.90,
+      0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99
+    ]::double precision[]
+  ) WITHIN GROUP (ORDER BY achievable_gap) AS breakpoints,
+  count(*) AS n_users
+FROM per_user_excl_sparse;
+```
+
+The 99-element `breakpoints` array is the row that lands in `GLOBAL_PERCENTILE_CDF["achievable_score_gap"].values` (with index `i ∈ {0..98}` mapping to percentile `i + 1`). Phase 94's interpolation helper consumes this array plus `n_users`.
 
 ---
 
