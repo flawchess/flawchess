@@ -88,6 +88,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Final, Literal, TypeAlias
 
+from app.services.chesscom_to_lichess import CHESSCOM_BLITZ_TO_LICHESS
 from app.services.global_percentile_cdf import CdfMetricId
 
 # Per-TC bucket identifier — used by Phase 94.3 per-TC builders so the leading
@@ -1082,6 +1083,40 @@ per_user_values AS (
 )"""
 
 
+def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
+    """Emit a VALUES body for the (chesscom_anchor, lichess_equiv) lookup table.
+
+    Reads ``CHESSCOM_BLITZ_TO_LICHESS`` from ``app.services.chesscom_to_lichess``
+    and emits all rows whose ``target_tc`` column is not None. Returns the VALUES
+    expression including the alias, e.g.:
+
+        (VALUES (600, 632), (650, 681), ...) AS chesscom_conversion_lookup(chesscom_anchor, lichess_equiv)
+
+    The returned string is intended for use as a CTE body:
+
+        chesscom_conversion_lookup AS {_chesscom_conversion_values_sql(tc)}
+
+    Security: the rows are emitted from a ``Final`` Python-controlled snapshot
+    constant (``CHESSCOM_BLITZ_TO_LICHESS``) — all values are Python ``int``
+    literals with no user-input injection surface (T-94.4-10-02).
+
+    Raises:
+        ValueError: if no rows have a non-None lichess equivalent for
+            ``target_tc`` (defensive — shouldn't happen for the 4 standard TCs).
+    """
+    rows: list[tuple[int, int]] = [
+        (anchor, equiv)
+        for anchor, tc_map in CHESSCOM_BLITZ_TO_LICHESS.items()
+        if (equiv := tc_map.get(target_tc)) is not None  # type: ignore[assignment]
+    ]
+    if not rows:
+        raise ValueError(
+            f"CHESSCOM_BLITZ_TO_LICHESS has no entries for target_tc={target_tc!r}"
+        )
+    values_body = ", ".join(f"({anchor}, {equiv})" for anchor, equiv in rows)
+    return f"(VALUES {values_body}) AS chesscom_conversion_lookup(chesscom_anchor, lichess_equiv)"
+
+
 def per_user_cte_median_anchor(
     tc: TimeControlBucket,
     *,
@@ -1089,6 +1124,7 @@ def per_user_cte_median_anchor(
     snapshot_date: date | None = None,
     platform: Literal["lichess", "chesscom"] | None = None,
     min_games: int = MEDIAN_ANCHOR_MIN_GAMES,
+    blend: bool = False,
 ) -> str:
     """Per-(user, TC) median rating anchor over the recent-3000-per-TC × 36-month pool.
 
@@ -1098,11 +1134,62 @@ def per_user_cte_median_anchor(
     CDF artifact to read the percentile (Plan 04 benchmark-side; Plan 05
     single-user-side).
 
+    Two modes, selected by ``blend``:
+
+    **Non-blend mode** (``blend=False``, default):
+
     Output CTE: ``per_user_anchor(user_id, anchor_rating INT, n_games INT)``.
     ``anchor_rating`` is ``percentile_cont(0.5) WITHIN GROUP (ORDER BY ...)::int``
     over the user's rating at game time (white_rating / black_rating, whichever
     side the user played); ``n_games`` is the count of games used (HAVING
     >= ``min_games``).
+
+    The ``platform`` parameter restricts the join to a single platform:
+
+    * ``None`` → no platform filter (both Lichess and chess.com games
+      contribute to the median; the cohort CDF generator in Plan 04 uses
+      this form on the benchmark DB which is Lichess-only by construction).
+    * ``'lichess'`` / ``'chesscom'`` → emit ``AND g.platform = '<value>'``.
+      The Plan 05 Python wrapper drove the Lichess-precedence policy
+      (D-12 original) by calling this builder first with ``platform='lichess'``
+      and falling back to ``platform='chesscom'`` — this policy is superseded
+      by the D-12 Reversal Amendment (see blend mode below).
+
+    **Blended mode** (``blend=True``, D-12 Reversal Amendment 2026-05-27):
+
+    Output CTE: ``per_user_anchor(user_id, anchor_rating INT, n_chesscom_games INT,
+    n_lichess_games INT, chesscom_median_native INT, lichess_median_native INT)``.
+
+    Per-game weighted blended anchor. chess.com (non-Daily) games are converted
+    via the ``chesscom_conversion_lookup`` VALUES CTE (generated from
+    ``CHESSCOM_BLITZ_TO_LICHESS`` via ``_chesscom_conversion_values_sql``). Each
+    chess.com game is matched to the nearest anchor row via
+    ``ORDER BY ABS(rating_at_game_time - chesscom_anchor) LIMIT 1`` and the
+    ``lichess_equiv`` is used as the blended rating. Lichess games pass through
+    their native rating unchanged. The per-user median of the combined
+    (converted + native) pool is the blended ``anchor_rating``.
+
+    ``blend=True`` with ``platform!=None`` is mutually exclusive and raises
+    ``ValueError`` — blended mode pools both platforms inherently; a platform
+    filter would defeat the purpose.
+
+    Suppression rule (§Suppression rule of the D-12 Reversal Amendment):
+    the HAVING clause applies to the POOLED count (n_chesscom_games +
+    n_lichess_games >= min_games). A chess.com-Daily-only user in the
+    ``classical`` bucket has zero qualifying games and produces no row.
+
+    Worked example (from ``.planning/notes/percentile-anchor-d12-reversal.md``):
+    4000 chess.com games @ 2200 (→ ~2050 lichess-equiv) + 100 lichess games
+    @ 1900 → pooled median ≈ 2046 (game-weighted; heavy chess.com side dominates).
+
+    ``n_chesscom_games``: count of non-Daily chess.com games in the pooled window.
+    ``n_lichess_games``: count of lichess games in the pooled window.
+    ``chesscom_median_native``: median of RAW chess.com ratings (pre-conversion);
+      NULL when n_chesscom_games = 0. Tooltip-disclosure source (D-07 bullet 4).
+    ``lichess_median_native``: median of native lichess ratings; NULL when
+      n_lichess_games = 0. Tooltip-disclosure source.
+
+    **Common documentation (both modes)**:
 
     Daily-classical drop (RESEARCH Pitfall 11): chess.com Daily games are
     bucketed ``classical`` by the import pipeline but are excluded from the
@@ -1114,17 +1201,6 @@ def per_user_cte_median_anchor(
     chip suppresses naturally for that (user, classical) cell (D-04
     suppression semantics).
 
-    The ``platform`` parameter restricts the join to a single platform:
-
-    * ``None`` → no platform filter (both Lichess and chess.com games
-      contribute to the median; the cohort CDF generator in Plan 04 uses
-      this form on the benchmark DB which is Lichess-only by construction).
-    * ``'lichess'`` / ``'chesscom'`` → emit ``AND g.platform = '<value>'``.
-      The Plan 05 Python wrapper drives the Lichess-precedence policy
-      (D-12) by calling this builder first with ``platform='lichess'`` and
-      falling back to ``platform='chesscom'`` only if the Lichess result
-      misses the floor — the policy is intentionally NOT in this SQL builder.
-
     The ``source`` parameter is accepted for API symmetry with the other
     pooled builders (the cohort difference lives entirely in
     ``selected_users_cte``); the pooled body is identical on both paths
@@ -1133,16 +1209,33 @@ def per_user_cte_median_anchor(
     Security: ``tc`` and ``platform`` are ``Literal`` parameters constrained
     by ty + Pydantic to the closed value set (4-value × 3-value matrix of
     known strings), so the f-string interpolation has no SQL-injection
-    surface (T-94.4-02-01 / T-94.4-02-02). ``min_games`` is an ``int``,
-    safe to embed directly. ``snapshot_date.isoformat()`` emits only digits
-    and dashes via the existing ``_recency_window_sql`` helper.
+    surface (T-94.4-02-01 / T-94.4-02-02 / T-94.4-10-01). ``min_games`` is
+    an ``int``, safe to embed directly. ``snapshot_date.isoformat()`` emits
+    only digits and dashes via the existing ``_recency_window_sql`` helper.
+    The ``_chesscom_conversion_values_sql`` output is generated from
+    Python-controlled snapshot data (a ``Final`` constant of Python ints) —
+    no user-input injection surface (T-94.4-10-02). ``user_id`` flows through
+    ``.bindparams()`` in the caller; never f-stringed here (V5).
 
     f-string ``%`` convention: ``time_control_str LIKE '1/%'`` uses a single
     ``%`` — this module's builders return raw SQL passed to asyncpg via
     SQLAlchemy ``text()`` with ``:name``-style bindparams, NOT with Python
     ``%``-style formatting, so no ``%%`` doubling is required.
+
+    Design-decision record: D-12 Reversal Amendment (CONTEXT 2026-05-27) and
+    ``.planning/notes/percentile-anchor-d12-reversal.md``.
     """
+    if blend and platform is not None:
+        raise ValueError(
+            "blend=True is mutually exclusive with platform!=None — "
+            "blended mode pools both platforms inherently"
+        )
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+
+    if blend:
+        return _per_user_cte_median_anchor_blended(tc, snapshot_date, min_games)
+
+    # --- Non-blend mode (byte-for-byte unchanged from pre-Task-1 baseline) ---
     # ``platform`` is the AnchorSource Literal ('lichess' | 'chesscom') used by
     # the user_rating_anchors model, but the games table stores the chess.com
     # platform string with a dot (``platform='chess.com'``). Translate before
@@ -1172,6 +1265,74 @@ per_user_anchor AS (
   FROM recent_capped_no_daily rc
   JOIN games g ON g.id = rc.id
   GROUP BY rc.user_id
+  HAVING count(*) >= {min_games}
+)"""
+
+
+def _per_user_cte_median_anchor_blended(
+    tc: TimeControlBucket,
+    snapshot_date: date | None,
+    min_games: int,
+) -> str:
+    """Emit the blended-mode ``per_user_anchor`` CTE chain.
+
+    Internal helper for ``per_user_cte_median_anchor(blend=True)``. Extracted
+    to keep the parent function readable (CLAUDE.md nesting-depth rule). Not
+    exported; callers use ``per_user_cte_median_anchor``.
+
+    Emits:
+      recent_capped, recent_capped_no_daily,
+      chesscom_conversion_lookup,
+      per_game_blended_rating,
+      per_user_anchor (6 columns)
+
+    The LATERAL nearest-anchor join is bounded by the recent-3000-per-TC cap
+    (3000 games × ~50 lookup rows ≈ 150K comparisons per user per TC) —
+    T-94.4-10-04 accept disposition.
+    """
+    elo_expr = _user_elo_at_game_expr()
+    conv_lookup = _chesscom_conversion_values_sql(tc)
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+recent_capped_no_daily AS (
+  SELECT rc.*
+  FROM recent_capped rc
+  JOIN games g ON g.id = rc.id
+  WHERE NOT (g.platform = 'chess.com' AND g.time_control_str LIKE '1/%')
+),
+chesscom_conversion_lookup AS {conv_lookup},
+per_game_blended_rating AS (
+  -- chess.com non-Daily: convert via nearest-anchor lookup
+  SELECT rc.user_id, lookup.lichess_equiv AS blended_rating, 'chesscom' AS platform_tag,
+         {elo_expr} AS native_rating
+  FROM recent_capped_no_daily rc
+  JOIN games g ON g.id = rc.id
+  JOIN LATERAL (
+    SELECT lichess_equiv
+    FROM chesscom_conversion_lookup
+    ORDER BY ABS(chesscom_anchor - {elo_expr})
+    LIMIT 1
+  ) lookup ON true
+  WHERE g.platform = 'chess.com'
+  UNION ALL
+  -- lichess: pass through native rating, no conversion
+  SELECT rc.user_id, {elo_expr} AS blended_rating, 'lichess' AS platform_tag,
+         {elo_expr} AS native_rating
+  FROM recent_capped_no_daily rc
+  JOIN games g ON g.id = rc.id
+  WHERE g.platform = 'lichess'
+),
+per_user_anchor AS (
+  SELECT
+    user_id,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY blended_rating)::int AS anchor_rating,
+    count(*) FILTER (WHERE platform_tag = 'chesscom') AS n_chesscom_games,
+    count(*) FILTER (WHERE platform_tag = 'lichess') AS n_lichess_games,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY native_rating)
+      FILTER (WHERE platform_tag = 'chesscom')::int AS chesscom_median_native,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY native_rating)
+      FILTER (WHERE platform_tag = 'lichess')::int AS lichess_median_native
+  FROM per_game_blended_rating
+  GROUP BY user_id
   HAVING count(*) >= {min_games}
 )"""
 
