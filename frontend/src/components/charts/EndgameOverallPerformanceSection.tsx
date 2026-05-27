@@ -203,6 +203,7 @@ export function EndgameOverallPerformanceSection({
                         lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
                         metricLabel="Achievable Score Gap"
                         testId="achievable-score-gap-percentile-chip"
+                        perTcBreakdown={data.achievable_score_gap_per_tc}
                       />
                     ) : undefined
                   }
@@ -259,6 +260,7 @@ export function EndgameOverallPerformanceSection({
                         lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
                         metricLabel="Endgame Score Gap"
                         testId="endgame-score-gap-percentile-chip"
+                        perTcBreakdown={scoreGap.score_gap_per_tc}
                       />
                     ) : undefined
                   }

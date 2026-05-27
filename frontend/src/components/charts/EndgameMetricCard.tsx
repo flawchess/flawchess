@@ -37,7 +37,7 @@ import {
   SCORE_GAP_RECOV_NEUTRAL_MIN,
   SCORE_GAP_RECOV_NEUTRAL_MAX,
 } from '@/generated/endgameZones';
-import type { MaterialBucket, MaterialRow } from '@/types/endgames';
+import type { MaterialBucket, MaterialRow, PerTcBreakdownOut } from '@/types/endgames';
 
 import { PercentileChip } from './PercentileChip';
 import { ScoreGapRow } from './EndgameOverallScoreGapRow';
@@ -79,6 +79,10 @@ interface EndgameMetricCardProps {
    *  D-05a rescues it under the peer-relative cohort framing (same-rated
    *  comparison normalises the opponent-rating confound). */
   scoreGapPercentile: number | null;
+  /** Quick task 260527-q0b: per-TC breakdown for the percentile chip's
+   *  tooltip bullet 2. Optional so legacy callers / older fixtures keep
+   *  rendering without per-TC data. */
+  scoreGapPerTc?: PerTcBreakdownOut[];
   /** Phase 94.4 Plan 07: per-TC rating anchors (whole map). The card picks
    *  the dominant-TC anchor for the chip's 4th-bullet disclosure. Aggregated
    *  page-level chips omit the `tc` prop on PercentileChip — bullet 1 frames
@@ -102,6 +106,7 @@ export function EndgameMetricCard({
   scoreGapCiLow,
   scoreGapCiHigh,
   scoreGapPercentile,
+  scoreGapPerTc,
   ratingAnchors,
   tileTestId,
   titleTooltip,
@@ -263,6 +268,7 @@ export function EndgameMetricCard({
                         lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
                         metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
                         testId={`${tileTestId}-percentile-chip`}
+                        perTcBreakdown={scoreGapPerTc}
                       />
                     ) : undefined
                   }

@@ -117,6 +117,7 @@ export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSec
           scoreGapCiLow={data.score_gap_conv_ci_low}
           scoreGapCiHigh={data.score_gap_conv_ci_high}
           scoreGapPercentile={data.score_gap_conv_percentile}
+          scoreGapPerTc={data.score_gap_conv_per_tc}
           ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['conversion']}
           titleTooltip={TITLE_TOOLTIPS['conversion']}
@@ -134,6 +135,7 @@ export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSec
           scoreGapCiLow={data.score_gap_parity_ci_low}
           scoreGapCiHigh={data.score_gap_parity_ci_high}
           scoreGapPercentile={data.score_gap_parity_percentile}
+          scoreGapPerTc={data.score_gap_parity_per_tc}
           ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['parity']}
           titleTooltip={TITLE_TOOLTIPS['parity']}
@@ -157,6 +159,7 @@ export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSec
           scoreGapCiLow={data.score_gap_recov_ci_low}
           scoreGapCiHigh={data.score_gap_recov_ci_high}
           scoreGapPercentile={data.recovery_score_gap_percentile}
+          scoreGapPerTc={data.recovery_score_gap_per_tc}
           ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['recovery']}
           titleTooltip={TITLE_TOOLTIPS['recovery']}
