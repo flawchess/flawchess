@@ -1438,11 +1438,11 @@ def _compute_score_gap_material(
         _effective_rows.get("score_gap")
     )
 
-    section2_score_gap_conv_percentile: float | None = _aggregate_per_tc_percentile(
-        _effective_rows.get("section2_score_gap_conv")
+    score_gap_conv_percentile: float | None = _aggregate_per_tc_percentile(
+        _effective_rows.get("score_gap_conv")
     )
-    section2_score_gap_parity_percentile: float | None = _aggregate_per_tc_percentile(
-        _effective_rows.get("section2_score_gap_parity")
+    score_gap_parity_percentile: float | None = _aggregate_per_tc_percentile(
+        _effective_rows.get("score_gap_parity")
     )
     # Phase 94.4 D-05a: Recovery Score Gap chip RESCUED under peer-relative.
     # The earlier D-12 "NO recovery percentile" suppression (Phase 94 global)
@@ -1466,29 +1466,29 @@ def _compute_score_gap_material(
         score_difference_ci_high=score_diff_ci_high,
         score_gap_percentile=score_gap_percentile,
         # Phase 87.2 (D-06): per-bucket ΔES Score Gap fields.
-        section2_score_gap_conv_mean=conv_mean,
-        section2_score_gap_conv_n=conv_n,
-        section2_score_gap_conv_p_value=conv_p,
-        section2_score_gap_conv_ci_low=conv_ci_lo,
-        section2_score_gap_conv_ci_high=conv_ci_hi,
-        section2_score_gap_conv_percentile=section2_score_gap_conv_percentile,
-        section2_score_gap_parity_mean=parity_mean,
-        section2_score_gap_parity_n=parity_n,
-        section2_score_gap_parity_p_value=parity_p,
-        section2_score_gap_parity_ci_low=parity_ci_lo,
-        section2_score_gap_parity_ci_high=parity_ci_hi,
-        section2_score_gap_parity_percentile=section2_score_gap_parity_percentile,
-        section2_score_gap_recov_mean=recov_mean,
-        section2_score_gap_recov_n=recov_n,
-        section2_score_gap_recov_p_value=recov_p,
-        section2_score_gap_recov_ci_low=recov_ci_lo,
-        section2_score_gap_recov_ci_high=recov_ci_hi,
+        score_gap_conv_mean=conv_mean,
+        score_gap_conv_n=conv_n,
+        score_gap_conv_p_value=conv_p,
+        score_gap_conv_ci_low=conv_ci_lo,
+        score_gap_conv_ci_high=conv_ci_hi,
+        score_gap_conv_percentile=score_gap_conv_percentile,
+        score_gap_parity_mean=parity_mean,
+        score_gap_parity_n=parity_n,
+        score_gap_parity_p_value=parity_p,
+        score_gap_parity_ci_low=parity_ci_lo,
+        score_gap_parity_ci_high=parity_ci_hi,
+        score_gap_parity_percentile=score_gap_parity_percentile,
+        score_gap_recov_mean=recov_mean,
+        score_gap_recov_n=recov_n,
+        score_gap_recov_p_value=recov_p,
+        score_gap_recov_ci_low=recov_ci_lo,
+        score_gap_recov_ci_high=recov_ci_hi,
         # Phase 94.4 D-05a: Recovery Score Gap chip RESCUED — see field
         # docstring on ScoreGapMaterialResponse.recovery_score_gap_percentile
         # for the peer-relative rationale that overrides the earlier Phase
         # 94 global-CDF suppression.
         recovery_score_gap_percentile=recovery_score_gap_percentile,
-        # Phase 87.4 (D-05): section2_score_gap_skill_* and
+        # Phase 87.4 (D-05): score_gap_skill_* and
         # endgame_skill_rate_mean kwargs dropped — fields removed from the
         # Pydantic model in app/schemas/endgames.py.
     )

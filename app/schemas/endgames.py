@@ -435,7 +435,7 @@ class ScoreGapMaterialResponse(BaseModel):
     skill_diff_p_value, skill_diff_ci_low, skill_diff_ci_high on this response;
     opponent_score, opponent_games, diff_p_value, diff_ci_low, diff_ci_high on
     MaterialRow) have been deleted and replaced by the 20 eval-baseline Delta-ES
-    Score Gap fields below (section2_score_gap_{conv,parity,recov,skill}_{mean,n,
+    Score Gap fields below (score_gap_{conv,parity,recov,skill}_{mean,n,
     p_value,ci_low,ci_high}). The rate-based peer-bullet was mathematically
     degenerate; see Phase 87.2 CONTEXT D-05.
 
@@ -491,41 +491,41 @@ class ScoreGapMaterialResponse(BaseModel):
     # Defaults are None for backward compat with existing constructor call sites.
 
     # Conversion bucket (eval_entry >= +1.0 pawn, user perspective):
-    section2_score_gap_conv_mean: float | None = None
-    section2_score_gap_conv_n: int | None = None
-    section2_score_gap_conv_p_value: float | None = None
-    section2_score_gap_conv_ci_low: float | None = None
-    section2_score_gap_conv_ci_high: float | None = None
-    # Phase 94 (PCTL-02): cohort percentile of section2_score_gap_conv_mean
+    score_gap_conv_mean: float | None = None
+    score_gap_conv_n: int | None = None
+    score_gap_conv_p_value: float | None = None
+    score_gap_conv_ci_low: float | None = None
+    score_gap_conv_ci_high: float | None = None
+    # Phase 94 (PCTL-02): cohort percentile of score_gap_conv_mean
     # vs the Phase 93 global empirical CDF.
-    section2_score_gap_conv_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of section2_score_gap_conv_mean vs the
+    score_gap_conv_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of score_gap_conv_mean vs the
     Phase 93 global empirical CDF.
-    None when section2_score_gap_conv_n < PVALUE_RELIABILITY_MIN_N (=10) or
-    conv_mean is None — same single-N gate as section2_score_gap_conv_p_value
+    None when score_gap_conv_n < PVALUE_RELIABILITY_MIN_N (=10) or
+    conv_mean is None — same single-N gate as score_gap_conv_p_value
     / _ci_*."""
 
     # Parity bucket (|eval_entry| <= 1.0 pawn):
-    section2_score_gap_parity_mean: float | None = None
-    section2_score_gap_parity_n: int | None = None
-    section2_score_gap_parity_p_value: float | None = None
-    section2_score_gap_parity_ci_low: float | None = None
-    section2_score_gap_parity_ci_high: float | None = None
-    # Phase 94 (PCTL-02): cohort percentile of section2_score_gap_parity_mean
+    score_gap_parity_mean: float | None = None
+    score_gap_parity_n: int | None = None
+    score_gap_parity_p_value: float | None = None
+    score_gap_parity_ci_low: float | None = None
+    score_gap_parity_ci_high: float | None = None
+    # Phase 94 (PCTL-02): cohort percentile of score_gap_parity_mean
     # vs the Phase 93 global empirical CDF.
-    section2_score_gap_parity_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of section2_score_gap_parity_mean vs the
+    score_gap_parity_percentile: float | None = None
+    """Cohort percentile (in [0, 100]) of score_gap_parity_mean vs the
     Phase 93 global empirical CDF.
-    None when section2_score_gap_parity_n < PVALUE_RELIABILITY_MIN_N (=10) or
-    parity_mean is None — same single-N gate as section2_score_gap_parity_p_value
+    None when score_gap_parity_n < PVALUE_RELIABILITY_MIN_N (=10) or
+    parity_mean is None — same single-N gate as score_gap_parity_p_value
     / _ci_*."""
 
     # Recovery bucket (eval_entry <= -1.0 pawn):
-    section2_score_gap_recov_mean: float | None = None
-    section2_score_gap_recov_n: int | None = None
-    section2_score_gap_recov_p_value: float | None = None
-    section2_score_gap_recov_ci_low: float | None = None
-    section2_score_gap_recov_ci_high: float | None = None
+    score_gap_recov_mean: float | None = None
+    score_gap_recov_n: int | None = None
+    score_gap_recov_p_value: float | None = None
+    score_gap_recov_ci_low: float | None = None
+    score_gap_recov_ci_high: float | None = None
     # Phase 94.4 D-05a (RESCUES Phase 94 D-12 suppression): Recovery Score
     # Gap chip slot is restored under peer-relative. Under global, Recovery's
     # d=0.95 inverted + opponent-confounded drove the v1 drop. Under
@@ -537,14 +537,14 @@ class ScoreGapMaterialResponse(BaseModel):
     # key the per-(metric, TC) percentile rows in
     # user_benchmark_percentiles.
     recovery_score_gap_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of section2_score_gap_recov_mean vs the
+    """Cohort percentile (in [0, 100]) of score_gap_recov_mean vs the
     Phase 94.4 per-(rating cohort, TC) CDF for the rescued recovery metric
     (D-05a). None when (a) Stage B has not computed a row for any of the
     user's TCs, or (b) every above-floor TC's percentile is None (CDF out of
     range)."""
 
     # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
-    # section2_score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
+    # score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
     # the three bucket means) and endgame_skill_rate_mean (rate composite for
     # the gauge) were deleted. See .planning/notes/endgame-skill-dropped-
     # conversion-elo.md for rationale (no composite definition survived

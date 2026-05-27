@@ -90,8 +90,8 @@ def test_stage_b_metric_families_is_7_tuple() -> None:
     assert len(STAGE_B_METRIC_FAMILIES) == 7
     assert STAGE_B_METRIC_FAMILIES == (
         "achievable_score_gap",
-        "section2_score_gap_conv",
-        "section2_score_gap_parity",
+        "score_gap_conv",
+        "score_gap_parity",
         "recovery_score_gap",
         "time_pressure_score_gap",
         "clock_gap",

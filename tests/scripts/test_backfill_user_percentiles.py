@@ -64,8 +64,8 @@ _DUMMY_NON_5432_PORT: int = 99999
 _EXPECTED_METRIC_LABELS: list[str] = [
     "score_gap",
     "achievable_score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
+    "score_gap_conv",
+    "score_gap_parity",
 ]
 _EXPECTED_SUMMARY_TOKENS: list[str] = ["included", "floor_rej", "suppressed"]
 
@@ -258,7 +258,7 @@ async def test_backfill_with_metric_filter_only_processes_that_metric(
     """main() with metric_filter='score_gap' only processes Stage A (score_gap).
 
     After the filtered run, any rows written have metric='score_gap' only.
-    The Stage B metrics (achievable_score_gap, section2_*) have no rows.
+    The Stage B metrics (achievable_score_gap, score_gap_bucket_*) have no rows.
     """
     session_maker = _make_session_maker(test_engine)
     main = backfill_user_percentiles.main
@@ -276,8 +276,8 @@ async def test_backfill_with_metric_filter_only_processes_that_metric(
             # infers VARCHAR which causes type mismatch on the ENUM column.
             for stage_b_metric in (
                 "achievable_score_gap",
-                "section2_score_gap_conv",
-                "section2_score_gap_parity",
+                "score_gap_conv",
+                "score_gap_parity",
             ):
                 result = await check.execute(
                     text(
@@ -354,8 +354,8 @@ async def test_backfill_emits_per_metric_summary(
     Per CONTEXT §Specifics backfill output shape:
         score_gap                      upserted=X, skipped=Y (...)
         achievable_score_gap           upserted=X, skipped=Y (...)
-        section2_score_gap_conv        upserted=X, skipped=Y (...)
-        section2_score_gap_parity      upserted=X, skipped=Y (...)
+        score_gap_conv        upserted=X, skipped=Y (...)
+        score_gap_parity      upserted=X, skipped=Y (...)
     """
     session_maker = _make_session_maker(test_engine)
     main = backfill_user_percentiles.main

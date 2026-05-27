@@ -45,8 +45,8 @@ from app.services.global_percentile_cdf import CdfMetricId
 _METRICS: tuple[CdfMetricId, ...] = (
     "score_gap",
     "achievable_score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
+    "score_gap_conv",
+    "score_gap_parity",
 )
 _SOURCES: tuple[Literal["benchmark", "single_user"], ...] = ("benchmark", "single_user")
 
@@ -202,7 +202,7 @@ _PLAN_03_NEW_TCS: tuple[Literal["bullet", "blitz", "rapid", "classical"], ...] =
     "rapid",
     "classical",
 )
-_PLAN_03_SECTION2_BUCKETS: tuple[Literal["conversion", "parity", "recovery"], ...] = (
+_PLAN_03_SCORE_GAP_BUCKETS: tuple[Literal["conversion", "parity", "recovery"], ...] = (
     "conversion",
     "parity",
     "recovery",
@@ -244,25 +244,25 @@ def test_achievable_tc_pooled_body_byte_identical_across_sources(
 
 
 @pytest.mark.parametrize("tc", _PLAN_03_NEW_TCS)
-@pytest.mark.parametrize("bucket_label", _PLAN_03_SECTION2_BUCKETS)
-def test_section2_tc_pooled_body_byte_identical_across_sources(
+@pytest.mark.parametrize("bucket_label", _PLAN_03_SCORE_GAP_BUCKETS)
+def test_score_gap_bucket_tc_pooled_body_byte_identical_across_sources(
     tc: Literal["bullet", "blitz", "rapid", "classical"],
     bucket_label: Literal["conversion", "parity", "recovery"],
 ) -> None:
-    """``per_user_cte_section2_tc`` emits identical pooled body across sources.
+    """``per_user_cte_score_gap_bucket_tc`` emits identical pooled body across sources.
 
     Parametrised over all 12 (tc × bucket_label) cells.
     """
-    from app.services.canonical_slice_sql import per_user_cte_section2_tc
+    from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket_tc
 
-    bm = per_user_cte_section2_tc(
+    bm = per_user_cte_score_gap_bucket_tc(
         tc, source="benchmark", snapshot_date=date(2026, 3, 31), bucket_label=bucket_label
     )
-    su = per_user_cte_section2_tc(
+    su = per_user_cte_score_gap_bucket_tc(
         tc, source="single_user", snapshot_date=date(2026, 3, 31), bucket_label=bucket_label
     )
     assert _normalise_whitespace(bm) == _normalise_whitespace(su), (
-        f"per_user_cte_section2_tc({tc}, {bucket_label}) pooled body diverged across sources"
+        f"per_user_cte_score_gap_bucket_tc({tc}, {bucket_label}) pooled body diverged across sources"
     )
 
 

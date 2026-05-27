@@ -58,7 +58,7 @@ Pooled-aggregate shape (identical on both sources, per D-5):
 * ``per_user_values``: emits exactly ``(metric_value, n_games)``.
   ``n_games`` is the metric-relevant count on the pooled set per the
   amendment to D-9 (endgame games for ``score_gap``; eval'd entry games
-  for ``achievable_score_gap``; bucket spans for ``section2_*``).
+  for ``achievable_score_gap``; bucket spans for ``score_gap_bucket_*``).
 
 Removed in 94.2:
 
@@ -102,7 +102,7 @@ TimeControlBucket: TypeAlias = Literal["bullet", "blitz", "rapid", "classical"]
 SCORE_GAP_MIN_ENDGAME_N: int = 30
 SCORE_GAP_MIN_NON_ENDGAME_N: int = 30
 ACHIEVABLE_MIN_GAMES: int = 30
-SECTION2_MIN_SPANS_PER_BUCKET: int = 30
+SCORE_GAP_BUCKET_MIN_SPANS: int = 30
 
 # Pooled-window shape (D-5).
 RECENT_GAMES_PER_TC_CAP: int = 1000
@@ -450,13 +450,13 @@ per_user_values AS (
 )"""
 
 
-def per_user_cte_section2(
+def per_user_cte_score_gap_bucket(
     *,
     bucket_label: Literal["conversion", "parity", "recovery"],
     source: Literal["benchmark", "single_user"],
     snapshot_date: date | None = None,
 ) -> str:
-    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``section2_score_gap_{conv,parity,recovery}``.
+    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``score_gap_{conv,parity,recovery}``.
 
     ``bucket_label`` filters spans by entry-eval bucket:
     - ``'conversion'`` — user up material at endgame entry
@@ -561,7 +561,7 @@ per_user_bucket AS (
   FROM gap_rows
   WHERE gap_span IS NOT NULL
   GROUP BY user_id, bucket
-  HAVING count(*) >= {SECTION2_MIN_SPANS_PER_BUCKET}
+  HAVING count(*) >= {SCORE_GAP_BUCKET_MIN_SPANS}
 ),
 per_user_values AS (
   SELECT
@@ -969,16 +969,16 @@ per_user_values AS (
 )"""
 
 
-def per_user_cte_section2_tc(
+def per_user_cte_score_gap_bucket_tc(
     tc: TimeControlBucket,
     *,
     source: Literal["benchmark", "single_user"],
     snapshot_date: date | None = None,
     bucket_label: Literal["conversion", "parity", "recovery"],
 ) -> str:
-    """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``section2_score_gap_{conv,parity,recovery}``.
+    """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``score_gap_{conv,parity,recovery}``.
 
-    Per-TC version of ``per_user_cte_section2`` — restricted to one
+    Per-TC version of ``per_user_cte_score_gap_bucket`` — restricted to one
     ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The ``gap_rows``
     bucket classification (conversion / parity / recovery — see lines 502-512
     of the non-per-TC builder) and per-bucket HAVING ≥30 floor are
@@ -1069,7 +1069,7 @@ per_user_bucket AS (
   FROM gap_rows
   WHERE gap_span IS NOT NULL
   GROUP BY user_id, bucket
-  HAVING count(*) >= {SECTION2_MIN_SPANS_PER_BUCKET}
+  HAVING count(*) >= {SCORE_GAP_BUCKET_MIN_SPANS}
 ),
 per_user_values AS (
   -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
@@ -1200,12 +1200,12 @@ def per_user_cte_for(
         return per_user_cte_score_gap(source=source, snapshot_date=snapshot_date)
     if metric_id == "achievable_score_gap":
         return per_user_cte_achievable(source=source, snapshot_date=snapshot_date)
-    if metric_id == "section2_score_gap_conv":
-        return per_user_cte_section2(
+    if metric_id == "score_gap_conv":
+        return per_user_cte_score_gap_bucket(
             bucket_label="conversion", source=source, snapshot_date=snapshot_date
         )
-    if metric_id == "section2_score_gap_parity":
-        return per_user_cte_section2(
+    if metric_id == "score_gap_parity":
+        return per_user_cte_score_gap_bucket(
             bucket_label="parity", source=source, snapshot_date=snapshot_date
         )
     # Phase 94.3 Plan B — 12 new dispatcher arms for the per-(metric × TC)

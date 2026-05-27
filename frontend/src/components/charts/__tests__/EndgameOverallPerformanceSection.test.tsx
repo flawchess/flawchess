@@ -170,8 +170,8 @@ function makeScoreGap(
     score_difference_ci_low: null,
     score_difference_ci_high: null,
     score_gap_percentile: null,
-    section2_score_gap_conv_percentile: null,
-    section2_score_gap_parity_percentile: null,
+    score_gap_conv_percentile: null,
+    score_gap_parity_percentile: null,
     ...overrides,
   };
 }

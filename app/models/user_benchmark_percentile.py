@@ -54,8 +54,8 @@ from app.services.global_percentile_cdf import CdfMetricId
 benchmark_metric_enum = SAEnum(
     "score_gap",
     "achievable_score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
+    "score_gap_conv",
+    "score_gap_parity",
     "recovery_score_gap",
     "time_pressure_score_gap",
     "clock_gap",
@@ -91,9 +91,9 @@ class UserBenchmarkPercentile(Base):
       table).
     - ``achievable_score_gap`` → count of endgame-entry games with non-null
       ``d_i`` on the pool.
-    - ``section2_score_gap_conv`` → count of spans classified into the
+    - ``score_gap_conv`` → count of spans classified into the
       conversion bucket on the pool.
-    - ``section2_score_gap_parity`` → count of spans classified into the
+    - ``score_gap_parity`` → count of spans classified into the
       parity bucket on the pool.
     - ``recovery_score_gap`` → count of spans classified into the recovery
       bucket on the pool.

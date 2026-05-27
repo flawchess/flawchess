@@ -52,8 +52,8 @@ from app.services.global_percentile_cdf import CdfMetricId
 _METRICS: tuple[CdfMetricId, ...] = (
     "score_gap",
     "achievable_score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
+    "score_gap_conv",
+    "score_gap_parity",
 )
 _SOURCES: tuple[Literal["benchmark", "single_user"], ...] = ("benchmark", "single_user")
 
@@ -217,15 +217,15 @@ class TestInclusionFloor:
         sql = per_user_cte_for("achievable_score_gap", source="single_user")
         assert "HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= 30" in sql
 
-    def test_section2_conv_having_gates_30(self) -> None:
-        sql = per_user_cte_for("section2_score_gap_conv", source="single_user")
+    def test_score_gap_bucket_conv_having_gates_30(self) -> None:
+        sql = per_user_cte_for("score_gap_conv", source="single_user")
         # The HAVING gate inside per_user_bucket is "HAVING count(*) >= 30".
         assert "HAVING count(*) >= 30" in sql
         # And the per_user_values WHERE clause selects the conversion bucket.
         assert "bucket = 'conversion'" in sql
 
-    def test_section2_parity_having_gates_30(self) -> None:
-        sql = per_user_cte_for("section2_score_gap_parity", source="single_user")
+    def test_score_gap_bucket_parity_having_gates_30(self) -> None:
+        sql = per_user_cte_for("score_gap_parity", source="single_user")
         assert "HAVING count(*) >= 30" in sql
         assert "bucket = 'parity'" in sql
 
@@ -732,7 +732,7 @@ class TestPitfall1UserIdWideningExistingBuilders:
 
         Task 1 is scoped to the 3 existing 94.3 per-TC builders. The original
         pooled builders (``per_user_cte_score_gap`` / ``per_user_cte_achievable``
-        / ``per_user_cte_section2``) are widened in Task 2 only — Task 1 must
+        / ``per_user_cte_score_gap_bucket``) are widened in Task 2 only — Task 1 must
         leave them untouched so we can detect a scope leak.
         """
         for metric_id in _METRICS:
@@ -765,13 +765,13 @@ class TestPitfall1UserIdWideningExistingBuilders:
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.4 Plan 03 Task 2 — 4 new per-TC ΔES builders + section2 bucket_label
+# Phase 94.4 Plan 03 Task 2 — 4 new per-TC ΔES builders + score-gap-bucket bucket_label
 # extension to include 'recovery'. RESEARCH Pattern 6 lines 569-669.
 # ---------------------------------------------------------------------------
 
 
 _NEW_PER_TC_TCS: tuple[TimeControlBucket, ...] = ("bullet", "blitz", "rapid", "classical")
-_SECTION2_BUCKETS: tuple[Literal["conversion", "parity", "recovery"], ...] = (
+_SCORE_GAP_BUCKETS: tuple[Literal["conversion", "parity", "recovery"], ...] = (
     "conversion",
     "parity",
     "recovery",
@@ -899,10 +899,10 @@ class TestPerUserCteAchievableTc:
 
 
 class TestPerUserCteSection2Tc:
-    """``per_user_cte_section2_tc(tc, *, source, snapshot_date, bucket_label)`` (Task 2.4)."""
+    """``per_user_cte_score_gap_bucket_tc(tc, *, source, snapshot_date, bucket_label)`` (Task 2.4)."""
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
-    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    @pytest.mark.parametrize("bucket_label", _SCORE_GAP_BUCKETS)
     @pytest.mark.parametrize("source", _SOURCES)
     def test_emits_per_tc_predicate_for_all_buckets(
         self,
@@ -910,68 +910,72 @@ class TestPerUserCteSection2Tc:
         bucket_label: Literal["conversion", "parity", "recovery"],
         source: Literal["benchmark", "single_user"],
     ) -> None:
-        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket_tc
 
-        sql = per_user_cte_section2_tc(tc, source=source, bucket_label=bucket_label)
+        sql = per_user_cte_score_gap_bucket_tc(tc, source=source, bucket_label=bucket_label)
         assert f"g.time_control_bucket = '{tc}'" in sql
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
-    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    @pytest.mark.parametrize("bucket_label", _SCORE_GAP_BUCKETS)
     def test_per_user_values_projects_user_id_metric_value_n_games(
         self,
         tc: TimeControlBucket,
         bucket_label: Literal["conversion", "parity", "recovery"],
     ) -> None:
-        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket_tc
 
-        sql = per_user_cte_section2_tc(tc, source="benchmark", bucket_label=bucket_label)
+        sql = per_user_cte_score_gap_bucket_tc(tc, source="benchmark", bucket_label=bucket_label)
         block = _per_user_values_block(sql)
         assert re.search(r"SELECT\s+user_id\s*,", block), (
-            f"per_user_values must project user_id for section2_tc({tc}, {bucket_label})"
+            f"per_user_values must project user_id for score_gap_bucket_tc({tc}, {bucket_label})"
         )
         assert "metric_value" in block
         assert "n_games" in block
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
-    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    @pytest.mark.parametrize("bucket_label", _SCORE_GAP_BUCKETS)
     def test_emits_bucket_where_dispatch(
         self,
         tc: TimeControlBucket,
         bucket_label: Literal["conversion", "parity", "recovery"],
     ) -> None:
         """``WHERE bucket = '{bucket_label}'`` dispatch is f-stringed correctly."""
-        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket_tc
 
-        sql = per_user_cte_section2_tc(tc, source="benchmark", bucket_label=bucket_label)
+        sql = per_user_cte_score_gap_bucket_tc(tc, source="benchmark", bucket_label=bucket_label)
         assert f"WHERE bucket = '{bucket_label}'" in sql
 
     def test_recovery_branch_returns_non_empty_sql(self) -> None:
-        """bucket_label='recovery' on per_user_cte_section2_tc emits valid SQL.
+        """bucket_label='recovery' on per_user_cte_score_gap_bucket_tc emits valid SQL.
 
         The recovery rows are produced by the existing gap_rows CASE
         classification (entry_eval_mate < 0 user-color signed OR
         entry_eval_cp * sign <= -100). The widening is purely at the Literal
         type level + the bucket WHERE-clause dispatch.
         """
-        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket_tc
 
-        sql = per_user_cte_section2_tc("blitz", source="benchmark", bucket_label="recovery")
+        sql = per_user_cte_score_gap_bucket_tc("blitz", source="benchmark", bucket_label="recovery")
         assert sql
         assert "WHERE bucket = 'recovery'" in sql
 
-    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
+    @pytest.mark.parametrize("bucket_label", _SCORE_GAP_BUCKETS)
     def test_source_mode_pooled_body_byte_identical(
         self, bucket_label: Literal["conversion", "parity", "recovery"]
     ) -> None:
-        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket_tc
 
-        bm = per_user_cte_section2_tc("blitz", source="benchmark", bucket_label=bucket_label)
-        su = per_user_cte_section2_tc("blitz", source="single_user", bucket_label=bucket_label)
+        bm = per_user_cte_score_gap_bucket_tc(
+            "blitz", source="benchmark", bucket_label=bucket_label
+        )
+        su = per_user_cte_score_gap_bucket_tc(
+            "blitz", source="single_user", bucket_label=bucket_label
+        )
         assert bm == su
 
 
 class TestPerUserCteSection2RecoveryWidening:
-    """The existing (non-per-TC) ``per_user_cte_section2`` accepts ``bucket_label='recovery'``.
+    """The existing (non-per-TC) ``per_user_cte_score_gap_bucket`` accepts ``bucket_label='recovery'``.
 
     Task 2.3 — the widening is purely at the Literal type level. The existing
     ``gap_rows`` CASE already classifies recovery rows (lines 502-512 of
@@ -980,46 +984,46 @@ class TestPerUserCteSection2RecoveryWidening:
     where bucket = bucket_label, so 'recovery' just flips the dispatch.
     """
 
-    def test_section2_accepts_recovery_bucket_label(self) -> None:
-        from app.services.canonical_slice_sql import per_user_cte_section2
+    def test_score_gap_bucket_accepts_recovery_bucket_label(self) -> None:
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket
 
-        sql = per_user_cte_section2(source="benchmark", bucket_label="recovery")
+        sql = per_user_cte_score_gap_bucket(source="benchmark", bucket_label="recovery")
         assert sql
         assert "WHERE bucket = 'recovery'" in sql
 
-    def test_section2_recovery_preserves_existing_conversion_parity_behavior(self) -> None:
+    def test_score_gap_bucket_recovery_preserves_existing_conversion_parity_behavior(self) -> None:
         """The existing conversion / parity dispatch is byte-identical post-widening."""
-        from app.services.canonical_slice_sql import per_user_cte_section2
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket
 
-        sql_conv = per_user_cte_section2(source="benchmark", bucket_label="conversion")
-        sql_par = per_user_cte_section2(source="benchmark", bucket_label="parity")
+        sql_conv = per_user_cte_score_gap_bucket(source="benchmark", bucket_label="conversion")
+        sql_par = per_user_cte_score_gap_bucket(source="benchmark", bucket_label="parity")
         assert "WHERE bucket = 'conversion'" in sql_conv
         assert "WHERE bucket = 'parity'" in sql_par
         # And the conversion/parity bodies still pool by user_id.
         assert "GROUP BY user_id, bucket" in sql_conv
         assert "GROUP BY user_id, bucket" in sql_par
 
-    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
-    def test_section2_source_mode_byte_identical_for_all_buckets(
+    @pytest.mark.parametrize("bucket_label", _SCORE_GAP_BUCKETS)
+    def test_score_gap_bucket_source_mode_byte_identical_for_all_buckets(
         self, bucket_label: Literal["conversion", "parity", "recovery"]
     ) -> None:
-        from app.services.canonical_slice_sql import per_user_cte_section2
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket
 
-        bm = per_user_cte_section2(source="benchmark", bucket_label=bucket_label)
-        su = per_user_cte_section2(source="single_user", bucket_label=bucket_label)
+        bm = per_user_cte_score_gap_bucket(source="benchmark", bucket_label=bucket_label)
+        su = per_user_cte_score_gap_bucket(source="single_user", bucket_label=bucket_label)
         assert bm == su
 
-    def test_section2_recovery_per_user_values_widening_optional(self) -> None:
-        """The non-per-TC ``per_user_cte_section2`` is NOT touched by Plan 03 Pitfall 1.
+    def test_score_gap_bucket_recovery_per_user_values_widening_optional(self) -> None:
+        """The non-per-TC ``per_user_cte_score_gap_bucket`` is NOT touched by Plan 03 Pitfall 1.
 
         Pitfall 1 widening is scoped to per-TC builders only (Plan 04's cohort-CDF
         JOIN consumes per-TC builders, not the non-per-TC family). The non-per-TC
-        section2 builder's per_user_values is allowed to omit user_id under Plan 03.
+        score-gap-bucket builder's per_user_values is allowed to omit user_id under Plan 03.
         Plan 05 may revisit this when per-user service consumption is wired.
         """
-        from app.services.canonical_slice_sql import per_user_cte_section2
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket
 
-        sql = per_user_cte_section2(source="benchmark", bucket_label="recovery")
+        sql = per_user_cte_score_gap_bucket(source="benchmark", bucket_label="recovery")
         block = _per_user_values_block(sql)
         # No Pitfall 1 comment — non-per-TC builder is out of Task 1/2 scope.
         assert "user_id widened per Phase 94.4 Pitfall 1" not in block
@@ -1050,14 +1054,14 @@ class TestPitfall1UserIdWideningNewBuilders:
         assert re.search(r"SELECT\s+user_id\s*,", block)
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
-    @pytest.mark.parametrize("bucket_label", _SECTION2_BUCKETS)
-    def test_section2_tc_user_id(
+    @pytest.mark.parametrize("bucket_label", _SCORE_GAP_BUCKETS)
+    def test_score_gap_bucket_tc_user_id(
         self,
         tc: TimeControlBucket,
         bucket_label: Literal["conversion", "parity", "recovery"],
     ) -> None:
-        from app.services.canonical_slice_sql import per_user_cte_section2_tc
+        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket_tc
 
-        sql = per_user_cte_section2_tc(tc, source="benchmark", bucket_label=bucket_label)
+        sql = per_user_cte_score_gap_bucket_tc(tc, source="benchmark", bucket_label=bucket_label)
         block = _per_user_values_block(sql)
         assert re.search(r"SELECT\s+user_id\s*,", block)

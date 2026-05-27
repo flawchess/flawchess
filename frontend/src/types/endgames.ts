@@ -219,31 +219,31 @@ export interface ScoreGapMaterialResponse {
   // in user-facing labels — the abbreviated form is shorter and consistent with backend.
 
   // Conversion bucket (entered endgame with eval >= +1.0):
-  section2_score_gap_conv_mean: number | null;
-  section2_score_gap_conv_n: number | null;
-  section2_score_gap_conv_p_value: number | null;
-  section2_score_gap_conv_ci_low: number | null;
-  section2_score_gap_conv_ci_high: number | null;
+  score_gap_conv_mean: number | null;
+  score_gap_conv_n: number | null;
+  score_gap_conv_p_value: number | null;
+  score_gap_conv_ci_low: number | null;
+  score_gap_conv_ci_high: number | null;
   /** Phase 94 (PCTL-02): cohort percentile [0,100] for Conversion ΔES vs the Phase 93 global CDF.
-   *  null when section2_score_gap_conv_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
-  section2_score_gap_conv_percentile: number | null;
+   *  null when score_gap_conv_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
+  score_gap_conv_percentile: number | null;
 
   // Parity bucket (entered endgame with eval between -1.0 and +1.0):
-  section2_score_gap_parity_mean: number | null;
-  section2_score_gap_parity_n: number | null;
-  section2_score_gap_parity_p_value: number | null;
-  section2_score_gap_parity_ci_low: number | null;
-  section2_score_gap_parity_ci_high: number | null;
+  score_gap_parity_mean: number | null;
+  score_gap_parity_n: number | null;
+  score_gap_parity_p_value: number | null;
+  score_gap_parity_ci_low: number | null;
+  score_gap_parity_ci_high: number | null;
   /** Phase 94 (PCTL-02): cohort percentile [0,100] for Parity ΔES vs the Phase 93 global CDF.
-   *  null when section2_score_gap_parity_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
-  section2_score_gap_parity_percentile: number | null;
+   *  null when score_gap_parity_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
+  score_gap_parity_percentile: number | null;
 
   // Recovery bucket (entered endgame with eval <= -1.0):
-  section2_score_gap_recov_mean: number | null;
-  section2_score_gap_recov_n: number | null;
-  section2_score_gap_recov_p_value: number | null;
-  section2_score_gap_recov_ci_low: number | null;
-  section2_score_gap_recov_ci_high: number | null;
+  score_gap_recov_mean: number | null;
+  score_gap_recov_n: number | null;
+  score_gap_recov_p_value: number | null;
+  score_gap_recov_ci_low: number | null;
+  score_gap_recov_ci_high: number | null;
   /** Phase 94.4 D-05a: Recovery Score Gap chip RESCUED under peer-relative.
    *  Replaces Phase 94 D-12 suppression — same-rated cohort comparison
    *  normalises the opponent-rating confound that drove the v1 drop.
@@ -252,7 +252,7 @@ export interface ScoreGapMaterialResponse {
    *  when every per-TC PercentileRow has null percentile. */
   recovery_score_gap_percentile: number | null;
 
-  // Phase 87.4 (D-05): the 6 Skill fields (section2_score_gap_skill_* and
+  // Phase 87.4 (D-05): the 6 Skill fields (score_gap_skill_* and
   // endgame_skill_rate_mean) were hard-deleted alongside EndgameSkillCard.
   // No composite definition survived scrutiny on all four axes; see
   // .planning/notes/endgame-skill-dropped-conversion-elo.md.

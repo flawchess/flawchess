@@ -18,7 +18,7 @@ Key reshape vs Phase 94.3:
   TC-suffixed entries (``time_pressure_score_gap_{bullet,blitz,rapid,classical}``,
   ``clock_gap_*``, ``net_flag_rate_*``) retire entirely — TC is now an outer
   key, not a metric suffix. ``recovery_score_gap`` is added as a peer to
-  ``section2_score_gap_{conv,parity}``.
+  ``score_gap_{conv,parity}``.
 - **Registry shape** widens: ``Mapping[CdfMetricId, Mapping[tuple[int, TimeControlBucket], CdfTable]]``
   keyed by ``(anchor_elo, time_control_bucket)`` per metric (CONTEXT D-09 /
   RESEARCH Pattern 1).
@@ -93,7 +93,7 @@ _RIGHT_TAIL_CLAMP: Final[float] = 100.0
 
 # Phase 94.4 CdfMetricId — collapsed from 16 to 8 (CONTEXT D-13). The 12
 # Phase 94.3 TC-suffixed entries retire; ``recovery_score_gap`` joins as a
-# peer to the section2 family. TC is an outer key on the registry (not a
+# peer to the score-gap-bucket family. TC is an outer key on the registry (not a
 # suffix on the metric name), so each metric has at most 4 cells per anchor.
 #
 # This Literal is the single source of truth — ``scripts/gen_global_percentile_cdf.py``
@@ -101,8 +101,8 @@ _RIGHT_TAIL_CLAMP: Final[float] = 100.0
 CdfMetricId = Literal[
     "score_gap",
     "achievable_score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
+    "score_gap_conv",
+    "score_gap_parity",
     "recovery_score_gap",
     "time_pressure_score_gap",
     "clock_gap",
@@ -23668,7 +23668,7 @@ COHORT_PERCENTILE_CDF: Mapping[CdfMetricId, Mapping[tuple[int, TimeControlBucket
             snapshot_month="2026-05",
         ),
     },
-    "section2_score_gap_conv": {
+    "score_gap_conv": {
         (900, "blitz"): CdfTable(
             breakpoints=(
                 -0.4560,
@@ -34695,7 +34695,7 @@ COHORT_PERCENTILE_CDF: Mapping[CdfMetricId, Mapping[tuple[int, TimeControlBucket
             snapshot_month="2026-05",
         ),
     },
-    "section2_score_gap_parity": {
+    "score_gap_parity": {
         (950, "blitz"): CdfTable(
             breakpoints=(
                 -0.1690,

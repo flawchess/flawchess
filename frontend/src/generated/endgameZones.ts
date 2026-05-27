@@ -41,13 +41,13 @@ export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX = 0.05;
 export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN = -0.04;
 export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX = 0.04;
 // Phase 87.2 (D-02): per-bucket Section 2 ΔES Score Gap neutral bands.
-export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN = -0.11;
-export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX = 0.0;
-export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN = -0.04;
-export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX = 0.04;
-export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN = 0.01;
-export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX = 0.11;
-// Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_NEUTRAL_* emission dropped
+export const SCORE_GAP_CONV_NEUTRAL_MIN = -0.11;
+export const SCORE_GAP_CONV_NEUTRAL_MAX = 0.0;
+export const SCORE_GAP_PARITY_NEUTRAL_MIN = -0.04;
+export const SCORE_GAP_PARITY_NEUTRAL_MAX = 0.04;
+export const SCORE_GAP_RECOV_NEUTRAL_MIN = 0.01;
+export const SCORE_GAP_RECOV_NEUTRAL_MAX = 0.11;
+// Phase 87.4 (D-05): SCORE_GAP_SKILL_NEUTRAL_* emission dropped
 // alongside the Endgame Skill concept retirement.
 
 // Phase 83 D-14/D-17: per-user entry_expected_score cohort band.

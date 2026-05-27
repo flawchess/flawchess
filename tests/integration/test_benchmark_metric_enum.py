@@ -69,8 +69,8 @@ EXPECTED_ENUM_LABELS: list[str] = [
     "net_flag_rate",
     "recovery_score_gap",
     "score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
+    "score_gap_conv",
+    "score_gap_parity",
     "time_pressure_score_gap",
 ]
 

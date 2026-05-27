@@ -49,8 +49,8 @@ _TEST_USER_ID: int = 9001
 _SECOND_USER_ID: int = 9002
 _METRIC_SCORE_GAP: str = "score_gap"
 _METRIC_ACHIEVABLE: str = "achievable_score_gap"
-_METRIC_CONV: str = "section2_score_gap_conv"
-_METRIC_PARITY: str = "section2_score_gap_parity"
+_METRIC_CONV: str = "score_gap_conv"
+_METRIC_PARITY: str = "score_gap_parity"
 _ALL_METRICS: tuple[str, ...] = (
     _METRIC_SCORE_GAP,
     _METRIC_ACHIEVABLE,

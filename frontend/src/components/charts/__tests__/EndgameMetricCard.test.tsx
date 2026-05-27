@@ -84,7 +84,7 @@ function buildRow(overrides?: Partial<MaterialRow>): MaterialRow {
 
 // Default Score Gap props for a positive, confident, outside-neutral-band scenario.
 const DEFAULT_SCORE_GAP_PROPS = {
-  scoreGapMean: 0.10,   // +10%, well above SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX (0.00)
+  scoreGapMean: 0.10,   // +10%, well above SCORE_GAP_CONV_NEUTRAL_MAX (0.00)
   scoreGapN: 100,
   scoreGapPValue: 0.001,
   scoreGapCiLow: 0.05,
@@ -240,7 +240,7 @@ describe('EndgameMetricCard — sign convention (zone-only tint, no sig-gate)', 
         sharePct={45.5}
         tileTestId="tile-conversion"
         titleTooltip="Test tooltip"
-        scoreGapMean={0.10}   // above SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX (0.00)
+        scoreGapMean={0.10}   // above SCORE_GAP_CONV_NEUTRAL_MAX (0.00)
         scoreGapN={100}
         scoreGapPValue={0.5}  // weak p-value: zone-only means color is still applied
         scoreGapCiLow={null}
@@ -259,7 +259,7 @@ describe('EndgameMetricCard — sign convention (zone-only tint, no sig-gate)', 
         sharePct={45.5}
         tileTestId="tile-conversion"
         titleTooltip="Test tooltip"
-        scoreGapMean={-0.20}  // below SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN (-0.11)
+        scoreGapMean={-0.20}  // below SCORE_GAP_CONV_NEUTRAL_MIN (-0.11)
         scoreGapN={100}
         scoreGapPValue={0.5}
         scoreGapCiLow={null}

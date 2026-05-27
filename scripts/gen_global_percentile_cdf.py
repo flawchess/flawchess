@@ -97,7 +97,7 @@ from app.services.canonical_slice_sql import (  # noqa: E402
     per_user_cte_median_anchor,
     per_user_cte_net_flag_rate,
     per_user_cte_score_gap_tc,
-    per_user_cte_section2_tc,
+    per_user_cte_score_gap_bucket_tc,
     per_user_cte_time_pressure_score_gap,
     selected_users_cte,
 )
@@ -154,8 +154,8 @@ ALL_TIME_CONTROLS: Final[tuple[TimeControlBucket, ...]] = (
 IN_SCOPE_METRICS: Final[tuple[CdfMetricId, ...]] = (
     "score_gap",
     "achievable_score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
+    "score_gap_conv",
+    "score_gap_parity",
     "recovery_score_gap",
     "time_pressure_score_gap",
     "clock_gap",
@@ -268,9 +268,9 @@ def _per_user_cte_for_metric_and_tc(
 
     - ``score_gap``                  → ``per_user_cte_score_gap_tc``
     - ``achievable_score_gap``       → ``per_user_cte_achievable_tc``
-    - ``section2_score_gap_conv``    → ``per_user_cte_section2_tc(bucket_label='conversion')``
-    - ``section2_score_gap_parity``  → ``per_user_cte_section2_tc(bucket_label='parity')``
-    - ``recovery_score_gap``         → ``per_user_cte_section2_tc(bucket_label='recovery')``
+    - ``score_gap_conv``    → ``per_user_cte_score_gap_bucket_tc(bucket_label='conversion')``
+    - ``score_gap_parity``  → ``per_user_cte_score_gap_bucket_tc(bucket_label='parity')``
+    - ``recovery_score_gap``         → ``per_user_cte_score_gap_bucket_tc(bucket_label='recovery')``
     - ``time_pressure_score_gap``    → ``per_user_cte_time_pressure_score_gap(tc)``
     - ``clock_gap``                  → ``per_user_cte_clock_gap(tc)``
     - ``net_flag_rate``              → ``per_user_cte_net_flag_rate(tc)``
@@ -283,16 +283,16 @@ def _per_user_cte_for_metric_and_tc(
         return per_user_cte_score_gap_tc(tc, source="benchmark", snapshot_date=snapshot_date)
     if metric == "achievable_score_gap":
         return per_user_cte_achievable_tc(tc, source="benchmark", snapshot_date=snapshot_date)
-    if metric == "section2_score_gap_conv":
-        return per_user_cte_section2_tc(
+    if metric == "score_gap_conv":
+        return per_user_cte_score_gap_bucket_tc(
             tc, source="benchmark", snapshot_date=snapshot_date, bucket_label="conversion"
         )
-    if metric == "section2_score_gap_parity":
-        return per_user_cte_section2_tc(
+    if metric == "score_gap_parity":
+        return per_user_cte_score_gap_bucket_tc(
             tc, source="benchmark", snapshot_date=snapshot_date, bucket_label="parity"
         )
     if metric == "recovery_score_gap":
-        return per_user_cte_section2_tc(
+        return per_user_cte_score_gap_bucket_tc(
             tc, source="benchmark", snapshot_date=snapshot_date, bucket_label="recovery"
         )
     if metric == "time_pressure_score_gap":
@@ -583,8 +583,8 @@ def _write_module(
 _METRIC_DISPLAY: Final[dict[CdfMetricId, str]] = {
     "score_gap": "Endgame Score Gap",
     "achievable_score_gap": "Achievable Score Gap",
-    "section2_score_gap_conv": "Section 2 Conversion ΔES",
-    "section2_score_gap_parity": "Section 2 Parity ΔES",
+    "score_gap_conv": "Section 2 Conversion ΔES",
+    "score_gap_parity": "Section 2 Parity ΔES",
     "recovery_score_gap": "Recovery Score Gap",
     "time_pressure_score_gap": "Time Pressure Score Gap",
     "clock_gap": "Clock Gap",

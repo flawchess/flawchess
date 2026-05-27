@@ -427,7 +427,7 @@ class TestPromptVersionAndBody:
                         or "do NOT use" in line
                     ), f"{token!r} appears outside a forbidden-words list. Offending line: {line!r}"
 
-    def test_endgame_insights_prompt_carries_section2_glossary(self) -> None:
+    def test_endgame_insights_prompt_carries_score_gap_bucket_glossary(self) -> None:
         """Phase 87.2 Plan 04: endgame_insights.md contains the Section 2 Score Gap family block.
 
         Asserts the required glossary strings per PLAN.md Task 2 acceptance criteria.
@@ -3338,7 +3338,7 @@ class TestHideOverview:
 class TestSection2ScoreGapFindings:
     """Phase 87.2: 4 new ΔES Score Gap findings emitted by _findings_endgame_metrics.
 
-    D-09 (RESEARCH-corrected ADDITIVE): the 4 new section2_score_gap_{conv,parity,recov,skill}
+    D-09 (RESEARCH-corrected ADDITIVE): the 4 new score_gap_{conv,parity,recov,skill}
     findings are emitted ALONGSIDE the existing rate findings, not replacing them.
 
     Wire shape: (mean, n, zone, neutral_band). No p_value / verdict per memory
@@ -3398,18 +3398,18 @@ class TestSection2ScoreGapFindings:
             material_rows=material_rows,
             timeline=[],
             timeline_window=50,
-            section2_score_gap_conv_mean=conv_mean,
-            section2_score_gap_conv_n=conv_n,
-            section2_score_gap_parity_mean=parity_mean,
-            section2_score_gap_parity_n=parity_n,
-            section2_score_gap_recov_mean=recov_mean,
-            section2_score_gap_recov_n=recov_n,
+            score_gap_conv_mean=conv_mean,
+            score_gap_conv_n=conv_n,
+            score_gap_parity_mean=parity_mean,
+            score_gap_parity_n=parity_n,
+            score_gap_recov_mean=recov_mean,
+            score_gap_recov_n=recov_n,
         )
         return EndgameOverviewResponse.model_construct(
             score_gap_material=score_gap_material,
         )
 
-    def test_section2_score_gap_findings_full_cohort(self) -> None:
+    def test_score_gap_findings_full_cohort(self) -> None:
         """Full cohort (each bucket n >= 10): 3 ΔES findings emitted (Phase 87.4
         D-05 drops the retired "skill" bucket).
 
@@ -3436,9 +3436,9 @@ class TestSection2ScoreGapFindings:
             for f in findings
             if f.metric
             in {
-                "section2_score_gap_conv",
-                "section2_score_gap_parity",
-                "section2_score_gap_recov",
+                "score_gap_conv",
+                "score_gap_parity",
+                "score_gap_recov",
             }
         ]
         assert len(delta_es_findings) == 3, (
@@ -3448,13 +3448,13 @@ class TestSection2ScoreGapFindings:
         by_metric = {f.metric: f for f in delta_es_findings}
 
         # Correct values from means.
-        assert by_metric["section2_score_gap_conv"].value == pytest.approx(0.08)
-        assert by_metric["section2_score_gap_parity"].value == pytest.approx(-0.02)
-        assert by_metric["section2_score_gap_recov"].value == pytest.approx(0.04)
+        assert by_metric["score_gap_conv"].value == pytest.approx(0.08)
+        assert by_metric["score_gap_parity"].value == pytest.approx(-0.02)
+        assert by_metric["score_gap_recov"].value == pytest.approx(0.04)
 
         # Sample sizes match per-bucket n.
-        assert by_metric["section2_score_gap_conv"].sample_size == 15
-        assert by_metric["section2_score_gap_parity"].sample_size == 15
+        assert by_metric["score_gap_conv"].sample_size == 15
+        assert by_metric["score_gap_parity"].sample_size == 15
 
         # Zone dispatched (not None).
         for f in delta_es_findings:
@@ -3471,7 +3471,7 @@ class TestSection2ScoreGapFindings:
         for f in delta_es_findings:
             assert f.dimension is None, f"{f.metric}: dimension should be None"
 
-    def test_section2_score_gap_findings_sparse_cohort(self) -> None:
+    def test_score_gap_findings_sparse_cohort(self) -> None:
         """Sparse cohort (each bucket n < 10): 3 findings emitted, is_headline_eligible False.
 
         Phase 87.4 (D-05): skill bucket retired — expected count drops from 4 to 3.
@@ -3493,9 +3493,9 @@ class TestSection2ScoreGapFindings:
             for f in findings
             if f.metric
             in {
-                "section2_score_gap_conv",
-                "section2_score_gap_parity",
-                "section2_score_gap_recov",
+                "score_gap_conv",
+                "score_gap_parity",
+                "score_gap_recov",
             }
         ]
         assert len(delta_es_findings) == 3
@@ -3508,7 +3508,7 @@ class TestSection2ScoreGapFindings:
             # zone still dispatched even for sparse cohort.
             assert f.zone in {"weak", "typical", "strong"}
 
-    def test_section2_score_gap_findings_empty_cohort(self) -> None:
+    def test_score_gap_findings_empty_cohort(self) -> None:
         """Empty cohort (each bucket mean=None, n=0): 3 findings with value=NaN, is_headline_eligible=False.
 
         Phase 87.4 (D-05): skill bucket retired.
@@ -3532,9 +3532,9 @@ class TestSection2ScoreGapFindings:
             for f in findings
             if f.metric
             in {
-                "section2_score_gap_conv",
-                "section2_score_gap_parity",
-                "section2_score_gap_recov",
+                "score_gap_conv",
+                "score_gap_parity",
+                "score_gap_recov",
             }
         ]
         assert len(delta_es_findings) == 3
@@ -3548,8 +3548,8 @@ class TestSection2ScoreGapFindings:
             # assign_zone(metric_id, NaN) must return a zone (not raise).
             assert f.zone in {"weak", "typical", "strong"}
 
-    def test_section2_score_gap_findings_skill_metric_absent(self) -> None:
-        """Phase 87.4 (D-05): the section2_score_gap_skill finding was retired
+    def test_score_gap_findings_skill_metric_absent(self) -> None:
+        """Phase 87.4 (D-05): the score_gap_skill finding was retired
         end-to-end. Regression guard against re-emitting it.
         """
         from app.services.insights_service import _findings_endgame_metrics
@@ -3557,10 +3557,8 @@ class TestSection2ScoreGapFindings:
         response = self._make_overview()
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        skill_findings = [f for f in findings if f.metric == "section2_score_gap_skill"]
-        assert skill_findings == [], (
-            "section2_score_gap_skill must not be emitted post-Phase 87.4 D-05"
-        )
+        skill_findings = [f for f in findings if f.metric == "score_gap_skill"]
+        assert skill_findings == [], "score_gap_skill must not be emitted post-Phase 87.4 D-05"
 
     def test_existing_rate_findings_preserved(self) -> None:
         """D-09 ADDITIVE: per-bucket rate findings survive alongside ΔES findings.
@@ -3588,12 +3586,12 @@ class TestSection2ScoreGapFindings:
         assert "parity_score_pct" in metric_ids, "parity_score_pct finding missing"
         assert "recovery_save_pct" in metric_ids, "recovery_save_pct finding missing"
         # New ΔES findings present (Phase 87.4 D-05: skill bucket retired).
-        assert "section2_score_gap_conv" in metric_ids
-        assert "section2_score_gap_parity" in metric_ids
-        assert "section2_score_gap_recov" in metric_ids
-        assert "section2_score_gap_skill" not in metric_ids
+        assert "score_gap_conv" in metric_ids
+        assert "score_gap_parity" in metric_ids
+        assert "score_gap_recov" in metric_ids
+        assert "score_gap_skill" not in metric_ids
         # Total: 3 rate + 3 ΔES = 6 (Phase 87.4 D-05 drops aggregate skill +
-        # the section2_score_gap_skill ΔES bucket).
+        # the score_gap_skill ΔES bucket).
         assert len(findings) == 6, f"Expected 6 findings (3 rate + 3 ΔES), got {len(findings)}"
 
 
@@ -3631,8 +3629,8 @@ class TestPhase874PromptVersion:
         assert '"endgame_skill"' not in src, (
             "quoted-string 'endgame_skill' literal still present in insights_llm.py"
         )
-        assert '"section2_score_gap_skill"' not in src, (
-            "quoted-string 'section2_score_gap_skill' literal still present"
+        assert '"score_gap_skill"' not in src, (
+            "quoted-string 'score_gap_skill' literal still present"
         )
         assert '"endgame_skill_rate_mean"' not in src, (
             "quoted-string 'endgame_skill_rate_mean' literal still present"

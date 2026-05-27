@@ -225,7 +225,7 @@ class TestRegistrySanity:
         row (Plan 03) and through the LLM type_breakdown payload (Plan 04).
         Bands calibrate from benchmarks SKILL.md §3.4.2.
 
-        Phase 87.2 (SEC2-ΔES-03): `section2_score_gap_{conv,parity,recov,skill}`
+        Phase 87.2 (SEC2-ΔES-03): `score_gap_{conv,parity,recov,skill}`
         (placeholder ±0.05 bands) added — per-bucket ΔES Score Gap metrics
         powering the four Section 2 cards. Bands calibrate from benchmarks
         SKILL.md §3.4.4.
@@ -250,9 +250,9 @@ class TestRegistrySanity:
             "net_timeout_rate",
             "endgame_elo_gap",
             "win_rate",
-            "section2_score_gap_conv",
-            "section2_score_gap_parity",
-            "section2_score_gap_recov",
+            "score_gap_conv",
+            "score_gap_parity",
+            "score_gap_recov",
             "clock_gap_pct",
         }
 

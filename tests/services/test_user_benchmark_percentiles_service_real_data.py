@@ -180,10 +180,10 @@ async def _seed_canonical_slice_user(
       - Game A (typical):  per-ply eval drifts in [_EVAL_TYPICAL_*]; drives
         `achievable_score_gap` (entry-eval-only path uses the first ply).
       - Game B (winning):  per-ply eval in [_EVAL_WINNING_*]; contributes
-        to `section2_score_gap_conv` if the per-metric span-bucket floor
+        to `score_gap_conv` if the per-metric span-bucket floor
         is crossed.
       - Game C (parity):   per-ply eval in [_EVAL_PARITY_*]; contributes
-        to `section2_score_gap_parity` if the per-metric span-bucket floor
+        to `score_gap_parity` if the per-metric span-bucket floor
         is crossed.
     Note: per-metric span-bucket floor (>=20 entry-eval-bucket spans per
     bucket) is NOT crossed with only 3 games. Section2 rows may legitimately
@@ -236,7 +236,7 @@ async def _seed_canonical_slice_user(
             # Eval ranges (only when with_evals): every endgame game gets a
             # distinctive eval range so the achievable_score_gap floor of
             # 20 entry-eval games is crossed. The 3 buckets rotate across
-            # games to also exercise the section2_* per-bucket grouping.
+            # games to also exercise the score_gap_bucket_* per-bucket grouping.
             if with_evals:
                 bucket = idx % 3
                 if bucket == 0:
@@ -341,7 +341,7 @@ async def test_compute_stage_b_writes_three_rows_for_qualifying_user(
     Same canonical-slice seed as Test 1 plus 3 distinctive-eval games for
     Stage B. Strong assertion is only on achievable_score_gap (the
     entry-eval-only metric whose floor is reachable with 3 eval-bearing
-    games). The two section2_* metrics MAY be absent because the per-metric
+    games). The two score_gap_bucket_* metrics MAY be absent because the per-metric
     span-bucket floor (>=20 spans per entry-eval bucket) is not crossed
     with this small seed — soft-asserted only.
     """
@@ -375,11 +375,11 @@ async def test_compute_stage_b_writes_three_rows_for_qualifying_user(
     assert 'achievable_score_gap' in result and _TC_BUCKET in result['achievable_score_gap'] and result['achievable_score_gap'][_TC_BUCKET].value is not None, f"Stage B failed to write achievable_score_gap blitz with non-null value (got {result.get('achievable_score_gap')!r})"  # noqa: E501
     # fmt: on
 
-    # Soft assertions: section2_* MAY be present or absent depending on
+    # Soft assertions: score_gap_bucket_* MAY be present or absent depending on
     # whether the seed crosses the per-metric span-bucket floor of 20 spans.
     # If present, they must have a value (percentile may legitimately be NULL
     # below floor).
-    for soft_metric in ("section2_score_gap_conv", "section2_score_gap_parity"):
+    for soft_metric in ("score_gap_conv", "score_gap_parity"):
         if soft_metric in result and _TC_BUCKET in result[soft_metric]:
             assert result[soft_metric][_TC_BUCKET].value is not None, (
                 f"{soft_metric}.{_TC_BUCKET} row was written but value is None; "

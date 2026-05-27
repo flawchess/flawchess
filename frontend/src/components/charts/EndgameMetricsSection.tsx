@@ -13,7 +13,7 @@
  *
  * Phase 87.2 refactor: MIRROR_BUCKET wiring removed; buildZeroRow updated to
  * drop the deleted MaterialRow fields; scoreGap* props threaded from
- * response.section2_score_gap_{conv,parity,recov}_* to each card.
+ * response.score_gap_{conv,parity,recov}_* to each card.
  * Phase 87.4 refactor: EndgameSkillCard + tile-endgame-skill + ConnectorArrows
  * deleted; endgameWdl prop removed (the deleted Skill card was its sole
  * consumer); `relative` class dropped from the grid (no positioned children
@@ -111,12 +111,12 @@ export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSec
           bucket="conversion"
           row={rowByBucket['conversion'] ?? buildZeroRow('conversion')}
           sharePct={totalMaterialGames > 0 ? ((rowByBucket['conversion']?.games ?? 0) / totalMaterialGames) * 100 : 0}
-          scoreGapMean={data.section2_score_gap_conv_mean}
-          scoreGapN={data.section2_score_gap_conv_n}
-          scoreGapPValue={data.section2_score_gap_conv_p_value}
-          scoreGapCiLow={data.section2_score_gap_conv_ci_low}
-          scoreGapCiHigh={data.section2_score_gap_conv_ci_high}
-          scoreGapPercentile={data.section2_score_gap_conv_percentile}
+          scoreGapMean={data.score_gap_conv_mean}
+          scoreGapN={data.score_gap_conv_n}
+          scoreGapPValue={data.score_gap_conv_p_value}
+          scoreGapCiLow={data.score_gap_conv_ci_low}
+          scoreGapCiHigh={data.score_gap_conv_ci_high}
+          scoreGapPercentile={data.score_gap_conv_percentile}
           ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['conversion']}
           titleTooltip={TITLE_TOOLTIPS['conversion']}
@@ -128,19 +128,19 @@ export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSec
           bucket="parity"
           row={rowByBucket['parity'] ?? buildZeroRow('parity')}
           sharePct={totalMaterialGames > 0 ? ((rowByBucket['parity']?.games ?? 0) / totalMaterialGames) * 100 : 0}
-          scoreGapMean={data.section2_score_gap_parity_mean}
-          scoreGapN={data.section2_score_gap_parity_n}
-          scoreGapPValue={data.section2_score_gap_parity_p_value}
-          scoreGapCiLow={data.section2_score_gap_parity_ci_low}
-          scoreGapCiHigh={data.section2_score_gap_parity_ci_high}
-          scoreGapPercentile={data.section2_score_gap_parity_percentile}
+          scoreGapMean={data.score_gap_parity_mean}
+          scoreGapN={data.score_gap_parity_n}
+          scoreGapPValue={data.score_gap_parity_p_value}
+          scoreGapCiLow={data.score_gap_parity_ci_low}
+          scoreGapCiHigh={data.score_gap_parity_ci_high}
+          scoreGapPercentile={data.score_gap_parity_percentile}
           ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['parity']}
           titleTooltip={TITLE_TOOLTIPS['parity']}
         />
 
         {/* Recovery card — Phase 94.4 D-05a: chip RESCUED under peer-relative.
-            Percentile field renamed from the prior `section2_score_gap_recov`
+            Percentile field renamed from the prior `score_gap_recov`
             prefix to `recovery_score_gap_percentile` (Plan 05c — mirrors the
             CdfMetricId Literal). The Phase 94 D-12 defensive
             `bucket !== 'recovery'` guard inside EndgameMetricCard is now
@@ -151,11 +151,11 @@ export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSec
           bucket="recovery"
           row={rowByBucket['recovery'] ?? buildZeroRow('recovery')}
           sharePct={totalMaterialGames > 0 ? ((rowByBucket['recovery']?.games ?? 0) / totalMaterialGames) * 100 : 0}
-          scoreGapMean={data.section2_score_gap_recov_mean}
-          scoreGapN={data.section2_score_gap_recov_n}
-          scoreGapPValue={data.section2_score_gap_recov_p_value}
-          scoreGapCiLow={data.section2_score_gap_recov_ci_low}
-          scoreGapCiHigh={data.section2_score_gap_recov_ci_high}
+          scoreGapMean={data.score_gap_recov_mean}
+          scoreGapN={data.score_gap_recov_n}
+          scoreGapPValue={data.score_gap_recov_p_value}
+          scoreGapCiLow={data.score_gap_recov_ci_low}
+          scoreGapCiHigh={data.score_gap_recov_ci_high}
           scoreGapPercentile={data.recovery_score_gap_percentile}
           ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['recovery']}

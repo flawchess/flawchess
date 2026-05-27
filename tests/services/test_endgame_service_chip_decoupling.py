@@ -90,7 +90,7 @@ def _make_percentile_rows(
                 n_games=_SEED_N_GAMES,
             ),
         },
-        "section2_score_gap_conv": {
+        "score_gap_conv": {
             _SEED_TC: PercentileRow(
                 value=_SEED_VALUE,
                 percentile=conv,
@@ -98,7 +98,7 @@ def _make_percentile_rows(
                 n_games=_SEED_N_GAMES,
             ),
         },
-        "section2_score_gap_parity": {
+        "score_gap_parity": {
             _SEED_TC: PercentileRow(
                 value=_SEED_VALUE,
                 percentile=parity,
@@ -178,10 +178,10 @@ async def test_chip_percentile_unchanged_across_filter_toggles(
     # But the chip is invariant (D-12 / PCTL-07)
     assert result_a.score_gap_percentile == _KNOWN_SCORE_GAP_PERCENTILE
     assert result_b.score_gap_percentile == _KNOWN_SCORE_GAP_PERCENTILE
-    assert result_a.section2_score_gap_conv_percentile == _KNOWN_CONV_PERCENTILE
-    assert result_b.section2_score_gap_conv_percentile == _KNOWN_CONV_PERCENTILE
-    assert result_a.section2_score_gap_parity_percentile == _KNOWN_PARITY_PERCENTILE
-    assert result_b.section2_score_gap_parity_percentile == _KNOWN_PARITY_PERCENTILE
+    assert result_a.score_gap_conv_percentile == _KNOWN_CONV_PERCENTILE
+    assert result_b.score_gap_conv_percentile == _KNOWN_CONV_PERCENTILE
+    assert result_a.score_gap_parity_percentile == _KNOWN_PARITY_PERCENTILE
+    assert result_b.score_gap_parity_percentile == _KNOWN_PARITY_PERCENTILE
 
 
 # ── Test 2 — V4 cross-user scope ──────────────────────────────────────────────
@@ -283,11 +283,11 @@ async def test_chip_percentile_is_none_when_no_row_in_table(
     assert result.score_gap_percentile is None, (
         "score_gap_percentile must be None when no materialised row exists"
     )
-    assert result.section2_score_gap_conv_percentile is None, (
-        "section2_score_gap_conv_percentile must be None when no materialised row exists"
+    assert result.score_gap_conv_percentile is None, (
+        "score_gap_conv_percentile must be None when no materialised row exists"
     )
-    assert result.section2_score_gap_parity_percentile is None, (
-        "section2_score_gap_parity_percentile must be None when no materialised row exists"
+    assert result.score_gap_parity_percentile is None, (
+        "score_gap_parity_percentile must be None when no materialised row exists"
     )
 
     perf = _get_endgame_performance_from_rows([], [], [], percentile_rows=empty_rows)
@@ -336,7 +336,7 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
                 n_games=_SEED_N_GAMES,
             ),
         },
-        "section2_score_gap_conv": {
+        "score_gap_conv": {
             _SEED_TC: PercentileRow(
                 value=0.01,
                 percentile=None,
@@ -344,7 +344,7 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
                 n_games=_SEED_N_GAMES,
             ),
         },
-        "section2_score_gap_parity": {
+        "score_gap_parity": {
             _SEED_TC: PercentileRow(
                 value=0.01,
                 percentile=None,
@@ -363,11 +363,11 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
     assert result.score_gap_percentile is None, (
         "score_gap_percentile must be None when percentile column is NULL"
     )
-    assert result.section2_score_gap_conv_percentile is None, (
-        "section2_score_gap_conv_percentile must be None when percentile column is NULL"
+    assert result.score_gap_conv_percentile is None, (
+        "score_gap_conv_percentile must be None when percentile column is NULL"
     )
-    assert result.section2_score_gap_parity_percentile is None, (
-        "section2_score_gap_parity_percentile must be None when percentile column is NULL"
+    assert result.score_gap_parity_percentile is None, (
+        "score_gap_parity_percentile must be None when percentile column is NULL"
     )
 
     perf = _get_endgame_performance_from_rows([], [], [], percentile_rows=null_pct_rows)

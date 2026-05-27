@@ -60,8 +60,8 @@ Examples:
 
 The 8 valid ``--metric`` values (CONTEXT D-13, Plan 04 collapse):
 
-    score_gap, achievable_score_gap, section2_score_gap_conv,
-    section2_score_gap_parity, recovery_score_gap, time_pressure_score_gap,
+    score_gap, achievable_score_gap, score_gap_conv,
+    score_gap_parity, recovery_score_gap, time_pressure_score_gap,
     clock_gap, net_flag_rate
 
 The 12 legacy TC-suffixed composite metric IDs (e.g.
@@ -790,7 +790,7 @@ def _parse_args() -> argparse.Namespace:
         dest="skip_anchors",
         help=(
             "Skip the anchor compute path when narrowing to a Stage B metric family "
-            "(--metric in achievable_score_gap, section2_*, recovery_score_gap, "
+            "(--metric in achievable_score_gap, score_gap_bucket_*, recovery_score_gap, "
             "time_pressure_score_gap, clock_gap, net_flag_rate). Has no effect when "
             "score_gap is in scope (Stage A always recomputes anchors)."
         ),

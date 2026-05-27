@@ -2153,7 +2153,7 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
     the Wald-z test was mathematically degenerate: Conv-Gap == Recov-Gap by
     symmetry, and Parity-Gap is an affine transformation of the gauge.
     Replaced by the eval-baseline Delta-ES Score Gap family on
-    ScoreGapMaterialResponse (section2_score_gap_* — Phase 87.2 D-06).
+    ScoreGapMaterialResponse (score_gap_* — Phase 87.2 D-06).
 
     Retained as a class to avoid renumbering downstream test IDs; its bucket-
     classification + score logic is preserved in TestScoreGapMaterial and
@@ -3588,7 +3588,7 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
 
     def test_score_gap_material_response_defaults_for_phase872_score_gap_fields(self) -> None:
         """Phase 87.2 (SEC2-ΔES-02 / D-06): ScoreGapMaterialResponse carries 20 new
-        section2_score_gap_* fields (4 buckets x 5 fields), all None by default.
+        score_gap_* fields (4 buckets x 5 fields), all None by default.
         The deleted Phase 86 fields (skill, opp_skill, skill_diff_*) are gone."""
         from app.schemas.endgames import ScoreGapMaterialResponse
 
@@ -3603,23 +3603,23 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
         # New fields all default to None.
         # Phase 87.4 (D-05): "skill" bucket dropped — composite retired.
         for bucket in ("conv", "parity", "recov"):
-            assert getattr(resp, f"section2_score_gap_{bucket}_mean") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_n") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_p_value") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_ci_low") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_ci_high") is None
+            assert getattr(resp, f"score_gap_{bucket}_mean") is None
+            assert getattr(resp, f"score_gap_{bucket}_n") is None
+            assert getattr(resp, f"score_gap_{bucket}_p_value") is None
+            assert getattr(resp, f"score_gap_{bucket}_ci_low") is None
+            assert getattr(resp, f"score_gap_{bucket}_ci_high") is None
         # Deleted Phase 86 fields must not exist
         assert not hasattr(resp, "skill")
         assert not hasattr(resp, "opp_skill")
         assert not hasattr(resp, "skill_diff_p_value")
-        # Phase 87.4 (D-05): the section2_score_gap_skill_* family + the
+        # Phase 87.4 (D-05): the score_gap_skill_* family + the
         # endgame_skill_rate_mean gauge driver were dropped end-to-end.
         for f in (
-            "section2_score_gap_skill_mean",
-            "section2_score_gap_skill_n",
-            "section2_score_gap_skill_p_value",
-            "section2_score_gap_skill_ci_low",
-            "section2_score_gap_skill_ci_high",
+            "score_gap_skill_mean",
+            "score_gap_skill_n",
+            "score_gap_skill_p_value",
+            "score_gap_skill_ci_low",
+            "score_gap_skill_ci_high",
             "endgame_skill_rate_mean",
         ):
             assert not hasattr(resp, f), f"unexpected residual field: {f}"
@@ -3687,7 +3687,7 @@ class TestSkillDiffTestWireFields(TestScoreGapMaterial):
 
 
 class TestPhase872SchemaFields:
-    """Phase 87.2 (SEC2-ΔES-02): 20 new section2_score_gap_* fields on
+    """Phase 87.2 (SEC2-ΔES-02): 20 new score_gap_* fields on
     ScoreGapMaterialResponse; 5 deletions on MaterialRow (opponent_score,
     opponent_games, diff_p_value, diff_ci_low, diff_ci_high); 5 deletions
     on ScoreGapMaterialResponse (skill, opp_skill, skill_diff_p_value,
@@ -3697,7 +3697,7 @@ class TestPhase872SchemaFields:
 
     def test_score_gap_material_response_has_20_new_fields_with_none_defaults(self) -> None:
         """ScoreGapMaterialResponse(without any 87.2 kwargs) defaults all 20
-        new section2_score_gap_* fields to None (backward compat)."""
+        new score_gap_* fields to None (backward compat)."""
         from app.schemas.endgames import ScoreGapMaterialResponse
 
         resp = ScoreGapMaterialResponse(
@@ -3710,14 +3710,14 @@ class TestPhase872SchemaFields:
         )
         # 3 buckets x 5 fields = 15 fields (Phase 87.4 D-05: "skill" dropped).
         for bucket in ("conv", "parity", "recov"):
-            assert getattr(resp, f"section2_score_gap_{bucket}_mean") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_n") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_p_value") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_ci_low") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_ci_high") is None
+            assert getattr(resp, f"score_gap_{bucket}_mean") is None
+            assert getattr(resp, f"score_gap_{bucket}_n") is None
+            assert getattr(resp, f"score_gap_{bucket}_p_value") is None
+            assert getattr(resp, f"score_gap_{bucket}_ci_low") is None
+            assert getattr(resp, f"score_gap_{bucket}_ci_high") is None
 
     def test_score_gap_material_response_new_fields_round_trip(self) -> None:
-        """Setting section2_score_gap_conv_mean=0.05 and _conv_n=42 round-trips
+        """Setting score_gap_conv_mean=0.05 and _conv_n=42 round-trips
         through model_dump() and model_validate()."""
         from app.schemas.endgames import ScoreGapMaterialResponse
 
@@ -3728,22 +3728,22 @@ class TestPhase872SchemaFields:
             material_rows=[],
             timeline=[],
             timeline_window=100,
-            section2_score_gap_conv_mean=0.05,
-            section2_score_gap_conv_n=42,
-            section2_score_gap_conv_p_value=0.03,
-            section2_score_gap_conv_ci_low=0.01,
-            section2_score_gap_conv_ci_high=0.09,
+            score_gap_conv_mean=0.05,
+            score_gap_conv_n=42,
+            score_gap_conv_p_value=0.03,
+            score_gap_conv_ci_low=0.01,
+            score_gap_conv_ci_high=0.09,
         )
         dumped = resp.model_dump()
-        assert dumped["section2_score_gap_conv_mean"] == pytest.approx(0.05)
-        assert dumped["section2_score_gap_conv_n"] == 42
-        assert dumped["section2_score_gap_conv_p_value"] == pytest.approx(0.03)
-        assert dumped["section2_score_gap_conv_ci_low"] == pytest.approx(0.01)
-        assert dumped["section2_score_gap_conv_ci_high"] == pytest.approx(0.09)
+        assert dumped["score_gap_conv_mean"] == pytest.approx(0.05)
+        assert dumped["score_gap_conv_n"] == 42
+        assert dumped["score_gap_conv_p_value"] == pytest.approx(0.03)
+        assert dumped["score_gap_conv_ci_low"] == pytest.approx(0.01)
+        assert dumped["score_gap_conv_ci_high"] == pytest.approx(0.09)
         # Round-trip
         resp2 = ScoreGapMaterialResponse.model_validate(dumped)
-        assert resp2.section2_score_gap_conv_mean == pytest.approx(0.05)
-        assert resp2.section2_score_gap_conv_n == 42
+        assert resp2.score_gap_conv_mean == pytest.approx(0.05)
+        assert resp2.score_gap_conv_n == 42
 
     def test_material_row_does_not_have_opponent_score_field(self) -> None:
         """After Phase 87.2 migration, MaterialRow no longer has opponent_score
@@ -3912,7 +3912,7 @@ class TestPhase872PerBucketDeltaES:
     def test_per_bucket_full_cohort_paired_z(self) -> None:
         """15 Conv-bucket spans all with gap=+0.1 (zero variance).
 
-        section2_score_gap_conv_mean = 0.1, n=15, p_value populated (n>=10),
+        score_gap_conv_mean = 0.1, n=15, p_value populated (n>=10),
         ci_low == ci_high == 0.1 (zero-variance collapse per helper contract).
         """
 
@@ -3943,17 +3943,17 @@ class TestPhase872PerBucketDeltaES:
         empty = self._make_wdl(0, 0, 0)
         gaps_by_bucket = {"conversion": [0.1] * n, "parity": [], "recovery": []}
         result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
-        assert result.section2_score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
-        assert result.section2_score_gap_conv_n == n
-        assert result.section2_score_gap_conv_p_value is not None  # n >= 10
+        assert result.score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
+        assert result.score_gap_conv_n == n
+        assert result.score_gap_conv_p_value is not None  # n >= 10
         # Zero-variance collapse: ci_low == ci_high == mean.
-        assert result.section2_score_gap_conv_ci_low is not None
-        assert result.section2_score_gap_conv_ci_high is not None
-        assert result.section2_score_gap_conv_ci_low == pytest.approx(0.1, abs=1e-9)
-        assert result.section2_score_gap_conv_ci_high == pytest.approx(0.1, abs=1e-9)
+        assert result.score_gap_conv_ci_low is not None
+        assert result.score_gap_conv_ci_high is not None
+        assert result.score_gap_conv_ci_low == pytest.approx(0.1, abs=1e-9)
+        assert result.score_gap_conv_ci_high == pytest.approx(0.1, abs=1e-9)
 
     def test_per_bucket_zero_cohort_returns_none_mean(self) -> None:
-        """Bucket with n=0 returns section2_score_gap_*_mean=None (not 0.0).
+        """Bucket with n=0 returns score_gap_*_mean=None (not 0.0).
 
         The helper compute_paired_difference_test returns (0.0, None, None, None)
         for empty input. The service must gate this to None on the wire to prevent
@@ -3965,18 +3965,18 @@ class TestPhase872PerBucketDeltaES:
         # Only Conv bucket has data; parity and recovery are empty.
         gaps_by_bucket = {"conversion": [0.1] * 5, "parity": [], "recovery": []}
         result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
-        assert result.section2_score_gap_parity_mean is None
-        assert result.section2_score_gap_parity_n == 0
-        assert result.section2_score_gap_recov_mean is None
-        assert result.section2_score_gap_recov_n == 0
+        assert result.score_gap_parity_mean is None
+        assert result.score_gap_parity_n == 0
+        assert result.score_gap_recov_mean is None
+        assert result.score_gap_recov_n == 0
 
     # Phase 87.4 (D-05): test_skill_equal_weighted_mean_three_active_buckets,
     # test_skill_denominator_drop_below_floor, test_skill_all_below_floor_returns_none,
     # and test_skill_ci_propagation_variance_of_sum deleted alongside the
-    # ScoreGapMaterialResponse.section2_score_gap_skill_* field family.
+    # ScoreGapMaterialResponse.score_gap_skill_* field family.
 
     def test_sign_convention_positive_means_above_stockfish(self) -> None:
-        """Positive section2_score_gap_conv_mean means user outperformed Stockfish baseline.
+        """Positive score_gap_conv_mean means user outperformed Stockfish baseline.
 
         Fixture: gaps_by_bucket with one conv gap = +0.1
         (exit_score 0.1 above ES_entry). Mean must be +0.1 (NOT -0.1).
@@ -3988,9 +3988,9 @@ class TestPhase872PerBucketDeltaES:
         gaps_by_bucket = {"conversion": [0.1], "parity": [], "recovery": []}
         result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
         # n=1 → mean populated, p/CI gated (per compute_paired_difference_test contract).
-        assert result.section2_score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
-        assert result.section2_score_gap_conv_mean is not None
-        assert result.section2_score_gap_conv_mean > 0  # sign check
+        assert result.score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
+        assert result.score_gap_conv_mean is not None
+        assert result.score_gap_conv_mean > 0  # sign check
 
 
 # Phase 87.4 (D-05): TestEndgameSkillRateMean class deleted alongside the
@@ -4334,9 +4334,9 @@ class TestPercentileGates:
         )
         assert result.score_gap_percentile == 72.5
 
-    # --- Site B: section2 conv / parity (single-N gates with mean-is-not-None) -
+    # --- Site B: score-gap-bucket conv / parity (single-N gates with mean-is-not-None) -
 
-    def test_section2_conv_percentile_below_floor_is_none(self) -> None:
+    def test_score_gap_bucket_conv_percentile_below_floor_is_none(self) -> None:
         """conv_n = 9 -> conv percentile gated to None (single-N gate fails)."""
         endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
@@ -4344,13 +4344,15 @@ class TestPercentileGates:
         result = _compute_score_gap_material(
             endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
         )
-        assert result.section2_score_gap_conv_n == 9
-        assert result.section2_score_gap_conv_percentile is None
+        assert result.score_gap_conv_n == 9
+        assert result.score_gap_conv_percentile is None
 
-    def test_section2_conv_percentile_with_percentile_rows_reflects_table_value(self) -> None:
+    def test_score_gap_bucket_conv_percentile_with_percentile_rows_reflects_table_value(
+        self,
+    ) -> None:
         """D-12 / PCTL-07: conv chip is sourced from percentile_rows, not per-request N-gate.
 
-        When percentile_rows is provided with section2_score_gap_conv, the chip
+        When percentile_rows is provided with score_gap_conv, the chip
         field reflects the table value regardless of conv_n.
         """
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
@@ -4363,7 +4365,7 @@ class TestPercentileGates:
         gaps_by_bucket = {"conversion": [0.0] * 10, "parity": [], "recovery": []}
         # Phase 94.4 D-08: nested shape.
         percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
-            "section2_score_gap_conv": {
+            "score_gap_conv": {
                 "blitz": PercentileRow(
                     value=0.0,
                     percentile=41.0,
@@ -4379,10 +4381,10 @@ class TestPercentileGates:
             gaps_by_bucket=gaps_by_bucket,
             percentile_rows=percentile_rows,
         )
-        assert result.section2_score_gap_conv_n == 10
-        assert result.section2_score_gap_conv_percentile == 41.0
+        assert result.score_gap_conv_n == 10
+        assert result.score_gap_conv_percentile == 41.0
 
-    def test_section2_parity_percentile_below_floor_is_none(self) -> None:
+    def test_score_gap_bucket_parity_percentile_below_floor_is_none(self) -> None:
         """parity_n = 9 -> parity percentile None."""
         endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
         non_endgame_wdl = self._make_wdl(wins=20, draws=0, losses=0)
@@ -4390,13 +4392,15 @@ class TestPercentileGates:
         result = _compute_score_gap_material(
             endgame_wdl, non_endgame_wdl, [], gaps_by_bucket=gaps_by_bucket
         )
-        assert result.section2_score_gap_parity_n == 9
-        assert result.section2_score_gap_parity_percentile is None
+        assert result.score_gap_parity_n == 9
+        assert result.score_gap_parity_percentile is None
 
-    def test_section2_parity_percentile_with_percentile_rows_reflects_table_value(self) -> None:
+    def test_score_gap_bucket_parity_percentile_with_percentile_rows_reflects_table_value(
+        self,
+    ) -> None:
         """D-12 / PCTL-07: parity chip is sourced from percentile_rows, not per-request N-gate.
 
-        When percentile_rows is provided with section2_score_gap_parity, the chip
+        When percentile_rows is provided with score_gap_parity, the chip
         field reflects the table value regardless of parity_n.
         """
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
@@ -4409,7 +4413,7 @@ class TestPercentileGates:
         gaps_by_bucket = {"conversion": [], "parity": [0.0] * 10, "recovery": []}
         # Phase 94.4 D-08: nested shape.
         percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
-            "section2_score_gap_parity": {
+            "score_gap_parity": {
                 "blitz": PercentileRow(
                     value=0.0,
                     percentile=68.0,
@@ -4425,10 +4429,10 @@ class TestPercentileGates:
             gaps_by_bucket=gaps_by_bucket,
             percentile_rows=percentile_rows,
         )
-        assert result.section2_score_gap_parity_n == 10
-        assert result.section2_score_gap_parity_percentile == 68.0
+        assert result.score_gap_parity_n == 10
+        assert result.score_gap_parity_percentile == 68.0
 
-    def test_section2_empty_cohort_mean_none_yields_percentile_none(self) -> None:
+    def test_score_gap_bucket_empty_cohort_mean_none_yields_percentile_none(self) -> None:
         """Empty conv/parity cohorts (mean is None) yield percentile None even
         when the dual-N gate on Endgame Score Gap clears.
 
@@ -4440,10 +4444,10 @@ class TestPercentileGates:
         # No gaps in any bucket -> _compute_per_bucket_score_gap returns
         # mean=None for both conv and parity.
         result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
-        assert result.section2_score_gap_conv_mean is None
-        assert result.section2_score_gap_parity_mean is None
-        assert result.section2_score_gap_conv_percentile is None
-        assert result.section2_score_gap_parity_percentile is None
+        assert result.score_gap_conv_mean is None
+        assert result.score_gap_parity_mean is None
+        assert result.score_gap_conv_percentile is None
+        assert result.score_gap_parity_percentile is None
 
     def test_recovery_percentile_is_emitted_per_d05a(self) -> None:
         """Phase 94.4 D-05a: Recovery Score Gap chip is RESCUED under peer-relative.
@@ -4453,8 +4457,8 @@ class TestPercentileGates:
         rating component of opponent strength normalises naturally inside a
         same-rated cohort, so the field is restored.
 
-        The legacy section2_score_gap_recov_percentile field name (mirroring
-        the section2 prefix used for conv/parity) is intentionally NOT used.
+        The legacy score_gap_recov_percentile field name (mirroring
+        the score-gap-bucket family used for conv/parity) is intentionally NOT used.
         The rescued chip lives at ``recovery_score_gap_percentile`` to mirror
         the CdfMetricId literal ``recovery_score_gap`` (D-13 ENUM) used to
         key the per-(metric, TC) percentile rows.
@@ -4472,9 +4476,9 @@ class TestPercentileGates:
         # When no percentile_rows are passed the chip is None (same suppression
         # semantics as score_gap_percentile et al. without a DB-fed mapping).
         assert result.recovery_score_gap_percentile is None
-        # The legacy section2_* name remains absent — D-05a renames to
+        # The legacy score_gap_bucket_* name remains absent — D-05a renames to
         # match the CdfMetricId literal.
-        assert "section2_score_gap_recov_percentile" not in ScoreGapMaterialResponse.model_fields
+        assert "score_gap_recov_percentile" not in ScoreGapMaterialResponse.model_fields
 
 
 # ── Phase 94.4 Plan 05c Task 2: _aggregate_per_tc_percentile helper ───────────

@@ -104,7 +104,7 @@ from app.services.canonical_slice_sql import (
     per_user_cte_median_anchor,
     per_user_cte_net_flag_rate,
     per_user_cte_score_gap_tc,
-    per_user_cte_section2_tc,
+    per_user_cte_score_gap_bucket_tc,
     per_user_cte_time_pressure_score_gap,
     selected_users_cte,
 )
@@ -150,8 +150,8 @@ STAGE_A_METRIC: CdfMetricId = "score_gap"
 # COHORT_PERCENTILE_CDF outer key).
 STAGE_B_METRIC_FAMILIES: tuple[CdfMetricId, ...] = (
     "achievable_score_gap",
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
+    "score_gap_conv",
+    "score_gap_parity",
     "recovery_score_gap",
     "time_pressure_score_gap",
     "clock_gap",
@@ -180,16 +180,16 @@ def _per_user_cte_for_family_and_tc(
         return per_user_cte_score_gap_tc(tc, source="single_user", snapshot_date=None)
     if family == "achievable_score_gap":
         return per_user_cte_achievable_tc(tc, source="single_user", snapshot_date=None)
-    if family == "section2_score_gap_conv":
-        return per_user_cte_section2_tc(
+    if family == "score_gap_conv":
+        return per_user_cte_score_gap_bucket_tc(
             tc, source="single_user", snapshot_date=None, bucket_label="conversion"
         )
-    if family == "section2_score_gap_parity":
-        return per_user_cte_section2_tc(
+    if family == "score_gap_parity":
+        return per_user_cte_score_gap_bucket_tc(
             tc, source="single_user", snapshot_date=None, bucket_label="parity"
         )
     if family == "recovery_score_gap":
-        return per_user_cte_section2_tc(
+        return per_user_cte_score_gap_bucket_tc(
             tc, source="single_user", snapshot_date=None, bucket_label="recovery"
         )
     if family == "time_pressure_score_gap":

@@ -26,16 +26,16 @@ import {
   BUCKET_DISPLAY_LABELS,
   BUCKET_DISPLAY_LABELS_WITH_METRIC,
   FIXED_GAUGE_ZONES,
-  SECTION2_DISPLAY_SHIFT,
+  SCORE_GAP_BUCKET_DISPLAY_SHIFT,
 } from '@/lib/endgameMetrics';
 // Per-bucket neutral bands for the Section 2 Delta-ES Score Gap bullet (D-02 / Plan 01).
 import {
-  SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN,
-  SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX,
-  SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN,
-  SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX,
-  SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN,
-  SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX,
+  SCORE_GAP_CONV_NEUTRAL_MIN,
+  SCORE_GAP_CONV_NEUTRAL_MAX,
+  SCORE_GAP_PARITY_NEUTRAL_MIN,
+  SCORE_GAP_PARITY_NEUTRAL_MAX,
+  SCORE_GAP_RECOV_NEUTRAL_MIN,
+  SCORE_GAP_RECOV_NEUTRAL_MAX,
 } from '@/generated/endgameZones';
 import type { MaterialBucket, MaterialRow } from '@/types/endgames';
 
@@ -66,14 +66,14 @@ interface EndgameMetricCardProps {
    * (e.g. 45.5 for 45.5%). Computed by the caller from `row.games / totalGames`. */
   sharePct: number;
   /** Phase 87.2: 5 eval-baseline Delta-ES Score Gap fields from
-   * ScoreGapMaterialResponse.section2_score_gap_{conv,parity,recov}_*. */
+   * ScoreGapMaterialResponse.score_gap_{conv,parity,recov}_*. */
   scoreGapMean: number | null;
   scoreGapN: number | null;
   scoreGapPValue: number | null;
   scoreGapCiLow: number | null;
   scoreGapCiHigh: number | null;
   /** Phase 94 (PCTL-03/04) + Phase 94.4 D-05a: cohort percentile [0,100]
-   *  sourced from ScoreGapMaterialResponse.section2_score_gap_{conv,parity}_percentile
+   *  sourced from ScoreGapMaterialResponse.score_gap_{conv,parity}_percentile
    *  for conversion/parity, and `recovery_score_gap_percentile` (CdfMetricId-mirror
    *  rescue field) for recovery. Pre-94.4 the recovery slot was hard-suppressed —
    *  D-05a rescues it under the peer-relative cohort framing (same-rated
@@ -126,20 +126,20 @@ export function EndgameMetricCard({
   const gapN = scoreGapN ?? 0;
   const showGapRow = gapN > 0;
 
-  const { section2NeutralMin, section2NeutralMax } = useMemo(
+  const { neutralMin, neutralMax } = useMemo(
     () => ({
-      section2NeutralMin:
+      neutralMin:
         bucket === 'conversion'
-          ? SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN
+          ? SCORE_GAP_CONV_NEUTRAL_MIN
           : bucket === 'parity'
-            ? SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN
-            : SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN,
-      section2NeutralMax:
+            ? SCORE_GAP_PARITY_NEUTRAL_MIN
+            : SCORE_GAP_RECOV_NEUTRAL_MIN,
+      neutralMax:
         bucket === 'conversion'
-          ? SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX
+          ? SCORE_GAP_CONV_NEUTRAL_MAX
           : bucket === 'parity'
-            ? SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX
-            : SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX,
+            ? SCORE_GAP_PARITY_NEUTRAL_MAX
+            : SCORE_GAP_RECOV_NEUTRAL_MAX,
     }),
     [bucket],
   );
@@ -149,10 +149,10 @@ export function EndgameMetricCard({
   // Recov by +0.06 (each = midpoint of the metric's calibrated band). The
   // displayed value, neutral-band edges, and formatted text are all shifted;
   // gapColor below stays on RAW values so zone tinting is unaffected.
-  const displayShift = SECTION2_DISPLAY_SHIFT[bucket];
+  const displayShift = SCORE_GAP_BUCKET_DISPLAY_SHIFT[bucket];
   const displayedValue = (gapMean ?? 0) + displayShift;
-  const displayedNeutralMin = section2NeutralMin + displayShift;
-  const displayedNeutralMax = section2NeutralMax + displayShift;
+  const displayedNeutralMin = neutralMin + displayShift;
+  const displayedNeutralMax = neutralMax + displayShift;
   const gapFormatted =
     gapMean != null
       ? (displayedValue >= 0 ? '+' : '') + `${Math.round(displayedValue * 100)}%`
@@ -163,9 +163,9 @@ export function EndgameMetricCard({
   // the LLM zone semantics (which still reason about raw Conv ΔES space).
   const gapColor: string | undefined =
     gapMean != null
-      ? gapMean < section2NeutralMin
+      ? gapMean < neutralMin
         ? ZONE_DANGER
-        : gapMean >= section2NeutralMax
+        : gapMean >= neutralMax
           ? ZONE_SUCCESS
           : undefined
       : undefined;
