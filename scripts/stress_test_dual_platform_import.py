@@ -54,6 +54,8 @@ from app.services.import_service import JobState, create_job, get_job, run_impor
 DEFAULT_SAMPLE_INTERVAL_S: float = 5.0
 DEFAULT_DB_CONTAINER: str = "flawchess-dev-db-1"
 DEFAULT_OUTPUT_DIR: Path = Path("reports/phase95-stress-data")
+# Dev DB name is "flawchess" per app.core.config.settings.DATABASE_URL;
+# the plan (95-02-PLAN.md line 107) said "flawchess_dev" which was a plan-side typo.
 PG_DBNAME: str = "flawchess"
 
 # Columns for the docker-stats CSV.
