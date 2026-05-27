@@ -10,11 +10,9 @@
  * legacy `p23` token for screen readers per D-06b.
  *
  * Per CONTEXT D-07: tooltip body is 4 bullets per chip:
- *   1. Direct percentile statement ("Your <em>recent</em> {metric} ({value})
- *      is in the top/bottom X% of ~{rating}-rated players{ in {tc} |
- *      , aggregated across...}."). `metricValue` is optional — when omitted,
- *      the "(value)" fragment is dropped (e.g. Time Pressure Score Gap chip
- *      exposes only the percentile, no raw value).
+ *   1. Direct percentile statement ("Your <em>recent</em> {metric} is in the
+ *      top/bottom X% of ~{rating}-rated players{ in {tc} | , aggregated
+ *      across...}.").
  *   2. Recent-games basis (TC-scoped per Plan 05; vs +/-100 Elo opponents).
  *   3. Filter independence (kept verbatim from 94.3, `COPY_FILTER_INDEPENDENCE`).
  *   4. Rating-anchor disclosure (Lichess vs chess.com source; chess.com sources
@@ -109,11 +107,6 @@ export interface PercentileChipProps {
   chesscomRawRating?: number;
   /** User-facing metric label used in aria-label. */
   metricLabel: string;
-  /** Pre-formatted metric value (e.g. "+3%", "-12%", "+5%") rendered inline in
-   *  the popover bullet 1 — "Your recent {metricLabel} ({metricValue}) is in
-   *  the top X% ...". Omit when the chip has no raw value to display (e.g.
-   *  Time Pressure Score Gap exposes only the percentile). */
-  metricValue?: string;
   /** Becomes data-testid on the trigger; popover Content uses `${testId}-popover`. */
   testId: string;
 }
@@ -144,7 +137,6 @@ function deriveBandColor(pct: number): string {
 interface PopoverBodyProps {
   percentile: number;
   metricLabel: string;
-  metricValue: string | undefined;
   tc: TimeControlBucket | undefined;
   anchorRating: number;
   anchorSource: 'lichess' | 'chesscom';
@@ -154,7 +146,6 @@ interface PopoverBodyProps {
 function PercentileChipPopoverBody({
   percentile,
   metricLabel,
-  metricValue,
   tc,
   anchorRating,
   anchorSource,
@@ -174,12 +165,10 @@ function PercentileChipPopoverBody({
     tc !== undefined
       ? ` in ${tc}`
       : ', aggregated across the time controls you play';
-  const valueFragment = metricValue !== undefined ? ` (${metricValue})` : '';
   const bullet1 = (
     <>
-      Your <em>recent</em> {metricLabel}
-      {valueFragment} is in the {directionWord} {percentForCopy}% of ~{anchorRating}-rated
-      players{cohortSuffix}.
+      Your <em>recent</em> {metricLabel} is in the {directionWord} {percentForCopy}% of
+      ~{anchorRating}-rated players{cohortSuffix}.
     </>
   );
   const bullet2 =
@@ -225,7 +214,6 @@ export function PercentileChip({
   anchorSource,
   chesscomRawRating,
   metricLabel,
-  metricValue,
   testId,
 }: PercentileChipProps): React.ReactElement {
   const [open, setOpen] = React.useState(false);
@@ -318,7 +306,6 @@ export function PercentileChip({
           <PercentileChipPopoverBody
             percentile={percentile}
             metricLabel={metricLabel}
-            metricValue={metricValue}
             tc={tc}
             anchorRating={anchorRating}
             anchorSource={anchorSource}

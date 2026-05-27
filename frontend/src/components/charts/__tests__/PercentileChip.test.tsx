@@ -167,84 +167,50 @@ describe('PercentileChip — chip face (Phase 94.4)', () => {
 });
 
 describe('PercentileChip — popover bullets (Phase 94.4)', () => {
-  // Test 7: per-TC bullet 1 — direct percentile statement with metricValue
-  it('per-TC popover bullet 1 reads "Your recent {metric} ({value}) is in the bottom 23% of ~1600-rated players in bullet."', () => {
-    render(
-      <PercentileChip
-        percentile={23}
-        flavor="time-pressure-score-gap"
-        tc="bullet"
-        anchorRating={1600}
-        anchorSource="lichess"
-        metricLabel="Time-Pressure Score Gap"
-        metricValue="-4%"
-        testId={TID}
-      />,
-    );
+  // Test 7: per-TC bullet 1 — direct percentile statement
+  it('per-TC popover bullet 1 reads "Your recent {metric} is in the bottom 23% of ~1600-rated players in bullet."', () => {
+    renderChip(23, {
+      flavor: 'time-pressure-score-gap',
+      tc: 'bullet',
+      anchorRating: 1600,
+      metricLabel: 'Time-Pressure Score Gap',
+    });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'Your recent Time-Pressure Score Gap (-4%) is in the bottom 23% of ~1600-rated players in bullet.',
+      'Your recent Time-Pressure Score Gap is in the bottom 23% of ~1600-rated players in bullet.',
     );
   });
 
-  // Test 8: aggregated bullet 1 — direct percentile statement with metricValue
-  it('aggregated popover bullet 1 reads "Your recent {metric} ({value}) is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play."', () => {
-    render(
-      <PercentileChip
-        percentile={23}
-        flavor="score-gap"
-        anchorRating={1600}
-        anchorSource="lichess"
-        metricLabel="Endgame Score Gap"
-        metricValue="-2%"
-        testId={TID}
-      />,
-    );
+  // Test 8: aggregated bullet 1 — direct percentile statement
+  it('aggregated popover bullet 1 reads "Your recent {metric} is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play."', () => {
+    renderChip(23, {
+      flavor: 'score-gap',
+      anchorRating: 1600,
+      metricLabel: 'Endgame Score Gap',
+    });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'Your recent Endgame Score Gap (-2%) is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play.',
+      'Your recent Endgame Score Gap is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play.',
     );
   });
 
   // Test 8b: "top X%" form when percentile >= 50 (pct=90 → top 10%)
   it('high-percentile bullet 1 uses "top {100-pct}%" form (pct=90 → top 10%)', () => {
-    render(
-      <PercentileChip
-        percentile={90}
-        flavor="score-gap"
-        anchorRating={1600}
-        anchorSource="lichess"
-        metricLabel="Endgame Score Gap"
-        metricValue="+5%"
-        testId={TID}
-      />,
-    );
-    fireEvent.click(screen.getByTestId(TID));
-    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    expect(body).toContain(
-      'Your recent Endgame Score Gap (+5%) is in the top 10% of ~1600-rated players, aggregated across the time controls you play.',
-    );
-  });
-
-  // Test 8c: metricValue omitted — bullet 1 has no parentheses
-  it('bullet 1 omits "(value)" parens when metricValue is undefined', () => {
-    renderChip(70, {
-      flavor: 'time-pressure-score-gap',
-      tc: 'blitz',
+    renderChip(90, {
+      flavor: 'score-gap',
       anchorRating: 1600,
-      metricLabel: 'Time Pressure Score Gap',
+      metricLabel: 'Endgame Score Gap',
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'Your recent Time Pressure Score Gap is in the top 30% of ~1600-rated players in blitz.',
+      'Your recent Endgame Score Gap is in the top 10% of ~1600-rated players, aggregated across the time controls you play.',
     );
-    expect(body).not.toContain('Time Pressure Score Gap (');
   });
 
-  // Test 8d: "recent" is wrapped in <em> for emphasis
+  // Test 8c: "recent" is wrapped in <em> for emphasis
   it('bullet 1 wraps "recent" in an <em> element', () => {
     renderChip(40, { flavor: 'score-gap', anchorRating: 1600 });
     fireEvent.click(screen.getByTestId(TID));

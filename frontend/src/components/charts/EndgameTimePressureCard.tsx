@@ -191,7 +191,6 @@ function ClockGapHeaderRow({
             anchorSource={ratingAnchor.source_platform}
             chesscomRawRating={ratingAnchor.chesscom_raw_rating ?? undefined}
             metricLabel="Clock Gap"
-            metricValue={formattedGapValue}
             testId={`time-pressure-card-${card.tc}-clock-gap-chip`}
           />
         </span>
@@ -259,7 +258,6 @@ function NetFlagRateRow({
             anchorSource={ratingAnchor.source_platform}
             chesscomRawRating={ratingAnchor.chesscom_raw_rating ?? undefined}
             metricLabel="Net Flag Rate"
-            metricValue={formatNetTimeoutRate(card.net_timeout_rate)}
             testId={`time-pressure-card-${card.tc}-net-flag-rate-chip`}
           />
         </span>

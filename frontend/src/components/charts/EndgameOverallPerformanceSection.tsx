@@ -202,7 +202,6 @@ export function EndgameOverallPerformanceSection({
                           dominantAnchor.chesscom_raw_rating ?? undefined
                         }
                         metricLabel="Achievable Score Gap"
-                        metricValue={achievableGapFormatted}
                         testId="achievable-score-gap-percentile-chip"
                       />
                     ) : undefined
@@ -259,7 +258,6 @@ export function EndgameOverallPerformanceSection({
                           dominantAnchor.chesscom_raw_rating ?? undefined
                         }
                         metricLabel="Endgame Score Gap"
-                        metricValue={gapFormatted}
                         testId="endgame-score-gap-percentile-chip"
                       />
                     ) : undefined

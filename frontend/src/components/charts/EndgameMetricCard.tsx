@@ -262,7 +262,6 @@ export function EndgameMetricCard({
                           dominantAnchor.chesscom_raw_rating ?? undefined
                         }
                         metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
-                        metricValue={gapFormatted}
                         testId={`${tileTestId}-percentile-chip`}
                       />
                     ) : undefined
