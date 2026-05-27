@@ -35,6 +35,7 @@ from app.services.canonical_slice_sql import (
     TIME_PRESSURE_CLOCK_PCT_THRESHOLD,
     TIME_PRESSURE_MIN_PRESSURED_N,
     TimeControlBucket,
+    _chesscom_conversion_values_sql,
     _recent_capped_per_tc_cte,
     elo_bucket_expr,
     equal_footing_filter_sql,
@@ -43,7 +44,56 @@ from app.services.canonical_slice_sql import (
     selected_users_cte,
     sparse_exclusion_sql,
 )
+from app.services.chesscom_to_lichess import CHESSCOM_BLITZ_TO_LICHESS
 from app.services.global_percentile_cdf import CdfMetricId
+
+# ---------------------------------------------------------------------------
+# Phase 94.4 Plan 10 Task 1.0 — Baseline SQL for the non-blend regression guard.
+#
+# Captured from ``per_user_cte_median_anchor('rapid', source='benchmark')``
+# at the pre-Task-1 git state (a9d5431a). This constant is the regression
+# pin for Plan 04's cohort-CDF benchmark-side call path. Test A1 asserts
+# byte-for-byte equality against this string — any drift in the non-blend
+# code path (whitespace, column reorder, helper extraction, comment change)
+# trips the test deterministically.
+# ---------------------------------------------------------------------------
+
+_BASELINE_PER_USER_CTE_MEDIAN_ANCHOR_RAPID_BENCHMARK: str = (
+    "recent_capped AS (\n"
+    "  SELECT g.id, g.user_id, g.user_color, g.result, g.played_at\n"
+    "  FROM (\n"
+    "    SELECT g.*,\n"
+    "           row_number() OVER (PARTITION BY g.user_id\n"
+    "                              ORDER BY g.played_at DESC) AS rn\n"
+    "    FROM games g\n"
+    "    JOIN selected_users su ON su.user_id = g.user_id\n"
+    "    WHERE g.rated AND NOT g.is_computer_game\n"
+    "      AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL\n"
+    "      AND g.played_at >= NOW() - INTERVAL '36 months'\n"
+    "      AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100\n"
+    "      AND g.time_control_bucket = 'rapid'\n"
+    "  ) g\n"
+    "  WHERE g.rn <= 3000\n"
+    "),\n"
+    "recent_capped_no_daily AS (\n"
+    "  SELECT rc.*\n"
+    "  FROM recent_capped rc\n"
+    "  JOIN games g ON g.id = rc.id\n"
+    "  WHERE NOT (g.platform = 'chess.com' AND g.time_control_str LIKE '1/%')\n"
+    "    \n"
+    "),\n"
+    "per_user_anchor AS (\n"
+    "  SELECT\n"
+    "    rc.user_id,\n"
+    "    percentile_cont(0.5) WITHIN GROUP (ORDER BY (CASE WHEN g.user_color::text='white' THEN g.white_rating ELSE g.black_rating END))::int AS anchor_rating,\n"
+    "    count(*) AS n_games\n"
+    "  FROM recent_capped_no_daily rc\n"
+    "  JOIN games g ON g.id = rc.id\n"
+    "  GROUP BY rc.user_id\n"
+    "  HAVING count(*) >= 30\n"
+    ")"
+)
+
 
 # ---------------------------------------------------------------------------
 # Parametrise constants.
