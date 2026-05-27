@@ -436,9 +436,15 @@ export function EndgamesPage() {
                         etc.) the same way it is computed for each benchmark user.
                       </li>
                       <li>
-                        <strong>Look up your percentile in the cohort distribution.</strong> The benchmark cell
-                        stores 99 precomputed percentile breakpoints for that metric. Your value is interpolated
-                        against those breakpoints to produce a percentile in [1, 99].
+                        <strong>Look up your percentile in the cohort distribution, per time control.</strong>
+                        {' '}Steps 1-3 are performed independently for each time control you play. For each TC,
+                        the benchmark cell stores 99 precomputed percentile breakpoints for that metric; your
+                        per-TC value is interpolated against those breakpoints to produce a per-TC percentile.
+                        For page-level chips that span time controls (Endgame Score Gap, Achievable Score Gap,
+                        Conversion, Parity, Recovery), the per-TC percentiles are then combined into a single
+                        chip value via a game-count-weighted mean, so the time controls you play most weigh
+                        most heavily. Per-TC chips on the Time Pressure cards skip this aggregation step and
+                        render their own TC's percentile directly.
                       </li>
                       <li>
                         <strong>Color and display.</strong> The integer percentile is rendered on the badge with
