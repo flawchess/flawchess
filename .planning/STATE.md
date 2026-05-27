@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.19
-milestone_name: Endgame Percentiles & LLM Statistical Reasoning
-status: "Phase 94.4 shipped — PR #145"
-last_updated: "2026-05-27T15:19:21.481Z"
+milestone: v1.20
+milestone_name: LLM Statistical Reasoning
+status: "v1.19 shipped — milestone archived; v1.20 not started"
+last_updated: "2026-05-27T15:30:00.000Z"
 last_activity: 2026-05-27
 progress:
-  total_phases: 11
-  completed_phases: 5
-  total_plans: 45
-  completed_plans: 45
-  percent: 45
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
@@ -19,18 +19,18 @@ progress:
 
 Phase: 95
 Plan: Not started
-Status: Phase 94.4 shipped — PR #145
+Status: v1.19 shipped 2026-05-27 — milestone archived; v1.20 LLM Statistical Reasoning not started
 Last activity: 2026-05-27
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-19 after v1.17 milestone)
+See: .planning/PROJECT.md (updated 2026-05-27 after v1.19 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: Planning next milestone. v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — three table-driven Endgames sections replaced with the WDL + ScoreBullet card pattern; single-bullet doctrine; eval-based ΔES Score Gap replacing the degenerate rate-based peer-diff; hypothesis tests + 95% CIs; Endgame Skill dropped and the timeline rebuilt as Endgame ELO via a logistic stretch around Actual ELO; Time Pressure reworked with benchmark-calibrated zones; inactivity-gap annotations on all 6 ordinal-axis timeline charts. Run `/gsd:new-milestone` to scope the next milestone.
+Current focus: v1.19 Endgame Percentiles shipped 2026-05-27 — peer-relative percentile chips on Endgames page (per-(metric, ELO anchor, TC) cohort CDFs, per-user blended platform rating anchors, 4-bullet tooltip with rating-anchor disclosure, filter-independent). 12 per-TC chips on Time Pressure cards. Phase 95 split into v1.20 LLM Statistical Reasoning. Run `/gsd-discuss-phase 95` to start the LLM rework, or refine v1.20 scope first.
 
 ## Milestone Progress
 
-Seventeen milestones complete (v1.0–v1.17). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88). 80 phases before v1.17; v1.17 adds 13 shipped (incl. 10 inserted decimals) — `git tag v1.17` at commit 114211c2.
+Nineteen milestones complete (v1.0–v1.19). v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied; Phase 95 split into v1.20 before milestone close. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
 
 ## Key Context
 
