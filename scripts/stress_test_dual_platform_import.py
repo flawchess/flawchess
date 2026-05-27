@@ -188,16 +188,16 @@ async def _sample_metrics(
 
         while not stop_event.is_set():
             ts = _ts_iso_utc()
-            await _sample_docker(
+            # WR-01 fix: _sample_docker now returns the parsed mem_bytes so the
+            # CSV write and peak tracker share a single docker stats observation
+            # (previously a second docker stats invocation captured the peak,
+            # causing the CSV trace and peak_mem_usage_bytes to diverge under
+            # live memory pressure, and doubling per-sample subprocess cost).
+            mem_bytes = await _sample_docker(
                 ts=ts,
                 db_container=db_container,
                 writer=docker_writer,
-                fh=docker_fh,
-                peak_mem_bytes=peak_mem_bytes,
             )
-            # Capture peak mem from the last written row (mutate via closure).
-            # Re-read from the CSV buffer approach is messy; track inline.
-            mem_bytes = await _get_docker_mem_bytes(db_container)
             if mem_bytes > peak_mem_bytes:
                 peak_mem_bytes = mem_bytes
 
@@ -205,7 +205,6 @@ async def _sample_metrics(
                 ts=ts,
                 engine=metric_engine,
                 writer=pg_writer,
-                fh=pg_fh,
             )
             if conn_count > peak_conn_count:
                 peak_conn_count = conn_count
@@ -224,39 +223,19 @@ async def _sample_metrics(
     return peak_mem_bytes, peak_conn_count
 
 
-async def _get_docker_mem_bytes(db_container: str) -> int:
-    """Return the current memory usage of db_container in bytes (0 on error)."""
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "docker",
-            "stats",
-            db_container,
-            "--no-stream",
-            "--format",
-            "{{.MemUsage}}",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
-        line = stdout.decode().strip()
-        if not line:
-            return 0
-        # "1.23GiB / 7.5GiB" — take the used (left) part.
-        used_part = line.split("/")[0].strip()
-        return _parse_mem_bytes(used_part)
-    except Exception:
-        return 0
-
-
 async def _sample_docker(
     *,
     ts: str,
     db_container: str,
     writer: "csv.DictWriter[str]",
-    fh: "object",
-    peak_mem_bytes: int,
-) -> None:
-    """Run docker stats --no-stream, parse, write one CSV row."""
+) -> int:
+    """Run docker stats --no-stream, parse, write one CSV row. Returns mem_bytes (0 on error).
+
+    WR-01 fix: single source of truth for both the CSV write and peak tracking —
+    previously the peak was captured by a second `_get_docker_mem_bytes` call,
+    which doubled the per-sample subprocess cost and could disagree with the
+    CSV row under live memory pressure.
+    """
     try:
         proc = await asyncio.create_subprocess_exec(
             "docker",
@@ -271,10 +250,10 @@ async def _sample_docker(
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10.0)
         line = stdout.decode().strip()
         if not line:
-            return
+            return 0
         parts = line.split("\t")
         if len(parts) < 3:
-            return
+            return 0
         mem_used = parts[0].split("/")[0].strip()
         mem_bytes = _parse_mem_bytes(mem_used)
         mem_perc = _parse_perc(parts[1])
@@ -287,8 +266,9 @@ async def _sample_docker(
                 "cpu_perc": f"{cpu_perc:.2f}",
             }
         )
+        return mem_bytes
     except Exception:
-        pass
+        return 0
 
 
 async def _sample_pg_activity(
@@ -296,7 +276,6 @@ async def _sample_pg_activity(
     ts: str,
     engine: object,
     writer: "csv.DictWriter[str]",
-    fh: "object",
 ) -> int:
     """Query pg_stat_activity, write one CSV row per backend, return row count."""
     sql = text(
