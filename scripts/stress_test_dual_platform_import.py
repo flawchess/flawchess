@@ -304,7 +304,9 @@ async def _sample_pg_activity(
         "EXTRACT(EPOCH FROM (NOW() - query_start)) AS query_age_s, "
         "LEFT(query, 80) AS query_excerpt "
         "FROM pg_stat_activity "
-        "WHERE datname = :dbname"
+        # IN-07 fix: filter out the sampler's own backend so peak_connection_count
+        # reflects only import-driven connections, not the +1 from this SELECT.
+        "WHERE datname = :dbname AND pid != pg_backend_pid()"
     )
     conn_count = 0
     try:
