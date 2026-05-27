@@ -216,7 +216,7 @@ function PercentileChipPopoverBody({
       return `Anchored at ~${anchorRating} Elo from ${nLichessGames} lichess games (native rating).`;
     }
     if (nChesscomGames > 0 && nLichessGames === 0) {
-      return `Anchored at ~${anchorRating} Elo from ${nChesscomGames} chess.com games (median ${chesscomMedianNative}, converted to Lichess-equivalent via ChessGoals snapshot 2026-05-26).`;
+      return `Anchored at ~${anchorRating} Elo from ${nChesscomGames} chess.com games (median ${chesscomMedianNative}, converted to Lichess-equivalent).`;
     }
     return ''; // defensive — caller should have suppressed the chip when both counts are 0
   })();
