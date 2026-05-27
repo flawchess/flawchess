@@ -25,27 +25,34 @@ TimeControlBucket = Literal["bullet", "blitz", "rapid", "classical"]
 
 
 class RatingAnchorOut(BaseModel):
-    """Per-time-control rating anchor disclosure for the percentile chip tooltip.
+    """Blended anchor + per-platform composition for the percentile chip tooltip.
 
-    Phase 94.4 D-07 bullet 4 surface — when `source_platform == 'chesscom'`,
-    `chesscom_raw_rating` is the user's pre-conversion chess.com rating; the
-    tooltip renders inline as e.g. "Anchored on your chess.com {tc}
-    ({chesscom_raw_rating} → {anchor_rating} Lichess-equivalent ...)". When
-    `source_platform == 'lichess'`, `chesscom_raw_rating` is None and the
-    tooltip drops the conversion clause. `anchor_rating` is always the
-    Lichess-equivalent (post-conversion for chess.com sources) since the cohort
-    CDF is keyed on Lichess ratings (RESEARCH Open Question 4, Plan 02 B3).
+    D-12 Reversal Amendment (CONTEXT 2026-05-27). The anchor is the
+    game-weighted median of converted-chess.com + native-lichess ratings.
+    See: .planning/notes/percentile-anchor-d12-reversal.md (rationale, risk profile).
+
+    `anchor_rating` is the blended Lichess-equivalent (post-conversion for
+    chess.com games; native for lichess games). The per-platform game-count and
+    native-median fields exist solely to support the four tooltip-disclosure
+    branches in `PercentileChipPopoverBody`:
+      (a) Mixed user (n_chesscom_games > 0 AND n_lichess_games > 0): blended
+          composition prose — names both platforms with their native medians.
+      (b) Pure-lichess user (n_chesscom_games == 0): drops the chess.com clause;
+          flags "native rating" so the user knows no conversion was applied.
+      (c) Pure-chess.com user (n_lichess_games == 0): drops the lichess clause;
+          discloses the ChessGoals snapshot conversion.
+      (d) Suppression (both counts == 0): chip suppresses entirely at the caller.
 
     Provenance: populated from the `user_rating_anchors` row written by
     `app/services/user_benchmark_percentiles_service.py::compute_anchors_for_user`
-    (Plan 05b — captures `chesscom_raw_rating` PRE-conversion when source is
-    chess.com).
+    (Plan 10 blended-anchor rewrite).
     """
 
     anchor_rating: int
-    source_platform: Literal["lichess", "chesscom"]
-    chesscom_raw_rating: int | None = None
-    n_games: int
+    n_chesscom_games: int
+    n_lichess_games: int
+    chesscom_median_native: int | None = None
+    lichess_median_native: int | None = None
 
 
 class ConversionRecoveryStats(BaseModel):

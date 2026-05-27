@@ -9,14 +9,18 @@
  * ceiling preserved per D-06a. `aria-label` preserves a direction word and the
  * legacy `p23` token for screen readers per D-06b.
  *
- * Per CONTEXT D-07: tooltip body is 4 bullets per chip:
+ * Per CONTEXT D-07 + D-12 Reversal Amendment (2026-05-27): tooltip body is 4
+ * bullets per chip:
  *   1. Direct percentile statement ("Your <em>recent</em> {metric} is in the
  *      top/bottom X% of ~{rating}-rated players{ in {tc} | , aggregated
  *      across...}.").
  *   2. Recent-games basis (TC-scoped per Plan 05; vs +/-100 Elo opponents).
  *   3. Filter independence (kept verbatim from 94.3, `COPY_FILTER_INDEPENDENCE`).
- *   4. Rating-anchor disclosure (Lichess vs chess.com source; chess.com sources
- *      with `chesscomRawRating` show the raw -> Lichess-equivalent conversion).
+ *   4. Rating-anchor disclosure — blended composition per the D-12 amendment:
+ *      (a) Mixed (nChesscomGames > 0 AND nLichessGames > 0): blended prose.
+ *      (b) Pure-lichess (nChesscomGames == 0): native-rating clause only.
+ *      (c) Pure-chess.com (nLichessGames == 0): conversion clause only.
+ *      (d) Suppression (both == 0): empty string — caller should suppress chip.
  *
  * Per CONTEXT D-07a: the 16-variant flavor enum collapses to 8 (5 page-level
  * aggregated + 3 per-TC families). All 8 flavors are `higher_is_better`
@@ -97,14 +101,19 @@ export interface PercentileChipProps {
    *  `recovery`) omit this prop — the chip is aggregated across TCs and the tooltip
    *  frames as multi-TC. */
   tc?: TimeControlBucket;
-  /** Anchor rating disclosed in popover bullet 4. Always the Lichess-equivalent
-   *  (post-conversion for chess.com sources). */
+  /** Anchor rating disclosed in popover bullet 4. Blended Lichess-equivalent
+   *  (post-conversion for chess.com games; native for lichess games). */
   anchorRating: number;
-  /** Which platform's games produced the anchor — drives bullet 4's wording. */
-  anchorSource: 'lichess' | 'chesscom';
-  /** Raw chess.com rating pre-conversion; populated when `anchorSource === 'chesscom'`.
-   *  When omitted on a chess.com source, bullet 4 falls back to the simpler form. */
-  chesscomRawRating?: number;
+  /** D-12 Reversal Amendment (2026-05-27): chess.com game count for bullet 4 disclosure.
+   *  0 for pure-lichess users. Drives the mixed / pure-lichess / pure-chess.com branch. */
+  nChesscomGames: number;
+  /** D-12 Reversal Amendment (2026-05-27): lichess game count for bullet 4 disclosure.
+   *  0 for pure-chess.com users. */
+  nLichessGames: number;
+  /** PRE-conversion chess.com native median; present when nChesscomGames > 0. */
+  chesscomMedianNative?: number;
+  /** Native lichess median; present when nLichessGames > 0. */
+  lichessMedianNative?: number;
   /** User-facing metric label used in aria-label. */
   metricLabel: string;
   /** Becomes data-testid on the trigger; popover Content uses `${testId}-popover`. */
@@ -139,8 +148,10 @@ interface PopoverBodyProps {
   metricLabel: string;
   tc: TimeControlBucket | undefined;
   anchorRating: number;
-  anchorSource: 'lichess' | 'chesscom';
-  chesscomRawRating: number | undefined;
+  nChesscomGames: number;
+  nLichessGames: number;
+  chesscomMedianNative: number | undefined;
+  lichessMedianNative: number | undefined;
 }
 
 function PercentileChipPopoverBody({
@@ -148,8 +159,10 @@ function PercentileChipPopoverBody({
   metricLabel,
   tc,
   anchorRating,
-  anchorSource,
-  chesscomRawRating,
+  nChesscomGames,
+  nLichessGames,
+  chesscomMedianNative,
+  lichessMedianNative,
 }: PopoverBodyProps): React.ReactElement {
   // Bullet 1 phrases the chip's percentile as a direct "top/bottom X% of
   // ~{rating}-rated players" statement. Same clamp as the chip face so the
@@ -176,26 +189,30 @@ function PercentileChipPopoverBody({
       ? `Based on your most recent 3000 rated games in ${tc} over the last 36 months, vs opponents within +/-100 Elo.`
       : `Based on your most recent 3000 rated games per time control over the last 36 months, vs opponents within +/-100 Elo.`;
   const bullet3 = COPY_FILTER_INDEPENDENCE;
-  // CONTEXT D-07 bullet 4: dominant-TC anchor disclosure. For aggregated chips
-  // (`tc === undefined`), the bullet still names the dominant TC's anchor inline;
-  // bullet 1's "aggregated across the time controls you play" carries the
-  // honest multi-TC framing. See Plan 05c W4 deferral — the "+ N other TCs"
-  // footnote is deferred to a v1.1 tooltip rev.
-  const tcOrAgg = tc ?? 'rating per time control';
-  let bullet4: string;
-  if (anchorSource === 'lichess') {
-    bullet4 = `Anchored on your Lichess ${tcOrAgg} (${anchorRating}).`;
-  } else if (chesscomRawRating !== undefined) {
-    bullet4 = `Anchored on your chess.com ${tcOrAgg} (${chesscomRawRating} -> ${anchorRating} Lichess-equivalent).`;
-  } else {
-    bullet4 = `Anchored on your chess.com ${tcOrAgg} (${anchorRating}).`;
-  }
+  // D-12 Reversal Amendment (2026-05-27): bullet 4 blended-composition disclosure.
+  // 4 branches per the amendment contract (locked by Plan 11 Vitest C1-C6):
+  //   (a) Mixed: blended composition prose — names both platforms with native medians.
+  //   (b) Pure-lichess: native-rating clause only (no conversion mention).
+  //   (c) Pure-chess.com: conversion clause only (ChessGoals snapshot citation).
+  //   (d) Suppression (both == 0): empty string — caller should have suppressed chip.
+  const bullet4 = (() => {
+    if (nChesscomGames > 0 && nLichessGames > 0) {
+      return `Anchored at ~${anchorRating} Elo, blending ${nChesscomGames} chess.com games (median ${chesscomMedianNative}, converted) with ${nLichessGames} lichess games (median ${lichessMedianNative}).`;
+    }
+    if (nChesscomGames === 0 && nLichessGames > 0) {
+      return `Anchored at ~${anchorRating} Elo from ${nLichessGames} lichess games (native rating).`;
+    }
+    if (nChesscomGames > 0 && nLichessGames === 0) {
+      return `Anchored at ~${anchorRating} Elo from ${nChesscomGames} chess.com games (median ${chesscomMedianNative}, converted to Lichess-equivalent via ChessGoals snapshot 2026-05-26).`;
+    }
+    return ''; // defensive — caller should have suppressed the chip when both counts are 0
+  })();
   return (
     <div className="space-y-1.5">
       <p>{bullet1}</p>
       <p>{bullet2}</p>
       <p>{bullet3}</p>
-      <p>{bullet4}</p>
+      {bullet4 !== '' && <p>{bullet4}</p>}
     </div>
   );
 }
@@ -211,8 +228,10 @@ export function PercentileChip({
   // future per-flavor copy variants without an API churn.
   tc,
   anchorRating,
-  anchorSource,
-  chesscomRawRating,
+  nChesscomGames,
+  nLichessGames,
+  chesscomMedianNative,
+  lichessMedianNative,
   metricLabel,
   testId,
 }: PercentileChipProps): React.ReactElement {
@@ -308,8 +327,10 @@ export function PercentileChip({
             metricLabel={metricLabel}
             tc={tc}
             anchorRating={anchorRating}
-            anchorSource={anchorSource}
-            chesscomRawRating={chesscomRawRating}
+            nChesscomGames={nChesscomGames}
+            nLichessGames={nLichessGames}
+            chesscomMedianNative={chesscomMedianNative}
+            lichessMedianNative={lichessMedianNative}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
