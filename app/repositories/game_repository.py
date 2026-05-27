@@ -232,9 +232,7 @@ async def bulk_insert_positions(session: AsyncSession, position_rows: list[dict]
     # after get_raw_connection()), but if the adapter ever changes we get a
     # specific, debuggable error instead.
     if raw_conn is None:
-        raise RuntimeError(
-            "asyncpg driver_connection is None — SQLAlchemy adapter changed"
-        )
+        raise RuntimeError("asyncpg driver_connection is None — SQLAlchemy adapter changed")
 
     for i in range(0, len(position_rows), _POSITION_CHUNK_SIZE):
         chunk = position_rows[i : i + _POSITION_CHUNK_SIZE]
