@@ -23,21 +23,25 @@ this to ``8 × 4 = 32 queries`` by:
    50-Elo grid (800..2400). Each anchor's K=200 nearest users by
    ``abs(anchor_rating - anchor)`` form the cohort for that cell.
 3. A user_id tiebreaker on the sort is REQUIRED for byte-identical
-   deterministic regen: when multiple users share the same anchor
-   distance, sort by ``(distance, user_id)`` so the K=200 cohort is
-   stable across runs.
+   deterministic regen: when the in-window cohort exceeds ``COHORT_MAX_USERS_PER_ANCHOR``
+   and the cap-at-MAX truncation has ties on anchor distance, sort by
+   ``(distance, user_id)`` so the cohort is stable across runs.
 
-Strict-default suppression policy (CONTEXT D-11)
-------------------------------------------------
+Suppression policy
+------------------
 
-A cell is SUPPRESSED (no entry in COHORT_PERCENTILE_CDF) when:
-- ``len(ranked) < COHORT_K_USERS_PER_ANCHOR`` (insufficient K), OR
-- ``abs(ranked[-1].anchor_rating - anchor) > COHORT_MAX_WINDOW_ELO``
-  (window too wide — the K-th nearest user is more than ±150 Elo away).
+The window (``COHORT_MAX_WINDOW_ELO``) is the primary filter — only users
+within ``±W`` Elo of the anchor are eligible. From that pool:
 
-Strict defaults are intentional. The regen report's TOP-LINE suppression
-table is the operator's signal for whether to relax the constants before
-Plan 06 backfill.
+- if ``n_in_window < COHORT_MIN_USERS_PER_ANCHOR`` → cell SUPPRESSED
+  (``insufficient_users_in_window``);
+- otherwise, the cohort is the in-window users, capped at
+  ``COHORT_MAX_USERS_PER_ANCHOR`` (nearest-anchor preferred when capping).
+
+Cohort size is therefore variable per cell (between MIN and MAX). The regen
+report's TOP-LINE suppression table surfaces both ``n_users`` (actual
+cohort size) and ``n_in_window`` (the available pool) so the operator can
+see where MAX is binding.
 
 What this script produces
 -------------------------
@@ -111,12 +115,20 @@ from app.services.global_percentile_cdf import (  # noqa: E402
 # the regen report's suppression table (HUMAN-VERIFY checkpoint at end of
 # Plan 04). Strict defaults ship unless the operator explicitly relaxes.
 
-# CONTEXT D-11 — cohort size per anchor. Higher = tighter CI, more suppression.
-COHORT_K_USERS_PER_ANCHOR: Final[int] = 200
+# CONTEXT D-11 — minimum cohort size for a cell to qualify. Below this the
+# cell suppresses. Floor on noise (~±5pp CI on any breakpoint at MIN=100).
+COHORT_MIN_USERS_PER_ANCHOR: Final[int] = 100
 
-# CONTEXT D-11 — maximum Elo distance from anchor to k-th user. Wider = more
-# coverage, looser peer-relativity.
-COHORT_MAX_WINDOW_ELO: Final[int] = 150
+# CONTEXT D-11 — maximum cohort size per cell. When the in-window pool
+# exceeds this, the cohort is capped to the nearest-anchor MAX users.
+# Tradeoff: tighter CIs in dense bands, at the cost of variable per-cell
+# precision across cells.
+COHORT_MAX_USERS_PER_ANCHOR: Final[int] = 500
+
+# CONTEXT D-11 — maximum Elo distance from anchor for a user to be eligible.
+# Anchor ± W defines the cohort window. Wider = more coverage, looser
+# peer-relativity.
+COHORT_MAX_WINDOW_ELO: Final[int] = 200
 
 # CONTEXT D-11 — anchor grid step. Must match COHORT_ANCHOR_STEP_ELO in
 # ``app/services/global_percentile_cdf.py`` (interpolate_cohort_percentile
@@ -418,41 +430,42 @@ def _build_cohort_cdf_for(
 
     For each anchor on the 50-Elo grid 800..2400:
 
-    1. Sort all rows by ``(abs(anchor_rating - anchor), user_id)`` — the
-       ``user_id`` tiebreaker is REQUIRED for byte-identical regen
-       determinism when multiple users share the same anchor distance.
-    2. Take the first K=200 as the cohort for this cell.
-    3. If ``len(ranked) < K`` → suppress (insufficient_k).
-    4. If ``abs(ranked[-1].anchor_rating - anchor) > COHORT_MAX_WINDOW_ELO``
-       → suppress (window_too_wide).
-    5. Otherwise compute 99-breakpoint CDF via ``numpy.percentile`` and
-       record under ``result[anchor]``.
+    1. Filter ``rows`` to users with ``abs(anchor_rating - anchor) <= W`` (the
+       eligibility window). This is the in-window pool ``n_in_window``.
+    2. If ``n_in_window < MIN`` → suppress (insufficient_users_in_window).
+    3. Otherwise, sort the in-window pool by ``(abs(distance), user_id)`` and
+       cap at ``MAX`` to form the cohort. The ``user_id`` tiebreaker is
+       REQUIRED for byte-identical regen determinism when capping at MAX
+       and multiple users share the same anchor distance.
+    4. Compute 99-breakpoint CDF via ``numpy.percentile`` and record under
+       ``result[anchor]``.
 
-    Returns a parallel suppression log capturing per-anchor n_users, k-th
-    distance, suppressed flag, and suppression reason. The log feeds the
-    Task 4 regen report.
+    Returns a parallel suppression log capturing per-anchor n_users (cohort
+    size), n_in_window (available pool), farthest_dist_elo (cohort width),
+    suppressed flag, and suppression reason. The log feeds the regen report.
     """
     result: dict[int, CdfTable] = {}
     log: list[_CellLogEntry] = []
     for anchor in range(COHORT_ANCHOR_MIN_ELO, COHORT_ANCHOR_MAX_ELO + 1, COHORT_ANCHOR_STEP_ELO):
-        # The (|distance|, user_id) tiebreaker is REQUIRED for byte-identical
-        # regen determinism — when multiple users share the same anchor
-        # distance, sort by user_id so the K=200 cohort is stable across runs.
-        ranked = sorted(rows, key=lambda r: (abs(r.anchor_rating - anchor), r.user_id))[
-            :COHORT_K_USERS_PER_ANCHOR
-        ]
-        n_users = len(ranked)
-        kth_dist: int = abs(ranked[-1].anchor_rating - anchor) if ranked else 0
+        in_window = [r for r in rows if abs(r.anchor_rating - anchor) <= COHORT_MAX_WINDOW_ELO]
+        n_in_window = len(in_window)
         suppressed = False
         suppression_reason: str | None = None
-        if n_users < COHORT_K_USERS_PER_ANCHOR:
+        cohort: list[_PerUserRow] = []
+        if n_in_window < COHORT_MIN_USERS_PER_ANCHOR:
             suppressed = True
-            suppression_reason = "insufficient_k"
-        elif kth_dist > COHORT_MAX_WINDOW_ELO:
-            suppressed = True
-            suppression_reason = "window_too_wide"
+            suppression_reason = "insufficient_users_in_window"
+        else:
+            # The (|distance|, user_id) tiebreaker is REQUIRED for byte-identical
+            # regen determinism — when capping at MAX, users at the same anchor
+            # distance must sort deterministically so the cohort is stable.
+            cohort = sorted(in_window, key=lambda r: (abs(r.anchor_rating - anchor), r.user_id))[
+                :COHORT_MAX_USERS_PER_ANCHOR
+            ]
+        n_users = len(cohort)
+        farthest_dist: int = abs(cohort[-1].anchor_rating - anchor) if cohort else 0
         if not suppressed:
-            values = sorted(r.metric_value for r in ranked)
+            values = sorted(r.metric_value for r in cohort)
             breakpoints = tuple(_percentile_linear(values, p) for p in range(1, 100))
             result[anchor] = CdfTable(
                 breakpoints=breakpoints,
@@ -465,7 +478,8 @@ def _build_cohort_cdf_for(
                 "anchor": anchor,
                 "tc": tc,
                 "n_users": n_users,
-                "kth_dist_elo": kth_dist,
+                "n_in_window": n_in_window,
+                "farthest_dist_elo": farthest_dist,
                 "suppressed": suppressed,
                 "suppression_reason": suppression_reason,
             }
@@ -593,16 +607,21 @@ def _render_regen_report(
     intro = (
         f"# Cohort Percentile CDF — Sliding-Window Methodology (Phase 94.4)\n\n"
         f"**Methodology:** Each cell is the 99-breakpoint empirical CDF over the "
-        f"K={COHORT_K_USERS_PER_ANCHOR} nearest-anchor users in that (metric, "
-        f"anchor, TC) cohort, ranked in Python after one per-(metric, TC) SQL "
-        f"query joining ``per_user_values × per_user_anchor`` "
-        f"(RESEARCH Pitfall 8). Anchors sweep "
-        f"{COHORT_ANCHOR_MIN_ELO}..{COHORT_ANCHOR_MAX_ELO} Elo on a "
+        f"users in the (metric, anchor, TC) cohort, where a user is eligible "
+        f"if their anchor rating is within ±{COHORT_MAX_WINDOW_ELO} Elo of the "
+        f"cell anchor. The cohort takes up to {COHORT_MAX_USERS_PER_ANCHOR} users "
+        f"from the in-window pool (nearest-anchor preferred when capping) and "
+        f"requires at least {COHORT_MIN_USERS_PER_ANCHOR} for the cell to qualify. "
+        f"Ranked in Python after one per-(metric, TC) SQL query joining "
+        f"``per_user_values × per_user_anchor`` (RESEARCH Pitfall 8). Anchors "
+        f"sweep {COHORT_ANCHOR_MIN_ELO}..{COHORT_ANCHOR_MAX_ELO} Elo on a "
         f"{COHORT_ANCHOR_STEP_ELO}-Elo grid (33 anchors per (metric, TC)). "
-        f"A cell is SUPPRESSED when ``len(ranked) < K`` "
-        f"(``insufficient_k``) or ``abs(k-th distance) > "
-        f"{COHORT_MAX_WINDOW_ELO}`` Elo (``window_too_wide``). "
-        f"Strict-default policy per CONTEXT D-11.\n\n"
+        f"A cell is SUPPRESSED when fewer than "
+        f"{COHORT_MIN_USERS_PER_ANCHOR} users fall within ±"
+        f"{COHORT_MAX_WINDOW_ELO} Elo of the anchor "
+        f"(``insufficient_users_in_window``). Cohort size is variable per "
+        f"cell — denser bands yield larger cohorts (tighter CIs) up to the "
+        f"MAX cap; sparser bands sit closer to MIN.\n\n"
         f"- **DB**: benchmark (Docker on localhost:5433, "
         f"{BENCHMARK_DB_NAME_TOKEN})\n"
         f"- **Snapshot date (recency anchor)**: {snapshot_date.isoformat()} "
@@ -614,7 +633,8 @@ def _render_regen_report(
         f"- **Generated by**: ``scripts/gen_global_percentile_cdf.py "
         f"--target benchmark --snapshot-date {snapshot_date.isoformat()}``\n\n"
         f"## Policy constants\n\n"
-        f"- ``COHORT_K_USERS_PER_ANCHOR = {COHORT_K_USERS_PER_ANCHOR}``\n"
+        f"- ``COHORT_MIN_USERS_PER_ANCHOR = {COHORT_MIN_USERS_PER_ANCHOR}``\n"
+        f"- ``COHORT_MAX_USERS_PER_ANCHOR = {COHORT_MAX_USERS_PER_ANCHOR}``\n"
         f"- ``COHORT_MAX_WINDOW_ELO = {COHORT_MAX_WINDOW_ELO}``\n"
         f"- ``COHORT_ANCHOR_STEP_ELO = {COHORT_ANCHOR_STEP_ELO}``\n"
         f"- ``COHORT_ANCHOR_MIN_ELO = {COHORT_ANCHOR_MIN_ELO}``\n"
@@ -626,9 +646,12 @@ def _render_regen_report(
         "## Per-(metric, anchor, TC) suppression-flag table (TOP-LINE)\n\n"
         "Per-cell rows for all 8 metrics × 33 anchors × 4 TCs = 1,056 cells. "
         "Sorted by metric ASC, anchor ASC, TC in canonical order (bullet, "
-        "blitz, rapid, classical).\n\n"
-        "| metric | anchor (Elo) | TC | suppressed | reason | k-th distance (Elo) | n_users |\n"
-        "|---|---:|---|---|---|---:|---:|\n"
+        "blitz, rapid, classical). ``n_users`` is the cohort size used to "
+        "compute the CDF (capped at MAX); ``n_in_window`` is the total "
+        "available pool within ±W of the anchor; ``farthest_dist`` is the "
+        "anchor distance of the furthest user actually in the cohort.\n\n"
+        "| metric | anchor (Elo) | TC | suppressed | reason | farthest_dist (Elo) | n_users | n_in_window |\n"
+        "|---|---:|---|---|---|---:|---:|---:|\n"
     )
     tc_order = {tc: i for i, tc in enumerate(ALL_TIME_CONTROLS)}
     sorted_log = sorted(
@@ -646,11 +669,12 @@ def _render_regen_report(
         tc = entry["tc"]
         suppressed = bool(entry["suppressed"])
         reason = entry["suppression_reason"] or "—"
-        kth = entry["kth_dist_elo"]
+        farthest = entry["farthest_dist_elo"]
         n_users = entry["n_users"]
+        n_in_window = entry["n_in_window"]
         rows.append(
             f"| {metric} | {anchor} | {tc} | {'Y' if suppressed else 'N'} | "
-            f"{reason} | {kth} | {n_users} |"
+            f"{reason} | {farthest} | {n_users} | {n_in_window} |"
         )
     table_body = "\n".join(rows)
 
@@ -673,22 +697,27 @@ def _render_regen_report(
     # Relaxation-guidance paragraph (cites CONTEXT D-11).
     guidance = (
         "\n\n## Relaxation guidance\n\n"
-        "If coverage in the table above is too sparse for the shipping goal "
-        "(per CONTEXT D-11 strict-default policy), the operator can choose:\n\n"
-        "- **Option A — ship strict defaults**: chip suppresses for users in "
-        "the affected (metric, anchor, TC) cells; ``interpolate_cohort_percentile`` "
-        f"returns ``None`` → frontend renders nothing. Recommended when rapid "
-        "mid-range coverage is adequate (RESEARCH Pattern 4 expects this band "
-        "to be the comfortable case).\n"
-        "- **Option B — relax K**: lower ``COHORT_K_USERS_PER_ANCHOR`` from "
-        f"{COHORT_K_USERS_PER_ANCHOR} (e.g. to 150 or 100) and rerun Task 3. "
-        "Tradeoff: wider CIs on the chip percentile.\n"
+        "If coverage in the table above is too sparse for the shipping goal, "
+        "the operator can choose:\n\n"
+        "- **Option A — ship current settings**: chip suppresses for users "
+        "in the affected (metric, anchor, TC) cells; "
+        "``interpolate_cohort_percentile`` returns ``None`` → frontend "
+        "renders nothing.\n"
+        "- **Option B — lower the MIN floor**: lower "
+        f"``COHORT_MIN_USERS_PER_ANCHOR`` from {COHORT_MIN_USERS_PER_ANCHOR} "
+        "and rerun the regen. Tradeoff: wider CIs on chips that fall in "
+        "newly-qualifying cells (~±5pp at n=100, ~±7pp at n=50).\n"
         "- **Option C — widen the window**: raise ``COHORT_MAX_WINDOW_ELO`` "
-        f"from {COHORT_MAX_WINDOW_ELO} Elo (e.g. to 200 Elo) and rerun Task 3. "
-        "Tradeoff: chip becomes less peer-relative as the window widens.\n\n"
-        "All three constants are module-level in ``scripts/gen_global_percentile_cdf.py`` "
-        "for one-line tuning. The HUMAN-VERIFY checkpoint at the end of Plan 04 "
-        "is where the operator records the chosen option.\n"
+        f"from {COHORT_MAX_WINDOW_ELO} Elo and rerun the regen. Tradeoff: "
+        "the chip becomes less peer-relative as the band widens (a "
+        "1600-anchored user gets compared against a [1600−W, 1600+W] band).\n"
+        "- **Option D — raise the MAX cap**: raise "
+        f"``COHORT_MAX_USERS_PER_ANCHOR`` from {COHORT_MAX_USERS_PER_ANCHOR} "
+        "(or remove the cap) and rerun the regen. Tradeoff: tighter CIs in "
+        "dense bands, but ``n_users`` becomes more variable across cells.\n\n"
+        "Inspect the ``n_in_window`` column above to see where MAX is binding "
+        "(``n_users == MAX < n_in_window``) vs. where MIN is the only floor "
+        "(``n_users < MAX``).\n"
     )
 
     return intro + table_header + table_body + "\n".join(coverage_lines) + guidance
