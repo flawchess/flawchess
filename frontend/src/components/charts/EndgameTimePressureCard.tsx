@@ -132,16 +132,8 @@ function ClockGapHeaderRow({
       className="flex items-center gap-1 text-sm tabular-nums mb-2"
       data-testid={`time-pressure-card-${card.tc}-clock-gap-header`}
     >
-      <span data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
-        You: <span className="font-semibold">{formatPct(card.user_avg_pct)}</span>
-      </span>
-      <span className="text-muted-foreground">•</span>
-      <span data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
-        Opp: <span className="font-semibold">{formatPct(card.opp_avg_pct)}</span>
-      </span>
-      <span className="text-muted-foreground">•</span>
       <span>
-        Gap:{' '}
+        Clock Gap:{' '}
         <span
           className="font-semibold"
           style={fontColor ? { color: fontColor } : undefined}
@@ -152,7 +144,21 @@ function ClockGapHeaderRow({
       </span>
       <MetricStatPopover
         name="Clock Gap"
-        explanation="Your average clock advantage over your opponent when the endgame begins, as a share of the starting time. Positive means you entered the endgame with more time on your clock."
+        explanation={
+          <>
+            Your average clock advantage over your opponent when the endgame
+            begins, as a share of the starting time. Positive means you
+            entered the endgame with more time on your clock. You averaged{' '}
+            <strong data-testid={`time-pressure-card-${card.tc}-my-avg-time`}>
+              {formatPct(card.user_avg_pct)}
+            </strong>{' '}
+            of your clock; opponents averaged{' '}
+            <strong data-testid={`time-pressure-card-${card.tc}-opp-avg-time`}>
+              {formatPct(card.opp_avg_pct)}
+            </strong>
+            .
+          </>
+        }
         value={gap.mean_diff_pct}
         baseline={0}
         unit="percent"

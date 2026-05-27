@@ -11,8 +11,8 @@
  * - Post-UAT structural refinements.
  */
 
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import type {
   ClockGapBullet,
@@ -176,16 +176,17 @@ describe('EndgameTimePressureCard — Clock Gap bullet', () => {
 // ─── SC-2: 3-column header row ───────────────────────────────────────────────
 
 describe('EndgameTimePressureCard — SC-2: 3-column header row', () => {
-  it('renders You/Gap/Opp in a 3-column header row ABOVE the Clock Gap bullet', () => {
+  it('renders a single "Clock Gap: X%" label ABOVE the Clock Gap bullet', () => {
     renderCard(makeCard({ user_avg_pct: 0.33, user_avg_seconds: 99, opp_avg_pct: 0.57, opp_avg_seconds: 170 }));
     const header = screen.getByTestId('time-pressure-card-bullet-clock-gap-header');
     expect(header).not.toBeNull();
-    expect(header.textContent).toContain('You');
-    expect(header.textContent).toContain('Gap');
-    expect(header.textContent).toContain('Opp');
+    expect(header.textContent).toContain('Clock Gap');
+    // You/Opp avg time moved into the info popover; no longer in the header line.
+    expect(header.textContent).not.toMatch(/\bYou:\s/);
+    expect(header.textContent).not.toMatch(/\bOpp:\s/);
   });
 
-  it('Clock Gap MetricStatPopover info icon is in the header row (centered Gap cell)', () => {
+  it('Clock Gap MetricStatPopover info icon is in the header row', () => {
     renderCard(makeCard());
     expect(screen.getByTestId('time-pressure-card-bullet-clock-gap-info')).not.toBeNull();
   });
@@ -215,54 +216,61 @@ describe('EndgameTimePressureCard — SC-3: ScoreGapByTimePressureChart replaces
 // ─── Plan 88-14 (A-3): top-zone stats via ClockGapHeaderRow + NetFlagRateRow ──
 
 describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone stats', () => {
-  it('renders You, Opp, and Net flag rate with correct formatted values', () => {
-    renderCard(
-      makeCard({
-        user_avg_pct: 0.47,
-        user_avg_seconds: 215,
-        opp_avg_pct: 0.52,
-        opp_avg_seconds: 231,
-        avg_clock_diff_seconds: -16,
-        net_timeout_rate: -0.03,
-      }),
+  /** Hover the Clock Gap info icon to open the popover, then return the
+   * rendered You/Opp value spans from the popover body. */
+  async function openClockGapPopover() {
+    vi.useFakeTimers();
+    try {
+      const trigger = screen.getByTestId('time-pressure-card-bullet-clock-gap-info');
+      fireEvent.mouseEnter(trigger);
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    const myAvg = await waitFor(() =>
+      screen.getByTestId('time-pressure-card-bullet-my-avg-time'),
     );
-    // SC-2: my-avg-time and opp-avg-time now live in ClockGapHeaderRow.
-    const myAvg = screen.getByTestId('time-pressure-card-bullet-my-avg-time');
     const oppAvg = screen.getByTestId('time-pressure-card-bullet-opp-avg-time');
+    return { myAvg, oppAvg };
+  }
+
+  it('Net flag rate renders with correct formatted value in the row below the bullet', () => {
+    renderCard(makeCard({ net_timeout_rate: -0.03 }));
     const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
-
-    // Header row uses "You" / "Opp" labels (SC-2 spec).
-    expect(myAvg.textContent).toContain('You');
-    expect(oppAvg.textContent).toContain('Opp');
     expect(netRate.textContent).toContain('Net flag rate');
-
-    // Post-UAT 88.4: pct rounded to int only — raw seconds dropped from cell.
-    expect(myAvg.textContent).toContain('47%');
-    expect(myAvg.textContent).not.toContain('215s');
-    expect(oppAvg.textContent).toContain('52%');
-    expect(oppAvg.textContent).not.toContain('231s');
     // Net flag rate is integer-rounded (16bf43f0); negative shows a minus sign.
     expect(netRate.textContent).toContain('-3%');
   });
 
-  it('shows em-dash when an average is null', () => {
+  it('You/Opp avg clock pct appear in the Clock Gap info popover', async () => {
+    renderCard(
+      makeCard({
+        user_avg_pct: 0.47,
+        opp_avg_pct: 0.52,
+      }),
+    );
+    const { myAvg, oppAvg } = await openClockGapPopover();
+    // Post-UAT 88.4: pct rounded to int only.
+    expect(myAvg.textContent).toContain('47%');
+    expect(oppAvg.textContent).toContain('52%');
+  });
+
+  it('Clock Gap info popover shows em-dash when an avg is null', async () => {
     renderCard(
       makeCard({
         user_avg_pct: null,
-        user_avg_seconds: null,
         opp_avg_pct: 0.5,
-        opp_avg_seconds: 150,
-        avg_clock_diff_seconds: null,
         net_timeout_rate: 0,
       }),
     );
-    const myAvg = screen.getByTestId('time-pressure-card-bullet-my-avg-time');
+    const { myAvg, oppAvg } = await openClockGapPopover();
     // Em-dash (U+2014) when the underlying value is null.
     expect(myAvg.textContent).toContain('—');
-    // Opp side still renders normally.
-    const oppAvg = screen.getByTestId('time-pressure-card-bullet-opp-avg-time');
     expect(oppAvg.textContent).toContain('50%');
-    // 0% for net_timeout_rate === 0 (integer-rounded, no sign — 16bf43f0).
+    // 0% for net_timeout_rate === 0 (integer-rounded, no sign — 16bf43f0) still
+    // verified inline since the Net Flag Rate row is unaffected by this change.
     const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
     expect(netRate.textContent).toContain('0%');
   });
