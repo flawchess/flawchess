@@ -30,23 +30,25 @@ metric family in ``STAGE_B_METRIC_FAMILIES`` × each TC with an above-floor
 anchor, dispatch to the matching per-TC builder, interpolate against the
 cohort CDF, and UPSERT one row per (family, tc).
 
-Lichess-precedence (D-12) + chesscom_raw_rating capture (D-07 bullet 4):
+Game-weighted blended anchor (D-12 Reversal Amendment, 2026-05-27):
 
-  ``compute_anchors_for_user`` implements the Lichess-first policy:
+  ``compute_anchors_for_user`` implements the blended anchor per the
+  D-12 Reversal Amendment. Per-game conversion is done SQL-side via the
+  ``chesscom_conversion_lookup`` VALUES CTE in
+  ``per_user_cte_median_anchor(blend=True)``:
 
-  - If the user has ANY Lichess games in the TC → call
-    ``per_user_cte_median_anchor(tc, source='single_user',
-    platform='lichess')``; persist with ``source_platform='lichess'`` and
-    ``chesscom_raw_rating=None`` (Lichess-direct path; no conversion).
-  - Otherwise → call ``per_user_cte_median_anchor(tc,
-    source='single_user', platform='chesscom')`` to read the raw
-    chess.com median, capture it as ``chesscom_raw_rating`` BEFORE
-    conversion (so the Plan 07 tooltip can disclose "your chess.com X →
-    Lichess-equivalent Y"), then convert via
-    ``convert_chesscom_to_lichess(raw, source_tc=tc, target_tc=tc)``.
-    If the conversion returns None (chess.com Daily, or out of the
-    published range) the TC is skipped entirely — the chip suppresses
-    for that (user, TC).
+  - chess.com (non-Daily) games: converted per-game to lichess-equivalent
+    via the nearest anchor in ``CHESSCOM_BLITZ_TO_LICHESS``.
+  - Lichess games: pass through native rating unchanged.
+  - The per-user median of the combined pool is the blended anchor.
+  - Per-platform game counts and native medians are persisted alongside
+    the blended anchor for tooltip disclosure (D-07 bullet 4, amended).
+  - Suppression rule: skip TC if pooled count < MEDIAN_ANCHOR_MIN_GAMES.
+
+  The original Lichess-precedence rule (D-12 original) and the
+  ``_compute_median_anchor_for_platform`` / ``_user_has_lichess_games_in_tc``
+  helpers are retired. Design-decision record:
+  ``.planning/notes/percentile-anchor-d12-reversal.md``.
 
 Both stages remain non-blocking — exceptions are captured to Sentry and
 swallowed (D-04); neither propagates back to the import worker or drain
@@ -90,7 +92,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import async_session_maker as _default_session_maker
-from app.models.user_rating_anchors import AnchorSource, TimeControlBucket
+from app.models.user_rating_anchors import TimeControlBucket
 from app.repositories.user_benchmark_percentiles_repository import upsert_percentile
 from app.repositories.user_rating_anchors_repository import (
     RatingAnchorRow,
@@ -108,7 +110,6 @@ from app.services.canonical_slice_sql import (
     per_user_cte_time_pressure_score_gap,
     selected_users_cte,
 )
-from app.services.chesscom_to_lichess import ChessComSourceTC, convert_chesscom_to_lichess
 from app.services.global_percentile_cdf import CdfMetricId, interpolate_cohort_percentile
 
 # ---------------------------------------------------------------------------
@@ -125,20 +126,6 @@ _ALL_TIME_CONTROLS: tuple[TimeControlBucket, ...] = (
     "classical",
 )
 
-
-# Mapping from the user_rating_anchors ``TimeControlBucket`` Literal (bullet,
-# blitz, rapid, classical) to the ChessGoals snapshot's chess.com source TC
-# Literal (bullet, blitz, rapid, daily). chess.com's ``classical`` TC bucket is
-# only ever populated by Daily-game imports (RESEARCH Pitfall 11) — Daily has
-# no ChessGoals mapping, so ``convert_chesscom_to_lichess(..., source_tc='daily')``
-# returns None and the chip suppresses naturally for the (user, classical) cell
-# when the only source is chess.com (D-12 fall-through + Pitfall 2 / Pitfall 11).
-_CHESSCOM_SOURCE_TC_BY_BUCKET: dict[TimeControlBucket, ChessComSourceTC] = {
-    "bullet": "bullet",
-    "blitz": "blitz",
-    "rapid": "rapid",
-    "classical": "daily",
-}
 
 # Stage A metric — eval-independent, runs at import-completion time.
 STAGE_A_METRIC: CdfMetricId = "score_gap"
@@ -236,74 +223,8 @@ async def _compute_metric_for_user_per_tc(
     return (float(row.value), int(row.n_games))
 
 
-async def _user_has_lichess_games_in_tc(
-    session: AsyncSession,
-    user_id: int,
-    tc: TimeControlBucket,
-) -> bool:
-    """Return True iff the user has at least one Lichess game in ``tc``.
-
-    Single existence query — short-circuits via ``LIMIT 1``. Used by
-    ``compute_anchors_for_user`` to drive the D-12 Lichess-precedence
-    rule before dispatching to the per-platform anchor compute.
-
-    ``tc`` is constrained by ``TimeControlBucket`` so f-stringing it into
-    the SQL has no injection vector (closed 4-value Literal); ``user_id``
-    flows through ``.bindparams()`` per V5.
-    """
-    sql = (
-        f"SELECT 1 FROM games "
-        f"WHERE user_id = :user_id "
-        f"  AND platform = 'lichess' "
-        f"  AND time_control_bucket = '{tc}' "
-        f"LIMIT 1"
-    )
-    result = await session.execute(text(sql).bindparams(user_id=user_id))
-    return result.fetchone() is not None
-
-
-async def _compute_median_anchor_for_platform(
-    session: AsyncSession,
-    user_id: int,
-    tc: TimeControlBucket,
-    platform: AnchorSource,
-) -> tuple[int, int] | None:
-    """Run ``per_user_cte_median_anchor`` for one (user, tc, platform).
-
-    Returns ``(anchor_rating, n_games)`` from the single row of
-    ``per_user_anchor``, or ``None`` when the user is below
-    ``MEDIAN_ANCHOR_MIN_GAMES`` on the per-TC × platform pool (the CTE's
-    HAVING clause emits no row).
-
-    ``platform`` maps directly to the builder's ``platform`` kwarg
-    ('lichess' or 'chesscom'); the Lichess-precedence rule lives in the
-    caller (``compute_anchors_for_user``), not here. ``user_id`` is bound
-    via ``.bindparams()`` (V5).
-    """
-    su_cte = selected_users_cte(source="single_user")
-    anchor_cte = per_user_cte_median_anchor(
-        tc,
-        source="single_user",
-        snapshot_date=None,
-        platform=platform,
-        min_games=MEDIAN_ANCHOR_MIN_GAMES,
-    )
-    sql = (
-        f"WITH {su_cte},\n{anchor_cte}\n"
-        f"SELECT anchor_rating::int AS anchor_rating, n_games::int AS n_games\n"
-        f"FROM per_user_anchor\n"
-        f"LIMIT 1"
-    )
-    result = await session.execute(text(sql).bindparams(user_id=user_id))
-    row = result.fetchone()
-    if row is None or row.anchor_rating is None or row.n_games is None:
-        return None
-    return (int(row.anchor_rating), int(row.n_games))
-
-
 # ---------------------------------------------------------------------------
-# compute_anchors_for_user — Lichess-precedence rule (D-12) + chesscom_raw_rating
-# capture (D-07 bullet 4).
+# compute_anchors_for_user — D-12 Reversal Amendment: blended anchor.
 # ---------------------------------------------------------------------------
 
 
@@ -311,84 +232,82 @@ async def compute_anchors_for_user(
     session: AsyncSession,
     user_id: int,
 ) -> dict[TimeControlBucket, RatingAnchorRow]:
-    """Compute per-(user, TC) anchors and UPSERT them.
+    """Compute per-(user, TC) blended anchors and UPSERT them.
 
-    For each TC in ``_ALL_TIME_CONTROLS``:
+    D-12 Reversal Amendment (CONTEXT 2026-05-27). Per-game conversion +
+    pooled median: chess.com (non-Daily) games convert via the ChessGoals
+    snapshot to lichess-equivalent; lichess games pass through native;
+    the per-user median of the pooled set is the anchor. Per-platform
+    game counts and native medians are emitted alongside for tooltip
+    composition disclosure (D-07 bullet 4 amendment-revised; rendered by
+    Plan 11's PercentileChip tooltip body).
 
-    1. Decide source platform via D-12 precedence:
+    See ``.planning/notes/percentile-anchor-d12-reversal.md`` for the
+    design-decision record (rationale, risk profile, why D-12 was walked
+    back).
 
-       - Has the user played ANY Lichess games in this TC? If yes,
-         source_platform='lichess'. Otherwise source_platform='chesscom'.
-
-    2. Run the per-platform median anchor compute on the recent-3000 ×
-       36-month pool. Below-floor (n_games < MEDIAN_ANCHOR_MIN_GAMES)
-       skips this TC entirely (no anchor row, chip suppresses).
-
-    3. For chess.com anchors: capture the raw chess.com median rating
-       BEFORE conversion into ``chesscom_raw_rating`` (D-07 bullet 4 —
-       this is the value the Plan 07 tooltip discloses), then call
-       ``convert_chesscom_to_lichess(raw, source_tc=tc, target_tc=tc)``
-       to obtain the Lichess-equivalent that becomes the persisted
-       ``anchor_rating``. If conversion returns None (chess.com Daily,
-       or out of the published [500, 3000] chess.com Blitz range), skip
-       the TC — the cohort CDF is Lichess-keyed and a chess.com-only
-       anchor without a conversion has no defensible anchor to key
-       against.
-
-    4. For Lichess anchors: ``chesscom_raw_rating=None`` (no conversion
-       involved); ``anchor_rating`` is the raw Lichess median.
-
-    5. UPSERT via ``upsert_anchor``. Return the dict of fresh
-       ``RatingAnchorRow`` values keyed by TC for the percentile loop.
+    Suppression rule: if the pooled count (n_chesscom_games +
+    n_lichess_games) < MEDIAN_ANCHOR_MIN_GAMES for a TC, no anchor row is
+    produced for that TC and the chip suppresses naturally.
 
     Sentry pattern (CLAUDE.md):
       Per-TC exceptions trip an inner try/except; ``set_context`` carries
-      ``user_id``, ``stage='anchor'``, ``tc``, ``platform`` BEFORE
-      ``capture_exception``. No variables in error messages.
+      ``user_id``, ``stage='anchor'``, ``tc`` BEFORE ``capture_exception``.
+      No variables in error messages (V4 / CLAUDE.md Backend Rules).
     """
     anchors: dict[TimeControlBucket, RatingAnchorRow] = {}
     for tc in _ALL_TIME_CONTROLS:
         try:
-            has_lichess = await _user_has_lichess_games_in_tc(session, user_id, tc)
-            platform: AnchorSource = "lichess" if has_lichess else "chesscom"
-
-            result = await _compute_median_anchor_for_platform(session, user_id, tc, platform)
-            if result is None:
-                # Below the per-TC × platform floor — skip this TC entirely.
+            su_cte = selected_users_cte(source="single_user")
+            anchor_cte = per_user_cte_median_anchor(
+                tc,
+                source="single_user",
+                snapshot_date=None,
+                blend=True,
+                min_games=MEDIAN_ANCHOR_MIN_GAMES,
+            )
+            sql = (
+                f"WITH {su_cte},\n{anchor_cte}\n"
+                f"SELECT anchor_rating::int AS anchor_rating, "
+                f"n_chesscom_games::int AS n_chesscom_games, "
+                f"n_lichess_games::int AS n_lichess_games, "
+                f"chesscom_median_native AS chesscom_median_native, "
+                f"lichess_median_native AS lichess_median_native "
+                f"FROM per_user_anchor LIMIT 1"
+            )
+            result = await session.execute(text(sql).bindparams(user_id=user_id))
+            row = result.fetchone()
+            if row is None or row.anchor_rating is None:
+                # Below MEDIAN_ANCHOR_MIN_GAMES on the pooled count, OR
+                # the user has zero non-Daily games — chip suppresses
+                # for that (user, TC) per amendment §Suppression rule.
                 continue
-            raw_anchor_rating, n_games = result
-
-            if platform == "lichess":
-                anchor_rating = raw_anchor_rating
-                chesscom_raw_rating: int | None = None
-            else:
-                # chess.com path: capture raw rating BEFORE conversion
-                # (D-07 bullet 4 tooltip disclosure source), then convert
-                # to the Lichess-equivalent the CDF is keyed against.
-                chesscom_raw_rating = raw_anchor_rating
-                source_tc = _CHESSCOM_SOURCE_TC_BY_BUCKET[tc]
-                lichess_equiv = convert_chesscom_to_lichess(
-                    raw_anchor_rating, source_tc=source_tc, target_tc=tc
-                )
-                if lichess_equiv is None:
-                    # Daily, or out-of-range — chip suppresses for this TC.
-                    continue
-                anchor_rating = lichess_equiv
-
+            chesscom_median = (
+                int(row.chesscom_median_native)
+                if row.chesscom_median_native is not None
+                else None
+            )
+            lichess_median = (
+                int(row.lichess_median_native)
+                if row.lichess_median_native is not None
+                else None
+            )
             await upsert_anchor(
                 session,
                 user_id=user_id,
                 time_control_bucket=tc,
-                anchor_rating=anchor_rating,
-                source_platform=platform,
-                chesscom_raw_rating=chesscom_raw_rating,
-                n_games=n_games,
+                anchor_rating=int(row.anchor_rating),
+                n_chesscom_games=int(row.n_chesscom_games),
+                n_lichess_games=int(row.n_lichess_games),
+                chesscom_median_native=chesscom_median,
+                lichess_median_native=lichess_median,
             )
             anchors[tc] = RatingAnchorRow(
-                anchor_rating=anchor_rating,
-                source_platform=platform,
-                chesscom_raw_rating=chesscom_raw_rating,
-                n_games=n_games,
+                anchor_rating=int(row.anchor_rating),
+                n_chesscom_games=int(row.n_chesscom_games),
+                n_lichess_games=int(row.n_lichess_games),
+                chesscom_median_native=chesscom_median,
+                lichess_median_native=lichess_median,
             )
         except asyncio.CancelledError:
             raise  # lifespan shutdown contract
