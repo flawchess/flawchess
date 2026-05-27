@@ -1115,3 +1115,104 @@ class TestPitfall1UserIdWideningNewBuilders:
         sql = per_user_cte_score_gap_bucket_tc(tc, source="benchmark", bucket_label=bucket_label)
         block = _per_user_values_block(sql)
         assert re.search(r"SELECT\s+user_id\s*,", block)
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.4 Plan 10 Task 2 — Blend-mode SQL builder tests.
+#
+# Tests A1-A8 cover the new blend=True mode and the byte-identical regression
+# guard for the non-blend path (Plan 04 cohort-CDF call path).
+# ---------------------------------------------------------------------------
+
+
+class TestPerUserCteMedianAnchorBlendMode:
+    """Phase 94.4 D-12 Reversal Amendment — blend=True SQL builder tests."""
+
+    def test_a1_non_blend_byte_identical_to_baseline(self) -> None:
+        """A1 (BYTE-IDENTICAL regression guard): non-blend SQL is byte-for-byte identical
+        to the pre-Task-1 captured baseline.
+
+        Regression guard for Plan 04's cohort-CDF benchmark-side call path. Any
+        drift in the non-blend code path (whitespace, column reorder, helper
+        extraction) trips this test. The baseline was captured at the pre-Task-1
+        git state in Task 1.0 and pinned as a module-level constant; the
+        byte-identical comparison ensures the regression guard is anchored to
+        actual production code, not a hand-reconstruction from memory.
+        """
+        actual = per_user_cte_median_anchor("rapid", source="benchmark")
+        assert actual == _BASELINE_PER_USER_CTE_MEDIAN_ANCHOR_RAPID_BENCHMARK, (
+            f"Non-blend SQL drifted from baseline.\n"
+            f"---ACTUAL---\n{actual}\n"
+            f"---BASELINE---\n{_BASELINE_PER_USER_CTE_MEDIAN_ANCHOR_RAPID_BENCHMARK}"
+        )
+        # Belt-and-braces: the legacy shape MUST stay 3-column and MUST NOT
+        # contain blend-mode markers.
+        assert "n_chesscom_games" not in actual
+        assert "chesscom_conversion_lookup" not in actual
+
+    def test_a2_blend_true_emits_chesscom_conversion_lookup_cte(self) -> None:
+        """A2: blend=True emits a chesscom_conversion_lookup CTE."""
+        sql = per_user_cte_median_anchor("rapid", source="single_user", blend=True)
+        assert "chesscom_conversion_lookup" in sql, (
+            "blend=True SQL must include chesscom_conversion_lookup CTE"
+        )
+
+    def test_a3_blend_true_emits_all_four_new_output_columns(self) -> None:
+        """A3: blend=True emits all 4 new output columns in per_user_anchor CTE."""
+        sql = per_user_cte_median_anchor("blitz", source="single_user", blend=True)
+        anchor_idx = sql.find("per_user_anchor AS")
+        assert anchor_idx != -1, "per_user_anchor CTE missing in blend=True SQL"
+        block = sql[anchor_idx:]
+        assert "n_chesscom_games" in block, "n_chesscom_games missing from per_user_anchor"
+        assert "n_lichess_games" in block, "n_lichess_games missing from per_user_anchor"
+        assert "chesscom_median_native" in block, "chesscom_median_native missing"
+        assert "lichess_median_native" in block, "lichess_median_native missing"
+
+    def test_a4_blend_true_emits_platform_tag_filter_clauses(self) -> None:
+        """A4: blend=True emits count(*) FILTER (WHERE platform_tag = ...) for both platforms."""
+        sql = per_user_cte_median_anchor("bullet", source="single_user", blend=True)
+        assert "count(*) FILTER (WHERE platform_tag = 'chesscom')" in sql, (
+            "chess.com game-count FILTER clause missing in blend=True SQL"
+        )
+        assert "count(*) FILTER (WHERE platform_tag = 'lichess')" in sql, (
+            "lichess game-count FILTER clause missing in blend=True SQL"
+        )
+
+    def test_a5_blend_true_with_platform_raises_value_error(self) -> None:
+        """A5: blend=True and platform='lichess' raises ValueError (mutual exclusion)."""
+        with pytest.raises(ValueError, match="blend=True is mutually exclusive"):
+            per_user_cte_median_anchor("rapid", source="single_user", platform="lichess", blend=True)
+
+    def test_a6_chesscom_conversion_values_sql_includes_known_snapshot_row(self) -> None:
+        """A6 (snapshot-row assertion): _chesscom_conversion_values_sql('rapid') includes
+        a VALUES row matching CHESSCOM_BLITZ_TO_LICHESS[1500]['rapid'].
+
+        The test reads the snapshot dynamically — if the snapshot table updates,
+        the test self-updates (RESEARCH Pattern 8b discipline).
+        """
+        expected_equiv = CHESSCOM_BLITZ_TO_LICHESS[1500]["rapid"]
+        assert expected_equiv is not None, "CHESSCOM_BLITZ_TO_LICHESS[1500]['rapid'] is None — pick another anchor"
+        sql_fragment = _chesscom_conversion_values_sql("rapid")
+        assert f"(1500, {expected_equiv})" in sql_fragment, (
+            f"Expected (1500, {expected_equiv}) in rapid VALUES table; got: {sql_fragment[:200]}"
+        )
+
+    def test_a7_blend_true_having_clause_on_pooled_count(self) -> None:
+        """A7: blend=True HAVING clause floors on the POOLED count (not per-platform)."""
+        sql = per_user_cte_median_anchor("classical", source="single_user", blend=True)
+        # The HAVING clause must gate on count(*) applied to the combined pool,
+        # not on n_chesscom_games or n_lichess_games individually.
+        assert f"HAVING count(*) >= {MEDIAN_ANCHOR_MIN_GAMES}" in sql, (
+            f"HAVING count(*) >= {MEDIAN_ANCHOR_MIN_GAMES} missing from blend=True SQL"
+        )
+        assert "HAVING count(*) >= 30" in sql  # belt-and-braces constant lock
+
+    def test_a8_blend_true_contains_daily_classical_drop(self) -> None:
+        """A8: blend=True SQL contains the Daily-classical drop (time_control_str LIKE '1/%')."""
+        sql = per_user_cte_median_anchor("classical", source="single_user", blend=True)
+        assert "g.platform = 'chess.com'" in sql, (
+            "Daily drop chess.com clause missing from blend=True SQL"
+        )
+        assert "time_control_str LIKE '1/%'" in sql, (
+            "Daily LIKE '1/%' filter missing from blend=True SQL"
+        )
