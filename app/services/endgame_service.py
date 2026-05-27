@@ -60,6 +60,7 @@ from app.schemas.endgames import (
     EndgameWDLSummary,
     MaterialBucket,
     MaterialRow,
+    PerTcBreakdownOut,
     PressureQuintileBullet,
     RatingAnchorOut,
     ScoreGapMaterialResponse,
@@ -1317,12 +1318,93 @@ def _aggregate_per_tc_percentile(
     return weighted_sum / weight_sum
 
 
+def _build_per_tc_breakdown(
+    per_tc_rows: Mapping[TimeControlBucket, PercentileRow] | None,
+    per_tc_games: Mapping[TimeControlBucket, int],
+) -> list[PerTcBreakdownOut]:
+    """Construct the per-TC breakdown list for a single aggregated metric.
+
+    Quick task 260527-q0b: emits one ``PerTcBreakdownOut`` per TC the user has
+    games in, in the fixed display order
+    ``("bullet", "blitz", "rapid", "classical")`` shared with
+    ``_TIME_CONTROL_ORDER``. Used by ``_compute_score_gap_material`` and
+    ``_get_endgame_performance_from_rows`` to feed the percentile chip
+    tooltip's bullet 2 per-TC list.
+
+    Args:
+        per_tc_rows: per-(metric, TC) PercentileRow dict for ONE metric. None
+            or empty when no TC passed the inclusion floor.
+        per_tc_games: user's game count by TC, derived from
+            ``endgame_rows`` index 4 (``time_control_bucket``). 0 entries are
+            omitted entirely from output (NOT emitted).
+
+    Returns:
+        Ordered list of breakdown entries. Branch semantics:
+          - TC in ``per_tc_rows``: emit row with value, n_games, percentile
+            (emit even when ``percentile is None`` — frontend drops the line;
+            backend stays honest about wire shape).
+          - Else TC in ``per_tc_games`` with games > 0: emit value=None,
+            n_games=count, percentile=None (frontend renders
+            ``<tc>: insufficient games``).
+          - Else: omit.
+    """
+    out: list[PerTcBreakdownOut] = []
+    for tc_str in _TIME_CONTROL_ORDER:
+        tc = cast(TimeControlBucket, tc_str)
+        row = per_tc_rows.get(tc) if per_tc_rows else None
+        if row is not None:
+            out.append(
+                PerTcBreakdownOut(
+                    tc=tc,
+                    value=row.value,
+                    n_games=row.n_games,
+                    percentile=row.percentile,
+                )
+            )
+            continue
+        n_games = per_tc_games.get(tc, 0)
+        if n_games > 0:
+            out.append(
+                PerTcBreakdownOut(
+                    tc=tc,
+                    value=None,
+                    n_games=n_games,
+                    percentile=None,
+                )
+            )
+    return out
+
+
+def _per_tc_game_counts(
+    endgame_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> dict[TimeControlBucket, int]:
+    """Derive per-TC user game counts from the endgame rows for the chip tooltip.
+
+    Quick task 260527-q0b: single source of truth for "n_games per TC" feeding
+    the chip tooltip's bullet 2 per-TC breakdown. ``endgame_rows`` shape is
+    ``(played_at, result, user_color, platform, time_control_bucket)``; we
+    count by index 4 and drop rows whose bucket is None or outside the 4-bucket
+    Literal (defensive — should never happen post-Phase 87.5 schema).
+    """
+    counts: dict[TimeControlBucket, int] = {}
+    for row in endgame_rows:
+        tc_raw = row[4] if len(row) > 4 else None
+        if tc_raw is None:
+            continue
+        if tc_raw not in ("bullet", "blitz", "rapid", "classical"):
+            continue
+        tc = cast(TimeControlBucket, tc_raw)
+        counts[tc] = counts.get(tc, 0) + 1
+    return counts
+
+
 def _compute_score_gap_material(
     endgame_wdl: EndgameWDLSummary,
     non_endgame_wdl: EndgameWDLSummary,
     entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
     *,
     percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
+    per_tc_games: Mapping[TimeControlBucket, int] | None = None,
     gaps_by_bucket: dict[str, list[float]] | None = None,
     timeline: list[ScoreGapTimelinePoint] | None = None,
     timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
@@ -1454,6 +1536,27 @@ def _compute_score_gap_material(
         _effective_rows.get("recovery_score_gap")
     )
 
+    # Quick task 260527-q0b: per-TC breakdown lists for the chip tooltip
+    # bullet 2. `per_tc_games` is computed once by the orchestrator (single
+    # source of truth) and passed in; for independent callers / older tests
+    # we derive it locally from `entry_rows`'s game ids (not equivalent to the
+    # full endgame_rows per-TC count, but `entry_rows` lacks `time_control_bucket`
+    # so the lookup falls through to row-by-row counting only when the caller
+    # provides it). When neither is available the lists are empty.
+    _per_tc_games: Mapping[TimeControlBucket, int] = (
+        per_tc_games if per_tc_games is not None else {}
+    )
+    score_gap_per_tc = _build_per_tc_breakdown(_effective_rows.get("score_gap"), _per_tc_games)
+    score_gap_conv_per_tc = _build_per_tc_breakdown(
+        _effective_rows.get("score_gap_conv"), _per_tc_games
+    )
+    score_gap_parity_per_tc = _build_per_tc_breakdown(
+        _effective_rows.get("score_gap_parity"), _per_tc_games
+    )
+    recovery_score_gap_per_tc = _build_per_tc_breakdown(
+        _effective_rows.get("recovery_score_gap"), _per_tc_games
+    )
+
     return ScoreGapMaterialResponse(
         endgame_score=endgame_score,
         non_endgame_score=non_endgame_score,
@@ -1488,6 +1591,11 @@ def _compute_score_gap_material(
         # for the peer-relative rationale that overrides the earlier Phase
         # 94 global-CDF suppression.
         recovery_score_gap_percentile=recovery_score_gap_percentile,
+        # Quick task 260527-q0b: per-TC breakdown lists threading.
+        score_gap_per_tc=score_gap_per_tc,
+        score_gap_conv_per_tc=score_gap_conv_per_tc,
+        score_gap_parity_per_tc=score_gap_parity_per_tc,
+        recovery_score_gap_per_tc=recovery_score_gap_per_tc,
         # Phase 87.4 (D-05): score_gap_skill_* and
         # endgame_skill_rate_mean kwargs dropped — fields removed from the
         # Pydantic model in app/schemas/endgames.py.
@@ -2074,6 +2182,16 @@ def _compute_time_pressure_cards(
                 ),
                 clock_gap_percentile=(cg_row.percentile if cg_row is not None else None),
                 net_flag_rate_percentile=(nf_row.percentile if nf_row is not None else None),
+                # Quick task 260527-q0b: per-TC chip tooltip bullet 2 — simplified
+                # framing reads the chip-cohort (n_games, value) directly from the
+                # PercentileRow consumed above. May differ from the card's headline
+                # number — disclosure of the percentile basis, not the card stat.
+                time_pressure_score_gap_n_games=(tps_row.n_games if tps_row is not None else None),
+                time_pressure_score_gap_value=(tps_row.value if tps_row is not None else None),
+                clock_gap_n_games=(cg_row.n_games if cg_row is not None else None),
+                clock_gap_value=(cg_row.value if cg_row is not None else None),
+                net_flag_rate_n_games=(nf_row.n_games if nf_row is not None else None),
+                net_flag_rate_value=(nf_row.value if nf_row is not None else None),
             )
         )
     return TimePressureCardsResponse(cards=cards)
@@ -2296,6 +2414,7 @@ def _get_endgame_performance_from_rows(
     non_endgame_rows: list[Row[Any]],
     bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
     percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
+    per_tc_games: Mapping[TimeControlBucket, int] | None = None,
 ) -> EndgamePerformanceResponse:
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 
@@ -2465,6 +2584,18 @@ def _get_endgame_performance_from_rows(
         percentile_rows.get("achievable_score_gap") if percentile_rows is not None else None
     )
 
+    # Quick task 260527-q0b: per-TC breakdown list for Achievable Score Gap
+    # chip tooltip bullet 2. Use the orchestrator-provided per_tc_games dict
+    # when available (single source of truth across both helpers); else derive
+    # internally from endgame_rows to keep this helper independently testable.
+    _resolved_per_tc_games: Mapping[TimeControlBucket, int] = (
+        per_tc_games if per_tc_games is not None else _per_tc_game_counts(endgame_rows)
+    )
+    achievable_score_gap_per_tc = _build_per_tc_breakdown(
+        percentile_rows.get("achievable_score_gap") if percentile_rows is not None else None,
+        _resolved_per_tc_games,
+    )
+
     return EndgamePerformanceResponse(
         endgame_wdl=endgame_wdl,
         non_endgame_wdl=non_endgame_wdl,
@@ -2486,6 +2617,8 @@ def _get_endgame_performance_from_rows(
         achievable_score_gap_ci_low=achievable_ci_low,
         achievable_score_gap_ci_high=achievable_ci_high,
         achievable_score_gap_percentile=achievable_score_gap_percentile,
+        # Quick task 260527-q0b: per-TC breakdown for chip tooltip bullet 2.
+        achievable_score_gap_per_tc=achievable_score_gap_per_tc,
     )
 
 
@@ -2921,8 +3054,19 @@ async def get_endgame_overview(
         session, user_id=user_id
     )
 
+    # Quick task 260527-q0b: derive per-TC user game counts ONCE from
+    # endgame_rows and pass the dict to both _get_endgame_performance_from_rows
+    # and _compute_score_gap_material. Single source of truth so the per-TC
+    # "n_games" surfaced in the chip tooltip's bullet 2 is identical across
+    # the 5 aggregated chips on the page.
+    per_tc_games = _per_tc_game_counts(endgame_rows)
+
     performance = _get_endgame_performance_from_rows(
-        endgame_rows, non_endgame_rows, bucket_rows, percentile_rows=percentile_rows
+        endgame_rows,
+        non_endgame_rows,
+        bucket_rows,
+        percentile_rows=percentile_rows,
+        per_tc_games=per_tc_games,
     )
     # Build score-gap timeline from unfiltered rows so the rolling 100-game
     # window per side is pre-filled with games before the cutoff; then drop
@@ -2938,6 +3082,7 @@ async def get_endgame_overview(
         performance.non_endgame_wdl,
         bucket_rows,
         percentile_rows=percentile_rows,
+        per_tc_games=per_tc_games,
         gaps_by_bucket=gaps_by_bucket,
         timeline=score_gap_timeline,
         timeline_window=SCORE_GAP_TIMELINE_WINDOW,
