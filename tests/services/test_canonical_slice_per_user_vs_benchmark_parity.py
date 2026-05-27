@@ -39,7 +39,7 @@ from typing import Literal
 
 import pytest
 
-from app.services.canonical_slice_sql import per_user_cte_for
+from app.services.canonical_slice_sql import RECENT_GAMES_PER_TC_CAP, per_user_cte_for
 from app.services.global_percentile_cdf import CdfMetricId
 
 _METRICS: tuple[CdfMetricId, ...] = (
@@ -103,12 +103,14 @@ def test_no_per_tc_predicate_on_either_source(
 
 @pytest.mark.parametrize("metric_id", _METRICS)
 def test_pooled_cte_contains_recent_capped_prelude(metric_id: CdfMetricId) -> None:
-    """Both sources include the shared ``recent_capped`` 1000-per-TC + 36mo prelude (D-5)."""
+    """Both sources include the shared ``recent_capped`` recent-per-TC + 36mo prelude (D-5)."""
     bm = per_user_cte_for(metric_id, source="benchmark")
     su = per_user_cte_for(metric_id, source="single_user")
     for sql, label in ((bm, "benchmark"), (su, "single_user")):
         assert "recent_capped AS (" in sql, f"recent_capped CTE missing on {label}/{metric_id}"
-        assert "<= 1000" in sql, f"1000-per-TC cap missing on {label}/{metric_id}"
+        assert f"<= {RECENT_GAMES_PER_TC_CAP}" in sql, (
+            f"recent-per-TC cap missing on {label}/{metric_id}"
+        )
         assert "INTERVAL '36 months'" in sql, (
             f"36-month recency window missing on {label}/{metric_id}"
         )

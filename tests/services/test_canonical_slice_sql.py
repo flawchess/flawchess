@@ -145,11 +145,11 @@ class TestPooledShape:
 
 
 class TestRecencyWindow:
-    """36-month recency anchor + 1000-per-TC cap (D-5)."""
+    """36-month recency anchor + 3000-per-TC cap (D-5)."""
 
     @pytest.mark.parametrize("metric_id", _METRICS)
     @pytest.mark.parametrize("source", _SOURCES)
-    def test_recent_1000_per_tc_cap_substrings_present(
+    def test_recent_per_tc_cap_substrings_present(
         self, metric_id: CdfMetricId, source: Literal["benchmark", "single_user"]
     ) -> None:
         sql = per_user_cte_for(metric_id, source=source)
@@ -160,7 +160,7 @@ class TestRecencyWindow:
             "ORDER BY g.played_at DESC)" in normalised
         ), f"ROW_NUMBER partition missing for {metric_id}/{source}"
         assert f"<= {RECENT_GAMES_PER_TC_CAP}" in sql, (
-            f"1000-per-TC cap missing for {metric_id}/{source}"
+            f"recent-per-TC cap missing for {metric_id}/{source}"
         )
 
     @pytest.mark.parametrize("metric_id", _METRICS)
@@ -191,7 +191,7 @@ class TestRecencyWindow:
 
     @pytest.mark.parametrize("metric_id", _METRICS)
     def test_cap_appears_once_per_builder_output(self, metric_id: CdfMetricId) -> None:
-        """``<= 1000`` should appear exactly once in the rendered SQL (single capping site)."""
+        """``<= {cap}`` should appear exactly once in the rendered SQL (single capping site)."""
         sql = per_user_cte_for(metric_id, source="single_user")
         cap_count = sql.count(f"<= {RECENT_GAMES_PER_TC_CAP}")
         assert cap_count == 1, (

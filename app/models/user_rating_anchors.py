@@ -7,14 +7,14 @@ most one row per user per TC at all times. Recompute is UPSERT (see
 
 Write path (Stage A — wired in Plan 05): the per-user anchor compute service
 calls ``per_user_cte_median_anchor`` (this plan, Task 5) over the user's
-recent-1000-per-TC × 36-month pool, evaluates the median anchor per
+recent-3000-per-TC × 36-month pool, evaluates the median anchor per
 ``time_control_bucket``, and UPSERTs into this table. The live chip lookup
 later joins ``user_rating_anchors`` to the cohort CDF artifact via
 ``(anchor_rating, time_control_bucket)`` to read the percentile.
 
 Suppression semantics: no row → no anchor → chip suppresses naturally. A user
 who has not yet reached the per-TC inclusion floor (``MEDIAN_ANCHOR_MIN_GAMES =
-30`` games on the recent-1000 pool) produces no row for that TC, and the chip
+30`` games on the recent-3000 pool) produces no row for that TC, and the chip
 disappears for that (user, TC) without any null-handling at the API layer.
 
 Lichess-precedence rule (D-12): when a user has games on both platforms, the
@@ -88,7 +88,7 @@ class UserRatingAnchor(Base):
     Columns:
       user_id (PK): FK to users.id with ON DELETE CASCADE.
       time_control_bucket (PK): one of bullet/blitz/rapid/classical.
-      anchor_rating: median rating over the user's recent-1000-per-TC pool;
+      anchor_rating: median rating over the user's recent-3000-per-TC pool;
         for source_platform='chesscom' this is the POST-conversion
         (Lichess-equivalent) rating produced by app.services.chesscom_to_lichess.
       source_platform: 'lichess' wins per D-12 precedence; 'chesscom' only

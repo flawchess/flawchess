@@ -342,7 +342,7 @@ class _PercentileSummary:
 
       ``users_floor_rejected`` — no row written. The per-TC pooled CTE
         emitted no row because the user is below the metric's per-TC
-        inclusion floor (e.g. < 30 endgames in the recent-1000 × 36-month
+        inclusion floor (e.g. < 30 endgames in the recent-3000 × 36-month
         pool, or no above-floor anchor in that TC).
 
       ``users_suppressed`` — row written with ``percentile=NULL``. The

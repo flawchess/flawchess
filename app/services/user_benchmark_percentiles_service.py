@@ -320,7 +320,7 @@ async def compute_anchors_for_user(
        - Has the user played ANY Lichess games in this TC? If yes,
          source_platform='lichess'. Otherwise source_platform='chesscom'.
 
-    2. Run the per-platform median anchor compute on the recent-1000 ×
+    2. Run the per-platform median anchor compute on the recent-3000 ×
        36-month pool. Below-floor (n_games < MEDIAN_ANCHOR_MIN_GAMES)
        skips this TC entirely (no anchor row, chip suppresses).
 

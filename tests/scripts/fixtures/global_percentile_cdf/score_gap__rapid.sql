@@ -26,7 +26,7 @@ recent_capped AS (
       AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100
       AND g.time_control_bucket = 'rapid'
   ) g
-  WHERE g.rn <= 1000
+  WHERE g.rn <= 3000
 ),
 endgame_game_ids AS (
   SELECT game_id FROM game_positions
@@ -79,7 +79,7 @@ recent_capped_anchor AS (
       AND abs((CASE WHEN g.user_color='white' THEN g.white_rating ELSE g.black_rating END) - (CASE WHEN g.user_color='white' THEN g.black_rating ELSE g.white_rating END)) <= 100
       AND g.time_control_bucket = 'rapid'
   ) g
-  WHERE g.rn <= 1000
+  WHERE g.rn <= 3000
 ),
 recent_capped_anchor_no_daily AS (
   SELECT rc.*

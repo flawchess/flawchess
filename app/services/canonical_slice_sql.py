@@ -4,7 +4,7 @@ Phase 94.2 (this module's current state) replaces the per-cell stratified
 methodology from Phase 94.1 with a *one-point-per-user pooled* model. Each
 subject (a cohort user during CDF construction; an app user during per-user
 lookup) contributes a single ``metric_value`` and ``n_games`` aggregate to
-the output, computed over their recent-1000-per-TC × 36-month game window
+the output, computed over their recent-3000-per-TC × 36-month game window
 pooled across all time controls.
 
 Methodology source-of-truth:
@@ -44,7 +44,7 @@ Structural diff between the two sources (the ONLY documented diff):
 Pooled-aggregate shape (identical on both sources, per D-5):
 
 * ``recent_capped``: per-(user, TC) ``ROW_NUMBER() OVER … ORDER BY
-  played_at DESC <= 1000`` with the universal filter (rated, non-computer,
+  played_at DESC <= 3000`` with the universal filter (rated, non-computer,
   both ratings non-null, equal-footing ±100) and the 36-month recency
   predicate.
 
@@ -105,7 +105,7 @@ ACHIEVABLE_MIN_GAMES: int = 30
 SCORE_GAP_BUCKET_MIN_SPANS: int = 30
 
 # Pooled-window shape (D-5).
-RECENT_GAMES_PER_TC_CAP: int = 1000
+RECENT_GAMES_PER_TC_CAP: int = 3000
 RECENCY_WINDOW_MONTHS: int = 36
 
 # Phase 94.3 per-TC time-pressure builder thresholds (CONTEXT D-6).
@@ -120,7 +120,7 @@ CLOCK_GAP_MIN_POOL_N: int = 30
 NET_FLAG_RATE_MIN_POOL_N: int = 30
 
 # Phase 94.4 D-04: per-(user, TC) median rating anchor inclusion floor.
-# 30 games is the lower bound for a stable per-TC median on the recent-1000
+# 30 games is the lower bound for a stable per-TC median on the recent-3000
 # pool (CLAUDE.md no-magic-numbers); tighter floors should be planner-tuned
 # post-Plan-04 regen report. Used as the default `min_games` in
 # `per_user_cte_median_anchor` below.
@@ -257,7 +257,7 @@ def sparse_exclusion_sql(elo_col: str, tc_col: str) -> str:
 
 
 def _recent_capped_cte(snapshot_date: date | None) -> str:
-    """Shared ``recent_capped`` CTE — recent-1000-per-TC + 36-month window.
+    """Shared ``recent_capped`` CTE — recent-3000-per-TC + 36-month window.
 
     Identical on benchmark and single_user paths (the per-TC predicate goes
     away on BOTH sources per D-5). The cohort difference lives entirely
@@ -294,7 +294,7 @@ def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket)
        by ``TimeControlBucket``; no SQL-injection vector.
     2. ``ROW_NUMBER() OVER (PARTITION BY g.user_id ...)`` — the per-(user, TC)
        partition collapses to per-user because the inner set is already
-       restricted to one TC. The 1000-cap then means "most recent 1000 games
+       restricted to one TC. The 3000-cap then means "most recent 3000 games
        of this TC per user" (RESEARCH §Pattern 1).
     """
     recency = _recency_window_sql(snapshot_date)
@@ -324,7 +324,7 @@ def per_user_cte_score_gap(
     """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``score_gap``.
 
     ``metric_value`` = ``eg_score - non_eg_score`` over the user's pooled
-    36-month / 1000-per-TC window. ``n_games`` = endgame-game count on the
+    36-month / 3000-per-TC window. ``n_games`` = endgame-game count on the
     pooled set (the binding floor per CONTEXT.md "Claude's Discretion —
     n_games"; the paired non-endgame count goes in the backfill summary
     log, not the row).
@@ -1090,7 +1090,7 @@ def per_user_cte_median_anchor(
     platform: Literal["lichess", "chesscom"] | None = None,
     min_games: int = MEDIAN_ANCHOR_MIN_GAMES,
 ) -> str:
-    """Per-(user, TC) median rating anchor over the recent-1000-per-TC × 36-month pool.
+    """Per-(user, TC) median rating anchor over the recent-3000-per-TC × 36-month pool.
 
     Phase 94.4 D-04 / RESEARCH Pattern 6 (lines 622-666). Substrate for the
     peer-relative percentile chip lookup: the median anchor per (user, TC) is
