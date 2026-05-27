@@ -215,44 +215,60 @@ async def test_bulk_insert_positions_rollback_atomicity(test_engine) -> None:  #
         await ensure_test_user(setup_session, user_id)
         await setup_session.commit()
 
+    # WR-04 fix: clean up the committed test user in a finally block so the
+    # session-scoped test_engine doesn't leak user_id=2003 across the rest
+    # of the pytest session. The other tests in this file use the
+    # rollback-wrapped db_session fixture and auto-clean, but this test
+    # bypasses that wrapper (per D-7) to exercise real rollback semantics.
     try:
-        async with session_maker() as session:
-            game_ids = await bulk_insert_games(session, [_make_game_row(user_id)])
-            game_id = game_ids[0]
+        try:
+            async with session_maker() as session:
+                game_ids = await bulk_insert_games(session, [_make_game_row(user_id)])
+                game_id = game_ids[0]
 
-            rows = [_make_full_position_row(game_id, user_id, ply) for ply in range(5)]
-            await bulk_insert_positions(session, rows)
+                rows = [_make_full_position_row(game_id, user_id, ply) for ply in range(5)]
+                await bulk_insert_positions(session, rows)
 
-            # Trigger a constraint violation: duplicate PK insert forces rollback.
-            # Use a raw SQL insert of a game with an explicit duplicate id.
-            await session.execute(
-                text("INSERT INTO games (id) VALUES (:gid)"),
-                {"gid": game_id},
-            )
-            # This flush should raise IntegrityError due to duplicate PK
-            await session.flush()
-
-    except Exception:
-        pass  # expected — the IntegrityError is the point
-
-    # Verify: both games and game_positions rows are gone for this user+game.
-    async with session_maker() as verify_session:
-        game_count = (
-            (await verify_session.execute(select(Game).where(Game.user_id == user_id)))
-            .scalars()
-            .all()
-        )
-        pos_count = (
-            (
-                await verify_session.execute(
-                    select(GamePosition).where(GamePosition.user_id == user_id)
+                # Trigger a constraint violation: duplicate PK insert forces rollback.
+                # Use a raw SQL insert of a game with an explicit duplicate id.
+                await session.execute(
+                    text("INSERT INTO games (id) VALUES (:gid)"),
+                    {"gid": game_id},
                 )
+                # This flush should raise IntegrityError due to duplicate PK
+                await session.flush()
+
+        except Exception:
+            pass  # expected — the IntegrityError is the point
+
+        # Verify: both games and game_positions rows are gone for this user+game.
+        async with session_maker() as verify_session:
+            game_count = (
+                (await verify_session.execute(select(Game).where(Game.user_id == user_id)))
+                .scalars()
+                .all()
             )
-            .scalars()
-            .all()
-        )
-        assert len(game_count) == 0, f"Expected 0 games after rollback, got {len(game_count)}"
-        assert len(pos_count) == 0, f"Expected 0 positions after rollback, got {len(pos_count)}"
+            pos_count = (
+                (
+                    await verify_session.execute(
+                        select(GamePosition).where(GamePosition.user_id == user_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(game_count) == 0, f"Expected 0 games after rollback, got {len(game_count)}"
+            assert len(pos_count) == 0, (
+                f"Expected 0 positions after rollback, got {len(pos_count)}"
+            )
+    finally:
+        # Clean up the committed user so it doesn't leak across the session.
+        async with session_maker() as cleanup_session:
+            await cleanup_session.execute(
+                text("DELETE FROM users WHERE id = :uid"),
+                {"uid": user_id},
+            )
+            await cleanup_session.commit()
 
 
 @pytest.mark.asyncio
