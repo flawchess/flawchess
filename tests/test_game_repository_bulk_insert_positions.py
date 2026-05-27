@@ -31,8 +31,8 @@ def _make_game_row(user_id: int) -> dict:
         "platform": "chess.com",
         "platform_game_id": f"game-{uuid.uuid4().hex}",
         "platform_url": None,
-        "pgn": "[Event 'Test']\n\n1. e4 *",
-        "result": "*",
+        "pgn": "[Event 'Test']\n\n1. e4 e5 *",
+        "result": "1/2-1/2",
         "user_color": "white",
         "time_control_str": "600+0",
         "time_control_bucket": "blitz",
@@ -269,14 +269,15 @@ async def test_bulk_insert_positions_chunking_across_chunk_size(
     game_id = game_ids[0]
 
     n_rows = _CHUNK_SIZE + 1  # 1701 — spans exactly two chunks
+    # Use values within signed int64 range: 0x7F00000000000000 | ply is safe.
     rows = [
         {
             "game_id": game_id,
             "user_id": user_id,
             "ply": ply,
-            "full_hash": ply | 0xFF00000000000000,  # unique per ply
-            "white_hash": ply | 0xAA00000000000000,
-            "black_hash": ply | 0xBB00000000000000,
+            "full_hash": 0x7F00000000000000 | ply,  # unique per ply, within int64
+            "white_hash": 0x5A00000000000000 | ply,
+            "black_hash": 0x3B00000000000000 | ply,
         }
         for ply in range(n_rows)
     ]
