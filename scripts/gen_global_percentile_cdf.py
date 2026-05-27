@@ -12,16 +12,16 @@ TC) cohort (CONTEXT D-09 / D-11 / D-13).
 In-Python ranking strategy (RESEARCH Pitfall 8)
 -----------------------------------------------
 
-A naive per-anchor SQL approach would issue ``8 metrics × 33 anchors × 4 TCs
-= 1,056 queries`` against the benchmark DB. The chosen strategy collapses
-this to ``8 × 4 = 32 queries`` by:
+A naive per-anchor SQL approach would issue ``8 metrics × N anchors × 4 TCs``
+queries against the benchmark DB (where ``N`` is the size of the anchor
+grid). The chosen strategy collapses this to ``8 × 4 = 32 queries`` by:
 
 1. Issuing one query per (metric, TC) returning ``(user_id, metric_value,
    n_games, anchor_rating)`` over the joint pool: ``per_user_values
    JOIN per_user_anchor USING (user_id)``.
-2. Ranking the result in Python across each of the 33 anchors on the
-   50-Elo grid (800..2400). Each anchor's K=200 nearest users by
-   ``abs(anchor_rating - anchor)`` form the cohort for that cell.
+2. Ranking the result in Python across each anchor on the 50-Elo grid
+   between ``COHORT_ANCHOR_MIN_ELO`` and ``COHORT_ANCHOR_MAX_ELO``. The
+   in-window users at each anchor form the cohort for that cell.
 3. A user_id tiebreaker on the sort is REQUIRED for byte-identical
    deterministic regen: when the in-window cohort exceeds ``COHORT_MAX_USERS_PER_ANCHOR``
    and the cap-at-MAX truncation has ties on anchor distance, sort by
@@ -137,7 +137,7 @@ COHORT_ANCHOR_STEP_ELO: Final[int] = 50
 
 # CONTEXT D-11 — anchor sweep range.
 COHORT_ANCHOR_MIN_ELO: Final[int] = 800
-COHORT_ANCHOR_MAX_ELO: Final[int] = 2400
+COHORT_ANCHOR_MAX_ELO: Final[int] = 2600
 
 # Time-control sweep order — canonical bullet → blitz → rapid → classical.
 ALL_TIME_CONTROLS: Final[tuple[TimeControlBucket, ...]] = (
@@ -426,9 +426,10 @@ def _build_cohort_cdf_for(
     metric: CdfMetricId,
     tc: TimeControlBucket,
 ) -> tuple[dict[int, CdfTable], list[_CellLogEntry]]:
-    """In-Python rank ``rows`` across the 33 anchors; return (per-anchor CDF map, log).
+    """In-Python rank ``rows`` across the anchor grid; return (per-anchor CDF map, log).
 
-    For each anchor on the 50-Elo grid 800..2400:
+    For each anchor on the 50-Elo grid from ``COHORT_ANCHOR_MIN_ELO`` to
+    ``COHORT_ANCHOR_MAX_ELO`` (inclusive):
 
     1. Filter ``rows`` to users with ``abs(anchor_rating - anchor) <= W`` (the
        eligibility window). This is the in-window pool ``n_in_window``.
@@ -604,6 +605,11 @@ def _render_regen_report(
     """
     snapshot_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    n_anchors_per_tc = (
+        (COHORT_ANCHOR_MAX_ELO - COHORT_ANCHOR_MIN_ELO) // COHORT_ANCHOR_STEP_ELO
+    ) + 1
+    total_cells = len(IN_SCOPE_METRICS) * n_anchors_per_tc * len(ALL_TIME_CONTROLS)
+
     intro = (
         f"# Cohort Percentile CDF — Sliding-Window Methodology (Phase 94.4)\n\n"
         f"**Methodology:** Each cell is the 99-breakpoint empirical CDF over the "
@@ -615,7 +621,7 @@ def _render_regen_report(
         f"Ranked in Python after one per-(metric, TC) SQL query joining "
         f"``per_user_values × per_user_anchor`` (RESEARCH Pitfall 8). Anchors "
         f"sweep {COHORT_ANCHOR_MIN_ELO}..{COHORT_ANCHOR_MAX_ELO} Elo on a "
-        f"{COHORT_ANCHOR_STEP_ELO}-Elo grid (33 anchors per (metric, TC)). "
+        f"{COHORT_ANCHOR_STEP_ELO}-Elo grid ({n_anchors_per_tc} anchors per (metric, TC)). "
         f"A cell is SUPPRESSED when fewer than "
         f"{COHORT_MIN_USERS_PER_ANCHOR} users fall within ±"
         f"{COHORT_MAX_WINDOW_ELO} Elo of the anchor "
@@ -644,7 +650,9 @@ def _render_regen_report(
     # TOP-LINE suppression-flag table.
     table_header = (
         "## Per-(metric, anchor, TC) suppression-flag table (TOP-LINE)\n\n"
-        "Per-cell rows for all 8 metrics × 33 anchors × 4 TCs = 1,056 cells. "
+        f"Per-cell rows for all {len(IN_SCOPE_METRICS)} metrics × "
+        f"{n_anchors_per_tc} anchors × {len(ALL_TIME_CONTROLS)} TCs = "
+        f"{total_cells:,} cells. "
         "Sorted by metric ASC, anchor ASC, TC in canonical order (bullet, "
         "blitz, rapid, classical). ``n_users`` is the cohort size used to "
         "compute the CDF (capped at MAX); ``n_in_window`` is the total "

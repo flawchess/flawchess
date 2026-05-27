@@ -5,10 +5,12 @@ Phase 94.4 — peer-relative percentile chip (CONTEXT D-09 / D-09a / D-13)
 
 This module retires the Phase 94.3 flat ``GLOBAL_PERCENTILE_CDF`` registry
 (16-key, pooled across all anchors) and replaces it with
-``COHORT_PERCENTILE_CDF`` — an 8-metric × ~33-anchor × 4-TC nested registry
-(≤ 1,056 cells; suppressed cells absent by construction). The chip is now
-peer-relative: every user's percentile is read against a sliding-window
-cohort of K=200 nearest-anchor users in the user's own TC.
+``COHORT_PERCENTILE_CDF`` — an 8-metric × N-anchor × 4-TC nested registry
+where ``N`` is the size of the 50-Elo anchor grid between
+``COHORT_ANCHOR_MIN_ELO`` and ``COHORT_ANCHOR_MAX_ELO`` (suppressed cells
+absent by construction). The chip is peer-relative: every user's percentile
+is read against an in-window cohort of users near the user's anchor rating
+in the user's own TC.
 
 Key reshape vs Phase 94.3:
 
@@ -135,8 +137,9 @@ class CdfTable:
 # The script ``scripts/gen_global_percentile_cdf.py --target benchmark``
 # populates this dict between the BEGIN/END sentinels by running 32 per-
 # (metric, TC) queries against the benchmark DB, then ranking results in
-# Python across 33 anchors per (metric, TC) — see the regen script for the
-# K=200 sliding-window policy (CONTEXT D-11).
+# Python across the 50-Elo anchor grid (COHORT_ANCHOR_MIN_ELO ..
+# COHORT_ANCHOR_MAX_ELO) per (metric, TC) — see the regen script for the
+# MIN/MAX sliding-window policy (CONTEXT D-11).
 # ---------------------------------------------------------------------------
 
 # --- BEGIN GENERATED REGISTRY ---
