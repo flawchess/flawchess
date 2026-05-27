@@ -168,7 +168,7 @@ describe('PercentileChip — chip face (Phase 94.4)', () => {
 });
 
 describe('PercentileChip — popover bullets (Phase 94.4)', () => {
-  // Test 7: per-TC bullet 1 — direct percentile statement
+  // Test 7: per-TC bullet 1 — pct<=50 keeps the legacy "bottom X%" framing
   it('per-TC popover bullet 1 reads "Your recent {metric} is in the bottom 23% of ~1600-rated players in bullet."', () => {
     renderChip(23, {
       flavor: 'time-pressure-score-gap',
@@ -183,7 +183,7 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
     );
   });
 
-  // Test 8: aggregated bullet 1 — direct percentile statement
+  // Test 8: aggregated bullet 1 — pct<=50 keeps the legacy "bottom X%" framing
   it('aggregated popover bullet 1 reads "Your recent {metric} is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play."', () => {
     renderChip(23, {
       flavor: 'score-gap',
@@ -197,8 +197,8 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
     );
   });
 
-  // Test 8b: "top X%" form when percentile >= 50 (pct=90 → top 10%)
-  it('high-percentile bullet 1 uses "top {100-pct}%" form (pct=90 → top 10%)', () => {
+  // Test 8b: pct>50 uses positive framing with the chip's percentile verbatim
+  it('high-percentile bullet 1 echoes the chip percentile verbatim (pct=90 → "better than 90%")', () => {
     renderChip(90, {
       flavor: 'score-gap',
       anchorRating: 1600,
@@ -207,7 +207,21 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'Your recent Endgame Score Gap is in the top 10% of ~1600-rated players, aggregated across the time controls you play.',
+      'Your recent Endgame Score Gap is better than 90% of ~1600-rated players, aggregated across the time controls you play.',
+    );
+  });
+
+  // Test 8c: median boundary (pct=50) stays on the "bottom" side per the <= rule
+  it('median percentile (pct=50) uses "in the bottom 50%" framing', () => {
+    renderChip(50, {
+      flavor: 'score-gap',
+      anchorRating: 1600,
+      metricLabel: 'Endgame Score Gap',
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain(
+      'Your recent Endgame Score Gap is in the bottom 50% of ~1600-rated players, aggregated across the time controls you play.',
     );
   });
 

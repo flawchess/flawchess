@@ -166,24 +166,26 @@ function PercentileChipPopoverBody({
   chesscomMedianNative,
   lichessMedianNative,
 }: PopoverBodyProps): React.ReactElement {
-  // Bullet 1 phrases the chip's percentile as a direct "top/bottom X% of
-  // ~{rating}-rated players" statement. Same clamp as the chip face so the
-  // copy never reads "top 0%" or "bottom 0%". For pct >= 50, "top" uses
-  // (100 - pct); for pct < 50, "bottom" uses pct directly. Per-TC chips
-  // append "in {tc}"; aggregated chips append the multi-TC framing from
-  // CONTEXT D-07b.
+  // Bullet 1 phrases the chip's percentile as a direct statement using the
+  // chip face value verbatim (no 100-pct flip), so the tooltip number always
+  // echoes the visible chip number. Above the median ("better than X%")
+  // foregrounds the positive framing; at/below the median ("in the bottom
+  // X%") preserves the legacy framing so low percentiles aren't sugar-coated.
+  // Per-TC chips append "in {tc}"; aggregated chips append the multi-TC
+  // framing from CONTEXT D-07b.
   const clampedPct = Math.max(MIN_PERCENT, Math.min(MAX_PERCENT, Math.round(percentile)));
-  const isTop = clampedPct >= PERCENTILE_MEDIAN;
-  const directionWord = isTop ? 'top' : 'bottom';
-  const percentForCopy = isTop ? 100 - clampedPct : clampedPct;
   const cohortSuffix =
     tc !== undefined
       ? ` in ${tc}`
       : ', aggregated across the time controls you play';
+  const phrasing =
+    clampedPct > PERCENTILE_MEDIAN
+      ? `better than ${clampedPct}%`
+      : `in the bottom ${clampedPct}%`;
   const bullet1 = (
     <>
-      Your <em>recent</em> {metricLabel} is in the {directionWord} {percentForCopy}% of
-      ~{anchorRating}-rated players{cohortSuffix}.
+      Your <em>recent</em> {metricLabel} is {phrasing} of ~{anchorRating}-rated players
+      {cohortSuffix}.
     </>
   );
   const bullet2 =
@@ -197,7 +199,7 @@ function PercentileChipPopoverBody({
   // see what raw values fed the percentile rank.
   const bulletMetricNote =
     flavor === 'time-pressure-score-gap'
-      ? "Computed from the chart's 10% and 30% datapoints (endgames entered with under 40% of your clock): your average score in those buckets minus your opponents' average score when they were under the same pressure."
+      ? "Computed from the chart's 10% and 30% datapoints (endgames entered with under 40% of your clock): your average score in those buckets minus your opponents' average score against you, when they were under the same pressure."
       : null;
   const bullet3 = COPY_FILTER_INDEPENDENCE;
   // D-12 Reversal Amendment (2026-05-27): bullet 4 blended-composition disclosure.
