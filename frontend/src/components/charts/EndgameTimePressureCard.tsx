@@ -179,10 +179,10 @@ function ClockGapHeaderRow({
           percentile suppresses the chip silently. Also gated on
           `ratingAnchor !== undefined` because bullet 4 of the popover MUST
           disclose the anchor; without it we cannot honestly render the
-          tooltip per CONTEXT D-07 bullet 4. Hidden on mobile — the mobile
-          twin renders below the bullet chart for better breathing room. */}
+          tooltip per CONTEXT D-07 bullet 4. Inline on all widths — the icon
+          + integer chip face fits at 375px without wrapping. */}
       {card.clock_gap_percentile != null && ratingAnchor !== undefined && (
-        <span className="ml-auto hidden sm:inline-flex">
+        <span className="ml-auto inline-flex">
           <PercentileChip
             percentile={card.clock_gap_percentile}
             flavor="clock-gap"
@@ -245,12 +245,11 @@ function NetFlagRateRow({
           Gated on `!= null` so a 0.0 percentile (best possible — no net
           timeouts) still renders, while below-floor (null) suppresses
           silently. Also gated on `ratingAnchor !== undefined` so bullet 4
-          can disclose the anchor honestly. Hidden on mobile; the mobile
-          twin renders below the row, left-aligned. Per CONTEXT D-07a +
-          Plan 04, all 8 flavors are higher_is_better — Net Flag Rate's
-          inversion is handled at the data layer (CDF gen). */}
+          can disclose the anchor honestly. Inline on all widths. Per
+          CONTEXT D-07a + Plan 04, all 8 flavors are higher_is_better —
+          Net Flag Rate's inversion is handled at the data layer (CDF gen). */}
       {card.net_flag_rate_percentile != null && ratingAnchor !== undefined && (
-        <span className="ml-auto hidden sm:inline-flex">
+        <span className="ml-auto inline-flex">
           <PercentileChip
             percentile={card.net_flag_rate_percentile}
             flavor="net-flag-rate"
@@ -260,23 +259,6 @@ function NetFlagRateRow({
             chesscomRawRating={ratingAnchor.chesscom_raw_rating ?? undefined}
             metricLabel="Net Flag Rate"
             testId={`time-pressure-card-${card.tc}-net-flag-rate-chip`}
-          />
-        </span>
-      )}
-      {/* Mobile-only Net Flag Rate chip — drops to a left-aligned row
-          beneath the label on <sm widths. Distinct testid keeps "lives
-          inside row" assertion valid against the desktop slot. */}
-      {card.net_flag_rate_percentile != null && ratingAnchor !== undefined && (
-        <span className="basis-full mt-2 flex justify-start sm:hidden">
-          <PercentileChip
-            percentile={card.net_flag_rate_percentile}
-            flavor="net-flag-rate"
-            tc={card.tc}
-            anchorRating={ratingAnchor.anchor_rating}
-            anchorSource={ratingAnchor.source_platform}
-            chesscomRawRating={ratingAnchor.chesscom_raw_rating ?? undefined}
-            metricLabel="Net Flag Rate"
-            testId={`time-pressure-card-${card.tc}-net-flag-rate-chip-mobile`}
           />
         </span>
       )}
@@ -372,25 +354,6 @@ export function EndgameTimePressureCard({
               barColor="neutral"
             />
           </div>
-          {/* Mobile-only Clock Gap chip slot — desktop renders the chip
-              inline-right inside the header row. Below `sm` the chip drops
-              to its own line under the bullet for better readability on
-              narrow widths. Distinct testid keeps "lives inside header"
-              assertions valid. */}
-          {card.clock_gap_percentile != null && ratingAnchor !== undefined && (
-            <div className="flex justify-start mt-2 sm:hidden">
-              <PercentileChip
-                percentile={card.clock_gap_percentile}
-                flavor="clock-gap"
-                tc={card.tc}
-                anchorRating={ratingAnchor.anchor_rating}
-                anchorSource={ratingAnchor.source_platform}
-                chesscomRawRating={ratingAnchor.chesscom_raw_rating ?? undefined}
-                metricLabel="Clock Gap"
-                testId={`time-pressure-card-${card.tc}-clock-gap-chip-mobile`}
-              />
-            </div>
-          )}
           {/* Visual separator between Clock Gap bullet and Net flag rate row. */}
           <div className="border-t border-border/40 mt-3" aria-hidden="true" />
           <NetFlagRateRow card={card} ratingAnchor={ratingAnchor} />
@@ -404,10 +367,9 @@ export function EndgameTimePressureCard({
         <div>
           {/* Phase 94.3 (TPCTL-06): subtitle changed from inline-flex → flex so
               the trailing `ml-auto` Time Pressure Score Gap chip slot can push
-              to the right edge. The leading label + InfoPopover still sit
-              side-by-side via `items-center gap-1.5`; the chip wraps on narrow
-              widths (mobile parity verified at 375px). The element changed
-              from <p> to <div> because the chip's Radix popover renders a
+              to the right edge. The leading label + InfoPopover sit side-by-
+              side via `items-center gap-1.5`. The element changed from <p>
+              to <div> because the chip's Radix popover renders a
               span[role="button"] which is invalid inside a paragraph. */}
           <div
             className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
@@ -443,7 +405,7 @@ export function EndgameTimePressureCard({
               </div>
             </InfoPopover>
             {card.time_pressure_score_gap_percentile != null && ratingAnchor !== undefined && (
-              <span className="ml-auto hidden sm:inline-flex">
+              <span className="ml-auto inline-flex">
                 <PercentileChip
                   percentile={card.time_pressure_score_gap_percentile}
                   flavor="time-pressure-score-gap"
@@ -457,25 +419,6 @@ export function EndgameTimePressureCard({
               </span>
             )}
           </div>
-          {/* Mobile-only Time Pressure Score Gap chip — desktop renders it
-              inline-right inside the subtitle. Below `sm` the chip drops
-              to its own line under the label for better readability on
-              narrow widths. Distinct testid keeps "lives inside subtitle"
-              assertions valid. */}
-          {card.time_pressure_score_gap_percentile != null && ratingAnchor !== undefined && (
-            <div className="flex justify-start mb-2 sm:hidden">
-              <PercentileChip
-                percentile={card.time_pressure_score_gap_percentile}
-                flavor="time-pressure-score-gap"
-                tc={card.tc}
-                anchorRating={ratingAnchor.anchor_rating}
-                anchorSource={ratingAnchor.source_platform}
-                chesscomRawRating={ratingAnchor.chesscom_raw_rating ?? undefined}
-                metricLabel="Time Pressure Score Gap"
-                testId={`time-pressure-card-${card.tc}-time-pressure-score-gap-chip-mobile`}
-              />
-            </div>
-          )}
           <div data-testid={`time-pressure-card-${card.tc}-score-gap-chart`}>
             <ScoreGapByTimePressureChart quintiles={card.quintiles} tc={card.tc} />
           </div>

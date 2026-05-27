@@ -1,7 +1,7 @@
 /**
  * PercentileChip — Phase 94.4 peer-relative rewrite.
  *
- * Per CONTEXT D-06: chip face renders a `SquarePercent` lucide icon followed by
+ * Per CONTEXT D-06: chip face renders a `BadgePercent` lucide icon followed by
  * the bare integer (e.g. icon + "23") — the icon distinguishes a percentile
  * rank from raw percent values elsewhere in the UI. NO direction word (no
  * "Top X%" / "Bottom X%"). NO flame icons. Color band (red < p25 / neutral
@@ -40,7 +40,7 @@
 
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { SquarePercent } from 'lucide-react';
+import { BadgePercent } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
@@ -117,7 +117,7 @@ export interface PercentileChipProps {
 
 /**
  * Bare chip-face formatter — integer string clamped to `[MIN_PERCENT, MAX_PERCENT]`.
- * The leading `SquarePercent` icon rendered alongside conveys "percentile rank";
+ * The leading `BadgePercent` icon rendered alongside conveys "percentile rank";
  * the chip text is now just the number. aria-label still emits the legacy `p23`
  * token for screen readers (see ariaRounded below).
  */
@@ -261,7 +261,7 @@ export function PercentileChip({
           )}
           style={{ backgroundColor: bandColor, color: CHIP_TEXT_COLOR }}
         >
-          <SquarePercent size={PERCENTILE_ICON_SIZE_PX} aria-hidden="true" />
+          <BadgePercent size={PERCENTILE_ICON_SIZE_PX} aria-hidden="true" />
           <span>{label}</span>
         </span>
       </PopoverPrimitive.Trigger>
