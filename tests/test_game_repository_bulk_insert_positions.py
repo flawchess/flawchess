@@ -259,9 +259,7 @@ async def test_bulk_insert_positions_rollback_atomicity(test_engine) -> None:  #
                 .all()
             )
             assert len(game_count) == 0, f"Expected 0 games after rollback, got {len(game_count)}"
-            assert len(pos_count) == 0, (
-                f"Expected 0 positions after rollback, got {len(pos_count)}"
-            )
+            assert len(pos_count) == 0, f"Expected 0 positions after rollback, got {len(pos_count)}"
     finally:
         # Clean up the committed user so it doesn't leak across the session.
         async with session_maker() as cleanup_session:
