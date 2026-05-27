@@ -1088,13 +1088,18 @@ def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
 
     Reads ``CHESSCOM_BLITZ_TO_LICHESS`` from ``app.services.chesscom_to_lichess``
     and emits all rows whose ``target_tc`` column is not None. Returns the VALUES
-    expression including the alias, e.g.:
+    expression body suitable for use inside a named CTE, e.g.:
 
-        (VALUES (600, 632), (650, 681), ...) AS chesscom_conversion_lookup(chesscom_anchor, lichess_equiv)
+        VALUES (600, 632), (650, 681), ...
 
-    The returned string is intended for use as a CTE body:
+    The returned string is intended for use inside a column-aliased CTE body:
 
-        chesscom_conversion_lookup AS {_chesscom_conversion_values_sql(tc)}
+        chesscom_conversion_lookup(chesscom_anchor, lichess_equiv) AS (
+            {_chesscom_conversion_values_sql(tc)}
+        )
+
+    This is the standard PostgreSQL CTE VALUES pattern — the column names are
+    declared in the CTE name clause, not via an alias on the VALUES expression.
 
     Security: the rows are emitted from a ``Final`` Python-controlled snapshot
     constant (``CHESSCOM_BLITZ_TO_LICHESS``) — all values are Python ``int``
@@ -1113,8 +1118,7 @@ def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
         raise ValueError(
             f"CHESSCOM_BLITZ_TO_LICHESS has no entries for target_tc={target_tc!r}"
         )
-    values_body = ", ".join(f"({anchor}, {equiv})" for anchor, equiv in rows)
-    return f"(VALUES {values_body}) AS chesscom_conversion_lookup(chesscom_anchor, lichess_equiv)"
+    return "VALUES " + ", ".join(f"({anchor}, {equiv})" for anchor, equiv in rows)
 
 
 def per_user_cte_median_anchor(
@@ -1291,7 +1295,7 @@ def _per_user_cte_median_anchor_blended(
     T-94.4-10-04 accept disposition.
     """
     elo_expr = _user_elo_at_game_expr()
-    conv_lookup = _chesscom_conversion_values_sql(tc)
+    conv_values = _chesscom_conversion_values_sql(tc)
     return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
 recent_capped_no_daily AS (
   SELECT rc.*
@@ -1299,7 +1303,9 @@ recent_capped_no_daily AS (
   JOIN games g ON g.id = rc.id
   WHERE NOT (g.platform = 'chess.com' AND g.time_control_str LIKE '1/%')
 ),
-chesscom_conversion_lookup AS {conv_lookup},
+chesscom_conversion_lookup(chesscom_anchor, lichess_equiv) AS (
+  {conv_values}
+),
 per_game_blended_rating AS (
   -- chess.com non-Daily: convert via nearest-anchor lookup
   SELECT rc.user_id, lookup.lichess_equiv AS blended_rating, 'chesscom' AS platform_tag,
