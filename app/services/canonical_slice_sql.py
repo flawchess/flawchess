@@ -1115,9 +1115,7 @@ def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
         if (equiv := tc_map.get(target_tc)) is not None  # type: ignore[assignment]
     ]
     if not rows:
-        raise ValueError(
-            f"CHESSCOM_BLITZ_TO_LICHESS has no entries for target_tc={target_tc!r}"
-        )
+        raise ValueError(f"CHESSCOM_BLITZ_TO_LICHESS has no entries for target_tc={target_tc!r}")
     return "VALUES " + ", ".join(f"({anchor}, {equiv})" for anchor, equiv in rows)
 
 

@@ -785,7 +785,6 @@ async def test_b7_sentry_capture_on_anchor_stage_failure(
 
     Verifies: set_context carries stage='anchor', tc set; no user_id in message.
     """
-    from sqlalchemy import text as real_text
 
     captured_contexts: list[dict] = []
     captured_exceptions: list[Exception] = []

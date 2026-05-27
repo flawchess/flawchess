@@ -283,14 +283,10 @@ async def compute_anchors_for_user(
                 # for that (user, TC) per amendment §Suppression rule.
                 continue
             chesscom_median = (
-                int(row.chesscom_median_native)
-                if row.chesscom_median_native is not None
-                else None
+                int(row.chesscom_median_native) if row.chesscom_median_native is not None else None
             )
             lichess_median = (
-                int(row.lichess_median_native)
-                if row.lichess_median_native is not None
-                else None
+                int(row.lichess_median_native) if row.lichess_median_native is not None else None
             )
             await upsert_anchor(
                 session,

@@ -1181,7 +1181,9 @@ class TestPerUserCteMedianAnchorBlendMode:
     def test_a5_blend_true_with_platform_raises_value_error(self) -> None:
         """A5: blend=True and platform='lichess' raises ValueError (mutual exclusion)."""
         with pytest.raises(ValueError, match="blend=True is mutually exclusive"):
-            per_user_cte_median_anchor("rapid", source="single_user", platform="lichess", blend=True)
+            per_user_cte_median_anchor(
+                "rapid", source="single_user", platform="lichess", blend=True
+            )
 
     def test_a6_chesscom_conversion_values_sql_includes_known_snapshot_row(self) -> None:
         """A6 (snapshot-row assertion): _chesscom_conversion_values_sql('rapid') includes
@@ -1191,7 +1193,9 @@ class TestPerUserCteMedianAnchorBlendMode:
         the test self-updates (RESEARCH Pattern 8b discipline).
         """
         expected_equiv = CHESSCOM_BLITZ_TO_LICHESS[1500]["rapid"]
-        assert expected_equiv is not None, "CHESSCOM_BLITZ_TO_LICHESS[1500]['rapid'] is None — pick another anchor"
+        assert expected_equiv is not None, (
+            "CHESSCOM_BLITZ_TO_LICHESS[1500]['rapid'] is None — pick another anchor"
+        )
         sql_fragment = _chesscom_conversion_values_sql("rapid")
         assert f"(1500, {expected_equiv})" in sql_fragment, (
             f"Expected (1500, {expected_equiv}) in rapid VALUES table; got: {sql_fragment[:200]}"
