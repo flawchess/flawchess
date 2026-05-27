@@ -1,11 +1,13 @@
 /**
  * PercentileChip — Phase 94.4 peer-relative rewrite.
  *
- * Per CONTEXT D-06: chip face renders the bare `p23` form. NO direction word
- * (no "Top X%" / "Bottom X%"). NO flame icons. Color band (red < p25 / neutral
+ * Per CONTEXT D-06: chip face renders a `SquarePercent` lucide icon followed by
+ * the bare integer (e.g. icon + "23") — the icon distinguishes a percentile
+ * rank from raw percent values elsewhere in the UI. NO direction word (no
+ * "Top X%" / "Bottom X%"). NO flame icons. Color band (red < p25 / neutral
  * p25-p75 / green > p75) carries direction. `MIN_PERCENT = 1` floor and p99
- * ceiling preserved per D-06a. `aria-label` preserves a direction word for
- * screen readers per D-06b.
+ * ceiling preserved per D-06a. `aria-label` preserves a direction word and the
+ * legacy `p23` token for screen readers per D-06b.
  *
  * Per CONTEXT D-07: tooltip body is 4 bullets per chip:
  *   1. Cohort framing (anchor + TC, inline; per-TC vs aggregated phrasing).
@@ -38,6 +40,7 @@
 
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
+import { SquarePercent } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { GAUGE_NEUTRAL, ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
@@ -48,6 +51,7 @@ const PERCENTILE_BAND_HIGH = 75;
 const PERCENTILE_MEDIAN = 50; // < → "bottom" in aria-label; >= → "top"
 const MIN_PERCENT = 1; // floor — no "p0"
 const MAX_PERCENT = 99; // ceiling — no "p100"
+const PERCENTILE_ICON_SIZE_PX = 14; // matches text-sm (14px) line height
 
 // Sole hard-coded color in this component. Justification: the chip's text
 // renders in near-white on top of all three band colors (red / blue / green).
@@ -112,12 +116,14 @@ export interface PercentileChipProps {
 }
 
 /**
- * Bare chip-face formatter — `p${rounded}` clamped to `[MIN_PERCENT, MAX_PERCENT]`.
- * Replaces the post-94.3 `formatTopXPercent` (which carried a direction word).
+ * Bare chip-face formatter — integer string clamped to `[MIN_PERCENT, MAX_PERCENT]`.
+ * The leading `SquarePercent` icon rendered alongside conveys "percentile rank";
+ * the chip text is now just the number. aria-label still emits the legacy `p23`
+ * token for screen readers (see ariaRounded below).
  */
-function formatBarePercentile(pct: number): string {
+function formatPercentileValue(pct: number): string {
   const rounded = Math.max(MIN_PERCENT, Math.min(MAX_PERCENT, Math.round(pct)));
-  return `p${rounded}`;
+  return String(rounded);
 }
 
 /**
@@ -226,7 +232,7 @@ export function PercentileChip({
     setOpen(false);
   };
 
-  const label = formatBarePercentile(percentile);
+  const label = formatPercentileValue(percentile);
   const bandColor = deriveBandColor(percentile);
   // aria-label preserves a direction word for screen readers per CONTEXT D-06b.
   // The rounded value uses the same clamp as the chip face so the aria-label and
@@ -247,14 +253,15 @@ export function PercentileChip({
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           className={cn(
-            // The bare-percentile form ("p23", up to "p99") is shorter than the
-            // pre-94.4 "Bottom 50%" form; min-w-[3rem] keeps the chip visually
-            // balanced without over-padding. text-sm is the CLAUDE.md minimum.
-            'inline-flex items-center justify-center gap-1 rounded-full px-2 py-0.5 text-sm font-normal cursor-pointer min-w-[3rem]',
+            // Icon + bare integer (e.g. "[%] 23") replaces the pre-94.4
+            // "Bottom 50%" form; min-w-[3rem] keeps the chip visually balanced
+            // across 1- and 2-digit values. text-sm is the CLAUDE.md minimum.
+            'inline-flex items-center justify-center gap-0.5 rounded-full px-2 py-0.5 text-sm font-normal cursor-pointer min-w-[3rem]',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           )}
           style={{ backgroundColor: bandColor, color: CHIP_TEXT_COLOR }}
         >
+          <SquarePercent size={PERCENTILE_ICON_SIZE_PX} aria-hidden="true" />
           <span>{label}</span>
         </span>
       </PopoverPrimitive.Trigger>

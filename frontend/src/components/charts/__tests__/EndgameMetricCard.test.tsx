@@ -439,8 +439,9 @@ describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', ()
     const chip = screen.getByTestId('tile-conversion-percentile-chip');
     expect(chip).not.toBeNull();
     expect(chip.getAttribute('aria-label')).toMatch(/Conversion Score Gap percentile/);
-    // p=20 → chip face "p20"; aria-label direction word "bottom".
-    expect(chip.textContent).toContain('p20');
+    // p=20 → chip face "20" (with SquarePercent icon); aria-label "p20" + "bottom".
+    expect(chip.textContent).toBe('20');
+    expect(chip.getAttribute('aria-label')).toContain('p20');
     expect(chip.getAttribute('aria-label')).toContain('bottom');
   });
 

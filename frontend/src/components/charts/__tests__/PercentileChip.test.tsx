@@ -3,9 +3,10 @@
  * Phase 94.4 Plan 07: PercentileChip peer-relative rewrite tests.
  *
  * 13 assertions cover the new peer-relative chip:
- *   1. Chip face renders bare `p${rounded}` form (no "Top X%" / "Bottom X%").
- *   2. MIN_PERCENT=1 floor (no "p0").
- *   3. p99 ceiling (no "p100").
+ *   1. Chip face renders `SquarePercent` icon + bare integer (no "p" prefix,
+ *      no "Top X%" / "Bottom X%").
+ *   2. MIN_PERCENT=1 floor (no "0").
+ *   3. p99 ceiling (no "100").
  *   4. Color band routing — red < 25 / neutral 25..75 / green > 75 (single-branch,
  *      all flavors `higher_is_better` per CONTEXT D-07a).
  *   5. aria-label preserves direction word ("bottom" < 50, "top" >= 50) per D-06b.
@@ -94,34 +95,35 @@ function parseOklch(s: string): readonly [number, number, number] | null {
 }
 
 describe('PercentileChip — chip face (Phase 94.4)', () => {
-  // Test 1: bare p{rounded} form
+  // Test 1: icon + bare integer form
   it.each([
-    [1, 'p1'],
-    [10, 'p10'],
-    [23, 'p23'],
-    [50, 'p50'],
-    [75, 'p75'],
-    [90, 'p90'],
-    [99, 'p99'],
-  ])('renders bare "%s" form for percentile=%d', (pct, expected) => {
+    [1, '1'],
+    [10, '10'],
+    [23, '23'],
+    [50, '50'],
+    [75, '75'],
+    [90, '90'],
+    [99, '99'],
+  ])('renders icon + "%s" form for percentile=%d', (pct, expected) => {
     renderChip(pct);
-    expect(screen.getByTestId(TID).textContent ?? '').toContain(expected);
+    const chip = screen.getByTestId(TID);
+    expect(chip.textContent ?? '').toBe(expected);
+    // Icon must always be present — distinguishes percentile from raw percent.
+    expect(chip.querySelector('svg')).not.toBeNull();
   });
 
   // Test 2: MIN_PERCENT=1 floor
-  it.each([0, 0.4, -5])('floors at "p1" for percentile=%d (no "p0")', (pct) => {
+  it.each([0, 0.4, -5])('floors at "1" for percentile=%d (no "0")', (pct) => {
     renderChip(pct);
     const txt = screen.getByTestId(TID).textContent ?? '';
-    expect(txt).toContain('p1');
-    expect(txt).not.toMatch(/\bp0\b/);
+    expect(txt).toBe('1');
   });
 
   // Test 3: p99 ceiling
-  it.each([99.6, 100, 105])('clamps at "p99" for percentile=%d (no "p100")', (pct) => {
+  it.each([99.6, 100, 105])('clamps at "99" for percentile=%d (no "100")', (pct) => {
     renderChip(pct);
     const txt = screen.getByTestId(TID).textContent ?? '';
-    expect(txt).toContain('p99');
-    expect(txt).not.toContain('p100');
+    expect(txt).toBe('99');
   });
 
   // Test 4: color band routing

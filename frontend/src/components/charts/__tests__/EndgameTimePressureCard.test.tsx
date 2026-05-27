@@ -434,7 +434,8 @@ describe('EndgameTimePressureCard — Phase 94.3 chip slots', () => {
     );
     const chip = screen.getByTestId('time-pressure-card-bullet-net-flag-rate-chip');
     expect(chip).not.toBeNull();
-    expect(chip.textContent).toContain('p1');
+    // percentile=0 → chip face floors to "1" (with SquarePercent icon).
+    expect(chip.textContent).toBe('1');
   });
 
   // Per-TC placement parity — confirm the testid template substitutes the TC
