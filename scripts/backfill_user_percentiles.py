@@ -1,21 +1,22 @@
 """One-shot backfill script for user_rating_anchors + user_benchmark_percentiles.
 
 Phase 94.4 Plan 06 — cohort-CDF cutover repopulate
+Phase 94.4 Plan 12 — D-12 Reversal Amendment repopulate
 ---------------------------------------------------
 
 Populates BOTH ``user_rating_anchors`` and ``user_benchmark_percentiles``
 for all existing users so the cohort-percentile chip lights up at deploy
 time, not only for users who import after the phase ships.
 
-After Plan 05a's destructive migration, both tables are empty: this
+After Plan 09's reshape migration, both tables are empty: this
 script is the canonical repopulate path. The 3-stage per-user flow
 mirrors the import-time fire-and-forget path exactly:
 
   1. ``compute_stage_a`` — opens its own session, calls
-     ``compute_anchors_for_user`` (Lichess-precedence per D-12, capture
-     ``chesscom_raw_rating`` per D-07 bullet 4), then per-TC score_gap
-     percentiles. RESEARCH Pitfall 9 backfill ordering is enforced
-     INSIDE ``compute_stage_a`` (anchors first, then percentiles).
+     ``compute_anchors_for_user`` (D-12 Reversal: game-weighted blended
+     anchor, pooling converted chess.com + native Lichess ratings), then
+     per-TC score_gap percentiles. RESEARCH Pitfall 9 backfill ordering is
+     enforced INSIDE ``compute_stage_a`` (anchors first, then percentiles).
   2. ``compute_stage_b`` — opens its own session, reads anchors via
      ``fetch_anchors_for_user``, computes the 7 eval-dependent metric
      families × the user's above-floor TCs.
@@ -31,19 +32,25 @@ CLI usage:
 
     uv run python scripts/backfill_user_percentiles.py --target dev|prod
         [--user-id N] [--metric METRIC] [--tc TC] [--skip-anchors]
+        [--snapshot-date YYYY-MM-DD]
 
     --target dev   : run against the local dev DB (Docker, localhost:5432)
     --target prod  : run against prod via the SSH tunnel (localhost:15432)
                      REQUIRES: ``bin/prod_db_tunnel.sh`` first.
+    --snapshot-date: date to use as the snapshot date for the backfill
+                     (defaults to today; used for reproducibility).
 
 Examples:
 
     # Full dev backfill (anchors + percentiles)
     uv run python scripts/backfill_user_percentiles.py --target dev
 
+    # Full dev backfill with explicit snapshot date (D-12 Reversal Amendment)
+    uv run python scripts/backfill_user_percentiles.py --target dev --snapshot-date 2026-05-27
+
     # Prod backfill (tunnel must be running)
     bin/prod_db_tunnel.sh
-    uv run python scripts/backfill_user_percentiles.py --target prod
+    uv run python scripts/backfill_user_percentiles.py --target prod --snapshot-date 2026-05-27
     bin/prod_db_tunnel.sh stop
 
     # Single user
@@ -91,13 +98,15 @@ Cross-environment guard (V4):
   After engine construction, ``str(engine.url)`` is asserted against the
   resolved URL before any DB I/O; the script aborts if there is a mismatch.
 
-Summary output (per CONTEXT D-13 + Plan 06 truth):
+Summary output (per CONTEXT D-13 + Plan 12 D-12 Reversal Amendment truth):
 
   Two tables print at end-of-run:
 
-    1. Anchor summary — counts per (TC × source_platform): lichess /
-       chesscom counts, plus suppressed (no anchor row written, e.g.
-       below ``MEDIAN_ANCHOR_MIN_GAMES`` floor or chess.com Daily-only).
+    1. Anchor Composition Summary — counts per (TC × composition): mixed
+       (both platforms), pure_lichess, pure_chesscom, no_anchor (below
+       ``MEDIAN_ANCHOR_MIN_GAMES`` floor or chess.com Daily-only). Derived
+       from the ``n_chesscom_games`` / ``n_lichess_games`` fields on the
+       upserted ``RatingAnchorRow`` (D-12 Reversal Amendment schema).
 
     2. Percentile summary — counts per (metric × TC): users-included
        (row written), users-floor-rejected (no row written, below per-TC
@@ -136,7 +145,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import settings  # noqa: E402
 from app.models import oauth_account as _oauth_account_module  # noqa: E402,F401 — registers OAuthAccount for SQLAlchemy mapper (User.oauth_accounts relationship)
 from app.models.user import User  # noqa: E402
-from app.models.user_rating_anchors import AnchorSource, TimeControlBucket  # noqa: E402
+from app.models.user_rating_anchors import TimeControlBucket  # noqa: E402
+from app.repositories.user_rating_anchors_repository import RatingAnchorRow  # noqa: E402
 from app.services.global_percentile_cdf import CdfMetricId  # noqa: E402
 from app.services.user_benchmark_percentiles_service import (  # noqa: E402
     STAGE_A_METRIC,
@@ -162,9 +172,16 @@ _ALL_TIME_CONTROLS: tuple[TimeControlBucket, ...] = (
     "classical",
 )
 
-# Anchor source platforms tracked in the per-(TC × source_platform)
-# anchor summary table.
-_ALL_ANCHOR_SOURCES: tuple[AnchorSource, ...] = ("lichess", "chesscom")
+# Composition categories for the per-(TC × composition) anchor summary table.
+# Derived from n_chesscom_games / n_lichess_games on the upserted RatingAnchorRow
+# (D-12 Reversal Amendment schema — composition replaces the old per-platform grouping).
+AnchorComposition = Literal["mixed", "pure_lichess", "pure_chesscom", "no_anchor"]
+_ALL_ANCHOR_COMPOSITIONS: tuple[AnchorComposition, ...] = (
+    "mixed",
+    "pure_lichess",
+    "pure_chesscom",
+    "no_anchor",
+)
 
 # ---------------------------------------------------------------------------
 # Constants (CLAUDE.md: no magic numbers)
@@ -305,30 +322,46 @@ async def _iter_users(
 # ---------------------------------------------------------------------------
 
 
+def _classify_composition(row: RatingAnchorRow) -> AnchorComposition:
+    """Classify an anchor row by platform composition (D-12 Reversal Amendment).
+
+    Derives the composition from ``n_chesscom_games`` / ``n_lichess_games``
+    on the upserted ``RatingAnchorRow``.  The ``"no_anchor"`` category is
+    handled separately in the caller (no row produced for that TC).
+
+    Returns:
+        "mixed"          — games from both platforms present.
+        "pure_chesscom"  — chess.com games only (no Lichess games).
+        "pure_lichess"   — Lichess games only (no chess.com games).
+    """
+    if row.n_chesscom_games > 0 and row.n_lichess_games > 0:
+        return "mixed"
+    elif row.n_chesscom_games > 0:
+        return "pure_chesscom"
+    else:
+        return "pure_lichess"
+
+
 class _AnchorSummary:
-    """Accumulates per-(TC × source_platform) anchor counts.
+    """Accumulates per-(TC × composition) anchor counts (D-12 Reversal Amendment).
 
-    For each (TimeControlBucket, AnchorSource) cell we count the number of
-    users whose anchor compute produced a row for that (TC, platform). The
-    Lichess-precedence rule (D-12) means most users with both platforms
-    appear under ``lichess``; chess.com-only users appear under ``chesscom``.
+    For each (TimeControlBucket, AnchorComposition) cell we count the number
+    of users whose anchor compute produced a row with that composition.
 
-    ``suppressed`` is incremented per-(TC) when a user has games but no
-    anchor row was produced (below ``MEDIAN_ANCHOR_MIN_GAMES`` floor, or
-    chess.com Daily-only — neither path produces an anchor row).
+    Composition categories:
+      ``mixed``         — user has games on both chess.com and Lichess in this TC.
+      ``pure_lichess``  — user has Lichess games only in this TC.
+      ``pure_chesscom`` — user has chess.com games only in this TC.
+      ``no_anchor``     — user has a completed import but no anchor row for
+                          this TC (below ``MEDIAN_ANCHOR_MIN_GAMES`` floor, or
+                          chess.com Daily-only — neither path produces a row).
     """
 
     def __init__(self) -> None:
-        # cells[(tc, platform)] = count of users with that anchor row.
-        self.cells: dict[tuple[TimeControlBucket, AnchorSource], int] = {
-            (tc, platform): 0 for tc in _ALL_TIME_CONTROLS for platform in _ALL_ANCHOR_SOURCES
+        # cells[(tc, composition)] = count of users with that composition.
+        self.cells: dict[tuple[TimeControlBucket, AnchorComposition], int] = {
+            (tc, comp): 0 for tc in _ALL_TIME_CONTROLS for comp in _ALL_ANCHOR_COMPOSITIONS
         }
-        # suppressed[tc] = count of users with no anchor row in that TC
-        # (despite having a completed import). Distinct from "user has no
-        # games in this TC at all" — we cannot cheaply discriminate, so
-        # the count includes both. Cross-reference against the per-TC
-        # game count when interpreting.
-        self.suppressed: dict[TimeControlBucket, int] = {tc: 0 for tc in _ALL_TIME_CONTROLS}
 
 
 class _PercentileSummary:
@@ -399,31 +432,40 @@ async def _classify_anchor_rows(
     """Probe ``user_rating_anchors`` for this user and update the anchor summary.
 
     For each TC in ``_ALL_TIME_CONTROLS`` (or just ``tc_filter`` if set),
-    check whether an anchor row exists; if yes, bump the (tc, source_platform)
-    cell; otherwise bump the per-TC suppressed counter.
+    check whether an anchor row exists; if yes, classify its composition from
+    ``n_chesscom_games`` / ``n_lichess_games`` and bump the (tc, composition)
+    cell; otherwise bump the ``no_anchor`` cell for that TC.
 
     Uses a single query that returns all of the user's anchor rows in one
-    round-trip.
+    round-trip (D-12 Reversal Amendment — reads game counts, not platform column).
     """
     result = await session.execute(
         text(
-            "SELECT time_control_bucket::text AS tc, source_platform::text AS platform "
+            "SELECT time_control_bucket::text AS tc, "
+            "       n_chesscom_games, n_lichess_games "
             "FROM user_rating_anchors WHERE user_id = :uid"
         ).bindparams(uid=user_id)
     )
-    seen: dict[TimeControlBucket, AnchorSource] = {}
+    # Build a composition map keyed by TC.  Construct a minimal RatingAnchorRow
+    # (anchor_rating + native medians are irrelevant here; only the two game
+    # counts are needed) and delegate to _classify_composition.
+    seen: dict[TimeControlBucket, AnchorComposition] = {}
     for row in result.all():
         tc: TimeControlBucket = row.tc  # type: ignore[assignment]
-        platform: AnchorSource = row.platform  # type: ignore[assignment]
-        seen[tc] = platform
+        stub_row = RatingAnchorRow(
+            anchor_rating=0,
+            n_chesscom_games=row.n_chesscom_games,
+            n_lichess_games=row.n_lichess_games,
+            chesscom_median_native=None,
+            lichess_median_native=None,
+        )
+        seen[tc] = _classify_composition(stub_row)
 
     for tc in _ALL_TIME_CONTROLS:
         if tc_filter is not None and tc != tc_filter:
             continue
-        if tc in seen:
-            summary.cells[(tc, seen[tc])] += 1
-        else:
-            summary.suppressed[tc] += 1
+        composition: AnchorComposition = seen.get(tc, "no_anchor")
+        summary.cells[(tc, composition)] += 1
 
 
 async def _classify_percentile_rows(
@@ -685,16 +727,22 @@ def _print_anchor_summary(
     *,
     tc_filter: TimeControlBucket | None,
 ) -> None:
-    """Print the per-(TC × source_platform) anchor count table."""
-    print("Anchor summary (user_rating_anchors counts per TC × source_platform):")
-    print(f"  {'TC':<10} {'lichess':>10} {'chesscom':>10} {'no_anchor':>12}")
+    """Print the per-(TC × composition) anchor count table (D-12 Reversal Amendment).
+
+    Composition categories: mixed / pure_lichess / pure_chesscom / no_anchor.
+    Replaces the old per-(TC × platform) table from Plan 06.
+    """
+    print("Anchor Composition Summary")
+    print("--------------------------")
+    print(f"  {'TC':<12} {'mixed':>8} {'pure_lichess':>14} {'pure_chesscom':>14} {'no_anchor':>12}")
     for tc in _ALL_TIME_CONTROLS:
         if tc_filter is not None and tc != tc_filter:
             continue
-        lichess_n = summary.cells[(tc, "lichess")]
-        chesscom_n = summary.cells[(tc, "chesscom")]
-        no_anchor = summary.suppressed[tc]
-        print(f"  {tc:<10} {lichess_n:>10} {chesscom_n:>10} {no_anchor:>12}")
+        mixed = summary.cells[(tc, "mixed")]
+        pure_lichess = summary.cells[(tc, "pure_lichess")]
+        pure_chesscom = summary.cells[(tc, "pure_chesscom")]
+        no_anchor = summary.cells[(tc, "no_anchor")]
+        print(f"  {tc:<12} {mixed:>8} {pure_lichess:>14} {pure_chesscom:>14} {no_anchor:>12}")
 
 
 def _print_percentile_summary(
@@ -795,6 +843,21 @@ def _parse_args() -> argparse.Namespace:
             "score_gap is in scope (Stage A always recomputes anchors)."
         ),
     )
+    parser.add_argument(
+        "--snapshot-date",
+        default=None,
+        dest="snapshot_date",
+        metavar="YYYY-MM-DD",
+        help=(
+            "Snapshot date for the backfill run (informational; defaults to today). "
+            "Used for the D-12 Reversal Amendment repopulate to stamp the intended "
+            "anchor computation date in the run log. Does not affect computed values "
+            "(anchor computation always uses the current conversion snapshot). "
+            "Example: --snapshot-date 2026-05-27 for the Plan 12 backfill. "
+            "The anchor composition summary prints at the end of the run — "
+            "see 'Anchor Composition Summary' (mixed / pure_lichess / pure_chesscom / no_anchor)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -803,6 +866,8 @@ if __name__ == "__main__":
     target: Literal["dev", "prod"] = args.target  # type: ignore[assignment]
     metric: CdfMetricId | None = args.metric  # type: ignore[assignment]
     tc: TimeControlBucket | None = args.tc  # type: ignore[assignment]
+    snapshot_date: str = args.snapshot_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    print(f"[backfill] snapshot_date={snapshot_date} (D-12 Reversal Amendment run)")
     asyncio.run(
         main(
             target=target,
