@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stale Stage B percentiles after Stage-5c-covered imports** (quick-260527-u3u). The 7 eval-dependent percentile metric families (`achievable_score_gap`, `score_gap_conv`, `score_gap_parity`, `recovery_score_gap`, `clock_gap`, `net_flag_rate`, `time_pressure_score_gap`) now refresh on import completion when the user has no pending evals, not only on Stockfish cold-drain completion. Previously, an incremental import where every new game already carried lichess `%eval` annotations (Stage 5c marked them `evals_completed_at = NOW()` at import time) refreshed `score_gap` via the Stage A trigger but left the 7 eval-dependent families stale until the next drain tick on that user. The existing cold-drain trigger in `eval_drain.py` is unchanged; both sites are idempotent.
+
 ## [v1.19] Endgame Percentiles — 2026-05-27
 
 The first peer-relative percentile chips on the Endgames page. The chip compares each user against same-rated-cohort peers (per-(metric, ELO anchor, TC) cohort CDFs built from the Phase 93 / 94.2 pooled benchmark cohort), making the percentile a stable *trait* of the user rather than a *view* of their currently-filtered data. Phases 93 + 94 shipped the underlying CDF + chip primitive (initial global-pool framing); Phase 94.1 made the chip filter-independent via a materialized `user_benchmark_percentiles` table; Phase 94.2 collapsed the per-cell stratified methodology into a one-point-per-user pooled model; Phase 94.3 extended chips to the Time Pressure cards (12 per-TC chips); Phase 94.4 pivoted the framing from global-pool to peer-relative cohort with rating-anchor disclosure and rescued Recovery Score Gap from the v1 drop list.
