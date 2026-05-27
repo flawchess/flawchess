@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.19
 milestone_name: Endgame Percentiles & LLM Statistical Reasoning
-status: ready_to_plan
-last_updated: 2026-05-27T14:17:11.413Z
-last_activity: 2026-05-27 -- Phase 94.4 execution started
+status: "Phase 94.4 shipped — PR #145"
+last_updated: "2026-05-27T15:19:21.481Z"
+last_activity: 2026-05-27
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 45
   completed_plans: 45
   percent: 45
-stopped_at: Phase 94.4 complete (15/15) — ready to discuss Phase 95
 ---
 
 # Project State: FlawChess
@@ -20,7 +19,7 @@ stopped_at: Phase 94.4 complete (15/15) — ready to discuss Phase 95
 
 Phase: 95
 Plan: Not started
-Status: Ready to plan
+Status: Phase 94.4 shipped — PR #145
 Last activity: 2026-05-27
 
 ## Project Reference
