@@ -86,7 +86,7 @@ export function EndgameCard({
       <div className="flex flex-col gap-4">
         {showWdl ? (
           <div className="flex flex-col gap-2">
-            <span className="min-h-5 flex items-center gap-2 text-sm tabular-nums w-full">
+            <span className="flex items-center gap-2 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">Win/Draw/Loss</span>
               <span
                 className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums whitespace-nowrap"
@@ -112,7 +112,7 @@ export function EndgameCard({
 
         {showScoreRow ? (
           <div className="flex flex-col gap-2">
-            <span className="min-h-5 flex items-center gap-1 text-sm tabular-nums w-full">
+            <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground">{scoreLabel}</span>
               <span
                 className="font-semibold"

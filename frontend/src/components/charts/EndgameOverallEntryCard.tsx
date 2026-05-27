@@ -77,7 +77,7 @@ export function EntryCard({ data }: EntryCardProps) {
         {/* Row 1: entry-eval bullet (pawns) */}
         {showEntryEvalChart ? (
           <div className="flex flex-col gap-2">
-            <span className="min-h-5 flex items-center gap-1 text-sm tabular-nums w-full">
+            <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground inline-flex items-center gap-1">
                 <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
                 Endgame Entry Eval:
@@ -136,7 +136,7 @@ export function EntryCard({ data }: EntryCardProps) {
         <div data-testid="endgame-achievable-score">
           {showAchievableChart ? (
             <div className="flex flex-col gap-2">
-              <span className="min-h-5 flex items-center gap-1 text-sm tabular-nums w-full">
+              <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                 <span className="text-muted-foreground inline-flex items-center gap-1">
                   <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
                   Achievable Score:
