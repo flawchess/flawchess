@@ -175,51 +175,57 @@ async def _sample_metrics(
         pool_pre_ping=True,
     )
 
-    with (
-        docker_csv_path.open("w", newline="", encoding="utf-8") as docker_fh,
-        pg_csv_path.open("w", newline="", encoding="utf-8") as pg_fh,
-    ):
-        docker_writer: csv.DictWriter[str] = csv.DictWriter(
-            docker_fh, fieldnames=_DOCKER_CSV_HEADER
-        )
-        pg_writer: csv.DictWriter[str] = csv.DictWriter(pg_fh, fieldnames=_PG_CSV_HEADER)
-        docker_writer.writeheader()
-        pg_writer.writeheader()
-        docker_fh.flush()
-        pg_fh.flush()
-
-        while not stop_event.is_set():
-            ts = _ts_iso_utc()
-            # WR-01 fix: _sample_docker now returns the parsed mem_bytes so the
-            # CSV write and peak tracker share a single docker stats observation
-            # (previously a second docker stats invocation captured the peak,
-            # causing the CSV trace and peak_mem_usage_bytes to diverge under
-            # live memory pressure, and doubling per-sample subprocess cost).
-            mem_bytes = await _sample_docker(
-                ts=ts,
-                db_container=db_container,
-                writer=docker_writer,
+    # IN-06 fix: open a single pg connection for the lifetime of the sampler
+    # instead of opening/closing one per sample tick. Previously each tick did
+    # a TCP handshake + auth round-trip and contributed an extra row to
+    # pg_stat_activity (mildly inflating peak_connection_count). Mirrors the
+    # docker_writer pattern (open once, reuse).
+    async with metric_engine.connect() as pg_conn:
+        with (
+            docker_csv_path.open("w", newline="", encoding="utf-8") as docker_fh,
+            pg_csv_path.open("w", newline="", encoding="utf-8") as pg_fh,
+        ):
+            docker_writer: csv.DictWriter[str] = csv.DictWriter(
+                docker_fh, fieldnames=_DOCKER_CSV_HEADER
             )
-            if mem_bytes > peak_mem_bytes:
-                peak_mem_bytes = mem_bytes
-
-            conn_count = await _sample_pg_activity(
-                ts=ts,
-                engine=metric_engine,
-                writer=pg_writer,
-            )
-            if conn_count > peak_conn_count:
-                peak_conn_count = conn_count
-
+            pg_writer: csv.DictWriter[str] = csv.DictWriter(pg_fh, fieldnames=_PG_CSV_HEADER)
+            docker_writer.writeheader()
+            pg_writer.writeheader()
             docker_fh.flush()
             pg_fh.flush()
 
-            # Sleep in small slices so we respond to stop_event quickly.
-            elapsed = 0.0
-            slice_s = min(0.5, sample_interval)
-            while elapsed < sample_interval and not stop_event.is_set():
-                await asyncio.sleep(slice_s)
-                elapsed += slice_s
+            while not stop_event.is_set():
+                ts = _ts_iso_utc()
+                # WR-01 fix: _sample_docker now returns the parsed mem_bytes so the
+                # CSV write and peak tracker share a single docker stats observation
+                # (previously a second docker stats invocation captured the peak,
+                # causing the CSV trace and peak_mem_usage_bytes to diverge under
+                # live memory pressure, and doubling per-sample subprocess cost).
+                mem_bytes = await _sample_docker(
+                    ts=ts,
+                    db_container=db_container,
+                    writer=docker_writer,
+                )
+                if mem_bytes > peak_mem_bytes:
+                    peak_mem_bytes = mem_bytes
+
+                conn_count = await _sample_pg_activity(
+                    ts=ts,
+                    conn=pg_conn,
+                    writer=pg_writer,
+                )
+                if conn_count > peak_conn_count:
+                    peak_conn_count = conn_count
+
+                docker_fh.flush()
+                pg_fh.flush()
+
+                # Sleep in small slices so we respond to stop_event quickly.
+                elapsed = 0.0
+                slice_s = min(0.5, sample_interval)
+                while elapsed < sample_interval and not stop_event.is_set():
+                    await asyncio.sleep(slice_s)
+                    elapsed += slice_s
 
     await metric_engine.dispose()
     return peak_mem_bytes, peak_conn_count
@@ -284,10 +290,15 @@ async def _sample_docker(
 async def _sample_pg_activity(
     *,
     ts: str,
-    engine: object,
+    conn: object,
     writer: "csv.DictWriter[str]",
 ) -> int:
-    """Query pg_stat_activity, write one CSV row per backend, return row count."""
+    """Query pg_stat_activity, write one CSV row per backend, return row count.
+
+    IN-06 fix: takes a long-lived ``AsyncConnection`` instead of opening one per
+    call. The connection is owned by the outer ``_sample_metrics`` ``with`` block
+    and reused across every sample tick, eliminating per-tick connect/auth cost.
+    """
     sql = text(
         "SELECT pid, state, "
         "EXTRACT(EPOCH FROM (NOW() - query_start)) AS query_age_s, "
@@ -297,12 +308,11 @@ async def _sample_pg_activity(
     )
     conn_count = 0
     try:
-        from sqlalchemy.ext.asyncio import AsyncEngine  # noqa: PLC0415
+        from sqlalchemy.ext.asyncio import AsyncConnection  # noqa: PLC0415
 
-        assert isinstance(engine, AsyncEngine)
-        async with engine.connect() as conn:
-            result = await conn.execute(sql, {"dbname": PG_DBNAME})
-            rows = result.fetchall()
+        assert isinstance(conn, AsyncConnection)
+        result = await conn.execute(sql, {"dbname": PG_DBNAME})
+        rows = result.fetchall()
         for row in rows:
             conn_count += 1
             writer.writerow(
