@@ -10,10 +10,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **Recovery Score Gap chip slot on the Endgames page** (Phase 94.4). Rescued from the v1 drop list under peer-relative framing. Cohort comparison normalises the opponent-rating selection bias that drove the v1 drop, surfacing how a user recovers from material deficit vs other same-rated players.
+- **Rating-anchor disclosure in the chip tooltip** (Phase 94.4). For chess.com-anchored users, the tooltip shows the raw chess.com rating and the Lichess-equivalent computed via a hardcoded ChessGoals snapshot. Lichess-anchored users see their Lichess rating directly.
 - **Percentile annotations on 4 endgame ΔES rows** (Phase 94). A new "Top X%" chip appears next to four metrics — Endgame Score Gap, Achievable Score Gap, Section 2 Conversion ΔES, Section 2 Parity ΔES — surfacing the user's cohort percentile against the Phase 93 global CDF. Banded color (red <25 / blue 25..75 / green >75), flame tier stack at p≥90 / 95 / 99 (highest tier only), Radix popover with metric-aware copy: skill-isolating framing for the three low-effect metrics (Endgame Score Gap, Achievable Score Gap, Parity ΔES) and improvement-focus framing for Conversion ΔES (the high-effect metric that tracks rating closely). Backend gates each percentile at `n ≥ 10` (the existing `PVALUE_RELIABILITY_MIN_N` reliability floor); chips simply don't render when the field is null. Raw % gauges (Conv/Parity/Recov), Recovery ΔES, per-type cards, and the Time Pressure section deliberately keep their existing IQR zone bands and get no chip.
 
 ### Changed
 
+- **Endgame percentile chip pivoted from global-pool to peer-relative cohort framing** (Phase 94.4). The chip now compares each user against same-rated-cohort peers (per-(metric, ELO anchor, TC) cohort CDFs, K=200 sliding windows at 50-Elo anchors). Chip face shrinks to a bare `p23` pill (no flame icons, no direction word); tooltip rewrites to a 4-bullet peer-relative form including rating-anchor disclosure ("Anchored on your Lichess rapid rating" / "Anchored on your chess.com blitz rating, converted via ChessGoals snapshot"). 2400-rated users no longer see globally-low percentiles that demoralize honest skill; the percentile is now relative to other 2400s.
 - **`ScoreGapRow` layout** (Phase 94). Non-`hasSlots` callers now render via CSS Grid so the new percentile chip can sit at the right edge of the value row on desktop (≥640 px) and on its own line below the bullet chart, left-aligned, on mobile (<640 px). `EndgameTypeCard`'s 3-column variant (`hasSlots`) is unchanged.
 
 ### Fixed
