@@ -6,7 +6,7 @@ status: "v1.19 shipped — milestone archived; v1.20 not started"
 last_updated: "2026-05-27T15:30:00.000Z"
 last_activity: 2026-05-27
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,16 +17,16 @@ progress:
 
 ## Current Position
 
-Phase: 95
+Phase: 95 (standalone hardening — asyncpg COPY for `bulk_insert_positions`; SEED-027 Thread B)
 Plan: Not started
-Status: v1.19 shipped 2026-05-27 — milestone archived; v1.20 LLM Statistical Reasoning not started
+Status: v1.19 shipped 2026-05-27; v1.20 LLM Statistical Reasoning Phase 96 not started. Phase 95 inserted 2026-05-27 as a standalone import-hardening phase before v1.20 kicks off — the prior Phase 95 (LLM rework) was renumbered to 96.
 Last activity: 2026-05-27
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-27 after v1.19 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.19 Endgame Percentiles shipped 2026-05-27 — peer-relative percentile chips on Endgames page (per-(metric, ELO anchor, TC) cohort CDFs, per-user blended platform rating anchors, 4-bullet tooltip with rating-anchor disclosure, filter-independent). 12 per-TC chips on Time Pressure cards. Phase 95 split into v1.20 LLM Statistical Reasoning. Run `/gsd-discuss-phase 95` to start the LLM rework, or refine v1.20 scope first.
+Current focus: v1.19 Endgame Percentiles shipped 2026-05-27 — peer-relative percentile chips on Endgames page (per-(metric, ELO anchor, TC) cohort CDFs, per-user blended platform rating anchors, 4-bullet tooltip with rating-anchor disclosure, filter-independent). 12 per-TC chips on Time Pressure cards. The prior Phase 95 (LLM Statistical Reasoning rework) was renumbered to Phase 96 (v1.20) on 2026-05-27 to make room for a standalone hardening phase. New Phase 95 (SEED-027 Thread B) switches `bulk_insert_positions` to asyncpg `copy_records_to_table` to finish closing FLAWCHESS-3Q — Thread A (container memory budget) shipped 2026-05-26 via hotfix PR #144 at prod SHA 65511c9. Run `/gsd-plan-phase 95` next, then `/gsd-discuss-phase 96` for the LLM rework.
 
 ## Milestone Progress
 
