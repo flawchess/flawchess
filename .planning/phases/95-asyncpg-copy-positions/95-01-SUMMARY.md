@@ -64,7 +64,7 @@ Switch `bulk_insert_positions` from `insert(GamePosition).values(chunk)` to asyn
 
 ### tests/test_game_repository_bulk_insert_positions.py
 
-Six async integration tests against the live dev Postgres:
+Six async integration tests against the test Postgres DB (`flawchess_test`) via the `db_session` fixture (which auto-rolls-back each test):
 
 | Test | What it asserts |
 |------|-----------------|
