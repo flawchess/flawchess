@@ -28,6 +28,7 @@
 
 - [ ] **Phase 95: asyncpg COPY for `bulk_insert_positions`** *(standalone hardening, no milestone)* — Switch the heaviest INSERT in the import pipeline from parameterized `INSERT … VALUES(...)` to asyncpg `copy_records_to_table` (binary COPY) to cut per-backend memory pressure during dual-platform imports. Follow-up to SEED-027 Thread A (PR #144 container budget hotfix).
 - [ ] **Phase 96: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+- [ ] **Phase 97: Import Readiness Gate** *(standalone UX/correctness, no milestone)* — Hold the user on the import page until import + Stockfish eval drain + Stage A/B percentiles are all ready, then unlock all routes via a user-initiated "Explore" CTA. Replaces the `useEvalCoverage` auto-reload hack and removes eval-progress UI from all non-import surfaces. See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
 
 ## Phase Details
 
@@ -60,6 +61,23 @@
   3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
   4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
   5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
+
+**Plans**: TBD
+
+### Phase 97: Import Readiness Gate
+
+**Goal**: Hold the user on the import page until their data is fully ready — import jobs complete, the Stockfish cold drain (`app/services/eval_drain.py`) has zero pending evals, AND Stage A/B percentiles (`app/services/user_benchmark_percentiles_service.py`) are persisted — then unlock all routes via a user-initiated "Explore" CTA. This prevents the eval-dependent surfaces (Endgame Conversion/Parity/Recovery cards, eval-dependent `PercentileChip`s, Openings Cpu-icon stats) from rendering partial/biased data mid-drain. Replaces the `window.location.reload()`-on-eval-complete hack in `frontend/src/hooks/useEvalCoverage.ts` with one coarse global gate (preferred over fragile per-surface loading containers), and collapses all eval-progress UI to the import page. Background: percentile/anchor compute is NOT the bottleneck (in-memory `COHORT_PERCENTILE_CDF` + user-scoped queries = seconds); the entire wait is the Stockfish drain at ~13–15 ev/s. Incremental and typical first imports gate only seconds-to-minutes; only the rare power-user first import (~40k games) gates ~30–45 min, on an empty account with nothing worth showing.
+**Depends on**: none (builds on existing two-lane import + Stage A/B percentile pipeline)
+**Requirements**: standalone — no requirement IDs (UX / correctness follow-up to the v1.18 two-lane import + v1.19 percentiles)
+**Success Criteria** (what must be TRUE):
+
+  1. **Authoritative readiness signal.** A single backend endpoint reports the user "ready" only when ALL hold: no import job in `pending`/`in_progress` for the user, `pending_count == 0` for eval coverage, AND the user's Stage A anchors + Stage A/B percentile rows are persisted. The gate keys off THIS signal — never off `useEvalCoverage`'s `pct_complete == 100` transition (which races Stage B's `asyncio.create_task` and can fire before percentile rows commit). A unit/integration test asserts the endpoint returns not-ready when evals are done but Stage B rows are absent.
+  2. **Global gate.** While the user is not ready, all routes except the import page are blocked; direct URL navigation to a gated route (`/openings`, `/endgames`, `/overview`) redirects to the import page. When the user is ready, all routes are reachable.
+  3. **Informative progress, not a blank spinner.** The gated import page renders as a state machine — fetching → importing → analyzing endgames (X / Y games) → computing stats → ready — using the existing live eval counter. Verified across each phase transition.
+  4. **"Complete" means readiness-complete.** The celebratory "N games imported and analyzed" message renders only in the ready state, NOT at hot-import `status=completed`. No message claims completion while evals or percentiles are still pending.
+  5. **User-initiated unlock.** The ready state shows an enabled "Explore" CTA; clicking it navigates into the app (with a hard refresh if cache freshness requires it). The `useEvalCoverage` auto-reload is retired. No forced `window.location.reload()` remains on the eval-completion path.
+  6. **Eval-progress UI collapses to the import page.** The eval-coverage UI is removed from all non-import surfaces — `EvalCoverageHeader`, `EvalConfidenceTooltip` eval counters, and `useEvalCoverage` consumers in the Endgame cards (`EndgameMetricCard`, `EndgameTypeCard`, `EndgameOverallEntryCard`, `EndgameOverallPerformanceSection`) and `OpeningFindingCard` / `PositionResultsPanel`. `npm run knip` passes with the now-unused exports deleted.
+  7. **Tests + gates pass.** Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) all green. New tests cover the readiness-endpoint truth table, the route-gate redirect behavior, and the import-page state-machine transitions.
 
 **Plans**: TBD
 
@@ -365,17 +383,6 @@ Plans:
 **Requirements:** TBD
 **Plans:** 0 plans
 **Context:** Moved from v1.10 Advanced Analytics — v1.10 is an endgame-focused milestone and opening risk metrics are a better fit for the upcoming Opening Insights milestone (discovering weaknesses in most-played opening lines). Re-evaluate scope at that time.
-
-Plans:
-
-- [ ] TBD (promote with /gsd-review-backlog when ready)
-
-### Phase 999.7: Import Readiness Gate (BACKLOG)
-
-**Goal:** Replace the `window.location.reload()`-on-eval-complete hack (`frontend/src/hooks/useEvalCoverage.ts`) with a global gate that holds the user on the import page until import + Stockfish eval drain + Stage A/B percentiles are ALL done, then unlocks all routes. Prevents eval-dependent surfaces (Endgame Conversion/Parity/Recovery cards, eval-dependent PercentileChips, Openings Cpu-icon stats) from rendering partial/biased data while the cold drain runs. Prefer one coarse global gate over fragile per-surface loading containers.
-**Requirements:** TBD
-**Plans:** 0 plans
-**Context:** Explore session 2026-05-28. Four locked constraints (see `.planning/notes/import-readiness-gate.md`): (1) gate on an authoritative "percentiles ready" signal — no active import AND pending_count==0 AND Stage A/B rows persisted — NOT the raw eval-coverage 100% transition (races Stage B's asyncio.create_task); (2) gated import page must show informative progress as a state machine (fetching → importing → analyzing endgames X/Y → computing stats → ready), not a blank spinner, since power-user first imports can gate ~30–45 min; (3) "import complete" messaging must mean readiness-complete, not hot-import-complete (today it fires prematurely at status=completed); (4) unlock is user-initiated via an "Explore" CTA on the ready state, not a forced auto-reload (which is jarring and drops the completion message); (5) eval progress collapses to the import page only — remove the eval-coverage UI from all non-import surfaces (EvalCoverageHeader, EvalConfidenceTooltip counters, useEvalCoverage consumers in the Endgame cards + OpeningFindingCard/PositionResultsPanel), since gated surfaces only ever render at 100% coverage (expect a knip cleanup). Percentile/anchor compute is NOT the bottleneck (in-memory CDF + user-scoped queries = seconds); the entire wait is the Stockfish drain at ~13–15 ev/s. Incremental and typical first imports gate only seconds-to-minutes.
 
 Plans:
 
