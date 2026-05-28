@@ -92,6 +92,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import async_session_maker as _default_session_maker
+from app.services import percentile_compute_registry
 from app.models.user_rating_anchors import TimeControlBucket
 from app.repositories.user_benchmark_percentiles_repository import upsert_percentile
 from app.repositories.user_rating_anchors_repository import (
@@ -468,3 +469,11 @@ async def compute_stage_b(
         # Top-level capture for session-open / commit / anchor-fetch failures.
         sentry_sdk.set_context("percentile_compute", {"user_id": user_id, "stage": "B"})
         sentry_sdk.capture_exception(exc)
+    finally:
+        # Quick 260529-015: release the Tier-2 readiness gate regardless of how
+        # Stage B exits — success, the no-anchors early return, the top-level
+        # exception path, or cancellation (finally runs before the re-raise
+        # propagates). Clearing even when zero rows are written is what prevents
+        # below-floor / no-anchor users from being locked out of the page forever.
+        # Additive only: does not replace the Sentry capture above.
+        percentile_compute_registry.clear(user_id)
