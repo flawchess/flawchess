@@ -35,6 +35,8 @@ import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useCachedEndgameInsights, useEndgameInsights } from '@/hooks/useEndgameInsights';
 import { useActiveJobs } from '@/hooks/useImport';
+import { useReadiness } from '@/hooks/useReadiness';
+import { EndgamesProcessingState } from '@/components/EndgamesProcessingState';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 import type { EndgameInsightsResponse, SectionId } from '@/types/insights';
@@ -82,6 +84,7 @@ const TAB_INFO: Record<'stats' | 'games', { aria: string; text: string }> = {
 };
 
 export function EndgamesPage() {
+  const { tier2, pendingCount, totalCount } = useReadiness();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -762,6 +765,13 @@ export function EndgamesPage() {
   );
 
   // ── Render ───────────────────────────────────────────────────────────────────
+
+  // Whole-page lock until Tier 2 (D-01/D-02): uniform for first-import and
+  // incremental import — the nav link stays enabled but the page shows the
+  // processing state. No forced navigation; unlock is reactive once tier2=true.
+  if (!tier2) {
+    return <EndgamesProcessingState pendingCount={pendingCount} totalCount={totalCount} />;
+  }
 
   if (needsRedirect) {
     return <Navigate to="/endgames/stats" replace />;
