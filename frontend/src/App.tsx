@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation, useNavigate } from 'react-router-dom';
 import * as Sentry from "@sentry/react";
 import { Link } from 'react-router-dom';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -31,15 +31,11 @@ import { AdminPage } from '@/pages/Admin';
 import { PrivacyPage } from '@/pages/Privacy';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
-import type { UserProfile } from '@/types/users';
+import { useReadiness } from '@/hooks/useReadiness';
 
 const FLAG_OPENINGS_VISITED = 'openings_visited';
 const FLAG_ENDGAMES_VISITED = 'endgames_visited';
 const IMPORT_REQUIRED_MESSAGE = 'Import your games first to unlock this feature.';
-
-function profileHasCompletedImport(profile: UserProfile | null | undefined): boolean {
-  return profile != null && (profile.chess_com_last_sync_at !== null || profile.lichess_last_sync_at !== null);
-}
 
 // ─── Non-visual job completion watcher ────────────────────────────────────────
 
@@ -102,9 +98,10 @@ function NavHeader() {
   const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
   const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
-  // Backed by completed-import timestamps so the dots wait for the first
-  // import to actually finish (game counts can climb mid-import).
-  const hasCompletedImport = profileHasCompletedImport(profile);
+  // Tier-1 readiness replaces profileHasCompletedImport: keyed off whether
+  // the import job is no longer in-flight (not just timestamp presence), so
+  // nav unlocks when the first import actually completes (not on submit).
+  const { tier1: hasCompletedImport } = useReadiness();
   const showOpeningsDot = hasCompletedImport && !openingsVisited;
   // Endgames dot is gated behind the Openings dot — we want users to discover
   // Openings first, then Endgames after that dot is cleared.
@@ -244,8 +241,8 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
   const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
-  // See NavHeader — gate on completed-import timestamps, not game counts.
-  const hasCompletedImport = profileHasCompletedImport(profile);
+  // See NavHeader — gate on tier1 readiness, not completed-import timestamps.
+  const { tier1: hasCompletedImport } = useReadiness();
   const showOpeningsDot = hasCompletedImport && !openingsVisited;
   const showEndgamesDot = hasCompletedImport && openingsVisited && !endgamesVisited;
 
@@ -322,7 +319,8 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
-  const hasCompletedImport = profileHasCompletedImport(profile);
+  // See NavHeader — gate on tier1 readiness, not completed-import timestamps.
+  const { tier1: hasCompletedImport } = useReadiness();
   // D-17: Admin entry surfaced in the More drawer (not the bottom bar) for superusers.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
@@ -445,15 +443,17 @@ function ProtectedLayout() {
 // ─── Import-required route guard ──────────────────────────────────────────────
 
 /**
- * Locks non-Import pages until at least one game import has finished successfully.
- * Backed by completed-import timestamps on the profile (chess_com_last_sync_at /
- * lichess_last_sync_at), so users can browse the rest of the app only after their
- * first import returns. Redirects to /import with a toast when locked.
+ * Locks non-Import pages until Tier 1 readiness is reached (no active import
+ * job in-flight). Replaced profileHasCompletedImport (timestamp-based) with
+ * readiness.tier1 from useReadiness so the route gate reacts to job completion
+ * rather than profile sync timestamps. Pitfall 2: the isLoading guard prevents
+ * a content flash while the first readiness fetch is in-flight (tier1 defaults
+ * to false before the first response).
  */
 function ImportRequiredRoute({ children }: { children: React.ReactNode }) {
-  const { data: profile, isLoading } = useUserProfile();
-  const hasCompletedImport = profileHasCompletedImport(profile);
-  const shouldRedirect = !isLoading && profile != null && !hasCompletedImport;
+  const readiness = useReadiness();
+  const isLoading = readiness.isLoading;
+  const shouldRedirect = !isLoading && !readiness.tier1;
 
   useEffect(() => {
     if (shouldRedirect) {
@@ -495,20 +495,55 @@ function AppRoutes() {
   const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const { token } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { tier2 } = useReadiness();
 
   // Restore active jobs from server on mount (and after re-login when token changes)
   const hasRestoredRef = useRef(false);
   // Track which token restoration has been performed for — reset guard on re-login
   const restoredForTokenRef = useRef<string | null>(null);
+  // Tracks the in-session tier2 false→true transition for the Tier-2 toast.
+  // A useRef (not module boolean) so it resets on token change (re-login/impersonation).
+  const wasTier2FalseRef = useRef<boolean>(false);
+
   // eslint-disable-next-line react-hooks/refs -- intentional: reset restoration guard on token change
   if (restoredForTokenRef.current !== token) {
     restoredForTokenRef.current = token; // eslint-disable-line react-hooks/refs
     hasRestoredRef.current = false; // eslint-disable-line react-hooks/refs
+    wasTier2FalseRef.current = false; // eslint-disable-line react-hooks/refs
     // Phase 62: an admin who impersonates swaps their token — their in-flight job
     // ids belong to the admin, not the target. Drop them so we do not poll 404s.
     setActiveJobIds([]);
     setCompletedJobIds(new Set());
   }
+
+  // Fire-once Tier-2 toast when tier2 transitions false→true in-session.
+  // Suppressed when already on /endgames (user can see the page unlock directly).
+  // Uses wasTier2FalseRef to avoid firing on cold load when tier2 is already true.
+  useEffect(() => {
+    if (!tier2) {
+      // Observe that we have seen tier2=false in this session.
+      wasTier2FalseRef.current = true;
+      return;
+    }
+    if (!wasTier2FalseRef.current) {
+      // tier2 was already true on first fetch — no transition to fire for.
+      return;
+    }
+    // tier2 just became true after being false — fire the toast.
+    wasTier2FalseRef.current = false;
+    if (location.pathname.startsWith('/endgames')) return;
+    toast('Endgame analysis complete!', {
+      action: {
+        label: 'Explore Endgames',
+        onClick: () => {
+          navigate('/endgames');
+          queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
+        },
+      },
+    });
+  }, [tier2, location.pathname, navigate, queryClient]);
 
   const activeJobsQuery = useActiveJobs(!!token);
   useEffect(() => {
