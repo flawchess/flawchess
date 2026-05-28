@@ -23,10 +23,11 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-// useEvalCoverage calls useQuery which requires a QueryClientProvider.
-// Return safe defaults so the component renders without a provider.
-vi.mock('@/hooks/useEvalCoverage', () => ({
-  useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
+// useReadiness calls useQuery which requires a QueryClientProvider.
+// Return safe defaults (tier2=true) so the component renders without a provider
+// and the eval rows are visible by default (tests that want !tier2 override the mock).
+vi.mock('@/hooks/useReadiness', () => ({
+  useReadiness: () => ({ tier1: true, tier2: true, pendingCount: 0, totalCount: 0, isLoading: false }),
 }));
 
 vi.mock('@/components/board/LazyMiniBoard', () => ({

@@ -1,14 +1,9 @@
-import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 import type { EvalCoverageResponse } from '@/types/api';
 
 const EVAL_COVERAGE_POLL_INTERVAL_MS = 3_000;
 const EVAL_COVERAGE_STALE_TIME_MS = 3_000;
-
-// Module-level guard so the reload only fires once across all hook consumers
-// in a single page lifetime. Reset implicitly when the page reloads.
-let evalCompletionReloadFired = false;
 
 /** Poll GET /imports/eval-coverage every 10s while Stockfish analysis is pending.
  *
@@ -42,27 +37,11 @@ export function useEvalCoverage() {
   const data = query.data;
   const isPending = (data?.pct_complete ?? 100) < 100;
 
-  // Reload the page once Stockfish finishes so eval-dependent stats
-  // (Conversion/Parity/Recovery, etc.) refresh without manual reload.
-  // Only triggers on a true pending→complete transition observed in this
-  // session — never on initial load when eval is already at 100%.
-  const wasPendingRef = useRef(false);
-  useEffect(() => {
-    if (isPending) {
-      wasPendingRef.current = true;
-      return;
-    }
-    if (
-      wasPendingRef.current &&
-      !evalCompletionReloadFired &&
-      data &&
-      data.total_count > 0 &&
-      data.pct_complete === 100
-    ) {
-      evalCompletionReloadFired = true;
-      window.location.reload();
-    }
-  }, [isPending, data]);
+  // NOTE: Auto-reload on eval completion was removed in Phase 96 Plan 03
+  // (Constraint 4 / SC-5). Reactive reveal via useReadiness tier2 flag replaces
+  // the forced full-page reload. EvalCoverageHeader (driven by this hook) still
+  // shows the global progress bar while analysis is pending; per-row reveal on
+  // Openings cards is handled by EvalCpuPlaceholder gated on useReadiness.tier2.
 
   return {
     pendingCount: data?.pending_count ?? 0,

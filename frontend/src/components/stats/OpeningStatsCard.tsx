@@ -6,7 +6,8 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
-import { useEvalCoverage } from '@/hooks/useEvalCoverage';
+import { EvalCpuPlaceholder } from './EvalCpuPlaceholder';
+import { useReadiness } from '@/hooks/useReadiness';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
@@ -57,7 +58,7 @@ export function OpeningStatsCard({
   onOpenGames,
   evalBaselinePawns,
 }: OpeningStatsCardProps) {
-  const { isPending, pendingCount } = useEvalCoverage();
+  const { tier2 } = useReadiness();
 
   const cardTestId = `${testIdPrefix}-${idx}`;
 
@@ -215,32 +216,39 @@ export function OpeningStatsCard({
         />
       </span>
 
-      {/* Eval row */}
-      <div
-        className="min-w-0 tabular-nums"
-        data-testid={`${cardTestId}-bullet`}
-      >
-        {mgBulletContent}
-      </div>
-      <span
-        className="flex items-center gap-1 text-sm tabular-nums w-full"
-        data-testid={`${cardTestId}-eval-text`}
-      >
-        <span className="hidden sm:inline text-muted-foreground">Eval:</span>
-        <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
-        {hasMgEval && (
-          <BulletConfidencePopover
-            level={opening.eval_confidence}
-            pValue={opening.eval_p_value}
-            gameCount={opening.eval_n}
-            evalMeanPawns={opening.avg_eval_pawns}
-            color={color}
-            testId={`${cardTestId}-bullet-popover`}
-            isPending={isPending}
-            pendingCount={pendingCount}
-          />
-        )}
-      </span>
+      {/* Eval row — gated on Tier 2 (eval analysis complete).
+          When !tier2, the two eval-row cells are replaced by a single
+          pulsating-Cpu placeholder spanning the full 2-col grid.
+          The WDL score row above is not eval-dependent and stays visible. */}
+      {tier2 ? (
+        <>
+          <div
+            className="min-w-0 tabular-nums"
+            data-testid={`${cardTestId}-bullet`}
+          >
+            {mgBulletContent}
+          </div>
+          <span
+            className="flex items-center gap-1 text-sm tabular-nums w-full"
+            data-testid={`${cardTestId}-eval-text`}
+          >
+            <span className="hidden sm:inline text-muted-foreground">Eval:</span>
+            <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
+            {hasMgEval && (
+              <BulletConfidencePopover
+                level={opening.eval_confidence}
+                pValue={opening.eval_p_value}
+                gameCount={opening.eval_n}
+                evalMeanPawns={opening.avg_eval_pawns}
+                color={color}
+                testId={`${cardTestId}-bullet-popover`}
+              />
+            )}
+          </span>
+        </>
+      ) : (
+        <EvalCpuPlaceholder />
+      )}
     </div>
   );
 

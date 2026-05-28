@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -29,9 +29,27 @@ function makeWrapper(): ({ children }: { children: ReactNode }) => ReactNode {
   };
 }
 
+// Spy on window.location.reload to assert it is never called (Phase 96 Plan 03,
+// Constraint 4 / SC-5: auto-reload has been removed from useEvalCoverage).
+const reloadSpy = vi.fn();
+const originalLocation = window.location;
+beforeEach(() => {
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: { ...originalLocation, reload: reloadSpy },
+  });
+});
+afterAll(() => {
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: originalLocation,
+  });
+});
+
 describe('useEvalCoverage', () => {
   beforeEach(() => {
     vi.mocked(apiClient.get).mockReset();
+    reloadSpy.mockReset();
     vi.useFakeTimers();
   });
 
@@ -136,5 +154,30 @@ describe('useEvalCoverage', () => {
     expect(result.current.isPending).toBe(false);
     expect(result.current.pendingCount).toBe(0);
     expect(result.current.totalCount).toBe(0);
+  });
+
+  it('does NOT call window.location.reload after a pending→done transition (Phase 96 Constraint 4)', async () => {
+    // Simulate: first fetch returns pending=50%, then resolves to 100%.
+    // Auto-reload was removed in Phase 96 Plan 03; reactive reveal via
+    // useReadiness.tier2 replaces the forced full-page reload.
+    let callCount = 0;
+    vi.mocked(apiClient.get).mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({ data: { pending_count: 5, total_count: 10, pct_complete: 50 } });
+      }
+      return Promise.resolve({ data: { pending_count: 0, total_count: 10, pct_complete: 100 } });
+    });
+
+    renderHook(() => useEvalCoverage(), { wrapper: makeWrapper() });
+
+    // Flush initial fetch (pending state)
+    await act(async () => { await Promise.resolve(); });
+
+    // Advance timer to trigger the poll that resolves to 100%
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(reloadSpy).not.toHaveBeenCalled();
   });
 });

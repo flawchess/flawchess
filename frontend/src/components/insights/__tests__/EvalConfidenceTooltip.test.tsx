@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 /**
- * Phase 91 Plan 07: Tests for the pending-analysis caveat added to EvalConfidenceTooltip.
+ * Phase 96 Plan 03: Tests for EvalConfidenceTooltip after removing the
+ * pending-analysis caveat (Constraint 7).
  *
- * Covers:
- *   - caveat shown when isPending=true AND pendingCount > 0
- *   - caveat absent when isPending=false
- *   - caveat absent when isPending=true but pendingCount=0 (defensive edge case)
+ * The eval-pending-caveat block (data-testid="eval-pending-caveat") has been
+ * removed — the global EvalCoverageHeader bar + per-row EvalCpuPlaceholder
+ * are now the only in-progress signals. This file asserts the caveat is gone
+ * under all prop combinations the component still accepts.
+ *
+ * History: the caveat block was added in Phase 91 Plan 07 and removed here.
+ * The previous test cases testing caveat visibility have been replaced by
+ * assertions that confirm the caveat element is absent from the DOM.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -50,45 +55,38 @@ const baseProps = {
   color: 'white' as const,
 };
 
-describe('EvalConfidenceTooltip — pending-analysis caveat', () => {
-  it('test_caveat_shown_when_pending: shows caveat with formatted count when isPending=true and pendingCount > 0', () => {
-    render(
-      <EvalConfidenceTooltip
-        {...baseProps}
-        isPending={true}
-        pendingCount={1432}
-      />,
-    );
-    const caveat = screen.getByTestId('eval-pending-caveat');
-    expect(caveat.textContent).toMatch(/Based on 50 currently-evaluated games/);
-    expect(caveat.textContent).toMatch(/1,432 more across your library/);
-    expect(caveat.textContent).toMatch(/may shift as analysis completes/);
-  });
-
-  it('test_caveat_absent_when_not_pending: caveat is absent from the DOM when isPending=false', () => {
-    render(
-      <EvalConfidenceTooltip
-        {...baseProps}
-        isPending={false}
-        pendingCount={500}
-      />,
-    );
-    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
-  });
-
-  it('test_caveat_absent_when_pending_count_zero: caveat is absent when isPending=true but pendingCount=0', () => {
-    render(
-      <EvalConfidenceTooltip
-        {...baseProps}
-        isPending={true}
-        pendingCount={0}
-      />,
-    );
-    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
-  });
-
-  it('caveat is absent when isPending and pendingCount props are omitted (default)', () => {
+describe('EvalConfidenceTooltip — pending-analysis caveat removed (Constraint 7)', () => {
+  it('eval-pending-caveat is absent under base props (no pending props)', () => {
     render(<EvalConfidenceTooltip {...baseProps} />);
     expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
+  });
+
+  it('eval-pending-caveat is absent with low confidence', () => {
+    render(<EvalConfidenceTooltip {...baseProps} level="low" />);
+    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
+  });
+
+  it('eval-pending-caveat is absent with high confidence', () => {
+    render(<EvalConfidenceTooltip {...baseProps} level="high" />);
+    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
+  });
+
+  it('eval-pending-caveat is absent for endgame-entry evalContext', () => {
+    render(<EvalConfidenceTooltip {...baseProps} evalContext="endgame-entry" showBaselineTick={false} />);
+    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
+  });
+
+  it('eval-pending-caveat is absent for black color', () => {
+    render(<EvalConfidenceTooltip {...baseProps} color="black" />);
+    expect(screen.queryByTestId('eval-pending-caveat')).toBeNull();
+  });
+
+  it('renders the metric line with signed pawns and game count', () => {
+    render(<EvalConfidenceTooltip {...baseProps} />);
+    // Should still render the metric content (caveat removal does not affect the main content)
+    const container = document.querySelector('.text-left');
+    expect(container).not.toBeNull();
+    expect(container?.textContent).toMatch(/\+0.30 pawns/);
+    expect(container?.textContent).toMatch(/50 games/);
   });
 });
