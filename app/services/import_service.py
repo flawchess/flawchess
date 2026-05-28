@@ -62,17 +62,20 @@ _RETRIABLE_DB_OUTAGE_ERRORS: tuple[type[BaseException], ...] = (
 
 
 # Number of games per DB insert batch. Each game produces ~80 position rows,
-# so batch_size=12 means ~960 position rows per INSERT.
+# so batch_size=30 means ~2400 position rows per COPY.
 #
-# Bug fix (2026-05-16, FLAWCHESS-56 / FLAWCHESS-3Q): reduced from 28 back to 12.
-# The old comment claimed "~1.8MB per batch — safe" but that only counted the
-# position rows; it ignored the per-batch Stockfish eval pass added in Phase
-# 41.1, which runs STOCKFISH_POOL_SIZE engines concurrently over the batch.
-# At batch_size=28 with prod's 4-engine pool this drove a Postgres OOM-kill
-# mid-import. Keep this low until the orphan-reaper / atomic-import-guard
-# follow-up phase lands. The dominant memory cost is the engine pass, not the
-# INSERT, so batch size is the cheapest lever.
-_BATCH_SIZE = 12
+# History: temporarily dropped to 12 on 2026-05-16 (FLAWCHESS-56 / FLAWCHESS-3Q)
+# because Phase 41.1's per-batch Stockfish eval pass — STOCKFISH_POOL_SIZE engines
+# run concurrently over the batch — drove a Postgres OOM-kill at batch_size=28.
+# That eval pass no longer runs in this hot lane: it was moved to the decoupled
+# run_eval_drain() cold lane (see _flush_batch below), so the OOM driver is gone.
+# Position writes now use asyncpg binary COPY (game_repository.bulk_insert_positions),
+# which is lighter than the old ORM INSERT and has no VALUES parameter ceiling.
+# The 2026-05-27 dual-platform 20k-each prod stress test ran at 12 with the import
+# phase nowhere near memory-bound (backend 36% / DB 27% of caps, zero swap); the
+# bottleneck is the Stockfish eval drain, which batch size does not affect. Raised
+# 12 -> 30 for fewer transactions during fetch+import with comfortable headroom.
+_BATCH_SIZE = 30
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
 
 # Phase 90 / SEED-017 resilience constants — no magic numbers (CLAUDE.md).
