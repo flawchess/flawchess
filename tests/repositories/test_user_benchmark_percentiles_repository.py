@@ -40,6 +40,7 @@ user_benchmark_percentiles_repository = pytest.importorskip(
 # Convenience aliases to functions we'll call once the module exists.
 upsert_percentile = user_benchmark_percentiles_repository.upsert_percentile
 fetch_for_user = user_benchmark_percentiles_repository.fetch_for_user
+has_any_rows = user_benchmark_percentiles_repository.has_any_rows
 
 # ---------------------------------------------------------------------------
 # Test constants — no magic numbers
@@ -385,3 +386,78 @@ async def test_fetch_for_user_returns_dict_keyed_by_metric_id(
     assert abs(par.value - (-0.02)) < 1e-9
     assert par.percentile is not None
     assert abs(par.percentile - 38.0) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — has_any_rows returns False when no rows exist for the user
+# ---------------------------------------------------------------------------
+
+
+async def test_has_any_rows_returns_false_when_no_rows(db_session: AsyncSession) -> None:
+    """has_any_rows returns False when no percentile rows exist for the user.
+
+    Phase 96 Plan 01 Task 1: verifies the Tier-2 signal baseline (user with
+    no rows is not yet Stage-B ready).
+    """
+    result = await has_any_rows(db_session, user_id=_TEST_USER_ID)
+    assert result is False, "no rows inserted — has_any_rows must return False"
+
+
+# ---------------------------------------------------------------------------
+# Test 8 — has_any_rows returns True when at least one row exists for the user
+# ---------------------------------------------------------------------------
+
+
+async def test_has_any_rows_returns_true_when_row_exists(db_session: AsyncSession) -> None:
+    """has_any_rows returns True when at least one percentile row exists for the user.
+
+    Phase 96 Plan 01 Task 1: verifies the Tier-2 signal positive case.
+    Row existence is the post-commit Stage-B signal (computed_at refreshed
+    on every upsert, so no Stage-B race).
+    """
+    await upsert_percentile(
+        db_session,
+        user_id=_TEST_USER_ID,
+        metric=_METRIC_SCORE_GAP,
+        time_control_bucket=_DEFAULT_TC,
+        value=_DEFAULT_VALUE,
+        n_games=_DEFAULT_N_GAMES,
+        percentile=_DEFAULT_PERCENTILE,
+        cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
+    )
+    await db_session.flush()
+
+    result = await has_any_rows(db_session, user_id=_TEST_USER_ID)
+    assert result is True, "one row inserted — has_any_rows must return True"
+
+
+# ---------------------------------------------------------------------------
+# Test 9 — has_any_rows scopes strictly by user_id
+# ---------------------------------------------------------------------------
+
+
+async def test_has_any_rows_scoped_to_user(db_session: AsyncSession) -> None:
+    """has_any_rows(user_id=X) must not return True due to rows owned by user Y.
+
+    Phase 96 Plan 01 Task 1 SC-1: T-96-01 IDOR mitigation — rows for a
+    different user must not affect the existence check.
+    """
+    # Insert a row for _SECOND_USER_ID only
+    await upsert_percentile(
+        db_session,
+        user_id=_SECOND_USER_ID,
+        metric=_METRIC_SCORE_GAP,
+        time_control_bucket=_DEFAULT_TC,
+        value=_DEFAULT_VALUE,
+        n_games=_DEFAULT_N_GAMES,
+        percentile=_DEFAULT_PERCENTILE,
+        cdf_snapshot=_DEFAULT_CDF_SNAPSHOT,
+    )
+    await db_session.flush()
+
+    # _TEST_USER_ID has no rows — must return False
+    result = await has_any_rows(db_session, user_id=_TEST_USER_ID)
+    assert result is False, (
+        "has_any_rows must scope strictly to user_id; "
+        "rows for another user must not affect the result"
+    )
