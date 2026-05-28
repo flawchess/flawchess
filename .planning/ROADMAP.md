@@ -67,7 +67,12 @@
   9. **Tests + gates pass.** Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) all green. New tests cover the two-tier readiness truth table, the per-page gate behavior (incl. incremental keeping Openings/Overview open), and the import-page state-machine transitions.
 
 **Plans**: 3 plans (2 waves)
+**Wave 1**
+
 - [ ] 96-01-PLAN.md — Backend readiness endpoint (GET /imports/readiness) + has_any_rows helper + useReadiness hook
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 96-02-PLAN.md — Tier-1 route/nav gate + Endgames whole-page lock + Import state machine + Tier-2 toast
 - [ ] 96-03-PLAN.md — Openings Cpu-placeholder + tooltip counter removal + useEvalCoverage auto-reload retirement
 
