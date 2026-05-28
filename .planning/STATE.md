@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.20
 milestone_name: LLM Statistical Reasoning
-status: ready
-last_updated: "2026-05-28T00:00:00.000Z"
-last_activity: 2026-05-28 -- Phase 95 (asyncpg COPY) shipped via PRs #148/#149; Phase 96 (Import Readiness Gate) created, ready to plan
+status: planning
+last_updated: "2026-05-28T16:49:53.644Z"
+last_activity: 2026-05-28 -- Phase 96 (Import Readiness Gate) created from /gsd-explore session
 progress:
-  total_phases: 6
-  completed_phases: 1
+  total_phases: 7
+  completed_phases: 0
   total_plans: 2
-  completed_plans: 2
-  percent: 100
+  completed_plans: 1
+  percent: 0
 ---
 
 # Project State: FlawChess
