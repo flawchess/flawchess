@@ -272,7 +272,7 @@ export function EndgamesPage() {
     data: overviewData,
     isLoading: overviewLoading,
     isError: overviewError,
-  } = useEndgameOverview(appliedFilters);
+  } = useEndgameOverview(appliedFilters, { enabled: tier2 });
 
   const rawStatsData = overviewData?.stats;
   const statsData = useMemo(() => {
