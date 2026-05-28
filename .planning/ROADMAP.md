@@ -73,8 +73,8 @@
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 96-02-PLAN.md — Tier-1 route/nav gate + Endgames whole-page lock + Import state machine + Tier-2 toast
-- [ ] 96-03-PLAN.md — Openings Cpu-placeholder + tooltip counter removal + useEvalCoverage auto-reload retirement
+- [x] 96-02-PLAN.md — Tier-1 route/nav gate + Endgames whole-page lock + Import state machine + Tier-2 toast
+- [x] 96-03-PLAN.md — Openings Cpu-placeholder + tooltip counter removal + useEvalCoverage auto-reload retirement
 
 ### Phase 97: LLM Endgame-Insights Statistical-Reasoning Rework
 
