@@ -101,10 +101,24 @@ Drain timing (from `logs/import-stress-20k-each-prod-2026-05-27.log`):
    in progress (X/Y)"; the full "imported and analyzed" message waits for Tier 2.
 
 4. **Unlock should be user-initiated / reactive, not a forced reload.** No
-   forced `window.location.reload()`. The import page's Tier-1 state shows an
-   "Explore openings" CTA. Tier-2 reveals (Endgames unlock, Openings eval metrics
-   appearing) happen **reactively** via the readiness poll + query invalidation,
-   not a full page reload. Retire the `useEvalCoverage` auto-reload.
+   forced `window.location.reload()`; retire the `useEvalCoverage` auto-reload.
+   Two CTAs, two different mechanisms (the app uses **sonner** for toasts):
+   - **Tier 1 — "Explore Openings": in-page CTA on the import page.** Only
+     relevant on a first import (user is held there); on incremental, Openings
+     is never gated so no CTA is needed. Not a toast — the user is already
+     looking at the import page.
+   - **Tier 2 — "Explore Endgames": a sonner action toast.** When percentiles
+     finish, the user has almost certainly left the import page (browsing
+     Openings, or elsewhere on incremental), so an in-page CTA can't reach them.
+     Fire `toast(..., { action: { label: "Explore Endgames", onClick: nav } })`;
+     clicking does client-side nav + query invalidation (no reload). Guards:
+     fire **once** (dedupe like the existing `evalCompletionReloadFired` flag),
+     and **suppress if the user is already on `/endgames`** (it reveals
+     reactively there).
+   - Beyond the CTAs, Tier-2 reveals (Endgames unlock, Openings eval metrics
+     appearing) also happen **reactively** via the readiness poll + query
+     invalidation, so a user already on the page sees data appear without acting
+     on the toast.
 
 5. **Preserve the Stockfish progress bar on ALL pages.** While the drain runs,
    the eval-coverage progress header (`EvalCoverageHeader` style) stays visible
