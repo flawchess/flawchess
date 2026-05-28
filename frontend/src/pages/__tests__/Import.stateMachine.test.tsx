@@ -2,10 +2,10 @@
 /**
  * Phase 96 Plan 02 — Import page readiness state machine tests.
  *
- * Verifies:
- * 1. At Tier 1 (tier1=true, tier2=false): btn-explore-openings CTA renders
- *    and the page copy does not contain the word "complete".
- * 2. At Tier 1 with pendingCount>0: "Analyzing endgames (X / Y)" text renders.
+ * Verifies (post-UAT):
+ * 1. Both Explore CTAs always render; each is enabled only once its tier is ready
+ *    (Openings at Tier 1, Endgames at Tier 2).
+ * 2. The "Analyzing endgames (X / Y)" indicator is gone (Stockfish banner covers it).
  * 3. The hot-import "done" message no longer says "Imported N games from {platform}".
  * 4. The polling invalidation set includes ['imports','readiness'].
  */
@@ -15,6 +15,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 // ── Static contract test: readiness queryKey in polling invalidation ──────────
 
@@ -136,11 +137,13 @@ import { ImportPage } from '../Import';
 function renderImport() {
   return render(
     <MemoryRouter>
-      <ImportPage
-        onImportStarted={vi.fn()}
-        activeJobIds={[]}
-        onJobDismissed={vi.fn()}
-      />
+      <TooltipProvider>
+        <ImportPage
+          onImportStarted={vi.fn()}
+          activeJobIds={[]}
+          onJobDismissed={vi.fn()}
+        />
+      </TooltipProvider>
     </MemoryRouter>,
   );
 }
@@ -148,31 +151,49 @@ function renderImport() {
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
 describe('Import page readiness state machine', () => {
-  it('renders Explore Openings CTA at Tier 1 (tier1=true, tier2=false)', () => {
-    readinessState.tier1 = true;
-    readinessState.tier2 = false;
-    readinessState.pendingCount = 0;
-    readinessState.totalCount = 100;
-
-    renderImport();
-
-    const cta = screen.getByTestId('btn-explore-openings');
-    expect(cta).toBeTruthy();
-    expect(cta.textContent).toBe('Explore Openings');
-  });
-
-  it('does not contain "complete" in the page at Tier 1 hot-import-done state', () => {
-    readinessState.tier1 = true;
+  it('always renders both Explore CTAs regardless of tier', () => {
+    readinessState.tier1 = false;
     readinessState.tier2 = false;
 
     renderImport();
 
-    // The readiness section shows "Games imported. Openings ready." — no "complete"
-    const readinessSection = screen.getByTestId('import-readiness-section');
-    expect(readinessSection.textContent?.toLowerCase()).not.toContain('complete');
+    const openings = screen.getByTestId('btn-explore-openings');
+    const endgames = screen.getByTestId('btn-explore-endgames');
+    expect(openings.textContent).toBe('Openings');
+    expect(endgames.textContent).toBe('Endgames');
   });
 
-  it('renders analyzing endgames text when tier1=true and pendingCount>0', () => {
+  it('disables both CTAs before either tier is ready', () => {
+    readinessState.tier1 = false;
+    readinessState.tier2 = false;
+
+    renderImport();
+
+    expect(screen.getByTestId('btn-explore-openings')).toHaveProperty('disabled', true);
+    expect(screen.getByTestId('btn-explore-endgames')).toHaveProperty('disabled', true);
+  });
+
+  it('enables Explore Openings at Tier 1 while Endgames stays disabled', () => {
+    readinessState.tier1 = true;
+    readinessState.tier2 = false;
+
+    renderImport();
+
+    expect(screen.getByTestId('btn-explore-openings')).toHaveProperty('disabled', false);
+    expect(screen.getByTestId('btn-explore-endgames')).toHaveProperty('disabled', true);
+  });
+
+  it('enables both CTAs at Tier 2', () => {
+    readinessState.tier1 = true;
+    readinessState.tier2 = true;
+
+    renderImport();
+
+    expect(screen.getByTestId('btn-explore-openings')).toHaveProperty('disabled', false);
+    expect(screen.getByTestId('btn-explore-endgames')).toHaveProperty('disabled', false);
+  });
+
+  it('no longer renders the analyzing-endgames indicator', () => {
     readinessState.tier1 = true;
     readinessState.tier2 = false;
     readinessState.pendingCount = 150;
@@ -180,31 +201,6 @@ describe('Import page readiness state machine', () => {
 
     renderImport();
 
-    const analyzingEl = screen.getByTestId('import-analyzing-endgames');
-    expect(analyzingEl).toBeTruthy();
-    // analysedCount = 500 - 150 = 350
-    expect(analyzingEl.textContent).toContain('350');
-    expect(analyzingEl.textContent).toContain('500');
-    expect(analyzingEl.textContent).toContain('Analyzing endgames');
-  });
-
-  it('does not render analyzing text when pendingCount=0 at Tier 1', () => {
-    readinessState.tier1 = true;
-    readinessState.tier2 = false;
-    readinessState.pendingCount = 0;
-    readinessState.totalCount = 500;
-
-    renderImport();
-
     expect(screen.queryByTestId('import-analyzing-endgames')).toBeNull();
-  });
-
-  it('does not render Explore Openings CTA when tier1=false', () => {
-    readinessState.tier1 = false;
-    readinessState.tier2 = false;
-
-    renderImport();
-
-    expect(screen.queryByTestId('btn-explore-openings')).toBeNull();
   });
 });

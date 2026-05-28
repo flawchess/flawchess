@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import * as Sentry from "@sentry/react";
 import { Link } from 'react-router-dom';
 import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -95,17 +95,20 @@ function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
-  const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
+  const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
+  const noGames = profile != null && totalGames === 0;
+  // Nav unlocks only once the user has games AND import phase 1 (Tier 1) is
+  // complete — matching the "Explore Openings" button. tier1 alone is true for a
+  // fresh zero-game account (no job in-flight), and games alone appear mid-import
+  // before phase 1 finishes; both gates together avoid unlocking too early.
+  const { tier1 } = useReadiness();
+  const navUnlocked = totalGames > 0 && tier1;
   const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
-  // Tier-1 readiness replaces profileHasCompletedImport: keyed off whether
-  // the import job is no longer in-flight (not just timestamp presence), so
-  // nav unlocks when the first import actually completes (not on submit).
-  const { tier1: hasCompletedImport } = useReadiness();
-  const showOpeningsDot = hasCompletedImport && !openingsVisited;
+  const showOpeningsDot = navUnlocked && !openingsVisited;
   // Endgames dot is gated behind the Openings dot — we want users to discover
   // Openings first, then Endgames after that dot is cleared.
-  const showEndgamesDot = hasCompletedImport && openingsVisited && !endgamesVisited;
+  const showEndgamesDot = navUnlocked && openingsVisited && !endgamesVisited;
   // D-16: Admin tab rightmost for superusers, absent otherwise.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
@@ -119,7 +122,7 @@ function NavHeader() {
           </Link>
           <nav aria-label="Main navigation" className="flex items-stretch h-full">
             {navItems.map(({ to, label, Icon }) => {
-              const locked = to !== '/import' && profile != null && !hasCompletedImport;
+              const locked = to !== '/import' && to !== '/admin' && !navUnlocked;
               return (
               <Link
                 key={to}
@@ -127,7 +130,7 @@ function NavHeader() {
                 data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
                 aria-disabled={locked || undefined}
                 title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
-                onClick={locked ? (e) => { e.preventDefault(); toast.info(IMPORT_REQUIRED_MESSAGE); } : undefined}
+                onClick={locked ? (e) => e.preventDefault() : undefined}
                 className={cn(
                   'relative flex items-center gap-1.5 px-3 text-sm transition-colors',
                   locked && 'opacity-40 cursor-not-allowed',
@@ -238,13 +241,15 @@ function MobileHeader() {
 function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   const location = useLocation();
   const { data: profile } = useUserProfile();
-  const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
+  const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
+  const noGames = profile != null && totalGames === 0;
+  // See NavHeader — unlock only once games exist AND import phase 1 is complete.
+  const { tier1 } = useReadiness();
+  const navUnlocked = totalGames > 0 && tier1;
   const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
-  // See NavHeader — gate on tier1 readiness, not completed-import timestamps.
-  const { tier1: hasCompletedImport } = useReadiness();
-  const showOpeningsDot = hasCompletedImport && !openingsVisited;
-  const showEndgamesDot = hasCompletedImport && openingsVisited && !endgamesVisited;
+  const showOpeningsDot = navUnlocked && !openingsVisited;
+  const showEndgamesDot = navUnlocked && openingsVisited && !endgamesVisited;
 
   return (
     <nav
@@ -253,7 +258,7 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
       className="fixed bottom-0 inset-x-0 flex sm:hidden z-40 bg-background border-t border-border pb-safe"
     >
       {BOTTOM_NAV_ITEMS.map(({ to, label, Icon }) => {
-        const locked = to !== '/import' && profile != null && !hasCompletedImport;
+        const locked = to !== '/import' && !navUnlocked;
         return (
         <Link
           key={to}
@@ -261,7 +266,7 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
           data-testid={`mobile-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
           aria-disabled={locked || undefined}
           title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
-          onClick={locked ? (e) => { e.preventDefault(); toast.info(IMPORT_REQUIRED_MESSAGE); } : undefined}
+          onClick={locked ? (e) => e.preventDefault() : undefined}
           className={cn(
             'relative flex flex-1 flex-col items-center gap-1 py-2',
             locked && 'opacity-40 cursor-not-allowed',
@@ -319,8 +324,10 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
-  // See NavHeader — gate on tier1 readiness, not completed-import timestamps.
-  const { tier1: hasCompletedImport } = useReadiness();
+  const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
+  // See NavHeader — unlock only once games exist AND import phase 1 is complete.
+  const { tier1 } = useReadiness();
+  const navUnlocked = totalGames > 0 && tier1;
   // D-17: Admin entry surfaced in the More drawer (not the bottom bar) for superusers.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
@@ -335,7 +342,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
         <div className="px-4 pb-4">
           <nav className="flex flex-col gap-1">
             {navItems.map(({ to, label }) => {
-              const locked = to !== '/import' && profile != null && !hasCompletedImport;
+              const locked = to !== '/import' && to !== '/admin' && !navUnlocked;
               return (
               <DrawerClose key={to} asChild>
                 <Link
@@ -343,7 +350,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
                   data-testid={`drawer-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
                   aria-disabled={locked || undefined}
                   title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
-                  onClick={locked ? (e) => { e.preventDefault(); toast.info(IMPORT_REQUIRED_MESSAGE); } : undefined}
+                  onClick={locked ? (e) => e.preventDefault() : undefined}
                   className={cn(
                     'rounded-md px-3 py-2 text-base',
                     locked && 'opacity-40 cursor-not-allowed',
@@ -443,17 +450,18 @@ function ProtectedLayout() {
 // ─── Import-required route guard ──────────────────────────────────────────────
 
 /**
- * Locks non-Import pages until Tier 1 readiness is reached (no active import
- * job in-flight). Replaced profileHasCompletedImport (timestamp-based) with
- * readiness.tier1 from useReadiness so the route gate reacts to job completion
- * rather than profile sync timestamps. Pitfall 2: the isLoading guard prevents
- * a content flash while the first readiness fetch is in-flight (tier1 defaults
- * to false before the first response).
+ * Locks non-Import pages until the user has imported games AND import phase 1
+ * (Tier 1) is complete — the same gate as the nav links and the "Explore
+ * Openings" button. This keeps a fresh zero-game account out (no games) and an
+ * in-progress import out (tier1=false), and re-locks after deleting all games.
+ * The isLoading guard prevents a redirect flash while the first fetches resolve.
  */
 function ImportRequiredRoute({ children }: { children: React.ReactNode }) {
-  const readiness = useReadiness();
-  const isLoading = readiness.isLoading;
-  const shouldRedirect = !isLoading && !readiness.tier1;
+  const { data: profile, isLoading: profileLoading } = useUserProfile();
+  const { tier1, isLoading: readinessLoading } = useReadiness();
+  const isLoading = profileLoading || readinessLoading;
+  const hasGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count > 0;
+  const shouldRedirect = !isLoading && profile != null && !(hasGames && tier1);
 
   useEffect(() => {
     if (shouldRedirect) {
@@ -495,55 +503,21 @@ function AppRoutes() {
   const [completedJobIds, setCompletedJobIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const { token } = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { tier2 } = useReadiness();
 
   // Restore active jobs from server on mount (and after re-login when token changes)
   const hasRestoredRef = useRef(false);
   // Track which token restoration has been performed for — reset guard on re-login
   const restoredForTokenRef = useRef<string | null>(null);
-  // Tracks the in-session tier2 false→true transition for the Tier-2 toast.
-  // A useRef (not module boolean) so it resets on token change (re-login/impersonation).
-  const wasTier2FalseRef = useRef<boolean>(false);
 
   // eslint-disable-next-line react-hooks/refs -- intentional: reset restoration guard on token change
   if (restoredForTokenRef.current !== token) {
     restoredForTokenRef.current = token; // eslint-disable-line react-hooks/refs
     hasRestoredRef.current = false; // eslint-disable-line react-hooks/refs
-    wasTier2FalseRef.current = false; // eslint-disable-line react-hooks/refs
     // Phase 62: an admin who impersonates swaps their token — their in-flight job
     // ids belong to the admin, not the target. Drop them so we do not poll 404s.
     setActiveJobIds([]);
     setCompletedJobIds(new Set());
   }
-
-  // Fire-once Tier-2 toast when tier2 transitions false→true in-session.
-  // Suppressed when already on /endgames (user can see the page unlock directly).
-  // Uses wasTier2FalseRef to avoid firing on cold load when tier2 is already true.
-  useEffect(() => {
-    if (!tier2) {
-      // Observe that we have seen tier2=false in this session.
-      wasTier2FalseRef.current = true;
-      return;
-    }
-    if (!wasTier2FalseRef.current) {
-      // tier2 was already true on first fetch — no transition to fire for.
-      return;
-    }
-    // tier2 just became true after being false — fire the toast.
-    wasTier2FalseRef.current = false;
-    if (location.pathname.startsWith('/endgames')) return;
-    toast('Endgame analysis complete!', {
-      action: {
-        label: 'Explore Endgames',
-        onClick: () => {
-          navigate('/endgames');
-          queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
-        },
-      },
-    });
-  }, [tier2, location.pathname, navigate, queryClient]);
 
   const activeJobsQuery = useActiveJobs(!!token);
   useEffect(() => {
@@ -613,7 +587,7 @@ function AppRoutes() {
           <Route path="/rating" element={<Navigate to="/overview" replace />} />
           <Route path="/global-stats" element={<Navigate to="/overview" replace />} />
           <Route path="/overview" element={<ImportRequiredRoute><GlobalStatsPage /></ImportRequiredRoute>} />
-          <Route path="/admin" element={<SuperuserRoute><ImportRequiredRoute><AdminPage /></ImportRequiredRoute></SuperuserRoute>} />
+          <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
         </Route>
         {/* Catch-all redirects to homepage */}
         <Route path="*" element={<Navigate to="/" replace />} />

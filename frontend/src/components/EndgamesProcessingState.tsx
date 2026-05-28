@@ -8,8 +8,8 @@ interface EndgamesProcessingStateProps {
 /**
  * Whole-page locked state for Endgames while Stockfish eval is still in
  * progress. Used for both first-import and incremental import (D-01/D-02) —
- * one component, one message. No CTA button; unlock is via the Tier-2 toast
- * from App.tsx or reactive reveal when tier2 flips to true on this page.
+ * one component, one message. No CTA button; the page reveals reactively when
+ * tier2 flips to true.
  */
 export function EndgamesProcessingState({ pendingCount, totalCount }: EndgamesProcessingStateProps) {
   const analysedCount = Math.max(totalCount - pendingCount, 0);
