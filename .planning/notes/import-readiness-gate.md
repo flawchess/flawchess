@@ -90,6 +90,17 @@ user self-selected into a huge import on an empty account.
    cache freshness requires it). This preserves the message and gives the user
    control. Retire the `useEvalCoverage` auto-reload.
 
+5. **Eval progress collapses to the import page only.** Today eval coverage is
+   surfaced in multiple places — `EvalCoverageHeader.tsx`, the
+   `EvalConfidenceTooltip` eval counters, and `useEvalCoverage` consumers inside
+   the Endgame cards (`EndgameMetricCard`, `EndgameTypeCard`,
+   `EndgameOverallEntryCard`, `EndgameOverallPerformanceSection`) and
+   `OpeningFindingCard` / `PositionResultsPanel`. Once a surface only ever
+   renders at 100% coverage (the gate guarantees this), it has no in-progress
+   state to communicate. **Remove the eval-progress UI from all non-import
+   surfaces** and show it only on the gated import page state machine. Expect a
+   knip cleanup of the now-unused exports.
+
 ## Rejected
 
 - **Per-surface loading containers** — too fragile/messy (the original concern).
