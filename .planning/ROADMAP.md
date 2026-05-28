@@ -66,7 +66,15 @@
   8. **Eval-metric tooltip counter removed.** The running eval counter inside `EvalConfidenceTooltip` (and any per-metric tooltip counter) is removed; the bar + placeholder carry the in-progress signal instead. `npm run knip` passes with any now-unused exports deleted.
   9. **Tests + gates pass.** Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) all green. New tests cover the two-tier readiness truth table, the per-page gate behavior (incl. incremental keeping Openings/Overview open), and the import-page state-machine transitions.
 
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
+**Wave 1**
+
+- [x] 96-01-PLAN.md — Backend readiness endpoint (GET /imports/readiness) + has_any_rows helper + useReadiness hook
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 96-02-PLAN.md — Tier-1 route/nav gate + Endgames whole-page lock + Import state machine + Tier-2 toast
+- [x] 96-03-PLAN.md — Openings Cpu-placeholder + tooltip counter removal + useEvalCoverage auto-reload retirement
 
 ### Phase 97: LLM Endgame-Insights Statistical-Reasoning Rework
 

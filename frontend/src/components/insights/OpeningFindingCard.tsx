@@ -5,7 +5,8 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
-import { useEvalCoverage } from '@/hooks/useEvalCoverage';
+import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
+import { useReadiness } from '@/hooks/useReadiness';
 import { formatCandidateMove } from '@/lib/openingInsights';
 import { sanToSquares } from '@/lib/sanToSquares';
 import {
@@ -44,8 +45,7 @@ export function OpeningFindingCard({
   onFindingClick: (finding: OpeningInsightFinding) => void;
   onOpenGames: (finding: OpeningInsightFinding) => void;
 }) {
-  const { isPending, pendingCount } = useEvalCoverage();
-
+  const { tier2 } = useReadiness();
   const candidateMoveDisplay = formatCandidateMove(
     finding.entry_san_sequence,
     finding.candidate_move_san,
@@ -201,32 +201,38 @@ export function OpeningFindingCard({
         />
       </span>
 
-      {/* Eval row */}
-      <div
-        className="min-w-0 tabular-nums"
-        data-testid={`${cardTestId}-bullet`}
-      >
-        {mgBulletContent}
-      </div>
-      <span
-        className="flex items-center gap-1 text-sm tabular-nums w-full"
-        data-testid={`${cardTestId}-eval-text`}
-      >
-        <span className="hidden sm:inline text-muted-foreground">Eval:</span>
-        <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
-        {hasMgEval && (
-          <BulletConfidencePopover
-            level={finding.eval_confidence ?? 'low'}
-            pValue={finding.eval_p_value}
-            gameCount={evalN}
-            evalMeanPawns={avgEvalPawns}
-            color={finding.color}
-            testId={`${cardTestId}-bullet-popover`}
-            isPending={isPending}
-            pendingCount={pendingCount}
-          />
-        )}
-      </span>
+      {/* Eval row — gated on Tier 2 (eval analysis complete). When !tier2 the
+          two eval cells are replaced by the pulsating-Cpu placeholder spanning
+          the 2-col grid, matching OpeningStatsCard. */}
+      {tier2 ? (
+        <>
+          <div
+            className="min-w-0 tabular-nums"
+            data-testid={`${cardTestId}-bullet`}
+          >
+            {mgBulletContent}
+          </div>
+          <span
+            className="flex items-center gap-1 text-sm tabular-nums w-full"
+            data-testid={`${cardTestId}-eval-text`}
+          >
+            <span className="hidden sm:inline text-muted-foreground">Eval:</span>
+            <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
+            {hasMgEval && (
+              <BulletConfidencePopover
+                level={finding.eval_confidence ?? 'low'}
+                pValue={finding.eval_p_value}
+                gameCount={evalN}
+                evalMeanPawns={avgEvalPawns}
+                color={finding.color}
+                testId={`${cardTestId}-bullet-popover`}
+              />
+            )}
+          </span>
+        </>
+      ) : (
+        <EvalCpuPlaceholder />
+      )}
     </div>
   );
 

@@ -50,3 +50,27 @@ class EvalCoverageResponse(BaseModel):
     pending_count: int
     total_count: int
     pct_complete: int  # 0-100, rounded
+
+
+class ReadinessResponse(BaseModel):
+    """Response for GET /imports/readiness.
+
+    Two-tier readiness signal for gating eval-dependent features:
+
+    Tier 1 (tier1=True): no active import job in-flight for this user.
+        False while a PENDING or IN_PROGRESS import exists in-memory.
+        NOTE: In-memory only — orphaned DB jobs after server restart are not
+        detected here (RESEARCH Open Question 1 / A3). Out of scope.
+
+    Tier 2 (tier2=True): tier1 AND pending evals == 0 AND
+        (user has no games OR at least one user_benchmark_percentiles row exists).
+        The "no games" escape prevents a below-floor user from being locked out
+        forever when Stage B has nothing to compute (Pitfall 1).
+        Row existence is the post-commit Stage-B signal — computed_at is
+        refreshed on every upsert, so no Stage-B race with create_task.
+    """
+
+    tier1: bool
+    tier2: bool
+    pending_count: int
+    total_count: int

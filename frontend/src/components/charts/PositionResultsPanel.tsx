@@ -5,7 +5,8 @@ import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
-import { useEvalCoverage } from '@/hooks/useEvalCoverage';
+import { EvalCpuPlaceholder } from '@/components/stats/EvalCpuPlaceholder';
+import { useReadiness } from '@/hooks/useReadiness';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
   SCORE_BULLET_CENTER,
@@ -67,8 +68,8 @@ export function PositionResultsPanel({
   className = 'order-2 lg:order-1',
   evalContext = 'opening-end',
 }: PositionResultsPanelProps) {
-  const { isPending, pendingCount } = useEvalCoverage();
-
+  // Hook must run before the early return below (Rules of Hooks).
+  const { tier2 } = useReadiness();
   if (stats.total === 0) return null;
 
   const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
@@ -186,55 +187,63 @@ export function PositionResultsPanel({
           />
         </div>
 
-        {/* Row 3: Eval value + Cpu + popover + Eval bullet. */}
-        <span
-          className="flex items-center gap-1 text-sm tabular-nums w-full"
-          data-testid="eval-text-position"
-        >
-          <span className="text-muted-foreground">Eval:</span>
-          {hasMgEval ? (
+        {/* Row 3: Eval value + Cpu + popover + Eval bullet. Gated on Tier 2 —
+            when !tier2 (Stockfish still analyzing) both eval cells are replaced
+            by the pulsating-Cpu placeholder spanning the 2-col grid. In the
+            endgame-entry context tier2 is always true (the Endgames page is
+            itself Tier-2 gated), so this only affects the openings explorer. */}
+        {tier2 ? (
+          <>
             <span
-              className="ml-auto font-semibold inline-flex items-center gap-0.3"
-              style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
+              className="flex items-center gap-1 text-sm tabular-nums w-full"
+              data-testid="eval-text-position"
             >
-              {formatSignedEvalPawns(stats.avg_eval_pawns as number)}
-              <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Eval:</span>
+              {hasMgEval ? (
+                <span
+                  className="ml-auto font-semibold inline-flex items-center gap-0.3"
+                  style={showEvalZoneFont && evalZoneHex ? { color: evalZoneHex } : undefined}
+                >
+                  {formatSignedEvalPawns(stats.avg_eval_pawns as number)}
+                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                </span>
+              ) : (
+                <span className="ml-auto text-muted-foreground">—</span>
+              )}
+              {hasMgEval && (
+                <BulletConfidencePopover
+                  level={stats.eval_confidence}
+                  pValue={stats.eval_p_value}
+                  gameCount={stats.eval_n}
+                  evalMeanPawns={stats.avg_eval_pawns}
+                  color={filterColor}
+                  testId="eval-bullet-popover-trigger"
+                  evalContext={evalContext}
+                  showBaselineTick={isEndgameEntryEval ? false : undefined}
+                />
+              )}
             </span>
-          ) : (
-            <span className="ml-auto text-muted-foreground">—</span>
-          )}
-          {hasMgEval && (
-            <BulletConfidencePopover
-              level={stats.eval_confidence}
-              pValue={stats.eval_p_value}
-              gameCount={stats.eval_n}
-              evalMeanPawns={stats.avg_eval_pawns}
-              color={filterColor}
-              testId="eval-bullet-popover-trigger"
-              evalContext={evalContext}
-              showBaselineTick={isEndgameEntryEval ? false : undefined}
-              isPending={isPending}
-              pendingCount={pendingCount}
-            />
-          )}
-        </span>
-        <div className="min-w-0 tabular-nums" data-testid="eval-bullet-position">
-          {hasMgEval ? (
-            <MiniBulletChart
-              value={stats.avg_eval_pawns as number}
-              ciLow={stats.eval_ci_low_pawns ?? undefined}
-              ciHigh={stats.eval_ci_high_pawns ?? undefined}
-              tickPawns={isEndgameEntryEval ? undefined : resolvedEvalBaselinePawns}
-              neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
-              neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
-              domain={EVAL_BULLET_DOMAIN_PAWNS}
-              barColor="neutral"
-              ariaLabel={evalAriaLabel}
-            />
-          ) : (
-            <span className="text-muted-foreground">—</span>
-          )}
-        </div>
+            <div className="min-w-0 tabular-nums" data-testid="eval-bullet-position">
+              {hasMgEval ? (
+                <MiniBulletChart
+                  value={stats.avg_eval_pawns as number}
+                  ciLow={stats.eval_ci_low_pawns ?? undefined}
+                  ciHigh={stats.eval_ci_high_pawns ?? undefined}
+                  tickPawns={isEndgameEntryEval ? undefined : resolvedEvalBaselinePawns}
+                  neutralMin={EVAL_NEUTRAL_MIN_PAWNS}
+                  neutralMax={EVAL_NEUTRAL_MAX_PAWNS}
+                  domain={EVAL_BULLET_DOMAIN_PAWNS}
+                  barColor="neutral"
+                  ariaLabel={evalAriaLabel}
+                />
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
+            </div>
+          </>
+        ) : (
+          <EvalCpuPlaceholder />
+        )}
       </div>
     </div>
   );
