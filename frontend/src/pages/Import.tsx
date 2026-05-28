@@ -20,7 +20,9 @@ import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
+import { useReadiness } from '@/hooks/useReadiness';
 import { apiClient } from '@/api/client';
+import { useNavigate } from 'react-router-dom';
 
 
 const GAME_COUNT_REFRESH_INTERVAL_MS = 5000;
@@ -73,6 +75,10 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
       queryClient.invalidateQueries({ queryKey: ['gameCount'] });
       queryClient.invalidateQueries({ queryKey: ['imports', 'eval-coverage'] });
+      // Phase 96: also invalidate the readiness query so the import page reacts
+      // to tier transitions (Tier 1 CTA and analyzing-endgames state) alongside
+      // eval-coverage and endgameOverview.
+      queryClient.invalidateQueries({ queryKey: ['imports', 'readiness'] });
       // Bug fix (Phase 94.1-11): the percentile background tasks (Stage A on
       // import-complete, Stage B on eval-drain) write to user_benchmark_percentiles
       // asynchronously. Without invalidating the endgame overview the 30s
@@ -88,8 +94,11 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string
 
   const canDismiss = isDone || isError;
 
+  // Phase 96 Constraint 3: the hot-import "done" copy must not over-claim completion
+  // by saying "Imported N games" — Stockfish eval and percentile computation still
+  // run after the import job finishes. Use a neutral status message instead.
   const progressText = isDone
-    ? (data.games_imported === 0 ? 'No new games found since last sync' : `Imported ${data.games_imported} games from ${data.platform}`)
+    ? (data.games_imported === 0 ? 'No new games found since last sync' : 'Games imported. Openings ready.')
     : isError
       ? `Import failed: ${data.error ?? 'Unknown error'}`
       : `Importing ${data.username} (${data.platform})... ${data.games_fetched} fetched, ${data.games_imported} saved`;
@@ -137,6 +146,9 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
   const { data: profile, isLoading: profileLoading } = useUserProfile();
   const trigger = useImportTrigger();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { tier1, tier2, pendingCount, totalCount } = useReadiness();
+  const analysedCount = Math.max(totalCount - pendingCount, 0);
 
   // Username state — always editable, synced from profile on first load only
   const [chessComUsername, setChessComUsername] = useState('');
@@ -351,6 +363,31 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
               <ImportProgressBar key={id} jobId={id} onDismiss={handleDismiss} platformFilter="lichess" />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Readiness state machine: show CTA and endgame analysis status after Tier 1 */}
+      {tier1 && (
+        <div className="space-y-2" data-testid="import-readiness-section">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="default"
+              data-testid="btn-explore-openings"
+              onClick={() => navigate('/openings')}
+            >
+              Explore Openings
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              {tier2
+                ? 'Ready. All analysis complete.'
+                : 'Games imported. Openings ready.'}
+            </span>
+          </div>
+          {!tier2 && pendingCount > 0 && (
+            <p className="text-sm text-muted-foreground" data-testid="import-analyzing-endgames">
+              Analyzing endgames ({analysedCount.toLocaleString()} / {totalCount.toLocaleString()})
+            </p>
+          )}
         </div>
       )}
 
