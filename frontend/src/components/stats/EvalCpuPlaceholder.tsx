@@ -20,7 +20,7 @@ export function EvalCpuPlaceholder() {
       data-testid="eval-cpu-placeholder"
     >
       <Cpu className="h-3.5 w-3.5 shrink-0 text-amber-700 animate-pulse" aria-hidden="true" />
-      <span className="text-muted-foreground text-sm truncate">Analyzing…</span>
+      <span className="text-foreground text-sm truncate">Analyzing…</span>
     </div>
   );
 }
