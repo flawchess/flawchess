@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.main import app
 from app.models.game import Game
 from app.models.user_benchmark_percentile import UserBenchmarkPercentile
-from app.services import import_service
+from app.services import import_service, percentile_compute_registry
 
 READINESS_ENDPOINT = "/api/imports/readiness"
 
@@ -302,6 +302,77 @@ async def test_tier2_true_when_evals_and_percentiles_ready(
     assert data["tier2"] is True, "tier2 must be True when evals done AND percentile rows exist"
     assert data["pending_count"] == 0
     assert data["total_count"] == 5
+
+
+@pytest.mark.asyncio
+async def test_tier2_false_while_stage_b_computing(
+    user_a_client: tuple[int, str],
+    test_engine,
+) -> None:
+    """Drained games + percentile row, but user mid-Stage-B → tier2=False.
+
+    Quick 260529-015: identical DB state to the tier2=True case (pending==0,
+    has_any_rows True), but the in-memory Stage-B registry mark forces
+    tier2=False so the page does not unlock with missing/stale badges before
+    compute_stage_b finishes writing the eval-dependent rows.
+    """
+    user_id, token = user_a_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    games = [_make_game(user_id, evals_completed_at=_NOW) for _ in range(5)]
+    await _seed_games_for_user(test_engine, user_id, games)
+    await _seed_percentile_row_for_user(test_engine, user_id)
+
+    percentile_compute_registry.mark(user_id)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(READINESS_ENDPOINT, headers=headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tier1"] is True
+        assert data["tier2"] is False, "tier2 must be False while Stage B is computing"
+        assert data["pending_count"] == 0
+        assert data["total_count"] == 5
+    finally:
+        percentile_compute_registry.clear(user_id)
+
+
+@pytest.mark.asyncio
+async def test_tier2_true_after_stage_b_clears(
+    user_a_client: tuple[int, str],
+    test_engine,
+) -> None:
+    """Same seed as above; mark then clear → tier2=True (gate releases).
+
+    Proves the registry gate is released once compute_stage_b clears the mark,
+    with identical DB state to the locked case.
+    """
+    user_id, token = user_a_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    games = [_make_game(user_id, evals_completed_at=_NOW) for _ in range(5)]
+    await _seed_games_for_user(test_engine, user_id, games)
+    await _seed_percentile_row_for_user(test_engine, user_id)
+
+    percentile_compute_registry.mark(user_id)
+    percentile_compute_registry.clear(user_id)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get(READINESS_ENDPOINT, headers=headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tier1"] is True
+        assert data["tier2"] is True, "tier2 must be True after the Stage-B mark is cleared"
+        assert data["pending_count"] == 0
+        assert data["total_count"] == 5
+    finally:
+        percentile_compute_registry.clear(user_id)
 
 
 @pytest.mark.asyncio

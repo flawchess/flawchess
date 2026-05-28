@@ -26,14 +26,23 @@ const DEFAULT_OVERVIEW_WINDOW = 100;
 
 export function useEndgameOverview(
   filters: FilterState,
-  window: number = DEFAULT_OVERVIEW_WINDOW,
+  options: { window?: number; enabled?: boolean } = {},
 ) {
+  const { window = DEFAULT_OVERVIEW_WINDOW, enabled = true } = options;
   const params = buildEndgameParams(filters);
   return useQuery({
     queryKey: ['endgameOverview', params, window],
     queryFn: () => endgameApi.getOverview({ ...params, window }),
     staleTime: ENDGAME_STALE_TIME,
     refetchOnWindowFocus: false,
+    // Quick 260529-015: gate the fetch on Tier-2 readiness. While the page is
+    // locked (Analyzing…) the overview must NOT fetch — a fetch during the
+    // locked phase caches a pre-Stage-B response (only the score_gap badge),
+    // and the 5min staleTime then serves that stale cache when the page
+    // reactively unlocks, so the eval-dependent badges only appear after a
+    // manual reload. Disabling until tier2 makes the first fetch happen
+    // post-unlock (after Stage B has committed all percentile rows).
+    enabled,
   });
 }
 

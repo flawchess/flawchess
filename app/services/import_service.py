@@ -29,7 +29,7 @@ from app.models.game import Game
 from app.repositories import game_repository, import_job_repository
 from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
-from app.services import chesscom_client, lichess_client
+from app.services import chesscom_client, lichess_client, percentile_compute_registry
 from app.services.eval_drain import (
     _collect_midgame_eval_targets,
     _collect_endgame_span_eval_targets,
@@ -519,6 +519,10 @@ async def _complete_import_job(job: JobState, job_id: str) -> None:
                 read_session, [job.user_id]
             )
             if zero_pending:
+                # Quick 260529-015: mark BEFORE scheduling so the 3s readiness
+                # poll can't observe pending==0 and unlock Tier 2 in the window
+                # before compute_stage_b starts writing rows.
+                percentile_compute_registry.mark(job.user_id)
                 asyncio.create_task(compute_stage_b(job.user_id))
     except asyncio.CancelledError:
         # Lifespan shutdown — propagate (mirrors WR-07 cancellation contract).
