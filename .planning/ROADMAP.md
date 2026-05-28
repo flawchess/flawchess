@@ -22,12 +22,13 @@
 - ✅ **v1.17 Endgame Stats Card Redesign** — Phases 84-88.4 (shipped 2026-05-19; Phase 89 dropped, 87.3 superseded) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 - ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
 - ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split into v1.20 before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
-- 🔄 **v1.20 LLM Statistical Reasoning** — Phase 96 (not started)
+- 🔄 **v1.20 LLM Statistical Reasoning** — Phase 97 (not started)
 
 ## Phases
 
-- [ ] **Phase 95: asyncpg COPY for `bulk_insert_positions`** *(standalone hardening, no milestone)* — Switch the heaviest INSERT in the import pipeline from parameterized `INSERT … VALUES(...)` to asyncpg `copy_records_to_table` (binary COPY) to cut per-backend memory pressure during dual-platform imports. Follow-up to SEED-027 Thread A (PR #144 container budget hotfix).
-- [ ] **Phase 96: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+- [x] **Phase 95: asyncpg COPY for `bulk_insert_positions`** *(standalone hardening, no milestone)* — Switch the heaviest INSERT in the import pipeline from parameterized `INSERT … VALUES(...)` to asyncpg `copy_records_to_table` (binary COPY) to cut per-backend memory pressure during dual-platform imports. Follow-up to SEED-027 Thread A (PR #144 container budget hotfix). — shipped 2026-05-27 (PRs #148/#149).
+- [ ] **Phase 96: Import Readiness Gate** *(standalone UX/correctness, no milestone)* — Hold the user on the import page until import + Stockfish eval drain + Stage A/B percentiles are all ready, then unlock all routes via a user-initiated "Explore" CTA. Replaces the `useEvalCoverage` auto-reload hack and removes eval-progress UI from all non-import surfaces. See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
+- [ ] **Phase 97: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
 
@@ -48,7 +49,34 @@
 
 **Plans**: TBD
 
-### Phase 96: LLM Endgame-Insights Statistical-Reasoning Rework
+### Phase 96: Import Readiness Gate
+
+**Goal**: Replace the `window.location.reload()`-on-eval-complete hack (`frontend/src/hooks/useEvalCoverage.ts`) with a **two-tier per-page gate** so users reach already-correct surfaces immediately and only misleading ones are withheld. Tier 1 (hot lane done — no `pending`/`in_progress` import) unlocks **Openings** + **Overview**; Tier 2 (Tier 1 AND `pending_count == 0` AND Stage A/B percentiles persisted) unlocks **Endgames** and reveals the Openings eval metrics. On a first import the empty account is held on the import page until Tier 1; on an incremental import Openings/Overview **stay usable** and only Endgames locks (partial-eval endgame stats are misleading). The Stockfish progress bar stays visible on ALL pages during the drain; each Openings one-row eval metric (label + value + tooltip + bullet chart) hides behind a pulsating-Cpu placeholder bar matching the progress-header style until Tier 2; the live eval counter in the eval-metric tooltips is removed. Background: percentile/anchor compute is NOT the bottleneck (in-memory `COHORT_PERCENTILE_CDF` + user-scoped queries = seconds); the entire wait is the Stockfish drain at ~13–15 ev/s, so Endgames is locked only seconds-to-minutes except for the rare ~40k power-user first import (~30–45 min, with Openings/Overview already explorable). See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
+**Depends on**: none (builds on existing two-lane import + Stage A/B percentile pipeline)
+**Requirements**: standalone — no requirement IDs (UX / correctness follow-up to the v1.18 two-lane import + v1.19 percentiles)
+**Success Criteria** (what must be TRUE):
+
+  1. **Authoritative two-tier readiness signal.** A single backend endpoint exposes both tiers for the user: Tier 1 = no import job in `pending`/`in_progress`; Tier 2 = Tier 1 AND `pending_count == 0` AND Stage A anchors + Stage A/B percentile rows persisted. Frontend gates off THIS signal — never off `useEvalCoverage`'s `pct_complete == 100` transition (which races Stage B's `asyncio.create_task` and can fire before percentile rows commit). A test asserts Tier 2 is false when evals are done but Stage B rows are absent.
+  2. **Per-page gate.** Openings + Overview require Tier 1 to enter; Endgames requires Tier 2. Direct URL navigation to a not-yet-unlocked page renders its gated state (Endgames → processing state; first-import Openings/Overview → held on import page), never partial data. On an incremental import, Openings/Overview stay reachable throughout and only Endgames is locked until Tier 2.
+  3. **Informative import-page progress.** The import page renders as a state machine — fetching → importing → (Tier 1: "Explore openings" CTA) → analyzing endgames (X / Y games) → ready — using the existing live eval counter. The Endgames gated state shows the same eval X/Y progress.
+  4. **Honest completion messaging.** No message claims full completion at hot-import `status=completed`. At Tier 1 the copy says games are imported and openings are ready with endgame analysis still in progress (X/Y); the "imported and analyzed" completion message renders only at Tier 2.
+  5. **Reactive / user-initiated unlock — no forced reload.** No `window.location.reload()` remains on the eval-completion path; the `useEvalCoverage` auto-reload is retired. Two CTAs (app uses sonner): Tier 1 "Explore Openings" is an in-page CTA on the import page (first-import only); Tier 2 "Explore Endgames" is a sonner action toast that reaches the user wherever they are, fired once (deduped) and suppressed when already on `/endgames`, navigating client-side with query invalidation. Tier-2 reveals (Endgames unlock + Openings eval metrics appearing) also happen reactively via the readiness poll + query invalidation for users already on the page.
+  6. **Stockfish progress bar preserved on all pages.** While the drain runs, the eval-coverage progress header (`EvalCoverageHeader` style) is visible on every page as the global processing signal — NOT collapsed to the import page.
+  7. **Openings eval metrics behind a pulsating-Cpu placeholder.** Until Tier 2, each one-row eval-based Openings metric (across subtabs) is replaced by one repeating placeholder bar with a pulsating Cpu icon styled to match the progress header — not bespoke per-metric loaders; the rest of each subtab stays usable. They reveal on Tier 2.
+  8. **Eval-metric tooltip counter removed.** The running eval counter inside `EvalConfidenceTooltip` (and any per-metric tooltip counter) is removed; the bar + placeholder carry the in-progress signal instead. `npm run knip` passes with any now-unused exports deleted.
+  9. **Tests + gates pass.** Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) all green. New tests cover the two-tier readiness truth table, the per-page gate behavior (incl. incremental keeping Openings/Overview open), and the import-page state-machine transitions.
+
+**Plans**: 3 plans (2 waves)
+**Wave 1**
+
+- [x] 96-01-PLAN.md — Backend readiness endpoint (GET /imports/readiness) + has_any_rows helper + useReadiness hook
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 96-02-PLAN.md — Tier-1 route/nav gate + Endgames whole-page lock + Import state machine + Tier-2 toast
+- [x] 96-03-PLAN.md — Openings Cpu-placeholder + tooltip counter removal + useEvalCoverage auto-reload retirement
+
+### Phase 97: LLM Endgame-Insights Statistical-Reasoning Rework
 
 **Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
 **Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
@@ -325,7 +353,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
 | 93. Global Percentile Benchmark Artifact | v1.19 | 2/2 | Complete    | 2026-05-22 |
 | 94. Backend & Frontend Percentile Annotations | v1.19 | 3/3 | Complete   | 2026-05-23 |
-| 95. LLM Endgame-Insights Statistical-Reasoning Rework | v1.20 | 1/2 | In Progress|  |
+| 95. asyncpg COPY for bulk_insert_positions | — (standalone) | 2/2 | Complete | 2026-05-27 |
 
 ## Backlog
 

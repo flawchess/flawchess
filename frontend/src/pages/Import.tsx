@@ -20,7 +20,9 @@ import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
 import { useQueryClient } from '@tanstack/react-query';
+import { useReadiness } from '@/hooks/useReadiness';
 import { apiClient } from '@/api/client';
+import { useNavigate } from 'react-router-dom';
 
 
 const GAME_COUNT_REFRESH_INTERVAL_MS = 5000;
@@ -73,6 +75,10 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string
       queryClient.invalidateQueries({ queryKey: ['userProfile'] });
       queryClient.invalidateQueries({ queryKey: ['gameCount'] });
       queryClient.invalidateQueries({ queryKey: ['imports', 'eval-coverage'] });
+      // Phase 96: also invalidate the readiness query so the import page reacts
+      // to tier transitions (Tier 1 CTA and analyzing-endgames state) alongside
+      // eval-coverage and endgameOverview.
+      queryClient.invalidateQueries({ queryKey: ['imports', 'readiness'] });
       // Bug fix (Phase 94.1-11): the percentile background tasks (Stage A on
       // import-complete, Stage B on eval-drain) write to user_benchmark_percentiles
       // asynchronously. Without invalidating the endgame overview the 30s
@@ -88,8 +94,11 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string
 
   const canDismiss = isDone || isError;
 
+  // Phase 96 Constraint 3: the hot-import "done" copy must not over-claim completion
+  // by saying "Imported N games" — Stockfish eval and percentile computation still
+  // run after the import job finishes. Use a neutral status message instead.
   const progressText = isDone
-    ? (data.games_imported === 0 ? 'No new games found since last sync' : `Imported ${data.games_imported} games from ${data.platform}`)
+    ? (data.games_imported === 0 ? 'No new games found since last sync' : 'Games imported. Openings ready.')
     : isError
       ? `Import failed: ${data.error ?? 'Unknown error'}`
       : `Importing ${data.username} (${data.platform})... ${data.games_fetched} fetched, ${data.games_imported} saved`;
@@ -98,7 +107,6 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <div className={`flex items-center gap-1.5 text-sm ${isError ? 'text-destructive' : isDone ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
-          <PlatformIcon platform={data.platform} className="h-4 w-4 shrink-0" />
           <span>{progressText}</span>
         </div>
         {canDismiss && (
@@ -132,11 +140,51 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string
   );
 }
 
+/**
+ * Primary (brand-brown) Explore CTA. Enabled only when its analysis tier is
+ * ready; otherwise rendered disabled with a hover tooltip explaining why. The
+ * disabled button is wrapped in a span so the tooltip still opens on hover
+ * (a disabled button has pointer-events-none and would swallow the hover).
+ */
+function ExploreButton({ label, ready, hint, testId, onGo }: {
+  label: string;
+  ready: boolean;
+  hint: string;
+  testId: string;
+  onGo: () => void;
+}) {
+  if (ready) {
+    return (
+      <Button className="btn-brand flex-1 sm:flex-none" data-testid={testId} onClick={onGo}>
+        {label}
+      </Button>
+    );
+  }
+  return (
+    <Tooltip content={hint}>
+      <span className="inline-flex flex-1 cursor-not-allowed sm:flex-none" tabIndex={0}>
+        <Button className="btn-brand w-full sm:w-auto" disabled data-testid={testId}>
+          {label}
+        </Button>
+      </span>
+    </Tooltip>
+  );
+}
+
 export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: ImportPageProps) {
   const { logoutForPromotion } = useAuth();
   const { data: profile, isLoading: profileLoading } = useUserProfile();
   const trigger = useImportTrigger();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { tier1, tier2 } = useReadiness();
+  const hasGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count > 0;
+  const openingsHint = !hasGames
+    ? 'Import your games first to explore openings.'
+    : 'Openings will be ready once your import finishes.';
+  const endgamesHint = !hasGames
+    ? 'Import your games first to explore endgames.'
+    : 'Endgames unlock once Stockfish finishes analyzing your games.';
 
   // Username state — always editable, synced from profile on first load only
   const [chessComUsername, setChessComUsername] = useState('');
@@ -182,6 +230,12 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
       // pending as soon as the first batch of games lands, instead of
       // waiting for the next refresh tick.
       queryClient.invalidateQueries({ queryKey: ['imports', 'eval-coverage'] });
+      // Refetch readiness immediately so the Explore buttons disable as soon as
+      // the new job is in-flight. After a prior import reached Tier 2, the
+      // readiness poll stops (refetchInterval returns false at tier2), so the
+      // cached tier1/tier2=true would otherwise keep the buttons enabled until
+      // a remount. Invalidating forces a refetch (tier1=false) and resumes polling.
+      queryClient.invalidateQueries({ queryKey: ['imports', 'readiness'] });
     } catch (err) {
       Sentry.captureException(err, {
         tags: { source: 'import' },
@@ -286,11 +340,10 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
                 />
               </div>
               <Button
-                size="sm"
                 onClick={() => handleSync('chess.com')}
                 disabled={trigger.isPending || !chessComUsername.trim() || activePlatforms.has('chess.com')}
                 data-testid="btn-sync-chess-com"
-                className="self-end"
+                className="btn-brand self-end"
               >
                 Sync
               </Button>
@@ -335,11 +388,10 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
                 />
               </div>
               <Button
-                size="sm"
                 onClick={() => handleSync('lichess')}
                 disabled={trigger.isPending || !lichessUsername.trim() || activePlatforms.has('lichess')}
                 data-testid="btn-sync-lichess"
-                className="self-end"
+                className="btn-brand self-end"
               >
                 Sync
               </Button>
@@ -354,6 +406,34 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
         </div>
       )}
 
+      {/* Explore CTAs: always visible as primary (brand-brown) buttons. Each is
+          enabled only when the user has games and its analysis tier is ready
+          (Openings at Tier 1, Endgames at Tier 2); otherwise it is disabled with
+          a hover tooltip explaining why. */}
+      <div className="flex items-center gap-3" data-testid="import-readiness-section">
+        <ExploreButton
+          label="Openings"
+          ready={hasGames && tier1}
+          hint={openingsHint}
+          testId="btn-explore-openings"
+          onGo={() => navigate('/openings')}
+        />
+        <ExploreButton
+          label="Endgames"
+          ready={hasGames && tier2}
+          hint={endgamesHint}
+          testId="btn-explore-endgames"
+          onGo={() => {
+            // Percentiles (Stage B) are written asynchronously after eval drain,
+            // so the cached endgame overview predates them. Invalidate before
+            // navigating so the page refetches and the percentile badges render
+            // without a manual reload.
+            queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
+            navigate('/endgames');
+          }}
+        />
+      </div>
+
       <Alert variant="info" data-testid="import-info">
         {profile && (profile.chess_com_last_sync_at || profile.lichess_last_sync_at) &&
           (profile.chess_com_game_count + profile.lichess_game_count) < MIN_GAMES_FOR_RELIABLE_STATS && (
@@ -364,9 +444,6 @@ export function ImportPage({ onImportStarted, activeJobIds, onJobDismissed }: Im
         )}
         <p>
           <strong className="text-foreground">First Sync:</strong> imports all your games. Later syncs only fetch new games since the last import.
-        </p>
-        <p>
-          <strong className="text-foreground">Slow Import:</strong> due to partial stockfish game analysis, imports take a while.
         </p>
       </Alert>
 

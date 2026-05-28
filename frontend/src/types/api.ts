@@ -194,3 +194,10 @@ export interface EvalCoverageResponse {
   total_count: number;
   pct_complete: number;  // 0–100, rounded
 }
+
+export interface ReadinessResponse {
+  tier1: boolean;
+  tier2: boolean;
+  pending_count: number;
+  total_count: number;
+}

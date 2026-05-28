@@ -40,6 +40,13 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
   useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
 }));
 
+// useReadiness calls useQuery which requires a QueryClientProvider. Default to
+// tier2=true so the eval rows render (matches the pre-gate behavior these tests
+// assert). The eval row is replaced by the Cpu placeholder only when !tier2.
+vi.mock('@/hooks/useReadiness', () => ({
+  useReadiness: () => ({ tier1: true, tier2: true, pendingCount: 0, totalCount: 0, isLoading: false }),
+}));
+
 import type * as React from 'react';
 
 import { OpeningFindingCard } from './OpeningFindingCard';

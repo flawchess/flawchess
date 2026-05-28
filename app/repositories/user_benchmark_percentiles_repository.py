@@ -124,6 +124,37 @@ async def upsert_percentile(
     await session.execute(stmt)
 
 
+async def has_any_rows(session: AsyncSession, *, user_id: int) -> bool:
+    """Return True if at least one percentile row exists for the user.
+
+    V4 Information Disclosure mitigation: Caller MUST pass the authenticated
+    user's ID (from FastAPI-Users dep ``current_active_user.id``); never accept
+    ``user_id`` as a query parameter from the client.
+
+    Row existence is the Tier-2 signal for ``GET /imports/readiness``.
+    ``computed_at`` is refreshed on every upsert (``func.now()`` in the
+    ``on_conflict_do_update`` set), so a row's presence is a post-commit signal
+    with no Stage-B race against ``asyncio.create_task(compute_stage_b())``.
+
+    Uses a bounded-count query (``LIMIT 1``) rather than an unbounded scan or a
+    Python-side ``len(rows)``, so it exits after finding the first matching row.
+
+    Args:
+        session: AsyncSession.
+        user_id: Authenticated user's internal PK. Keyword-only to match the
+            V4 access-control convention used by ``fetch_for_user``.
+
+    Returns:
+        True if any row exists for the user; False otherwise.
+    """
+    result = await session.execute(
+        select(func.count(UserBenchmarkPercentile.user_id))
+        .where(UserBenchmarkPercentile.user_id == user_id)
+        .limit(1)
+    )
+    return (result.scalar() or 0) > 0
+
+
 async def fetch_for_user(
     session: AsyncSession,
     *,
