@@ -2,31 +2,31 @@
 gsd_state_version: 1.0
 milestone: v1.20
 milestone_name: LLM Statistical Reasoning
-status: executing
-last_updated: "2026-05-27T17:53:37.935Z"
-last_activity: 2026-05-27 -- Phase 95 execution started
+status: ready
+last_updated: "2026-05-28T00:00:00.000Z"
+last_activity: 2026-05-28 -- Phase 95 (asyncpg COPY) shipped via PRs #148/#149; Phase 96 (Import Readiness Gate) created, ready to plan
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 0
-  percent: 0
+  completed_plans: 2
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 95 (asyncpg-copy-positions) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 95
-Last activity: 2026-05-27 -- Phase 95 execution started
+Phase: 95 (asyncpg-copy-positions) — COMPLETE (2/2 plans, shipped 2026-05-27 via PRs #148/#149)
+Next: Phase 96 (Import Readiness Gate) — NOT STARTED, ready to plan
+Status: Between phases — Phase 96 awaiting planning
+Last activity: 2026-05-28 -- Phase 96 (Import Readiness Gate) created from /gsd-explore session
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-27 after v1.19 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.19 Endgame Percentiles shipped 2026-05-27 — peer-relative percentile chips on Endgames page (per-(metric, ELO anchor, TC) cohort CDFs, per-user blended platform rating anchors, 4-bullet tooltip with rating-anchor disclosure, filter-independent). 12 per-TC chips on Time Pressure cards. The prior Phase 95 (LLM Statistical Reasoning rework) was renumbered to Phase 96 (v1.20) on 2026-05-27 to make room for a standalone hardening phase. New Phase 95 (SEED-027 Thread B) switches `bulk_insert_positions` to asyncpg `copy_records_to_table` to finish closing FLAWCHESS-3Q — Thread A (container memory budget) shipped 2026-05-26 via hotfix PR #144 at prod SHA 65511c9. Run `/gsd-plan-phase 95` next, then `/gsd-discuss-phase 96` for the LLM rework.
+Current focus: v1.19 Endgame Percentiles shipped 2026-05-27 — peer-relative percentile chips on Endgames page (per-(metric, ELO anchor, TC) cohort CDFs, per-user blended platform rating anchors, 4-bullet tooltip with rating-anchor disclosure, filter-independent). 12 per-TC chips on Time Pressure cards. The prior Phase 95 (LLM Statistical Reasoning rework) was renumbered to Phase 96 (v1.20) on 2026-05-27 to make room for a standalone hardening phase. Phase 95 (SEED-027 Thread B) switched `bulk_insert_positions` to asyncpg `copy_records_to_table` to finish closing FLAWCHESS-3Q — shipped 2026-05-27 via PRs #148/#149 (Thread A container memory budget shipped 2026-05-26 via hotfix PR #144 at prod SHA 65511c9). Renumbering on 2026-05-28: a `/gsd-explore` session created standalone Phase 96 (Import Readiness Gate) and bumped the LLM Statistical-Reasoning rework to Phase 97 (v1.20). Run `/gsd-plan-phase 96` next.
 
 ## Milestone Progress
 

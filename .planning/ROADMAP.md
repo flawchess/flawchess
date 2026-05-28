@@ -26,7 +26,7 @@
 
 ## Phases
 
-- [ ] **Phase 95: asyncpg COPY for `bulk_insert_positions`** *(standalone hardening, no milestone)* — Switch the heaviest INSERT in the import pipeline from parameterized `INSERT … VALUES(...)` to asyncpg `copy_records_to_table` (binary COPY) to cut per-backend memory pressure during dual-platform imports. Follow-up to SEED-027 Thread A (PR #144 container budget hotfix).
+- [x] **Phase 95: asyncpg COPY for `bulk_insert_positions`** *(standalone hardening, no milestone)* — Switch the heaviest INSERT in the import pipeline from parameterized `INSERT … VALUES(...)` to asyncpg `copy_records_to_table` (binary COPY) to cut per-backend memory pressure during dual-platform imports. Follow-up to SEED-027 Thread A (PR #144 container budget hotfix). — shipped 2026-05-27 (PRs #148/#149).
 - [ ] **Phase 96: Import Readiness Gate** *(standalone UX/correctness, no milestone)* — Hold the user on the import page until import + Stockfish eval drain + Stage A/B percentiles are all ready, then unlock all routes via a user-initiated "Explore" CTA. Replaces the `useEvalCoverage` auto-reload hack and removes eval-progress UI from all non-import surfaces. See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
 - [ ] **Phase 97: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
