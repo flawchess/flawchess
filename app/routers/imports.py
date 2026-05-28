@@ -29,7 +29,7 @@ from app.schemas.imports import (
     ImportStatusResponse,
     ReadinessResponse,
 )
-from app.services import import_service
+from app.services import import_service, percentile_compute_registry
 from app.users import current_active_user
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -148,18 +148,27 @@ async def get_readiness(
         A3, out of scope).
 
     Tier 2 (tier2=True): tier1=True AND pending evals == 0 AND
-        (total_count == 0 OR at least one user_benchmark_percentiles row exists).
+        (total_count == 0 OR at least one user_benchmark_percentiles row exists)
+        AND the user is not mid-Stage-B percentile compute (in-memory registry).
         The ``total_count == 0`` branch is the below-floor escape: a user with
         no games is vacuously Stage-B ready and must not be locked out forever
-        (RESEARCH Pitfall 1).
+        (RESEARCH Pitfall 1). The Stage-B-computing clause (Quick 260529-015)
+        closes the race where pending==0 is observed before the eval-dependent
+        percentile rows are written, so the page would otherwise unlock with
+        missing (first import) or stale (re-import) badges.
 
     Reads are strictly sequential on one AsyncSession per CLAUDE.md constraint
     (no asyncio.gather on a single AsyncSession). Short-circuits skip downstream
-    queries when not needed, bounding the query count to at most 3.
+    queries when not needed, bounding the query count to at most 3. The
+    is_computing check is a sync in-memory set lookup (no query), so it does not
+    affect that bound.
     """
     # Tier 1: no active import job for this user (in-memory check only)
     has_active = bool(import_service.find_active_jobs_for_user(user.id))
     tier1 = not has_active
+
+    # Quick 260529-015: in-memory Stage-B-in-progress gate (sync set lookup).
+    stage_b_computing = percentile_compute_registry.is_computing(user.id)
 
     # Total games (needed for tier2 and pending_count)
     total = await game_repository.count_games_for_user(session, user.id)
@@ -172,7 +181,7 @@ async def get_readiness(
         tier1 and await user_benchmark_percentiles_repository.has_any_rows(session, user_id=user.id)
     )
 
-    tier2 = tier1 and pending == 0 and percentile_ready
+    tier2 = tier1 and pending == 0 and percentile_ready and not stage_b_computing
 
     return ReadinessResponse(
         tier1=tier1,

@@ -55,6 +55,7 @@ from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories.game_repository import users_with_zero_pending
 from app.services import engine as engine_service
+from app.services import percentile_compute_registry
 from app.services.user_benchmark_percentiles_service import compute_stage_b
 from app.services.zobrist import PlyData
 
@@ -565,6 +566,10 @@ async def run_eval_drain() -> None:
                 if affected_user_ids:
                     zero_pending = await users_with_zero_pending(read_session, affected_user_ids)
                     for uid in zero_pending:
+                        # Quick 260529-015: mark BEFORE scheduling so the 3s
+                        # readiness poll can't observe pending==0 and unlock Tier 2
+                        # in the window before compute_stage_b starts writing rows.
+                        percentile_compute_registry.mark(uid)
                         asyncio.create_task(compute_stage_b(uid))
 
         except asyncio.CancelledError:
