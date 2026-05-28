@@ -119,6 +119,10 @@ describe('useReadiness', () => {
 
     const { result } = renderHook(() => useReadiness(), { wrapper: makeWrapper() });
 
+    // Flush microtasks + timers so TanStack Query updates the hook state
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     await act(async () => {
       await Promise.resolve();
     });
