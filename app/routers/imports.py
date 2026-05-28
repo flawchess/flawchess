@@ -15,13 +15,19 @@ from app.models.import_job import ImportJob
 from app.models.user import User
 from app.models.user_benchmark_percentile import UserBenchmarkPercentile
 from app.models.user_rating_anchors import UserRatingAnchor
-from app.repositories import game_repository, import_job_repository, user_repository
+from app.repositories import (
+    game_repository,
+    import_job_repository,
+    user_benchmark_percentiles_repository,
+    user_repository,
+)
 from app.schemas.imports import (
     DeleteGamesResponse,
     EvalCoverageResponse,
     ImportRequest,
     ImportStartedResponse,
     ImportStatusResponse,
+    ReadinessResponse,
 )
 from app.services import import_service
 from app.users import current_active_user
@@ -124,6 +130,56 @@ async def get_active_imports(
         )
 
     return results
+
+
+@router.get("/readiness", response_model=ReadinessResponse)
+async def get_readiness(
+    user: Annotated[User, Depends(current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> ReadinessResponse:
+    """Return two-tier readiness for the authenticated user.
+
+    Locked by D-01/D-04: dedicated endpoint; keys tier1, tier2, pending_count,
+    total_count.
+
+    Tier 1 (tier1=True): no active import job in-flight for this user.
+        Derived from the in-memory import registry only — orphaned DB jobs
+        after server restart are not detected here (RESEARCH Open Question 1 /
+        A3, out of scope).
+
+    Tier 2 (tier2=True): tier1=True AND pending evals == 0 AND
+        (total_count == 0 OR at least one user_benchmark_percentiles row exists).
+        The ``total_count == 0`` branch is the below-floor escape: a user with
+        no games is vacuously Stage-B ready and must not be locked out forever
+        (RESEARCH Pitfall 1).
+
+    Reads are strictly sequential on one AsyncSession per CLAUDE.md constraint
+    (no asyncio.gather on a single AsyncSession). Short-circuits skip downstream
+    queries when not needed, bounding the query count to at most 3.
+    """
+    # Tier 1: no active import job for this user (in-memory check only)
+    has_active = bool(import_service.find_active_jobs_for_user(user.id))
+    tier1 = not has_active
+
+    # Total games (needed for tier2 and pending_count)
+    total = await game_repository.count_games_for_user(session, user.id)
+
+    # Skip pending eval count when tier1=False (no point during active import)
+    pending = 0 if not tier1 else await game_repository.count_pending_evals(session, user.id)
+
+    # Skip has_any_rows when total==0 (vacuously ready) or tier1=False
+    percentile_ready = total == 0 or (
+        tier1 and await user_benchmark_percentiles_repository.has_any_rows(session, user_id=user.id)
+    )
+
+    tier2 = tier1 and pending == 0 and percentile_ready
+
+    return ReadinessResponse(
+        tier1=tier1,
+        tier2=tier2,
+        pending_count=pending,
+        total_count=total,
+    )
 
 
 @router.get("/eval-coverage", response_model=EvalCoverageResponse)
