@@ -22,13 +22,13 @@
 - ✅ **v1.17 Endgame Stats Card Redesign** — Phases 84-88.4 (shipped 2026-05-19; Phase 89 dropped, 87.3 superseded) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 - ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
 - ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split into v1.20 before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
-- 🔄 **v1.20 LLM Statistical Reasoning** — Phase 96 (not started)
+- 🔄 **v1.20 LLM Statistical Reasoning** — Phase 97 (not started)
 
 ## Phases
 
 - [ ] **Phase 95: asyncpg COPY for `bulk_insert_positions`** *(standalone hardening, no milestone)* — Switch the heaviest INSERT in the import pipeline from parameterized `INSERT … VALUES(...)` to asyncpg `copy_records_to_table` (binary COPY) to cut per-backend memory pressure during dual-platform imports. Follow-up to SEED-027 Thread A (PR #144 container budget hotfix).
-- [ ] **Phase 96: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
-- [ ] **Phase 97: Import Readiness Gate** *(standalone UX/correctness, no milestone)* — Hold the user on the import page until import + Stockfish eval drain + Stage A/B percentiles are all ready, then unlock all routes via a user-initiated "Explore" CTA. Replaces the `useEvalCoverage` auto-reload hack and removes eval-progress UI from all non-import surfaces. See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
+- [ ] **Phase 96: Import Readiness Gate** *(standalone UX/correctness, no milestone)* — Hold the user on the import page until import + Stockfish eval drain + Stage A/B percentiles are all ready, then unlock all routes via a user-initiated "Explore" CTA. Replaces the `useEvalCoverage` auto-reload hack and removes eval-progress UI from all non-import surfaces. See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
+- [ ] **Phase 97: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
 
@@ -49,22 +49,7 @@
 
 **Plans**: TBD
 
-### Phase 96: LLM Endgame-Insights Statistical-Reasoning Rework
-
-**Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
-**Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
-**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, LLM-05, LLM-06, LLM-07
-**Success Criteria** (what must be TRUE):
-
-  1. The endgame-insights API payload exposes per-metric p-values, confidence interval bounds, and percentile fields on the v1.17 statistical-rigor metric set, additive and non-breaking alongside existing `zone` + `sample_quality` fields.
-  2. The endgame-insights system prompt teaches the LLM to reason explicitly over CIs and percentiles in narration (e.g. "your value sits at X with 95% CI [Y, Z], top P% of all players") without re-licensing the small-but-significant narration pattern from `feedback_llm_significance_signal`.
-  3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
-  4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
-  5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
-
-**Plans**: TBD
-
-### Phase 97: Import Readiness Gate
+### Phase 96: Import Readiness Gate
 
 **Goal**: Hold the user on the import page until their data is fully ready — import jobs complete, the Stockfish cold drain (`app/services/eval_drain.py`) has zero pending evals, AND Stage A/B percentiles (`app/services/user_benchmark_percentiles_service.py`) are persisted — then unlock all routes via a user-initiated "Explore" CTA. This prevents the eval-dependent surfaces (Endgame Conversion/Parity/Recovery cards, eval-dependent `PercentileChip`s, Openings Cpu-icon stats) from rendering partial/biased data mid-drain. Replaces the `window.location.reload()`-on-eval-complete hack in `frontend/src/hooks/useEvalCoverage.ts` with one coarse global gate (preferred over fragile per-surface loading containers), and collapses all eval-progress UI to the import page. Background: percentile/anchor compute is NOT the bottleneck (in-memory `COHORT_PERCENTILE_CDF` + user-scoped queries = seconds); the entire wait is the Stockfish drain at ~13–15 ev/s. Incremental and typical first imports gate only seconds-to-minutes; only the rare power-user first import (~40k games) gates ~30–45 min, on an empty account with nothing worth showing.
 **Depends on**: none (builds on existing two-lane import + Stage A/B percentile pipeline)
@@ -78,6 +63,21 @@
   5. **User-initiated unlock.** The ready state shows an enabled "Explore" CTA; clicking it navigates into the app (with a hard refresh if cache freshness requires it). The `useEvalCoverage` auto-reload is retired. No forced `window.location.reload()` remains on the eval-completion path.
   6. **Eval-progress UI collapses to the import page.** The eval-coverage UI is removed from all non-import surfaces — `EvalCoverageHeader`, `EvalConfidenceTooltip` eval counters, and `useEvalCoverage` consumers in the Endgame cards (`EndgameMetricCard`, `EndgameTypeCard`, `EndgameOverallEntryCard`, `EndgameOverallPerformanceSection`) and `OpeningFindingCard` / `PositionResultsPanel`. `npm run knip` passes with the now-unused exports deleted.
   7. **Tests + gates pass.** Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) all green. New tests cover the readiness-endpoint truth table, the route-gate redirect behavior, and the import-page state-machine transitions.
+
+**Plans**: TBD
+
+### Phase 97: LLM Endgame-Insights Statistical-Reasoning Rework
+
+**Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
+**Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
+**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, LLM-05, LLM-06, LLM-07
+**Success Criteria** (what must be TRUE):
+
+  1. The endgame-insights API payload exposes per-metric p-values, confidence interval bounds, and percentile fields on the v1.17 statistical-rigor metric set, additive and non-breaking alongside existing `zone` + `sample_quality` fields.
+  2. The endgame-insights system prompt teaches the LLM to reason explicitly over CIs and percentiles in narration (e.g. "your value sits at X with 95% CI [Y, Z], top P% of all players") without re-licensing the small-but-significant narration pattern from `feedback_llm_significance_signal`.
+  3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
+  4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
+  5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
 
 **Plans**: TBD
 
