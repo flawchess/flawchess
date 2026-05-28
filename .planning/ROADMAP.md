@@ -69,7 +69,7 @@
 **Plans**: 3 plans (2 waves)
 **Wave 1**
 
-- [ ] 96-01-PLAN.md — Backend readiness endpoint (GET /imports/readiness) + has_any_rows helper + useReadiness hook
+- [x] 96-01-PLAN.md — Backend readiness endpoint (GET /imports/readiness) + has_any_rows helper + useReadiness hook
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
