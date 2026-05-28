@@ -98,7 +98,7 @@ function ImportProgressBar({ jobId, onDismiss, platformFilter }: { jobId: string
   // by saying "Imported N games" — Stockfish eval and percentile computation still
   // run after the import job finishes. Use a neutral status message instead.
   const progressText = isDone
-    ? (data.games_imported === 0 ? 'No new games found since last sync' : 'Games imported. Openings ready.')
+    ? (data.games_imported === 0 ? 'No new games found since last sync' : 'Games imported.')
     : isError
       ? `Import failed: ${data.error ?? 'Unknown error'}`
       : `Importing ${data.username} (${data.platform})... ${data.games_fetched} fetched, ${data.games_imported} saved`;
