@@ -118,6 +118,20 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
   }),
 }));
 
+// Phase 96: Endgames page gates its content on useReadiness().tier2. Mock the
+// hook with tier2=true so the real statistics content renders (these tests
+// assert against it) without needing a QueryClientProvider.
+vi.mock('@/hooks/useReadiness', () => ({
+  useReadiness: () => ({
+    tier1: true,
+    tier2: true,
+    pendingCount: 0,
+    totalCount: 0,
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 // jsdom shims required by the existing component.
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {

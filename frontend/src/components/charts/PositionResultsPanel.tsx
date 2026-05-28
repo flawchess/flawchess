@@ -5,7 +5,6 @@ import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
-import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
   SCORE_BULLET_CENTER,
@@ -67,8 +66,6 @@ export function PositionResultsPanel({
   className = 'order-2 lg:order-1',
   evalContext = 'opening-end',
 }: PositionResultsPanelProps) {
-  const { isPending, pendingCount } = useEvalCoverage();
-
   if (stats.total === 0) return null;
 
   const isUnreliable = stats.total < MIN_GAMES_FOR_RELIABLE_STATS;
@@ -213,8 +210,6 @@ export function PositionResultsPanel({
               testId="eval-bullet-popover-trigger"
               evalContext={evalContext}
               showBaselineTick={isEndgameEntryEval ? false : undefined}
-              isPending={isPending}
-              pendingCount={pendingCount}
             />
           )}
         </span>
