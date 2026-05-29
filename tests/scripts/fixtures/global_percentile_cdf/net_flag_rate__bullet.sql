@@ -35,7 +35,10 @@ endgame_entry_clocks AS (
        FILTER (WHERE gp.clock_seconds IS NOT NULL AND gp.ply % 2 = 0))[1] AS white_entry_clock,
     (array_agg(gp.clock_seconds ORDER BY gp.ply ASC)
        FILTER (WHERE gp.clock_seconds IS NOT NULL AND gp.ply % 2 = 1))[1] AS black_entry_clock
-  FROM game_positions gp
+  -- recent_capped is always prepended by all 3 callers (_recent_capped_per_tc_cte);
+  -- JOIN scopes to the selected user's games only (result-equivalent: only recent_capped
+  -- games survive the downstream joined CTE anyway).
+  FROM game_positions gp JOIN recent_capped rc ON rc.id = gp.game_id
   WHERE gp.endgame_class IS NOT NULL
   GROUP BY gp.game_id
   HAVING count(gp.ply) >= 6
