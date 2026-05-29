@@ -95,8 +95,8 @@
 **Plans**: 4 plans
 **Wave 1**
 
-- [ ] 97-01-PLAN.md — TC-keyed bands (`TC_METRIC_BANDS`) in `endgame_zones.py` + codegen into `endgameZones.ts`
-- [ ] 97-02-PLAN.md — Backend per-TC rate aggregation (`_compute_per_tc_metric_cards`) + `endgame_metrics_cards` overview field
+- [x] 97-01-PLAN.md — TC-keyed bands (`TC_METRIC_BANDS`) in `endgame_zones.py` + codegen into `endgameZones.ts`
+- [x] 97-02-PLAN.md — Backend per-TC rate aggregation (`_compute_per_tc_metric_cards`) + `endgame_metrics_cards` overview field
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
