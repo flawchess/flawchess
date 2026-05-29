@@ -1533,43 +1533,20 @@ def _compute_score_gap_material(
         _effective_rows.get("score_gap")
     )
 
-    score_gap_conv_percentile: float | None = _aggregate_per_tc_percentile(
-        _effective_rows.get("score_gap_conv")
-    )
-    score_gap_parity_percentile: float | None = _aggregate_per_tc_percentile(
-        _effective_rows.get("score_gap_parity")
-    )
-    # Phase 94.4 D-05a: Recovery Score Gap chip RESCUED under peer-relative.
-    # The earlier D-12 "NO recovery percentile" suppression (Phase 94 global)
-    # is replaced — same-rated cohort comparison normalises the opponent-
-    # rating confound that drove the v1 drop. Wire the same aggregation as
-    # the other Section 2 ΔES chips; the residual opponent-selection
-    # confound reads honestly in the tooltip framing.
-    recovery_score_gap_percentile: float | None = _aggregate_per_tc_percentile(
-        _effective_rows.get("recovery_score_gap")
-    )
-
-    # Quick task 260527-q0b: per-TC breakdown lists for the chip tooltip
+    # Quick task 260527-q0b: per-TC breakdown list for the score_gap chip tooltip
     # bullet 2. `per_tc_games` is computed once by the orchestrator (single
     # source of truth) and passed in; for independent callers / older tests
     # we derive it locally from `entry_rows`'s game ids (not equivalent to the
     # full endgame_rows per-TC count, but `entry_rows` lacks `time_control_bucket`
     # so the lookup falls through to row-by-row counting only when the caller
-    # provides it). When neither is available the lists are empty.
+    # provides it). When neither is available the list is empty.
+    # Phase 97 D-10: conv/parity/recovery per-TC breakdowns removed — those
+    # fields were Metrics-section-only and are superseded by the per-TC cards.
     _per_tc_games: Mapping[TimeControlBucket, int] = (
         per_tc_games if per_tc_games is not None else {}
     )
     score_gap_per_tc = _build_per_tc_breakdown(
         _effective_rows.get("score_gap"), _per_tc_games, anchors_by_tc=anchors_by_tc
-    )
-    score_gap_conv_per_tc = _build_per_tc_breakdown(
-        _effective_rows.get("score_gap_conv"), _per_tc_games, anchors_by_tc=anchors_by_tc
-    )
-    score_gap_parity_per_tc = _build_per_tc_breakdown(
-        _effective_rows.get("score_gap_parity"), _per_tc_games, anchors_by_tc=anchors_by_tc
-    )
-    recovery_score_gap_per_tc = _build_per_tc_breakdown(
-        _effective_rows.get("recovery_score_gap"), _per_tc_games, anchors_by_tc=anchors_by_tc
     )
 
     return ScoreGapMaterialResponse(
@@ -1589,28 +1566,20 @@ def _compute_score_gap_material(
         score_gap_conv_p_value=conv_p,
         score_gap_conv_ci_low=conv_ci_lo,
         score_gap_conv_ci_high=conv_ci_hi,
-        score_gap_conv_percentile=score_gap_conv_percentile,
         score_gap_parity_mean=parity_mean,
         score_gap_parity_n=parity_n,
         score_gap_parity_p_value=parity_p,
         score_gap_parity_ci_low=parity_ci_lo,
         score_gap_parity_ci_high=parity_ci_hi,
-        score_gap_parity_percentile=score_gap_parity_percentile,
         score_gap_recov_mean=recov_mean,
         score_gap_recov_n=recov_n,
         score_gap_recov_p_value=recov_p,
         score_gap_recov_ci_low=recov_ci_lo,
         score_gap_recov_ci_high=recov_ci_hi,
-        # Phase 94.4 D-05a: Recovery Score Gap chip RESCUED — see field
-        # docstring on ScoreGapMaterialResponse.recovery_score_gap_percentile
-        # for the peer-relative rationale that overrides the earlier Phase
-        # 94 global-CDF suppression.
-        recovery_score_gap_percentile=recovery_score_gap_percentile,
-        # Quick task 260527-q0b: per-TC breakdown lists threading.
+        # Quick task 260527-q0b: per-TC breakdown for the score_gap chip tooltip.
+        # Phase 97 D-10: conv/parity/recovery per-TC fields removed (Metrics-section-only,
+        # superseded by per-TC cards).
         score_gap_per_tc=score_gap_per_tc,
-        score_gap_conv_per_tc=score_gap_conv_per_tc,
-        score_gap_parity_per_tc=score_gap_parity_per_tc,
-        recovery_score_gap_per_tc=recovery_score_gap_per_tc,
         # Phase 87.4 (D-05): score_gap_skill_* and
         # endgame_skill_rate_mean kwargs dropped — fields removed from the
         # Pydantic model in app/schemas/endgames.py.
