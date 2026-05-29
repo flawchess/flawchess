@@ -182,9 +182,13 @@ function MetricBlock({
               <div data-testid={`${testId}-score-gap-bullet`}>
                 <ScoreGapRow
                   label={
+                    // Card label is shortened to just "Score Gap:" — the block
+                    // heading (Conversion/Parity/Recovery) already names the
+                    // bucket. The full "{bucket} Score Gap" name is kept in the
+                    // tooltip, chip metricLabel, and aria-label below.
                     <span className="inline-flex items-center gap-1">
                       <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                      {`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap:`}
+                      Score Gap:
                     </span>
                   }
                   value={displayedValue}

@@ -312,12 +312,17 @@ export function EndgameTimePressureCard({
 
   return (
     <div
-      className="charcoal-texture rounded-md p-4"
+      className="charcoal-texture rounded-md overflow-hidden"
       data-testid={`time-pressure-card-${card.tc}`}
       role="group"
       aria-label={`${tcLabel} time pressure breakdown`}
     >
-      <h3 className="text-base font-semibold mb-3 flex items-center gap-1.5">
+      {/* Card header section: distinct recessed background + bottom separator,
+          full-bleed to the card edges (matches EndgameMetricsByTcCard). */}
+      <h3
+        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+        data-testid={`time-pressure-card-${card.tc}-header`}
+      >
         {/* Post-UAT: TC icon next to the label matches the filter-button
             convention. h-4 w-4 keeps icon optical weight aligned with the
             text-base heading. */}
@@ -339,7 +344,7 @@ export function EndgameTimePressureCard({
         </span>
       </h3>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 p-4">
         {/* SC-2: top section — 3-column header row + Clock Gap bullet + net flag rate.
             The ClockGapHeaderRow sits ABOVE the bullet, replacing the old label row. */}
         <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
