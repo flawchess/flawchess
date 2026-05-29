@@ -61,6 +61,20 @@ _THREADS: int = 1
 _DEPTH: int = 15
 # D-05: defensive per-eval timeout
 _TIMEOUT_S: float = 2.0
+#
+# NOTE (2026-05-29): eval_cp is NOT reproducible across machines/runs, and the
+# eval-derived percentiles (achievable_score_gap, score_gap_conv/parity/recovery)
+# therefore differ slightly between independently-backfilled DBs (e.g. dev vs prod)
+# even for identical imports. Two causes: (1) this wall-clock timeout is
+# machine-speed-dependent — a slower/busier host times out more depth-15 searches,
+# leaving eval_cp=NULL, which classify_span() routes to "parity"; (2) the TT
+# persists across positions within a pool worker (python-chess only clears on a
+# `game=` change, which we don't pass) so depth-15 evals are mildly order-/
+# scheduling-dependent. Stockfish has no RNG seed — its search isn't randomized —
+# so there's nothing to seed; determinism would require a node limit + per-position
+# hash clear + pinned binary/net. Decided NOT worth fixing: differences are
+# sub-percentile and at the ±100cp classification boundary. If dev/prod must match
+# exactly, copy eval_cp/eval_mate between DBs rather than re-backfilling each.
 # Module-level pool size. Default 1 = legacy singleton behavior. Prod sets
 # STOCKFISH_POOL_SIZE=4 to use all 4 vCPUs for parallel import-time evals;
 # safe because each child runs under Linux SCHED_IDLE (see _sched_idle_preexec)
