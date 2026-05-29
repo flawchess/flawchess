@@ -384,7 +384,7 @@ def composed_chesscom_to_lichess_grid(
 
     The native-rating domain is derived from the lookup-table constants
     (``_COMPOSED_NATIVE_BOUNDS``) so a future snapshot refit keeps the grid in
-    sync. Ratings are stepped by ``_COMPOSED_GRID_STEP`` (25) from the per-source
+    sync. Ratings are stepped by ``_COMPOSED_GRID_STEP`` from the per-source
     min to max inclusive, always including the exact max bound. The 15-point step
     keeps the SQL nearest-anchor reconstruction error vs the converter well under
     the test tolerance (see the comment on ``_COMPOSED_GRID_STEP`` and the
