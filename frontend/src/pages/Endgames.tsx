@@ -19,7 +19,9 @@ import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameOverallPerformanceSection } from '@/components/charts/EndgameOverallPerformanceSection';
 import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
-import { EndgameMetricsSection } from '@/components/charts/EndgameMetricsSection';
+import { EndgameMetricsByTcSection } from '@/components/charts/EndgameMetricsByTcSection';
+// EndgameMetricsSection removed in favour of EndgameMetricsByTcSection (Phase 97 Plan 03).
+// The old component is deleted in Plan 04.
 import { EndgameTypeBreakdownSection } from '@/components/charts/EndgameTypeBreakdownSection';
 import {
   ENDGAME_CLASS_TO_SLUG,
@@ -577,12 +579,17 @@ export function EndgamesPage() {
                 </div>
               )}
               <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
-              {scoreGapData && perfData && (
+              {perfData && (
                 <>
                   <h2 className="text-lg font-semibold text-foreground mt-2">
                     Endgame Metrics
                   </h2>
-                  <EndgameMetricsSection data={scoreGapData} />
+                  {/* Phase 97 Plan 03: replaced aggregated EndgameMetricsSection with per-TC
+                      cards fed by endgame_metrics_cards. The ?? fallback handles older server
+                      responses where endgame_metrics_cards is absent. */}
+                  <EndgameMetricsByTcSection
+                    data={overviewData?.endgame_metrics_cards ?? { cards: [] }}
+                  />
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}
