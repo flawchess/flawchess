@@ -44,10 +44,8 @@ Each TC card holds the Conversion/Parity/Recovery trifecta; each metric block is
 ### Backend
 - **D-15:** A **new backend aggregation path** is required: per-TC conversion/parity/recovery **rate values** (win% / score% / save%) do not exist today — only per-TC ΔES-gap percentiles do. Group the existing bucket-row query by TC before the bucket split and expose per-TC rate values on the endgame overview response. (Implementation shape is the researcher/planner's call.)
 
-### Process
-- **D-16:** **No `/gsd-ui-phase`** — all visual components already exist (gauge, WDL, ΔES bullet, badge) and `EndgameTimePressureSection` is a direct layout template. This is a re-grouping of existing pieces, not new visual design. Go straight to `/gsd-plan-phase 97`.
-
 ### Claude's Discretion
+- [informational, process] No `/gsd-ui-phase` — all visual components already exist (gauge, WDL, ΔES bullet, badge) and `EndgameTimePressureSection` is a direct layout template. This is a re-grouping of existing pieces, not new visual design. Went straight to `/gsd-plan-phase 97`. (Workflow decision, not a plan deliverable — no plan tracks this.)
 - Exact backend response shape for per-TC rate values.
 - Whether the new TC-keyed band structure replaces or sits alongside the existing `BUCKETED_ZONE_REGISTRY` (planner decides; parity must still resolve to the global band).
 - knip/dead-code cleanup of the removed aggregated-card components and the `_aggregate_per_tc_percentile` path.

@@ -93,10 +93,17 @@
   7. Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) gates all pass.
 
 **Plans**: 4 plans
+**Wave 1**
 
 - [ ] 97-01-PLAN.md — TC-keyed bands (`TC_METRIC_BANDS`) in `endgame_zones.py` + codegen into `endgameZones.ts`
 - [ ] 97-02-PLAN.md — Backend per-TC rate aggregation (`_compute_per_tc_metric_cards`) + `endgame_metrics_cards` overview field
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 97-03-PLAN.md — Frontend per-TC section + card (gauge/WDL/ΔES/percentile trifecta) wired into Endgames page
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 97-04-PLAN.md — Remove aggregated Metrics section + blended chip fields; knip-clean (Overall Performance chips preserved)
 
 ### Phase 98: LLM Endgame-Insights Statistical-Reasoning Rework
