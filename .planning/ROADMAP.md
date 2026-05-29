@@ -92,7 +92,12 @@
   6. Desktop and mobile layouts both render the per-TC cards responsively (mirroring `EndgameTimePressureSection`).
   7. Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) gates all pass.
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+- [ ] 97-01-PLAN.md — TC-keyed bands (`TC_METRIC_BANDS`) in `endgame_zones.py` + codegen into `endgameZones.ts`
+- [ ] 97-02-PLAN.md — Backend per-TC rate aggregation (`_compute_per_tc_metric_cards`) + `endgame_metrics_cards` overview field
+- [ ] 97-03-PLAN.md — Frontend per-TC section + card (gauge/WDL/ΔES/percentile trifecta) wired into Endgames page
+- [ ] 97-04-PLAN.md — Remove aggregated Metrics section + blended chip fields; knip-clean (Overall Performance chips preserved)
 
 ### Phase 98: LLM Endgame-Insights Statistical-Reasoning Rework
 
