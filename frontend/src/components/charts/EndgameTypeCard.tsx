@@ -3,19 +3,22 @@
  * Breakdown section. Replaces the original Conv + Recov peer-diff bullet rows
  * (which always rendered the same magnitude because of the same-game mirror
  * identity) with a SINGLE chess-score bullet using the same pattern as the
- * "Games with Endgame" card (see EndgameOverallCard / EndgameCard). The two
- * per-class gauges (Conversion, Recovery) at the top of each card are kept.
+ * "Games with Endgame" card (see EndgameOverallCard / EndgameCard).
  *
  * Card structure (top-to-bottom):
  *   1. Title + per-card title InfoPopover + optional n={total} chip.
- *   2. Side-by-side Conv + Recov gauges (unchanged).
- *   3. WDL bar row with the Games deep-link.
- *   4. Score bullet (W + 0.5*D / N) sig-gated against 50%.
- *   5. Per-span Score Gap bullet (eval-based, Cpu-iconed) — Phase 87.1.
+ *   2. WDL bar row with the Games deep-link.
+ *   3. Score bullet (W + 0.5*D / N) sig-gated against 50%.
+ *   4. Per-span Score Gap bullet (eval-based, Cpu-iconed) — Phase 87.1.
+ *
+ * Conv/Recov gauges removed (260529-une): they overloaded the section and
+ * misrepresented users judged against wrong-TC bands. The backend still
+ * computes per-class conv/recov for the LLM insights narration; only the
+ * rendered gauges are dropped.
  *
  * Empty / sparse handling (CONTEXT D-13 / D-14 / D-15):
- * - total === 0: gauge row opacity-50, "Not enough data yet" placeholder, no
- *   WDL / Score row, no Games link.
+ * - total === 0: "Not enough data yet" placeholder, no WDL / Score row,
+ *   no Games link.
  * - 0 < total < MIN_GAMES_FOR_RELIABLE_STATS: body wrapper gets UNRELIABLE_OPACITY,
  *   `n={total}` chip appears next to the title (full opacity). Score row hidden.
  */
@@ -25,7 +28,6 @@ import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { Cpu, Swords } from 'lucide-react';
 
-import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { useEvalCoverage } from '@/hooks/useEvalCoverage';
@@ -38,7 +40,6 @@ import { Tooltip } from '@/components/ui/tooltip';
 import {
   ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX,
   ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN,
-  PER_CLASS_GAUGE_ZONES,
 } from '@/generated/endgameZones';
 import {
   SCORE_BULLET_CENTER,
@@ -55,7 +56,6 @@ import {
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
-  colorizeGaugeZones,
 } from '@/lib/theme';
 import {
   ENDGAME_CLASS_TO_SLUG,
@@ -70,9 +70,6 @@ import {
   ENDGAME_TYPE_SCORE_GAP_DOMAIN,
   deriveLevel,
 } from './EndgameOverallShared';
-
-// Per-card gauge size — extracted per REVIEW IN-02 (was hard-coded 4 times).
-const PER_TYPE_GAUGE_SIZE = 130;
 
 // Score-vs-50% neutral band, mirrors EndgameOverallCard (260514-i3l). Kept inline
 // rather than re-importing because the bounds are the same one-line constants.
@@ -139,14 +136,6 @@ export function EndgameTypeCard({
       : undefined;
   const gapLevel = deriveLevel(category.type_achievable_score_gap_p_value, gapN);
 
-  // Per-class gauge zones (p25/p75 bands from the generated registry). With
-  // `pawnless` filtered upstream and the union of registry keys covering the
-  // remaining 5 classes, the explicit guard documents the contract instead of
-  // relying on a runtime fallback (REVIEW WR-04).
-  const bands =
-    category.endgame_class !== 'pawnless'
-      ? PER_CLASS_GAUGE_ZONES[category.endgame_class]
-      : undefined;
   // REVIEW WR-03: pawnless guard surfaces missing descriptions during dev
   // rather than silently emitting an empty popover via a `?? ''` fallback.
   const typeDescription =
@@ -185,10 +174,7 @@ export function EndgameTypeCard({
     </h3>
   );
 
-  // Empty-class shell (no games at all). REVIEW WR-04: dropped the redundant
-  // !bands branch — bands existence is guaranteed for the 5 non-pawnless
-  // classes via the generated registry, so the `!hasGames` path is the only
-  // empty case.
+  // Empty-class shell (no games at all).
   if (!hasGames) {
     return (
       <div
@@ -199,39 +185,6 @@ export function EndgameTypeCard({
       >
         {titleRow}
         <div className="flex flex-col gap-4 p-4">
-          <div
-            className="grid grid-cols-2 gap-2 opacity-50"
-            data-testid={`${tileTestId}-gauges`}
-          >
-            <div
-              className="flex flex-col items-center"
-              data-testid={`${tileTestId}-conv-gauge`}
-            >
-              <div className="text-sm text-muted-foreground mb-1">
-                Conversion
-              </div>
-              <EndgameGauge
-                value={0}
-                maxValue={100}
-                label="Conversion"
-                zones={colorizeGaugeZones([{ from: 0, to: 1.0 }])}
-                size={PER_TYPE_GAUGE_SIZE}
-              />
-            </div>
-            <div
-              className="flex flex-col items-center"
-              data-testid={`${tileTestId}-recov-gauge`}
-            >
-              <div className="text-sm text-muted-foreground mb-1">Recovery</div>
-              <EndgameGauge
-                value={0}
-                maxValue={100}
-                label="Recovery"
-                zones={colorizeGaugeZones([{ from: 0, to: 1.0 }])}
-                size={PER_TYPE_GAUGE_SIZE}
-              />
-            </div>
-          </div>
           <p className="text-sm text-muted-foreground py-4">
             Not enough data yet
           </p>
@@ -239,21 +192,6 @@ export function EndgameTypeCard({
       </div>
     );
   }
-
-  // bands is non-undefined here: hasGames implies a non-pawnless class with a
-  // registry entry (HIDDEN_ENDGAME_CLASSES filters pawnless upstream).
-  const [convLower, convUpper] = bands!.conversion;
-  const [recovLower, recovUpper] = bands!.recovery;
-  const convZones = colorizeGaugeZones([
-    { from: 0, to: convLower },
-    { from: convLower, to: convUpper },
-    { from: convUpper, to: 1.0 },
-  ]);
-  const recovZones = colorizeGaugeZones([
-    { from: 0, to: recovLower },
-    { from: recovLower, to: recovUpper },
-    { from: recovUpper, to: 1.0 },
-  ]);
 
   const gamesLink = (
     <Tooltip content={`View ${category.label} endgame games`}>
@@ -281,41 +219,6 @@ export function EndgameTypeCard({
     >
       {titleRow}
       <div className="flex flex-col gap-4 p-4" style={bodyStyle}>
-        {/* Gauge row (Conv | Recov side-by-side). Gauges are always rendered
-            with full opacity here; the empty-class shell above handles
-            total === 0. */}
-        <div
-          className="grid grid-cols-2 gap-2"
-          data-testid={`${tileTestId}-gauges`}
-        >
-          <div
-            className="flex flex-col items-center"
-            data-testid={`${tileTestId}-conv-gauge`}
-          >
-            <div className="text-sm text-muted-foreground mb-1">Conversion</div>
-            <EndgameGauge
-              value={category.conversion.conversion_pct}
-              maxValue={100}
-              label="Conversion"
-              zones={convZones}
-              size={PER_TYPE_GAUGE_SIZE}
-            />
-          </div>
-          <div
-            className="flex flex-col items-center"
-            data-testid={`${tileTestId}-recov-gauge`}
-          >
-            <div className="text-sm text-muted-foreground mb-1">Recovery</div>
-            <EndgameGauge
-              value={category.conversion.recovery_pct}
-              maxValue={100}
-              label="Recovery"
-              zones={recovZones}
-              size={PER_TYPE_GAUGE_SIZE}
-            />
-          </div>
-        </div>
-
         {SHOW_WDL_BAR_IN_TYPE_CARDS ? (
           <div className="flex flex-col gap-2">
             <span className="flex items-center gap-2 text-sm tabular-nums w-full">
