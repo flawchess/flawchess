@@ -566,7 +566,7 @@ describe('MAX_DEFAULT_VISIBLE = 1', () => {
 });
 
 describe('gap annotations', () => {
-  // A response where two points are more than 56 days apart.
+  // A response where two points are more than 90 days apart.
   function buildResponseWithGap(): EndgameEloTimelineResponse {
     return {
       combos: [
@@ -585,8 +585,8 @@ describe('gap annotations', () => {
               per_week_total_games: 18,
             },
             {
-              // 90 days later — exceeds the 56-day threshold
-              date: '2025-04-06',
+              // 120 days later — exceeds the 90-day threshold
+              date: '2025-05-06',
               endgame_elo: 1640,
               non_endgame_elo: 1610,
               actual_elo: 1625,
@@ -601,7 +601,7 @@ describe('gap annotations', () => {
     };
   }
 
-  it('renders inactivity-gap-label testid when allDates contains a >56-day gap', () => {
+  it('renders inactivity-gap-label testid when allDates contains a >90-day gap', () => {
     const { container } = render(
       <EndgameEloTimelineSection
         data={buildResponseWithGap()}
@@ -613,7 +613,7 @@ describe('gap annotations', () => {
     expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
   });
 
-  it('renders inactivity-gap-glyph (Palmtree) when allDates contains a >56-day gap', () => {
+  it('renders inactivity-gap-glyph (Palmtree) when allDates contains a >90-day gap', () => {
     const { container } = render(
       <EndgameEloTimelineSection
         data={buildResponseWithGap()}

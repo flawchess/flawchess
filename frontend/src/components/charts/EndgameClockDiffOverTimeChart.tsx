@@ -240,7 +240,7 @@ export function EndgameClockDiffOverTimeChart({
               strokeOpacity={0.4}
             />
             {/* Inactivity-gap annotations via shared helper: Palmtree glyph + label per
-                >56-day gap. Vertical x= gap lines are independent from the horizontal
+                >90-day gap. Vertical x= gap lines are independent from the horizontal
                 y=0 baseline above — no overlap, no double-annotation. Placed BEFORE
                 <Bar> so annotations sit behind data in SVG z-order. */}
             {inactivityGapReferenceLines({ dates, yAxisId: 'value' })}

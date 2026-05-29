@@ -22,7 +22,7 @@ export interface InactivityGapReferenceLinesProps {
   dates: string[];
   /** Forward to ReferenceLine when the chart has named axes; omit for single-default-axis charts. */
   yAxisId?: string;
-  /** Gaps strictly greater than this value are annotated. Defaults to INACTIVITY_GAP_THRESHOLD_DAYS (56). */
+  /** Gaps strictly greater than this value are annotated. Defaults to INACTIVITY_GAP_THRESHOLD_DAYS (90). */
   thresholdDays?: number;
 }
 
