@@ -306,7 +306,6 @@ class TestComputePerTcMetricCardsPercentile:
 
     def test_percentile_rows_direct_lookup(self) -> None:
         """Per-TC percentile is read directly from percentile_rows[metric][tc]."""
-        import datetime
 
         from app.models.user_rating_anchors import TimeControlBucket
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
@@ -350,7 +349,6 @@ class TestComputePerTcMetricCardsPercentile:
 
     def test_percentile_rows_missing_tc_is_none(self) -> None:
         """If the TC is absent from a metric's percentile dict, percentile is None."""
-        import datetime
 
         from app.models.user_rating_anchors import TimeControlBucket
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow
@@ -380,7 +378,6 @@ class TestComputePerTcMetricCardsPercentile:
 
     def test_percentile_no_blended_aggregation(self) -> None:
         """Percentile lookup is per-TC direct; two TCs get their own independent values."""
-        import datetime
 
         from app.models.user_rating_anchors import TimeControlBucket
         from app.repositories.user_benchmark_percentiles_repository import PercentileRow

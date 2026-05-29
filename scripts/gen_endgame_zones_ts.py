@@ -267,9 +267,7 @@ def _render() -> str:
         "export const TC_METRIC_BANDS: Record<\n"
         "  'bullet' | 'blitz' | 'rapid' | 'classical',\n"
         "  { convRate: [number, number]; recovRate: [number, number]; convScoreGap: [number, number]; recovScoreGap: [number, number] }\n"
-        "> = {\n"
-        + _format_tc_metric_bands()
-        + "} as const;\n"
+        "> = {\n" + _format_tc_metric_bands() + "} as const;\n"
     )
 
 
