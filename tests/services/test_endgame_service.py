@@ -12,7 +12,7 @@ Tests cover:
 """
 
 import datetime
-from typing import Any
+from typing import Any, NamedTuple
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -25,8 +25,27 @@ from app.services.endgame_service import (
 
 
 # ---------------------------------------------------------------------------
-# Row builder
+# Row type and builder
 # ---------------------------------------------------------------------------
+
+
+class _BucketRow(NamedTuple):
+    """Minimal stand-in for an extended query_endgame_bucket_rows Row.
+
+    Mirrors the labeled columns produced by the Phase 97 extended query so
+    _compute_per_tc_metric_cards (positional indexing) and _get_endgame_performance_from_rows
+    (named attribute access on eval_cp, eval_mate) both work correctly.
+    """
+
+    game_id: int
+    endgame_class: int
+    result: str
+    user_color: str
+    eval_cp: Any
+    eval_mate: Any
+    time_control_bucket: str
+    next_entry_eval_cp: Any
+    next_entry_eval_mate: Any
 
 
 def _make_bucket_row(
@@ -39,10 +58,10 @@ def _make_bucket_row(
     next_entry_eval_cp: int | None = None,
     next_entry_eval_mate: int | None = None,
     endgame_class: int = 1,
-) -> tuple[Any, ...]:
+) -> _BucketRow:
     """Build a minimal bucket row matching the extended query_endgame_bucket_rows shape.
 
-    Column indices:
+    Column indices (and named attributes for NamedTuple access):
         [0] game_id
         [1] endgame_class
         [2] result
@@ -53,32 +72,42 @@ def _make_bucket_row(
         [7] next_entry_eval_cp
         [8] next_entry_eval_mate
     """
-    return (
-        game_id,           # [0] game_id
-        endgame_class,     # [1] endgame_class
-        result,            # [2] result
-        user_color,        # [3] user_color
-        eval_cp,           # [4] eval_cp (white-perspective raw)
-        eval_mate,         # [5] eval_mate
-        tc,                # [6] time_control_bucket
-        next_entry_eval_cp,    # [7] next_entry_eval_cp (always None for bucket rows)
-        next_entry_eval_mate,  # [8] next_entry_eval_mate (always None for bucket rows)
+    return _BucketRow(
+        game_id=game_id,
+        endgame_class=endgame_class,
+        result=result,
+        user_color=user_color,
+        eval_cp=eval_cp,
+        eval_mate=eval_mate,
+        time_control_bucket=tc,
+        next_entry_eval_cp=next_entry_eval_cp,
+        next_entry_eval_mate=next_entry_eval_mate,
     )
 
 
-def _make_conversion_row(tc: str, result: str, user_color: str = "white", game_id: int = 1) -> tuple[Any, ...]:
+def _make_conversion_row(
+    tc: str, result: str, user_color: str = "white", game_id: int = 1
+) -> _BucketRow:
     """Build a conversion bucket row: eval_cp=200 (user up, white perspective)."""
     # eval_cp=200 centipawns, user_color=white => +2.0 from user's perspective => conversion
-    return _make_bucket_row(tc=tc, result=result, user_color=user_color, eval_cp=200, game_id=game_id)
+    return _make_bucket_row(
+        tc=tc, result=result, user_color=user_color, eval_cp=200, game_id=game_id
+    )
 
 
-def _make_recovery_row(tc: str, result: str, user_color: str = "white", game_id: int = 1) -> tuple[Any, ...]:
+def _make_recovery_row(
+    tc: str, result: str, user_color: str = "white", game_id: int = 1
+) -> _BucketRow:
     """Build a recovery bucket row: eval_cp=-200 (user down, white perspective)."""
     # eval_cp=-200 centipawns, user_color=white => -2.0 from user's perspective => recovery
-    return _make_bucket_row(tc=tc, result=result, user_color=user_color, eval_cp=-200, game_id=game_id)
+    return _make_bucket_row(
+        tc=tc, result=result, user_color=user_color, eval_cp=-200, game_id=game_id
+    )
 
 
-def _make_parity_row(tc: str, result: str, user_color: str = "white", game_id: int = 1) -> tuple[Any, ...]:
+def _make_parity_row(
+    tc: str, result: str, user_color: str = "white", game_id: int = 1
+) -> _BucketRow:
     """Build a parity bucket row: eval_cp=0 (even position)."""
     return _make_bucket_row(tc=tc, result=result, user_color=user_color, eval_cp=0, game_id=game_id)
 
@@ -106,8 +135,7 @@ class TestComputePerTcMetricCardsEmpty:
     def test_at_threshold_card_emitted(self) -> None:
         """TC with total == MIN_GAMES_PER_TC_CARD emits one card."""
         rows = [
-            _make_conversion_row("blitz", "1-0", game_id=i)
-            for i in range(MIN_GAMES_PER_TC_CARD)
+            _make_conversion_row("blitz", "1-0", game_id=i) for i in range(MIN_GAMES_PER_TC_CARD)
         ]
         result = _compute_per_tc_metric_cards(rows)
         assert len(result.cards) == 1
@@ -120,9 +148,7 @@ class TestComputePerTcMetricCardsOrder:
         rows: list[tuple[Any, ...]] = []
         for tc_offset, tc in enumerate(["classical", "rapid", "blitz", "bullet"]):  # reversed
             for i in range(MIN_GAMES_PER_TC_CARD):
-                rows.append(
-                    _make_parity_row(tc, "1/2-1/2", game_id=1000 * (tc_offset + 1) + i)
-                )
+                rows.append(_make_parity_row(tc, "1/2-1/2", game_id=1000 * (tc_offset + 1) + i))
         result = _compute_per_tc_metric_cards(rows)
         assert len(result.cards) == 4
         assert [c.tc for c in result.cards] == ["bullet", "blitz", "rapid", "classical"]
@@ -130,14 +156,10 @@ class TestComputePerTcMetricCardsOrder:
     def test_only_qualifying_tcs_in_cards(self) -> None:
         """Only TCs that pass MIN_GAMES_PER_TC_CARD appear in cards."""
         rows = [
-            _make_parity_row("bullet", "1/2-1/2", game_id=i)
-            for i in range(MIN_GAMES_PER_TC_CARD)
+            _make_parity_row("bullet", "1/2-1/2", game_id=i) for i in range(MIN_GAMES_PER_TC_CARD)
         ]
         # Add 5 rapid rows (below threshold)
-        rows += [
-            _make_parity_row("rapid", "1/2-1/2", game_id=1000 + i)
-            for i in range(5)
-        ]
+        rows += [_make_parity_row("rapid", "1/2-1/2", game_id=1000 + i) for i in range(5)]
         result = _compute_per_tc_metric_cards(rows)
         assert len(result.cards) == 1
         assert result.cards[0].tc == "bullet"
@@ -273,8 +295,7 @@ class TestComputePerTcMetricCardsPercentile:
     def test_percentile_rows_omitted_defaults_to_none(self) -> None:
         """Calling without percentile_rows gives None on all three buckets' percentile."""
         rows = [
-            _make_parity_row("blitz", "1/2-1/2", game_id=i)
-            for i in range(MIN_GAMES_PER_TC_CARD)
+            _make_parity_row("blitz", "1/2-1/2", game_id=i) for i in range(MIN_GAMES_PER_TC_CARD)
         ]
         result = _compute_per_tc_metric_cards(rows)
         assert len(result.cards) == 1
@@ -292,8 +313,7 @@ class TestComputePerTcMetricCardsPercentile:
         from app.services.global_percentile_cdf import CdfMetricId
 
         rows = [
-            _make_parity_row("blitz", "1/2-1/2", game_id=i)
-            for i in range(MIN_GAMES_PER_TC_CARD)
+            _make_parity_row("blitz", "1/2-1/2", game_id=i) for i in range(MIN_GAMES_PER_TC_CARD)
         ]
         percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
             "score_gap_conv": {
@@ -337,8 +357,7 @@ class TestComputePerTcMetricCardsPercentile:
         from app.services.global_percentile_cdf import CdfMetricId
 
         rows = [
-            _make_parity_row("bullet", "1/2-1/2", game_id=i)
-            for i in range(MIN_GAMES_PER_TC_CARD)
+            _make_parity_row("bullet", "1/2-1/2", game_id=i) for i in range(MIN_GAMES_PER_TC_CARD)
         ]
         # score_gap_conv has blitz but NOT bullet; others not provided
         percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
@@ -478,6 +497,7 @@ class TestGetEndgameOverviewMetricsCards:
     @pytest.mark.asyncio
     async def test_endgame_metrics_cards_populated_multi_tc(self) -> None:
         """get_endgame_overview returns a non-empty endgame_metrics_cards for a multi-TC fixture."""
+        from app.schemas.endgames import EndgameEloTimelineResponse, EndgameTimelineResponse
         from app.services.endgame_service import get_endgame_overview
 
         # Build bucket rows that will produce two TC cards (bullet + blitz)
@@ -487,47 +507,65 @@ class TestGetEndgameOverviewMetricsCards:
         for i in range(MIN_GAMES_PER_TC_CARD):
             bucket_rows.append(_make_parity_row("blitz", "1/2-1/2", game_id=1000 + i))
 
-        # Build minimal entry_rows for _aggregate_endgame_stats
-        entry_rows: list[tuple[Any, ...]] = []
-
-        session = AsyncMock(spec=AsyncSession)
-
         with (
             patch(
                 "app.services.endgame_service.query_endgame_bucket_rows",
+                new_callable=AsyncMock,
                 return_value=bucket_rows,
             ),
             patch(
                 "app.services.endgame_service.query_endgame_entry_rows",
-                return_value=entry_rows,
+                new_callable=AsyncMock,
+                return_value=[],
             ),
-            patch("app.services.endgame_service.query_non_endgame_rows", return_value=[]),
-            patch("app.services.endgame_service.query_clock_stats_rows", return_value=[]),
+            patch(
+                "app.services.endgame_service.query_endgame_performance_rows",
+                new_callable=AsyncMock,
+                return_value=([], []),
+            ),
+            patch(
+                "app.services.endgame_service.count_filtered_games",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+            patch(
+                "app.services.endgame_service.count_endgame_games",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+            patch(
+                "app.services.endgame_service.query_clock_stats_rows",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "app.services.endgame_service.get_endgame_timeline",
+                new_callable=AsyncMock,
+                return_value=EndgameTimelineResponse(overall=[], per_type={}, window=100),
+            ),
+            patch(
+                "app.services.endgame_service.get_endgame_elo_timeline",
+                new_callable=AsyncMock,
+                return_value=EndgameEloTimelineResponse(combos=[], timeline_window=100),
+            ),
             patch(
                 "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
                 return_value={},
             ),
             patch(
                 "app.services.endgame_service.fetch_anchors_for_user",
+                new_callable=AsyncMock,
                 return_value={},
             ),
-            patch(
-                "app.services.endgame_service.get_endgame_stats",
-                return_value=AsyncMock(),
-            ),
-            patch(
-                "app.services.endgame_service.get_endgame_elo_timeline",
-                return_value=AsyncMock(),
-            ),
-            patch("app.services.endgame_service.get_endgame_timeline", return_value=AsyncMock()),
         ):
             result = await get_endgame_overview(
-                session,
+                AsyncMock(spec=AsyncSession),
                 user_id=1,
                 time_control=None,
                 platform=None,
                 rated=None,
-                opponent_type="all",
+                opponent_type="human",
                 from_date=None,
                 to_date=None,
                 window=100,
