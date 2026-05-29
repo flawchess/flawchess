@@ -32,6 +32,9 @@ from app.repositories.user_benchmark_percentiles_repository import (  # noqa: E4
     fetch_for_user,
     upsert_percentile,
 )
+from app.repositories.user_rating_anchors_repository import (  # noqa: E402
+    RatingAnchorRow,
+)
 from app.schemas.endgames import EndgameWDLSummary  # noqa: E402
 from app.services.endgame_service import (  # noqa: E402
     _compute_score_gap_material,
@@ -373,4 +376,44 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
     perf = _get_endgame_performance_from_rows([], [], [], percentile_rows=null_pct_rows)
     assert perf.achievable_score_gap_percentile is None, (
         "achievable_score_gap_percentile must be None when percentile column is NULL"
+    )
+
+
+# ── Test 5 — per-TC breakdown carries the rating anchor (260529-l1i) ───────────
+
+
+_SEED_ANCHOR_RATING: int = 1525  # planted anchor for the seeded TC
+
+
+async def test_per_tc_breakdown_carries_anchor() -> None:
+    """260529-l1i: PerTcBreakdownOut.anchor is populated from the per-TC
+    RatingAnchorRow.anchor_rating for the seeded TC.
+
+    Builds a minimal anchors_by_tc mapping + seeded percentile_rows, calls
+    _compute_score_gap_material with anchors_by_tc, and asserts the seeded-TC
+    entry in score_gap_per_tc carries the anchor.
+    """
+    percentile_rows = _make_percentile_rows()
+    anchors_by_tc: dict[TimeControlBucket, RatingAnchorRow] = {
+        _SEED_TC: RatingAnchorRow(
+            anchor_rating=_SEED_ANCHOR_RATING,
+            n_chesscom_games=0,
+            n_lichess_games=200,
+            chesscom_median_native=None,
+            lichess_median_native=_SEED_ANCHOR_RATING,
+        )
+    }
+
+    result = _compute_score_gap_material(
+        _zero_wdl(),
+        _zero_wdl(),
+        entry_rows=[],
+        percentile_rows=percentile_rows,
+        anchors_by_tc=anchors_by_tc,
+    )
+
+    seeded = [e for e in result.score_gap_per_tc if e.tc == _SEED_TC]
+    assert seeded, f"expected a {_SEED_TC} entry in score_gap_per_tc"
+    assert seeded[0].anchor == _SEED_ANCHOR_RATING, (
+        "per-TC breakdown entry must carry the seeded anchor_rating"
     )

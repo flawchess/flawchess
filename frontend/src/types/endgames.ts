@@ -410,12 +410,17 @@ export interface RatingAnchorOut {
  *    - value == null && n_games > 0: below floor → render `<tc>: insufficient games`.
  *    - n_games == 0: backend should not emit; defensive frontend drop.
  *
+ *  260529-l1i: each renderable row also shows a per-TC rating-anchor line
+ *  ("<tc> — anchored at ~<anchor> Lichess Elo"). `anchor` is null when this TC
+ *  has no anchor; the anchor line is then omitted for that row.
+ *
  *  TCs ordered bullet → blitz → rapid → classical by the backend builder. */
 export interface PerTcBreakdownOut {
   tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
   value: number | null;
   n_games: number;
   percentile: number | null;
+  anchor: number | null;
 }
 
 export interface EndgameOverviewResponse {

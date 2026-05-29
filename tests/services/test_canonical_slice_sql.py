@@ -39,13 +39,12 @@ from app.services.canonical_slice_sql import (
     _recent_capped_per_tc_cte,
     elo_bucket_expr,
     equal_footing_filter_sql,
-    per_user_cte_for,
     per_user_cte_median_anchor,
+    per_user_cte_score_gap_tc,
     selected_users_cte,
     sparse_exclusion_sql,
 )
-from app.services.chesscom_to_lichess import CHESSCOM_BLITZ_TO_LICHESS
-from app.services.global_percentile_cdf import CdfMetricId
+from app.services.chesscom_to_lichess import composed_chesscom_to_lichess_grid
 
 # ---------------------------------------------------------------------------
 # Phase 94.4 Plan 10 Task 1.0 — Baseline SQL for the non-blend regression guard.
@@ -99,195 +98,93 @@ _BASELINE_PER_USER_CTE_MEDIAN_ANCHOR_RAPID_BENCHMARK: str = (
 # Parametrise constants.
 # ---------------------------------------------------------------------------
 
-_METRICS: tuple[CdfMetricId, ...] = (
-    "score_gap",
-    "achievable_score_gap",
-    "score_gap_conv",
-    "score_gap_parity",
-)
 _SOURCES: tuple[Literal["benchmark", "single_user"], ...] = ("benchmark", "single_user")
 
 
 # ---------------------------------------------------------------------------
-# Test class: pooled shape.
+# Negative regression guards — repointed to per_user_cte_score_gap_tc (D-1/D-5).
 # ---------------------------------------------------------------------------
 
 
-class TestPooledShape:
-    """Per-cell shape is replaced by a pooled per-user aggregate (D-5)."""
+class TestPooledShapeNegativeGuards:
+    """Negative-property regression guards for the live per-TC builders (D-1/D-5).
 
-    @pytest.mark.parametrize("metric_id", _METRICS)
+    The dead non-per-TC builders (removed in 260529-gl0) are gone. These
+    guards are repointed to ``per_user_cte_score_gap_tc`` as a
+    representative live builder — it uses the same SQL-generation path, so a
+    regression that injects elo_bucket/tc_bucket/sparse-cell into the per-TC
+    family would be caught here.
+    """
+
     @pytest.mark.parametrize("source", _SOURCES)
-    def test_per_user_values_projection_emits_metric_value_and_n_games(
-        self, metric_id: CdfMetricId, source: Literal["benchmark", "single_user"]
+    def test_no_elo_bucket_in_live_tc_builder(
+        self, source: Literal["benchmark", "single_user"]
     ) -> None:
-        """``per_user_values`` must project exactly ``(metric_value, n_games)`` (D-9-amend)."""
-        sql = per_user_cte_for(metric_id, source=source)
-        pv_idx = sql.find("per_user_values")
-        assert pv_idx != -1, f"per_user_values block missing for {metric_id}/{source}"
-        block = sql[pv_idx:]
-        assert "metric_value" in block, (
-            f"per_user_values must project metric_value for {metric_id}/{source}"
-        )
-        assert "n_games" in block, (
-            f"per_user_values must project n_games for {metric_id}/{source} (D-9-amend)"
-        )
-
-    @pytest.mark.parametrize("metric_id", _METRICS)
-    @pytest.mark.parametrize("source", _SOURCES)
-    def test_no_elo_bucket_or_tc_bucket_projection_on_per_user(
-        self, metric_id: CdfMetricId, source: Literal["benchmark", "single_user"]
-    ) -> None:
-        """The pooled per-user CTE must not project ``elo_bucket`` or carry a per-TC bucket column.
-
-        ``time_control_bucket`` may still appear inside the
-        ``ROW_NUMBER() OVER (PARTITION BY ... time_control_bucket ...)`` cap
-        window, but neither ``elo_bucket`` nor a free ``tc_bucket`` may
-        appear in the per-user projection.
-        """
-        sql = per_user_cte_for(metric_id, source=source)
+        """``elo_bucket`` must not appear in the live per-TC builder output (D-5)."""
+        sql = per_user_cte_score_gap_tc("bullet", source=source)
         assert "elo_bucket" not in sql, (
-            f"elo_bucket leaked into pooled SQL for {metric_id}/{source} (D-5)"
+            f"elo_bucket leaked into per_user_cte_score_gap_tc/bullet/{source} (D-5)"
         )
-        # Allow time_control_bucket only inside the row_number partition.
+
+    @pytest.mark.parametrize("source", _SOURCES)
+    def test_no_tc_bucket_leak_in_live_tc_builder(
+        self, source: Literal["benchmark", "single_user"]
+    ) -> None:
+        """``tc_bucket`` must not appear outside the time_control_bucket filter in the live builder (D-5)."""
+        sql = per_user_cte_score_gap_tc("bullet", source=source)
+        # The per-TC predicate uses time_control_bucket (OK); tc_bucket is the per-cell artifact.
         non_window_tc = sql.replace("time_control_bucket", "")
         assert "tc_bucket" not in non_window_tc, (
-            f"tc_bucket leaked into pooled SQL for {metric_id}/{source} (D-5)"
+            f"tc_bucket leaked into per_user_cte_score_gap_tc/bullet/{source} (D-5)"
         )
 
-    @pytest.mark.parametrize("metric_id", _METRICS)
     @pytest.mark.parametrize("source", _SOURCES)
-    def test_no_per_tc_join_predicate(
-        self, metric_id: CdfMetricId, source: Literal["benchmark", "single_user"]
+    def test_no_per_tc_join_predicate_from_old_schema(
+        self, source: Literal["benchmark", "single_user"]
     ) -> None:
-        """``g.time_control_bucket::text = su.tc_bucket`` must be absent on BOTH sources (D-5).
+        """``g.time_control_bucket::text = su.tc_bucket`` must be absent (D-5).
 
-        Regression guard: a leftover per-TC predicate on single_user would
-        zero out the pooled set (the single_user CTE no longer projects
-        tc_bucket at all); on benchmark it would defeat the pooling intent.
+        Regression guard: this join predicate was the per-cell schema artifact.
+        The live per-TC builders use ``AND g.time_control_bucket = '{tc}'``
+        directly in the WHERE clause; the old join form must stay gone.
         """
-        sql = per_user_cte_for(metric_id, source=source)
+        sql = per_user_cte_score_gap_tc("bullet", source=source)
         assert "g.time_control_bucket::text = su.tc_bucket" not in sql, (
-            f"per-TC predicate must NOT appear in pooled CTE for {metric_id}/{source}"
+            f"old per-TC join predicate must NOT appear in per_user_cte_score_gap_tc/bullet/{source}"
         )
 
-    @pytest.mark.parametrize("metric_id", _METRICS)
     @pytest.mark.parametrize("source", _SOURCES)
-    def test_no_sparse_cell_literal_in_per_user_cte(
-        self, metric_id: CdfMetricId, source: Literal["benchmark", "single_user"]
+    def test_no_sparse_cell_literal_in_live_tc_builder(
+        self, source: Literal["benchmark", "single_user"]
     ) -> None:
-        """Per-row sparse-cell exclusion is gone (D-1).
+        """Per-row sparse-cell exclusion is gone from the live per-TC builder (D-1).
 
-        The literal substring ``2400 AND tc_bucket = 'classical'`` (the
-        signature of ``sparse_exclusion_sql("elo_bucket", "tc_bucket")``)
-        must not appear in the rendered pooled CTE. Sparse-cell exclusion
-        lives on cohort selection only.
+        Sparse-cell exclusion lives in ``selected_users_cte("benchmark")`` only.
         """
-        sql = per_user_cte_for(metric_id, source=source)
+        sql = per_user_cte_score_gap_tc("bullet", source=source)
         assert "tc_bucket = 'classical'" not in sql, (
-            f"sparse_exclusion_sql leaked into pooled CTE for {metric_id}/{source}"
+            f"sparse_exclusion_sql leaked into per_user_cte_score_gap_tc/bullet/{source}"
         )
 
 
 # ---------------------------------------------------------------------------
-# Test class: recency window.
+# Per-TC cap appears exactly once — repointed guard (was TestRecencyWindow).
 # ---------------------------------------------------------------------------
 
 
-class TestRecencyWindow:
-    """36-month recency anchor + 3000-per-TC cap (D-5)."""
+def test_cap_appears_once_per_builder_output() -> None:
+    """``<= {cap}`` should appear exactly once in the rendered SQL (single capping site).
 
-    @pytest.mark.parametrize("metric_id", _METRICS)
-    @pytest.mark.parametrize("source", _SOURCES)
-    def test_recent_per_tc_cap_substrings_present(
-        self, metric_id: CdfMetricId, source: Literal["benchmark", "single_user"]
-    ) -> None:
-        sql = per_user_cte_for(metric_id, source=source)
-        # Normalise whitespace so the multi-line SQL emission matches a single-line probe.
-        normalised = " ".join(sql.split())
-        assert (
-            "row_number() OVER (PARTITION BY g.user_id, g.time_control_bucket "
-            "ORDER BY g.played_at DESC)" in normalised
-        ), f"ROW_NUMBER partition missing for {metric_id}/{source}"
-        assert f"<= {RECENT_GAMES_PER_TC_CAP}" in sql, (
-            f"recent-per-TC cap missing for {metric_id}/{source}"
-        )
-
-    @pytest.mark.parametrize("metric_id", _METRICS)
-    @pytest.mark.parametrize("source", _SOURCES)
-    def test_recency_window_default_uses_now(
-        self, metric_id: CdfMetricId, source: Literal["benchmark", "single_user"]
-    ) -> None:
-        """``snapshot_date=None`` (default) emits ``NOW() - INTERVAL '36 months'``."""
-        sql = per_user_cte_for(metric_id, source=source)
-        assert f"NOW() - INTERVAL '{RECENCY_WINDOW_MONTHS} months'" in sql, (
-            f"NOW() recency anchor missing for {metric_id}/{source}"
-        )
-
-    @pytest.mark.parametrize("metric_id", _METRICS)
-    @pytest.mark.parametrize("source", _SOURCES)
-    def test_recency_window_explicit_snapshot_date(
-        self, metric_id: CdfMetricId, source: Literal["benchmark", "single_user"]
-    ) -> None:
-        """Explicit ``date`` emits ``DATE 'YYYY-MM-DD' - INTERVAL '36 months'``."""
-        sql = per_user_cte_for(metric_id, source=source, snapshot_date=date(2026, 3, 31))
-        assert f"DATE '2026-03-31' - INTERVAL '{RECENCY_WINDOW_MONTHS} months'" in sql, (
-            f"explicit DATE anchor missing for {metric_id}/{source}"
-        )
-        # Default NOW() must NOT be present when explicit date is given.
-        assert "NOW() - INTERVAL" not in sql, (
-            f"NOW() leaked into explicit-snapshot SQL for {metric_id}/{source}"
-        )
-
-    @pytest.mark.parametrize("metric_id", _METRICS)
-    def test_cap_appears_once_per_builder_output(self, metric_id: CdfMetricId) -> None:
-        """``<= {cap}`` should appear exactly once in the rendered SQL (single capping site)."""
-        sql = per_user_cte_for(metric_id, source="single_user")
-        cap_count = sql.count(f"<= {RECENT_GAMES_PER_TC_CAP}")
-        assert cap_count == 1, (
-            f"expected exactly one ``<= {RECENT_GAMES_PER_TC_CAP}`` occurrence for {metric_id}, "
-            f"got {cap_count}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Test class: inclusion floor.
-# ---------------------------------------------------------------------------
-
-
-class TestInclusionFloor:
-    """Single ≥30 inclusion-floor gate per metric (D-6)."""
-
-    def test_score_gap_having_gates_both_30(self) -> None:
-        sql = per_user_cte_for("score_gap", source="single_user")
-        assert "HAVING count(*) FILTER (WHERE has_endgame)     >= 30" in sql
-        assert "AND count(*) FILTER (WHERE NOT has_endgame) >= 30" in sql
-
-    def test_achievable_having_gates_di_ge_30(self) -> None:
-        sql = per_user_cte_for("achievable_score_gap", source="single_user")
-        assert "HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= 30" in sql
-
-    def test_score_gap_bucket_conv_having_gates_30(self) -> None:
-        sql = per_user_cte_for("score_gap_conv", source="single_user")
-        # The HAVING gate inside per_user_bucket is "HAVING count(*) >= 30".
-        assert "HAVING count(*) >= 30" in sql
-        # And the per_user_values WHERE clause selects the conversion bucket.
-        assert "bucket = 'conversion'" in sql
-
-    def test_score_gap_bucket_parity_having_gates_30(self) -> None:
-        sql = per_user_cte_for("score_gap_parity", source="single_user")
-        assert "HAVING count(*) >= 30" in sql
-        assert "bucket = 'parity'" in sql
-
-    @pytest.mark.parametrize("metric_id", _METRICS)
-    def test_apply_floor_argument_raises_typeerror(self, metric_id: CdfMetricId) -> None:
-        """``apply_floor`` is removed from the public surface (D-8)."""
-        with pytest.raises(TypeError):
-            per_user_cte_for(
-                metric_id,
-                source="single_user",
-                apply_floor=False,  # ty: ignore[unknown-argument]  # negative assertion: 94.2 removed apply_floor (D-8)
-            )
+    Repointed to ``per_user_cte_score_gap_tc`` after removal of the dead
+    non-per-TC builders. The per-TC builder uses _recent_capped_per_tc_cte
+    which caps exactly once; this guard catches any accidental double-cap.
+    """
+    sql = per_user_cte_score_gap_tc("bullet", source="single_user")
+    cap_count = sql.count(f"<= {RECENT_GAMES_PER_TC_CAP}")
+    assert cap_count == 1, (
+        f"expected exactly one ``<= {RECENT_GAMES_PER_TC_CAP}`` occurrence in score_gap_tc/bullet, "
+        f"got {cap_count}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +334,7 @@ class TestPerTcConstants:
 
 
 class TestRecentCappedPerTcCte:
-    """The per-TC variant of ``_recent_capped_cte`` (Plan B Task 1)."""
+    """The per-TC ``recent_capped`` CTE (Plan B Task 1)."""
 
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
     def test_emits_per_tc_predicate(self, tc: TimeControlBucket) -> None:
@@ -452,7 +349,7 @@ class TestRecentCappedPerTcCte:
         assert (
             "row_number() OVER (PARTITION BY g.user_id ORDER BY g.played_at DESC)" in normalised
         ), f"partition should collapse to per-user for tc={tc!r}"
-        # The full per-(user, tc) partition from `_recent_capped_cte` must NOT appear here.
+        # The full per-(user, tc) partition from the pooled-TC form must NOT appear here.
         assert "PARTITION BY g.user_id, g.time_control_bucket" not in normalised, (
             f"per-(user, TC) partition leaked into per-TC variant for tc={tc!r}"
         )
@@ -540,53 +437,6 @@ class TestPerTcBuilders:
         block = sql[pv_idx:]
         assert "metric_value" in block
         assert "n_games" in block
-
-
-class TestPerTcDispatcher:
-    """``per_user_cte_for`` widened with 12 new dispatch arms (Plan B Task 2)."""
-
-    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
-    def test_dispatcher_routes_time_pressure_score_gap(self, tc: TimeControlBucket) -> None:
-        metric_id = f"time_pressure_score_gap_{tc}"
-        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # 12 new metric IDs are widened in Plan C; Plan B dispatcher matches string literals
-        normalised = " ".join(sql.split())
-        assert f"g.time_control_bucket = '{tc}'" in sql
-        assert "HAVING count(*) FILTER (WHERE user_clock_pct < 0.40) >= 30" in normalised
-
-    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
-    def test_dispatcher_routes_clock_gap(self, tc: TimeControlBucket) -> None:
-        metric_id = f"clock_gap_{tc}"
-        sql = per_user_cte_for(metric_id, source="benchmark")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
-        assert f"g.time_control_bucket = '{tc}'" in sql
-        assert "HAVING count(*) >= 30" in sql
-
-    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
-    def test_dispatcher_routes_net_flag_rate(self, tc: TimeControlBucket) -> None:
-        metric_id = f"net_flag_rate_{tc}"
-        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
-        assert f"g.time_control_bucket = '{tc}'" in sql
-        assert "HAVING count(*) >= 30" in sql
-
-    def test_dispatcher_raises_on_unknown_metric(self) -> None:
-        with pytest.raises(ValueError, match=r"^Unknown metric_id:"):
-            per_user_cte_for("does_not_exist_metric", source="single_user")  # ty: ignore[invalid-argument-type]  # negative assertion: arbitrary unknown ID
-
-    @pytest.mark.parametrize("metric_family", _PER_TC_METRIC_FAMILIES)
-    @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
-    def test_dispatcher_emits_per_tc_predicate_for_every_cell(
-        self, metric_family: str, tc: TimeControlBucket
-    ) -> None:
-        """Parametrised over all 12 (metric × TC) cells (Plan B Task 2 Test 8)."""
-        metric_id = f"{metric_family}_{tc}"
-        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
-        assert f"g.time_control_bucket = '{tc}'" in sql, f"per-TC predicate missing for {metric_id}"
-        # Metric-specific floor signature.
-        if metric_family == "time_pressure_score_gap":
-            assert "HAVING count(*) FILTER" in sql, (
-                f"per-pressure-cell HAVING missing for {metric_id}"
-            )
-        else:
-            assert "HAVING count(*) >= 30" in sql, f"pooled ≥30 HAVING missing for {metric_id}"
 
 
 # ---------------------------------------------------------------------------
@@ -749,13 +599,25 @@ class TestPitfall1UserIdWideningExistingBuilders:
 
         Parametrised: 3 existing 94.3 builders × 4 TCs = 12 cases.
         """
-        metric_id = f"{builder_family}_{tc}"
-        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+        from app.services.canonical_slice_sql import (
+            per_user_cte_clock_gap,
+            per_user_cte_net_flag_rate,
+            per_user_cte_time_pressure_score_gap,
+        )
+
+        builders = {
+            "time_pressure_score_gap": lambda t: per_user_cte_time_pressure_score_gap(
+                t, source="single_user"
+            ),
+            "clock_gap": lambda t: per_user_cte_clock_gap(t, source="single_user"),
+            "net_flag_rate": lambda t: per_user_cte_net_flag_rate(t, source="single_user"),
+        }
+        sql = builders[builder_family](tc)
         block = _per_user_values_block(sql)
         # Tolerant probe: accepts ``SELECT user_id,`` or ``SELECT\n  user_id,``
         # (multi-line emission). Use re.search with whitespace tolerance.
         assert re.search(r"SELECT\s+user_id\s*,", block), (
-            f"per_user_values must project user_id for {metric_id} "
+            f"per_user_values must project user_id for {builder_family}/{tc} "
             f"(Pitfall 1 — cohort-CDF JOIN requirement). Block was:\n{block[:400]}"
         )
 
@@ -769,29 +631,25 @@ class TestPitfall1UserIdWideningExistingBuilders:
         The comment is grep-able so future readers can trace the user_id
         projection to its source decision (RESEARCH Pitfall 1).
         """
-        metric_id = f"{builder_family}_{tc}"
-        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
-        block = _per_user_values_block(sql)
-        assert "user_id widened per Phase 94.4 Pitfall 1" in block, (
-            f"Pitfall 1 provenance comment missing in per_user_values for {metric_id}; "
-            f"block:\n{block[:400]}"
+        from app.services.canonical_slice_sql import (
+            per_user_cte_clock_gap,
+            per_user_cte_net_flag_rate,
+            per_user_cte_time_pressure_score_gap,
         )
 
-    def test_non_per_tc_builders_are_not_touched_by_pitfall_1(self) -> None:
-        """The 4 non-per-TC builders are NOT widened by Task 1 (scope guard).
-
-        Task 1 is scoped to the 3 existing 94.3 per-TC builders. The original
-        pooled builders (``per_user_cte_score_gap`` / ``per_user_cte_achievable``
-        / ``per_user_cte_score_gap_bucket``) are widened in Task 2 only — Task 1 must
-        leave them untouched so we can detect a scope leak.
-        """
-        for metric_id in _METRICS:
-            sql = per_user_cte_for(metric_id, source="single_user")
-            block = _per_user_values_block(sql)
-            assert "user_id widened per Phase 94.4 Pitfall 1" not in block, (
-                f"Pitfall 1 comment leaked into non-per-TC builder {metric_id} during Task 1; "
-                f"that widening is Task 2 territory."
-            )
+        builders = {
+            "time_pressure_score_gap": lambda t: per_user_cte_time_pressure_score_gap(
+                t, source="single_user"
+            ),
+            "clock_gap": lambda t: per_user_cte_clock_gap(t, source="single_user"),
+            "net_flag_rate": lambda t: per_user_cte_net_flag_rate(t, source="single_user"),
+        }
+        sql = builders[builder_family](tc)
+        block = _per_user_values_block(sql)
+        assert "user_id widened per Phase 94.4 Pitfall 1" in block, (
+            f"Pitfall 1 provenance comment missing in per_user_values for {builder_family}/{tc}; "
+            f"block:\n{block[:400]}"
+        )
 
     @pytest.mark.parametrize("builder_family", _PITFALL_1_EXISTING_94_3_BUILDERS)
     @pytest.mark.parametrize("tc", _TIME_PRESSURE_TCS)
@@ -805,8 +663,20 @@ class TestPitfall1UserIdWideningExistingBuilders:
         smoke test, not a DB-execution test — it catches malformed SQL emitted
         by the widening edit (e.g. trailing comma, dangling SELECT).
         """
-        metric_id = f"{builder_family}_{tc}"
-        sql = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+        from app.services.canonical_slice_sql import (
+            per_user_cte_clock_gap,
+            per_user_cte_net_flag_rate,
+            per_user_cte_time_pressure_score_gap,
+        )
+
+        builders = {
+            "time_pressure_score_gap": lambda t: per_user_cte_time_pressure_score_gap(
+                t, source="single_user"
+            ),
+            "clock_gap": lambda t: per_user_cte_clock_gap(t, source="single_user"),
+            "net_flag_rate": lambda t: per_user_cte_net_flag_rate(t, source="single_user"),
+        }
+        sql = builders[builder_family](tc)
         # Prepend the single_user `selected_users` preamble so the WITH chain is complete.
         preamble = selected_users_cte(source="single_user")
         wrapped = f"WITH {preamble},\n{sql}\nSELECT user_id FROM per_user_values"
@@ -859,7 +729,7 @@ class TestPerUserCteScoreGapTc:
 
     @pytest.mark.parametrize("tc", _NEW_PER_TC_TCS)
     def test_metric_value_formula_matches_non_per_tc_analog(self, tc: TimeControlBucket) -> None:
-        """metric_value formula mirrors per_user_cte_score_gap: eg_score - non_eg_score."""
+        """metric_value formula: eg_score - non_eg_score (mirrors the pooled-TC form)."""
         from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
 
         sql = per_user_cte_score_gap_tc(tc, source="benchmark")
@@ -1024,61 +894,6 @@ class TestPerUserCteSection2Tc:
         assert bm == su
 
 
-class TestPerUserCteSection2RecoveryWidening:
-    """The existing (non-per-TC) ``per_user_cte_score_gap_bucket`` accepts ``bucket_label='recovery'``.
-
-    Task 2.3 — the widening is purely at the Literal type level. The existing
-    ``gap_rows`` CASE already classifies recovery rows (lines 502-512 of
-    canonical_slice_sql.py): entry_eval_mate < 0 signed by user_color, OR
-    entry_eval_cp * sign <= -100. The downstream WHERE clause selects rows
-    where bucket = bucket_label, so 'recovery' just flips the dispatch.
-    """
-
-    def test_score_gap_bucket_accepts_recovery_bucket_label(self) -> None:
-        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket
-
-        sql = per_user_cte_score_gap_bucket(source="benchmark", bucket_label="recovery")
-        assert sql
-        assert "WHERE bucket = 'recovery'" in sql
-
-    def test_score_gap_bucket_recovery_preserves_existing_conversion_parity_behavior(self) -> None:
-        """The existing conversion / parity dispatch is byte-identical post-widening."""
-        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket
-
-        sql_conv = per_user_cte_score_gap_bucket(source="benchmark", bucket_label="conversion")
-        sql_par = per_user_cte_score_gap_bucket(source="benchmark", bucket_label="parity")
-        assert "WHERE bucket = 'conversion'" in sql_conv
-        assert "WHERE bucket = 'parity'" in sql_par
-        # And the conversion/parity bodies still pool by user_id.
-        assert "GROUP BY user_id, bucket" in sql_conv
-        assert "GROUP BY user_id, bucket" in sql_par
-
-    @pytest.mark.parametrize("bucket_label", _SCORE_GAP_BUCKETS)
-    def test_score_gap_bucket_source_mode_byte_identical_for_all_buckets(
-        self, bucket_label: Literal["conversion", "parity", "recovery"]
-    ) -> None:
-        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket
-
-        bm = per_user_cte_score_gap_bucket(source="benchmark", bucket_label=bucket_label)
-        su = per_user_cte_score_gap_bucket(source="single_user", bucket_label=bucket_label)
-        assert bm == su
-
-    def test_score_gap_bucket_recovery_per_user_values_widening_optional(self) -> None:
-        """The non-per-TC ``per_user_cte_score_gap_bucket`` is NOT touched by Plan 03 Pitfall 1.
-
-        Pitfall 1 widening is scoped to per-TC builders only (Plan 04's cohort-CDF
-        JOIN consumes per-TC builders, not the non-per-TC family). The non-per-TC
-        score-gap-bucket builder's per_user_values is allowed to omit user_id under Plan 03.
-        Plan 05 may revisit this when per-user service consumption is wired.
-        """
-        from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket
-
-        sql = per_user_cte_score_gap_bucket(source="benchmark", bucket_label="recovery")
-        block = _per_user_values_block(sql)
-        # No Pitfall 1 comment — non-per-TC builder is out of Task 1/2 scope.
-        assert "user_id widened per Phase 94.4 Pitfall 1" not in block
-
-
 class TestPitfall1UserIdWideningNewBuilders:
     """The 4 new Task 2 per-TC builders all project user_id (Pitfall 1).
 
@@ -1187,18 +1002,21 @@ class TestPerUserCteMedianAnchorBlendMode:
 
     def test_a6_chesscom_conversion_values_sql_includes_known_snapshot_row(self) -> None:
         """A6 (snapshot-row assertion): _chesscom_conversion_values_sql('rapid') includes
-        a VALUES row matching CHESSCOM_BLITZ_TO_LICHESS[1500]['rapid'].
+        a VALUES row from composed_chesscom_to_lichess_grid('rapid', 'rapid').
 
-        The test reads the snapshot dynamically — if the snapshot table updates,
-        the test self-updates (RESEARCH Pattern 8b discipline).
+        Post quick-260529-js1 the rapid table is keyed on NATIVE chess.com RAPID
+        ratings (not chess.com Blitz anchors), so the row is read dynamically
+        from the composed grid. The test self-updates if the snapshot or grid
+        step changes (RESEARCH Pattern 8b discipline).
         """
-        expected_equiv = CHESSCOM_BLITZ_TO_LICHESS[1500]["rapid"]
-        assert expected_equiv is not None, (
-            "CHESSCOM_BLITZ_TO_LICHESS[1500]['rapid'] is None — pick another anchor"
-        )
+        grid = composed_chesscom_to_lichess_grid("rapid", "rapid")
+        assert grid, "composed grid for ('rapid','rapid') is empty"
+        # Pick a mid-range row so the assertion is stable against edge-trimming.
+        native, equiv = grid[len(grid) // 2]
         sql_fragment = _chesscom_conversion_values_sql("rapid")
-        assert f"(1500, {expected_equiv})" in sql_fragment, (
-            f"Expected (1500, {expected_equiv}) in rapid VALUES table; got: {sql_fragment[:200]}"
+        assert f"({native}, {equiv})" in sql_fragment, (
+            f"Expected native-rapid-keyed row ({native}, {equiv}) in rapid VALUES "
+            f"table; got: {sql_fragment[:200]}"
         )
 
     def test_a7_blend_true_having_clause_on_pooled_count(self) -> None:
