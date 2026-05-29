@@ -591,6 +591,65 @@ PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Mapping[
 
 
 # ---------------------------------------------------------------------------
+# TC_METRIC_BANDS — per-TC typical bands for Conversion/Recovery/Parity rate and ΔES gap.
+# Phase 97 D-06 (conv/recov rate bands), D-07 (ΔES gap bands).
+# Cohen's d ≈ 0.9 on the TC axis makes per-TC bands necessary for Conv/Recov.
+# parity_rate is now ALSO per-TC (user request, 2026-05-29): the per-TC card shows
+# each TC's actual §3.2.1 parity IQR rather than the editorial global band. NOTE:
+# parity rate collapses on TC (d = 0.08 per §3.2.1), so the bullet/blitz/rapid
+# bands are near-identical; only classical (n=579, noisier tails) widens visibly.
+# The parity ΔES-gap neutral band stays global (SCORE_GAP_PARITY_NEUTRAL_*) — only
+# the gauge rate band went per-TC.
+#
+# Source: reports/benchmark/benchmarks-latest.md §3.2.1 (rates p25/p75) and
+#         §3.2.2 (ΔES gap p25/p75). Sparse cell (2400, classical) excluded.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TcConvRecovBands:
+    """Per-TC typical [lower, upper] bands for Conv/Recov/Parity rate and DeltaES gap."""
+
+    conv_rate: tuple[float, float]
+    recov_rate: tuple[float, float]
+    parity_rate: tuple[float, float]
+    conv_score_gap: tuple[float, float]
+    recov_score_gap: tuple[float, float]
+
+
+TC_METRIC_BANDS: Mapping[Literal["bullet", "blitz", "rapid", "classical"], TcConvRecovBands] = {
+    "bullet": TcConvRecovBands(
+        conv_rate=(0.588, 0.719),
+        recov_rate=(0.295, 0.412),
+        parity_rate=(0.436, 0.572),
+        conv_score_gap=(-0.195, -0.057),
+        recov_score_gap=(0.074, 0.177),
+    ),
+    "blitz": TcConvRecovBands(
+        conv_rate=(0.667, 0.769),
+        recov_rate=(0.251, 0.357),
+        parity_rate=(0.448, 0.569),
+        conv_score_gap=(-0.085, 0.003),
+        recov_score_gap=(0.011, 0.084),
+    ),
+    "rapid": TcConvRecovBands(
+        conv_rate=(0.696, 0.800),
+        recov_rate=(0.218, 0.333),
+        parity_rate=(0.449, 0.575),
+        conv_score_gap=(-0.063, 0.021),
+        recov_score_gap=(-0.008, 0.062),
+    ),
+    "classical": TcConvRecovBands(
+        conv_rate=(0.685, 0.833),
+        recov_rate=(0.174, 0.316),
+        parity_rate=(0.404, 0.591),
+        conv_score_gap=(-0.053, 0.038),
+        recov_score_gap=(-0.037, 0.035),
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
 # Helpers.
 # ---------------------------------------------------------------------------
 

@@ -184,7 +184,7 @@ export function RatingChart({ data, platform }: RatingChartProps) {
           content={<ChartLegendContent hiddenKeys={hiddenKeys} onClickItem={handleLegendClick} />}
         />
         {/* Inactivity-gap annotations via shared helper: Palmtree glyph + label per
-            >56-day gap. Placed BEFORE the TIME_CONTROLS Line series so annotations
+            >90-day gap. Placed BEFORE the TIME_CONTROLS Line series so annotations
             sit behind the data in SVG z-order. sortedGapDates is a defensively
             sorted copy of allDates so computeInactivityGaps' ascending-sort
             requirement is guaranteed even if the backend order shifts. No yAxisId

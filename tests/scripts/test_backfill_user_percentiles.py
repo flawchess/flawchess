@@ -301,7 +301,9 @@ async def test_backfill_with_metric_filter_only_processes_that_metric(
 # ---------------------------------------------------------------------------
 
 
-def test_backfill_target_prod_refuses_when_tunnel_down() -> None:
+def test_backfill_target_prod_refuses_when_tunnel_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """_assert_target_safe(url_with_port_15432, 'prod') raises SystemExit when
     no socket listener exists on localhost:15432.
 
@@ -309,10 +311,16 @@ def test_backfill_target_prod_refuses_when_tunnel_down() -> None:
     knows exactly what to run. This is the PCTL-10 safety gate against
     accidental cross-env writes (Pitfall 6 / V4 Tampering).
 
-    Note: the test relies on no actual tunnel being active during CI. If the
-    test DB also uses port 15432 by coincidence, this test would be flaky —
-    but the test DB is on 5432 and the prod tunnel is always off in CI.
+    The socket probe is monkeypatched to raise OSError ("tunnel down") so the
+    test is deterministic regardless of whether a real prod tunnel happens to
+    be open on localhost:15432 (it previously failed whenever a developer had
+    bin/prod_db_tunnel.sh running locally).
     """
+
+    def _refuse_connection(*_args: object, **_kwargs: object) -> object:
+        raise OSError("simulated: no listener on localhost:15432")
+
+    monkeypatch.setattr(backfill_user_percentiles.socket, "create_connection", _refuse_connection)
     _assert_target_safe = backfill_user_percentiles._assert_target_safe
     url_with_prod_port = f"postgresql://user:pass@localhost:{_PROD_TUNNEL_PORT}/flawchess"
     with pytest.raises(SystemExit) as exc_info:

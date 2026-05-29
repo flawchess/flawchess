@@ -22,13 +22,14 @@
 - ✅ **v1.17 Endgame Stats Card Redesign** — Phases 84-88.4 (shipped 2026-05-19; Phase 89 dropped, 87.3 superseded) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 - ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
 - ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split into v1.20 before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
-- 🔄 **v1.20 LLM Statistical Reasoning** — Phase 97 (not started)
+- 🔄 **v1.20 LLM Statistical Reasoning** — Phase 98 (not started)
 
 ## Phases
 
 - [x] **Phase 95: asyncpg COPY for `bulk_insert_positions`** *(standalone hardening, no milestone)* — Switch the heaviest INSERT in the import pipeline from parameterized `INSERT … VALUES(...)` to asyncpg `copy_records_to_table` (binary COPY) to cut per-backend memory pressure during dual-platform imports. Follow-up to SEED-027 Thread A (PR #144 container budget hotfix). — shipped 2026-05-27 (PRs #148/#149).
 - [ ] **Phase 96: Import Readiness Gate** *(standalone UX/correctness, no milestone)* — Hold the user on the import page until import + Stockfish eval drain + Stage A/B percentiles are all ready, then unlock all routes via a user-initiated "Explore" CTA. Replaces the `useEvalCoverage` auto-reload hack and removes eval-progress UI from all non-import surfaces. See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
-- [ ] **Phase 97: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+- [ ] **Phase 97: Endgame Metrics by Time Control** *(standalone UX, no milestone)* — Replace the aggregated Conversion/Parity/Recovery gauge cards in the Endgame Metrics section with TC-specific cards (bullet/blitz/rapid/classical), mirroring the Time Pressure section's per-TC pattern. Conversion/Recovery gauges get TC-specific neutral bands (benchmark TC d≈0.9); Parity and Score Gap keep the shared global band (both collapse on TC). No aggregated cards remain; cards self-suppress below a min-games floor. Per-TC conversion/recovery percentile badges deferred.
+- [ ] **Phase 98: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
 
@@ -76,7 +77,36 @@
 - [x] 96-02-PLAN.md — Tier-1 route/nav gate + Endgames whole-page lock + Import state machine + Tier-2 toast
 - [x] 96-03-PLAN.md — Openings Cpu-placeholder + tooltip counter removal + useEvalCoverage auto-reload retirement
 
-### Phase 97: LLM Endgame-Insights Statistical-Reasoning Rework
+### Phase 97: Endgame Metrics by Time Control
+
+**Goal**: Restructure the Endgame Metrics section of the Endgames page into per-time-control cards (bullet/blitz/rapid/classical), mirroring the existing `EndgameTimePressureSection` per-TC card pattern. Each TC card renders the Conversion/Parity/Recovery gauge trifecta plus WDL and Score Gap charts scoped to that time control. The single aggregated Conversion/Parity/Recovery cards are removed entirely (no aggregated cards on top). Conversion and Recovery gauges use **TC-specific neutral bands** (benchmark Cohen's d ≈ 0.9 on the TC axis — they genuinely differ per TC; bands sourced from `reports/benchmark/benchmarks-latest.md` §3.2.1 per-TC p25/p75); Parity keeps the shared global band and Score Gap keeps the shared global band (both collapse on the TC axis, d < 0.15, so a single band is correct for every TC). Cards self-suppress below a minimum-games floor because Conversion/Recovery are conditional rates with thin per-TC denominators. Requires a new backend aggregation path that computes per-TC conversion/recovery/parity rate values (only per-TC ΔES score-gap percentiles exist today) and a new TC-keyed band structure in `app/services/endgame_zones.py` regenerated into `frontend/src/generated/endgameZones.ts`. Per-TC conversion/recovery **percentile badges are deferred** to a follow-up phase (they would require new per-(metric, TC) CDF materialization in `user_benchmark_percentiles`).
+**Depends on**: none (builds on the v1.19 per-TC percentile/anchor pipeline + v1.17 Endgame Metrics section)
+**Requirements**: standalone — no requirement IDs (endgame stats UX refinement)
+**Success Criteria** (what must be TRUE):
+
+  1. The Endgame Metrics section renders one card per time control the user has sufficient games in (fixed order bullet/blitz/rapid/classical), with no aggregated Conversion/Parity/Recovery cards remaining.
+  2. Each TC card shows the Conversion/Parity/Recovery gauge trifecta plus WDL and a Score Gap chart, all scoped to that time control.
+  3. Conversion and Recovery gauge neutral bands are TC-specific (distinct per bullet/blitz/rapid/classical, calibrated from the latest benchmark per-TC p25/p75); Parity and Score Gap bands are the shared global bands on every card.
+  4. Cards self-suppress below a minimum-games floor; the floor is chosen deliberately for conditional rates and validated against dev-DB distributions during planning.
+  5. Per-TC conversion/parity/recovery rate values are computed by the backend and exposed via the endgame overview response; the TC-keyed bands are threaded to the frontend via the regenerated `endgameZones.ts` (CI drift gate green).
+  6. Desktop and mobile layouts both render the per-TC cards responsively (mirroring `EndgameTimePressureSection`).
+  7. Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) gates all pass.
+
+**Plans**: 4 plans
+**Wave 1**
+
+- [x] 97-01-PLAN.md — TC-keyed bands (`TC_METRIC_BANDS`) in `endgame_zones.py` + codegen into `endgameZones.ts`
+- [x] 97-02-PLAN.md — Backend per-TC rate aggregation (`_compute_per_tc_metric_cards`) + `endgame_metrics_cards` overview field
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 97-03-PLAN.md — Frontend per-TC section + card (gauge/WDL/ΔES/percentile trifecta) wired into Endgames page
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 97-04-PLAN.md — Remove aggregated Metrics section + blended chip fields; knip-clean (Overall Performance chips preserved)
+
+### Phase 98: LLM Endgame-Insights Statistical-Reasoning Rework
 
 **Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
 **Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)

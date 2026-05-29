@@ -33,11 +33,19 @@ from app.main import app
 from app.models.game import Game
 from app.models.user_benchmark_percentile import UserBenchmarkPercentile
 from app.services import import_service, percentile_compute_registry
+from app.services.canonical_slice_sql import MEDIAN_ANCHOR_MIN_GAMES
 
 READINESS_ENDPOINT = "/api/imports/readiness"
 
 # Constants per CLAUDE.md no-magic-numbers rule
 _NOW = datetime.datetime(2024, 1, 1, tzinfo=datetime.timezone.utc)
+# A played_at inside the anchor SQL's 36-month recency window (NOW() - 36mo),
+# so seeded games are eligible to produce a per-TC anchor. _NOW (2024) is far
+# outside the window, so it cannot be used for above-floor seeding.
+_RECENT_PLAYED_AT = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)
+# Equal-footing rating used on both sides so |white - black| <= 100 holds
+# (the anchor SQL's universal equal-footing filter).
+_ANCHOR_RATING = 1500
 _DEFAULT_CDF_SNAPSHOT = datetime.date(2026, 3, 31)
 _DEFAULT_METRIC = "score_gap"
 _DEFAULT_TC = "blitz"
@@ -48,8 +56,20 @@ _DEFAULT_TC = "blitz"
 # ---------------------------------------------------------------------------
 
 
-def _make_game(user_id: int, evals_completed_at: datetime.datetime | None = None) -> Game:
-    """Build a minimal Game ORM object for seeding tests."""
+def _make_game(
+    user_id: int,
+    evals_completed_at: datetime.datetime | None = None,
+    *,
+    anchor_eligible: bool = False,
+) -> Game:
+    """Build a minimal Game ORM object for seeding tests.
+
+    ``anchor_eligible=True`` populates the fields the per-TC anchor SQL needs to
+    count a game toward the 30-game floor (both ratings set + equal-footing, a
+    played_at inside the 36-month recency window). Left False, the game is
+    counted by ``count_games_for_user`` but never produces an anchor (NULL
+    ratings / NULL played_at), i.e. it is a below-floor game.
+    """
     return Game(
         user_id=user_id,
         platform="chess.com",
@@ -64,6 +84,9 @@ def _make_game(user_id: int, evals_completed_at: datetime.datetime | None = None
         rated=True,
         is_computer_game=False,
         evals_completed_at=evals_completed_at,
+        white_rating=_ANCHOR_RATING if anchor_eligible else None,
+        black_rating=_ANCHOR_RATING if anchor_eligible else None,
+        played_at=_RECENT_PLAYED_AT if anchor_eligible else None,
     )
 
 
@@ -244,20 +267,25 @@ async def test_tier1_false_when_active_import(
 
 
 @pytest.mark.asyncio
-async def test_tier2_false_when_evals_done_but_no_percentile_rows(
+async def test_tier2_false_when_above_floor_evals_done_but_no_percentile_rows(
     user_a_client: tuple[int, str],
     test_engine,
 ) -> None:
-    """Drained games (evals_completed_at set), no percentile rows → tier2=False.
+    """Above-floor user, evals done, no percentile rows → tier2=False.
 
-    With total > 0 and pending_count == 0 but no Stage-B percentile rows,
-    tier2 must be False — the user is waiting for Stage B to complete.
+    With enough anchor-eligible games to clear the 30-game per-TC floor and
+    pending_count == 0 but no Stage-B percentile rows yet, tier2 must be
+    False — the user is genuinely waiting for Stage B to write rows (the
+    below-floor escape must NOT fire because an anchor exists).
     """
     user_id, token = user_a_client
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Seed 3 fully-evaluated games (evals_completed_at set), no percentile rows
-    games = [_make_game(user_id, evals_completed_at=_NOW) for _ in range(3)]
+    # Seed exactly the floor count of anchor-eligible, fully-evaluated games.
+    n_games = MEDIAN_ANCHOR_MIN_GAMES
+    games = [
+        _make_game(user_id, evals_completed_at=_NOW, anchor_eligible=True) for _ in range(n_games)
+    ]
     await _seed_games_for_user(test_engine, user_id, games)
 
     async with httpx.AsyncClient(
@@ -268,9 +296,45 @@ async def test_tier2_false_when_evals_done_but_no_percentile_rows(
     assert response.status_code == 200
     data = response.json()
     assert data["tier1"] is True
-    assert data["tier2"] is False, "tier2 must be False when no percentile rows exist (total > 0)"
+    assert data["tier2"] is False, "above-floor user with no percentile rows must stay locked"
     assert data["pending_count"] == 0
-    assert data["total_count"] == 3
+    assert data["total_count"] == n_games
+
+
+@pytest.mark.asyncio
+async def test_tier2_true_when_below_anchor_floor(
+    user_a_client: tuple[int, str],
+    test_engine,
+) -> None:
+    """Below-floor user, evals done, no percentile rows → tier2=True.
+
+    Regression for the prod-145 lockout (quick-260529): a user with games but
+    too few to clear the 30-game per-TC anchor floor produces no anchors and
+    therefore no percentile rows, by design. Without the below-floor escape
+    ``has_any_rows`` stays False forever and the endgames page is stuck on the
+    "Analyzing endgames" screen even though Stockfish is done. The escape must
+    unlock them once evals are drained.
+    """
+    user_id, token = user_a_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 13 evaluated games (prod user 145's exact count) — below the 30-game floor.
+    n_games = 13
+    assert n_games < MEDIAN_ANCHOR_MIN_GAMES
+    games = [_make_game(user_id, evals_completed_at=_NOW) for _ in range(n_games)]
+    await _seed_games_for_user(test_engine, user_id, games)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(READINESS_ENDPOINT, headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["tier1"] is True
+    assert data["tier2"] is True, "below-floor user must unlock once evals are drained"
+    assert data["pending_count"] == 0
+    assert data["total_count"] == n_games
 
 
 @pytest.mark.asyncio

@@ -229,23 +229,12 @@ export interface ScoreGapMaterialResponse {
   score_gap_conv_p_value: number | null;
   score_gap_conv_ci_low: number | null;
   score_gap_conv_ci_high: number | null;
-  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Conversion ΔES vs the Phase 93 global CDF.
-   *  null when score_gap_conv_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
-  score_gap_conv_percentile: number | null;
-  /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2. */
-  score_gap_conv_per_tc: PerTcBreakdownOut[];
-
   // Parity bucket (entered endgame with eval between -1.0 and +1.0):
   score_gap_parity_mean: number | null;
   score_gap_parity_n: number | null;
   score_gap_parity_p_value: number | null;
   score_gap_parity_ci_low: number | null;
   score_gap_parity_ci_high: number | null;
-  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Parity ΔES vs the Phase 93 global CDF.
-   *  null when score_gap_parity_n is null/below PVALUE_RELIABILITY_MIN_N (=10). */
-  score_gap_parity_percentile: number | null;
-  /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2. */
-  score_gap_parity_per_tc: PerTcBreakdownOut[];
 
   // Recovery bucket (entered endgame with eval <= -1.0):
   score_gap_recov_mean: number | null;
@@ -253,15 +242,11 @@ export interface ScoreGapMaterialResponse {
   score_gap_recov_p_value: number | null;
   score_gap_recov_ci_low: number | null;
   score_gap_recov_ci_high: number | null;
-  /** Phase 94.4 D-05a: Recovery Score Gap chip RESCUED under peer-relative.
-   *  Replaces Phase 94 D-12 suppression — same-rated cohort comparison
-   *  normalises the opponent-rating confound that drove the v1 drop.
-   *  Field name mirrors the MetricId literal `recovery_score_gap` (D-13
-   *  ENUM). null when Stage B wrote no row for any above-floor TC, or
-   *  when every per-TC PercentileRow has null percentile. */
-  recovery_score_gap_percentile: number | null;
-  /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2. */
-  recovery_score_gap_per_tc: PerTcBreakdownOut[];
+
+  // Phase 97 D-10: score_gap_conv_percentile, score_gap_parity_percentile,
+  // recovery_score_gap_percentile, score_gap_conv_per_tc, score_gap_parity_per_tc,
+  // and recovery_score_gap_per_tc removed — Metrics-section-only fields deleted
+  // with EndgameMetricsSection.tsx (superseded by per-TC cards).
 
   // Phase 87.4 (D-05): the 6 Skill fields (score_gap_skill_* and
   // endgame_skill_rate_mean) were hard-deleted alongside EndgameSkillCard.
@@ -423,6 +408,45 @@ export interface PerTcBreakdownOut {
   anchor: number | null;
 }
 
+// ── Phase 97: Per-TC Endgame Metrics Cards ──────────────────────────────────
+
+/** Stats for one material bucket (conversion / parity / recovery) within one TC.
+ *  Mirrors backend PerTcBucketStats (Plan 97-02). */
+export interface PerTcBucketStats {
+  games: number;
+  win_pct: number;    // percent 0-100
+  draw_pct: number;
+  loss_pct: number;
+  rate: number | null;             // conversion win%, parity score%, recovery save%
+  score_gap_mean: number | null;
+  score_gap_n: number | null;
+  score_gap_p_value: number | null;
+  score_gap_ci_low: number | null;
+  score_gap_ci_high: number | null;
+  percentile: number | null;       // per-TC DeltaES-gap percentile
+  // Chip-cohort n_games + value from the same PercentileRow as `percentile`.
+  // Feed the chip tooltip's "Based on {n} of your recent {tc} games … Your
+  // value: {v}" line (mirrors TimePressureTcCard). Optional for older fixtures.
+  percentile_n_games?: number | null;
+  percentile_value?: number | null;
+}
+
+/** One TC card in the per-TC Endgame Metrics section.
+ *  Mirrors backend EndgameMetricsTcCard (Plan 97-02). */
+export interface EndgameMetricsTcCard {
+  tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
+  total: number;
+  conversion: PerTcBucketStats;
+  parity: PerTcBucketStats;
+  recovery: PerTcBucketStats;
+}
+
+/** Response wrapper for the per-TC endgame metrics cards.
+ *  Mirrors backend EndgameMetricsCardsResponse (Plan 97-02). */
+export interface EndgameMetricsCardsResponse {
+  cards: EndgameMetricsTcCard[];
+}
+
 export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
@@ -437,6 +461,9 @@ export interface EndgameOverviewResponse {
    *  the user is below the inclusion floor for that TC or (for chess.com
    *  sources) the conversion returned null. */
   rating_anchors: Partial<Record<'bullet' | 'blitz' | 'rapid' | 'classical', RatingAnchorOut>>;
+  /** Phase 97: per-TC endgame metrics cards (conversion / parity / recovery per TC).
+   *  Optional for back-compat with older fixtures and pre-97 server responses. */
+  endgame_metrics_cards?: EndgameMetricsCardsResponse;
 }
 
 // ── Phase 87.5: Endgame ELO Timeline (rebuilt on Endgame Score Gap) ──

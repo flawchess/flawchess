@@ -36,16 +36,16 @@ describe('computeInactivityGaps', () => {
     expect(computeInactivityGaps(dates)).toEqual([]);
   });
 
-  it('returns one gap when exactly one pair is 57 days apart (above 56-day threshold)', () => {
-    const dates = [BASE, addDays(BASE, 57)];
+  it('returns one gap when exactly one pair is 91 days apart (above 90-day threshold)', () => {
+    const dates = [BASE, addDays(BASE, 91)];
     const result = computeInactivityGaps(dates);
     expect(result).toHaveLength(1);
     expect(result[0]?.afterIndex).toBe(0);
-    expect(result[0]?.gapDays).toBe(57);
+    expect(result[0]?.gapDays).toBe(91);
   });
 
-  it('does not return a gap when exactly at the threshold (56 days apart)', () => {
-    const dates = [BASE, addDays(BASE, 56)];
+  it('does not return a gap when exactly at the threshold (90 days apart)', () => {
+    const dates = [BASE, addDays(BASE, 90)];
     const result = computeInactivityGaps(dates);
     expect(result).toHaveLength(0);
   });
@@ -71,10 +71,10 @@ describe('computeInactivityGaps', () => {
     expect(result[0]?.label).toMatch(/^\d+mo$/);
   });
 
-  it('label for ~60 days reads 2mo', () => {
-    const dates = [BASE, addDays(BASE, 60)];
+  it('label for ~100 days reads 3mo', () => {
+    const dates = [BASE, addDays(BASE, 100)];
     const result = computeInactivityGaps(dates);
-    expect(result[0]?.label).toBe('2mo');
+    expect(result[0]?.label).toBe('3mo');
   });
 
   it('afterIndex always points to the date BEFORE the gap', () => {
@@ -94,12 +94,12 @@ describe('computeInactivityGaps', () => {
     const dates = [BASE, addDays(BASE, 14)];
     const withDefault = computeInactivityGaps(dates);
     const withCustom = computeInactivityGaps(dates, 10);
-    expect(withDefault).toHaveLength(0);  // 14 <= 56 default
+    expect(withDefault).toHaveLength(0);  // 14 <= 90 default
     expect(withCustom).toHaveLength(1);   // 14 > 10 custom
   });
 
-  it('INACTIVITY_GAP_THRESHOLD_DAYS constant is exported and equals 56', () => {
-    expect(INACTIVITY_GAP_THRESHOLD_DAYS).toBe(56);
+  it('INACTIVITY_GAP_THRESHOLD_DAYS constant is exported and equals 90', () => {
+    expect(INACTIVITY_GAP_THRESHOLD_DAYS).toBe(90);
   });
 
   it('detects multiple gaps in a series', () => {
