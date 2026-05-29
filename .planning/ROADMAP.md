@@ -100,7 +100,7 @@
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 97-03-PLAN.md — Frontend per-TC section + card (gauge/WDL/ΔES/percentile trifecta) wired into Endgames page
+- [x] 97-03-PLAN.md — Frontend per-TC section + card (gauge/WDL/ΔES/percentile trifecta) wired into Endgames page
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
