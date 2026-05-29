@@ -550,7 +550,6 @@ export function EndgamesPage() {
                 <EndgameOverallPerformanceSection
                   data={perfData}
                   scoreGap={scoreGapData}
-                  ratingAnchors={overviewData?.rating_anchors}
                 />
               )}
               {scoreGapData && scoreGapData.timeline.length > 0 && (
@@ -583,10 +582,7 @@ export function EndgamesPage() {
                   <h2 className="text-lg font-semibold text-foreground mt-2">
                     Endgame Metrics
                   </h2>
-                  <EndgameMetricsSection
-                    data={scoreGapData}
-                    ratingAnchors={overviewData?.rating_anchors}
-                  />
+                  <EndgameMetricsSection data={scoreGapData} />
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}

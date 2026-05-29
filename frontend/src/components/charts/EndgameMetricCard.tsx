@@ -20,7 +20,6 @@ import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
-import { pickDominantTcAnchor, type RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import {
   BUCKET_DISPLAY_LABELS,
@@ -83,11 +82,6 @@ interface EndgameMetricCardProps {
    *  tooltip bullet 2. Optional so legacy callers / older fixtures keep
    *  rendering without per-TC data. */
   scoreGapPerTc?: PerTcBreakdownOut[];
-  /** Phase 94.4 Plan 07: per-TC rating anchors (whole map). The card picks
-   *  the dominant-TC anchor for the chip's 4th-bullet disclosure. Aggregated
-   *  page-level chips omit the `tc` prop on PercentileChip — bullet 1 frames
-   *  them as multi-TC. Optional so legacy fixtures still render the card body. */
-  ratingAnchors?: RatingAnchorsByTc;
   /** Container data-testid (e.g. "tile-conversion"). Sub-element testids derive
    * from this: `${tileTestId}-score-gap-bullet`, `${tileTestId}-score-gap-value`,
    * `${tileTestId}-score-gap-info`. */
@@ -107,16 +101,10 @@ export function EndgameMetricCard({
   scoreGapCiHigh,
   scoreGapPercentile,
   scoreGapPerTc,
-  ratingAnchors,
   tileTestId,
   titleTooltip,
 }: EndgameMetricCardProps) {
   const { isPending, pendingCount } = useEvalCoverage();
-  // Phase 94.4 Plan 07: aggregated chip uses the dominant-TC anchor for the
-  // popover's 4th bullet. When no anchors are available, the chip suppresses
-  // entirely (`pickDominantTcAnchor` returns undefined → conditional below
-  // resolves to undefined chipSlot).
-  const dominantAnchor = pickDominantTcAnchor(ratingAnchors ?? {});
 
   const userR = bucket === 'conversion'
     ? row.win_pct / 100
@@ -248,10 +236,13 @@ export function EndgameMetricCard({
                   ciHigh={scoreGapCiHigh != null ? scoreGapCiHigh + displayShift : undefined}
                   chipSlot={
                     // Phase 94.4 D-05a: recovery rescued under peer-relative.
-                    // All 3 buckets now render a chip when percentile + anchor
-                    // are both present. Bucket-to-flavor map uses kebab-case
-                    // matching the new flavor enum.
-                    scoreGapPercentile != null && dominantAnchor !== undefined ? (
+                    // All 3 buckets now render a chip when percentile is
+                    // present. Bucket-to-flavor map uses kebab-case matching
+                    // the new flavor enum. 260529-l1i: the aggregated chip no
+                    // longer needs a single anchor — per-TC anchors live on the
+                    // tooltip's per-TC breakdown rows — so the gate dropped the
+                    // dominant-anchor condition.
+                    scoreGapPercentile != null ? (
                       <PercentileChip
                         percentile={scoreGapPercentile}
                         flavor={
@@ -261,11 +252,6 @@ export function EndgameMetricCard({
                               ? 'parity'
                               : 'recovery'
                         }
-                        anchorRating={dominantAnchor.anchor_rating}
-                        nChesscomGames={dominantAnchor.n_chesscom_games}
-                        nLichessGames={dominantAnchor.n_lichess_games}
-                        chesscomMedianNative={dominantAnchor.chesscom_median_native ?? undefined}
-                        lichessMedianNative={dominantAnchor.lichess_median_native ?? undefined}
                         metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
                         testId={`${tileTestId}-percentile-chip`}
                         perTcBreakdown={scoreGapPerTc}
