@@ -26,7 +26,6 @@ vi.mock('@/hooks/useEvalCoverage', () => ({
   useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
 }));
 
-import type { RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import { ZONE_DANGER, ZONE_SUCCESS } from '@/lib/theme';
 import type { MaterialRow } from '@/types/endgames';
 
@@ -90,18 +89,6 @@ const DEFAULT_SCORE_GAP_PROPS = {
   scoreGapCiLow: 0.05,
   scoreGapCiHigh: 0.15,
   scoreGapPercentile: null as number | null,
-};
-
-// Phase 94.4 Plan 07: page-level ΔES chips require both a non-null
-// percentile AND a rating anchor (for the popover's 4th-bullet disclosure).
-// Tests that exercise chip rendering pass `DEFAULT_RATING_ANCHORS`.
-const DEFAULT_RATING_ANCHORS: RatingAnchorsByTc = {
-  blitz: {
-    anchor_rating: 1600,
-    source_platform: 'lichess',
-    chesscom_raw_rating: null,
-    n_games: 1000,
-  },
 };
 
 describe('EndgameMetricCard — structural render', () => {
@@ -419,7 +406,7 @@ describe('EndgameMetricCard — empty state', () => {
 
 // ── Phase 94 PCTL-03/04/06: percentile chip rendering + bucket-flavor routing
 describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', () => {
-  it('renders chip with flavor="conversion" on bucket="conversion" when percentile + anchors non-null', () => {
+  it('renders chip with flavor="conversion" on bucket="conversion" when percentile non-null', () => {
     render(
       <EndgameMetricCard
         bucket="conversion"
@@ -433,7 +420,6 @@ describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', ()
         scoreGapCiLow={0.05}
         scoreGapCiHigh={0.15}
         scoreGapPercentile={20}
-        ratingAnchors={DEFAULT_RATING_ANCHORS}
       />,
     );
     const chip = screen.getByTestId('tile-conversion-percentile-chip');
@@ -445,7 +431,7 @@ describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', ()
     expect(chip.getAttribute('aria-label')).toContain('bottom');
   });
 
-  it('renders chip with flavor="parity" on bucket="parity" when percentile + anchors non-null', () => {
+  it('renders chip with flavor="parity" on bucket="parity" when percentile non-null', () => {
     render(
       <EndgameMetricCard
         bucket="parity"
@@ -459,7 +445,6 @@ describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', ()
         scoreGapCiLow={0.02}
         scoreGapCiHigh={0.14}
         scoreGapPercentile={73}
-        ratingAnchors={DEFAULT_RATING_ANCHORS}
       />,
     );
     const chip = screen.getByTestId('tile-parity-percentile-chip');
@@ -469,9 +454,9 @@ describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', ()
 
   // Phase 94.4 D-05a: recovery chip RESCUED under peer-relative cohort
   // framing. The Phase 94 D-12 defensive guard ("recovery never renders")
-  // is superseded — when the recovery percentile is non-null AND anchors are
-  // available, the chip MUST render with flavor="recovery".
-  it('renders chip with flavor="recovery" on bucket="recovery" when percentile + anchors non-null (D-05a rescue)', () => {
+  // is superseded — when the recovery percentile is non-null, the chip MUST
+  // render with flavor="recovery".
+  it('renders chip with flavor="recovery" on bucket="recovery" when percentile non-null (D-05a rescue)', () => {
     render(
       <EndgameMetricCard
         bucket="recovery"
@@ -485,7 +470,6 @@ describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', ()
         scoreGapCiLow={-0.10}
         scoreGapCiHigh={0.04}
         scoreGapPercentile={42}
-        ratingAnchors={DEFAULT_RATING_ANCHORS}
       />,
     );
     const chip = screen.getByTestId('tile-recovery-percentile-chip');
@@ -507,7 +491,6 @@ describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', ()
         scoreGapCiLow={0.05}
         scoreGapCiHigh={0.15}
         scoreGapPercentile={null}
-        ratingAnchors={DEFAULT_RATING_ANCHORS}
       />,
     );
     expect(screen.queryByTestId('tile-conversion-percentile-chip')).toBeNull();
@@ -527,13 +510,15 @@ describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', ()
         scoreGapCiLow={0.02}
         scoreGapCiHigh={0.14}
         scoreGapPercentile={null}
-        ratingAnchors={DEFAULT_RATING_ANCHORS}
       />,
     );
     expect(screen.queryByTestId('tile-parity-percentile-chip')).toBeNull();
   });
 
-  it('does NOT render chip when ratingAnchors is omitted (anchor required for bullet 4 disclosure)', () => {
+  // 260529-l1i: the aggregated chip no longer gates on a rating anchor (the
+  // anchor moved inline into the per-TC tooltip rows). The chip now renders on
+  // a non-null percentile alone, with no anchor prop required.
+  it('renders chip on bucket="conversion" with percentile non-null and NO anchor prop (260529-l1i gate dropped)', () => {
     render(
       <EndgameMetricCard
         bucket="conversion"
@@ -547,9 +532,8 @@ describe('EndgameMetricCard — percentile chip wiring (Phase 94.4 Plan 07)', ()
         scoreGapCiLow={0.05}
         scoreGapCiHigh={0.15}
         scoreGapPercentile={20}
-        // ratingAnchors intentionally omitted
       />,
     );
-    expect(screen.queryByTestId('tile-conversion-percentile-chip')).toBeNull();
+    expect(screen.queryByTestId('tile-conversion-percentile-chip')).not.toBeNull();
   });
 });
