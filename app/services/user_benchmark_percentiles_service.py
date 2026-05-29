@@ -318,6 +318,55 @@ async def compute_anchors_for_user(
     return anchors
 
 
+async def is_below_anchor_floor(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    total_games: int,
+) -> bool:
+    """Return True iff the user qualifies for NO per-TC anchor in ANY time control.
+
+    Such a user can never produce ``user_benchmark_percentiles`` rows: both
+    ``compute_stage_a`` and ``compute_stage_b`` iterate the user's above-floor
+    anchors, and with zero anchors both are deterministic no-ops. The readiness
+    gate uses this to distinguish "wrote nothing because below floor (compute is
+    done)" from "compute has not run yet", so below-floor users are not locked
+    out of the endgames page forever.
+
+    Bug context (quick-260529): prod user 145 imported 13 chess.com games (all
+    below the 30-game floor), so Stage A/B wrote no anchors and no percentile
+    rows. ``has_any_rows`` stayed False, so ``GET /imports/readiness`` kept
+    ``tier2=False`` and the endgames page stayed on the "Analyzing endgames"
+    screen permanently even though Stockfish was done.
+
+    Consistency: this probe runs the SAME blended-anchor candidate SQL
+    (``per_user_cte_median_anchor(blend=True)`` with the same ``min_games``)
+    that ``compute_anchors_for_user`` uses to decide whether to write an anchor
+    row, so the two can never disagree about floor status. Read-only — no UPSERT.
+
+    Cheap short-circuit: a user with fewer than ``MEDIAN_ANCHOR_MIN_GAMES`` games
+    TOTAL cannot reach the floor in any single TC, so we answer True without
+    touching the DB (covers the common small-import case with zero queries).
+    """
+    if total_games < MEDIAN_ANCHOR_MIN_GAMES:
+        return True
+    for tc in _ALL_TIME_CONTROLS:
+        su_cte = selected_users_cte(source="single_user")
+        anchor_cte = per_user_cte_median_anchor(
+            tc,
+            source="single_user",
+            snapshot_date=None,
+            blend=True,
+            min_games=MEDIAN_ANCHOR_MIN_GAMES,
+        )
+        sql = f"WITH {su_cte},\n{anchor_cte}\nSELECT 1 FROM per_user_anchor LIMIT 1"
+        result = await session.execute(text(sql).bindparams(user_id=user_id))
+        if result.fetchone() is not None:
+            # At least one TC clears the floor — user is above floor somewhere.
+            return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Public entry points.
 # ---------------------------------------------------------------------------

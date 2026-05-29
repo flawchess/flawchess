@@ -29,7 +29,11 @@ from app.schemas.imports import (
     ImportStatusResponse,
     ReadinessResponse,
 )
-from app.services import import_service, percentile_compute_registry
+from app.services import (
+    import_service,
+    percentile_compute_registry,
+    user_benchmark_percentiles_service,
+)
 from app.users import current_active_user
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -148,20 +152,30 @@ async def get_readiness(
         A3, out of scope).
 
     Tier 2 (tier2=True): tier1=True AND pending evals == 0 AND
-        (total_count == 0 OR at least one user_benchmark_percentiles row exists)
+        (total_count == 0 OR at least one user_benchmark_percentiles row exists
+         OR the user is below the per-TC anchor floor in every TC)
         AND the user is not mid-Stage-B percentile compute (in-memory registry).
-        The ``total_count == 0`` branch is the below-floor escape: a user with
+        The ``total_count == 0`` branch is the empty-account escape: a user with
         no games is vacuously Stage-B ready and must not be locked out forever
-        (RESEARCH Pitfall 1). The Stage-B-computing clause (Quick 260529-015)
-        closes the race where pending==0 is observed before the eval-dependent
-        percentile rows are written, so the page would otherwise unlock with
-        missing (first import) or stale (re-import) badges.
+        (RESEARCH Pitfall 1). The below-anchor-floor branch (quick-260529)
+        generalises that escape to users who DO have games but too few to clear
+        the 30-game per-TC anchor floor in any TC: Stage A/B write zero rows for
+        them by design, so ``has_any_rows`` stays False forever and they would
+        otherwise be locked out permanently (prod user 145: 13 games). The
+        Stage-B-computing clause (Quick 260529-015) closes the race where
+        pending==0 is observed before the eval-dependent percentile rows are
+        written, so the page would otherwise unlock with missing (first import)
+        or stale (re-import) badges.
 
     Reads are strictly sequential on one AsyncSession per CLAUDE.md constraint
     (no asyncio.gather on a single AsyncSession). Short-circuits skip downstream
-    queries when not needed, bounding the query count to at most 3. The
-    is_computing check is a sync in-memory set lookup (no query), so it does not
-    affect that bound.
+    queries when not needed, bounding the query count to at most 3 plus, only
+    when the user has rows-but-no-percentiles and evals are drained, up to 4
+    cheap per-TC anchor existence probes (below-floor escape). In practice
+    Stage A writes ``score_gap`` rows before evals drain, so ``has_any_rows`` is
+    already True for above-floor users and the probe runs only for genuinely
+    below-floor users (where it is cheap — few games). The is_computing check is
+    a sync in-memory set lookup (no query).
     """
     # Tier 1: no active import job for this user (in-memory check only)
     has_active = bool(import_service.find_active_jobs_for_user(user.id))
@@ -181,7 +195,24 @@ async def get_readiness(
         tier1 and await user_benchmark_percentiles_repository.has_any_rows(session, user_id=user.id)
     )
 
-    tier2 = tier1 and pending == 0 and percentile_ready and not stage_b_computing
+    # Below-anchor-floor escape (quick-260529): a user with games but no
+    # percentile rows, whose evals are fully drained and who is not mid-compute,
+    # may simply be below the per-TC anchor floor everywhere — Stage A/B wrote
+    # nothing by design and never will. Probe the anchor-candidate SQL so these
+    # users unlock instead of polling forever. Evaluated lazily: only when the
+    # cheaper conditions already permit tier2 AND no percentile rows exist, so
+    # the per-TC probes never run on the common above-floor path.
+    below_floor = (
+        tier1
+        and pending == 0
+        and not stage_b_computing
+        and not percentile_ready
+        and await user_benchmark_percentiles_service.is_below_anchor_floor(
+            session, user.id, total_games=total
+        )
+    )
+
+    tier2 = tier1 and pending == 0 and not stage_b_computing and (percentile_ready or below_floor)
 
     return ReadinessResponse(
         tier1=tier1,
