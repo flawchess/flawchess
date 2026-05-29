@@ -86,14 +86,31 @@ into SQL has no injection vector. Never f-string ``user_id`` here.
 from __future__ import annotations
 
 from datetime import date
-from typing import Final, Literal, TypeAlias
+from typing import Final, Literal, Mapping, TypeAlias
 
-from app.services.chesscom_to_lichess import CHESSCOM_BLITZ_TO_LICHESS
-from app.services.global_percentile_cdf import CdfMetricId
+from app.services.chesscom_to_lichess import (
+    ChessComSourceTC,
+    composed_chesscom_to_lichess_grid,
+)
 
 # Per-TC bucket identifier — used by Phase 94.3 per-TC builders so the leading
 # positional argument is type-checked (CLAUDE.md type-safety rule per D-8).
 TimeControlBucket: TypeAlias = Literal["bullet", "blitz", "rapid", "classical"]
+
+# FlawChess TimeControlBucket -> chess.com source TC for the anchor-conversion
+# lookup (quick-260529-js1). Each bucket's chess.com games carry a NATIVE rating
+# on that source TC's scale; the composed grid is keyed on native ratings so the
+# nearest-anchor SQL join converts correctly. classical->rapid: chess.com has no
+# classical category, and chess.com games bucketed `classical` carry rapid
+# ratings (chess.com Daily games are dropped upstream by the
+# `time_control_str LIKE '1/%'` filter, so the classical bucket only ever sees
+# rapid-rated chess.com games here).
+_BUCKET_TO_CHESSCOM_SOURCE_TC: Final[Mapping[TimeControlBucket, ChessComSourceTC]] = {
+    "bullet": "bullet",
+    "blitz": "blitz",
+    "rapid": "rapid",
+    "classical": "rapid",
+}
 
 # ---------------------------------------------------------------------------
 # Module-level constants (CLAUDE.md no-magic-numbers).
@@ -257,38 +274,13 @@ def sparse_exclusion_sql(elo_col: str, tc_col: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _recent_capped_cte(snapshot_date: date | None) -> str:
-    """Shared ``recent_capped`` CTE — recent-3000-per-TC + 36-month window.
-
-    Identical on benchmark and single_user paths (the per-TC predicate goes
-    away on BOTH sources per D-5). The cohort difference lives entirely
-    inside ``selected_users``.
-    """
-    recency = _recency_window_sql(snapshot_date)
-    return f"""recent_capped AS (
-  SELECT g.id, g.user_id, g.user_color, g.result, g.played_at
-  FROM (
-    SELECT g.*,
-           row_number() OVER (PARTITION BY g.user_id, g.time_control_bucket
-                              ORDER BY g.played_at DESC) AS rn
-    FROM games g
-    JOIN selected_users su ON su.user_id = g.user_id
-    WHERE g.rated AND NOT g.is_computer_game
-      AND g.white_rating IS NOT NULL AND g.black_rating IS NOT NULL
-      AND g.played_at >= {recency}
-      AND {equal_footing_filter_sql()}
-  ) g
-  WHERE g.rn <= {RECENT_GAMES_PER_TC_CAP}
-)"""
-
-
 def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket) -> str:
-    """Phase 94.3 per-TC sibling of ``_recent_capped_cte`` (PATTERNS.md lines 120-147).
+    """Phase 94.3 per-TC ``recent_capped`` CTE (PATTERNS.md lines 120-147).
 
     Restricts the canonical slice to a single ``time_control_bucket`` so the
     per-TC percentile chips can be computed against a per-TC pooled set.
 
-    Two structural differences from ``_recent_capped_cte``:
+    Two structural properties vs the pooled-TC form:
 
     1. ``AND g.time_control_bucket = '{tc}'`` is added to the inner WHERE.
        Safe to f-string because ``tc`` is constrained to four literal values
@@ -314,262 +306,6 @@ def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket)
       AND g.time_control_bucket = '{tc}'
   ) g
   WHERE g.rn <= {RECENT_GAMES_PER_TC_CAP}
-)"""
-
-
-def per_user_cte_score_gap(
-    *,
-    source: Literal["benchmark", "single_user"],
-    snapshot_date: date | None = None,
-) -> str:
-    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``score_gap``.
-
-    ``metric_value`` = ``eg_score - non_eg_score`` over the user's pooled
-    36-month / 3000-per-TC window. ``n_games`` = endgame-game count on the
-    pooled set (the binding floor per CONTEXT.md "Claude's Discretion —
-    n_games"; the paired non-endgame count goes in the backfill summary
-    log, not the row).
-
-    HAVING gates on BOTH ``count(*) FILTER (WHERE has_endgame) >= 30`` and
-    ``count(*) FILTER (WHERE NOT has_endgame) >= 30`` per D-6. Below-floor
-    users contribute no row.
-
-    No per-TC predicate, no per-row sparse-cell exclusion (D-1, D-5).
-    ``source`` parameter is accepted for API symmetry with the cohort CTE
-    but does not alter the pooled SQL body — the cohort difference lives
-    entirely in ``selected_users``.
-    """
-    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
-    return f"""{_recent_capped_cte(snapshot_date)},
-endgame_game_ids AS (
-  SELECT game_id FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-scored AS (
-  SELECT
-    rc.user_id,
-    CASE
-      WHEN (rc.result = '1-0' AND rc.user_color = 'white')
-        OR (rc.result = '0-1' AND rc.user_color = 'black') THEN 1.0
-      WHEN rc.result = '1/2-1/2' THEN 0.5
-      ELSE 0.0
-    END AS score,
-    (eg.game_id IS NOT NULL) AS has_endgame
-  FROM recent_capped rc
-  LEFT JOIN endgame_game_ids eg ON eg.game_id = rc.id
-),
-per_user AS (
-  SELECT
-    user_id,
-    avg(score) FILTER (WHERE has_endgame)     AS eg_score,
-    avg(score) FILTER (WHERE NOT has_endgame) AS non_eg_score,
-    count(*)   FILTER (WHERE has_endgame)     AS eg_n
-  FROM scored
-  GROUP BY user_id
-  HAVING count(*) FILTER (WHERE has_endgame)     >= {SCORE_GAP_MIN_ENDGAME_N}
-     AND count(*) FILTER (WHERE NOT has_endgame) >= {SCORE_GAP_MIN_NON_ENDGAME_N}
-),
-per_user_values AS (
-  SELECT
-    (eg_score - non_eg_score) AS metric_value,
-    eg_n AS n_games
-  FROM per_user
-)"""
-
-
-def per_user_cte_achievable(
-    *,
-    source: Literal["benchmark", "single_user"],
-    snapshot_date: date | None = None,
-) -> str:
-    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``achievable_score_gap``.
-
-    ``metric_value`` = ``avg(d_i)`` over endgame-entry rows with non-null
-    ``d_i`` (the score-vs-Lichess-sigmoid gap at endgame entry).
-    ``n_games`` = count of endgame-entry games with non-null ``d_i`` (the
-    binding floor per D-6).
-
-    HAVING ≥30 on ``count(*) FILTER (WHERE d_i IS NOT NULL)`` per D-6.
-
-    No per-TC predicate, no per-row sparse-cell exclusion (D-1, D-5).
-    """
-    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
-    return f"""{_recent_capped_cte(snapshot_date)},
-endgame_game_ids AS (
-  SELECT game_id FROM game_positions
-  WHERE endgame_class IS NOT NULL
-  GROUP BY game_id HAVING count(*) >= 6
-),
-entry_rows AS (
-  SELECT gp.game_id, gp.eval_cp, gp.eval_mate,
-         ROW_NUMBER() OVER (PARTITION BY gp.game_id ORDER BY gp.ply ASC) AS rn
-  FROM game_positions gp
-  JOIN endgame_game_ids eg ON eg.game_id = gp.game_id
-  WHERE gp.endgame_class IS NOT NULL
-),
-scored AS (
-  SELECT
-    rc.user_id,
-    (
-      CASE
-        WHEN (rc.result = '1-0' AND rc.user_color = 'white')
-          OR (rc.result = '0-1' AND rc.user_color = 'black') THEN 1.0
-        WHEN rc.result = '1/2-1/2' THEN 0.5
-        ELSE 0.0
-      END
-      -
-      CASE
-        WHEN er.eval_mate IS NOT NULL AND
-             (er.eval_mate * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END)) > 0 THEN 1.0
-        WHEN er.eval_mate IS NOT NULL AND
-             (er.eval_mate * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END)) < 0 THEN 0.0
-        WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < 2000
-             THEN 1.0 / (1.0 + exp(-0.00368208 *
-                  (er.eval_cp * (CASE WHEN rc.user_color='white' THEN 1 ELSE -1 END))))
-        ELSE NULL
-      END
-    ) AS d_i
-  FROM recent_capped rc
-  JOIN entry_rows er ON er.game_id = rc.id AND er.rn = 1
-),
-per_user AS (
-  SELECT
-    user_id,
-    avg(d_i) AS achievable_gap,
-    count(*) FILTER (WHERE d_i IS NOT NULL) AS di_n
-  FROM scored
-  GROUP BY user_id
-  HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= {ACHIEVABLE_MIN_GAMES}
-),
-per_user_values AS (
-  SELECT
-    achievable_gap AS metric_value,
-    di_n AS n_games
-  FROM per_user
-  WHERE achievable_gap IS NOT NULL
-)"""
-
-
-def per_user_cte_score_gap_bucket(
-    *,
-    bucket_label: Literal["conversion", "parity", "recovery"],
-    source: Literal["benchmark", "single_user"],
-    snapshot_date: date | None = None,
-) -> str:
-    """Pooled ``per_user_values(metric_value, n_games)`` CTE for ``score_gap_{conv,parity,recovery}``.
-
-    ``bucket_label`` filters spans by entry-eval bucket:
-    - ``'conversion'`` — user up material at endgame entry
-      (entry_eval_cp * user_color_sign >= 100, or entry_eval_mate > 0 signed).
-    - ``'parity'`` — equal at entry (|entry_eval_cp * sign| < 100,
-      or entry_eval_mate IS NULL AND entry_eval_cp IS NULL).
-    - ``'recovery'`` — user down material at entry
-      (entry_eval_cp * user_color_sign <= -100, or entry_eval_mate < 0 signed).
-      Added in Phase 94.4 Plan 03 Task 2 per RESEARCH Open Question 3 — the
-      widening is purely at the Literal type level + the bucket WHERE dispatch.
-      The existing ``gap_rows`` CASE classification (below) already emits
-      ``'recovery'`` rows; the WHERE clause in ``per_user_values`` simply
-      selects them when ``bucket_label='recovery'``.
-
-    ``metric_value`` = per-user ``avg(gap_span)`` on spans in the selected
-    bucket. ``n_games`` = span count in the selected bucket (the binding
-    floor per D-6).
-
-    HAVING ≥30 on ``count(*)`` inside the per-user/per-bucket aggregation
-    per D-6.
-
-    The ``>= _SUB_800_FLOOR`` user-rating gate inside ``gap_rows`` is kept —
-    it defends against missing rating data, independent of any bucketing
-    scheme.
-
-    No per-TC predicate, no per-row sparse-cell exclusion (D-1, D-5).
-    """
-    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
-    ueag = _user_elo_at_game_expr()
-    return f"""{_recent_capped_cte(snapshot_date)},
-spans AS (
-  SELECT
-    gp.game_id, gp.endgame_class,
-    (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
-    (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,
-    min(gp.ply) AS span_min_ply
-  FROM game_positions gp
-  JOIN recent_capped rc ON rc.id = gp.game_id
-  WHERE gp.endgame_class IS NOT NULL
-  GROUP BY gp.game_id, gp.endgame_class
-  HAVING count(gp.ply) >= 6
-),
-spans_with_next AS (
-  SELECT s.*,
-         lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,
-         lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate
-  FROM spans s
-),
-gap_rows AS (
-  SELECT
-    g.user_id,
-    CASE
-      WHEN swn.entry_eval_mate IS NOT NULL THEN
-        CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
-          THEN 'conversion' ELSE 'recovery' END
-      WHEN swn.entry_eval_cp IS NOT NULL THEN
-        CASE
-          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) >= 100
-            THEN 'conversion'
-          WHEN (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) <= -100
-            THEN 'recovery'
-          ELSE 'parity'
-        END
-      ELSE 'parity'
-    END AS bucket,
-    (
-      CASE
-        WHEN swn.next_eval_mate IS NOT NULL
-          THEN CASE WHEN (swn.next_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
-                    THEN 1.0 ELSE 0.0 END
-        WHEN swn.next_eval_cp IS NOT NULL
-          THEN 1.0 / (1.0 + exp(-0.00368208 *
-                 (swn.next_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-        ELSE
-          CASE
-            WHEN (g.result='1-0' AND g.user_color='white')
-              OR (g.result='0-1' AND g.user_color='black') THEN 1.0
-            WHEN g.result='1/2-1/2' THEN 0.5
-            ELSE 0.0
-          END
-      END
-    ) - (
-      CASE
-        WHEN swn.entry_eval_mate IS NOT NULL
-          THEN CASE WHEN (swn.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
-                    THEN 1.0 ELSE 0.0 END
-        WHEN swn.entry_eval_cp IS NOT NULL
-          THEN 1.0 / (1.0 + exp(-0.00368208 *
-                 (swn.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END))))
-        ELSE NULL
-      END
-    ) AS gap_span
-  FROM spans_with_next swn
-  JOIN games g ON g.id = swn.game_id
-  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)
-    AND {ueag} >= {_SUB_800_FLOOR}
-),
-per_user_bucket AS (
-  SELECT user_id, bucket,
-         avg(gap_span) AS mean_gap,
-         count(*) AS span_n
-  FROM gap_rows
-  WHERE gap_span IS NOT NULL
-  GROUP BY user_id, bucket
-  HAVING count(*) >= {SCORE_GAP_BUCKET_MIN_SPANS}
-),
-per_user_values AS (
-  SELECT
-    mean_gap AS metric_value,
-    span_n AS n_games
-  FROM per_user_bucket
-  WHERE bucket = '{bucket_label}'
 )"""
 
 
@@ -842,11 +578,10 @@ def per_user_cte_score_gap_tc(
 ) -> str:
     """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``score_gap``.
 
-    Per-TC version of ``per_user_cte_score_gap``. Restricted to one
-    ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The metric_value
-    formula and HAVING gates are byte-identical to the non-per-TC analog
-    (``eg_score - non_eg_score`` projection; dual ≥30 floor on
-    endgame / non-endgame game counts).
+    Per-TC ``score_gap`` builder. Restricted to one ``time_control_bucket``
+    via ``_recent_capped_per_tc_cte``. The metric_value formula and HAVING
+    gates mirror the pooled form: ``eg_score - non_eg_score`` projection;
+    dual ≥30 floor on endgame / non-endgame game counts.
 
     ``n_games`` = endgame-game count on the per-TC pooled set.
 
@@ -916,11 +651,10 @@ def per_user_cte_achievable_tc(
 ) -> str:
     """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``achievable_score_gap``.
 
-    Per-TC version of ``per_user_cte_achievable``. Restricted to one
+    Per-TC ``achievable_score_gap`` builder. Restricted to one
     ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The metric_value
-    formula (``avg(d_i)`` where d_i is the per-game score-vs-Lichess-sigmoid
-    gap at endgame entry) and HAVING gate (≥30 d_i-non-null games per D-6)
-    are byte-identical to the non-per-TC analog.
+    formula is ``avg(d_i)`` where d_i is the per-game score-vs-Lichess-sigmoid
+    gap at endgame entry; HAVING gate is ≥30 d_i-non-null games per D-6.
 
     Security and source-mode parity identical to ``per_user_cte_score_gap_tc``.
     Pitfall 1 user_id widening applied.
@@ -998,11 +732,11 @@ def per_user_cte_score_gap_bucket_tc(
 ) -> str:
     """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``score_gap_{conv,parity,recovery}``.
 
-    Per-TC version of ``per_user_cte_score_gap_bucket`` — restricted to one
+    Per-TC ``score_gap_{conv,parity,recovery}`` builder — restricted to one
     ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The ``gap_rows``
-    bucket classification (conversion / parity / recovery — see lines 502-512
-    of the non-per-TC builder) and per-bucket HAVING ≥30 floor are
-    byte-identical to the non-per-TC analog.
+    bucket classification (conversion / parity / recovery via entry-eval
+    signed by user_color) and per-bucket HAVING ≥30 floor mirror the
+    pooled-TC form.
 
     The ``bucket_label`` Literal includes ``'recovery'`` (Phase 94.4 Plan 03
     Task 2) for the recovery-rescue cohort: rows where the user entered the
@@ -1105,11 +839,13 @@ per_user_values AS (
 def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
     """Emit a VALUES body for the (chesscom_anchor, lichess_equiv) lookup table.
 
-    Reads ``CHESSCOM_BLITZ_TO_LICHESS`` from ``app.services.chesscom_to_lichess``
-    and emits all rows whose ``target_tc`` column is not None. Returns the VALUES
-    expression body suitable for use inside a named CTE, e.g.:
+    The table is keyed on NATIVE chess.com ratings for the bucket's source TC
+    (``_BUCKET_TO_CHESSCOM_SOURCE_TC``), and each ``lichess_equiv`` is produced
+    by the canonical :func:`convert_chesscom_to_lichess` via
+    :func:`composed_chesscom_to_lichess_grid` (single source of truth). Returns
+    the VALUES expression body suitable for use inside a named CTE, e.g.:
 
-        VALUES (600, 632), (650, 681), ...
+        VALUES (735, 1205), (750, 1224), ...
 
     The returned string is intended for use inside a column-aliased CTE body:
 
@@ -1120,21 +856,30 @@ def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
     This is the standard PostgreSQL CTE VALUES pattern — the column names are
     declared in the CTE name clause, not via an alias on the VALUES expression.
 
-    Security: the rows are emitted from a ``Final`` Python-controlled snapshot
-    constant (``CHESSCOM_BLITZ_TO_LICHESS``) — all values are Python ``int``
-    literals with no user-input injection surface (T-94.4-10-02).
+    Bug fix (quick-260529-js1): the previous implementation keyed the table on
+    chess.com BLITZ anchors and read ``CHESSCOM_BLITZ_TO_LICHESS`` directly. The
+    nearest-anchor LATERAL join then matched every chess.com game's native rating
+    against blitz-scale anchors regardless of the game's actual TC, skipping the
+    intra-TC inversion the canonical converter applies (inflated rapid/classical
+    anchors, deflated bullet). Keying the grid on native chess.com ratings for
+    the bucket's source TC (bullet->bullet, blitz->blitz, rapid->rapid,
+    classical->rapid) makes the join correct.
+
+    Security: the rows are generated from a Python-controlled snapshot via the
+    converter — all values are Python ``int`` literals with no user-input
+    injection surface (T-94.4-10-02).
 
     Raises:
-        ValueError: if no rows have a non-None lichess equivalent for
-            ``target_tc`` (defensive — shouldn't happen for the 4 standard TCs).
+        ValueError: if the composed grid is empty for ``target_tc`` (defensive —
+            shouldn't happen for the 4 standard TCs).
     """
-    rows: list[tuple[int, int]] = [
-        (anchor, equiv)
-        for anchor, tc_map in CHESSCOM_BLITZ_TO_LICHESS.items()
-        if (equiv := tc_map.get(target_tc)) is not None  # type: ignore[assignment]
-    ]
+    source_tc = _BUCKET_TO_CHESSCOM_SOURCE_TC[target_tc]
+    rows = composed_chesscom_to_lichess_grid(source_tc, target_tc)
     if not rows:
-        raise ValueError(f"CHESSCOM_BLITZ_TO_LICHESS has no entries for target_tc={target_tc!r}")
+        raise ValueError(
+            f"composed_chesscom_to_lichess_grid empty for source_tc={source_tc!r}, "
+            f"target_tc={target_tc!r}"
+        )
     return "VALUES " + ", ".join(f"({anchor}, {equiv})" for anchor, equiv in rows)
 
 
@@ -1182,13 +927,18 @@ def per_user_cte_median_anchor(
     n_lichess_games INT, chesscom_median_native INT, lichess_median_native INT)``.
 
     Per-game weighted blended anchor. chess.com (non-Daily) games are converted
-    via the ``chesscom_conversion_lookup`` VALUES CTE (generated from
-    ``CHESSCOM_BLITZ_TO_LICHESS`` via ``_chesscom_conversion_values_sql``). Each
-    chess.com game is matched to the nearest anchor row via
+    via the ``chesscom_conversion_lookup`` VALUES CTE, which is keyed on NATIVE
+    chess.com ratings for this bucket's source TC (bullet->bullet, blitz->blitz,
+    rapid->rapid, classical->rapid) and composed via the canonical
+    ``convert_chesscom_to_lichess`` (``_chesscom_conversion_values_sql`` →
+    ``composed_chesscom_to_lichess_grid``). Each chess.com game is matched to the
+    nearest anchor row via
     ``ORDER BY ABS(rating_at_game_time - chesscom_anchor) LIMIT 1`` and the
-    ``lichess_equiv`` is used as the blended rating. Lichess games pass through
-    their native rating unchanged. The per-user median of the combined
-    (converted + native) pool is the blended ``anchor_rating``.
+    ``lichess_equiv`` is used as the blended rating. The native-rating keying
+    means the nearest-anchor match applies the correct intra-TC inversion
+    (quick-260529-js1 fix). Lichess games pass through their native rating
+    unchanged. The per-user median of the combined (converted + native) pool is
+    the blended ``anchor_rating``.
 
     ``blend=True`` with ``platform!=None`` is mutually exclusive and raises
     ``ValueError`` — blended mode pools both platforms inherently; a platform
@@ -1324,7 +1074,12 @@ chesscom_conversion_lookup(chesscom_anchor, lichess_equiv) AS (
   {conv_values}
 ),
 per_game_blended_rating AS (
-  -- chess.com non-Daily: convert via nearest-anchor lookup
+  -- chess.com non-Daily: convert via nearest-anchor lookup. The lookup is keyed
+  -- on NATIVE chess.com ratings for this bucket's source TC (bullet->bullet,
+  -- blitz->blitz, rapid->rapid, classical->rapid) and composed via the canonical
+  -- convert_chesscom_to_lichess, so the nearest-anchor match applies the correct
+  -- intra-TC inversion (quick-260529-js1 fix; was keyed on chess.com Blitz
+  -- anchors, which skipped the inversion and inflated rapid/classical anchors).
   SELECT rc.user_id, lookup.lichess_equiv AS blended_rating, 'chesscom' AS platform_tag,
          {elo_expr} AS native_rating
   FROM recent_capped_no_daily rc
@@ -1358,74 +1113,3 @@ per_user_anchor AS (
   GROUP BY user_id
   HAVING count(*) >= {min_games}
 )"""
-
-
-def per_user_cte_for(
-    metric_id: CdfMetricId,
-    *,
-    source: Literal["benchmark", "single_user"],
-    snapshot_date: date | None = None,
-) -> str:
-    """Dispatch to the metric-specific pooled ``per_user_values`` CTE block.
-
-    ``source`` selects the cohort definition (handled by ``selected_users_cte``;
-    the pooled aggregate body is identical on both paths per D-10).
-
-    ``snapshot_date`` controls the recency anchor:
-      - ``None`` → ``NOW()`` (per-user lookup path).
-      - explicit ``date`` → that date (CDF construction path; passed by
-        ``scripts/gen_global_percentile_cdf.py``).
-
-    Note: the ``apply_floor`` argument from 94.1 is removed (D-8). Passing
-    it raises ``TypeError`` (the inclusion floor is always applied; below-floor
-    → no row emitted → no row stored → chip suppressed).
-    """
-    if metric_id == "score_gap":
-        return per_user_cte_score_gap(source=source, snapshot_date=snapshot_date)
-    if metric_id == "achievable_score_gap":
-        return per_user_cte_achievable(source=source, snapshot_date=snapshot_date)
-    if metric_id == "score_gap_conv":
-        return per_user_cte_score_gap_bucket(
-            bucket_label="conversion", source=source, snapshot_date=snapshot_date
-        )
-    if metric_id == "score_gap_parity":
-        return per_user_cte_score_gap_bucket(
-            bucket_label="parity", source=source, snapshot_date=snapshot_date
-        )
-    # Phase 94.3 Plan B — 12 new dispatcher arms for the per-(metric × TC)
-    # percentile chips. The CdfMetricId Literal is widened to 16 entries by
-    # Plan C; here we match string literals directly so this plan can land
-    # before the Literal expansion (D-10 atomic-cutover trio B → C → D).
-    if metric_id == "time_pressure_score_gap_bullet":
-        return per_user_cte_time_pressure_score_gap(
-            "bullet", source=source, snapshot_date=snapshot_date
-        )
-    if metric_id == "time_pressure_score_gap_blitz":
-        return per_user_cte_time_pressure_score_gap(
-            "blitz", source=source, snapshot_date=snapshot_date
-        )
-    if metric_id == "time_pressure_score_gap_rapid":
-        return per_user_cte_time_pressure_score_gap(
-            "rapid", source=source, snapshot_date=snapshot_date
-        )
-    if metric_id == "time_pressure_score_gap_classical":
-        return per_user_cte_time_pressure_score_gap(
-            "classical", source=source, snapshot_date=snapshot_date
-        )
-    if metric_id == "clock_gap_bullet":
-        return per_user_cte_clock_gap("bullet", source=source, snapshot_date=snapshot_date)
-    if metric_id == "clock_gap_blitz":
-        return per_user_cte_clock_gap("blitz", source=source, snapshot_date=snapshot_date)
-    if metric_id == "clock_gap_rapid":
-        return per_user_cte_clock_gap("rapid", source=source, snapshot_date=snapshot_date)
-    if metric_id == "clock_gap_classical":
-        return per_user_cte_clock_gap("classical", source=source, snapshot_date=snapshot_date)
-    if metric_id == "net_flag_rate_bullet":
-        return per_user_cte_net_flag_rate("bullet", source=source, snapshot_date=snapshot_date)
-    if metric_id == "net_flag_rate_blitz":
-        return per_user_cte_net_flag_rate("blitz", source=source, snapshot_date=snapshot_date)
-    if metric_id == "net_flag_rate_rapid":
-        return per_user_cte_net_flag_rate("rapid", source=source, snapshot_date=snapshot_date)
-    if metric_id == "net_flag_rate_classical":
-        return per_user_cte_net_flag_rate("classical", source=source, snapshot_date=snapshot_date)
-    raise ValueError(f"Unknown metric_id: {metric_id!r}")

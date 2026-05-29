@@ -76,6 +76,7 @@ from app.services.endgame_zones import (
 from app.repositories import user_benchmark_percentiles_repository
 from app.repositories.user_benchmark_percentiles_repository import PercentileRow
 from app.repositories.user_rating_anchors_repository import (
+    RatingAnchorRow,
     fetch_anchors_for_user,
 )
 from app.models.user_rating_anchors import TimeControlBucket
@@ -1321,6 +1322,8 @@ def _aggregate_per_tc_percentile(
 def _build_per_tc_breakdown(
     per_tc_rows: Mapping[TimeControlBucket, PercentileRow] | None,
     per_tc_games: Mapping[TimeControlBucket, int],
+    *,
+    anchors_by_tc: Mapping[TimeControlBucket, RatingAnchorRow] | None = None,
 ) -> list[PerTcBreakdownOut]:
     """Construct the per-TC breakdown list for a single aggregated metric.
 
@@ -1351,6 +1354,10 @@ def _build_per_tc_breakdown(
     out: list[PerTcBreakdownOut] = []
     for tc_str in _TIME_CONTROL_ORDER:
         tc = cast(TimeControlBucket, tc_str)
+        # 260529-l1i: per-TC anchor for the two-line tooltip row; None when this
+        # TC has no anchor row.
+        anchor_row = anchors_by_tc.get(tc) if anchors_by_tc else None
+        anchor = anchor_row.anchor_rating if anchor_row is not None else None
         row = per_tc_rows.get(tc) if per_tc_rows else None
         if row is not None:
             out.append(
@@ -1359,6 +1366,7 @@ def _build_per_tc_breakdown(
                     value=row.value,
                     n_games=row.n_games,
                     percentile=row.percentile,
+                    anchor=anchor,
                 )
             )
             continue
@@ -1370,6 +1378,7 @@ def _build_per_tc_breakdown(
                     value=None,
                     n_games=n_games,
                     percentile=None,
+                    anchor=anchor,
                 )
             )
     return out
@@ -1405,6 +1414,7 @@ def _compute_score_gap_material(
     *,
     percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
     per_tc_games: Mapping[TimeControlBucket, int] | None = None,
+    anchors_by_tc: Mapping[TimeControlBucket, RatingAnchorRow] | None = None,
     gaps_by_bucket: dict[str, list[float]] | None = None,
     timeline: list[ScoreGapTimelinePoint] | None = None,
     timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
@@ -1546,15 +1556,17 @@ def _compute_score_gap_material(
     _per_tc_games: Mapping[TimeControlBucket, int] = (
         per_tc_games if per_tc_games is not None else {}
     )
-    score_gap_per_tc = _build_per_tc_breakdown(_effective_rows.get("score_gap"), _per_tc_games)
+    score_gap_per_tc = _build_per_tc_breakdown(
+        _effective_rows.get("score_gap"), _per_tc_games, anchors_by_tc=anchors_by_tc
+    )
     score_gap_conv_per_tc = _build_per_tc_breakdown(
-        _effective_rows.get("score_gap_conv"), _per_tc_games
+        _effective_rows.get("score_gap_conv"), _per_tc_games, anchors_by_tc=anchors_by_tc
     )
     score_gap_parity_per_tc = _build_per_tc_breakdown(
-        _effective_rows.get("score_gap_parity"), _per_tc_games
+        _effective_rows.get("score_gap_parity"), _per_tc_games, anchors_by_tc=anchors_by_tc
     )
     recovery_score_gap_per_tc = _build_per_tc_breakdown(
-        _effective_rows.get("recovery_score_gap"), _per_tc_games
+        _effective_rows.get("recovery_score_gap"), _per_tc_games, anchors_by_tc=anchors_by_tc
     )
 
     return ScoreGapMaterialResponse(
@@ -2415,6 +2427,7 @@ def _get_endgame_performance_from_rows(
     bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
     percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
     per_tc_games: Mapping[TimeControlBucket, int] | None = None,
+    anchors_by_tc: Mapping[TimeControlBucket, RatingAnchorRow] | None = None,
 ) -> EndgamePerformanceResponse:
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 
@@ -2594,6 +2607,7 @@ def _get_endgame_performance_from_rows(
     achievable_score_gap_per_tc = _build_per_tc_breakdown(
         percentile_rows.get("achievable_score_gap") if percentile_rows is not None else None,
         _resolved_per_tc_games,
+        anchors_by_tc=anchors_by_tc,
     )
 
     return EndgamePerformanceResponse(
@@ -3061,12 +3075,21 @@ async def get_endgame_overview(
     # the 5 aggregated chips on the page.
     per_tc_games = _per_tc_game_counts(endgame_rows)
 
+    # 260529-l1i: fetch the per-TC rating anchors BEFORE building performance +
+    # score_gap_material so both can thread the anchor into each per-TC
+    # breakdown entry (two-line tooltip rows). Single fetch — the top-level
+    # rating_anchors block below consumes the same `anchors` dict. The
+    # repository call is V4-scoped: user_id is the authenticated user's PK from
+    # the FastAPI-Users dep, never a query/path param.
+    anchors = await fetch_anchors_for_user(session, user_id=user_id)
+
     performance = _get_endgame_performance_from_rows(
         endgame_rows,
         non_endgame_rows,
         bucket_rows,
         percentile_rows=percentile_rows,
         per_tc_games=per_tc_games,
+        anchors_by_tc=anchors,
     )
     # Build score-gap timeline from unfiltered rows so the rolling 100-game
     # window per side is pre-filled with games before the cutoff; then drop
@@ -3083,6 +3106,7 @@ async def get_endgame_overview(
         bucket_rows,
         percentile_rows=percentile_rows,
         per_tc_games=per_tc_games,
+        anchors_by_tc=anchors,
         gaps_by_bucket=gaps_by_bucket,
         timeline=score_gap_timeline,
         timeline_window=SCORE_GAP_TIMELINE_WINDOW,
@@ -3185,7 +3209,10 @@ async def get_endgame_overview(
     # the dominant-TC disclosure with the aggregated framing of bullet 1
     # ("Compared to other ~{anchor}-rated players, aggregated across the
     # time controls you play.") covering honesty.
-    anchors = await fetch_anchors_for_user(session, user_id=user_id)
+    #
+    # 260529-l1i: `anchors` is fetched ONCE earlier (before performance +
+    # score_gap_material) so the per-TC breakdown rows carry the anchor. This
+    # block reuses that same dict — no second fetch.
     rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = {
         tc: RatingAnchorOut(
             anchor_rating=row.anchor_rating,

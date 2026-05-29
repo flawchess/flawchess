@@ -9,18 +9,21 @@
  * ceiling preserved per D-06a. `aria-label` preserves a direction word and the
  * legacy `p23` token for screen readers per D-06b.
  *
- * Per CONTEXT D-07 + D-12 Reversal Amendment (2026-05-27): tooltip body is 4
- * bullets per chip:
- *   1. Direct percentile statement ("Your <em>recent</em> {metric} is in the
- *      top/bottom X% of ~{rating}-rated players{ in {tc} | , aggregated
- *      across...}.").
- *   2. Recent-games basis (TC-scoped per Plan 05; vs +/-100 Elo opponents).
+ * Per CONTEXT D-07 + 260529-l1i: tooltip body is 3 bullets per chip:
+ *   1. Direct percentile statement. Per-TC chips (tc !== undefined) read
+ *      "…of ~{rating}-rated players in {tc}."; aggregated chips
+ *      (tc === undefined) read "…of similarly-rated players, aggregated across
+ *      the time controls you play." (no rating number).
+ *   2. Recent-games basis. For aggregated chips, the per-TC breakdown list
+ *      renders two stacked lines per renderable TC: line 1
+ *      "{tc} — anchored at ~{anchor} Lichess Elo" (omitted when anchor is
+ *      null), line 2 "{value} over {n} games -> {percentile} percentile".
  *   3. Filter independence (kept verbatim from 94.3, `COPY_FILTER_INDEPENDENCE`).
- *   4. Rating-anchor disclosure — blended composition per the D-12 amendment:
- *      (a) Mixed (nChesscomGames > 0 AND nLichessGames > 0): blended prose.
- *      (b) Pure-lichess (nChesscomGames == 0): native-rating clause only.
- *      (c) Pure-chess.com (nLichessGames == 0): conversion clause only.
- *      (d) Suppression (both == 0): empty string — caller should suppress chip.
+ *
+ * 260529-l1i: the standalone bullet-4 platform-blend anchor paragraph was
+ * REMOVED entirely (deliberate reversal of the Phase 94.4 D-12 amendment). The
+ * rating-matching method is now conveyed only by the per-row "anchored at ~X
+ * Lichess Elo" text on the aggregated chip's per-TC list.
  *
  * Per CONTEXT D-07a: the 16-variant flavor enum collapses to 8 (5 page-level
  * aggregated + 3 per-TC families). All 8 flavors are `higher_is_better`
@@ -102,19 +105,11 @@ export interface PercentileChipProps {
    *  `recovery`) omit this prop — the chip is aggregated across TCs and the tooltip
    *  frames as multi-TC. */
   tc?: TimeControlBucket;
-  /** Anchor rating disclosed in popover bullet 4. Blended Lichess-equivalent
-   *  (post-conversion for chess.com games; native for lichess games). */
-  anchorRating: number;
-  /** D-12 Reversal Amendment (2026-05-27): chess.com game count for bullet 4 disclosure.
-   *  0 for pure-lichess users. Drives the mixed / pure-lichess / pure-chess.com branch. */
-  nChesscomGames: number;
-  /** D-12 Reversal Amendment (2026-05-27): lichess game count for bullet 4 disclosure.
-   *  0 for pure-chess.com users. */
-  nLichessGames: number;
-  /** PRE-conversion chess.com native median; present when nChesscomGames > 0. */
-  chesscomMedianNative?: number;
-  /** Native lichess median; present when nLichessGames > 0. */
-  lichessMedianNative?: number;
+  /** 260529-l1i: anchor rating named in per-TC chip bullet 1
+   *  ("…of ~{anchorRating}-rated players in {tc}"). Per-TC chips pass it;
+   *  aggregated chips OMIT it (their bullet 1 no longer shows a number — the
+   *  per-row "anchored at ~X Lichess Elo" lines carry the anchors instead). */
+  anchorRating?: number;
   /** User-facing metric label used in aria-label. */
   metricLabel: string;
   /** Becomes data-testid on the trigger; popover Content uses `${testId}-popover`. */
@@ -181,11 +176,7 @@ interface PopoverBodyProps {
   flavor: PercentileChipFlavor;
   metricLabel: string;
   tc: TimeControlBucket | undefined;
-  anchorRating: number;
-  nChesscomGames: number;
-  nLichessGames: number;
-  chesscomMedianNative: number | undefined;
-  lichessMedianNative: number | undefined;
+  anchorRating: number | undefined;
   perTcBreakdown: PerTcBreakdownOut[] | undefined;
   nGames: number | null | undefined;
   value: number | null | undefined;
@@ -197,10 +188,6 @@ function PercentileChipPopoverBody({
   metricLabel,
   tc,
   anchorRating,
-  nChesscomGames,
-  nLichessGames,
-  chesscomMedianNative,
-  lichessMedianNative,
   perTcBreakdown,
   nGames,
   value,
@@ -213,20 +200,27 @@ function PercentileChipPopoverBody({
   // Per-TC chips append "in {tc}"; aggregated chips append the multi-TC
   // framing from CONTEXT D-07b.
   const clampedPct = Math.max(MIN_PERCENT, Math.min(MAX_PERCENT, Math.round(percentile)));
-  const cohortSuffix =
-    tc !== undefined
-      ? ` in ${tc}`
-      : ', aggregated across the time controls you play';
   const phrasing =
     clampedPct > PERCENTILE_MEDIAN
       ? `better than ${clampedPct}%`
       : `in the bottom ${clampedPct}%`;
-  const bullet1 = (
-    <>
-      Your <em>recent</em> {metricLabel} is {phrasing} of ~{anchorRating}-rated players
-      {cohortSuffix}.
-    </>
-  );
+  // 260529-l1i: bullet 1 diverges by chip type.
+  //   - Per-TC chip (tc !== undefined): keeps the "~{anchor}-rated players in
+  //     {tc}" clause — the chip is scoped to one TC with one anchor.
+  //   - Aggregated chip (tc === undefined): drops the rating number; the
+  //     per-row "anchored at ~X Lichess Elo" lines in bullet 2 carry the
+  //     per-TC anchors instead.
+  const bullet1 =
+    tc !== undefined ? (
+      <>
+        Your <em>recent</em> {metricLabel} is {phrasing} of ~{anchorRating}-rated players in {tc}.
+      </>
+    ) : (
+      <>
+        Your <em>recent</em> {metricLabel} is {phrasing} of similarly-rated players, aggregated
+        across the time controls you play.
+      </>
+    );
   // Quick task 260527-q0b: bullet 2 rewrite. Two code paths:
   //   - tc === undefined (aggregated chip): render a leading line + per-TC list.
   //     Each per-TC entry obeys the 4 branches documented on PerTcBreakdownOut.
@@ -276,12 +270,25 @@ function PercentileChipPopoverBody({
             if (entry.value == null) {
               return <li key={entry.tc}>{entry.tc}: insufficient games</li>;
             }
-            // value != null && percentile != null (other case dropped above)
+            // value != null && percentile != null (other case dropped above).
+            // 260529-l1i: two stacked lines — the anchor label line (only when
+            // entry.anchor is present, defensive null guard) then the stats
+            // line. Both wrapped in block spans so they stack inside the <li>.
             const pInt = entry.percentile != null ? clampPercentInt(entry.percentile) : 0;
             return (
               <li key={entry.tc}>
-                {entry.tc}: {formatChipValue(flavor, entry.value)} over {entry.n_games} games -&gt;{' '}
-                {pInt} percentile
+                {entry.anchor != null && (
+                  <span
+                    className="block"
+                    data-testid={`percentile-chip-anchor-${entry.tc}`}
+                  >
+                    {entry.tc} — anchored at ~{entry.anchor} Lichess Elo
+                  </span>
+                )}
+                <span className="block">
+                  {formatChipValue(flavor, entry.value)} over {entry.n_games} games -&gt; {pInt}{' '}
+                  percentile
+                </span>
               </li>
             );
           })}
@@ -299,31 +306,15 @@ function PercentileChipPopoverBody({
       ? "Computed from the chart's 10% and 30% datapoints (endgames entered with under 40% of your clock): your average score in those buckets minus your opponents' average score against you, when they were under the same pressure."
       : null;
   const bullet3 = COPY_FILTER_INDEPENDENCE;
-  // D-12 Reversal Amendment (2026-05-27): bullet 4 blended-composition disclosure.
-  // 4 branches per the amendment contract (locked by Plan 11 Vitest C1-C6):
-  //   (a) Mixed: blended composition prose — names both platforms with native medians.
-  //   (b) Pure-lichess: native-rating clause only (no conversion mention).
-  //   (c) Pure-chess.com: conversion clause only (ChessGoals snapshot citation).
-  //   (d) Suppression (both == 0): empty string — caller should have suppressed chip.
-  const bullet4 = (() => {
-    if (nChesscomGames > 0 && nLichessGames > 0) {
-      return `Anchored at ~${anchorRating} Elo, blending ${nChesscomGames} chess.com games (median ${chesscomMedianNative}, converted) with ${nLichessGames} lichess games (median ${lichessMedianNative}).`;
-    }
-    if (nChesscomGames === 0 && nLichessGames > 0) {
-      return `Anchored at ~${anchorRating} Elo from ${nLichessGames} lichess games (native rating).`;
-    }
-    if (nChesscomGames > 0 && nLichessGames === 0) {
-      return `Anchored at ~${anchorRating} Elo from ${nChesscomGames} chess.com games (median ${chesscomMedianNative}, converted to Lichess-equivalent).`;
-    }
-    return ''; // defensive — caller should have suppressed the chip when both counts are 0
-  })();
+  // 260529-l1i: bullet 4 (the standalone platform-blend anchor paragraph) was
+  // removed entirely. The rating-matching method is now conveyed only by the
+  // per-row "anchored at ~X Lichess Elo" lines in the aggregated chip's bullet 2.
   return (
     <div className="space-y-1.5">
       <p>{bullet1}</p>
       {bulletMetricNote !== null && <p>{bulletMetricNote}</p>}
       <div>{bullet2}</div>
       <p>{bullet3}</p>
-      {bullet4 !== '' && <p>{bullet4}</p>}
     </div>
   );
 }
@@ -332,14 +323,10 @@ export function PercentileChip({
   percentile,
   // `flavor` routes the optional per-metric note (currently only
   // `time-pressure-score-gap` opts in to explain the 10%/30% bucket
-  // derivation). All other flavors render the standard 4-bullet body.
+  // derivation). All other flavors render the standard 3-bullet body.
   flavor,
   tc,
   anchorRating,
-  nChesscomGames,
-  nLichessGames,
-  chesscomMedianNative,
-  lichessMedianNative,
   metricLabel,
   testId,
   perTcBreakdown,
@@ -439,10 +426,6 @@ export function PercentileChip({
             metricLabel={metricLabel}
             tc={tc}
             anchorRating={anchorRating}
-            nChesscomGames={nChesscomGames}
-            nLichessGames={nLichessGames}
-            chesscomMedianNative={chesscomMedianNative}
-            lichessMedianNative={lichessMedianNative}
             perTcBreakdown={perTcBreakdown}
             nGames={nGames}
             value={value}

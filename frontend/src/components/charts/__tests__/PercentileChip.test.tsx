@@ -64,10 +64,6 @@ type RenderOpts = {
   flavor?: PercentileChipFlavor;
   tc?: 'bullet' | 'blitz' | 'rapid' | 'classical';
   anchorRating?: number;
-  nChesscomGames?: number;
-  nLichessGames?: number;
-  chesscomMedianNative?: number;
-  lichessMedianNative?: number;
   metricLabel?: string;
   perTcBreakdown?: PerTcBreakdownOut[];
   nGames?: number | null;
@@ -75,16 +71,14 @@ type RenderOpts = {
 };
 
 function renderChip(percentile: number, opts: RenderOpts = {}) {
+  // 260529-l1i: anchorRating is optional. Per-TC chips (tc set) pass it for
+  // bullet 1; aggregated chips omit it. Only pass it when explicitly provided.
   return render(
     <PercentileChip
       percentile={percentile}
       flavor={opts.flavor ?? 'score-gap'}
       tc={opts.tc}
-      anchorRating={opts.anchorRating ?? 1600}
-      nChesscomGames={opts.nChesscomGames ?? 0}
-      nLichessGames={opts.nLichessGames ?? 500}
-      chesscomMedianNative={opts.chesscomMedianNative}
-      lichessMedianNative={opts.lichessMedianNative ?? 1600}
+      {...(opts.anchorRating !== undefined ? { anchorRating: opts.anchorRating } : {})}
       metricLabel={opts.metricLabel ?? 'Endgame Score Gap'}
       testId={TID}
       perTcBreakdown={opts.perTcBreakdown}
@@ -190,17 +184,18 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
     );
   });
 
-  // Test 8: aggregated bullet 1 — pct<=50 keeps the legacy "bottom X%" framing
-  it('aggregated popover bullet 1 reads "Your recent {metric} is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play."', () => {
+  // Test 8: aggregated bullet 1 — pct<=50 keeps the legacy "bottom X%" framing.
+  // 260529-l1i: aggregated bullet 1 drops the "~{anchor}-rated" number and
+  // reads "similarly-rated players".
+  it('aggregated popover bullet 1 reads "Your recent {metric} is in the bottom 23% of similarly-rated players, aggregated across the time controls you play."', () => {
     renderChip(23, {
       flavor: 'score-gap',
-      anchorRating: 1600,
       metricLabel: 'Endgame Score Gap',
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'Your recent Endgame Score Gap is in the bottom 23% of ~1600-rated players, aggregated across the time controls you play.',
+      'Your recent Endgame Score Gap is in the bottom 23% of similarly-rated players, aggregated across the time controls you play.',
     );
   });
 
@@ -208,13 +203,12 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
   it('high-percentile bullet 1 echoes the chip percentile verbatim (pct=90 → "better than 90%")', () => {
     renderChip(90, {
       flavor: 'score-gap',
-      anchorRating: 1600,
       metricLabel: 'Endgame Score Gap',
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'Your recent Endgame Score Gap is better than 90% of ~1600-rated players, aggregated across the time controls you play.',
+      'Your recent Endgame Score Gap is better than 90% of similarly-rated players, aggregated across the time controls you play.',
     );
   });
 
@@ -222,13 +216,12 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
   it('median percentile (pct=50) uses "in the bottom 50%" framing', () => {
     renderChip(50, {
       flavor: 'score-gap',
-      anchorRating: 1600,
       metricLabel: 'Endgame Score Gap',
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain(
-      'Your recent Endgame Score Gap is in the bottom 50% of ~1600-rated players, aggregated across the time controls you play.',
+      'Your recent Endgame Score Gap is in the bottom 50% of similarly-rated players, aggregated across the time controls you play.',
     );
   });
 
@@ -318,11 +311,11 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
       flavor: 'score-gap',
       metricLabel: 'Endgame Score Gap',
       perTcBreakdown: [
-        { tc: 'bullet', value: 0.05, n_games: 137, percentile: 62.3 },
-        { tc: 'blitz', value: -0.02, n_games: 410, percentile: 38.0 },
-        { tc: 'rapid', value: null, n_games: 12, percentile: null },
+        { tc: 'bullet', value: 0.05, n_games: 137, percentile: 62.3, anchor: 1600 },
+        { tc: 'blitz', value: -0.02, n_games: 410, percentile: 38.0, anchor: 1580 },
+        { tc: 'rapid', value: null, n_games: 12, percentile: null, anchor: 1620 },
         // classical above floor (value != null) but percentile null → DROPPED.
-        { tc: 'classical', value: 0.1, n_games: 200, percentile: null },
+        { tc: 'classical', value: 0.1, n_games: 200, percentile: null, anchor: 1650 },
       ],
     });
     fireEvent.click(screen.getByTestId(TID));
@@ -330,17 +323,23 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
     expect(body).toContain('weighted average of Endgame Score Gap percentiles');
     expect(body).toContain('3000 games per time control');
     expect(body).toContain('+/-100 Elo');
-    // Branch (a): above-floor with percentile → full line.
-    expect(body).toContain('bullet: +0.05 over 137 games');
+    // Branch (a): above-floor with percentile → two-line row (anchor + stats).
+    // 260529-l1i: the TC label now lives on the anchor line; the stats line no
+    // longer carries a "{tc}: " prefix.
+    expect(body).toContain('bullet — anchored at ~1600 Lichess Elo');
+    expect(body).toContain('+0.05 over 137 games');
     expect(body).toContain('62 percentile');
-    expect(body).toContain('blitz: -0.02 over 410 games');
+    expect(body).toContain('blitz — anchored at ~1580 Lichess Elo');
+    expect(body).toContain('-0.02 over 410 games');
     expect(body).toContain('38 percentile');
-    // Branch (c): below-floor → "insufficient games" line.
+    // Branch (c): below-floor → "insufficient games" line (no anchor line).
     expect(body).toContain('rapid: insufficient games');
+    expect(body).not.toContain('rapid — anchored at');
     // Branch (b): null-percentile-above-floor → line DROPPED. Guard against a
-    // single-branch fallback silently passing by asserting "classical:" is
-    // absent from the per-TC list.
+    // single-branch fallback silently passing by asserting "classical" is
+    // absent from the per-TC list entirely.
     expect(body).not.toMatch(/classical:/);
+    expect(body).not.toContain('classical — anchored at');
   });
 
   // Per-flavor coverage of the new bullet-2 framing across the 5 aggregated +
@@ -358,12 +357,16 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
       renderChip(50, {
         flavor,
         metricLabel: label,
-        perTcBreakdown: [{ tc: 'blitz', value: 0.03, n_games: 200, percentile: 55.0 }],
+        perTcBreakdown: [
+          { tc: 'blitz', value: 0.03, n_games: 200, percentile: 55.0, anchor: 1580 },
+        ],
       });
       fireEvent.click(screen.getByTestId(TID));
       const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
       expect(body).toContain(`weighted average of ${label} percentiles`);
-      expect(body).toContain('blitz: +0.03 over 200 games');
+      // 260529-l1i: two-line row — anchor label line + stats line.
+      expect(body).toContain('blitz — anchored at ~1580 Lichess Elo');
+      expect(body).toContain('+0.03 over 200 games');
       expect(body).toContain('55 percentile');
     },
   );
@@ -423,8 +426,6 @@ describe('PercentileChip — NO flame icon (regression guard for commit-6766898c
   it('renders NO flame icon when popover is opened (any flavor, any percentile)', () => {
     const { container } = renderChip(95, {
       flavor: 'conversion',
-      anchorRating: 1700,
-      nLichessGames: 300,
     });
     fireEvent.click(screen.getByTestId(TID));
     expect(screen.queryByTestId(/flame/i)).toBeNull();
@@ -433,127 +434,87 @@ describe('PercentileChip — NO flame icon (regression guard for commit-6766898c
   });
 });
 
-// ── Bullet 4 composition branch tests (D-12 Reversal Amendment 2026-05-27) ──
+// ── 260529-l1i: bullet 4 removed; per-TC anchor rows added ──────────────────
 //
-// All 4 branches of the blended-anchor disclosure are exercised explicitly.
-// Branch-differentiating MUST-NOT-APPEAR assertions in C2 and C3 ensure a
-// single-branch fallback cannot silently pass.
+// The standalone bullet-4 platform-blend anchor paragraph was removed. The
+// rating-matching method now lives inline on each per-TC breakdown row of the
+// aggregated chip tooltip ("anchored at ~X Lichess Elo"). These tests assert
+// the removal and the new per-row anchor behavior.
 
-describe('PercentileChip — bullet 4 composition branches (D-12 Reversal Amendment)', () => {
-  // C1: Mixed user — BOTH platform substrings + all 5 numbers appear.
-  // Unique signature: "blending" compositional verb + both "chess.com games"
-  // and "lichess games" substrings in bullet 4.
-  it('C1 mixed-user: bullet 4 shows blended composition with both platforms and all 5 numbers', () => {
+describe('PercentileChip — per-TC anchor rows (260529-l1i)', () => {
+  // No platform-blend prose anywhere, for any chip input.
+  it('renders NO platform-blend prose (no "blending", "Anchored at", "converted") for any chip', () => {
+    // Aggregated chip with per-TC anchors.
     renderChip(50, {
       flavor: 'score-gap',
-      anchorRating: 2046,
-      nChesscomGames: 4000,
-      nLichessGames: 100,
-      chesscomMedianNative: 2200,
-      lichessMedianNative: 1900,
+      metricLabel: 'Endgame Score Gap',
+      perTcBreakdown: [{ tc: 'blitz', value: 0.03, n_games: 200, percentile: 55.0, anchor: 1580 }],
     });
     fireEvent.click(screen.getByTestId(TID));
-    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    // Both platforms must appear (branch-differentiating)
-    expect(body).toContain('chess.com games');
-    expect(body.toLowerCase()).toContain('lichess games');
-    // All 5 numbers must appear
-    expect(body).toContain('4000');
-    expect(body).toContain('100');
-    expect(body).toContain('2200');
-    expect(body).toContain('1900');
-    expect(body).toContain('2046');
-    // Compositional verb (mixed unique signature)
-    expect(body.toLowerCase()).toContain('blending');
-  });
+    const aggBody = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(aggBody).not.toContain('blending');
+    expect(aggBody).not.toContain('Anchored at');
+    expect(aggBody).not.toContain('converted');
 
-  // C2: Pure-lichess — "native rating" signal + NO chess.com clause + NO "converted".
-  // MUST-NOT-APPEAR guards: "chess.com" and "converted" must be absent from bullet 4.
-  it('C2 pure-lichess: bullet 4 shows lichess-only anchor with "native rating" and NO chess.com mention', () => {
-    renderChip(40, {
-      flavor: 'time-pressure-score-gap',
-      tc: 'blitz',
-      anchorRating: 1750,
-      nChesscomGames: 0,
-      nLichessGames: 500,
-      lichessMedianNative: 1750,
-    });
-    fireEvent.click(screen.getByTestId(TID));
-    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    // MUST APPEAR (branch-differentiating)
-    expect(body.toLowerCase()).toContain('lichess games');
-    expect(body).toContain('500');
-    expect(body).toContain('1750');
-    expect(body.toLowerCase()).toContain('native rating');
-    // MUST NOT APPEAR (branch-differentiation guard)
-    expect(body).not.toMatch(/chess\.com/i);
-    expect(body).not.toContain('converted');
-  });
+    cleanup();
 
-  // C3: Pure-chess.com — "converted" + snapshot date + NO lichess clause.
-  // MUST-NOT-APPEAR guards: "lichess games" must be absent from bullet 4.
-  it('C3 pure-chess.com: bullet 4 shows chess.com-only anchor with conversion + NO lichess mention', () => {
+    // Per-TC chip.
     renderChip(60, {
       flavor: 'clock-gap',
       tc: 'rapid',
       anchorRating: 1920,
-      nChesscomGames: 1500,
-      nLichessGames: 0,
-      chesscomMedianNative: 1830,
+      nGames: 150,
+      value: 0.04,
     });
     fireEvent.click(screen.getByTestId(TID));
-    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    // MUST APPEAR (branch-differentiating)
-    expect(body).toContain('chess.com games');
-    expect(body).toContain('1500');
-    expect(body).toContain('1830');
-    expect(body.toLowerCase()).toContain('converted');
-    // ChessGoals snapshot detail intentionally dropped from copy (f70592ef).
-    // MUST NOT APPEAR (branch-differentiation guard)
-    expect(body).not.toMatch(/lichess games/i);
+    const perTcBody = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(perTcBody).not.toContain('blending');
+    expect(perTcBody).not.toContain('Anchored at');
+    expect(perTcBody).not.toContain('converted');
   });
 
-  // C5: Props deprecation sanity guard — old prop names rejected at compile time.
-  // Uses @ts-expect-error blocks to assert that anchorSource and chesscomRawRating
-  // are no longer valid props on PercentileChip.
-  it('C5 deprecation guard: component renders correctly with new props (old props would be TS errors)', () => {
-    // This test ensures the new props work correctly as a runtime sanity check.
-    // The compile-time rejection of anchorSource/chesscomRawRating is asserted
-    // via @ts-expect-error below — if those errors disappear, TS will flag this
-    // test file as broken (the old props were accidentally re-added).
-    const { container } = renderChip(50, {
-      flavor: 'score-gap',
-      anchorRating: 1600,
-      nChesscomGames: 0,
-      nLichessGames: 300,
-      lichessMedianNative: 1600,
-    });
-    // @ts-expect-error — anchorSource is not a valid prop on the new PercentileChip
-    const _oldPropTest1 = { anchorSource: 'lichess' };
-    // @ts-expect-error — chesscomRawRating is not a valid prop on the new PercentileChip
-    const _oldPropTest2 = { chesscomRawRating: 1500 };
-    expect(container).toBeTruthy();
-    void _oldPropTest1;
-    void _oldPropTest2;
-  });
-
-  // C6: Suppression — when both counts == 0, bullet 4 defensive fallback produces
-  // empty string; neither platform's characteristic substrings appear in bullet 4.
-  it('C6 suppression: when nChesscomGames=0 and nLichessGames=0, bullet 4 is empty and shows no platform copy', () => {
+  // Above-floor entry with anchor → two-line row with the locked anchor label.
+  it('above-floor per-TC row renders "anchored at ~X Lichess Elo" + stats line + anchor data-testid', () => {
     renderChip(50, {
       flavor: 'score-gap',
-      anchorRating: 1600,
-      nChesscomGames: 0,
-      nLichessGames: 0,
+      metricLabel: 'Endgame Score Gap',
+      perTcBreakdown: [{ tc: 'blitz', value: 0.04, n_games: 410, percentile: 55.0, anchor: 1525 }],
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
-    // Branch differentiation: suppression branch produces neither mixed nor pure-platform copy
-    expect(body).not.toContain('blending');
-    expect(body).not.toContain('Anchored at');
-    // Neither platform's characteristic substring should appear in bullet 4 copy
-    expect(body).not.toMatch(/chess\.com games/i);
-    expect(body).not.toMatch(/lichess games/i);
+    expect(body).toContain('anchored at ~1525 Lichess Elo');
+    expect(body).toContain('over');
+    expect(body).toContain('percentile');
+    // The per-row anchor data-testid must exist for the above-floor entry.
+    expect(screen.getByTestId('percentile-chip-anchor-blitz')).toBeTruthy();
+  });
+
+  // Below-floor entry (value null) → single "insufficient games" line, no anchor.
+  it('below-floor per-TC row shows "insufficient games" and NO anchor line', () => {
+    renderChip(50, {
+      flavor: 'score-gap',
+      metricLabel: 'Endgame Score Gap',
+      perTcBreakdown: [{ tc: 'rapid', value: null, n_games: 8, percentile: null, anchor: 1620 }],
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain('rapid: insufficient games');
+    expect(screen.queryByTestId('percentile-chip-anchor-rapid')).toBeNull();
+  });
+
+  // Defensive: renderable entry with anchor === null → stats line renders,
+  // anchor label line absent.
+  it('renderable per-TC row with anchor=null renders the stats line and NO anchor line', () => {
+    renderChip(50, {
+      flavor: 'score-gap',
+      metricLabel: 'Endgame Score Gap',
+      perTcBreakdown: [{ tc: 'blitz', value: 0.02, n_games: 300, percentile: 48.0, anchor: null }],
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain('over 300 games');
+    expect(body).not.toContain('anchored at');
+    expect(screen.queryByTestId('percentile-chip-anchor-blitz')).toBeNull();
   });
 });
 

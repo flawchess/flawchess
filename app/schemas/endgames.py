@@ -86,6 +86,9 @@ class PerTcBreakdownOut(BaseModel):
     value: float | None
     n_games: int
     percentile: float | None
+    # 260529-l1i: per-TC rating anchor for the two-line tooltip row; None when
+    # no anchor for this TC.
+    anchor: int | None = None
 
 
 class ConversionRecoveryStats(BaseModel):

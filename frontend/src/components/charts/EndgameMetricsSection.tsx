@@ -22,7 +22,6 @@
 
 import type { ReactNode } from 'react';
 
-import type { RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import type {
   MaterialBucket,
   MaterialRow,
@@ -81,13 +80,9 @@ function buildZeroRow(bucket: MaterialBucket): MaterialRow {
 
 interface EndgameMetricsSectionProps {
   data: ScoreGapMaterialResponse;
-  /** Phase 94.4 Plan 07: per-TC rating anchors threaded into each card so the
-   *  page-level ΔES chips (Conv/Parity/Recovery) can disclose the dominant-TC
-   *  anchor in bullet 4. Optional — without anchors, all chips suppress. */
-  ratingAnchors?: RatingAnchorsByTc;
 }
 
-export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSectionProps) {
+export function EndgameMetricsSection({ data }: EndgameMetricsSectionProps) {
   const totalMaterialGames = data.material_rows.reduce((sum, r) => sum + r.games, 0);
 
   const rowByBucket: Partial<Record<MaterialBucket, MaterialRow>> = {};
@@ -118,7 +113,6 @@ export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSec
           scoreGapCiHigh={data.score_gap_conv_ci_high}
           scoreGapPercentile={data.score_gap_conv_percentile}
           scoreGapPerTc={data.score_gap_conv_per_tc}
-          ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['conversion']}
           titleTooltip={TITLE_TOOLTIPS['conversion']}
         />
@@ -136,7 +130,6 @@ export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSec
           scoreGapCiHigh={data.score_gap_parity_ci_high}
           scoreGapPercentile={data.score_gap_parity_percentile}
           scoreGapPerTc={data.score_gap_parity_per_tc}
-          ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['parity']}
           titleTooltip={TITLE_TOOLTIPS['parity']}
         />
@@ -160,7 +153,6 @@ export function EndgameMetricsSection({ data, ratingAnchors }: EndgameMetricsSec
           scoreGapCiHigh={data.score_gap_recov_ci_high}
           scoreGapPercentile={data.recovery_score_gap_percentile}
           scoreGapPerTc={data.recovery_score_gap_per_tc}
-          ratingAnchors={ratingAnchors}
           tileTestId={TILE_TESTIDS['recovery']}
           titleTooltip={TITLE_TOOLTIPS['recovery']}
         />
