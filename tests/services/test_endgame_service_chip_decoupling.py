@@ -385,7 +385,7 @@ async def test_chip_percentile_is_none_when_percentile_column_is_null(
 _SEED_ANCHOR_RATING: int = 1525  # planted anchor for the seeded TC
 
 
-def test_per_tc_breakdown_carries_anchor() -> None:
+async def test_per_tc_breakdown_carries_anchor() -> None:
     """260529-l1i: PerTcBreakdownOut.anchor is populated from the per-TC
     RatingAnchorRow.anchor_rating for the seeded TC.
 
