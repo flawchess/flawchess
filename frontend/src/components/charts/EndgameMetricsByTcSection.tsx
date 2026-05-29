@@ -28,6 +28,9 @@ interface EndgameMetricsByTcSectionProps {
 
 export function EndgameMetricsByTcSection({ data, ratingAnchors }: EndgameMetricsByTcSectionProps) {
   const anchors = ratingAnchors ?? {};
+  // Denominator for each card header's "Games: x%" share — sum across cards so
+  // the per-TC card percentages add up to 100%.
+  const grandTotal = data.cards.reduce((sum, card) => sum + card.total, 0);
   return (
     <section
       data-testid="endgame-metrics-tc-section"
@@ -46,7 +49,12 @@ export function EndgameMetricsByTcSection({ data, ratingAnchors }: EndgameMetric
       ) : (
         <div className="w-full mt-2 flex flex-col gap-4">
           {data.cards.map((card) => (
-            <EndgameMetricsByTcCard key={card.tc} card={card} ratingAnchor={anchors[card.tc]} />
+            <EndgameMetricsByTcCard
+              key={card.tc}
+              card={card}
+              ratingAnchor={anchors[card.tc]}
+              grandTotal={grandTotal}
+            />
           ))}
         </div>
       )}

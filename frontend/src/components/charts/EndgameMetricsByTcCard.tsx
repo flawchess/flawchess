@@ -30,7 +30,7 @@
 
 import { useMemo } from 'react';
 
-import { Cpu } from 'lucide-react';
+import { Cpu, Swords } from 'lucide-react';
 
 import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
@@ -88,6 +88,9 @@ interface MetricBlockProps {
   /** Cohort rating anchor for this TC, named in the percentile chip tooltip.
    *  When undefined the chip is suppressed (see file header). */
   anchorRating: number | undefined;
+  /** Sum of games across the three buckets in this card — denominator for the
+   *  block's "Games: x%" share, so the three blocks add up to 100%. */
+  gamesTotal: number;
 }
 
 function MetricBlock({
@@ -99,6 +102,7 @@ function MetricBlock({
   neutralMax,
   displayShift,
   anchorRating,
+  gamesTotal,
 }: MetricBlockProps) {
   const userR =
     bucket === 'conversion'
@@ -132,6 +136,8 @@ function MetricBlock({
       : undefined;
   const gapLevel = deriveLevel(block.score_gap_p_value ?? null, gapN);
   const testId = `metrics-tc-${tc}-${bucket}`;
+  // Block's share of this card's endgame games — the three blocks sum to 100%.
+  const gamesPct = gamesTotal > 0 ? Math.round((block.games / gamesTotal) * 100) : 0;
 
   return (
     <div className="flex-1 min-w-0" data-testid={testId}>
@@ -162,10 +168,11 @@ function MetricBlock({
               <span className="flex items-center gap-2 text-sm tabular-nums w-full">
                 <span className="text-muted-foreground">Win/Draw/Loss</span>
                 <span
-                  className="ml-auto text-muted-foreground"
+                  className="ml-auto inline-flex items-center gap-1 text-muted-foreground"
                   data-testid={`${testId}-games-count`}
                 >
-                  {block.games.toLocaleString()} games
+                  {`Games: ${gamesPct}% (${block.games.toLocaleString()})`}
+                  <Swords className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
               </span>
               <div className="min-w-0">
@@ -265,9 +272,17 @@ interface EndgameMetricsByTcCardProps {
    *  Threaded into each block's percentile chip tooltip. Undefined when this TC
    *  has no anchor — the chips then self-suppress. */
   ratingAnchor?: RatingAnchorOut;
+  /** Sum of `total` across all TC cards in the section — denominator for the
+   *  header's "Games: x%" share, so the cards add up to 100%. When absent the
+   *  header falls back to the count-only format. */
+  grandTotal?: number;
 }
 
-export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByTcCardProps) {
+export function EndgameMetricsByTcCard({
+  card,
+  ratingAnchor,
+  grandTotal,
+}: EndgameMetricsByTcCardProps) {
   // Narrow TC_METRIC_BANDS[card.tc] — noUncheckedIndexedAccess requires explicit
   // narrowing since Record keys may return undefined for unknown values. card.tc
   // is the four-member literal union so the lookup is always defined, but we
@@ -314,6 +329,16 @@ export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByT
 
   const anchorRating = ratingAnchor?.anchor_rating;
 
+  // Header "Games: x%" share — this TC's portion of all displayed TC cards.
+  // null when the section didn't pass a grand total (falls back to count-only).
+  const pctOfTotal =
+    grandTotal !== undefined && grandTotal > 0
+      ? Math.round((card.total / grandTotal) * 100)
+      : null;
+
+  // Per-card bucket total — denominator for each block's "Games: x%" share.
+  const cardGamesTotal = card.conversion.games + card.parity.games + card.recovery.games;
+
   // Divider between metric blocks: a vertical rule when the blocks sit
   // side-by-side (lg+), a horizontal rule when they stack (< lg). Mirrors the
   // EndgameOverallPerformanceSection two-column card. The flex parent's default
@@ -342,8 +367,14 @@ export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByT
           className="h-4 w-4"
         />
         <h3 className="text-base font-semibold">{TC_LABELS[card.tc]}</h3>
-        <span className="text-sm text-muted-foreground ml-auto">
-          {card.total.toLocaleString()} games
+        <span
+          className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums font-normal"
+          data-testid={`metrics-tc-card-${card.tc}-total`}
+        >
+          {pctOfTotal !== null
+            ? `Games: ${pctOfTotal}% (${card.total.toLocaleString()})`
+            : `Games: ${card.total.toLocaleString()}`}
+          <Swords className="h-3.5 w-3.5" aria-hidden="true" />
         </span>
       </div>
 
@@ -360,6 +391,7 @@ export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByT
           neutralMax={bands.convScoreGap[1]}
           displayShift={convShift}
           anchorRating={anchorRating}
+          gamesTotal={cardGamesTotal}
         />
         {divider}
         <MetricBlock
@@ -371,6 +403,7 @@ export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByT
           neutralMax={SCORE_GAP_PARITY_NEUTRAL_MAX}
           displayShift={parityShift}
           anchorRating={anchorRating}
+          gamesTotal={cardGamesTotal}
         />
         {divider}
         <MetricBlock
@@ -382,6 +415,7 @@ export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByT
           neutralMax={bands.recovScoreGap[1]}
           displayShift={recovShift}
           anchorRating={anchorRating}
+          gamesTotal={cardGamesTotal}
         />
       </div>
     </div>

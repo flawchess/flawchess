@@ -263,17 +263,41 @@ describe('EndgameMetricsByTcCard — header + games count', () => {
     expect(screen.getByTestId('metrics-tc-card-rapid-header')).not.toBeNull();
   });
 
-  it('shows the per-metric game count above each WDL bar', () => {
-    renderCard(buildCard('bullet'));
-    // buildBucket sets games=50 for every block.
+  it('shows per-metric game count as "Games: x% (n)" summing to 100% across blocks', () => {
+    const card: EndgameMetricsTcCard = {
+      ...buildCard('bullet'),
+      conversion: buildBucket({ games: 60 }),
+      parity: buildBucket({ games: 30 }),
+      recovery: buildBucket({ games: 10 }),
+    };
+    renderCard(card);
+    // Denominator = 60 + 30 + 10 = 100 → shares add up to 100%.
     expect(screen.getByTestId('metrics-tc-bullet-conversion-games-count').textContent).toContain(
-      '50 games',
+      'Games: 60% (60)',
     );
     expect(screen.getByTestId('metrics-tc-bullet-parity-games-count').textContent).toContain(
-      '50 games',
+      'Games: 30% (30)',
     );
     expect(screen.getByTestId('metrics-tc-bullet-recovery-games-count').textContent).toContain(
-      '50 games',
+      'Games: 10% (10)',
+    );
+  });
+
+  it('header shows the TC share of total games as "Games: x% (n)"', () => {
+    render(
+      <MemoryRouter>
+        <TooltipProvider>
+          <EndgameMetricsByTcCard
+            card={{ ...buildCard('bullet'), total: 100 }}
+            ratingAnchor={DEFAULT_ANCHOR}
+            grandTotal={400}
+          />
+        </TooltipProvider>
+      </MemoryRouter>,
+    );
+    // 100 / 400 = 25%.
+    expect(screen.getByTestId('metrics-tc-card-bullet-total').textContent).toContain(
+      'Games: 25% (100)',
     );
   });
 });
