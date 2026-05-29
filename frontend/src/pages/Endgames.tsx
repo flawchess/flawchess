@@ -555,7 +555,7 @@ export function EndgamesPage() {
                 />
               )}
               {scoreGapData && scoreGapData.timeline.length > 0 && (
-                <div className="charcoal-texture rounded-md p-4">
+                <div className="charcoal-texture rounded-md overflow-hidden">
                   <EndgameScoreOverTimeChart
                     timeline={scoreGapData.timeline}
                     window={scoreGapData.timeline_window}
@@ -568,7 +568,7 @@ export function EndgamesPage() {
                   plumbing (overviewData) as EndgameScoreOverTimeChart above. */}
               {eloTimelineData && (
                 <div
-                  className="charcoal-texture rounded-md p-4"
+                  className="charcoal-texture rounded-md overflow-hidden"
                   data-testid="endgame-elo-timeline-section"
                 >
                   <EndgameEloTimelineSection
@@ -609,7 +609,7 @@ export function EndgamesPage() {
                   per-TC cards so the user sees the trend story first, then
                   drills into per-TC breakdowns. Hides when no eligible points. */}
               {showClockDiffTimeline && clockDiffTimelineData && (
-                <div className="charcoal-texture rounded-md p-4">
+                <div className="charcoal-texture rounded-md overflow-hidden">
                   <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
                 </div>
               )}

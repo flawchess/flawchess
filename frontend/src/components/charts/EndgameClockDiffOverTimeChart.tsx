@@ -139,34 +139,36 @@ export function EndgameClockDiffOverTimeChart({
       role="img"
       aria-label="Average clock gap over time"
     >
-      <div className="mb-3">
-        <h3 className="text-base font-semibold">
-          <span className="inline-flex items-center gap-1">
-            Clock Gap at Endgame Entry
-            <InfoPopover
-              ariaLabel="Clock gap at endgame entry info"
-              testId="clock-diff-over-time-info"
-              side="top"
-            >
-              <p>
-                <strong>Clock Gap at Endgame Entry:</strong> whether you
-                tend to enter endgames with more or less time on your clock
-                than your opponent, tracked over time. Positive means you
-                arrived with more time left.
-              </p>
-              <p className="mt-1">
-                Dots are colored by zone: green when your lead exceeds
-                +{NEUTRAL_PCT_THRESHOLD}%, red when you're down more than
-                −{NEUTRAL_PCT_THRESHOLD}%, blue in between. Bars at the bottom
-                show how many games you played.
-              </p>
-            </InfoPopover>
-          </span>
-        </h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Are you banking time into the endgame or burning it down?
-        </p>
-      </div>
+      {/* Card header band: recessed background + bottom separator, full-bleed to
+          the card edges (matches EndgameMetricsByTcCard / EndgameTimePressureCard). */}
+      <h3
+        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+        data-testid="clock-diff-over-time-header"
+      >
+        Clock Gap at Endgame Entry
+        <InfoPopover
+          ariaLabel="Clock gap at endgame entry info"
+          testId="clock-diff-over-time-info"
+          side="top"
+        >
+          <p>
+            <strong>Clock Gap at Endgame Entry:</strong> whether you
+            tend to enter endgames with more or less time on your clock
+            than your opponent, tracked over time. Positive means you
+            arrived with more time left.
+          </p>
+          <p className="mt-1">
+            Dots are colored by zone: green when your lead exceeds
+            +{NEUTRAL_PCT_THRESHOLD}%, red when you're down more than
+            −{NEUTRAL_PCT_THRESHOLD}%, blue in between. Bars at the bottom
+            show how many games you played.
+          </p>
+        </InfoPopover>
+      </h3>
+      <div className="p-4">
+      <p className="text-sm text-muted-foreground mb-3">
+        Are you banking time into the endgame or burning it down?
+      </p>
       <div className={isMobile ? '' : 'flex items-stretch'}>
         {/* Vertical Y-axis label on desktop only. Plain HTML rotated via CSS —
             Recharts' SVG `label` with position='insideLeft' + angle produces
@@ -319,6 +321,7 @@ export function EndgameClockDiffOverTimeChart({
       <p className="text-sm text-muted-foreground text-center mt-1">
         Week (rolling average of the last 100 games)
       </p>
+      </div>
     </div>
   );
 }

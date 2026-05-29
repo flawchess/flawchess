@@ -157,8 +157,13 @@ export function EndgameTypeCard({
   const sharePctFormatted = Math.round(sharePct);
   const gamesCountFormatted = category.total.toLocaleString();
 
+  // Card header band: recessed background + bottom separator, full-bleed to the
+  // card edges (matches EndgameMetricsByTcCard / EndgameTimePressureCard).
   const titleRow = (
-    <h3 className="text-base font-semibold mb-2 inline-flex items-center gap-1">
+    <h3
+      className="flex items-center gap-1 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+      data-testid={`${tileTestId}-header`}
+    >
       <span>{category.label}</span>
       <InfoPopover
         ariaLabel={`${category.label} info`}
@@ -187,13 +192,13 @@ export function EndgameTypeCard({
   if (!hasGames) {
     return (
       <div
-        className="charcoal-texture rounded-md p-4"
+        className="charcoal-texture rounded-md overflow-hidden"
         data-testid={tileTestId}
         role="group"
         aria-label={`${category.label} endgame breakdown`}
       >
         {titleRow}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 p-4">
           <div
             className="grid grid-cols-2 gap-2 opacity-50"
             data-testid={`${tileTestId}-gauges`}
@@ -269,13 +274,13 @@ export function EndgameTypeCard({
 
   return (
     <div
-      className="charcoal-texture rounded-md p-4"
+      className="charcoal-texture rounded-md overflow-hidden"
       data-testid={tileTestId}
       role="group"
       aria-label={`${category.label} endgame breakdown`}
     >
       {titleRow}
-      <div className="flex flex-col gap-4" style={bodyStyle}>
+      <div className="flex flex-col gap-4 p-4" style={bodyStyle}>
         {/* Gauge row (Conv | Recov side-by-side). Gauges are always rendered
             with full opacity here; the empty-class shell above handles
             total === 0. */}
