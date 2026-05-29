@@ -31,6 +31,9 @@ from app.services.chesscom_to_lichess import (
     CHESSCOM_TO_LICHESS_SOURCE,
     CHESSCOM_TO_LICHESS_TABLE_SNAPSHOT,
     LICHESS_BLITZ_INTRA_TC,
+    ChessComSourceTC,
+    LichessTC,
+    composed_chesscom_to_lichess_grid,
     convert_chesscom_to_lichess,
     lookup_fide_from_chesscom_blitz,
     lookup_fide_from_lichess_blitz,
@@ -231,3 +234,152 @@ def test_lookup_fide_from_chesscom_blitz_returns_none_in_null_region(
     rating: int,
 ) -> None:
     assert lookup_fide_from_chesscom_blitz(rating) is None
+
+
+# -----------------------------------------------------------------------------
+# composed_chesscom_to_lichess_grid equivalence tests (quick-260529-js1).
+#
+# The SQL anchor pipeline (`_chesscom_conversion_values_sql`) used to key its
+# VALUES lookup on chess.com BLITZ anchors and match every game's native rating
+# against them regardless of the game's actual TC. For rapid/bullet that meant
+# matching a rapid/bullet native rating against blitz-scale anchors and skipping
+# the intra-TC inversion the canonical converter applies, inflating rapid/
+# classical anchors and deflating bullet. The fix composes the grid by calling
+# `convert_chesscom_to_lichess` per native chess.com rating for the bucket's
+# source TC, so the SQL nearest-anchor join becomes correct.
+#
+# These tests assert the grid (selected via the SQL nearest-anchor rule:
+# `ORDER BY ABS(anchor - rating) LIMIT 1`) reproduces the converter within a
+# named tolerance for all 4 FlawChess buckets.
+# -----------------------------------------------------------------------------
+
+# FlawChess bucket -> chess.com source TC mapping (classical->rapid: chess.com
+# has no classical category; chess.com games bucketed `classical` carry rapid
+# ratings, with Daily games already dropped upstream).
+_BUCKET_TO_SOURCE_TC: dict[LichessTC, ChessComSourceTC] = {
+    "bullet": "bullet",
+    "blitz": "blitz",
+    "rapid": "rapid",
+    "classical": "rapid",
+}
+
+# Tolerance for the nearest-anchor reconstruction error vs the converter.
+# The converter is piecewise-linear; the steepest path is the bullet/rapid
+# inversion in the high range (classical bucket, source_tc='rapid'), where
+# Table 1's rapid column is flat so a native-rapid grid step inverts to a larger
+# chess.com Blitz step that Table 2 then amplifies. With the module's 15-pt
+# native grid step (_COMPOSED_GRID_STEP) the measured worst-case nearest-anchor
+# error across all 4 buckets is 16 pts; a 20-pt tolerance comfortably exceeds
+# that (and exceeds half the max inter-grid converter delta). A coarser 25-pt
+# grid was measured to leave a 26-pt worst-case error, which is why the module
+# uses 15.
+_GRID_NEAREST_TOLERANCE: int = 20
+
+# Native-rating probe step for the equivalence sweep. 1 = exhaustive over the
+# native domain (a few thousand cheap pure-Python converter calls), so the
+# worst-case midpoint between grid anchors is always exercised.
+_PROBE_STEP: int = 1
+
+
+def _nearest_grid_equiv(grid: list[tuple[int, int]], rating: int) -> int:
+    """Mimic the SQL `ORDER BY ABS(anchor - rating) LIMIT 1` nearest-anchor pick."""
+    best_anchor, best_equiv = grid[0]
+    best_dist = abs(best_anchor - rating)
+    for anchor, equiv in grid[1:]:
+        dist = abs(anchor - rating)
+        if dist < best_dist:
+            best_anchor, best_equiv, best_dist = anchor, equiv, dist
+    return best_equiv
+
+
+@pytest.mark.parametrize("bucket", ["bullet", "blitz", "rapid", "classical"])
+def test_composed_grid_matches_converter_for_all_buckets(bucket: LichessTC) -> None:
+    """Nearest-anchor grid selection reproduces convert_chesscom_to_lichess.
+
+    For every native probe rating in the source-TC domain, the SQL-equivalent
+    nearest-anchor pick on the composed grid must land within
+    `_GRID_NEAREST_TOLERANCE` of the canonical converter output. This is the
+    core correctness guarantee: the SQL path is result-equivalent to the
+    Python converter for all 4 buckets.
+    """
+    source_tc = _BUCKET_TO_SOURCE_TC[bucket]
+    grid = composed_chesscom_to_lichess_grid(source_tc, bucket)
+    assert grid, f"grid empty for source_tc={source_tc!r}, target_tc={bucket!r}"
+    # Probe across the grid's native domain.
+    native_min = grid[0][0]
+    native_max = grid[-1][0]
+    checked = 0
+    for probe in range(native_min, native_max + 1, _PROBE_STEP):
+        expected = convert_chesscom_to_lichess(probe, source_tc, bucket)
+        if expected is None:
+            continue
+        actual = _nearest_grid_equiv(grid, probe)
+        assert abs(actual - expected) <= _GRID_NEAREST_TOLERANCE, (
+            f"bucket={bucket} source_tc={source_tc} probe={probe}: "
+            f"nearest-grid={actual} vs converter={expected} "
+            f"exceeds tolerance {_GRID_NEAREST_TOLERANCE}"
+        )
+        checked += 1
+    assert checked > 0, f"no valid probes for bucket={bucket}"
+
+
+def test_composed_grid_blitz_values_equal_converter_at_grid_points() -> None:
+    """Blitz grid values equal the converter exactly at each native grid point.
+
+    Blitz is the table's native source TC: no inversion step is applied, so the
+    grid value must be byte-equal to convert_chesscom_to_lichess at every native
+    grid rating (this is the property that preserves correct blitz behavior).
+    """
+    grid = composed_chesscom_to_lichess_grid("blitz", "blitz")
+    for native, equiv in grid:
+        assert equiv == convert_chesscom_to_lichess(native, "blitz", "blitz"), (
+            f"blitz grid point {native} -> {equiv} disagrees with converter"
+        )
+
+
+def test_composed_grid_omits_none_converter_rows() -> None:
+    """Rows whose converter output is None are omitted from the grid.
+
+    chess.com Blitz 2900/3000 have no Lichess Classical mapping (Table 2 None),
+    so the classical grid (source_tc='rapid') must not contain any row whose
+    converter output is None — every emitted equiv is a real int.
+    """
+    grid = composed_chesscom_to_lichess_grid("rapid", "classical")
+    for native, equiv in grid:
+        assert convert_chesscom_to_lichess(native, "rapid", "classical") is not None, (
+            f"grid row {native} -> {equiv} maps to a None converter output"
+        )
+
+
+def test_composed_grid_fixes_rapid_inflation_bug() -> None:
+    """Bug-repro: chess.com rapid ~1461 now maps to ~1795 lichess-rapid, not ~1915.
+
+    OLD as-built behavior keyed the SQL lookup on chess.com BLITZ anchors and
+    matched a native chess.com RAPID rating (1461) against the blitz scale: the
+    nearest blitz anchor to 1461 is 1450, whose Lichess-rapid equiv is 1915 — an
+    inflated, wrong-scale value. The composed grid is keyed on native chess.com
+    RAPID ratings, so 1461 inverts (Table 1 rapid column) to a chess.com Blitz
+    ~1300 and chains to Lichess-rapid ~1825, much closer to the converter's true
+    value. The nearest-grid pick must agree with the converter (~1795), and must
+    NOT be near the old inflated 1915.
+    """
+    probe = 1461
+    converter_value = convert_chesscom_to_lichess(probe, "rapid", "rapid")
+    assert converter_value is not None
+    # Converter true value is well below the old blitz-keyed 1915.
+    assert converter_value < 1900, (
+        f"expected corrected rapid equiv well below old 1915, got {converter_value}"
+    )
+    grid = composed_chesscom_to_lichess_grid("rapid", "rapid")
+    nearest = _nearest_grid_equiv(grid, probe)
+    assert abs(nearest - converter_value) <= _GRID_NEAREST_TOLERANCE, (
+        f"nearest-grid {nearest} disagrees with converter {converter_value}"
+    )
+    # The old blitz-keyed behavior would have returned ~1915 (Lichess-rapid at
+    # chess.com Blitz anchor 1450). Assert the corrected path is clearly away
+    # from that inflated value.
+    old_inflated = CHESSCOM_BLITZ_TO_LICHESS[1450]["rapid"]
+    assert old_inflated == 1915  # pin the old-behavior reference value
+    assert abs(nearest - old_inflated) > _GRID_NEAREST_TOLERANCE, (
+        f"corrected nearest-grid {nearest} is still near old inflated {old_inflated}"
+    )

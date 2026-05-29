@@ -232,6 +232,54 @@ _LICHESS_BLITZ_KEYS: Final[list[int]] = sorted(LICHESS_BLITZ_INTRA_TC.keys())
 
 
 # ---------------------------------------------------------------------------
+# Native chess.com rating bounds per source TC — derived from the table
+# constants (not hardcoded magic numbers), so a future snapshot refit keeps the
+# composed-grid domain in sync automatically (quick-260529-js1).
+#
+#   * blitz  → the CHESSCOM_BLITZ_TO_LICHESS key range (native chess.com Blitz
+#              is the table's own key, [500, 3000]).
+#   * bullet → the min/max of the CHESSCOM_INTRA_TC `bullet` column (the native
+#              chess.com Bullet ratings the Table-1 inversion can map).
+#   * rapid  → the min/max of the CHESSCOM_INTRA_TC `rapid` column.
+# ---------------------------------------------------------------------------
+
+
+def _intra_tc_column_bounds(column: ChessComIntraTC) -> tuple[int, int]:
+    """Return (min, max) of a fully-populated CHESSCOM_INTRA_TC column.
+
+    Bullet/Rapid columns are non-None across all rows by the snapshot invariant
+    (asserted in `_invert_intra_tc`), so the bounds are well-defined integers.
+    """
+    values = [row[column] for row in CHESSCOM_INTRA_TC.values()]
+    populated = [v for v in values if v is not None]
+    return min(populated), max(populated)
+
+
+_CHESSCOM_BULLET_MIN_NATIVE, _CHESSCOM_BULLET_MAX_NATIVE = _intra_tc_column_bounds("bullet")
+_CHESSCOM_RAPID_MIN_NATIVE, _CHESSCOM_RAPID_MAX_NATIVE = _intra_tc_column_bounds("rapid")
+
+# Native-rating domain per source TC for the composed-grid builder.
+_COMPOSED_NATIVE_BOUNDS: Final[Mapping[ChessComSourceTC, tuple[int, int]]] = {
+    "blitz": (_CHESSCOM_BLITZ_MIN_ANCHOR, _CHESSCOM_BLITZ_MAX_ANCHOR),
+    "bullet": (_CHESSCOM_BULLET_MIN_NATIVE, _CHESSCOM_BULLET_MAX_NATIVE),
+    "rapid": (_CHESSCOM_RAPID_MIN_NATIVE, _CHESSCOM_RAPID_MAX_NATIVE),
+}
+
+# Composed-grid native-rating step. WHY 15: convert_chesscom_to_lichess is
+# piecewise-linear, so a fine native grid keeps the SQL nearest-anchor
+# reconstruction error vs the converter under the tolerance asserted in
+# tests/services/test_chesscom_to_lichess.py (_GRID_NEAREST_TOLERANCE = 20).
+# The steepest path is the bullet/rapid inversion in the high range
+# (classical bucket, source_tc='rapid'): Table 1's rapid column is flat there
+# (chess.com Blitz 2200->2300 moves rapid only 2135->2190, slope ~0.55), so a
+# native-rapid step inverts to a ~1.8x larger Blitz step, then Table 2 amplifies
+# again. Empirically a 25-pt step left a 26-pt worst-case error (over tolerance);
+# a 15-pt step caps the measured worst-case error at 16 pts, comfortably inside
+# the 20-pt tolerance (which itself exceeds half the max inter-grid delta).
+_COMPOSED_GRID_STEP: Final[int] = 15
+
+
+# ---------------------------------------------------------------------------
 # Generic interpolation helper.
 # ---------------------------------------------------------------------------
 
@@ -309,6 +357,66 @@ def convert_chesscom_to_lichess(
     if blitz_equiv is None:
         return None
     return _interp_blitz_to_lichess(blitz_equiv, target_tc)
+
+
+def composed_chesscom_to_lichess_grid(
+    source_tc: ChessComSourceTC,
+    target_tc: LichessTC,
+) -> list[tuple[int, int]]:
+    """Composed (native chess.com rating → Lichess equiv) lookup grid.
+
+    Builds a list of ``(native_chesscom_rating, lichess_equiv)`` rows for the
+    given ``source_tc``, where each ``lichess_equiv`` is produced by the
+    canonical :func:`convert_chesscom_to_lichess` — this is the single source of
+    truth (no SQL-side reimplementation of inversion or interpolation).
+
+    The grid is keyed on NATIVE chess.com ratings for ``source_tc``:
+
+      * ``source_tc='blitz'`` → each value equals
+        ``convert_chesscom_to_lichess(rating, 'blitz', target_tc)`` exactly (no
+        inversion step; blitz is the table's native source TC). This preserves
+        the existing correct blitz behavior of the SQL anchor path.
+      * ``source_tc in ('bullet', 'rapid')`` → each value is the two-step
+        converter output (invert the intra-TC column to recover a chess.com
+        Blitz equivalent, then Table-2 to ``target_tc``).
+      * ``source_tc='daily'`` → returns an empty grid (no published mapping;
+        Daily games are dropped upstream by the anchor pipeline).
+
+    The native-rating domain is derived from the lookup-table constants
+    (``_COMPOSED_NATIVE_BOUNDS``) so a future snapshot refit keeps the grid in
+    sync. Ratings are stepped by ``_COMPOSED_GRID_STEP`` (25) from the per-source
+    min to max inclusive, always including the exact max bound. The 15-point step
+    keeps the SQL nearest-anchor reconstruction error vs the converter well under
+    the test tolerance (see the comment on ``_COMPOSED_GRID_STEP`` and the
+    equivalence test in tests/services/test_chesscom_to_lichess.py).
+
+    Rows whose converter output is None (rating outside the published domain, or
+    a None target column such as Lichess Classical above chess.com Blitz 2800)
+    are omitted.
+
+    Why this exists (quick-260529-js1 bug fix): the SQL anchor pipeline
+    (``_chesscom_conversion_values_sql``) previously keyed its VALUES lookup on
+    chess.com Blitz anchors and matched every game's native rating against them
+    regardless of the game's actual TC, skipping the intra-TC inversion the
+    converter applies. That inflated rapid/classical anchors and deflated bullet.
+    Keying the grid on native ratings per source TC makes the nearest-anchor
+    LATERAL join correct.
+    """
+    bounds = _COMPOSED_NATIVE_BOUNDS.get(source_tc)
+    if bounds is None:
+        # source_tc='daily' — no published mapping.
+        return []
+    native_min, native_max = bounds
+    # Step from min to max inclusive, always appending the exact max bound.
+    natives = list(range(native_min, native_max + 1, _COMPOSED_GRID_STEP))
+    if natives[-1] != native_max:
+        natives.append(native_max)
+    grid: list[tuple[int, int]] = []
+    for native in natives:
+        equiv = convert_chesscom_to_lichess(native, source_tc, target_tc)
+        if equiv is not None:
+            grid.append((native, equiv))
+    return grid
 
 
 def _interp_blitz_to_lichess(blitz_rating: int, target_tc: LichessTC) -> int | None:

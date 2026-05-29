@@ -535,7 +535,10 @@ _LI_RATING_MIXED: int = 1900  # lichess games seeded at this rating
 _N_MIXED_GAMES: int = 50  # per platform; well above 30-floor
 _N_PURE_GAMES: int = 100
 _N_PURE_CHESSCOM: int = 100
-# Use 1800 — an exact anchor in CHESSCOM_BLITZ_TO_LICHESS for all 4 TCs.
+# Native chess.com BULLET rating for the pure-chess.com bullet anchor test.
+# Post quick-260529-js1 the conversion is keyed on native chess.com ratings for
+# the bucket's source TC, so this is treated as a native bullet rating (inverted
+# via Table 1's bullet column, then chained to lichess-equivalent).
 _USER_RATING_BULLET: int = 1800
 _BELOW_FLOOR_GAMES: int = 5  # pooled 5+5=10 < 30
 
@@ -643,9 +646,13 @@ async def test_b3_pure_chesscom_user_anchor(test_engine) -> None:  # noqa: ANN00
     """B3: Pure-chess.com user → chesscom_median_native populated, lichess_median_native None.
 
     anchor_rating is the lichess-equivalent of the chess.com median via the
-    nearest-anchor lookup in CHESSCOM_BLITZ_TO_LICHESS.
+    nearest-anchor lookup. Post quick-260529-js1 the lookup is keyed on NATIVE
+    chess.com ratings for the bucket's source TC (bullet here), so the expected
+    value is the nearest-anchor pick on the composed bullet grid (which the SQL
+    LATERAL join mirrors via ORDER BY ABS(anchor - rating) LIMIT 1) — NOT the old
+    blitz-keyed CHESSCOM_BLITZ_TO_LICHESS[1800]['bullet'].
     """
-    from app.services.chesscom_to_lichess import CHESSCOM_BLITZ_TO_LICHESS
+    from app.services.chesscom_to_lichess import composed_chesscom_to_lichess_grid
 
     test_session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     user_id = await _create_user(test_session_maker)
@@ -674,14 +681,19 @@ async def test_b3_pure_chesscom_user_anchor(test_engine) -> None:  # noqa: ANN00
             "n_lichess_games=0 → lichess_median_native must be NULL"
         )
 
-        # anchor_rating is the lichess-equivalent. _USER_RATING_BULLET=1800 is an
-        # exact anchor in CHESSCOM_BLITZ_TO_LICHESS. Read dynamically — self-updating
-        # if snapshot changes.
-        expected_bullet_equiv = CHESSCOM_BLITZ_TO_LICHESS[_USER_RATING_BULLET]["bullet"]
-        assert expected_bullet_equiv is not None
+        # anchor_rating is the lichess-equivalent of the native chess.com bullet
+        # median (1800), selected via the SQL nearest-anchor rule on the composed
+        # bullet grid. Read the expected value dynamically (self-updating if the
+        # snapshot or grid step changes).
+        bullet_grid = composed_chesscom_to_lichess_grid("bullet", "bullet")
+        assert bullet_grid, "composed bullet grid must be non-empty"
+        nearest_anchor, expected_bullet_equiv = min(
+            bullet_grid, key=lambda row: abs(row[0] - _USER_RATING_BULLET)
+        )
         assert anchor.anchor_rating == expected_bullet_equiv, (
-            f"anchor_rating {anchor.anchor_rating} must equal the converted "
-            f"CHESSCOM_BLITZ_TO_LICHESS[{_USER_RATING_BULLET}]['bullet']={expected_bullet_equiv}"
+            f"anchor_rating {anchor.anchor_rating} must equal the native-keyed "
+            f"nearest-anchor lichess-equiv ({nearest_anchor} -> {expected_bullet_equiv}) "
+            f"for native chess.com bullet {_USER_RATING_BULLET}"
         )
     finally:
         await _delete_user(test_session_maker, user_id)

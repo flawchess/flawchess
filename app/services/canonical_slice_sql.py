@@ -86,13 +86,31 @@ into SQL has no injection vector. Never f-string ``user_id`` here.
 from __future__ import annotations
 
 from datetime import date
-from typing import Final, Literal, TypeAlias
+from typing import Final, Literal, Mapping, TypeAlias
 
-from app.services.chesscom_to_lichess import CHESSCOM_BLITZ_TO_LICHESS
+from app.services.chesscom_to_lichess import (
+    ChessComSourceTC,
+    composed_chesscom_to_lichess_grid,
+)
 
 # Per-TC bucket identifier — used by Phase 94.3 per-TC builders so the leading
 # positional argument is type-checked (CLAUDE.md type-safety rule per D-8).
 TimeControlBucket: TypeAlias = Literal["bullet", "blitz", "rapid", "classical"]
+
+# FlawChess TimeControlBucket -> chess.com source TC for the anchor-conversion
+# lookup (quick-260529-js1). Each bucket's chess.com games carry a NATIVE rating
+# on that source TC's scale; the composed grid is keyed on native ratings so the
+# nearest-anchor SQL join converts correctly. classical->rapid: chess.com has no
+# classical category, and chess.com games bucketed `classical` carry rapid
+# ratings (chess.com Daily games are dropped upstream by the
+# `time_control_str LIKE '1/%'` filter, so the classical bucket only ever sees
+# rapid-rated chess.com games here).
+_BUCKET_TO_CHESSCOM_SOURCE_TC: Final[Mapping[TimeControlBucket, ChessComSourceTC]] = {
+    "bullet": "bullet",
+    "blitz": "blitz",
+    "rapid": "rapid",
+    "classical": "rapid",
+}
 
 # ---------------------------------------------------------------------------
 # Module-level constants (CLAUDE.md no-magic-numbers).
@@ -821,11 +839,13 @@ per_user_values AS (
 def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
     """Emit a VALUES body for the (chesscom_anchor, lichess_equiv) lookup table.
 
-    Reads ``CHESSCOM_BLITZ_TO_LICHESS`` from ``app.services.chesscom_to_lichess``
-    and emits all rows whose ``target_tc`` column is not None. Returns the VALUES
-    expression body suitable for use inside a named CTE, e.g.:
+    The table is keyed on NATIVE chess.com ratings for the bucket's source TC
+    (``_BUCKET_TO_CHESSCOM_SOURCE_TC``), and each ``lichess_equiv`` is produced
+    by the canonical :func:`convert_chesscom_to_lichess` via
+    :func:`composed_chesscom_to_lichess_grid` (single source of truth). Returns
+    the VALUES expression body suitable for use inside a named CTE, e.g.:
 
-        VALUES (600, 632), (650, 681), ...
+        VALUES (735, 1205), (750, 1224), ...
 
     The returned string is intended for use inside a column-aliased CTE body:
 
@@ -836,21 +856,30 @@ def _chesscom_conversion_values_sql(target_tc: TimeControlBucket) -> str:
     This is the standard PostgreSQL CTE VALUES pattern — the column names are
     declared in the CTE name clause, not via an alias on the VALUES expression.
 
-    Security: the rows are emitted from a ``Final`` Python-controlled snapshot
-    constant (``CHESSCOM_BLITZ_TO_LICHESS``) — all values are Python ``int``
-    literals with no user-input injection surface (T-94.4-10-02).
+    Bug fix (quick-260529-js1): the previous implementation keyed the table on
+    chess.com BLITZ anchors and read ``CHESSCOM_BLITZ_TO_LICHESS`` directly. The
+    nearest-anchor LATERAL join then matched every chess.com game's native rating
+    against blitz-scale anchors regardless of the game's actual TC, skipping the
+    intra-TC inversion the canonical converter applies (inflated rapid/classical
+    anchors, deflated bullet). Keying the grid on native chess.com ratings for
+    the bucket's source TC (bullet->bullet, blitz->blitz, rapid->rapid,
+    classical->rapid) makes the join correct.
+
+    Security: the rows are generated from a Python-controlled snapshot via the
+    converter — all values are Python ``int`` literals with no user-input
+    injection surface (T-94.4-10-02).
 
     Raises:
-        ValueError: if no rows have a non-None lichess equivalent for
-            ``target_tc`` (defensive — shouldn't happen for the 4 standard TCs).
+        ValueError: if the composed grid is empty for ``target_tc`` (defensive —
+            shouldn't happen for the 4 standard TCs).
     """
-    rows: list[tuple[int, int]] = [
-        (anchor, equiv)
-        for anchor, tc_map in CHESSCOM_BLITZ_TO_LICHESS.items()
-        if (equiv := tc_map.get(target_tc)) is not None  # type: ignore[assignment]
-    ]
+    source_tc = _BUCKET_TO_CHESSCOM_SOURCE_TC[target_tc]
+    rows = composed_chesscom_to_lichess_grid(source_tc, target_tc)
     if not rows:
-        raise ValueError(f"CHESSCOM_BLITZ_TO_LICHESS has no entries for target_tc={target_tc!r}")
+        raise ValueError(
+            f"composed_chesscom_to_lichess_grid empty for source_tc={source_tc!r}, "
+            f"target_tc={target_tc!r}"
+        )
     return "VALUES " + ", ".join(f"({anchor}, {equiv})" for anchor, equiv in rows)
 
 
@@ -898,13 +927,18 @@ def per_user_cte_median_anchor(
     n_lichess_games INT, chesscom_median_native INT, lichess_median_native INT)``.
 
     Per-game weighted blended anchor. chess.com (non-Daily) games are converted
-    via the ``chesscom_conversion_lookup`` VALUES CTE (generated from
-    ``CHESSCOM_BLITZ_TO_LICHESS`` via ``_chesscom_conversion_values_sql``). Each
-    chess.com game is matched to the nearest anchor row via
+    via the ``chesscom_conversion_lookup`` VALUES CTE, which is keyed on NATIVE
+    chess.com ratings for this bucket's source TC (bullet->bullet, blitz->blitz,
+    rapid->rapid, classical->rapid) and composed via the canonical
+    ``convert_chesscom_to_lichess`` (``_chesscom_conversion_values_sql`` →
+    ``composed_chesscom_to_lichess_grid``). Each chess.com game is matched to the
+    nearest anchor row via
     ``ORDER BY ABS(rating_at_game_time - chesscom_anchor) LIMIT 1`` and the
-    ``lichess_equiv`` is used as the blended rating. Lichess games pass through
-    their native rating unchanged. The per-user median of the combined
-    (converted + native) pool is the blended ``anchor_rating``.
+    ``lichess_equiv`` is used as the blended rating. The native-rating keying
+    means the nearest-anchor match applies the correct intra-TC inversion
+    (quick-260529-js1 fix). Lichess games pass through their native rating
+    unchanged. The per-user median of the combined (converted + native) pool is
+    the blended ``anchor_rating``.
 
     ``blend=True`` with ``platform!=None`` is mutually exclusive and raises
     ``ValueError`` — blended mode pools both platforms inherently; a platform
@@ -1040,7 +1074,12 @@ chesscom_conversion_lookup(chesscom_anchor, lichess_equiv) AS (
   {conv_values}
 ),
 per_game_blended_rating AS (
-  -- chess.com non-Daily: convert via nearest-anchor lookup
+  -- chess.com non-Daily: convert via nearest-anchor lookup. The lookup is keyed
+  -- on NATIVE chess.com ratings for this bucket's source TC (bullet->bullet,
+  -- blitz->blitz, rapid->rapid, classical->rapid) and composed via the canonical
+  -- convert_chesscom_to_lichess, so the nearest-anchor match applies the correct
+  -- intra-TC inversion (quick-260529-js1 fix; was keyed on chess.com Blitz
+  -- anchors, which skipped the inversion and inflated rapid/classical anchors).
   SELECT rc.user_id, lookup.lichess_equiv AS blended_rating, 'chesscom' AS platform_tag,
          {elo_expr} AS native_rating
   FROM recent_capped_no_daily rc
