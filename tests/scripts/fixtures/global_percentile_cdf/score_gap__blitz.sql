@@ -29,8 +29,11 @@ recent_capped AS (
   WHERE g.rn <= 3000
 ),
 endgame_game_ids AS (
+  -- Scoped to recent_capped (result-equivalent): only recent_capped games survive the
+  -- downstream scored LEFT JOIN anyway. HAVING count(*) >= 6 counts rows within each
+  -- retained game, so membership filtering does not alter the count or retained set.
   SELECT game_id FROM game_positions
-  WHERE endgame_class IS NOT NULL
+  WHERE endgame_class IS NOT NULL AND game_id IN (SELECT id FROM recent_capped)
   GROUP BY game_id HAVING count(*) >= 6
 ),
 scored AS (

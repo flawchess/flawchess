@@ -341,7 +341,7 @@ describe('Endgames page — Phase 85 Plan 05 single composite section', () => {
     expect(screen.getAllByText(/Endgame Score:/).length).toBeGreaterThan(0);
   });
 
-  it('places the 2 accordion paragraphs AFTER Recovery and BEFORE the rating-changes caveat (D-14)', () => {
+  it('places the 2 accordion paragraphs AFTER Recovery (D-14)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
     openConceptsAccordion(container);
@@ -356,13 +356,12 @@ describe('Endgames page — Phase 85 Plan 05 single composite section', () => {
     const recoveryIdx = text.findIndex((t) => /Recovery:/.test(t));
     const entryEvalIdx = text.findIndex((t) => /Endgame Entry Eval:/.test(t));
     const endgameScoreIdx = text.findIndex((t) => /Endgame Score:/.test(t));
-    const ratingChangesIdx = text.findIndex((t) =>
-      /usually reflect your performance against opponents at your rating/.test(t),
-    );
     expect(recoveryIdx).toBeGreaterThanOrEqual(0);
     expect(entryEvalIdx).toBeGreaterThan(recoveryIdx);
     expect(endgameScoreIdx).toBeGreaterThan(entryEvalIdx);
-    expect(ratingChangesIdx).toBeGreaterThan(endgameScoreIdx);
+    // The rating-changes caveat paragraph that previously followed these two
+    // was removed in feec92cc (style: drop opponent-strength caveat from the
+    // Endgame ELO popover), so the ordering assertion against it was dropped.
   });
 
   it('preserves the new Section 1 cards, Score Gap, and timeline chart (D-21 negative scope)', () => {
