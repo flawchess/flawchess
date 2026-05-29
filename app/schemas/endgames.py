@@ -547,35 +547,12 @@ class ScoreGapMaterialResponse(BaseModel):
     score_gap_conv_p_value: float | None = None
     score_gap_conv_ci_low: float | None = None
     score_gap_conv_ci_high: float | None = None
-    # Phase 94 (PCTL-02): cohort percentile of score_gap_conv_mean
-    # vs the Phase 93 global empirical CDF.
-    score_gap_conv_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of score_gap_conv_mean vs the
-    Phase 93 global empirical CDF.
-    None when score_gap_conv_n < PVALUE_RELIABILITY_MIN_N (=10) or
-    conv_mean is None — same single-N gate as score_gap_conv_p_value
-    / _ci_*."""
-
-    # Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
-    score_gap_conv_per_tc: list[PerTcBreakdownOut] = []
-
     # Parity bucket (|eval_entry| <= 1.0 pawn):
     score_gap_parity_mean: float | None = None
     score_gap_parity_n: int | None = None
     score_gap_parity_p_value: float | None = None
     score_gap_parity_ci_low: float | None = None
     score_gap_parity_ci_high: float | None = None
-    # Phase 94 (PCTL-02): cohort percentile of score_gap_parity_mean
-    # vs the Phase 93 global empirical CDF.
-    score_gap_parity_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of score_gap_parity_mean vs the
-    Phase 93 global empirical CDF.
-    None when score_gap_parity_n < PVALUE_RELIABILITY_MIN_N (=10) or
-    parity_mean is None — same single-N gate as score_gap_parity_p_value
-    / _ci_*."""
-
-    # Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
-    score_gap_parity_per_tc: list[PerTcBreakdownOut] = []
 
     # Recovery bucket (eval_entry <= -1.0 pawn):
     score_gap_recov_mean: float | None = None
@@ -583,25 +560,6 @@ class ScoreGapMaterialResponse(BaseModel):
     score_gap_recov_p_value: float | None = None
     score_gap_recov_ci_low: float | None = None
     score_gap_recov_ci_high: float | None = None
-    # Phase 94.4 D-05a (RESCUES Phase 94 D-12 suppression): Recovery Score
-    # Gap chip slot is restored under peer-relative. Under global, Recovery's
-    # d=0.95 inverted + opponent-confounded drove the v1 drop. Under
-    # peer-relative same-rated cohort comparison, the rating component of
-    # opponent strength normalises naturally; residual opponent-selection
-    # confound (challenging up vs farming down) is disclosed honestly via the
-    # tooltip's cohort-relative framing.
-    # Field name mirrors the MetricId literal "recovery_score_gap" used to
-    # key the per-(metric, TC) percentile rows in
-    # user_benchmark_percentiles.
-    recovery_score_gap_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of score_gap_recov_mean vs the
-    Phase 94.4 per-(rating cohort, TC) CDF for the rescued recovery metric
-    (D-05a). None when (a) Stage B has not computed a row for any of the
-    user's TCs, or (b) every above-floor TC's percentile is None (CDF out of
-    range)."""
-
-    # Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
-    recovery_score_gap_per_tc: list[PerTcBreakdownOut] = []
 
     # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
     # score_gap_skill_* fields (ΔES Skill, equal-weighted mean of
@@ -855,6 +813,74 @@ class ClockGapBullet(BaseModel):
     ci_high: float | None
 
 
+class PerTcBucketStats(BaseModel):
+    """Per-bucket (conversion/parity/recovery) stats for one TC metric block (Phase 97).
+
+    Carries WDL percentages (0-100), the headline rate, per-bucket ΔES score-gap stats,
+    and the per-TC ΔES-gap percentile read directly from user_benchmark_percentiles.
+
+    games: total games in this bucket for the TC.
+    win_pct/draw_pct/loss_pct: WDL breakdown as percent 0-100 (for MiniWDLBar).
+    rate: headline metric — conversion_win_pct, parity_score_pct, or recovery_save_pct.
+        None when the bucket has zero games.
+    score_gap_mean/n/p_value/ci_low/ci_high: ΔES gap stats from compute_paired_difference_test.
+        mean is None when n == 0 (avoids 0.0 polluting wire).
+    percentile: per-TC ΔES-gap percentile from user_benchmark_percentiles. None when
+        the user is below the pooled inclusion floor for this (metric, TC) cell.
+    percentile_n_games/percentile_value: the chip-cohort n_games and value from the
+        same PercentileRow that produced ``percentile`` — surfaced so the chip tooltip
+        states the actual game count and value (mirrors TimePressureTcCard's
+        clock_gap_n_games/value). Both None when no percentile row exists for the cell.
+        Defaulted so existing fixtures that build PerTcBucketStats keyword-style without
+        these args do not break.
+    """
+
+    games: int
+    win_pct: float
+    draw_pct: float
+    loss_pct: float
+    rate: float | None
+    score_gap_mean: float | None
+    score_gap_n: int | None
+    score_gap_p_value: float | None
+    score_gap_ci_low: float | None
+    score_gap_ci_high: float | None
+    percentile: float | None
+    percentile_n_games: int | None = None
+    percentile_value: float | None = None
+
+
+class EndgameMetricsTcCard(BaseModel):
+    """Per-TC endgame metrics card: Conv/Parity/Recovery trifecta for one time control (Phase 97).
+
+    Mirrors TimePressureTcCard structure: one card per TC with per-bucket sub-blocks.
+    Cards are pre-filtered to TCs where total endgame games >= MIN_GAMES_PER_TC_CARD,
+    ordered bullet -> blitz -> rapid -> classical.
+
+    tc: time control bucket.
+    total: total endgame games in this TC (used to gate card visibility).
+    conversion: stats for the conversion bucket (eval >= +1.0, user perspective).
+    parity: stats for the parity bucket (no clear material advantage).
+    recovery: stats for the recovery bucket (eval <= -1.0, user perspective).
+    """
+
+    tc: Literal["bullet", "blitz", "rapid", "classical"]
+    total: int
+    conversion: PerTcBucketStats
+    parity: PerTcBucketStats
+    recovery: PerTcBucketStats
+
+
+class EndgameMetricsCardsResponse(BaseModel):
+    """Per-TC endgame metrics cards response (Phase 97).
+
+    cards: list of EndgameMetricsTcCard, ordered bullet -> blitz -> rapid -> classical.
+        Only includes TCs where total endgame games >= MIN_GAMES_PER_TC_CARD.
+    """
+
+    cards: list[EndgameMetricsTcCard]
+
+
 class TimePressureTcCard(BaseModel):
     """Per-time-control time pressure card carrying Clock Gap + Score-Delta bullets (Phase 88).
 
@@ -955,3 +981,8 @@ class EndgameOverviewResponse(BaseModel):
     # sites (older tests that build EndgameOverviewResponse keyword-style
     # without this arg) working.
     rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = Field(default_factory=dict)
+    # Phase 97: per-TC endgame metrics cards (conv/parity/recovery per time control).
+    # Default factory keeps existing constructor call sites working (B-2 lock).
+    endgame_metrics_cards: EndgameMetricsCardsResponse = Field(
+        default_factory=lambda: EndgameMetricsCardsResponse(cards=[])
+    )

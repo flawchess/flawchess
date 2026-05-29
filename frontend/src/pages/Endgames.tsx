@@ -19,7 +19,9 @@ import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameOverallPerformanceSection } from '@/components/charts/EndgameOverallPerformanceSection';
 import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
-import { EndgameMetricsSection } from '@/components/charts/EndgameMetricsSection';
+import { EndgameMetricsByTcSection } from '@/components/charts/EndgameMetricsByTcSection';
+// EndgameMetricsSection removed in favour of EndgameMetricsByTcSection (Phase 97 Plan 03).
+// The old component is deleted in Plan 04.
 import { EndgameTypeBreakdownSection } from '@/components/charts/EndgameTypeBreakdownSection';
 import {
   ENDGAME_CLASS_TO_SLUG,
@@ -553,7 +555,7 @@ export function EndgamesPage() {
                 />
               )}
               {scoreGapData && scoreGapData.timeline.length > 0 && (
-                <div className="charcoal-texture rounded-md p-4">
+                <div className="charcoal-texture rounded-md overflow-hidden">
                   <EndgameScoreOverTimeChart
                     timeline={scoreGapData.timeline}
                     window={scoreGapData.timeline_window}
@@ -566,7 +568,7 @@ export function EndgamesPage() {
                   plumbing (overviewData) as EndgameScoreOverTimeChart above. */}
               {eloTimelineData && (
                 <div
-                  className="charcoal-texture rounded-md p-4"
+                  className="charcoal-texture rounded-md overflow-hidden"
                   data-testid="endgame-elo-timeline-section"
                 >
                   <EndgameEloTimelineSection
@@ -577,12 +579,18 @@ export function EndgamesPage() {
                 </div>
               )}
               <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
-              {scoreGapData && perfData && (
+              {perfData && (
                 <>
                   <h2 className="text-lg font-semibold text-foreground mt-2">
                     Endgame Metrics
                   </h2>
-                  <EndgameMetricsSection data={scoreGapData} />
+                  {/* Phase 97 Plan 03: replaced aggregated EndgameMetricsSection with per-TC
+                      cards fed by endgame_metrics_cards. The ?? fallback handles older server
+                      responses where endgame_metrics_cards is absent. */}
+                  <EndgameMetricsByTcSection
+                    data={overviewData?.endgame_metrics_cards ?? { cards: [] }}
+                    ratingAnchors={overviewData?.rating_anchors}
+                  />
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}
@@ -601,7 +609,7 @@ export function EndgamesPage() {
                   per-TC cards so the user sees the trend story first, then
                   drills into per-TC breakdowns. Hides when no eligible points. */}
               {showClockDiffTimeline && clockDiffTimelineData && (
-                <div className="charcoal-texture rounded-md p-4">
+                <div className="charcoal-texture rounded-md overflow-hidden">
                   <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
                 </div>
               )}

@@ -329,18 +329,22 @@ export function EndgameEloTimelineSection({
     </InfoPopover>
   );
 
-  const headingBlock = (
-    <div className="mb-3">
-      <h3 className="text-base font-semibold">
-        <span className="inline-flex items-center gap-1">
-          Endgame ELO Timeline
-          {infoPopover}
-        </span>
-      </h3>
-      <p className="text-sm text-muted-foreground mt-1">
-        Is your endgame lifting your ELO rating, or holding it back? Green band: Endgame Score is higher than Non-Endgame Score. Red band: Endgame Score is lower.
-      </p>
-    </div>
+  // Card header band: recessed background + bottom separator, full-bleed to the
+  // card edges (matches EndgameMetricsByTcCard / EndgameTimePressureCard). The
+  // subtitle moves into the padded body below, rendered by each branch.
+  const headerBand = (
+    <h3
+      className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+      data-testid="endgame-elo-timeline-header"
+    >
+      Endgame ELO Timeline
+      {infoPopover}
+    </h3>
+  );
+  const subtitle = (
+    <p className="text-sm text-muted-foreground mb-3">
+      Is your endgame lifting your ELO rating, or holding it back? Green band: Endgame Score is higher than Non-Endgame Score. Red band: Endgame Score is lower.
+    </p>
   );
 
   // Error branch FIRST (before loading) — if the overview query errored, the
@@ -349,7 +353,7 @@ export function EndgameEloTimelineSection({
   if (isError) {
     return (
       <div
-        className="flex flex-col items-center justify-center py-8 text-center"
+        className="flex flex-col items-center justify-center p-8 text-center"
         data-testid="endgame-elo-timeline-error"
       >
         <p className="mb-2 text-base font-medium text-foreground">
@@ -367,10 +371,13 @@ export function EndgameEloTimelineSection({
   if (isLoading || !data) {
     return (
       <div>
-        {headingBlock}
-        <div className="h-72 flex flex-col gap-2" aria-busy="true" aria-live="polite">
-          <div className="flex-1 bg-muted animate-pulse rounded" />
-          <div className="h-6 bg-muted animate-pulse rounded w-3/4 self-center" />
+        {headerBand}
+        <div className="p-4">
+          {subtitle}
+          <div className="h-72 flex flex-col gap-2" aria-busy="true" aria-live="polite">
+            <div className="flex-1 bg-muted animate-pulse rounded" />
+            <div className="h-6 bg-muted animate-pulse rounded w-3/4 self-center" />
+          </div>
         </div>
       </div>
     );
@@ -380,13 +387,16 @@ export function EndgameEloTimelineSection({
   if (data.combos.length === 0) {
     return (
       <div>
-        {headingBlock}
-        <div
-          className="text-center text-muted-foreground py-8"
-          data-testid="endgame-elo-timeline-empty"
-        >
-          <p className="font-medium">Not enough endgame games yet for a timeline.</p>
-          <p className="text-sm mt-1">Import more games or loosen the recency filter.</p>
+        {headerBand}
+        <div className="p-4">
+          {subtitle}
+          <div
+            className="text-center text-muted-foreground py-8"
+            data-testid="endgame-elo-timeline-empty"
+          >
+            <p className="font-medium">Not enough endgame games yet for a timeline.</p>
+            <p className="text-sm mt-1">Import more games or loosen the recency filter.</p>
+          </div>
         </div>
       </div>
     );
@@ -439,7 +449,9 @@ export function EndgameEloTimelineSection({
 
   return (
     <div>
-      {headingBlock}
+      {headerBand}
+      <div className="p-4">
+      {subtitle}
       <div className={isMobile ? '' : 'flex items-stretch'}>
         {!isMobile && (
           <div
@@ -656,6 +668,7 @@ export function EndgameEloTimelineSection({
             })}
           </ComposedChart>
         </ChartContainer>
+      </div>
       </div>
     </div>
   );
