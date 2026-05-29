@@ -78,23 +78,28 @@ describe('inactivityGapReferenceLines — pure cases', () => {
     expect(inactivityGapReferenceLines({ dates: ['2024-01-01'] }).length).toBe(0);
   });
 
-  it('returns [] when all consecutive pairs are <= 56 days apart', () => {
+  it('returns [] when all consecutive pairs are <= 90 days apart', () => {
     const dates = ['2024-01-01', '2024-01-08', '2024-02-01', '2024-02-15'];
     expect(inactivityGapReferenceLines({ dates }).length).toBe(0);
   });
 
-  it('returns one element for exactly one >56-day gap', () => {
-    const dates = ['2024-01-01', '2024-03-01']; // 60 days apart
+  it('returns [] for a gap below the 90-day threshold (e.g. 60 days)', () => {
+    const dates = ['2024-01-01', '2024-03-01']; // 60 days apart, under threshold
+    expect(inactivityGapReferenceLines({ dates }).length).toBe(0);
+  });
+
+  it('returns one element for exactly one >90-day gap', () => {
+    const dates = ['2024-01-01', '2024-05-01']; // 121 days apart
     expect(inactivityGapReferenceLines({ dates }).length).toBe(1);
   });
 
-  it('returns two elements for two >56-day gaps', () => {
-    const dates = ['2024-01-01', '2024-03-01', '2024-06-01']; // 60 + 92 days
+  it('returns two elements for two >90-day gaps', () => {
+    const dates = ['2024-01-01', '2024-05-01', '2024-09-01']; // 121 + 123 days
     expect(inactivityGapReferenceLines({ dates }).length).toBe(2);
   });
 
   it('returned elements have stable React keys derived from gap.afterIndex', () => {
-    const dates = ['2024-01-01', '2024-03-01']; // gap at afterIndex=0
+    const dates = ['2024-01-01', '2024-05-01']; // gap at afterIndex=0
     const elements = inactivityGapReferenceLines({ dates });
     expect(elements.length).toBe(1);
     // React key is set as a prop — accessible via element.key
@@ -111,8 +116,8 @@ function makeChartData(dates: string[]): { date: string; value: number }[] {
   return dates.map((date) => ({ date, value: 50 }));
 }
 
-/** Fixture with a >56-day gap between index 0 and 1 (60 days). */
-const GAP_DATES = ['2024-01-01', '2024-03-01', '2024-03-08'];
+/** Fixture with a >90-day gap between index 0 and 1 (121 days). */
+const GAP_DATES = ['2024-01-01', '2024-05-01', '2024-05-08'];
 
 /** Fixture where all consecutive pairs are 7 days apart — no gap. */
 const NO_GAP_DATES = ['2024-01-01', '2024-01-08', '2024-01-15', '2024-01-22'];
@@ -167,7 +172,7 @@ describe('inactivityGapReferenceLines — render cases (no yAxisId)', () => {
 
 describe('inactivityGapReferenceLines — yAxisId forwarding', () => {
   it('yAxisId prop is forwarded to the returned ReferenceLine element', () => {
-    const dates = ['2024-01-01', '2024-03-01'];
+    const dates = ['2024-01-01', '2024-05-01'];
     const elements = inactivityGapReferenceLines({ dates, yAxisId: 'elo' });
     expect(elements.length).toBe(1);
     // The yAxisId prop should be present on the ReactElement props
@@ -176,7 +181,7 @@ describe('inactivityGapReferenceLines — yAxisId forwarding', () => {
   });
 
   it('yAxisId is absent from the ReferenceLine element when not provided', () => {
-    const dates = ['2024-01-01', '2024-03-01'];
+    const dates = ['2024-01-01', '2024-05-01'];
     const elements = inactivityGapReferenceLines({ dates });
     expect(elements.length).toBe(1);
     const props = elements[0]?.props as { yAxisId?: string } | undefined;

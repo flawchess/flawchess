@@ -10,8 +10,8 @@
  * single exported function, zero imports, no React, no side effects.
  */
 
-/** Default threshold: 8 weeks (~2 months). */
-export const INACTIVITY_GAP_THRESHOLD_DAYS = 56;
+/** Default threshold: 3 months (~90 days). */
+export const INACTIVITY_GAP_THRESHOLD_DAYS = 90;
 
 /** Describes a gap between two consecutive data points. */
 export interface InactivityGap {
@@ -28,7 +28,7 @@ export interface InactivityGap {
  *
  * @param sortedDates  ISO YYYY-MM-DD strings in ascending order.
  * @param thresholdDays  Gaps strictly greater than this value are annotated.
- *                       Defaults to INACTIVITY_GAP_THRESHOLD_DAYS (56).
+ *                       Defaults to INACTIVITY_GAP_THRESHOLD_DAYS (90).
  * @returns Descriptors for every gap exceeding the threshold.
  */
 export function computeInactivityGaps(
