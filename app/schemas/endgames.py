@@ -547,35 +547,12 @@ class ScoreGapMaterialResponse(BaseModel):
     score_gap_conv_p_value: float | None = None
     score_gap_conv_ci_low: float | None = None
     score_gap_conv_ci_high: float | None = None
-    # Phase 94 (PCTL-02): cohort percentile of score_gap_conv_mean
-    # vs the Phase 93 global empirical CDF.
-    score_gap_conv_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of score_gap_conv_mean vs the
-    Phase 93 global empirical CDF.
-    None when score_gap_conv_n < PVALUE_RELIABILITY_MIN_N (=10) or
-    conv_mean is None — same single-N gate as score_gap_conv_p_value
-    / _ci_*."""
-
-    # Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
-    score_gap_conv_per_tc: list[PerTcBreakdownOut] = []
-
     # Parity bucket (|eval_entry| <= 1.0 pawn):
     score_gap_parity_mean: float | None = None
     score_gap_parity_n: int | None = None
     score_gap_parity_p_value: float | None = None
     score_gap_parity_ci_low: float | None = None
     score_gap_parity_ci_high: float | None = None
-    # Phase 94 (PCTL-02): cohort percentile of score_gap_parity_mean
-    # vs the Phase 93 global empirical CDF.
-    score_gap_parity_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of score_gap_parity_mean vs the
-    Phase 93 global empirical CDF.
-    None when score_gap_parity_n < PVALUE_RELIABILITY_MIN_N (=10) or
-    parity_mean is None — same single-N gate as score_gap_parity_p_value
-    / _ci_*."""
-
-    # Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
-    score_gap_parity_per_tc: list[PerTcBreakdownOut] = []
 
     # Recovery bucket (eval_entry <= -1.0 pawn):
     score_gap_recov_mean: float | None = None
@@ -583,25 +560,6 @@ class ScoreGapMaterialResponse(BaseModel):
     score_gap_recov_p_value: float | None = None
     score_gap_recov_ci_low: float | None = None
     score_gap_recov_ci_high: float | None = None
-    # Phase 94.4 D-05a (RESCUES Phase 94 D-12 suppression): Recovery Score
-    # Gap chip slot is restored under peer-relative. Under global, Recovery's
-    # d=0.95 inverted + opponent-confounded drove the v1 drop. Under
-    # peer-relative same-rated cohort comparison, the rating component of
-    # opponent strength normalises naturally; residual opponent-selection
-    # confound (challenging up vs farming down) is disclosed honestly via the
-    # tooltip's cohort-relative framing.
-    # Field name mirrors the MetricId literal "recovery_score_gap" used to
-    # key the per-(metric, TC) percentile rows in
-    # user_benchmark_percentiles.
-    recovery_score_gap_percentile: float | None = None
-    """Cohort percentile (in [0, 100]) of score_gap_recov_mean vs the
-    Phase 94.4 per-(rating cohort, TC) CDF for the rescued recovery metric
-    (D-05a). None when (a) Stage B has not computed a row for any of the
-    user's TCs, or (b) every above-floor TC's percentile is None (CDF out of
-    range)."""
-
-    # Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
-    recovery_score_gap_per_tc: list[PerTcBreakdownOut] = []
 
     # Phase 87.4 (D-05): Skill composite retired end-to-end. The previous
     # score_gap_skill_* fields (ΔES Skill, equal-weighted mean of

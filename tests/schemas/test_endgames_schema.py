@@ -81,34 +81,36 @@ class TestEndgameEloTimelinePointFieldRename:
 
 
 class TestPercentileFieldsPresent:
-    """Phase 94 (PCTL-02): 4 new nullable `_percentile` fields land on the wire.
+    """Phase 94 (PCTL-02) / Phase 97 D-10: percentile fields on the wire.
 
-    Field-name convention mirrors the MetricId literal (D-11):
-      - score_gap_percentile (note name divergence from sibling score_difference_*)
-      - achievable_score_gap_percentile
-      - score_gap_conv_percentile
-      - score_gap_parity_percentile
+    Phase 94 added 4 nullable `_percentile` fields:
+      - score_gap_percentile (Overall Performance chip — KEPT)
+      - achievable_score_gap_percentile (Overall Performance chip — KEPT)
+      - score_gap_conv_percentile (Metrics-section chip — REMOVED in Phase 97 D-10)
+      - score_gap_parity_percentile (Metrics-section chip — REMOVED in Phase 97 D-10)
 
-    Recovery percentile is EXCLUDED (D-12): the Phase 93 CDF does not ship a
-    recovery breakpoint table, and the recovery metric is opponent-confounded.
-    The negative assertion below is a defensive guard against future
-    "let's add recovery to be symmetric" mistakes.
+    Phase 97 D-10: score_gap_conv_percentile, score_gap_parity_percentile,
+    and recovery_score_gap_percentile were Metrics-section-only and are removed
+    now that the EndgameMetricsSection component is deleted (superseded by per-TC
+    cards). Only the Overall-Performance chips survive.
     """
 
-    def test_score_gap_response_has_percentile_fields(self) -> None:
+    def test_score_gap_response_has_overall_percentile_field(self) -> None:
         keys = set(ScoreGapMaterialResponse.model_fields.keys())
-        required = {
-            "score_gap_percentile",
+        assert "score_gap_percentile" in keys, (
+            "score_gap_percentile missing — Overall Performance chip must remain"
+        )
+        # Metrics-section-only fields removed in Phase 97 D-10.
+        removed = {
             "score_gap_conv_percentile",
             "score_gap_parity_percentile",
+            "recovery_score_gap_percentile",
+            "score_gap_conv_per_tc",
+            "score_gap_parity_per_tc",
+            "recovery_score_gap_per_tc",
         }
-        missing = required - keys
-        assert missing == set(), f"Percentile fields missing: {missing}"
-        # Defensive guard: recovery percentile MUST NOT be added (D-12).
-        assert "score_gap_recov_percentile" not in keys, (
-            "score_gap_recov_percentile is forbidden — Recovery is "
-            "out of scope per Phase 94 D-12 (opponent-confounded, no CDF shipped)."
-        )
+        leaked = removed & keys
+        assert leaked == set(), f"Metrics-section-only fields still present: {leaked}"
 
     def test_performance_response_has_percentile_field(self) -> None:
         keys = set(EndgamePerformanceResponse.model_fields.keys())
