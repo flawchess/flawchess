@@ -218,3 +218,4 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 ## Operator Next Steps
 
 - Start the next milestone with /gsd-new-milestone
+| 61 | Fix flaky prod-tunnel safety-gate test (mock socket probe) | 2026-05-29 | 8d209930 | — |
