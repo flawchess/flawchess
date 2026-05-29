@@ -258,12 +258,12 @@ def sparse_exclusion_sql(elo_col: str, tc_col: str) -> str:
 
 
 def _recent_capped_per_tc_cte(snapshot_date: date | None, tc: TimeControlBucket) -> str:
-    """Phase 94.3 per-TC sibling of ``_recent_capped_cte`` (PATTERNS.md lines 120-147).
+    """Phase 94.3 per-TC ``recent_capped`` CTE (PATTERNS.md lines 120-147).
 
     Restricts the canonical slice to a single ``time_control_bucket`` so the
     per-TC percentile chips can be computed against a per-TC pooled set.
 
-    Two structural differences from ``_recent_capped_cte``:
+    Two structural properties vs the pooled-TC form:
 
     1. ``AND g.time_control_bucket = '{tc}'`` is added to the inner WHERE.
        Safe to f-string because ``tc`` is constrained to four literal values
@@ -561,11 +561,10 @@ def per_user_cte_score_gap_tc(
 ) -> str:
     """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``score_gap``.
 
-    Per-TC version of ``per_user_cte_score_gap``. Restricted to one
-    ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The metric_value
-    formula and HAVING gates are byte-identical to the non-per-TC analog
-    (``eg_score - non_eg_score`` projection; dual ≥30 floor on
-    endgame / non-endgame game counts).
+    Per-TC ``score_gap`` builder. Restricted to one ``time_control_bucket``
+    via ``_recent_capped_per_tc_cte``. The metric_value formula and HAVING
+    gates mirror the pooled form: ``eg_score - non_eg_score`` projection;
+    dual ≥30 floor on endgame / non-endgame game counts.
 
     ``n_games`` = endgame-game count on the per-TC pooled set.
 
@@ -635,11 +634,10 @@ def per_user_cte_achievable_tc(
 ) -> str:
     """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``achievable_score_gap``.
 
-    Per-TC version of ``per_user_cte_achievable``. Restricted to one
+    Per-TC ``achievable_score_gap`` builder. Restricted to one
     ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The metric_value
-    formula (``avg(d_i)`` where d_i is the per-game score-vs-Lichess-sigmoid
-    gap at endgame entry) and HAVING gate (≥30 d_i-non-null games per D-6)
-    are byte-identical to the non-per-TC analog.
+    formula is ``avg(d_i)`` where d_i is the per-game score-vs-Lichess-sigmoid
+    gap at endgame entry; HAVING gate is ≥30 d_i-non-null games per D-6.
 
     Security and source-mode parity identical to ``per_user_cte_score_gap_tc``.
     Pitfall 1 user_id widening applied.
@@ -717,11 +715,11 @@ def per_user_cte_score_gap_bucket_tc(
 ) -> str:
     """Per-TC pooled ``per_user_values(user_id, metric_value, n_games)`` for ``score_gap_{conv,parity,recovery}``.
 
-    Per-TC version of ``per_user_cte_score_gap_bucket`` — restricted to one
+    Per-TC ``score_gap_{conv,parity,recovery}`` builder — restricted to one
     ``time_control_bucket`` via ``_recent_capped_per_tc_cte``. The ``gap_rows``
-    bucket classification (conversion / parity / recovery — see lines 502-512
-    of the non-per-TC builder) and per-bucket HAVING ≥30 floor are
-    byte-identical to the non-per-TC analog.
+    bucket classification (conversion / parity / recovery via entry-eval
+    signed by user_color) and per-bucket HAVING ≥30 floor mirror the
+    pooled-TC form.
 
     The ``bucket_label`` Literal includes ``'recovery'`` (Phase 94.4 Plan 03
     Task 2) for the recovery-rescue cohort: rows where the user entered the

@@ -156,7 +156,7 @@ def test_pooled_per_tc_cte_emits_per_user_values_with_metric_value_and_n_games(
 # ---------------------------------------------------------------------------
 # Phase 94.4 Plan 03 Task 3 — source-mode parity for the 4 new per-TC ΔES
 # builders. Each new builder is called directly here (not through
-# per_user_cte_for) because the dispatcher widening to expose them via the
+# the dispatcher widening to expose them via the
 # CdfMetricId Literal lands in Plan 04 (atomic-cutover sequence).
 # ---------------------------------------------------------------------------
 
