@@ -587,6 +587,14 @@ def _endgame_entry_clocks_cte() -> str:
     The user/opp assignment then collapses by ``rc.user_color`` in the
     consumer's ``joined`` CTE. Centralised here because all three Phase 94.3
     per-TC builders need the identical derivation.
+
+    All three callers prepend ``_recent_capped_per_tc_cte`` immediately before
+    this CTE in the WITH chain, so ``recent_capped`` is always in scope.
+    Scoping to ``recent_capped`` is result-equivalent: only games whose id
+    appears in ``recent_capped`` survive the downstream ``joined`` CTE join
+    (``joined JOIN endgame_entry_clocks ee ON ee.game_id = rc.id``). The per-game
+    ``HAVING count(gp.ply) >= 6`` is unaffected by game_id membership filtering
+    because it counts rows within each retained game, not across games.
     """
     return """endgame_entry_clocks AS (
   SELECT
@@ -595,7 +603,10 @@ def _endgame_entry_clocks_cte() -> str:
        FILTER (WHERE gp.clock_seconds IS NOT NULL AND gp.ply % 2 = 0))[1] AS white_entry_clock,
     (array_agg(gp.clock_seconds ORDER BY gp.ply ASC)
        FILTER (WHERE gp.clock_seconds IS NOT NULL AND gp.ply % 2 = 1))[1] AS black_entry_clock
-  FROM game_positions gp
+  -- recent_capped is always prepended by all 3 callers (_recent_capped_per_tc_cte);
+  -- JOIN scopes to the selected user's games only (result-equivalent: only recent_capped
+  -- games survive the downstream joined CTE anyway).
+  FROM game_positions gp JOIN recent_capped rc ON rc.id = gp.game_id
   WHERE gp.endgame_class IS NOT NULL
   GROUP BY gp.game_id
   HAVING count(gp.ply) >= 6
@@ -856,8 +867,11 @@ def per_user_cte_score_gap_tc(
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
     return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
 endgame_game_ids AS (
+  -- Scoped to recent_capped (result-equivalent): only recent_capped games survive the
+  -- downstream scored LEFT JOIN anyway. HAVING count(*) >= 6 counts rows within each
+  -- retained game, so membership filtering does not alter the count or retained set.
   SELECT game_id FROM game_positions
-  WHERE endgame_class IS NOT NULL
+  WHERE endgame_class IS NOT NULL AND game_id IN (SELECT id FROM recent_capped)
   GROUP BY game_id HAVING count(*) >= 6
 ),
 scored AS (
@@ -914,8 +928,13 @@ def per_user_cte_achievable_tc(
     _ = source  # cohort difference is in selected_users_cte; pooled body is identical
     return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
 endgame_game_ids AS (
+  -- Scoped to recent_capped (result-equivalent): only recent_capped games survive the
+  -- downstream scored JOIN (via entry_rows JOIN endgame_game_ids then rc.id = rc.id).
+  -- entry_rows inherits the scoping automatically via its JOIN on endgame_game_ids.
+  -- HAVING count(*) >= 6 counts rows within each retained game; membership filtering
+  -- does not alter the per-game count or the retained game set.
   SELECT game_id FROM game_positions
-  WHERE endgame_class IS NOT NULL
+  WHERE endgame_class IS NOT NULL AND game_id IN (SELECT id FROM recent_capped)
   GROUP BY game_id HAVING count(*) >= 6
 ),
 entry_rows AS (

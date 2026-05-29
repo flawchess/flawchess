@@ -48,7 +48,7 @@ What this script produces
 1. Overwrites the ``COHORT_PERCENTILE_CDF = {...}`` literal in
    ``app/services/global_percentile_cdf.py`` between the
    ``BEGIN GENERATED REGISTRY`` / ``END GENERATED REGISTRY`` sentinels.
-2. Writes ``reports/cohort-percentile-cdf-latest.md`` with the
+2. Writes ``reports/percentile/cohort-percentile-cdf-latest.md`` with the
    per-(metric, anchor, TC) suppression-flag table as the TOP-LINE section.
 
 Operator workflow::
@@ -66,7 +66,7 @@ CLI:
 * ``--snapshot-date YYYY-MM-DD`` (optional) — anchors the 36-month recency
   window. Defaults to today (UTC).
 * ``--regen-report-path PATH`` (optional) — defaults to
-  ``reports/cohort-percentile-cdf-latest.md``.
+  ``reports/percentile/cohort-percentile-cdf-latest.md``.
 """
 
 from __future__ import annotations
@@ -164,7 +164,7 @@ IN_SCOPE_METRICS: Final[tuple[CdfMetricId, ...]] = (
 
 # Output paths.
 OUTPUT_MODULE_PATH: Final[Path] = Path("app/services/global_percentile_cdf.py")
-DEFAULT_REPORT_PATH: Final[Path] = Path("reports/cohort-percentile-cdf-latest.md")
+DEFAULT_REPORT_PATH: Final[Path] = Path("reports/percentile/cohort-percentile-cdf-latest.md")
 ARCHIVE_DIR: Final[Path] = Path("reports/archive")
 
 # Safety-guard tokens (mirrors ``scripts/backfill_eval.py --db benchmark``).
