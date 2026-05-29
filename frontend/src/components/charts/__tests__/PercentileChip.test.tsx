@@ -169,8 +169,29 @@ describe('PercentileChip — chip face (Phase 94.4)', () => {
 });
 
 describe('PercentileChip — popover bullets (Phase 94.4)', () => {
-  // Test 7: per-TC bullet 1 — pct<=50 keeps the legacy "bottom X%" framing
-  it('per-TC popover bullet 1 reads "Your recent {metric} is in the bottom 23% of ~1600-rated players in bullet."', () => {
+  // Test 7: per-TC bullet 1 — pct<=50 keeps the legacy "bottom X%" framing.
+  // 260529-fast: the chip's value is woven into the sentence (percent-formatted),
+  // not shown as a separate "Your value:" line in bullet 2.
+  it('per-TC popover bullet 1 reads "Your recent {metric} {value} is in the bottom 23% of ~1600-rated players in bullet."', () => {
+    renderChip(23, {
+      flavor: 'time-pressure-score-gap',
+      tc: 'bullet',
+      anchorRating: 1600,
+      metricLabel: 'Time-Pressure Score Gap',
+      value: 0.04,
+    });
+    fireEvent.click(screen.getByTestId(TID));
+    const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
+    expect(body).toContain(
+      'Your recent Time-Pressure Score Gap +4% is in the bottom 23% of ~1600-rated players in bullet.',
+    );
+    // The value no longer appears as a separate "Your value:" line.
+    expect(body).not.toContain('Your value');
+  });
+
+  // 260529-fast: per-TC bullet 1 omits the value when the caller did not thread
+  // `value` (legacy fixtures), falling back to the metric-label-only sentence.
+  it('per-TC popover bullet 1 omits the value when `value` is not provided', () => {
     renderChip(23, {
       flavor: 'time-pressure-score-gap',
       tc: 'bullet',
@@ -248,11 +269,14 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
   // concrete per-TC n_games + value + percentile (aggregated chips) or a
   // single-line n_games + value (per-TC chips).
 
-  // Per-TC chip bullet 2 — concrete n_games + value framing.
-  it('per-TC bullet 2 renders "Based on <n> of your recent <tc> games" with "Your value: <value>"', () => {
+  // Per-TC chip bullet 2 — concrete n_games framing. 260529-fast: the value
+  // moved to bullet 1 (percent-formatted); bullet 2 no longer carries it.
+  it('per-TC bullet 2 renders "Based on <n> of your recent <tc> games" with the value in bullet 1', () => {
     renderChip(40, {
       flavor: 'time-pressure-score-gap',
       tc: 'bullet',
+      anchorRating: 1600,
+      metricLabel: 'Time Pressure Score Gap',
       nGames: 137,
       value: 0.04,
     });
@@ -261,35 +285,43 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
     expect(body).toContain('Based on 137 of your recent bullet games');
     expect(body).toContain('over the last 36 months');
     expect(body).toContain('+/-100 Elo');
-    expect(body).toContain('Your value: +0.04');
+    // Value is in bullet 1 as a percent, not a separate "Your value:" line.
+    expect(body).toContain('Your recent Time Pressure Score Gap +4% is');
+    expect(body).not.toContain('Your value');
   });
 
-  // Per-TC clock-gap chip uses the integer-percent formatter.
-  it('per-TC clock-gap bullet 2 renders the value as signed integer percent', () => {
+  // Per-TC clock-gap chip formats the value as signed integer percent in bullet 1.
+  it('per-TC clock-gap bullet 1 renders the value as signed integer percent', () => {
     renderChip(60, {
       flavor: 'clock-gap',
       tc: 'blitz',
+      anchorRating: 1600,
+      metricLabel: 'Clock Gap',
       nGames: 320,
       value: 0.05,
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain('Based on 320 of your recent blitz games');
-    expect(body).toContain('Your value: +5%');
+    expect(body).toContain('Your recent Clock Gap +5% is');
+    expect(body).not.toContain('Your value');
   });
 
-  // Per-TC net-flag-rate chip also uses the integer-percent formatter.
-  it('per-TC net-flag-rate bullet 2 renders the value as signed integer percent', () => {
+  // Per-TC net-flag-rate chip also formats the value as signed integer percent.
+  it('per-TC net-flag-rate bullet 1 renders the value as signed integer percent', () => {
     renderChip(70, {
       flavor: 'net-flag-rate',
       tc: 'rapid',
+      anchorRating: 1600,
+      metricLabel: 'Net Flag Rate',
       nGames: 210,
       value: -0.02,
     });
     fireEvent.click(screen.getByTestId(TID));
     const body = screen.getByTestId(`${TID}-popover`).textContent ?? '';
     expect(body).toContain('Based on 210 of your recent rapid games');
-    expect(body).toContain('Your value: -2%');
+    expect(body).toContain('Your recent Net Flag Rate -2% is');
+    expect(body).not.toContain('Your value');
   });
 
   // Per-TC fallback when caller has not threaded the new fields (legacy fixture).
@@ -327,10 +359,10 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
     // 260529-l1i: the TC label now lives on the anchor line; the stats line no
     // longer carries a "{tc}: " prefix.
     expect(body).toContain('bullet — anchored at ~1600 Lichess Elo');
-    expect(body).toContain('+0.05 over 137 games');
+    expect(body).toContain('+5% over 137 games');
     expect(body).toContain('62 percentile');
     expect(body).toContain('blitz — anchored at ~1580 Lichess Elo');
-    expect(body).toContain('-0.02 over 410 games');
+    expect(body).toContain('-2% over 410 games');
     expect(body).toContain('38 percentile');
     // Branch (c): below-floor → "insufficient games" line (no anchor line).
     expect(body).toContain('rapid: insufficient games');
@@ -366,7 +398,7 @@ describe('PercentileChip — popover bullets (Phase 94.4)', () => {
       expect(body).toContain(`weighted average of ${label} percentiles`);
       // 260529-l1i: two-line row — anchor label line + stats line.
       expect(body).toContain('blitz — anchored at ~1580 Lichess Elo');
-      expect(body).toContain('+0.03 over 200 games');
+      expect(body).toContain('+3% over 200 games');
       expect(body).toContain('55 percentile');
     },
   );
