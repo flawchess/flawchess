@@ -423,6 +423,40 @@ export interface PerTcBreakdownOut {
   anchor: number | null;
 }
 
+// ── Phase 97: Per-TC Endgame Metrics Cards ──────────────────────────────────
+
+/** Stats for one material bucket (conversion / parity / recovery) within one TC.
+ *  Mirrors backend PerTcBucketStats (Plan 97-02). */
+export interface PerTcBucketStats {
+  games: number;
+  win_pct: number;    // percent 0-100
+  draw_pct: number;
+  loss_pct: number;
+  rate: number | null;             // conversion win%, parity score%, recovery save%
+  score_gap_mean: number | null;
+  score_gap_n: number | null;
+  score_gap_p_value: number | null;
+  score_gap_ci_low: number | null;
+  score_gap_ci_high: number | null;
+  percentile: number | null;       // per-TC DeltaES-gap percentile
+}
+
+/** One TC card in the per-TC Endgame Metrics section.
+ *  Mirrors backend EndgameMetricsTcCard (Plan 97-02). */
+export interface EndgameMetricsTcCard {
+  tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
+  total: number;
+  conversion: PerTcBucketStats;
+  parity: PerTcBucketStats;
+  recovery: PerTcBucketStats;
+}
+
+/** Response wrapper for the per-TC endgame metrics cards.
+ *  Mirrors backend EndgameMetricsCardsResponse (Plan 97-02). */
+export interface EndgameMetricsCardsResponse {
+  cards: EndgameMetricsTcCard[];
+}
+
 export interface EndgameOverviewResponse {
   stats: EndgameStatsResponse;
   performance: EndgamePerformanceResponse;
@@ -437,6 +471,9 @@ export interface EndgameOverviewResponse {
    *  the user is below the inclusion floor for that TC or (for chess.com
    *  sources) the conversion returned null. */
   rating_anchors: Partial<Record<'bullet' | 'blitz' | 'rapid' | 'classical', RatingAnchorOut>>;
+  /** Phase 97: per-TC endgame metrics cards (conversion / parity / recovery per TC).
+   *  Optional for back-compat with older fixtures and pre-97 server responses. */
+  endgame_metrics_cards?: EndgameMetricsCardsResponse;
 }
 
 // ── Phase 87.5: Endgame ELO Timeline (rebuilt on Endgame Score Gap) ──
