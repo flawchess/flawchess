@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Changed
 
+- **Simpler Endgame Type Breakdown cards** (quick-260529-une). Each per-type card (Rook, Minor Piece, Pawn, Queen, Mixed) drops its Conversion and Recovery gauges, leaving the win/draw/loss bar, the type Score, and the Score Gap bullet. The Score Gap already captures conversion and defensive performance in a single engine-adjusted number, and the removed gauges were the only metrics on the card that shifted with time control, so they could mispaint a bullet player against slow-game expectations. AI insights still use the full conversion/recovery breakdown.
 - **Percentile chip tooltip shows the matched rating anchor inline** (quick-260529-l1i). Each time-control breakdown row now displays the anchor it was matched against ("Bullet — anchored at ~1525 Lichess Elo"), and the separate platform-blend anchor note was dropped.
 
 ### Fixed
