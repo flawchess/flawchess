@@ -72,8 +72,11 @@ export function EntryCard({ data }: EntryCardProps) {
 
   return (
     <div data-testid="tile-at-endgame-entry">
-      <h3 className="text-base font-semibold mb-2">Eval at Endgame Entry</h3>
-      <div className="flex flex-col gap-4">
+      {/* Full-bleed card header bar (matches the Time Pressure cards). */}
+      <h3 className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold">
+        Eval at Endgame Entry
+      </h3>
+      <div className="flex flex-col gap-4 p-4">
         {/* Row 1: entry-eval bullet (pawns) */}
         {showEntryEvalChart ? (
           <div className="flex flex-col gap-2">
