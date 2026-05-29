@@ -132,17 +132,20 @@ def _format_pressure_bin_zones() -> str:
 def _format_tc_metric_bands() -> str:
     """Emit TC_METRIC_BANDS as a nested TS Record literal (Phase 97).
 
-    Each TC entry has { convRate, recovRate, convScoreGap, recovScoreGap } with
-    [lower, upper] tuples. Mirrors _format_per_class_gauge_zones() structure.
+    Each TC entry has { convRate, recovRate, parityRate, convScoreGap,
+    recovScoreGap } with [lower, upper] tuples. Mirrors
+    _format_per_class_gauge_zones() structure.
     """
     lines: list[str] = []
     for tc, bands in TC_METRIC_BANDS.items():
         cr_lo, cr_hi = bands.conv_rate
         rr_lo, rr_hi = bands.recov_rate
+        pr_lo, pr_hi = bands.parity_rate
         cg_lo, cg_hi = bands.conv_score_gap
         rg_lo, rg_hi = bands.recov_score_gap
         lines.append(
             f"  {tc}: {{ convRate: [{cr_lo}, {cr_hi}], recovRate: [{rr_lo}, {rr_hi}],"
+            f" parityRate: [{pr_lo}, {pr_hi}],"
             f" convScoreGap: [{cg_lo}, {cg_hi}], recovScoreGap: [{rg_lo}, {rg_hi}] }},"
         )
     return "\n".join(lines) + "\n"
@@ -262,11 +265,12 @@ def _render() -> str:
         f"export const CLOCK_GAP_NEUTRAL_MIN = {_CLOCK_GAP_SPEC.typical_lower};\n"
         f"export const CLOCK_GAP_NEUTRAL_MAX = {_CLOCK_GAP_SPEC.typical_upper};\n"
         "\n"
-        "// Phase 97: per-TC gauge + DeltaES bullet bands for Conversion and Recovery.\n"
+        "// Phase 97: per-TC gauge + DeltaES bullet bands for Conversion, Recovery, Parity.\n"
         "// Source: reports/benchmark/benchmarks-latest.md §3.2.1 (rates) and §3.2.2 (DeltaES gaps).\n"
+        "// parityRate is per-TC (gauge band only); the parity DeltaES band stays global.\n"
         "export const TC_METRIC_BANDS: Record<\n"
         "  'bullet' | 'blitz' | 'rapid' | 'classical',\n"
-        "  { convRate: [number, number]; recovRate: [number, number]; convScoreGap: [number, number]; recovScoreGap: [number, number] }\n"
+        "  { convRate: [number, number]; recovRate: [number, number]; parityRate: [number, number]; convScoreGap: [number, number]; recovScoreGap: [number, number] }\n"
         "> = {\n" + _format_tc_metric_bands() + "} as const;\n"
     )
 

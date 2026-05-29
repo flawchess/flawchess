@@ -5,13 +5,15 @@
  * trifecta laid out as three columns inside a SINGLE charcoal container,
  * separated by a vertical divider on desktop and horizontal dividers when
  * stacked on mobile (mirrors EndgameOverallPerformanceSection's two-column
- * card). Each block shows a gauge (TC-specific bands for conv/recov, global
- * band for parity), WDL bar, Delta-ES Score Gap bullet, and a percentile chip
- * when the per-TC percentile is available.
+ * card). Each block shows a gauge (TC-specific bands for all three metrics),
+ * WDL bar, Delta-ES Score Gap bullet, and a percentile chip when the per-TC
+ * percentile is available.
  *
  * Key design decisions (from 97-PATTERNS.md / 97-RESEARCH.md):
- *   - Gauge zones: TC-specific via TC_METRIC_BANDS[card.tc] for conversion and
- *     recovery; global FIXED_GAUGE_ZONES.parity for parity (Pitfall 2).
+ *   - Gauge zones: TC-specific via TC_METRIC_BANDS[card.tc] for conversion,
+ *     recovery AND parity (parity rate went per-TC on 2026-05-29 — each card
+ *     shows that TC's §3.2.1 IQR). The parity ΔES-gap neutral band stays global
+ *     (SCORE_GAP_PARITY_NEUTRAL_*); only the gauge rate band is per-TC.
  *   - Display shift: recomputed per-TC = -(lower+upper)/2 for conv/recov;
  *     0 for parity (Pitfall 3).
  *   - TC_METRIC_BANDS access is narrowed per noUncheckedIndexedAccess (Pitfall 5).
@@ -37,7 +39,7 @@ import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { ZONE_DANGER, ZONE_SUCCESS, colorizeGaugeZones } from '@/lib/theme';
 import { BUCKET_DISPLAY_LABELS } from '@/lib/endgameMetrics';
-import { TC_METRIC_BANDS, FIXED_GAUGE_ZONES, SCORE_GAP_PARITY_NEUTRAL_MIN, SCORE_GAP_PARITY_NEUTRAL_MAX } from '@/generated/endgameZones';
+import { TC_METRIC_BANDS, SCORE_GAP_PARITY_NEUTRAL_MIN, SCORE_GAP_PARITY_NEUTRAL_MAX } from '@/generated/endgameZones';
 import type { EndgameMetricsTcCard, PerTcBucketStats, RatingAnchorOut } from '@/types/endgames';
 import type { MaterialBucket } from '@/generated/endgameZones';
 
@@ -280,10 +282,16 @@ export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByT
     [bands],
   );
 
-  // Global parity zones (unchanged across all TCs).
+  // Per-TC parity gauge zones (user request 2026-05-29): each TC's actual
+  // §3.2.1 parity IQR. The parity ΔES-gap band below stays global.
   const parityGaugeZones = useMemo(
-    () => colorizeGaugeZones(FIXED_GAUGE_ZONES.parity),
-    [],
+    () =>
+      colorizeGaugeZones([
+        { from: 0, to: bands.parityRate[0] },
+        { from: bands.parityRate[0], to: bands.parityRate[1] },
+        { from: bands.parityRate[1], to: 1.0 },
+      ]),
+    [bands],
   );
 
   // TC-specific display shifts: recenters the bullet on visual zero.

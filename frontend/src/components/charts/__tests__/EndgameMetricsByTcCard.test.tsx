@@ -141,6 +141,21 @@ describe('EndgameMetricsByTcCard — TC-specific gauge zones', () => {
     // Recovery testid is present.
     expect(screen.getByTestId('metrics-tc-bullet-recovery')).not.toBeNull();
   });
+
+  it('parity gauge uses per-TC parityRate bands (classical wider than bullet)', () => {
+    // Parity rate went per-TC on 2026-05-29 (§3.2.1 IQR per TC). The bands
+    // collapse on TC (d=0.08) so most are near-identical, but classical
+    // (n=579) is visibly wider — assert the per-TC band exists and varies.
+    renderCard(buildCard('classical'));
+
+    const classicalBands = TC_METRIC_BANDS['classical'];
+    const bulletBands = TC_METRIC_BANDS['bullet'];
+    expect(classicalBands.parityRate).toBeDefined();
+    const classicalWidth = classicalBands.parityRate[1] - classicalBands.parityRate[0];
+    const bulletWidth = bulletBands.parityRate[1] - bulletBands.parityRate[0];
+    expect(classicalWidth).toBeGreaterThan(bulletWidth);
+    expect(screen.getByTestId('metrics-tc-classical-parity')).not.toBeNull();
+  });
 });
 
 describe('EndgameMetricsByTcCard — percentile chip rendering', () => {
