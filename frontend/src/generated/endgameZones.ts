@@ -124,3 +124,15 @@ export function getPressureBinBand(
 // Calibrated from reports/benchmarks-latest.md §3.3.1 clock-gap-% (Phase 88-08, 2026-05-17).
 export const CLOCK_GAP_NEUTRAL_MIN = -0.065;
 export const CLOCK_GAP_NEUTRAL_MAX = 0.047;
+
+// Phase 97: per-TC gauge + DeltaES bullet bands for Conversion and Recovery.
+// Source: reports/benchmark/benchmarks-latest.md §3.2.1 (rates) and §3.2.2 (DeltaES gaps).
+export const TC_METRIC_BANDS: Record<
+  'bullet' | 'blitz' | 'rapid' | 'classical',
+  { convRate: [number, number]; recovRate: [number, number]; convScoreGap: [number, number]; recovScoreGap: [number, number] }
+> = {
+  bullet: { convRate: [0.588, 0.719], recovRate: [0.295, 0.412], convScoreGap: [-0.195, -0.057], recovScoreGap: [0.074, 0.177] },
+  blitz: { convRate: [0.667, 0.769], recovRate: [0.251, 0.357], convScoreGap: [-0.085, 0.003], recovScoreGap: [0.011, 0.084] },
+  rapid: { convRate: [0.696, 0.8], recovRate: [0.218, 0.333], convScoreGap: [-0.063, 0.021], recovScoreGap: [-0.008, 0.062] },
+  classical: { convRate: [0.685, 0.833], recovRate: [0.174, 0.316], convScoreGap: [-0.053, 0.038], recovScoreGap: [-0.037, 0.035] },
+} as const;

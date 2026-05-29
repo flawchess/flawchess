@@ -35,6 +35,7 @@ from app.services.endgame_zones import (  # noqa: E402
     NEUTRAL_TIMEOUT_THRESHOLD,
     PER_CLASS_GAUGE_ZONES,
     PRESSURE_BIN_SCORE_NEUTRAL_ZONES,  # Phase 88
+    TC_METRIC_BANDS,  # Phase 97: per-TC conv/recov gauge + DeltaES bullet bands
     ZONE_REGISTRY,
 )
 
@@ -125,6 +126,25 @@ def _format_pressure_bin_zones() -> str:
             f"{q}: {{ min: {band.lower}, max: {band.upper} }}" for q, band in quintile_map.items()
         )
         lines.append(f"  {tc}: {{ {q_entries} }},")
+    return "\n".join(lines) + "\n"
+
+
+def _format_tc_metric_bands() -> str:
+    """Emit TC_METRIC_BANDS as a nested TS Record literal (Phase 97).
+
+    Each TC entry has { convRate, recovRate, convScoreGap, recovScoreGap } with
+    [lower, upper] tuples. Mirrors _format_per_class_gauge_zones() structure.
+    """
+    lines: list[str] = []
+    for tc, bands in TC_METRIC_BANDS.items():
+        cr_lo, cr_hi = bands.conv_rate
+        rr_lo, rr_hi = bands.recov_rate
+        cg_lo, cg_hi = bands.conv_score_gap
+        rg_lo, rg_hi = bands.recov_score_gap
+        lines.append(
+            f"  {tc}: {{ convRate: [{cr_lo}, {cr_hi}], recovRate: [{rr_lo}, {rr_hi}],"
+            f" convScoreGap: [{cg_lo}, {cg_hi}], recovScoreGap: [{rg_lo}, {rg_hi}] }},"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -241,6 +261,15 @@ def _render() -> str:
         "// Calibrated from reports/benchmarks-latest.md §3.3.1 clock-gap-% (Phase 88-08, 2026-05-17).\n"
         f"export const CLOCK_GAP_NEUTRAL_MIN = {_CLOCK_GAP_SPEC.typical_lower};\n"
         f"export const CLOCK_GAP_NEUTRAL_MAX = {_CLOCK_GAP_SPEC.typical_upper};\n"
+        "\n"
+        "// Phase 97: per-TC gauge + DeltaES bullet bands for Conversion and Recovery.\n"
+        "// Source: reports/benchmark/benchmarks-latest.md §3.2.1 (rates) and §3.2.2 (DeltaES gaps).\n"
+        "export const TC_METRIC_BANDS: Record<\n"
+        "  'bullet' | 'blitz' | 'rapid' | 'classical',\n"
+        "  { convRate: [number, number]; recovRate: [number, number]; convScoreGap: [number, number]; recovScoreGap: [number, number] }\n"
+        "> = {\n"
+        + _format_tc_metric_bands()
+        + "} as const;\n"
     )
 
 
