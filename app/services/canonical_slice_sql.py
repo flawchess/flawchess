@@ -89,7 +89,6 @@ from datetime import date
 from typing import Final, Literal, TypeAlias
 
 from app.services.chesscom_to_lichess import CHESSCOM_BLITZ_TO_LICHESS
-from app.services.global_percentile_cdf import CdfMetricId
 
 # Per-TC bucket identifier — used by Phase 94.3 per-TC builders so the leading
 # positional argument is type-checked (CLAUDE.md type-safety rule per D-8).
@@ -1075,5 +1074,3 @@ per_user_anchor AS (
   GROUP BY user_id
   HAVING count(*) >= {min_games}
 )"""
-
-

@@ -194,7 +194,9 @@ def test_score_gap_tc_pooled_body_byte_identical_across_sources(
     )
     # Prelude substring guard (formerly in test_pooled_cte_contains_recent_capped_prelude).
     for sql, label in ((bm, "benchmark"), (su, "single_user")):
-        assert "recent_capped AS (" in sql, f"recent_capped CTE missing on {label}/score_gap_tc/{tc}"
+        assert "recent_capped AS (" in sql, (
+            f"recent_capped CTE missing on {label}/score_gap_tc/{tc}"
+        )
         assert f"<= {RECENT_GAMES_PER_TC_CAP}" in sql, (
             f"recent-per-TC cap missing on {label}/score_gap_tc/{tc}"
         )
@@ -219,7 +221,6 @@ def test_achievable_tc_pooled_body_byte_identical_across_sources(
     tc: Literal["bullet", "blitz", "rapid", "classical"],
 ) -> None:
     """``per_user_cte_achievable_tc`` emits identical pooled body across sources."""
-    from app.services.canonical_slice_sql import per_user_cte_achievable_tc
 
     bm = per_user_cte_achievable_tc(tc, source="benchmark", snapshot_date=date(2026, 3, 31))
     su = per_user_cte_achievable_tc(tc, source="single_user", snapshot_date=date(2026, 3, 31))
@@ -238,7 +239,6 @@ def test_score_gap_bucket_tc_pooled_body_byte_identical_across_sources(
 
     Parametrised over all 12 (tc × bucket_label) cells.
     """
-    from app.services.canonical_slice_sql import per_user_cte_score_gap_bucket_tc
 
     bm = per_user_cte_score_gap_bucket_tc(
         tc, source="benchmark", snapshot_date=date(2026, 3, 31), bucket_label=bucket_label
