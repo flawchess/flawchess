@@ -855,6 +855,66 @@ class ClockGapBullet(BaseModel):
     ci_high: float | None
 
 
+class PerTcBucketStats(BaseModel):
+    """Per-bucket (conversion/parity/recovery) stats for one TC metric block (Phase 97).
+
+    Carries WDL percentages (0-100), the headline rate, per-bucket ΔES score-gap stats,
+    and the per-TC ΔES-gap percentile read directly from user_benchmark_percentiles.
+
+    games: total games in this bucket for the TC.
+    win_pct/draw_pct/loss_pct: WDL breakdown as percent 0-100 (for MiniWDLBar).
+    rate: headline metric — conversion_win_pct, parity_score_pct, or recovery_save_pct.
+        None when the bucket has zero games.
+    score_gap_mean/n/p_value/ci_low/ci_high: ΔES gap stats from compute_paired_difference_test.
+        mean is None when n == 0 (avoids 0.0 polluting wire).
+    percentile: per-TC ΔES-gap percentile from user_benchmark_percentiles. None when
+        the user is below the pooled inclusion floor for this (metric, TC) cell.
+    """
+
+    games: int
+    win_pct: float
+    draw_pct: float
+    loss_pct: float
+    rate: float | None
+    score_gap_mean: float | None
+    score_gap_n: int | None
+    score_gap_p_value: float | None
+    score_gap_ci_low: float | None
+    score_gap_ci_high: float | None
+    percentile: float | None
+
+
+class EndgameMetricsTcCard(BaseModel):
+    """Per-TC endgame metrics card: Conv/Parity/Recovery trifecta for one time control (Phase 97).
+
+    Mirrors TimePressureTcCard structure: one card per TC with per-bucket sub-blocks.
+    Cards are pre-filtered to TCs where total endgame games >= MIN_GAMES_PER_TC_CARD,
+    ordered bullet -> blitz -> rapid -> classical.
+
+    tc: time control bucket.
+    total: total endgame games in this TC (used to gate card visibility).
+    conversion: stats for the conversion bucket (eval >= +1.0, user perspective).
+    parity: stats for the parity bucket (no clear material advantage).
+    recovery: stats for the recovery bucket (eval <= -1.0, user perspective).
+    """
+
+    tc: Literal["bullet", "blitz", "rapid", "classical"]
+    total: int
+    conversion: PerTcBucketStats
+    parity: PerTcBucketStats
+    recovery: PerTcBucketStats
+
+
+class EndgameMetricsCardsResponse(BaseModel):
+    """Per-TC endgame metrics cards response (Phase 97).
+
+    cards: list of EndgameMetricsTcCard, ordered bullet -> blitz -> rapid -> classical.
+        Only includes TCs where total endgame games >= MIN_GAMES_PER_TC_CARD.
+    """
+
+    cards: list[EndgameMetricsTcCard]
+
+
 class TimePressureTcCard(BaseModel):
     """Per-time-control time pressure card carrying Clock Gap + Score-Delta bullets (Phase 88).
 
@@ -955,3 +1015,8 @@ class EndgameOverviewResponse(BaseModel):
     # sites (older tests that build EndgameOverviewResponse keyword-style
     # without this arg) working.
     rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = Field(default_factory=dict)
+    # Phase 97: per-TC endgame metrics cards (conv/parity/recovery per time control).
+    # Default factory keeps existing constructor call sites working (B-2 lock).
+    endgame_metrics_cards: EndgameMetricsCardsResponse = Field(
+        default_factory=lambda: EndgameMetricsCardsResponse(cards=[])
+    )

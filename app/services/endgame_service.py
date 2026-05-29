@@ -17,7 +17,7 @@ import math
 import statistics
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from datetime import date as _date
 from enum import IntEnum
@@ -51,6 +51,8 @@ from app.schemas.endgames import (
     EndgameEloTimelineResponse,
     EndgameGamesResponse,
     EndgameLabel,
+    EndgameMetricsCardsResponse,
+    EndgameMetricsTcCard,
     EndgameOverallPoint,
     EndgameOverviewResponse,
     EndgamePerformanceResponse,
@@ -61,6 +63,7 @@ from app.schemas.endgames import (
     MaterialBucket,
     MaterialRow,
     PerTcBreakdownOut,
+    PerTcBucketStats,
     PressureQuintileBullet,
     RatingAnchorOut,
     ScoreGapMaterialResponse,
@@ -1679,6 +1682,34 @@ class _ClockAggregate:
     timeout_losses: int = 0
 
 
+@dataclass(slots=True)
+class _MetricTcAccumulator:
+    """Phase 97: per-TC accumulator for the EndgameMetricsTcCard trifecta.
+
+    Single-pass accumulator for one time control bucket. Tallies per-bucket
+    WDL counts and span-gap lists using the same conversion > recovery > parity
+    priority as _aggregate_bucket_counts. Fields are summable in a single pass.
+
+    Per-bucket WDL counters track games that landed in each bucket.
+    Per-bucket gap lists accumulate ΔES span-gap values for ΔES stats.
+    total: count of all endgame games in this TC.
+    """
+
+    conv_wins: int = 0
+    conv_draws: int = 0
+    conv_total: int = 0
+    parity_wins: int = 0
+    parity_draws: int = 0
+    parity_total: int = 0
+    recov_wins: int = 0
+    recov_draws: int = 0
+    recov_total: int = 0
+    total: int = 0
+    gaps_conv: list[float] = field(default_factory=list)
+    gaps_parity: list[float] = field(default_factory=list)
+    gaps_recov: list[float] = field(default_factory=list)
+
+
 # Rolling window size for the Endgame ELO timeline chart (Phase 57 ELO-05).
 # Matches SCORE_GAP_TIMELINE_WINDOW.
 ENDGAME_ELO_TIMELINE_WINDOW = 100
@@ -2207,6 +2238,216 @@ def _compute_time_pressure_cards(
             )
         )
     return TimePressureCardsResponse(cards=cards)
+
+
+def _build_per_tc_bucket_stats(
+    acc: "_MetricTcAccumulator",
+    bucket: MaterialBucket,
+    gaps: list[float],
+    percentile: float | None,
+) -> PerTcBucketStats:
+    """Build a PerTcBucketStats from per-bucket accumulator fields.
+
+    Phase 97: helper to keep _compute_per_tc_metric_cards shallow (depth-3 guard).
+    Computes WDL pcts (0-100), the headline rate, and ΔES stats.
+
+    bucket: which sub-bucket ("conversion", "parity", "recovery").
+    gaps: per-TC span-gap list for ΔES computation.
+    percentile: per-TC percentile from user_benchmark_percentiles, None when absent.
+    """
+    if bucket == "conversion":
+        games = acc.conv_total
+        wins = acc.conv_wins
+        draws = acc.conv_draws
+    elif bucket == "parity":
+        games = acc.parity_total
+        wins = acc.parity_wins
+        draws = acc.parity_draws
+    else:  # recovery
+        games = acc.recov_total
+        wins = acc.recov_wins
+        draws = acc.recov_draws
+
+    losses = games - wins - draws
+
+    if games > 0:
+        win_pct = wins / games * 100.0
+        draw_pct = draws / games * 100.0
+        loss_pct = losses / games * 100.0
+    else:
+        win_pct = 0.0
+        draw_pct = 0.0
+        loss_pct = 0.0
+
+    # Headline rate per bucket type
+    if bucket == "conversion":
+        rate: float | None = wins / games if games > 0 else None
+    elif bucket == "parity":
+        rate = (wins + 0.5 * draws) / games if games > 0 else None
+    else:  # recovery
+        rate = (wins + draws) / games if games > 0 else None
+
+    # ΔES score-gap stats
+    n = len(gaps)
+    mean_raw, p_val, ci_lo, ci_hi = compute_paired_difference_test(gaps)
+    score_gap_mean: float | None = mean_raw if n > 0 else None
+    score_gap_n: int | None = n if n > 0 else None
+    score_gap_p_value: float | None = p_val if n > 0 else None
+    score_gap_ci_low: float | None = ci_lo if n > 0 else None
+    score_gap_ci_high: float | None = ci_hi if n > 0 else None
+
+    return PerTcBucketStats(
+        games=games,
+        win_pct=win_pct,
+        draw_pct=draw_pct,
+        loss_pct=loss_pct,
+        rate=rate,
+        score_gap_mean=score_gap_mean,
+        score_gap_n=score_gap_n,
+        score_gap_p_value=score_gap_p_value,
+        score_gap_ci_low=score_gap_ci_low,
+        score_gap_ci_high=score_gap_ci_high,
+        percentile=percentile,
+    )
+
+
+def _compute_per_tc_metric_cards(
+    bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    *,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
+) -> EndgameMetricsCardsResponse:
+    """Compute per-TC endgame metric cards from bucket_rows.
+
+    Phase 97 (D-15 Sub-option A): mirrors _compute_time_pressure_cards structure.
+    Single pass through bucket_rows (extended with time_control_bucket at col 6
+    and LEAD next-eval columns at cols 7-8) grouping _MetricTcAccumulator by TC.
+
+    For each TC with total >= MIN_GAMES_PER_TC_CARD, builds one EndgameMetricsTcCard
+    with three PerTcBucketStats (conversion/parity/recovery). Card ordering follows
+    _TIME_CONTROL_ORDER (bullet -> blitz -> rapid -> classical).
+
+    Bucket classification reuses _classify_endgame_bucket (eval_cp, eval_mate,
+    user_color) with the existing conversion > recovery > parity priority from
+    _aggregate_bucket_counts. ΔES span gaps are computed from the LEAD next-eval
+    columns (cols 7-8) via _compute_span_gap — since bucket_rows has one row per
+    game, next_entry_eval columns are always NULL, so all spans are terminal and
+    use the game result as exit score.
+
+    Per-TC percentile lookup reads directly from
+    percentile_rows[metric][tc_bucket] (D-09, no _aggregate_per_tc_percentile
+    blending). T-97-03 mitigation: receives already-fetched bucket_rows scoped
+    to the authenticated user_id — never sources user_id itself.
+    """
+    _effective_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] = (
+        percentile_rows if percentile_rows is not None else {}
+    )
+
+    # Single pass: accumulate per-TC stats
+    tc_accumulators: dict[str, _MetricTcAccumulator] = {}
+    for row in bucket_rows:
+        # Column indices: game_id[0], endgame_class[1], result[2], user_color[3],
+        # eval_cp[4], eval_mate[5], time_control_bucket[6],
+        # next_entry_eval_cp[7], next_entry_eval_mate[8]
+        tc = row[6]
+        result_str = row[2]
+        user_color = row[3]
+        eval_cp = row[4]
+        eval_mate = row[5]
+        next_eval_cp = row[7]
+        next_eval_mate = row[8]
+
+        if tc not in tc_accumulators:
+            tc_accumulators[tc] = _MetricTcAccumulator()
+        acc = tc_accumulators[tc]
+        acc.total += 1
+
+        bucket = _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+        outcome = derive_user_result(result_str, user_color)
+        is_win = outcome == "win"
+        is_draw = outcome == "draw"
+
+        if bucket == "conversion":
+            acc.conv_total += 1
+            if is_win:
+                acc.conv_wins += 1
+            elif is_draw:
+                acc.conv_draws += 1
+        elif bucket == "recovery":
+            acc.recov_total += 1
+            if is_win:
+                acc.recov_wins += 1
+            elif is_draw:
+                acc.recov_draws += 1
+        else:
+            acc.parity_total += 1
+            if is_win:
+                acc.parity_wins += 1
+            elif is_draw:
+                acc.parity_draws += 1
+
+        # ΔES span gap: next_eval columns are always NULL for bucket_rows
+        # (terminal span semantics), so _compute_span_gap falls back to game result.
+        span_gap = _compute_span_gap(
+            eval_cp,
+            eval_mate,
+            next_eval_cp,
+            next_eval_mate,
+            result_str,
+            user_color,
+        )
+        if span_gap is not None:
+            if bucket == "conversion":
+                acc.gaps_conv.append(span_gap)
+            elif bucket == "recovery":
+                acc.gaps_recov.append(span_gap)
+            else:
+                acc.gaps_parity.append(span_gap)
+
+    # Build cards in fixed TC order, gating on MIN_GAMES_PER_TC_CARD
+    cards: list[EndgameMetricsTcCard] = []
+    for tc in _TIME_CONTROL_ORDER:
+        acc = tc_accumulators.get(tc)
+        if acc is None or acc.total < MIN_GAMES_PER_TC_CARD:
+            continue
+
+        tc_literal = cast(Literal["bullet", "blitz", "rapid", "classical"], tc)
+        tc_bucket: TimeControlBucket = tc_literal
+
+        # Direct per-TC percentile lookup bypassing _aggregate_per_tc_percentile
+        # (D-09, D-10). CdfMetricId keys use legacy inconsistent naming — preserved as-is.
+        conv_row = _effective_rows.get("score_gap_conv", {}).get(tc_bucket)
+        parity_row = _effective_rows.get("score_gap_parity", {}).get(tc_bucket)
+        recov_row = _effective_rows.get("recovery_score_gap", {}).get(tc_bucket)
+
+        conversion_stats = _build_per_tc_bucket_stats(
+            acc,
+            "conversion",
+            acc.gaps_conv,
+            conv_row.percentile if conv_row is not None else None,
+        )
+        parity_stats = _build_per_tc_bucket_stats(
+            acc,
+            "parity",
+            acc.gaps_parity,
+            parity_row.percentile if parity_row is not None else None,
+        )
+        recovery_stats = _build_per_tc_bucket_stats(
+            acc,
+            "recovery",
+            acc.gaps_recov,
+            recov_row.percentile if recov_row is not None else None,
+        )
+
+        cards.append(
+            EndgameMetricsTcCard(
+                tc=tc_literal,
+                total=acc.total,
+                conversion=conversion_stats,
+                parity=parity_stats,
+                recovery=recovery_stats,
+            )
+        )
+    return EndgameMetricsCardsResponse(cards=cards)
 
 
 def _compute_clock_diff_timeline(
@@ -3224,6 +3465,17 @@ async def get_endgame_overview(
         for tc, row in anchors.items()
     }
 
+    # Phase 97 (D-15): per-TC endgame metric cards (conv/parity/recovery rates,
+    # WDL, ΔES gap, per-TC percentile). Computed from the already-fetched
+    # bucket_rows (extended with time_control_bucket + LEAD next-eval cols in
+    # Plan 02 Task 1). No new DB query, no asyncio.gather (CLAUDE.md constraint).
+    # T-97-03: bucket_rows are pre-scoped to the authenticated user_id (V4 control
+    # preserved — _compute_per_tc_metric_cards never sources user_id itself).
+    endgame_metrics_cards = _compute_per_tc_metric_cards(
+        bucket_rows,
+        percentile_rows=percentile_rows,
+    )
+
     return EndgameOverviewResponse(
         stats=stats,
         performance=performance,
@@ -3233,4 +3485,5 @@ async def get_endgame_overview(
         clock_diff_timeline=clock_diff_timeline,
         endgame_elo_timeline=endgame_elo_timeline,
         rating_anchors=rating_anchors,
+        endgame_metrics_cards=endgame_metrics_cards,
     )
