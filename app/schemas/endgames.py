@@ -827,6 +827,12 @@ class PerTcBucketStats(BaseModel):
         mean is None when n == 0 (avoids 0.0 polluting wire).
     percentile: per-TC ΔES-gap percentile from user_benchmark_percentiles. None when
         the user is below the pooled inclusion floor for this (metric, TC) cell.
+    percentile_n_games/percentile_value: the chip-cohort n_games and value from the
+        same PercentileRow that produced ``percentile`` — surfaced so the chip tooltip
+        states the actual game count and value (mirrors TimePressureTcCard's
+        clock_gap_n_games/value). Both None when no percentile row exists for the cell.
+        Defaulted so existing fixtures that build PerTcBucketStats keyword-style without
+        these args do not break.
     """
 
     games: int
@@ -840,6 +846,8 @@ class PerTcBucketStats(BaseModel):
     score_gap_ci_low: float | None
     score_gap_ci_high: float | None
     percentile: float | None
+    percentile_n_games: int | None = None
+    percentile_value: float | None = None
 
 
 class EndgameMetricsTcCard(BaseModel):

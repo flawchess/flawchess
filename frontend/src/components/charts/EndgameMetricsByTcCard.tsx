@@ -157,10 +157,16 @@ function MetricBlock({
 
         {hasGames ? (
           <>
-            {/* WDL bar row */}
+            {/* WDL bar row -- game count restored above the bar, per TC + metric. */}
             <div className="flex flex-col gap-2">
               <span className="flex items-center gap-2 text-sm tabular-nums w-full">
                 <span className="text-muted-foreground">Win/Draw/Loss</span>
+                <span
+                  className="ml-auto text-muted-foreground"
+                  data-testid={`${testId}-games-count`}
+                >
+                  {block.games.toLocaleString()} games
+                </span>
               </span>
               <div className="min-w-0">
                 <MiniWDLBar
@@ -205,6 +211,8 @@ function MetricBlock({
                         anchorRating={anchorRating}
                         metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
                         testId={`${testId}-percentile-chip`}
+                        nGames={block.percentile_n_games}
+                        value={block.percentile_value}
                       />
                     ) : undefined
                   }
@@ -303,23 +311,28 @@ export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByT
   const anchorRating = ratingAnchor?.anchor_rating;
 
   // Divider between metric blocks: a vertical rule when the blocks sit
-  // side-by-side (xl+), a horizontal rule when they stack (< xl). Mirrors the
+  // side-by-side (lg+), a horizontal rule when they stack (< lg). Mirrors the
   // EndgameOverallPerformanceSection two-column card. The flex parent's default
-  // align-items: stretch gives the vertical rule full column height.
+  // align-items: stretch gives the vertical rule full column height. The lg
+  // breakpoint (was xl) keeps the three metrics on one row down to tablet width.
   const divider = (
     <>
-      <div className="hidden xl:block w-px bg-border/40 mx-6" aria-hidden="true" />
-      <div className="block xl:hidden border-t border-border/40 my-4" aria-hidden="true" />
+      <div className="hidden lg:block w-px bg-border/40 mx-6" aria-hidden="true" />
+      <div className="block lg:hidden border-t border-border/40 my-4" aria-hidden="true" />
     </>
   );
 
   return (
     <div
-      className="charcoal-texture rounded-md p-4 w-full"
+      className="charcoal-texture rounded-md w-full overflow-hidden"
       data-testid={`metrics-tc-card-${card.tc}`}
     >
-      {/* TC header: icon + label + total games */}
-      <div className="flex items-center gap-2 mb-3">
+      {/* Card header section: distinct recessed background + bottom separator,
+          full-bleed to the card edges (outer has no padding; header pads itself). */}
+      <div
+        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40"
+        data-testid={`metrics-tc-card-${card.tc}-header`}
+      >
         <TimeControlIcon
           timeControl={card.tc}
           className="h-4 w-4"
@@ -330,10 +343,10 @@ export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByT
         </span>
       </div>
 
-      {/* Conversion / Parity / Recovery trifecta (D-03): three columns split by
-          vertical dividers on desktop (xl+), stacked with horizontal dividers
-          on mobile — single charcoal container shared by all three. */}
-      <div className="flex flex-col xl:flex-row">
+      {/* Body: Conversion / Parity / Recovery trifecta (D-03) — three columns
+          split by vertical dividers on desktop (lg+), stacked with horizontal
+          dividers below lg. Single charcoal container shared by all three. */}
+      <div className="flex flex-col lg:flex-row p-4">
         <MetricBlock
           bucket="conversion"
           block={card.conversion}

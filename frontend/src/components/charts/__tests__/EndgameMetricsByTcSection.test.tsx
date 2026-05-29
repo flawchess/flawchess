@@ -163,8 +163,11 @@ describe('EndgameMetricsByTcSection — card order', () => {
       makePayload('bullet', 'blitz', 'rapid', 'classical'),
     );
 
-    // Gather all TC card testids in DOM order.
-    const cards = container.querySelectorAll('[data-testid^="metrics-tc-card-"]');
+    // Gather all TC card ROOT testids in DOM order. Exclude the per-card
+    // header band (`metrics-tc-card-{tc}-header`) which shares the prefix.
+    const cards = container.querySelectorAll(
+      '[data-testid^="metrics-tc-card-"]:not([data-testid$="-header"])',
+    );
     const tcs = Array.from(cards).map((el) =>
       el.getAttribute('data-testid')!.replace('metrics-tc-card-', ''),
     );

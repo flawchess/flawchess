@@ -2213,7 +2213,7 @@ def _build_per_tc_bucket_stats(
     acc: "_MetricTcAccumulator",
     bucket: MaterialBucket,
     gaps: list[float],
-    percentile: float | None,
+    percentile_row: PercentileRow | None,
 ) -> PerTcBucketStats:
     """Build a PerTcBucketStats from per-bucket accumulator fields.
 
@@ -2222,7 +2222,9 @@ def _build_per_tc_bucket_stats(
 
     bucket: which sub-bucket ("conversion", "parity", "recovery").
     gaps: per-TC span-gap list for ΔES computation.
-    percentile: per-TC percentile from user_benchmark_percentiles, None when absent.
+    percentile_row: per-(metric, TC) PercentileRow from user_benchmark_percentiles,
+        None when the user is below the inclusion floor. Its ``percentile``,
+        ``n_games`` and ``value`` feed the chip + its tooltip.
     """
     if bucket == "conversion":
         games = acc.conv_total
@@ -2276,7 +2278,9 @@ def _build_per_tc_bucket_stats(
         score_gap_p_value=score_gap_p_value,
         score_gap_ci_low=score_gap_ci_low,
         score_gap_ci_high=score_gap_ci_high,
-        percentile=percentile,
+        percentile=percentile_row.percentile if percentile_row is not None else None,
+        percentile_n_games=percentile_row.n_games if percentile_row is not None else None,
+        percentile_value=percentile_row.value if percentile_row is not None else None,
     )
 
 
@@ -2392,19 +2396,19 @@ def _compute_per_tc_metric_cards(
             acc,
             "conversion",
             acc.gaps_conv,
-            conv_row.percentile if conv_row is not None else None,
+            conv_row,
         )
         parity_stats = _build_per_tc_bucket_stats(
             acc,
             "parity",
             acc.gaps_parity,
-            parity_row.percentile if parity_row is not None else None,
+            parity_row,
         )
         recovery_stats = _build_per_tc_bucket_stats(
             acc,
             "recovery",
             acc.gaps_recov,
-            recov_row.percentile if recov_row is not None else None,
+            recov_row,
         )
 
         cards.append(

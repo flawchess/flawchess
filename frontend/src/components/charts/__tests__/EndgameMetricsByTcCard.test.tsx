@@ -63,6 +63,8 @@ function buildBucket(overrides?: Partial<PerTcBucketStats>): PerTcBucketStats {
     score_gap_ci_low: -0.12,
     score_gap_ci_high: -0.04,
     percentile: 42,
+    percentile_n_games: 38,
+    percentile_value: -0.08,
     ...overrides,
   };
 }
@@ -252,6 +254,27 @@ describe('EndgameMetricsByTcCard — block testid presence', () => {
     expect(screen.getByTestId(`metrics-tc-${tc}-parity`)).not.toBeNull();
     expect(screen.getByTestId(`metrics-tc-${tc}-recovery`)).not.toBeNull();
     expect(screen.getByTestId(`metrics-tc-card-${tc}`)).not.toBeNull();
+  });
+});
+
+describe('EndgameMetricsByTcCard — header + games count', () => {
+  it('renders a distinct header section per card', () => {
+    renderCard(buildCard('rapid'));
+    expect(screen.getByTestId('metrics-tc-card-rapid-header')).not.toBeNull();
+  });
+
+  it('shows the per-metric game count above each WDL bar', () => {
+    renderCard(buildCard('bullet'));
+    // buildBucket sets games=50 for every block.
+    expect(screen.getByTestId('metrics-tc-bullet-conversion-games-count').textContent).toContain(
+      '50 games',
+    );
+    expect(screen.getByTestId('metrics-tc-bullet-parity-games-count').textContent).toContain(
+      '50 games',
+    );
+    expect(screen.getByTestId('metrics-tc-bullet-recovery-games-count').textContent).toContain(
+      '50 games',
+    );
   });
 });
 

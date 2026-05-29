@@ -424,6 +424,11 @@ export interface PerTcBucketStats {
   score_gap_ci_low: number | null;
   score_gap_ci_high: number | null;
   percentile: number | null;       // per-TC DeltaES-gap percentile
+  // Chip-cohort n_games + value from the same PercentileRow as `percentile`.
+  // Feed the chip tooltip's "Based on {n} of your recent {tc} games … Your
+  // value: {v}" line (mirrors TimePressureTcCard). Optional for older fixtures.
+  percentile_n_games?: number | null;
+  percentile_value?: number | null;
 }
 
 /** One TC card in the per-TC Endgame Metrics section.
