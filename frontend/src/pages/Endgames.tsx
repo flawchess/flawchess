@@ -589,6 +589,7 @@ export function EndgamesPage() {
                       responses where endgame_metrics_cards is absent. */}
                   <EndgameMetricsByTcSection
                     data={overviewData?.endgame_metrics_cards ?? { cards: [] }}
+                    ratingAnchors={overviewData?.rating_anchors}
                   />
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>

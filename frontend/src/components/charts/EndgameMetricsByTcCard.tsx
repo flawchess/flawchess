@@ -2,7 +2,10 @@
  * Phase 97 Plan 03 — Per-TC card for the Endgame Metrics by Time Control section.
  *
  * Renders one card per time control with the Conversion / Parity / Recovery
- * trifecta. Each block shows a gauge (TC-specific bands for conv/recov, global
+ * trifecta laid out as three columns inside a SINGLE charcoal container,
+ * separated by a vertical divider on desktop and horizontal dividers when
+ * stacked on mobile (mirrors EndgameOverallPerformanceSection's two-column
+ * card). Each block shows a gauge (TC-specific bands for conv/recov, global
  * band for parity), WDL bar, Delta-ES Score Gap bullet, and a percentile chip
  * when the per-TC percentile is available.
  *
@@ -16,6 +19,11 @@
  *     neutral-band edges shift (D-04 carve-out).
  *   - Recovery popover copy uses opponent-first framing per folded todo
  *     2026-05-17-recovery-score-gap-popover-copy.md.
+ *   - Per-TC percentile chips disclose the cohort rating anchor in their
+ *     tooltip ("…of ~{anchor}-rated players in {tc}"), so the chip is gated on
+ *     BOTH percentile != null AND anchorRating != null — matching
+ *     EndgameTimePressureCard. Without an anchor the tooltip would render a
+ *     broken "~-rated players" clause, so the chip is suppressed instead.
  */
 
 import { useMemo } from 'react';
@@ -30,7 +38,7 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { ZONE_DANGER, ZONE_SUCCESS, colorizeGaugeZones } from '@/lib/theme';
 import { BUCKET_DISPLAY_LABELS } from '@/lib/endgameMetrics';
 import { TC_METRIC_BANDS, FIXED_GAUGE_ZONES, SCORE_GAP_PARITY_NEUTRAL_MIN, SCORE_GAP_PARITY_NEUTRAL_MAX } from '@/generated/endgameZones';
-import type { EndgameMetricsTcCard, PerTcBucketStats } from '@/types/endgames';
+import type { EndgameMetricsTcCard, PerTcBucketStats, RatingAnchorOut } from '@/types/endgames';
 import type { MaterialBucket } from '@/generated/endgameZones';
 
 import { PercentileChip } from './PercentileChip';
@@ -75,6 +83,9 @@ interface MetricBlockProps {
   neutralMin: number;
   neutralMax: number;
   displayShift: number;
+  /** Cohort rating anchor for this TC, named in the percentile chip tooltip.
+   *  When undefined the chip is suppressed (see file header). */
+  anchorRating: number | undefined;
 }
 
 function MetricBlock({
@@ -85,6 +96,7 @@ function MetricBlock({
   neutralMin,
   neutralMax,
   displayShift,
+  anchorRating,
 }: MetricBlockProps) {
   const userR =
     bucket === 'conversion'
@@ -120,7 +132,7 @@ function MetricBlock({
   const testId = `metrics-tc-${tc}-${bucket}`;
 
   return (
-    <div className="charcoal-texture rounded-md p-4" data-testid={testId}>
+    <div className="flex-1 min-w-0" data-testid={testId}>
       <h4 className="text-base font-semibold mb-2 inline-flex items-center gap-1">
         {BUCKET_DISPLAY_LABELS[bucket]}
         <InfoPopover
@@ -177,7 +189,7 @@ function MetricBlock({
                   ciLow={block.score_gap_ci_low != null ? block.score_gap_ci_low + displayShift : undefined}
                   ciHigh={block.score_gap_ci_high != null ? block.score_gap_ci_high + displayShift : undefined}
                   chipSlot={
-                    block.percentile != null ? (
+                    block.percentile != null && anchorRating != null ? (
                       <PercentileChip
                         percentile={block.percentile}
                         flavor={
@@ -188,6 +200,7 @@ function MetricBlock({
                               : 'recovery'
                         }
                         tc={tc}
+                        anchorRating={anchorRating}
                         metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
                         testId={`${testId}-percentile-chip`}
                       />
@@ -234,9 +247,13 @@ function MetricBlock({
 
 interface EndgameMetricsByTcCardProps {
   card: EndgameMetricsTcCard;
+  /** Per-TC cohort rating anchor (from EndgameOverviewResponse.rating_anchors).
+   *  Threaded into each block's percentile chip tooltip. Undefined when this TC
+   *  has no anchor — the chips then self-suppress. */
+  ratingAnchor?: RatingAnchorOut;
 }
 
-export function EndgameMetricsByTcCard({ card }: EndgameMetricsByTcCardProps) {
+export function EndgameMetricsByTcCard({ card, ratingAnchor }: EndgameMetricsByTcCardProps) {
   // Narrow TC_METRIC_BANDS[card.tc] — noUncheckedIndexedAccess requires explicit
   // narrowing since Record keys may return undefined for unknown values. card.tc
   // is the four-member literal union so the lookup is always defined, but we
@@ -275,9 +292,22 @@ export function EndgameMetricsByTcCard({ card }: EndgameMetricsByTcCardProps) {
   const recovShift = -(bands.recovScoreGap[0] + bands.recovScoreGap[1]) / 2;
   const parityShift = 0;
 
+  const anchorRating = ratingAnchor?.anchor_rating;
+
+  // Divider between metric blocks: a vertical rule when the blocks sit
+  // side-by-side (xl+), a horizontal rule when they stack (< xl). Mirrors the
+  // EndgameOverallPerformanceSection two-column card. The flex parent's default
+  // align-items: stretch gives the vertical rule full column height.
+  const divider = (
+    <>
+      <div className="hidden xl:block w-px bg-border/40 mx-6" aria-hidden="true" />
+      <div className="block xl:hidden border-t border-border/40 my-4" aria-hidden="true" />
+    </>
+  );
+
   return (
     <div
-      className="w-full"
+      className="charcoal-texture rounded-md p-4 w-full"
       data-testid={`metrics-tc-card-${card.tc}`}
     >
       {/* TC header: icon + label + total games */}
@@ -292,8 +322,10 @@ export function EndgameMetricsByTcCard({ card }: EndgameMetricsByTcCardProps) {
         </span>
       </div>
 
-      {/* 3-column metric grid (D-03): side-by-side desktop, stacked mobile */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      {/* Conversion / Parity / Recovery trifecta (D-03): three columns split by
+          vertical dividers on desktop (xl+), stacked with horizontal dividers
+          on mobile — single charcoal container shared by all three. */}
+      <div className="flex flex-col xl:flex-row">
         <MetricBlock
           bucket="conversion"
           block={card.conversion}
@@ -302,7 +334,9 @@ export function EndgameMetricsByTcCard({ card }: EndgameMetricsByTcCardProps) {
           neutralMin={bands.convScoreGap[0]}
           neutralMax={bands.convScoreGap[1]}
           displayShift={convShift}
+          anchorRating={anchorRating}
         />
+        {divider}
         <MetricBlock
           bucket="parity"
           block={card.parity}
@@ -311,7 +345,9 @@ export function EndgameMetricsByTcCard({ card }: EndgameMetricsByTcCardProps) {
           neutralMin={SCORE_GAP_PARITY_NEUTRAL_MIN}
           neutralMax={SCORE_GAP_PARITY_NEUTRAL_MAX}
           displayShift={parityShift}
+          anchorRating={anchorRating}
         />
+        {divider}
         <MetricBlock
           bucket="recovery"
           block={card.recovery}
@@ -320,6 +356,7 @@ export function EndgameMetricsByTcCard({ card }: EndgameMetricsByTcCardProps) {
           neutralMin={bands.recovScoreGap[0]}
           neutralMax={bands.recovScoreGap[1]}
           displayShift={recovShift}
+          anchorRating={anchorRating}
         />
       </div>
     </div>

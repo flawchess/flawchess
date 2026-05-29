@@ -15,13 +15,19 @@
  */
 
 import { EndgameMetricsByTcCard } from '@/components/charts/EndgameMetricsByTcCard';
+import type { RatingAnchorsByTc } from '@/lib/percentileAnchor';
 import type { EndgameMetricsCardsResponse } from '@/types/endgames';
 
 interface EndgameMetricsByTcSectionProps {
   data: EndgameMetricsCardsResponse;
+  /** Per-TC rating anchors from EndgameOverviewResponse.rating_anchors. Threaded
+   *  into each card's percentile chip tooltip ("…of ~{anchor}-rated players in
+   *  {tc}"). Cards whose TC has no anchor self-suppress their chips. */
+  ratingAnchors?: RatingAnchorsByTc;
 }
 
-export function EndgameMetricsByTcSection({ data }: EndgameMetricsByTcSectionProps) {
+export function EndgameMetricsByTcSection({ data, ratingAnchors }: EndgameMetricsByTcSectionProps) {
+  const anchors = ratingAnchors ?? {};
   return (
     <section
       data-testid="endgame-metrics-tc-section"
@@ -40,7 +46,7 @@ export function EndgameMetricsByTcSection({ data }: EndgameMetricsByTcSectionPro
       ) : (
         <div className="w-full mt-2 flex flex-col gap-4">
           {data.cards.map((card) => (
-            <EndgameMetricsByTcCard key={card.tc} card={card} />
+            <EndgameMetricsByTcCard key={card.tc} card={card} ratingAnchor={anchors[card.tc]} />
           ))}
         </div>
       )}

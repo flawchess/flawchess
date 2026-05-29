@@ -17,7 +17,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { TC_METRIC_BANDS, FIXED_GAUGE_ZONES } from '@/generated/endgameZones';
-import type { EndgameMetricsTcCard, PerTcBucketStats } from '@/types/endgames';
+import type { EndgameMetricsTcCard, PerTcBucketStats, RatingAnchorOut } from '@/types/endgames';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -77,11 +77,25 @@ function buildCard(tc: EndgameMetricsTcCard['tc']): EndgameMetricsTcCard {
   };
 }
 
-function renderCard(card: EndgameMetricsTcCard): ReturnType<typeof render> {
+// Default cohort anchor — per-TC percentile chips are gated on an anchor being
+// present (the tooltip names "~{anchor}-rated players in {tc}"), so tests that
+// assert chip presence must supply one.
+const DEFAULT_ANCHOR: RatingAnchorOut = {
+  anchor_rating: 1533,
+  n_chesscom_games: 0,
+  n_lichess_games: 100,
+  chesscom_median_native: null,
+  lichess_median_native: 1533,
+};
+
+function renderCard(
+  card: EndgameMetricsTcCard,
+  ratingAnchor: RatingAnchorOut | undefined = DEFAULT_ANCHOR,
+): ReturnType<typeof render> {
   return render(
     <MemoryRouter>
       <TooltipProvider>
-        <EndgameMetricsByTcCard card={card} />
+        <EndgameMetricsByTcCard card={card} ratingAnchor={ratingAnchor} />
       </TooltipProvider>
     </MemoryRouter>,
   );
@@ -164,6 +178,25 @@ describe('EndgameMetricsByTcCard — percentile chip rendering', () => {
     expect(screen.getByTestId('metrics-tc-classical-conversion-percentile-chip')).not.toBeNull();
     expect(screen.queryByTestId('metrics-tc-classical-parity-percentile-chip')).toBeNull();
     expect(screen.getByTestId('metrics-tc-classical-recovery-percentile-chip')).not.toBeNull();
+  });
+
+  it('suppresses all percentile chips when the TC has no rating anchor', () => {
+    // Regression guard: the chip tooltip reads "…of ~{anchor}-rated players in
+    // {tc}". Without an anchor it would render a broken "~-rated players" clause,
+    // so the chip must self-suppress (mirrors EndgameTimePressureCard). Render
+    // directly with the ratingAnchor prop omitted — a default-param helper would
+    // substitute the default on an explicit `undefined`.
+    render(
+      <MemoryRouter>
+        <TooltipProvider>
+          <EndgameMetricsByTcCard card={buildCard('blitz')} />
+        </TooltipProvider>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByTestId('metrics-tc-blitz-conversion-percentile-chip')).toBeNull();
+    expect(screen.queryByTestId('metrics-tc-blitz-parity-percentile-chip')).toBeNull();
+    expect(screen.queryByTestId('metrics-tc-blitz-recovery-percentile-chip')).toBeNull();
   });
 });
 
