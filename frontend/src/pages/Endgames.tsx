@@ -542,13 +542,6 @@ export function EndgamesPage() {
                       endgame play is lifting your rating (green band); when it sits below, your endgame is
                       holding it back (red band).
                     </p>
-                    <p>
-                      Conversion and Recovery rates usually reflect your performance against opponents at your rating
-                      level. As your rating changes, you face stronger or weaker opponents, so trends may not
-                      directly indicate improvement or stagnation in absolute terms. If you often play against
-                      stronger or weaker opponents, set the Opponent Strength filter to "Similar" to adjust your
-                      analysis.
-                    </p>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
