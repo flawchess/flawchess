@@ -104,7 +104,7 @@
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 97-04-PLAN.md — Remove aggregated Metrics section + blended chip fields; knip-clean (Overall Performance chips preserved)
+- [x] 97-04-PLAN.md — Remove aggregated Metrics section + blended chip fields; knip-clean (Overall Performance chips preserved)
 
 ### Phase 98: LLM Endgame-Insights Statistical-Reasoning Rework
 
