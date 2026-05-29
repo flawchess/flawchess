@@ -1,4 +1,4 @@
-"""Pooled-shape parity assertions for ``per_user_cte_for`` — Phase 94.2 Plan 01.
+"""Pooled-shape parity assertions for the live per-TC CTE builders — Phase 94.2 Plan 01.
 
 This module replaces the Phase 94.1 SC-7 numerical-parity gate (which
 seeded a test DB, ran both code paths, and asserted ``abs(bm - su) < 1e-9``
@@ -8,11 +8,14 @@ to aggregate over; ``per_user_values`` already pools to one row per user).
 
 94.2 structural contract (D-10 "drift remains structurally impossible"):
 
-* ``per_user_cte_for(metric, source="benchmark")`` and
-  ``per_user_cte_for(metric, source="single_user")`` produce the SAME
-  pooled CTE body. The only structural difference between the two paths
-  is the ``selected_users`` CTE preamble, which is composed separately
-  by ``selected_users_cte(source=...)`` and concatenated by the consumer.
+The live per-TC builders (``per_user_cte_score_gap_tc``,
+``per_user_cte_achievable_tc``, ``per_user_cte_score_gap_bucket_tc``,
+``per_user_cte_time_pressure_score_gap``, ``per_user_cte_clock_gap``,
+``per_user_cte_net_flag_rate``) produce the SAME pooled CTE body on both
+``source="benchmark"`` and ``source="single_user"``. The only structural
+difference between the two paths is the ``selected_users`` CTE preamble,
+which is composed separately by ``selected_users_cte(source=...)`` and
+concatenated by the consumer.
 
 * Neither rendered fragment contains the per-TC equality predicate
   ``g.time_control_bucket::text = su.tc_bucket`` — D-5 pools across
@@ -22,8 +25,8 @@ The numerical-parity claim is now structurally trivial: identical SQL
 emits identical values. We assert the structural identity via byte-equal
 string comparison after whitespace normalisation.
 
-Phase 94.3 Plan 02 extension: 12 new per-(metric × TC) parity assertions
-guard against the per-TC restriction being introduced at the wrong layer
+Phase 94.3 Plan 02 extension: per-(metric × TC) parity assertions guard
+against the per-TC restriction being introduced at the wrong layer
 (RESEARCH §Pitfall 2). If a future refactor "simplifies" by injecting
 ``AND g.time_control_bucket = '{tc}'`` at the script (Plan C) or service
 (Plan D) layer instead of inside ``canonical_slice_sql.py``, these
@@ -39,28 +42,30 @@ from typing import Literal
 
 import pytest
 
-from app.services.canonical_slice_sql import RECENT_GAMES_PER_TC_CAP, per_user_cte_for
-from app.services.global_percentile_cdf import CdfMetricId
-
-_METRICS: tuple[CdfMetricId, ...] = (
-    "score_gap",
-    "achievable_score_gap",
-    "score_gap_conv",
-    "score_gap_parity",
+from app.services.canonical_slice_sql import (
+    RECENT_GAMES_PER_TC_CAP,
+    per_user_cte_achievable_tc,
+    per_user_cte_clock_gap,
+    per_user_cte_net_flag_rate,
+    per_user_cte_score_gap_bucket_tc,
+    per_user_cte_score_gap_tc,
+    per_user_cte_time_pressure_score_gap,
 )
+
 _SOURCES: tuple[Literal["benchmark", "single_user"], ...] = ("benchmark", "single_user")
 
-# Phase 94.3 — 12 per-(metric_family × TC) combinations covered by the new
-# dispatcher arms in ``canonical_slice_sql.per_user_cte_for``. Parametrised
+# Phase 94.3 — 12 per-(metric_family × TC) combinations. Parametrised
 # here so the parity assertion is run once per cell.
 _PER_TC_METRIC_FAMILIES: tuple[str, ...] = (
     "time_pressure_score_gap",
     "clock_gap",
     "net_flag_rate",
 )
-_PER_TC_TCS: tuple[str, ...] = ("bullet", "blitz", "rapid", "classical")
-_PER_TC_METRIC_IDS: tuple[str, ...] = tuple(
-    f"{family}_{tc}" for family in _PER_TC_METRIC_FAMILIES for tc in _PER_TC_TCS
+_PER_TC_TCS: tuple[Literal["bullet", "blitz", "rapid", "classical"], ...] = (
+    "bullet",
+    "blitz",
+    "rapid",
+    "classical",
 )
 
 
@@ -69,77 +74,33 @@ def _normalise_whitespace(sql: str) -> str:
     return re.sub(r"\s+", " ", sql).strip()
 
 
-@pytest.mark.parametrize("metric_id", _METRICS)
-def test_pooled_cte_body_is_identical_across_sources(metric_id: CdfMetricId) -> None:
-    """The pooled per-user CTE body is byte-identical between benchmark and single_user (D-10).
-
-    ``per_user_cte_for`` does NOT include the ``selected_users`` CTE preamble
-    in its output (that's composed separately by ``selected_users_cte``).
-    What this builder returns is the shared pooled body — which must be the
-    same regardless of cohort definition.
-    """
-    bm = per_user_cte_for(metric_id, source="benchmark")
-    su = per_user_cte_for(metric_id, source="single_user")
-    assert _normalise_whitespace(bm) == _normalise_whitespace(su), (
-        f"pooled CTE body diverged between sources for {metric_id}; "
-        f"the only allowed structural diff lives in selected_users_cte()."
-    )
-
-
-@pytest.mark.parametrize("metric_id", _METRICS)
-@pytest.mark.parametrize("source", _SOURCES)
-def test_no_per_tc_predicate_on_either_source(
-    metric_id: CdfMetricId, source: Literal["benchmark", "single_user"]
-) -> None:
-    """``g.time_control_bucket::text = su.tc_bucket`` is gone on BOTH sources (D-5).
-
-    A leftover predicate on either side would defeat cross-TC pooling.
-    """
-    sql = per_user_cte_for(metric_id, source=source)
-    assert "g.time_control_bucket::text = su.tc_bucket" not in sql, (
-        f"per-TC predicate must be absent on {source} for {metric_id} (D-5)"
-    )
-
-
-@pytest.mark.parametrize("metric_id", _METRICS)
-def test_pooled_cte_contains_recent_capped_prelude(metric_id: CdfMetricId) -> None:
-    """Both sources include the shared ``recent_capped`` recent-per-TC + 36mo prelude (D-5)."""
-    bm = per_user_cte_for(metric_id, source="benchmark")
-    su = per_user_cte_for(metric_id, source="single_user")
-    for sql, label in ((bm, "benchmark"), (su, "single_user")):
-        assert "recent_capped AS (" in sql, f"recent_capped CTE missing on {label}/{metric_id}"
-        assert f"<= {RECENT_GAMES_PER_TC_CAP}" in sql, (
-            f"recent-per-TC cap missing on {label}/{metric_id}"
-        )
-        assert "INTERVAL '36 months'" in sql, (
-            f"36-month recency window missing on {label}/{metric_id}"
-        )
-
-
-@pytest.mark.parametrize("metric_id", _METRICS)
-def test_pooled_cte_emits_per_user_values_with_metric_value_and_n_games(
-    metric_id: CdfMetricId,
-) -> None:
-    """``per_user_values(metric_value, n_games)`` shape is identical on both sources (D-9-amend)."""
-    bm = per_user_cte_for(metric_id, source="benchmark")
-    su = per_user_cte_for(metric_id, source="single_user")
-    for sql, label in ((bm, "benchmark"), (su, "single_user")):
-        pv_idx = sql.find("per_user_values")
-        assert pv_idx != -1, f"per_user_values missing on {label}/{metric_id}"
-        block = sql[pv_idx:]
-        assert "metric_value" in block, (
-            f"metric_value missing in per_user_values for {label}/{metric_id}"
-        )
-        assert "n_games" in block, f"n_games missing in per_user_values for {label}/{metric_id}"
+def _call_per_tc_builder(
+    family: str,
+    tc: Literal["bullet", "blitz", "rapid", "classical"],
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Dispatch to the live per-TC builder by family name."""
+    if family == "time_pressure_score_gap":
+        return per_user_cte_time_pressure_score_gap(tc, source=source, snapshot_date=snapshot_date)
+    if family == "clock_gap":
+        return per_user_cte_clock_gap(tc, source=source, snapshot_date=snapshot_date)
+    if family == "net_flag_rate":
+        return per_user_cte_net_flag_rate(tc, source=source, snapshot_date=snapshot_date)
+    raise ValueError(f"Unknown family: {family!r}")
 
 
 # ---------------------------------------------------------------------------
-# Phase 94.3 Plan 02 — per-(metric × TC) parity assertions (12 new cells).
+# Phase 94.3 Plan 02 — per-(metric × TC) parity assertions (12 cells).
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("metric_id", _PER_TC_METRIC_IDS)
-def test_pooled_per_tc_cte_body_is_identical_across_sources(metric_id: str) -> None:
+@pytest.mark.parametrize("tc", _PER_TC_TCS)
+@pytest.mark.parametrize("family", _PER_TC_METRIC_FAMILIES)
+def test_pooled_per_tc_cte_body_is_identical_across_sources(
+    family: str, tc: Literal["bullet", "blitz", "rapid", "classical"]
+) -> None:
     """The per-TC pooled CTE body must be byte-identical across sources (RESEARCH §Pitfall 2).
 
     Locating the per-TC restriction inside the shared builder
@@ -150,45 +111,46 @@ def test_pooled_per_tc_cte_body_is_identical_across_sources(metric_id: str) -> N
     this assertion catches it because the two paths would diverge (the
     script-injected predicate would only appear on the benchmark side).
 
-    Parametrised over all 12 (metric × TC) cells.
+    Parametrised over all 12 (family × TC) cells.
     """
-    bm = per_user_cte_for(metric_id, source="benchmark", snapshot_date=date(2026, 3, 31))  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
-    su = per_user_cte_for(metric_id, source="single_user", snapshot_date=date(2026, 3, 31))  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+    bm = _call_per_tc_builder(family, tc, source="benchmark", snapshot_date=date(2026, 3, 31))
+    su = _call_per_tc_builder(family, tc, source="single_user", snapshot_date=date(2026, 3, 31))
     assert _normalise_whitespace(bm) == _normalise_whitespace(su), (
-        f"per-TC pooled CTE body diverged between sources for {metric_id}; "
+        f"per-TC pooled CTE body diverged between sources for {family}/{tc}; "
         f"the per-TC restriction must live ONLY in canonical_slice_sql._recent_capped_per_tc_cte, "
         f"not in the consumer layer."
     )
 
 
-@pytest.mark.parametrize("metric_id", _PER_TC_METRIC_IDS)
-def test_pooled_per_tc_cte_contains_per_tc_predicate(metric_id: str) -> None:
+@pytest.mark.parametrize("tc", _PER_TC_TCS)
+@pytest.mark.parametrize("family", _PER_TC_METRIC_FAMILIES)
+def test_pooled_per_tc_cte_contains_per_tc_predicate(
+    family: str, tc: Literal["bullet", "blitz", "rapid", "classical"]
+) -> None:
     """Every per-TC builder output must contain the per-TC predicate (D-10 invariant)."""
-    # Derive the expected tc from the metric_id suffix.
-    tc = metric_id.rsplit("_", 1)[-1]
-    assert tc in {"bullet", "blitz", "rapid", "classical"}, f"unexpected tc suffix on {metric_id}"
     for source in _SOURCES:
-        sql = per_user_cte_for(metric_id, source=source)  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+        sql = _call_per_tc_builder(family, tc, source=source)
         assert f"g.time_control_bucket = '{tc}'" in sql, (
-            f"per-TC predicate '{tc}' missing on {source} for {metric_id}"
+            f"per-TC predicate '{tc}' missing on {source} for {family}/{tc}"
         )
 
 
-@pytest.mark.parametrize("metric_id", _PER_TC_METRIC_IDS)
+@pytest.mark.parametrize("tc", _PER_TC_TCS)
+@pytest.mark.parametrize("family", _PER_TC_METRIC_FAMILIES)
 def test_pooled_per_tc_cte_emits_per_user_values_with_metric_value_and_n_games(
-    metric_id: str,
+    family: str, tc: Literal["bullet", "blitz", "rapid", "classical"]
 ) -> None:
     """``per_user_values(metric_value, n_games)`` shape identical on both sources (D-9-amend)."""
-    bm = per_user_cte_for(metric_id, source="benchmark")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
-    su = per_user_cte_for(metric_id, source="single_user")  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+    bm = _call_per_tc_builder(family, tc, source="benchmark")
+    su = _call_per_tc_builder(family, tc, source="single_user")
     for sql, label in ((bm, "benchmark"), (su, "single_user")):
         pv_idx = sql.find("per_user_values")
-        assert pv_idx != -1, f"per_user_values missing on {label}/{metric_id}"
+        assert pv_idx != -1, f"per_user_values missing on {label}/{family}/{tc}"
         block = sql[pv_idx:]
         assert "metric_value" in block, (
-            f"metric_value missing in per_user_values for {label}/{metric_id}"
+            f"metric_value missing in per_user_values for {label}/{family}/{tc}"
         )
-        assert "n_games" in block, f"n_games missing in per_user_values for {label}/{metric_id}"
+        assert "n_games" in block, f"n_games missing in per_user_values for {label}/{family}/{tc}"
 
 
 # ---------------------------------------------------------------------------
@@ -221,14 +183,35 @@ def test_score_gap_tc_pooled_body_byte_identical_across_sources(
     after the selected_users CTE switch must be byte-identical between
     benchmark and single_user (D-10 invariant; the cohort difference lives
     entirely in ``selected_users_cte``).
-    """
-    from app.services.canonical_slice_sql import per_user_cte_score_gap_tc
 
+    Also asserts the recent_capped prelude presence and per_user_values shape
+    (folded from the deleted non-per-TC tests, now verified on a live builder).
+    """
     bm = per_user_cte_score_gap_tc(tc, source="benchmark", snapshot_date=date(2026, 3, 31))
     su = per_user_cte_score_gap_tc(tc, source="single_user", snapshot_date=date(2026, 3, 31))
     assert _normalise_whitespace(bm) == _normalise_whitespace(su), (
         f"per_user_cte_score_gap_tc({tc}) pooled body diverged between sources"
     )
+    # Prelude substring guard (formerly in test_pooled_cte_contains_recent_capped_prelude).
+    for sql, label in ((bm, "benchmark"), (su, "single_user")):
+        assert "recent_capped AS (" in sql, f"recent_capped CTE missing on {label}/score_gap_tc/{tc}"
+        assert f"<= {RECENT_GAMES_PER_TC_CAP}" in sql, (
+            f"recent-per-TC cap missing on {label}/score_gap_tc/{tc}"
+        )
+        assert "INTERVAL '36 months'" in sql, (
+            f"36-month recency window missing on {label}/score_gap_tc/{tc}"
+        )
+    # per_user_values shape guard (formerly in test_pooled_cte_emits_per_user_values_*).
+    for sql, label in ((bm, "benchmark"), (su, "single_user")):
+        pv_idx = sql.find("per_user_values")
+        assert pv_idx != -1, f"per_user_values missing on {label}/score_gap_tc/{tc}"
+        block = sql[pv_idx:]
+        assert "metric_value" in block, (
+            f"metric_value missing in per_user_values for {label}/score_gap_tc/{tc}"
+        )
+        assert "n_games" in block, (
+            f"n_games missing in per_user_values for {label}/score_gap_tc/{tc}"
+        )
 
 
 @pytest.mark.parametrize("tc", _PLAN_03_NEW_TCS)
@@ -275,9 +258,10 @@ def test_score_gap_bucket_tc_pooled_body_byte_identical_across_sources(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("metric_id", _PER_TC_METRIC_IDS)
+@pytest.mark.parametrize("tc", _PER_TC_TCS)
+@pytest.mark.parametrize("family", _PER_TC_METRIC_FAMILIES)
 def test_existing_94_3_per_tc_pooled_body_byte_identical_after_pitfall_1(
-    metric_id: str,
+    family: str, tc: Literal["bullet", "blitz", "rapid", "classical"]
 ) -> None:
     """After the Pitfall 1 widening (Task 1) the 3 existing per-TC builders
     must STILL show source-mode parity — the widening is applied equally
@@ -286,10 +270,10 @@ def test_existing_94_3_per_tc_pooled_body_byte_identical_after_pitfall_1(
 
     Parametrised over 3 builders × 4 TCs = 12 cells.
     """
-    bm = per_user_cte_for(metric_id, source="benchmark", snapshot_date=date(2026, 3, 31))  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
-    su = per_user_cte_for(metric_id, source="single_user", snapshot_date=date(2026, 3, 31))  # ty: ignore[invalid-argument-type]  # Plan C widens CdfMetricId
+    bm = _call_per_tc_builder(family, tc, source="benchmark", snapshot_date=date(2026, 3, 31))
+    su = _call_per_tc_builder(family, tc, source="single_user", snapshot_date=date(2026, 3, 31))
     assert _normalise_whitespace(bm) == _normalise_whitespace(su), (
-        f"existing 94.3 per-TC builder {metric_id} lost source-mode parity after Pitfall 1 widening"
+        f"existing 94.3 per-TC builder {family}/{tc} lost source-mode parity after Pitfall 1 widening"
     )
     # And both sides expose user_id in per_user_values.
     for sql, label in ((bm, "benchmark"), (su, "single_user")):
@@ -297,5 +281,5 @@ def test_existing_94_3_per_tc_pooled_body_byte_identical_after_pitfall_1(
         assert pv_idx != -1
         block = sql[pv_idx:]
         assert re.search(r"SELECT\s+user_id\s*,", block), (
-            f"user_id projection missing on {label} for {metric_id} (Pitfall 1)"
+            f"user_id projection missing on {label} for {family}/{tc} (Pitfall 1)"
         )
