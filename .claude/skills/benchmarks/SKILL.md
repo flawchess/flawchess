@@ -2520,6 +2520,49 @@ GROUP BY endgame_class_int
 ORDER BY endgame_class_int;
 ```
 
+##### Per-class per-axis conv/recov rate distribution (for TC / ELO collapse verdicts)
+
+The pooled-by-class and per-cell tables above answer "does the metric vary **across class**". They do **not** answer "does conversion (resp. recovery) **within** a class vary across TC / ELO" — the question that decides whether `PER_CLASS_GAUGE_ZONES` needs to become per-(class × TC). Run two per-user passes to produce that verdict properly. Use a **per-user rate** unit (not the per-cell pooled rate): the cohort doubling (2026-05) makes per-user-per-class feasible at a ≥10-bucket-game floor for rook / minor_piece / pawn / queen / mixed across all four TCs (hundreds of users per cell). **Pawnless stays excluded** from these verdicts (n far below floor; hidden in the live UI).
+
+Sparse-cell handling: exclude the `(elo_bucket=2400, tc='classical')` rows **at the game-row level** (`AND NOT (elo_bucket=2400 AND tc='classical')` inside `classified`) before forming per-user rates. This honors the canonical exclusion exactly while keeping the per-user units well-powered (the alternative — a 5-way `(user, elo_bucket, tc, class)` unit — is too thin per the skill's original concern; row-level exclusion sidesteps it).
+
+**TC-axis unit** = per-`(user, tc, class)` rate (pool ELO). **ELO-axis unit** = per-`(user, elo_bucket, class)` rate (pool TC). Conversion rate = `avg(score=1.0)` over `bucket='conversion'` spans; recovery rate = `avg(score>=0.5)` over `bucket='recovery'` spans; `≥10` bucket-games per unit. Both passes share the `selected_users` / `class_span` / `bucketed` / `classified` CTEs from the cell-level query above (with the row-level sparse exclusion added to `classified`); only the final per-user grouping differs.
+
+```sql
+-- TC-axis pass: unit = (user, tc, class), pooling ELO.
+-- (CTEs selected_users / class_span / bucketed identical to the cell-level query,
+--  EXCEPT classified adds: WHERE uelo>=800 AND NOT (elo_bucket=2400 AND tc='classical'))
+, per_user_tc AS (
+  SELECT user_id, tc, cls,
+    avg(CASE WHEN score=1.0  THEN 1.0 ELSE 0.0 END) FILTER (WHERE bucket='conversion') AS conv_rate,
+    count(*) FILTER (WHERE bucket='conversion') AS conv_n,
+    avg(CASE WHEN score>=0.5 THEN 1.0 ELSE 0.0 END) FILTER (WHERE bucket='recovery')   AS recov_rate,
+    count(*) FILTER (WHERE bucket='recovery')   AS recov_n
+  FROM classified GROUP BY user_id, tc, cls
+)
+SELECT cls, tc,
+  count(*) FILTER (WHERE conv_n>=10)  AS conv_users,
+  round(avg(conv_rate)      FILTER (WHERE conv_n>=10)::numeric,4)  AS conv_mean,
+  round(var_samp(conv_rate) FILTER (WHERE conv_n>=10)::numeric,6)  AS conv_var,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY conv_rate) FILTER (WHERE conv_n>=10)::numeric,4) AS conv_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY conv_rate) FILTER (WHERE conv_n>=10)::numeric,4) AS conv_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY conv_rate) FILTER (WHERE conv_n>=10)::numeric,4) AS conv_p75,
+  count(*) FILTER (WHERE recov_n>=10) AS recov_users,
+  round(avg(recov_rate)      FILTER (WHERE recov_n>=10)::numeric,4) AS recov_mean,
+  round(var_samp(recov_rate) FILTER (WHERE recov_n>=10)::numeric,6) AS recov_var,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY recov_rate) FILTER (WHERE recov_n>=10)::numeric,4) AS recov_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY recov_rate) FILTER (WHERE recov_n>=10)::numeric,4) AS recov_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY recov_rate) FILTER (WHERE recov_n>=10)::numeric,4) AS recov_p75
+FROM per_user_tc WHERE cls <= 5
+GROUP BY cls, tc
+ORDER BY cls, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 ELSE 4 END;
+
+-- ELO-axis pass: identical, but per_user_elo groups by (user_id, elo_bucket, cls)
+-- and the final SELECT groups by (cls, elo_bucket) ORDER BY cls, elo_bucket.
+```
+
+**Cohen's d (per class, per axis, per metric)**: `d = (max_group_mean − min_group_mean) / sqrt(mean(group variances))` over the TC (resp. ELO) group means/variances from the pass above. Apply the canonical 3-level threshold (`<0.2` collapse / `0.2–0.5` review / `≥0.5` keep separate). This is the same recipe every other subchapter uses; the only difference is the per-user unit is a within-class rate rather than a score.
+
 ##### Output
 
 For each of the three metrics (score / conversion / recovery):
@@ -2533,10 +2576,9 @@ For each of the three metrics (score / conversion / recovery):
      - If a class's `[p25, p75]` shifts the midpoint by > 1pp from 0.50 OR widens / narrows by > 2pp, propose a per-class override. Suggested per-class shape mirrors `PER_CLASS_GAUGE_ZONES`: a new `PER_CLASS_SCORE_BULLET_ZONES: Record<EndgameClass, { neutralMin: number; neutralMax: number }>` in `endgame_zones.py`, codegen'd to TS via `scripts/gen_endgame_zones_ts.py`, consumed in `EndgameTypeCard.tsx` via a lookup analogous to `PER_CLASS_GAUGE_ZONES[class]`.
      - If all classes stay within `[0.495, 0.505]` midpoint and `± 1pp` width vs the global band, keep the global band and document the verdict.
    - **Per-class score-diff neutral zone** (legacy `NEUTRAL_ZONE_MIN/MAX = ±0.05` in the now-deleted `EndgameWDLChart.tsx`): DEPRECATED after Phase 87 — the score-diff bullet was removed in the redesign and replaced with an absolute chess-score bullet vs the 50% baseline. Score-diff zone is no longer used by any live UI surface.
-   - **Per-class conv/recov gauge zones** (`PER_CLASS_GAUGE_ZONES` in `endgame_zones.py`): already per-class as of 2026-05-01. Compare current values against fresh pooled rates — recommend a delta only when the pooled rate drifts more than ~3pp from the live midpoint.
-5. **Collapse verdict per (metric × class)**: 6 classes × 3 metrics = 18 verdicts. For each metric × class, run Cohen's d across {TC, ELO} marginals on the per-cell pooled rate (n ≥ 30 cell-floor). This is rate-level rather than per-user because per-user-per-class would be too sparse at the current sample size.
-
-If 18 verdicts is too noisy, aggregate to one verdict per metric (across-class max d) plus per-class footnote when an outlier class fails the metric-level verdict.
+   - **Per-class conv/recov gauge zones** (`PER_CLASS_GAUGE_ZONES` in `endgame_zones.py`): already per-class as of 2026-05-01, but **TC-agnostic** (one band per class, pooling all four TCs). Compare current values against fresh pooled rates — recommend a level delta when the pooled rate drifts more than ~3pp from the live midpoint. **Additionally check the TC collapse verdict below**: if conv/recov keep-separate on the TC axis within a class (they do, as of 2026-05-27, d≈1.2–1.7 every class), the single per-class band mispaints by TC — a bullet player is judged against a band centered on the much higher slow-TC conversion (and lower slow-TC recovery). Flag this as a stratification recommendation (`PER_CLASS_GAUGE_ZONES` → per-`(class × TC)`), scoped to whether the live Endgame Type cards expose a TC filter.
+5. **Per-class TC marginal + ELO marginal tables** (from the per-axis passes above): for conversion and for recovery, one table per axis with rows = class (rook/minor_piece/pawn/queen/mixed), columns = axis level (TC: bullet/blitz/rapid/classical; ELO: 800–2400). Cell = `mean (p25–p75, n_users)`. These are the per-class analogues of the §3.2.1 global conv/recov marginals and the §3.4.2 per-class gap marginals; the reader must see them, not just the verdict.
+6. **Collapse verdict per (metric × class × axis)**: 5 classes × 2 rate metrics × 2 axes. For each, compute the per-user Cohen's d per the recipe above and apply the 3-level threshold. Render as a table: `class | conv TC d | conv TC verdict | conv ELO d | conv ELO verdict | recov TC d | recov TC verdict | recov ELO d | recov ELO verdict`. Keep the across-class score verdict (score is flat across class → collapse) as a separate one-liner. Pawnless is excluded (n below floor) with a footnote.
 
 #### 3.4.2 Per-span Score Gap by Endgame Type (Phase 87.1 SEED-016)
 

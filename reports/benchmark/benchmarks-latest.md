@@ -852,18 +852,86 @@ All midpoints sit within ±2pp of live except **pawnless**, which drifts +4.3pp 
 
 Mixed has the tightest IQR (`±5pp`); pawn / queen are wider (`±9pp / ±11pp`); pawnless is by far the widest (`±14pp` and `n=243` users only at the ≥10-game floor — high noise).
 
-#### Collapse verdict (per metric across class)
+#### Collapse verdict — class axis (does the metric vary *across* class?)
 
 - Per-class **score** is flat (~50–51% pooled across all classes); class-effect on pooled score is `collapse`.
 - Per-class **conversion** spread: 69% (minor_piece) → 79% (pawnless). Range 10pp → **keep separate** (this is why per-class `PER_CLASS_GAUGE_ZONES` exists).
 - Per-class **recovery** spread: 20% (pawnless) → 33% (minor_piece). Range 13pp → **keep separate** (same).
 
+> ⚠️ The class-axis verdict above does **not** address within-class TC/ELO variation. The live `PER_CLASS_GAUGE_ZONES` are a single band per class, pooled across all four TCs. The TC/ELO marginals and verdict below (added 2026-05-29) test whether that pooling is safe. **It is not** — conversion and recovery keep-separate on the TC axis within every class.
+
+#### Per-class conversion / recovery — TC marginal (per-user, ≥10 bucket-games/user, sparse cell excluded)
+
+Per-user rate unit = `(user, tc, class)` pooling ELO; cell = `mean (p25–p75 integer %, n_users)`. Pawnless excluded (n far below floor; hidden in live UI).
+
+**Conversion rate:**
+
+| class | bullet | blitz | rapid | classical |
+|---|---|---|---|---|
+| rook | 65.0% (56–75, n832) | 73.4% (67–82, n800) | 75.8% (69–83, n597) | 80.0% (74–87, n106) |
+| minor_piece | 61.7% (51–73, n703) | 71.5% (64–81, n698) | 75.4% (68–83, n466) | 80.9% (75–89, n87) |
+| pawn | 67.0% (57–80, n473) | 76.6% (68–87, n421) | 81.8% (75–91, n263) | 86.1% (80–92, n46) |
+| queen | 73.9% (64–83, n512) | 78.8% (70–90, n436) | 82.7% (75–92, n268) | 91.6% (88–100, n30) |
+| mixed | 65.6% (60–72, n990) | 71.8% (68–76, n984) | 74.7% (70–79, n961) | 76.1% (70–83, n475) |
+
+**Recovery rate:**
+
+| class | bullet | blitz | rapid | classical |
+|---|---|---|---|---|
+| rook | 34.4% (27–43, n770) | 28.5% (20–37, n739) | 23.7% (17–30, n536) | 19.6% (13–25, n110) |
+| minor_piece | 39.9% (29–50, n657) | 30.8% (21–40, n655) | 25.2% (15–33, n418) | 20.2% (12–28, n89) |
+| pawn | 35.4% (25–46, n436) | 25.8% (17–36, n382) | 19.5% (10–28, n259) | 16.8% (8–21, n43) |
+| queen | 27.9% (19–36, n416) | 23.7% (14–31, n349) | 17.9% (8–25, n213) | 7.4% (0–9, n35) |
+| mixed | 35.3% (30–40, n989) | 30.2% (25–35, n977) | 27.5% (23–31, n929) | 24.4% (18–30, n438) |
+
+#### Per-class conversion / recovery — ELO marginal (per-user, ≥10 bucket-games/user, pooling TC, sparse cell excluded)
+
+Per-user rate unit = `(user, elo_bucket, class)` pooling TC; cell = `mean (n_users)`.
+
+**Conversion rate:**
+
+| class | 800 | 1200 | 1600 | 2000 | 2400 |
+|---|---|---|---|---|---|
+| rook | 68.0% (339) | 71.2% (561) | 72.5% (602) | 70.7% (511) | 71.8% (356) |
+| minor_piece | 64.2% (154) | 68.0% (373) | 70.5% (508) | 69.5% (486) | 69.5% (355) |
+| pawn | 71.5% (49) | 73.8% (205) | 76.4% (331) | 72.7% (255) | 72.7% (199) |
+| queen | 78.9% (114) | 80.3% (219) | 77.7% (282) | 76.0% (251) | 77.2% (215) |
+| mixed | 68.2% (742) | 70.3% (1048) | 71.7% (1125) | 72.5% (964) | 73.1% (558) |
+
+**Recovery rate:**
+
+| class | 800 | 1200 | 1600 | 2000 | 2400 |
+|---|---|---|---|---|---|
+| rook | 30.0% (322) | 27.8% (533) | 28.3% (553) | 30.1% (462) | 30.3% (318) |
+| minor_piece | 35.7% (170) | 31.2% (359) | 30.8% (468) | 33.5% (440) | 33.9% (316) |
+| pawn | 35.8% (59) | 27.7% (215) | 25.7% (287) | 27.3% (263) | 30.8% (168) |
+| queen | 25.5% (116) | 21.2% (201) | 23.7% (227) | 24.4% (200) | 25.4% (178) |
+| mixed | 31.2% (723) | 29.4% (1016) | 29.7% (1062) | 30.7% (910) | 31.5% (551) |
+
+#### Collapse verdict — TC and ELO axes (does the metric vary *within* a class?)
+
+Per-user Cohen's d, `d = (max_group_mean − min_group_mean) / sqrt(mean(group variances))`, thresholds `<0.2` collapse / `0.2–0.5` review / `≥0.5` keep separate.
+
+| class | conv TC d | conv TC | conv ELO d | conv ELO | recov TC d | recov TC | recov ELO d | recov ELO |
+|---|---:|---|---:|---|---:|---|---:|---|
+| rook | 1.24 | **keep separate** | 0.32 | review | 1.33 | **keep separate** | 0.20 | collapse |
+| minor_piece | 1.50 | **keep separate** | 0.41 | review | 1.48 | **keep separate** | 0.31 | review |
+| pawn | 1.40 | **keep separate** | 0.31 | review | 1.36 | **keep separate** | 0.65 | **keep separate** |
+| queen | 1.43 | **keep separate** | 0.32 | review | 1.67 | **keep separate** | 0.31 | review |
+| mixed | 1.19 | **keep separate** | 0.49 | review | 1.28 | **keep separate** | 0.22 | review |
+
+- **TC axis: keep separate for every class × metric** (d ≈ 1.19–1.67). The within-class TC effect is as large as the global conv/recov TC effect (§3.2.1): conversion rises 10–19pp bullet→classical, recovery falls 11–20pp. The live single-band-per-class `PER_CLASS_GAUGE_ZONES` therefore **mispaint by TC** — a bullet player is judged against a band centred on much higher slow-TC conversion (and lower slow-TC recovery), and vice-versa.
+- **ELO axis: mostly review** (d 0.20–0.49), one keep-separate (**pawn recovery** d=0.65, driven by the 800-bucket +8pp tail on small n=59) and one collapse (rook recovery d=0.20). Consistent with the global conv/recov ELO findings — ELO is the secondary axis.
+- **Score axis** (class): flat across class → `collapse` (unchanged from the class-axis verdict above; per-user score IQR drives the global score bullet, not per-class).
+
 #### Recommendations
 
-- **Conv/recov per-class gauge zones** (live `PER_CLASS_GAUGE_ZONES`): rook/minor_piece/pawn/queen/mixed all sit within ±2pp of midpoint — **keep**. **Pawnless** (only class drifting >2pp) — recommend updating:
+- **🔴 Stratify `PER_CLASS_GAUGE_ZONES` conv/recov by TC** (new, 2026-05-29): the TC collapse verdict is keep-separate for all 5 classes × 2 metrics (d ≈ 1.19–1.67). The live bands are TC-agnostic, so they mispaint heavily at the TC extremes. Worked example — **rook conversion**: live band `(0.65, 0.75)`, mid 70%. A bullet rook player's typical band is ≈`(0.56, 0.75)`, mid 67% (live mid is +3pp too high); a classical rook player's is ≈`(0.74, 0.87)`, mid 81% (live mid is **−11pp too low**, so a perfectly typical classical player paints solid green). Recommended shape: a per-`(class × TC)` lookup `PER_CLASS_TC_GAUGE_ZONES[class][tc].{conversion,recovery}` calibrated to the p25/p75 in the TC-marginal tables above (rook/minor_piece/pawn/queen/mixed × bullet/blitz/rapid/classical = 20 bands per metric). Pawnless stays global (n below floor). **Scope gate — CONFIRMED actionable (verified 2026-05-29):** the Endgame Type Breakdown cards *are* TC-filterable. The page-level TC filter (`filters.timeControls` → `buildEndgameParams` → `/endgames/overview` in `hooks/useEndgames.ts`) recomputes each class's `conversion_pct` / `recovery_pct` for the selected TC, but the gauge band is a hard-coded TC-agnostic `PER_CLASS_GAUGE_ZONES[class]` lookup (`EndgameTypeCard.tsx:148`) that does **not** move with the filter. So a user who filters to "classical only" sees a recomputed ~80% rook conversion painted against a band centred on 70% → solid green for a perfectly typical classical player. The mispaint is live, not hypothetical. (Distinct from the Phase 97 `EndgameMetricsByTcSection`, which is TC-aware by design with per-TC bands — that section is unaffected.)
+- **Conv/recov per-class gauge zones — pooled-TC level check** (live `PER_CLASS_GAUGE_ZONES`): *if* the TC stratification above is deferred and the single band is retained, the pooled-across-TC midpoints for rook/minor_piece/pawn/queen/mixed all sit within ±2pp — **keep**. **Pawnless** (only class drifting >2pp on pooled) — recommend updating:
   - conversion: `(0.70, 0.80)` → **`(0.74, 0.84)`** (pooled +4.3pp midpoint drift; doubled cohort confirms higher conv rate).
   - recovery: `(0.21, 0.31)` → **`(0.15, 0.25)`** (pooled −6.3pp midpoint drift; doubled cohort confirms lower recov).
   - Caveat: pawnless has per-user `n_users=243`, much smaller than other classes (`2,303–3,597`). Apply update with caution; the recov drift especially is large.
+  - Note: the "within ±2pp" pooled-midpoint reassurance is only meaningful for a population that mixes TCs in the live proportion. It does **not** justify the band for a TC-filtered view — see the stratification recommendation above.
 - **Per-class score-bullet** (currently global `SCORE_BULLET_NEUTRAL = [0.45, 0.55]`): only **queen** and **pawnless** materially exceed the global band. Pooled score IQR per class:
   - mixed `[0.46, 0.56]` ≈ global; **keep**.
   - rook, minor_piece, pawn `[~0.43, ~0.58]` — moderately wider; per-class override would tighten typical zone painting marginally. **Keep global** (within editorial tolerance).
