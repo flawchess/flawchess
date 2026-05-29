@@ -44,7 +44,7 @@ from app.services.canonical_slice_sql import (
     selected_users_cte,
     sparse_exclusion_sql,
 )
-from app.services.chesscom_to_lichess import CHESSCOM_BLITZ_TO_LICHESS
+from app.services.chesscom_to_lichess import composed_chesscom_to_lichess_grid
 
 # ---------------------------------------------------------------------------
 # Phase 94.4 Plan 10 Task 1.0 — Baseline SQL for the non-blend regression guard.
@@ -1002,18 +1002,21 @@ class TestPerUserCteMedianAnchorBlendMode:
 
     def test_a6_chesscom_conversion_values_sql_includes_known_snapshot_row(self) -> None:
         """A6 (snapshot-row assertion): _chesscom_conversion_values_sql('rapid') includes
-        a VALUES row matching CHESSCOM_BLITZ_TO_LICHESS[1500]['rapid'].
+        a VALUES row from composed_chesscom_to_lichess_grid('rapid', 'rapid').
 
-        The test reads the snapshot dynamically — if the snapshot table updates,
-        the test self-updates (RESEARCH Pattern 8b discipline).
+        Post quick-260529-js1 the rapid table is keyed on NATIVE chess.com RAPID
+        ratings (not chess.com Blitz anchors), so the row is read dynamically
+        from the composed grid. The test self-updates if the snapshot or grid
+        step changes (RESEARCH Pattern 8b discipline).
         """
-        expected_equiv = CHESSCOM_BLITZ_TO_LICHESS[1500]["rapid"]
-        assert expected_equiv is not None, (
-            "CHESSCOM_BLITZ_TO_LICHESS[1500]['rapid'] is None — pick another anchor"
-        )
+        grid = composed_chesscom_to_lichess_grid("rapid", "rapid")
+        assert grid, "composed grid for ('rapid','rapid') is empty"
+        # Pick a mid-range row so the assertion is stable against edge-trimming.
+        native, equiv = grid[len(grid) // 2]
         sql_fragment = _chesscom_conversion_values_sql("rapid")
-        assert f"(1500, {expected_equiv})" in sql_fragment, (
-            f"Expected (1500, {expected_equiv}) in rapid VALUES table; got: {sql_fragment[:200]}"
+        assert f"({native}, {equiv})" in sql_fragment, (
+            f"Expected native-rapid-keyed row ({native}, {equiv}) in rapid VALUES "
+            f"table; got: {sql_fragment[:200]}"
         )
 
     def test_a7_blend_true_having_clause_on_pooled_count(self) -> None:
