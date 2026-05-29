@@ -10,6 +10,8 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- **Percentile-compute query optimization** (quick-260529-cum). The five per-TC builders (`score_gap`, `achievable_score_gap`, `time_pressure_score_gap`, `clock_gap`, `net_flag_rate`) and their shared `endgame_entry_clocks` helper now scope `game_positions` aggregation to the selected user's recent games only. Previously each query scanned the full `game_positions` table and discarded nearly all rows in a later join. Cut is result-equivalent: only `recent_capped` games survive the downstream joins regardless. Addresses the ~6 s/call, ~58 min cumulative server time flagged by the /db-report for the import and eval-drain hot paths.
+
 - **Stale Stage B percentiles after Stage-5c-covered imports** (quick-260527-u3u). The 7 eval-dependent percentile metric families (`achievable_score_gap`, `score_gap_conv`, `score_gap_parity`, `recovery_score_gap`, `clock_gap`, `net_flag_rate`, `time_pressure_score_gap`) now refresh on import completion when the user has no pending evals, not only on Stockfish cold-drain completion. Previously, an incremental import where every new game already carried lichess `%eval` annotations (Stage 5c marked them `evals_completed_at = NOW()` at import time) refreshed `score_gap` via the Stage A trigger but left the 7 eval-dependent families stale until the next drain tick on that user. The existing cold-drain trigger in `eval_drain.py` is unchanged; both sites are idempotent.
 
 ## [v1.19] Endgame Percentiles — 2026-05-27
