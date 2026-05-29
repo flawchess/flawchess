@@ -4,7 +4,7 @@ Repeat of the 2026-05-20 stress test that triggered a Postgres OOM-kill, now aga
 
 **Workload:** simultaneous import of ~20k games each from chess.com and lichess for a single user (user_id 95).
 **Server:** Hetzner Cloud, 4 vCPU / 7.6 GB RAM / 4 GB swap.
-**Log:** [`logs/import-stress-20k-each-2026-05-21.log`](../logs/import-stress-20k-each-2026-05-21.log) — sampled every ~33 s.
+**Log:** [`logs/import-stress-20k-each-2026-05-21.log`](import-stress-20k-each-2026-05-21.log) — sampled every ~33 s.
 
 ## TL;DR
 
