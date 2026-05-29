@@ -4,16 +4,15 @@
  * bullet replacing the dual Conv/Recov peer-diff bullets).
  *
  * Covers:
- * - Full render when total >= MIN_GAMES_FOR_RELIABLE_STATS (gauges + WDL bar +
- *   Score bullet + Games deep-link + title InfoPopover).
+ * - Full render when total >= MIN_GAMES_FOR_RELIABLE_STATS (WDL bar + Score
+ *   bullet + Games deep-link + title InfoPopover).
  * - Games-link onClick fires onCategorySelect with the endgame_class and the
  *   href targets /endgames/games?type={slug}.
  * - Title InfoPopover content matches ENDGAME_TYPE_DESCRIPTIONS[class].
- * - Empty class (total = 0) → empty-class shell with "Not enough data yet" +
- *   opacity-50 gauge row; no WDL, no Score bullet, no Games link.
+ * - Empty class (total = 0) → empty-class shell with "Not enough data yet";
+ *   no WDL, no Score bullet, no Games link.
  * - Sparse class (0 < total < MIN_GAMES_FOR_RELIABLE_STATS) → n=total chip,
- *   UNRELIABLE_OPACITY on the body, Score row hidden, gauges + WDL still
- *   render.
+ *   UNRELIABLE_OPACITY on the body, Score row hidden, WDL still renders.
  * - Score bullet sig-gating: confident + outside-neutral → inline color;
  *   weak p-value → no inline color.
  */
@@ -145,11 +144,9 @@ function renderCard(
 }
 
 describe('EndgameTypeCard — Layout', () => {
-  it('renders gauges, WDL bar, and Score bullet when total >= MIN_GAMES_FOR_RELIABLE_STATS', () => {
+  it('renders WDL bar and Score bullet when total >= MIN_GAMES_FOR_RELIABLE_STATS', () => {
     renderCard(buildCategory());
     expect(screen.getByTestId(TILE_TESTID)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-conv-gauge`)).not.toBeNull();
-    expect(screen.getByTestId(`${TILE_TESTID}-recov-gauge`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-wdl`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-score-row`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-score-value`)).not.toBeNull();
@@ -219,8 +216,6 @@ describe('EndgameTypeCard — Empty / sparse states', () => {
       }),
     );
     expect(screen.getByTestId(TILE_TESTID)).not.toBeNull();
-    const gaugeRow = screen.getByTestId(`${TILE_TESTID}-gauges`);
-    expect(gaugeRow.className).toMatch(/opacity-50/);
     expect(screen.getByText(/Not enough data yet/i)).not.toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-wdl`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-row`)).toBeNull();
@@ -250,7 +245,7 @@ describe('EndgameTypeCard — Empty / sparse states', () => {
     const body = tile.querySelector<HTMLElement>('.flex.flex-col.gap-4');
     expect(body).not.toBeNull();
     expect(body!.style.opacity).toBe(`${UNRELIABLE_OPACITY}`);
-    // Gauges + WDL still render; Score row hidden below the sample-size gate.
+    // WDL still renders; Score row hidden below the sample-size gate.
     expect(screen.getByTestId(`${TILE_TESTID}-wdl`)).not.toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-row`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-bullet`)).toBeNull();
@@ -333,23 +328,19 @@ describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
   it('positions the ScoreGapRow as the last row in the card', () => {
     renderCard(buildCategory());
     const tile = screen.getByTestId(TILE_TESTID);
-    const gauges = screen.getByTestId(`${TILE_TESTID}-gauges`);
-    const asgBullet = screen.getByTestId(`${TILE_TESTID}-asg-bullet`);
     const wdl = screen.getByTestId(`${TILE_TESTID}-wdl`);
+    const asgBullet = screen.getByTestId(`${TILE_TESTID}-asg-bullet`);
     const scoreRow = screen.getByTestId(`${TILE_TESTID}-score-row`);
     const body = tile.querySelector('.flex.flex-col.gap-4');
     expect(body).not.toBeNull();
-    expect(gauges.parentElement).toBe(body);
     expect(asgBullet.parentElement).toBe(body);
-    // DOM ordering: gauges -> wdl block -> score row -> asg row (Score Gap last).
+    // DOM ordering: wdl block -> score row -> asg row (Score Gap last).
     const children = Array.from(body!.children);
-    const gaugesIdx = children.indexOf(gauges);
     const wdlWrapper = children.find((c) => c.contains(wdl)) as HTMLElement;
     const wdlIdx = children.indexOf(wdlWrapper);
     const scoreIdx = children.indexOf(scoreRow);
     const asgIdx = children.indexOf(asgBullet);
-    expect(gaugesIdx).toBeGreaterThanOrEqual(0);
-    expect(wdlIdx).toBeGreaterThan(gaugesIdx);
+    expect(wdlIdx).toBeGreaterThanOrEqual(0);
     expect(scoreIdx).toBeGreaterThan(wdlIdx);
     expect(asgIdx).toBeGreaterThan(scoreIdx);
   });

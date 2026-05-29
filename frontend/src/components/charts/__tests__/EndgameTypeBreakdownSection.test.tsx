@@ -148,7 +148,7 @@ function renderSection(
 
 // Match only top-level card containers (`type-card-{slug}` without any
 // `-{sub-element}` suffix). Each card emits many sub-element testids like
-// `type-card-rook-conv-gauge`; the anchored regex below selects only the
+// `type-card-rook-score-bullet`; the anchored regex below selects only the
 // 5 card roots so card counts and ordering assertions are unambiguous.
 const TOP_LEVEL_CARD_RE = /^type-card-(?:rook|minor-piece|pawn|queen|mixed|pawnless)$/;
 

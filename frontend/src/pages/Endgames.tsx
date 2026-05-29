@@ -639,9 +639,7 @@ export function EndgamesPage() {
                     kinds of endgames (rook, minor piece, pawn, queen, mixed).
                   </p>
                   <p>
-                    Each card shows your win, draw, and loss rate for that type, plus your
-                    Conversion rate (closing out winning endgames) and Recovery rate (saving
-                    losing endgames).
+                    Each card shows your win, draw, and loss rate for that endgame type.
                   </p>
                 </div>
               </InfoPopover>
