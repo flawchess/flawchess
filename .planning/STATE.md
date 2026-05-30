@@ -227,3 +227,4 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 | 65 | Card-style Endgame Statistics Concepts + collapsible header hover state | 2026-05-30 | d7b7a13a | — |
 | 66 | Remove concepts info icon; make Insights a collapsible card (open by default) | 2026-05-30 | 3c610ccc | — |
 | 67 | Render insights 3 sections as plain headings/paragraphs (no inner cards) | 2026-05-30 | 98daa838 | — |
+| 68 | Per-section insight slots as collapsible header-band cards (open by default) | 2026-05-30 | 32d38f66 | — |

@@ -975,24 +975,54 @@ function SectionInsightSlot({
   data: { headline: string; bullets: string[] } | null;
 }) {
   if (!data) return null;
+
+  // Header band content shared by both the plain (headline-only) and the
+  // collapsible (headline + bullets) variants.
+  const headline = (
+    <span className="flex items-center gap-2 flex-1 text-sm font-semibold text-foreground">
+      <span className="insight-lightbulb shrink-0" aria-hidden="true">
+        <Lightbulb className="size-4" />
+      </span>
+      {data.headline}
+    </span>
+  );
+
+  // No bullets: nothing to fold, so render a plain header card without a
+  // chevron rather than a collapsible with an empty body.
+  if (data.bullets.length === 0) {
+    return (
+      <div
+        data-testid={`insights-section-${sectionId}`}
+        className="charcoal-texture rounded-md overflow-hidden border-none"
+      >
+        <div className="w-full flex items-center gap-2 px-4 py-3 bg-black/20">
+          {headline}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      data-testid={`insights-section-${sectionId}`}
-      className="charcoal-texture rounded-md p-4"
-    >
-      <p className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-        <span className="insight-lightbulb" aria-hidden="true">
-          <Lightbulb className="size-4" />
-        </span>
-        {data.headline}
-      </p>
-      {data.bullets.length > 0 && (
-        <ul className="list-disc list-outside pl-5 space-y-1 text-sm text-muted-foreground">
-          {data.bullets.map((b, i) => (
-            <li key={i}>{b}</li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Accordion type="single" collapsible defaultValue="insight">
+      <AccordionItem
+        value="insight"
+        data-testid={`insights-section-${sectionId}`}
+        className="charcoal-texture rounded-md overflow-hidden border-none"
+      >
+        <AccordionTrigger
+          data-testid={`insights-section-${sectionId}-trigger`}
+          className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0"
+        >
+          {headline}
+        </AccordionTrigger>
+        <AccordionContent className="p-4">
+          <ul className="list-disc list-outside pl-5 space-y-1 text-sm text-muted-foreground">
+            {data.bullets.map((b, i) => (
+              <li key={i}>{b}</li>
+            ))}
+          </ul>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
   );
 }
