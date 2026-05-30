@@ -25,6 +25,7 @@
 - ✅ **v1.20 Import Pipeline Hardening Follow-Up and Readiness** — Phases 95, 96 (shipped 2026-05-29) — see [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md)
 - 🔄 **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99 (Phase 97 shipped 2026-05-29; 98, 99 not started)
 - 🔄 **v1.22 LLM Statistical Reasoning** — Phase 100 (not started)
+- 🔄 **v1.23 Benchmark Generator Rebuild** — Phases 101, 102 (not started)
 
 ## Phases
 
@@ -34,6 +35,8 @@
 - [ ] **Phase 98: TC-mix-weighted Conv/Recov Gauges on Endgame Type Cards** *(v1.21)* — Re-add Conversion/Recovery gauges to the 5 `EndgameTypeCard`s (removed 2026-05-29, quick-260529-une) as **absolute-arc gauges with a TC-mix-weighted neutral band**: `band = Σ_tc (user's share of eligible games in tc for class) × (benchmark IQR for class × tc)`, weighted by conversion-/recovery-eligible games respectively. Raw rate stays the headline; band tooltip discloses the TC-mix basis. TC-only by design (ELO precision stays in the Score-Gap percentile chip; per-(class×TC×ELO) banding is infeasible on sparsity). Absolute-arc idiom matches the Phase 97 Endgame Metrics gauges, so that section is untouched (no cascade). See [notes/endgame-typecard-tcmix-gauges.md](notes/endgame-typecard-tcmix-gauges.md).
 - [ ] **Phase 99: Percentile Badges for Conversion, Parity, and Recovery** *(v1.21)* — Add peer-relative percentile chips (the v1.19 `PercentileChip` primitive) to the per-TC Conversion, Parity, and Recovery rate cards delivered in Phase 97. Deferred from Phase 97 because it requires new per-(metric, TC) cohort CDF materialization in `user_benchmark_percentiles` (today only ΔES score-gap percentiles exist there). Mirrors the Phase 94.3 Time Pressure per-TC chip pattern: 3 metric families × 4 TCs computed via pooled-per-user methodology parameterised by TC, cohort-matched on rating anchor, 4-bullet disclosure tooltip per `feedback_percentile_chip_tooltip_disclosure`.
 - [ ] **Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.22)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+- [ ] **Phase 101: Deterministic /benchmarks Generator (Faithful Port)** *(v1.23)* — Rebuild the `/benchmarks` skill as a committed deterministic generator script (DB → structured data artifact: JSON + markdown tables) that the LLM narrates, replacing today's hand-run inline SQL + hand-computed stats. **Faithful port only**: reproduce the *existing* methodology verbatim (max\|d\| collapse statistic, IQR neutral bands, current per-user/per-cell floors, sparse-cell exclusion, equal-footing filter, game-time ELO bucketing). Code emits all numbers + computes the data artifact; the LLM applies the fixed collapse thresholds (collapse/review/keep) and writes prose interpretation + recommendations. Validation gate: script output diffs against the current `benchmarks-latest.md` within rounding (numbers, not LLM verdicts). See [notes/benchmark-skill-rebuild-decisions.md](notes/benchmark-skill-rebuild-decisions.md).
+- [ ] **Phase 102: Benchmark Methodology Improvements + Full Rerun** *(v1.23)* — On top of the Phase 101 generator, layer in two attributable methodology changes: **#4** replace/supplement `max\|d\|` with a more stable collapse signal (metric-vs-ELO correlation + a TC effect measure, with round-number-band miscoverage as a sanity check) and **#6** add a conditional-opportunity denominator floor for conversion/recovery per-user rates (require N winning-advantage / losing entries, not just total endgame games). Then do a **full benchmark rerun** and **drop the in-report cross-snapshot section** (Claude can still diff against a prior report on demand). #7 (IQR-as-neutral semantic) left as an open question, not in scope. Depends on Phase 101 (clean regression oracle must exist first). See [notes/benchmark-skill-rebuild-decisions.md](notes/benchmark-skill-rebuild-decisions.md).
 
 ## Phase Details
 
@@ -112,6 +115,39 @@
   3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
   4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
   5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
+
+**Plans**: TBD
+
+### Phase 101: Deterministic /benchmarks Generator (Faithful Port)
+
+**Goal**: Replace the LLM-narrated `/benchmarks` workflow (today: ~40 inline SQL blocks run via the benchmark MCP plus hand-computed Cohen's d / IQRs / midpoint drifts written into a hand-authored markdown report) with a committed, deterministic generator script that queries the benchmark DB and emits a structured data artifact (JSON + markdown tables); the LLM then narrates that artifact. This is a **faithful port** — the methodology is reproduced verbatim, with no metric or threshold changes — so the script's numeric output can be diffed against the current `benchmarks-latest.md` as a regression oracle. The code/LLM seam is fixed: **code emits all numbers** and computes every distribution / d-value / IQR / drift into the data artifact; **the LLM applies the fixed collapse thresholds** (collapse/review/keep) and writes the prose interpretation and recommendations. Bring the zone-calibration report in line with the already-deterministic production percentile path (`scripts/gen_global_percentile_cdf.py`, `app/services/global_percentile_cdf.py`, `canonical_slice_sql.py` from Phase 93/94).
+**Depends on**: none (reads the existing benchmark DB; no re-ingest / re-selection)
+**Requirements**: standalone — no requirement IDs (tooling / methodology infrastructure)
+**Success Criteria** (what must be TRUE):
+
+  1. A committed generator script (e.g. `scripts/gen_benchmarks.py`, `--db benchmark` guarded like `backfill_eval.py`) produces the full benchmark data artifact deterministically from the benchmark DB — no hand-run SQL, no hand-computed statistics.
+  2. The script reproduces the *existing* methodology verbatim: max|d| collapse statistic, IQR `[p25,p75]` neutral bands and `[p05,p95]` domains, the current per-user/per-cell sample floors, sparse-cell `(2400, classical)` exclusion, the equal-footing `abs(opp−user) ≤ 100` filter, and game-time ELO bucketing.
+  3. The script's numeric output matches the current `benchmarks-latest.md` within documented rounding tolerance for every metric, marginal, and Cohen's d (the regression oracle); any discrepancy is investigated and resolved or explicitly footnoted as a fixed prior-report transcription error.
+  4. The code/LLM boundary is exactly: code emits numbers + the structured artifact; the LLM applies the fixed verdict thresholds and writes prose. The threshold table lives in the artifact/docs so verdicts are reproducible-by-derivation even though the LLM authors them.
+  5. The `/benchmarks` SKILL.md is updated to invoke the generator and narrate its artifact, replacing the inline-SQL run procedure (display-formatting, rendering-as-tables, and report-rotation rules preserved).
+  6. Backend gates (`ruff`, `ty`, `pytest`) pass for the new script; if any unit-testable pure functions are extracted (bucketing, Cohen's d, IQR), they have tests.
+
+**Plans**: TBD
+
+### Phase 102: Benchmark Methodology Improvements + Full Rerun
+
+**Goal**: With the Phase 101 deterministic generator and its clean regression oracle in place, layer in two **attributable** methodology changes and then do a full rerun. **#4 — collapse statistic**: replace or supplement `max|d|` (upward-biased as the max over 6–10 noisy pairwise estimates, and demonstrably unstable — Achievable Score Gap ELO d flipped 0.62→0.34 just by doubling the cohort) with a more stable signal: metric-vs-ELO correlation (Spearman/Pearson) for the ELO axis and a TC effect measure for the TC axis, with the round-number-band miscoverage (% of a subgroup mis-zoned by the shipped band) as the practical-significance sanity check. **#6 — conditional denominator floor**: conversion and recovery are conditional rates (score given up-/down-material), but today's floors gate on total endgame games, not the conditional opportunity count — add a per-user minimum winning-advantage (conversion) / losing (recovery) entry count so 0/3-style noise stops inflating the per-user IQR band tails. Then perform a **full benchmark rerun** through the new generator and **drop the in-report cross-snapshot diff section** (per-snapshot comparison is no longer baked in; Claude can diff against a prior report on demand if supplied one). Each change is introduced as an isolated commit so its effect on the output is attributable against the Phase 101 baseline. **Out of scope**: #7 (IQR-as-neutral band semantic) — recorded as an open question; #1/#2/#5 dismissed by design; #3/#8 covered by Phases 97–99.
+**Depends on**: Phase 101 (the faithful-port generator and its numeric regression oracle must exist before methodology changes can be made attributable)
+**Requirements**: standalone — no requirement IDs (tooling / methodology infrastructure)
+**Success Criteria** (what must be TRUE):
+
+  1. The collapse-decision input is reworked away from bare `max|d|` to a more stable statistic (ELO-axis correlation + TC effect measure) with a documented band-miscoverage sanity check; the rationale and the old→new verdict deltas are recorded.
+  2. A conditional-opportunity denominator floor is applied to per-user conversion and recovery rates (distinct from the total-endgame-games floor), with the chosen minimums validated against benchmark-DB distributions and documented.
+  3. Each methodology change is a separate, attributable commit, with its effect on the report output described relative to the Phase 101 faithful-port baseline (port bug vs intended change never entangled).
+  4. A full benchmark rerun is executed through the generator, producing a fresh `benchmarks-latest.md` with prior latest rotated per the existing date-based rotation rule.
+  5. The in-report cross-snapshot diff section is removed from the report template; on-demand comparison against a user-supplied prior report still works.
+  6. Any shipped zone constants that move materially as a result are surfaced as recommendations (the report already drives `endgame_zones.py` / `endgameZones.ts`); no silent constant changes.
+  7. Backend gates (`ruff`, `ty`, `pytest`) pass; new pure-function logic (correlation, conditional-floor gating) has unit tests.
 
 **Plans**: TBD
 
