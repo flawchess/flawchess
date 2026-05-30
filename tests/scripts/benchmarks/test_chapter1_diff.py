@@ -11,16 +11,14 @@ literals from the new report in the same commit that rotates the report.
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-
 import pytest
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from scripts import gen_benchmarks
 from scripts.benchmarks import chapter1
 
 pytestmark = pytest.mark.asyncio
+
+# `benchmark_session` fixture lives in conftest.py (shared with the other chapter gates).
 
 # --- expected values, transcribed from benchmarks-latest.md (2026-05-27) -------
 
@@ -68,29 +66,6 @@ EXPECTED_STATUS: dict[tuple[int, str], dict[str, int]] = {
     (800, "classical"): {"completed": 151, "skipped": 340, "failed": 9, "unattempted": 0},
     (2400, "classical"): {"completed": 12, "skipped": 8, "failed": 3, "unattempted": 0},
 }
-
-
-@pytest.fixture
-async def benchmark_session() -> AsyncGenerator[AsyncSession, None]:
-    """Read-only session on the benchmark DB, or skip if unreachable."""
-    gen_benchmarks._load_dotenv()
-    url = gen_benchmarks._db_url("benchmark")
-    engine = create_async_engine(url, pool_pre_ping=True)
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-    except Exception as exc:  # pragma: no cover - environment-dependent
-        await engine.dispose()
-        pytest.skip(
-            f"benchmark DB unreachable ({type(exc).__name__}): run bin/benchmark_db.sh start"
-        )
-    session_maker = async_sessionmaker(engine, expire_on_commit=False)
-    try:
-        async with session_maker() as session:
-            await session.execute(text("SET TRANSACTION READ ONLY"))
-            yield session
-    finally:
-        await engine.dispose()
 
 
 async def test_chapter1_matches_report(benchmark_session: AsyncSession) -> None:

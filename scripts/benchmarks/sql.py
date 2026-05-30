@@ -31,12 +31,29 @@ TC_ORDER: tuple[TcBucket, ...] = ("bullet", "blitz", "rapid", "classical")
 # kept in cell-level grids with a footnote. SKILL.md "Sparse-cell exclusion".
 SPARSE_CELL: tuple[int, TcBucket] = (2400, "classical")
 
+# SQL predicate that drops the sparse cell from marginal / pooled / Cohen's d
+# aggregation (applied where `elo_bucket` and `tc` columns are in scope).
+SPARSE_CELL_EXCLUSION: str = f"NOT (elo_bucket = {SPARSE_CELL[0]} AND tc = '{SPARSE_CELL[1]}')"
+
 # Equal-footing opponent filter tolerance (Elo). SKILL.md "Equal-footing opponent filter".
 EQUAL_FOOTING_TOLERANCE: int = 100
 
 # Endgame-entry qualification: a game reaches the endgame when it has at least this
 # many plies with a non-NULL endgame_class. SKILL.md "Eval coverage check".
 MIN_ENDGAME_PLIES: int = 6
+
+# game_positions.phase codes (app/models/game_position.py): 0=opening / 1=middlegame
+# / 2=endgame. SKILL.md "Phase-entry definition".
+MIDDLEGAME_PHASE: int = 1
+ENDGAME_PHASE: int = 2
+
+# Eval mate handling / outlier trim — match production exactly (SKILL.md "Mate handling
+# and outlier trim"). Rows with |eval_cp| >= this are dropped (not clipped); mate rows
+# (eval_mate IS NOT NULL) are dropped entirely.
+EVAL_OUTLIER_TRIM_CP: int = 2000
+# Per-user sample floor for entry-eval metrics (matches EVAL_CONFIDENCE_MIN_N, the live
+# z-test gate). SKILL.md "Sample floor" / "Sample floors".
+EVAL_CONFIDENCE_MIN_N: int = 20
 
 
 def elo_bucket(rating: int | None) -> int | None:
