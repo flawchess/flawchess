@@ -1,48 +1,102 @@
 /**
- * Phase 87 — Orchestrator for the 5-card Endgame Type Breakdown section.
- * Replaces both legacy EndgameWDLChart (per-type WDL table) and
- * EndgameConvRecovChart (gauge-only mini cards) per SEC3-06 / SEC3-07.
+ * Phase 98 — Controlled-accordion orchestrator for the Endgame Type Breakdown.
  *
- * Layout: 3-column grid on lg+, 2-column on sm, single column on mobile.
- * `pawnless` is filtered upstream via HIDDEN_ENDGAME_CLASSES; with all 6
- * classes present the section renders exactly 5 cards. Per-card sharePct uses
- * the parent's `totalGames` (all filtered games) as the denominator, NOT the
- * sum of per-type totals: a single game can count toward multiple Endgame
- * Types, so summing per-type totals over-counts the population.
+ * Replaces the Phase 87 3-col grid (grid-cols-1 sm:grid-cols-2 lg:grid-cols-3)
+ * with full-width vertically-stacked collapsible per-TC cards (SC-1, mode-3
+ * disclosure pattern). The user's primary TC is expanded by default (SC-2);
+ * other TCs are collapsed. The accordion resets to the recomputed primary TC
+ * whenever the filter state changes (D-12).
  *
- * v1.17 single-bullet doctrine: each EndgameTypeCard carries one peer bullet
- * (vs 0) per metric (Conv + Recov). Section-level h3 / InfoPopover were
- * dropped (D-12); the page-level "Endgame Type Breakdown" h2 in Endgames.tsx
- * carries the taxonomy + Conv/Recov metric definitions + per-type
- * descriptions + peer-bullet explainer.
+ * Props:
+ *   - categoriesByTc: the new per-(class × TC) breakdown from EndgameStatsResponse.
+ *     Optional for back-compat; section returns null when not present (Pitfall 6).
+ *   - filterKey: a stable serialised string of the active filter params. Changing
+ *     this value resets the accordion to the recomputed primary TC (D-12).
+ *   - onCategorySelect: deep-link handler forwarded to each tile.
+ *
+ * Games-floor suppression: TCs with summed total < MIN_GAMES_PER_TC_CARD are
+ * excluded from `eligibleTcs` (SC-7). When no TC is eligible, an empty-state
+ * message is shown.
  */
 
-import { ENDGAME_CLASS_TO_SLUG, HIDDEN_ENDGAME_CLASSES } from '@/lib/endgameMetrics';
+import { useState, useEffect } from 'react';
+
+import { Accordion } from '@/components/ui/accordion';
+import { MIN_GAMES_PER_TC_CARD } from '@/generated/endgameZones';
+import { computePrimaryTc } from '@/lib/primaryTc';
 import type { EndgameCategoryStats, EndgameClass } from '@/types/endgames';
 
-import { EndgameTypeCard } from './EndgameTypeCard';
+import { EndgameTypeTcCard } from './EndgameTypeTcCard';
+
+// Fixed TC render order (SC-3, same as other per-TC sections).
+const TC_ORDER = ['bullet', 'blitz', 'rapid', 'classical'] as const;
+type Tc = (typeof TC_ORDER)[number];
 
 export interface EndgameTypeBreakdownSectionProps {
-  categories: EndgameCategoryStats[];
-  // Total endgame games used as the sharePct denominator. Per REVIEW WR-01
-  // (Phase 87 follow-up) callers pass the count of games that reached an
-  // endgame phase (EndgameStatsResponse.endgame_games), not all filtered
-  // games — so each card's "Games: X%" reads as the share of the user's
-  // endgames, not the share of all their games. A single game can still
-  // contribute to multiple Endgame Types, so the sum across cards can
-  // exceed 100%.
-  totalGames: number;
+  // Phase 98: per-(class × TC) rates keyed by TC. Optional for back-compat.
+  categoriesByTc?: Record<Tc, EndgameCategoryStats[]>;
+  // Serialised string of the active filter params (TC filter, recency, color,
+  // platform, etc.). Changing this value resets the accordion to the
+  // recomputed primary TC (D-12). The parent (Endgames.tsx) must pass a
+  // stable string that changes whenever appliedFilters changes.
+  filterKey?: string;
   onCategorySelect: (cls: EndgameClass) => void;
 }
 
 export function EndgameTypeBreakdownSection({
-  categories,
-  totalGames,
+  categoriesByTc,
+  filterKey,
   onCategorySelect,
 }: EndgameTypeBreakdownSectionProps) {
-  const visibleCategories = categories.filter(
-    (cat) => !HIDDEN_ENDGAME_CLASSES.has(cat.endgame_class),
+  // Gate: section only renders when the backend field is present (Pitfall 6).
+  if (!categoriesByTc) return null;
+
+  return (
+    <EndgameTypeBreakdownSectionInner
+      categoriesByTc={categoriesByTc}
+      filterKey={filterKey}
+      onCategorySelect={onCategorySelect}
+    />
   );
+}
+
+// Inner component: separated from the outer guard to keep hook calls
+// unconditional (React rules of hooks require no conditional hook calls).
+function EndgameTypeBreakdownSectionInner({
+  categoriesByTc,
+  filterKey,
+  onCategorySelect,
+}: Required<Pick<EndgameTypeBreakdownSectionProps, 'categoriesByTc' | 'onCategorySelect'>> &
+  Pick<EndgameTypeBreakdownSectionProps, 'filterKey'>) {
+  // Compute eligible TCs (summed total >= MIN_GAMES_PER_TC_CARD) in fixed order.
+  const eligibleTcs = TC_ORDER.filter((tc) => {
+    const tcTotal = (categoriesByTc[tc] ?? []).reduce(
+      (sum, c) => sum + c.total,
+      0,
+    );
+    return tcTotal >= MIN_GAMES_PER_TC_CARD;
+  });
+
+  const grandTotal = eligibleTcs.reduce((sum, tc) => {
+    return (
+      sum +
+      (categoriesByTc[tc] ?? []).reduce((s, c) => s + c.total, 0)
+    );
+  }, 0);
+
+  // Primary TC: argmax of summed_games × NOMINAL_DURATION over eligible TCs.
+  // Initialize accordion to primary TC expanded (D-09).
+  const [expandedTc, setExpandedTc] = useState<string>(
+    () => computePrimaryTc(categoriesByTc, MIN_GAMES_PER_TC_CARD) ?? '',
+  );
+
+  // Reset accordion to recomputed primary on filter change (D-12).
+  useEffect(() => {
+    const newPrimary =
+      computePrimaryTc(categoriesByTc, MIN_GAMES_PER_TC_CARD) ?? '';
+    setExpandedTc(newPrimary);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey]);
 
   return (
     <section
@@ -52,22 +106,33 @@ export function EndgameTypeBreakdownSection({
       <p className="text-sm text-muted-foreground">
         Which Endgame Types did you convert or defend poorly against your opponents?
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
-        {visibleCategories.map((cat) => {
-          const slug = ENDGAME_CLASS_TO_SLUG[cat.endgame_class];
-          const sharePct =
-            totalGames > 0 ? (cat.total / totalGames) * 100 : 0;
-          return (
-            <EndgameTypeCard
-              key={cat.endgame_class}
-              category={cat}
-              sharePct={sharePct}
+
+      {eligibleTcs.length === 0 ? (
+        <div
+          className="mt-2 text-sm text-muted-foreground"
+          data-testid="endgame-type-breakdown-empty"
+        >
+          No endgame type data yet. Import more games to see this section.
+        </div>
+      ) : (
+        <Accordion
+          type="single"
+          collapsible
+          value={expandedTc}
+          onValueChange={setExpandedTc}
+          className="flex flex-col gap-2 mt-2"
+        >
+          {eligibleTcs.map((tc) => (
+            <EndgameTypeTcCard
+              key={tc}
+              tc={tc}
+              categories={categoriesByTc[tc] ?? []}
+              grandTotal={grandTotal}
               onCategorySelect={onCategorySelect}
-              tileTestId={`type-card-${slug}`}
             />
-          );
-        })}
-      </div>
+          ))}
+        </Accordion>
+      )}
     </section>
   );
 }

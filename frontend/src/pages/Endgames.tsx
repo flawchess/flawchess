@@ -646,8 +646,8 @@ export function EndgamesPage() {
             </span>
           </h2>
           <EndgameTypeBreakdownSection
-            categories={statsData.categories}
-            totalGames={statsData.endgame_games}
+            categoriesByTc={statsData.categories_by_tc}
+            filterKey={JSON.stringify(appliedFilters)}
             onCategorySelect={handleCategorySelect}
           />
           <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />

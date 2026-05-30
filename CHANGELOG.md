@@ -8,8 +8,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Conversion and Recovery gauges back in Endgame Type Breakdown** (Phase 98). Each endgame type tile (Rook, Minor Piece, Pawn, Queen) now shows its Conversion and Recovery gauges again, this time banded against the correct per-(class x time control) benchmark range so a bullet player is judged against bullet norms, not slow-game ones.
+
 ### Changed
 
+- **Endgame Type Breakdown restructured into collapsible per-TC cards** (Phase 98). The 3-column grid of five per-type cards is replaced by full-width vertically-stacked accordion cards, one per time control (Bullet, Blitz, Rapid, Classical). Your primary time control (the one weighted by game count and typical duration) expands by default; others start collapsed. Mixed is no longer shown; each TC card with fewer than 20 games is suppressed. The accordion resets to your primary TC whenever you change filters.
 - **Simpler Endgame Type Breakdown cards** (quick-260529-une). Each per-type card (Rook, Minor Piece, Pawn, Queen, Mixed) drops its Conversion and Recovery gauges, leaving the win/draw/loss bar, the type Score, and the Score Gap bullet. The Score Gap already captures conversion and defensive performance in a single engine-adjusted number, and the removed gauges were the only metrics on the card that shifted with time control, so they could mispaint a bullet player against slow-game expectations. AI insights still use the full conversion/recovery breakdown.
 
 ### Fixed
