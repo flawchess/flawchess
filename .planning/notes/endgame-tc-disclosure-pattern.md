@@ -103,8 +103,15 @@ endgame WDL across the cohort? (Pawnless is already hidden.)
   without blending. See Phase 98 and [[endgame-typecard-tcmix-gauges]] (superseded).
 - **Endgame Metrics by TC** (Phase 97, shipped) → already per-TC; could adopt mode 3's
   collapsible affordance as a follow-up, but it's out of Phase 98 scope.
-- **Score Gap** within the type breakdown → mode 1 (TC-flat at d≈0.13): keep its single
-  per-class band, do **not** re-fragment it per TC even inside per-TC cards.
+- **Score Gap** within the type breakdown → **forced per-TC for visual consistency**
+  (decided 2026-05-30). Statistically it's TC-flat (per-class ΔES TC d≈0.13), so the four
+  per-TC bands will be **near-identical** — that's the textbook mode-1 "pool" case. But
+  Score Gap conceptually belongs to the endgame type tile alongside the TC-varying
+  Conv/Recov gauges, and a single hoisted band would break the per-TC card's visual
+  cohesion. So it gets a per-(class × TC) band like the other tile metrics, accepting the
+  near-identical bands as the cost of one consistent card grammar. **Do not "fix" this
+  back to a single band** on the strength of the d≈0.13 finding — the redundancy is known
+  and chosen.
 
 ## Related
 
