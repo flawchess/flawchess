@@ -282,3 +282,46 @@ async def test_chapter3_314_matches_report(benchmark_session: AsyncSession) -> N
     _check_marginal(block["elo_marginal"], EXPECTED_314_ELO)
     _check_marginal(block["tc_marginal"], EXPECTED_314_TC)
     _check_verdicts(block, EXPECTED_314_VERDICTS)
+
+
+# --- §3.1.5 Achievable Score Gap (paired actual − expected) --------------------
+
+# Proportions (4 dp), rendered as pp. Reproduces benchmarks-latest.md §3.1.5 exactly.
+EXPECTED_315_POOLED = {
+    "n": 4616,
+    "mean": 0.0050,
+    "sd": 0.0818,
+    "p05": -0.1282,
+    "p25": -0.0386,
+    "p50": 0.0071,
+    "p75": 0.0513,
+    "p95": 0.1318,
+}
+EXPECTED_315_ELO = {
+    "800": (756, -0.0060, 0.0927, -0.0581, -0.0044, 0.0445),
+    "1200": (1068, -0.0050, 0.0856, -0.0468, -0.0031, 0.0417),
+    "1600": (1166, 0.0022, 0.0785, -0.0385, 0.0043, 0.0463),
+    "2000": (1028, 0.0167, 0.0764, -0.0282, 0.0172, 0.0605),
+    "2400": (598, 0.0220, 0.0695, -0.0196, 0.0248, 0.0640),
+}
+EXPECTED_315_TC = {
+    "bullet": (1350, 0.0017, 0.1096, -0.0601, 0.0071, 0.0722),
+    "blitz": (1353, 0.0069, 0.0704, -0.0344, 0.0097, 0.0498),
+    "rapid": (1334, 0.0086, 0.0631, -0.0270, 0.0074, 0.0439),
+    "classical": (579, 0.0000, 0.0673, -0.0424, -0.0008, 0.0397),
+}
+# TC pair corrected to (rapid, classical): deterministic max |d|=0.134 is there, while
+# the report's labeled (bullet, rapid) is only 0.08 — the report carried the right
+# magnitude (0.13 / collapse) on the wrong pair label. ELO (800, 2400) 0.34 matches.
+EXPECTED_315_VERDICTS = {
+    "TC": (("rapid", "classical"), 0.13),
+    "ELO": (("800", "2400"), 0.34),
+}
+
+
+async def test_chapter3_315_matches_report(benchmark_session: AsyncSession) -> None:
+    block = await chapter3.compute_315(benchmark_session)
+    _check_pooled(block, EXPECTED_315_POOLED)
+    _check_marginal(block["elo_marginal"], EXPECTED_315_ELO)
+    _check_marginal(block["tc_marginal"], EXPECTED_315_TC)
+    _check_verdicts(block, EXPECTED_315_VERDICTS)

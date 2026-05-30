@@ -5,6 +5,7 @@ Ported sub-metrics so far:
   §3.1.2 Endgame-entry eval  — two-pass symmetric-baseline eval at EG entry (cp).
   §3.1.3 Achievable Score    — per-user entry_xs (Lichess sigmoid at EG entry, score).
   §3.1.4 Endgame Score       — per-user absolute eg_score over EG games (score).
+  §3.1.5 Achievable Score Gap — per-user avg(actual − expected) paired gap (pp).
   §3.1.6 Endgame Score Gap   — per-user (eg_score − non_eg_score) distribution (pp).
 
 §3.1.1/§3.1.6 derive from one shared per_user CTE (≥30 endgame AND ≥30 non-endgame
@@ -36,6 +37,10 @@ Faithful-port findings (validated against benchmarks-latest.md):
     out (800, 2000)'s 0.34679; both round to 0.35 / review, so magnitude and verdict are
     unchanged. The prior report labeled the runner-up (800, 2000) — a hand-computation
     pair-selection slip, same class as §2.1's (800,1200)→(800,1600). Footnoted.
+  - §3.1.5: pooled and all ELO/TC marginals reproduce the report exactly. TC-axis pair
+    corrected to (rapid, classical): the deterministic max |d|=0.134 is there, while the
+    report's labeled (bullet, rapid) is only 0.08 — the report carried the right
+    magnitude (0.13 → collapse) on the wrong pair label. ELO (800, 2400) 0.34 matches.
 """
 
 from __future__ import annotations
@@ -52,7 +57,7 @@ from scripts.benchmarks import sql
 from scripts.benchmarks.entry_eval import Baseline
 from scripts.benchmarks.render import fmt_int, fmt_signed, fmt_unsigned, markdown_table
 
-SECTION = "SKILL.md §3.1 — endgame overall (3.1.1 Non-EG, 3.1.2 EG-entry eval, 3.1.3 achievable, 3.1.4 EG score, 3.1.6 score gap)"
+SECTION = "SKILL.md §3.1 — endgame overall (3.1.1–3.1.6: Non-EG, EG-entry eval, achievable, EG score, achievable gap, score gap)"
 
 _SCORE_DIGITS = 4  # proportion metrics round to 4 dp in SQL (SKILL.md §3.1.x queries)
 # §3.1.2 eval is a cp metric: mean at 2 dp (report double-rounds), sd/pct at 1 dp.
@@ -253,6 +258,61 @@ async def compute_314(session: AsyncSession) -> MetricBlock:
     )
 
 
+# --- §3.1.5 Achievable Score Gap (paired actual − expected) ----------------
+
+
+def _achievable_gap_per_user_cte() -> str:
+    """Per-user `achievable_gap = avg(actual − expected)` at EG entry (SKILL.md §3.1.5).
+
+    Paired per-game gap: actual score (USER_SCORE_EXPR) minus the Lichess-sigmoid
+    expected score at the first endgame ply (mate INCLUDED, |cp|≥2000 → NULL → dropped,
+    both sides identically). ≥20 non-null pairs per (user, game-time ELO, TC) cell,
+    sub-800 dropped, equal-footing filtered, sparse cell excluded. Shares the
+    `entry_rows` + `expected_score` machinery with §3.1.3.
+    """
+    bucket_case = sql.elo_bucket_case_sql("ueag")
+    d_i = f"({sql.USER_SCORE_EXPR})\n         - ({sql.expected_score_sql()})"
+    return (
+        f"WITH {sql.SELECTED_USERS_CTE},\n"
+        f"{sql.ENDGAME_GAME_IDS_CTE},\n"
+        f"{sql.ENTRY_ROWS_CTE},\n"
+        "rows AS (\n"
+        f"  SELECT g.user_id, ({sql.USER_ELO_AT_GAME_SQL}) AS ueag, su.tc_bucket AS tc,\n"
+        f"         {d_i} AS d_i\n"
+        "  FROM games g\n"
+        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  JOIN entry_rows er ON er.game_id = g.id AND er.rn = 1\n"
+        f"  WHERE {sql.BASE_GAME_FILTER}\n"
+        "),\n"
+        "per_user AS (\n"
+        f"  SELECT user_id, ({bucket_case}) AS elo_bucket, tc, avg(d_i) AS achievable_gap\n"
+        f"  FROM rows WHERE ueag >= {sql.ELO_FLOOR}\n"
+        "  GROUP BY user_id, elo_bucket, tc\n"
+        f"  HAVING count(*) FILTER (WHERE d_i IS NOT NULL) >= {sql.ENDGAME_MIN_GAMES}\n"
+        "),\n"
+        "pu AS MATERIALIZED (\n"
+        f"  SELECT * FROM per_user WHERE {sql.SPARSE_CELL_EXCLUSION}\n"
+        ")"
+    )
+
+
+async def compute_315(session: AsyncSession) -> MetricBlock:
+    query = (
+        _achievable_gap_per_user_cte()
+        + "\nSELECT\n"
+        + dist.agg_select("achievable_gap", digits=_SCORE_DIGITS)
+        + f"\nFROM pu {dist.GROUPING_SETS}"
+    )
+    rows = await _fetch(session, query)
+    pooled, elo, tc = dist.split_grouping_sets(rows)
+    return MetricBlock(
+        pooled=pooled,
+        elo_marginal=elo,
+        tc_marginal=tc,
+        verdicts=[dist.verdict("TC", tc), dist.verdict("ELO", elo)],
+    )
+
+
 # --- §3.1.2 Endgame-entry eval (two-pass, phase = 2) -----------------------
 
 
@@ -383,7 +443,11 @@ def _render_312(v: EntryEval312) -> list[str]:
 
 
 def render(
-    values: Chapter3Values, eval312: EntryEval312, xs313: MetricBlock, eg314: MetricBlock
+    values: Chapter3Values,
+    eval312: EntryEval312,
+    xs313: MetricBlock,
+    eg314: MetricBlock,
+    gap315: MetricBlock,
 ) -> str:
     parts = ["## 3. Endgames", "", "### 3.1 Endgame Overall Performance", ""]
     parts += _metric_section(
@@ -410,6 +474,13 @@ def render(
     )
     parts += ["", "---", ""]
     parts += _metric_section(
+        "#### 3.1.5 Achievable Score Gap (paired actual − expected)",
+        gap315,
+        "pp",
+        pooled_label="Pooled distribution",
+    )
+    parts += ["", "---", ""]
+    parts += _metric_section(
         "#### 3.1.6 Endgame Score Gap and Timeline",
         values["diff"],
         "pp",
@@ -423,6 +494,7 @@ async def build(session: AsyncSession) -> dict[str, Any]:
     eval312 = await compute_312(session)
     xs313 = await compute_313(session)
     eg314 = await compute_314(session)
+    gap315 = await compute_315(session)
     return {
         "status": "OK",
         "section": SECTION,
@@ -430,5 +502,6 @@ async def build(session: AsyncSession) -> dict[str, Any]:
         "values_312": eval312,
         "values_313": xs313,
         "values_314": eg314,
-        "markdown": render(values, eval312, xs313, eg314),
+        "values_315": gap315,
+        "markdown": render(values, eval312, xs313, eg314, gap315),
     }

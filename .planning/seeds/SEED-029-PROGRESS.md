@@ -30,11 +30,17 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
   `sql.USER_COLOR_SIGN_SQL` (the ROW_NUMBER first-endgame-ply CTE + Lichess sigmoid, both
   reused by §3.1.5). Reproduces the report EXACTLY (pooled, all marginals, both verdicts
   TC 0.12 / ELO 0.12 1600-vs-2400) — NO transcription errors.
-- (next commit) §3.1.4 Endgame Score — simplest MetricBlock (score unit, INNER JOIN
+- `63c5f44f` §3.1.4 Endgame Score — simplest MetricBlock (score unit, INNER JOIN
   endgame_game_ids + ≥20 floor + USER_SCORE_EXPR). Pooled + all marginals reproduce the
   report exactly. FOUND a pair-selection slip: ELO max |d| is (800, 2400) at 0.34694,
   not the report's (800, 2000) at 0.34679 — both round to 0.35 / review, magnitude +
   verdict unchanged (same class as §2.1). Footnoted in test + chapter3 docstring.
+- (next commit) §3.1.5 Achievable Score Gap — MetricBlock (pp unit). d_i = USER_SCORE_EXPR
+  − expected_score_sql() (reuses §3.1.3's entry_rows + sigmoid; mate INCLUDED). ≥20 non-null
+  pairs floor. Pooled + all marginals reproduce the report exactly. FOUND a pair-selection
+  slip: TC max |d| is (rapid, classical) at 0.134, NOT the report's labeled (bullet, rapid)
+  which is only 0.08 — the report carried the right magnitude (0.13/collapse) on the wrong
+  pair label. ELO (800, 2400) 0.34 matches. **§3.1 now COMPLETE (3.1.1–3.1.6).**
 
 ## Architecture (scripts/benchmarks/ subpackage; tests in tests/scripts/benchmarks/)
 
@@ -93,14 +99,13 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
   column subset). §3.2.1/§3.4 DO use the 5×4 cell grid — build it in distribution.py when you reach them.
 - **Prior-report transcription errors found (all footnoted, verdict-neutral)**: §2.1 ELO d pair
   (800,1200)→(800,1600); §3.1.1 pooled SD 8.3%→8.8%; §3.1.6 pooled mean −0.9→−0.95 (rounding boundary);
-  §3.1.4 ELO d pair (800,2000)→(800,2400) (0.34679 vs 0.34694, both →0.35/review).
+  §3.1.4 ELO d pair (800,2000)→(800,2400) (0.34679 vs 0.34694, both →0.35/review);
+  §3.1.5 TC d pair (bullet,rapid)→(rapid,classical) (report's labeled pair = 0.08, the true
+  max 0.13 is rapid-vs-classical — right magnitude, wrong pair label; verdict collapse unchanged).
   §3.1.2 + §3.1.3 had NONE. Expect more — verify, don't assume the report is exact.
 
 ## Remaining work
 
-- §3.1.5 Achievable Score Gap — per_user avg(actual − expected) paired (mate INCLUDED, |cp|<2000);
-  ≥20 floor; "pp" unit. (SKILL.md ~1155-1296.) Reuse `sql.ENTRY_ROWS_CTE` + `sql.expected_score_sql()`
-  (already extracted for §3.1.3); the `actual` side needs USER_SCORE_EXPR per entry game.
 - §3.2 Conv/Parity/Recovery (3.2.1) — multi-metric + composite Endgame Skill; uses the 5×4 cell grid.
 - §3.3 Time Pressure (3.3.x); §3.4 Endgame Type per-class (3.4.x) — partitioned per class/bin.
 - §4 — already deterministic; chapter just references scripts/gen_global_percentile_cdf.py.
