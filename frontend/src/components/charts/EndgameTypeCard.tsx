@@ -11,8 +11,13 @@
  * receives a `tc` prop so gauges and Score Gap are banded against the correct
  * per-(class × TC) benchmark IQR from PER_CLASS_TC_GAUGE_ZONES.
  *
- * Card structure (top-to-bottom):
- *   1. Title + per-card title InfoPopover + optional n={total} chip.
+ * Phase 98 follow-up: the tile renders as a plain BLOCK (no container, no
+ * recessed header band) — the per-TC card (EndgameTypeTcCard) owns the charcoal
+ * container, the TC header, and the dividers between tiles, mirroring the
+ * Conversion/Parity/Recovery blocks in EndgameMetricsByTcCard.
+ *
+ * Block structure (top-to-bottom):
+ *   1. Bold type label + title InfoPopover + optional n={total} chip.
  *   2. Side-by-side Conv + Recov gauges (EndgameGauge), banded per-(class × TC).
  *   3. WDL bar row with the Games deep-link.
  *   4. Score bullet (W + 0.5*D / N) sig-gated against 50%.
@@ -183,11 +188,13 @@ export function EndgameTypeCard({
   const sharePctFormatted = Math.round(sharePct);
   const gamesCountFormatted = category.total.toLocaleString();
 
-  // Card header band: recessed background + bottom separator, full-bleed to the
-  // card edges (matches EndgameMetricsByTcCard / EndgameTimePressureCard).
+  // Phase 98 follow-up: the tile is a block inside the per-TC card (like the
+  // Conversion/Parity/Recovery blocks in EndgameMetricsByTcCard), NOT its own
+  // card. Plain bold label, no recessed header band or container — the per-TC
+  // card supplies the charcoal container, header, and the dividers between tiles.
   const titleRow = (
-    <h3
-      className="flex items-center gap-1 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+    <h4
+      className="flex items-center gap-1 mb-2 text-base font-semibold"
       data-testid={`${tileTestId}-header`}
     >
       <span>{category.label}</span>
@@ -208,7 +215,7 @@ export function EndgameTypeCard({
           n={category.total}
         </span>
       )}
-    </h3>
+    </h4>
   );
 
   // Empty-class shell (no games at all). REVIEW WR-04: dropped the redundant
@@ -218,13 +225,13 @@ export function EndgameTypeCard({
   if (!hasGames) {
     return (
       <div
-        className="charcoal-texture rounded-md overflow-hidden"
+        className="p-4"
         data-testid={tileTestId}
         role="group"
         aria-label={`${category.label} endgame breakdown`}
       >
         {titleRow}
-        <div className="flex flex-col gap-4 p-4">
+        <div className="flex flex-col gap-4">
           <div
             className="grid grid-cols-2 gap-2 opacity-50"
             data-testid={`${tileTestId}-gauges`}
@@ -285,13 +292,13 @@ export function EndgameTypeCard({
 
   return (
     <div
-      className="charcoal-texture rounded-md overflow-hidden"
+      className="p-4"
       data-testid={tileTestId}
       role="group"
       aria-label={`${category.label} endgame breakdown`}
     >
       {titleRow}
-      <div className="flex flex-col gap-4 p-4" style={bodyStyle}>
+      <div className="flex flex-col gap-4" style={bodyStyle}>
         {/* Phase 98: Gauge row (Conv | Recov side-by-side) restored.
             Zones banded against PER_CLASS_TC_GAUGE_ZONES[class][tc] (D-04). */}
         <div
