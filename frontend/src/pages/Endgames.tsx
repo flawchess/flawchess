@@ -485,13 +485,13 @@ export function EndgamesPage() {
                       the first Score is the higher of the two, negative means it is lower.
                     </p>
                     <p>
-                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1 text-brand-brown/70" aria-hidden="true" />
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
                       <strong>Eval:</strong> the Stockfish evaluation of a position, in pawns and from
                       your perspective, where positive means you stand better (+1.0 is a one-pawn
                       advantage). Metrics that come from the engine are marked with this chip icon.
                     </p>
                     <p>
-                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1 text-brand-brown/70" aria-hidden="true" />
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
                       <strong>Eval Score:</strong> an Eval converted into a Score (a 0-100% win
                       expectancy) with the{' '}
                       <a
@@ -506,7 +506,7 @@ export function EndgamesPage() {
                       is roughly a 60% Eval Score.
                     </p>
                     <p>
-                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1 text-brand-brown/70" aria-hidden="true" />
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
                       <strong>Eval Score Gap:</strong> the difference between two Eval Scores, for
                       example how much your Eval Score changed between the start and end of an
                       Endgame Sequence. Positive means you gained expected Score (you outplayed the
