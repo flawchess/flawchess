@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams, Navigate, Link } from 'react-router-dom';
-import { SlidersHorizontal, X, BarChart2Icon, SwordsIcon, HelpCircle, Lightbulb } from 'lucide-react';
+import { SlidersHorizontal, X, BarChart2Icon, SwordsIcon, HelpCircle, Lightbulb, Cpu } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
@@ -474,6 +474,43 @@ export function EndgamesPage() {
                       a rook endgame where the rooks get traded becomes a pawn endgame, giving that game one rook
                       sequence and one pawn sequence. Sequences drive the Endgame Type Breakdown, so a game can appear
                       under more than one type.
+                    </p>
+                    <p>
+                      <strong>Score:</strong> your result as a percentage, counting each win as a
+                      full point and each draw as a half point (so 3 wins, 2 draws and 1 loss over
+                      6 games is 67%). 50% is an even result against equally matched opponents.
+                    </p>
+                    <p>
+                      <strong>Score Gap:</strong> the difference between two Scores. Positive means
+                      the first Score is the higher of the two, negative means it is lower.
+                    </p>
+                    <p>
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1 text-brand-brown/70" aria-hidden="true" />
+                      <strong>Eval:</strong> the Stockfish evaluation of a position, in pawns and from
+                      your perspective, where positive means you stand better (+1.0 is a one-pawn
+                      advantage). Metrics that come from the engine are marked with this chip icon.
+                    </p>
+                    <p>
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1 text-brand-brown/70" aria-hidden="true" />
+                      <strong>Eval Score:</strong> an Eval converted into a Score (a 0-100% win
+                      expectancy) with the{' '}
+                      <a
+                        href="https://lichess.org/page/accuracy"
+                        className="text-primary underline-offset-4 hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Lichess expected-score formula
+                      </a>
+                      , so engine evaluations and actual results sit on the same scale. A +1.0 Eval
+                      is roughly a 60% Eval Score.
+                    </p>
+                    <p>
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1 text-brand-brown/70" aria-hidden="true" />
+                      <strong>Eval Score Gap:</strong> the difference between two Eval Scores, for
+                      example how much your Eval Score changed between the start and end of an
+                      Endgame Sequence. Positive means you gained expected Score (you outplayed the
+                      engine's expectation), negative means you gave some back.
                     </p>
                     <p>
                       <strong>Conversion:</strong> percentage of games where you entered the endgame with a
