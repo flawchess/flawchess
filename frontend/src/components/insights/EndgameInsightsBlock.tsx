@@ -266,9 +266,9 @@ function RenderedState({
           <span>{staleCopy}</span>
         </div>
       )}
-      <div className="space-y-3 mb-3">
+      <div className="space-y-5 mb-3">
         {showPlayerProfile && (
-          <InsightsCard
+          <InsightsSection
             testId="insights-player-profile"
             title="Player Profile"
             icon={UserCircle2}
@@ -278,10 +278,10 @@ function RenderedState({
                 <p key={idx}>{paragraph}</p>
               ))}
             </div>
-          </InsightsCard>
+          </InsightsSection>
         )}
         {showOverview && (
-          <InsightsCard
+          <InsightsSection
             testId="insights-overview"
             title="Data Analysis"
             icon={BarChart3}
@@ -291,10 +291,10 @@ function RenderedState({
                 <p key={idx}>{paragraph}</p>
               ))}
             </div>
-          </InsightsCard>
+          </InsightsSection>
         )}
         {showRecommendations && (
-          <InsightsCard
+          <InsightsSection
             testId="insights-recommendations"
             title="Recommendations"
             icon={ListChecks}
@@ -304,7 +304,7 @@ function RenderedState({
                 <li key={idx}>{rec}</li>
               ))}
             </ul>
-          </InsightsCard>
+          </InsightsSection>
         )}
       </div>
       <div className="flex items-center gap-2">
@@ -335,7 +335,7 @@ function RenderedState({
   );
 }
 
-function InsightsCard({
+function InsightsSection({
   testId,
   title,
   icon: Icon,
@@ -347,11 +347,8 @@ function InsightsCard({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      data-testid={testId}
-      className="rounded-md border border-border/40 bg-background/40 p-3"
-    >
-      <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-2">
+    <div data-testid={testId}>
+      <h3 className="flex items-center gap-2 text-base font-semibold text-foreground mb-2">
         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         {title}
       </h3>
