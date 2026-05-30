@@ -122,7 +122,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 99-03-PLAN.md — Stage B + regen dispatch arms; PerTcBucketStats rate field trio; endgame_service threading
+- [x] 99-03-PLAN.md — Stage B + regen dispatch arms; PerTcBucketStats rate field trio; endgame_service threading
 - [ ] 99-04-PLAN.md — Frontend: TS rate fields + title-line rate chip in shared MetricBlock (desktop + mobile)
 
 **Wave 3** *(blocked on Wave 2 completion)*

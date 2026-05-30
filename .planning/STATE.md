@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
 status: executing
-last_updated: "2026-05-30T21:05:52.639Z"
+last_updated: "2026-05-30T21:19:49.792Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 9
   percent: 25
 ---
 
@@ -19,9 +19,9 @@ progress:
 
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
 Phase: 99 (percentile-badges-for-conversion-parity-and-recovery) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Next: Plan 03 (PerTcBucketStats field widening + endgame_service dispatch)
-Status: Executing Phase 99 (Plan 02 complete — rate builders + ENUM widening + migration)
+Status: Ready to execute
 Last activity: 2026-05-30
 
 ## Project Reference
@@ -235,3 +235,8 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 | Phase | Plan | Duration | Notes |
 |-------|------|----------|-------|
 | Phase 99 P02 | 25 | 2 tasks | 6 files |
+| Phase 99 P03 | 15 | 2 tasks | 18 files |
+
+## Decisions
+
+- [Phase ?]: rate_percentile field trio named distinctly from percentile star (D-01 coexistence)
