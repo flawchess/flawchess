@@ -30,6 +30,7 @@
 - [ ] **Phase 96: Import Readiness Gate** *(standalone UX/correctness, no milestone)* — Hold the user on the import page until import + Stockfish eval drain + Stage A/B percentiles are all ready, then unlock all routes via a user-initiated "Explore" CTA. Replaces the `useEvalCoverage` auto-reload hack and removes eval-progress UI from all non-import surfaces. See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
 - [ ] **Phase 97: Endgame Metrics by Time Control** *(standalone UX, no milestone)* — Replace the aggregated Conversion/Parity/Recovery gauge cards in the Endgame Metrics section with TC-specific cards (bullet/blitz/rapid/classical), mirroring the Time Pressure section's per-TC pattern. Conversion/Recovery gauges get TC-specific neutral bands (benchmark TC d≈0.9); Parity and Score Gap keep the shared global band (both collapse on TC). No aggregated cards remain; cards self-suppress below a min-games floor. Per-TC conversion/recovery percentile badges deferred.
 - [ ] **Phase 98: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+- [ ] **Phase 99: TC-mix-weighted Conv/Recov Gauges on Endgame Type Cards** *(standalone UX, no milestone)* — Re-add Conversion/Recovery gauges to the 5 `EndgameTypeCard`s (removed 2026-05-29, quick-260529-une) as **absolute-arc gauges with a TC-mix-weighted neutral band**: `band = Σ_tc (user's share of eligible games in tc for class) × (benchmark IQR for class × tc)`, weighted by conversion-/recovery-eligible games respectively. Raw rate stays the headline; band tooltip discloses the TC-mix basis. TC-only by design (ELO precision stays in the Score-Gap percentile chip; per-(class×TC×ELO) banding is infeasible on sparsity). Absolute-arc idiom matches the Phase 97 Endgame Metrics gauges, so that section is untouched (no cascade). See [notes/endgame-typecard-tcmix-gauges.md](notes/endgame-typecard-tcmix-gauges.md).
 
 ## Phase Details
 
@@ -118,6 +119,25 @@
   3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
   4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
   5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
+
+### Phase 99: TC-mix-weighted Conv/Recov Gauges on Endgame Type Cards
+
+**Goal**: Re-introduce Conversion and Recovery gauges to all five `EndgameTypeCard`s (rook, minor_piece, pawn, queen, mixed) — removed 2026-05-29 in quick-260529-une because their only band was `PER_CLASS_GAUGE_ZONES`, a single pooled-across-TC band that mispaints TC-concentrated users (conv/recov are TC-dependent at Cohen's d ≈ 1.2–1.7). Re-add them as **absolute 0–100% arc gauges with a TC-mix-weighted neutral band**, computed as `band = Σ_tc (user's share of eligible games in tc for this class) × (benchmark IQR for class × tc)` — weighted by conversion-eligible games per (class, tc) for the conversion gauge and recovery-eligible games for the recovery gauge, since the rate is conditional on entering ahead/behind and that entry frequency varies by TC. The raw rate stays the headline number; the gauge is the "vs typical" visual; a tooltip discloses the TC-mix basis ("Typical range for the time controls you play. Faster controls convert less and recover more."). The gauge is deliberately **TC-only** — ELO precision lives in the Score-Gap percentile chip (cohort-matched on TC+ELO via `anchorRating`); per-(class × TC × ELO) banding is infeasible on sparsity (queen/classical already n≈30 in the TC-only marginal). The **absolute-arc idiom matches the Phase 97 Endgame Metrics gauges**, so that section is left untouched (no page-wide gauge migration). See [notes/endgame-typecard-tcmix-gauges.md](notes/endgame-typecard-tcmix-gauges.md) for the full decision and rejected alternatives.
+**Depends on**: Phase 97 (shares the per-TC band / `endgameZones.ts` codegen pattern and the per-TC rate aggregation path)
+**Requirements**: standalone — no requirement IDs (endgame stats UX refinement)
+**Success Criteria** (what must be TRUE):
+
+  1. Each of the 5 `EndgameTypeCard`s renders a Conversion gauge and a Recovery gauge again, as absolute 0–100% arcs matching the Endgame Metrics (Phase 97) gauge idiom, with the raw rate shown as the prominent headline value.
+  2. Each gauge's neutral band is the **TC-mix-weighted** blend of per-(class × TC) benchmark IQRs, weighted by the user's eligible-game distribution across time controls (conversion-eligible for conversion, recovery-eligible for recovery) for that class — not a single pooled band.
+  3. Per-(class × TC) conversion/recovery IQRs are generated into `frontend/src/generated/endgameZones.ts` via `app/services/endgame_zones.py` + `scripts/gen_endgame_zones_ts.py`, with the CI drift gate green.
+  4. The endgame breakdown response exposes per-(class × TC) conversion-eligible and recovery-eligible game counts so the frontend can compute the TC-mix weights (today only `category.total` summed across TCs is sent).
+  5. A sparse-cell rule is defined and applied: per-(class × TC) cells below a deliberate min-n are dropped from or pooled in the weighted band (validated against dev-DB distributions during planning; queen/classical and pawnless are the known-thin cells).
+  6. Each gauge carries the disclosure tooltip and self-suppresses below the existing `MIN_GAMES_FOR_RELIABLE_STATS` floor.
+  7. The Endgame Metrics (Phase 97) section is unchanged — no migration to a centered idiom, no edits to its gauges.
+  8. Desktop and mobile layouts both render the re-added gauges responsively.
+  9. Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) gates all pass; new/updated `EndgameTypeCard` tests cover the re-added gauges and the TC-mix band computation; a `CHANGELOG.md` `[Unreleased]` entry records the re-introduction.
+
+**Plans**: TBD
 
 **Plans**: TBD
 
