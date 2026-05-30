@@ -49,6 +49,7 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -61,6 +62,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings  # noqa: E402
+from scripts.benchmarks import chapter1  # noqa: E402
 
 DbTarget = Literal["benchmark", "dev"]
 
@@ -158,24 +160,26 @@ CHAPTER_STUBS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Registry of ported chapters. Keys match CHAPTER_STUBS; unported keys fall back
+# to `_stub_chapter`. Shared building blocks (game-time ELO + TC bucketing,
+# equal-footing filter, sparse-cell exclusion, Cohen's d, IQR) live in the
+# `scripts.benchmarks` subpackage (importable + unit-tested via tests/scripts/).
+_CHAPTER_BUILDERS: dict[str, Callable[[AsyncSession], Awaitable[dict[str, Any]]]] = {
+    "1-stratified-sample": chapter1.build,
+}
+
+
 async def _generate_chapters(session: AsyncSession) -> dict[str, Any]:
     """Compute every benchmark chapter into a structured dict.
 
-    SCAFFOLD: returns a stub per chapter. Replace each `_stub_chapter` call with
-    the real port, validated against benchmarks-latest.md within rounding.
-
-    Shared building blocks to extract as pure, unit-tested functions (SKILL.md
-    §"Collapse verdict methodology", §"Shared SQL building blocks"):
-      - game-time ELO bucketing (anchored 800/1200/1600/2000/2400, 400-wide)
-      - TC bucketing (from benchmark_selected_users.tc_bucket)
-      - Cohen's d + IQR band derivation
-      - equal-footing opponent filter
-      - sparse-cell exclusion + status='completed' marginal filter
-    These belong in app/services/ (importable + testable), not inline here.
+    Ported chapters (in `_CHAPTER_BUILDERS`) emit real numbers + rendered markdown,
+    validated against benchmarks-latest.md within rounding. Unported chapters fall
+    back to a TODO stub. Port one section at a time, diffing each before the next.
     """
     chapters: dict[str, Any] = {}
     for key, todo in CHAPTER_STUBS:
-        chapters[key] = _stub_chapter(key, todo)
+        builder = _CHAPTER_BUILDERS.get(key)
+        chapters[key] = await builder(session) if builder is not None else _stub_chapter(key, todo)
     return chapters
 
 
@@ -208,8 +212,12 @@ def _render_markdown(artifact: dict[str, Any]) -> str:
         "",
     ]
     for key, chapter in artifact["chapters"].items():
-        lines.append(f"## {key}")
-        lines.append(f"_{chapter['status']}: {chapter['section']}_")
+        md = chapter.get("markdown")
+        if md:
+            lines.append(md)
+        else:
+            lines.append(f"## {key}")
+            lines.append(f"_{chapter['status']}: {chapter['section']}_")
         lines.append("")
     return "\n".join(lines)
 

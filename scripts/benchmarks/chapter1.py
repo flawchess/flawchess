@@ -1,0 +1,296 @@
+"""Chapter 1 — Stratified Sample (SKILL.md §1).
+
+Pure cohort construction: population counts, selection-pool coverage + status
+breakdown (selection-snapshot bucketing), eval coverage at endgame entry, and the
+game-time cell sizes the analysis actually pools over (post equal-footing filter).
+No Cohen's d, no IQR, no verdicts — those start in Chapter 3.
+
+The acceptance gate (SEED-029 #2) is a numeric diff of these four tables + the
+population header against `reports/benchmark/benchmarks-latest.md`. See
+`tests/scripts/benchmarks/test_chapter1_diff.py`.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any, TypedDict
+
+from sqlalchemy import RowMapping, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from scripts.benchmarks import sql
+from scripts.benchmarks.render import Align, fmt_int, markdown_table
+
+SECTION = "SKILL.md §1 — cohort construction, game-time ELO + TC bucketing"
+
+# Status codes in the audit-trail column order: Completed / Skipped / Failed / Unattempted.
+_STATUS_ORDER: tuple[str, ...] = ("completed", "skipped", "failed", "unattempted")
+
+
+class PopulationCounts(TypedDict):
+    users: int
+    games: int
+    positions: int
+
+
+class EvalCoverage(TypedDict):
+    endgame_games: int
+    with_eval: int
+    pct_with_eval: float
+
+
+class CellCount(TypedDict):
+    elo: int
+    tc: str
+    n: int
+
+
+class StatusCount(TypedDict):
+    elo: int
+    tc: str
+    status: str
+    n: int
+
+
+class GameTimeCell(TypedDict):
+    elo: int
+    tc: str
+    users: int
+    games: int
+
+
+class Chapter1Values(TypedDict):
+    population: PopulationCounts
+    pool_coverage: list[CellCount]
+    pool_status: list[StatusCount]
+    eval_coverage: EvalCoverage
+    game_time_cells: list[GameTimeCell]
+
+
+async def _fetch(session: AsyncSession, sql_text: str) -> Sequence[RowMapping]:
+    """Run a read-only query and return rows as dict-like mappings."""
+    result = await session.execute(text(sql_text))
+    return result.mappings().all()
+
+
+async def _population(session: AsyncSession) -> PopulationCounts:
+    """Total users / games / positions in the benchmark DB (report header line)."""
+    row = (
+        await _fetch(
+            session,
+            "SELECT (SELECT count(*) FROM users) AS users,"
+            " (SELECT count(*) FROM games) AS games,"
+            " (SELECT count(*) FROM game_positions) AS positions",
+        )
+    )[0]
+    return PopulationCounts(
+        users=int(row["users"]), games=int(row["games"]), positions=int(row["positions"])
+    )
+
+
+async def _pool_coverage(session: AsyncSession) -> list[CellCount]:
+    """`status='completed'` user count per (selection rating_bucket, tc_bucket).
+
+    Selection-pool coverage — uses `bsu.rating_bucket` deliberately (a selection-time
+    property), not the game-time analysis bucket. SKILL.md "Sample size check".
+    """
+    rows = await _fetch(
+        session,
+        "SELECT bsu.rating_bucket AS elo, bsu.tc_bucket AS tc, count(DISTINCT u.id) AS n\n"
+        "FROM benchmark_selected_users bsu\n"
+        "JOIN benchmark_ingest_checkpoints bic\n"
+        "  ON bic.lichess_username = bsu.lichess_username\n"
+        " AND bic.tc_bucket = bsu.tc_bucket\n"
+        " AND bic.status = 'completed'\n"
+        "JOIN users u ON u.lichess_username = bsu.lichess_username\n"
+        "GROUP BY 1, 2",
+    )
+    return [CellCount(elo=int(r["elo"]), tc=str(r["tc"]), n=int(r["n"])) for r in rows]
+
+
+async def _pool_status(session: AsyncSession) -> list[StatusCount]:
+    """Full C/S/F/U status breakdown per cell (pool-exhaustion audit trail).
+
+    LEFT JOIN so never-attempted pool members surface as 'unattempted'.
+    SKILL.md "Sample size check" (status breakdown query).
+    """
+    rows = await _fetch(
+        session,
+        "SELECT bsu.rating_bucket AS elo, bsu.tc_bucket AS tc,\n"
+        "       COALESCE(bic.status, 'unattempted') AS status, count(*) AS n\n"
+        "FROM benchmark_selected_users bsu\n"
+        "LEFT JOIN benchmark_ingest_checkpoints bic\n"
+        "  ON bic.lichess_username = bsu.lichess_username\n"
+        " AND bic.tc_bucket = bsu.tc_bucket\n"
+        "GROUP BY 1, 2, 3",
+    )
+    return [
+        StatusCount(elo=int(r["elo"]), tc=str(r["tc"]), status=str(r["status"]), n=int(r["n"]))
+        for r in rows
+    ]
+
+
+async def _eval_coverage(session: AsyncSession) -> EvalCoverage:
+    """Stockfish eval coverage at the first endgame ply. SKILL.md "Eval coverage check"."""
+    row = (
+        await _fetch(
+            session,
+            "WITH first_endgame AS (\n"
+            "  SELECT game_id, min(ply) AS entry_ply\n"
+            "  FROM game_positions\n"
+            "  WHERE endgame_class IS NOT NULL\n"
+            f"  GROUP BY game_id HAVING count(*) >= {sql.MIN_ENDGAME_PLIES}\n"
+            ")\n"
+            "SELECT count(*) AS endgame_games,\n"
+            "  count(*) FILTER (WHERE ep.eval_cp IS NOT NULL OR ep.eval_mate IS NOT NULL) AS with_eval\n"
+            "FROM first_endgame fe\n"
+            "JOIN game_positions ep ON ep.game_id = fe.game_id AND ep.ply = fe.entry_ply",
+        )
+    )[0]
+    endgame_games = int(row["endgame_games"])
+    with_eval = int(row["with_eval"])
+    pct = 100.0 * with_eval / endgame_games if endgame_games else 0.0
+    return EvalCoverage(endgame_games=endgame_games, with_eval=with_eval, pct_with_eval=pct)
+
+
+async def _game_time_cells(session: AsyncSession) -> list[GameTimeCell]:
+    """Per-(game-time ELO bucket, TC) user + game counts, post equal-footing filter.
+
+    These are the cells the analysis pools over. SKILL.md "Game-time cell sizes".
+    """
+    bucket_case = sql.elo_bucket_case_sql("ueag")
+    sql_text = (
+        f"WITH {sql.SELECTED_USERS_CTE},\n"
+        "gt AS (\n"
+        f"  SELECT g.user_id, ({sql.USER_ELO_AT_GAME_SQL}) AS ueag, su.tc_bucket AS tc\n"
+        "  FROM games g JOIN selected_users su ON su.user_id = g.user_id\n"
+        f"  WHERE {sql.BASE_GAME_FILTER}\n"
+        ")\n"
+        f"SELECT ({bucket_case}) AS elo, tc,\n"
+        "       count(DISTINCT user_id) AS users, count(*) AS games\n"
+        f"FROM gt WHERE ueag >= {sql.ELO_FLOOR} GROUP BY 1, 2"
+    )
+    rows = await _fetch(session, sql_text)
+    return [
+        GameTimeCell(
+            elo=int(r["elo"]), tc=str(r["tc"]), users=int(r["users"]), games=int(r["games"])
+        )
+        for r in rows
+    ]
+
+
+async def compute(session: AsyncSession) -> Chapter1Values:
+    """Compute all Chapter 1 raw values (the JSON half of the artifact)."""
+    return Chapter1Values(
+        population=await _population(session),
+        pool_coverage=await _pool_coverage(session),
+        pool_status=await _pool_status(session),
+        eval_coverage=await _eval_coverage(session),
+        game_time_cells=await _game_time_cells(session),
+    )
+
+
+# --- rendering -------------------------------------------------------------
+
+_GRID_HEADERS: tuple[str, ...] = ("ELO \\ TC", *sql.TC_ORDER)
+_GRID_ALIGNS: tuple[Align, ...] = ("right",) * len(_GRID_HEADERS)
+
+
+def _is_sparse(elo: int, tc: str) -> bool:
+    return (elo, tc) == sql.SPARSE_CELL
+
+
+def _population_line(pop: PopulationCounts) -> str:
+    return (
+        f"_Population: {fmt_int(pop['users'])} users / {fmt_int(pop['games'])} games"
+        f" / {fmt_int(pop['positions'])} positions._"
+    )
+
+
+def _coverage_table(cells: Sequence[CellCount]) -> str:
+    index = {(c["elo"], c["tc"]): c["n"] for c in cells}
+    rows: list[list[str]] = []
+    for elo in sql.ELO_ORDER:
+        row = [str(elo)]
+        for tc in sql.TC_ORDER:
+            n = index.get((elo, tc), 0)
+            cell = f"{fmt_int(n)}*" if _is_sparse(elo, tc) else fmt_int(n)
+            row.append(cell)
+        rows.append(row)
+    return markdown_table(_GRID_HEADERS, rows, _GRID_ALIGNS)
+
+
+def _status_table(counts: Sequence[StatusCount]) -> str:
+    index: dict[tuple[int, str], dict[str, int]] = {}
+    for c in counts:
+        index.setdefault((c["elo"], c["tc"]), {})[c["status"]] = c["n"]
+    headers = ["ELO \\ TC", f"{sql.TC_ORDER[0]} C / S / F / U", *sql.TC_ORDER[1:]]
+    aligns: tuple[Align, ...] = ("left",) * len(headers)
+    rows: list[list[str]] = []
+    for elo in sql.ELO_ORDER:
+        row = [str(elo)]
+        for tc in sql.TC_ORDER:
+            by_status = index.get((elo, tc), {})
+            row.append(" / ".join(str(by_status.get(s, 0)) for s in _STATUS_ORDER))
+        rows.append(row)
+    return markdown_table(headers, rows, aligns)
+
+
+def _eval_table(ev: EvalCoverage) -> str:
+    rows = [
+        [
+            "Endgame-reaching games (≥6 plies, `endgame_class IS NOT NULL`)",
+            fmt_int(ev["endgame_games"]),
+        ],
+        ["With non-NULL Stockfish eval at entry ply", fmt_int(ev["with_eval"])],
+        ["Coverage", f"**{ev['pct_with_eval']:.2f}%**"],
+    ]
+    return markdown_table(["metric", "value"], rows, ("left", "right"))
+
+
+def _game_time_table(cells: Sequence[GameTimeCell]) -> str:
+    index = {(c["elo"], c["tc"]): c for c in cells}
+    rows: list[list[str]] = []
+    for elo in sql.ELO_ORDER:
+        row = [str(elo)]
+        for tc in sql.TC_ORDER:
+            cell = index.get((elo, tc))
+            if cell is None:
+                row.append("—")
+                continue
+            text_cell = f"{fmt_int(cell['users'])} / {fmt_int(cell['games'])}"
+            row.append(f"{text_cell}*" if _is_sparse(elo, tc) else text_cell)
+        rows.append(row)
+    return markdown_table(_GRID_HEADERS, rows, _GRID_ALIGNS)
+
+
+def render(values: Chapter1Values) -> str:
+    """Render Chapter 1 as markdown tables (the MD half of the artifact)."""
+    parts = [
+        "## 1. Stratified Sample",
+        "",
+        _population_line(values["population"]),
+        "",
+        "### Selection-pool coverage (`status='completed'` users per cell)",
+        "",
+        _coverage_table(values["pool_coverage"]),
+        "",
+        "### Selection-pool status breakdown (audit trail)",
+        "",
+        _status_table(values["pool_status"]),
+        "",
+        "### Eval coverage at endgame entry",
+        "",
+        _eval_table(values["eval_coverage"]),
+        "",
+        "### Game-time cell sizes (post equal-footing filter)",
+        "",
+        _game_time_table(values["game_time_cells"]),
+    ]
+    return "\n".join(parts)
+
+
+async def build(session: AsyncSession) -> dict[str, Any]:
+    """Compute + render Chapter 1 into the artifact chapter shape."""
+    values = await compute(session)
+    return {"status": "OK", "section": SECTION, "values": values, "markdown": render(values)}
