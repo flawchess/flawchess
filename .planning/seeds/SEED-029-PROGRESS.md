@@ -136,6 +136,18 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
     test). NB the FULL generator (`gen_benchmarks.py --db benchmark`) is now slow (§3.4 adds
     heavy span scans) and can exceed a 580s `timeout` — run it without a timeout; it is NOT
     needed for the gate (the gate calls `compute_34x` directly).
+- **§4 DONE — reference-only chapter** (NEW `chapter4.py`, registered as `4-global-percentile-cdf`
+  → `chapter4.build`). §4 (percentile CDF) is a SEPARATE deliverable — it is NOT in
+  `benchmarks-latest.md` (the report has no §4 section), so the chapter computes/queries nothing
+  and renders nothing into the benchmark report body. It returns a `REFERENCE` payload
+  (markdown=None) carrying cross-ref pointers in the JSON artifact only; `_render_markdown` now
+  skips `status == "REFERENCE"` chapters from the body. The CDF is its own deterministic pipeline:
+  generator `scripts/gen_global_percentile_cdf.py`, artifact `app/services/global_percentile_cdf.py`
+  (`COHORT_PERCENTILE_CDF`), report `reports/percentile/cohort-percentile-cdf-latest.md`, gated by
+  `tests/scripts/test_gen_global_percentile_cdf_{pooled,unchanged}.py`. NB the SKILL §4 prose is
+  stale (describes the retired Phase 93/94.2 flat `GLOBAL_PERCENTILE_CDF`; live artifact is the
+  Phase 94.4 cohort sliding-window) — the SKILL rewrite reconciles it. **All chapters now ported;
+  only the SKILL.md rewrite + report rotation remain in Phase A.**
 
 ## Architecture (scripts/benchmarks/ subpackage; tests in tests/scripts/benchmarks/)
 
@@ -233,7 +245,7 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
 
 ## Remaining work
 
-- §4 — already deterministic; chapter just references scripts/gen_global_percentile_cdf.py.
+- §4 — DONE (reference-only chapter; see "What's done"). All chapters ported.
 
 NOTE on the 5×4 cell grid (RESOLVED): the SKILL "Output" sections mention 5×4 p50 cell tables,
 but benchmarks-latest.md NEVER contains one — §3.1/§3.2/§3.3 AND §3.4 all emit pooled +

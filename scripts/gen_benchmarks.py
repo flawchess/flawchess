@@ -62,7 +62,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings  # noqa: E402
-from scripts.benchmarks import chapter1, chapter2, chapter3, chapter3_3, chapter3_4  # noqa: E402
+from scripts.benchmarks import (  # noqa: E402
+    chapter1,
+    chapter2,
+    chapter3,
+    chapter3_3,
+    chapter3_4,
+    chapter4,
+)
 
 DbTarget = Literal["benchmark", "dev"]
 
@@ -171,6 +178,9 @@ _CHAPTER_BUILDERS: dict[str, Callable[[AsyncSession], Awaitable[dict[str, Any]]]
     "3.2-endgame-metrics-elo": chapter3.build_32,
     "3.3-time-pressure": chapter3_3.build,
     "3.4-endgame-type": chapter3_4.build,
+    # §4 is a separate deliverable (its own generator + report + gates); the chapter is a
+    # reference-only payload (markdown=None) that records cross-refs without a report body.
+    "4-global-percentile-cdf": chapter4.build,
 }
 
 
@@ -220,6 +230,10 @@ def _render_markdown(artifact: dict[str, Any]) -> str:
         md = chapter.get("markdown")
         if md:
             lines.append(md)
+        elif chapter.get("status") == "REFERENCE":
+            # Separate deliverable (e.g. §4 percentile CDF) — cross-ref lives in the JSON
+            # artifact, not the benchmark report body. Skip it here.
+            continue
         else:
             lines.append(f"## {key}")
             lines.append(f"_{chapter['status']}: {chapter['section']}_")
