@@ -9,7 +9,7 @@ TC-suffixed values are deleted: per-TC dimensionality now lives in the
 (PK widening) + D-13 (8-value ENUM) + D-05a (Recovery Score Gap rescued
 from the v1 drop list under peer-relative framing).
 
-Phase 99 extends the ENUM with 11 new values (3 rate-metric families × 4 TCs),
+Phase 99 extends the ENUM with 12 new values (3 rate-metric families × 4 TCs),
 bringing the initial total to 11 metric families represented across 20 SAEnum values
 (8 family-level + 12 TC-suffixed rate values). Phase 99 Plan 05 (Rule 1) adds
 3 more bare family names (conversion_rate, parity_rate, recovery_rate) needed

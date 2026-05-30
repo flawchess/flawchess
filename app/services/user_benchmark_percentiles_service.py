@@ -7,7 +7,7 @@ Rewrite of the post-94.3 service to consume the new cohort CDF artifact
 (``COHORT_PERCENTILE_CDF`` via ``interpolate_cohort_percentile``) and the
 per-(user, TC) median rating anchor (``user_rating_anchors``). The old
 flat 12-name TC-suffixed Stage B metric tuple retires; Stage B now iterates
-``STAGE_B_METRIC_FAMILIES`` (7-tuple) × the user's above-floor TCs and
+``STAGE_B_METRIC_FAMILIES`` (10-tuple) × the user's above-floor TCs and
 the legacy 2-arg ``interpolate_percentile`` helper is no longer called.
 
 Stage A (eval-independent — wired into import completion per D-03):
@@ -464,7 +464,7 @@ async def compute_stage_b(
     *,
     session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    """Compute the 7 eval-dependent metric families × user's above-floor TCs.
+    """Compute the 10 eval-dependent metric families × user's above-floor TCs.
 
     Background task — never propagates exceptions (D-04 / ROADMAP SC-3).
     Called by ``eval_drain.py`` via ``asyncio.create_task`` once the
