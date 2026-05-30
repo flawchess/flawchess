@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
-status: planning
-last_updated: "2026-05-30T11:56:56.904Z"
-last_activity: "2026-05-30 — Regrouped the shipped standalone phases into milestones: v1.20 Import Pipeline Hardening Follow-Up and Readiness (Phases 95, 96), v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99), v1.22 LLM Statistical Reasoning (Phase 100, renumbered from old Phase 99). Added new Phase 99 (Percentile Badges for Conv/Parity/Recovery). v1.20 tagged at dcd22fef and released. Phase 97 shipped 2026-05-29 (PR #160); Phase 96 shipped 2026-05-28 (PR #151); Phase 95 shipped 2026-05-27 (PRs #148/#149)."
+status: executing
+last_updated: "2026-05-30T12:26:20.665Z"
+last_activity: 2026-05-30 -- Phase 98 planning complete
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 4
+  total_plans: 6
   completed_plans: 4
   percent: 13
 ---
@@ -20,8 +20,8 @@ progress:
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
 Phase: 97 (endgame-metrics-by-time-control) — COMPLETE & SHIPPED (PR #160, 2026-05-29)
 Next: Phase 98 (TC-mix-weighted Conv/Recov gauges on Endgame Type cards) — NOT STARTED, ready to plan; then Phase 99 (Percentile Badges for Conversion, Parity, and Recovery), then Phase 100 (v1.22 LLM Statistical-Reasoning rework)
-Status: v1.20 released (tag + GitHub release); v1.21 Phase 97 done; Phase 98 ready to plan
-Last activity: 2026-05-30 — Regrouped the shipped standalone phases into milestones: v1.20 Import Pipeline Hardening Follow-Up and Readiness (Phases 95, 96), v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99), v1.22 LLM Statistical Reasoning (Phase 100, renumbered from old Phase 99). Added new Phase 99 (Percentile Badges for Conv/Parity/Recovery). v1.20 tagged at dcd22fef and released. Phase 97 shipped 2026-05-29 (PR #160); Phase 96 shipped 2026-05-28 (PR #151); Phase 95 shipped 2026-05-27 (PRs #148/#149).
+Status: Ready to execute
+Last activity: 2026-05-30 -- Phase 98 planning complete
 
 ## Project Reference
 

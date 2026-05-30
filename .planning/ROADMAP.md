@@ -92,7 +92,12 @@
   10. Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) gates pass; `EndgameTypeBreakdownSection` / `EndgameTypeCard` tests are updated for the new layout (the locked `grid-cols-*` assertions and Mixed-tile assertions must change); a `CHANGELOG.md` `[Unreleased]` entry records the restructure and the Conv/Recov re-introduction.
 
 **Plans**: 2 plans
+**Wave 1**
+
 - [ ] 98-01-PLAN.md — Backend: per-(class × TC) zone registry + codegen + categories_by_tc aggregation (LLM path unaffected)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 98-02-PLAN.md — Frontend: primaryTc util + restored 5-element tile + collapsible per-TC accordion section + test updates + CHANGELOG
 
 ### Phase 99: Percentile Badges for Conversion, Parity, and Recovery
