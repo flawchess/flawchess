@@ -124,16 +124,11 @@ export function EndgameTypeTcCard({
 
       {/* Tile grid body: no px-4 on AccordionContent (full-bleed header constraint,
           RESEARCH §7). The grid div carries its own p-4 padding.
-          h-auto overrides the shared primitive's h-(--radix-accordion-content-height),
-          which pins the body to the height measured at open time. Without this, a
-          viewport resize that reflows the tile grid to more rows (e.g. 4×1 → 2×2)
-          leaves the charcoal shell at its old height and clips the bottom row
-          (UAT 98). h-auto lets the shell grow/shrink with the reflowed content.
           The [&_a] overrides cancel the primitive's prose-link styling
           ([&_a]:underline / [&_a]:hover:text-foreground) — descendant selectors
           that out-specify the games link's own utility classes — so the games
           indicator matches the Moves-tab card (no underline, brand-brown hover). */}
-      <AccordionContent className="h-auto p-0 [&_a]:no-underline [&_a]:hover:text-brand-brown-highlight">
+      <AccordionContent className="p-0 [&_a]:no-underline [&_a]:hover:text-brand-brown-highlight">
         {tiles.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
             {tiles.map((cat, i) => (
