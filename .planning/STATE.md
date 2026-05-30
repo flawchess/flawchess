@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
-status: executing
-last_updated: "2026-05-30T12:54:40.794Z"
-last_activity: 2026-05-30 -- Phase 98 execution started
+status: "Phase 98 shipped — PR #163"
+last_updated: "2026-05-30T16:15:20.389Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 8
   completed_phases: 1
@@ -21,8 +21,8 @@ Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXEC
 Phase: 98 (per-tc-collapsible-endgame-type-cards) — EXECUTING
 Plan: 2 of 2 complete — verified (1 ruff-format blocker found and fixed)
 Next: HUMAN-UAT (responsive staircase/divider grammar + primary-TC default-expand with real data), then ship (PR) and plan Phase 99
-Status: Phase 98 VERIFIED-WITH-GAPS (only HUMAN-UAT remaining), ready to ship
-Last activity: 2026-05-30 -- Phase 98 verified; ruff-format blocker closed (style commit da57883d)
+Status: Phase 98 shipped — PR #163
+Last activity: 2026-05-30
 
 ## Project Reference
 
