@@ -436,6 +436,12 @@ export interface PerTcBucketStats {
   // value: {v}" line (mirrors TimePressureTcCard). Optional for older fixtures.
   percentile_n_games?: number | null;
   percentile_value?: number | null;
+  // Phase 99 — raw-rate percentile (SEPARATE from ΔES-gap `percentile` per D-01).
+  // Both chips coexist per metric block: this one on the title line, the gap
+  // chip on the ΔES bullet. null = below the ≥30-span floor → no chip renders.
+  rate_percentile?: number | null;
+  rate_percentile_n_games?: number | null;
+  rate_percentile_value?: number | null;
 }
 
 /** One TC card in the per-TC Endgame Metrics section.
