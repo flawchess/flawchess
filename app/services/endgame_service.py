@@ -128,6 +128,13 @@ _INT_TO_CLASS: dict[int, EndgameClass] = {
 
 _CLASS_TO_INT: dict[EndgameClass, int] = {v: k for k, v in _INT_TO_CLASS.items()}
 
+# Phase 98: endgame classes excluded from the collapsible per-(class × TC) type
+# cards. Mixed is the least-actionable catch-all (dropped per D-05) and pawnless is
+# hidden in the UI; excluding them from _aggregate_endgame_stats_by_tc keeps the
+# per-TC card header count equal to the sum of the four rendered tiles. This does
+# NOT affect the pooled `categories` (LLM path), which still includes Mixed.
+_TYPE_CARD_EXCLUDED_CLASSES: frozenset[EndgameClass] = frozenset({"mixed", "pawnless"})
+
 
 # Display labels for each endgame category (D-07).
 _ENDGAME_CATEGORY_LABELS: dict[EndgameClass, EndgameLabel] = {
@@ -778,20 +785,24 @@ def _aggregate_endgame_stats_by_tc(
 ) -> dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]]:
     """Group endgame stats by (TC, class) for the collapsible type-breakdown cards.
 
-    Phase 98: single pass over bucket_rows (already fetched), extending
-    _aggregate_endgame_stats to produce a TC-keyed breakdown alongside the
-    pooled categories. Returns dict[tc_str, list[EndgameCategoryStats]] in
-    bullet/blitz/rapid/classical order, each list in rook/minor_piece/pawn/queen
-    order (Mixed included in data for completeness; pawnless omitted by
-    _INT_TO_CLASS not including 0).
+    Phase 98: single pass over the per-class `entry_rows` (already fetched) —
+    one row per (game, endgame_class) span, the SAME source the pooled
+    `categories` use — keyed on (TC, class). NOT `bucket_rows` (one row per
+    game, class = first endgame position): that classified almost every game as
+    "mixed", leaving the rook/minor/pawn/queen tiles empty. Returns
+    dict[tc_str, list[EndgameCategoryStats]] in bullet/blitz/rapid/classical
+    order. Mixed and pawnless are excluded (_TYPE_CARD_EXCLUDED_CLASSES) so the
+    per-TC card header equals the sum of the four rendered tiles.
 
-    Column indices: game_id[0], endgame_class_int[1], result[2], user_color[3],
-    eval_cp[4], eval_mate[5], time_control_bucket[6],
-    next_entry_eval_cp[7], next_entry_eval_mate[8].
+    Prod rows are SA Rows read by attribute (`row.time_control_bucket`,
+    `row.next_entry_eval_cp`, ...). Test fixtures use plain tuples with the
+    layout: game_id[0], endgame_class_int[1], result[2], user_color[3],
+    eval_cp[4], eval_mate[5], time_control_bucket[6], next_entry_eval_cp[7],
+    next_entry_eval_mate[8].
 
-    D-15 invariant: reads only bucket_rows (already authorized); does NOT touch
-    the pooled `categories` list or `assign_per_class_zone`. The LLM path reads
-    `EndgameStatsResponse.categories` (pooled) and is unaffected by this function.
+    D-15 invariant: does NOT touch the pooled `categories` list or
+    `assign_per_class_zone`. The LLM path reads `EndgameStatsResponse.categories`
+    (pooled, Mixed included) and is unaffected by this function.
     """
     if not rows:
         return {}
@@ -850,6 +861,14 @@ def _aggregate_endgame_stats_by_tc(
         endgame_class = _INT_TO_CLASS.get(endgame_class_int)
         if endgame_class is None:
             continue  # Unknown class int; already captured by _aggregate_endgame_stats
+
+        # Phase 98: the collapsible type cards render only rook/minor_piece/pawn/queen
+        # tiles — Mixed is dropped (least-actionable catch-all, D-05) and pawnless is
+        # hidden. Excluding them here (not just in the frontend) keeps the card header
+        # "Games: X% (count)" equal to the sum of the four visible tiles. The pooled
+        # `categories` / LLM path still see Mixed via _aggregate_endgame_stats.
+        if endgame_class in _TYPE_CARD_EXCLUDED_CLASSES:
+            continue
 
         outcome = derive_user_result(result, user_color)
         if outcome == "win":
@@ -3697,9 +3716,15 @@ async def get_endgame_overview(
     )
 
     # Phase 98: per-(class × TC) type card breakdown for the collapsible tile grid.
-    # Single pass over already-fetched bucket_rows — no new DB query (T-98-01).
+    # Single pass over the already-fetched per-class `entry_rows` (one row per
+    # (game, endgame_class) span) — NOT `bucket_rows` (one row per game, class =
+    # first endgame position). bucket_rows classified almost every game as "mixed"
+    # (the first endgame position rarely is a pure rook/pawn/etc. ending), which
+    # left the rook/minor/pawn/queen tiles empty even when the card header showed
+    # hundreds of games. entry_rows is the same source the pooled `categories`
+    # use, so the two breakdowns stay consistent. No new DB query (T-98-01).
     # D-15: additive only; `stats.categories` (pooled) remains unchanged.
-    categories_by_tc = _aggregate_endgame_stats_by_tc(bucket_rows)
+    categories_by_tc = _aggregate_endgame_stats_by_tc(entry_rows)
     stats = EndgameStatsResponse(
         categories=stats.categories,
         total_games=stats.total_games,

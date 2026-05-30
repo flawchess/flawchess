@@ -19,6 +19,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Fixed
 
+- **Endgame Type Breakdown showed "no data" despite a game count** (Phase 98). The per-time-control type cards displayed their header game count but an empty tile grid ("No endgame type data for this time control"). The per-(class x TC) breakdown was computed from one row per game classified by the *first* endgame position, which is almost always a mixed-material position, so nearly every game landed in Mixed (which the cards intentionally drop) and the Rook/Minor/Pawn/Queen tiles came up empty. It now aggregates the same per-class endgame spans the pooled stats use, and Mixed and pawnless are excluded from the computation so each card's header count equals the sum of its four tiles.
 - **Endgames page locked forever for users with too few games** (quick-260529). A user with games but fewer than the 30-game per-time-control anchor floor (e.g. 13 imported games) produces no rating anchors and therefore no percentile rows by design, so the readiness gate kept the page on the "Analyzing endgames" screen permanently even after Stockfish finished. The gate now recognises a below-floor user as fully processed and unlocks the page once evals are drained, alongside the existing empty-account escape.
 
 ## [v1.20] Import Pipeline Hardening Follow-Up and Readiness — 2026-05-29

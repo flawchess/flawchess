@@ -4443,13 +4443,15 @@ class TestAggregatePerTcPercentile:
 class TestAggregateEndgameStatsByTc:
     """Unit tests for _aggregate_endgame_stats_by_tc (Phase 98).
 
-    Uses plain tuples as bucket_rows fixtures (same convention as
-    _aggregate_endgame_stats tests above). Column layout:
+    Prod feeds per-class `entry_rows` (one row per (game, endgame_class) span,
+    carrying time_control_bucket). Tests use plain tuples with the column layout:
     game_id[0], endgame_class_int[1], result[2], user_color[3],
     eval_cp[4], eval_mate[5], time_control_bucket[6],
     next_entry_eval_cp[7], next_entry_eval_mate[8]
 
-    rook=1, minor_piece=2, pawn=3, queen=4, mixed=5
+    rook=1, minor_piece=2, pawn=3, queen=4, mixed=5, pawnless=6.
+    Mixed and pawnless are EXCLUDED from the output (only rook/minor/pawn/queen
+    tiles render — D-05); see test_mixed_and_pawnless_excluded.
     """
 
     # Conversion threshold is >=100cp for white (see _classify_endgame_bucket).
@@ -4470,6 +4472,26 @@ class TestAggregateEndgameStatsByTc:
     def test_empty_rows_returns_empty_dict(self) -> None:
         result = _aggregate_endgame_stats_by_tc([])
         assert result == {}
+
+    def test_mixed_and_pawnless_excluded(self) -> None:
+        """Mixed (5) and pawnless (6) spans are dropped; only the four type tiles remain.
+
+        Regression for the empty-tile bug: when fed per-class spans, the header
+        count must equal the sum of the four rendered tiles (no Mixed/pawnless).
+        """
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "rapid"),  # rook (kept)
+            self._row(2, 2, "1-0", "white", 200, "rapid"),  # minor_piece (kept)
+            self._row(3, 3, "1-0", "white", 200, "rapid"),  # pawn (kept)
+            self._row(4, 4, "1-0", "white", 200, "rapid"),  # queen (kept)
+            self._row(5, 5, "1-0", "white", 200, "rapid"),  # mixed (excluded)
+            self._row(6, 6, "1-0", "white", 200, "rapid"),  # pawnless (excluded)
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        classes = {c.endgame_class for c in result["rapid"]}
+        assert classes == {"rook", "minor_piece", "pawn", "queen"}
+        # Header count (sum of categories) excludes the 2 dropped spans.
+        assert sum(c.total for c in result["rapid"]) == 4
 
     def test_dict_keys_are_tc_strings(self) -> None:
         rows = [
