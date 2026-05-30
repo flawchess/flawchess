@@ -222,8 +222,7 @@ class EndgameStatsResponse(BaseModel):
     # Optional for back-compat; frontend gates on presence before rendering.
     # D-15: the LLM insights path reads `categories` (pooled) and never touches this field.
     categories_by_tc: (
-        dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]]
-        | None
+        dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]] | None
     ) = None
 
 

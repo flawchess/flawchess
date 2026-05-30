@@ -4482,9 +4482,9 @@ class TestAggregateEndgameStatsByTc:
     def test_per_tc_totals_match_row_counts(self) -> None:
         """Each TC's total across classes must equal the number of rows for that TC."""
         rows = [
-            self._row(1, 1, "1-0", "white", 200, "blitz"),   # blitz, rook
+            self._row(1, 1, "1-0", "white", 200, "blitz"),  # blitz, rook
             self._row(2, 2, "0-1", "white", -200, "blitz"),  # blitz, minor_piece
-            self._row(3, 1, "1-0", "white", 200, "rapid"),   # rapid, rook
+            self._row(3, 1, "1-0", "white", 200, "rapid"),  # rapid, rook
         ]
         result = _aggregate_endgame_stats_by_tc(rows)
         blitz_total = sum(c.total for c in result["blitz"])
@@ -4495,10 +4495,10 @@ class TestAggregateEndgameStatsByTc:
     def test_conversion_rate_computed_correctly(self) -> None:
         """Three conversion wins out of four conversion games = 75%."""
         rows = [
-            self._row(1, 1, "1-0", "white", 200, "blitz"),   # conversion win
-            self._row(2, 1, "1-0", "white", 200, "blitz"),   # conversion win
-            self._row(3, 1, "1-0", "white", 200, "blitz"),   # conversion win
-            self._row(4, 1, "0-1", "white", 200, "blitz"),   # conversion loss
+            self._row(1, 1, "1-0", "white", 200, "blitz"),  # conversion win
+            self._row(2, 1, "1-0", "white", 200, "blitz"),  # conversion win
+            self._row(3, 1, "1-0", "white", 200, "blitz"),  # conversion win
+            self._row(4, 1, "0-1", "white", 200, "blitz"),  # conversion loss
         ]
         result = _aggregate_endgame_stats_by_tc(rows)
         assert "blitz" in result
@@ -4512,7 +4512,7 @@ class TestAggregateEndgameStatsByTc:
         """One recovery save (win/draw) out of two recovery games = 50%."""
         rows = [
             self._row(1, 3, "1/2-1/2", "white", -200, "rapid"),  # recovery draw (save)
-            self._row(2, 3, "0-1", "white", -200, "rapid"),       # recovery loss
+            self._row(2, 3, "0-1", "white", -200, "rapid"),  # recovery loss
         ]
         result = _aggregate_endgame_stats_by_tc(rows)
         assert "rapid" in result
@@ -4525,9 +4525,9 @@ class TestAggregateEndgameStatsByTc:
     def test_wdl_split_correct(self) -> None:
         """WDL counts and percentages are correct for a two-TC, two-class fixture."""
         rows = [
-            self._row(1, 1, "1-0", "white", 50, "bullet"),     # rook win (parity)
-            self._row(2, 1, "1/2-1/2", "white", 50, "bullet"), # rook draw (parity)
-            self._row(3, 1, "0-1", "white", 50, "bullet"),     # rook loss (parity)
+            self._row(1, 1, "1-0", "white", 50, "bullet"),  # rook win (parity)
+            self._row(2, 1, "1/2-1/2", "white", 50, "bullet"),  # rook draw (parity)
+            self._row(3, 1, "0-1", "white", 50, "bullet"),  # rook loss (parity)
         ]
         result = _aggregate_endgame_stats_by_tc(rows)
         cats = result["bullet"]
@@ -4568,8 +4568,8 @@ class TestAggregateEndgameStatsByTc:
     def test_two_tc_two_class_fixture(self) -> None:
         """Verify per-(TC, class) isolation: blitz/rook and rapid/pawn stay separate."""
         rows = [
-            self._row(1, 1, "1-0", "white", 200, "blitz"),   # blitz rook conv win
-            self._row(2, 1, "0-1", "white", 200, "blitz"),   # blitz rook conv loss
+            self._row(1, 1, "1-0", "white", 200, "blitz"),  # blitz rook conv win
+            self._row(2, 1, "0-1", "white", 200, "blitz"),  # blitz rook conv loss
             self._row(3, 3, "1-0", "white", -200, "rapid"),  # rapid pawn recov win
         ]
         result = _aggregate_endgame_stats_by_tc(rows)

@@ -889,7 +889,9 @@ def _aggregate_endgame_stats_by_tc(
             ends_by_tc_class[tc][endgame_class].append(exit_score)
 
     # Build per-TC lists in fixed order
-    result_by_tc: dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]] = {}
+    result_by_tc: dict[
+        Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]
+    ] = {}
     for tc in _TIME_CONTROL_ORDER:
         tc_literal = cast(Literal["bullet", "blitz", "rapid", "classical"], tc)
         tc_wdl = wdl.get(tc, {})
@@ -919,9 +921,7 @@ def _aggregate_endgame_stats_by_tc(
             conversion_draws = conv_data["draws"]
             conversion_losses = conversion_games - conversion_wins - conversion_draws
             conversion_pct = (
-                round(conversion_wins / conversion_games * 100, 1)
-                if conversion_games > 0
-                else 0.0
+                round(conversion_wins / conversion_games * 100, 1) if conversion_games > 0 else 0.0
             )
 
             recovery_games = recov_data["games"]
@@ -939,9 +939,7 @@ def _aggregate_endgame_stats_by_tc(
                 else None
             )
             opponent_recovery_pct: float | None = (
-                round(
-                    (conversion_losses + conversion_draws) / conversion_games * 100, 1
-                )
+                round((conversion_losses + conversion_draws) / conversion_games * 100, 1)
                 if conversion_games >= _MIN_OPPONENT_SAMPLE
                 else None
             )
@@ -985,9 +983,7 @@ def _aggregate_endgame_stats_by_tc(
             type_start_mean: float | None = (
                 sum(type_starts) / type_gap_n if type_gap_n > 0 else None
             )
-            type_end_mean: float | None = (
-                sum(type_ends) / type_gap_n if type_gap_n > 0 else None
-            )
+            type_end_mean: float | None = sum(type_ends) / type_gap_n if type_gap_n > 0 else None
 
             cats.append(
                 EndgameCategoryStats(

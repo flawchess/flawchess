@@ -67,12 +67,13 @@ def test_per_class_tc_achievable_score_gap_consistent_across_tc(cls: str) -> Non
     are near-identical by design (redundancy chosen per D-04/D-14)."""
     from typing import Literal, cast
 
-    endgame_class = cast(
-        Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"], cls
-    )
+    endgame_class = cast(Literal["rook", "minor_piece", "pawn", "queen", "mixed", "pawnless"], cls)
     tc_map = PER_CLASS_TC_GAUGE_ZONES[endgame_class]
     tc_order: list[Literal["bullet", "blitz", "rapid", "classical"]] = [
-        "bullet", "blitz", "rapid", "classical"
+        "bullet",
+        "blitz",
+        "rapid",
+        "classical",
     ]
     gaps = [tc_map[tc].achievable_score_gap for tc in tc_order]
     # All four TCs should have identical achievable_score_gap bands (TC d collapses)

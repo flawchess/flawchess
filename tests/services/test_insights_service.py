@@ -1357,16 +1357,12 @@ class TestD15LlmPathInvariant:
             draw_pct=0.0,
             loss_pct=round(conv_losses / (conv_games + recov_games) * 100, 1),
             conversion=ConversionRecoveryStats(
-                conversion_pct=(
-                    round(conv_wins / conv_games * 100, 1) if conv_games else 0.0
-                ),
+                conversion_pct=(round(conv_wins / conv_games * 100, 1) if conv_games else 0.0),
                 conversion_games=conv_games,
                 conversion_wins=conv_wins,
                 conversion_draws=conv_draws,
                 conversion_losses=conv_losses,
-                recovery_pct=(
-                    round(recovery_saves / recov_games * 100, 1) if recov_games else 0.0
-                ),
+                recovery_pct=(round(recovery_saves / recov_games * 100, 1) if recov_games else 0.0),
                 recovery_games=recov_games,
                 recovery_saves=recovery_saves,
                 recovery_wins=recov_wins,
