@@ -165,6 +165,7 @@ describe('OpeningFindingCard', () => {
     expect(text).toMatch(/\d+%/);
   });
 
+  // Full-height left spine: the score-zone accent lives on the card root and runs the whole left edge (header band included).
   it('applies ZONE_DANGER (red) border-left when score <= 0.45', () => {
     render(
       <OpeningFindingCard

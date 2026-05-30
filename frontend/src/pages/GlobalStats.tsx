@@ -54,45 +54,45 @@ export function GlobalStatsPage() {
     <div className="space-y-6">
       {/* Chess.com Rating section */}
       {(selectedPlatforms === null || selectedPlatforms.includes('chess.com')) && (
-        <div className="charcoal-texture rounded-md p-4">
-          <section data-testid="rating-section-chess-com" className="space-y-3">
-            <h2 className="text-lg font-medium">
-              <span className="inline-flex items-center gap-1">
-                Chess.com Rating
-                <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
-                  Your Chess.com rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones.
-                </InfoPopover>
-              </span>
-            </h2>
+        <section data-testid="rating-section-chess-com" className="charcoal-texture rounded-md overflow-hidden">
+          <h3
+            className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+            data-testid="rating-chess-com-header"
+          >
+            Chess.com Rating
+            <InfoPopover ariaLabel="Chess.com rating info" testId="rating-chess-com-info" side="top">
+              Your Chess.com rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones.
+            </InfoPopover>
+          </h3>
+          <div className="p-4">
             <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" />
-          </section>
-        </div>
+          </div>
+        </section>
       )}
 
       {/* Lichess Rating section */}
       {(selectedPlatforms === null || selectedPlatforms.includes('lichess')) && (
-        <div className="charcoal-texture rounded-md p-4">
-          <section data-testid="rating-section-lichess" className="space-y-3">
-            <h2 className="text-lg font-medium">
-              <span className="inline-flex items-center gap-1">
-                Lichess Rating
-                <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
-                  Your Lichess rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
-                </InfoPopover>
-              </span>
-            </h2>
+        <section data-testid="rating-section-lichess" className="charcoal-texture rounded-md overflow-hidden">
+          <h3
+            className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+            data-testid="rating-lichess-header"
+          >
+            Lichess Rating
+            <InfoPopover ariaLabel="Lichess rating info" testId="rating-lichess-info" side="top">
+              Your Lichess rating over time by time control. Granularity adapts automatically: daily for shorter spans, weekly or monthly for longer ones. Lichess uses Glicko-2 ratings which start at 1500 and tend to run 200-400 points higher than Chess.com, so the two are not directly comparable.
+            </InfoPopover>
+          </h3>
+          <div className="p-4">
             <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" />
-          </section>
-        </div>
+          </div>
+        </section>
       )}
 
-      {/* WDL charts */}
-      <div className="charcoal-texture rounded-md p-4">
-        <GlobalStatsCharts
-          byTimeControl={globalStats?.by_time_control ?? []}
-          byColor={globalStats?.by_color ?? []}
-        />
-      </div>
+      {/* WDL charts — each card owns its own shell inside GlobalStatsCharts */}
+      <GlobalStatsCharts
+        byTimeControl={globalStats?.by_time_control ?? []}
+        byColor={globalStats?.by_color ?? []}
+      />
     </div>
   );
 

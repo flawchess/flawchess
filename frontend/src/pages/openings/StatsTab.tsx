@@ -232,7 +232,7 @@ export function StatsTab({
 
       {/* 3. Score over Time — only when bookmarks exist with time series data */}
       {bookmarks.length > 0 && tsData && (
-        <div className="charcoal-texture rounded-md p-4">
+        <div className="charcoal-texture rounded-md overflow-hidden">
           <ScoreChart bookmarks={chartBookmarks} series={tsData.series} />
         </div>
       )}

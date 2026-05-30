@@ -749,7 +749,7 @@ export function EndgamesPage() {
           evalBaselinePawns={selectedCategoryStats.eval_baseline_pawns}
           filterColor="white"
           label={`${ENDGAME_CLASS_LABELS[selectedCategory]} Endgame Results`}
-          className="charcoal-texture rounded-md p-4"
+          className=""
           evalContext="endgame-entry"
         />
       )}

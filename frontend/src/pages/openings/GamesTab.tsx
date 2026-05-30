@@ -68,7 +68,7 @@ export function GamesTab({
             evalBaselinePawns={gamesData.eval_baseline_pawns}
             filterColor={filterColor}
             label={positionResultsLabel}
-            className="charcoal-texture rounded-md p-4"
+            className=""
           />
           <GameCardList
             games={gamesData.games}
