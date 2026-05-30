@@ -365,7 +365,9 @@ export function EndgameTypeCard({
             data-testid={`${tileTestId}-score-row`}
           >
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-              <span className="text-muted-foreground">{category.label} Endgame Score:</span>
+              {/* Short visible label; the popover name/explanation keeps the full
+                  "{type} Endgame Score" wording (UAT 98). */}
+              <span className="text-muted-foreground">Score:</span>
               <span
                 className="font-semibold"
                 style={scoreColor ? { color: scoreColor } : undefined}
@@ -419,17 +421,20 @@ export function EndgameTypeCard({
         )}
 
         {/* Phase 87.1 (SEED-016 D-08): per-span Score Gap bullet row.
-            Positioned last in the card. Card row label is "Score Gap" (short
-            form per D-02); card title ("Rook Endgames" etc.) supplies the
-            disambiguating type context.
-            quick-260519-ni3: startSlot/endSlot show Start/End predicted scores
-            flanking the center Score Gap (hidden when their mean is null). The
-            Cpu icon now flags only Start (the eval-based entry anchor); Score
-            Gap and End drop it to keep the row uncluttered. */}
+            Positioned last in the card. Left-aligned label "<Cpu> Score Gap:"
+            (UAT 98); the Start/End predicted scores moved from inline slots into
+            the popover (second paragraph of the explanation), so the row no
+            longer uses startSlot/endSlot and falls back to the left-aligned
+            label/value/bullet layout. */}
         {showGapRow && (
           <div data-testid={`${tileTestId}-asg-bullet`}>
             <ScoreGapRow
-              label="Gap:"
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                  Score Gap:
+                </span>
+              }
               value={gapMean ?? 0}
               formatted={gapFormatted}
               resultColor={gapColor}
@@ -443,7 +448,27 @@ export function EndgameTypeCard({
               tooltip={
                 <MetricStatPopover
                   name="Score Gap"
-                  explanation={`Each ${category.label} Endgame Sequence has a start Stockfish eval and an end eval, or the actual game result for the final sequence in a game. Both get converted to expected scores via the Lichess expected-score formula. The Score Gap is the average of (end − start) across all your ${category.label} sequences: positive = you outperformed expectation, negative = you gave back score.`}
+                  explanation={
+                    <>
+                      Each {category.label} Endgame Sequence has a start Stockfish
+                      eval and an end eval, or the actual game result for the final
+                      sequence in a game. Both get converted to expected scores via
+                      the Lichess expected-score formula. The Score Gap is the
+                      average of (end − start) across all your {category.label}{' '}
+                      sequences: positive = you outperformed expectation, negative =
+                      you gave back score.
+                      {startMean != null && endMean != null && (
+                        <span
+                          className="mt-1 block"
+                          data-testid={`${tileTestId}-asg-startend`}
+                        >
+                          Your average predicted score runs from{' '}
+                          {Math.round(startMean * 100)}% at entry to{' '}
+                          {Math.round(endMean * 100)}% at exit.
+                        </span>
+                      )}
+                    </>
+                  }
                   value={gapMean ?? 0}
                   baseline={0}
                   unit="percent"
@@ -466,27 +491,6 @@ export function EndgameTypeCard({
                   isPending={isPending}
                   pendingCount={pendingCount}
                 />
-              }
-              startSlot={
-                startMean != null ? (
-                  <span
-                    className="inline-flex items-center gap-1 text-muted-foreground text-sm"
-                    data-testid={`${tileTestId}-asg-start`}
-                  >
-                    <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                    Start: {Math.round(startMean * 100)}%
-                  </span>
-                ) : undefined
-              }
-              endSlot={
-                endMean != null ? (
-                  <span
-                    className="inline-flex items-center gap-1 text-muted-foreground text-sm"
-                    data-testid={`${tileTestId}-asg-end`}
-                  >
-                    End: {Math.round(endMean * 100)}%
-                  </span>
-                ) : undefined
               }
             />
           </div>
