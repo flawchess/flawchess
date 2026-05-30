@@ -325,3 +325,237 @@ async def test_chapter3_315_matches_report(benchmark_session: AsyncSession) -> N
     _check_marginal(block["elo_marginal"], EXPECTED_315_ELO)
     _check_marginal(block["tc_marginal"], EXPECTED_315_TC)
     _check_verdicts(block, EXPECTED_315_VERDICTS)
+
+
+# --- §3.2.1 Conversion / Parity / Recovery + Endgame Skill ---------------------
+
+# Per-user rates (proportions, 4 dp). Reproduce benchmarks-latest.md §3.2.1 exactly
+# (conv/recov pooled, all marginals, and the conv/recov verdicts). The classical
+# conversion mean 0.7545 displays as 75.4% (the report's 75.5% is the .5-boundary
+# half-up of the same 4 dp value through render.py's float×100 — within rounding).
+EXPECTED_321_CONV_POOLED = {
+    "n": 4616,
+    "mean": 0.7106,
+    "sd": 0.1076,
+    "p05": 0.5291,
+    "p25": 0.6485,
+    "p50": 0.7156,
+    "p75": 0.7770,
+    "p95": 0.8750,
+}
+EXPECTED_321_CONV_ELO = {
+    "800": (756, 0.6783, 0.1120, 0.6131, 0.6911, 0.7500),
+    "1200": (1068, 0.6999, 0.1090, 0.6375, 0.7115, 0.7684),
+    "1600": (1166, 0.7171, 0.1041, 0.6571, 0.7198, 0.7826),
+    "2000": (1028, 0.7254, 0.1050, 0.6667, 0.7293, 0.7902),
+    "2400": (598, 0.7325, 0.0993, 0.6784, 0.7302, 0.7855),
+}
+EXPECTED_321_CONV_TC = {
+    "bullet": (1350, 0.6519, 0.1065, 0.5882, 0.6563, 0.7188),
+    "blitz": (1353, 0.7170, 0.0894, 0.6667, 0.7185, 0.7692),
+    "rapid": (1334, 0.7444, 0.0938, 0.6961, 0.7464, 0.8000),
+    "classical": (579, 0.7545, 0.1196, 0.6851, 0.7600, 0.8333),
+}
+EXPECTED_321_PAR_POOLED = {
+    "n": 4616,
+    "mean": 0.5069,
+    "sd": 0.1280,
+    "p05": 0.3016,
+    "p25": 0.4402,
+    "p50": 0.5000,
+    "p75": 0.5734,
+    "p95": 0.7143,
+}
+EXPECTED_321_PAR_ELO = {
+    "800": (756, 0.4933, 0.1699, 0.4000, 0.5000, 0.5789),
+    "1200": (1068, 0.4941, 0.1371, 0.4211, 0.5000, 0.5636),
+    "1600": (1166, 0.5074, 0.1183, 0.4375, 0.5000, 0.5714),
+    "2000": (1028, 0.5210, 0.1078, 0.4605, 0.5201, 0.5833),
+    "2400": (598, 0.5215, 0.0920, 0.4667, 0.5196, 0.5714),
+}
+EXPECTED_321_PAR_TC = {
+    "bullet": (1350, 0.5039, 0.1325, 0.4355, 0.5000, 0.5724),
+    "blitz": (1353, 0.5078, 0.1116, 0.4477, 0.5098, 0.5688),
+    "rapid": (1334, 0.5130, 0.1209, 0.4490, 0.5052, 0.5750),
+    "classical": (579, 0.4977, 0.1643, 0.4043, 0.5000, 0.5909),
+}
+EXPECTED_321_RECOV_POOLED = {
+    "n": 4616,
+    "mean": 0.3081,
+    "sd": 0.1117,
+    "p05": 0.1429,
+    "p25": 0.2397,
+    "p50": 0.3000,
+    "p75": 0.3696,
+    "p95": 0.5000,
+}
+EXPECTED_321_RECOV_ELO = {
+    "800": (756, 0.3129, 0.1129, 0.2389, 0.3017, 0.3729),
+    "1200": (1068, 0.2991, 0.1066, 0.2333, 0.2940, 0.3600),
+    "1600": (1166, 0.3030, 0.1090, 0.2336, 0.2941, 0.3636),
+    "2000": (1028, 0.3099, 0.1217, 0.2364, 0.3016, 0.3750),
+    "2400": (598, 0.3252, 0.1036, 0.2609, 0.3158, 0.3750),
+}
+EXPECTED_321_RECOV_TC = {
+    "bullet": (1350, 0.3569, 0.0999, 0.2950, 0.3533, 0.4118),
+    "blitz": (1353, 0.3087, 0.1008, 0.2514, 0.3000, 0.3571),
+    "rapid": (1334, 0.2809, 0.1016, 0.2184, 0.2733, 0.3333),
+    "classical": (579, 0.2560, 0.1368, 0.1739, 0.2353, 0.3158),
+}
+# conv/recov verdicts match the report exactly. Parity carries two verdict-NEUTRAL
+# pair-selection slips vs the report (same class as §3.1.4/§3.1.5):
+#   - TC: report labels 0.08; the true max is 0.11 (rapid vs classical). Both < 0.2 →
+#     collapse. (The report's 0.08 is the blitz-vs-classical pair.)
+#   - ELO: report labels (800, 2400) at 0.20; the true max is (1200, 2400) at 0.22 —
+#     1200's smaller variance edges out 800. Both in [0.2, 0.5) → review.
+EXPECTED_321_VERDICTS = {
+    "conversion": {"TC": (("bullet", "classical"), 0.93), "ELO": (("800", "2400"), 0.51)},
+    "parity": {"TC": (("rapid", "classical"), 0.11), "ELO": (("1200", "2400"), 0.22)},
+    "recovery": {"TC": (("bullet", "classical"), 0.90), "ELO": (("1200", "2400"), 0.25)},
+}
+# Endgame Skill (composite, retracted Phase 87.4) — informational, no verdict. The report
+# shows only POOLED + 800 + 2400; the generator emits full marginals (superset is fine).
+EXPECTED_321_SKILL_POOLED = {
+    "n": 4616,
+    "mean": 0.5086,
+    "sd": 0.0800,
+    "p05": 0.3815,
+    "p25": 0.4637,
+    "p50": 0.5082,
+    "p75": 0.5531,
+    "p95": 0.6398,
+}
+EXPECTED_321_SKILL_ENDS = {
+    "800": (756, 0.4948, 0.0884, 0.4474, 0.4980, 0.5462),
+    "2400": (598, 0.5264, 0.0725, 0.4814, 0.5249, 0.5652),
+}
+
+
+async def test_chapter3_321_matches_report(benchmark_session: AsyncSession) -> None:
+    v = await chapter3.compute_321(benchmark_session)
+
+    _check_pooled(v["conversion"], EXPECTED_321_CONV_POOLED)
+    _check_marginal(v["conversion"]["elo_marginal"], EXPECTED_321_CONV_ELO)
+    _check_marginal(v["conversion"]["tc_marginal"], EXPECTED_321_CONV_TC)
+    _check_verdicts(v["conversion"], EXPECTED_321_VERDICTS["conversion"])
+
+    _check_pooled(v["parity"], EXPECTED_321_PAR_POOLED)
+    _check_marginal(v["parity"]["elo_marginal"], EXPECTED_321_PAR_ELO)
+    _check_marginal(v["parity"]["tc_marginal"], EXPECTED_321_PAR_TC)
+    _check_verdicts(v["parity"], EXPECTED_321_VERDICTS["parity"])
+
+    _check_pooled(v["recovery"], EXPECTED_321_RECOV_POOLED)
+    _check_marginal(v["recovery"]["elo_marginal"], EXPECTED_321_RECOV_ELO)
+    _check_marginal(v["recovery"]["tc_marginal"], EXPECTED_321_RECOV_TC)
+    _check_verdicts(v["recovery"], EXPECTED_321_VERDICTS["recovery"])
+
+    _check_dist(v["skill_pooled"], EXPECTED_321_SKILL_POOLED)
+    skill_elo = {m["label"]: m for m in v["skill_elo"]}
+    for label, (n, mean, sd, p25, p50, p75) in EXPECTED_321_SKILL_ENDS.items():
+        d = skill_elo[label]["dist"]
+        assert d["n"] == n, label
+        assert d["mean"] == pytest.approx(mean), label
+        assert d["sd"] == pytest.approx(sd), label
+        assert (d["p25"], d["p50"], d["p75"]) == pytest.approx((p25, p50, p75)), label
+
+
+# --- §3.2.2 Section-2 ΔES Score Gap (per entry-eval bucket) --------------------
+
+# Per-span ΔES gap (proportions, 4 dp, rendered as pp). Reproduce benchmarks-latest.md
+# §3.2.2 exactly (conv/recov pooled, all marginals, conv/recov verdicts).
+EXPECTED_322_CONV_POOLED = {
+    "n": 4138,
+    "mean": -0.0617,
+    "sd": 0.0955,
+    "p05": -0.2473,
+    "p25": -0.1101,
+    "p50": -0.0481,
+    "p75": 0.0019,
+    "p95": 0.0690,
+}
+EXPECTED_322_CONV_ELO = {
+    "800": (683, -0.1286, 0.0994, -0.1740, -0.1053, -0.0633),
+    "1200": (973, -0.0865, 0.0929, -0.1277, -0.0652, -0.0246),
+    "1600": (1048, -0.0517, 0.0857, -0.0984, -0.0384, 0.0077),
+    "2000": (901, -0.0253, 0.0834, -0.0680, -0.0117, 0.0324),
+    "2400": (533, -0.0117, 0.0662, -0.0518, -0.0105, 0.0354),
+}
+EXPECTED_322_CONV_TC = {
+    "bullet": (1270, -0.1315, 0.1031, -0.1951, -0.1157, -0.0567),
+    "blitz": (1254, -0.0445, 0.0754, -0.0846, -0.0403, 0.0031),
+    "rapid": (1201, -0.0232, 0.0683, -0.0626, -0.0200, 0.0211),
+    "classical": (413, -0.0108, 0.0709, -0.0534, -0.0010, 0.0376),
+}
+EXPECTED_322_PAR_POOLED = {
+    "n": 3623,
+    "mean": 0.0014,
+    "sd": 0.0654,
+    "p05": -0.1069,
+    "p25": -0.0370,
+    "p50": 0.0032,
+    "p75": 0.0414,
+    "p95": 0.1026,
+}
+EXPECTED_322_PAR_ELO = {
+    "800": (456, -0.0067, 0.0753, -0.0559, -0.0003, 0.0451),
+    "1200": (780, -0.0057, 0.0679, -0.0459, -0.0057, 0.0330),
+    "1600": (948, -0.0019, 0.0655, -0.0402, -0.0014, 0.0375),
+    "2000": (883, 0.0079, 0.0615, -0.0275, 0.0085, 0.0465),
+    "2400": (556, 0.0134, 0.0556, -0.0203, 0.0116, 0.0477),
+}
+EXPECTED_322_PAR_TC = {
+    "bullet": (1100, -0.0010, 0.0685, -0.0404, 0.0016, 0.0424),
+    "blitz": (1163, 0.0031, 0.0617, -0.0331, 0.0043, 0.0408),
+    "rapid": (1049, 0.0045, 0.0656, -0.0366, 0.0047, 0.0458),
+    "classical": (311, -0.0073, 0.0659, -0.0504, -0.0042, 0.0318),
+}
+EXPECTED_322_RECOV_POOLED = {
+    "n": 3973,
+    "mean": 0.0641,
+    "sd": 0.0804,
+    "p05": -0.0491,
+    "p25": 0.0091,
+    "p50": 0.0538,
+    "p75": 0.1099,
+    "p95": 0.2104,
+}
+EXPECTED_322_RECOV_ELO = {
+    "800": (670, 0.1122, 0.0854, 0.0569, 0.0950, 0.1553),
+    "1200": (940, 0.0765, 0.0781, 0.0258, 0.0631, 0.1182),
+    "1600": (989, 0.0518, 0.0750, -0.0011, 0.0352, 0.0938),
+    "2000": (848, 0.0421, 0.0751, -0.0102, 0.0339, 0.0910),
+    "2400": (526, 0.0391, 0.0638, -0.0069, 0.0357, 0.0813),
+}
+EXPECTED_322_RECOV_TC = {
+    "bullet": (1240, 0.1294, 0.0810, 0.0739, 0.1243, 0.1770),
+    "blitz": (1219, 0.0511, 0.0605, 0.0111, 0.0476, 0.0841),
+    "rapid": (1123, 0.0277, 0.0552, -0.0078, 0.0260, 0.0617),
+    "classical": (391, 0.0021, 0.0545, -0.0371, 0.0020, 0.0349),
+}
+# conv/recov verdicts match the report exactly. Parity TC carries a verdict-NEUTRAL slip:
+# the report labels 0.10; the true max is 0.18 (rapid vs classical), both < 0.2 → collapse.
+# Parity ELO (800, 2400) 0.31 matches the report exactly.
+EXPECTED_322_VERDICTS = {
+    "conversion": {"TC": (("bullet", "classical"), 1.25), "ELO": (("800", "2400"), 1.35)},
+    "parity": {"TC": (("rapid", "classical"), 0.18), "ELO": (("800", "2400"), 0.31)},
+    "recovery": {"TC": (("bullet", "classical"), 1.69), "ELO": (("800", "2400"), 0.95)},
+}
+
+
+async def test_chapter3_322_matches_report(benchmark_session: AsyncSession) -> None:
+    v = await chapter3.compute_322(benchmark_session)
+
+    _check_pooled(v["conversion"], EXPECTED_322_CONV_POOLED)
+    _check_marginal(v["conversion"]["elo_marginal"], EXPECTED_322_CONV_ELO)
+    _check_marginal(v["conversion"]["tc_marginal"], EXPECTED_322_CONV_TC)
+    _check_verdicts(v["conversion"], EXPECTED_322_VERDICTS["conversion"])
+
+    _check_pooled(v["parity"], EXPECTED_322_PAR_POOLED)
+    _check_marginal(v["parity"]["elo_marginal"], EXPECTED_322_PAR_ELO)
+    _check_marginal(v["parity"]["tc_marginal"], EXPECTED_322_PAR_TC)
+    _check_verdicts(v["parity"], EXPECTED_322_VERDICTS["parity"])
+
+    _check_pooled(v["recovery"], EXPECTED_322_RECOV_POOLED)
+    _check_marginal(v["recovery"]["elo_marginal"], EXPECTED_322_RECOV_ELO)
+    _check_marginal(v["recovery"]["tc_marginal"], EXPECTED_322_RECOV_TC)
+    _check_verdicts(v["recovery"], EXPECTED_322_VERDICTS["recovery"])

@@ -61,6 +61,11 @@ LICHESS_WIN_CHANCES_K: float = 0.00368208
 # Per-user game floors (SKILL.md "Sample floors").
 SCORE_GAP_MIN_GAMES: int = 30  # §3.1.1/§3.1.6: >=30 endgame AND >=30 non-endgame
 ENDGAME_MIN_GAMES: int = 20  # §3.1.3/§3.1.4/§3.1.5/§3.2.1: >=20 endgame games per cell
+SECTION2_SPAN_MIN_SPANS: int = 20  # §3.2.2/§3.4.2: >=20 qualifying spans per user per bucket
+
+# Eval-advantage threshold (cp, user-perspective) for the conv/parity/recovery split.
+# Mirrors `_classify_endgame_bucket` / EVAL_ADVANTAGE_THRESHOLD. SKILL.md §3.2.1/§3.4.1.
+EVAL_ADVANTAGE_THRESHOLD: int = 100
 
 # User's score in a game (SKILL.md "Shared SQL building blocks — user_score_expr").
 USER_SCORE_EXPR: str = (
@@ -99,6 +104,71 @@ ENTRY_ROWS_CTE: str = (
 USER_COLOR_SIGN_SQL: str = "(CASE WHEN g.user_color = 'white' THEN 1 ELSE -1 END)"
 
 
+def win_chances_sigmoid_sql(signed_cp_expr: str) -> str:
+    """Lichess winning-chances sigmoid for a user-perspective signed-cp expression.
+
+    `1 / (1 + exp(-k·cp))`. Shared by `expected_score_sql` (§3.1.3/§3.1.5, with an outlier
+    trim) and the §3.2.2/§3.4.2 per-span ΔES (no trim — see `span_es_sql`).
+    """
+    return f"1.0 / (1.0 + exp(-{LICHESS_WIN_CHANCES_K} * ({signed_cp_expr})))"
+
+
+def endgame_bucket_case_sql(cp_expr: str, mate_expr: str, sign_expr: str) -> str:
+    """conversion / recovery / parity CASE from an entry eval (mirrors `_classify_endgame_bucket`).
+
+    Mate forces conv (user-favorable) / recov (unfavorable); otherwise the user-perspective
+    cp vs ±`EVAL_ADVANTAGE_THRESHOLD`; NULL eval routes to parity. Shared by §3.2.1 (per-game
+    entry eval) and §3.2.2 / §3.4.x (per-span entry eval). `sign_expr` is the user-POV sign.
+    """
+    t = EVAL_ADVANTAGE_THRESHOLD
+    return (
+        "CASE\n"
+        f"      WHEN {mate_expr} IS NOT NULL AND ({mate_expr} * {sign_expr}) > 0 THEN 'conversion'\n"
+        f"      WHEN {mate_expr} IS NOT NULL AND ({mate_expr} * {sign_expr}) < 0 THEN 'recovery'\n"
+        f"      WHEN {cp_expr} IS NOT NULL AND ({cp_expr} * {sign_expr}) >=  {t} THEN 'conversion'\n"
+        f"      WHEN {cp_expr} IS NOT NULL AND ({cp_expr} * {sign_expr}) <= -{t} THEN 'recovery'\n"
+        "      ELSE 'parity'\n"
+        "    END"
+    )
+
+
+def bucket_score_case_sql(cp_expr: str, mate_expr: str, sign_expr: str, score_expr: str) -> str:
+    """Per-game bucket contribution (Win / Score / Save), mirroring `_endgame_skill_from_bucket_rows`.
+
+    conversion → 1 if the user won (`score = 1`); recovery → 1 if the user won or drew
+    (`score >= 0.5`); parity → the raw `score`. The bucket is implied by the same eval rule
+    as `endgame_bucket_case_sql`, so the two stay in lockstep. SKILL.md §3.2.1.
+    """
+    t = EVAL_ADVANTAGE_THRESHOLD
+    won = f"CASE WHEN {score_expr} = 1.0 THEN 1.0 ELSE 0.0 END"
+    saved = f"CASE WHEN {score_expr} >= 0.5 THEN 1.0 ELSE 0.0 END"
+    return (
+        "CASE\n"
+        f"      WHEN {mate_expr} IS NOT NULL AND ({mate_expr} * {sign_expr}) > 0 THEN {won}\n"
+        f"      WHEN {mate_expr} IS NOT NULL AND ({mate_expr} * {sign_expr}) < 0 THEN {saved}\n"
+        f"      WHEN {cp_expr} IS NOT NULL AND ({cp_expr} * {sign_expr}) >=  {t} THEN {won}\n"
+        f"      WHEN {cp_expr} IS NOT NULL AND ({cp_expr} * {sign_expr}) <= -{t} THEN {saved}\n"
+        f"      ELSE {score_expr}\n"
+        "    END"
+    )
+
+
+def span_es_sql(cp_expr: str, mate_expr: str, sign_expr: str, fallback_expr: str) -> str:
+    """Expected score at a span boundary: mate → 0/1, else win-chances sigmoid, else fallback.
+
+    The §3.2.2/§3.4.2 per-span ΔES uses the raw sigmoid on any non-null eval (NO `|cp| < trim`
+    guard, unlike `expected_score_sql`). `fallback_expr` covers the final span (exit eval =
+    game result `USER_SCORE_EXPR`) or the entry side (`NULL` → span dropped).
+    """
+    return (
+        "CASE\n"
+        f"        WHEN {mate_expr} IS NOT NULL THEN CASE WHEN ({mate_expr} * {sign_expr}) > 0 THEN 1.0 ELSE 0.0 END\n"
+        f"        WHEN {cp_expr} IS NOT NULL THEN {win_chances_sigmoid_sql(f'{cp_expr} * {sign_expr}')}\n"
+        f"        ELSE {fallback_expr}\n"
+        "      END"
+    )
+
+
 def expected_score_sql() -> str:
     """Per-game user-POV expected score at the first endgame ply (SKILL.md §3.1.3/§3.1.5).
 
@@ -112,7 +182,7 @@ def expected_score_sql() -> str:
         f"      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * {sign}) > 0 THEN 1.0\n"
         f"      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * {sign}) < 0 THEN 0.0\n"
         f"      WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < {EVAL_OUTLIER_TRIM_CP}\n"
-        f"           THEN 1.0 / (1.0 + exp(-{LICHESS_WIN_CHANCES_K} * (er.eval_cp * {sign})))\n"
+        f"           THEN {win_chances_sigmoid_sql(f'er.eval_cp * {sign}')}\n"
         "      ELSE NULL\n"
         "    END"
     )

@@ -1,4 +1,4 @@
-"""Chapter 3 — Endgames (SKILL.md §3). §3.1 Endgame Overall Performance.
+"""Chapter 3 — Endgames (SKILL.md §3). §3.1 Endgame Overall + §3.2 Endgame Metrics vs ELO.
 
 Ported sub-metrics so far:
   §3.1.1 Non-Endgame Score   — per-user non_eg_score distribution (score units).
@@ -7,6 +7,9 @@ Ported sub-metrics so far:
   §3.1.4 Endgame Score       — per-user absolute eg_score over EG games (score).
   §3.1.5 Achievable Score Gap — per-user avg(actual − expected) paired gap (pp).
   §3.1.6 Endgame Score Gap   — per-user (eg_score − non_eg_score) distribution (pp).
+  §3.2.1 Conv/Parity/Recovery — per-user bucket rates (+ retracted composite skill, score).
+  §3.2.2 Section-2 ΔES Gap   — per-user per-bucket span gap, ES_exit − ES_entry (pp).
+  §3.2.3 Rate-vs-gap divergence — derived cross-cut of §3.2.1/§3.2.2 (no new query).
 
 §3.1.1/§3.1.6 derive from one shared per_user CTE (≥30 endgame AND ≥30 non-endgame
 games per user, SKILL.md §3.1.6), computed in a single scan: per_user is materialized,
@@ -41,6 +44,16 @@ Faithful-port findings (validated against benchmarks-latest.md):
     corrected to (rapid, classical): the deterministic max |d|=0.134 is there, while the
     report's labeled (bullet, rapid) is only 0.08 — the report carried the right
     magnitude (0.13 → collapse) on the wrong pair label. ELO (800, 2400) 0.34 matches.
+  - §3.2.1: conv/recov/skill pooled + all marginals + the conv/recov verdicts reproduce
+    the report exactly (conv TC 0.93 / ELO 0.51; recov TC 0.90 / ELO 0.25). Parity carries
+    two verdict-NEUTRAL pair-selection slips: TC report 0.08 → true 0.11 (rapid vs
+    classical, both collapse); ELO report (800,2400) 0.20 → true (1200,2400) 0.22 (1200's
+    smaller variance wins, both review). Classical conv mean 0.7545 renders 75.4% vs the
+    report's 75.5% — a .5-boundary half-up display artifact (the 4 dp value is exact).
+  - §3.2.2: conv/recov pooled + all marginals + verdicts reproduce the report exactly
+    (conv TC 1.25 / ELO 1.35; recov TC 1.69 / ELO 0.95; parity ELO 0.31). One
+    verdict-NEUTRAL parity slip: TC report 0.10 → true 0.18 (rapid vs classical, both
+    collapse). The conv/recov bands that drive zone calibration are exact.
 """
 
 from __future__ import annotations
@@ -55,7 +68,15 @@ from scripts.benchmarks import distribution as dist
 from scripts.benchmarks import entry_eval
 from scripts.benchmarks import sql
 from scripts.benchmarks.entry_eval import Baseline
-from scripts.benchmarks.render import fmt_int, fmt_signed, fmt_unsigned, markdown_table
+from scripts.benchmarks.render import (
+    Align,
+    Unit,
+    fmt_int,
+    fmt_signed,
+    fmt_unsigned,
+    fmt_value,
+    markdown_table,
+)
 
 SECTION = "SKILL.md §3.1 — endgame overall (3.1.1–3.1.6: Non-EG, EG-entry eval, achievable, EG score, achievable gap, score gap)"
 
@@ -365,6 +386,207 @@ async def compute_312(session: AsyncSession) -> EntryEval312:
     )
 
 
+# --- §3.2.1 Conversion / Parity / Recovery + Endgame Skill -----------------
+
+# conv/par/recov are full MetricBlocks (verdict); skill is informational (retracted).
+_CPR_METRICS: tuple[tuple[str, str], ...] = (
+    ("conversion", "conv_rate"),
+    ("parity", "par_rate"),
+    ("recovery", "recov_rate"),
+)
+
+
+class ConvParRecov321(TypedDict):
+    conversion: MetricBlock
+    parity: MetricBlock
+    recovery: MetricBlock
+    # Endgame Skill — composite retracted Phase 87.4, reported for continuity (no verdict).
+    skill_pooled: dist.Distribution
+    skill_elo: list[dist.Marginal]
+    skill_tc: list[dist.Marginal]
+
+
+def _conv_par_recov_pu_cte() -> str:
+    """Per-user conv/par/recov rates + composite skill per cell (SKILL.md §3.2.1).
+
+    Each endgame-reaching game is bucketed by its first-endgame-ply eval
+    (`endgame_bucket_case_sql`) into conversion/parity/recovery; the per-user per-bucket
+    rate is the mean win/score/save contribution. `per_user_cell` pivots to wide form
+    (conv/par/recov rate + unweighted-mean skill) over users with ≥20 total endgame games
+    and ≥2 active buckets, sub-800 dropped, equal-footing filtered, sparse cell excluded.
+    Reuses the §3.1.3/§3.1.5 `entry_rows` (rn = 1) for the first-endgame-ply eval.
+    """
+    bucket_case = sql.elo_bucket_case_sql("ueag")
+    bucket_expr = sql.endgame_bucket_case_sql("ec", "em", "color_sign")
+    contrib_expr = sql.bucket_score_case_sql("ec", "em", "color_sign", "score")
+    return (
+        f"WITH {sql.SELECTED_USERS_CTE},\n"
+        f"{sql.ENDGAME_GAME_IDS_CTE},\n"
+        f"{sql.ENTRY_ROWS_CTE},\n"
+        "bucketed AS (\n"
+        f"  SELECT g.user_id, ({sql.USER_ELO_AT_GAME_SQL}) AS ueag, su.tc_bucket AS tc,\n"
+        f"         {sql.USER_SCORE_EXPR} AS score,\n"
+        f"         {sql.USER_COLOR_SIGN_SQL} AS color_sign,\n"
+        "         er.eval_cp AS ec, er.eval_mate AS em\n"
+        "  FROM games g\n"
+        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  JOIN entry_rows er ON er.game_id = g.id AND er.rn = 1\n"
+        f"  WHERE {sql.BASE_GAME_FILTER}\n"
+        "),\n"
+        "classified AS (\n"
+        f"  SELECT user_id, ({bucket_case}) AS elo_bucket, tc, score,\n"
+        f"         {bucket_expr} AS bucket,\n"
+        f"         {contrib_expr} AS contrib\n"
+        f"  FROM bucketed WHERE ueag >= {sql.ELO_FLOOR}\n"
+        "),\n"
+        "per_user_bucket AS (\n"
+        "  SELECT user_id, elo_bucket, tc, bucket,\n"
+        "         count(*) AS games, avg(contrib) AS bucket_rate\n"
+        "  FROM classified GROUP BY user_id, elo_bucket, tc, bucket\n"
+        "),\n"
+        "per_user_cell AS (\n"
+        "  SELECT user_id, elo_bucket, tc,\n"
+        "         max(bucket_rate) FILTER (WHERE bucket = 'conversion') AS conv_rate,\n"
+        "         max(bucket_rate) FILTER (WHERE bucket = 'parity')     AS par_rate,\n"
+        "         max(bucket_rate) FILTER (WHERE bucket = 'recovery')   AS recov_rate,\n"
+        "         avg(bucket_rate) AS skill\n"
+        "  FROM per_user_bucket GROUP BY user_id, elo_bucket, tc\n"
+        f"  HAVING sum(games) >= {sql.ENDGAME_MIN_GAMES} AND count(*) >= 2\n"
+        "),\n"
+        "pu AS MATERIALIZED (\n"
+        f"  SELECT * FROM per_user_cell WHERE {sql.SPARSE_CELL_EXCLUSION}\n"
+        ")"
+    )
+
+
+async def compute_321(session: AsyncSession) -> ConvParRecov321:
+    """§3.2.1 — conv/par/recov MetricBlocks (with verdict) + informational skill block.
+
+    With ~100% endgame-entry eval coverage every qualifying user has all three buckets,
+    so `count(*)` equals each metric's non-null count (verified: pooled n = 4,616 for all
+    four metrics) and the canonical `agg_select` n is faithful.
+    """
+    selects = [
+        f"SELECT '{metric}' AS metric,\n{dist.agg_select(col, digits=_SCORE_DIGITS)}\n"
+        f"FROM pu {dist.GROUPING_SETS}"
+        for metric, col in (*_CPR_METRICS, ("skill", "skill"))
+    ]
+    query = _conv_par_recov_pu_cte() + "\n" + "\nUNION ALL\n".join(selects)
+    rows = await _fetch(session, query)
+
+    def block(metric: str) -> MetricBlock:
+        pooled, elo, tc = dist.split_grouping_sets([r for r in rows if r["metric"] == metric])
+        return MetricBlock(
+            pooled=pooled,
+            elo_marginal=elo,
+            tc_marginal=tc,
+            verdicts=[dist.verdict("TC", tc), dist.verdict("ELO", elo)],
+        )
+
+    skill_pooled, skill_elo, skill_tc = dist.split_grouping_sets(
+        [r for r in rows if r["metric"] == "skill"]
+    )
+    return ConvParRecov321(
+        conversion=block("conversion"),
+        parity=block("parity"),
+        recovery=block("recovery"),
+        skill_pooled=skill_pooled,
+        skill_elo=skill_elo,
+        skill_tc=skill_tc,
+    )
+
+
+# --- §3.2.2 Section-2 ΔES Score Gap (per entry-eval bucket) -----------------
+
+
+class Section2Gap322(TypedDict):
+    conversion: MetricBlock
+    parity: MetricBlock
+    recovery: MetricBlock
+
+
+def _section2_gap_per_user_bucket_cte() -> str:
+    """Per-user per-bucket mean ΔES score gap over endgame-class spans (SKILL.md §3.2.2).
+
+    One row per (game, endgame_class) span of ≥6 plies; `gap_span = ES_exit − ES_entry`
+    where each ES is the win-chances expectation at the span's first ply (exit = the NEXT
+    span's entry, or the game result for the final span). Spans are assigned to the
+    conversion/parity/recovery bucket by their entry eval (`endgame_bucket_case_sql`).
+    `per_user_bucket` keeps users with ≥20 qualifying spans per bucket per cell, sub-800
+    dropped, equal-footing filtered, sparse cell excluded. Same span machinery as §3.4.2.
+    """
+    sign = sql.USER_COLOR_SIGN_SQL
+    elo_case = sql.elo_bucket_case_sql(sql.USER_ELO_AT_GAME_SQL)
+    bucket_expr = sql.endgame_bucket_case_sql("swn.entry_eval_cp", "swn.entry_eval_mate", sign)
+    exit_es = sql.span_es_sql("next_eval_cp", "next_eval_mate", sign, sql.USER_SCORE_EXPR)
+    entry_es = sql.span_es_sql("swn.entry_eval_cp", "swn.entry_eval_mate", sign, "NULL")
+    return (
+        f"WITH {sql.SELECTED_USERS_CTE},\n"
+        "spans AS (\n"
+        "  SELECT gp.game_id, gp.endgame_class,\n"
+        "         (array_agg(gp.eval_cp ORDER BY gp.ply ASC))[1] AS entry_eval_cp,\n"
+        "         (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,\n"
+        "         min(gp.ply) AS span_min_ply\n"
+        "  FROM game_positions gp\n"
+        "  JOIN games g ON g.id = gp.game_id\n"
+        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  WHERE gp.endgame_class IS NOT NULL\n"
+        f"    AND {sql.BASE_GAME_FILTER}\n"
+        f"  GROUP BY gp.game_id, gp.endgame_class HAVING count(gp.ply) >= {sql.MIN_ENDGAME_PLIES}\n"
+        "),\n"
+        "spans_with_next AS (\n"
+        "  SELECT s.*,\n"
+        "         lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,\n"
+        "         lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate\n"
+        "  FROM spans s\n"
+        "),\n"
+        "gap_rows AS (\n"
+        f"  SELECT g.user_id, ({elo_case}) AS elo_bucket, su.tc_bucket AS tc,\n"
+        f"         {bucket_expr} AS bucket,\n"
+        f"         ({exit_es})\n      - ({entry_es}) AS gap_span\n"
+        "  FROM spans_with_next swn\n"
+        "  JOIN games g ON g.id = swn.game_id\n"
+        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)\n"
+        f"    AND ({sql.USER_ELO_AT_GAME_SQL}) >= {sql.ELO_FLOOR}\n"
+        "),\n"
+        "per_user_bucket AS (\n"
+        "  SELECT user_id, elo_bucket, tc, bucket, avg(gap_span) AS mean_gap\n"
+        "  FROM gap_rows\n"
+        f"  WHERE gap_span IS NOT NULL AND elo_bucket IS NOT NULL AND {sql.SPARSE_CELL_EXCLUSION}\n"
+        "  GROUP BY user_id, elo_bucket, tc, bucket\n"
+        f"  HAVING count(*) >= {sql.SECTION2_SPAN_MIN_SPANS}\n"
+        ")"
+    )
+
+
+async def compute_322(session: AsyncSession) -> Section2Gap322:
+    """§3.2.2 — per-bucket ΔES score-gap MetricBlocks (pp). One distribution per bucket."""
+    buckets = ("conversion", "parity", "recovery")
+    selects = [
+        f"SELECT '{b}' AS metric,\n{dist.agg_select('mean_gap', digits=_SCORE_DIGITS)}\n"
+        f"FROM per_user_bucket WHERE bucket = '{b}' {dist.GROUPING_SETS}"
+        for b in buckets
+    ]
+    query = _section2_gap_per_user_bucket_cte() + "\n" + "\nUNION ALL\n".join(selects)
+    rows = await _fetch(session, query)
+
+    def block(bucket: str) -> MetricBlock:
+        pooled, elo, tc = dist.split_grouping_sets([r for r in rows if r["metric"] == bucket])
+        return MetricBlock(
+            pooled=pooled,
+            elo_marginal=elo,
+            tc_marginal=tc,
+            verdicts=[dist.verdict("TC", tc), dist.verdict("ELO", elo)],
+        )
+
+    return Section2Gap322(
+        conversion=block("conversion"),
+        parity=block("parity"),
+        recovery=block("recovery"),
+    )
+
+
 # --- rendering -------------------------------------------------------------
 
 
@@ -504,4 +726,150 @@ async def build(session: AsyncSession) -> dict[str, Any]:
         "values_314": eg314,
         "values_315": gap315,
         "markdown": render(values, eval312, xs313, eg314, gap315),
+    }
+
+
+# --- §3.2 rendering + build ------------------------------------------------
+
+SECTION_32 = "SKILL.md §3.2 — endgame metrics vs ELO (3.2.1 Conv/Parity/Recovery + retracted Skill, 3.2.2 Section-2 ΔES gap, 3.2.3 rate-vs-gap divergence)"
+
+
+def _skill_section(v: ConvParRecov321) -> list[str]:
+    """Endgame Skill informational block (no band, no verdict — composite retracted)."""
+    return [
+        "##### Endgame Skill (per-user) — informational only (composite retracted Phase 87.4)",
+        "",
+        "###### Pooled distribution",
+        "",
+        dist.pooled_table(v["skill_pooled"], "score"),
+        "",
+        "###### ELO marginal",
+        "",
+        dist.marginal_table("ELO", v["skill_elo"], "score"),
+        "",
+        "###### TC marginal",
+        "",
+        dist.marginal_table("TC", v["skill_tc"], "score"),
+    ]
+
+
+def _sweep(marginals: Sequence[dist.Marginal], unit: Unit) -> str:
+    """Endpoint sweep `first → last` of marginal means in display order (§3.2.3)."""
+    lo = fmt_value(marginals[0]["dist"]["mean"], unit, "mean")
+    hi = fmt_value(marginals[-1]["dist"]["mean"], unit, "mean")
+    return f"{lo} → {hi}"
+
+
+def _axis_d(block: MetricBlock, axis: str) -> str:
+    for ver in block["verdicts"]:
+        if ver["axis"] == axis:
+            return f"{ver['max_abs_d']:.2f}"
+    raise KeyError(axis)
+
+
+def _divergence_row(label: str, rate: MetricBlock, gap: MetricBlock) -> list[str]:
+    """One §3.2.3 axis-driver row: raw-rate vs ΔES-gap sweeps + max |d| per axis.
+
+    Derived entirely from the §3.2.1 rate block (score unit) and the §3.2.2 gap block
+    (pp unit); the LLM narrator applies the collapse/review/keep word per the fixed
+    threshold table (code emits the d-value only, per the SEED-029 code/LLM seam).
+    """
+    return [
+        label,
+        _sweep(rate["elo_marginal"], "score"),
+        _axis_d(rate, "ELO"),
+        _sweep(rate["tc_marginal"], "score"),
+        _axis_d(rate, "TC"),
+        _sweep(gap["elo_marginal"], "pp"),
+        _axis_d(gap, "ELO"),
+        _sweep(gap["tc_marginal"], "pp"),
+        _axis_d(gap, "TC"),
+    ]
+
+
+def _render_323(cpr: ConvParRecov321, gap: Section2Gap322) -> list[str]:
+    headers = [
+        "Bucket",
+        "Raw rate ELO sweep",
+        "Raw ELO d",
+        "Raw rate TC sweep",
+        "Raw TC d",
+        "Gap ELO sweep",
+        "Gap ELO d",
+        "Gap TC sweep",
+        "Gap TC d",
+    ]
+    aligns: tuple[Align, ...] = ("left", *(("right",) * (len(headers) - 1)))
+    rows = [
+        _divergence_row("Conversion", cpr["conversion"], gap["conversion"]),
+        _divergence_row("Recovery", cpr["recovery"], gap["recovery"]),
+    ]
+    return [
+        "#### 3.2.3 Rate vs Score-Gap divergence (Conv & Recov cross-cut — derived)",
+        "",
+        "Derived from the §3.2.1 raw rates and §3.2.2 ΔES gaps (no new query). Sweep =",
+        "first → last marginal mean in display order; d = max |Cohen's d| over the axis.",
+        "",
+        markdown_table(headers, rows, aligns),
+    ]
+
+
+def render_32(cpr: ConvParRecov321, gap: Section2Gap322) -> str:
+    parts = ["### 3.2 Endgame Metrics and ELO", ""]
+    parts += [
+        "#### 3.2.1 Conversion / Parity / Recovery (+ retracted Endgame Skill)",
+        "",
+    ]
+    parts += _metric_section(
+        "##### Conversion (per-user)",
+        cpr["conversion"],
+        "score",
+        pooled_label="Pooled distribution",
+    )
+    parts += ["", "##### Parity (per-user)", ""]
+    parts += _metric_section(
+        "###### Parity", cpr["parity"], "score", pooled_label="Pooled distribution"
+    )
+    parts += ["", "##### Recovery (per-user)", ""]
+    parts += _metric_section(
+        "###### Recovery", cpr["recovery"], "score", pooled_label="Pooled distribution"
+    )
+    parts += [""]
+    parts += _skill_section(cpr)
+    parts += ["", "---", ""]
+    parts += ["#### 3.2.2 Section-2 ΔES Score Gap (per entry-eval bucket)", ""]
+    parts += _metric_section(
+        "##### Conversion-bucket ΔES (per-user)",
+        gap["conversion"],
+        "pp",
+        pooled_label="Pooled distribution",
+    )
+    parts += ["", ""]
+    parts += _metric_section(
+        "##### Parity-bucket ΔES (per-user)",
+        gap["parity"],
+        "pp",
+        pooled_label="Pooled distribution",
+    )
+    parts += ["", ""]
+    parts += _metric_section(
+        "##### Recovery-bucket ΔES (per-user)",
+        gap["recovery"],
+        "pp",
+        pooled_label="Pooled distribution",
+    )
+    parts += ["", "---", ""]
+    parts += _render_323(cpr, gap)
+    return "\n".join(parts)
+
+
+async def build_32(session: AsyncSession) -> dict[str, Any]:
+    cpr = await compute_321(session)
+    gap = await compute_322(session)
+    return {
+        "status": "OK",
+        "section": SECTION_32,
+        "values_321": cpr,
+        "values_322": gap,
+        "markdown": render_32(cpr, gap),
     }

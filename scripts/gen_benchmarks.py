@@ -168,6 +168,7 @@ _CHAPTER_BUILDERS: dict[str, Callable[[AsyncSession], Awaitable[dict[str, Any]]]
     "1-stratified-sample": chapter1.build,
     "2.1-openings-middlegame-eval": chapter2.build,
     "3.1-endgame-overall": chapter3.build,
+    "3.2-endgame-metrics-elo": chapter3.build_32,
 }
 
 
