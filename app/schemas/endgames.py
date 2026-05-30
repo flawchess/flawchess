@@ -218,6 +218,12 @@ class EndgameStatsResponse(BaseModel):
     categories: list[EndgameCategoryStats]
     total_games: int  # Total games matching current filters (not just endgame games)
     endgame_games: int  # Games that reached an endgame phase
+    # Phase 98: per-(class × TC) rates for the collapsible endgame type cards.
+    # Optional for back-compat; frontend gates on presence before rendering.
+    # D-15: the LLM insights path reads `categories` (pooled) and never touches this field.
+    categories_by_tc: (
+        dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]] | None
+    ) = None
 
 
 class EndgameGamesResponse(BaseModel):
@@ -817,7 +823,8 @@ class PerTcBucketStats(BaseModel):
     """Per-bucket (conversion/parity/recovery) stats for one TC metric block (Phase 97).
 
     Carries WDL percentages (0-100), the headline rate, per-bucket ΔES score-gap stats,
-    and the per-TC ΔES-gap percentile read directly from user_benchmark_percentiles.
+    and two separate percentile triplets — the ΔES-gap percentile and (Phase 99) the
+    raw-rate percentile — read directly from user_benchmark_percentiles.
 
     games: total games in this bucket for the TC.
     win_pct/draw_pct/loss_pct: WDL breakdown as percent 0-100 (for MiniWDLBar).
@@ -833,6 +840,15 @@ class PerTcBucketStats(BaseModel):
         clock_gap_n_games/value). Both None when no percentile row exists for the cell.
         Defaulted so existing fixtures that build PerTcBucketStats keyword-style without
         these args do not break.
+    rate_percentile: per-TC RAW-RATE percentile from user_benchmark_percentiles
+        (Phase 99). This is a SEPARATE signal from the skill-adjusted ΔES-gap
+        percentile above (D-01: both coexist on the same block). None when the user
+        is below the pooled inclusion floor for this (rate metric, TC) cell, or when
+        no cohort CDF has been backfilled yet. Defaulted None for backward compat.
+    rate_percentile_n_games/rate_percentile_value: chip-cohort n_games and metric
+        value from the same PercentileRow that produced ``rate_percentile``.
+        Mirror percentile_n_games/percentile_value but for the raw-rate chip tooltip.
+        Both None when no rate-percentile row exists for the cell.
     """
 
     games: int
@@ -848,6 +864,10 @@ class PerTcBucketStats(BaseModel):
     percentile: float | None
     percentile_n_games: int | None = None
     percentile_value: float | None = None
+    # Phase 99: raw-rate percentile chip (separate from ΔES-gap percentile — D-01).
+    rate_percentile: float | None = None
+    rate_percentile_n_games: int | None = None
+    rate_percentile_value: float | None = None
 
 
 class EndgameMetricsTcCard(BaseModel):

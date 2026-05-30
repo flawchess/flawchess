@@ -1,10 +1,21 @@
 ---
 title: Endgame Type Card — Re-add Conv/Recov as TC-mix-weighted Gauges
 date: 2026-05-30
-status: decided
+status: SUPERSEDED (2026-05-30, same day) — see notes/endgame-tc-disclosure-pattern.md
 supersedes_followup_in: notes/endgame-type-card-drop-gauges.md
-phase: Phase 98 (proposed)
+phase: Phase 98 (respecced — no longer TC-mix-weighted)
 ---
+
+> **SUPERSEDED 2026-05-30 (same day).** A follow-up `/gsd-explore` session (Lichess Tutor
+> research) replaced the TC-mix-weighted **blended band** approach below with **per-TC
+> collapsible cards**: one full-width collapsible card per TC, most-active expanded, a 2×2
+> type grid (rook/minor/pawn/queen — Mixed dropped) inside, and each card showing its own
+> per-(class × TC) band. No TC-mix weighting, no per-(class×TC) eligible-count payload
+> math. Conv/Recov gauges still return — but TC-honestly by segmentation, not by blending.
+> See [[endgame-tc-disclosure-pattern]] and the respecced Phase 98 in `ROADMAP.md`.
+> The benchmark facts below (Conv/Recov d≈1.2–1.7 on TC; per-(class×TC) IQRs feed the
+> bands; sparse cells like queen/classical n≈30) remain accurate and carry into the
+> respec. Only the *blending mechanism* is rejected.
 
 # Endgame Type Card — Re-add Conv/Recov as TC-mix-weighted Gauges
 

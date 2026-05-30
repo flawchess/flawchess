@@ -66,7 +66,12 @@ function AccordionContent({
     >
       <div
         className={cn(
-          "h-(--radix-accordion-content-height) pt-0 pb-2.5 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground [&_p:not(:last-child)]:mb-4",
+          // No fixed height on the resting body: the open/close slide animations
+          // already use --radix-accordion-content-height on the Content element.
+          // Pinning the inner div to that once-measured height made the body clip
+          // its content whenever it reflowed taller after open (e.g. a viewport
+          // resize wrapping FAQ text or restacking a grid). Auto height reflows.
+          "pt-0 pb-2.5 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground [&_p:not(:last-child)]:mb-4",
           className
         )}
       >

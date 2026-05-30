@@ -103,7 +103,7 @@ export function PositionResultsPanel({
   const resolvedEvalBaselinePawns = evalBaselinePawns ?? evalBaselinePawnsLocal;
 
   // The Endgames Games subtab samples the eval at endgame entry (color-agnostic,
-  // matching the Stats-tab "Endgame Entry Eval"): no per-color baseline tick,
+  // matching the Stats-tab "Entry Eval"): no per-color baseline tick,
   // and the popover copy describes the endgame start rather than opening end.
   const isEndgameEntryEval = evalContext === 'endgame-entry';
   const evalAriaLabel = isEndgameEntryEval
@@ -112,11 +112,17 @@ export function PositionResultsPanel({
 
   return (
     <div
-      className={`charcoal-texture rounded-md p-4 ${className}`}
+      className={`charcoal-texture rounded-md overflow-hidden ${className}`}
       style={isUnreliable ? { opacity: UNRELIABLE_OPACITY } : undefined}
       data-testid="wdl-moves-position"
     >
-      <div className="text-sm font-medium mb-2">{label}</div>
+      <h4
+        className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-border/40 text-sm font-semibold"
+        data-testid="wdl-moves-position-header"
+      >
+        {label}
+      </h4>
+      <div className="p-4">
 
       {/* Three same-width chart rows (indicator-left / chart-right). */}
       <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 items-center">
@@ -244,6 +250,7 @@ export function PositionResultsPanel({
         ) : (
           <EvalCpuPlaceholder />
         )}
+      </div>
       </div>
     </div>
   );

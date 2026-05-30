@@ -8,13 +8,21 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Peer-relative percentile chips on the per-TC Conversion, Parity, and Recovery rates** (Phase 99). Each per-time-control card (Bullet, Blitz, Rapid, Classical) now shows a percentile chip on its Conversion, Parity, and Recovery rate alongside the existing engine-adjusted score-gap chip, so you can see how your raw conversion/parity/recovery rate ranks against players in your rating band and time control, not just against the engine. Chips are cohort-matched on your per-time-control rating and only appear once you have enough endgames in that bucket; sparse cells (commonly Classical) stay hidden rather than show a noisy number.
+- **Conversion and Recovery gauges back in Endgame Type Breakdown** (Phase 98). Each endgame type tile (Rook, Minor Piece, Pawn, Queen) now shows its Conversion and Recovery gauges again, this time banded against the correct per-(class x time control) benchmark range so a bullet player is judged against bullet norms, not slow-game ones.
+
 ### Changed
 
+- **Endgame Type Breakdown restructured into collapsible per-TC cards** (Phase 98). The 3-column grid of five per-type cards is replaced by full-width vertically-stacked accordion cards, one per time control (Bullet, Blitz, Rapid, Classical). Your primary time control (the one weighted by game count and typical duration) expands by default; others start collapsed. Mixed is no longer shown; each TC card with fewer than 20 games is suppressed. The accordion resets to your primary TC whenever you change filters.
 - **Simpler Endgame Type Breakdown cards** (quick-260529-une). Each per-type card (Rook, Minor Piece, Pawn, Queen, Mixed) drops its Conversion and Recovery gauges, leaving the win/draw/loss bar, the type Score, and the Score Gap bullet. The Score Gap already captures conversion and defensive performance in a single engine-adjusted number, and the removed gauges were the only metrics on the card that shifted with time control, so they could mispaint a bullet player against slow-game expectations. AI insights still use the full conversion/recovery breakdown.
 
 ### Fixed
 
+- **Endgame Type Breakdown showed "no data" despite a game count** (Phase 98). The per-time-control type cards displayed their header game count but an empty tile grid ("No endgame type data for this time control"). The per-(class x TC) breakdown was computed from one row per game classified by the *first* endgame position, which is almost always a mixed-material position, so nearly every game landed in Mixed (which the cards intentionally drop) and the Rook/Minor/Pawn/Queen tiles came up empty. It now aggregates the same per-class endgame spans the pooled stats use, and Mixed and pawnless are excluded from the computation so each card's header count equals the sum of its four tiles.
 - **Endgames page locked forever for users with too few games** (quick-260529). A user with games but fewer than the 30-game per-time-control anchor floor (e.g. 13 imported games) produces no rating anchors and therefore no percentile rows by design, so the readiness gate kept the page on the "Analyzing endgames" screen permanently even after Stockfish finished. The gate now recognises a below-floor user as fully processed and unlocks the page once evals are drained, alongside the existing empty-account escape.
+- **Endgames page locked forever when few games reach an endgame** (debug endgame-percentiles-missing). A user above the 30-game rating-anchor floor but with too few games that actually reach an endgame (e.g. 33 rapid games rated, only 22 reaching an endgame) clears the anchor floor yet falls below every endgame metric's own 30-game floor, so no percentile rows are written by design. The readiness gate treated this as "still analyzing" and kept the "Analyzing endgames" screen up forever even after Stockfish finished. The gate now recognises that a committed rating anchor with no percentile rows means analysis has run and the player is simply too sparse for benchmarked metrics, and unlocks the page once evals are drained.
 
 ## [v1.20] Import Pipeline Hardening Follow-Up and Readiness — 2026-05-29
 
@@ -31,6 +39,8 @@ Two follow-ups to the v1.18 import hardening and v1.19 percentile work, regroupe
 - **Percentile chip tooltip shows the matched rating anchor inline** (quick-260529-l1i). Each time-control breakdown row now displays the anchor it was matched against ("Bullet — anchored at ~1525 Lichess Elo"), and the separate platform-blend anchor note was dropped.
 
 ### Fixed
+
+- **Endgames page locked forever for users with too few games** (quick-260529). A user with games but fewer than the 30-game per-time-control anchor floor (e.g. 13 imported games) produces no rating anchors and therefore no percentile rows by design, so the readiness gate kept the page on the "Analyzing endgames" screen permanently even after Stockfish finished. The gate now recognises a below-floor user as fully processed and unlocks the page once evals are drained, alongside the existing empty-account escape.
 
 - **Percentile-compute query optimization** (quick-260529-cum). The five per-TC builders (`score_gap`, `achievable_score_gap`, `time_pressure_score_gap`, `clock_gap`, `net_flag_rate`) and their shared `endgame_entry_clocks` helper now scope `game_positions` aggregation to the selected user's recent games only. Previously each query scanned the full `game_positions` table and discarded nearly all rows in a later join. Cut is result-equivalent: only `recent_capped` games survive the downstream joins regardless. Addresses the ~6 s/call, ~58 min cumulative server time flagged by the /db-report for the import and eval-drain hot paths.
 

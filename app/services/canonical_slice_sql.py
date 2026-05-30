@@ -137,6 +137,13 @@ TIME_PRESSURE_MIN_PRESSURED_N: int = 30
 CLOCK_GAP_MIN_POOL_N: int = 30
 NET_FLAG_RATE_MIN_POOL_N: int = 30
 
+# Phase 99: per-(rate metric, TC) chip-inclusion floor — minimum number of
+# endgame spans in the relevant bucket (conversion / parity / recovery) for a
+# user's rate chip to render. Same value as SCORE_GAP_BUCKET_MIN_SPANS (both
+# ≥30) but named separately so future tuning of one does not silently move
+# the other (CLAUDE.md no-magic-numbers).
+MINIMUM_RATE_BUCKET_SPANS: int = 30
+
 # Phase 94.4 D-04: per-(user, TC) median rating anchor inclusion floor.
 # 30 games is the lower bound for a stable per-TC median on the recent-3000
 # pool (CLAUDE.md no-magic-numbers); tighter floors should be planner-tuned
@@ -833,6 +840,230 @@ per_user_values AS (
     span_n AS n_games
   FROM per_user_bucket
   WHERE bucket = '{bucket_label}'
+)"""
+
+
+def per_user_cte_conv_rate_tc(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Pooled ``per_user_values(user_id, metric_value, n_games)`` for ``conversion_rate_{tc}``.
+
+    ``metric_value`` = wins / conv_spans (pooled over the recent-3000-per-TC ×
+    36-month pool). ``n_games`` = conversion span count (the binding floor
+    ≥ MINIMUM_RATE_BUCKET_SPANS).
+
+    No ``lead()`` / ``spans_with_next`` — rate is measured from game outcome,
+    not ΔES delta. Terminal-span semantics: one row per endgame span; the game
+    result is the exit-score proxy (verified: endgame_service.py lines 2562-2574).
+
+    Security: ``tc`` is a 4-value Literal; ty enforces the closed set at every
+    call site — no user string is interpolated (T-99-SQLi identical to existing
+    builders, canonical_slice_sql.py lines 76-83).
+
+    Source-mode parity: ``_ = source`` — cohort difference lives entirely in
+    ``selected_users_cte``; pooled body is byte-identical for both sources (SC-2).
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    ueag = _user_elo_at_game_expr()
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+spans AS (
+  SELECT gp.game_id,
+         (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
+         (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate
+  FROM game_positions gp
+  JOIN recent_capped rc ON rc.id = gp.game_id
+  WHERE gp.endgame_class IS NOT NULL
+  GROUP BY gp.game_id
+  HAVING count(gp.ply) >= 6
+),
+bucket_rows AS (
+  SELECT g.user_id,
+    CASE
+      WHEN (s.entry_eval_mate IS NOT NULL
+            AND (s.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0)
+        OR (s.entry_eval_cp IS NOT NULL
+            AND (s.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) >= 100)
+      THEN true ELSE false
+    END AS is_conversion,
+    CASE
+      WHEN (g.result='1-0' AND g.user_color='white') OR (g.result='0-1' AND g.user_color='black')
+      THEN 1 ELSE 0
+    END AS is_win
+  FROM spans s
+  JOIN games g ON g.id = s.game_id
+  WHERE (s.entry_eval_cp IS NOT NULL OR s.entry_eval_mate IS NOT NULL)
+    AND {ueag} >= {_SUB_800_FLOOR}
+),
+per_user AS (
+  SELECT user_id,
+    count(*) FILTER (WHERE is_conversion) AS conv_n,
+    sum(is_win) FILTER (WHERE is_conversion)::float AS conv_wins
+  FROM bucket_rows
+  GROUP BY user_id
+  HAVING count(*) FILTER (WHERE is_conversion) >= {MINIMUM_RATE_BUCKET_SPANS}
+),
+per_user_values AS (
+  -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
+  SELECT user_id,
+    conv_wins / NULLIF(conv_n, 0) AS metric_value,
+    conv_n::int AS n_games
+  FROM per_user
+  WHERE conv_wins IS NOT NULL
+)"""
+
+
+def per_user_cte_parity_rate_tc(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Pooled ``per_user_values(user_id, metric_value, n_games)`` for ``parity_rate_{tc}``.
+
+    ``metric_value`` = (wins + 0.5 * draws) / parity_spans (chess-score formula,
+    pooled over the recent-3000-per-TC × 36-month pool). ``n_games`` = parity
+    span count (the binding floor ≥ MINIMUM_RATE_BUCKET_SPANS).
+
+    No ``lead()`` / ``spans_with_next`` — rate is measured from game outcome,
+    not ΔES delta (D-09 research verified: endgame_service.py lines 2562-2574).
+
+    Source-mode parity and security identical to ``per_user_cte_conv_rate_tc``.
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    ueag = _user_elo_at_game_expr()
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+spans AS (
+  SELECT gp.game_id,
+         (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
+         (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate
+  FROM game_positions gp
+  JOIN recent_capped rc ON rc.id = gp.game_id
+  WHERE gp.endgame_class IS NOT NULL
+  GROUP BY gp.game_id
+  HAVING count(gp.ply) >= 6
+),
+bucket_rows AS (
+  SELECT g.user_id,
+    CASE
+      WHEN s.entry_eval_mate IS NOT NULL THEN
+        CASE
+          WHEN (s.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0
+          THEN 'conversion'
+          ELSE 'recovery'
+        END
+      WHEN s.entry_eval_cp IS NOT NULL THEN
+        CASE
+          WHEN (s.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) >= 100
+          THEN 'conversion'
+          WHEN (s.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) <= -100
+          THEN 'recovery'
+          ELSE 'parity'
+        END
+      ELSE 'parity'
+    END AS bucket,
+    CASE
+      WHEN (g.result='1-0' AND g.user_color='white') OR (g.result='0-1' AND g.user_color='black')
+      THEN 1 ELSE 0
+    END AS is_win,
+    CASE WHEN g.result='1/2-1/2' THEN 1 ELSE 0 END AS is_draw
+  FROM spans s
+  JOIN games g ON g.id = s.game_id
+  WHERE (s.entry_eval_cp IS NOT NULL OR s.entry_eval_mate IS NOT NULL)
+    AND {ueag} >= {_SUB_800_FLOOR}
+),
+per_user AS (
+  SELECT user_id,
+    count(*) FILTER (WHERE bucket = 'parity') AS parity_n,
+    sum(is_win)  FILTER (WHERE bucket = 'parity')::float AS parity_wins,
+    sum(is_draw) FILTER (WHERE bucket = 'parity')::float AS parity_draws
+  FROM bucket_rows
+  GROUP BY user_id
+  HAVING count(*) FILTER (WHERE bucket = 'parity') >= {MINIMUM_RATE_BUCKET_SPANS}
+),
+per_user_values AS (
+  -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
+  SELECT user_id,
+    (parity_wins + 0.5 * parity_draws) / NULLIF(parity_n, 0) AS metric_value,
+    parity_n::int AS n_games
+  FROM per_user
+  WHERE parity_wins IS NOT NULL
+)"""
+
+
+def per_user_cte_recovery_rate_tc(
+    tc: TimeControlBucket,
+    *,
+    source: Literal["benchmark", "single_user"],
+    snapshot_date: date | None = None,
+) -> str:
+    """Pooled ``per_user_values(user_id, metric_value, n_games)`` for ``recovery_rate_{tc}``.
+
+    ``metric_value`` = (wins + draws) / recov_spans (saves formula — both wins
+    and draws count as successful recoveries, pooled over the recent-3000-per-TC
+    × 36-month pool). ``n_games`` = recovery span count (the binding floor
+    ≥ MINIMUM_RATE_BUCKET_SPANS).
+
+    No ``lead()`` / ``spans_with_next`` — rate is measured from game outcome,
+    not ΔES delta (D-09 research verified: endgame_service.py lines 2562-2574).
+
+    Source-mode parity and security identical to ``per_user_cte_conv_rate_tc``.
+    """
+    _ = source  # cohort difference is in selected_users_cte; pooled body is identical
+    ueag = _user_elo_at_game_expr()
+    return f"""{_recent_capped_per_tc_cte(snapshot_date, tc)},
+spans AS (
+  SELECT gp.game_id,
+         (array_agg(gp.eval_cp   ORDER BY gp.ply ASC))[1] AS entry_eval_cp,
+         (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate
+  FROM game_positions gp
+  JOIN recent_capped rc ON rc.id = gp.game_id
+  WHERE gp.endgame_class IS NOT NULL
+  GROUP BY gp.game_id
+  HAVING count(gp.ply) >= 6
+),
+bucket_rows AS (
+  SELECT g.user_id,
+    CASE
+      WHEN (s.entry_eval_mate IS NOT NULL
+            AND (s.entry_eval_mate * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) > 0)
+        OR (s.entry_eval_cp IS NOT NULL
+            AND (s.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) >= 100)
+      THEN 'conversion'
+      WHEN s.entry_eval_mate IS NOT NULL
+        OR (s.entry_eval_cp IS NOT NULL
+            AND (s.entry_eval_cp * (CASE WHEN g.user_color='white' THEN 1 ELSE -1 END)) <= -100)
+      THEN 'recovery'
+      ELSE 'parity'
+    END AS bucket,
+    CASE
+      WHEN (g.result='1-0' AND g.user_color='white') OR (g.result='0-1' AND g.user_color='black')
+      THEN 1 ELSE 0
+    END AS is_win,
+    CASE WHEN g.result='1/2-1/2' THEN 1 ELSE 0 END AS is_draw
+  FROM spans s
+  JOIN games g ON g.id = s.game_id
+  WHERE (s.entry_eval_cp IS NOT NULL OR s.entry_eval_mate IS NOT NULL)
+    AND {ueag} >= {_SUB_800_FLOOR}
+),
+per_user AS (
+  SELECT user_id,
+    count(*) FILTER (WHERE bucket = 'recovery') AS recov_n,
+    sum(is_win)  FILTER (WHERE bucket = 'recovery')::float AS recov_wins,
+    sum(is_draw) FILTER (WHERE bucket = 'recovery')::float AS recov_draws
+  FROM bucket_rows
+  GROUP BY user_id
+  HAVING count(*) FILTER (WHERE bucket = 'recovery') >= {MINIMUM_RATE_BUCKET_SPANS}
+),
+per_user_values AS (
+  -- user_id widened per Phase 94.4 Pitfall 1 (cohort-CDF JOIN against per_user_anchor).
+  SELECT user_id,
+    (recov_wins + recov_draws) / NULLIF(recov_n, 0) AS metric_value,
+    recov_n::int AS n_games
+  FROM per_user
+  WHERE recov_wins IS NOT NULL
 )"""
 
 

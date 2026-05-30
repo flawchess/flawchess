@@ -23,7 +23,7 @@
 - ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
 - ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split out before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
 - ✅ **v1.20 Import Pipeline Hardening Follow-Up and Readiness** — Phases 95, 96 (shipped 2026-05-29) — see [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md)
-- 🔄 **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99 (Phase 97 shipped 2026-05-29; 98, 99 not started)
+- 🔄 **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99 (Phases 97, 98 shipped; 99 not started)
 - 🔄 **v1.22 LLM Statistical Reasoning** — Phase 100 (not started)
 
 ## Phases
@@ -31,8 +31,9 @@
 *v1.20 (Phases 95, 96) shipped 2026-05-29 — archived to [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md); see the collapsed block below.*
 
 - [x] **Phase 97: Endgame Metrics by Time Control** *(v1.21)* — Replace the aggregated Conversion/Parity/Recovery gauge cards in the Endgame Metrics section with TC-specific cards (bullet/blitz/rapid/classical), mirroring the Time Pressure section's per-TC pattern. Conversion/Recovery gauges get TC-specific neutral bands (benchmark TC d≈0.9); Parity and Score Gap keep the shared global band (both collapse on TC). No aggregated cards remain; cards self-suppress below a min-games floor. Per-TC conversion/recovery percentile badges deferred to Phase 99. — shipped 2026-05-29 (PR #160; rating-anchor follow-up #158/#159).
-- [ ] **Phase 98: TC-mix-weighted Conv/Recov Gauges on Endgame Type Cards** *(v1.21)* — Re-add Conversion/Recovery gauges to the 5 `EndgameTypeCard`s (removed 2026-05-29, quick-260529-une) as **absolute-arc gauges with a TC-mix-weighted neutral band**: `band = Σ_tc (user's share of eligible games in tc for class) × (benchmark IQR for class × tc)`, weighted by conversion-/recovery-eligible games respectively. Raw rate stays the headline; band tooltip discloses the TC-mix basis. TC-only by design (ELO precision stays in the Score-Gap percentile chip; per-(class×TC×ELO) banding is infeasible on sparsity). Absolute-arc idiom matches the Phase 97 Endgame Metrics gauges, so that section is untouched (no cascade). See [notes/endgame-typecard-tcmix-gauges.md](notes/endgame-typecard-tcmix-gauges.md).
-- [ ] **Phase 99: Percentile Badges for Conversion, Parity, and Recovery** *(v1.21)* — Add peer-relative percentile chips (the v1.19 `PercentileChip` primitive) to the per-TC Conversion, Parity, and Recovery rate cards delivered in Phase 97. Deferred from Phase 97 because it requires new per-(metric, TC) cohort CDF materialization in `user_benchmark_percentiles` (today only ΔES score-gap percentiles exist there). Mirrors the Phase 94.3 Time Pressure per-TC chip pattern: 3 metric families × 4 TCs computed via pooled-per-user methodology parameterised by TC, cohort-matched on rating anchor, 4-bullet disclosure tooltip per `feedback_percentile_chip_tooltip_disclosure`.
+- [x] **Phase 98: Per-TC Collapsible Endgame Type Cards** *(v1.21)* — Restructure the Endgame Type Breakdown from a 3-col grid of 5 per-type cards into **one full-width collapsible card per time control** (bullet/blitz/rapid/classical), chevron in the header, **most-active TC expanded by default**, the rest collapsed. Inside each TC card: a **2×2 grid of 4 type tiles** (rook/minor_piece/pawn/queen — **Mixed dropped** as the least-actionable catch-all). This is the TC-honest way to bring back the Conv/Recov gauges removed 2026-05-29: each tile shows that TC's own per-(class × TC) band (**no TC-mix blending** — supersedes the blended-band approach). **Score Gap is banded per-TC too, for visual consistency** — statistically it's TC-flat (d≈0.13) so the four bands will be near-identical, but it conceptually belongs to the type tile alongside Conv/Recov and gets one consistent card grammar (the known redundancy is chosen, not a bug). Per-TC sparsity suppression (a TC card / tile self-suppresses below the games floor, à la Lichess Tutor's 30-games-per-speed model). Applies the mode-3 "collapsible TC cards" pattern. See [notes/endgame-tc-disclosure-pattern.md](notes/endgame-tc-disclosure-pattern.md). — shipped 2026-05-30 (PR #163; deployed via release PR #164).
+- [x] **Phase 99: Percentile Badges for Conversion, Parity, and Recovery** *(v1.21)* — Add peer-relative percentile chips (the v1.19 `PercentileChip` primitive) to the per-TC Conversion, Parity, and Recovery rate cards delivered in Phase 97. Deferred from Phase 97 because it requires new per-(metric, TC) cohort CDF materialization in `user_benchmark_percentiles` (today only ΔES score-gap percentiles exist there). Mirrors the Phase 94.3 Time Pressure per-TC chip pattern: 3 metric families × 4 TCs computed via pooled-per-user methodology parameterised by TC, cohort-matched on rating anchor, 4-bullet disclosure tooltip per `feedback_percentile_chip_tooltip_disclosure`. (completed 2026-05-30)
+- [ ] **Phase 99.1: Move Cohort CDF Out of Source into a DB Table** *(v1.21)* — Refactor `app/services/global_percentile_cdf.py` (3.1 MB / 130k lines, of which only ~250 are logic) by moving the generated `COHORT_PERCENTILE_CDF` registry into a `benchmark_cohort_cdf` DB table. The lookup is background-only (`compute_stage_a/b`, ~32 calls per import), so `interpolate_cohort_percentile` becomes `async` and queries the table directly (no in-memory cache). The generator emits a compact seed file to `app/data/` instead of rewriting the `.py`; a manual idempotent seed script (`scripts/seed_cohort_cdf.py`, `ON CONFLICT DO UPDATE`, modeled on `seed_openings.py`) loads it, wired into `bin/run_local.sh`. Module shrinks to ~250 lines (keeps `CdfMetricId`, `CdfTable`, interpolation math). Also unlocks SQL analysis of the breakpoints. See [notes/phase-99-1-cdf-db-refactor.md](notes/phase-99-1-cdf-db-refactor.md).
 - [ ] **Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.22)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
@@ -66,24 +67,39 @@
 
 - [x] 97-04-PLAN.md — Remove aggregated Metrics section + blended chip fields; knip-clean (Overall Performance chips preserved)
 
-### Phase 98: TC-mix-weighted Conv/Recov Gauges on Endgame Type Cards
+### Phase 98: Per-TC Collapsible Endgame Type Cards
 
-**Goal**: Re-introduce Conversion and Recovery gauges to all five `EndgameTypeCard`s (rook, minor_piece, pawn, queen, mixed) — removed 2026-05-29 in quick-260529-une because their only band was `PER_CLASS_GAUGE_ZONES`, a single pooled-across-TC band that mispaints TC-concentrated users (conv/recov are TC-dependent at Cohen's d ≈ 1.2–1.7). Re-add them as **absolute 0–100% arc gauges with a TC-mix-weighted neutral band**, computed as `band = Σ_tc (user's share of eligible games in tc for this class) × (benchmark IQR for class × tc)` — weighted by conversion-eligible games per (class, tc) for the conversion gauge and recovery-eligible games for the recovery gauge, since the rate is conditional on entering ahead/behind and that entry frequency varies by TC. The raw rate stays the headline number; the gauge is the "vs typical" visual; a tooltip discloses the TC-mix basis ("Typical range for the time controls you play. Faster controls convert less and recover more."). The gauge is deliberately **TC-only** — ELO precision lives in the Score-Gap percentile chip (cohort-matched on TC+ELO via `anchorRating`); per-(class × TC × ELO) banding is infeasible on sparsity (queen/classical already n≈30 in the TC-only marginal). The **absolute-arc idiom matches the Phase 97 Endgame Metrics gauges**, so that section is left untouched (no page-wide gauge migration). See [notes/endgame-typecard-tcmix-gauges.md](notes/endgame-typecard-tcmix-gauges.md) for the full decision and rejected alternatives.
-**Depends on**: Phase 97 (shares the per-TC band / `endgameZones.ts` codegen pattern and the per-TC rate aggregation path)
+**Goal**: Restructure the **Endgame Type Breakdown** section so time control is a per-card *view dimension* instead of either a pooled band or a TC-mix blend. Today `EndgameTypeBreakdownSection` renders a 3-col grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`) of five per-type `EndgameTypeCard`s. Replace that with **one full-width collapsible card per time control** (bullet/blitz/rapid/classical), each with a chevron in its header, the **user's primary TC expanded by default** (primary = most coarse time spent: `games_in_bucket × NOMINAL_DURATION[bucket]`, no recency weighting; see the note) and the rest collapsed. Inside each TC card render a **2×2 grid of four endgame-type tiles** — rook, minor_piece, pawn, queen — with **Mixed dropped** (it's the least-actionable catch-all material bucket and its WDL tends to track the overall endgame number; pawnless stays hidden). This is the TC-honest replacement for the SUPERSEDED TC-mix-weighted-band plan: because each card is a single TC, the Conversion and Recovery gauges removed on 2026-05-29 return showing **that TC's own per-(class × TC) benchmark band** (the d≈1.2–1.7 metrics finally judged against the right reference) with **no TC-mix weighting math and no per-(class×TC) eligible-count payload weighting**. **Score Gap (ΔES) is banded per-TC as well, for visual consistency** (decided 2026-05-30): statistically it's TC-flat (per-class ΔES TC d≈0.13) so the four per-TC bands will be near-identical, but Score Gap conceptually belongs to the type tile alongside the TC-varying Conv/Recov gauges, and giving it a per-(class × TC) band keeps one consistent card grammar rather than a single hoisted band breaking the per-TC cohesion — the redundancy is known and chosen, do not "fix" it back to one band. A TC card (or an individual tile) **self-suppresses** when that TC lacks enough games, mirroring Lichess Tutor's 30-games-per-speed model so sparse speeds simply don't render rather than showing noise. This applies the **mode-3 "collapsible TC cards"** disclosure pattern; the full-width-stacked layout is a hard constraint (collapsibles in a multi-column grid go ragged). The Endgame ELO Timeline (mode 2) and Endgame Metrics by TC (Phase 97) sections are out of scope. See [notes/endgame-tc-disclosure-pattern.md](notes/endgame-tc-disclosure-pattern.md) for the full pattern and the Lichess Tutor research; [notes/endgame-typecard-tcmix-gauges.md](notes/endgame-typecard-tcmix-gauges.md) is SUPERSEDED but retains the accurate benchmark facts.
+**Depends on**: Phase 97 (reuses `EndgameGauge`, the `endgameZones.ts` codegen, and the per-(class × TC) rate aggregation path)
 **Requirements**: standalone — no requirement IDs (endgame stats UX refinement)
+**Open planning inputs** (resolve during plan-phase, not blockers):
+
+  - **Tile contents.** Decide what each of the four type tiles carries (WDL bar + Conv gauge + Recov gauge + Score/Score-Gap bullet) and whether the 2×2 cell has room for all of it on mobile, or whether per-tile content thins on small screens.
+  - **Score Gap band generation.** Decided to band Score Gap per-TC for visual consistency (see goal). Confirm `endgame_zones.py` / `endgameZones.ts` can emit per-(class × TC) ΔES bands (today it has a single per-class `achievable_score_gap` band), and accept that the four bands will be near-identical given d≈0.13.
+  - **Accordion state.** The default-expanded TC is decided: the **primary TC** = argmax of coarse time spent `games_in_bucket × NOMINAL_DURATION[bucket]` (fixed per-bucket duration constants, no per-game lookup, no recency weighting), taken only over TCs that pass the games floor, computed over the currently-filtered game set (see [notes/endgame-tc-disclosure-pattern.md](notes/endgame-tc-disclosure-pattern.md)). Remaining open: the exact `NOMINAL_DURATION` constants, where the shared util lives (so the timeline can later align), and whether manual expand/collapse state persists across filter changes.
+  - **Backend grouping.** Confirm the `/stats` breakdown can return per-(class × TC) rates + counts grouped for per-TC rendering (Phase 97 already established the per-(class × TC) path).
+
 **Success Criteria** (what must be TRUE):
 
-  1. Each of the 5 `EndgameTypeCard`s renders a Conversion gauge and a Recovery gauge again, as absolute 0–100% arcs matching the Endgame Metrics (Phase 97) gauge idiom, with the raw rate shown as the prominent headline value.
-  2. Each gauge's neutral band is the **TC-mix-weighted** blend of per-(class × TC) benchmark IQRs, weighted by the user's eligible-game distribution across time controls (conversion-eligible for conversion, recovery-eligible for recovery) for that class — not a single pooled band.
-  3. Per-(class × TC) conversion/recovery IQRs are generated into `frontend/src/generated/endgameZones.ts` via `app/services/endgame_zones.py` + `scripts/gen_endgame_zones_ts.py`, with the CI drift gate green.
-  4. The endgame breakdown response exposes per-(class × TC) conversion-eligible and recovery-eligible game counts so the frontend can compute the TC-mix weights (today only `category.total` summed across TCs is sent).
-  5. A sparse-cell rule is defined and applied: per-(class × TC) cells below a deliberate min-n are dropped from or pooled in the weighted band (validated against dev-DB distributions during planning; queen/classical and pawnless are the known-thin cells).
-  6. Each gauge carries the disclosure tooltip and self-suppresses below the existing `MIN_GAMES_FOR_RELIABLE_STATS` floor.
-  7. The Endgame Metrics (Phase 97) section is unchanged — no migration to a centered idiom, no edits to its gauges.
-  8. Desktop and mobile layouts both render the re-added gauges responsively.
-  9. Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) gates all pass; new/updated `EndgameTypeCard` tests cover the re-added gauges and the TC-mix band computation; a `CHANGELOG.md` `[Unreleased]` entry records the re-introduction.
+  1. The Endgame Type Breakdown renders as **full-width, vertically stacked collapsible cards, one per time control** (only TCs with sufficient games appear), replacing the previous 3-col grid of per-type cards.
+  2. The user's **primary TC card is expanded by default** — primary = argmax of coarse time spent (`games_in_bucket × NOMINAL_DURATION[bucket]`, no per-game lookup, no recency weighting), over TCs passing the games floor; the others are collapsed behind a chevron and expand on click. Expand/collapse is keyboard-accessible with `data-testid`s on each header.
+  3. Each expanded TC card shows a **2×2 grid of four type tiles** (rook, minor_piece, pawn, queen). **Mixed is no longer shown** as a type tile; pawnless stays hidden.
+  4. Each tile's **Conversion and Recovery gauges are back**, banded against **that card's own per-(class × TC) benchmark IQR** — no TC-mix-weighted blend, no pooled-across-TC band.
+  5. **Score Gap is banded per-(class × TC)** like the other tile metrics (forced per-TC for visual consistency despite being TC-flat); each TC card shows its own Score Gap band even though the four will be near-identical.
+  6. Per-(class × TC) conversion/recovery bands are generated into `frontend/src/generated/endgameZones.ts` via `app/services/endgame_zones.py` + `scripts/gen_endgame_zones_ts.py`, CI drift gate green. (No eligible-count weighting payload is added — that was the superseded approach.)
+  7. A TC card and/or its tiles **self-suppress** below the existing games floor (`MIN_GAMES_FOR_RELIABLE_STATS` / the per-TC floor Phase 97 established); a user concentrated in one TC sees only that TC's card.
+  8. The backend `/stats` endgame breakdown exposes per-(class × TC) rates and games counts grouped for per-TC rendering; the LLM insights path (`_findings_conversion_recovery_by_type` / `assign_per_class_zone`) is unaffected (response shape preserved or additively extended).
+  9. Desktop and mobile both render the collapsible per-TC cards and 2×2 tile grid responsively (full-width on both; no ragged multi-column collapsibles).
+  10. Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) gates pass; `EndgameTypeBreakdownSection` / `EndgameTypeCard` tests are updated for the new layout (the locked `grid-cols-*` assertions and Mixed-tile assertions must change); a `CHANGELOG.md` `[Unreleased]` entry records the restructure and the Conv/Recov re-introduction.
 
-**Plans**: TBD
+**Plans**: 2 plans
+**Wave 1**
+
+- [x] 98-01-PLAN.md — Backend: per-(class × TC) zone registry + codegen + categories_by_tc aggregation (LLM path unaffected)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 98-02-PLAN.md — Frontend: primaryTc util + restored 5-element tile + collapsible per-TC accordion section + test updates + CHANGELOG
 
 ### Phase 99: Percentile Badges for Conversion, Parity, and Recovery
 
@@ -98,7 +114,35 @@
   4. Chips are cohort-matched on the per-(user, TC) rating anchor and carry the 4-bullet disclosure tooltip per `feedback_percentile_chip_tooltip_disclosure`, with the first two bullets TC-scoped.
   5. The backfill script populates the 12 new metrics on dev (and prod via tunnel after sign-off); desktop + mobile parity; backend + frontend gates pass.
 
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+**Wave 1**
+
+- [x] 99-01-PLAN.md — Wave 0 test scaffolds (rate-builder floor/parity, ENUM membership, schema field, frontend chip)
+- [x] 99-02-PLAN.md — Backend contract layer: 3 rate builders + floor constant + CdfMetricId + SAEnum +12 + Alembic migration
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 99-03-PLAN.md — Stage B + regen dispatch arms; PerTcBucketStats rate field trio; endgame_service threading
+- [x] 99-04-PLAN.md — Frontend: TS rate fields + title-line rate chip in shared MetricBlock (desktop + mobile)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 99-05-PLAN.md — Cohort CDF regen (benchmark) + archive report + dev backfill; prod backfill gated on sign-off (D-11)
+
+### Phase 99.1: Move Cohort CDF Out of Source into a DB Table
+
+**Goal**: Eliminate the source bloat in `app/services/global_percentile_cdf.py` (3.1 MB / 130,369 lines, of which ~130,119 are float literals for the generated `COHORT_PERCENTILE_CDF` dict and only ~250 are logic) by relocating the CDF breakpoint data into a `benchmark_cohort_cdf` DB table, and unlock SQL analysis of the breakpoints as a side benefit. The lookup is **not** on a request hot path — `interpolate_cohort_percentile` is called only by the `compute_stage_a` / `compute_stage_b` background tasks (~32 indexed lookups per import), so it becomes `async` and queries the table directly with no in-memory cache. The generator (`scripts/gen_global_percentile_cdf.py`) stops rewriting the `.py` between the BEGIN/END sentinels and emits a compact seed file to `app/data/` instead; a manual idempotent seed script (`scripts/seed_cohort_cdf.py`, `INSERT ... ON CONFLICT DO UPDATE`, modeled on `scripts/seed_openings.py`) loads it and is wired into `bin/run_local.sh` (count-gated, mirroring the openings block). The module shrinks to ~250 lines, retaining `CdfMetricId` (imported widely), `CdfTable`, the breakpoint constants, and the interpolation math. See [notes/phase-99-1-cdf-db-refactor.md](notes/phase-99-1-cdf-db-refactor.md) for the full decision log.
+**Depends on**: Phase 99 (consumes the regenerated cohort CDF + the `interpolate_cohort_percentile` lookup and its two background callers)
+**Requirements**: standalone — no requirement IDs (internal refactor / tech-debt)
+**Success Criteria** (what must be TRUE):
+
+  1. `app/services/global_percentile_cdf.py` no longer contains the generated registry; the file is ~250 lines and the BEGIN/END sentinels are gone. `CdfMetricId`, `CdfTable`, breakpoint constants, and `_interpolate_with_table` remain.
+  2. A `benchmark_cohort_cdf` table (new SQLAlchemy model + Alembic migration, schema only) holds all breakpoint cells, with `snapshot_month` as an audit column (not an idempotency gate). Table layout (long vs wide) decided during planning.
+  3. `interpolate_cohort_percentile` is `async`, takes a session, queries the table for the `(metric, anchor, tc)` cell, and runs the existing interpolation math in Python; both background callers (`compute_stage_a` / `compute_stage_b`) are updated and pass.
+  4. `gen_global_percentile_cdf.py` emits a compact seed file to `app/data/` (no longer rewrites the module source); the regen drift test compares regenerated seed-file content rather than source bytes.
+  5. `scripts/seed_cohort_cdf.py` performs an idempotent `ON CONFLICT DO UPDATE` load from the seed file (re-runnable; picks up new cells and changed values); `bin/run_local.sh` seeds on first-time local setup; dev DB is seeded and chips render unchanged end-to-end.
+  6. Backend + frontend gates pass (`ruff`, `ty`, `pytest`, frontend lint/tests); chip output is byte-for-byte equivalent to pre-refactor for a representative user (pure relocation, no behavior change).
 
 ### Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework
 
@@ -397,7 +441,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 5/6 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 

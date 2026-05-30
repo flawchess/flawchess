@@ -509,6 +509,116 @@ PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
 
 
 # ---------------------------------------------------------------------------
+# PER_CLASS_TC_GAUGE_ZONES — per-(class × TC) typical bands for Conv/Recov/ScoreGap.
+# Phase 98. Source: reports/benchmark/benchmarks-latest.md §3.4.1 (TC marginal
+# tables, p25/p75 per class per TC). Cohen's d per class ≈ 1.2–1.7 across TCs
+# → all classes "keep separate" → per-(class × TC) bands are required.
+#
+# Added ALONGSIDE PER_CLASS_GAUGE_ZONES (not replacing it). PER_CLASS_GAUGE_ZONES
+# and assign_per_class_zone remain unchanged for the LLM insights path (D-15).
+#
+# pawnless is OMITTED: n far below floor for per-(class × TC) analysis; hidden
+# in the collapsible tile UI (Phase 98 shows rook/minor_piece/pawn/queen only).
+#
+# Score Gap (achievable_score_gap): TC d ≈ 0.07–0.18 (all collapse verdict).
+# The four per-(class × TC) ΔES bands are near-identical per class by design
+# (Score Gap forced per-TC for visual consistency — "redundancy is chosen" per D-04/D-14).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PerClassTcBands:
+    """Per-(class × TC) typical bands. Same shape as PerClassBands but TC-keyed."""
+
+    conversion: tuple[float, float]
+    recovery: tuple[float, float]
+    achievable_score_gap: tuple[float, float]
+
+
+PER_CLASS_TC_GAUGE_ZONES: Mapping[
+    EndgameClass,
+    Mapping[Literal["bullet", "blitz", "rapid", "classical"], PerClassTcBands],
+] = {
+    "rook": {
+        "bullet": PerClassTcBands(
+            conversion=(0.56, 0.75), recovery=(0.27, 0.43), achievable_score_gap=(-0.05, 0.05)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.67, 0.82), recovery=(0.20, 0.37), achievable_score_gap=(-0.05, 0.05)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.69, 0.83), recovery=(0.17, 0.30), achievable_score_gap=(-0.05, 0.05)
+        ),
+        "classical": PerClassTcBands(
+            conversion=(0.74, 0.87), recovery=(0.13, 0.25), achievable_score_gap=(-0.05, 0.05)
+        ),
+    },
+    "minor_piece": {
+        "bullet": PerClassTcBands(
+            conversion=(0.51, 0.73), recovery=(0.29, 0.50), achievable_score_gap=(-0.04, 0.06)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.64, 0.81), recovery=(0.21, 0.40), achievable_score_gap=(-0.04, 0.06)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.68, 0.83), recovery=(0.15, 0.33), achievable_score_gap=(-0.04, 0.06)
+        ),
+        "classical": PerClassTcBands(
+            conversion=(0.75, 0.89), recovery=(0.12, 0.28), achievable_score_gap=(-0.04, 0.06)
+        ),
+    },
+    "pawn": {
+        "bullet": PerClassTcBands(
+            conversion=(0.57, 0.80), recovery=(0.25, 0.46), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.68, 0.87), recovery=(0.17, 0.36), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.75, 0.91), recovery=(0.10, 0.28), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "classical": PerClassTcBands(
+            conversion=(0.80, 0.92), recovery=(0.08, 0.21), achievable_score_gap=(-0.04, 0.05)
+        ),
+    },
+    "queen": {
+        "bullet": PerClassTcBands(
+            conversion=(0.64, 0.83), recovery=(0.19, 0.36), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.70, 0.90), recovery=(0.14, 0.31), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.75, 0.92), recovery=(0.08, 0.25), achievable_score_gap=(-0.04, 0.05)
+        ),
+        # conversion=(0.88, 1.00) and recovery=(0.00, 0.09) are small-n benchmark
+        # artifacts (n≈30–35 users). Accepted as-is per "use benchmark numbers" rule
+        # (RESEARCH Open Question 1). The narrow recovery band will paint most users
+        # as "typical" or "weak" in classical queen recovery, which is accurate for
+        # this small classical cohort.
+        "classical": PerClassTcBands(
+            conversion=(0.88, 1.00), recovery=(0.00, 0.09), achievable_score_gap=(-0.04, 0.05)
+        ),
+    },
+    "mixed": {
+        "bullet": PerClassTcBands(
+            conversion=(0.60, 0.72), recovery=(0.30, 0.40), achievable_score_gap=(-0.03, 0.04)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.68, 0.76), recovery=(0.25, 0.35), achievable_score_gap=(-0.03, 0.04)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.70, 0.79), recovery=(0.23, 0.31), achievable_score_gap=(-0.03, 0.04)
+        ),
+        "classical": PerClassTcBands(
+            conversion=(0.70, 0.83), recovery=(0.18, 0.30), achievable_score_gap=(-0.03, 0.04)
+        ),
+    },
+    # pawnless: OMITTED — n below per-class TC floor; hidden in live UI (Phase 98).
+}
+
+
+# ---------------------------------------------------------------------------
 # PRESSURE_BIN_SCORE_NEUTRAL_ZONES — per-(TC, pressure-quintile) neutral bands.
 # Phase 88 D-02. Calibrated from /benchmarks §3.3.3 (Plan 08, 2026-05-17).
 # ELO is pooled by acceptance (accept-pooled-with-caveat decision, 2026-05-17).

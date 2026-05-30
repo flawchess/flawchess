@@ -16,6 +16,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { Accordion } from '@/components/ui/accordion';
 import { TC_METRIC_BANDS, FIXED_GAUGE_ZONES } from '@/generated/endgameZones';
 import type { EndgameMetricsTcCard, PerTcBucketStats, RatingAnchorOut } from '@/types/endgames';
 
@@ -90,6 +91,10 @@ const DEFAULT_ANCHOR: RatingAnchorOut = {
   lichess_median_native: 1533,
 };
 
+// 260530-pll: EndgameMetricsByTcCard is now an AccordionItem and must be
+// wrapped in an Accordion. The card's tc value is used as the AccordionItem
+// value, so we default the accordion to [card.tc] (expanded) so all content
+// is visible in tests.
 function renderCard(
   card: EndgameMetricsTcCard,
   ratingAnchor: RatingAnchorOut | undefined = DEFAULT_ANCHOR,
@@ -97,7 +102,9 @@ function renderCard(
   return render(
     <MemoryRouter>
       <TooltipProvider>
-        <EndgameMetricsByTcCard card={card} ratingAnchor={ratingAnchor} />
+        <Accordion type="multiple" defaultValue={[card.tc]}>
+          <EndgameMetricsByTcCard card={card} ratingAnchor={ratingAnchor} />
+        </Accordion>
       </TooltipProvider>
     </MemoryRouter>,
   );
@@ -206,7 +213,9 @@ describe('EndgameMetricsByTcCard — percentile chip rendering', () => {
     render(
       <MemoryRouter>
         <TooltipProvider>
-          <EndgameMetricsByTcCard card={buildCard('blitz')} />
+          <Accordion type="multiple" defaultValue={['blitz']}>
+            <EndgameMetricsByTcCard card={buildCard('blitz')} />
+          </Accordion>
         </TooltipProvider>
       </MemoryRouter>,
     );
@@ -287,11 +296,13 @@ describe('EndgameMetricsByTcCard — header + games count', () => {
     render(
       <MemoryRouter>
         <TooltipProvider>
-          <EndgameMetricsByTcCard
-            card={{ ...buildCard('bullet'), total: 100 }}
-            ratingAnchor={DEFAULT_ANCHOR}
-            grandTotal={400}
-          />
+          <Accordion type="multiple" defaultValue={['bullet']}>
+            <EndgameMetricsByTcCard
+              card={{ ...buildCard('bullet'), total: 100 }}
+              ratingAnchor={DEFAULT_ANCHOR}
+              grandTotal={400}
+            />
+          </Accordion>
         </TooltipProvider>
       </MemoryRouter>,
     );

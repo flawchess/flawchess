@@ -6,7 +6,7 @@
  * separated by a vertical divider on desktop and horizontal dividers when
  * stacked on mobile (mirrors EndgameOverallPerformanceSection's two-column
  * card). Each block shows a gauge (TC-specific bands for all three metrics),
- * WDL bar, Delta-ES Score Gap bullet, and a percentile chip when the per-TC
+ * WDL bar, Delta-ES Eval Score Gap bullet, and a percentile chip when the per-TC
  * percentile is available.
  *
  * Key design decisions (from 97-PATTERNS.md / 97-RESEARCH.md):
@@ -26,6 +26,11 @@
  *     BOTH percentile != null AND anchorRating != null — matching
  *     EndgameTimePressureCard. Without an anchor the tooltip would render a
  *     broken "~-rated players" clause, so the chip is suppressed instead.
+ *
+ * 260530-pll: converted from plain <div> to AccordionItem so the card participates
+ * in the controlled accordion managed by EndgameMetricsByTcSection. The header
+ * band IS the AccordionTrigger; the body is AccordionContent. The chevron is
+ * supplied by the shared AccordionTrigger — no manual chevron needed.
  */
 
 import { useMemo } from 'react';
@@ -37,6 +42,7 @@ import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ZONE_DANGER, ZONE_SUCCESS, colorizeGaugeZones } from '@/lib/theme';
 import { BUCKET_DISPLAY_LABELS } from '@/lib/endgameMetrics';
 import { TC_METRIC_BANDS, SCORE_GAP_PARITY_NEUTRAL_MIN, SCORE_GAP_PARITY_NEUTRAL_MAX } from '@/generated/endgameZones';
@@ -65,7 +71,7 @@ const POPOVER_COPY: Record<MaterialBucket, string> = {
   parity:
     'How your score from balanced endgames compares to what a strong (2300+) player would score from the same positions, according to the Lichess expected-score formula. The blue zone marks the range that is typical for balanced endgames.',
   recovery:
-    'Per-span Score Gap on endgame spans you entered behind by >= 1 pawn. Above baseline = opponents failed to convert their winning positions more often than Stockfish predicted. Not a pure skill signal, you cannot outplay an engine from a lost position on your own. The blue zone marks the range that is typical for losing endgames.',
+    'Per-span Eval Score Gap on endgame spans you entered behind by >= 1 pawn. Above baseline = opponents failed to convert their winning positions more often than Stockfish predicted. Not a pure skill signal, you cannot outplay an engine from a lost position on your own. The blue zone marks the range that is typical for losing endgames.',
 };
 
 // Popover content per bucket (title InfoPopover next to each block heading).
@@ -141,7 +147,7 @@ function MetricBlock({
 
   return (
     <div className="flex-1 min-w-0" data-testid={testId}>
-      <h4 className="text-base font-semibold mb-2 inline-flex items-center gap-1">
+      <h4 className="text-base font-semibold mb-2 inline-flex items-center gap-1 w-full">
         {BUCKET_DISPLAY_LABELS[bucket]}
         <InfoPopover
           ariaLabel={`${BUCKET_DISPLAY_LABELS[bucket]} info`}
@@ -150,6 +156,38 @@ function MetricBlock({
         >
           {TITLE_TOOLTIP[bucket]}
         </InfoPopover>
+        {/* Phase 99: raw-rate percentile chip, right-aligned on the title line.
+            Gated on BOTH rate_percentile != null AND anchorRating != null so the
+            tooltip can disclose the anchor honestly (mirrors the gap chip gate).
+            Uses existing flavor + distinct metricLabel for tooltip-only differentiation
+            per D-03/D-08. MetricBlock is the single shared renderer for desktop +
+            mobile — no duplicated markup needed. */}
+        {block.rate_percentile != null && anchorRating != null && (
+          <span className="ml-auto inline-flex">
+            <PercentileChip
+              percentile={block.rate_percentile}
+              flavor={
+                bucket === 'conversion'
+                  ? 'conversion'
+                  : bucket === 'parity'
+                    ? 'parity'
+                    : 'recovery'
+              }
+              tc={tc}
+              anchorRating={anchorRating}
+              metricLabel={
+                bucket === 'conversion'
+                  ? 'Conversion Rate'
+                  : bucket === 'parity'
+                    ? 'Parity Rate'
+                    : 'Recovery Rate'
+              }
+              testId={`${testId}-rate-percentile-chip`}
+              nGames={block.rate_percentile_n_games}
+              value={block.rate_percentile_value}
+            />
+          </span>
+        )}
       </h4>
       <div className="flex flex-col gap-4">
         {/* Gauge row -- opacity-50 when no games (mirrors EndgameMetricCard). */}
@@ -184,25 +222,25 @@ function MetricBlock({
               </div>
             </div>
 
-            {/* Delta-ES Score Gap bullet -- gated on gapN > 0 */}
+            {/* Delta-ES Eval Score Gap bullet -- gated on gapN > 0 */}
             {showGapRow && (
               <div data-testid={`${testId}-score-gap-bullet`}>
                 <ScoreGapRow
                   label={
-                    // Card label is shortened to just "Score Gap:" — the block
-                    // heading (Conversion/Parity/Recovery) already names the
-                    // bucket. The full "{bucket} Score Gap" name is kept in the
-                    // tooltip, chip metricLabel, and aria-label below.
+                    // Card label is "Eval Score Gap:" — the block heading
+                    // (Conversion/Parity/Recovery) already names the bucket. The
+                    // full "{bucket} Eval Score Gap" name is kept in the tooltip,
+                    // chip metricLabel, and aria-label below.
                     <span className="inline-flex items-center gap-1">
                       <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                      Score Gap:
+                      Eval Score Gap:
                     </span>
                   }
                   value={displayedValue}
                   formatted={gapFormatted}
                   resultColor={gapColor}
                   valueTestId={`${testId}-score-gap-value`}
-                  ariaLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap: ${gapFormatted}`}
+                  ariaLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Eval Score Gap: ${gapFormatted}`}
                   neutralMin={displayedNeutralMin}
                   neutralMax={displayedNeutralMax}
                   ciLow={block.score_gap_ci_low != null ? block.score_gap_ci_low + displayShift : undefined}
@@ -220,7 +258,7 @@ function MetricBlock({
                         }
                         tc={tc}
                         anchorRating={anchorRating}
-                        metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
+                        metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Eval Score Gap`}
                         testId={`${testId}-percentile-chip`}
                         nGames={block.percentile_n_games}
                         value={block.percentile_value}
@@ -229,7 +267,7 @@ function MetricBlock({
                   }
                   tooltip={
                     <MetricStatPopover
-                      name={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
+                      name={`${BUCKET_DISPLAY_LABELS[bucket]} Eval Score Gap`}
                       explanation={POPOVER_COPY[bucket]}
                       value={displayedValue}
                       baseline={displayShift}
@@ -243,13 +281,13 @@ function MetricBlock({
                       baselineLabel="0%"
                       methodology={
                         <>
-                          Score Gap: Difference between Endgame Sequence start and end score, based on Stockfish evaluations converted to expected score.<br />
+                          Eval Score Gap: difference between the Eval Scores at the start and end of an Endgame Sequence (Stockfish evals converted via the Lichess expected-score formula).<br />
                           Test: paired one-sample z-test on per-span Delta-ES values vs 0.<br />
                           Confidence interval: 95% normal-approx on the paired diffs.
                         </>
                       }
                       testId={`${testId}-score-gap-info`}
-                      ariaLabel={`What is ${BUCKET_DISPLAY_LABELS[bucket]} Score Gap?`}
+                      ariaLabel={`What is ${BUCKET_DISPLAY_LABELS[bucket]} Eval Score Gap?`}
                     />
                   }
                 />
@@ -352,72 +390,86 @@ export function EndgameMetricsByTcCard({
   );
 
   return (
-    <div
-      className="charcoal-texture rounded-md w-full overflow-hidden"
+    // 260530-pll: AccordionItem replaces the plain <div>. The charcoal-texture,
+    // rounded-md, overflow-hidden, and border-none classes mirror EndgameTypeTcCard.
+    <AccordionItem
+      value={card.tc}
       data-testid={`metrics-tc-card-${card.tc}`}
+      className="charcoal-texture rounded-md overflow-hidden border-none"
     >
-      {/* Card header section: distinct recessed background + bottom separator,
-          full-bleed to the card edges (outer has no padding; header pads itself). */}
-      <div
-        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40"
-        data-testid={`metrics-tc-card-${card.tc}-header`}
+      {/* Card header: the AccordionTrigger IS the header band — full-bleed,
+          charcoal background, bottom separator only when expanded.
+          The inner content div retains the existing header testid so tests
+          and automation referencing `-header` continue to work. */}
+      <AccordionTrigger
+        data-testid={`metrics-tc-card-${card.tc}-trigger`}
+        aria-label={`${TC_LABELS[card.tc]} endgame metrics`}
+        className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0"
       >
-        <TimeControlIcon
-          timeControl={card.tc}
-          className="h-4 w-4"
-        />
-        <h3 className="text-base font-semibold">{TC_LABELS[card.tc]}</h3>
-        <span
-          className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums font-normal"
-          data-testid={`metrics-tc-card-${card.tc}-total`}
+        <div
+          className="flex items-center gap-2 flex-1"
+          data-testid={`metrics-tc-card-${card.tc}-header`}
         >
-          {pctOfTotal !== null
-            ? `Games: ${pctOfTotal}% (${card.total.toLocaleString()})`
-            : `Games: ${card.total.toLocaleString()}`}
-          <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-        </span>
-      </div>
+          <TimeControlIcon
+            timeControl={card.tc}
+            className="h-4 w-4 shrink-0"
+          />
+          <h3 className="text-base font-semibold">{TC_LABELS[card.tc]}</h3>
+          <span
+            className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums font-normal"
+            data-testid={`metrics-tc-card-${card.tc}-total`}
+          >
+            {pctOfTotal !== null
+              ? `Games: ${pctOfTotal}% (${card.total.toLocaleString()})`
+              : `Games: ${card.total.toLocaleString()}`}
+            <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+        </div>
+      </AccordionTrigger>
 
       {/* Body: Conversion / Parity / Recovery trifecta (D-03) — three columns
           split by vertical dividers on desktop (lg+), stacked with horizontal
-          dividers below lg. Single charcoal container shared by all three. */}
-      <div className="flex flex-col lg:flex-row p-4">
-        <MetricBlock
-          bucket="conversion"
-          block={card.conversion}
-          tc={card.tc}
-          gaugeZones={convGaugeZones}
-          neutralMin={bands.convScoreGap[0]}
-          neutralMax={bands.convScoreGap[1]}
-          displayShift={convShift}
-          anchorRating={anchorRating}
-          gamesTotal={cardGamesTotal}
-        />
-        {divider}
-        <MetricBlock
-          bucket="parity"
-          block={card.parity}
-          tc={card.tc}
-          gaugeZones={parityGaugeZones}
-          neutralMin={SCORE_GAP_PARITY_NEUTRAL_MIN}
-          neutralMax={SCORE_GAP_PARITY_NEUTRAL_MAX}
-          displayShift={parityShift}
-          anchorRating={anchorRating}
-          gamesTotal={cardGamesTotal}
-        />
-        {divider}
-        <MetricBlock
-          bucket="recovery"
-          block={card.recovery}
-          tc={card.tc}
-          gaugeZones={recovGaugeZones}
-          neutralMin={bands.recovScoreGap[0]}
-          neutralMax={bands.recovScoreGap[1]}
-          displayShift={recovShift}
-          anchorRating={anchorRating}
-          gamesTotal={cardGamesTotal}
-        />
-      </div>
-    </div>
+          dividers below lg. Single charcoal container shared by all three.
+          AccordionContent className="p-0" so the body carries its own p-4. */}
+      <AccordionContent className="p-0">
+        <div className="flex flex-col lg:flex-row p-4">
+          <MetricBlock
+            bucket="conversion"
+            block={card.conversion}
+            tc={card.tc}
+            gaugeZones={convGaugeZones}
+            neutralMin={bands.convScoreGap[0]}
+            neutralMax={bands.convScoreGap[1]}
+            displayShift={convShift}
+            anchorRating={anchorRating}
+            gamesTotal={cardGamesTotal}
+          />
+          {divider}
+          <MetricBlock
+            bucket="parity"
+            block={card.parity}
+            tc={card.tc}
+            gaugeZones={parityGaugeZones}
+            neutralMin={SCORE_GAP_PARITY_NEUTRAL_MIN}
+            neutralMax={SCORE_GAP_PARITY_NEUTRAL_MAX}
+            displayShift={parityShift}
+            anchorRating={anchorRating}
+            gamesTotal={cardGamesTotal}
+          />
+          {divider}
+          <MetricBlock
+            bucket="recovery"
+            block={card.recovery}
+            tc={card.tc}
+            gaugeZones={recovGaugeZones}
+            neutralMin={bands.recovScoreGap[0]}
+            neutralMax={bands.recovScoreGap[1]}
+            displayShift={recovShift}
+            anchorRating={anchorRating}
+            gamesTotal={cardGamesTotal}
+          />
+        </div>
+      </AccordionContent>
+    </AccordionItem>
   );
 }

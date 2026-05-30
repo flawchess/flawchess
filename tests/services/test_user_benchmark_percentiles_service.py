@@ -3,8 +3,9 @@
 Phase 94.4 Plan 05b rewrites the service to consume the cohort CDF artifact
 (``COHORT_PERCENTILE_CDF`` via ``interpolate_cohort_percentile``) and the
 per-(user, TC) median rating anchor (``user_rating_anchors``). The post-94.3
-``STAGE_B_METRICS`` 12-tuple retires; Stage B now iterates the 7-tuple
-``STAGE_B_METRIC_FAMILIES`` × the user's above-floor TCs.
+``STAGE_B_METRICS`` 12-tuple retires; Stage B now iterates the 10-tuple
+``STAGE_B_METRIC_FAMILIES`` × the user's above-floor TCs (7 Phase-94.4
+families + 3 Phase-99 raw-rate families).
 
 Phase 94.4 Plan 10 (D-12 Reversal Amendment) replaces T1-T4/T10 (Lichess-
 precedence schema) with B1-B7 (blended-anchor schema).
@@ -12,7 +13,7 @@ precedence schema) with B1-B7 (blended-anchor schema).
 Mock test coverage (T5-T9 — unchanged from Plan 05b):
 
   T5.  Stage A computes score_gap percentile ONLY for TCs where an anchor exists.
-  T6.  Stage B fans out across STAGE_B_METRIC_FAMILIES (7-tuple) × anchored TCs.
+  T6.  Stage B fans out across STAGE_B_METRIC_FAMILIES (10-tuple) × anchored TCs.
   T7.  ``upsert_percentile`` is called with the 3-column PK tuple.
   T8.  Suppressed cohort-CDF cell still upserts with ``percentile=None``.
   T9.  Sentry ``capture_exception`` fires on a metric-compute failure.
@@ -80,10 +81,10 @@ def test_stage_a_metric_is_score_gap() -> None:
     assert STAGE_A_METRIC == "score_gap"
 
 
-def test_stage_b_metric_families_is_7_tuple() -> None:
-    """STAGE_B_METRIC_FAMILIES is the 7-tuple per CONTEXT D-13."""
+def test_stage_b_metric_families_is_10_tuple() -> None:
+    """STAGE_B_METRIC_FAMILIES is the 10-tuple (7 Phase-94.4 + 3 Phase-99 rate families)."""
     assert isinstance(STAGE_B_METRIC_FAMILIES, tuple)
-    assert len(STAGE_B_METRIC_FAMILIES) == 7
+    assert len(STAGE_B_METRIC_FAMILIES) == 10
     assert STAGE_B_METRIC_FAMILIES == (
         "achievable_score_gap",
         "score_gap_conv",
@@ -92,6 +93,10 @@ def test_stage_b_metric_families_is_7_tuple() -> None:
         "time_pressure_score_gap",
         "clock_gap",
         "net_flag_rate",
+        # Phase 99: raw-rate families
+        "conversion_rate",
+        "parity_rate",
+        "recovery_rate",
     )
 
 
@@ -212,7 +217,8 @@ async def test_compute_stage_b_fans_out_across_families_and_anchored_tcs(
     """T6: Stage B iterates STAGE_B_METRIC_FAMILIES × anchored TCs.
 
     Setup: 2 anchored TCs (bullet, blitz). Expected:
-      len(STAGE_B_METRIC_FAMILIES) × 2 = 7 × 2 = 14 upsert calls.
+      len(STAGE_B_METRIC_FAMILIES) × 2 = 10 × 2 = 20 upsert calls
+      (Phase 99 added 3 rate families, extending 7-tuple → 10-tuple).
     """
     fake_maker = _FakeSessionMaker()
     test_user_id = 99501
@@ -241,7 +247,7 @@ async def test_compute_stage_b_fans_out_across_families_and_anchored_tcs(
     await compute_stage_b(test_user_id, session_maker=fake_maker)  # ty: ignore[invalid-argument-type]
 
     expected_calls = len(STAGE_B_METRIC_FAMILIES) * len(fake_anchors)
-    assert upsert_mock.call_count == expected_calls == 14
+    assert upsert_mock.call_count == expected_calls == 20
 
     upserted_metrics = {call.kwargs["metric"] for call in upsert_mock.call_args_list}
     assert upserted_metrics == set(STAGE_B_METRIC_FAMILIES)

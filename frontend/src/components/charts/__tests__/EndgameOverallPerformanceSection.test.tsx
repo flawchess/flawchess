@@ -196,7 +196,7 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(screen.getByText('Games with Endgame')).toBeTruthy();
     expect(screen.getByText('Endgame Score Differences')).toBeTruthy();
     expect(screen.getByText('Endgame Score Gap:')).toBeTruthy();
-    expect(screen.getByText('Achievable Score Gap:')).toBeTruthy();
+    expect(screen.getByText('Eval Score Gap:')).toBeTruthy();
     expect(screen.getByText(/Do you perform better or worse when games reach an endgame/)).toBeTruthy();
   });
 
@@ -388,7 +388,7 @@ describe('EndgameOverallPerformanceSection', () => {
     // so we can locate the achievable bullet specifically.
     const bullets = screen.getAllByTestId('mock-mini-bullet');
     const achievableBullet = bullets.find((b) =>
-      (b.getAttribute('data-aria-label') ?? '').startsWith('Achievable Score Gap'),
+      (b.getAttribute('data-aria-label') ?? '').startsWith('Eval Score Gap'),
     );
     expect(achievableBullet).toBeTruthy();
     expect(achievableBullet?.getAttribute('data-ci-low')).toBe('-0.02');
@@ -431,7 +431,7 @@ describe('EndgameOverallPerformanceSection', () => {
     );
     const bullets = screen.getAllByTestId('mock-mini-bullet');
     const achievableBullet = bullets.find((b) =>
-      (b.getAttribute('data-aria-label') ?? '').startsWith('Achievable Score Gap'),
+      (b.getAttribute('data-aria-label') ?? '').startsWith('Eval Score Gap'),
     );
     const endgameBullet = bullets.find((b) =>
       (b.getAttribute('data-aria-label') ?? '').startsWith('Endgame Score Gap'),

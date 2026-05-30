@@ -19,6 +19,7 @@ from app.repositories import (
     game_repository,
     import_job_repository,
     user_benchmark_percentiles_repository,
+    user_rating_anchors_repository,
     user_repository,
 )
 from app.schemas.imports import (
@@ -153,6 +154,7 @@ async def get_readiness(
 
     Tier 2 (tier2=True): tier1=True AND pending evals == 0 AND
         (total_count == 0 OR at least one user_benchmark_percentiles row exists
+         OR an anchor row exists but no percentile rows (settled-empty)
          OR the user is below the per-TC anchor floor in every TC)
         AND the user is not mid-Stage-B percentile compute (in-memory registry).
         The ``total_count == 0`` branch is the empty-account escape: a user with
@@ -162,20 +164,30 @@ async def get_readiness(
         the 30-game per-TC anchor floor in any TC: Stage A/B write zero rows for
         them by design, so ``has_any_rows`` stays False forever and they would
         otherwise be locked out permanently (prod user 145: 13 games). The
-        Stage-B-computing clause (Quick 260529-015) closes the race where
-        pending==0 is observed before the eval-dependent percentile rows are
-        written, so the page would otherwise unlock with missing (first import)
-        or stale (re-import) badges.
+        settled-empty branch (endgame-percentiles-missing, prod user 146) closes
+        a gap that branch missed: a user can be ABOVE the anchor floor (enough
+        rating-eligible games) yet BELOW every endgame metric's per-metric
+        population floor because too few of their games reach an endgame (user
+        146: 33 rating-eligible rapid games, only 22 reach an endgame, < 30). An
+        anchor row proves Stage A ran and committed; zero percentile rows
+        alongside it means no metric can ever qualify (score_gap's game set is a
+        superset of every Stage B metric's), so the user is unlocked rather than
+        spinning forever. The Stage-B-computing clause (Quick 260529-015) closes
+        the race where pending==0 is observed before the eval-dependent
+        percentile rows are written, so the page would otherwise unlock with
+        missing (first import) or stale (re-import) badges.
 
     Reads are strictly sequential on one AsyncSession per CLAUDE.md constraint
     (no asyncio.gather on a single AsyncSession). Short-circuits skip downstream
-    queries when not needed, bounding the query count to at most 3 plus, only
-    when the user has rows-but-no-percentiles and evals are drained, up to 4
-    cheap per-TC anchor existence probes (below-floor escape). In practice
-    Stage A writes ``score_gap`` rows before evals drain, so ``has_any_rows`` is
-    already True for above-floor users and the probe runs only for genuinely
-    below-floor users (where it is cheap — few games). The is_computing check is
-    a sync in-memory set lookup (no query).
+    queries when not needed. On the common ready path the query count is at most
+    3. Only when the user is "stuck" (evals drained, not mid-compute, no
+    percentile rows) does a 4th query run — a cheap LIMIT-1 ``has_any_anchor``
+    count for the settled-empty escape — and only when that returns False (no
+    anchor row) do up to 4 per-TC anchor-candidate CTEs run for the below-floor
+    escape. The settled-empty probe is ordered first because it is a single
+    cheap count, and an anchor row implies above-floor (so the per-TC probes
+    would return False anyway). The is_computing check is a sync in-memory set
+    lookup (no query).
     """
     # Tier 1: no active import job for this user (in-memory check only)
     has_active = bool(import_service.find_active_jobs_for_user(user.id))
@@ -195,24 +207,47 @@ async def get_readiness(
         tier1 and await user_benchmark_percentiles_repository.has_any_rows(session, user_id=user.id)
     )
 
+    # "Stuck" precondition shared by both no-rows escapes below: evals drained,
+    # not mid-compute, but no percentile rows exist yet.
+    stuck = tier1 and pending == 0 and not stage_b_computing and not percentile_ready
+
+    # Settled-empty escape (bug fix endgame-percentiles-missing, prod user 146):
+    # an anchor row proves compute_stage_a ran AND committed (Stage A writes its
+    # anchors and the eval-independent score_gap percentiles in one transaction,
+    # so the anchor only becomes visible once that whole commit lands). If Stage A
+    # ran yet produced zero percentile rows, every endgame metric is below its
+    # per-metric population floor: the user is above the 30-game ANCHOR floor but
+    # too few of their games REACH an endgame (user 146: 33 rating-eligible rapid
+    # games, only 22 reach an endgame, < 30). score_gap's game set is a superset
+    # of every Stage B metric's set, so no metric can ever produce a row — the
+    # page would otherwise spin forever. Probed before the below-floor SQL because
+    # it is a single cheap LIMIT-1 count vs up to 4 per-TC anchor-candidate CTEs.
+    settled_empty = stuck and await user_rating_anchors_repository.has_any_anchor(
+        session, user_id=user.id
+    )
+
     # Below-anchor-floor escape (quick-260529): a user with games but no
     # percentile rows, whose evals are fully drained and who is not mid-compute,
     # may simply be below the per-TC anchor floor everywhere — Stage A/B wrote
-    # nothing by design and never will. Probe the anchor-candidate SQL so these
-    # users unlock instead of polling forever. Evaluated lazily: only when the
-    # cheaper conditions already permit tier2 AND no percentile rows exist, so
-    # the per-TC probes never run on the common above-floor path.
+    # nothing by design and never will (no anchor row exists either). Probe the
+    # anchor-candidate SQL so these users unlock instead of polling forever.
+    # Evaluated lazily: skipped on the common above-floor path AND when the
+    # settled-empty escape already fired (an anchor row exists, so the user is
+    # above floor and this probe would return False anyway).
     below_floor = (
-        tier1
-        and pending == 0
-        and not stage_b_computing
-        and not percentile_ready
+        stuck
+        and not settled_empty
         and await user_benchmark_percentiles_service.is_below_anchor_floor(
             session, user.id, total_games=total
         )
     )
 
-    tier2 = tier1 and pending == 0 and not stage_b_computing and (percentile_ready or below_floor)
+    tier2 = (
+        tier1
+        and pending == 0
+        and not stage_b_computing
+        and (percentile_ready or settled_empty or below_floor)
+    )
 
     return ReadinessResponse(
         tier1=tier1,

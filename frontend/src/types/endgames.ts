@@ -65,9 +65,16 @@ export interface EndgameCategoryStats {
 }
 
 export interface EndgameStatsResponse {
-  categories: EndgameCategoryStats[];  // sorted by total desc
+  categories: EndgameCategoryStats[];  // sorted by total desc; LLM path reads this
   total_games: number;       // Total games matching current filters
   endgame_games: number;     // Games that reached an endgame phase
+  // Phase 98: per-(class × TC) rates for the collapsible endgame type cards.
+  // Optional for back-compat with older server responses (Pitfall 6).
+  // D-15: the LLM insights path reads `categories` (pooled) and never touches this field.
+  categories_by_tc?: Record<
+    'bullet' | 'blitz' | 'rapid' | 'classical',
+    EndgameCategoryStats[]
+  >;
 }
 
 export interface EndgameGamesResponse {
@@ -113,7 +120,7 @@ export interface EndgamePerformanceResponse {
   achievable_score_gap_p_value: number | null;
   achievable_score_gap_ci_low: number | null;
   achievable_score_gap_ci_high: number | null;
-  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Achievable Score Gap vs the Phase 93 global CDF.
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Eval Score Gap (server field: achievable_score_gap) vs the Phase 93 global CDF.
    *  null when the endgame-entry span count is below PVALUE_RELIABILITY_MIN_N (=10). */
   achievable_score_gap_percentile: number | null;
   /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.
@@ -429,6 +436,12 @@ export interface PerTcBucketStats {
   // value: {v}" line (mirrors TimePressureTcCard). Optional for older fixtures.
   percentile_n_games?: number | null;
   percentile_value?: number | null;
+  // Phase 99 — raw-rate percentile (SEPARATE from ΔES-gap `percentile` per D-01).
+  // Both chips coexist per metric block: this one on the title line, the gap
+  // chip on the ΔES bullet. null = below the ≥30-span floor → no chip renders.
+  rate_percentile?: number | null;
+  rate_percentile_n_games?: number | null;
+  rate_percentile_value?: number | null;
 }
 
 /** One TC card in the per-TC Endgame Metrics section.

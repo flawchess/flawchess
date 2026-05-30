@@ -14,49 +14,36 @@ interface WDLCategoryChartProps {
   infoTooltip: string;
 }
 
-function ChartTitle({ title, infoTooltip, testId }: { title: string; infoTooltip: string; testId: string }) {
+function WDLCategoryChart({ data, title, testId, infoTooltip }: WDLCategoryChartProps) {
   return (
-    <h2 className="text-lg font-medium mb-3">
-      <span className="inline-flex items-center gap-1">
+    <div className="charcoal-texture rounded-md overflow-hidden">
+      <h3
+        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+        data-testid={`${testId}-header`}
+      >
         {title}
         <InfoPopover ariaLabel={`${title} info`} testId={`${testId}-info`} side="top">
           {infoTooltip}
         </InfoPopover>
-      </span>
-    </h2>
-  );
-}
-
-function WDLCategoryChart({ data, title, testId, infoTooltip }: WDLCategoryChartProps) {
-  if (data.length === 0) {
-    return (
-      <div>
-        <ChartTitle title={title} infoTooltip={infoTooltip} testId={testId} />
-        <div
-          data-testid={testId}
-          className="text-center text-muted-foreground py-8"
-        >
-          No data available.
-        </div>
-      </div>
-    );
-  }
-
-  const maxTotal = Math.max(...data.map((d) => d.total));
-
-  return (
-    <div>
-      <ChartTitle title={title} infoTooltip={infoTooltip} testId={testId} />
-      <div className="space-y-2" data-testid={testId}>
-        {data.map((cat) => (
-          <WDLChartRow
-            key={cat.label}
-            data={cat}
-            label={cat.label}
-            maxTotal={maxTotal}
-            testId={`${testId}-${cat.label.toLowerCase()}`}
-          />
-        ))}
+      </h3>
+      <div className="p-4">
+        {data.length === 0 ? (
+          <div data-testid={testId} className="text-center text-muted-foreground py-8">
+            No data available.
+          </div>
+        ) : (
+          <div className="space-y-2" data-testid={testId}>
+            {data.map((cat) => (
+              <WDLChartRow
+                key={cat.label}
+                data={cat}
+                label={cat.label}
+                maxTotal={Math.max(...data.map((d) => d.total))}
+                testId={`${testId}-${cat.label.toLowerCase()}`}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

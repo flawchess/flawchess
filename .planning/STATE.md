@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
-status: executing
-last_updated: "2026-05-30T08:40:00.000Z"
-last_activity: 2026-05-30 -- Regrouped standalone phases into milestones v1.20/v1.21/v1.22; v1.20 released
+status: ready_to_plan
+last_updated: 2026-05-30T22:53:45.861Z
+last_activity: 2026-05-30
 progress:
-  total_phases: 3
-  completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 33
+  total_phases: 8
+  completed_phases: 3
+  total_plans: 11
+  completed_plans: 11
+  percent: 38
+stopped_at: Phase 99 complete (5/5) — ready to discuss Phase 99.1
 ---
 
 # Project State: FlawChess
@@ -18,10 +19,11 @@ progress:
 ## Current Position
 
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
-Phase: 97 (endgame-metrics-by-time-control) — COMPLETE & SHIPPED (PR #160, 2026-05-29)
-Next: Phase 98 (TC-mix-weighted Conv/Recov gauges on Endgame Type cards) — NOT STARTED, ready to plan; then Phase 99 (Percentile Badges for Conversion, Parity, and Recovery), then Phase 100 (v1.22 LLM Statistical-Reasoning rework)
-Status: v1.20 released (tag + GitHub release); v1.21 Phase 97 done; Phase 98 ready to plan
-Last activity: 2026-05-30 — Regrouped the shipped standalone phases into milestones: v1.20 Import Pipeline Hardening Follow-Up and Readiness (Phases 95, 96), v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99), v1.22 LLM Statistical Reasoning (Phase 100, renumbered from old Phase 99). Added new Phase 99 (Percentile Badges for Conv/Parity/Recovery). v1.20 tagged at dcd22fef and released. Phase 97 shipped 2026-05-29 (PR #160); Phase 96 shipped 2026-05-28 (PR #151); Phase 95 shipped 2026-05-27 (PRs #148/#149).
+Phase: 99.1
+Plan: Not started
+Next: Plan 03 (PerTcBucketStats field widening + endgame_service dispatch)
+Status: Ready to plan
+Last activity: 2026-05-30
 
 ## Project Reference
 
@@ -218,6 +220,25 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 ## Operator Next Steps
 
 - Start the next milestone with /gsd-new-milestone
+
 | 61 | Fix flaky prod-tunnel safety-gate test (mock socket probe) | 2026-05-29 | 8d209930 | — |
 | 260529-ptv | Percentile badge tooltips (endgame page): moved the calculated value out of bullet 2's trailing "Your value: x" clause and into bullet 1's first sentence ("Your recent {metric} {value} is in the bottom X% of ~{anchor}-rated players in {tc}"), gated on the value being present. Reformatted every chip value as signed integer percent (`Math.round(v*100)%`) via a simplified `formatChipValue(v)` (dropped the unused `flavor` param and the `.toFixed(2)` ΔES-family branch) so the chip value matches the adjacent metric tooltip's percent form (was "+0.04", now "+4%"); also applies to the aggregated per-TC breakdown list ("+5% over 137 games"). Per-TC bullet 2 now gates only on nGames. Frontend-only: `PercentileChip.tsx` + `PercentileChip.test.tsx` (updated/added assertions). Gates: vitest 54/54 (chip) + 83 card tests, eslint + knip + tsc clean. Commit `3ae66b2d` on branch `fix/percentile-tooltip-value-in-sentence` (off main; not pushed). | 2026-05-29 | 3ae66b2d | — |
 | 260529-une | Declutter the Endgame Type Breakdown cards by removing the two Conversion/Recovery gauges from each `EndgameTypeCard` (both the live render and the empty-state shell, which now shows only "Not enough data yet"). Kept one card per type (no TC split) with WDL bar + Games link, Score bullet, and Score Gap bullet intact. Decision (from `/gsd-explore` 260529, note `endgame-type-card-drop-gauges.md`): the original idea — split type cards into TC-specific cards keeping only Score Gap — was rejected because the benchmark (`benchmarks-latest.md` lines 1064/1100) shows the per-class per-span ΔES Score Gap is the ONE metric that collapses across TC (Cohen's d≈0.13), while Conv/Recov are the metrics that keep separate by TC (d≈1.19–1.67). So a TC split would have multiplied cards 5→20 on the axis the surviving metric is flat across, dropping the metrics that actually justify a split, and worsened sparsity (Score Gap needs ≥20 spans/user/class). Dropping the gauges instead kills the §3.4.1 TC-mispaint by removal AND declutters — no TC dimension needed. Consciously overrides benchmark lines 1022 ("keep all 3 signals") and 1102 ("keep layout"), which predate this call. FRONTEND-ONLY: backend per-type conv/recov is load-bearing for the LLM insights narration (`insights_service.py` `_findings_conversion_recovery_by_type` consumes `cat.conversion.*` through `assign_per_class_zone`), so `category.conversion.*` stays on the `/stats` wire and the Python per-class bands in `endgame_zones.py` are untouched — the data just stops rendering on the cards. Removed unused frontend symbols from `EndgameTypeCard.tsx` (`EndgameGauge`, `PER_CLASS_GAUGE_ZONES`, `colorizeGaugeZones`, `PER_TYPE_GAUGE_SIZE`, `bands`/`convZones`/`recovZones`); `EndgameGauge` the component survives (still used by `EndgameMetricsByTcCard`), `colorizeGaugeZones` stays exported (still used elsewhere). `endgameZones.ts` already in knip's `ignore` list, so the now-dead `PER_CLASS_GAUGE_ZONES` export needed no new ignore. Updated 3 frontend tests (dropped gauge testid + conv/recov-value assertions, re-anchored the "Score Gap row is last" DOM-ordering test on the WDL block) and trimmed the Conv/Recov metric definitions from the breakdown-section h2 InfoPopover in `Endgames.tsx` (kept taxonomy + per-type descriptions + Score/Score Gap explainers). Gates: frontend lint + knip + 717 vitest tests pass; no backend files touched. Commits `d3453597` (feat) + `1de3d408` (tests/copy) + `104255a2` (worktree merge) on `main`; not pushed. | 2026-05-29 | 104255a2 | [260529-une-declutter-endgame-type-breakdown-cards-r](./quick/260529-une-declutter-endgame-type-breakdown-cards-r/) |
+| 260530-pll | Make per-TC Endgame Metrics cards collapsible (Phase 98 Accordion pattern) with the primary-TC card expanded by default and the others collapsed; default the Endgame ELO Timeline to only the primary-TC series (both chess.com + lichess when the TC was played on both). Reused `computePrimaryTc` (the time-weighted heuristic placed in `lib/` during Phase 98) verbatim across the breakdown section, the new metrics section, and the timeline. Task 1: `EndgameMetricsByTcCard` div→`AccordionItem` (header band → `AccordionTrigger` with `metrics-tc-card-{tc}-trigger` testid + aria-label; body → `AccordionContent`); `EndgameMetricsByTcSection` → controlled `<Accordion type="multiple">` seeded from `computePrimaryTc(byTc, MIN_GAMES_PER_TC_CARD)`, reset on `filterKey` change; `Endgames.tsx` passes `filterKey={JSON.stringify(appliedFilters)}`. Task 2: replaced the timeline's `computeDefaultHidden` (active-weeks ratio + top-1-by-games) with `computeDefaultHiddenByPrimaryTc` — sums `per_week_total_games` per TC across both platforms, picks the primary TC, hides every combo whose `time_control` isn't primary (so both platform series of the primary TC survive); null-primary fallback shows all; removed now-dead `MAX_DEFAULT_VISIBLE` + `MIN_ACTIVE_WEEKS_RATIO`. Rule-1 fix: `EndgameMetricsByTcCard.test.tsx` render calls wrapped in `<Accordion>` since the card is now an `AccordionItem`. Gates: frontend lint + knip + build clean, 735/735 vitest. FRONTEND-ONLY, no backend/DB. HUMAN-UAT pending: verify default-expand + timeline default against real multi-TC data. Commits `3c7e1340` + `ee599f00` + `982901d7` on `main` (worktree merged via `f93a9441`); not pushed. | 2026-05-30 | f93a9441 | [260530-pll-make-the-tc-specific-endgame-metrics-car](./quick/260530-pll-make-the-tc-specific-endgame-metrics-car/) |
+| 260530-rnz | Apply the Endgames-page header-band card style (recessed full-bleed `<h3>` with `bg-black/20 border-b border-border/40 px-4 py-3 text-base font-semibold`, body in a padded div below, `overflow-hidden` on the rounded wrapper) to cards across Overview, Openings, and Bookmarks — STYLE-ONLY, no Accordion/chevron/collapse. Task 1 (`GlobalStatsCharts.tsx` / `GlobalStats.tsx` / `PositionResultsPanel.tsx`): moved card-wrapping into `GlobalStatsCharts` so each `WDLCategoryChart` renders its own headered card, splitting "Results by Color" into a standalone card (alongside Results by Time Control + the two Rating cards); banded the shared `PositionResultsPanel` label (covers the "Results played as White/Black" card on BOTH the Moves and Games subtabs at once) and cleaned the duplicated `charcoal-texture rounded-md p-4` shell off its callers in `GamesTab.tsx` + `Endgames.tsx`. Task 2 (`OpeningStatsCard.tsx` / `OpeningFindingCard.tsx` / `StatsTab.tsx` / `ScoreChart.tsx`): banded the identical accent-card shells, relocating the score-zone `border-l-4` + `borderLeftColor` off the card root onto the inner content `<div>` so the left-border accent runs down the CONTENT only, not the header band (opacity-muting stays on the root); banded the "Bookmarked Openings: Score over Time" card via `ScoreChart`'s title. Section `<h2>`/`<h3>` headers (OpeningStatsSection, OpeningInsightsBlock FindingsSection) stay PLAIN — not banded — and the existing "show N more" toggles are untouched. Test surgery: updated `OpeningStatsCard.test.tsx` + `OpeningFindingCard.test.tsx` border-left assertions to read `borderLeftColor` from a new `*-content` testid (border moved off root), opacity tests still read the root; verified D-18 "no block-level h2" + four-section-header InfoPopover contracts still pass. Gates: frontend lint + knip clean, vitest 735/735. FRONTEND-ONLY, no backend/DB. HUMAN-UAT pending: visual check that bands render flush to rounded corners (no spill) on desktop + mobile and the accent runs only down the content area. Commits `a1433a2d` + `2824668a` + `a9ade8cf` on branch `quick/header-band-cards` off `main`; not pushed. | 2026-05-30 | a9ade8cf | [260530-rnz-apply-the-endgames-page-header-band-card](./quick/260530-rnz-apply-the-endgames-page-header-band-card/) |
+| 65 | Card-style Endgame Statistics Concepts + collapsible header hover state | 2026-05-30 | d7b7a13a | — |
+| 66 | Remove concepts info icon; make Insights a collapsible card (open by default) | 2026-05-30 | 3c610ccc | — |
+| 67 | Render insights 3 sections as plain headings/paragraphs (no inner cards) | 2026-05-30 | 98daa838 | — |
+| 68 | Per-section insight slots as collapsible header-band cards (open by default) | 2026-05-30 | 32d38f66 | — |
+
+## Performance Metrics
+
+| Phase | Plan | Duration | Notes |
+|-------|------|----------|-------|
+| Phase 99 P02 | 25 | 2 tasks | 6 files |
+| Phase 99 P03 | 15 | 2 tasks | 18 files |
+| Phase 99 P04 | 5 | 2 tasks | 2 files |
+
+## Decisions
+
+- [Phase ?]: rate_percentile field trio named distinctly from percentile star (D-01 coexistence)

@@ -128,6 +128,13 @@ _INT_TO_CLASS: dict[int, EndgameClass] = {
 
 _CLASS_TO_INT: dict[EndgameClass, int] = {v: k for k, v in _INT_TO_CLASS.items()}
 
+# Phase 98: endgame classes excluded from the collapsible per-(class × TC) type
+# cards. Mixed is the least-actionable catch-all (dropped per D-05) and pawnless is
+# hidden in the UI; excluding them from _aggregate_endgame_stats_by_tc keeps the
+# per-TC card header count equal to the sum of the four rendered tiles. This does
+# NOT affect the pooled `categories` (LLM path), which still includes Mixed.
+_TYPE_CARD_EXCLUDED_CLASSES: frozenset[EndgameClass] = frozenset({"mixed", "pawnless"})
+
 
 # Display labels for each endgame category (D-07).
 _ENDGAME_CATEGORY_LABELS: dict[EndgameClass, EndgameLabel] = {
@@ -771,6 +778,265 @@ def _aggregate_endgame_stats(
 
     # Convert defaultdict to plain dict to avoid downstream defaultdict surprises.
     return categories, dict(gaps_by_bucket)
+
+
+def _aggregate_endgame_stats_by_tc(
+    rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]]:
+    """Group endgame stats by (TC, class) for the collapsible type-breakdown cards.
+
+    Phase 98: single pass over the per-class `entry_rows` (already fetched) —
+    one row per (game, endgame_class) span, the SAME source the pooled
+    `categories` use — keyed on (TC, class). NOT `bucket_rows` (one row per
+    game, class = first endgame position): that classified almost every game as
+    "mixed", leaving the rook/minor/pawn/queen tiles empty. Returns
+    dict[tc_str, list[EndgameCategoryStats]] in bullet/blitz/rapid/classical
+    order. Mixed and pawnless are excluded (_TYPE_CARD_EXCLUDED_CLASSES) so the
+    per-TC card header equals the sum of the four rendered tiles.
+
+    Prod rows are SA Rows read by attribute (`row.time_control_bucket`,
+    `row.next_entry_eval_cp`, ...). Test fixtures use plain tuples with the
+    layout: game_id[0], endgame_class_int[1], result[2], user_color[3],
+    eval_cp[4], eval_mate[5], time_control_bucket[6], next_entry_eval_cp[7],
+    next_entry_eval_mate[8].
+
+    D-15 invariant: does NOT touch the pooled `categories` list or
+    `assign_per_class_zone`. The LLM path reads `EndgameStatsResponse.categories`
+    (pooled, Mixed included) and is unaffected by this function.
+    """
+    if not rows:
+        return {}
+
+    # tc -> class -> accumulator dicts  (using the same accumulator structure as
+    # _aggregate_endgame_stats but keyed on (tc, class))
+    wdl: dict[str, dict[EndgameClass, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {"wins": 0, "draws": 0, "losses": 0})
+    )
+    conv: dict[str, dict[EndgameClass, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {"games": 0, "wins": 0, "draws": 0})
+    )
+    recov: dict[str, dict[EndgameClass, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {"games": 0, "wins": 0, "draws": 0})
+    )
+    # Per-(tc, class) Score Gap accumulator (same span_scores logic)
+    gaps_by_tc_class: dict[str, dict[EndgameClass, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    starts_by_tc_class: dict[str, dict[EndgameClass, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    ends_by_tc_class: dict[str, dict[EndgameClass, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+
+    for row in rows:
+        # bucket_rows: SA Row or tuple. For tuples (test fixtures) col 6 is TC.
+        if isinstance(row, tuple):
+            if len(row) < 7:
+                # Legacy 6-column fixture (no TC column) — skip; not per-TC data
+                continue
+            _game_id = row[0]
+            endgame_class_int = row[1]
+            result = row[2]
+            user_color = row[3]
+            eval_cp = row[4]
+            eval_mate = row[5]
+            tc = row[6]
+            next_entry_eval_cp: int | None = row[7] if len(row) > 7 else None
+            next_entry_eval_mate: int | None = row[8] if len(row) > 8 else None
+        else:
+            _game_id = row.game_id
+            endgame_class_int = row.endgame_class
+            result = row.result
+            user_color = row.user_color
+            eval_cp = row.eval_cp
+            eval_mate = row.eval_mate
+            tc = row.time_control_bucket
+            next_entry_eval_cp = row.next_entry_eval_cp
+            next_entry_eval_mate = row.next_entry_eval_mate
+
+        if tc not in _TIME_CONTROL_ORDER:
+            continue
+
+        endgame_class = _INT_TO_CLASS.get(endgame_class_int)
+        if endgame_class is None:
+            continue  # Unknown class int; already captured by _aggregate_endgame_stats
+
+        # Phase 98: the collapsible type cards render only rook/minor_piece/pawn/queen
+        # tiles — Mixed is dropped (least-actionable catch-all, D-05) and pawnless is
+        # hidden. Excluding them here (not just in the frontend) keeps the card header
+        # "Games: X% (count)" equal to the sum of the four visible tiles. The pooled
+        # `categories` / LLM path still see Mixed via _aggregate_endgame_stats.
+        if endgame_class in _TYPE_CARD_EXCLUDED_CLASSES:
+            continue
+
+        outcome = derive_user_result(result, user_color)
+        if outcome == "win":
+            wdl[tc][endgame_class]["wins"] += 1
+        elif outcome == "draw":
+            wdl[tc][endgame_class]["draws"] += 1
+        else:
+            wdl[tc][endgame_class]["losses"] += 1
+
+        bucket = _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+        if bucket == "conversion":
+            conv[tc][endgame_class]["games"] += 1
+            if outcome == "win":
+                conv[tc][endgame_class]["wins"] += 1
+            elif outcome == "draw":
+                conv[tc][endgame_class]["draws"] += 1
+        elif bucket == "recovery":
+            recov[tc][endgame_class]["games"] += 1
+            if outcome == "win":
+                recov[tc][endgame_class]["wins"] += 1
+            elif outcome == "draw":
+                recov[tc][endgame_class]["draws"] += 1
+
+        # Score Gap (same span_scores logic as _aggregate_endgame_stats)
+        span_scores = _compute_span_scores(
+            entry_eval_cp=eval_cp,
+            entry_eval_mate=eval_mate,
+            next_entry_eval_cp=next_entry_eval_cp,
+            next_entry_eval_mate=next_entry_eval_mate,
+            result=result,
+            user_color=user_color,
+        )
+        if span_scores is not None:
+            es_entry, exit_score = span_scores
+            gaps_by_tc_class[tc][endgame_class].append(exit_score - es_entry)
+            starts_by_tc_class[tc][endgame_class].append(es_entry)
+            ends_by_tc_class[tc][endgame_class].append(exit_score)
+
+    # Build per-TC lists in fixed order
+    result_by_tc: dict[
+        Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]
+    ] = {}
+    for tc in _TIME_CONTROL_ORDER:
+        tc_literal = cast(Literal["bullet", "blitz", "rapid", "classical"], tc)
+        tc_wdl = wdl.get(tc, {})
+        if not tc_wdl:
+            continue
+
+        cats: list[EndgameCategoryStats] = []
+        for endgame_class in tc_wdl:
+            c = tc_wdl[endgame_class]
+            wins = c["wins"]
+            draws = c["draws"]
+            losses = c["losses"]
+            total = wins + draws + losses
+
+            if total > 0:
+                win_pct = round(wins / total * 100, 1)
+                draw_pct = round(draws / total * 100, 1)
+                loss_pct = round(losses / total * 100, 1)
+            else:
+                win_pct = draw_pct = loss_pct = 0.0
+
+            conv_data = conv[tc][endgame_class]
+            recov_data = recov[tc][endgame_class]
+
+            conversion_games = conv_data["games"]
+            conversion_wins = conv_data["wins"]
+            conversion_draws = conv_data["draws"]
+            conversion_losses = conversion_games - conversion_wins - conversion_draws
+            conversion_pct = (
+                round(conversion_wins / conversion_games * 100, 1) if conversion_games > 0 else 0.0
+            )
+
+            recovery_games = recov_data["games"]
+            recovery_wins = recov_data["wins"]
+            recovery_draws = recov_data["draws"]
+            recovery_saves = recovery_wins + recovery_draws
+            recovery_pct = (
+                round(recovery_saves / recovery_games * 100, 1) if recovery_games > 0 else 0.0
+            )
+            recovery_losses = recovery_games - recovery_wins - recovery_draws
+
+            opponent_conversion_pct: float | None = (
+                round(recovery_losses / recovery_games * 100, 1)
+                if recovery_games >= _MIN_OPPONENT_SAMPLE
+                else None
+            )
+            opponent_recovery_pct: float | None = (
+                round((conversion_losses + conversion_draws) / conversion_games * 100, 1)
+                if conversion_games >= _MIN_OPPONENT_SAMPLE
+                else None
+            )
+
+            conversion_stats = ConversionRecoveryStats(
+                conversion_pct=conversion_pct,
+                conversion_games=conversion_games,
+                conversion_wins=conversion_wins,
+                conversion_draws=conversion_draws,
+                conversion_losses=conversion_losses,
+                recovery_pct=recovery_pct,
+                recovery_games=recovery_games,
+                recovery_saves=recovery_saves,
+                recovery_wins=recovery_wins,
+                recovery_draws=recovery_draws,
+                opponent_conversion_pct=opponent_conversion_pct,
+                opponent_conversion_games=recovery_games,
+                opponent_recovery_pct=opponent_recovery_pct,
+                opponent_recovery_games=conversion_games,
+            )
+
+            label = _ENDGAME_CATEGORY_LABELS[endgame_class]
+            wdl_stats = _build_wdl_stats(wins, draws, losses, total, last_played_at=None)
+            score_p_value: float | None = (
+                wdl_stats.p_value if total >= PVALUE_RELIABILITY_MIN_N else None
+            )
+
+            # Score Gap per (tc, class) — same paired z-test as _aggregate_endgame_stats
+            type_gaps = gaps_by_tc_class[tc][endgame_class]
+            type_gap_n = len(type_gaps)
+            (
+                type_gap_mean_raw,
+                type_gap_p,
+                type_gap_ci_low,
+                type_gap_ci_high,
+            ) = compute_paired_difference_test(type_gaps)
+            type_gap_mean: float | None = type_gap_mean_raw if type_gap_n > 0 else None
+
+            type_starts = starts_by_tc_class[tc][endgame_class]
+            type_ends = ends_by_tc_class[tc][endgame_class]
+            type_start_mean: float | None = (
+                sum(type_starts) / type_gap_n if type_gap_n > 0 else None
+            )
+            type_end_mean: float | None = sum(type_ends) / type_gap_n if type_gap_n > 0 else None
+
+            cats.append(
+                EndgameCategoryStats(
+                    endgame_class=endgame_class,
+                    label=label,
+                    wins=wins,
+                    draws=draws,
+                    losses=losses,
+                    total=total,
+                    win_pct=win_pct,
+                    draw_pct=draw_pct,
+                    loss_pct=loss_pct,
+                    conversion=conversion_stats,
+                    score_p_value=score_p_value,
+                    type_achievable_score_gap_mean=type_gap_mean,
+                    type_achievable_score_gap_n=type_gap_n,
+                    type_achievable_score_gap_p_value=type_gap_p,
+                    type_achievable_score_gap_ci_low=type_gap_ci_low,
+                    type_achievable_score_gap_ci_high=type_gap_ci_high,
+                    type_achievable_score_start_mean=type_start_mean,
+                    type_achievable_score_end_mean=type_end_mean,
+                    # No eval aggregation per (tc, class) — keeping it simple;
+                    # the tile only needs WDL + conv/recov + score_p_value + score gap.
+                    score=wdl_stats.score,
+                    confidence=wdl_stats.confidence,
+                    p_value=wdl_stats.p_value,
+                    ci_low=wdl_stats.ci_low,
+                    ci_high=wdl_stats.ci_high,
+                )
+            )
+
+        result_by_tc[tc_literal] = cats
+
+    return result_by_tc
 
 
 async def get_endgame_stats(
@@ -2214,6 +2480,7 @@ def _build_per_tc_bucket_stats(
     bucket: MaterialBucket,
     gaps: list[float],
     percentile_row: PercentileRow | None,
+    rate_percentile_row: PercentileRow | None = None,
 ) -> PerTcBucketStats:
     """Build a PerTcBucketStats from per-bucket accumulator fields.
 
@@ -2222,9 +2489,14 @@ def _build_per_tc_bucket_stats(
 
     bucket: which sub-bucket ("conversion", "parity", "recovery").
     gaps: per-TC span-gap list for ΔES computation.
-    percentile_row: per-(metric, TC) PercentileRow from user_benchmark_percentiles,
-        None when the user is below the inclusion floor. Its ``percentile``,
-        ``n_games`` and ``value`` feed the chip + its tooltip.
+    percentile_row: per-(metric, TC) PercentileRow for the ΔES-gap chip from
+        user_benchmark_percentiles, None when the user is below the inclusion
+        floor. Its ``percentile``, ``n_games`` and ``value`` feed the chip +
+        its tooltip.
+    rate_percentile_row: per-(rate metric, TC) PercentileRow for the raw-rate
+        chip (Phase 99), None when below the inclusion floor or not yet
+        backfilled. Its ``percentile``, ``n_games`` and ``value`` feed the
+        rate chip + its tooltip (D-01: separate from gap percentile).
     """
     if bucket == "conversion":
         games = acc.conv_total
@@ -2281,6 +2553,14 @@ def _build_per_tc_bucket_stats(
         percentile=percentile_row.percentile if percentile_row is not None else None,
         percentile_n_games=percentile_row.n_games if percentile_row is not None else None,
         percentile_value=percentile_row.value if percentile_row is not None else None,
+        # Phase 99: raw-rate percentile (D-01 — separate from ΔES-gap percentile above).
+        rate_percentile=rate_percentile_row.percentile if rate_percentile_row is not None else None,
+        rate_percentile_n_games=rate_percentile_row.n_games
+        if rate_percentile_row is not None
+        else None,
+        rate_percentile_value=rate_percentile_row.value
+        if rate_percentile_row is not None
+        else None,
     )
 
 
@@ -2392,23 +2672,32 @@ def _compute_per_tc_metric_cards(
         parity_row = _effective_rows.get("score_gap_parity", {}).get(tc_bucket)
         recov_row = _effective_rows.get("recovery_score_gap", {}).get(tc_bucket)
 
+        # Phase 99: raw-rate percentile rows — same fetch_for_user [metric][tc] path
+        # as the gap rows. Returns None until Plan 05 backfills these metrics.
+        conv_rate_row = _effective_rows.get("conversion_rate", {}).get(tc_bucket)
+        parity_rate_row = _effective_rows.get("parity_rate", {}).get(tc_bucket)
+        recov_rate_row = _effective_rows.get("recovery_rate", {}).get(tc_bucket)
+
         conversion_stats = _build_per_tc_bucket_stats(
             acc,
             "conversion",
             acc.gaps_conv,
             conv_row,
+            conv_rate_row,
         )
         parity_stats = _build_per_tc_bucket_stats(
             acc,
             "parity",
             acc.gaps_parity,
             parity_row,
+            parity_rate_row,
         )
         recovery_stats = _build_per_tc_bucket_stats(
             acc,
             "recovery",
             acc.gaps_recov,
             recov_row,
+            recov_rate_row,
         )
 
         cards.append(
@@ -3447,6 +3736,23 @@ async def get_endgame_overview(
     endgame_metrics_cards = _compute_per_tc_metric_cards(
         bucket_rows,
         percentile_rows=percentile_rows,
+    )
+
+    # Phase 98: per-(class × TC) type card breakdown for the collapsible tile grid.
+    # Single pass over the already-fetched per-class `entry_rows` (one row per
+    # (game, endgame_class) span) — NOT `bucket_rows` (one row per game, class =
+    # first endgame position). bucket_rows classified almost every game as "mixed"
+    # (the first endgame position rarely is a pure rook/pawn/etc. ending), which
+    # left the rook/minor/pawn/queen tiles empty even when the card header showed
+    # hundreds of games. entry_rows is the same source the pooled `categories`
+    # use, so the two breakdowns stay consistent. No new DB query (T-98-01).
+    # D-15: additive only; `stats.categories` (pooled) remains unchanged.
+    categories_by_tc = _aggregate_endgame_stats_by_tc(entry_rows)
+    stats = EndgameStatsResponse(
+        categories=stats.categories,
+        total_games=stats.total_games,
+        endgame_games=stats.endgame_games,
+        categories_by_tc=categories_by_tc,
     )
 
     return EndgameOverviewResponse(
