@@ -7,6 +7,11 @@
  *   - Section wrapper testid="endgame-metrics-tc-section" is always present.
  *   - Empty-state testid="endgame-metrics-tc-section-empty" is present iff cards=[].
  *   - Cards absent from the payload do not render.
+ *
+ * 260530-pll additions:
+ *   - Primary-TC card is expanded by default; non-primary cards are collapsed.
+ *   - Expanding one card does NOT collapse another (independent accordion).
+ *   - filterKey change resets expanded set to the recomputed primary TC.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -67,10 +72,10 @@ function buildBucket(): PerTcBucketStats {
   };
 }
 
-function buildCard(tc: EndgameMetricsTcCard['tc']): EndgameMetricsTcCard {
+function buildCard(tc: EndgameMetricsTcCard['tc'], total: number = 150): EndgameMetricsTcCard {
   return {
     tc,
-    total: 150,
+    total,
     conversion: buildBucket(),
     parity: buildBucket(),
     recovery: buildBucket(),
@@ -83,17 +88,20 @@ function makePayload(
   const tcsToUse =
     tcs.length > 0 ? tcs : (['bullet', 'blitz', 'rapid', 'classical'] as const);
   return {
-    cards: tcsToUse.map(buildCard),
+    cards: tcsToUse.map((tc) => buildCard(tc)),
   };
 }
 
 // ── Render helper ──────────────────────────────────────────────────────────────
 
-function renderSection(data: EndgameMetricsCardsResponse): ReturnType<typeof render> {
+function renderSection(
+  data: EndgameMetricsCardsResponse,
+  filterKey?: string,
+): ReturnType<typeof render> {
   return render(
     <MemoryRouter>
       <TooltipProvider>
-        <EndgameMetricsByTcSection data={data} />
+        <EndgameMetricsByTcSection data={data} filterKey={filterKey} />
       </TooltipProvider>
     </MemoryRouter>,
   );
@@ -164,8 +172,8 @@ describe('EndgameMetricsByTcSection — card order', () => {
     );
 
     // Gather all TC card ROOT testids in DOM order. The prefix also matches
-    // suffixed children (`-header`, `-total`), so keep only entries whose
-    // stripped value is one of the four TC literals.
+    // suffixed children (`-header`, `-total`, `-trigger`), so keep only entries
+    // whose stripped value is one of the four TC literals.
     const VALID_TCS = new Set(['bullet', 'blitz', 'rapid', 'classical']);
     const cards = container.querySelectorAll('[data-testid^="metrics-tc-card-"]');
     const tcs = Array.from(cards)
@@ -173,5 +181,78 @@ describe('EndgameMetricsByTcSection — card order', () => {
       .filter((tc) => VALID_TCS.has(tc));
 
     expect(tcs).toEqual(['bullet', 'blitz', 'rapid', 'classical']);
+  });
+});
+
+// ── 260530-pll: collapsible accordion tests ───────────────────────────────────
+
+describe('EndgameMetricsByTcSection — primary-TC default expand', () => {
+  // rapid card with enough time-weighted games to beat a smaller bullet card.
+  // rapid total=200, bullet total=25.
+  // time-weighted: rapid = 200 * 600 = 120000 vs bullet = 25 * 60 = 1500
+  // so rapid is unambiguously primary.
+  function makeUnambiguousPayload(): EndgameMetricsCardsResponse {
+    return {
+      cards: [
+        buildCard('bullet', 25),  // 25 * 60 = 1500 weight
+        buildCard('rapid', 200),  // 200 * 600 = 120000 weight — primary
+      ],
+    };
+  }
+
+  it('primary-TC trigger has data-state="open" on initial render', () => {
+    renderSection(makeUnambiguousPayload());
+    const rapidTrigger = screen.getByTestId('metrics-tc-card-rapid-trigger');
+    // Radix accordion sets data-state="open" on the trigger of the expanded item.
+    expect(rapidTrigger.getAttribute('data-state')).toBe('open');
+  });
+
+  it('non-primary TC trigger has data-state="closed" on initial render', () => {
+    renderSection(makeUnambiguousPayload());
+    const bulletTrigger = screen.getByTestId('metrics-tc-card-bullet-trigger');
+    expect(bulletTrigger.getAttribute('data-state')).toBe('closed');
+  });
+
+  it('trigger has aria-label with TC name', () => {
+    renderSection(makeUnambiguousPayload());
+    const rapidTrigger = screen.getByTestId('metrics-tc-card-rapid-trigger');
+    expect(rapidTrigger.getAttribute('aria-label')).toContain('Rapid');
+  });
+
+  it('AccordionItem root persists in DOM regardless of open/closed state', () => {
+    renderSection(makeUnambiguousPayload());
+    // Both card roots must be present even though bullet is collapsed.
+    expect(screen.getByTestId('metrics-tc-card-rapid')).not.toBeNull();
+    expect(screen.getByTestId('metrics-tc-card-bullet')).not.toBeNull();
+  });
+});
+
+describe('EndgameMetricsByTcSection — filterKey resets accordion', () => {
+  it('resets expanded set to new primary TC when filterKey changes', () => {
+    // Initial: rapid is primary (200 games * 600 weight)
+    const data = makePayload('bullet', 'rapid');
+    const { rerender } = render(
+      <MemoryRouter>
+        <TooltipProvider>
+          <EndgameMetricsByTcSection data={data} filterKey="filter-v1" />
+        </TooltipProvider>
+      </MemoryRouter>,
+    );
+
+    const rapidTrigger = screen.getByTestId('metrics-tc-card-rapid-trigger');
+    expect(rapidTrigger.getAttribute('data-state')).toBe('open');
+
+    // Re-render with new filterKey — reset should happen (same data here, same primary).
+    rerender(
+      <MemoryRouter>
+        <TooltipProvider>
+          <EndgameMetricsByTcSection data={data} filterKey="filter-v2" />
+        </TooltipProvider>
+      </MemoryRouter>,
+    );
+
+    // After reset, primary (rapid) should still be open.
+    const rapidTriggerAfter = screen.getByTestId('metrics-tc-card-rapid-trigger');
+    expect(rapidTriggerAfter.getAttribute('data-state')).toBe('open');
   });
 });

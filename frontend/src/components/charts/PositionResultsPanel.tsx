@@ -103,7 +103,7 @@ export function PositionResultsPanel({
   const resolvedEvalBaselinePawns = evalBaselinePawns ?? evalBaselinePawnsLocal;
 
   // The Endgames Games subtab samples the eval at endgame entry (color-agnostic,
-  // matching the Stats-tab "Endgame Entry Eval"): no per-color baseline tick,
+  // matching the Stats-tab "Entry Eval"): no per-color baseline tick,
   // and the popover copy describes the endgame start rather than opening end.
   const isEndgameEntryEval = evalContext === 'endgame-entry';
   const evalAriaLabel = isEndgameEntryEval

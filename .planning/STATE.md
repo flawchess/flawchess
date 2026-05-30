@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.20
-milestone_name: LLM Statistical Reasoning
-status: executing
-last_updated: "2026-05-29T15:27:28.895Z"
-last_activity: 2026-05-29 -- Phase 97 execution started
+milestone: v1.21
+milestone_name: Time-Control-Aware Endgame Metrics
+status: "Phase 98 shipped — PR #163"
+last_updated: "2026-05-30T16:15:20.389Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 8
   completed_phases: 1
-  total_plans: 9
+  total_plans: 6
   completed_plans: 4
   percent: 13
 ---
@@ -17,21 +17,22 @@ progress:
 
 ## Current Position
 
-Phase: 97 (endgame-metrics-by-time-control) — EXECUTING
-Plan: 1 of 4
-Next: Phase 96 (Import Readiness Gate) — NOT STARTED, ready to plan
-Status: Executing Phase 97
-Last activity: 2026-05-29 -- Phase 97 execution started
+Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
+Phase: 98 (per-tc-collapsible-endgame-type-cards) — EXECUTING
+Plan: 2 of 2 complete — verified (1 ruff-format blocker found and fixed)
+Next: HUMAN-UAT (responsive staircase/divider grammar + primary-TC default-expand with real data), then ship (PR) and plan Phase 99
+Status: Phase 98 shipped — PR #163
+Last activity: 2026-05-30 - Completed quick task 260530-pll: Collapsible per-TC Endgame Metrics cards + primary-TC timeline default
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-27 after v1.19 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.19 Endgame Percentiles shipped 2026-05-27 — peer-relative percentile chips on Endgames page (per-(metric, ELO anchor, TC) cohort CDFs, per-user blended platform rating anchors, 4-bullet tooltip with rating-anchor disclosure, filter-independent). 12 per-TC chips on Time Pressure cards. The prior Phase 95 (LLM Statistical Reasoning rework) was renumbered to Phase 96 (v1.20) on 2026-05-27 to make room for a standalone hardening phase. Phase 95 (SEED-027 Thread B) switched `bulk_insert_positions` to asyncpg `copy_records_to_table` to finish closing FLAWCHESS-3Q — shipped 2026-05-27 via PRs #148/#149 (Thread A container memory budget shipped 2026-05-26 via hotfix PR #144 at prod SHA 65511c9). Renumbering on 2026-05-28: a `/gsd-explore` session created standalone Phase 96 (Import Readiness Gate) and bumped the LLM Statistical-Reasoning rework to Phase 97 (v1.20). Run `/gsd-plan-phase 96` next.
+Current focus: v1.21 Time-Control-Aware Endgame Metrics. Phase 97 (Endgame Metrics by Time Control — per-TC Conversion/Parity/Recovery cards with TC-specific bands) shipped 2026-05-29 (PR #160). Remaining: Phase 98 (TC-mix-weighted Conv/Recov gauges re-added to the 5 Endgame Type cards) and Phase 99 (peer-relative percentile badges on the per-TC Conv/Parity/Recovery cards, deferred from Phase 97). The three earlier standalone phases were regrouped post-hoc on 2026-05-30: v1.20 Import Pipeline Hardening Follow-Up and Readiness = Phase 95 (asyncpg COPY for `bulk_insert_positions`, closes FLAWCHESS-3Q, PRs #148/#149) + Phase 96 (Import Readiness Gate, two-tier per-page gate replacing the eval-coverage auto-reload, PR #151). v1.22 LLM Statistical Reasoning = Phase 100 (renumbered from the old Phase 99). v1.20 was tagged at `dcd22fef` (pre-Phase-97 boundary on main) and released on GitHub. Run `/gsd-plan-phase 98` next.
 
 ## Milestone Progress
 
-Nineteen milestones complete (v1.0–v1.19). v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied; Phase 95 split into v1.20 before milestone close. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
+Twenty milestones complete (v1.0–v1.20). v1.20 Import Pipeline Hardening Follow-Up and Readiness shipped 2026-05-29 — 2 phases (95 asyncpg COPY, 96 Import Readiness Gate), 5 plans, PRs #148/#149/#151; regrouped post-hoc from standalone phases on 2026-05-30, tagged at `dcd22fef`. v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
 
 ## Key Context
 
@@ -218,4 +219,12 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 ## Operator Next Steps
 
 - Start the next milestone with /gsd-new-milestone
+
 | 61 | Fix flaky prod-tunnel safety-gate test (mock socket probe) | 2026-05-29 | 8d209930 | — |
+| 260529-ptv | Percentile badge tooltips (endgame page): moved the calculated value out of bullet 2's trailing "Your value: x" clause and into bullet 1's first sentence ("Your recent {metric} {value} is in the bottom X% of ~{anchor}-rated players in {tc}"), gated on the value being present. Reformatted every chip value as signed integer percent (`Math.round(v*100)%`) via a simplified `formatChipValue(v)` (dropped the unused `flavor` param and the `.toFixed(2)` ΔES-family branch) so the chip value matches the adjacent metric tooltip's percent form (was "+0.04", now "+4%"); also applies to the aggregated per-TC breakdown list ("+5% over 137 games"). Per-TC bullet 2 now gates only on nGames. Frontend-only: `PercentileChip.tsx` + `PercentileChip.test.tsx` (updated/added assertions). Gates: vitest 54/54 (chip) + 83 card tests, eslint + knip + tsc clean. Commit `3ae66b2d` on branch `fix/percentile-tooltip-value-in-sentence` (off main; not pushed). | 2026-05-29 | 3ae66b2d | — |
+| 260529-une | Declutter the Endgame Type Breakdown cards by removing the two Conversion/Recovery gauges from each `EndgameTypeCard` (both the live render and the empty-state shell, which now shows only "Not enough data yet"). Kept one card per type (no TC split) with WDL bar + Games link, Score bullet, and Score Gap bullet intact. Decision (from `/gsd-explore` 260529, note `endgame-type-card-drop-gauges.md`): the original idea — split type cards into TC-specific cards keeping only Score Gap — was rejected because the benchmark (`benchmarks-latest.md` lines 1064/1100) shows the per-class per-span ΔES Score Gap is the ONE metric that collapses across TC (Cohen's d≈0.13), while Conv/Recov are the metrics that keep separate by TC (d≈1.19–1.67). So a TC split would have multiplied cards 5→20 on the axis the surviving metric is flat across, dropping the metrics that actually justify a split, and worsened sparsity (Score Gap needs ≥20 spans/user/class). Dropping the gauges instead kills the §3.4.1 TC-mispaint by removal AND declutters — no TC dimension needed. Consciously overrides benchmark lines 1022 ("keep all 3 signals") and 1102 ("keep layout"), which predate this call. FRONTEND-ONLY: backend per-type conv/recov is load-bearing for the LLM insights narration (`insights_service.py` `_findings_conversion_recovery_by_type` consumes `cat.conversion.*` through `assign_per_class_zone`), so `category.conversion.*` stays on the `/stats` wire and the Python per-class bands in `endgame_zones.py` are untouched — the data just stops rendering on the cards. Removed unused frontend symbols from `EndgameTypeCard.tsx` (`EndgameGauge`, `PER_CLASS_GAUGE_ZONES`, `colorizeGaugeZones`, `PER_TYPE_GAUGE_SIZE`, `bands`/`convZones`/`recovZones`); `EndgameGauge` the component survives (still used by `EndgameMetricsByTcCard`), `colorizeGaugeZones` stays exported (still used elsewhere). `endgameZones.ts` already in knip's `ignore` list, so the now-dead `PER_CLASS_GAUGE_ZONES` export needed no new ignore. Updated 3 frontend tests (dropped gauge testid + conv/recov-value assertions, re-anchored the "Score Gap row is last" DOM-ordering test on the WDL block) and trimmed the Conv/Recov metric definitions from the breakdown-section h2 InfoPopover in `Endgames.tsx` (kept taxonomy + per-type descriptions + Score/Score Gap explainers). Gates: frontend lint + knip + 717 vitest tests pass; no backend files touched. Commits `d3453597` (feat) + `1de3d408` (tests/copy) + `104255a2` (worktree merge) on `main`; not pushed. | 2026-05-29 | 104255a2 | [260529-une-declutter-endgame-type-breakdown-cards-r](./quick/260529-une-declutter-endgame-type-breakdown-cards-r/) |
+| 260530-pll | Make per-TC Endgame Metrics cards collapsible (Phase 98 Accordion pattern) with the primary-TC card expanded by default and the others collapsed; default the Endgame ELO Timeline to only the primary-TC series (both chess.com + lichess when the TC was played on both). Reused `computePrimaryTc` (the time-weighted heuristic placed in `lib/` during Phase 98) verbatim across the breakdown section, the new metrics section, and the timeline. Task 1: `EndgameMetricsByTcCard` div→`AccordionItem` (header band → `AccordionTrigger` with `metrics-tc-card-{tc}-trigger` testid + aria-label; body → `AccordionContent`); `EndgameMetricsByTcSection` → controlled `<Accordion type="multiple">` seeded from `computePrimaryTc(byTc, MIN_GAMES_PER_TC_CARD)`, reset on `filterKey` change; `Endgames.tsx` passes `filterKey={JSON.stringify(appliedFilters)}`. Task 2: replaced the timeline's `computeDefaultHidden` (active-weeks ratio + top-1-by-games) with `computeDefaultHiddenByPrimaryTc` — sums `per_week_total_games` per TC across both platforms, picks the primary TC, hides every combo whose `time_control` isn't primary (so both platform series of the primary TC survive); null-primary fallback shows all; removed now-dead `MAX_DEFAULT_VISIBLE` + `MIN_ACTIVE_WEEKS_RATIO`. Rule-1 fix: `EndgameMetricsByTcCard.test.tsx` render calls wrapped in `<Accordion>` since the card is now an `AccordionItem`. Gates: frontend lint + knip + build clean, 735/735 vitest. FRONTEND-ONLY, no backend/DB. HUMAN-UAT pending: verify default-expand + timeline default against real multi-TC data. Commits `3c7e1340` + `ee599f00` + `982901d7` on `main` (worktree merged via `f93a9441`); not pushed. | 2026-05-30 | f93a9441 | [260530-pll-make-the-tc-specific-endgame-metrics-car](./quick/260530-pll-make-the-tc-specific-endgame-metrics-car/) |
+| 65 | Card-style Endgame Statistics Concepts + collapsible header hover state | 2026-05-30 | d7b7a13a | — |
+| 66 | Remove concepts info icon; make Insights a collapsible card (open by default) | 2026-05-30 | 3c610ccc | — |
+| 67 | Render insights 3 sections as plain headings/paragraphs (no inner cards) | 2026-05-30 | 98daa838 | — |
+| 68 | Per-section insight slots as collapsible header-band cards (open by default) | 2026-05-30 | 32d38f66 | — |

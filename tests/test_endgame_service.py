@@ -26,6 +26,7 @@ from app.schemas.endgames import (
 from app.services.endgame_service import (
     SCORE_GAP_TIMELINE_WINDOW,
     _aggregate_endgame_stats,
+    _aggregate_endgame_stats_by_tc,
     _classify_endgame_bucket,
     _compute_endgame_elo_weekly_series,
     _compute_rolling_series,
@@ -4437,3 +4438,166 @@ class TestAggregatePerTcPercentile:
             "rapid": self._row(percentile=37.5, n_games=100)
         }
         assert _aggregate_per_tc_percentile(per_tc) == pytest.approx(37.5)
+
+
+class TestAggregateEndgameStatsByTc:
+    """Unit tests for _aggregate_endgame_stats_by_tc (Phase 98).
+
+    Prod feeds per-class `entry_rows` (one row per (game, endgame_class) span,
+    carrying time_control_bucket). Tests use plain tuples with the column layout:
+    game_id[0], endgame_class_int[1], result[2], user_color[3],
+    eval_cp[4], eval_mate[5], time_control_bucket[6],
+    next_entry_eval_cp[7], next_entry_eval_mate[8]
+
+    rook=1, minor_piece=2, pawn=3, queen=4, mixed=5, pawnless=6.
+    Mixed and pawnless are EXCLUDED from the output (only rook/minor/pawn/queen
+    tiles render — D-05); see test_mixed_and_pawnless_excluded.
+    """
+
+    # Conversion threshold is >=100cp for white (see _classify_endgame_bucket).
+    # Recovery threshold is <=-100cp for white.
+
+    @staticmethod
+    def _row(
+        game_id: int,
+        class_int: int,
+        result: str,
+        user_color: str,
+        eval_cp: int | None,
+        tc: str,
+    ) -> tuple[int, int, str, str, int | None, None, str, None, None]:
+        """Helper: build a 9-tuple bucket row with NULL eval_mate and next-eval cols."""
+        return (game_id, class_int, result, user_color, eval_cp, None, tc, None, None)
+
+    def test_empty_rows_returns_empty_dict(self) -> None:
+        result = _aggregate_endgame_stats_by_tc([])
+        assert result == {}
+
+    def test_mixed_and_pawnless_excluded(self) -> None:
+        """Mixed (5) and pawnless (6) spans are dropped; only the four type tiles remain.
+
+        Regression for the empty-tile bug: when fed per-class spans, the header
+        count must equal the sum of the four rendered tiles (no Mixed/pawnless).
+        """
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "rapid"),  # rook (kept)
+            self._row(2, 2, "1-0", "white", 200, "rapid"),  # minor_piece (kept)
+            self._row(3, 3, "1-0", "white", 200, "rapid"),  # pawn (kept)
+            self._row(4, 4, "1-0", "white", 200, "rapid"),  # queen (kept)
+            self._row(5, 5, "1-0", "white", 200, "rapid"),  # mixed (excluded)
+            self._row(6, 6, "1-0", "white", 200, "rapid"),  # pawnless (excluded)
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        classes = {c.endgame_class for c in result["rapid"]}
+        assert classes == {"rook", "minor_piece", "pawn", "queen"}
+        # Header count (sum of categories) excludes the 2 dropped spans.
+        assert sum(c.total for c in result["rapid"]) == 4
+
+    def test_dict_keys_are_tc_strings(self) -> None:
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "blitz"),
+            self._row(2, 1, "1-0", "white", 200, "rapid"),
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        assert set(result.keys()) == {"blitz", "rapid"}
+
+    def test_per_tc_totals_match_row_counts(self) -> None:
+        """Each TC's total across classes must equal the number of rows for that TC."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "blitz"),  # blitz, rook
+            self._row(2, 2, "0-1", "white", -200, "blitz"),  # blitz, minor_piece
+            self._row(3, 1, "1-0", "white", 200, "rapid"),  # rapid, rook
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        blitz_total = sum(c.total for c in result["blitz"])
+        rapid_total = sum(c.total for c in result["rapid"])
+        assert blitz_total == 2
+        assert rapid_total == 1
+
+    def test_conversion_rate_computed_correctly(self) -> None:
+        """Three conversion wins out of four conversion games = 75%."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "blitz"),  # conversion win
+            self._row(2, 1, "1-0", "white", 200, "blitz"),  # conversion win
+            self._row(3, 1, "1-0", "white", 200, "blitz"),  # conversion win
+            self._row(4, 1, "0-1", "white", 200, "blitz"),  # conversion loss
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        assert "blitz" in result
+        cats = result["blitz"]
+        rook_cat = next((c for c in cats if c.endgame_class == "rook"), None)
+        assert rook_cat is not None
+        assert rook_cat.conversion.conversion_games == 4
+        assert rook_cat.conversion.conversion_pct == pytest.approx(75.0)
+
+    def test_recovery_rate_computed_correctly(self) -> None:
+        """One recovery save (win/draw) out of two recovery games = 50%."""
+        rows = [
+            self._row(1, 3, "1/2-1/2", "white", -200, "rapid"),  # recovery draw (save)
+            self._row(2, 3, "0-1", "white", -200, "rapid"),  # recovery loss
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        assert "rapid" in result
+        cats = result["rapid"]
+        pawn_cat = next((c for c in cats if c.endgame_class == "pawn"), None)
+        assert pawn_cat is not None
+        assert pawn_cat.conversion.recovery_games == 2
+        assert pawn_cat.conversion.recovery_pct == pytest.approx(50.0)
+
+    def test_wdl_split_correct(self) -> None:
+        """WDL counts and percentages are correct for a two-TC, two-class fixture."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 50, "bullet"),  # rook win (parity)
+            self._row(2, 1, "1/2-1/2", "white", 50, "bullet"),  # rook draw (parity)
+            self._row(3, 1, "0-1", "white", 50, "bullet"),  # rook loss (parity)
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        cats = result["bullet"]
+        rook = next((c for c in cats if c.endgame_class == "rook"), None)
+        assert rook is not None
+        assert rook.wins == 1
+        assert rook.draws == 1
+        assert rook.losses == 1
+        assert rook.total == 3
+
+    def test_score_p_value_none_below_reliability_floor(self) -> None:
+        """score_p_value is None when total < PVALUE_RELIABILITY_MIN_N (=10)."""
+        rows = [self._row(i, 1, "1-0", "white", 200, "rapid") for i in range(5)]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        rook = next((c for c in result["rapid"] if c.endgame_class == "rook"), None)
+        assert rook is not None
+        assert rook.score_p_value is None
+
+    def test_score_p_value_populated_above_reliability_floor(self) -> None:
+        """score_p_value is populated when total >= PVALUE_RELIABILITY_MIN_N (=10)."""
+        rows = [self._row(i, 1, "1-0", "white", 200, "rapid") for i in range(10)]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        rook = next((c for c in result["rapid"] if c.endgame_class == "rook"), None)
+        assert rook is not None
+        assert rook.score_p_value is not None
+
+    def test_tc_ordering_matches_time_control_order(self) -> None:
+        """Result dict keys appear in bullet/blitz/rapid/classical order."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "classical"),
+            self._row(2, 1, "1-0", "white", 200, "rapid"),
+            self._row(3, 1, "1-0", "white", 200, "bullet"),
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        # Dict insertion order must match _TIME_CONTROL_ORDER
+        assert list(result.keys()) == ["bullet", "rapid", "classical"]
+
+    def test_two_tc_two_class_fixture(self) -> None:
+        """Verify per-(TC, class) isolation: blitz/rook and rapid/pawn stay separate."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "blitz"),  # blitz rook conv win
+            self._row(2, 1, "0-1", "white", 200, "blitz"),  # blitz rook conv loss
+            self._row(3, 3, "1-0", "white", -200, "rapid"),  # rapid pawn recov win
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        blitz_rook = next(c for c in result["blitz"] if c.endgame_class == "rook")
+        assert blitz_rook.total == 2
+        assert blitz_rook.conversion.conversion_games == 2
+        rapid_pawn = next(c for c in result["rapid"] if c.endgame_class == "pawn")
+        assert rapid_pawn.total == 1
+        assert rapid_pawn.conversion.recovery_games == 1

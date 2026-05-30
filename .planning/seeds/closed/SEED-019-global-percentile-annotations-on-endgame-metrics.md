@@ -11,7 +11,7 @@ depends_on: v1.17 shipped (Endgame Stats Card Redesign — Phases 84–88.4, inc
 
 # SEED-019: Global percentile annotations on Endgame metrics
 
-> **⚠ Superseded by [SEED-026 v2](./SEED-026-percentile-chip-refinement.md) (Phase 94.4, shipped 2026-05-27).**
+> **⚠ Superseded by [SEED-026 v2](SEED-026-percentile-chip-refinement.md) (Phase 94.4, shipped 2026-05-27).**
 >
 > Phase 94.4 pivoted the chip from global-pool to peer-relative cohort framing. The "Final Tier-1 chip set" section below (rendered here as `### Ship (4 chips)`) is superseded — Recovery Score Gap and Conversion Score Gap are rescued from the v1 drop list under peer-relative framing (per CONTEXT D-05 / D-05a). The Cohen's d / Spearman ρ analysis is preserved as historical context but is no longer load-bearing — the cohort comparison absorbs the rating coupling the candidacy table was designed to flag.
 >

@@ -1,11 +1,11 @@
 /**
  * Phase 85 — Score Gap row (label + result + bullet chart).
  *
- * Used for both the *Endgame Score Gap* (with − without) and *Achievable Score
- * Gap* (actual − achievable) rows in the Score Differences card. Both share
+ * Used for both the *Endgame Score Gap* (with − without) and *Eval Score
+ * Gap* (actual − Entry Eval Score) rows in the Score Differences card. Both share
  * the same bullet-chart shell (center=0, domain=SCORE_GAP_DOMAIN) and the
  * same coloring rule (zone tint regardless of confidence, per D-04), but the
- * neutral band now differs per row (Achievable ±5pp vs Endgame ±10pp — see
+ * neutral band now differs per row (Eval ±5pp vs Endgame ±10pp — see
  * 260514-kei). The band is supplied by the caller via `neutralMin`/`neutralMax`
  * to keep a single source of truth for which row gets which band.
  */

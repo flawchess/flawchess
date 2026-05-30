@@ -82,8 +82,11 @@ export function EndgameCard({
 
   return (
     <div data-testid={tileTestId}>
-      <h3 className="text-base font-semibold mb-2">{title}</h3>
-      <div className="flex flex-col gap-4">
+      {/* Full-bleed card header bar (matches the Time Pressure cards). */}
+      <h3 className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold">
+        {title}
+      </h3>
+      <div className="flex flex-col gap-4 p-4">
         {showWdl ? (
           <div className="flex flex-col gap-2">
             <span className="flex items-center gap-2 text-sm tabular-nums w-full">

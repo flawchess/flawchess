@@ -137,3 +137,49 @@ export const TC_METRIC_BANDS: Record<
   rapid: { convRate: [0.696, 0.8], recovRate: [0.218, 0.333], parityRate: [0.449, 0.575], convScoreGap: [-0.063, 0.021], recovScoreGap: [-0.008, 0.062] },
   classical: { convRate: [0.685, 0.833], recovRate: [0.174, 0.316], parityRate: [0.404, 0.591], convScoreGap: [-0.053, 0.038], recovScoreGap: [-0.037, 0.035] },
 } as const;
+
+// Phase 98: per-(class × TC) gauge bands for Conv/Recov/ScoreGap.
+// Source: reports/benchmark/benchmarks-latest.md §3.4.1 (TC marginal p25/p75).
+// Cohen's d ≈ 1.2–1.7 per class across TCs → all classes keep-separate.
+// Score Gap TC d ≈ 0.07–0.18 (collapse) — four near-identical ΔES bands per
+// class by design (Score Gap forced per-TC for visual consistency, D-04/D-14).
+// pawnless omitted: n below per-class TC floor; hidden in the collapsible tile UI.
+// Type excludes 'pawnless' to match the emitted keys (the value omits it).
+export const PER_CLASS_TC_GAUGE_ZONES: Record<
+  Exclude<EndgameClassKey, 'pawnless'>,
+  Record<
+    'bullet' | 'blitz' | 'rapid' | 'classical',
+    { conversion: [number, number]; recovery: [number, number]; achievable_score_gap: [number, number] }
+  >
+> = {
+  rook: {
+    bullet: { conversion: [0.56, 0.75], recovery: [0.27, 0.43], achievable_score_gap: [-0.05, 0.05] },
+    blitz: { conversion: [0.67, 0.82], recovery: [0.2, 0.37], achievable_score_gap: [-0.05, 0.05] },
+    rapid: { conversion: [0.69, 0.83], recovery: [0.17, 0.3], achievable_score_gap: [-0.05, 0.05] },
+    classical: { conversion: [0.74, 0.87], recovery: [0.13, 0.25], achievable_score_gap: [-0.05, 0.05] },
+  },
+  minor_piece: {
+    bullet: { conversion: [0.51, 0.73], recovery: [0.29, 0.5], achievable_score_gap: [-0.04, 0.06] },
+    blitz: { conversion: [0.64, 0.81], recovery: [0.21, 0.4], achievable_score_gap: [-0.04, 0.06] },
+    rapid: { conversion: [0.68, 0.83], recovery: [0.15, 0.33], achievable_score_gap: [-0.04, 0.06] },
+    classical: { conversion: [0.75, 0.89], recovery: [0.12, 0.28], achievable_score_gap: [-0.04, 0.06] },
+  },
+  pawn: {
+    bullet: { conversion: [0.57, 0.8], recovery: [0.25, 0.46], achievable_score_gap: [-0.04, 0.05] },
+    blitz: { conversion: [0.68, 0.87], recovery: [0.17, 0.36], achievable_score_gap: [-0.04, 0.05] },
+    rapid: { conversion: [0.75, 0.91], recovery: [0.1, 0.28], achievable_score_gap: [-0.04, 0.05] },
+    classical: { conversion: [0.8, 0.92], recovery: [0.08, 0.21], achievable_score_gap: [-0.04, 0.05] },
+  },
+  queen: {
+    bullet: { conversion: [0.64, 0.83], recovery: [0.19, 0.36], achievable_score_gap: [-0.04, 0.05] },
+    blitz: { conversion: [0.7, 0.9], recovery: [0.14, 0.31], achievable_score_gap: [-0.04, 0.05] },
+    rapid: { conversion: [0.75, 0.92], recovery: [0.08, 0.25], achievable_score_gap: [-0.04, 0.05] },
+    classical: { conversion: [0.88, 1.0], recovery: [0.0, 0.09], achievable_score_gap: [-0.04, 0.05] },
+  },
+  mixed: {
+    bullet: { conversion: [0.6, 0.72], recovery: [0.3, 0.4], achievable_score_gap: [-0.03, 0.04] },
+    blitz: { conversion: [0.68, 0.76], recovery: [0.25, 0.35], achievable_score_gap: [-0.03, 0.04] },
+    rapid: { conversion: [0.7, 0.79], recovery: [0.23, 0.31], achievable_score_gap: [-0.03, 0.04] },
+    classical: { conversion: [0.7, 0.83], recovery: [0.18, 0.3], achievable_score_gap: [-0.03, 0.04] },
+  },
+} as const;

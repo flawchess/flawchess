@@ -127,17 +127,14 @@ export interface PercentileChipProps {
   value?: number | null;
 }
 
-// Quick task 260527-q0b: value formatter dispatcher. Two output formats:
-//   - clock-gap / net-flag-rate: signed integer percent ("+5%", "-3%").
-//   - all other flavors: signed score with 2 decimals ("+0.04", "-0.12").
-// The percent formatter multiplies the raw fraction by 100 and rounds; the
-// score formatter preserves chart precision for the ΔES family.
-function formatChipValue(flavor: PercentileChipFlavor, v: number): string {
-  if (flavor === 'clock-gap' || flavor === 'net-flag-rate') {
-    const pct = Math.round(v * 100);
-    return `${pct >= 0 ? '+' : ''}${pct}%`;
-  }
-  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+// Value formatter. All flavors render as a signed integer percent ("+5%",
+// "-3%") so the chip tooltip matches the corresponding metric tooltip, which
+// formats every score gap / clock gap / net flag rate as `Math.round(v*100)%`
+// (see EndgameMetricsByTcCard, EndgameTimePressureCard, EndgameOverallPerformanceSection).
+// The raw value is a fraction (0.04 = 4 percentage points).
+function formatChipValue(v: number): string {
+  const pct = Math.round(v * 100);
+  return `${pct >= 0 ? '+' : ''}${pct}%`;
 }
 
 // Quick task 260527-q0b: clamp a raw percentile float to the same integer
@@ -206,14 +203,19 @@ function PercentileChipPopoverBody({
       : `in the bottom ${clampedPct}%`;
   // 260529-l1i: bullet 1 diverges by chip type.
   //   - Per-TC chip (tc !== undefined): keeps the "~{anchor}-rated players in
-  //     {tc}" clause — the chip is scoped to one TC with one anchor.
+  //     {tc}" clause — the chip is scoped to one TC with one anchor. The chip's
+  //     own value is woven into the sentence (formatted as percent, matching the
+  //     adjacent metric tooltip) so the user reads their number and its rank in
+  //     one statement; omitted when the caller did not thread `value`.
   //   - Aggregated chip (tc === undefined): drops the rating number; the
   //     per-row "anchored at ~X Lichess Elo" lines in bullet 2 carry the
   //     per-TC anchors instead.
+  const valueFragment = value != null ? ` ${formatChipValue(value)}` : '';
   const bullet1 =
     tc !== undefined ? (
       <>
-        Your <em>recent</em> {metricLabel} is {phrasing} of ~{anchorRating}-rated players in {tc}.
+        Your <em>recent</em> {metricLabel}
+        {valueFragment} is {phrasing} of ~{anchorRating}-rated players in {tc}.
       </>
     ) : (
       <>
@@ -225,16 +227,16 @@ function PercentileChipPopoverBody({
   //   - tc === undefined (aggregated chip): render a leading line + per-TC list.
   //     Each per-TC entry obeys the 4 branches documented on PerTcBreakdownOut.
   //   - tc !== undefined (per-TC chip): render a single line with the chip-cohort
-  //     n_games + value framed as "Your value: <value>".
+  //     n_games. The chip's value now lives in bullet 1, not here.
   // Fall back to the prior single-line copy when the caller did not thread the
   // new fields so older fixtures + test harnesses keep rendering.
   const bullet2 = ((): React.ReactElement => {
     if (tc !== undefined) {
-      if (nGames != null && value != null) {
+      if (nGames != null) {
         return (
           <>
             Based on {nGames} of your recent {tc} games over the last 36 months, vs opponents
-            within +/-100 Elo. Your value: {formatChipValue(flavor, value)}.
+            within +/-100 Elo.
           </>
         );
       }
@@ -286,7 +288,7 @@ function PercentileChipPopoverBody({
                   </span>
                 )}
                 <span className="block">
-                  {formatChipValue(flavor, entry.value)} over {entry.n_games} games -&gt; {pInt}{' '}
+                  {formatChipValue(entry.value)} over {entry.n_games} games -&gt; {pInt}{' '}
                   percentile
                 </span>
               </li>

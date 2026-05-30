@@ -332,12 +332,12 @@ describe('Endgames page — Phase 85 Plan 05 single composite section', () => {
     ).toBeNull();
   });
 
-  it('contains both accordion paragraphs ("Endgame Entry Eval" + "Endgame Score") (D-13)', () => {
+  it('contains both accordion paragraphs ("Entry Eval" + "Endgame Score") (D-13)', () => {
     overviewState.data = buildOverview();
     const { container } = renderPage();
     // Open the first accordion trigger (radix collapses content when closed).
     openConceptsAccordion(container);
-    expect(screen.getAllByText(/Endgame Entry Eval:/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Entry Eval:/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Endgame Score:/).length).toBeGreaterThan(0);
   });
 
@@ -354,7 +354,7 @@ describe('Endgames page — Phase 85 Plan 05 single composite section', () => {
     ) as HTMLParagraphElement[];
     const text = paragraphs.map((p) => p.textContent ?? '');
     const recoveryIdx = text.findIndex((t) => /Recovery:/.test(t));
-    const entryEvalIdx = text.findIndex((t) => /Endgame Entry Eval:/.test(t));
+    const entryEvalIdx = text.findIndex((t) => /Entry Eval:/.test(t));
     const endgameScoreIdx = text.findIndex((t) => /Endgame Score:/.test(t));
     expect(recoveryIdx).toBeGreaterThanOrEqual(0);
     expect(entryEvalIdx).toBeGreaterThan(recoveryIdx);
