@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
 status: "Phase 98 shipped — PR #163"
-last_updated: "2026-05-30T16:15:20.389Z"
-last_activity: 2026-05-30
+last_updated: "2026-05-30T20:06:52.001Z"
+last_activity: "2026-05-30 - Completed quick task 260530-rnz: Applied the Endgames-page header-band card style to Overview cards (Results by Color split into its own card), the shared "Results played as" card on both Openings subtabs, the Openings Stats/Insights accent cards (left-border accent relocated to content only), and the Bookmarked "Score over Time" card. Style-only, no collapse behavior; lint/knip clean, vitest 735/735. Previously: 2026-05-30 - Completed quick task 260530-pll: Collapsible per-TC Endgame Metrics cards + primary-TC timeline default"
 progress:
   total_phases: 8
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 4
-  percent: 13
+  completed_plans: 6
+  percent: 25
 ---
 
 # Project State: FlawChess
