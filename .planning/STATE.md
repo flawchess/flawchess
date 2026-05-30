@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
 status: executing
-last_updated: "2026-05-30T12:26:20.665Z"
-last_activity: 2026-05-30 -- Phase 98 planning complete
+last_updated: "2026-05-30T12:54:40.794Z"
+last_activity: 2026-05-30 -- Phase 98 execution started
 progress:
   total_phases: 8
   completed_phases: 1
@@ -18,10 +18,11 @@ progress:
 ## Current Position
 
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
-Phase: 97 (endgame-metrics-by-time-control) — COMPLETE & SHIPPED (PR #160, 2026-05-29)
-Next: Phase 98 (TC-mix-weighted Conv/Recov gauges on Endgame Type cards) — NOT STARTED, ready to plan; then Phase 99 (Percentile Badges for Conversion, Parity, and Recovery), then Phase 100 (v1.22 LLM Statistical-Reasoning rework)
-Status: Ready to execute
-Last activity: 2026-05-30 -- Phase 98 planning complete
+Phase: 98 (per-tc-collapsible-endgame-type-cards) — EXECUTING
+Plan: wave 1 complete (98-01 backend done), executing wave 2 (98-02 frontend)
+Next: finish 98-02 (collapsible per-TC cards), then verify phase 98
+Status: Executing Phase 98
+Last activity: 2026-05-30 -- Phase 98 wave 1 complete (98-01 backend foundation merged)
 
 ## Project Reference
 

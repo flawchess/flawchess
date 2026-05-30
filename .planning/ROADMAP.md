@@ -94,7 +94,7 @@
 **Plans**: 2 plans
 **Wave 1**
 
-- [ ] 98-01-PLAN.md — Backend: per-(class × TC) zone registry + codegen + categories_by_tc aggregation (LLM path unaffected)
+- [x] 98-01-PLAN.md — Backend: per-(class × TC) zone registry + codegen + categories_by_tc aggregation (LLM path unaffected)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
