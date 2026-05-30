@@ -61,6 +61,33 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
     §3.2.1 ELO (800,2400)0.20→(1200,2400)0.22; §3.2.2 TC 0.10→0.18 (rapid,classical).
     §3.2.2 parity ELO 0.31 matches. Classical conv mean 0.7545 renders 75.4% (report 75.5%)
     — .5-boundary half-up display artifact (4 dp value exact), same class as known §3.1 cases.
+- `c7d76c72` §3.3 COMPLETE (3.3.1 + 3.3.2 + 3.3.3) — NEW module `chapter3_3.py`, registered as
+  chapter `3.3-time-pressure` → `chapter3_3.build`. Added shared clock SQL to sql.py:
+  `FIRST_ENDGAME_ENTRY_CTE` (entry_ply variant of ENDGAME_GAME_IDS_CTE), `clock_routing_case`
+  (user/opp clock at entry by color+parity), `CLOCK_MIN_GAMES`=20, `PRESSURE_BIN_MIN_GAMES`=5,
+  `PRESSURE_BIN_NEUTRAL_CAP`=0.06.
+  - §3.3.1 clock-diff % / clock-gap fraction / net-timeout — one shared clock-routing scan
+    (clean→routed→per_user_cell, ≥20 games/user). clock-gap = clock-diff÷100 (computed natively
+    at 4 dp). Pooled + all marginals reproduce the report EXACTLY (n=4,604; sub-800 + sparse
+    applied even though §3.3.1's inline SQL omits them — universal rule, like §3.2.1).
+    clock-diff verdicts TC 0.24 (bullet,classical) / ELO 0.17 (1600,2400) match. Net-timeout
+    ELO 0.28 (800,2400) matches; TC slip report 0.04→det 0.09 (blitz,classical), both collapse.
+  - §3.3.2 GAME-level curve. GROUPING SETS ((tb),(tb,tc),(tb,elo)) one scan → pooled 10-bucket
+    curve + TC/ELO marginals + var_samp(score) for per-tb Cohen's d on the 0/0.5/1 outcome.
+    Pooled curve + both marginals EXACT. Per-tb TC d tb0/5/9 = 0.39/0.14/0.05 (report ≈0.38/
+    ≈0.13/0.05, 1-ulp); ELO ≤0.16 all buckets → collapse.
+  - §3.3.3 per-user score per (TC×ELO×quintile), quintile=min(4,clock%//20), ≥5 games/bin,
+    ≥10 users/cell, sub-800+sparse INLINE (per SKILL §3.3.3). ONE scan: GROUPING SETS
+    ((quintile,tc),(quintile,elo)) — the (quintile,tc) rows ARE both the shipped band cells
+    (ELO pooled) and the TC-axis verdict input. The 20-cell band table (n_users + p25/p50/p75)
+    reproduces the report EXACTLY. **Verdict finding**: the report's per-quintile d's
+    (≈0.18–0.46) do NOT reproduce under the documented per-user n/mean/var_samp recipe — they
+    read as eyeballed/game-level. Deterministic per-user d's are larger: Q0 TC 0.75 / ELO 0.56,
+    Q2 TC 0.46, Q3 ELO 0.34, Q4 ELO 0.31 (Q1 TC 0.32 / Q4 TC 0.19 match). Verdict-narrative
+    only — the shipped per-(TC×quintile) band design is unaffected (the larger ELO d's, if
+    anything, feed the Phase-B per-ELO stratification review). Emits deterministic values.
+  - Rendering is bespoke (§3.3's slice/curve/band tables differ from §3.1/§3.2's MetricBlock
+    layout); reuses `agg_select`/`split_grouping_sets`/`stats.max_abs_d` for COMPUTE only.
 
 ## Architecture (scripts/benchmarks/ subpackage; tests in tests/scripts/benchmarks/)
 
@@ -83,7 +110,11 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
   chapter3 §3.1.2 build on it so the cohort/equal-footing/trim logic can't drift.
 - `render.py` — `markdown_table`, `fmt_int` (commas ≥1000), `fmt_signed`/`fmt_unsigned` (U+2212
   minus, half-up), `fmt_value(v, unit, role, *, pooled)` (cp/score/pp display).
-- `chapter1.py`, `chapter2.py`, `chapter3.py` — chapters; registered in gen_benchmarks._CHAPTER_BUILDERS.
+- `chapter1.py`, `chapter2.py`, `chapter3.py` (§3.1+§3.2), `chapter3_3.py` (§3.3) — chapters;
+  registered in gen_benchmarks._CHAPTER_BUILDERS. §3.3 added clock building blocks to sql.py:
+  `FIRST_ENDGAME_ENTRY_CTE`, `clock_routing_case`, CLOCK_MIN_GAMES, PRESSURE_BIN_MIN_GAMES,
+  PRESSURE_BIN_NEUTRAL_CAP. §3.2 added `endgame_bucket_case_sql`, `bucket_score_case_sql`,
+  `win_chances_sigmoid_sql`, `span_es_sql`, EVAL_ADVANTAGE_THRESHOLD, SECTION2_SPAN_MIN_SPANS.
 
 ## The cadence (one sub-metric at a time)
 
@@ -122,21 +153,33 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
   §3.1.4 ELO d pair (800,2000)→(800,2400) (0.34679 vs 0.34694, both →0.35/review);
   §3.1.5 TC d pair (bullet,rapid)→(rapid,classical) (report's labeled pair = 0.08, the true
   max 0.13 is rapid-vs-classical — right magnitude, wrong pair label; verdict collapse unchanged).
-  §3.1.2 + §3.1.3 had NONE. Expect more — verify, don't assume the report is exact.
+  §3.1.2 + §3.1.3 had NONE. §3.2 parity (×3, all verdict-neutral). §3.3.1 net-timeout TC
+  0.04→0.09. §3.3.2 per-tb TC 0.38/0.13→0.39/0.14 (1-ulp). Expect more — verify, don't assume.
+- **§3.3.3 verdict recipe mismatch (the one MATERIAL verdict divergence so far)**: the report's
+  §3.3.3 per-quintile collapse d's (≈0.18–0.46) were NOT computed with the documented per-user
+  n/mean/var_samp recipe — they read as eyeballed/game-level. Per-user scores cluster tightly
+  (var≈0.014–0.034), so the same mean gap yields a much larger Cohen's d than the report shows
+  (Q0 TC 0.43→0.75, Q0 ELO 0.20→0.56). The generator emits the deterministic per-user values; the
+  20-cell band table (the actual shipped output) matches the report exactly, so this is
+  verdict-narrative-only. If a future reviewer wants the report's verdict to match, the question
+  is whether §3.3.3's verdict should be game-level (it should NOT, per the documented recipe).
+- **§3.3 sub-800 + sparse are universal even when the inline §3.3.1/§3.3.2 SQL omits them** (same
+  as §3.2.1). §3.3.3's inline SQL includes them. Apply to all three; pooled n=4,604 confirms.
 
 ## Remaining work
 
-- §3.3 Time Pressure (3.3.x) — clock/time-pressure absolute curves + per-pressure-bin curves.
 - §3.4 Endgame Type per-class (3.4.x) — partitioned per class (rook/minor/pawn/queen/mixed/
-  pawnless). §3.4.2 reuses the §3.2.2 span-gap machinery (spans/spans_with_next/gap_rows) —
-  consider extracting it from chapter3 into a shared CTE builder when porting §3.4.2.
+  pawnless). §3.4.2 reuses the §3.2.2 span-gap machinery (the `spans`/`spans_with_next`/`gap_rows`
+  CTEs currently inline in chapter3._section2_gap_per_user_bucket_cte) — extract it into a shared
+  CTE builder when porting §3.4.2. §3.4.1 reuses the §3.2.1 eval-bucket classification
+  (`sql.endgame_bucket_case_sql` / `bucket_score_case_sql`) but per-CLASS-SPAN entry eval
+  (array_agg[1] per (game, endgame_class) span) rather than the game's first endgame ply.
 - §4 — already deterministic; chapter just references scripts/gen_global_percentile_cdf.py.
 
-NOTE on the 5×4 cell grid: the SKILL.md §3.2.1 "Output" mentions a 5×4 p50 cell table, but
-benchmarks-latest.md §3.2 does NOT contain one (only pooled + ELO + TC marginals, same as
-§3.1). The gate is the report, so §3.2 emits marginals only — matching §3.1's structure. The
-5×4 grid first actually appears in the report at §3.4 (per-class); build it in distribution.py
-when porting §3.4.
+NOTE on the 5×4 cell grid: §3.2.1's SKILL "Output" mentions a 5×4 p50 cell table, but
+benchmarks-latest.md §3.2/§3.3 do NOT contain one (only pooled + marginals, same as §3.1).
+The gate is the report, so §3.2/§3.3 emit marginals only. The 5×4 grid first actually appears
+in the report at §3.4 (per-class); build it when porting §3.4.
 
 ## LAST steps of Phase A (after all chapters pass — do NOT do early)
 
