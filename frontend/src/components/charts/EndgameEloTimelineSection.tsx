@@ -310,7 +310,7 @@ export function EndgameEloTimelineSection({
         <p>
           <strong>Endgame ELO Timeline:</strong> your Endgame ELO (dashed line)
           and Non-Endgame ELO (dotted line) over time, derived from your
-          Endgame Score Gap. See the "Endgame statistics concepts" section at
+          Endgame Score Gap. See the "Endgame Statistics Concepts" section at
           the top of the page for details.
         </p>
         <p>

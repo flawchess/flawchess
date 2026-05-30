@@ -372,7 +372,7 @@ export function EndgameMetricsByTcCard({
       <AccordionTrigger
         data-testid={`metrics-tc-card-${card.tc}-trigger`}
         aria-label={`${TC_LABELS[card.tc]} endgame metrics`}
-        className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline [&>svg:last-child]:ml-0"
+        className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0"
       >
         <div
           className="flex items-center gap-2 flex-1"

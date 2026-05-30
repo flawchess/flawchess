@@ -379,12 +379,14 @@ export function EndgamesPage() {
           {showPerfSection && (
             <>
               <Accordion type="single" collapsible>
-                <AccordionItem value="concepts" className="charcoal-texture rounded-md px-4" data-testid="endgame-concepts-trigger">
-                  <AccordionTrigger className="text-foreground justify-start flex-none gap-2 **:data-[slot=accordion-trigger-icon]:ml-0 **:data-[slot=accordion-trigger-icon]:order-first">
-                    <HelpCircle className="h-4 w-4 text-brand-brown/70 shrink-0 order-last" />
-                    Endgame statistics concepts
+                <AccordionItem value="concepts" className="charcoal-texture rounded-md overflow-hidden border-none" data-testid="endgame-concepts-trigger">
+                  <AccordionTrigger className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0">
+                    <span className="flex items-center gap-2 flex-1">
+                      <HelpCircle className="h-4 w-4 text-brand-brown/70 shrink-0" />
+                      <h3 className="text-base font-semibold text-foreground">Endgame Statistics Concepts</h3>
+                    </span>
                   </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground space-y-2">
+                  <AccordionContent className="text-muted-foreground space-y-2 p-4">
                     <p>
                       <strong>FlawChess Benchmark:</strong> a stratified sample of Lichess players across rating
                       and time control buckets, used to calibrate the typical range for each metric. The latest
