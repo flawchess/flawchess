@@ -62,7 +62,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings  # noqa: E402
-from scripts.benchmarks import chapter1, chapter2  # noqa: E402
+from scripts.benchmarks import chapter1, chapter2, chapter3  # noqa: E402
 
 DbTarget = Literal["benchmark", "dev"]
 
@@ -167,6 +167,7 @@ CHAPTER_STUBS: tuple[tuple[str, str], ...] = (
 _CHAPTER_BUILDERS: dict[str, Callable[[AsyncSession], Awaitable[dict[str, Any]]]] = {
     "1-stratified-sample": chapter1.build,
     "2.1-openings-middlegame-eval": chapter2.build,
+    "3.1-endgame-overall": chapter3.build,
 }
 
 

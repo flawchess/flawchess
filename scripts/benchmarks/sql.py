@@ -55,6 +55,33 @@ EVAL_OUTLIER_TRIM_CP: int = 2000
 # z-test gate). SKILL.md "Sample floor" / "Sample floors".
 EVAL_CONFIDENCE_MIN_N: int = 20
 
+# Lichess winning-chances sigmoid coefficient (SKILL.md §3.1.3/§3.1.5 expected_score).
+LICHESS_WIN_CHANCES_K: float = 0.00368208
+
+# Per-user game floors (SKILL.md "Sample floors").
+SCORE_GAP_MIN_GAMES: int = 30  # §3.1.1/§3.1.6: >=30 endgame AND >=30 non-endgame
+ENDGAME_MIN_GAMES: int = 20  # §3.1.3/§3.1.4/§3.1.5/§3.2.1: >=20 endgame games per cell
+
+# User's score in a game (SKILL.md "Shared SQL building blocks — user_score_expr").
+USER_SCORE_EXPR: str = (
+    "CASE\n"
+    "  WHEN (g.result = '1-0' AND g.user_color = 'white')\n"
+    "    OR (g.result = '0-1' AND g.user_color = 'black') THEN 1.0\n"
+    "  WHEN g.result = '1/2-1/2' THEN 0.5\n"
+    "  ELSE 0.0\n"
+    "END"
+)
+
+# Games meeting the 6-ply endgame rule (SKILL.md "Shared SQL building blocks —
+# endgame_game_ids"). A CTE body for inclusion in a WITH clause.
+ENDGAME_GAME_IDS_CTE: str = (
+    "endgame_game_ids AS (\n"
+    "  SELECT game_id FROM game_positions\n"
+    "  WHERE endgame_class IS NOT NULL\n"
+    f"  GROUP BY game_id HAVING count(*) >= {MIN_ENDGAME_PLIES}\n"
+    ")"
+)
+
 
 def elo_bucket(rating: int | None) -> int | None:
     """Game-time ELO bucket for a rating, or None if below the floor / missing.

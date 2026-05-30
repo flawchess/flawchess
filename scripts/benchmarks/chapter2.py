@@ -5,10 +5,8 @@ Two passes (SKILL.md §2.1 "Query"):
            equal-footing filter (production-realistic regime). Yields one white-POV
            number `BASELINE_CP`; the symmetric baseline is +X / −X.
   Pass 2 — per-(user, color) signed eval at MG entry, centered on the symmetric
-           baseline, pooled + marginalized over the game-time (ELO, TC) cells.
-
-Emits the pass-1 baseline row, the pooled centered distribution, ELO + TC marginals,
-and the TC/ELO Cohen's d collapse *numbers* (the LLM applies the verdict word).
+           baseline, pooled + marginalized over the game-time (ELO, TC) cells (the
+           shared distribution machinery).
 
 Two faithful-port decisions vs the SKILL.md §2.1 text (both validated against
 benchmarks-latest.md):
@@ -28,10 +26,15 @@ from typing import Any, TypedDict
 from sqlalchemy import RowMapping, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from scripts.benchmarks import sql, stats
-from scripts.benchmarks.render import Align, fmt_int, fmt_signed, fmt_unsigned, markdown_table
+from scripts.benchmarks import distribution as dist
+from scripts.benchmarks import sql
+from scripts.benchmarks.render import fmt_int, fmt_signed, fmt_unsigned, markdown_table
 
 SECTION = "SKILL.md §2.1 — middlegame-entry eval (symmetric baseline + centered distribution)"
+
+# Centered eval is a cp metric: mean at 2 dp (report double-rounds to +3.7), sd/pct at 1 dp.
+_CP_DIGITS = 1
+_CP_MEAN_DIGITS = 2
 
 
 class Baseline(TypedDict):
@@ -42,46 +45,17 @@ class Baseline(TypedDict):
     centering_cp: float  # round(baseline) — the symmetric ±constant pass 2 centers on
 
 
-class Distribution(TypedDict):
-    n: int
-    mean: float  # SQL-rounded to 2 dp (display half-up rounds to 1 dp)
-    sd: float
-    p05: float
-    p25: float
-    p50: float
-    p75: float
-    p95: float
-
-
-class Marginal(TypedDict):
-    label: str
-    dist: Distribution
-    mean_raw: float  # unrounded mean, for Cohen's d
-    var: float  # var_samp, for Cohen's d
-
-
-class Verdict(TypedDict):
-    axis: str
-    max_abs_d: float
-    pair: tuple[str, str]
-
-
 class Chapter2Values(TypedDict):
     baseline: Baseline
-    pooled: Distribution
-    elo_marginal: list[Marginal]
-    tc_marginal: list[Marginal]
-    verdicts: list[Verdict]
+    pooled: dist.Distribution
+    elo_marginal: list[dist.Marginal]
+    tc_marginal: list[dist.Marginal]
+    verdicts: list[dist.Verdict]
 
 
 async def _fetch(session: AsyncSession, sql_text: str) -> Sequence[RowMapping]:
     result = await session.execute(text(sql_text))
     return result.mappings().all()
-
-
-def _f(value: Any) -> float:
-    """Coerce a DB numeric (asyncpg Decimal) to float for JSON + stats."""
-    return float(value)
 
 
 async def _baseline(session: AsyncSession) -> Baseline:
@@ -113,38 +87,21 @@ async def _baseline(session: AsyncSession) -> Baseline:
             "FROM deduped",
         )
     )[0]
-    baseline_cp = _f(row["baseline_cp_white"])
+    baseline_cp = float(row["baseline_cp_white"])
     return Baseline(
         n_games=int(row["n_games"]),
         baseline_cp_white=baseline_cp,
-        median_white_pov=_f(row["median_white_pov"]),
-        sd_white_pov=_f(row["sd_white_pov"]),
+        median_white_pov=float(row["median_white_pov"]),
+        sd_white_pov=float(row["sd_white_pov"]),
         centering_cp=float(
             round(baseline_cp)
         ),  # symmetric ±constant (= live EVAL_BASELINE_CP_WHITE)
     )
 
 
-def _dist(row: RowMapping) -> Distribution:
-    return Distribution(
-        n=int(row["n"]),
-        mean=_f(row["mean"]),
-        sd=_f(row["sd"]),
-        p05=_f(row["p05"]),
-        p25=_f(row["p25"]),
-        p50=_f(row["p50"]),
-        p75=_f(row["p75"]),
-        p95=_f(row["p95"]),
-    )
-
-
 async def _pass2(session: AsyncSession, centering_cp: float) -> Sequence[RowMapping]:
     """Pass 2 — pooled + ELO + TC marginals in one GROUPING SETS scan over centered values."""
     bucket_case = sql.elo_bucket_case_sql("gf.ueag")
-    percentiles = ",\n".join(
-        f"  round(percentile_cont({p}) WITHIN GROUP (ORDER BY centered_cp)::numeric, 1) AS p{int(p * 100):02d}"
-        for p in (0.05, 0.25, 0.50, 0.75, 0.95)
-    )
     sql_text = (
         f"WITH {sql.SELECTED_USERS_CTE},\n"
         "first_middlegame AS (\n"
@@ -176,72 +133,27 @@ async def _pass2(session: AsyncSession, centering_cp: float) -> Sequence[RowMapp
         "         elo_bucket, tc\n"
         f"  FROM mid_per_user_color WHERE {sql.SPARSE_CELL_EXCLUSION}\n"
         ")\n"
-        "SELECT elo_bucket, tc, count(*) AS n,\n"
-        "  round(avg(centered_cp)::numeric, 2) AS mean,\n"
-        "  avg(centered_cp) AS mean_raw,\n"
-        "  round(stddev_samp(centered_cp)::numeric, 1) AS sd,\n"
-        "  var_samp(centered_cp) AS var,\n"
-        f"{percentiles}\n"
-        "FROM mc GROUP BY GROUPING SETS ((), (elo_bucket), (tc))"
+        "SELECT\n"
+        f"{dist.agg_select('centered_cp', digits=_CP_DIGITS, mean_digits=_CP_MEAN_DIGITS)}\n"
+        f"FROM mc {dist.GROUPING_SETS}"
     )
     return await _fetch(session, sql_text)
-
-
-def _marginal(row: RowMapping, label: str) -> Marginal:
-    return Marginal(label=label, dist=_dist(row), mean_raw=_f(row["mean_raw"]), var=_f(row["var"]))
-
-
-def _verdict(axis: str, marginals: Sequence[Marginal]) -> Verdict:
-    levels = [
-        stats.LevelStat(m["label"], m["dist"]["n"], m["mean_raw"], m["var"]) for m in marginals
-    ]
-    result = stats.max_abs_d(levels)
-    return Verdict(axis=axis, max_abs_d=result.max_abs_d, pair=result.pair)
 
 
 async def compute(session: AsyncSession) -> Chapter2Values:
     baseline = await _baseline(session)
     rows = await _pass2(session, baseline["centering_cp"])
-
-    pooled: Distribution | None = None
-    elo: list[Marginal] = []
-    tc: list[Marginal] = []
-    for row in rows:
-        if row["elo_bucket"] is not None:
-            elo.append(_marginal(row, str(int(row["elo_bucket"]))))
-        elif row["tc"] is not None:
-            tc.append(_marginal(row, str(row["tc"])))
-        else:
-            pooled = _dist(row)
-    if pooled is None:
-        raise RuntimeError("pass-2 GROUPING SETS returned no pooled row")
-
-    elo.sort(key=lambda m: int(m["label"]))
-    tc.sort(key=lambda m: sql.TC_ORDER.index(m["label"]))  # type: ignore[arg-type]
-
+    pooled, elo, tc = dist.split_grouping_sets(rows)
     return Chapter2Values(
         baseline=baseline,
         pooled=pooled,
         elo_marginal=elo,
         tc_marginal=tc,
-        verdicts=[_verdict("TC", tc), _verdict("ELO", elo)],
+        verdicts=[dist.verdict("TC", tc), dist.verdict("ELO", elo)],
     )
 
 
 # --- rendering -------------------------------------------------------------
-
-_DIST_HEADERS: tuple[str, ...] = ("n", "mean", "SD", "p05", "p25", "p50", "p75", "p95")
-_DIST_ALIGNS: tuple[Align, ...] = ("right",) * len(_DIST_HEADERS)
-
-
-def _dist_cells(d: Distribution, *, suffix: str = "") -> list[str]:
-    """n / mean(1dp signed) / SD(1dp) / percentiles(int signed), eval-cp display."""
-    return [
-        fmt_int(d["n"]),
-        f"{fmt_signed(d['mean'], 1)}{suffix}",
-        f"{fmt_unsigned(d['sd'], 1)}{suffix}",
-        *(f"{fmt_signed(d[k], 0)}{suffix}" for k in ("p05", "p25", "p50", "p75", "p95")),
-    ]
 
 
 def _baseline_table(b: Baseline) -> str:
@@ -253,25 +165,6 @@ def _baseline_table(b: Baseline) -> str:
         fmt_unsigned(b["sd_white_pov"], 1),
     ]
     return markdown_table(headers, [row], ("right",) * 4)
-
-
-def _pooled_table(d: Distribution) -> str:
-    return markdown_table(_DIST_HEADERS, [_dist_cells(d, suffix=" cp")], _DIST_ALIGNS)
-
-
-def _marginal_table(axis_label: str, marginals: Sequence[Marginal]) -> str:
-    headers = [axis_label, *_DIST_HEADERS]
-    aligns: tuple[Align, ...] = ("right",) * len(headers)
-    rows = [[m["label"], *_dist_cells(m["dist"])] for m in marginals]
-    return markdown_table(headers, rows, aligns)
-
-
-def _verdict_block(verdicts: Sequence[Verdict]) -> str:
-    lines = ["#### Collapse verdict", ""]
-    for v in verdicts:
-        a, b = v["pair"]
-        lines.append(f"- **{v['axis']} axis**: max |d| = **{v['max_abs_d']:.2f}** ({a} vs {b})")
-    return "\n".join(lines)
 
 
 def render(values: Chapter2Values) -> str:
@@ -288,17 +181,17 @@ def render(values: Chapter2Values) -> str:
         "",
         "##### Pooled centered distribution",
         "",
-        _pooled_table(values["pooled"]),
+        dist.pooled_table(values["pooled"], "cp"),
         "",
         "##### ELO marginal (centered)",
         "",
-        _marginal_table("ELO", values["elo_marginal"]),
+        dist.marginal_table("ELO", values["elo_marginal"], "cp"),
         "",
         "##### TC marginal (centered)",
         "",
-        _marginal_table("TC", values["tc_marginal"]),
+        dist.marginal_table("TC", values["tc_marginal"], "cp"),
         "",
-        _verdict_block(values["verdicts"]),
+        dist.verdict_block(values["verdicts"]),
     ]
     return "\n".join(parts)
 

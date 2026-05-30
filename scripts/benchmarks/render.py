@@ -57,6 +57,35 @@ def fmt_unsigned(value: float | Decimal | str, decimals: int) -> str:
     return f"{_round_half_up(value, decimals):.{decimals}f}"
 
 
+# Per-metric display unit for distribution tables (SKILL.md "Display formatting"):
+#   cp    — eval centipawns: mean/percentiles signed, percentiles as integer cp,
+#           SD unsigned 1 dp; " cp" suffix on pooled rows only (marginals bare).
+#   score — proportion rendered as percent: unsigned, 1 dp, "%" suffix everywhere.
+#   pp    — signed proportion rendered as percentage points: 1 dp, "pp" everywhere
+#           (SD unsigned).
+Unit = Literal["cp", "score", "pp"]
+Role = Literal["mean", "sd", "pct"]
+
+_UNIT_SCALE: dict[Unit, int] = {"cp": 1, "score": 100, "pp": 100}
+
+
+def fmt_value(value: float | Decimal | str, unit: Unit, role: Role, *, pooled: bool = False) -> str:
+    """Format one distribution-table cell per its unit + role (SKILL.md "Display formatting").
+
+    `pooled` controls only the cp unit's " cp" suffix (shown on pooled rows, omitted
+    on marginal rows, matching benchmarks-latest.md).
+    """
+    scaled = float(value) * _UNIT_SCALE[unit]
+    decimals = 0 if (unit == "cp" and role == "pct") else 1
+    signed = unit in ("cp", "pp") and role != "sd"
+    body = fmt_signed(scaled, decimals) if signed else fmt_unsigned(scaled, decimals)
+    if unit == "score":
+        return f"{body}%"
+    if unit == "pp":
+        return f"{body}pp"
+    return f"{body} cp" if pooled else body  # cp
+
+
 def markdown_table(
     headers: Sequence[str],
     rows: Sequence[Sequence[str]],
