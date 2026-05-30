@@ -107,6 +107,11 @@ CdfMetricId = Literal[
     "time_pressure_score_gap",
     "clock_gap",
     "net_flag_rate",
+    # Phase 99: raw-rate percentile families (TC is an outer registry key, NOT a
+    # suffix here — per Phase 94.4 D-13 / Anti-Patterns in 99-RESEARCH.md).
+    "conversion_rate",
+    "parity_rate",
+    "recovery_rate",
 ]
 
 
