@@ -30,3 +30,12 @@ skipped: 0
 blocked: 0
 
 ## Gaps
+
+## UAT Sign-off — 2026-05-31
+
+Both human UAT items were manually verified by Adrian and **PASS**:
+
+- [x] **UAT-1** — Each per-TC Conversion / Parity / Recovery card shows the title-line rate chip, right-aligned and distinct from the ΔES-gap chip on the ScoreGapRow; classical suppresses when the cohort is below the inclusion floor. **PASS**
+- [x] **UAT-2** — On a narrow mobile viewport (<1024px) the rate chips still render on the per-TC cards and do not displace the ΔES-gap chips. **PASS**
+
+**Status: COMPLETE** — phase verification updated to `passed`.
