@@ -19,10 +19,10 @@ progress:
 
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
 Phase: 98 (per-tc-collapsible-endgame-type-cards) — EXECUTING
-Plan: wave 1 complete (98-01 backend done), executing wave 2 (98-02 frontend)
-Next: finish 98-02 (collapsible per-TC cards), then verify phase 98
-Status: Executing Phase 98
-Last activity: 2026-05-30 -- Phase 98 wave 1 complete (98-01 backend foundation merged)
+Plan: 2 of 2 complete — both plans merged to phase branch
+Next: verify phase 98, then ship (PR) and plan Phase 99
+Status: Phase 98 implementation complete, verifying
+Last activity: 2026-05-30 -- Phase 98 both plans complete (backend + collapsible per-TC frontend)
 
 ## Project Reference
 

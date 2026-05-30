@@ -98,7 +98,7 @@
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 98-02-PLAN.md — Frontend: primaryTc util + restored 5-element tile + collapsible per-TC accordion section + test updates + CHANGELOG
+- [x] 98-02-PLAN.md — Frontend: primaryTc util + restored 5-element tile + collapsible per-TC accordion section + test updates + CHANGELOG
 
 ### Phase 99: Percentile Badges for Conversion, Parity, and Recovery
 
