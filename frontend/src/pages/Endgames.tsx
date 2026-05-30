@@ -437,7 +437,7 @@ export function EndgamesPage() {
                       <li>
                         <strong>Compute your recent metric value.</strong> Your most recent 3000 rated games
                         per time control over the last 36 months, vs opponents within +/-100 Elo, are used to
-                        compute the same metric (Endgame Score Gap, Conversion, Recovery, Achievable Score Gap,
+                        compute the same metric (Endgame Score Gap, Conversion, Recovery, Eval Score Gap,
                         etc.) the same way it is computed for each benchmark user.
                       </li>
                       <li>
@@ -445,7 +445,7 @@ export function EndgamesPage() {
                         {' '}Steps 1-3 are performed independently for each time control you play. For each TC,
                         the benchmark cell stores 99 precomputed percentile breakpoints for that metric; your
                         per-TC value is interpolated against those breakpoints to produce a per-TC percentile.
-                        For page-level chips that span time controls (Endgame Score Gap, Achievable Score Gap,
+                        For page-level chips that span time controls (Endgame Score Gap, Eval Score Gap,
                         Conversion, Parity, Recovery), the per-TC percentiles are then combined into a single
                         chip value via a game-count-weighted mean, so the time controls you play most weigh
                         most heavily. Per-TC chips on the Time Pressure cards skip this aggregation step and
@@ -506,9 +506,11 @@ export function EndgamesPage() {
                     </p>
                     <p>
                       <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
-                      <strong>Eval Score Gap:</strong> the difference between two Eval Scores, for
-                      example how much your Eval Score changed between the start and end of an
-                      Endgame Sequence. Positive means you gained Eval Score, negative means you lost some.
+                      <strong>Eval Score Gap:</strong> the gap between an Eval Score and another Score.
+                      Across your overall endgames it is your Endgame Score minus your Entry Eval Score
+                      (did you beat the engine's expectation for the positions you reached?); within an
+                      Endgame Sequence it is the change in Eval Score from start to end. Positive means
+                      you came out ahead of the engine's expectation, negative means you fell short.
                     </p>
                     <p>
                       <strong>Conversion:</strong> percentage of games where you entered the endgame with a
@@ -526,15 +528,14 @@ export function EndgamesPage() {
                       and drew or won. Measures how well you defend losing endgames.
                     </p>
                     <p>
-                      <strong>Endgame Entry Eval:</strong> the average Stockfish evaluation of
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
+                      <strong>Entry Eval:</strong> the average Stockfish evaluation of
                       the position where the endgame begins, measured in pawns from your perspective
                       (positive means you have the better position). Mate scores are excluded.
                     </p>
                     <p>
-                      <strong>Achievable Score:</strong> what a 2300+ rated player would score
-                      from your endgame-entry positions against a peer of similar rating.
-                      Calculated from your Endgame Entry Eval
-                      using the{' '}
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
+                      <strong>Entry Eval Score:</strong> your Entry Eval converted to a Score with the{' '}
                       <a
                         href="https://lichess.org/page/accuracy"
                         className="text-primary underline-offset-4 hover:underline"
@@ -543,9 +544,10 @@ export function EndgamesPage() {
                       >
                         Lichess expected-score formula
                       </a>
-                      . The curve is fitted on 2300+ rapid games, so scoring a little below this
-                      baseline from positive evals is normal at lower ratings. Compare against your
-                      achieved Endgame Score to see how well you convert the positions you reach.
+                      , i.e. what a strong player would expect to score from your endgame-entry
+                      positions. The curve is fitted on 2300+ rapid games, so scoring a little below
+                      it from positive evals is normal at lower ratings. Compare it against your
+                      Endgame Score to see how well you convert the positions you reach.
                     </p>
                     <p>
                       <strong>Endgame Score:</strong> your win rate (with draws counted as half)
@@ -555,12 +557,6 @@ export function EndgamesPage() {
                     <p>
                       <strong>Endgame Score Gap:</strong> the score difference between games that reach an endgame (Endgame Score) vs. games that end before (Non-Endgame Score). Positive means endgames are your strength; negative
                       means you perform worse once games reach an endgame.
-                    </p>
-                    <p>
-                      <strong>Achievable Score Gap:</strong> your average per-game score minus the achievable
-                      score from each endgame-entry position. Positive means you converted your endgame entry
-                      positions better than a 2300+ rated rapid player would on average; negative means you
-                      converted them worse.
                     </p>
                     <p>
                       <strong>Endgame ELO and Non-Endgame ELO:</strong> what your rating would be if your whole

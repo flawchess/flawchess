@@ -77,11 +77,11 @@ export function EndgameOverallPerformanceSection({
     SCORE_GAP_NEUTRAL_MAX,
   );
 
-  // Achievable Score Gap: how much the actual endgame score fell short of (or
-  // exceeded) the achievable score expected from the entry eval.
-  // achievable_score_gap is computed server-side per SEC1-10 (paired z-test on
-  // per-game actual - expected pairs). Phase 85.1 Plan 03 retired the previous
-  // frontend derivation `withScore - entry_expected_score`.
+  // Eval Score Gap (UI label; server field stays achievable_score_gap): how much
+  // the actual Endgame Score fell short of (or exceeded) the Entry Eval Score
+  // expected from the entry eval. achievable_score_gap is computed server-side
+  // per SEC1-10 (paired z-test on per-game actual - expected pairs). Phase 85.1
+  // Plan 03 retired the previous frontend derivation `withScore - entry_expected_score`.
   const achievableGapValue = data.achievable_score_gap;
   const achievableGapPositive = achievableGapValue >= 0;
   const achievableGapFormatted =
@@ -93,7 +93,7 @@ export function EndgameOverallPerformanceSection({
   );
 
   // Sample sizes for the two paired/two-sample tests powering the gap popovers.
-  // Achievable Score Gap: paired-diff over endgame games with non-null entry
+  // Eval Score Gap: paired-diff over endgame games with non-null entry
   // eval (d_n == entry_expected_score_n by construction, see endgame_service.py).
   // Endgame Score Gap: two-sample over both cohorts combined.
   const achievableGapN = data.entry_expected_score_n;
@@ -165,14 +165,14 @@ export function EndgameOverallPerformanceSection({
                 label={
                   <span className="inline-flex items-center gap-1">
                     <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                    Achievable Score Gap:
+                    Eval Score Gap:
                   </span>
                 }
                 value={achievableGapValue}
                 formatted={achievableGapFormatted}
                 resultColor={achievableGapColor}
                 valueTestId="achievable-score-gap-value"
-                ariaLabel={`Achievable Score Gap: ${achievableGapFormatted}`}
+                ariaLabel={`Eval Score Gap: ${achievableGapFormatted}`}
                 neutralMin={ACHIEVABLE_SCORE_GAP_NEUTRAL_MIN}
                 neutralMax={ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX}
                 ciLow={data.achievable_score_gap_ci_low ?? undefined}
@@ -182,7 +182,7 @@ export function EndgameOverallPerformanceSection({
                     <PercentileChip
                       percentile={data.achievable_score_gap_percentile}
                       flavor="achievable"
-                      metricLabel="Achievable Score Gap"
+                      metricLabel="Eval Score Gap"
                       testId="achievable-score-gap-percentile-chip"
                       perTcBreakdown={data.achievable_score_gap_per_tc}
                     />
@@ -190,8 +190,8 @@ export function EndgameOverallPerformanceSection({
                 }
                 tooltip={
                   <MetricStatPopover
-                    name="Achievable Score Gap"
-                    explanation="Your average per-game endgame score minus the achievable score from each entry position. Positive means you outperformed the 2300+ baseline; negative means you underperformed."
+                    name="Eval Score Gap"
+                    explanation="Your average per-game Endgame Score minus your Entry Eval Score (what a strong player would expect to score from your endgame-entry positions). Positive means you outperformed that expectation; negative means you underperformed."
                     value={achievableGapValue}
                     baseline={0}
                     unit="percent"
@@ -210,7 +210,7 @@ export function EndgameOverallPerformanceSection({
                       </>
                     }
                     testId="achievable-score-gap-info"
-                    ariaLabel="What is Achievable Score Gap?"
+                    ariaLabel="What is Eval Score Gap?"
                     isPending={isPending}
                     pendingCount={pendingCount}
                   />

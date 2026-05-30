@@ -120,7 +120,7 @@ export interface EndgamePerformanceResponse {
   achievable_score_gap_p_value: number | null;
   achievable_score_gap_ci_low: number | null;
   achievable_score_gap_ci_high: number | null;
-  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Achievable Score Gap vs the Phase 93 global CDF.
+  /** Phase 94 (PCTL-02): cohort percentile [0,100] for Eval Score Gap (server field: achievable_score_gap) vs the Phase 93 global CDF.
    *  null when the endgame-entry span count is below PVALUE_RELIABILITY_MIN_N (=10). */
   achievable_score_gap_percentile: number | null;
   /** Quick task 260527-q0b: per-TC breakdown for the chip tooltip bullet 2.

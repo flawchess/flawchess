@@ -49,7 +49,7 @@ interface EvalConfidenceTooltipProps {
   /** Which game phase the averaged eval is sampled at. 'opening-end' (default)
    * = end of the openings containing this position (move explorer / Openings).
    * 'endgame-entry' = the position where the endgame begins (Endgames Games
-   * subtab), matching the Stats-tab "Endgame Entry Eval" metric. */
+   * subtab), matching the Stats-tab "Entry Eval" metric. */
   evalContext?: 'opening-end' | 'endgame-entry';
 }
 
