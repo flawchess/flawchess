@@ -65,9 +65,16 @@ export interface EndgameCategoryStats {
 }
 
 export interface EndgameStatsResponse {
-  categories: EndgameCategoryStats[];  // sorted by total desc
+  categories: EndgameCategoryStats[];  // sorted by total desc; LLM path reads this
   total_games: number;       // Total games matching current filters
   endgame_games: number;     // Games that reached an endgame phase
+  // Phase 98: per-(class × TC) rates for the collapsible endgame type cards.
+  // Optional for back-compat with older server responses (Pitfall 6).
+  // D-15: the LLM insights path reads `categories` (pooled) and never touches this field.
+  categories_by_tc?: Record<
+    'bullet' | 'blitz' | 'rapid' | 'classical',
+    EndgameCategoryStats[]
+  >;
 }
 
 export interface EndgameGamesResponse {

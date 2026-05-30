@@ -1316,3 +1316,142 @@ class TestComputePlayerProfile:
         # for bullet; 1350 + 5 - 1 = 1354 for blitz).
         assert result[0].current_elo == 1356
         assert result[1].current_elo == 1354
+
+
+class TestD15LlmPathInvariant:
+    """D-15 regression: _findings_conversion_recovery_by_type must read
+    response.stats.categories (pooled) only — never categories_by_tc.
+
+    Adding categories_by_tc to EndgameStatsResponse must NOT change the
+    findings produced by the LLM insights path. This test asserts identical
+    outputs with and without categories_by_tc populated, so any accidental
+    coupling to the new field is caught immediately.
+    """
+
+    @staticmethod
+    def _make_category(
+        endgame_class: str,
+        conv_games: int,
+        conv_wins: int,
+        recov_games: int,
+        recov_wins: int,
+    ) -> Any:
+        """Build a minimal EndgameCategoryStats for insights path smoke testing."""
+        from app.schemas.endgames import (
+            ConversionRecoveryStats,
+            EndgameCategoryStats,
+        )
+
+        conv_draws = 0
+        conv_losses = conv_games - conv_wins - conv_draws
+        recov_draws = 0
+        recovery_saves = recov_wins + recov_draws
+        return EndgameCategoryStats(
+            endgame_class=cast(Any, endgame_class),
+            label=cast(Any, endgame_class.capitalize()),
+            wins=conv_wins,
+            draws=recov_draws,
+            losses=conv_losses,
+            total=conv_games + recov_games,
+            win_pct=round(conv_wins / (conv_games + recov_games) * 100, 1),
+            draw_pct=0.0,
+            loss_pct=round(conv_losses / (conv_games + recov_games) * 100, 1),
+            conversion=ConversionRecoveryStats(
+                conversion_pct=(
+                    round(conv_wins / conv_games * 100, 1) if conv_games else 0.0
+                ),
+                conversion_games=conv_games,
+                conversion_wins=conv_wins,
+                conversion_draws=conv_draws,
+                conversion_losses=conv_losses,
+                recovery_pct=(
+                    round(recovery_saves / recov_games * 100, 1) if recov_games else 0.0
+                ),
+                recovery_games=recov_games,
+                recovery_saves=recovery_saves,
+                recovery_wins=recov_wins,
+                recovery_draws=recov_draws,
+                opponent_conversion_pct=None,
+                opponent_conversion_games=recov_games,
+                opponent_recovery_pct=None,
+                opponent_recovery_games=conv_games,
+            ),
+        )
+
+    def _make_stats(
+        self,
+        categories: list[Any],
+        categories_by_tc: Any = None,
+    ) -> Any:
+        """Build an EndgameStatsResponse with or without categories_by_tc."""
+        from app.schemas.endgames import EndgameStatsResponse
+
+        return EndgameStatsResponse(
+            categories=categories,
+            total_games=100,
+            endgame_games=50,
+            categories_by_tc=categories_by_tc,
+        )
+
+    def _make_response(self, stats: Any) -> Any:
+        """Build a minimal EndgameOverviewResponse containing the given stats."""
+        return EndgameOverviewResponse.model_construct(
+            stats=stats,
+            time_pressure_chart=None,
+            performance=None,
+        )
+
+    def test_findings_identical_with_and_without_categories_by_tc(self) -> None:
+        """D-15 invariant: adding categories_by_tc must NOT change LLM findings.
+
+        The _findings_conversion_recovery_by_type function must continue to
+        read response.stats.categories (pooled) and produce identical findings
+        whether categories_by_tc is None or populated with data.
+        """
+        from app.services.insights_service import _findings_conversion_recovery_by_type
+
+        categories = [
+            self._make_category("rook", conv_games=20, conv_wins=16, recov_games=10, recov_wins=3),
+            self._make_category("pawn", conv_games=15, conv_wins=12, recov_games=8, recov_wins=2),
+        ]
+
+        # Build a populated categories_by_tc (different data from pooled)
+        tc_cats = {
+            "blitz": [
+                self._make_category("rook", conv_games=5, conv_wins=2, recov_games=3, recov_wins=1)
+            ]
+        }
+
+        stats_without = self._make_stats(categories, categories_by_tc=None)
+        stats_with = self._make_stats(categories, categories_by_tc=tc_cats)
+        resp_without = self._make_response(stats_without)
+        resp_with = self._make_response(stats_with)
+
+        findings_without = _findings_conversion_recovery_by_type(resp_without, "all_time")
+        findings_with = _findings_conversion_recovery_by_type(resp_with, "all_time")
+
+        # Both must produce identical findings (same length, same values)
+        assert len(findings_without) == len(findings_with), (
+            "D-15 violated: findings count differs when categories_by_tc is set"
+        )
+        for f_without, f_with in zip(findings_without, findings_with, strict=True):
+            assert f_without.value == f_with.value, (
+                f"D-15 violated: finding value differs for metric={f_without.metric}, "
+                f"dim={f_without.dimension}"
+            )
+            assert f_without.zone == f_with.zone, (
+                f"D-15 violated: finding zone differs for metric={f_without.metric}"
+            )
+
+    def test_llm_path_does_not_reference_categories_by_tc(self) -> None:
+        """Static assertion: _findings_conversion_recovery_by_type source must not
+        reference categories_by_tc (prevents accidental coupling)."""
+        import inspect
+
+        from app.services import insights_service
+
+        source = inspect.getsource(insights_service._findings_conversion_recovery_by_type)  # type: ignore[attr-defined]
+        assert "categories_by_tc" not in source, (
+            "D-15 violated: _findings_conversion_recovery_by_type references "
+            "categories_by_tc — the LLM path must read only response.stats.categories"
+        )
