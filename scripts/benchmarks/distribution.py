@@ -80,6 +80,28 @@ def agg_select(value: str, *, digits: int, mean_digits: int | None = None) -> st
     )
 
 
+def pooled_agg_select(value: str, *, digits: int, mean_digits: int | None = None) -> str:
+    """`agg_select` column list for a single ungrouped pooled row (elo_bucket/tc → NULL).
+
+    Use to UNION ALL a pooled-only distribution (e.g. §3.1.2's uncentered variant)
+    against a `agg_select` + GROUPING SETS arm — the column lists line up so both arms
+    parse via `dist_from_row` / `split_grouping_sets`.
+    """
+    md = digits if mean_digits is None else mean_digits
+    pcts = ",\n".join(
+        f"  round(percentile_cont({p}) WITHIN GROUP (ORDER BY {value})::numeric, {digits}) AS p{int(p * 100):02d}"
+        for p in _PERCENTILES
+    )
+    return (
+        "  NULL::int AS elo_bucket, NULL::text AS tc, count(*) AS n,\n"
+        f"  round(avg({value})::numeric, {md}) AS mean,\n"
+        f"  avg({value}) AS mean_raw,\n"
+        f"  round(stddev_samp({value})::numeric, {digits}) AS sd,\n"
+        f"  var_samp({value}) AS var,\n"
+        f"{pcts}"
+    )
+
+
 GROUPING_SETS = "GROUP BY GROUPING SETS ((), (elo_bucket), (tc))"
 
 
