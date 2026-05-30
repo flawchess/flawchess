@@ -6,7 +6,7 @@
  * separated by a vertical divider on desktop and horizontal dividers when
  * stacked on mobile (mirrors EndgameOverallPerformanceSection's two-column
  * card). Each block shows a gauge (TC-specific bands for all three metrics),
- * WDL bar, Delta-ES Score Gap bullet, and a percentile chip when the per-TC
+ * WDL bar, Delta-ES Eval Score Gap bullet, and a percentile chip when the per-TC
  * percentile is available.
  *
  * Key design decisions (from 97-PATTERNS.md / 97-RESEARCH.md):
@@ -65,7 +65,7 @@ const POPOVER_COPY: Record<MaterialBucket, string> = {
   parity:
     'How your score from balanced endgames compares to what a strong (2300+) player would score from the same positions, according to the Lichess expected-score formula. The blue zone marks the range that is typical for balanced endgames.',
   recovery:
-    'Per-span Score Gap on endgame spans you entered behind by >= 1 pawn. Above baseline = opponents failed to convert their winning positions more often than Stockfish predicted. Not a pure skill signal, you cannot outplay an engine from a lost position on your own. The blue zone marks the range that is typical for losing endgames.',
+    'Per-span Eval Score Gap on endgame spans you entered behind by >= 1 pawn. Above baseline = opponents failed to convert their winning positions more often than Stockfish predicted. Not a pure skill signal, you cannot outplay an engine from a lost position on your own. The blue zone marks the range that is typical for losing endgames.',
 };
 
 // Popover content per bucket (title InfoPopover next to each block heading).
@@ -184,25 +184,25 @@ function MetricBlock({
               </div>
             </div>
 
-            {/* Delta-ES Score Gap bullet -- gated on gapN > 0 */}
+            {/* Delta-ES Eval Score Gap bullet -- gated on gapN > 0 */}
             {showGapRow && (
               <div data-testid={`${testId}-score-gap-bullet`}>
                 <ScoreGapRow
                   label={
-                    // Card label is shortened to just "Score Gap:" — the block
-                    // heading (Conversion/Parity/Recovery) already names the
-                    // bucket. The full "{bucket} Score Gap" name is kept in the
-                    // tooltip, chip metricLabel, and aria-label below.
+                    // Card label is "Eval Score Gap:" — the block heading
+                    // (Conversion/Parity/Recovery) already names the bucket. The
+                    // full "{bucket} Eval Score Gap" name is kept in the tooltip,
+                    // chip metricLabel, and aria-label below.
                     <span className="inline-flex items-center gap-1">
                       <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                      Score Gap:
+                      Eval Score Gap:
                     </span>
                   }
                   value={displayedValue}
                   formatted={gapFormatted}
                   resultColor={gapColor}
                   valueTestId={`${testId}-score-gap-value`}
-                  ariaLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap: ${gapFormatted}`}
+                  ariaLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Eval Score Gap: ${gapFormatted}`}
                   neutralMin={displayedNeutralMin}
                   neutralMax={displayedNeutralMax}
                   ciLow={block.score_gap_ci_low != null ? block.score_gap_ci_low + displayShift : undefined}
@@ -220,7 +220,7 @@ function MetricBlock({
                         }
                         tc={tc}
                         anchorRating={anchorRating}
-                        metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
+                        metricLabel={`${BUCKET_DISPLAY_LABELS[bucket]} Eval Score Gap`}
                         testId={`${testId}-percentile-chip`}
                         nGames={block.percentile_n_games}
                         value={block.percentile_value}
@@ -229,7 +229,7 @@ function MetricBlock({
                   }
                   tooltip={
                     <MetricStatPopover
-                      name={`${BUCKET_DISPLAY_LABELS[bucket]} Score Gap`}
+                      name={`${BUCKET_DISPLAY_LABELS[bucket]} Eval Score Gap`}
                       explanation={POPOVER_COPY[bucket]}
                       value={displayedValue}
                       baseline={displayShift}
@@ -243,13 +243,13 @@ function MetricBlock({
                       baselineLabel="0%"
                       methodology={
                         <>
-                          Score Gap: Difference between Endgame Sequence start and end score, based on Stockfish evaluations converted to expected score.<br />
+                          Eval Score Gap: difference between the Eval Scores at the start and end of an Endgame Sequence (Stockfish evals converted via the Lichess expected-score formula).<br />
                           Test: paired one-sample z-test on per-span Delta-ES values vs 0.<br />
                           Confidence interval: 95% normal-approx on the paired diffs.
                         </>
                       }
                       testId={`${testId}-score-gap-info`}
-                      ariaLabel={`What is ${BUCKET_DISPLAY_LABELS[bucket]} Score Gap?`}
+                      ariaLabel={`What is ${BUCKET_DISPLAY_LABELS[bucket]} Eval Score Gap?`}
                     />
                   }
                 />

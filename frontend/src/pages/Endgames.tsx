@@ -488,12 +488,11 @@ export function EndgamesPage() {
                       <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
                       <strong>Eval:</strong> the Stockfish evaluation of a position, in pawns and from
                       your perspective, where positive means you stand better (+1.0 is a one-pawn
-                      advantage). Metrics that come from the engine are marked with this chip icon.
+                      advantage). Metrics that are based on the engine are marked with this chip icon.
                     </p>
                     <p>
                       <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
-                      <strong>Eval Score:</strong> an Eval converted into a Score (a 0-100% win
-                      expectancy) with the{' '}
+                      <strong>Eval Score:</strong> an Eval converted into a Score with the{' '}
                       <a
                         href="https://lichess.org/page/accuracy"
                         className="text-primary underline-offset-4 hover:underline"
@@ -509,8 +508,7 @@ export function EndgamesPage() {
                       <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
                       <strong>Eval Score Gap:</strong> the difference between two Eval Scores, for
                       example how much your Eval Score changed between the start and end of an
-                      Endgame Sequence. Positive means you gained expected Score (you outplayed the
-                      engine's expectation), negative means you gave some back.
+                      Endgame Sequence. Positive means you gained Eval Score, negative means you lost some.
                     </p>
                     <p>
                       <strong>Conversion:</strong> percentage of games where you entered the endgame with a
