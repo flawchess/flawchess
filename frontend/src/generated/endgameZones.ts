@@ -144,8 +144,9 @@ export const TC_METRIC_BANDS: Record<
 // Score Gap TC d ≈ 0.07–0.18 (collapse) — four near-identical ΔES bands per
 // class by design (Score Gap forced per-TC for visual consistency, D-04/D-14).
 // pawnless omitted: n below per-class TC floor; hidden in the collapsible tile UI.
+// Type excludes 'pawnless' to match the emitted keys (the value omits it).
 export const PER_CLASS_TC_GAUGE_ZONES: Record<
-  EndgameClassKey,
+  Exclude<EndgameClassKey, 'pawnless'>,
   Record<
     'bullet' | 'blitz' | 'rapid' | 'classical',
     { conversion: [number, number]; recovery: [number, number]; achievable_score_gap: [number, number] }
