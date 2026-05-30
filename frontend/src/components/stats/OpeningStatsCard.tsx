@@ -106,8 +106,13 @@ export function OpeningStatsCard({
     isConfident(opening.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
-  const cardStyle: React.CSSProperties = {
-    borderLeftColor,
+  // Full-height left spine on the card root (see OpeningFindingCard). Reliable
+  // cards get the score-zone accent down the whole left edge; unreliable cards
+  // (n < MIN_GAMES) get no spine — the uniform 1px border stays, avoiding a 4px
+  // transparent gap and any color signal on sparse data. Opacity dimming is a
+  // separate, broader gate (isCardMuted also covers low confidence).
+  const rootStyle: React.CSSProperties = {
+    ...(isReliableScore ? { borderLeftColor } : {}),
     ...(isCardMuted ? { opacity: UNRELIABLE_OPACITY } : {}),
   };
 
@@ -141,18 +146,6 @@ export function OpeningStatsCard({
     />
   ) : (
     <span className="text-muted-foreground">—</span>
-  );
-
-  const headerLine = (
-    <div className="flex items-center gap-2 text-sm min-w-0">
-      <span className="truncate text-foreground font-medium min-w-0">
-        {/* display_name carries the "vs. " prefix for off-color rows (PRE-01). */}
-        {opening.display_name}
-        {opening.opening_eco && (
-          <span className="ml-1 text-muted-foreground">({opening.opening_eco})</span>
-        )}
-      </span>
-    </div>
   );
 
   const wdlData = {
@@ -285,39 +278,55 @@ export function OpeningStatsCard({
   return (
     <div
       data-testid={cardTestId}
-      className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
-      style={cardStyle}
+      className={`relative charcoal-texture border border-border/20 rounded-md overflow-hidden${
+        isReliableScore ? ' border-l-4' : ''
+      }`}
+      style={rootStyle}
     >
-      {/* Header above board on both viewports (260507-tu1). */}
-      {headerLine}
+      <h4
+        className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-border/40 text-sm font-semibold"
+        data-testid={`${cardTestId}-header`}
+      >
+        <span className="truncate text-foreground min-w-0">
+          {opening.display_name}
+          {opening.opening_eco && (
+            <span className="ml-1 text-muted-foreground font-normal">({opening.opening_eco})</span>
+          )}
+        </span>
+      </h4>
 
-      {/* Mobile: board left, content right */}
-      <div className="flex flex-col gap-2 sm:hidden mt-2">
-        <div className="flex gap-3 items-start">
+      <div
+        data-testid={`${cardTestId}-content`}
+        className="px-4 py-4"
+      >
+        {/* Mobile: board left, content right */}
+        <div className="flex flex-col gap-2 sm:hidden">
+          <div className="flex gap-3 items-start">
+            <LazyMiniBoard
+              fen={opening.fen}
+              flipped={color === 'black'}
+              size={MOBILE_BOARD_SIZE}
+            />
+            <div className="flex-1 min-w-0 flex flex-col gap-2">
+              {wdlLine}
+              {scoreEvalBlock}
+              {linksRow}
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop: board left, content right (header lives above on both) */}
+        <div className="hidden sm:flex gap-3 items-center">
           <LazyMiniBoard
             fen={opening.fen}
             flipped={color === 'black'}
-            size={MOBILE_BOARD_SIZE}
+            size={DESKTOP_BOARD_SIZE}
           />
-          <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <div className="min-w-0 flex-1 flex flex-col gap-2">
             {wdlLine}
             {scoreEvalBlock}
             {linksRow}
           </div>
-        </div>
-      </div>
-
-      {/* Desktop: board left, content right (header lives above on both) */}
-      <div className="hidden sm:flex gap-3 items-center mt-2">
-        <LazyMiniBoard
-          fen={opening.fen}
-          flipped={color === 'black'}
-          size={DESKTOP_BOARD_SIZE}
-        />
-        <div className="min-w-0 flex-1 flex flex-col gap-2">
-          {wdlLine}
-          {scoreEvalBlock}
-          {linksRow}
         </div>
       </div>
     </div>

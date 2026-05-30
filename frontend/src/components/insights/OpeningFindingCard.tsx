@@ -67,27 +67,16 @@ export function OpeningFindingCard({
   // D-11: Apply UNRELIABLE_OPACITY when n_games < 10 OR confidence is low.
   const isUnreliable =
     finding.n_games < MIN_GAMES_FOR_RELIABLE_STATS || finding.confidence === 'low';
-  const cardStyle: React.CSSProperties = {
+  // Full-height left spine: the score-zone accent runs the entire left edge of
+  // the card (header band included). It lives on the card root, not the content
+  // div — the old content-div border started the colored stripe abruptly under
+  // the header band, leaving the rounded top-left corner un-accented.
+  const rootStyle: React.CSSProperties = {
     borderLeftColor,
     ...(isUnreliable ? { opacity: UNRELIABLE_OPACITY } : {}),
   };
 
   const cardTestId = `opening-finding-card-${idx}`;
-
-  const headerLine = (
-    <div className="flex items-center gap-2 text-sm min-w-0">
-      <span className="truncate text-foreground font-medium min-w-0">
-        {isUnnamed ? (
-          <span className="italic text-muted-foreground">{finding.display_name}</span>
-        ) : (
-          finding.display_name
-        )}
-        {finding.opening_eco && (
-          <span className="ml-1 text-muted-foreground">({finding.opening_eco})</span>
-        )}
-      </span>
-    </div>
-  );
 
   // WDL bar — same pattern as OpeningStatsCard.tsx.
   // Compute pcts inline, guarding div-by-zero.
@@ -285,51 +274,68 @@ export function OpeningFindingCard({
   return (
     <div
       data-testid={cardTestId}
-      className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
-      style={cardStyle}
+      className="relative charcoal-texture border border-border/20 border-l-4 rounded-md overflow-hidden"
+      style={rootStyle}
     >
-      {/* Header above board on both viewports (260507-tu1). */}
-      {headerLine}
+      <h4
+        className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-border/40 text-sm font-semibold"
+        data-testid={`${cardTestId}-header`}
+      >
+        <span className="truncate text-foreground min-w-0">
+          {isUnnamed ? (
+            <span className="italic text-muted-foreground font-normal">{finding.display_name}</span>
+          ) : (
+            finding.display_name
+          )}
+          {finding.opening_eco && (
+            <span className="ml-1 text-muted-foreground font-normal">({finding.opening_eco})</span>
+          )}
+        </span>
+      </h4>
 
-      {/* Mobile: board + caption left, content right */}
-      <div className="flex flex-col gap-2 sm:hidden mt-2">
-        <div className="flex gap-3 items-start">
+      <div
+        data-testid={`${cardTestId}-content`}
+        className="px-4 py-4"
+      >
+        {/* Mobile: board + caption left, content right */}
+        <div className="flex flex-col gap-2 sm:hidden">
+          <div className="flex gap-3 items-start">
+            <div className="flex flex-col items-end gap-1">
+              <LazyMiniBoard
+                fen={finding.entry_fen}
+                flipped={finding.color === 'black'}
+                size={MOBILE_BOARD_SIZE}
+                arrows={arrows}
+              />
+              {moveCaption}
+            </div>
+            <div className="flex-1 min-w-0 flex flex-col gap-2">
+              {wdlLine}
+              {scoreEvalBlock}
+              {linksRow}
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop: board left, content stacked right (header above on both).
+            Move anchor lives in linksRow (left of Moves/Games), not under the
+            board, so the bullet rows can sit closer to the miniboard. */}
+        <div className="hidden sm:flex gap-3 items-start">
           <div className="flex flex-col items-end gap-1">
             <LazyMiniBoard
               fen={finding.entry_fen}
               flipped={finding.color === 'black'}
-              size={MOBILE_BOARD_SIZE}
+              size={DESKTOP_BOARD_SIZE}
               arrows={arrows}
             />
-            {moveCaption}
           </div>
-          <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <div className="min-w-0 flex-1 flex flex-col gap-2">
             {wdlLine}
             {scoreEvalBlock}
             {linksRow}
           </div>
         </div>
       </div>
-
-      {/* Desktop: board left, content stacked right (header above on both).
-          Move anchor lives in linksRow (left of Moves/Games), not under the
-          board, so the bullet rows can sit closer to the miniboard. */}
-      <div className="hidden sm:flex gap-3 items-start mt-2">
-        <div className="flex flex-col items-end gap-1">
-          <LazyMiniBoard
-            fen={finding.entry_fen}
-            flipped={finding.color === 'black'}
-            size={DESKTOP_BOARD_SIZE}
-            arrows={arrows}
-          />
-        </div>
-        <div className="min-w-0 flex-1 flex flex-col gap-2">
-          {wdlLine}
-          {scoreEvalBlock}
-          {linksRow}
-        </div>
-      </div>
-
     </div>
   );
 }

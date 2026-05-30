@@ -10,6 +10,9 @@ Covers:
   no percentile rows, total > 0 → tier1=True, tier2=False
 - test_tier2_true_when_evals_and_percentiles_ready: drained games + a
   UserBenchmarkPercentile row → tier2=True
+- test_tier2_true_when_anchor_exists_but_no_percentile_rows: anchor row present
+  (Stage A ran) but zero percentile rows (below per-metric endgame floor) →
+  tier2=True (settled-empty escape, prod user 146)
 - test_tier2_true_when_no_games: user with zero games, no active job →
   tier1=True, tier2=True (nothing to drain — below-floor escape)
 
@@ -32,6 +35,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.main import app
 from app.models.game import Game
 from app.models.user_benchmark_percentile import UserBenchmarkPercentile
+from app.models.user_rating_anchors import UserRatingAnchor
 from app.services import import_service, percentile_compute_registry
 from app.services.canonical_slice_sql import MEDIAN_ANCHOR_MIN_GAMES
 
@@ -103,6 +107,23 @@ def _make_percentile_row(user_id: int) -> UserBenchmarkPercentile:
     )
 
 
+def _make_anchor_row(user_id: int) -> UserRatingAnchor:
+    """Build a minimal UserRatingAnchor ORM object for seeding tests.
+
+    A committed anchor row stands in for "compute_stage_a ran and committed" —
+    the signal the settled-empty escape keys on.
+    """
+    return UserRatingAnchor(
+        user_id=user_id,
+        time_control_bucket=_DEFAULT_TC,  # type: ignore[arg-type]
+        anchor_rating=_ANCHOR_RATING,
+        n_chesscom_games=33,
+        n_lichess_games=0,
+        chesscom_median_native=231,
+        lichess_median_native=None,
+    )
+
+
 async def _register_and_login(email: str, password: str = "testpassword123") -> tuple[int, str]:
     """Register a user via HTTP and return (user_id, auth_token)."""
     async with httpx.AsyncClient(
@@ -154,8 +175,19 @@ async def _seed_percentile_row_for_user(
         await session.commit()
 
 
+async def _seed_anchor_row_for_user(
+    test_engine,
+    user_id: int,
+) -> None:
+    """Insert a UserRatingAnchor row for the given user via a committed session."""
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(_make_anchor_row(user_id))
+        await session.commit()
+
+
 async def _delete_games_for_user(test_engine, user_id: int) -> None:
-    """Delete all seeded games for cleanup after test."""
+    """Delete all seeded games + percentile/anchor rows for cleanup after test."""
     from sqlalchemy import delete
 
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -164,6 +196,7 @@ async def _delete_games_for_user(test_engine, user_id: int) -> None:
         await session.execute(
             delete(UserBenchmarkPercentile).where(UserBenchmarkPercentile.user_id == user_id)
         )
+        await session.execute(delete(UserRatingAnchor).where(UserRatingAnchor.user_id == user_id))
         await session.commit()
 
 
@@ -271,12 +304,16 @@ async def test_tier2_false_when_above_floor_evals_done_but_no_percentile_rows(
     user_a_client: tuple[int, str],
     test_engine,
 ) -> None:
-    """Above-floor user, evals done, no percentile rows → tier2=False.
+    """Above-floor user, evals done, no percentile rows, NO anchor row → tier2=False.
 
     With enough anchor-eligible games to clear the 30-game per-TC floor and
-    pending_count == 0 but no Stage-B percentile rows yet, tier2 must be
-    False — the user is genuinely waiting for Stage B to write rows (the
-    below-floor escape must NOT fire because an anchor exists).
+    pending_count == 0 but no Stage-B percentile rows AND no anchor row yet,
+    tier2 must be False — Stage A has not committed (no anchor row), so the user
+    is genuinely still waiting for compute, not settled-empty. Neither escape
+    fires: the below-floor probe returns False (above floor) and the
+    settled-empty escape requires a committed anchor row, which is absent here.
+    Contrast test_tier2_true_when_anchor_exists_but_no_percentile_rows, where an
+    anchor row IS present and the settled-empty escape unlocks the user.
     """
     user_id, token = user_a_client
     headers = {"Authorization": f"Bearer {token}"}
@@ -297,6 +334,57 @@ async def test_tier2_false_when_above_floor_evals_done_but_no_percentile_rows(
     data = response.json()
     assert data["tier1"] is True
     assert data["tier2"] is False, "above-floor user with no percentile rows must stay locked"
+    assert data["pending_count"] == 0
+    assert data["total_count"] == n_games
+
+
+@pytest.mark.asyncio
+async def test_tier2_true_when_anchor_exists_but_no_percentile_rows(
+    user_a_client: tuple[int, str],
+    test_engine,
+) -> None:
+    """Anchor row present, evals done, no percentile rows → tier2=True.
+
+    Regression for the prod-146 lockout (endgame-percentiles-missing): a user can
+    be ABOVE the 30-game anchor floor (enough rating-eligible games to produce an
+    anchor) yet BELOW every endgame metric's per-metric population floor, because
+    too few of their games actually reach an endgame (user 146: 33 rating-eligible
+    rapid games, only 22 reach an endgame, < 30). Stage A then commits an anchor
+    row but zero percentile rows, by design. Without the settled-empty escape
+    ``has_any_rows`` stays False forever and ``is_below_anchor_floor`` reports
+    above-floor, so the endgames page is stuck on "Analyzing endgames" even
+    though Stockfish is done. The committed anchor row proves Stage A ran; paired
+    with zero percentile rows it means no metric can ever qualify, so the user
+    must unlock.
+
+    Distinct from the below-floor test: here an anchor row EXISTS (the
+    settled-empty path), so the per-TC below-floor probe must not even be the
+    thing that unlocks them.
+    """
+    user_id, token = user_a_client
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Above the anchor floor (30 anchor-eligible evaluated games) but seed an
+    # anchor row directly (Stage A "ran") with NO percentile rows.
+    n_games = MEDIAN_ANCHOR_MIN_GAMES
+    games = [
+        _make_game(user_id, evals_completed_at=_NOW, anchor_eligible=True) for _ in range(n_games)
+    ]
+    await _seed_games_for_user(test_engine, user_id, games)
+    await _seed_anchor_row_for_user(test_engine, user_id)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(READINESS_ENDPOINT, headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["tier1"] is True
+    assert data["tier2"] is True, (
+        "anchor row present but no percentile rows (Stage A ran, metrics below "
+        "endgame floor) must unlock via the settled-empty escape"
+    )
     assert data["pending_count"] == 0
     assert data["total_count"] == n_games
 
