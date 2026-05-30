@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
-status: ready_to_plan
-last_updated: 2026-05-30T22:53:45.861Z
+status: planning
+last_updated: "2026-05-30T23:38:04.647Z"
 last_activity: 2026-05-30
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 3
   total_plans: 11
   completed_plans: 11
-  percent: 38
-stopped_at: Phase 99 complete (5/5) — ready to discuss Phase 99.1
+  percent: 33
 ---
 
 # Project State: FlawChess
