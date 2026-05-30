@@ -621,6 +621,7 @@ export function EndgamesPage() {
                   <EndgameMetricsByTcSection
                     data={overviewData?.endgame_metrics_cards ?? { cards: [] }}
                     ratingAnchors={overviewData?.rating_anchors}
+                    filterKey={JSON.stringify(appliedFilters)}
                   />
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>

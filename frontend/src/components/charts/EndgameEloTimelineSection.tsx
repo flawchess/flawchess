@@ -44,6 +44,8 @@ import {
 } from '@/lib/theme';
 import { signedBandGradient } from '@/lib/signedBandGradient';
 import type { GradientStop } from '@/lib/signedBandGradient';
+import { computePrimaryTc } from '@/lib/primaryTc';
+import { MIN_GAMES_PER_TC_CARD } from '@/generated/endgameZones';
 import { inactivityGapReferenceLines } from './InactivityGapReferenceLines';
 import type { EndgameEloTimelineResponse, EloComboKey } from '@/types/endgames';
 
@@ -94,54 +96,45 @@ function getComboLabel(combo_key: string): string {
   return COMBO_LABELS[combo_key as EloComboKey] ?? combo_key;
 }
 
-// Phase 87.6 amendment (2026-05-17): default-hide rarely-played combos to keep
-// the chart readable when a user has up to 8 platform/TC combinations.
-//   1. Filter: hide combos whose active weeks < 33% of the leader's active weeks.
-//      Active weeks = combo.points.length (the backend already drops weeks with
-//      < 10 qualifying endgame games, so each point ≡ one active week).
-//      Active-weeks-not-games is the right denominator: a player who logs 30
-//      bullet games in one weekend produces 1 timeline point, while 30 rapid
-//      games over 10 weeks produces 10 — visual clutter scales with the latter.
-//   2. Rank: of combos passing the filter, keep the top MAX_DEFAULT_VISIBLE by
-//      total games (sum of per_week_total_games). Ranking still uses raw games
-//      so a blitz main sees their blitz line at the top.
-// Hidden combos remain in the legend (dimmed + line-through) and become visible
-// on click. When data changes, the default is recomputed via useEffect — user
-// toggles within a single dataset are preserved, but a fresh dataset resets.
-const MAX_DEFAULT_VISIBLE = 1;
-const MIN_ACTIVE_WEEKS_RATIO = 0.33;
+// 260530-pll: replaced the old active-weeks/top-1-by-games heuristic with a
+// primary-TC heuristic that aligns with EndgameMetricsByTcSection's accordion.
+// All combos whose time_control equals the primary TC are visible by default
+// (both platforms when both were played). Other-TC combos start hidden.
+//
+// Fallback: if computePrimaryTc returns null (no TC clears MIN_GAMES_PER_TC_CARD),
+// nothing is hidden — show everything to avoid a blank chart.
 
-function computeDefaultHidden(
-  combos: ReadonlyArray<{ combo_key: string; points: ReadonlyArray<{ per_week_total_games: number }> }>,
+function computeDefaultHiddenByPrimaryTc(
+  combos: ReadonlyArray<{
+    combo_key: string;
+    time_control: string;
+    points: ReadonlyArray<{ per_week_total_games: number }>;
+  }>,
 ): Set<string> {
-  if (combos.length <= MAX_DEFAULT_VISIBLE) {
-    // With MAX_DEFAULT_VISIBLE = 1 this only applies to the single-combo case.
-    // Nothing to hide. Still run the active-weeks filter below — the stray-combo
-    // path (sparse combo hidden even under the cap) still applies.
-  }
-  const totalGames = new Map<string, number>();
-  const activeWeeks = new Map<string, number>();
-  let leaderWeeks = 0;
+  // Build per-TC summed totals for computePrimaryTc: sum per_week_total_games
+  // across all points for each combo, then aggregate across both platforms per TC.
+  const byTc: Record<string, { total: number }[]> = {};
   for (const combo of combos) {
-    let games = 0;
-    for (const pt of combo.points) games += pt.per_week_total_games;
-    totalGames.set(combo.combo_key, games);
-    activeWeeks.set(combo.combo_key, combo.points.length);
-    if (combo.points.length > leaderWeeks) leaderWeeks = combo.points.length;
+    let total = 0;
+    for (const pt of combo.points) total += pt.per_week_total_games;
+    const tc = combo.time_control;
+    const existing = byTc[tc];
+    if (existing) {
+      existing.push({ total });
+    } else {
+      byTc[tc] = [{ total }];
+    }
   }
-  const minWeeks = leaderWeeks * MIN_ACTIVE_WEEKS_RATIO;
-  const passing = combos.filter(
-    (c) => (activeWeeks.get(c.combo_key) ?? 0) >= minWeeks,
-  );
-  const ranked = [...passing].sort(
-    (a, b) => (totalGames.get(b.combo_key) ?? 0) - (totalGames.get(a.combo_key) ?? 0),
-  );
-  const visible = new Set(
-    ranked.slice(0, MAX_DEFAULT_VISIBLE).map((c) => c.combo_key),
-  );
+  const primaryTc = computePrimaryTc(byTc, MIN_GAMES_PER_TC_CARD);
+  if (!primaryTc) {
+    // No TC clears the floor — fall back to showing everything.
+    return new Set<string>();
+  }
   const hidden = new Set<string>();
   for (const combo of combos) {
-    if (!visible.has(combo.combo_key)) hidden.add(combo.combo_key);
+    if (combo.time_control !== primaryTc) {
+      hidden.add(combo.combo_key);
+    }
   }
   return hidden;
 }
@@ -164,12 +157,12 @@ export function EndgameEloTimelineSection({
     [data?.combos],
   );
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(() =>
-    computeDefaultHidden(data?.combos ?? []),
+    computeDefaultHiddenByPrimaryTc(data?.combos ?? []),
   );
   const [hiddenSignature, setHiddenSignature] = useState<string>(comboSignature);
   if (hiddenSignature !== comboSignature) {
     setHiddenSignature(comboSignature);
-    setHiddenKeys(computeDefaultHidden(data?.combos ?? []));
+    setHiddenKeys(computeDefaultHiddenByPrimaryTc(data?.combos ?? []));
   }
 
   // Per-component useId for gradient IDs. The baseGradientId is suffixed per-combo

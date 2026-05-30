@@ -26,6 +26,11 @@
  *     BOTH percentile != null AND anchorRating != null — matching
  *     EndgameTimePressureCard. Without an anchor the tooltip would render a
  *     broken "~-rated players" clause, so the chip is suppressed instead.
+ *
+ * 260530-pll: converted from plain <div> to AccordionItem so the card participates
+ * in the controlled accordion managed by EndgameMetricsByTcSection. The header
+ * band IS the AccordionTrigger; the body is AccordionContent. The chevron is
+ * supplied by the shared AccordionTrigger — no manual chevron needed.
  */
 
 import { useMemo } from 'react';
@@ -37,6 +42,7 @@ import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ZONE_DANGER, ZONE_SUCCESS, colorizeGaugeZones } from '@/lib/theme';
 import { BUCKET_DISPLAY_LABELS } from '@/lib/endgameMetrics';
 import { TC_METRIC_BANDS, SCORE_GAP_PARITY_NEUTRAL_MIN, SCORE_GAP_PARITY_NEUTRAL_MAX } from '@/generated/endgameZones';
@@ -352,72 +358,86 @@ export function EndgameMetricsByTcCard({
   );
 
   return (
-    <div
-      className="charcoal-texture rounded-md w-full overflow-hidden"
+    // 260530-pll: AccordionItem replaces the plain <div>. The charcoal-texture,
+    // rounded-md, overflow-hidden, and border-none classes mirror EndgameTypeTcCard.
+    <AccordionItem
+      value={card.tc}
       data-testid={`metrics-tc-card-${card.tc}`}
+      className="charcoal-texture rounded-md overflow-hidden border-none"
     >
-      {/* Card header section: distinct recessed background + bottom separator,
-          full-bleed to the card edges (outer has no padding; header pads itself). */}
-      <div
-        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40"
-        data-testid={`metrics-tc-card-${card.tc}-header`}
+      {/* Card header: the AccordionTrigger IS the header band — full-bleed,
+          charcoal background, bottom separator only when expanded.
+          The inner content div retains the existing header testid so tests
+          and automation referencing `-header` continue to work. */}
+      <AccordionTrigger
+        data-testid={`metrics-tc-card-${card.tc}-trigger`}
+        aria-label={`${TC_LABELS[card.tc]} endgame metrics`}
+        className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline [&>svg:last-child]:ml-0"
       >
-        <TimeControlIcon
-          timeControl={card.tc}
-          className="h-4 w-4"
-        />
-        <h3 className="text-base font-semibold">{TC_LABELS[card.tc]}</h3>
-        <span
-          className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums font-normal"
-          data-testid={`metrics-tc-card-${card.tc}-total`}
+        <div
+          className="flex items-center gap-2 flex-1"
+          data-testid={`metrics-tc-card-${card.tc}-header`}
         >
-          {pctOfTotal !== null
-            ? `Games: ${pctOfTotal}% (${card.total.toLocaleString()})`
-            : `Games: ${card.total.toLocaleString()}`}
-          <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-        </span>
-      </div>
+          <TimeControlIcon
+            timeControl={card.tc}
+            className="h-4 w-4 shrink-0"
+          />
+          <h3 className="text-base font-semibold">{TC_LABELS[card.tc]}</h3>
+          <span
+            className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums font-normal"
+            data-testid={`metrics-tc-card-${card.tc}-total`}
+          >
+            {pctOfTotal !== null
+              ? `Games: ${pctOfTotal}% (${card.total.toLocaleString()})`
+              : `Games: ${card.total.toLocaleString()}`}
+            <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+        </div>
+      </AccordionTrigger>
 
       {/* Body: Conversion / Parity / Recovery trifecta (D-03) — three columns
           split by vertical dividers on desktop (lg+), stacked with horizontal
-          dividers below lg. Single charcoal container shared by all three. */}
-      <div className="flex flex-col lg:flex-row p-4">
-        <MetricBlock
-          bucket="conversion"
-          block={card.conversion}
-          tc={card.tc}
-          gaugeZones={convGaugeZones}
-          neutralMin={bands.convScoreGap[0]}
-          neutralMax={bands.convScoreGap[1]}
-          displayShift={convShift}
-          anchorRating={anchorRating}
-          gamesTotal={cardGamesTotal}
-        />
-        {divider}
-        <MetricBlock
-          bucket="parity"
-          block={card.parity}
-          tc={card.tc}
-          gaugeZones={parityGaugeZones}
-          neutralMin={SCORE_GAP_PARITY_NEUTRAL_MIN}
-          neutralMax={SCORE_GAP_PARITY_NEUTRAL_MAX}
-          displayShift={parityShift}
-          anchorRating={anchorRating}
-          gamesTotal={cardGamesTotal}
-        />
-        {divider}
-        <MetricBlock
-          bucket="recovery"
-          block={card.recovery}
-          tc={card.tc}
-          gaugeZones={recovGaugeZones}
-          neutralMin={bands.recovScoreGap[0]}
-          neutralMax={bands.recovScoreGap[1]}
-          displayShift={recovShift}
-          anchorRating={anchorRating}
-          gamesTotal={cardGamesTotal}
-        />
-      </div>
-    </div>
+          dividers below lg. Single charcoal container shared by all three.
+          AccordionContent className="p-0" so the body carries its own p-4. */}
+      <AccordionContent className="p-0">
+        <div className="flex flex-col lg:flex-row p-4">
+          <MetricBlock
+            bucket="conversion"
+            block={card.conversion}
+            tc={card.tc}
+            gaugeZones={convGaugeZones}
+            neutralMin={bands.convScoreGap[0]}
+            neutralMax={bands.convScoreGap[1]}
+            displayShift={convShift}
+            anchorRating={anchorRating}
+            gamesTotal={cardGamesTotal}
+          />
+          {divider}
+          <MetricBlock
+            bucket="parity"
+            block={card.parity}
+            tc={card.tc}
+            gaugeZones={parityGaugeZones}
+            neutralMin={SCORE_GAP_PARITY_NEUTRAL_MIN}
+            neutralMax={SCORE_GAP_PARITY_NEUTRAL_MAX}
+            displayShift={parityShift}
+            anchorRating={anchorRating}
+            gamesTotal={cardGamesTotal}
+          />
+          {divider}
+          <MetricBlock
+            bucket="recovery"
+            block={card.recovery}
+            tc={card.tc}
+            gaugeZones={recovGaugeZones}
+            neutralMin={bands.recovScoreGap[0]}
+            neutralMax={bands.recovScoreGap[1]}
+            displayShift={recovShift}
+            anchorRating={anchorRating}
+            gamesTotal={cardGamesTotal}
+          />
+        </div>
+      </AccordionContent>
+    </AccordionItem>
   );
 }
