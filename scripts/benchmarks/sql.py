@@ -87,6 +87,40 @@ ENDGAME_GAME_IDS_CTE: str = (
     ")"
 )
 
+# First endgame-entry ply per endgame-reaching game (SKILL.md §3.3.x "first_endgame").
+# Like ENDGAME_GAME_IDS_CTE but also projects the entry ply, which §3.3 needs to read
+# the clock at entry / entry+1. A CTE body for inclusion in a WITH clause.
+FIRST_ENDGAME_ENTRY_CTE: str = (
+    "first_endgame AS (\n"
+    "  SELECT game_id, min(ply) AS entry_ply FROM game_positions\n"
+    "  WHERE endgame_class IS NOT NULL\n"
+    f"  GROUP BY game_id HAVING count(*) >= {MIN_ENDGAME_PLIES}\n"
+    ")"
+)
+
+
+def clock_routing_case(color: str, ply: str, at_entry: str, at_entry_plus1: str) -> str:
+    """User-POV clock at endgame entry, routed by color + entry-ply parity (SKILL.md §3.3.x).
+
+    The backend reads the first clock for the user's parity; SQL approximates with the
+    clocks at `entry_ply` (`at_entry`) and `entry_ply + 1` (`at_entry_plus1`). The user's
+    clock is `at_entry` when they are to move at the entry ply (white on an even ply, black
+    on an odd ply), else `at_entry_plus1`. Swap `at_entry`/`at_entry_plus1` for the opponent.
+    """
+    return (
+        f"CASE WHEN {color} = 'white' AND {ply} % 2 = 0 THEN {at_entry}\n"
+        f"     WHEN {color} = 'white' AND {ply} % 2 = 1 THEN {at_entry_plus1}\n"
+        f"     WHEN {color} = 'black' AND {ply} % 2 = 1 THEN {at_entry}\n"
+        f"     ELSE {at_entry_plus1} END"
+    )
+
+
+# Net-timeout sample floor / clock per-user game floor (SKILL.md §3.3.1 HAVING count(*) >= 20).
+CLOCK_MIN_GAMES: int = 20
+# Per-pressure-bin per-user game floor + editorial cap (SKILL.md §3.3.3).
+PRESSURE_BIN_MIN_GAMES: int = 5
+PRESSURE_BIN_NEUTRAL_CAP: float = 0.06
+
 # First endgame-class ply per endgame-reaching game (rn = 1), carrying its eval
 # (SKILL.md §3.1.3/§3.1.5 "entry_rows"). Requires `endgame_game_ids` already in the
 # WITH clause; a CTE body for inclusion after it.
