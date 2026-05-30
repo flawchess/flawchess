@@ -34,6 +34,7 @@ from app.services.endgame_zones import (  # noqa: E402
     NEUTRAL_PCT_THRESHOLD,
     NEUTRAL_TIMEOUT_THRESHOLD,
     PER_CLASS_GAUGE_ZONES,
+    PER_CLASS_TC_GAUGE_ZONES,  # Phase 98: per-(class × TC) conv/recov/score-gap bands
     PRESSURE_BIN_SCORE_NEUTRAL_ZONES,  # Phase 88
     TC_METRIC_BANDS,  # Phase 97: per-TC conv/recov gauge + DeltaES bullet bands
     ZONE_REGISTRY,
@@ -148,6 +149,29 @@ def _format_tc_metric_bands() -> str:
             f" parityRate: [{pr_lo}, {pr_hi}],"
             f" convScoreGap: [{cg_lo}, {cg_hi}], recovScoreGap: [{rg_lo}, {rg_hi}] }},"
         )
+    return "\n".join(lines) + "\n"
+
+
+def _format_per_class_tc_gauge_zones() -> str:
+    """Emit PER_CLASS_TC_GAUGE_ZONES as a nested TS Record literal (Phase 98).
+
+    Outer key: EndgameClassKey (rook/minor_piece/pawn/queen/mixed).
+    Inner key: TC string ('bullet'|'blitz'|'rapid'|'classical').
+    Each entry has { conversion: [lo, hi], recovery: [lo, hi], achievable_score_gap: [lo, hi] }.
+    Mirrors _format_tc_metric_bands() structure for TC nesting.
+    """
+    lines: list[str] = []
+    for cls, tc_map in PER_CLASS_TC_GAUGE_ZONES.items():
+        tc_entries: list[str] = []
+        for tc, bands in tc_map.items():
+            c_lo, c_hi = bands.conversion
+            r_lo, r_hi = bands.recovery
+            g_lo, g_hi = bands.achievable_score_gap
+            tc_entries.append(
+                f"    {tc}: {{ conversion: [{c_lo}, {c_hi}], recovery: [{r_lo}, {r_hi}],"
+                f" achievable_score_gap: [{g_lo}, {g_hi}] }},"
+            )
+        lines.append(f"  {cls}: {{\n" + "\n".join(tc_entries) + "\n  },")
     return "\n".join(lines) + "\n"
 
 
@@ -272,6 +296,20 @@ def _render() -> str:
         "  'bullet' | 'blitz' | 'rapid' | 'classical',\n"
         "  { convRate: [number, number]; recovRate: [number, number]; parityRate: [number, number]; convScoreGap: [number, number]; recovScoreGap: [number, number] }\n"
         "> = {\n" + _format_tc_metric_bands() + "} as const;\n"
+        "\n"
+        "// Phase 98: per-(class × TC) gauge bands for Conv/Recov/ScoreGap.\n"
+        "// Source: reports/benchmark/benchmarks-latest.md §3.4.1 (TC marginal p25/p75).\n"
+        "// Cohen's d ≈ 1.2–1.7 per class across TCs → all classes keep-separate.\n"
+        "// Score Gap TC d ≈ 0.07–0.18 (collapse) — four near-identical ΔES bands per\n"
+        "// class by design (Score Gap forced per-TC for visual consistency, D-04/D-14).\n"
+        "// pawnless omitted: n below per-class TC floor; hidden in the collapsible tile UI.\n"
+        "export const PER_CLASS_TC_GAUGE_ZONES: Record<\n"
+        "  EndgameClassKey,\n"
+        "  Record<\n"
+        "    'bullet' | 'blitz' | 'rapid' | 'classical',\n"
+        "    { conversion: [number, number]; recovery: [number, number]; achievable_score_gap: [number, number] }\n"
+        "  >\n"
+        "> = {\n" + _format_per_class_tc_gauge_zones() + "} as const;\n"
     )
 
 
