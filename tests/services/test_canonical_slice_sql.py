@@ -1038,3 +1038,160 @@ class TestPerUserCteMedianAnchorBlendMode:
         assert "time_control_str LIKE '1/%'" in sql, (
             "Daily LIKE '1/%' filter missing from blend=True SQL"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 99 Wave 0 — Rate builder tests (SC-1 / SC-2).
+#
+# These tests import per_user_cte_conv_rate_tc, per_user_cte_parity_rate_tc,
+# per_user_cte_recovery_rate_tc and MINIMUM_RATE_BUCKET_SPANS from
+# app.services.canonical_slice_sql via deferred imports inside each test method.
+#
+# INTENDED RED: these symbols do not yet exist (Plan 02 adds them). Each test
+# that calls the import will raise ImportError until Wave 1 lands — that is the
+# correct Wave 0 RED state. The deferred import (inside the method body rather
+# than at module level) allows pytest to collect the existing tests in this file
+# and fail only the Phase 99 tests themselves, rather than failing collection of
+# the entire module.
+#
+# Once Plan 02 ships the builders, all tests in these classes must pass.
+# ---------------------------------------------------------------------------
+
+
+class TestConvRateTcBuilder:
+    """Phase 99 SC-1 / SC-2: per_user_cte_conv_rate_tc floor and source-parity.
+
+    Imports are deferred inside each method so collection of the full module
+    is not blocked while the symbols are absent (Wave 0 RED state).
+    """
+
+    def test_per_user_cte_conv_rate_tc_floor(self) -> None:
+        """SC-1: conversion rate builder must emit a HAVING clause gating on MINIMUM_RATE_BUCKET_SPANS."""
+        # Deferred import — RED until Plan 02 adds the builders.
+        from app.services.canonical_slice_sql import MINIMUM_RATE_BUCKET_SPANS  # ty: ignore[unresolved-import]
+        from app.services.canonical_slice_sql import per_user_cte_conv_rate_tc  # ty: ignore[unresolved-import]
+
+        sql = per_user_cte_conv_rate_tc("rapid", source="benchmark")
+        assert f">= {MINIMUM_RATE_BUCKET_SPANS}" in sql, (
+            f"conversion rate builder must include HAVING count >= {MINIMUM_RATE_BUCKET_SPANS} "
+            f"(SC-1 inclusion floor)"
+        )
+
+    def test_per_user_cte_conv_rate_tc_source_parity(self) -> None:
+        """SC-2: benchmark and single_user paths must produce byte-identical SQL bodies.
+
+        The cohort difference lives entirely in selected_users_cte; the pooled
+        body is identical for both sources (``_ = source`` idiom). Drift between
+        the two paths is structurally impossible once this test passes.
+        """
+        # Deferred import — RED until Plan 02 adds the builders.
+        from app.services.canonical_slice_sql import per_user_cte_conv_rate_tc  # ty: ignore[unresolved-import]
+
+        sql_benchmark = per_user_cte_conv_rate_tc("rapid", source="benchmark")
+        sql_single = per_user_cte_conv_rate_tc("rapid", source="single_user")
+        assert sql_benchmark == sql_single, (
+            "per_user_cte_conv_rate_tc: benchmark and single_user SQL must be byte-identical "
+            "(cohort difference lives in selected_users_cte, not the pooled body — SC-2)"
+        )
+
+    def test_per_user_cte_conv_rate_tc_metric_value_formula(self) -> None:
+        """SC-2: per_user_values must project (user_id, metric_value, n_games) with wins/spans."""
+        # Deferred import — RED until Plan 02 adds the builders.
+        from app.services.canonical_slice_sql import per_user_cte_conv_rate_tc  # ty: ignore[unresolved-import]
+
+        sql = per_user_cte_conv_rate_tc("bullet", source="benchmark")
+        # user_id projection — mandatory per Phase 94.4 Pitfall 1
+        assert "user_id" in sql, "per_user_values must project user_id (Pitfall 1)"
+        # metric_value must be wins / spans (conversion = only wins count)
+        assert "metric_value" in sql, "per_user_values must alias metric_value"
+        assert "n_games" in sql, "per_user_values must alias n_games"
+        # division formula: wins over total conversion spans
+        assert "/" in sql, "conversion rate formula must contain a division"
+
+
+class TestParityRateTcBuilder:
+    """Phase 99 SC-1 / SC-2: per_user_cte_parity_rate_tc floor and source-parity.
+
+    Imports are deferred inside each method so collection of the full module
+    is not blocked while the symbols are absent (Wave 0 RED state).
+    """
+
+    def test_per_user_cte_parity_rate_tc_floor(self) -> None:
+        """SC-1: parity rate builder must emit a HAVING clause gating on MINIMUM_RATE_BUCKET_SPANS."""
+        # Deferred import — RED until Plan 02 adds the builders.
+        from app.services.canonical_slice_sql import MINIMUM_RATE_BUCKET_SPANS  # ty: ignore[unresolved-import]
+        from app.services.canonical_slice_sql import per_user_cte_parity_rate_tc  # ty: ignore[unresolved-import]
+
+        sql = per_user_cte_parity_rate_tc("blitz", source="benchmark")
+        assert f">= {MINIMUM_RATE_BUCKET_SPANS}" in sql, (
+            f"parity rate builder must include HAVING count >= {MINIMUM_RATE_BUCKET_SPANS} "
+            f"(SC-1 inclusion floor)"
+        )
+
+    def test_per_user_cte_parity_rate_tc_source_parity(self) -> None:
+        """SC-2: benchmark and single_user paths must produce byte-identical SQL bodies."""
+        # Deferred import — RED until Plan 02 adds the builders.
+        from app.services.canonical_slice_sql import per_user_cte_parity_rate_tc  # ty: ignore[unresolved-import]
+
+        sql_benchmark = per_user_cte_parity_rate_tc("blitz", source="benchmark")
+        sql_single = per_user_cte_parity_rate_tc("blitz", source="single_user")
+        assert sql_benchmark == sql_single, (
+            "per_user_cte_parity_rate_tc: benchmark and single_user SQL must be byte-identical "
+            "(cohort difference lives in selected_users_cte, not the pooled body — SC-2)"
+        )
+
+    def test_per_user_cte_parity_rate_tc_metric_value_formula(self) -> None:
+        """SC-2: per_user_values must project (user_id, metric_value, n_games) with chess-score formula."""
+        # Deferred import — RED until Plan 02 adds the builders.
+        from app.services.canonical_slice_sql import per_user_cte_parity_rate_tc  # ty: ignore[unresolved-import]
+
+        sql = per_user_cte_parity_rate_tc("rapid", source="benchmark")
+        assert "user_id" in sql, "per_user_values must project user_id (Pitfall 1)"
+        assert "metric_value" in sql, "per_user_values must alias metric_value"
+        assert "n_games" in sql, "per_user_values must alias n_games"
+        # parity rate = (wins + 0.5 * draws) / spans — formula must include 0.5
+        assert "0.5" in sql, "parity rate formula must contain 0.5 draw weight"
+
+
+class TestRecoveryRateTcBuilder:
+    """Phase 99 SC-1 / SC-2: per_user_cte_recovery_rate_tc floor and source-parity.
+
+    Imports are deferred inside each method so collection of the full module
+    is not blocked while the symbols are absent (Wave 0 RED state).
+    """
+
+    def test_per_user_cte_recovery_rate_tc_floor(self) -> None:
+        """SC-1: recovery rate builder must emit a HAVING clause gating on MINIMUM_RATE_BUCKET_SPANS."""
+        # Deferred import — RED until Plan 02 adds the builders.
+        from app.services.canonical_slice_sql import MINIMUM_RATE_BUCKET_SPANS  # ty: ignore[unresolved-import]
+        from app.services.canonical_slice_sql import per_user_cte_recovery_rate_tc  # ty: ignore[unresolved-import]
+
+        sql = per_user_cte_recovery_rate_tc("classical", source="benchmark")
+        assert f">= {MINIMUM_RATE_BUCKET_SPANS}" in sql, (
+            f"recovery rate builder must include HAVING count >= {MINIMUM_RATE_BUCKET_SPANS} "
+            f"(SC-1 inclusion floor)"
+        )
+
+    def test_per_user_cte_recovery_rate_tc_source_parity(self) -> None:
+        """SC-2: benchmark and single_user paths must produce byte-identical SQL bodies."""
+        # Deferred import — RED until Plan 02 adds the builders.
+        from app.services.canonical_slice_sql import per_user_cte_recovery_rate_tc  # ty: ignore[unresolved-import]
+
+        sql_benchmark = per_user_cte_recovery_rate_tc("classical", source="benchmark")
+        sql_single = per_user_cte_recovery_rate_tc("classical", source="single_user")
+        assert sql_benchmark == sql_single, (
+            "per_user_cte_recovery_rate_tc: benchmark and single_user SQL must be byte-identical "
+            "(cohort difference lives in selected_users_cte, not the pooled body — SC-2)"
+        )
+
+    def test_per_user_cte_recovery_rate_tc_metric_value_formula(self) -> None:
+        """SC-2: per_user_values must project (user_id, metric_value, n_games) with saves formula."""
+        # Deferred import — RED until Plan 02 adds the builders.
+        from app.services.canonical_slice_sql import per_user_cte_recovery_rate_tc  # ty: ignore[unresolved-import]
+
+        sql = per_user_cte_recovery_rate_tc("bullet", source="benchmark")
+        assert "user_id" in sql, "per_user_values must project user_id (Pitfall 1)"
+        assert "metric_value" in sql, "per_user_values must alias metric_value"
+        assert "n_games" in sql, "per_user_values must alias n_games"
+        # recovery rate = (wins + draws) / spans — both wins and draws count as saves
+        assert "/" in sql, "recovery rate formula must contain a division"
