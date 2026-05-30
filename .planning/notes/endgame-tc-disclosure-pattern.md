@@ -73,6 +73,31 @@ Showing all four TCs at once is the explosion. Showing one is Lichess's model bu
 at-a-glance cross-TC comparison (e.g. time-pressure bullet vs rapid). Default-active +
 opt-in to the rest is the best of both: glanceable by default, comparison on demand.
 
+### Which TC is the default-active one (the "primary TC" heuristic)
+
+Decided 2026-05-30. **Rank TC buckets by coarse time spent:**
+
+```
+score(tc) = games_in_bucket(tc) × NOMINAL_DURATION[tc]
+primary   = argmax score(tc)  over TCs whose card passes the games floor
+```
+
+- **Coarse, not per-game.** `NOMINAL_DURATION` is a fixed per-bucket constant (named, not
+  magic — e.g. roughly bullet ≈ 2 min, blitz ≈ 5 min, rapid ≈ 20 min, classical ≈ 45–60
+  min; exact values tunable in planning). We do **not** sum each game's real duration —
+  the bucket weight is enough. It's a weighted game count where the weights neutralize
+  bullet's volume advantage (a pile of 2-min bullet games loses to fewer 20-min rapid).
+- **No recency weighting.** Flat, all-time over the available games.
+- **Only among renderable TCs.** Never default-expand a suppressed/sparse card — take the
+  argmax over TCs that pass the games floor.
+- **Tracks the active filters.** Computed over the currently-filtered game set, so the
+  default reflects what the user is actually looking at.
+
+This deliberately replaces the **Endgame ELO Timeline's** default-line algo, which ranks
+by raw game count and so always picks bullet. Aligning the timeline to this same primary-TC
+heuristic is a **flagged follow-up**, not Phase 98 scope — but the heuristic should live in
+one shared util so the page agrees with itself about "your main TC."
+
 ## Separate two things the collapse verdict gets conflated into
 
 - **Zone calibration** — what gauge band counts as "typical" rook conversion in blitz vs
