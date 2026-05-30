@@ -3,18 +3,21 @@
  * Breakdown section. Replaces the original Conv + Recov peer-diff bullet rows
  * (which always rendered the same magnitude because of the same-game mirror
  * identity) with a SINGLE chess-score bullet using the same pattern as the
- * "Games with Endgame" card (see EndgameOverallCard / EndgameCard).
+ * "Games with Endgame" card (see EndgameOverallCard / EndgameCard). The two
+ * per-class gauges (Conversion, Recovery) at the top of each card are kept.
+ *
+ * Phase 98: Conv/Recov gauges restored (removed in 260529-une commit d3453597).
+ * Tile is now rendered inside a per-TC collapsible card (EndgameTypeTcCard) and
+ * receives a `tc` prop so gauges and Score Gap are banded against the correct
+ * per-(class × TC) benchmark IQR from PER_CLASS_TC_GAUGE_ZONES.
  *
  * Card structure (top-to-bottom):
  *   1. Title + per-card title InfoPopover + optional n={total} chip.
- *   2. WDL bar row with the Games deep-link.
- *   3. Score bullet (W + 0.5*D / N) sig-gated against 50%.
- *   4. Per-span Score Gap bullet (eval-based, Cpu-iconed) — Phase 87.1.
- *
- * Conv/Recov gauges removed (260529-une): they overloaded the section and
- * misrepresented users judged against wrong-TC bands. The backend still
- * computes per-class conv/recov for the LLM insights narration; only the
- * rendered gauges are dropped.
+ *   2. Side-by-side Conv + Recov gauges (EndgameGauge), banded per-(class × TC).
+ *   3. WDL bar row with the Games deep-link.
+ *   4. Score bullet (W + 0.5*D / N) sig-gated against 50%.
+ *   5. Per-span Score Gap bullet (eval-based, Cpu-iconed) — Phase 87.1,
+ *      now banded per-(class × TC) achievable_score_gap.
  *
  * Empty / sparse handling (CONTEXT D-13 / D-14 / D-15):
  * - total === 0: "Not enough data yet" placeholder, no WDL / Score row,
@@ -28,19 +31,17 @@ import type { CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import { Cpu, Swords } from 'lucide-react';
 
+import { EndgameGauge } from '@/components/charts/EndgameGauge';
 import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
-// Frontend constant names use the user-facing "ENDGAME_TYPE_SCORE_GAP" form;
-// internal identifier is `endgame_type_achievable_score_gap` (see
-// app/services/endgame_zones.py). Dual-label scheme per CONTEXT D-02.
-import {
-  ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX,
-  ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN,
-} from '@/generated/endgameZones';
+// Phase 98: replaced ENDGAME_TYPE_SCORE_GAP_NEUTRAL_* and PER_CLASS_GAUGE_ZONES
+// with PER_CLASS_TC_GAUGE_ZONES so gauge zones and Score Gap neutral band are
+// banded per-(class × TC) (D-04).
+import { PER_CLASS_TC_GAUGE_ZONES } from '@/generated/endgameZones';
 import {
   SCORE_BULLET_CENTER,
   SCORE_BULLET_NEUTRAL_MAX,
@@ -56,6 +57,7 @@ import {
   ZONE_DANGER,
   ZONE_NEUTRAL,
   ZONE_SUCCESS,
+  colorizeGaugeZones,
 } from '@/lib/theme';
 import {
   ENDGAME_CLASS_TO_SLUG,
@@ -71,6 +73,9 @@ import {
   deriveLevel,
 } from './EndgameOverallShared';
 
+// Per-card gauge size — extracted per REVIEW IN-02 (was hard-coded 4 times).
+const PER_TYPE_GAUGE_SIZE = 130;
+
 // Score-vs-50% neutral band, mirrors EndgameOverallCard (260514-i3l). Kept inline
 // rather than re-importing because the bounds are the same one-line constants.
 const SCORE_NEUTRAL_LOWER = 0.45;
@@ -78,6 +83,8 @@ const SCORE_NEUTRAL_UPPER = 0.55;
 
 export interface EndgameTypeCardProps {
   category: EndgameCategoryStats;
+  // Phase 98 (D-04): TC for this tile — resolves per-(class × TC) gauge bands.
+  tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
   sharePct: number;
   onCategorySelect: (cls: EndgameClass) => void;
   tileTestId: string;
@@ -85,6 +92,7 @@ export interface EndgameTypeCardProps {
 
 export function EndgameTypeCard({
   category,
+  tc,
   sharePct,
   onCategorySelect,
   tileTestId,
@@ -126,11 +134,40 @@ export function EndgameTypeCard({
     gapMean != null
       ? (gapMean >= 0 ? '+' : '') + `${Math.round(gapMean * 100)}%`
       : '—';
+
+  // Phase 98 (D-04): per-(class × TC) gauge zone bands.
+  // Guard pawnless (no TC entry) and any missing lookup (noUncheckedIndexedAccess).
+  const classBandsByTc =
+    category.endgame_class !== 'pawnless'
+      ? PER_CLASS_TC_GAUGE_ZONES[category.endgame_class]
+      : undefined;
+  const classBands = classBandsByTc?.[tc];
+
+  const convZones = classBands
+    ? colorizeGaugeZones([
+        { from: 0, to: classBands.conversion[0] },
+        { from: classBands.conversion[0], to: classBands.conversion[1] },
+        { from: classBands.conversion[1], to: 1.0 },
+      ])
+    : colorizeGaugeZones([{ from: 0, to: 1.0 }]);
+
+  const recovZones = classBands
+    ? colorizeGaugeZones([
+        { from: 0, to: classBands.recovery[0] },
+        { from: classBands.recovery[0], to: classBands.recovery[1] },
+        { from: classBands.recovery[1], to: 1.0 },
+      ])
+    : colorizeGaugeZones([{ from: 0, to: 1.0 }]);
+
+  // Phase 98 Score Gap neutral band: per-(class × TC) achievable_score_gap, or
+  // fallback when pawnless or lookup misses.
+  const [sgNeutralMin, sgNeutralMax] = classBands?.achievable_score_gap ?? [-0.04, 0.04];
+
   const gapColor: string | undefined =
     gapMean != null
-      ? gapMean < ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN
+      ? gapMean < sgNeutralMin
         ? ZONE_DANGER
-        : gapMean >= ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX
+        : gapMean >= sgNeutralMax
           ? ZONE_SUCCESS
           : undefined
       : undefined;
@@ -174,7 +211,10 @@ export function EndgameTypeCard({
     </h3>
   );
 
-  // Empty-class shell (no games at all).
+  // Empty-class shell (no games at all). REVIEW WR-04: dropped the redundant
+  // !bands branch — bands existence is guaranteed for the 5 non-pawnless
+  // classes via the generated registry, so the `!hasGames` path is the only
+  // empty case.
   if (!hasGames) {
     return (
       <div
@@ -185,6 +225,39 @@ export function EndgameTypeCard({
       >
         {titleRow}
         <div className="flex flex-col gap-4 p-4">
+          <div
+            className="grid grid-cols-2 gap-2 opacity-50"
+            data-testid={`${tileTestId}-gauges`}
+          >
+            <div
+              className="flex flex-col items-center"
+              data-testid={`${tileTestId}-conv-gauge`}
+            >
+              <div className="text-sm text-muted-foreground mb-1">
+                Conversion
+              </div>
+              <EndgameGauge
+                value={0}
+                maxValue={100}
+                label="Conversion"
+                zones={colorizeGaugeZones([{ from: 0, to: 1.0 }])}
+                size={PER_TYPE_GAUGE_SIZE}
+              />
+            </div>
+            <div
+              className="flex flex-col items-center"
+              data-testid={`${tileTestId}-recov-gauge`}
+            >
+              <div className="text-sm text-muted-foreground mb-1">Recovery</div>
+              <EndgameGauge
+                value={0}
+                maxValue={100}
+                label="Recovery"
+                zones={colorizeGaugeZones([{ from: 0, to: 1.0 }])}
+                size={PER_TYPE_GAUGE_SIZE}
+              />
+            </div>
+          </div>
           <p className="text-sm text-muted-foreground py-4">
             Not enough data yet
           </p>
@@ -219,6 +292,40 @@ export function EndgameTypeCard({
     >
       {titleRow}
       <div className="flex flex-col gap-4 p-4" style={bodyStyle}>
+        {/* Phase 98: Gauge row (Conv | Recov side-by-side) restored.
+            Zones banded against PER_CLASS_TC_GAUGE_ZONES[class][tc] (D-04). */}
+        <div
+          className="grid grid-cols-2 gap-2"
+          data-testid={`${tileTestId}-gauges`}
+        >
+          <div
+            className="flex flex-col items-center"
+            data-testid={`${tileTestId}-conv-gauge`}
+          >
+            <div className="text-sm text-muted-foreground mb-1">Conversion</div>
+            <EndgameGauge
+              value={category.conversion.conversion_pct}
+              maxValue={100}
+              label="Conversion"
+              zones={convZones}
+              size={PER_TYPE_GAUGE_SIZE}
+            />
+          </div>
+          <div
+            className="flex flex-col items-center"
+            data-testid={`${tileTestId}-recov-gauge`}
+          >
+            <div className="text-sm text-muted-foreground mb-1">Recovery</div>
+            <EndgameGauge
+              value={category.conversion.recovery_pct}
+              maxValue={100}
+              label="Recovery"
+              zones={recovZones}
+              size={PER_TYPE_GAUGE_SIZE}
+            />
+          </div>
+        </div>
+
         {SHOW_WDL_BAR_IN_TYPE_CARDS ? (
           <div className="flex flex-col gap-2">
             <span className="flex items-center gap-2 text-sm tabular-nums w-full">
@@ -319,8 +426,8 @@ export function EndgameTypeCard({
               resultColor={gapColor}
               valueTestId={`${tileTestId}-asg-value`}
               ariaLabel={`${category.label} Score Gap: ${gapFormatted}`}
-              neutralMin={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
-              neutralMax={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
+              neutralMin={sgNeutralMin}
+              neutralMax={sgNeutralMax}
               domain={ENDGAME_TYPE_SCORE_GAP_DOMAIN}
               ciLow={category.type_achievable_score_gap_ci_low ?? undefined}
               ciHigh={category.type_achievable_score_gap_ci_high ?? undefined}
@@ -335,8 +442,8 @@ export function EndgameTypeCard({
                   level={gapLevel}
                   pValue={category.type_achievable_score_gap_p_value}
                   vocabulary="score"
-                  neutralLower={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
-                  neutralUpper={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
+                  neutralLower={sgNeutralMin}
+                  neutralUpper={sgNeutralMax}
                   baselineLabel="0%"
                   methodology={
                     <>

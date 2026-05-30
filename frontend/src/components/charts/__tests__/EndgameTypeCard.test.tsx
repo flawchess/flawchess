@@ -3,14 +3,21 @@
  * Phase 87 follow-up — tests for the redesigned EndgameTypeCard (single Score
  * bullet replacing the dual Conv/Recov peer-diff bullets).
  *
+ * Phase 98 additions:
+ * - Gauge row (conv-gauge / recov-gauge testids) restored with per-(class × TC)
+ *   zone bands via PER_CLASS_TC_GAUGE_ZONES.
+ * - `tc` prop added to all fixtures and renderCard.
+ * - Score Gap neutralMin/Max now come from per-(class × TC) band.
+ *
  * Covers:
- * - Full render when total >= MIN_GAMES_FOR_RELIABLE_STATS (WDL bar + Score
- *   bullet + Games deep-link + title InfoPopover).
+ * - Full render when total >= MIN_GAMES_FOR_RELIABLE_STATS (gauges + WDL bar +
+ *   Score bullet + Games deep-link + title InfoPopover).
+ * - Conv/Recov gauge testids present.
  * - Games-link onClick fires onCategorySelect with the endgame_class and the
  *   href targets /endgames/games?type={slug}.
  * - Title InfoPopover content matches ENDGAME_TYPE_DESCRIPTIONS[class].
- * - Empty class (total = 0) → empty-class shell with "Not enough data yet";
- *   no WDL, no Score bullet, no Games link.
+ * - Empty class (total = 0) → empty-class shell with gauges at opacity-50 +
+ *   "Not enough data yet"; no WDL, no Score bullet, no Games link.
  * - Sparse class (0 < total < MIN_GAMES_FOR_RELIABLE_STATS) → n=total chip,
  *   UNRELIABLE_OPACITY on the body, Score row hidden, WDL still renders.
  * - Score bullet sig-gating: confident + outside-neutral → inline color;
@@ -120,6 +127,7 @@ interface RenderOptions {
   onCategorySelect?: (cls: EndgameCategoryStats['endgame_class']) => void;
   tileTestId?: string;
   sharePct?: number;
+  tc?: 'bullet' | 'blitz' | 'rapid' | 'classical';
 }
 
 function renderCard(
@@ -129,11 +137,13 @@ function renderCard(
   const onCategorySelect = opts.onCategorySelect ?? vi.fn();
   const tileTestId = opts.tileTestId ?? TILE_TESTID;
   const sharePct = opts.sharePct ?? 45.5;
+  const tc = opts.tc ?? 'rapid';
   return render(
     <MemoryRouter>
       <TooltipProvider>
         <EndgameTypeCard
           category={category}
+          tc={tc}
           sharePct={sharePct}
           onCategorySelect={onCategorySelect}
           tileTestId={tileTestId}
@@ -144,9 +154,13 @@ function renderCard(
 }
 
 describe('EndgameTypeCard — Layout', () => {
-  it('renders WDL bar and Score bullet when total >= MIN_GAMES_FOR_RELIABLE_STATS', () => {
+  it('renders Conv/Recov gauges + WDL bar + Score bullet when total >= MIN_GAMES_FOR_RELIABLE_STATS', () => {
     renderCard(buildCategory());
     expect(screen.getByTestId(TILE_TESTID)).not.toBeNull();
+    // Phase 98: gauge testids restored.
+    expect(screen.getByTestId(`${TILE_TESTID}-gauges`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-conv-gauge`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-recov-gauge`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-wdl`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-score-row`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-score-value`)).not.toBeNull();
@@ -217,6 +231,9 @@ describe('EndgameTypeCard — Empty / sparse states', () => {
     );
     expect(screen.getByTestId(TILE_TESTID)).not.toBeNull();
     expect(screen.getByText(/Not enough data yet/i)).not.toBeNull();
+    // Phase 98: gauge testids rendered at opacity-50 even in empty shell.
+    expect(screen.getByTestId(`${TILE_TESTID}-conv-gauge`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-recov-gauge`)).not.toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-wdl`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-row`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-bullet`)).toBeNull();
@@ -475,6 +492,7 @@ describe('EndgameTypeCard — WDL flag gating (mocked false)', () => {
         <TooltipProvider>
           <MockedCard
             category={buildCategory()}
+            tc="rapid"
             sharePct={45.5}
             onCategorySelect={onCategorySelect}
             tileTestId={TILE_TESTID}
