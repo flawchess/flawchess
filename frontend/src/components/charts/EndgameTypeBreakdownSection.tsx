@@ -1,7 +1,7 @@
 /**
  * Phase 98 — Controlled-accordion orchestrator for the Endgame Type Breakdown.
  *
- * Replaces the Phase 87 3-col grid (grid-cols-1 sm:grid-cols-2 lg:grid-cols-3)
+ * Replaces the Phase 87 3-column grid
  * with full-width vertically-stacked collapsible per-TC cards (SC-1, mode-3
  * disclosure pattern). The user's primary TC is expanded by default (SC-2);
  * other TCs are collapsed. The accordion resets to the recomputed primary TC
