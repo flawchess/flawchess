@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
 status: executing
-last_updated: "2026-05-30T20:37:10.250Z"
-last_activity: 2026-05-30 -- Phase 99 planning complete
+last_updated: "2026-05-30T20:53:59.043Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 11
-  completed_plans: 6
+  completed_plans: 7
   percent: 25
 ---
 
@@ -18,11 +18,11 @@ progress:
 ## Current Position
 
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
-Phase: 98 (per-tc-collapsible-endgame-type-cards) — EXECUTING
-Plan: 2 of 2 complete — verified (1 ruff-format blocker found and fixed)
-Next: HUMAN-UAT (responsive staircase/divider grammar + primary-TC default-expand with real data), then ship (PR) and plan Phase 99
-Status: Ready to execute
-Last activity: 2026-05-30 -- Phase 99 planning complete
+Phase: 99 (percentile-badges-for-conversion-parity-and-recovery) — EXECUTING
+Plan: 2 of 5
+Next: Plan 02 (rate SQL builders + ENUM widening + migration)
+Status: Executing Phase 99 (Plan 01 complete — Wave 0 test scaffolds)
+Last activity: 2026-05-30 -- Phase 99 Plan 01 complete (Wave 0 test scaffolds for rate-percentile badges)
 
 ## Project Reference
 

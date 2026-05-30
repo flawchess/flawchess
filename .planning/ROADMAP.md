@@ -117,7 +117,7 @@
 Plans:
 **Wave 1**
 
-- [ ] 99-01-PLAN.md — Wave 0 test scaffolds (rate-builder floor/parity, ENUM membership, schema field, frontend chip)
+- [x] 99-01-PLAN.md — Wave 0 test scaffolds (rate-builder floor/parity, ENUM membership, schema field, frontend chip)
 - [ ] 99-02-PLAN.md — Backend contract layer: 3 rate builders + floor constant + CdfMetricId + SAEnum +12 + Alembic migration
 
 **Wave 2** *(blocked on Wave 1 completion)*
