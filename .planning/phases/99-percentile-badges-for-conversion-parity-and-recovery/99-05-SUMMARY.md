@@ -20,7 +20,7 @@ dependency_graph:
     - alembic/versions/20260530_220134_52c928794fe7 (bare family name ENUM fix, Rule 1)
   affects:
     - Plan 04 (frontend chip wiring — chips now have real CDF data to render with)
-    - Prod DB (pending human sign-off — Task 3 checkpoint)
+    - Prod DB (backfill deferred to deploy — Task 3 sign-off 2026-05-31)
 
 tech-stack:
   added: []
@@ -43,7 +43,7 @@ key-decisions:
   - "Rule 1 auto-fix: benchmark_metric ENUM lacked bare family names — upsert path needs 'conversion_rate' not 'conversion_rate_blitz'; migration 52c928794fe7 added 3 bare family names"
   - "parity_rate|classical CDF is empty (0 non-suppressed anchors): 147 benchmark users qualify but max in-window=49 < 100 MIN floor; expected D-05 sparsity, not Pitfall 1"
   - "Dev DB classical rate rows: 0 rows (all 18 users below ≥30-span floor for classical); expected per D-05 validation"
-  - "Prod backfill: pending human sign-off (D-11 / Task 3 checkpoint)"
+  - "Prod backfill: DEFERRED to deploy per human sign-off 2026-05-31 (D-11 / Task 3); migrations auto-apply at deploy, per-user backfill runs post-deploy"
 
 requirements-completed: []
 
@@ -53,14 +53,14 @@ completed: "2026-05-31"
 
 # Phase 99 Plan 05: CDF Regen + Dev Backfill Summary
 
-**Cohort CDFs regenerated into global_percentile_cdf.py for all 12 new rate-percentile cells (conversion_rate/parity_rate/recovery_rate × 4 TCs); dev DB backfilled after a Rule-1 ENUM fix; prod backfill pending human sign-off.**
+**Cohort CDFs regenerated into global_percentile_cdf.py for all 12 new rate-percentile cells (conversion_rate/parity_rate/recovery_rate × 4 TCs); dev DB backfilled after a Rule-1 ENUM fix; prod backfill deferred to deploy per human sign-off (D-11).**
 
 ## Performance
 
 - **Duration:** ~75 min (includes 690s regen + 62s backfill + debugging Rule 1 bug)
 - **Started:** 2026-05-30T21:28:39Z
-- **Completed:** 2026-05-31 (paused at Task 3 prod checkpoint)
-- **Tasks completed:** 2 of 3 (Task 3 = human-action checkpoint)
+- **Completed:** 2026-05-31 (Task 3 checkpoint resolved — prod backfill deferred to deploy)
+- **Tasks completed:** 3 of 3 (Task 3 = human-action checkpoint, signed off: defer prod to deploy)
 - **Files modified:** 6 (+ 2 created)
 
 ## Accomplishments
@@ -139,9 +139,9 @@ Classical: 0 rows for all three rate metrics — expected per D-05 (dev DB class
 
 `_ALL_METRICS` verify command exits 0 (all 3 families present).
 
-### Task 3: STOPPED at prod checkpoint (awaiting human sign-off per D-11)
+### Task 3: Prod checkpoint resolved — DEFERRED to deploy (human sign-off, D-11)
 
-Prod backfill NOT run. The prod DB is gated on explicit human approval per D-11.
+Prod backfill NOT run on this branch. User signed off (2026-05-31) to **defer the prod backfill to deploy time**: the regenerated CDF artifact and both ENUM migrations (`3981239fd391`, `52c928794fe7`) ship with the code; alembic applies the migrations automatically on backend container startup. The per-user prod backfill (`scripts/backfill_user_percentiles.py --target prod`) runs once this milestone is deployed to production.
 
 ## Task Commits
 
@@ -169,7 +169,16 @@ The plan's Task 1 `<verify>` command contains a logic error:
 
 ## Prod Backfill Disposition
 
-**PENDING** — Task 3 is a `checkpoint:human-action` (D-11). The prod backfill must not run without explicit user approval. The regenerated CDF artifact (`global_percentile_cdf.py`) ships with the code deploy — prod reads the same static CDF; only the per-user rows need backfilling via `bin/prod_db_tunnel.sh` + `scripts/backfill_user_percentiles.py --target prod`.
+**DEFERRED TO DEPLOY** — User signed off on 2026-05-31 (Task 3 `checkpoint:human-action`, D-11) to defer the prod backfill to deploy time rather than running an ad-hoc prod write ahead of the production branch. The regenerated CDF artifact (`global_percentile_cdf.py`) and both ENUM migrations ship with the code deploy — prod reads the same static CDF; only the per-user rows need backfilling. Post-deploy step (after this milestone reaches production):
+
+```bash
+bin/prod_db_tunnel.sh                                      # open tunnel → localhost:15432
+# (alembic upgrade head runs automatically on backend container startup at deploy)
+uv run python scripts/backfill_user_percentiles.py --target prod --snapshot-date 2026-05-30
+bin/prod_db_tunnel.sh stop
+```
+
+`_assert_target_safe` port-checks the prod target. Tracked as a deferred deploy-time obligation (see `.planning/todos/`).
 
 ## Known Stubs
 
