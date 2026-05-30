@@ -94,8 +94,11 @@ from app.services.canonical_slice_sql import (  # noqa: E402
     TimeControlBucket,
     per_user_cte_achievable_tc,
     per_user_cte_clock_gap,
+    per_user_cte_conv_rate_tc,
     per_user_cte_median_anchor,
     per_user_cte_net_flag_rate,
+    per_user_cte_parity_rate_tc,
+    per_user_cte_recovery_rate_tc,
     per_user_cte_score_gap_tc,
     per_user_cte_score_gap_bucket_tc,
     per_user_cte_time_pressure_score_gap,
@@ -147,10 +150,12 @@ ALL_TIME_CONTROLS: Final[tuple[TimeControlBucket, ...]] = (
     "classical",
 )
 
-# 8-value CdfMetricId tuple. Order matters: registry-literal emission walks
+# 11-value CdfMetricId tuple. Order matters: registry-literal emission walks
 # this tuple so two regen runs against the same DB produce byte-identical
 # Python source. Order mirrors the Literal in
 # ``app/services/global_percentile_cdf.py`` (CONTEXT D-13).
+# Phase 99: 3 raw-rate families appended
+# (conversion_rate, parity_rate, recovery_rate).
 IN_SCOPE_METRICS: Final[tuple[CdfMetricId, ...]] = (
     "score_gap",
     "achievable_score_gap",
@@ -160,6 +165,9 @@ IN_SCOPE_METRICS: Final[tuple[CdfMetricId, ...]] = (
     "time_pressure_score_gap",
     "clock_gap",
     "net_flag_rate",
+    "conversion_rate",
+    "parity_rate",
+    "recovery_rate",
 )
 
 # Output paths.
@@ -263,8 +271,8 @@ def _per_user_cte_for_metric_and_tc(
 ) -> str:
     """Dispatch to the correct per-TC ``per_user_values`` CTE builder for one metric.
 
-    Phase 94.4 8-value CdfMetricId dispatcher. The builders are imported
-    from ``app.services.canonical_slice_sql`` (Plans 02 + 03):
+    Phase 94.4 8-value + Phase 99 3-value = 11-value CdfMetricId dispatcher.
+    The builders are imported from ``app.services.canonical_slice_sql``:
 
     - ``score_gap``                  → ``per_user_cte_score_gap_tc``
     - ``achievable_score_gap``       → ``per_user_cte_achievable_tc``
@@ -274,6 +282,9 @@ def _per_user_cte_for_metric_and_tc(
     - ``time_pressure_score_gap``    → ``per_user_cte_time_pressure_score_gap(tc)``
     - ``clock_gap``                  → ``per_user_cte_clock_gap(tc)``
     - ``net_flag_rate``              → ``per_user_cte_net_flag_rate(tc)``
+    - ``conversion_rate``            → ``per_user_cte_conv_rate_tc(tc)``
+    - ``parity_rate``                → ``per_user_cte_parity_rate_tc(tc)``
+    - ``recovery_rate``              → ``per_user_cte_recovery_rate_tc(tc)``
 
     All return a CTE block ending in ``per_user_values(user_id, metric_value, n_games)``
     restricted to TC ``tc``. The CTE is joined against
@@ -303,6 +314,14 @@ def _per_user_cte_for_metric_and_tc(
         return per_user_cte_clock_gap(tc, source="benchmark", snapshot_date=snapshot_date)
     if metric == "net_flag_rate":
         return per_user_cte_net_flag_rate(tc, source="benchmark", snapshot_date=snapshot_date)
+    # Phase 99: raw-rate families — same builders as the per-user dispatch so
+    # CDF construction and per-user lookup share one code path (SC-2).
+    if metric == "conversion_rate":
+        return per_user_cte_conv_rate_tc(tc, source="benchmark", snapshot_date=snapshot_date)
+    if metric == "parity_rate":
+        return per_user_cte_parity_rate_tc(tc, source="benchmark", snapshot_date=snapshot_date)
+    if metric == "recovery_rate":
+        return per_user_cte_recovery_rate_tc(tc, source="benchmark", snapshot_date=snapshot_date)
     raise ValueError(f"Unknown metric: {metric!r}")
 
 
@@ -589,6 +608,10 @@ _METRIC_DISPLAY: Final[dict[CdfMetricId, str]] = {
     "time_pressure_score_gap": "Time Pressure Score Gap",
     "clock_gap": "Clock Gap",
     "net_flag_rate": "Net Flag Rate",
+    # Phase 99: raw-rate metric families
+    "conversion_rate": "Conversion Rate",
+    "parity_rate": "Parity Rate",
+    "recovery_rate": "Recovery Rate",
 }
 
 

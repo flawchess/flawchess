@@ -104,8 +104,11 @@ from app.services.canonical_slice_sql import (
     MEDIAN_ANCHOR_MIN_GAMES,
     per_user_cte_achievable_tc,
     per_user_cte_clock_gap,
+    per_user_cte_conv_rate_tc,
     per_user_cte_median_anchor,
     per_user_cte_net_flag_rate,
+    per_user_cte_parity_rate_tc,
+    per_user_cte_recovery_rate_tc,
     per_user_cte_score_gap_tc,
     per_user_cte_score_gap_bucket_tc,
     per_user_cte_time_pressure_score_gap,
@@ -131,11 +134,15 @@ _ALL_TIME_CONTROLS: tuple[TimeControlBucket, ...] = (
 # Stage A metric — eval-independent, runs at import-completion time.
 STAGE_A_METRIC: CdfMetricId = "score_gap"
 
-# Stage B metric families (7-tuple) — eval-dependent, runs at cold-drain
+# Stage B metric families (10-tuple) — eval-dependent, runs at cold-drain
 # time. Each family is computed per the user's above-floor TCs; the legacy
 # 12-tuple of TC-suffixed names retires (CONTEXT D-13 — the 8-value
 # CdfMetricId Literal lifts TC out of the metric name into the
 # COHORT_PERCENTILE_CDF outer key).
+# Phase 99: 3 rate families appended (conversion_rate, parity_rate,
+# recovery_rate). Appending to this tuple auto-propagates to
+# backfill_user_percentiles._ALL_METRICS (Pitfall 7 — no backfill edit
+# needed).
 STAGE_B_METRIC_FAMILIES: tuple[CdfMetricId, ...] = (
     "achievable_score_gap",
     "score_gap_conv",
@@ -144,6 +151,9 @@ STAGE_B_METRIC_FAMILIES: tuple[CdfMetricId, ...] = (
     "time_pressure_score_gap",
     "clock_gap",
     "net_flag_rate",
+    "conversion_rate",
+    "parity_rate",
+    "recovery_rate",
 )
 
 
@@ -160,9 +170,9 @@ def _per_user_cte_for_family_and_tc(
 
     Mirrors ``scripts/gen_global_percentile_cdf.py::_per_user_cte_for_metric_and_tc``
     so the benchmark-side and single-user-side compute consume byte-identical
-    SQL pooled bodies (D-10 source-mode parity). The dispatch covers all 8
+    SQL pooled bodies (D-10 source-mode parity). The dispatch covers all 11
     CdfMetricId values; Stage A passes ``family='score_gap'`` and Stage B
-    passes one of the other 7 families.
+    passes one of the other 10 families.
     """
     if family == "score_gap":
         return per_user_cte_score_gap_tc(tc, source="single_user", snapshot_date=None)
@@ -186,6 +196,15 @@ def _per_user_cte_for_family_and_tc(
         return per_user_cte_clock_gap(tc, source="single_user", snapshot_date=None)
     if family == "net_flag_rate":
         return per_user_cte_net_flag_rate(tc, source="single_user", snapshot_date=None)
+    # Phase 99: raw-rate families (conversion/parity/recovery) — dispatch to
+    # the shared builders from canonical_slice_sql so CDF construction and
+    # per-user lookup share one code path (SC-2 drift-proof).
+    if family == "conversion_rate":
+        return per_user_cte_conv_rate_tc(tc, source="single_user", snapshot_date=None)
+    if family == "parity_rate":
+        return per_user_cte_parity_rate_tc(tc, source="single_user", snapshot_date=None)
+    if family == "recovery_rate":
+        return per_user_cte_recovery_rate_tc(tc, source="single_user", snapshot_date=None)
     # Defensive — the CdfMetricId Literal closes the value set; an unhandled
     # branch indicates a missed dispatcher arm rather than user input.
     raise ValueError(f"Unknown CdfMetricId for per-TC dispatch: {family!r}")
