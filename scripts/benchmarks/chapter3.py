@@ -513,43 +513,12 @@ def _section2_gap_per_user_bucket_cte() -> str:
     span's entry, or the game result for the final span). Spans are assigned to the
     conversion/parity/recovery bucket by their entry eval (`endgame_bucket_case_sql`).
     `per_user_bucket` keeps users with ≥20 qualifying spans per bucket per cell, sub-800
-    dropped, equal-footing filtered, sparse cell excluded. Same span machinery as §3.4.2.
+    dropped, equal-footing filtered, sparse cell excluded. The spans/spans_with_next/gap_rows
+    chain is the shared `sql.span_gap_ctes()` (§3.4.2/§3.4.3 reuse it); here we group by bucket.
     """
-    sign = sql.USER_COLOR_SIGN_SQL
-    elo_case = sql.elo_bucket_case_sql(sql.USER_ELO_AT_GAME_SQL)
-    bucket_expr = sql.endgame_bucket_case_sql("swn.entry_eval_cp", "swn.entry_eval_mate", sign)
-    exit_es = sql.span_es_sql("next_eval_cp", "next_eval_mate", sign, sql.USER_SCORE_EXPR)
-    entry_es = sql.span_es_sql("swn.entry_eval_cp", "swn.entry_eval_mate", sign, "NULL")
     return (
         f"WITH {sql.SELECTED_USERS_CTE},\n"
-        "spans AS (\n"
-        "  SELECT gp.game_id, gp.endgame_class,\n"
-        "         (array_agg(gp.eval_cp ORDER BY gp.ply ASC))[1] AS entry_eval_cp,\n"
-        "         (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,\n"
-        "         min(gp.ply) AS span_min_ply\n"
-        "  FROM game_positions gp\n"
-        "  JOIN games g ON g.id = gp.game_id\n"
-        "  JOIN selected_users su ON su.user_id = g.user_id\n"
-        "  WHERE gp.endgame_class IS NOT NULL\n"
-        f"    AND {sql.BASE_GAME_FILTER}\n"
-        f"  GROUP BY gp.game_id, gp.endgame_class HAVING count(gp.ply) >= {sql.MIN_ENDGAME_PLIES}\n"
-        "),\n"
-        "spans_with_next AS (\n"
-        "  SELECT s.*,\n"
-        "         lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,\n"
-        "         lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate\n"
-        "  FROM spans s\n"
-        "),\n"
-        "gap_rows AS (\n"
-        f"  SELECT g.user_id, ({elo_case}) AS elo_bucket, su.tc_bucket AS tc,\n"
-        f"         {bucket_expr} AS bucket,\n"
-        f"         ({exit_es})\n      - ({entry_es}) AS gap_span\n"
-        "  FROM spans_with_next swn\n"
-        "  JOIN games g ON g.id = swn.game_id\n"
-        "  JOIN selected_users su ON su.user_id = g.user_id\n"
-        "  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)\n"
-        f"    AND ({sql.USER_ELO_AT_GAME_SQL}) >= {sql.ELO_FLOOR}\n"
-        "),\n"
+        f"{sql.span_gap_ctes()},\n"
         "per_user_bucket AS (\n"
         "  SELECT user_id, elo_bucket, tc, bucket, avg(gap_span) AS mean_gap\n"
         "  FROM gap_rows\n"

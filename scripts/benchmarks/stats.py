@@ -47,6 +47,28 @@ def cohens_d(a: LevelStat, b: LevelStat) -> float:
     return (a.mean - b.mean) / math.sqrt(pooled_var)
 
 
+def spread_d(levels: Sequence[LevelStat]) -> DResult:
+    """§3.4.1 collapse d: `(max_mean − min_mean) / sqrt(mean(group variances))`.
+
+    A DIFFERENT recipe from `max_abs_d`'s pairwise pooled SD: the SKILL.md §3.4.1 verdict
+    (line "Cohen's d (per class, per axis, per metric)") divides the full spread of group
+    means by the root-mean of ALL eligible group variances, not the pooled SD of the two
+    extreme groups. Reproduces the report's §3.4.1 conv/recov d's exactly (e.g. rook conv
+    TC 1.24, pawn recov ELO 0.65). §3.4.2 / §3.1.5 use `max_abs_d` (pairwise pooled).
+    The returned `pair` is (max-mean label, min-mean label); `d` is signed (max − min ≥ 0).
+    """
+    eligible = [lv for lv in levels if lv.n >= COHENS_D_MIN_N]
+    if len(eligible) < 2:
+        raise ValueError(
+            f"spread_d needs >= 2 levels with n >= {COHENS_D_MIN_N}, got {len(eligible)}"
+        )
+    hi = max(eligible, key=lambda lv: lv.mean)
+    lo = min(eligible, key=lambda lv: lv.mean)
+    mean_var = sum(lv.var for lv in eligible) / len(eligible)
+    d = (hi.mean - lo.mean) / math.sqrt(mean_var)
+    return DResult(max_abs_d=abs(d), pair=(hi.label, lo.label), d=d)
+
+
 def max_abs_d(levels: Sequence[LevelStat]) -> DResult:
     """max |Cohen's d| across all unordered pairs of levels (each n >= COHENS_D_MIN_N).
 

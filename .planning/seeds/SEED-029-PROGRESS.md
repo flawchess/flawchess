@@ -88,6 +88,54 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
     anything, feed the Phase-B per-ELO stratification review). Emits deterministic values.
   - Rendering is bespoke (§3.3's slice/curve/band tables differ from §3.1/§3.2's MetricBlock
     layout); reuses `agg_select`/`split_grouping_sets`/`stats.max_abs_d` for COMPUTE only.
+- **§3.4 COMPLETE (3.4.1 + 3.4.2 + 3.4.3) — diff gate run end-to-end GREEN** (2026-05-30,
+  17m44s single job: test_341 + test_342 + test_343 + test_chapter3_322 all pass; the §3.2.2
+  span-CTE refactor onto `sql.span_gap_ctes()` is confirmed report-faithful). NEW module
+  `chapter3_4.py` registered as chapter `3.4-endgame-type` → `chapter3_4.build` (gen_benchmarks
+  `_CHAPTER_BUILDERS`).
+  - **§3.4.3 SD-rounding fix**: `_343_query()` rounded score/gap SD to 4 dp (→ 0.1487/0.0486)
+    while the report displays them at 3 dp (0.149/0.049, same precision as the query's other
+    five columns). Rounded the two SD columns to 3 dp to match the report's display precision —
+    NOT a prior-report slip (0.1487→0.149, 0.0486→0.049 confirm the report is correct), just a
+    port precision inconsistency. Rendered markdown was already correct (`fmt_unsigned(_, 3)`).
+  - **Shared span machinery extracted** (the §3.2.2 reuse the handoff asked for): added
+    `sql.span_gap_ctes()` (spans / spans_with_next / gap_rows — gap_rows now ALSO projects
+    `endgame_class`, inert for §3.2.2) and `sql.CLASS_SPAN_CTE`. chapter3 §3.2.2 refactored
+    onto `span_gap_ctes()` (semantically identical; re-run `test_chapter3_322` to confirm — it
+    was SKIPPED when the DB was down, not yet re-verified). §3.4.2 + §3.4.3 reuse it.
+  - **NEW stat `stats.spread_d()`** — §3.4.1 uses a DIFFERENT Cohen's d than §3.2/§3.3:
+    `(max_mean − min_mean) / sqrt(mean(group variances))`, NOT pairwise-pooled `max_abs_d`.
+    The SKILL §3.4.1 verdict text specifies it. Unit-tested (3 new tests in test_stats.py, all
+    green). Using the wrong recipe gives rook conv TC 1.09 vs the report's 1.24.
+  - §3.4.1 (bespoke render): pooled-by-class summary + per-(user,class) score IQR + conv/recov
+    TC & ELO marginals + spread-d verdicts. Summary, IQR, and ALL conv/recov marginals (mean,
+    p25, p75, n) reproduce the report EXACTLY; verdicts reproduce EXACTLY via spread_d
+    (rook 1.24/0.32/1.33/0.20 … mixed 1.19/0.49/1.28/0.22). Slip: IQR mixed n_users 3,599 det
+    vs report 3,597 (mean + all percentiles exact). FINDING: the SKILL §3.4.1 IQR query's
+    `GROUP BY ... user_elo_at_game, elo_bucket, tc ...` FRAGMENTS the per-user unit by exact
+    rating (→ rook n=2 garbage); the report used a `(user, class)` pooled unit — reproduced here.
+  - §3.4.2 (reuses `span_gap_ctes`, grouped by endgame_class): pooled-by-class IQR + ELO/TC
+    marginal means + collapse d. Pooled + marginals reproduce EXACTLY (all 6 classes incl.
+    pawnless n=12). Verdict d uses pairwise-pooled `max_abs_d` (§3.1.5 recipe). Every verdict
+    WORD matches (TC all collapse; ELO collapse rook/pawn/queen, review minor_piece/mixed) but
+    the d MAGNITUDES carry pair-selection slips (report eyeballed sub-max pairs: pawn TC
+    0.10→0.18, queen TC 0.18→0.198, queen ELO 0.16→0.17 — all verdict-neutral). The §3.4.2
+    verdict test asserts collapse/review BANDS, not exact 2-dp d's.
+  - §3.4.3 (inner-join of §3.4.1 score CTE + §3.4.2 gap CTE): reproduces the report EXACTLY —
+    only `mixed` clears the ≥30 joined-user floor (n=5,274, r=+0.105, sign 46.3%, strict 42.2%,
+    strong 9.0%, score SD 0.149, gap SD 0.049). FINDING: §3.4.3's `per_user_class_score`
+    fragments per (user, exact-rating, elo, tc, class) — the SKILL query as written — which is
+    why the small classes fall below the floor. This is a DIFFERENT unit from §3.4.1's
+    report-IQR (which pools per (user, class)); the SKILL comment "reuses the §3.4.1 CTE" is
+    inaccurate. Each subchapter reproduced as the report computed it.
+  - **NO 5×4 per-class cell grid** in the report §3.4 (despite the handoff/older NOTE saying it
+    "first appears at §3.4"): report §3.4.1/§3.4.2 emit pooled + marginals only (like §3.1/§3.2).
+    The gate is the report, so chapter3_4 emits pooled + marginals only — no cell-grid builder.
+  - SCRATCH to delete before commit: `temp/dump_d.py`, `temp/calc_d.py`, `temp/calc_d2.py`,
+    `temp/*.out` (used to derive the deterministic verdict d-values; values are baked into the
+    test). NB the FULL generator (`gen_benchmarks.py --db benchmark`) is now slow (§3.4 adds
+    heavy span scans) and can exceed a 580s `timeout` — run it without a timeout; it is NOT
+    needed for the gate (the gate calls `compute_34x` directly).
 
 ## Architecture (scripts/benchmarks/ subpackage; tests in tests/scripts/benchmarks/)
 
@@ -96,7 +144,8 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
   EQUAL_FOOTING_FILTER, BASE_GAME_FILTER, SPARSE_CELL_EXCLUSION, USER_SCORE_EXPR,
   ENDGAME_GAME_IDS_CTE, MIDDLEGAME_PHASE/ENDGAME_PHASE, EVAL_OUTLIER_TRIM_CP=2000,
   EVAL_CONFIDENCE_MIN_N=20, SCORE_GAP_MIN_GAMES=30, ENDGAME_MIN_GAMES=20, LICHESS_WIN_CHANCES_K.
-- `stats.py` — pure Cohen's d: `cohens_d`, `max_abs_d` (LevelStat → DResult). Unit-tested.
+- `stats.py` — pure Cohen's d: `cohens_d`, `max_abs_d` (pairwise pooled), `spread_d`
+  (§3.4.1 ONLY: `(max−min)/sqrt(mean variance)`). LevelStat → DResult. Unit-tested.
 - `distribution.py` — THE reusable per-user-metric engine. `agg_select(value, digits, mean_digits)`
   builds the canonical pooled+ELO+TC GROUPING SETS SELECT (SQL percentile_cont + var_samp);
   `pooled_agg_select(...)` is the ungrouped-pooled-only variant (elo_bucket/tc → NULL) for
@@ -110,11 +159,14 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
   chapter3 §3.1.2 build on it so the cohort/equal-footing/trim logic can't drift.
 - `render.py` — `markdown_table`, `fmt_int` (commas ≥1000), `fmt_signed`/`fmt_unsigned` (U+2212
   minus, half-up), `fmt_value(v, unit, role, *, pooled)` (cp/score/pp display).
-- `chapter1.py`, `chapter2.py`, `chapter3.py` (§3.1+§3.2), `chapter3_3.py` (§3.3) — chapters;
-  registered in gen_benchmarks._CHAPTER_BUILDERS. §3.3 added clock building blocks to sql.py:
+- `chapter1.py`, `chapter2.py`, `chapter3.py` (§3.1+§3.2), `chapter3_3.py` (§3.3),
+  `chapter3_4.py` (§3.4, bespoke render like §3.3) — chapters; registered in
+  gen_benchmarks._CHAPTER_BUILDERS. §3.3 added clock building blocks to sql.py:
   `FIRST_ENDGAME_ENTRY_CTE`, `clock_routing_case`, CLOCK_MIN_GAMES, PRESSURE_BIN_MIN_GAMES,
   PRESSURE_BIN_NEUTRAL_CAP. §3.2 added `endgame_bucket_case_sql`, `bucket_score_case_sql`,
   `win_chances_sigmoid_sql`, `span_es_sql`, EVAL_ADVANTAGE_THRESHOLD, SECTION2_SPAN_MIN_SPANS.
+  §3.4 added `sql.span_gap_ctes()` (shared spans/spans_with_next/gap_rows — chapter3 §3.2.2
+  refactored onto it) + `sql.CLASS_SPAN_CTE` + `stats.spread_d`.
 
 ## The cadence (one sub-metric at a time)
 
@@ -165,21 +217,28 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
   is whether §3.3.3's verdict should be game-level (it should NOT, per the documented recipe).
 - **§3.3 sub-800 + sparse are universal even when the inline §3.3.1/§3.3.2 SQL omits them** (same
   as §3.2.1). §3.3.3's inline SQL includes them. Apply to all three; pooled n=4,604 confirms.
+- **§3.4.1 uses a DIFFERENT Cohen's d than every other subchapter**: `(max_mean − min_mean) /
+  sqrt(mean(group variances))` (`stats.spread_d`), NOT pairwise-pooled `max_abs_d`. The SKILL
+  §3.4.1 verdict text specifies it; it's the only place the spread recipe is used. §3.4.2 keeps
+  pairwise-pooled (it says "same as §3.1.5"). Don't assume one d recipe across the report.
+- **NEVER run two heavy benchmark-DB scans concurrently** (e.g. the full generator + a gate, or
+  two gate jobs): it OOM'd/stopped the `flawchess-benchmark-db-1` container mid-run (→
+  `ECONNREFUSED 127.0.0.1:5433`, and gates silently SKIP per conftest). Run sequentially; if the
+  DB is unreachable, `bin/benchmark_db.sh start` and wait for `(healthy)`. asyncpg connects can
+  hang for minutes against a dying container with 0 CPU — kill and restart the DB rather than wait.
+- **The §3.4 SKILL "per-user-per-class score CTE" is reused inconsistently**: §3.4.1's report-IQR
+  pools per `(user, class)`; §3.4.3's join fragments per `(user, exact-rating, elo, tc, class)`.
+  Reproduce each exactly as the report did (verified against benchmarks-latest.md), not as the
+  cross-reference comments claim. Footnoted in chapter3_4 docstring.
 
 ## Remaining work
 
-- §3.4 Endgame Type per-class (3.4.x) — partitioned per class (rook/minor/pawn/queen/mixed/
-  pawnless). §3.4.2 reuses the §3.2.2 span-gap machinery (the `spans`/`spans_with_next`/`gap_rows`
-  CTEs currently inline in chapter3._section2_gap_per_user_bucket_cte) — extract it into a shared
-  CTE builder when porting §3.4.2. §3.4.1 reuses the §3.2.1 eval-bucket classification
-  (`sql.endgame_bucket_case_sql` / `bucket_score_case_sql`) but per-CLASS-SPAN entry eval
-  (array_agg[1] per (game, endgame_class) span) rather than the game's first endgame ply.
 - §4 — already deterministic; chapter just references scripts/gen_global_percentile_cdf.py.
 
-NOTE on the 5×4 cell grid: §3.2.1's SKILL "Output" mentions a 5×4 p50 cell table, but
-benchmarks-latest.md §3.2/§3.3 do NOT contain one (only pooled + marginals, same as §3.1).
-The gate is the report, so §3.2/§3.3 emit marginals only. The 5×4 grid first actually appears
-in the report at §3.4 (per-class); build it when porting §3.4.
+NOTE on the 5×4 cell grid (RESOLVED): the SKILL "Output" sections mention 5×4 p50 cell tables,
+but benchmarks-latest.md NEVER contains one — §3.1/§3.2/§3.3 AND §3.4 all emit pooled +
+marginals only. The gate is the report, so no chapter builds a 5×4 grid (the earlier guess that
+it "first appears at §3.4" was wrong — verified against the 2026-05-27 report).
 
 ## LAST steps of Phase A (after all chapters pass — do NOT do early)
 

@@ -62,7 +62,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.config import settings  # noqa: E402
-from scripts.benchmarks import chapter1, chapter2, chapter3, chapter3_3  # noqa: E402
+from scripts.benchmarks import chapter1, chapter2, chapter3, chapter3_3, chapter3_4  # noqa: E402
 
 DbTarget = Literal["benchmark", "dev"]
 
@@ -170,6 +170,7 @@ _CHAPTER_BUILDERS: dict[str, Callable[[AsyncSession], Awaitable[dict[str, Any]]]
     "3.1-endgame-overall": chapter3.build,
     "3.2-endgame-metrics-elo": chapter3.build_32,
     "3.3-time-pressure": chapter3_3.build,
+    "3.4-endgame-type": chapter3_4.build,
 }
 
 

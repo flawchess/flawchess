@@ -137,6 +137,17 @@ ENTRY_ROWS_CTE: str = (
 # User-POV color sign for an eval/mate value (+1 white, −1 black). `g` = games alias.
 USER_COLOR_SIGN_SQL: str = "(CASE WHEN g.user_color = 'white' THEN 1 ELSE -1 END)"
 
+# One row per (game, endgame_class) span of >=6 plies, with the span's first (entry) ply
+# (SKILL.md §3.4.1/§3.4.3 "class_span"). A CTE body for inclusion in a WITH clause.
+# Unlike ENTRY_ROWS_CTE (first ply of the whole game's endgame), this is per class span.
+CLASS_SPAN_CTE: str = (
+    "class_span AS (\n"
+    "  SELECT game_id, endgame_class, min(ply) AS entry_ply\n"
+    "  FROM game_positions WHERE endgame_class IS NOT NULL\n"
+    f"  GROUP BY game_id, endgame_class HAVING count(*) >= {MIN_ENDGAME_PLIES}\n"
+    ")"
+)
+
 
 def win_chances_sigmoid_sql(signed_cp_expr: str) -> str:
     """Lichess winning-chances sigmoid for a user-perspective signed-cp expression.
@@ -200,6 +211,56 @@ def span_es_sql(cp_expr: str, mate_expr: str, sign_expr: str, fallback_expr: str
         f"        WHEN {cp_expr} IS NOT NULL THEN {win_chances_sigmoid_sql(f'{cp_expr} * {sign_expr}')}\n"
         f"        ELSE {fallback_expr}\n"
         "      END"
+    )
+
+
+def span_gap_ctes() -> str:
+    """spans / spans_with_next / gap_rows CTE chain for per-span ΔES (SKILL.md §3.2.2/§3.4.2/§3.4.3).
+
+    One row per (game, endgame_class) span of >=6 plies, carrying the span's entry eval
+    (`array_agg[1]` over the span plies) and the next span's entry eval (`LEAD` over the
+    game's spans). `gap_rows` projects, per user-game-span: user_id, game-time elo_bucket,
+    tc, endgame_class, the entry-eval conv/par/recov `bucket`, and `gap_span = ES_exit −
+    ES_entry` (exit = next span's entry ES, or the game result on the terminal span; entry
+    = the span's own entry ES, NULL → span dropped downstream). Requires `selected_users`
+    already in the WITH clause. §3.2.2 groups `gap_rows` by `bucket`; §3.4.2 / §3.4.3 group
+    by `endgame_class` (both columns are projected so the chain serves all three).
+    """
+    sign = USER_COLOR_SIGN_SQL
+    elo_case = elo_bucket_case_sql(USER_ELO_AT_GAME_SQL)
+    bucket_expr = endgame_bucket_case_sql("swn.entry_eval_cp", "swn.entry_eval_mate", sign)
+    exit_es = span_es_sql("next_eval_cp", "next_eval_mate", sign, USER_SCORE_EXPR)
+    entry_es = span_es_sql("swn.entry_eval_cp", "swn.entry_eval_mate", sign, "NULL")
+    return (
+        "spans AS (\n"
+        "  SELECT gp.game_id, gp.endgame_class,\n"
+        "         (array_agg(gp.eval_cp ORDER BY gp.ply ASC))[1] AS entry_eval_cp,\n"
+        "         (array_agg(gp.eval_mate ORDER BY gp.ply ASC))[1] AS entry_eval_mate,\n"
+        "         min(gp.ply) AS span_min_ply\n"
+        "  FROM game_positions gp\n"
+        "  JOIN games g ON g.id = gp.game_id\n"
+        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  WHERE gp.endgame_class IS NOT NULL\n"
+        f"    AND {BASE_GAME_FILTER}\n"
+        f"  GROUP BY gp.game_id, gp.endgame_class HAVING count(gp.ply) >= {MIN_ENDGAME_PLIES}\n"
+        "),\n"
+        "spans_with_next AS (\n"
+        "  SELECT s.*,\n"
+        "         lead(s.entry_eval_cp)   OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_cp,\n"
+        "         lead(s.entry_eval_mate) OVER (PARTITION BY s.game_id ORDER BY s.span_min_ply) AS next_eval_mate\n"
+        "  FROM spans s\n"
+        "),\n"
+        "gap_rows AS (\n"
+        f"  SELECT g.user_id, ({elo_case}) AS elo_bucket, su.tc_bucket AS tc,\n"
+        "         swn.endgame_class,\n"
+        f"         {bucket_expr} AS bucket,\n"
+        f"         ({exit_es})\n      - ({entry_es}) AS gap_span\n"
+        "  FROM spans_with_next swn\n"
+        "  JOIN games g ON g.id = swn.game_id\n"
+        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  WHERE (swn.entry_eval_cp IS NOT NULL OR swn.entry_eval_mate IS NOT NULL)\n"
+        f"    AND ({USER_ELO_AT_GAME_SQL}) >= {ELO_FLOOR}\n"
+        ")"
     )
 
 

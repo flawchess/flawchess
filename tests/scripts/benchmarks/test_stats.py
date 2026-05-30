@@ -61,6 +61,44 @@ def test_max_abs_d_raises_without_two_eligible_levels() -> None:
         stats.max_abs_d([stats.LevelStat("only", 100, 0.0, 1.0)])
 
 
+def test_spread_d_uses_mean_variance_not_pooled() -> None:
+    """§3.4.1 recipe: (max−min) / sqrt(mean(all group variances)), pair = (max, min)."""
+    levels = [
+        stats.LevelStat("a", 100, 0.0, 1.0),
+        stats.LevelStat("b", 100, 2.0, 3.0),
+        stats.LevelStat("c", 100, 1.0, 2.0),
+    ]
+    result = stats.spread_d(levels)
+    assert result.pair == ("b", "a")  # max-mean, min-mean
+    # mean variance = (1+3+2)/3 = 2; d = (2-0)/sqrt(2)
+    assert result.max_abs_d == pytest.approx(2.0 / math.sqrt(2.0))
+
+
+def test_spread_d_differs_from_pairwise_pooled() -> None:
+    """spread_d (mean-variance denom) and max_abs_d (pooled-SD of the extremes) diverge.
+
+    Real §3.4.1 rook conv TC numbers: spread_d gives the report's 1.24, max_abs_d gives 1.09.
+    """
+    levels = [
+        stats.LevelStat("bullet", 832, 0.6502, 0.01975),
+        stats.LevelStat("blitz", 800, 0.7337, 0.01374),
+        stats.LevelStat("rapid", 597, 0.7584, 0.01352),
+        stats.LevelStat("classical", 106, 0.8002, 0.01164),
+    ]
+    assert round(stats.spread_d(levels).max_abs_d, 2) == 1.24
+    assert round(stats.max_abs_d(levels).max_abs_d, 2) == 1.09
+    assert stats.spread_d(levels).max_abs_d != stats.max_abs_d(levels).max_abs_d
+
+
+def test_spread_d_skips_levels_below_floor() -> None:
+    levels = [
+        stats.LevelStat("a", 100, 0.0, 1.0),
+        stats.LevelStat("tiny", 5, 100.0, 1.0),  # n < 10, ignored despite huge mean
+        stats.LevelStat("b", 100, 1.0, 1.0),
+    ]
+    assert stats.spread_d(levels).pair == ("b", "a")
+
+
 def test_mg_eval_elo_marginal_corrected_pair() -> None:
     """§2.1 ELO marginal (live DB values): max |d| is 800 vs 1600, not 800 vs 1200.
 
