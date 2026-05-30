@@ -73,3 +73,14 @@ Therefore the change is **frontend-only**:
   `Endgames.tsx`.
 
 `EndgameGauge` the component survives — `EndgameMetricsByTcCard` still uses it.
+
+## Superseded (2026-05-30)
+
+The "do not fix the gauges back" guidance above is **superseded**. A follow-up
+`/gsd-explore` session decided to re-add the per-type Conv/Recov gauges — but in the
+TC-honest form the original mispaint objection demanded: an absolute-arc gauge with a
+**TC-mix-weighted** band (not the pooled `PER_CLASS_GAUGE_ZONES` that this note
+removed). The removal here was the correct interim move; the re-add is the proper
+fix. See [[endgame-typecard-tcmix-gauges]] / Phase 99. The "backend conv/recov is NOT
+dead" and "EndgameGauge survives" facts above remain accurate and are leveraged by the
+re-add.
