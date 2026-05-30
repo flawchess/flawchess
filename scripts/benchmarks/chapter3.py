@@ -3,6 +3,7 @@
 Ported sub-metrics so far:
   §3.1.1 Non-Endgame Score   — per-user non_eg_score distribution (score units).
   §3.1.2 Endgame-entry eval  — two-pass symmetric-baseline eval at EG entry (cp).
+  §3.1.3 Achievable Score    — per-user entry_xs (Lichess sigmoid at EG entry, score).
   §3.1.6 Endgame Score Gap   — per-user (eg_score − non_eg_score) distribution (pp).
 
 §3.1.1/§3.1.6 derive from one shared per_user CTE (≥30 endgame AND ≥30 non-endgame
@@ -26,6 +27,8 @@ Faithful-port findings (validated against benchmarks-latest.md):
   - §3.1.2: pass 1, both pooled variants, all ELO/TC marginals (n/mean/SD), and both
     collapse verdicts (TC 0.14 bullet-vs-rapid, ELO 0.11 800-vs-2000) reproduce the
     report exactly. No transcription errors found.
+  - §3.1.3: pooled, all ELO/TC marginals, and both verdicts (TC 0.12 bullet-vs-rapid,
+    ELO 0.12 1600-vs-2400) reproduce the report exactly. No transcription errors found.
 """
 
 from __future__ import annotations
@@ -42,7 +45,7 @@ from scripts.benchmarks import sql
 from scripts.benchmarks.entry_eval import Baseline
 from scripts.benchmarks.render import fmt_int, fmt_signed, fmt_unsigned, markdown_table
 
-SECTION = "SKILL.md §3.1 — endgame overall performance (3.1.1 Non-EG score, 3.1.2 EG-entry eval, 3.1.6 score gap)"
+SECTION = "SKILL.md §3.1 — endgame overall performance (3.1.1 Non-EG, 3.1.2 EG-entry eval, 3.1.3 achievable, 3.1.6 score gap)"
 
 _SCORE_DIGITS = 4  # proportion metrics round to 4 dp in SQL (SKILL.md §3.1.x queries)
 # §3.1.2 eval is a cp metric: mean at 2 dp (report double-rounds), sd/pct at 1 dp.
@@ -136,6 +139,59 @@ async def compute(session: AsyncSession) -> Chapter3Values:
             verdicts=[dist.verdict("TC", tc), dist.verdict("ELO", elo)],
         )
     return Chapter3Values(non_eg=blocks["non_eg"], diff=blocks["diff"], eg=blocks["eg"])
+
+
+# --- §3.1.3 Achievable Score (entry_xs) ------------------------------------
+
+
+def _entry_xs_per_user_cte() -> str:
+    """Per-user `entry_xs = avg(expected_score)` over endgame-reaching games (SKILL.md §3.1.3).
+
+    expected_score is the Lichess winning-chances sigmoid (mate forces 0/1) at the first
+    endgame ply; ≥20 non-null entry games per (user, game-time ELO, TC) cell, sub-800
+    dropped, equal-footing filtered, sparse cell excluded. Shares `entry_rows` with §3.1.5.
+    """
+    bucket_case = sql.elo_bucket_case_sql("ueag")
+    return (
+        f"WITH {sql.SELECTED_USERS_CTE},\n"
+        f"{sql.ENDGAME_GAME_IDS_CTE},\n"
+        f"{sql.ENTRY_ROWS_CTE},\n"
+        "rows AS (\n"
+        f"  SELECT g.user_id, ({sql.USER_ELO_AT_GAME_SQL}) AS ueag, su.tc_bucket AS tc,\n"
+        f"         {sql.expected_score_sql()} AS expected_score\n"
+        "  FROM games g\n"
+        "  JOIN selected_users su ON su.user_id = g.user_id\n"
+        "  JOIN entry_rows er ON er.game_id = g.id AND er.rn = 1\n"
+        f"  WHERE {sql.BASE_GAME_FILTER}\n"
+        "),\n"
+        "per_user AS (\n"
+        f"  SELECT user_id, ({bucket_case}) AS elo_bucket, tc,\n"
+        "         avg(expected_score) AS entry_xs\n"
+        f"  FROM rows WHERE ueag >= {sql.ELO_FLOOR}\n"
+        "  GROUP BY user_id, elo_bucket, tc\n"
+        f"  HAVING count(*) FILTER (WHERE expected_score IS NOT NULL) >= {sql.ENDGAME_MIN_GAMES}\n"
+        "),\n"
+        "pu AS MATERIALIZED (\n"
+        f"  SELECT * FROM per_user WHERE {sql.SPARSE_CELL_EXCLUSION}\n"
+        ")"
+    )
+
+
+async def compute_313(session: AsyncSession) -> MetricBlock:
+    query = (
+        _entry_xs_per_user_cte()
+        + "\nSELECT\n"
+        + dist.agg_select("entry_xs", digits=_SCORE_DIGITS)
+        + f"\nFROM pu {dist.GROUPING_SETS}"
+    )
+    rows = await _fetch(session, query)
+    pooled, elo, tc = dist.split_grouping_sets(rows)
+    return MetricBlock(
+        pooled=pooled,
+        elo_marginal=elo,
+        tc_marginal=tc,
+        verdicts=[dist.verdict("TC", tc), dist.verdict("ELO", elo)],
+    )
 
 
 # --- §3.1.2 Endgame-entry eval (two-pass, phase = 2) -----------------------
@@ -267,7 +323,7 @@ def _render_312(v: EntryEval312) -> list[str]:
     ]
 
 
-def render(values: Chapter3Values, eval312: EntryEval312) -> str:
+def render(values: Chapter3Values, eval312: EntryEval312, xs313: MetricBlock) -> str:
     parts = ["## 3. Endgames", "", "### 3.1 Endgame Overall Performance", ""]
     parts += _metric_section(
         "#### 3.1.1 Non-Endgame Score (per-user)",
@@ -277,6 +333,13 @@ def render(values: Chapter3Values, eval312: EntryEval312) -> str:
     )
     parts += ["", "---", ""]
     parts += _render_312(eval312)
+    parts += ["", "---", ""]
+    parts += _metric_section(
+        "#### 3.1.3 Achievable Score (entry_xs)",
+        xs313,
+        "score",
+        pooled_label="Pooled distribution",
+    )
     parts += ["", "---", ""]
     parts += _metric_section(
         "#### 3.1.6 Endgame Score Gap and Timeline",
@@ -290,10 +353,12 @@ def render(values: Chapter3Values, eval312: EntryEval312) -> str:
 async def build(session: AsyncSession) -> dict[str, Any]:
     values = await compute(session)
     eval312 = await compute_312(session)
+    xs313 = await compute_313(session)
     return {
         "status": "OK",
         "section": SECTION,
         "values": values,
         "values_312": eval312,
-        "markdown": render(values, eval312),
+        "values_313": xs313,
+        "markdown": render(values, eval312, xs313),
     }

@@ -195,3 +195,43 @@ async def test_chapter3_312_matches_report(benchmark_session: AsyncSession) -> N
     for axis, (pair, d) in EXPECTED_312_VERDICTS.items():
         assert by_axis[axis]["pair"] == pair, axis
         assert round(by_axis[axis]["max_abs_d"], 2) == d, axis
+
+
+# --- §3.1.3 Achievable Score (entry_xs) ----------------------------------------
+
+# Proportions (4 dp). Reproduces benchmarks-latest.md §3.1.3 exactly.
+EXPECTED_313_POOLED = {
+    "n": 4616,
+    "mean": 0.5094,
+    "sd": 0.0796,
+    "p05": 0.3801,
+    "p25": 0.4621,
+    "p50": 0.5097,
+    "p75": 0.5566,
+    "p95": 0.6399,
+}
+EXPECTED_313_ELO = {
+    "800": (756, 0.5049, 0.1054, 0.4386, 0.5057, 0.5703),
+    "1200": (1068, 0.5066, 0.0922, 0.4476, 0.5055, 0.5657),
+    "1600": (1166, 0.5139, 0.0750, 0.4653, 0.5151, 0.5623),
+    "2000": (1028, 0.5126, 0.0607, 0.4738, 0.5134, 0.5495),
+    "2400": (598, 0.5060, 0.0488, 0.4757, 0.5029, 0.5333),
+}
+EXPECTED_313_TC = {
+    "bullet": (1350, 0.5041, 0.0942, 0.4469, 0.5036, 0.5619),
+    "blitz": (1353, 0.5103, 0.0676, 0.4698, 0.5109, 0.5510),
+    "rapid": (1334, 0.5143, 0.0720, 0.4691, 0.5121, 0.5579),
+    "classical": (579, 0.5087, 0.0845, 0.4582, 0.5069, 0.5603),
+}
+EXPECTED_313_VERDICTS = {
+    "TC": (("bullet", "rapid"), 0.12),
+    "ELO": (("1600", "2400"), 0.12),
+}
+
+
+async def test_chapter3_313_matches_report(benchmark_session: AsyncSession) -> None:
+    block = await chapter3.compute_313(benchmark_session)
+    _check_pooled(block, EXPECTED_313_POOLED)
+    _check_marginal(block["elo_marginal"], EXPECTED_313_ELO)
+    _check_marginal(block["tc_marginal"], EXPECTED_313_TC)
+    _check_verdicts(block, EXPECTED_313_VERDICTS)

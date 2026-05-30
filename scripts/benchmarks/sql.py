@@ -82,6 +82,41 @@ ENDGAME_GAME_IDS_CTE: str = (
     ")"
 )
 
+# First endgame-class ply per endgame-reaching game (rn = 1), carrying its eval
+# (SKILL.md §3.1.3/§3.1.5 "entry_rows"). Requires `endgame_game_ids` already in the
+# WITH clause; a CTE body for inclusion after it.
+ENTRY_ROWS_CTE: str = (
+    "entry_rows AS (\n"
+    "  SELECT gp.game_id, gp.eval_cp, gp.eval_mate,\n"
+    "         ROW_NUMBER() OVER (PARTITION BY gp.game_id ORDER BY gp.ply ASC) AS rn\n"
+    "  FROM game_positions gp\n"
+    "  JOIN endgame_game_ids eg ON eg.game_id = gp.game_id\n"
+    "  WHERE gp.endgame_class IS NOT NULL\n"
+    ")"
+)
+
+# User-POV color sign for an eval/mate value (+1 white, −1 black). `g` = games alias.
+USER_COLOR_SIGN_SQL: str = "(CASE WHEN g.user_color = 'white' THEN 1 ELSE -1 END)"
+
+
+def expected_score_sql() -> str:
+    """Per-game user-POV expected score at the first endgame ply (SKILL.md §3.1.3/§3.1.5).
+
+    Mate forces 0/1 (sign-flipped for black); `|cp| < EVAL_OUTLIER_TRIM_CP` uses the
+    Lichess winning-chances sigmoid; `|cp| >= trim` (decisive but mate-undeclared) →
+    NULL. Expects `entry_rows` aliased `er` and `games` aliased `g` in scope.
+    """
+    sign = USER_COLOR_SIGN_SQL
+    return (
+        "CASE\n"
+        f"      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * {sign}) > 0 THEN 1.0\n"
+        f"      WHEN er.eval_mate IS NOT NULL AND (er.eval_mate * {sign}) < 0 THEN 0.0\n"
+        f"      WHEN er.eval_cp IS NOT NULL AND abs(er.eval_cp) < {EVAL_OUTLIER_TRIM_CP}\n"
+        f"           THEN 1.0 / (1.0 + exp(-{LICHESS_WIN_CHANCES_K} * (er.eval_cp * {sign})))\n"
+        "      ELSE NULL\n"
+        "    END"
+    )
+
 
 def elo_bucket(rating: int | None) -> int | None:
     """Game-time ELO bucket for a rating, or None if below the floor / missing.

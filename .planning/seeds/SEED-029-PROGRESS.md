@@ -20,11 +20,16 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
 - `28dba510` §2.1 Middlegame-entry eval — two-pass (baseline + centered dist) + Cohen's d.
 - `67a65ed9` §3.1.1 Non-EG Score + §3.1.6 EG Score Gap + the shared `distribution.py` machinery
   (chapter2 refactored onto it). 33 tests green.
-- (next commit) §3.1.2 EG-entry eval — extracted the shared two-pass eval machinery into
+- `fffcf6ef` §3.1.2 EG-entry eval — extracted the shared two-pass eval machinery into
   `entry_eval.py` (baseline + per_user_color_with(phase) + centered_expr + baseline_table),
   refactored chapter2 onto it, added `distribution.pooled_agg_select` for the uncentered
   pooled arm. §3.1.2 reproduces the report EXACTLY (pass 1, both pooled variants, all
   marginals on n/mean/SD, both verdicts TC 0.14 / ELO 0.11) — NO transcription errors.
+- (next commit) §3.1.3 Achievable Score — standard MetricBlock (score unit), reuses
+  `_metric_section`. Added shared `sql.ENTRY_ROWS_CTE` + `sql.expected_score_sql()` +
+  `sql.USER_COLOR_SIGN_SQL` (the ROW_NUMBER first-endgame-ply CTE + Lichess sigmoid, both
+  reused by §3.1.5). Reproduces the report EXACTLY (pooled, all marginals, both verdicts
+  TC 0.12 / ELO 0.12 1600-vs-2400) — NO transcription errors.
 
 ## Architecture (scripts/benchmarks/ subpackage; tests in tests/scripts/benchmarks/)
 
@@ -87,13 +92,11 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
 
 ## Remaining work
 
-- §3.1.3 Achievable Score — per_user avg(expected_score) via Lichess sigmoid at first endgame ply;
-  ≥20 floor; "score" unit. (SKILL.md ~907-1035.)
 - §3.1.4 Endgame Score — per_user avg(score) over endgame games; ≥20 floor; "score" unit.
   (Simplest; reuses USER_SCORE_EXPR + endgame_game_ids.) (SKILL.md ~1037-1153.)
 - §3.1.5 Achievable Score Gap — per_user avg(actual − expected) paired (mate INCLUDED, |cp|<2000);
-  ≥20 floor; "pp" unit. (SKILL.md ~1155-1296.) 3.1.3/3.1.5 share the entry_rows (ROW_NUMBER first
-  endgame ply) CTE.
+  ≥20 floor; "pp" unit. (SKILL.md ~1155-1296.) Reuse `sql.ENTRY_ROWS_CTE` + `sql.expected_score_sql()`
+  (already extracted for §3.1.3); the `actual` side needs USER_SCORE_EXPR per entry game.
 - §3.2 Conv/Parity/Recovery (3.2.1) — multi-metric + composite Endgame Skill; uses the 5×4 cell grid.
 - §3.3 Time Pressure (3.3.x); §3.4 Endgame Type per-class (3.4.x) — partitioned per class/bin.
 - §4 — already deterministic; chapter just references scripts/gen_global_percentile_cdf.py.
