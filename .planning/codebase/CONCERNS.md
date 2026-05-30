@@ -45,14 +45,16 @@ No open bug markers found in source (`grep TODO/FIXME/HACK/XXX` returns 3 benign
 **Default `SECRET_KEY` signs JWTs if the env var is unset:**
 - Risk: `app/core/config.py:17` defaults `SECRET_KEY = "change-me-in-production"`, and `app/users.py:61,71` use `settings.SECRET_KEY` as the JWT signing secret. If the prod `.env` ever omits `SECRET_KEY`, the app starts with a publicly-known signing key, allowing forged auth tokens. There is no fail-fast guard rejecting the placeholder value in a production environment.
 - Files: `app/core/config.py:17`, `app/users.py:61,71`
-- Current mitigation: Prod `.env` is expected to set it; 1Password sync. But nothing enforces it.
+- Current mitigation: Confirmed — `SECRET_KEY` is set in `prod.env` (1Password sync), so prod does not run the default. But no code-level guard enforces it if the override is ever dropped.
 - Recommendations: Fail startup when `ENVIRONMENT != "development"` and `SECRET_KEY == "change-me-in-production"` (or is empty). Same guard would catch an empty `GOOGLE_OAUTH_CLIENT_SECRET` in prod.
 
-**Import-trigger endpoint has no per-IP / per-request rate limiting:**
-- Risk: Rate limiting exists for guest-account creation (`app/core/ip_rate_limiter.py`, 5 req/hour/IP, applied in `auth.py:232`) and for insights (`InsightsRateLimitExceeded` in `routers/insights.py`), but the import-start endpoint (`POST /` in `app/routers/imports.py`) has no limiter (`grep limiter` → 0 hits in that file). Imports are the most expensive operation (game fetch + Zobrist + eval drain) and the documented OOM history shows Postgres is the scarce resource.
-- Files: `app/routers/imports.py`, `app/services/import_service.py`
-- Current mitigation: Per-user active-job dedupe (`get_active_job` checks `status in (PENDING, IN_PROGRESS)`), the `game_repository.py:134-141` active-import gate, `IMPORT_TIMEOUT_SECONDS = 3h` cap, and per-platform `asyncio.Semaphore` throttles on *outbound* API calls (`app/core/rate_limiters.py`, 3 concurrent each). These bound per-user concurrency and external fetch rate, but not inbound request rate or guest fan-out across many guest accounts.
-- Recommendations: Add a per-user / per-IP limiter on the import-start endpoint; consider a global concurrent-import cap and a guest game-count quota (none found in `guest_service.py`).
+**Import-trigger endpoint has no per-IP / per-request rate limiting (LOW — already backpressured):**
+- Risk: Rate limiting exists for guest-account creation (`app/core/ip_rate_limiter.py`, 5 req/hour/IP, applied in `auth.py:232`) and for insights (`InsightsRateLimitExceeded` in `routers/insights.py`), but the import-start endpoint (`POST /` in `app/routers/imports.py:42`) has no limiter. "Unthrottled" here means narrowly: no per-user POST-frequency limit and no global cap on the *number* of import jobs (the in-memory `_jobs` dict has no ceiling).
+- Files: `app/routers/imports.py:42`, `app/services/import_service.py`
+- Assessment: This is a design-asymmetry / hardening note, **not** an OOM driver. The documented OOM history (FLAWCHESS-3Q) was caused by a *single* import's footprint (one job fanning out to ~13 Postgres backends + a per-batch eval pass at ~20 g/s), which was fixed directly — not by many concurrent imports. The many-concurrent-imports case is already backpressured by several mechanisms below.
+- Current mitigation (substantial): (1) per-user, per-platform active-job dedupe (`find_active_job` checks `status in (PENDING, IN_PROGRESS)`) caps a user at ~2 concurrent jobs (chess.com + lichess); (2) **process-global outbound semaphores** (`app/core/rate_limiters.py`, `CHESSCOM_SEMAPHORE_LIMIT = 3`, `LICHESS_SEMAPHORE_LIMIT = 3`) bound peak fetch concurrency across *all* jobs — excess jobs park on the semaphore holding only tiny `JobState` metadata, so this is the "limited by API speed" ceiling; (3) bounded Stockfish eval pool (`STOCKFISH_POOL_SIZE`, prod 4) serializes eval CPU/memory; (4) `IMPORT_TIMEOUT_SECONDS = 3h` cap; (5) SQLAlchemy pool ceiling (20/process) and Postgres `max_connections=30`; (6) container `mem_limit` contains any OOM to a restart rather than host-down; (7) anonymous fan-out is throttled upstream — guest accounts count as authenticated users and guest creation is capped at 5/hour/IP.
+- Residual gap (minor): a registered user can script back-to-back *sequential* re-imports (dedupe stops concurrent dupes, not a tight loop), and many *distinct* users importing at once adds connection-pool pressure — both bounded by the semaphores and pool ceiling above.
+- Recommendations (defense-in-depth, low priority): an explicit **global concurrent-import semaphore** (cap total active jobs, return 429 above it) would make the implicit fetch-semaphore backpressure explicit; optionally a guest game-count quota (none found in `guest_service.py`). Not urgent.
 
 **All rate limiters are in-process (reset on restart, do not span workers):**
 - Risk: `ip_rate_limiter.py` self-documents "In-process limiter — resets on server restart. Acceptable for single-process Uvicorn deployment. For multi-process or distributed deployments, replace with a Redis-backed solution." The import semaphores (`rate_limiters.py`) and insights limiter are likewise per-process.
@@ -129,7 +131,7 @@ No open bug markers found in source (`grep TODO/FIXME/HACK/XXX` returns 3 benign
 - Blocks: Safe deploys — a missing `SECRET_KEY` in prod silently falls back to a public signing key (see Security).
 - Fix approach: Add a `model_validator` that rejects placeholder / empty secrets when `ENVIRONMENT != "development"`.
 
-**Rate limiting on the expensive import endpoint:** see Security. Guest-creation and insights are limited; import-start is not.
+**Explicit global concurrent-import cap (optional hardening):** see Security. Guest-creation and insights have explicit limiters; import-start relies on implicit backpressure (per-platform fetch semaphores + per-user dedupe + bounded eval pool) rather than an explicit limiter. Low priority — making the cap explicit is defense-in-depth, not a true gap.
 
 **Single shared place for the OOM tuning budget:**
 - Problem: The OOM-relevant knobs are spread across three files (`import_service._BATCH_SIZE`, `engine._HASH_MB` + `STOCKFISH_POOL_SIZE`, `core/database` pool sizes). There is no single budget the way CLAUDE.md narrates it.
