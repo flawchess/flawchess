@@ -347,6 +347,8 @@ Score heatmaps render as percent; eval heatmaps render as integer cp (e.g. `+25 
 
 The p50 cell grid, ELO marginal, TC marginal, and pooled distribution MUST be rendered as **GitHub-flavored markdown tables** (pipe-delimited, header + `---` separator row). Do **NOT** collapse them into single-line prose summaries like `ELO marginal (cp): 800 n764 m0 SD88 · 1200 n1093 m+7 SD70 · …`. The middle-dot bullet form is unscannable, defeats column alignment, and silently drops most of the per-level statistics (p25/p75/p05/p95). Every numeric breakdown that has a row/column structure goes into a markdown table — there is no token-budget exception. If the recommendation prose still fits, the tables fit too.
 
+**Copy tables verbatim from the intermediate — never retype them, and self-check the separator row.** When splicing a table out of `benchmarks-generated.md` (step 6), copy the header row, the `|---:|...|` separator row, and every body row byte-for-byte. A recurring failure mode is silently dropping one `---:` cell from the separator, leaving it one column short of the header — which breaks GitHub markdown rendering for the whole table. After assembling the report, verify every table: the separator must have exactly as many `---`/`---:` cells as the header has columns. For an N-column header (N+1 pipes), the separator is `|` + `---:|`×N. Fix any short separator before writing the file.
+
 **Canonical templates** (use as drop-in skeletons — copy the column set verbatim, fill in the values):
 
 Pooled distribution (1 row):
