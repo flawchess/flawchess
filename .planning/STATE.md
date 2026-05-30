@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
 status: executing
-last_updated: "2026-05-30T21:19:49.792Z"
+last_updated: "2026-05-30T21:25:35.258Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
   percent: 25
 ---
 
@@ -19,7 +19,7 @@ progress:
 
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
 Phase: 99 (percentile-badges-for-conversion-parity-and-recovery) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Next: Plan 03 (PerTcBucketStats field widening + endgame_service dispatch)
 Status: Ready to execute
 Last activity: 2026-05-30
@@ -236,6 +236,7 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 |-------|------|----------|-------|
 | Phase 99 P02 | 25 | 2 tasks | 6 files |
 | Phase 99 P03 | 15 | 2 tasks | 18 files |
+| Phase 99 P04 | 5 | 2 tasks | 2 files |
 
 ## Decisions
 
