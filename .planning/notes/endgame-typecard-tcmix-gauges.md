@@ -3,7 +3,7 @@ title: Endgame Type Card — Re-add Conv/Recov as TC-mix-weighted Gauges
 date: 2026-05-30
 status: decided
 supersedes_followup_in: notes/endgame-type-card-drop-gauges.md
-phase: Phase 99 (proposed)
+phase: Phase 98 (proposed)
 ---
 
 # Endgame Type Card — Re-add Conv/Recov as TC-mix-weighted Gauges
@@ -92,7 +92,7 @@ from the existing Endgame Metrics gauges forces a cascade. Absolute-arc + TC-mix
 band + tooltip is the only option that is TC-honest, idiom-consistent, and leaves
 the Metrics section alone.
 
-## Open implementation items (planning inputs for Phase 99)
+## Open implementation items (planning inputs for Phase 98)
 
 1. **Benchmark stats.** Produce per-(class × TC) IQRs (p25/p75) — and median if the
    band is centred on it — for conversion and recovery, into
