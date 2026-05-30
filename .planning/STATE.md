@@ -19,10 +19,10 @@ progress:
 
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
 Phase: 98 (per-tc-collapsible-endgame-type-cards) — EXECUTING
-Plan: 2 of 2 complete — both plans merged to phase branch
-Next: verify phase 98, then ship (PR) and plan Phase 99
-Status: Phase 98 implementation complete, verifying
-Last activity: 2026-05-30 -- Phase 98 both plans complete (backend + collapsible per-TC frontend)
+Plan: 2 of 2 complete — verified (1 ruff-format blocker found and fixed)
+Next: HUMAN-UAT (responsive staircase/divider grammar + primary-TC default-expand with real data), then ship (PR) and plan Phase 99
+Status: Phase 98 VERIFIED-WITH-GAPS (only HUMAN-UAT remaining), ready to ship
+Last activity: 2026-05-30 -- Phase 98 verified; ruff-format blocker closed (style commit da57883d)
 
 ## Project Reference
 
