@@ -114,12 +114,19 @@
   5. The backfill script populates the 12 new metrics on dev (and prod via tunnel after sign-off); desktop + mobile parity; backend + frontend gates pass.
 
 **Plans**: 5 plans
-
 Plans:
+**Wave 1**
+
 - [ ] 99-01-PLAN.md — Wave 0 test scaffolds (rate-builder floor/parity, ENUM membership, schema field, frontend chip)
 - [ ] 99-02-PLAN.md — Backend contract layer: 3 rate builders + floor constant + CdfMetricId + SAEnum +12 + Alembic migration
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 99-03-PLAN.md — Stage B + regen dispatch arms; PerTcBucketStats rate field trio; endgame_service threading
 - [ ] 99-04-PLAN.md — Frontend: TS rate fields + title-line rate chip in shared MetricBlock (desktop + mobile)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 99-05-PLAN.md — Cohort CDF regen (benchmark) + archive report + dev backfill; prod backfill gated on sign-off (D-11)
 
 ### Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework

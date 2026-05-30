@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
-status: "Phase 98 shipped — PR #163"
-last_updated: "2026-05-30T20:06:52.001Z"
-last_activity: "2026-05-30 - Completed quick task 260530-rnz: Applied the Endgames-page header-band card style to Overview cards (Results by Color split into its own card), the shared "Results played as" card on both Openings subtabs, the Openings Stats/Insights accent cards (left-border accent relocated to content only), and the Bookmarked "Score over Time" card. Style-only, no collapse behavior; lint/knip clean, vitest 735/735. Previously: 2026-05-30 - Completed quick task 260530-pll: Collapsible per-TC Endgame Metrics cards + primary-TC timeline default"
+status: executing
+last_updated: "2026-05-30T20:37:10.250Z"
+last_activity: 2026-05-30 -- Phase 99 planning complete
 progress:
   total_phases: 8
   completed_phases: 2
-  total_plans: 6
+  total_plans: 11
   completed_plans: 6
   percent: 25
 ---
@@ -21,8 +21,8 @@ Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXEC
 Phase: 98 (per-tc-collapsible-endgame-type-cards) — EXECUTING
 Plan: 2 of 2 complete — verified (1 ruff-format blocker found and fixed)
 Next: HUMAN-UAT (responsive staircase/divider grammar + primary-TC default-expand with real data), then ship (PR) and plan Phase 99
-Status: Phase 98 shipped — PR #163
-Last activity: 2026-05-30 - Completed quick task 260530-rnz: Applied the Endgames-page header-band card style to Overview cards (Results by Color split into its own card), the shared "Results played as" card on both Openings subtabs, the Openings Stats/Insights accent cards (left-border accent relocated to content only), and the Bookmarked "Score over Time" card. Style-only, no collapse behavior; lint/knip clean, vitest 735/735. Previously: 2026-05-30 - Completed quick task 260530-pll: Collapsible per-TC Endgame Metrics cards + primary-TC timeline default
+Status: Ready to execute
+Last activity: 2026-05-30 -- Phase 99 planning complete
 
 ## Project Reference
 
