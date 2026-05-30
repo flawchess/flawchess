@@ -127,7 +127,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 99-05-PLAN.md — Cohort CDF regen (benchmark) + archive report + dev backfill; prod backfill gated on sign-off (D-11)
+- [x] 99-05-PLAN.md — Cohort CDF regen (benchmark) + archive report + dev backfill; prod backfill gated on sign-off (D-11)
 
 ### Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework
 
