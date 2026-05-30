@@ -27,10 +27,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import func
 
 from app.models.user_rating_anchors import (
     TimeControlBucket,
@@ -176,4 +175,50 @@ async def fetch_anchors_for_user(
     }
 
 
-__all__ = ["RatingAnchorRow", "upsert_anchor", "fetch_anchors_for_user"]
+async def has_any_anchor(session: AsyncSession, *, user_id: int) -> bool:
+    """Return True if at least one rating-anchor row exists for the user.
+
+    A committed anchor row is proof that ``compute_stage_a`` ran to completion
+    for this user: Stage A computes anchors AND the eval-independent
+    ``score_gap`` percentiles in one transaction and commits them together, so
+    an anchor row is only visible to other sessions once that whole transaction
+    has committed.
+
+    This is the "Stage A has run" signal for the ``GET /imports/readiness``
+    settled-empty escape (bug fix endgame-percentiles-missing, prod user 146):
+    a user who is above the 30-game anchor floor but below the per-metric
+    endgame-population floor (e.g. 33 rating-eligible games but only 22 reach an
+    endgame) gets an anchor row yet zero ``user_benchmark_percentiles`` rows, by
+    design. ``has_any_rows`` stays False forever and the anchor-floor probe
+    reports above-floor, so without this signal the endgames page locks
+    permanently. ``anchor row exists AND no percentile rows`` means Stage A ran
+    and the user is too sparse for any metric — unlock instead of spinning.
+
+    V4 Information Disclosure mitigation: caller MUST pass the authenticated
+    user's ID (from FastAPI-Users dep ``current_active_user.id``); never accept
+    ``user_id`` as a query parameter from the client.
+
+    Uses a bounded-count query (``LIMIT 1``) so it exits after the first match.
+
+    Args:
+        session: AsyncSession.
+        user_id: Authenticated user's internal PK. Keyword-only to match the
+            V4 access-control convention used by ``fetch_anchors_for_user``.
+
+    Returns:
+        True if any anchor row exists for the user; False otherwise.
+    """
+    result = await session.execute(
+        select(func.count(UserRatingAnchor.user_id))
+        .where(UserRatingAnchor.user_id == user_id)
+        .limit(1)
+    )
+    return (result.scalar() or 0) > 0
+
+
+__all__ = [
+    "RatingAnchorRow",
+    "upsert_anchor",
+    "fetch_anchors_for_user",
+    "has_any_anchor",
+]
