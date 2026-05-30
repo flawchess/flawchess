@@ -161,8 +161,15 @@ async def query_endgame_entry_rows(
 
     Returns rows of:
         (game_id, endgame_class, result, user_color,
-         eval_cp, eval_mate, next_entry_eval_cp, next_entry_eval_mate, played_at)
+         eval_cp, eval_mate, next_entry_eval_cp, next_entry_eval_mate, played_at,
+         time_control_bucket)
     where endgame_class is an integer (1-6, see EndgameClassInt).
+
+    Phase 98 fix: `time_control_bucket` (col 9) lets the per-(class × TC) type
+    breakdown (`_aggregate_endgame_stats_by_tc`) group these per-class spans by TC.
+    The earlier implementation grouped `query_endgame_bucket_rows` (one row per
+    game, class = first endgame position) which classified almost every game as
+    "mixed", leaving the rook/minor/pawn/queen tiles empty.
 
     eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply.
     NO sign flip in SQL — the service layer's _classify_endgame_bucket applies the
@@ -262,6 +269,10 @@ async def query_endgame_entry_rows(
             # Quick task 260519-lu0: played_at for MAX(played_at) per category
             # (drives last_played_at in EndgameCategoryStats / PositionResultsPanel).
             Game.played_at.label("played_at"),
+            # Phase 98 fix: per-(class × TC) type breakdown groups these per-class
+            # spans by TC. Appended (col 9) so existing positional/test consumers of
+            # cols 0-8 are unaffected; all prod consumers use named Row access.
+            Game.time_control_bucket.label("time_control_bucket"),
         )
         .join(span_with_next, Game.id == span_with_next.c.game_id)
         .where(Game.user_id == user_id)
