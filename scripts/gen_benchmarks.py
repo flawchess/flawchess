@@ -37,9 +37,18 @@ Usage:
     uv run python scripts/gen_benchmarks.py --db benchmark --out reports/benchmark
     uv run python scripts/gen_benchmarks.py --db dev --dry-run   # connectivity smoke
 
-Status: SCAFFOLD. Chapter computations are stubbed (see CHAPTER_STUBS / _generate_chapters).
-Each stub references the SKILL.md section it must port. Fill them in one section at a time,
-diffing each against benchmarks-latest.md as you go.
+Status: PORTED. Every chapter (§1–§4) computes real numbers, gated against
+benchmarks-latest.md within rounding (tests/scripts/benchmarks/test_chapter*_diff.py).
+
+OUTPUT IS A REGENERABLE INTERMEDIATE, NOT THE FINAL REPORT (SEED-029 Phase A division of
+labor). This script writes the numeric artifact pair — `benchmarks-generated.json` (numbers)
+and `benchmarks-generated.md` (numeric chapter tables) — to the output dir, gitignored. The
+`.claude/skills/benchmarks/SKILL.md` LLM consumes that artifact, applies the fixed
+collapse-verdict thresholds to the emitted Cohen's d's, narrates the header + per-subchapter
+Recommendations + the two headline summary tables, then ROTATES the prior
+`reports/benchmark/benchmarks-latest.md` to its dated archive and writes the assembled report.
+This script never writes or rotates `benchmarks-latest.md` itself (the code/LLM seam: code
+emits numbers, the LLM applies verdicts + narrates).
 """
 
 from __future__ import annotations
@@ -209,17 +218,20 @@ def _build_artifact(meta: dict[str, Any], chapters: dict[str, Any]) -> dict[str,
 
 
 def _render_markdown(artifact: dict[str, Any]) -> str:
-    """Render the artifact as markdown tables (the MD half of the output pair).
+    """Render the artifact as the numeric chapter tables (the MD half of the output pair).
 
-    SCAFFOLD: emits a skeleton mirroring the SKILL.md "Report file layout" so the
-    SKILL.md narrator has a stable shape to fill. Real table rendering (display
-    formatting rules, §"Display formatting") lands with the chapter ports.
+    This is the GENERATOR ARTIFACT the SKILL.md LLM narrates — NOT the final report. It
+    carries the per-chapter numeric tables (distributions, marginals, Cohen's d values) in
+    report order. The SKILL splices these tables into `benchmarks-latest.md`, applies the
+    verdict-threshold words to the emitted d's, and authors the header + summary tables +
+    Recommendations prose around them (see this module's docstring for the seam).
     """
     meta = artifact["meta"]
     lines = [
-        f"# FlawChess Benchmarks — {meta.get('generated_at', '<DATE>')}",
+        f"# FlawChess Benchmarks (generator artifact) — {meta.get('generated_at', '<DATE>')}",
         "",
-        "> SCAFFOLD output from scripts/gen_benchmarks.py. Chapters are stubs (SEED-029 Phase A).",
+        "> Numeric artifact from scripts/gen_benchmarks.py — input to the benchmarks SKILL,"
+        " NOT the final report. The SKILL narrates this into reports/benchmark/benchmarks-latest.md.",
         "",
         f"- DB target: `{meta.get('db_target')}`",
         f"- benchmark_selected_users: {meta.get('sanity', {}).get('benchmark_selected_users', '?')}",
@@ -242,16 +254,17 @@ def _render_markdown(artifact: dict[str, Any]) -> str:
 
 
 def _write_outputs(out_dir: Path, artifact: dict[str, Any]) -> tuple[Path, Path]:
-    """Write the JSON + markdown artifact pair. Returns their paths.
+    """Write the regenerable numeric artifact pair (JSON + markdown). Returns their paths.
 
-    NOTE: does not yet implement the SKILL.md date-based rotation rule (rotate a
-    prior benchmarks-latest.md to a dated filename). That lands when the port is
-    complete and this script owns report emission. For now writes scaffold files
-    under a `gen-scaffold` prefix so it can't clobber the real latest report.
+    Deliberately does NOT write or rotate `benchmarks-latest.md`: the final narrated report
+    (header prose, verdict words, the two headline summary tables, Recommendations) and the
+    date-based rotation of the prior `benchmarks-latest.md` are the SKILL.md LLM's job (the
+    code/LLM seam — see the module docstring). These two files are a gitignored intermediate
+    the SKILL consumes; the committed deliverable is the LLM-authored benchmarks-latest.md.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    json_path = out_dir / "gen-scaffold-benchmarks.json"
-    md_path = out_dir / "gen-scaffold-benchmarks.md"
+    json_path = out_dir / "benchmarks-generated.json"
+    md_path = out_dir / "benchmarks-generated.md"
     json_path.write_text(json.dumps(artifact, indent=2, sort_keys=True, ensure_ascii=False))
     md_path.write_text(_render_markdown(artifact))
     return json_path, md_path

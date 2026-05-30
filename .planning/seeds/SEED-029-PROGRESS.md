@@ -252,20 +252,36 @@ but benchmarks-latest.md NEVER contains one — §3.1/§3.2/§3.3 AND §3.4 all 
 marginals only. The gate is the report, so no chapter builds a 5×4 grid (the earlier guess that
 it "first appears at §3.4" was wrong — verified against the 2026-05-27 report).
 
-## LAST steps of Phase A (after all chapters pass — do NOT do early)
+## LAST steps of Phase A — DONE (2026-05-30)
 
-- Rewrite `.claude/skills/benchmarks/SKILL.md` to invoke the generator + narrate the artifact
-  (preserve display-format / table-render / report-rotation rules; LLM applies verdict thresholds;
-  footnote the obsolete checkpoint exception + the comma-grouping ≥1,000 reconciliation).
-- Implement report rotation in gen_benchmarks._write_outputs (rotate prior benchmarks-latest.md to
-  benchmarks-YYYY-MM-DD.md) and switch off the gen-scaffold-* filenames. Drop the cross-snapshot section.
-- The gen-scaffold-* artifacts are gitignored on purpose until then.
+Division of labor (user decision, Option B): the generator emits a **gitignored numeric
+intermediate**; the SKILL LLM applies verdict words + narrates + assembles + rotates the report.
+(Option A — generator owns the full report incl. summary tables — was rejected: the Top-axis
+collapse + Recommended-thresholds tables are heavily hand-authored/judgment, e.g. `(per-TC IQRs
+vary)`, `shift +4pp`, `**Retracted Phase 87.4**`, which a deterministic renderer can't reproduce.)
+
+- **gen_benchmarks._write_outputs** now writes `reports/benchmark/benchmarks-generated.{json,md}`
+  (renamed off `gen-scaffold-*`), gitignored. It does NOT write or rotate `benchmarks-latest.md`
+  (that + the cross-snapshot drop is the SKILL's job). `.gitignore` updated to
+  `reports/benchmark/benchmarks-generated.*`. Module + `_render_markdown` + `_write_outputs`
+  docstrings reflect the seam; output banner labels the file a generator artifact, not the report.
+- **SKILL.md rewrite**: new top-level "Workflow (generator-driven — read this first)" section is the
+  authoritative procedure (start DB → run generator → read artifact → grep live constants → apply
+  verdict thresholds → assemble + rotate `benchmarks-latest.md`). Per-subchapter SQL is now REFERENCE
+  for what the generator computes. Footnoted: the obsolete current-DB-state checkpoint exception (DB
+  has completed checkpoints for all 5 buckets → canonical CTE is the only path), the comma-grouping
+  ≥1,000 reconciliation (render.fmt_int `_GROUP_FLOOR=1000` is authoritative), and a "no cross-snapshot
+  diff section" note. §4 gets a SEED-029 current-reality callout (separate deliverable; live artifact
+  is the Phase 94.4 cohort `COHORT_PERCENTILE_CDF`; everything below is historical). "Re-running" is
+  generator-driven.
+
+**Phase A COMPLETE.** All chapters ported + gated; generator emits the intermediate; SKILL narrates.
 
 ## Run reference
 
 ```
 bin/benchmark_db.sh start
-uv run python scripts/gen_benchmarks.py --db benchmark      # full report → reports/benchmark/gen-scaffold-*
+uv run python scripts/gen_benchmarks.py --db benchmark      # numeric artifact → reports/benchmark/benchmarks-generated.{json,md} (gitignored)
 uv run --active pytest tests/scripts/benchmarks/ -q          # gates (~3 min; skip if DB down)
 uv run --active ruff format scripts/benchmarks/ tests/scripts/benchmarks/
 uv run --active ruff check  scripts/benchmarks/ scripts/gen_benchmarks.py tests/scripts/benchmarks/
