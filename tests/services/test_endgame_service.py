@@ -582,13 +582,9 @@ class TestGetEndgameOverviewMetricsCards:
 
 
 # ---------------------------------------------------------------------------
-# Phase 99 Wave 0 — PerTcBucketStats rate_percentile field tests (SC-2 / D-01).
-#
-# INTENDED RED (partial): the rate_percentile / rate_percentile_n_games /
-# rate_percentile_value fields do not yet exist on PerTcBucketStats (Plan 03
-# adds them). Until then, constructing PerTcBucketStats with these fields raises
-# a Pydantic ValidationError on unknown fields. Once Plan 03 ships, all tests
-# in this class must pass.
+# Phase 99 — PerTcBucketStats rate_percentile field tests (SC-2 / D-01).
+# Plan 03 adds the rate_percentile / rate_percentile_n_games / rate_percentile_value
+# fields to PerTcBucketStats; all tests in this class are GREEN from Plan 03 onward.
 # ---------------------------------------------------------------------------
 
 
@@ -612,36 +608,27 @@ class TestPerTcBucketStatsRatePercentileFields:
         }
 
     def test_rate_percentile_defaults_none(self) -> None:
-        """rate_percentile defaults to None — backward-compatible with existing fixtures.
-
-        INTENDED RED until Plan 03 adds the field.
-        """
+        """rate_percentile defaults to None — backward-compatible with existing fixtures."""
         from app.schemas.endgames import PerTcBucketStats
 
         stats = PerTcBucketStats(**self._make_base_stats())
-        assert stats.rate_percentile is None, (  # ty: ignore[unresolved-attribute]
+        assert stats.rate_percentile is None, (
             "rate_percentile must default to None (backward-compatible)"
         )
 
     def test_rate_percentile_n_games_defaults_none(self) -> None:
-        """rate_percentile_n_games defaults to None — backward-compatible.
-
-        INTENDED RED until Plan 03 adds the field.
-        """
+        """rate_percentile_n_games defaults to None — backward-compatible."""
         from app.schemas.endgames import PerTcBucketStats
 
         stats = PerTcBucketStats(**self._make_base_stats())
-        assert stats.rate_percentile_n_games is None, "rate_percentile_n_games must default to None"  # ty: ignore[unresolved-attribute]
+        assert stats.rate_percentile_n_games is None, "rate_percentile_n_games must default to None"
 
     def test_rate_percentile_value_defaults_none(self) -> None:
-        """rate_percentile_value defaults to None — backward-compatible.
-
-        INTENDED RED until Plan 03 adds the field.
-        """
+        """rate_percentile_value defaults to None — backward-compatible."""
         from app.schemas.endgames import PerTcBucketStats
 
         stats = PerTcBucketStats(**self._make_base_stats())
-        assert stats.rate_percentile_value is None, "rate_percentile_value must default to None"  # ty: ignore[unresolved-attribute]
+        assert stats.rate_percentile_value is None, "rate_percentile_value must default to None"
 
     def test_rate_percentile_distinct_from_gap_percentile(self) -> None:
         """D-01: rate_percentile and percentile coexist as SEPARATE fields — they must NOT collide.
@@ -649,8 +636,6 @@ class TestPerTcBucketStatsRatePercentileFields:
         When both field families are populated with different values, each must
         retain its own value. The rate chip and the ΔES-gap chip on the same
         block must come from independent data.
-
-        INTENDED RED until Plan 03 adds the rate_percentile fields.
         """
         from app.schemas.endgames import PerTcBucketStats
 
@@ -660,17 +645,17 @@ class TestPerTcBucketStatsRatePercentileFields:
             **base,
             percentile_n_games=50,
             percentile_value=0.04,
-            rate_percentile=55.0,  # ty: ignore[unknown-argument]
-            rate_percentile_n_games=35,  # ty: ignore[unknown-argument]
-            rate_percentile_value=0.62,  # ty: ignore[unknown-argument]
+            rate_percentile=55.0,
+            rate_percentile_n_games=35,
+            rate_percentile_value=0.62,
         )
         # Gap chip fields retain their values
         assert stats.percentile == 72.0, "gap percentile must not be overwritten by rate percentile"
         assert stats.percentile_n_games == 50
         assert stats.percentile_value == pytest.approx(0.04)
         # Rate chip fields retain their distinct values
-        assert stats.rate_percentile == pytest.approx(55.0), (  # ty: ignore[unresolved-attribute]
+        assert stats.rate_percentile == pytest.approx(55.0), (
             "rate_percentile must be a SEPARATE field from percentile (D-01)"
         )
-        assert stats.rate_percentile_n_games == 35  # ty: ignore[unresolved-attribute]
-        assert stats.rate_percentile_value == pytest.approx(0.62)  # ty: ignore[unresolved-attribute]
+        assert stats.rate_percentile_n_games == 35
+        assert stats.rate_percentile_value == pytest.approx(0.62)

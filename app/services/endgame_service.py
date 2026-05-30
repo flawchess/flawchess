@@ -2480,6 +2480,7 @@ def _build_per_tc_bucket_stats(
     bucket: MaterialBucket,
     gaps: list[float],
     percentile_row: PercentileRow | None,
+    rate_percentile_row: PercentileRow | None = None,
 ) -> PerTcBucketStats:
     """Build a PerTcBucketStats from per-bucket accumulator fields.
 
@@ -2488,9 +2489,14 @@ def _build_per_tc_bucket_stats(
 
     bucket: which sub-bucket ("conversion", "parity", "recovery").
     gaps: per-TC span-gap list for ΔES computation.
-    percentile_row: per-(metric, TC) PercentileRow from user_benchmark_percentiles,
-        None when the user is below the inclusion floor. Its ``percentile``,
-        ``n_games`` and ``value`` feed the chip + its tooltip.
+    percentile_row: per-(metric, TC) PercentileRow for the ΔES-gap chip from
+        user_benchmark_percentiles, None when the user is below the inclusion
+        floor. Its ``percentile``, ``n_games`` and ``value`` feed the chip +
+        its tooltip.
+    rate_percentile_row: per-(rate metric, TC) PercentileRow for the raw-rate
+        chip (Phase 99), None when below the inclusion floor or not yet
+        backfilled. Its ``percentile``, ``n_games`` and ``value`` feed the
+        rate chip + its tooltip (D-01: separate from gap percentile).
     """
     if bucket == "conversion":
         games = acc.conv_total
@@ -2547,6 +2553,14 @@ def _build_per_tc_bucket_stats(
         percentile=percentile_row.percentile if percentile_row is not None else None,
         percentile_n_games=percentile_row.n_games if percentile_row is not None else None,
         percentile_value=percentile_row.value if percentile_row is not None else None,
+        # Phase 99: raw-rate percentile (D-01 — separate from ΔES-gap percentile above).
+        rate_percentile=rate_percentile_row.percentile if rate_percentile_row is not None else None,
+        rate_percentile_n_games=rate_percentile_row.n_games
+        if rate_percentile_row is not None
+        else None,
+        rate_percentile_value=rate_percentile_row.value
+        if rate_percentile_row is not None
+        else None,
     )
 
 
@@ -2658,23 +2672,32 @@ def _compute_per_tc_metric_cards(
         parity_row = _effective_rows.get("score_gap_parity", {}).get(tc_bucket)
         recov_row = _effective_rows.get("recovery_score_gap", {}).get(tc_bucket)
 
+        # Phase 99: raw-rate percentile rows — same fetch_for_user [metric][tc] path
+        # as the gap rows. Returns None until Plan 05 backfills these metrics.
+        conv_rate_row = _effective_rows.get("conversion_rate", {}).get(tc_bucket)
+        parity_rate_row = _effective_rows.get("parity_rate", {}).get(tc_bucket)
+        recov_rate_row = _effective_rows.get("recovery_rate", {}).get(tc_bucket)
+
         conversion_stats = _build_per_tc_bucket_stats(
             acc,
             "conversion",
             acc.gaps_conv,
             conv_row,
+            conv_rate_row,
         )
         parity_stats = _build_per_tc_bucket_stats(
             acc,
             "parity",
             acc.gaps_parity,
             parity_row,
+            parity_rate_row,
         )
         recovery_stats = _build_per_tc_bucket_stats(
             acc,
             "recovery",
             acc.gaps_recov,
             recov_row,
+            recov_rate_row,
         )
 
         cards.append(
