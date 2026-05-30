@@ -420,28 +420,29 @@ export function EndgameTypeCard({
           </div>
         )}
 
-        {/* Phase 87.1 (SEED-016 D-08): per-span eval gap bullet row.
-            Positioned last in the card. Left-aligned label "<Cpu> Engine Gap:"
-            (UAT 98 — renamed from "Score Gap" to disambiguate from the
-            result-based Score above; this metric is the entry→exit Stockfish
-            expected-score delta). The Start/End predicted scores moved from
-            inline slots into the popover (second paragraph of the explanation),
-            so the row no longer uses startSlot/endSlot and falls back to the
-            left-aligned label/value/bullet layout. */}
+        {/* Phase 87.1 (SEED-016 D-08): per-span Eval Score Gap bullet row.
+            Positioned last in the card. Left-aligned label "<Cpu> Eval Score Gap:"
+            (UAT 98 terminology: Score = actual result; Eval Score = the eval put
+            through the Lichess expected-score formula; Eval Score Gap = entry→exit
+            difference of two Eval Scores. Eval-family metrics carry the Cpu icon).
+            The Start/End Eval Scores moved from inline slots into the popover
+            (second paragraph of the explanation), so the row no longer uses
+            startSlot/endSlot and falls back to the left-aligned
+            label/value/bullet layout. */}
         {showGapRow && (
           <div data-testid={`${tileTestId}-asg-bullet`}>
             <ScoreGapRow
               label={
                 <span className="inline-flex items-center gap-1">
                   <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                  Engine Gap:
+                  Eval Score Gap:
                 </span>
               }
               value={gapMean ?? 0}
               formatted={gapFormatted}
               resultColor={gapColor}
               valueTestId={`${tileTestId}-asg-value`}
-              ariaLabel={`${category.label} Engine Gap: ${gapFormatted}`}
+              ariaLabel={`${category.label} Eval Score Gap: ${gapFormatted}`}
               neutralMin={sgNeutralMin}
               neutralMax={sgNeutralMax}
               domain={ENDGAME_TYPE_SCORE_GAP_DOMAIN}
@@ -449,13 +450,13 @@ export function EndgameTypeCard({
               ciHigh={category.type_achievable_score_gap_ci_high ?? undefined}
               tooltip={
                 <MetricStatPopover
-                  name="Engine Gap"
+                  name="Eval Score Gap"
                   explanation={
                     <>
                       Each {category.label} Endgame Sequence has a start Stockfish
                       eval and an end eval, or the actual game result for the final
-                      sequence in a game. Both get converted to expected scores via
-                      the Lichess expected-score formula. The Engine Gap is the
+                      sequence in a game. Both get converted to Eval Scores via the
+                      Lichess expected-score formula. The Eval Score Gap is the
                       average of (end − start) across all your {category.label}{' '}
                       sequences: positive = you outplayed Stockfish's expectation,
                       negative = you gave back score.
@@ -464,7 +465,7 @@ export function EndgameTypeCard({
                           className="mt-1 block"
                           data-testid={`${tileTestId}-asg-startend`}
                         >
-                          Your average predicted score runs from{' '}
+                          Your average Eval Score runs from{' '}
                           {Math.round(startMean * 100)}% at entry to{' '}
                           {Math.round(endMean * 100)}% at exit.
                         </span>
@@ -489,7 +490,7 @@ export function EndgameTypeCard({
                     </>
                   }
                   testId={`${tileTestId}-asg-info`}
-                  ariaLabel={`What is ${category.label} Engine Gap?`}
+                  ariaLabel={`What is ${category.label} Eval Score Gap?`}
                   isPending={isPending}
                   pendingCount={pendingCount}
                 />
