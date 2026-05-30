@@ -1,37 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.20
-milestone_name: LLM Statistical Reasoning
+milestone: v1.21
+milestone_name: Time-Control-Aware Endgame Metrics
 status: executing
-last_updated: "2026-05-29T15:27:28.895Z"
-last_activity: 2026-05-29 -- Phase 97 execution started
+last_updated: "2026-05-30T08:40:00.000Z"
+last_activity: 2026-05-30 -- Regrouped standalone phases into milestones v1.20/v1.21/v1.22; v1.20 released
 progress:
-  total_phases: 8
+  total_phases: 3
   completed_phases: 1
-  total_plans: 9
+  total_plans: 4
   completed_plans: 4
-  percent: 13
+  percent: 33
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 97 (endgame-metrics-by-time-control) — EXECUTING
-Plan: 1 of 4
-Next: Phase 96 (Import Readiness Gate) — NOT STARTED, ready to plan
-Status: Executing Phase 97
-Last activity: 2026-05-29 — Completed quick task 260529-une: removed Conv/Recov gauges from Endgame Type Breakdown cards (frontend-only declutter; backend conv/recov retained for LLM insights)
+Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
+Phase: 97 (endgame-metrics-by-time-control) — COMPLETE & SHIPPED (PR #160, 2026-05-29)
+Next: Phase 98 (TC-mix-weighted Conv/Recov gauges on Endgame Type cards) — NOT STARTED, ready to plan; then Phase 99 (Percentile Badges for Conversion, Parity, and Recovery), then Phase 100 (v1.22 LLM Statistical-Reasoning rework)
+Status: v1.20 released (tag + GitHub release); v1.21 Phase 97 done; Phase 98 ready to plan
+Last activity: 2026-05-30 — Regrouped the shipped standalone phases into milestones: v1.20 Import Pipeline Hardening Follow-Up and Readiness (Phases 95, 96), v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99), v1.22 LLM Statistical Reasoning (Phase 100, renumbered from old Phase 99). Added new Phase 99 (Percentile Badges for Conv/Parity/Recovery). v1.20 tagged at dcd22fef and released. Phase 97 shipped 2026-05-29 (PR #160); Phase 96 shipped 2026-05-28 (PR #151); Phase 95 shipped 2026-05-27 (PRs #148/#149).
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-27 after v1.19 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.19 Endgame Percentiles shipped 2026-05-27 — peer-relative percentile chips on Endgames page (per-(metric, ELO anchor, TC) cohort CDFs, per-user blended platform rating anchors, 4-bullet tooltip with rating-anchor disclosure, filter-independent). 12 per-TC chips on Time Pressure cards. The prior Phase 95 (LLM Statistical Reasoning rework) was renumbered to Phase 96 (v1.20) on 2026-05-27 to make room for a standalone hardening phase. Phase 95 (SEED-027 Thread B) switched `bulk_insert_positions` to asyncpg `copy_records_to_table` to finish closing FLAWCHESS-3Q — shipped 2026-05-27 via PRs #148/#149 (Thread A container memory budget shipped 2026-05-26 via hotfix PR #144 at prod SHA 65511c9). Renumbering on 2026-05-28: a `/gsd-explore` session created standalone Phase 96 (Import Readiness Gate) and bumped the LLM Statistical-Reasoning rework to Phase 97 (v1.20). Run `/gsd-plan-phase 96` next.
+Current focus: v1.21 Time-Control-Aware Endgame Metrics. Phase 97 (Endgame Metrics by Time Control — per-TC Conversion/Parity/Recovery cards with TC-specific bands) shipped 2026-05-29 (PR #160). Remaining: Phase 98 (TC-mix-weighted Conv/Recov gauges re-added to the 5 Endgame Type cards) and Phase 99 (peer-relative percentile badges on the per-TC Conv/Parity/Recovery cards, deferred from Phase 97). The three earlier standalone phases were regrouped post-hoc on 2026-05-30: v1.20 Import Pipeline Hardening Follow-Up and Readiness = Phase 95 (asyncpg COPY for `bulk_insert_positions`, closes FLAWCHESS-3Q, PRs #148/#149) + Phase 96 (Import Readiness Gate, two-tier per-page gate replacing the eval-coverage auto-reload, PR #151). v1.22 LLM Statistical Reasoning = Phase 100 (renumbered from the old Phase 99). v1.20 was tagged at `dcd22fef` (pre-Phase-97 boundary on main) and released on GitHub. Run `/gsd-plan-phase 98` next.
 
 ## Milestone Progress
 
-Nineteen milestones complete (v1.0–v1.19). v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied; Phase 95 split into v1.20 before milestone close. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
+Twenty milestones complete (v1.0–v1.20). v1.20 Import Pipeline Hardening Follow-Up and Readiness shipped 2026-05-29 — 2 phases (95 asyncpg COPY, 96 Import Readiness Gate), 5 plans, PRs #148/#149/#151; regrouped post-hoc from standalone phases on 2026-05-30, tagged at `dcd22fef`. v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
 
 ## Key Context
 

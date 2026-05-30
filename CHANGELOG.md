@@ -11,11 +11,26 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Changed
 
 - **Simpler Endgame Type Breakdown cards** (quick-260529-une). Each per-type card (Rook, Minor Piece, Pawn, Queen, Mixed) drops its Conversion and Recovery gauges, leaving the win/draw/loss bar, the type Score, and the Score Gap bullet. The Score Gap already captures conversion and defensive performance in a single engine-adjusted number, and the removed gauges were the only metrics on the card that shifted with time control, so they could mispaint a bullet player against slow-game expectations. AI insights still use the full conversion/recovery breakdown.
-- **Percentile chip tooltip shows the matched rating anchor inline** (quick-260529-l1i). Each time-control breakdown row now displays the anchor it was matched against ("Bullet — anchored at ~1525 Lichess Elo"), and the separate platform-blend anchor note was dropped.
 
 ### Fixed
 
 - **Endgames page locked forever for users with too few games** (quick-260529). A user with games but fewer than the 30-game per-time-control anchor floor (e.g. 13 imported games) produces no rating anchors and therefore no percentile rows by design, so the readiness gate kept the page on the "Analyzing endgames" screen permanently even after Stockfish finished. The gate now recognises a below-floor user as fully processed and unlocks the page once evals are drained, alongside the existing empty-account escape.
+
+## [v1.20] Import Pipeline Hardening Follow-Up and Readiness — 2026-05-29
+
+Two follow-ups to the v1.18 import hardening and v1.19 percentile work, regrouped into a milestone after the fact. Phase 95 closed the last thread of the FLAWCHESS-3Q out-of-memory family by switching the heaviest import write to a binary COPY. Phase 96 replaced the brittle "reload the page when Stockfish finishes" hack with an honest per-page readiness gate, so users land on already-correct openings immediately while endgame analysis finishes in the background.
+
+### Added
+
+- **Import readiness gate** (Phase 96). The app no longer force-reloads the page when background analysis finishes. On a first import you stay on the import screen, which now reads as a live state machine (fetching → importing → "Explore openings" → analyzing endgames X / Y → ready); openings unlock as soon as games are in, and an "Explore endgames" toast reaches you wherever you are once Stockfish eval and percentiles are done. On a later incremental import, Openings and Overview stay usable throughout and only the Endgames page waits, since partial-eval endgame stats would mislead. The Stockfish progress bar now shows on every page during analysis, and each eval-based Openings metric sits behind a pulsating placeholder until its data is ready instead of showing a half-computed value.
+
+### Changed
+
+- **Honest completion messaging and consolidated eval-progress UI** (Phase 96). No message claims full completion while Stockfish is still running. Eval progress is a single global header rather than scattered per-surface banners, and the running eval counter inside the per-metric tooltips was removed (the progress bar and placeholders carry that signal now).
+- **Binary COPY for bulk position inserts** (Phase 95). The heaviest insert in the import pipeline (`bulk_insert_positions`) now uses asyncpg's binary `copy_records_to_table` instead of a parameterized multi-row `INSERT`, cutting per-connection Postgres memory during large dual-platform imports. This is the SEED-027 Thread B follow-up to the v1.19 container memory-budget hotfix (PR #144) and finishes closing the FLAWCHESS-3Q OOM family. Behaviour is unchanged; `bulk_insert_games` keeps its `ON CONFLICT DO NOTHING` path and the COPY enrolls in the same transaction so it rolls back atomically.
+- **Percentile chip tooltip shows the matched rating anchor inline** (quick-260529-l1i). Each time-control breakdown row now displays the anchor it was matched against ("Bullet — anchored at ~1525 Lichess Elo"), and the separate platform-blend anchor note was dropped.
+
+### Fixed
 
 - **Percentile-compute query optimization** (quick-260529-cum). The five per-TC builders (`score_gap`, `achievable_score_gap`, `time_pressure_score_gap`, `clock_gap`, `net_flag_rate`) and their shared `endgame_entry_clocks` helper now scope `game_positions` aggregation to the selected user's recent games only. Previously each query scanned the full `game_positions` table and discarded nearly all rows in a later join. Cut is result-equivalent: only `recent_capped` games survive the downstream joins regardless. Addresses the ~6 s/call, ~58 min cumulative server time flagged by the /db-report for the import and eval-drain hot paths.
 
@@ -621,7 +636,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.19...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.20...HEAD
+[v1.20]: https://github.com/flawchess/flawchess/compare/v1.19...v1.20
 [v1.19]: https://github.com/flawchess/flawchess/compare/v1.18...v1.19
 [v1.18]: https://github.com/flawchess/flawchess/compare/v1.17...v1.18
 [v1.17]: https://github.com/flawchess/flawchess/compare/v1.16...v1.17

@@ -21,62 +21,21 @@
 - ✅ **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82, 83 (shipped 2026-05-11) — see [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md)
 - ✅ **v1.17 Endgame Stats Card Redesign** — Phases 84-88.4 (shipped 2026-05-19; Phase 89 dropped, 87.3 superseded) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
 - ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
-- ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split into v1.20 before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
-- 🔄 **v1.20 LLM Statistical Reasoning** — Phase 99 (not started)
+- ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split out before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
+- ✅ **v1.20 Import Pipeline Hardening Follow-Up and Readiness** — Phases 95, 96 (shipped 2026-05-29) — see [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md)
+- 🔄 **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99 (Phase 97 shipped 2026-05-29; 98, 99 not started)
+- 🔄 **v1.22 LLM Statistical Reasoning** — Phase 100 (not started)
 
 ## Phases
 
-- [x] **Phase 95: asyncpg COPY for `bulk_insert_positions`** *(standalone hardening, no milestone)* — Switch the heaviest INSERT in the import pipeline from parameterized `INSERT … VALUES(...)` to asyncpg `copy_records_to_table` (binary COPY) to cut per-backend memory pressure during dual-platform imports. Follow-up to SEED-027 Thread A (PR #144 container budget hotfix). — shipped 2026-05-27 (PRs #148/#149).
-- [ ] **Phase 96: Import Readiness Gate** *(standalone UX/correctness, no milestone)* — Hold the user on the import page until import + Stockfish eval drain + Stage A/B percentiles are all ready, then unlock all routes via a user-initiated "Explore" CTA. Replaces the `useEvalCoverage` auto-reload hack and removes eval-progress UI from all non-import surfaces. See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
-- [ ] **Phase 97: Endgame Metrics by Time Control** *(standalone UX, no milestone)* — Replace the aggregated Conversion/Parity/Recovery gauge cards in the Endgame Metrics section with TC-specific cards (bullet/blitz/rapid/classical), mirroring the Time Pressure section's per-TC pattern. Conversion/Recovery gauges get TC-specific neutral bands (benchmark TC d≈0.9); Parity and Score Gap keep the shared global band (both collapse on TC). No aggregated cards remain; cards self-suppress below a min-games floor. Per-TC conversion/recovery percentile badges deferred.
-- [ ] **Phase 98: TC-mix-weighted Conv/Recov Gauges on Endgame Type Cards** *(standalone UX, no milestone)* — Re-add Conversion/Recovery gauges to the 5 `EndgameTypeCard`s (removed 2026-05-29, quick-260529-une) as **absolute-arc gauges with a TC-mix-weighted neutral band**: `band = Σ_tc (user's share of eligible games in tc for class) × (benchmark IQR for class × tc)`, weighted by conversion-/recovery-eligible games respectively. Raw rate stays the headline; band tooltip discloses the TC-mix basis. TC-only by design (ELO precision stays in the Score-Gap percentile chip; per-(class×TC×ELO) banding is infeasible on sparsity). Absolute-arc idiom matches the Phase 97 Endgame Metrics gauges, so that section is untouched (no cascade). See [notes/endgame-typecard-tcmix-gauges.md](notes/endgame-typecard-tcmix-gauges.md).
-- [ ] **Phase 99: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.20)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+*v1.20 (Phases 95, 96) shipped 2026-05-29 — archived to [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md); see the collapsed block below.*
+
+- [x] **Phase 97: Endgame Metrics by Time Control** *(v1.21)* — Replace the aggregated Conversion/Parity/Recovery gauge cards in the Endgame Metrics section with TC-specific cards (bullet/blitz/rapid/classical), mirroring the Time Pressure section's per-TC pattern. Conversion/Recovery gauges get TC-specific neutral bands (benchmark TC d≈0.9); Parity and Score Gap keep the shared global band (both collapse on TC). No aggregated cards remain; cards self-suppress below a min-games floor. Per-TC conversion/recovery percentile badges deferred to Phase 99. — shipped 2026-05-29 (PR #160; rating-anchor follow-up #158/#159).
+- [ ] **Phase 98: TC-mix-weighted Conv/Recov Gauges on Endgame Type Cards** *(v1.21)* — Re-add Conversion/Recovery gauges to the 5 `EndgameTypeCard`s (removed 2026-05-29, quick-260529-une) as **absolute-arc gauges with a TC-mix-weighted neutral band**: `band = Σ_tc (user's share of eligible games in tc for class) × (benchmark IQR for class × tc)`, weighted by conversion-/recovery-eligible games respectively. Raw rate stays the headline; band tooltip discloses the TC-mix basis. TC-only by design (ELO precision stays in the Score-Gap percentile chip; per-(class×TC×ELO) banding is infeasible on sparsity). Absolute-arc idiom matches the Phase 97 Endgame Metrics gauges, so that section is untouched (no cascade). See [notes/endgame-typecard-tcmix-gauges.md](notes/endgame-typecard-tcmix-gauges.md).
+- [ ] **Phase 99: Percentile Badges for Conversion, Parity, and Recovery** *(v1.21)* — Add peer-relative percentile chips (the v1.19 `PercentileChip` primitive) to the per-TC Conversion, Parity, and Recovery rate cards delivered in Phase 97. Deferred from Phase 97 because it requires new per-(metric, TC) cohort CDF materialization in `user_benchmark_percentiles` (today only ΔES score-gap percentiles exist there). Mirrors the Phase 94.3 Time Pressure per-TC chip pattern: 3 metric families × 4 TCs computed via pooled-per-user methodology parameterised by TC, cohort-matched on rating anchor, 4-bullet disclosure tooltip per `feedback_percentile_chip_tooltip_disclosure`.
+- [ ] **Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.22)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
 ## Phase Details
-
-### Phase 95: asyncpg COPY for `bulk_insert_positions`
-
-**Goal**: Switch `bulk_insert_positions` in `app/repositories/game_repository.py` from SQLAlchemy `insert(GamePosition).values(chunk)` to asyncpg's binary `Connection.copy_records_to_table` to reduce per-backend Postgres memory during the import hot-lane burst. SEED-027 Thread A (container memory budget) shipped 2026-05-26 via hotfix PR #144 — Thread B remains and is the subject of this phase. `bulk_insert_games` stays on `pg_insert(...).values(...)` because it relies on `ON CONFLICT DO NOTHING` (COPY can't express that). Atomicity vs `bulk_insert_games` is preserved by enrolling the COPY in the active SQLAlchemy session transaction. No feature flag — rollback is a single revert away. Verify under a dual-platform stress test mirroring Phase 91's setup; acceptance is no `ConnectionDoesNotExistError` and lower peak `flawchess-db-1` cgroup memory than the pre-COPY baseline.
-**Depends on**: none (Thread A already deployed at prod SHA 65511c9)
-**Requirements**: standalone — no requirement IDs (hardening / bugfix follow-up to FLAWCHESS-3Q)
-**Success Criteria** (what must be TRUE):
-
-  1. `bulk_insert_positions` uses `asyncpg.Connection.copy_records_to_table` for the inner write path; no `INSERT … VALUES(...)` remains in the function body for the position table.
-  2. Column order passed to COPY matches `GamePosition.__table__.columns` exactly, including nullable columns (`eval_cp`, `eval_mate`, `endgame_class`, `piece_count`, …), with `None` for absent values; mapper coverage is asserted in a unit test.
-  3. The COPY runs inside the existing SQLAlchemy session transaction (rolls back atomically with `bulk_insert_games` on failure); proven by a test that triggers a post-COPY exception and asserts both tables are empty afterwards.
-  4. `bulk_insert_games` is untouched and still uses `pg_insert(...).values(...)` with `ON CONFLICT DO NOTHING`.
-  5. Dual-platform stress test on local dev DB (seeded with user 109's import workload, or a 7k+ game multi-platform user) completes with both jobs `status='completed'`, `games_imported == games_fetched`, and no `ConnectionDoesNotExistError` in either job's `error_message`. Peak `flawchess-db-1` cgroup memory stays under 9 GB (75% of the 12 GB cap shipped in PR #144).
-  6. Existing import unit + integration tests pass unchanged. New tests cover: column-order parity with `GamePosition` model, transaction rollback atomicity, empty-batch no-op, NULL handling for the eval columns.
-  7. `pg_stat_statements` top-20 mean-time check (dev DB before/after) shows no analytics-query regression > 20%. Sanity only — write-path change shouldn't affect read latency, but cheap to verify.
-
-**Plans**: TBD
-
-### Phase 96: Import Readiness Gate
-
-**Goal**: Replace the `window.location.reload()`-on-eval-complete hack (`frontend/src/hooks/useEvalCoverage.ts`) with a **two-tier per-page gate** so users reach already-correct surfaces immediately and only misleading ones are withheld. Tier 1 (hot lane done — no `pending`/`in_progress` import) unlocks **Openings** + **Overview**; Tier 2 (Tier 1 AND `pending_count == 0` AND Stage A/B percentiles persisted) unlocks **Endgames** and reveals the Openings eval metrics. On a first import the empty account is held on the import page until Tier 1; on an incremental import Openings/Overview **stay usable** and only Endgames locks (partial-eval endgame stats are misleading). The Stockfish progress bar stays visible on ALL pages during the drain; each Openings one-row eval metric (label + value + tooltip + bullet chart) hides behind a pulsating-Cpu placeholder bar matching the progress-header style until Tier 2; the live eval counter in the eval-metric tooltips is removed. Background: percentile/anchor compute is NOT the bottleneck (in-memory `COHORT_PERCENTILE_CDF` + user-scoped queries = seconds); the entire wait is the Stockfish drain at ~13–15 ev/s, so Endgames is locked only seconds-to-minutes except for the rare ~40k power-user first import (~30–45 min, with Openings/Overview already explorable). See [notes/import-readiness-gate.md](notes/import-readiness-gate.md).
-**Depends on**: none (builds on existing two-lane import + Stage A/B percentile pipeline)
-**Requirements**: standalone — no requirement IDs (UX / correctness follow-up to the v1.18 two-lane import + v1.19 percentiles)
-**Success Criteria** (what must be TRUE):
-
-  1. **Authoritative two-tier readiness signal.** A single backend endpoint exposes both tiers for the user: Tier 1 = no import job in `pending`/`in_progress`; Tier 2 = Tier 1 AND `pending_count == 0` AND Stage A anchors + Stage A/B percentile rows persisted. Frontend gates off THIS signal — never off `useEvalCoverage`'s `pct_complete == 100` transition (which races Stage B's `asyncio.create_task` and can fire before percentile rows commit). A test asserts Tier 2 is false when evals are done but Stage B rows are absent.
-  2. **Per-page gate.** Openings + Overview require Tier 1 to enter; Endgames requires Tier 2. Direct URL navigation to a not-yet-unlocked page renders its gated state (Endgames → processing state; first-import Openings/Overview → held on import page), never partial data. On an incremental import, Openings/Overview stay reachable throughout and only Endgames is locked until Tier 2.
-  3. **Informative import-page progress.** The import page renders as a state machine — fetching → importing → (Tier 1: "Explore openings" CTA) → analyzing endgames (X / Y games) → ready — using the existing live eval counter. The Endgames gated state shows the same eval X/Y progress.
-  4. **Honest completion messaging.** No message claims full completion at hot-import `status=completed`. At Tier 1 the copy says games are imported and openings are ready with endgame analysis still in progress (X/Y); the "imported and analyzed" completion message renders only at Tier 2.
-  5. **Reactive / user-initiated unlock — no forced reload.** No `window.location.reload()` remains on the eval-completion path; the `useEvalCoverage` auto-reload is retired. Two CTAs (app uses sonner): Tier 1 "Explore Openings" is an in-page CTA on the import page (first-import only); Tier 2 "Explore Endgames" is a sonner action toast that reaches the user wherever they are, fired once (deduped) and suppressed when already on `/endgames`, navigating client-side with query invalidation. Tier-2 reveals (Endgames unlock + Openings eval metrics appearing) also happen reactively via the readiness poll + query invalidation for users already on the page.
-  6. **Stockfish progress bar preserved on all pages.** While the drain runs, the eval-coverage progress header (`EvalCoverageHeader` style) is visible on every page as the global processing signal — NOT collapsed to the import page.
-  7. **Openings eval metrics behind a pulsating-Cpu placeholder.** Until Tier 2, each one-row eval-based Openings metric (across subtabs) is replaced by one repeating placeholder bar with a pulsating Cpu icon styled to match the progress header — not bespoke per-metric loaders; the rest of each subtab stays usable. They reveal on Tier 2.
-  8. **Eval-metric tooltip counter removed.** The running eval counter inside `EvalConfidenceTooltip` (and any per-metric tooltip counter) is removed; the bar + placeholder carry the in-progress signal instead. `npm run knip` passes with any now-unused exports deleted.
-  9. **Tests + gates pass.** Backend (`pytest`, `ty`, `ruff`) and frontend (`lint`, `test`, `knip`) all green. New tests cover the two-tier readiness truth table, the per-page gate behavior (incl. incremental keeping Openings/Overview open), and the import-page state-machine transitions.
-
-**Plans**: 3 plans (2 waves)
-**Wave 1**
-
-- [x] 96-01-PLAN.md — Backend readiness endpoint (GET /imports/readiness) + has_any_rows helper + useReadiness hook
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 96-02-PLAN.md — Tier-1 route/nav gate + Endgames whole-page lock + Import state machine + Tier-2 toast
-- [x] 96-03-PLAN.md — Openings Cpu-placeholder + tooltip counter removal + useEvalCoverage auto-reload retirement
 
 ### Phase 97: Endgame Metrics by Time Control
 
@@ -107,19 +66,6 @@
 
 - [x] 97-04-PLAN.md — Remove aggregated Metrics section + blended chip fields; knip-clean (Overall Performance chips preserved)
 
-### Phase 99: LLM Endgame-Insights Statistical-Reasoning Rework
-
-**Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
-**Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
-**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, LLM-05, LLM-06, LLM-07
-**Success Criteria** (what must be TRUE):
-
-  1. The endgame-insights API payload exposes per-metric p-values, confidence interval bounds, and percentile fields on the v1.17 statistical-rigor metric set, additive and non-breaking alongside existing `zone` + `sample_quality` fields.
-  2. The endgame-insights system prompt teaches the LLM to reason explicitly over CIs and percentiles in narration (e.g. "your value sits at X with 95% CI [Y, Z], top P% of all players") without re-licensing the small-but-significant narration pattern from `feedback_llm_significance_signal`.
-  3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
-  4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
-  5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
-
 ### Phase 98: TC-mix-weighted Conv/Recov Gauges on Endgame Type Cards
 
 **Goal**: Re-introduce Conversion and Recovery gauges to all five `EndgameTypeCard`s (rook, minor_piece, pawn, queen, mixed) — removed 2026-05-29 in quick-260529-une because their only band was `PER_CLASS_GAUGE_ZONES`, a single pooled-across-TC band that mispaints TC-concentrated users (conv/recov are TC-dependent at Cohen's d ≈ 1.2–1.7). Re-add them as **absolute 0–100% arc gauges with a TC-mix-weighted neutral band**, computed as `band = Σ_tc (user's share of eligible games in tc for this class) × (benchmark IQR for class × tc)` — weighted by conversion-eligible games per (class, tc) for the conversion gauge and recovery-eligible games for the recovery gauge, since the rate is conditional on entering ahead/behind and that entry frequency varies by TC. The raw rate stays the headline number; the gauge is the "vs typical" visual; a tooltip discloses the TC-mix basis ("Typical range for the time controls you play. Faster controls convert less and recover more."). The gauge is deliberately **TC-only** — ELO precision lives in the Score-Gap percentile chip (cohort-matched on TC+ELO via `anchorRating`); per-(class × TC × ELO) banding is infeasible on sparsity (queen/classical already n≈30 in the TC-only marginal). The **absolute-arc idiom matches the Phase 97 Endgame Metrics gauges**, so that section is left untouched (no page-wide gauge migration). See [notes/endgame-typecard-tcmix-gauges.md](notes/endgame-typecard-tcmix-gauges.md) for the full decision and rejected alternatives.
@@ -139,7 +85,45 @@
 
 **Plans**: TBD
 
+### Phase 99: Percentile Badges for Conversion, Parity, and Recovery
+
+**Goal**: Add peer-relative percentile chips (the v1.19 `PercentileChip` primitive) to the per-TC Conversion, Parity, and Recovery rate cards delivered in Phase 97. This is the deferred badge work called out in Phase 97 ("Per-TC conversion/recovery percentile badges are deferred to a follow-up phase") — it requires new per-(metric, TC) cohort CDF materialization in `user_benchmark_percentiles`, since today only the ΔES score-gap family has stored percentiles there. Mirrors the Phase 94.3 Time Pressure per-TC chip pattern: the 3 rate families × 4 TCs are computed via the pooled-per-user methodology in `canonical_slice_sql.py` parameterised by TC, cohort-matched on the per-(user, TC) rating anchor, and surfaced with the 4-bullet disclosure tooltip per `feedback_percentile_chip_tooltip_disclosure`. Conversion and Recovery are conditional rates with thin per-TC denominators, so the inclusion floor and sparse-cell suppression carry over from Phase 97's per-TC cards.
+**Depends on**: Phase 97 (consumes the per-TC Conversion/Parity/Recovery rate aggregation + TC card layout); Phase 94.3 (per-TC pooled CDF + chip pattern)
+**Requirements**: standalone — no requirement IDs (endgame stats UX refinement)
+**Success Criteria** (what must be TRUE):
+
+  1. Each per-TC card (bullet/blitz/rapid/classical) from Phase 97 renders a percentile chip on its Conversion, Parity, and Recovery rates, gated on the per-(metric, TC) inclusion floor — below floor, no chip renders.
+  2. 12 new metrics (`{conversion_rate, parity_rate, recovery_rate}_{bullet, blitz, rapid, classical}`) are added to the `user_benchmark_percentiles` ENUM and computed via the shared `canonical_slice_sql.py` pooled-per-user builder parameterised by TC — drift between CDF construction and per-user lookup remains structurally impossible.
+  3. The cohort CDFs are generated into `app/services/global_percentile_cdf.py` (or the cohort-CDF sibling) under the existing per-(metric, ELO anchor, TC) sliding-window protocol, with the regen report archived.
+  4. Chips are cohort-matched on the per-(user, TC) rating anchor and carry the 4-bullet disclosure tooltip per `feedback_percentile_chip_tooltip_disclosure`, with the first two bullets TC-scoped.
+  5. The backfill script populates the 12 new metrics on dev (and prod via tunnel after sign-off); desktop + mobile parity; backend + frontend gates pass.
+
 **Plans**: TBD
+
+### Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework
+
+**Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
+**Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
+**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, LLM-05, LLM-06, LLM-07
+**Success Criteria** (what must be TRUE):
+
+  1. The endgame-insights API payload exposes per-metric p-values, confidence interval bounds, and percentile fields on the v1.17 statistical-rigor metric set, additive and non-breaking alongside existing `zone` + `sample_quality` fields.
+  2. The endgame-insights system prompt teaches the LLM to reason explicitly over CIs and percentiles in narration (e.g. "your value sits at X with 95% CI [Y, Z], top P% of all players") without re-licensing the small-but-significant narration pattern from `feedback_llm_significance_signal`.
+  3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
+  4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
+  5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
+
+**Plans**: TBD
+
+<details>
+<summary>✅ v1.20 Import Pipeline Hardening Follow-Up and Readiness (Phases 95-96) — SHIPPED 2026-05-29</summary>
+
+- [x] Phase 95: asyncpg COPY for `bulk_insert_positions` (2/2 plans, PRs #148/#149) — completed 2026-05-27
+- [x] Phase 96: Import Readiness Gate (3/3 plans, PR #151) — completed 2026-05-28
+
+See [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md) for full details.
+
+</details>
 
 <details>
 <summary>✅ v1.18 Import Pipeline Hardening (Phases 90-92) — SHIPPED 2026-05-22</summary>
@@ -403,7 +387,9 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
 | 93. Global Percentile Benchmark Artifact | v1.19 | 2/2 | Complete    | 2026-05-22 |
 | 94. Backend & Frontend Percentile Annotations | v1.19 | 3/3 | Complete   | 2026-05-23 |
-| 95. asyncpg COPY for bulk_insert_positions | — (standalone) | 2/2 | Complete | 2026-05-27 |
+| 95. asyncpg COPY for bulk_insert_positions | v1.20 | 2/2 | Complete | 2026-05-27 |
+| 96. Import Readiness Gate | v1.20 | 3/3 | Complete | 2026-05-28 |
+| 97. Endgame Metrics by Time Control | v1.21 | 4/4 | Complete | 2026-05-29 |
 
 ## Backlog
 
