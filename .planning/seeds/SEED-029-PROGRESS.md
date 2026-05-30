@@ -41,6 +41,26 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
   slip: TC max |d| is (rapid, classical) at 0.134, NOT the report's labeled (bullet, rapid)
   which is only 0.08 — the report carried the right magnitude (0.13/collapse) on the wrong
   pair label. ELO (800, 2400) 0.34 matches. **§3.1 now COMPLETE (3.1.1–3.1.6).**
+- `1b0dff5f` §3.2 COMPLETE (3.2.1 + 3.2.2 + 3.2.3) — registered as its own chapter
+  `3.2-endgame-metrics-elo` → `chapter3.build_32`. Added shared SQL building blocks to
+  sql.py: `endgame_bucket_case_sql` (conv/parity/recov split, mirrors `_classify_endgame_bucket`),
+  `bucket_score_case_sql` (win/score/save contribution), `win_chances_sigmoid_sql`,
+  `span_es_sql` (per-span ΔES expectation, NO outlier trim). `expected_score_sql` refactored
+  onto the sigmoid helper (byte-identical SQL — §3.1.3/§3.1.5 gates re-verified green).
+  - §3.2.1 reuses ENDGAME_GAME_IDS_CTE + ENTRY_ROWS_CTE (rn=1) for the first-endgame-ply
+    eval; per_user_cell pivots conv/par/recov rate + unweighted skill, ≥20 total games + ≥2
+    buckets. conv/recov pooled + all marginals + verdicts EXACT (conv TC 0.93 / ELO 0.51;
+    recov TC 0.90 / ELO 0.25). Skill = informational only (no verdict). With ~100% eval
+    coverage every qualifying user has all 3 buckets, so `agg_select`'s `count(*)` n is
+    faithful (n_conv == n == 4,616, verified).
+  - §3.2.2 spans/spans_with_next/gap_rows/per_user_bucket span machinery (the one §3.4.2 will
+    reuse). ≥20 spans/user/bucket. conv/recov pooled + all marginals + verdicts EXACT.
+  - §3.2.3 derived (no DB query) — pure projection of §3.2.1/§3.2.2 marginals + verdicts;
+    gated transitively. Emits sweep + max|d| only; LLM applies the collapse/review/keep word.
+  - Parity slips (all verdict-NEUTRAL, footnoted): §3.2.1 TC 0.08→0.11 (rapid,classical);
+    §3.2.1 ELO (800,2400)0.20→(1200,2400)0.22; §3.2.2 TC 0.10→0.18 (rapid,classical).
+    §3.2.2 parity ELO 0.31 matches. Classical conv mean 0.7545 renders 75.4% (report 75.5%)
+    — .5-boundary half-up display artifact (4 dp value exact), same class as known §3.1 cases.
 
 ## Architecture (scripts/benchmarks/ subpackage; tests in tests/scripts/benchmarks/)
 
@@ -106,9 +126,17 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
 
 ## Remaining work
 
-- §3.2 Conv/Parity/Recovery (3.2.1) — multi-metric + composite Endgame Skill; uses the 5×4 cell grid.
-- §3.3 Time Pressure (3.3.x); §3.4 Endgame Type per-class (3.4.x) — partitioned per class/bin.
+- §3.3 Time Pressure (3.3.x) — clock/time-pressure absolute curves + per-pressure-bin curves.
+- §3.4 Endgame Type per-class (3.4.x) — partitioned per class (rook/minor/pawn/queen/mixed/
+  pawnless). §3.4.2 reuses the §3.2.2 span-gap machinery (spans/spans_with_next/gap_rows) —
+  consider extracting it from chapter3 into a shared CTE builder when porting §3.4.2.
 - §4 — already deterministic; chapter just references scripts/gen_global_percentile_cdf.py.
+
+NOTE on the 5×4 cell grid: the SKILL.md §3.2.1 "Output" mentions a 5×4 p50 cell table, but
+benchmarks-latest.md §3.2 does NOT contain one (only pooled + ELO + TC marginals, same as
+§3.1). The gate is the report, so §3.2 emits marginals only — matching §3.1's structure. The
+5×4 grid first actually appears in the report at §3.4 (per-class); build it in distribution.py
+when porting §3.4.
 
 ## LAST steps of Phase A (after all chapters pass — do NOT do early)
 
