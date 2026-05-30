@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
 status: executing
-last_updated: "2026-05-30T20:53:59.043Z"
+last_updated: "2026-05-30T21:05:52.639Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 11
-  completed_plans: 7
+  completed_plans: 8
   percent: 25
 ---
 
@@ -19,10 +19,10 @@ progress:
 
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
 Phase: 99 (percentile-badges-for-conversion-parity-and-recovery) — EXECUTING
-Plan: 2 of 5
-Next: Plan 02 (rate SQL builders + ENUM widening + migration)
-Status: Executing Phase 99 (Plan 01 complete — Wave 0 test scaffolds)
-Last activity: 2026-05-30 -- Phase 99 Plan 01 complete (Wave 0 test scaffolds for rate-percentile badges)
+Plan: 3 of 5
+Next: Plan 03 (PerTcBucketStats field widening + endgame_service dispatch)
+Status: Executing Phase 99 (Plan 02 complete — rate builders + ENUM widening + migration)
+Last activity: 2026-05-30
 
 ## Project Reference
 
@@ -229,3 +229,9 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 | 66 | Remove concepts info icon; make Insights a collapsible card (open by default) | 2026-05-30 | 3c610ccc | — |
 | 67 | Render insights 3 sections as plain headings/paragraphs (no inner cards) | 2026-05-30 | 98daa838 | — |
 | 68 | Per-section insight slots as collapsible header-band cards (open by default) | 2026-05-30 | 32d38f66 | — |
+
+## Performance Metrics
+
+| Phase | Plan | Duration | Notes |
+|-------|------|----------|-------|
+| Phase 99 P02 | 25 | 2 tasks | 6 files |
