@@ -10,6 +10,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ### Added
 
+- **Peer-relative percentile chips on the per-TC Conversion, Parity, and Recovery rates** (Phase 99). Each per-time-control card (Bullet, Blitz, Rapid, Classical) now shows a percentile chip on its Conversion, Parity, and Recovery rate alongside the existing engine-adjusted score-gap chip, so you can see how your raw conversion/parity/recovery rate ranks against players in your rating band and time control, not just against the engine. Chips are cohort-matched on your per-time-control rating and only appear once you have enough endgames in that bucket; sparse cells (commonly Classical) stay hidden rather than show a noisy number.
 - **Conversion and Recovery gauges back in Endgame Type Breakdown** (Phase 98). Each endgame type tile (Rook, Minor Piece, Pawn, Queen) now shows its Conversion and Recovery gauges again, this time banded against the correct per-(class x time control) benchmark range so a bullet player is judged against bullet norms, not slow-game ones.
 
 ### Changed

@@ -147,7 +147,7 @@ function MetricBlock({
 
   return (
     <div className="flex-1 min-w-0" data-testid={testId}>
-      <h4 className="text-base font-semibold mb-2 inline-flex items-center gap-1">
+      <h4 className="text-base font-semibold mb-2 inline-flex items-center gap-1 w-full">
         {BUCKET_DISPLAY_LABELS[bucket]}
         <InfoPopover
           ariaLabel={`${BUCKET_DISPLAY_LABELS[bucket]} info`}
@@ -156,6 +156,38 @@ function MetricBlock({
         >
           {TITLE_TOOLTIP[bucket]}
         </InfoPopover>
+        {/* Phase 99: raw-rate percentile chip, right-aligned on the title line.
+            Gated on BOTH rate_percentile != null AND anchorRating != null so the
+            tooltip can disclose the anchor honestly (mirrors the gap chip gate).
+            Uses existing flavor + distinct metricLabel for tooltip-only differentiation
+            per D-03/D-08. MetricBlock is the single shared renderer for desktop +
+            mobile — no duplicated markup needed. */}
+        {block.rate_percentile != null && anchorRating != null && (
+          <span className="ml-auto inline-flex">
+            <PercentileChip
+              percentile={block.rate_percentile}
+              flavor={
+                bucket === 'conversion'
+                  ? 'conversion'
+                  : bucket === 'parity'
+                    ? 'parity'
+                    : 'recovery'
+              }
+              tc={tc}
+              anchorRating={anchorRating}
+              metricLabel={
+                bucket === 'conversion'
+                  ? 'Conversion Rate'
+                  : bucket === 'parity'
+                    ? 'Parity Rate'
+                    : 'Recovery Rate'
+              }
+              testId={`${testId}-rate-percentile-chip`}
+              nGames={block.rate_percentile_n_games}
+              value={block.rate_percentile_value}
+            />
+          </span>
+        )}
       </h4>
       <div className="flex flex-col gap-4">
         {/* Gauge row -- opacity-50 when no games (mirrors EndgameMetricCard). */}

@@ -9,6 +9,15 @@ TC-suffixed values are deleted: per-TC dimensionality now lives in the
 (PK widening) + D-13 (8-value ENUM) + D-05a (Recovery Score Gap rescued
 from the v1 drop list under peer-relative framing).
 
+Phase 99 extends the ENUM with 12 new values (3 rate-metric families × 4 TCs),
+bringing the initial total to 11 metric families represented across 20 SAEnum values
+(8 family-level + 12 TC-suffixed rate values). Phase 99 Plan 05 (Rule 1) adds
+3 more bare family names (conversion_rate, parity_rate, recovery_rate) needed
+by the upsert_percentile write path, bringing the SAEnum total to 23 values.
+The 12 TC-suffixed values remain for forward compatibility. The bare family
+names match the CdfMetricId entries and are stored with time_control_bucket
+providing the per-TC dimensionality (PK column, not ENUM suffix).
+
 ``create_type=False`` means Alembic controls the ENUM lifecycle — see
 ``alembic/versions/20260526_222651_1945ae56aa20_reshape_user_benchmark_percentiles.py``
 for the destructive reshape (drop/recreate of both the table and the ENUM).
@@ -51,6 +60,14 @@ from app.services.global_percentile_cdf import CdfMetricId
 # from Phase 94.3 are deleted; per-TC dimensionality is now carried by the
 # time_control_bucket PK column. Order matches the destructive reshape
 # migration verbatim.
+#
+# Phase 99: 12 new TC-suffixed values added (conversion_rate, parity_rate,
+# recovery_rate × bullet, blitz, rapid, classical). These ride in the
+# existing per-(user, metric, time_control_bucket) PK structure — the TC-suffix
+# in the ENUM value is redundant with the PK column but is required for the
+# ``user_benchmark_percentiles`` ORM write path (Pitfall 3 mitigation).
+# Order: family-then-TC, matching the Phase 99 migration _NEW_VALUES tuple and
+# gen_global_percentile_cdf.py IN_SCOPE_METRICS ordering.
 benchmark_metric_enum = SAEnum(
     "score_gap",
     "achievable_score_gap",
@@ -60,6 +77,25 @@ benchmark_metric_enum = SAEnum(
     "time_pressure_score_gap",
     "clock_gap",
     "net_flag_rate",
+    # Phase 99 rate families (TC-suffixed for the benchmark_metric Postgres ENUM).
+    "conversion_rate_bullet",
+    "conversion_rate_blitz",
+    "conversion_rate_rapid",
+    "conversion_rate_classical",
+    "parity_rate_bullet",
+    "parity_rate_blitz",
+    "parity_rate_rapid",
+    "parity_rate_classical",
+    "recovery_rate_bullet",
+    "recovery_rate_blitz",
+    "recovery_rate_rapid",
+    "recovery_rate_classical",
+    # Phase 99 Plan 05 Rule 1 fix: bare family names required by upsert_percentile
+    # write path (CdfMetricId is used as the metric column value; TC-suffix in
+    # ENUM is redundant with time_control_bucket PK column — migration 52c928794fe7).
+    "conversion_rate",
+    "parity_rate",
+    "recovery_rate",
     name="benchmark_metric",
     create_type=False,
 )
