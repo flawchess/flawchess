@@ -90,7 +90,6 @@ export interface EndgameTypeCardProps {
   category: EndgameCategoryStats;
   // Phase 98 (D-04): TC for this tile — resolves per-(class × TC) gauge bands.
   tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
-  sharePct: number;
   onCategorySelect: (cls: EndgameClass) => void;
   tileTestId: string;
 }
@@ -98,7 +97,6 @@ export interface EndgameTypeCardProps {
 export function EndgameTypeCard({
   category,
   tc,
-  sharePct,
   onCategorySelect,
   tileTestId,
 }: EndgameTypeCardProps) {
@@ -185,7 +183,6 @@ export function EndgameTypeCard({
       ? ENDGAME_TYPE_DESCRIPTIONS[category.endgame_class]
       : '';
 
-  const sharePctFormatted = Math.round(sharePct);
   const gamesCountFormatted = category.total.toLocaleString();
 
   // Phase 98 follow-up: the tile is a block inside the per-TC card (like the
@@ -273,19 +270,24 @@ export function EndgameTypeCard({
     );
   }
 
+  // Games indicator mirrors the "Results played as White/Black" card on the Moves
+  // tab (PositionResultsPanel): label + right-aligned count + sword, no percentage.
+  // no-underline overrides AccordionContent's [&_a]:underline (this tile renders
+  // inside the per-TC accordion body, unlike the Moves-tab reference).
   const gamesLink = (
     <Tooltip content={`View ${category.label} endgame games`}>
       <Link
         to={`/endgames/games?type=${slug}`}
         onClick={() => onCategorySelect(category.endgame_class)}
-        className="ml-auto inline-flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight tabular-nums whitespace-nowrap transition-colors"
+        className="ml-auto inline-flex items-center gap-1 text-sm tabular-nums no-underline whitespace-nowrap text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
         aria-label={`View ${category.label} endgame games`}
         data-testid={`${tileTestId}-games-link`}
       >
-        <span>
-          Games: {sharePctFormatted}% ({gamesCountFormatted})
+        <span>Games:</span>
+        <span className="font-semibold tabular-nums inline-flex items-center gap-0.3">
+          {gamesCountFormatted}
+          <Swords className="h-3.5 w-3.5" aria-hidden="true" />
         </span>
-        <Swords className="h-3.5 w-3.5" aria-hidden="true" />
       </Link>
     </Tooltip>
   );

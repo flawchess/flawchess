@@ -77,24 +77,19 @@ function EndgameTypeBreakdownSectionInner({
     return tcTotal >= MIN_GAMES_PER_TC_CARD;
   });
 
-  const grandTotal = eligibleTcs.reduce((sum, tc) => {
-    return (
-      sum +
-      (categoriesByTc[tc] ?? []).reduce((s, c) => s + c.total, 0)
-    );
-  }, 0);
-
   // Primary TC: argmax of summed_games × NOMINAL_DURATION over eligible TCs.
-  // Initialize accordion to primary TC expanded (D-09).
-  const [expandedTc, setExpandedTc] = useState<string>(
-    () => computePrimaryTc(categoriesByTc, MIN_GAMES_PER_TC_CARD) ?? '',
-  );
+  // type="multiple" so each card folds/unfolds independently (UAT 98 — opening
+  // one card no longer collapses another). Value is the array of open TC values;
+  // initialized with just the primary TC expanded (D-09).
+  const [expandedTcs, setExpandedTcs] = useState<string[]>(() => {
+    const primary = computePrimaryTc(categoriesByTc, MIN_GAMES_PER_TC_CARD);
+    return primary ? [primary] : [];
+  });
 
-  // Reset accordion to recomputed primary on filter change (D-12).
+  // Reset accordion to just the recomputed primary on filter change (D-12).
   useEffect(() => {
-    const newPrimary =
-      computePrimaryTc(categoriesByTc, MIN_GAMES_PER_TC_CARD) ?? '';
-    setExpandedTc(newPrimary);
+    const newPrimary = computePrimaryTc(categoriesByTc, MIN_GAMES_PER_TC_CARD);
+    setExpandedTcs(newPrimary ? [newPrimary] : []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
 
@@ -116,10 +111,9 @@ function EndgameTypeBreakdownSectionInner({
         </div>
       ) : (
         <Accordion
-          type="single"
-          collapsible
-          value={expandedTc}
-          onValueChange={setExpandedTc}
+          type="multiple"
+          value={expandedTcs}
+          onValueChange={setExpandedTcs}
           className="flex flex-col gap-2 mt-2"
         >
           {eligibleTcs.map((tc) => (
@@ -127,7 +121,6 @@ function EndgameTypeBreakdownSectionInner({
               key={tc}
               tc={tc}
               categories={categoriesByTc[tc] ?? []}
-              grandTotal={grandTotal}
               onCategorySelect={onCategorySelect}
             />
           ))}

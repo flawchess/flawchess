@@ -126,7 +126,6 @@ function buildCategory(
 interface RenderOptions {
   onCategorySelect?: (cls: EndgameCategoryStats['endgame_class']) => void;
   tileTestId?: string;
-  sharePct?: number;
   tc?: 'bullet' | 'blitz' | 'rapid' | 'classical';
 }
 
@@ -136,7 +135,6 @@ function renderCard(
 ): ReturnType<typeof render> {
   const onCategorySelect = opts.onCategorySelect ?? vi.fn();
   const tileTestId = opts.tileTestId ?? TILE_TESTID;
-  const sharePct = opts.sharePct ?? 45.5;
   const tc = opts.tc ?? 'rapid';
   return render(
     <MemoryRouter>
@@ -144,7 +142,6 @@ function renderCard(
         <EndgameTypeCard
           category={category}
           tc={tc}
-          sharePct={sharePct}
           onCategorySelect={onCategorySelect}
           tileTestId={tileTestId}
         />
@@ -493,7 +490,6 @@ describe('EndgameTypeCard — WDL flag gating (mocked false)', () => {
           <MockedCard
             category={buildCategory()}
             tc="rapid"
-            sharePct={45.5}
             onCategorySelect={onCategorySelect}
             tileTestId={TILE_TESTID}
           />

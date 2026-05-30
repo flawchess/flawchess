@@ -18,7 +18,6 @@
  * it receives.
  */
 
-import { Swords } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 import { AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -71,21 +70,14 @@ function tileDividerClasses(i: number): string {
 export interface EndgameTypeTcCardProps {
   tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
   categories: EndgameCategoryStats[];
-  grandTotal: number;
   onCategorySelect: (cls: EndgameClass) => void;
 }
 
 export function EndgameTypeTcCard({
   tc,
   categories,
-  grandTotal,
   onCategorySelect,
 }: EndgameTypeTcCardProps) {
-  // Sum this TC's total games for the header percentage.
-  const tcTotal = categories.reduce((sum, c) => sum + c.total, 0);
-  const pctOfGrandTotal =
-    grandTotal > 0 ? Math.round((tcTotal / grandTotal) * 100) : 0;
-
   // Build tile list in fixed order; exclude Mixed + pawnless.
   const tileMap = new Map(categories.map((c) => [c.endgame_class, c]));
   const tiles = TILE_ORDER.filter(
@@ -107,7 +99,10 @@ export function EndgameTypeTcCard({
     <AccordionItem
       value={tc}
       data-testid={`endgame-type-tc-card-${tc}`}
-      className="charcoal-texture rounded-md overflow-hidden border-none"
+      // Square off the bottom corners while expanded so the rounded shell doesn't
+      // clip the tile-grid dividers (UAT 98: "don't round the bottom corners when
+      // unfolded"); collapsed it stays fully rounded.
+      className="charcoal-texture rounded-md overflow-hidden border-none data-[state=open]:rounded-b-none"
     >
       {/* Full-bleed charcoal header: TC icon + label + Games count (D-05).
           The AccordionTrigger IS the header — no extra px-4 on AccordionItem.
@@ -115,7 +110,11 @@ export function EndgameTypeTcCard({
       <AccordionTrigger
         data-testid={`type-breakdown-tc-${tc}-trigger`}
         aria-label={`${TC_LABELS[tc]} endgame type breakdown`}
-        className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-left hover:no-underline [&>svg:last-child]:ml-0"
+        // rounded-none + border-0 override the Radix primitive's rounded-lg and
+        // all-side border so the header background fills the shell flush to its
+        // edges (UAT 98: no charcoal corner/edge bleed when collapsed). The
+        // bottom separator only appears while expanded, dividing header from tiles.
+        className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline [&>svg:last-child]:ml-0"
       >
         <div
           className="flex items-center gap-2 flex-1"
@@ -123,16 +122,17 @@ export function EndgameTypeTcCard({
         >
           <TimeControlIcon timeControl={tc} className="h-4 w-4 shrink-0" />
           <h3 className="text-base font-semibold">{TC_LABELS[tc]}</h3>
-          <span className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums font-normal">
-            Games: {pctOfGrandTotal}% ({tcTotal.toLocaleString()})
-            <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-          </span>
         </div>
       </AccordionTrigger>
 
       {/* Tile grid body: no px-4 on AccordionContent (full-bleed header constraint,
-          RESEARCH §7). The grid div carries its own p-4 padding. */}
-      <AccordionContent className="p-0">
+          RESEARCH §7). The grid div carries its own p-4 padding.
+          h-auto overrides the shared primitive's h-(--radix-accordion-content-height),
+          which pins the body to the height measured at open time. Without this, a
+          viewport resize that reflows the tile grid to more rows (e.g. 4×1 → 2×2)
+          leaves the charcoal shell at its old height and clips the bottom row
+          (UAT 98). h-auto lets the shell grow/shrink with the reflowed content. */}
+      <AccordionContent className="h-auto p-0">
         {tiles.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
             {tiles.map((cat, i) => (
@@ -143,9 +143,6 @@ export function EndgameTypeTcCard({
                 <EndgameTypeCard
                   category={cat}
                   tc={tc}
-                  sharePct={
-                    tcTotal > 0 ? (cat.total / tcTotal) * 100 : 0
-                  }
                   onCategorySelect={onCategorySelect}
                   tileTestId={`type-card-${tc}-${ENDGAME_CLASS_SLUGS[cat.endgame_class]}`}
                 />
