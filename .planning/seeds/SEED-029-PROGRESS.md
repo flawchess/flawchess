@@ -35,7 +35,7 @@ benchmark DB (localhost:5433; `bin/benchmark_db.sh start` if down).
   report exactly. FOUND a pair-selection slip: ELO max |d| is (800, 2400) at 0.34694,
   not the report's (800, 2000) at 0.34679 — both round to 0.35 / review, magnitude +
   verdict unchanged (same class as §2.1). Footnoted in test + chapter3 docstring.
-- (next commit) §3.1.5 Achievable Score Gap — MetricBlock (pp unit). d_i = USER_SCORE_EXPR
+- `98567c1a` §3.1.5 Achievable Score Gap — MetricBlock (pp unit). d_i = USER_SCORE_EXPR
   − expected_score_sql() (reuses §3.1.3's entry_rows + sigmoid; mate INCLUDED). ≥20 non-null
   pairs floor. Pooled + all marginals reproduce the report exactly. FOUND a pair-selection
   slip: TC max |d| is (rapid, classical) at 0.134, NOT the report's labeled (bullet, rapid)
