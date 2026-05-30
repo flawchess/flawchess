@@ -99,10 +99,7 @@ export function EndgameTypeTcCard({
     <AccordionItem
       value={tc}
       data-testid={`endgame-type-tc-card-${tc}`}
-      // Square off the bottom corners while expanded so the rounded shell doesn't
-      // clip the tile-grid dividers (UAT 98: "don't round the bottom corners when
-      // unfolded"); collapsed it stays fully rounded.
-      className="charcoal-texture rounded-md overflow-hidden border-none data-[state=open]:rounded-b-none"
+      className="charcoal-texture rounded-md overflow-hidden border-none"
     >
       {/* Full-bleed charcoal header: TC icon + label + Games count (D-05).
           The AccordionTrigger IS the header — no extra px-4 on AccordionItem.
@@ -131,8 +128,12 @@ export function EndgameTypeTcCard({
           which pins the body to the height measured at open time. Without this, a
           viewport resize that reflows the tile grid to more rows (e.g. 4×1 → 2×2)
           leaves the charcoal shell at its old height and clips the bottom row
-          (UAT 98). h-auto lets the shell grow/shrink with the reflowed content. */}
-      <AccordionContent className="h-auto p-0">
+          (UAT 98). h-auto lets the shell grow/shrink with the reflowed content.
+          The [&_a] overrides cancel the primitive's prose-link styling
+          ([&_a]:underline / [&_a]:hover:text-foreground) — descendant selectors
+          that out-specify the games link's own utility classes — so the games
+          indicator matches the Moves-tab card (no underline, brand-brown hover). */}
+      <AccordionContent className="h-auto p-0 [&_a]:no-underline [&_a]:hover:text-brand-brown-highlight">
         {tiles.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4">
             {tiles.map((cat, i) => (
