@@ -235,3 +235,50 @@ async def test_chapter3_313_matches_report(benchmark_session: AsyncSession) -> N
     _check_marginal(block["elo_marginal"], EXPECTED_313_ELO)
     _check_marginal(block["tc_marginal"], EXPECTED_313_TC)
     _check_verdicts(block, EXPECTED_313_VERDICTS)
+
+
+# --- §3.1.4 Endgame Score (per-user, EG-only) ----------------------------------
+
+# Proportions (4 dp). Reproduces benchmarks-latest.md §3.1.4 exactly (a few marginal-SD
+# displays land on the .5 ulp boundary, e.g. bullet 7.65% shows 7.6% in the prior report;
+# the raw 4 dp values asserted here match).
+EXPECTED_314_POOLED = {
+    "n": 4616,
+    "mean": 0.5144,
+    "sd": 0.0868,
+    "p05": 0.3826,
+    "p25": 0.4605,
+    "p50": 0.5101,
+    "p75": 0.5645,
+    "p95": 0.6652,
+}
+EXPECTED_314_ELO = {
+    "800": (756, 0.4989, 0.0941, 0.4398, 0.4930, 0.5495),
+    "1200": (1068, 0.5016, 0.0905, 0.4453, 0.4958, 0.5526),
+    "1600": (1166, 0.5162, 0.0863, 0.4602, 0.5084, 0.5682),
+    "2000": (1028, 0.5293, 0.0827, 0.4733, 0.5250, 0.5767),
+    "2400": (598, 0.5281, 0.0699, 0.4871, 0.5268, 0.5659),
+}
+EXPECTED_314_TC = {
+    "bullet": (1350, 0.5058, 0.0765, 0.4603, 0.5000, 0.5466),
+    "blitz": (1353, 0.5171, 0.0817, 0.4623, 0.5155, 0.5653),
+    "rapid": (1334, 0.5229, 0.0895, 0.4662, 0.5186, 0.5736),
+    "classical": (579, 0.5086, 0.1095, 0.4394, 0.5020, 0.5788),
+}
+# First non-collapse verdicts in the report (review/review); code emits the d-values only.
+# ELO pair corrected to (800, 2400): the deterministic max is |d|=0.34694 there, just above
+# (800, 2000)'s 0.34679 — both round to 0.35 / "review". The prior report labeled the
+# runner-up pair (800, 2000); a hand-computation pair-selection slip, same class as §2.1's
+# (800,1200)→(800,1600). Magnitude and verdict word are unchanged.
+EXPECTED_314_VERDICTS = {
+    "TC": (("bullet", "rapid"), 0.21),
+    "ELO": (("800", "2400"), 0.35),
+}
+
+
+async def test_chapter3_314_matches_report(benchmark_session: AsyncSession) -> None:
+    block = await chapter3.compute_314(benchmark_session)
+    _check_pooled(block, EXPECTED_314_POOLED)
+    _check_marginal(block["elo_marginal"], EXPECTED_314_ELO)
+    _check_marginal(block["tc_marginal"], EXPECTED_314_TC)
+    _check_verdicts(block, EXPECTED_314_VERDICTS)
