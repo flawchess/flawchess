@@ -9,6 +9,12 @@
  * SC-3 (Phase 88.4): The four stacked per-bucket Score-Gap bullet rows
  * (QuintileRow/EmptyBinRow) are replaced by a single ScoreGapByTimePressureChart.
  *
+ * 260531-f7s: converted from a plain <div> to an AccordionItem so the card
+ * participates in the controlled accordion managed by EndgameTimePressureSection.
+ * The header band IS the AccordionTrigger (TC icon + name + game count + chevron).
+ * Body is a 2-column flex layout: Score Gap chart left (~2/3), Clock Gap +
+ * Net flag gauges right (~1/3), vertical separator on desktop, horizontal on mobile.
+ *
  * Sparse handling (card level only):
  *   - card.total < MIN_GAMES_PER_TC_CARD → return null (TC hidden entirely).
  */
@@ -21,6 +27,7 @@ import { ScoreGapByTimePressureChart } from '@/components/charts/ScoreGapByTimeP
 import { TimeControlIcon } from '@/components/icons/TimeControlIcon';
 import { MetricStatPopover } from '@/components/popovers/MetricStatPopover';
 import { InfoPopover } from '@/components/ui/info-popover';
+import { AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   CLOCK_GAP_NEUTRAL_MIN,
   CLOCK_GAP_NEUTRAL_MAX,
@@ -310,131 +317,173 @@ export function EndgameTimePressureCard({
 
   const gap = card.clock_gap;
 
+  // Divider between the two body columns: a vertical rule on desktop, a
+  // horizontal rule when stacked on mobile. Structure mirrors
+  // EndgameMetricsByTcCard, but stacks at md (768px) rather than lg — the
+  // Score Gap chart + gauges stay readable side-by-side down to tablet width.
+  const divider = (
+    <>
+      <div className="hidden md:block w-px bg-border/40 mx-6" aria-hidden="true" />
+      <div className="block md:hidden border-t border-border/40 my-4" aria-hidden="true" />
+    </>
+  );
+
   return (
-    <div
-      className="charcoal-texture rounded-md overflow-hidden"
+    // 260531-f7s: AccordionItem replaces the plain <div>. The charcoal-texture,
+    // rounded-md, overflow-hidden, and border-none classes mirror EndgameMetricsByTcCard.
+    <AccordionItem
+      value={card.tc}
       data-testid={`time-pressure-card-${card.tc}`}
-      role="group"
-      aria-label={`${tcLabel} time pressure breakdown`}
+      className="charcoal-texture rounded-md overflow-hidden border-none"
     >
-      {/* Card header section: distinct recessed background + bottom separator,
-          full-bleed to the card edges (matches EndgameMetricsByTcCard). */}
-      <h3
-        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
-        data-testid={`time-pressure-card-${card.tc}-header`}
+      {/* Card header: the AccordionTrigger IS the header band — full-bleed,
+          charcoal background, bottom separator only when expanded.
+          The inner content div retains the existing header testid so tests
+          and automation referencing `-header` continue to work.
+          Collapsed header shows ONLY TC name + game count + chevron toggle. */}
+      <AccordionTrigger
+        data-testid={`time-pressure-card-${card.tc}-trigger`}
+        aria-label={`${tcLabel} time pressure`}
+        className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0"
       >
-        {/* Post-UAT: TC icon next to the label matches the filter-button
-            convention. h-4 w-4 keeps icon optical weight aligned with the
-            text-base heading. */}
-        <TimeControlIcon timeControl={card.tc} className="h-4 w-4 shrink-0" />
-        <span>{tcLabel}</span>
-        {/* Post-UAT (round 2): game count right-aligned, "Games: X% (N)"
-            framing with a sword icon. The percentage is this TC's share of
-            the user's filtered games (computed at the section level so all
-            cards share the same denominator). Falls back to "Games: N" when
-            the section didn't pass a grand total. */}
-        <span
-          className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums font-normal"
-          data-testid={`time-pressure-card-${card.tc}-total`}
+        <div
+          className="flex items-center gap-2 flex-1"
+          data-testid={`time-pressure-card-${card.tc}-header`}
         >
-          {pctOfTotal !== null
-            ? `Games: ${pctOfTotal}% (${card.total.toLocaleString()})`
-            : `Games: ${card.total.toLocaleString()}`}
-          <Swords className="h-3.5 w-3.5" aria-hidden="true" />
-        </span>
-      </h3>
-
-      <div className="flex flex-col gap-4 p-4">
-        {/* SC-2: top section — 3-column header row + Clock Gap bullet + net flag rate.
-            The ClockGapHeaderRow sits ABOVE the bullet, replacing the old label row. */}
-        <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
-          <ClockGapHeaderRow gap={gap} card={card} ratingAnchor={ratingAnchor} />
-          <div
-            className="min-w-0 tabular-nums"
-            data-testid={`time-pressure-card-${card.tc}-clock-gap-bullet`}
+          {/* Post-UAT: TC icon next to the label matches the filter-button
+              convention. h-4 w-4 keeps icon optical weight aligned with the
+              text-base heading. */}
+          <TimeControlIcon timeControl={card.tc} className="h-4 w-4 shrink-0" />
+          <h3 className="text-base font-semibold">{tcLabel}</h3>
+          {/* Post-UAT (round 2): game count right-aligned, "Games: X% (N)"
+              framing with a sword icon. The percentage is this TC's share of
+              the user's filtered games (computed at the section level so all
+              cards share the same denominator). Falls back to "Games: N" when
+              the section didn't pass a grand total. */}
+          <span
+            className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground tabular-nums font-normal"
+            data-testid={`time-pressure-card-${card.tc}-total`}
           >
-            <MiniBulletChart
-              value={gap.mean_diff_pct}
-              center={0}
-              neutralMin={CLOCK_GAP_NEUTRAL_MIN}
-              neutralMax={CLOCK_GAP_NEUTRAL_MAX}
-              domain={CLOCK_GAP_DOMAIN}
-              ciLow={gap.ci_low != null ? clampDeltaCi(gap.ci_low) : undefined}
-              ciHigh={gap.ci_high != null ? clampDeltaCi(gap.ci_high) : undefined}
-              ariaLabel={`Clock Gap: ${gap.mean_diff_pct >= 0 ? '+' : ''}${Math.round(gap.mean_diff_pct * 100)}%`}
-              barColor="neutral"
-            />
-          </div>
-          {/* Visual separator between Clock Gap bullet and Net flag rate row. */}
-          <div className="border-t border-border/40 mt-3" aria-hidden="true" />
-          <NetFlagRateRow card={card} ratingAnchor={ratingAnchor} />
+            {pctOfTotal !== null
+              ? `Games: ${pctOfTotal}% (${card.total.toLocaleString()})`
+              : `Games: ${card.total.toLocaleString()}`}
+            <Swords className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
         </div>
+      </AccordionTrigger>
 
-        {/* Visual separator between top section and score-gap chart. */}
-        <div className="border-t border-border/40" aria-hidden="true" />
-
-        {/* SC-3: Replace the four stacked per-bucket bullet rows with the
-            ScoreGapByTimePressureChart (line chart with zone bands). */}
-        <div>
-          {/* Phase 94.3 (TPCTL-06): subtitle changed from inline-flex → flex so
-              the trailing `ml-auto` Time Pressure Score Gap chip slot can push
-              to the right edge. The leading label + InfoPopover sit side-by-
-              side via `items-center gap-1.5`. The element changed from <p>
-              to <div> because the chip's Radix popover renders a
-              span[role="button"] which is invalid inside a paragraph. */}
-          <div
-            className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
-            data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
-          >
-            <span>Score Gap by Remaining Time</span>
-            <InfoPopover
-              ariaLabel={`${tcLabel} score gap by remaining time info`}
-              testId={`time-pressure-card-${card.tc}-quintiles-info`}
-              side="top"
+      {/* Body: 2-column flex layout (D-02 / 260531-f7s).
+          LEFT (~2/3): Score Gap by Remaining Time chart.
+          RIGHT (~1/3): Clock Gap bullet + Net flag rate gauges stacked.
+          Vertical separator on desktop (lg+); horizontal separator on mobile.
+          AccordionContent className="p-0" so the body div carries its own p-4. */}
+      <AccordionContent className="p-0">
+        <div className="flex flex-col md:flex-row p-4">
+          {/* LEFT column: Score Gap chart (the "what's your score vs pressure" story) */}
+          <div className="flex-1 min-w-0 md:basis-2/3">
+            {/* Phase 94.3 (TPCTL-06): subtitle changed from inline-flex → flex so
+                the trailing `ml-auto` Time Pressure Score Gap chip slot can push
+                to the right edge. The leading label + InfoPopover sit side-by-
+                side via `items-center gap-1.5`. The element changed from <p>
+                to <div> because the chip's Radix popover renders a
+                span[role="button"] which is invalid inside a paragraph. */}
+            <div
+              className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
+              data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
             >
-              <div className="space-y-2">
-                <p>
-                  This breaks your endgames into buckets by how much of your
-                  clock was left, and in each bucket compares your score
-                  against opponents who were under the <em>same amount</em> of
-                  time pressure. A positive gap means you outscored
-                  comparably-pressured opponents; a negative gap means they
-                  outscored you.
-                </p>
-                <p>
-                  Each x-axis label is the <em>center</em> of a 20%-wide
-                  bucket: 10% pools all endgames entered with 0-20% of your
-                  clock left, 30% pools 20-40%, 50% pools 40-60%, and 70% pools
-                  60-80%. The 80-100% bucket is dropped (little time pressure
-                  to measure).
-                </p>
-                <p>
-                  Each marker is sized by how many of that time bucket's games were
-                  yours versus your opponents'. A bigger dot means you were in this
-                  time pressure situation more often than your opponents.
-                </p>
-              </div>
-            </InfoPopover>
-            {card.time_pressure_score_gap_percentile != null && ratingAnchor !== undefined && (
-              <span className="ml-auto inline-flex">
-                <PercentileChip
-                  percentile={card.time_pressure_score_gap_percentile}
-                  flavor="time-pressure-score-gap"
-                  tc={card.tc}
-                  anchorRating={ratingAnchor.anchor_rating}
-                  metricLabel="Time Pressure Score Gap"
-                  testId={`time-pressure-card-${card.tc}-time-pressure-score-gap-chip`}
-                  nGames={card.time_pressure_score_gap_n_games}
-                  value={card.time_pressure_score_gap_value}
-                />
-              </span>
-            )}
+              <span>How you <em>score</em> under time pressure</span>
+              <InfoPopover
+                ariaLabel={`${tcLabel} score gap by remaining time info`}
+                testId={`time-pressure-card-${card.tc}-quintiles-info`}
+                side="top"
+              >
+                <div className="space-y-2">
+                  <p>
+                    The <strong>Score Gap by Remaining Time</strong> shows you if
+                    handle the <em>same amount</em> of time pressure better or worse
+                    than your opponents.
+                  </p>
+                  <p>
+                    It breaks your endgames into buckets by how much of your
+                    clock was left, and in each bucket compares your score
+                    to games where your opponents had the <em>same amount</em> of
+                    time pressure. A positive gap means you outscored
+                    comparably-pressured opponents; a negative gap means they
+                    outscored you.
+                  </p>
+                  <p>
+                    Each x-axis label is the <em>center</em> of a 20%-wide
+                    bucket: 10% pools all endgames entered with 0-20% of your
+                    clock left, 30% pools 20-40%, 50% pools 40-60%, and 70% pools
+                    60-80%. The 80-100% bucket is dropped (little time pressure
+                    to measure).
+                  </p>
+                  <p>
+                    Each marker is sized by how many of that time bucket's games were
+                    yours versus your opponents'. A bigger dot means you were in this
+                    time pressure situation more often than your opponents.
+                  </p>
+                </div>
+              </InfoPopover>
+              {card.time_pressure_score_gap_percentile != null && ratingAnchor !== undefined && (
+                <span className="ml-auto inline-flex">
+                  <PercentileChip
+                    percentile={card.time_pressure_score_gap_percentile}
+                    flavor="time-pressure-score-gap"
+                    tc={card.tc}
+                    anchorRating={ratingAnchor.anchor_rating}
+                    metricLabel="Time Pressure Score Gap"
+                    testId={`time-pressure-card-${card.tc}-time-pressure-score-gap-chip`}
+                    nGames={card.time_pressure_score_gap_n_games}
+                    value={card.time_pressure_score_gap_value}
+                  />
+                </span>
+              )}
+            </div>
+            <div data-testid={`time-pressure-card-${card.tc}-score-gap-chart`}>
+              <ScoreGapByTimePressureChart quintiles={card.quintiles} tc={card.tc} />
+            </div>
           </div>
-          <div data-testid={`time-pressure-card-${card.tc}-score-gap-chart`}>
-            <ScoreGapByTimePressureChart quintiles={card.quintiles} tc={card.tc} />
+
+          {divider}
+
+          {/* RIGHT column: Clock Gap bullet + Net flag rate (the "time management" story) */}
+          <div className="md:basis-1/3 md:shrink-0 flex flex-col gap-4">
+            {/* Column subtitle — parallels the left column's "How you score…"
+                line so the two stories read as a matched pair. */}
+            <div
+              className="text-sm font-medium text-muted-foreground"
+              data-testid={`time-pressure-card-${card.tc}-clock-gap-subtitle`}
+            >
+              How <em>often</em> you are under time pressure
+            </div>
+            {/* SC-2: top section — ClockGapHeaderRow sits ABOVE the bullet,
+                replacing the old label row. */}
+            <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>
+              <ClockGapHeaderRow gap={gap} card={card} ratingAnchor={ratingAnchor} />
+              <div
+                className="min-w-0 tabular-nums"
+                data-testid={`time-pressure-card-${card.tc}-clock-gap-bullet`}
+              >
+                <MiniBulletChart
+                  value={gap.mean_diff_pct}
+                  center={0}
+                  neutralMin={CLOCK_GAP_NEUTRAL_MIN}
+                  neutralMax={CLOCK_GAP_NEUTRAL_MAX}
+                  domain={CLOCK_GAP_DOMAIN}
+                  ciLow={gap.ci_low != null ? clampDeltaCi(gap.ci_low) : undefined}
+                  ciHigh={gap.ci_high != null ? clampDeltaCi(gap.ci_high) : undefined}
+                  ariaLabel={`Clock Gap: ${gap.mean_diff_pct >= 0 ? '+' : ''}${Math.round(gap.mean_diff_pct * 100)}%`}
+                  barColor="neutral"
+                />
+              </div>
+              {/* Visual separator between Clock Gap bullet and Net flag rate row. */}
+              <div className="border-t border-border/40 mt-3" aria-hidden="true" />
+              <NetFlagRateRow card={card} ratingAnchor={ratingAnchor} />
+            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </AccordionContent>
+    </AccordionItem>
   );
 }

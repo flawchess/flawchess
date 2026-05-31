@@ -2,6 +2,43 @@
 
 *A living document updated after each milestone. Lessons feed forward into future planning.*
 
+> Note: v1.18, v1.19, and v1.20 closes did not add retrospective sections (only the ROADMAP archives + — for v1.18 — a MILESTONES entry were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in `milestones/v1.18-…`–`v1.20-ROADMAP.md` and `MILESTONES.md`.
+
+## Milestone: v1.21 — Time-Control-Aware Endgame Metrics
+
+**Shipped:** 2026-05-31
+**Phases:** 4 (97, 98, 99, 99.1) | **Plans:** 15
+
+### What Was Built
+
+Made the Endgames page time-control-honest end to end: per-TC Endgame Metrics cards (TC-specific Conv/Recov bands, shared Parity/Score Gap band; Phase 97), collapsible per-TC Endgame Type Breakdown accordion cards with a 2×2 type-tile grid and Mixed dropped (Phase 98), peer-relative percentile chips on the per-TC Conversion/Parity/Recovery rates via 12 new per-(metric, TC) cohort metrics (Phase 99), and the 3.1 MB generated cohort-CDF lookup demoted from Python source into a `benchmark_cohort_cdf` DB table (Phase 99.1).
+
+### What Worked
+
+- **Benchmark-driven band decisions.** Each "per-TC vs shared band" call was settled by the benchmark report's Cohen's d on the TC axis (Conv/Recov d≈0.9 → per-TC; Parity/Score Gap d<0.15 → shared), not by taste. The source-of-truth discipline kept the gauge calibration defensible.
+- **Reusing the v1.19 per-TC chip pattern.** Phase 99 mirrored Phase 94.3's pooled-per-user methodology and chip primitive, so the 12 new metrics dropped in with the drift-impossible CDF-vs-lookup guarantee intact.
+- **Quick tasks as the iteration vehicle.** Most of the visual refinement (collapsible rows, header bands, primary-TC default-expand, declutter) happened as dated quick tasks rather than reopening phases.
+
+### What Was Inefficient
+
+- **Milestone-doc drift accumulated silently.** MILESTONES.md was missing v1.19/v1.20, RETROSPECTIVE.md was missing v1.18–v1.20, and PROJECT.md's "Current Milestone" header lagged a full version (flagged in its own footer but not fixed until this close). The per-close hygiene step was being skipped.
+- **A stale global `gsd-sdk` binary inflated the open-artifact audit to 186 items** (really 28), masking the genuine backlog behind 172 false-positive "missing" quick tasks for multiple closes. Cost real investigation time at this close to disprove.
+- **Newer quick-task SUMMARY template dropped `status: complete`**, so every recent done quick task read as open to the auditor.
+
+### Patterns Established
+
+- **Per-(class × TC) banding with no TC-mix blend** — single-TC cards judged against that TC's own reference; the chosen-redundancy of per-TC Score Gap bands for one consistent card grammar.
+- **Demote generated data from source to a seeded DB table** (Phase 99.1) — generator emits a compact `app/data/` artifact, idempotent `ON CONFLICT DO UPDATE` seed script, `run_local.sh` wiring; the SEED-030 Track B recipe, reusable for other oversized generated modules.
+
+### Key Lessons
+
+- Run the per-close doc hygiene (MILESTONES + RETROSPECTIVE + PROJECT footer) every time — three closes of skipping it compounded into a confusing log.
+- Trust the in-package `gsd-tools.cjs` scanner over the global `gsd-sdk` bin for the audit gate, or update `gsd-sdk`; the filename-match fix isn't in the global build.
+
+### Cost Observations
+
+- Single-session close; the bulk of the spend was the pre-close artifact investigation (disproving the 172-count) and the multi-file doc reconciliation, not the phase work itself.
+
 ## Milestone: v1.17 — Endgame Stats Card Redesign
 
 **Shipped:** 2026-05-19

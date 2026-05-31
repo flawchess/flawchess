@@ -1,12 +1,13 @@
 ---
 slug: import-job-db-conn-closed
-status: diagnosed
+status: resolved
+resolution: "FLAWCHESS-56 / FLAWCHESS-3Q fully resolved in milestone v1.18 (Import Pipeline Hardening): Phase 90 fixed the prepared-statement-cache memory leak + scoped sessions per batch + promoted cleanup_orphaned_jobs to a periodic/on-reconnect reaper + bounded-retry on the failure-state UPDATE; hotfix PR #139 capped DB pool/max_connections/container memory. No recurrence since 2026-05-22. Marked resolved at v1.21 close."
 trigger: |
   Two prod Sentry errors causing user 94's import jobs to fail or get stuck in_progress:
   - FLAWCHESS-56 (issue 120262007): InterfaceError: cannot call PreparedStatement.fetch(): the underlying connection is closed — at import_service.py:798 in _apply_eval_results
   - FLAWCHESS-3Q (issue 115610288): CannotConnectNowError: the database system is not yet accepting connections — at import_service.py:398 in run_import while recording failure state
 created: 2026-05-16
-updated: 2026-05-16
+updated: 2026-05-31
 ---
 
 # Debug Session: import-job-db-conn-closed
