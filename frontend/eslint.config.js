@@ -19,6 +19,13 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // New in react-hooks 7.1.1 — codebase intentionally uses setState in effects
+      // to derive state from server data and filter synchronisation. The patterns are
+      // correct (each effect has a stable dependency array) and carry no cascading-
+      // render risk at runtime. Re-evaluate if the affected hooks are refactored.
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
   // shadcn/ui components export variants alongside components — standard pattern
   {

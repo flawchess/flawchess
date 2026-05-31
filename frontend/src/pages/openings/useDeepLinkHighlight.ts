@@ -32,7 +32,6 @@ export function useDeepLinkHighlight(
 
   useEffect(() => {
     if (highlightedMove == null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- behavior preserved from original OpeningsPage; the setState here is the off-edge of the pulse-timer sync, not a render-derived value
       setPulseActive(false);
       return;
     }
@@ -74,7 +73,6 @@ export function useDeepLinkHighlight(
       return;
     }
     if (filtersAtHighlightRef.current !== null && filtersAtHighlightRef.current !== filters) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- behavior preserved from original OpeningsPage; cross-render filter-change-after-highlight clear depends on a snapshot ref, cannot be derived during render
       setHighlightedMove(null);
     }
   }, [filters, highlightedMove]);

@@ -11,13 +11,6 @@
  * and the frontend helper is retired in Plan 04+.
  */
 
-import {
-  colorizeGaugeZones,
-  type GaugeZone,
-} from '@/lib/theme';
-import {
-  FIXED_GAUGE_ZONES as REGISTRY_FIXED_GAUGE_ZONES,
-} from '@/generated/endgameZones';
 import type { EndgameClass, MaterialBucket } from '@/types/endgames';
 
 // Short display names — the eval threshold indicator ("≥ +1.0", "≤ −1.0")
@@ -27,37 +20,6 @@ export const BUCKET_DISPLAY_LABELS: Record<MaterialBucket, string> = {
   conversion: 'Conversion',
   parity: 'Parity',
   recovery: 'Recovery',
-};
-
-// User-facing labels that also name the per-bucket metric. Currently identical
-// to BUCKET_DISPLAY_LABELS — the explanatory "(Win)/(Score)/(Save)" suffix was
-// dropped per phase 86 feedback. Kept as a separate export so callers that
-// want the "name the metric" surface keep a stable import site if it diverges
-// again later.
-export const BUCKET_DISPLAY_LABELS_WITH_METRIC: Record<MaterialBucket, string> = {
-  conversion: 'Conversion',
-  parity: 'Parity',
-  recovery: 'Recovery',
-};
-
-/** Format a 0.0-1.0 rate as an integer percent string, e.g. 0.684 -> "68%". */
-export function formatScorePct(score: number): string {
-  return `${Math.round(score * 100)}%`;
-}
-
-// Fixed per-bucket gauge zones. Numeric boundaries come from the Python zone
-// registry via the codegen'd `@/generated/endgameZones` mirror; colors come
-// from the FE theme. The blue band marks the typical skill-cohort range for
-// each bucket; red below, green above. Bands are deliberately stable across
-// users, filters, and opponent pools — the "fixed target" the opponent-
-// calibrated design couldn't offer. Calibrated from FlawChess prod data
-// (users ±50 ELO vs opponents, 0-2499 ELO brackets): conversion and recovery
-// stay within ~4pp across rating ranges, so a single rating-agnostic band
-// is used for each bucket.
-export const FIXED_GAUGE_ZONES: Record<MaterialBucket, GaugeZone[]> = {
-  conversion: colorizeGaugeZones(REGISTRY_FIXED_GAUGE_ZONES.conversion),
-  parity: colorizeGaugeZones(REGISTRY_FIXED_GAUGE_ZONES.parity),
-  recovery: colorizeGaugeZones(REGISTRY_FIXED_GAUGE_ZONES.recovery),
 };
 
 // Phase 87.4 (D-03 / D-04): presentation-layer affine that recenters the
