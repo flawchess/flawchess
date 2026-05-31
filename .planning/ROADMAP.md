@@ -144,6 +144,15 @@ Plans:
   5. `scripts/seed_cohort_cdf.py` performs an idempotent `ON CONFLICT DO UPDATE` load from the seed file (re-runnable; picks up new cells and changed values); `bin/run_local.sh` seeds on first-time local setup; dev DB is seeded and chips render unchanged end-to-end.
   6. Backend + frontend gates pass (`ruff`, `ty`, `pytest`, frontend lint/tests); chip output is byte-for-byte equivalent to pre-refactor for a representative user (pure relocation, no behavior change).
 
+**Plans**: 4 plans
+
+  - [ ] 99.1-01-PLAN.md — benchmark_cohort_cdf model + schema-only Alembic migration (D-01)
+  - [ ] 99.1-02-PLAN.md — generator emits app/data/cohort_cdf.tsv + committed seed artifact + TSV drift test (D-02, SC#4)
+  - [ ] 99.1-03-PLAN.md — idempotent seed script + load_cohort_cells repository (D-03/D-04) + run_local.sh seed block (SC#5)
+  - [ ] 99.1-04-PLAN.md — shrink global_percentile_cdf.py (sync interpolator) + wire stage A/B prefetch + byte-for-byte parity (SC#1/#3/#6)
+
+> Planning note: SC#3's literal "interpolate_cohort_percentile becomes async" is reconciled per CONTEXT D-04 — the module stays pure/sync and takes a prefetched CdfTable; the async DB access lives in the new `benchmark_cohort_cdf_repository.load_cohort_cells` (batched prefetch, D-03).
+
 ### Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework
 
 **Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
