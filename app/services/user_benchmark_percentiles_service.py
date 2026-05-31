@@ -429,7 +429,9 @@ async def compute_stage_a(
                         # Below per-TC floor for score_gap → no row.
                         continue
                     value, n_games = result
-                    table_a = cohort_a.get((STAGE_A_METRIC, _round_anchor_to_grid(anchor.anchor_rating), tc))
+                    table_a = cohort_a.get(
+                        (STAGE_A_METRIC, _round_anchor_to_grid(anchor.anchor_rating), tc)
+                    )
                     percentile: float | None = interpolate_cohort_percentile(value, table_a)
                     await upsert_percentile(
                         session,
@@ -514,7 +516,9 @@ async def compute_stage_b(
                             # Below per-TC floor for this (family, tc) → no row.
                             continue
                         value, n_games = result
-                        table_b = cohort_b.get((family, _round_anchor_to_grid(anchor.anchor_rating), tc))
+                        table_b = cohort_b.get(
+                            (family, _round_anchor_to_grid(anchor.anchor_rating), tc)
+                        )
                         percentile: float | None = interpolate_cohort_percentile(value, table_b)
                         await upsert_percentile(
                             session,

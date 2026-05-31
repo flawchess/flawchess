@@ -131,8 +131,6 @@ class CdfTable:
     snapshot_month: str = field(default=BENCHMARK_DB_SNAPSHOT_MONTH)
 
 
-
-
 # ---------------------------------------------------------------------------
 # Public helper — interpolate_cohort_percentile.
 # ---------------------------------------------------------------------------
@@ -185,7 +183,6 @@ def _round_anchor_to_grid(anchor: int) -> int:
     so the rounded value is deterministic for downstream lookups.
     """
     return int(round(anchor / COHORT_ANCHOR_STEP_ELO) * COHORT_ANCHOR_STEP_ELO)
-
 
 
 def interpolate_cohort_percentile(value: float, table: CdfTable | None) -> float | None:
