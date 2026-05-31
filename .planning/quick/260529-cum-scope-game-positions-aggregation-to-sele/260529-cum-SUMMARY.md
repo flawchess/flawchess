@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260529-cum
 plan: "01"
 subsystem: percentile-compute / canonical_slice_sql

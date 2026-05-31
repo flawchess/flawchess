@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260531-f7s
 plan: "01"
 subsystem: frontend

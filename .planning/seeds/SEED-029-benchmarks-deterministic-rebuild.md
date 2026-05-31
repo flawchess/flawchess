@@ -11,6 +11,10 @@ recommended_vehicle: Separate milestone with two phases (faithful port, then met
 
 # SEED-007: Rebuild /benchmarks as deterministic generator + LLM narration
 
+## Progress (updated 2026-05-31, v1.21 close)
+
+Partial — the **endgame** benchmark generator was ported in PR #166 ("port endgame benchmark generator + fix dropped table separators", commit 239666e6). The faithful-port Phase A (full numeric-diff parity across all metrics/marginals/d-values in `scripts/gen_benchmarks.py`) and the methodology phase remain open; seed stays **open** as live backlog. See `SEED-029-PROGRESS.md` for the worktree handoff.
+
 ## Context
 
 `/benchmarks` today is an LLM running ~40 inline SQL blocks via the benchmark MCP and hand-computing

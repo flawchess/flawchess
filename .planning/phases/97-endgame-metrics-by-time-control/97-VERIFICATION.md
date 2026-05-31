@@ -1,7 +1,8 @@
 ---
 phase: 97-endgame-metrics-by-time-control
 verified: 2026-05-29T12:00:00Z
-status: human_needed
+status: verified
+human_resolution: "Visual/human-confirm items accepted at v1.21 close (2026-05-31): Phase 97 UI shipped to prod 2026-05-29 (PR #160, rating-anchor follow-up #158/#159); per-TC card layout and the preserved Overall Performance percentile chips are live and were confirmed in production."
 score: 7/7
 overrides_applied: 0
 human_verification:

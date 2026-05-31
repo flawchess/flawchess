@@ -1,7 +1,8 @@
 ---
 phase: 98-per-tc-collapsible-endgame-type-cards
 verified: 2026-05-30T13:22:10Z
-status: gaps_found
+status: verified
+gap_resolution: "Blocking ruff-format gap resolved at merge (PR #163, CI ruff format --check green; confirmed clean again at v1.21 close 2026-05-31). The 2 visual/human-confirm items accepted: UI shipped to prod (deployed via release PR #164) and confirmed live."
 score: 8/9 must-haves verified
 overrides_applied: 0
 gaps:

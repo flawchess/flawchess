@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260529-l1i
 plan: 01
 subsystem: endgames-percentile-chip
