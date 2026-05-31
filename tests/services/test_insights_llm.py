@@ -2663,7 +2663,7 @@ class TestCacheBehavior:
                 session,
                 _make_log_row(
                     fresh_test_user.id,
-                    model="google-gla:gemini-2.5-flash",
+                    model="google:gemini-3.5-flash",
                     findings_hash="b" * 64,
                     response_json=report.model_dump(),
                 ),
@@ -2677,7 +2677,7 @@ class TestCacheBehavior:
 
         async with session_maker() as session:
             r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
-        # Should be fresh — model "test" != "google-gla:gemini-2.5-flash"
+        # Should be fresh — model "test" != "google:gemini-3.5-flash"
         assert r.status == "fresh"
 
 

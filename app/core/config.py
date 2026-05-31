@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # is treated as "unconfigured" — app/main.py lifespan calls
     # get_insights_agent() which raises UserError on the empty string, aborting
     # startup (D-22/D-23). Accepts any pydantic-ai model string, e.g.
-    # "anthropic:claude-haiku-4-5-20251001", "google-gla:gemini-2.5-flash".
+    # "anthropic:claude-haiku-4-5-20251001", "google:gemini-3.5-flash".
     # Tests use the built-in "test" provider (see tests/conftest.py).
     PYDANTIC_AI_MODEL_INSIGHTS: str = ""
     # When true, insights service strips `report.overview = ""` before
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     INSIGHTS_HIDE_OVERVIEW: bool = False
 
     # Google Gemini thinking controls. Only applied when PYDANTIC_AI_MODEL_INSIGHTS
-    # starts with "google-gla:" or "google-vertex:". Silently ignored for other
+    # starts with "google:" or "google-cloud:". Silently ignored for other
     # providers (Anthropic, OpenAI, test).
     #
     # GEMINI_THINKING_LEVEL:  Gemini 3+ knob (e.g. gemini-3-flash-preview) —

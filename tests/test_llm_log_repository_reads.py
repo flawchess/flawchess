@@ -265,7 +265,7 @@ class TestLatestReportForUser:
                 session,
                 _make_row(
                     fresh_test_user.id,
-                    model="google-gla:gemini-2.5-flash",
+                    model="google:gemini-3.5-flash",
                     response_json={"v": "g"},
                 ),
                 _make_row(
