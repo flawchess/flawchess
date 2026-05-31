@@ -43,6 +43,13 @@ if [ "$OPENINGS_COUNT" -eq 0 ]; then
   uv run python -m scripts.seed_openings
 fi
 
+# Seed cohort CDF if table is empty (first-time setup only — skips instantly otherwise)
+COHORT_CDF_COUNT=$(PGPASSWORD=postgres psql -h localhost -p 5432 -U postgres -d flawchess -tAc "SELECT COUNT(*) FROM benchmark_cohort_cdf" 2>/dev/null || echo "0")
+if [ "$COHORT_CDF_COUNT" -eq 0 ]; then
+  echo "Seeding cohort CDF table..."
+  uv run python -m scripts.seed_cohort_cdf
+fi
+
 # Stockfish binary for local dev. Prod bakes the pinned sf_18 AVX2 binary into
 # the backend image (see Dockerfile); locally we install the identical binary
 # to ~/.local/stockfish/sf via bin/install_stockfish.sh. The installer is
