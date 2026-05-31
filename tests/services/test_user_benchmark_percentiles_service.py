@@ -193,7 +193,12 @@ async def test_compute_stage_a_score_gap_only_runs_for_anchored_tcs(
     ) -> tuple[float, int]:
         return (_FAKE_VALUE, _FAKE_N_GAMES)
 
+    # Phase 99.1: load_cohort_cells is now called once per import inside
+    # compute_stage_a. Mock it to return an empty cohort dict (tests only
+    # care that the per-TC upsert loop runs the right number of times).
+    load_mock_a = AsyncMock(return_value={})
     monkeypatch.setattr(svc, "compute_anchors_for_user", fake_compute_anchors)
+    monkeypatch.setattr(svc, "load_cohort_cells", load_mock_a)
     monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", fake_compute_metric)
     monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
     monkeypatch.setattr(svc, "interpolate_cohort_percentile", interp_mock)
@@ -239,7 +244,12 @@ async def test_compute_stage_b_fans_out_across_families_and_anchored_tcs(
     ) -> tuple[float, int]:
         return (_FAKE_VALUE, _FAKE_N_GAMES)
 
+    # Phase 99.1: load_cohort_cells is now called once per import inside
+    # compute_stage_b. Mock it to return an empty cohort dict (tests only
+    # care that the per-(family, TC) upsert loop runs the right number of times).
+    load_mock_b = AsyncMock(return_value={})
     monkeypatch.setattr(svc, "fetch_anchors_for_user", fake_fetch_anchors)
+    monkeypatch.setattr(svc, "load_cohort_cells", load_mock_b)
     monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", fake_compute_metric)
     monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
     monkeypatch.setattr(svc, "interpolate_cohort_percentile", interp_mock)
@@ -291,7 +301,9 @@ async def test_upsert_called_with_3_column_pk_tuple(monkeypatch: pytest.MonkeyPa
     ) -> tuple[float, int]:
         return (_FAKE_VALUE, _FAKE_N_GAMES)
 
+    load_mock_t7 = AsyncMock(return_value={})
     monkeypatch.setattr(svc, "compute_anchors_for_user", fake_compute_anchors)
+    monkeypatch.setattr(svc, "load_cohort_cells", load_mock_t7)
     monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", fake_compute_metric)
     monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
     monkeypatch.setattr(svc, "interpolate_cohort_percentile", interp_mock)
@@ -331,7 +343,9 @@ async def test_upsert_runs_with_percentile_none_for_suppressed_cell(
     ) -> tuple[float, int]:
         return (_FAKE_VALUE, _FAKE_N_GAMES)
 
+    load_mock_t8 = AsyncMock(return_value={})
     monkeypatch.setattr(svc, "compute_anchors_for_user", fake_compute_anchors)
+    monkeypatch.setattr(svc, "load_cohort_cells", load_mock_t8)
     monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", fake_compute_metric)
     monkeypatch.setattr(svc, "upsert_percentile", upsert_mock)
     monkeypatch.setattr(svc, "interpolate_cohort_percentile", interp_mock)
@@ -375,7 +389,9 @@ async def test_compute_stage_a_sentry_capture_on_metric_compute_failure(
     ) -> tuple[float, int]:
         raise RuntimeError("simulated per-TC compute failure")
 
+    load_mock_t9 = AsyncMock(return_value={})
     monkeypatch.setattr(svc, "compute_anchors_for_user", fake_compute_anchors)
+    monkeypatch.setattr(svc, "load_cohort_cells", load_mock_t9)
     monkeypatch.setattr(svc, "_compute_metric_for_user_per_tc", raising_compute_metric)
 
     with (

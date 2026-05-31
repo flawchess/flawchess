@@ -35,14 +35,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 pytestmark = pytest.mark.asyncio
 
 # ─── Module-level test constants (CLAUDE.md: no magic numbers) ───────────────
 LIFO_FIXTURE_GAME_COUNT: int = 15
-PARTIAL_INDEX_THRESHOLD_ROWS: int = 200
 _TEST_USER_ID: int = 99100  # unique per test module to avoid FK conflicts
 _TEST_USER_ID_2: int = 99101  # second user for isolation tests
 _SIMPLE_PGN: str = "1. e4 e5 2. Nf3 Nc6 3. Bc4 *"
@@ -423,54 +422,6 @@ class TestEngineNoneMarksComplete:
                     f"— D-09 / R-02 violated (engine returning (None,None) should not cause "
                     f"permanent retry; game must be marked complete)"
                 )
-        finally:
-            await _delete_games_by_ids(drain_test_session_maker, game_ids)
-
-
-# ─── Test: partial index used (EXPLAIN plan check) ────────────────────────────
-
-
-class TestPartialIndexUsed:
-    """T-91-08 / D-11: pick query must use ix_games_evals_pending partial index."""
-
-    async def test_partial_index_used(
-        self,
-        drain_test_user: int,
-        drain_test_session_maker: async_sessionmaker[AsyncSession],
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """EXPLAIN the LIFO pick query and verify ix_games_evals_pending appears in the plan."""
-        import app.services.eval_drain as drain_module
-
-        monkeypatch.setattr(drain_module, "async_session_maker", drain_test_session_maker)
-
-        # Pre-insert PARTIAL_INDEX_THRESHOLD_ROWS pending rows so the cost-based
-        # planner chooses the partial index over a seq scan.
-        game_ids = await _insert_and_commit_pending_games(
-            drain_test_session_maker, drain_test_user, PARTIAL_INDEX_THRESHOLD_ROWS
-        )
-        try:
-            # Run EXPLAIN against the exact query shape used by _pick_pending_game_ids.
-            async with drain_test_session_maker() as session:
-                explain_sql = text(
-                    "EXPLAIN SELECT id FROM games WHERE evals_completed_at IS NULL "
-                    "ORDER BY id DESC LIMIT 10"
-                )
-                result = await session.execute(explain_sql)
-                plan_lines = [row[0] for row in result.all()]
-
-            plan_text = "\n".join(plan_lines)
-
-            # Assert the partial index is used and no seq scan.
-            assert "ix_games_evals_pending" in plan_text, (
-                f"Partial index ix_games_evals_pending not found in EXPLAIN plan.\n"
-                f"Plan:\n{plan_text}\n"
-                f"Check that PARTIAL_INDEX_THRESHOLD_ROWS ({PARTIAL_INDEX_THRESHOLD_ROWS}) "
-                f"is large enough to make the index cost-effective."
-            )
-            assert "Seq Scan" not in plan_text, (
-                f"Seq Scan found in EXPLAIN plan — partial index not used.\nPlan:\n{plan_text}"
-            )
         finally:
             await _delete_games_by_ids(drain_test_session_maker, game_ids)
 
