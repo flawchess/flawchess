@@ -1,13 +1,19 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any
 
 import sentry_sdk
 from asyncpg.exceptions import CannotConnectNowError, ConnectionDoesNotExistError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+
+if TYPE_CHECKING:
+    from sentry_sdk._types import Event
 
 from app.core.config import settings
 from app.middleware.last_activity import LastActivityMiddleware
@@ -28,7 +34,7 @@ _DB_TRANSIENT_ERRORS = (ConnectionDoesNotExistError, CannotConnectNowError)
 _MAX_CAUSE_CHAIN_DEPTH = 5
 
 
-def _sentry_before_send(event: dict, hint: dict) -> dict:
+def _sentry_before_send(event: Event, hint: dict[str, Any]) -> Event | None:
     """Group transient DB connection errors into a single Sentry issue.
 
     SQLAlchemy wraps asyncpg errors in DBAPIError, so we walk the __cause__

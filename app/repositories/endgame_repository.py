@@ -627,7 +627,7 @@ async def query_endgame_timeline_rows(
     to_date: datetime.date | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
-) -> tuple[list[Row[Any]], list[Row[Any]], dict[int, list[Row[Any]]]]:
+) -> tuple[list[Any], list[Any], dict[int, list[Any]]]:
     """Return rows for rolling-window time series (overall and per endgame class).
 
     Issues exactly 2 queries against game_positions (sequential execution is
@@ -704,28 +704,26 @@ async def query_endgame_timeline_rows(
     # --- Python-side bucketing (no extra DB round trips) ---
     # Initialize all 6 class slots to empty lists so downstream callers can
     # iterate deterministically even when some classes have no data.
-    per_type_rows: dict[int, list[Row[Any]]] = {ci: [] for ci in _ENDGAME_CLASS_INTS}
+    per_type_rows: dict[int, list[Any]] = {ci: [] for ci in _ENDGAME_CLASS_INTS}
 
     # Deduplicate per game_id for the overall endgame series.
     # Walk rows once: bucket by class, and collect one (played_at, result, user_color)
     # row per distinct game_id (first seen = earliest class span, already ordered ASC).
     seen_game_ids: set[int] = set()
-    endgame_rows_unsorted: list[tuple] = []
+    endgame_rows_unsorted: list[tuple[Any, ...]] = []
 
     for row in per_class_raw:
         game_id = row.game_id
         class_int = row.endgame_class
         # Strip endgame_class: service layer expects 3-tuple (played_at, result, user_color)
         three_tuple = (row.played_at, row.result, row.user_color)
-        per_type_rows[class_int].append(three_tuple)  # ty: ignore[invalid-argument-type] — 3-tuple compatible with Row consumer
+        per_type_rows[class_int].append(three_tuple)
         if game_id not in seen_game_ids:
             seen_game_ids.add(game_id)
             endgame_rows_unsorted.append(three_tuple)
 
     # Sort the deduplicated overall series by played_at ASC (same ordering as Query B).
-    endgame_rows: list[Row[Any]] = sorted(  # ty: ignore[invalid-assignment] — plain tuples are Row-compatible for service consumers
-        endgame_rows_unsorted, key=lambda r: r[0]
-    )
+    endgame_rows: list[Any] = sorted(endgame_rows_unsorted, key=lambda r: r[0])
 
     # --- Query B: non-endgame games (games never reaching any qualifying span) ---
     # Reuse per_class_subq from Query A — its game_id column yields duplicates
