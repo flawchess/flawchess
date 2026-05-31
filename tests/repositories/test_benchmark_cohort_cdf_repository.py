@@ -9,7 +9,7 @@ Tests:
 3. test_cell_round_trip -- seeded (metric, anchor_elo, tc) reconstructs the
    correct 99-tuple CdfTable with matching n_users and snapshot_month
 4. test_grouping_keys -- multiple cells returned with correct tuple keys
-5. test_one_query_covers_all_cells -- anchors x tcs resolved in one round trip
+5. test_incomplete_cell_skipped -- cell with <99 rows is excluded defensively
 
 Data isolation: all tests use the rollback-scoped ``db_session`` fixture from
 ``tests/conftest.py`` -- no committed rows leak between tests. Each test inserts
@@ -18,14 +18,16 @@ its own fixture rows via direct model inserts into the rolled-back transaction.
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.benchmark_cohort_cdf import BenchmarkCohortCdf
+from app.models.user_rating_anchors import TimeControlBucket
 from app.repositories.benchmark_cohort_cdf_repository import load_cohort_cells
 from app.services.global_percentile_cdf import (
     BREAKPOINT_PERCENTILES,
-    BENCHMARK_DB_SNAPSHOT_MONTH,
     CdfMetricId,
     CdfTable,
 )
@@ -34,12 +36,12 @@ from app.services.global_percentile_cdf import (
 # Test constants -- no magic numbers
 # ---------------------------------------------------------------------------
 
-_METRIC: CdfMetricId = "score_gap"
-_METRIC_B: CdfMetricId = "conversion_rate"
+_METRIC: CdfMetricId = cast(CdfMetricId, "score_gap")
+_METRIC_B: CdfMetricId = cast(CdfMetricId, "conversion_rate")
 _ANCHOR_ELO: int = 1000
 _ANCHOR_ELO_B: int = 1050
-_TC: str = "blitz"
-_TC_B: str = "rapid"
+_TC: TimeControlBucket = cast(TimeControlBucket, "blitz")
+_TC_B: TimeControlBucket = cast(TimeControlBucket, "rapid")
 _SNAPSHOT_MONTH: str = "2026-05"
 _N_USERS: int = 42
 _N_PERCENTILES: int = 99  # BREAKPOINT_PERCENTILES has 99 entries (p1..p99)
@@ -64,7 +66,7 @@ async def _insert_cell(
     session: AsyncSession,
     metric: CdfMetricId,
     anchor_elo: int,
-    tc: str,
+    tc: TimeControlBucket,
     breakpoints: tuple[float, ...],
     n_users: int = _N_USERS,
     snapshot_month: str = _SNAPSHOT_MONTH,
@@ -75,9 +77,9 @@ async def _insert_cell(
         value = breakpoints[idx]
         session.add(
             BenchmarkCohortCdf(
-                metric=metric,  # ty: ignore[arg-type]
+                metric=metric,
                 anchor_elo=anchor_elo,
-                tc=tc,  # ty: ignore[arg-type]
+                tc=tc,
                 percentile=percentile,
                 value=value,
                 n_users=n_users,
@@ -94,7 +96,7 @@ async def _insert_cell(
 
 async def test_empty_anchors_returns_empty(db_session: AsyncSession) -> None:
     """load_cohort_cells with empty anchors list returns {} without querying."""
-    result = await load_cohort_cells(db_session, [], ["blitz"])
+    result = await load_cohort_cells(db_session, [], [_TC])
     assert result == {}
 
 
@@ -134,7 +136,7 @@ async def test_cell_round_trip(db_session: AsyncSession) -> None:
         snapshot_month=_SNAPSHOT_MONTH,
     )
 
-    result = await load_cohort_cells(db_session, [_ANCHOR_ELO], [_TC])  # type: ignore[arg-type]
+    result = await load_cohort_cells(db_session, [_ANCHOR_ELO], [_TC])
 
     key = (_METRIC, _ANCHOR_ELO, _TC)
     assert key in result, f"Expected key {key!r} in result dict"
@@ -160,9 +162,7 @@ async def test_grouping_keys(db_session: AsyncSession) -> None:
     bp_a = _make_breakpoints(offset=0.0)
     bp_b = _make_breakpoints(offset=1.0)
 
-    await _insert_cell(
-        db_session, metric=_METRIC, anchor_elo=_ANCHOR_ELO, tc=_TC, breakpoints=bp_a
-    )
+    await _insert_cell(db_session, metric=_METRIC, anchor_elo=_ANCHOR_ELO, tc=_TC, breakpoints=bp_a)
     await _insert_cell(
         db_session, metric=_METRIC_B, anchor_elo=_ANCHOR_ELO_B, tc=_TC_B, breakpoints=bp_b
     )
@@ -170,7 +170,7 @@ async def test_grouping_keys(db_session: AsyncSession) -> None:
     result = await load_cohort_cells(
         db_session,
         [_ANCHOR_ELO, _ANCHOR_ELO_B],
-        [_TC, _TC_B],  # type: ignore[arg-type]
+        [_TC, _TC_B],
     )
 
     key_a = (_METRIC, _ANCHOR_ELO, _TC)
@@ -197,9 +197,9 @@ async def test_incomplete_cell_skipped(db_session: AsyncSession) -> None:
     for percentile in range(1, 6):
         db_session.add(
             BenchmarkCohortCdf(
-                metric=_METRIC,  # ty: ignore[arg-type]
+                metric=_METRIC,
                 anchor_elo=_ANCHOR_ELO,
-                tc=_TC,  # ty: ignore[arg-type]
+                tc=_TC,
                 percentile=percentile,
                 value=float(percentile) * 0.001,
                 n_users=_N_USERS,
@@ -208,7 +208,7 @@ async def test_incomplete_cell_skipped(db_session: AsyncSession) -> None:
         )
     await db_session.flush()
 
-    result = await load_cohort_cells(db_session, [_ANCHOR_ELO], [_TC])  # type: ignore[arg-type]
+    result = await load_cohort_cells(db_session, [_ANCHOR_ELO], [_TC])
 
     key = (_METRIC, _ANCHOR_ELO, _TC)
     assert key not in result, "Incomplete cell (< 99 rows) must be skipped"
