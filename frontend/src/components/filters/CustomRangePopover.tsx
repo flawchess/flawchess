@@ -41,7 +41,6 @@ export const CALENDAR_MAX_DATE = new Date();
  * To only          → `"Until MMM d, yyyy"` (symmetric per CONTEXT.md D-17)
  * Neither set      → `"Custom range…"` (defensive fallback)
  */
-// eslint-disable-next-line react-refresh/only-export-components
 export function formatCustomRangeLabel(
   range: { from?: Date; to?: Date } | null,
 ): string {

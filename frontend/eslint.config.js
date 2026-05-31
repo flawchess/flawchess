@@ -34,4 +34,16 @@ export default defineConfig([
       'react-refresh/only-export-components': 'off',
     },
   },
+  // Filter components co-export types, constants, and utility functions alongside
+  // components (e.g. FilterState, DEFAULT_FILTERS, FILTER_DOT_FIELDS, CALENDAR_*).
+  // react-refresh 0.5 narrowed allowConstantExport to primitive literals only, so
+  // computed exports like new Date() and array constants now trigger the rule. The
+  // pattern is intentional — these shared values live alongside the components that
+  // define and own them.
+  {
+    files: ['src/components/filters/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])
