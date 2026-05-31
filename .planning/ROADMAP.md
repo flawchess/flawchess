@@ -354,32 +354,11 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 ## Backlog
 
-### Phase 999.7: LLM Endgame-Insights Statistical-Reasoning Rework (BACKLOG)
-
-**Goal:** Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the v1.19/v1.21 percentile annotations. Preserve the `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, validate via at least one UAT pass over representative production users.
-**Requirements:** LLM-01..07 (still pending in REQUIREMENTS.md)
-**Plans:** 0 plans
-**Context:** Was the sole phase of the planned v1.22 LLM Statistical Reasoning milestone (originally Phase 95 → 97 → 98 → 100 across renumbers). Deprioritized 2026-05-31 in favour of the v1.22 Maintenance milestone (test isolation + frontend major upgrades); parked here intact rather than renumbered inline. Promote with `/gsd-review-backlog` (likely into the next feature milestone) when ready. Depends on the v1.19 PCTL-02 percentile emission already shipped.
-
-Plans:
-
-- [ ] TBD (promote with /gsd-review-backlog when ready)
-
 ### Phase 999.1: Password Reset (BACKLOG)
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
 **Plans:** 5/5 plans complete
-
-Plans:
-
-- [ ] TBD (promote with /gsd:review-backlog when ready)
-
-### Phase 999.5: Hybrid Stockfish Eval for Conversion/Recovery (BACKLOG)
-
-**Goal:** Use Stockfish eval (`eval_cp`) as the advantage/disadvantage signal for conversion/recovery classification when available, falling back to material imbalance + 4-ply persistence for games without eval. Stockfish eval is the gold standard (no persistence filter needed since eval handles transient trades natively). Currently only ~15% of Lichess games have eval data and chess.com has 0%, but this improves automatically as more games get server-analyzed. Validated in `docs/endgame-conversion-recovery-analysis.md`: persistence closes 50-70% of the gap to Stockfish for pawn/mixed endgames, but a hybrid approach would eliminate the remaining 5-8pp offset for eval-available games.
-**Requirements:** TBD
-**Plans:** 0 plans
 
 Plans:
 
@@ -395,12 +374,33 @@ Plans:
 
 - [ ] TBD (promote with /gsd:review-backlog when ready)
 
+### Phase 999.5: Hybrid Stockfish Eval for Conversion/Recovery (BACKLOG)
+
+**Goal:** Use Stockfish eval (`eval_cp`) as the advantage/disadvantage signal for conversion/recovery classification when available, falling back to material imbalance + 4-ply persistence for games without eval. Stockfish eval is the gold standard (no persistence filter needed since eval handles transient trades natively). Currently only ~15% of Lichess games have eval data and chess.com has 0%, but this improves automatically as more games get server-analyzed. Validated in `docs/endgame-conversion-recovery-analysis.md`: persistence closes 50-70% of the gap to Stockfish for pawn/mixed endgames, but a hybrid approach would eliminate the remaining 5-8pp offset for eval-available games.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
 ### Phase 999.6: Opening Risk & Drawishness (BACKLOG)
 
 **Goal:** Risk and drawishness metrics per position in the move explorer.
 **Requirements:** TBD
 **Plans:** 0 plans
 **Context:** Moved from v1.10 Advanced Analytics — v1.10 is an endgame-focused milestone and opening risk metrics are a better fit for the upcoming Opening Insights milestone (discovering weaknesses in most-played opening lines). Re-evaluate scope at that time.
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.7: LLM Endgame-Insights Statistical-Reasoning Rework (BACKLOG)
+
+**Goal:** Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the v1.19/v1.21 percentile annotations. Preserve the `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, validate via at least one UAT pass over representative production users.
+**Requirements:** LLM-01..07 (still pending in REQUIREMENTS.md)
+**Plans:** 0 plans
+**Context:** Was the sole phase of the planned v1.22 LLM Statistical Reasoning milestone (originally Phase 95 → 97 → 98 → 100 across renumbers). Deprioritized 2026-05-31 in favour of the v1.22 Maintenance milestone (test isolation + frontend major upgrades); parked here intact rather than renumbered inline. Promote with `/gsd-review-backlog` (likely into the next feature milestone) when ready. Depends on the v1.19 PCTL-02 percentile emission already shipped.
 
 Plans:
 
