@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- Phase 101: upgraded 11 frontend dependencies to their latest major versions — lucide-react 0.577 → 1.x, Vite 7 → 8 (+plugin-react 6), jsdom 25 → 29, ESLint 9 → 10 (+@eslint/js, globals 17, react-refresh 0.5), TypeScript 5.9 → 6.0, recharts 2 → 3. shadcn straggler advanced 4.8.3 → 4.9.0. @types/node held at 24.x (CI tracks Node 24).
+
 ### Tests
 
 - Phase 100: each `pytest` run (and each `pytest-xdist` worker) now gets its own database cloned from a migrated template, so multiple test runs can execute at once without deadlocks or cross-run corruption. The hostile session-start `TRUNCATE … RESTART IDENTITY CASCADE` is gone (a fresh clone is already clean), killed runs self-heal, and the template auto-refreshes on Alembic migration changes. `pytest -n auto` is now safe locally and runs about 2x faster than serial (CI stays serial).
