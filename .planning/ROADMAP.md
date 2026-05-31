@@ -31,7 +31,7 @@
 *v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md); see the collapsed block below. v1.20 (Phases 95, 96) shipped 2026-05-29 — archived to [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md).*
 
 - [x] **Phase 100: Isolated Test DB Per Run** *(v1.22)* — Per-run/per-xdist-worker database cloned from a migrated template; retire the session-start `TRUNCATE … CASCADE` lock; unblock concurrent agent runs + `pytest -n auto` (SEED-031) (completed 2026-05-31)
-- [ ] **Phase 101: Frontend Major Dependency Upgrades** *(v1.22)* — Bump the 11 frontend deps that are a major behind, one cluster at a time (low→high risk), each atomically committed + gated; recharts 3 earns visual UAT (SEED-032)
+- [x] **Phase 101: Frontend Major Dependency Upgrades** *(v1.22)* — Bump the 11 frontend deps that are a major behind, one cluster at a time (low→high risk), each atomically committed + gated; recharts 3 earns visual UAT (SEED-032) (completed 2026-05-31)
 
 ## Phase Details
 
@@ -365,7 +365,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 
