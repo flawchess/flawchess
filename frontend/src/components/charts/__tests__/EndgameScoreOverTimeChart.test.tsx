@@ -44,14 +44,18 @@ function queryBand(container: HTMLElement): Element | null {
   return container.querySelector(`.${SCORE_BAND_CLASS}`);
 }
 
+// jsdom 29 changed CSS selector case-sensitivity for SVG elements: the
+// selector 'linearGradient stop' no longer matches because SVG element names
+// are treated case-sensitively in the SVG namespace. Use an attribute selector
+// '[stop-color]' instead, which is case-insensitive and works in jsdom 25+29.
 function gradientStopColors(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll('linearGradient stop')).map(
+  return Array.from(container.querySelectorAll('[stop-color]')).map(
     (s) => s.getAttribute('stop-color') ?? '',
   );
 }
 
 function gradientStops(container: HTMLElement): Array<{ offset: string; color: string }> {
-  return Array.from(container.querySelectorAll('linearGradient stop')).map((s) => ({
+  return Array.from(container.querySelectorAll('[stop-color]')).map((s) => ({
     offset: s.getAttribute('offset') ?? '',
     color: s.getAttribute('stop-color') ?? '',
   }));
