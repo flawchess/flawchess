@@ -3154,7 +3154,7 @@ class TestErrors:
             "model_used": "test",
             "prompt_version": "endgame_v16",
         }
-        fake = Agent(
+        fake = Agent(  # ty: ignore[no-matching-overload]
             TestModel(custom_output_args=bad_output),
             output_type=EndgameInsightsReport,
             output_retries=0,  # no retries — fail immediately

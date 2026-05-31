@@ -313,18 +313,18 @@ def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
         # cast to satisfy pydantic-ai's Literal param — the startswith check
         # above guarantees provider_prefix is one of the two accepted values.
         provider_literal = cast(Literal["google-gla", "google-vertex"], provider_prefix)
-        google_model = GoogleModel(model_name, provider=provider_literal)
+        google_model = GoogleModel(model_name, provider=provider_literal)  # ty: ignore[invalid-argument-type]
         google_settings = GoogleModelSettings(
             google_thinking_config=_build_google_thinking_config(model_name),  # ty: ignore[invalid-argument-type]
         )
-        return Agent(  # ty: ignore[invalid-return-type]
+        return Agent(  # ty: ignore[invalid-return-type, no-matching-overload]
             google_model,
             output_type=EndgameInsightsReport,
             system_prompt=_SYSTEM_PROMPT,
             output_retries=_OUTPUT_RETRIES,
             model_settings=google_settings,
         )
-    return Agent(  # ty: ignore[invalid-return-type] — pydantic-ai Agent generic params depend on runtime model string; ty cannot infer Agent[None, EndgameInsightsReport] from a str variable
+    return Agent(  # ty: ignore[invalid-return-type, no-matching-overload] — pydantic-ai Agent generic params depend on runtime model string; ty cannot infer Agent[None, EndgameInsightsReport] from a str variable
         model_str,
         output_type=EndgameInsightsReport,
         system_prompt=_SYSTEM_PROMPT,
