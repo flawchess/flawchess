@@ -156,7 +156,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-  - [ ] 99.1-04-PLAN.md — shrink global_percentile_cdf.py (sync interpolator) + wire stage A/B prefetch + byte-for-byte parity (SC#1/#3/#6)
+  - [x] 99.1-04-PLAN.md — shrink global_percentile_cdf.py (sync interpolator) + wire stage A/B prefetch + byte-for-byte parity (SC#1/#3/#6)
 
 > Planning note: SC#3's literal "interpolate_cohort_percentile becomes async" is reconciled per CONTEXT D-04 — the module stays pure/sync and takes a prefetched CdfTable; the async DB access lives in the new `benchmark_cohort_cdf_repository.load_cohort_cells` (batched prefetch, D-03).
 
