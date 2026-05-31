@@ -8,7 +8,7 @@ All fields come from the caller:
     user_prompt, cache_hit, error — request/context
   - model — the pydantic-ai model string (e.g. `anthropic:claude-haiku-4-5-20251001`)
   - response_json — parsed EndgameInsightsReport dict, or None on error
-  - input_tokens, output_tokens — from pydantic-ai RunResult.usage()
+  - input_tokens, output_tokens — from pydantic-ai RunResult.usage
   - latency_ms — wall-clock time caller measured around Agent.run()
 
 Fields NOT on LlmLogCreate (repo/DB compute):
