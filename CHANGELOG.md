@@ -8,13 +8,18 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.22] Maintenance — Test Isolation & Frontend Major Upgrades — 2026-05-31
+
+A maintenance milestone clearing two accrued debts before the next feature work: making the test suite safe under concurrent and parallel runs, and bringing the frontend onto its latest major dependency versions. No user-facing behaviour change.
+
 ### Changed
 
-- Phase 101: upgraded 11 frontend dependencies to their latest major versions — lucide-react 0.577 → 1.x, Vite 7 → 8 (+plugin-react 6), jsdom 25 → 29, ESLint 9 → 10 (+@eslint/js, globals 17, react-refresh 0.5), TypeScript 5.9 → 6.0, recharts 2 → 3. shadcn straggler advanced 4.8.3 → 4.9.0. @types/node held at 24.x (CI tracks Node 24).
+- Phase 101: upgraded 11 frontend dependencies to their latest major versions — lucide-react 0.577 → 1.x, Vite 7 → 8 (+plugin-react 6), jsdom 25 → 29, ESLint 9 → 10 (+@eslint/js, globals 17, react-refresh 0.5), TypeScript 5.9 → 6.0, recharts 2 → 3. shadcn straggler advanced 4.8.3 → 4.9.0. @types/node held at 24.x (CI tracks Node 24). Shipped as six bisectable atomic clusters in low→high risk order, each gated by the full backend+frontend local gate; recharts 3 passed a desktop + mobile visual UAT after one zone-band regression was fixed and locked with a regression test.
+- Backend dependency refresh: `uv lock --upgrade`, pinned patched transitives clearing Dependabot alerts, pydantic-ai-slim 1.85 → 1.104 with deprecation cleanup, and Gemini 3 thinking-level support (default low) in the insights path.
 
 ### Tests
 
-- Phase 100: each `pytest` run (and each `pytest-xdist` worker) now gets its own database cloned from a migrated template, so multiple test runs can execute at once without deadlocks or cross-run corruption. The hostile session-start `TRUNCATE … RESTART IDENTITY CASCADE` is gone (a fresh clone is already clean), killed runs self-heal, and the template auto-refreshes on Alembic migration changes. `pytest -n auto` is now safe locally and runs about 2x faster than serial (CI stays serial).
+- Phase 100: each `pytest` run (and each `pytest-xdist` worker) now gets its own database cloned from a migrated template, so multiple test runs can execute at once without deadlocks or cross-run corruption. The hostile session-start `TRUNCATE … RESTART IDENTITY CASCADE` is gone (a fresh clone is already clean), killed runs self-heal, and the template auto-refreshes on Alembic migration changes. `pytest -n auto` is now safe locally and runs about 2x faster than serial — measured 18.56s vs 40.29s (CI stays serial).
 
 ## [v1.21] Time-Control-Aware Endgame Metrics — 2026-05-31
 
@@ -658,7 +663,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.21...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.22...HEAD
+[v1.22]: https://github.com/flawchess/flawchess/compare/v1.21...v1.22
 [v1.21]: https://github.com/flawchess/flawchess/compare/v1.20...v1.21
 [v1.20]: https://github.com/flawchess/flawchess/compare/v1.19...v1.20
 [v1.19]: https://github.com/flawchess/flawchess/compare/v1.18...v1.19

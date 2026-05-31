@@ -4,6 +4,41 @@
 
 > Note: v1.18, v1.19, and v1.20 closes did not add retrospective sections (only the ROADMAP archives + — for v1.18 — a MILESTONES entry were written). Not backfilled here to avoid reconstructing reflections after the fact; their facts live in `milestones/v1.18-…`–`v1.20-ROADMAP.md` and `MILESTONES.md`.
 
+## Milestone: v1.22 — Maintenance — Test Isolation & Frontend Major Upgrades
+
+**Shipped:** 2026-05-31
+**Phases:** 2 (100, 101) | **Plans:** 3
+
+### What Was Built
+
+Two accrued maintenance debts cleared back-to-back in a single day. Phase 100 gave each `pytest` run (and each xdist worker) its own template-cloned database, retiring the hostile session-start `TRUNCATE … CASCADE` whole-schema lock and unblocking concurrent agent runs + `pytest -n auto` (green at 18.56s vs 40.29s serial, 2.2x). Phase 101 brought 11 majors-behind frontend deps to latest across six bisectable atomic clusters (lucide → Vite 8 → jsdom 29 → eslint 10 → TypeScript 6 → recharts 3), recharts earning a visual UAT. Alongside, small direct-to-`main` backend dep refresh + Gemini 3 thinking-level support.
+
+### What Worked
+
+- **Low→high risk clustering with a per-cluster gate.** Ordering the dependency bumps so the gate signal sharpened as risk rose, and committing each cluster atomically, meant any gate failure bisected to exactly one cluster. The single genuine regression (recharts 3 zone bands) was isolated immediately and locked with a regression test.
+- **Up-front peer-compat research paid off.** Resolving the typescript-eslint ↔ TS6/eslint-10 question before planning the lint/TS clusters meant those landed clean — the documented escape hatch was never needed.
+- **Template-clone isolation is the right primitive.** `CREATE DATABASE … TEMPLATE` per run + advisory-lock auto-refresh on Alembic drift removed a class of cross-run contention without any per-test bookkeeping, and self-heals on killed runs.
+- **Per-close doc hygiene applied this time.** Unlike the v1.18–v1.20 gap, MILESTONES + RETROSPECTIVE + PROJECT were reconciled at close (the v1.21 lesson held).
+
+### What Was Inefficient
+
+- **The open-artifact audit still surfaces 13 dormant carry-forward items** (seeds + long-range todos) that aren't milestone-scoped and get re-acknowledged every close. Tolerable, but it's noise on every gate.
+- **xdist non-determinism cost an extra fix pass.** `set`-iteration order in a parametrize and per-worker openings seeding both had to be made deterministic after the fact (`sorted()`, conftest-level seed fixture) once `-n auto` actually ran across 16 workers.
+
+### Patterns Established
+
+- **Per-run template-cloned test DB** (`CREATE DATABASE … TEMPLATE` + `pg_advisory_lock` auto-refresh on head drift + drop-if-exists self-heal) as the project's isolation primitive — documented in conftest.py + CLAUDE.md.
+- **Clustered dependency-major upgrades**: low→high risk, one atomic commit per coupled cluster, full local gate per cluster, blocking visual UAT for anything that renders. Reusable recipe for the next dep-debt sweep.
+
+### Key Lessons
+
+- When adopting parallel test execution, audit for hidden order-dependence (set iteration, shared seed data) — `-n auto` exposes what serial runs hide.
+- Gate-per-cluster beats gate-per-milestone for dependency work: the bisection guarantee is worth the extra commits.
+
+### Cost Observations
+
+- Single-session, single-day close. Phase 101 was ~75 min including the UAT loop; Phase 100 plan 02 was ~14 min. The milestone close itself (doc reconciliation) was the lighter half.
+
 ## Milestone: v1.21 — Time-Control-Aware Endgame Metrics
 
 **Shipped:** 2026-05-31

@@ -1,26 +1,26 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.22
-milestone_name: milestone
-status: verifying
-last_updated: "2026-05-31T21:09:46.064Z"
+milestone_name: Maintenance — Test Isolation & Frontend Major Upgrades
+status: shipped
+last_updated: "2026-05-31T21:30:00.000Z"
 last_activity: 2026-05-31
 progress:
-  total_phases: 7
+  total_phases: 2
   completed_phases: 2
   total_plans: 3
   completed_plans: 3
-  percent: 29
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1
+Phase: none active
 Plan: Not started
-Status: Phase complete — ready for verification
-Next: `/gsd-discuss-phase 100` (or `/gsd-plan-phase 100`) to begin v1.22 Maintenance
+Status: v1.22 Maintenance shipped 2026-05-31 (tag v1.22) — milestone archived
+Next: `/gsd-new-milestone` to start the next milestone (leading candidate: backlog Phase 999.7 LLM Statistical Reasoning)
 Last activity: 2026-05-31
 
 ## Project Reference
@@ -50,6 +50,15 @@ Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame 
 ## Accumulated Context
 
 ### Deferred Items
+
+Acknowledged and deferred at v1.22 milestone close on 2026-05-31 (open-artifact audit: 13 items — all dormant seeds + long-range todos, none v1.22-scoped):
+
+| Category | Item | Status |
+|----------|------|--------|
+| quick_task | 260531-jga-update-all-backend-and-frontend-dependencies | Resolved in spirit — superseded by Phase 101 (the SEED-032 capture this task seeded); frontmatter status not backfilled |
+| todos | 2026-03-11-bitboard-storage, 2026-04-26-phase-70-roadmap-amendments, 2026-04-30-benchmark-rebuild-per-tc-selection, 2026-04-30-benchmark-skill-v2-build, 2026-05-03-rerun-benchmarks-equal-footing (+5 more incl. phase prod-backfills, recovery-score-gap-popover-copy, pt-33-tailwind-axis-label) | Carried forward — long-range ideas + per-phase backfill tasks; not v1.22-scoped |
+| seeds | SEED-010 (library page), SEED-012 (client-side Stockfish tactics), SEED-029 (benchmarks deterministic rebuild), SEED-030 (structural code-health Track A), SEED-033 (cap explorer + partial-index Zobrist hashes) | Dormant — genuine future-work backlog |
+| seeds | SEED-031 (isolated test DB), SEED-032 (frontend major dep upgrades) | DELIVERED by Phases 100 / 101 this milestone — audit still lists them dormant (known gsd-sdk staleness); not actually open |
 
 Acknowledged at v1.21 milestone close on 2026-05-31 (open-artifact audit: 10 genuine backlog items; the historical "172 quick-task" noise was a stale `gsd-sdk` filename-match bug and was cleared, not deferred — see commit c4641db4):
 

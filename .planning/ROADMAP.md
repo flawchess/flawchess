@@ -24,53 +24,21 @@
 - ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split out before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
 - ✅ **v1.20 Import Pipeline Hardening Follow-Up and Readiness** — Phases 95, 96 (shipped 2026-05-29) — see [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md)
 - ✅ **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99, 99.1 (shipped 2026-05-31; PRs #160, #163/#164, #167, #168) — see [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md)
-- 🔄 **v1.22 Maintenance — Test Isolation & Frontend Major Upgrades** — Phases 100, 101 (not started)
+- ✅ **v1.22 Maintenance — Test Isolation & Frontend Major Upgrades** — Phases 100, 101 (shipped 2026-05-31) — see [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md)
 
 ## Phases
 
-*v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md); see the collapsed block below. v1.20 (Phases 95, 96) shipped 2026-05-29 — archived to [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md).*
+*v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md); see the collapsed block below. v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
 
-- [x] **Phase 100: Isolated Test DB Per Run** *(v1.22)* — Per-run/per-xdist-worker database cloned from a migrated template; retire the session-start `TRUNCATE … CASCADE` lock; unblock concurrent agent runs + `pytest -n auto` (SEED-031) (completed 2026-05-31)
-- [x] **Phase 101: Frontend Major Dependency Upgrades** *(v1.22)* — Bump the 11 frontend deps that are a major behind, one cluster at a time (low→high risk), each atomically committed + gated; recharts 3 earns visual UAT (SEED-032) (completed 2026-05-31)
+<details>
+<summary>✅ v1.22 Maintenance — Test Isolation & Frontend Major Upgrades (Phases 100, 101) — SHIPPED 2026-05-31</summary>
 
-## Phase Details
+- [x] Phase 100: Isolated Test DB Per Run (2/2 plans) — per-run/per-xdist-worker DB cloned from a migrated template; TRUNCATE retired; `pytest -n auto` green at 18.56s vs 40.29s serial (2.2x); concurrent-run isolation verified (SEED-031) — completed 2026-05-31
+- [x] Phase 101: Frontend Major Dependency Upgrades (1/1 plan) — 11 frontend deps to latest major across 6 bisectable atomic clusters (lucide → Vite 8 → jsdom 29 → eslint 10 → TypeScript 6 → recharts 3); recharts 3 visual UAT (one regression fixed); peer-compat clean (SEED-032) — completed 2026-05-31
 
-### Phase 100: Isolated Test DB Per Run
+See [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md) for full details.
 
-**Goal**: Give each `pytest` run (and each xdist worker) its own database, cloned from a migrated template via `CREATE DATABASE … TEMPLATE`, so concurrent runs (multiple agents + IDE coverage) are fully isolated and `pytest -n auto` becomes safe. Retire the hostile session-start `TRUNCATE … RESTART IDENTITY CASCADE` whole-schema `ACCESS EXCLUSIVE` lock — a fresh clone is already clean — and add a stale-DB reaper (drop-if-exists on create) so killed runs self-heal. Source: SEED-031.
-**Depends on**: None
-**Requirements**: TBD (no formal requirement IDs — internal test-infra; standalone like other maintenance phases)
-**Success Criteria** (what must be TRUE):
-
-  1. Two or more full `pytest` runs execute simultaneously against the dev Postgres with zero deadlocks and zero cross-run data corruption.
-  2. Session-start `TRUNCATE … RESTART IDENTITY CASCADE` is removed; per-run DB is created from a migrated template and dropped at teardown; killed runs self-heal (drop-if-exists on next create).
-  3. `pytest -n auto` runs green and measurably faster than serial (record the actual wall-clock number).
-  4. ruff / ty / pytest all green; no behavior change to individual tests.
-  5. Template-refresh trigger on Alembic head drift is resolved (auto re-migrate vs explicit `bin/` step) and documented.
-
-**Plans**: 2 plans
-**Wave 1**
-
-- [x] 100-01-PLAN.md — Per-run/per-xdist-worker DB cloned from migrated template; advisory-lock template auto-refresh; retire TRUNCATE; add pytest-xdist (SC-2, SC-4, D-01)
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 100-02-PLAN.md — Document template-refresh mechanism (conftest + CLAUDE.md); measure `-n auto` wall-clock (SC-3); concurrent-run HUMAN-UAT (SC-1, SC-5)
-
-### Phase 101: Frontend Major Dependency Upgrades
-
-**Goal**: Bring the 11 frontend deps that are one or more **majors** behind up to latest, one coupled cluster at a time, ordered low-risk → high-risk so the gate signal sharpens as work proceeds: (1) lucide-react 1.x, (2) Vite 8 + plugin-react 6, (3) jsdom 29 + @types/node (pinned to runtime Node line), (4) eslint 10 + @eslint/js + globals + react-refresh plugin, (5) typescript 6, (6) recharts 3. Each cluster is atomically committed and gated; recharts additionally gets visual UAT (desktop + mobile). Resolve the typescript-eslint ↔ TS6/eslint-10 peer-compat question up front (research pass) before planning the lint/TS clusters. Backend needs nothing. Source: SEED-032.
-**Depends on**: None (independent of Phase 100; sequential within the milestone)
-**Requirements**: TBD (no formal requirement IDs — tooling/dependency maintenance)
-**Success Criteria** (what must be TRUE):
-
-  1. All 11 listed frontend deps are on their latest major, or any package that can't be made green is pinned back with a documented reason (the same escape hatch quick task 260531-jga used).
-  2. Each cluster is a separate atomic commit in low→high-risk order, so a gate failure bisects to exactly one cluster.
-  3. The full local gate is green: `ruff format/check` + `ty` (backend) + `pytest -x`, and `( cd frontend && npm run lint && npm test -- --run && npm run build && npm run knip )`.
-  4. recharts 3 passes a visual UAT checklist across the endgame + openings charts (MiniBulletChart, WDLChartRow, ScoreChart, ScoreGapByTimePressureChart, gauges, custom tooltips/gradients) on desktop and mobile.
-  5. The typescript-eslint ↔ TS6/eslint-10 peer-compat question is resolved before the lint/TS clusters land; if a peer dep blocks, that cluster is deferred with the blocker recorded rather than forced.
-
-**Plans**: TBD
+</details>
 
 <details>
 <summary>✅ v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99, 99.1) — SHIPPED 2026-05-31</summary>
@@ -358,6 +326,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 94. Backend & Frontend Percentile Annotations | v1.19 | 3/3 | Complete   | 2026-05-23 |
 | 95-96. v1.20 phases | v1.20 | 5/5 | Complete | 2026-05-29 |
 | 97-99.1. v1.21 phases | v1.21 | 15/15 | Complete (99.1 INSERTED) | 2026-05-31 |
+| 100-101. v1.22 phases | v1.22 | 3/3 | Complete | 2026-05-31 |
 
 ## Backlog
 

@@ -1,5 +1,28 @@
 # Milestones: FlawChess
 
+## v1.22 Maintenance — Test Isolation & Frontend Major Upgrades (Shipped: 2026-05-31)
+
+**Phases completed:** 2 phases (100, 101), 3 plans. Landed directly on `main` (gated per-cluster), no release PR per phase.
+**Stats:** 132 files changed, +7,748 / -3,104 lines, 31 commits on 2026-05-31 since v1.21 (commit `45d882c7` → `db8eca80`). The two phases plus small direct-to-`main` backend dependency / insights maintenance.
+**Milestone goal:** Clear two accrued maintenance debts before the next feature milestone — make the test suite safe under concurrent runs and `pytest -n auto`, and bring the frontend onto its latest major dependency versions. Backend had no outstanding major bumps.
+
+**Key accomplishments:**
+
+- **Phase 100 — Isolated Test DB Per Run** (SEED-031): each `pytest` run (and each `pytest-xdist` worker) now gets its own database cloned from a migrated template via `CREATE DATABASE … TEMPLATE`. The hostile session-start `TRUNCATE … RESTART IDENTITY CASCADE` whole-schema `ACCESS EXCLUSIVE` lock is retired (a fresh clone is already clean); the template auto-refreshes on Alembic head drift under a `pg_advisory_lock`; killed runs self-heal (drop-if-exists on next create); per-run DBs drop at teardown. Two full suites run simultaneously with zero deadlocks / zero cross-run corruption; `pytest -n auto` green at 18.56s vs 40.29s serial (2.2x). CI stays serial (D-02).
+- **Phase 101 — Frontend Major Dependency Upgrades** (SEED-032): 11 majors-behind frontend deps brought to latest major across six atomically-committed clusters in low→high risk order (lucide-react 1 → Vite 8 + plugin-react 6 → jsdom 29 → eslint 10 stack → TypeScript 6 → recharts 3), each gated so a failure bisects to one cluster. recharts 2 → 3 earned a desktop + mobile visual UAT, which caught one zone-band regression (fixed + regression-tested). typescript-eslint ↔ TS6/eslint-10 peer-compat clean (escape hatch not needed); shadcn straggler 4.8.3 → 4.9.0; `@types/node` held at 24.x. Final gate: backend 2198 passed / 16 skipped, frontend 745 passed, build + knip clean, npm audit 0 high.
+- **Backend / insights maintenance** (direct-to-`main`, same window): `uv lock --upgrade` + pinned patched transitives clearing Dependabot alerts, pydantic-ai-slim 1.85 → 1.104 with deprecation cleanup, Gemini 3 thinking-level support (default low).
+
+**Tech debt (carried forward, informational):**
+
+- TS7 `baseUrl`-removal follow-up suppressed via `ignoreDeprecations "6.0"` (REVIEW IN-01) — revisit at the TypeScript 7 bump.
+- SEED-030 Track A (split oversized multi-concern modules) remains open.
+
+**Known deferred items at close:** 13 (see STATE.md Deferred Items — all dormant seeds / long-range todos, none v1.22-scoped).
+
+See `.planning/milestones/v1.22-ROADMAP.md`. No formal requirements (both phases standalone, sourced from SEED-031 / SEED-032 — no requirement IDs); `REQUIREMENTS.md` was kept in place (not archived/deleted) because it tracks the deprioritized LLM Statistical Reasoning scope now parked at backlog Phase 999.7 (see `v1.22-REQUIREMENTS.md`).
+
+---
+
 ## v1.21 Time-Control-Aware Endgame Metrics (Shipped: 2026-05-31)
 
 **Phases completed:** 4 phases (97, 98, 99, 99.1), 15 plans. Delivered via PRs #160 (Phase 97), #163/#164 (Phase 98), #167 (Phase 99), #168 (Phase 99.1); benchmark-generator side work in #166.
