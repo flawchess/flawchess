@@ -147,8 +147,8 @@ Plans:
 **Plans**: 4 plans
 **Wave 1**
 
-  - [ ] 99.1-01-PLAN.md — benchmark_cohort_cdf model + schema-only Alembic migration (D-01)
-  - [ ] 99.1-02-PLAN.md — generator emits app/data/cohort_cdf.tsv + committed seed artifact + TSV drift test (D-02, SC#4)
+  - [x] 99.1-01-PLAN.md — benchmark_cohort_cdf model + schema-only Alembic migration (D-01)
+  - [x] 99.1-02-PLAN.md — generator emits app/data/cohort_cdf.tsv + committed seed artifact + TSV drift test (D-02, SC#4)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
