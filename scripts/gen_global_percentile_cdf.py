@@ -45,9 +45,10 @@ see where MAX is binding.
 
 What this script produces
 -------------------------
-1. Overwrites the ``COHORT_PERCENTILE_CDF = {...}`` literal in
-   ``app/services/global_percentile_cdf.py`` between the
-   ``BEGIN GENERATED REGISTRY`` / ``END GENERATED REGISTRY`` sentinels.
+1. Emits ``app/data/cohort_cdf.tsv`` — a tab-delimited seed file with one
+   row per (metric, anchor_elo, tc, percentile) breakpoint (~130k rows).
+   The TSV replaces the old in-source ``COHORT_PERCENTILE_CDF`` literal that
+   was previously rewritten between ``BEGIN/END GENERATED REGISTRY`` sentinels.
 2. Writes ``reports/percentile/cohort-percentile-cdf-latest.md`` with the
    per-(metric, anchor, TC) suppression-flag table as the TOP-LINE section.
 
@@ -73,6 +74,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
 import os
 import re
 import sys
@@ -106,6 +108,7 @@ from app.services.canonical_slice_sql import (  # noqa: E402
 )
 from app.services.global_percentile_cdf import (  # noqa: E402
     BENCHMARK_DB_SNAPSHOT_MONTH,
+    BREAKPOINT_PERCENTILES,
     CdfMetricId,
     CdfTable,
 )
@@ -171,7 +174,7 @@ IN_SCOPE_METRICS: Final[tuple[CdfMetricId, ...]] = (
 )
 
 # Output paths.
-OUTPUT_MODULE_PATH: Final[Path] = Path("app/services/global_percentile_cdf.py")
+OUTPUT_SEED_PATH: Final[Path] = Path("app/data/cohort_cdf.tsv")
 DEFAULT_REPORT_PATH: Final[Path] = Path("reports/percentile/cohort-percentile-cdf-latest.md")
 ARCHIVE_DIR: Final[Path] = Path("reports/archive")
 
@@ -179,14 +182,9 @@ ARCHIVE_DIR: Final[Path] = Path("reports/archive")
 BENCHMARK_DB_NAME_TOKEN: Final[str] = "flawchess_benchmark"
 BENCHMARK_DB_PORT_TOKEN: Final[str] = ":5433"
 
-# Sentinel comments wrapping the COHORT_PERCENTILE_CDF literal. The script
-# rewrites only the block between these markers.
-REGISTRY_BEGIN_MARKER: Final[str] = "# --- BEGIN GENERATED REGISTRY ---"
-REGISTRY_END_MARKER: Final[str] = "# --- END GENERATED REGISTRY ---"
-
 # Floats are rendered to 4 decimal places. This is the byte-identical regen
 # precision: all breakpoint floats are emitted as `f"{v:.4f}"` so two runs
-# against the same DB snapshot produce identical Python source.
+# against the same DB snapshot produce identical TSV content.
 FLOAT_PRECISION: Final[int] = 4
 
 # Port map for --target choices.
@@ -508,90 +506,50 @@ def _build_cohort_cdf_for(
 
 
 # ---------------------------------------------------------------------------
-# Python source emission — overwrite COHORT_PERCENTILE_CDF block.
+# TSV seed emission — write cohort_cdf.tsv from cells dict.
 # ---------------------------------------------------------------------------
 
 
-def _emit_breakpoints_literal(breakpoints: tuple[float, ...]) -> str:
-    """Render breakpoints as a parenthesized tuple at fixed precision."""
-    parts = [f"{v:.{FLOAT_PRECISION}f}" for v in breakpoints]
-    # 10 values per line keeps the diff readable; 99 / 10 = 10 lines + 9 on the last.
-    chunks = [", ".join(parts[i : i + 10]) for i in range(0, len(parts), 10)]
-    body = ",\n                    ".join(chunks)
-    return f"(\n                    {body},\n                )"
-
-
-def _emit_registry_block(
+def _write_seed_tsv(
     cells: dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]],
-) -> str:
-    """Render the BEGIN…END block with one nested entry per (metric, anchor, TC) cell."""
-    lines: list[str] = [REGISTRY_BEGIN_MARKER]
-    lines.append(
-        "COHORT_PERCENTILE_CDF: Mapping["
-        "CdfMetricId, Mapping[tuple[int, TimeControlBucket], CdfTable]"
-        "] = {"
-    )
-    for metric in IN_SCOPE_METRICS:
-        per_metric = cells.get(metric, {})
-        if not per_metric:
-            # All cells suppressed for this metric — still emit an empty
-            # inner dict so every CdfMetricId is keyed in the registry.
-            lines.append(f'    "{metric}": {{}},')
-            continue
-        lines.append(f'    "{metric}": {{')
-        # Sort (anchor ASC, tc in canonical order) so two runs produce byte-
-        # identical Python source.
-        tc_order = {tc: i for i, tc in enumerate(ALL_TIME_CONTROLS)}
-        sorted_keys = sorted(per_metric.keys(), key=lambda k: (k[0], tc_order[k[1]]))
-        for anchor, tc in sorted_keys:
-            table = per_metric[(anchor, tc)]
-            lines.append(f'        ({anchor}, "{tc}"): CdfTable(')
-            lines.append(f"            breakpoints={_emit_breakpoints_literal(table.breakpoints)},")
-            lines.append(f"            n_users={table.n_users},")
-            lines.append(f'            snapshot_month="{table.snapshot_month}",')
-            lines.append("        ),")
-        lines.append("    },")
-    lines.append("}")
-    lines.append(REGISTRY_END_MARKER)
-    return "\n".join(lines)
-
-
-def _rewrite_module_source(
-    existing_source: str,
-    cells: dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]],
-) -> str:
-    """Replace the BEGIN…END registry block in ``existing_source`` with new values."""
-    pattern = re.compile(
-        re.escape(REGISTRY_BEGIN_MARKER) + r".*?" + re.escape(REGISTRY_END_MARKER),
-        flags=re.DOTALL,
-    )
-    if not pattern.search(existing_source):
-        raise SystemExit(
-            f"Could not find sentinel markers ({REGISTRY_BEGIN_MARKER!r} / "
-            f"{REGISTRY_END_MARKER!r}) in {OUTPUT_MODULE_PATH}. "
-            f"Task 1 must commit the markers around the placeholder registry."
-        )
-    new_block = _emit_registry_block(cells)
-    return pattern.sub(new_block, existing_source, count=1)
-
-
-def _write_module(
-    cells: dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]],
+    path: Path,
 ) -> None:
-    """Rewrite ``app/services/global_percentile_cdf.py`` then run ruff format + check."""
-    existing = OUTPUT_MODULE_PATH.read_text()
-    new_source = _rewrite_module_source(existing, cells)
+    """Write ``cells`` to ``path`` as a tab-delimited seed file.
 
-    tmp = OUTPUT_MODULE_PATH.with_suffix(".py.tmp")
-    tmp.write_text(new_source)
+    Header: ``metric\tanchor_elo\ttc\tpercentile\tvalue\tn_users\tsnapshot_month``
+    One data row per ``(metric, anchor_elo, tc, percentile)`` breakpoint.
 
-    import subprocess  # local import — this is the only function that shells out
-
-    subprocess.run(["uv", "run", "ruff", "format", str(tmp)], check=True)
-    subprocess.run(["uv", "run", "ruff", "check", "--fix", str(tmp)], check=True)
-
-    tmp.replace(OUTPUT_MODULE_PATH)
-    _log(f"Wrote {OUTPUT_MODULE_PATH}")
+    Iteration order mirrors the retired ``_emit_registry_block`` exactly so two
+    regen runs against the same DB snapshot produce byte-identical TSV content:
+    outer loop in ``IN_SCOPE_METRICS`` order; within each metric, sorted by
+    ``(anchor ASC, tc in canonical ALL_TIME_CONTROLS order)``; innermost loop
+    percentile index 0..98 (p1..p99).
+    """
+    tc_order = {tc: i for i, tc in enumerate(ALL_TIME_CONTROLS)}
+    with path.open("w", newline="") as f:
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerow(
+            ["metric", "anchor_elo", "tc", "percentile", "value", "n_users", "snapshot_month"]
+        )
+        for metric in IN_SCOPE_METRICS:
+            per_metric = cells.get(metric, {})
+            sorted_keys = sorted(per_metric.keys(), key=lambda k: (k[0], tc_order[k[1]]))
+            for anchor, tc in sorted_keys:
+                table = per_metric[(anchor, tc)]
+                for i, bp in enumerate(table.breakpoints):
+                    percentile = int(BREAKPOINT_PERCENTILES[i])
+                    writer.writerow(
+                        [
+                            metric,
+                            anchor,
+                            tc,
+                            percentile,
+                            f"{bp:.{FLOAT_PRECISION}f}",
+                            table.n_users,
+                            table.snapshot_month,
+                        ]
+                    )
+    _log(f"Wrote {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -795,11 +753,11 @@ async def regenerate(
     snapshot_date: date,
     report_path: Path,
 ) -> tuple[dict[CdfMetricId, dict[tuple[int, TimeControlBucket], CdfTable]], list[_CellLogEntry]]:
-    """Run the 3-level loop and emit the populated registry + regen report.
+    """Run the 3-level loop and emit the populated seed file + regen report.
 
     Returns ``(cells, suppression_log)`` for testing / inspection. Side effects:
-    overwrites ``app/services/global_percentile_cdf.py`` between the sentinel
-    markers and writes the regen report to ``report_path``.
+    writes ``app/data/cohort_cdf.tsv`` (the long-row seed file) and writes the
+    regen report to ``report_path``.
     """
     url = _db_url(target)
     _assert_benchmark_db(url)
@@ -847,7 +805,7 @@ async def regenerate(
     except Exception:  # pragma: no cover — best-effort audit
         pass
 
-    _write_module(cells)
+    _write_seed_tsv(cells, OUTPUT_SEED_PATH)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     _archive_prior_report(report_path)
     report_md = _render_regen_report(full_log, snapshot_date, runtime, git_commit)
