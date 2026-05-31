@@ -65,5 +65,11 @@
     "vite-plugin-pwa": "^1.2.0",
     "vite-prerender-plugin": "^0.5.13",
     "vitest": "^4.1.1"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.2",
+    "@babel/plugin-transform-modules-systemjs": "^7.29.4",
+    "hono": "^4.12.18",
+    "qs": "^6.15.2"
   }
 }
