@@ -391,7 +391,7 @@ export function EndgameTimePressureCard({
               className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
               data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
             >
-              <span>Score Gap by Remaining Time</span>
+              <span>How you score under time pressure</span>
               <InfoPopover
                 ariaLabel={`${tcLabel} score gap by remaining time info`}
                 testId={`time-pressure-card-${card.tc}-quintiles-info`}
@@ -399,9 +399,14 @@ export function EndgameTimePressureCard({
               >
                 <div className="space-y-2">
                   <p>
-                    This breaks your endgames into buckets by how much of your
+                    The <strong>Score Gap by Remaining Time</strong> shows you if
+                    handle the <em>same amount</em> of time pressure better or worse
+                    than your opponents.
+                  </p>
+                  <p>
+                    It breaks your endgames into buckets by how much of your
                     clock was left, and in each bucket compares your score
-                    against opponents who were under the <em>same amount</em> of
+                    to games where your opponents had the <em>same amount</em> of
                     time pressure. A positive gap means you outscored
                     comparably-pressured opponents; a negative gap means they
                     outscored you.
@@ -444,6 +449,14 @@ export function EndgameTimePressureCard({
 
           {/* RIGHT column: Clock Gap bullet + Net flag rate (the "time management" story) */}
           <div className="md:basis-1/3 md:shrink-0 flex flex-col gap-4">
+            {/* Column subtitle — parallels the left column's "How you score…"
+                line so the two stories read as a matched pair. */}
+            <div
+              className="text-sm font-medium text-muted-foreground"
+              data-testid={`time-pressure-card-${card.tc}-clock-gap-subtitle`}
+            >
+              How often you are under time pressure
+            </div>
             {/* SC-2: top section — ClockGapHeaderRow sits ABOVE the bullet,
                 replacing the old label row. */}
             <div data-testid={`time-pressure-card-${card.tc}-top-zone`}>

@@ -12,6 +12,7 @@
  * a fork — so it can be updated independently.
  */
 
+import { useEffect, useState } from 'react';
 import {
   CartesianGrid,
   ComposedChart,
@@ -35,6 +36,25 @@ import { deriveLevel } from './EndgameOverallShared';
 // Muted opacity for zone-tinted ReferenceArea bands. Matches EndgameClockDiffOverTimeChart.
 // Not exported from theme.ts — local constant per chart.
 const ZONE_OPACITY = 0.15;
+
+// Mobile breakpoint for hiding the vertical Y-axis label (Tailwind `sm:`).
+// Mirrors EndgameClockDiffOverTimeChart's "Clock Gap" axis-label treatment.
+const MOBILE_BREAKPOINT_PX = 640;
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`).matches,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 1}px)`);
+    const update = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', update);
+    return () => mq.removeEventListener('change', update);
+  }, []);
+  return isMobile;
+}
 
 // TC-collapsed neutral band for the score-gap line chart.
 // Derived from PRESSURE_BIN_SCORE_NEUTRAL_ZONES TC-collapse: all 20 (TC, quintile)
@@ -270,6 +290,7 @@ export function ScoreGapByTimePressureChart({
 }: ScoreGapByTimePressureChartProps) {
   const data = toChartData(quintiles);
   const { domain: yDomain, ticks: yTicks } = computeScoreGapYAxis(data);
+  const isMobile = useIsMobile();
 
   return (
     <div
@@ -277,12 +298,27 @@ export function ScoreGapByTimePressureChart({
       role="img"
       aria-label={`Score gap by time pressure - ${tc}`}
     >
-      <ChartContainer
-        config={{}}
-        className="w-full h-64"
-        data-testid="score-gap-by-time-pressure-chart-container"
-      >
-        <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
+      <div className={isMobile ? '' : 'flex items-stretch'}>
+        {/* Vertical Y-axis label on desktop only — mirrors the "Clock Gap"
+            label on EndgameClockDiffOverTimeChart. Plain HTML rotated via CSS
+            rather than Recharts' SVG `label` (which produces NaN plot-area
+            rects under a responsive container). pb-8 lifts the label off the
+            x-axis caption so it centers on the plot area. */}
+        {!isMobile && (
+          <div
+            className="flex items-center justify-center text-sm text-muted-foreground shrink-0 pb-8 -mr-1"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+            data-testid={`score-gap-by-time-pressure-yaxis-label-${tc}`}
+          >
+            Score Gap
+          </div>
+        )}
+        <ChartContainer
+          config={{}}
+          className="w-full h-64"
+          data-testid="score-gap-by-time-pressure-chart-container"
+        >
+          <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
           {/* Horizontal-only fine grid — identical to EndgameClockDiffOverTimeChart. */}
           <CartesianGrid vertical={false} />
           {/* Hidden full-range numeric x-axis the zone bands bind to. The
@@ -422,7 +458,8 @@ export function ScoreGapByTimePressureChart({
             />
           </Line>
         </ComposedChart>
-      </ChartContainer>
+        </ChartContainer>
+      </div>
     </div>
   );
 }
