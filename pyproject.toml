@@ -35,6 +35,10 @@ dev = [
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
+# Benchmark numeric-regression tests hit the heavy benchmark DB (port 5433) and
+# are slow by design; excluded from normal runs. Run on demand with an explicit
+# path (overrides this ignore): uv run pytest tests/scripts/benchmarks
+addopts = "--ignore=tests/scripts/benchmarks"
 
 [tool.ruff]
 line-length = 100
