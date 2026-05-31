@@ -47,9 +47,9 @@ docker compose -f docker-compose.dev.yml -p flawchess-dev up -d
 # Backend
 uv sync                          # Install dependencies from lockfile
 uv run uvicorn app.main:app --reload  # Run dev server
-uv run pytest                    # Run all tests
-uv run pytest tests/test_foo.py::test_bar  # Run single test
-uv run pytest -x               # Stop on first failure
+uv run pytest -n auto            # Run the FULL suite — ALWAYS use -n auto locally (parallel, ~2x faster)
+uv run pytest tests/test_foo.py::test_bar  # Run a single test (serial — -n auto is pointless for one test)
+uv run pytest -n auto -x         # Full suite, stop on first failure
 uv run ruff check .             # Lint
 uv run ruff format .            # Format
 uv run ty check app/ tests/     # Type check (must pass with zero errors)
@@ -71,6 +71,24 @@ gh run watch <run-id>           # Watch a run in progress
 gh pr checks <pr-number>        # Check PR status
 ```
 
+### Test isolation (per-run DB)
+
+Each pytest session creates its own PostgreSQL database (`flawchess_test_<pid>` or
+`flawchess_test_gw0` / `gw1` for xdist workers), cloned from a migrated template
+(`flawchess_test_template`) via `CREATE DATABASE ... TEMPLATE`. The template
+auto-refreshes when the live Alembic head differs from the template's stored
+`alembic_version` row, guarded by `pg_advisory_lock` so only one concurrent run
+refreshes while others block on the refresh path only. No manual template rebuild is
+needed after a migration. The `flawchess_test_template` DB persists between runs;
+per-run `flawchess_test_<pid>` / `flawchess_test_gw*` DBs are dropped at teardown. See
+`tests/conftest.py` for full implementation details.
+
+**Always run the full backend suite with `-n auto`** (e.g. `uv run pytest -n auto`,
+`uv run pytest -n auto -x`). It is roughly 2x faster locally and the per-run-DB isolation
+above makes it fully safe. Use a serial `uv run pytest <nodeid>` only when running a single
+test or a small targeted subset, where `-n auto` adds startup overhead for no gain. CI keeps
+serial execution (D-02 decision) — this is a local-only convenience.
+
 ### Pre-PR checklist (MANDATORY before `git push` / `gh pr create`)
 
 Run these locally and resolve all output **before** pushing a branch that will become a PR. CI runs the same gates and will fail the build if any of them are dirty; catching them locally avoids a "fix CI" round-trip commit.
@@ -79,7 +97,7 @@ Run these locally and resolve all output **before** pushing a branch that will b
 uv run ruff format app/ tests/         # apply formatting (not just --check)
 uv run ruff check app/ tests/ --fix    # apply autofixable lint
 uv run ty check app/ tests/            # type check, zero errors required
-uv run pytest -x                       # backend tests, stop on first failure
+uv run pytest -n auto -x               # full backend suite (parallel), stop on first failure
 ( cd frontend && npm run lint && npm test -- --run )  # frontend lint + tests
 ```
 

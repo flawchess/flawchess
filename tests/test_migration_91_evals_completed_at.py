@@ -6,16 +6,17 @@ and a one-shot backfill of pre-existing rows.
 
 Structure: each test drives Alembic via asyncio.to_thread (alembic.command is synchronous
 and calls asyncio.run() internally via env.py; it cannot be called directly inside an
-already-running event loop). Tests run against the shared flawchess_test DB via the
-session-scoped test_engine fixture (conftest.py).
+already-running event loop). Tests run against this run's private per-run database
+(flawchess_test_<pid|worker>) via the session-scoped test_engine fixture (conftest.py);
+alembic/env.py picks it up from settings.DATABASE_URL, which test_engine patches.
 
 Since the test session starts with `alembic upgrade head` already applied, each test
 downgrades to the previous revision, asserts the downgraded state, then upgrades again
 to assert the upgraded state.
 
-Warning: these tests are NOT transactionally isolated — they perform real DDL on
-flawchess_test. They are safe to run in CI because they always end with
-`alembic upgrade head` (restoring the schema).
+Warning: these tests are NOT transactionally isolated — they perform real DDL on the
+per-run database. They are safe to run in CI because they always end with
+`alembic upgrade head` (restoring the schema), and each run owns its own database.
 """
 
 import asyncio
@@ -38,15 +39,20 @@ pytestmark = pytest.mark.asyncio
 
 
 def _make_alembic_cfg() -> AlembicConfig:
-    """Build an AlembicConfig pointing at the test DB's sync URL.
+    """Build an AlembicConfig for this run's per-run test database.
 
-    Alembic env.py calls asyncio.run() internally, so it requires a sync
-    (psycopg2-style) URL. The test DB uses asyncpg by default.
+    NOTE: alembic/env.py overrides sqlalchemy.url from settings.DATABASE_URL at
+    load time (RESEARCH Pitfall 1), which test_engine has patched to this run's
+    private clone (flawchess_test_<pid|worker>). So these migrations run against
+    the per-run clone, NOT a shared static DB. We derive the URL from that same
+    settings.DATABASE_URL for clarity even though env.py would override it.
+    Alembic needs a sync (non-asyncpg) URL because its env.py calls
+    asyncio.run() internally.
     """
     from app.core.config import settings
 
     cfg = AlembicConfig("alembic.ini")
-    sync_url = settings.TEST_DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+    sync_url = settings.DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
     cfg.set_main_option("sqlalchemy.url", sync_url)
     return cfg
 

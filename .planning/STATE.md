@@ -1,27 +1,27 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.22
-milestone_name: Maintenance — Test Isolation & Frontend Major Upgrades
-status: planning
-last_updated: "2026-05-31T13:57:05.899Z"
+milestone_name: milestone
+status: verifying
+last_updated: "2026-05-31T15:47:21.926Z"
 last_activity: 2026-05-31
 progress:
-  total_phases: 2
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 7
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 14
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 100 (Isolated Test DB Per Run) — not started
-Plan: —
-Status: Roadmapped — ready to plan (v1.22 requirements + roadmap already defined; Phases 100, 101)
+Phase: 101
+Plan: Not started
+Status: Phase complete — ready for verification
 Next: `/gsd-discuss-phase 100` (or `/gsd-plan-phase 100`) to begin v1.22 Maintenance
-Last activity: 2026-05-31 — Milestone v1.22 started (pointer advanced to v1.22; v1.21 archived to milestones/v1.21-phases/)
+Last activity: 2026-05-31
 
 ## Project Reference
 
@@ -251,7 +251,14 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 | Phase 99 P02 | 25 | 2 tasks | 6 files |
 | Phase 99 P03 | 15 | 2 tasks | 18 files |
 | Phase 99 P04 | 5 | 2 tasks | 2 files |
+| Phase 100 P01 | 566 | 3 tasks | 3 files |
+| Phase 100 P02 | 14min | 2 tasks | 4 files |
 
 ## Decisions
 
 - [Phase ?]: rate_percentile field trio named distinctly from percentile star (D-01 coexistence)
+- [Phase ?]: alembic_command.upgrade() in sync context — Alembic env.py calls asyncio.run() internally; _ensure_template_fresh returns template URL or None to signal migration need
+- [Phase ?]: DROP DATABASE WITH (FORCE) at teardown: handles residual async connections from session-scoped pytest-asyncio fixtures
+- [Phase ?]: seed_openings_for_tests in conftest.py ensures all xdist workers seed openings per-run DB
+- [Phase ?]: sorted() required for set-based pytest.mark.parametrize: non-deterministic iteration causes xdist collection mismatch
+- [Phase ?]: -n auto: 18.56s vs 40.29s serial (2.2x speedup); two concurrent serial runs both RC=0 (SC-1 + SC-3 satisfied)

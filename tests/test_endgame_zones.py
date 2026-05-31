@@ -61,7 +61,7 @@ def test_per_class_tc_band_fields_are_two_floats() -> None:
                 assert lo < hi, f"{cls}/{tc}/{field_name}: lower {lo} >= upper {hi}"
 
 
-@pytest.mark.parametrize("cls", list(_VISIBLE_CLASSES))
+@pytest.mark.parametrize("cls", sorted(_VISIBLE_CLASSES))
 def test_per_class_tc_achievable_score_gap_consistent_across_tc(cls: str) -> None:
     """Score Gap TC d ≈ 0.07–0.18 (all collapse). The four ΔES bands per class
     are near-identical by design (redundancy chosen per D-04/D-14)."""

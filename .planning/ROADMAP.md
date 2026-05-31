@@ -30,7 +30,7 @@
 
 *v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md); see the collapsed block below. v1.20 (Phases 95, 96) shipped 2026-05-29 — archived to [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md).*
 
-- [ ] **Phase 100: Isolated Test DB Per Run** *(v1.22)* — Per-run/per-xdist-worker database cloned from a migrated template; retire the session-start `TRUNCATE … CASCADE` lock; unblock concurrent agent runs + `pytest -n auto` (SEED-031)
+- [x] **Phase 100: Isolated Test DB Per Run** *(v1.22)* — Per-run/per-xdist-worker database cloned from a migrated template; retire the session-start `TRUNCATE … CASCADE` lock; unblock concurrent agent runs + `pytest -n auto` (SEED-031) (completed 2026-05-31)
 - [ ] **Phase 101: Frontend Major Dependency Upgrades** *(v1.22)* — Bump the 11 frontend deps that are a major behind, one cluster at a time (low→high risk), each atomically committed + gated; recharts 3 earns visual UAT (SEED-032)
 
 ## Phase Details
@@ -48,7 +48,14 @@
   4. ruff / ty / pytest all green; no behavior change to individual tests.
   5. Template-refresh trigger on Alembic head drift is resolved (auto re-migrate vs explicit `bin/` step) and documented.
 
-**Plans**: TBD
+**Plans**: 2 plans
+**Wave 1**
+
+- [x] 100-01-PLAN.md — Per-run/per-xdist-worker DB cloned from migrated template; advisory-lock template auto-refresh; retire TRUNCATE; add pytest-xdist (SC-2, SC-4, D-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 100-02-PLAN.md — Document template-refresh mechanism (conftest + CLAUDE.md); measure `-n auto` wall-clock (SC-3); concurrent-run HUMAN-UAT (SC-1, SC-5)
 
 ### Phase 101: Frontend Major Dependency Upgrades
 
@@ -358,7 +365,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 5/5 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
 

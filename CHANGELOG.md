@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Tests
+
+- Phase 100: each `pytest` run (and each `pytest-xdist` worker) now gets its own database cloned from a migrated template, so multiple test runs can execute at once without deadlocks or cross-run corruption. The hostile session-start `TRUNCATE … RESTART IDENTITY CASCADE` is gone (a fresh clone is already clean), killed runs self-heal, and the template auto-refreshes on Alembic migration changes. `pytest -n auto` is now safe locally and runs about 2x faster than serial (CI stays serial).
+
 ## [v1.21] Time-Control-Aware Endgame Metrics — 2026-05-31
 
 Made the entire Endgame Metrics and Endgame Type Breakdown reporting time-control-aware, so a bullet player is judged against bullet norms rather than a blended average. The aggregated Conversion/Parity/Recovery cards became per-time-control cards, the type breakdown became collapsible per-TC accordion cards, and peer-relative percentile chips landed on the per-TC rates. (Phase 99.1 also moved the large generated cohort-percentile lookup table out of Python source into a database table — internal only, no behaviour change.)
