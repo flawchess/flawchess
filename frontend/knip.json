@@ -3,8 +3,6 @@
   "entry": ["src/prerender.tsx"],
   "project": ["src/**/*.{ts,tsx}"],
   "ignoreDependencies": [
-    "clsx",
-    "tailwind-merge",
     "shadcn",
     "tailwindcss",
     "tailwindcss-safe-area",
@@ -15,7 +13,6 @@
     "src/components/ui/command.tsx",
     "src/components/ui/popover.tsx",
     "src/components/ui/input-group.tsx",
-    "src/data/trollOpenings.ts",
     "src/generated/endgameZones.ts"
   ],
   "ignoreBinaries": ["cloudflared"]

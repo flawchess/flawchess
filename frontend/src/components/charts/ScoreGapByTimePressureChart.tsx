@@ -320,17 +320,30 @@ export function ScoreGapByTimePressureChart({
           data-testid="score-gap-by-time-pressure-chart-container"
         >
           <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 10 }}>
-          {/* Horizontal-only fine grid — identical to EndgameClockDiffOverTimeChart. */}
-          <CartesianGrid vertical={false} />
+          {/* Horizontal-only fine grid — recharts 3: bind to named primary YAxis via yAxisId */}
+          <CartesianGrid vertical={false} yAxisId="value" />
           {/* Hidden full-range numeric x-axis the zone bands bind to. The
               visible category axis is padded (datapoints inset off the
               borders), so a category-bound band would inherit that inset and
               leave uncolored gutters. Binding the bands to this unpadded
               [0,1] axis instead makes them full-bleed: flush to the y-axis on
-              the left and the chart border on the right (post-UAT 88.4). */}
+              the left and the chart border on the right (post-UAT 88.4).
+              Recharts 3 fix (D-01 / Wave 6 UAT): recharts 3 categorises any
+              xAxis in a horizontal ComposedChart as "categorical" in the axis
+              domain selector. When dataKey is absent, combineAxisDomain
+              returns range(0, dataLength) = [0,1,2,3] instead of the
+              user-supplied [0,1]. With that domain a linear scale maps x1=0
+              → left edge and x1=1 → 1/3-across (index 1 of 3), producing the
+              "left-third" bug. Adding a non-existent dataKey bypasses that
+              early-return branch; recharts 3 then falls through to return
+              selectNumericalDomain = [0,1] (because allowDataOverflow=true and
+              domain=[0,1] satisfies numericalDomainSpecifiedWithoutRequiringData).
+              The hidden axis carries no padding, so its pixel range spans the
+              full plot area and x1=0 / x2=1 are exactly flush to both edges. */}
           <XAxis
             xAxisId="bleed"
             type="number"
+            dataKey="__bleed__"
             domain={[0, 1]}
             hide
             allowDataOverflow

@@ -2,8 +2,8 @@
 
 Covers: column coverage, round-trip, NULL optional fields, empty-batch no-op,
 rollback atomicity, and chunking across the chunk_size boundary.
-Uses the test Postgres DB (`flawchess_test`) via the `db_session` fixture,
-which auto-rolls-back each test (no DB mocks).
+Uses this run's per-run test Postgres DB (cloned from a template by conftest)
+via the `db_session` fixture, which auto-rolls-back each test (no DB mocks).
 """
 
 import datetime

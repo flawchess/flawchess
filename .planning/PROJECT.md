@@ -143,11 +143,18 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 
 - ✓ Time-control-aware endgame reporting — Endgame Metrics section split into per-TC cards (Conv/Recov on TC-specific bands, Parity/Score Gap on the shared band); Endgame Type Breakdown restructured into collapsible per-TC accordion cards with a 2×2 type-tile grid (Mixed dropped) banded per-(class × TC); peer-relative percentile chips on the per-TC Conversion/Parity/Recovery rates (12 new per-(metric, TC) cohort metrics); generated cohort-CDF lookup demoted from Python source to a `benchmark_cohort_cdf` DB table — v1.21 Phases 97, 98, 99, 99.1
 
-### Active (next milestone — v1.22 LLM Statistical Reasoning)
+- ✓ Per-run/per-xdist-worker test database cloned from a migrated template (`CREATE DATABASE … TEMPLATE`); session-start `TRUNCATE … CASCADE` whole-schema lock retired; advisory-lock template auto-refresh on Alembic head drift; killed runs self-heal; `pytest -n auto` safe and 2.2x faster (18.56s vs 40.29s) — v1.22 Phase 100
+- ✓ 11 frontend deps brought to latest major across six bisectable atomic clusters (lucide-react 1, Vite 8 + plugin-react 6, jsdom 29, eslint 10 stack, TypeScript 6, recharts 3); recharts 3 visual-UAT'd; typescript-eslint ↔ TS6/eslint-10 peer-compat clean — v1.22 Phase 101
 
-Directional scope, refined per-phase via `/gsd:discuss-phase`:
+### Active (next milestone — TBD)
 
-- [ ] LLM endgame-insights prompt + payload rework for the v1.17 metric set + v1.19 percentile annotations — pass p-values, confidence interval bounds, and percentiles on the Section 1 Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, and time-pressure hypothesis tests, with explicit prompt guardrails against narrating small-but-significant findings (resolves tension with prior `feedback_llm_significance_signal` decision)
+No milestone is currently active. v1.22 Maintenance shipped 2026-05-31. Start the next one with `/gsd-new-milestone`.
+
+Candidate next scope (from backlog / deferred):
+
+- [ ] **LLM Endgame-Insights Statistical-Reasoning Rework** — backlog Phase 999.7; LLM-01..07 stay pending in REQUIREMENTS.md (was the originally-planned v1.22 scope, deprioritized in favour of Maintenance)
+- [ ] **SEED-030 Track A** — split oversized multi-concern modules (structural code-health; Track B closed by Phase 99.1)
+- [ ] Other dormant seeds: SEED-010 (library page), SEED-012 (client-side Stockfish tactics), SEED-029 (benchmarks deterministic rebuild), SEED-033 (cap explorer + partial-index Zobrist hashes)
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -165,22 +172,15 @@ Directional scope, refined per-phase via `/gsd:discuss-phase`:
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.22 LLM Statistical Reasoning
+## Current Milestone: none active
 
-**Goal:** Rework the endgame-insights LLM prompt + payload so it can reason over the full v1.17 metric set (Endgame Score Gap, Achievable Score, ΔES Score Gap family, time-pressure tests) using p-values, confidence intervals, and the v1.19 peer-relative percentile annotations, behind prompt guardrails that prevent narrating small-but-significant findings.
-
-**Target features (directional — refined per-phase via `/gsd:discuss-phase`):**
-
-- Endgame-insights LLM payload extended with p-values, CI bounds, and v1.19 percentile fields on the v1.17 metric set
-- Endgame-insights prompt rewrite to reason explicitly over CIs + percentiles using the cohort framing ("vs other ~{anchor}-rated players"), without re-licensing small-but-significant narration
-
-**Open decisions (deferred to phase discussion):**
-
-- How to reconcile p-value/CI payload exposure with the prior `feedback_llm_significance_signal` decision (tighten cohort bands further, or pass raw stats with prompt guardrails)
+v1.22 Maintenance — Test Isolation & Frontend Major Upgrades shipped 2026-05-31. No milestone is currently active; start the next one with `/gsd-new-milestone`. The leading candidate is the deprioritized LLM Endgame-Insights Statistical-Reasoning Rework (backlog Phase 999.7, LLM-01..07 pending in REQUIREMENTS.md).
 
 ## Current State
 
-v1.21 Time-Control-Aware Endgame Metrics shipped 2026-05-31 — 4 phases (97, 98, 99, 99.1), 15 plans, delivered via PRs #160 (Phase 97), #163/#164 (Phase 98), #167 (Phase 99), #168 (Phase 99.1). The Endgames page is now time-control-honest end to end: the aggregated Conversion/Parity/Recovery cards became one card per TC (bullet/blitz/rapid/classical) with TC-specific Conv/Recov neutral bands (benchmark TC d≈0.9) and the shared global band on Parity + Score Gap; the Endgame Type Breakdown became full-width collapsible per-TC accordion cards with the user's primary (time-weighted) TC expanded by default, each holding a 2×2 grid of rook/minor_piece/pawn/queen tiles (Mixed dropped) with Conv/Recov gauges restored on per-(class × TC) bands; and peer-relative percentile chips landed on the per-TC Conversion/Parity/Recovery rates (12 new per-(metric, TC) cohort metrics via the pooled-per-user builder). Phase 99.1 then relocated the 3.1 MB generated `COHORT_PERCENTILE_CDF` registry out of Python source into a `benchmark_cohort_cdf` DB table (module ~130k → ~250 lines, byte-for-byte chip parity, no behaviour change), closing SEED-030 Track B. Prod backfill of the 12 new rate-percentile metrics is deferred to deploy. v1.20 (Phases 95, 96 — asyncpg COPY + Import Readiness Gate) shipped 2026-05-29. Twenty-two milestones complete (v1.0–v1.21), live at flawchess.com; next is v1.22 LLM Statistical Reasoning (Phase 100).
+v1.22 Maintenance — Test Isolation & Frontend Major Upgrades shipped 2026-05-31 — 2 phases (100, 101), 3 plans, 31 commits in a single day (`45d882c7` → `db8eca80`). Phase 100 gave each `pytest` run (and each `pytest-xdist` worker) its own database cloned from a migrated template via `CREATE DATABASE … TEMPLATE`, retiring the hostile session-start `TRUNCATE … RESTART IDENTITY CASCADE` whole-schema lock; the template auto-refreshes on Alembic head drift under a `pg_advisory_lock`, killed runs self-heal, and `pytest -n auto` is now safe and 2.2x faster (18.56s vs 40.29s serial; CI stays serial). Phase 101 brought 11 majors-behind frontend deps to their latest major across six bisectable atomic clusters (lucide-react 1, Vite 8 + plugin-react 6, jsdom 29, eslint 10 stack, TypeScript 6, recharts 3), each gated so a failure bisects to one cluster; recharts 2 → 3 passed a desktop + mobile visual UAT after one zone-band regression was fixed and regression-tested, and the typescript-eslint ↔ TS6/eslint-10 peer-compat resolved cleanly. The window also folded in small direct-to-`main` backend maintenance (uv dep refresh + Dependabot clears, pydantic-ai-slim 1.85 → 1.104, Gemini 3 thinking-level support). Twenty-three milestones complete (v1.0–v1.22), live at flawchess.com. No formal requirements (both phases sourced from SEED-031 / SEED-032); REQUIREMENTS.md stays in place tracking the deprioritized LLM Statistical Reasoning scope (backlog Phase 999.7).
+
+v1.21 Time-Control-Aware Endgame Metrics shipped 2026-05-31 — 4 phases (97, 98, 99, 99.1), 15 plans, delivered via PRs #160 (Phase 97), #163/#164 (Phase 98), #167 (Phase 99), #168 (Phase 99.1). The Endgames page is now time-control-honest end to end: the aggregated Conversion/Parity/Recovery cards became one card per TC (bullet/blitz/rapid/classical) with TC-specific Conv/Recov neutral bands (benchmark TC d≈0.9) and the shared global band on Parity + Score Gap; the Endgame Type Breakdown became full-width collapsible per-TC accordion cards with the user's primary (time-weighted) TC expanded by default, each holding a 2×2 grid of rook/minor_piece/pawn/queen tiles (Mixed dropped) with Conv/Recov gauges restored on per-(class × TC) bands; and peer-relative percentile chips landed on the per-TC Conversion/Parity/Recovery rates (12 new per-(metric, TC) cohort metrics via the pooled-per-user builder). Phase 99.1 then relocated the 3.1 MB generated `COHORT_PERCENTILE_CDF` registry out of Python source into a `benchmark_cohort_cdf` DB table (module ~130k → ~250 lines, byte-for-byte chip parity, no behaviour change), closing SEED-030 Track B. Prod backfill of the 12 new rate-percentile metrics is deferred to deploy. v1.20 (Phases 95, 96 — asyncpg COPY + Import Readiness Gate) shipped 2026-05-29. Twenty-two milestones complete (v1.0–v1.21), live at flawchess.com; next is v1.22 Maintenance — Test Isolation & Frontend Major Upgrades (Phases 100, 101). The LLM Statistical Reasoning rework is deprioritized to backlog Phase 999.7.
 
 v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered through PR #145 plus earlier per-phase PRs. Peer-relative percentile chips are now live on the Endgames page: per-(metric, ELO anchor, TC) cohort CDFs built from 50-Elo sliding windows replace the global pool; per-(user, TC) rating anchors use a game-weighted blended median over converted-chess.com + native-lichess games (D-12 reversal); the chip face shrinks to a bare `p23` pill with a 4-bullet tooltip that discloses the rating anchor + per-platform composition; chips are a *trait* of the user computed once per Stage A/B trigger and independent of UI filter state. The Time Pressure section gains 12 per-TC chips (3 per `TimePressureTcCard`). Phase 95 (LLM Statistical Reasoning) was split into v1.20 before milestone close. SEED-019 closed; SEED-025 + SEED-026 v2 closed. Nineteen milestones complete (v1.0–v1.19), live at flawchess.com.
 
@@ -385,6 +385,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
+*Last updated: 2026-05-31 — after v1.22 Maintenance — Test Isolation & Frontend Major Upgrades milestone (Phases 100, 101; tag v1.22). Per-run/per-xdist-worker template-cloned test DB retiring the session-start TRUNCATE lock (`pytest -n auto` safe, 2.2x faster), and 11 frontend deps brought to latest major across six bisectable atomic clusters (recharts 3 visual-UAT'd). No active milestone follows; next is `/gsd-new-milestone` (leading candidate: backlog Phase 999.7 LLM Statistical Reasoning). (Prior footer below.)*
+
 *Last updated: 2026-05-31 — after v1.21 Time-Control-Aware Endgame Metrics milestone (Phases 97, 98, 99, 99.1; tag v1.21). The Endgames page is now time-control-honest end to end: per-TC Endgame Metrics cards (TC-specific Conv/Recov bands, shared Parity/Score Gap band), collapsible per-TC Endgame Type Breakdown cards (2×2 type tiles, Mixed dropped, per-(class × TC) bands), peer-relative percentile chips on the per-TC Conv/Parity/Recov rates (12 new per-(metric, TC) cohort metrics), and the generated cohort-CDF lookup demoted from Python source (~130k lines) to a `benchmark_cohort_cdf` DB table (SEED-030 Track B closed). Prod backfill of the 12 rate-percentile metrics deferred to deploy. The v1.20→v1.21 "Current Milestone" header drift flagged at the prior close is now reconciled: header points to v1.22 LLM Statistical Reasoning (Phase 100). (Prior footer: 2026-05-31 mid-v1.21, Phase 99 complete — 3 TC-parameterised pooled-per-user rate builders, 12 new `benchmark_metric` ENUM values via migrations `3981239fd391` / `52c928794fe7`, COHORT_PERCENTILE_CDF regenerated against the benchmark DB snapshot 2026-05-30.)*
 
 *Previous: 2026-05-19 after v1.17 milestone. v1.17 Endgame Stats Card Redesign shipped — 13 phases (84–88.4), ~54 plans, delivered via PRs #89–#117. Phase 89 (Polish) dropped from scope; Phase 87.3 (percentile composite) superseded by 87.4→87.6.*

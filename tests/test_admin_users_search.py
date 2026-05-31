@@ -191,12 +191,29 @@ async def test_search_by_lichess_username(test_engine):
 
 @pytest.mark.asyncio
 async def test_search_by_exact_id(test_engine):
-    """Numeric query matches exact user id."""
+    """Numeric query matches exact user id.
+
+    Per-run isolation bug: in a fresh per-run DB (sequences reset to 1), the
+    first few registered users get single-digit IDs.  The search endpoint
+    enforces a 2-character minimum query (D-12), so searching for e.g. "2"
+    returns an empty list — the correct server behaviour, but not what this
+    test intends to exercise.  Fix: register enough padding users first so the
+    target user's ID is guaranteed to be >= 10 (2 digits), making the exact-ID
+    query at least 2 characters regardless of where the sequence starts.
+    """
+    # Pad the sequence so the target always gets a 2-digit (or longer) ID.
+    # 10 padding registrations guarantee ID >= 11 even in a fresh DB where
+    # this test runs before any other user-creating test on the same worker.
+    _ID_DIGITS_MIN = 10  # first ID with 2 digits
+    _PADDING_COUNT = _ID_DIGITS_MIN  # ensures target ID >= 11 in a fresh DB
+
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        _, admin_token = await make_superuser(client, test_engine)
+        for i in range(_PADDING_COUNT):
+            await register(client, unique_email(f"pad{i}"))
 
+        _, admin_token = await make_superuser(client, test_engine)
         target_id = await register(client, unique_email("byid"))
 
         resp = await client.get(
@@ -207,7 +224,10 @@ async def test_search_by_exact_id(test_engine):
 
     assert resp.status_code == 200
     ids = {row["id"] for row in resp.json()}
-    assert target_id in ids
+    assert target_id in ids, (
+        f"target_id={target_id} missing from results — if single-digit, "
+        f"padding count ({_PADDING_COUNT}) was insufficient"
+    )
 
 
 @pytest.mark.asyncio

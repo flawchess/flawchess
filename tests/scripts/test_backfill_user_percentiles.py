@@ -69,7 +69,11 @@ _EXPECTED_METRIC_LABELS: list[str] = [
 ]
 _EXPECTED_SUMMARY_TOKENS: list[str] = ["included", "floor_rej", "suppressed"]
 
-pytestmark = pytest.mark.asyncio
+# No module-level `pytestmark = pytest.mark.asyncio`: asyncio_mode = "auto"
+# (pyproject.toml) auto-marks every `async def` test, so the module mark was
+# redundant — and it also stamped the sync guard tests below
+# (test_backfill_target_* ), emitting "marked with asyncio but not an async
+# function" PytestWarnings.
 
 
 # ---------------------------------------------------------------------------

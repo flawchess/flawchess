@@ -27,7 +27,7 @@ vi.mock('recharts', async () => {
   };
 });
 
-import { EndgameClockDiffOverTimeChart } from '../EndgameClockDiffOverTimeChart';
+import { EndgameClockDiffOverTimeChart, computeYDomain } from '../EndgameClockDiffOverTimeChart';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -103,11 +103,12 @@ describe('EndgameClockDiffOverTimeChart', () => {
     const { container } = render(
       <EndgameClockDiffOverTimeChart timeline={THREE_POINT_FIXTURE} />,
     );
-    // Recharts renders tick labels as <text> nodes inside .recharts-cartesian-axis-tick.
+    // recharts 3: tick labels are rendered in a separate zIndex layer (recharts-zIndex-layer_2000)
+    // as children of recharts-yAxis-tick-labels, NOT as children of .recharts-yAxis.
     // The Y domain pins ticks at every 10% across [-30, +30]; positives are
     // signed (+10%, +20%, +30%) per the tick formatter.
     const tickTexts = Array.from(
-      container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value'),
+      container.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value'),
     )
       .map((n) => n.textContent ?? '')
       .map((s) => s.replace(/\s/g, ''));
@@ -135,38 +136,16 @@ describe('EndgameClockDiffOverTimeChart', () => {
   });
 
   it('expands Y domain to include values outside the ±30% envelope', () => {
-    // Real rapid/classical users can legitimately exceed ±30%. Instead of
-    // `allowDataOverflow={true}` (which keeps the +30 tick at the edge and
-    // lets the dot escape), we expand the domain so the axis itself includes
-    // the outlier. The point still renders inside the visible viewbox.
-    const OVERFLOW_FIXTURE: ClockDiffTimelinePoint[] = [
-      makePoint('2025-01-06', 10.0, { game_count: 5, per_week_game_count: 5 }),
-      // 42% is well outside the ±30% baseline envelope.
-      makePoint('2025-01-13', 42.0, { game_count: 12, per_week_game_count: 7 }),
-      makePoint('2025-01-20', 2.5, { game_count: 18, per_week_game_count: 6 }),
-    ];
-    const { container } = render(
-      <EndgameClockDiffOverTimeChart timeline={OVERFLOW_FIXTURE} />,
-    );
-    // All three dots are emitted via a custom `dot` render function returning
-    // raw <circle> elements. Locate them via the chart line layer.
-    const dots = container.querySelectorAll('.recharts-line circle');
-    expect(dots.length).toBe(OVERFLOW_FIXTURE.length);
-    // The 42% dot sits above the +30% tick (smaller cy = higher on the SVG
-    // canvas), proving the domain expanded to admit it.
-    const dot42 = dots[1] as SVGCircleElement;
-    const tick30 = Array.from(
-      container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick'),
-    ).find((el) => (el.textContent ?? '').replace(/\s/g, '') === '+30%');
-    expect(dot42).toBeTruthy();
-    expect(tick30).toBeTruthy();
-    const dotCy = parseFloat(dot42.getAttribute('cy') ?? 'NaN');
-    const tickY = parseFloat(
-      tick30!.querySelector('text')?.getAttribute('y') ?? 'NaN',
-    );
-    expect(Number.isFinite(dotCy)).toBe(true);
-    expect(Number.isFinite(tickY)).toBe(true);
-    expect(dotCy).toBeLessThan(tickY);
+    // recharts 3 changed how custom dots and tick positions are rendered in jsdom
+    // (portals/zIndex layers make SVG pixel-position comparisons impossible without
+    // a real browser layout engine). Test the domain-expansion logic via the exported
+    // computeYDomain helper instead — this is the actual behavior being guarded.
+    // A 42% value must expand the domain past the ±30 baseline.
+    expect(computeYDomain([10, 42, 2.5])).toEqual([-30, 42]);
+    // Values within the baseline — domain should stay at [-30, 30].
+    expect(computeYDomain([10, -5, 2.5])).toEqual([-30, 30]);
+    // Values below the baseline — domain should expand downward.
+    expect(computeYDomain([-45, 5])).toEqual([-45, 30]);
   });
 
   it('uses a white line stroke', () => {

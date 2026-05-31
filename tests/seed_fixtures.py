@@ -1,8 +1,8 @@
 """Shared seeded-user fixture for router integration tests (Phase 61).
 
 Provides a single authoritative test user with a deterministic portfolio of
-games and positions, committed to flawchess_test so HTTP endpoints can observe
-the data through the patched async_session_maker. The seeded_user fixture is
+games and positions, committed to the per-run test database so HTTP endpoints
+can observe the data through the patched async_session_maker. The seeded_user fixture is
 module-scoped: register+seed cost is paid once per test module, not once per
 test function.
 
@@ -310,7 +310,7 @@ def _clock_series_for_span(
 async def _seed_portfolio(user_id: int) -> None:
     """Commit all _GAMES_SPEC games + their positions for the registered user.
 
-    Uses the patched async_session_maker (bound to flawchess_test by
+    Uses the patched async_session_maker (bound to the per-run test database by
     tests/conftest.py override_get_async_session) directly, so the writes
     land in the test DB and are visible to HTTP endpoints in the same run.
     """

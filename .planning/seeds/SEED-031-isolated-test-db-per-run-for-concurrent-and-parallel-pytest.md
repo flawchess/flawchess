@@ -1,6 +1,6 @@
 # SEED-031: Isolated test DB per run — unblock concurrent agent runs and `pytest -n auto`
 
-**Status:** Open
+**Status:** Scheduled — v1.22 Maintenance, Phase 100 (Isolated Test DB Per Run)
 **Created:** 2026-05-31
 **Source:** Investigation on 2026-05-31 into a slow/"hanging" test run that turned out to be six overlapping `pytest` invocations (multiple agents + a PyCharm coverage run) deadlocking on the shared `flawchess_test` DB.
 **Related:** `tests/conftest.py` (`test_engine`, `_truncate_all_tables`, `db_session` fixtures); SEED-022 (import concurrency / Postgres headroom — shares the "concurrent connections vs one Postgres" theme); CLAUDE.md "No dev DB reset in plans" + real-Postgres test policy.

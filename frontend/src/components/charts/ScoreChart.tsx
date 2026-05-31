@@ -156,16 +156,21 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
                     {payload
                       .filter((item) => item.value !== undefined)
                       .map((item) => {
-                        const cfg = chartConfig[item.dataKey as string];
-                        const gameCount = item.payload[`${item.dataKey}_game_count`] as number | undefined;
+                        // recharts 3: dataKey is DataKey<any> = string | number | function;
+                        // narrow to string for use as a React key and lookup key.
+                        const dataKey = typeof item.dataKey === 'string' || typeof item.dataKey === 'number'
+                          ? String(item.dataKey)
+                          : 'value';
+                        const cfg = chartConfig[dataKey];
+                        const gameCount = item.payload[`${dataKey}_game_count`] as number | undefined;
                         return (
-                          <div key={item.dataKey} className="flex items-center gap-1.5">
+                          <div key={dataKey} className="flex items-center gap-1.5">
                             <div
                               className="h-2 w-2 shrink-0 rounded-[2px]"
                               style={{ backgroundColor: item.color }}
                             />
                             <span>
-                              {cfg?.label ?? item.dataKey}: {Math.round((item.value as number) * 100)}%
+                              {cfg?.label ?? dataKey}: {Math.round((item.value as number) * 100)}%
                               {gameCount !== undefined && (
                                 <span className="text-muted-foreground ml-1">(past {gameCount} games)</span>
                               )}

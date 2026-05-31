@@ -1,5 +1,7 @@
 import asyncio
 import os
+import re
+import urllib.parse
 import uuid
 
 # Disable Sentry before any app imports — must precede app.core.config which
@@ -20,13 +22,15 @@ os.environ["SECRET_KEY"] = "test-secret-key-32-bytes-exactly-ok-for-hs256-tests"
 # lifespan-time get_insights_agent() call in app/main.py) see the env var.
 os.environ["PYDANTIC_AI_MODEL_INSIGHTS"] = "test"
 
+import asyncpg
 import chess
 import pytest
 import pytest_asyncio
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from alembic.script import ScriptDirectory
 from collections.abc import AsyncGenerator
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
@@ -37,75 +41,333 @@ from app.models.user import User
 # ruff F811 "redefined unused import" otherwise).
 pytest_plugins = ["tests.seed_fixtures"]
 
-# Tables NEVER to truncate during test-session reset:
-# - alembic_version: Alembic migration state. Truncating forces a re-migration
-#   on next startup and breaks `alembic current`.
-# - openings: reference data populated by scripts/seed_openings.py. Currently
-#   empty in flawchess_test but excluded defensively so a future contributor
-#   who seeds it for opening-classification tests does not see their seed
-#   silently wiped on each pytest run.
-_TRUNCATE_EXCLUDE = frozenset({"alembic_version", "openings"})
+# ---------------------------------------------------------------------------
+# Per-run database isolation — Phase 100
+#
+# OVERVIEW
+# --------
+# (a) Each pytest session (and each xdist worker) gets its own database
+#     "flawchess_test_<worker|pid>" cloned from the migrated template
+#     "flawchess_test_template" via CREATE DATABASE ... TEMPLATE.  This removes
+#     the session-start whole-schema ACCESS EXCLUSIVE lock (from the old
+#     per-session table wipe) that blocked concurrent agent runs.
+#
+# (b) The template is auto-refreshed when the live Alembic head differs from
+#     the template's stored alembic_version row — no manual rebuild step.
+#     The refresh is serialized across concurrent runs by
+#     pg_advisory_lock(_TEMPLATE_ADVISORY_LOCK_KEY): only the first run that
+#     acquires the advisory lock performs the drop+remigrate; the others block
+#     on the lock and then re-check drift after acquiring it (Pitfall 4 in
+#     RESEARCH.md) so they skip the refresh and proceed directly to cloning.
+#
+# (c) Killed runs self-heal: a DROP DATABASE IF EXISTS before each CREATE
+#     DATABASE acts as a stale-DB reaper — residue from a previously killed
+#     pytest session is cleaned up automatically on the next invocation.
+#
+# (d) No manual template rebuild is ever needed.  After a migration the
+#     template auto-refreshes on the next pytest run, paying migration time
+#     (~1.7 s for 66 migrations) once and serving all subsequent clones.
+#
+# Advisory lock key — reserved for flawchess test template refresh.
+# This is a fixed, app-chosen 64-bit integer; any unique value is valid as a
+# pg_advisory_lock key.  7_777_777_777 is reserved for this purpose
+# cluster-wide.
+_TEMPLATE_ADVISORY_LOCK_KEY: int = 7_777_777_777
+
+# Name of the shared migrated template database.  All per-run clones are
+# created from this template via CREATE DATABASE <run_db> TEMPLATE <template>.
+_TEMPLATE_DB_NAME: str = "flawchess_test_template"
+
+# Valid PostgreSQL identifier for a database name (lower-case, digits,
+# underscore; must start with a letter or underscore; <=63 bytes).  DB names
+# cannot be parameter-bound in DDL, so they are interpolated as raw SQL
+# identifiers — this guard ensures an explicit TEST_DB_NAME override cannot
+# carry a statement-injection payload (threat model T-100-01 / review WR-02).
+_DB_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 
-async def _truncate_all_tables(db_url: str) -> None:
-    """Truncate every public-schema table except reference tables.
+def _get_run_db_name() -> str:
+    """Derive the per-run / per-worker database name.
 
-    Called ONCE per pytest session, after alembic migrations run and before
-    the first test executes. Restarts identity columns so primary keys are
-    deterministic within a run. Data from the *previous* session is wiped;
-    data from the current session remains after teardown for inspection.
+    Priority order (CONTEXT.md Claude's Discretion):
+      1. TEST_DB_NAME env var — explicit override
+      2. PYTEST_XDIST_WORKER env var — set by pytest-xdist to "gw0", "gw1", …
+      3. os.getpid() fallback for serial (non-xdist) runs
 
-    Creates and disposes its own throwaway async engine inside the asyncio
-    event loop spawned by asyncio.run() in the caller. This is required
-    because asyncpg's connection pool is event-loop-bound — sharing the
-    test session's engine here would attach it to a dead loop.
+    Returns a name like "flawchess_test_gw0" or "flawchess_test_<pid>".
+    DB names derive only from trusted sources (fixed prefix + xdist-set env
+    var / PID / dev-controlled env var) — never from user/request input.
+    The dev-controlled TEST_DB_NAME override is validated as a PostgreSQL
+    identifier before it is interpolated into DDL (threat model T-100-01).
     """
-    truncate_engine = create_async_engine(db_url, echo=False)
-    try:
-        async with truncate_engine.begin() as conn:
-            rows = await conn.execute(
-                text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+    explicit = os.environ.get("TEST_DB_NAME")
+    if explicit:
+        if not _DB_NAME_RE.match(explicit):
+            raise ValueError(
+                f"TEST_DB_NAME={explicit!r} is not a valid PostgreSQL identifier "
+                r"(expected ^[a-z_][a-z0-9_]{0,62}$)"
             )
-            tables = [r[0] for r in rows if r[0] not in _TRUNCATE_EXCLUDE]
-            if tables:
-                await conn.execute(
-                    text(f"TRUNCATE TABLE {', '.join(tables)} RESTART IDENTITY CASCADE")
-                )
+        return explicit
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if worker:
+        return f"flawchess_test_{worker}"
+    return f"flawchess_test_{os.getpid()}"
+
+
+def _maint_dsn(test_db_url: str) -> str:
+    """Return an asyncpg plain DSN pointing at the 'postgres' maintenance DB.
+
+    asyncpg.connect() requires a plain postgresql:// URL (no +asyncpg scheme
+    prefix).  DDL statements (CREATE/DROP DATABASE) must run outside a
+    transaction — asyncpg connections are autocommit by default, which is
+    exactly what we need (SQLAlchemy wraps every connection in a transaction
+    and raises ActiveSQLTransactionError for these DDL statements).
+    """
+    p = urllib.parse.urlparse(test_db_url)
+    return f"postgresql://{p.username}:{p.password}@{p.hostname}:{p.port}/postgres"
+
+
+def _run_alembic_upgrade(template_url: str, original_url: str) -> None:
+    """Migrate the template DB to Alembic head (sync; run via asyncio.to_thread).
+
+    Runs in a worker thread so Alembic's env.py — which calls asyncio.run()
+    internally — gets a clean event loop.  Calling it directly from the running
+    _ensure_template_fresh loop would raise RuntimeError; calling it from the
+    sync test_engine fixture (the previous approach) released the advisory lock
+    before migration finished, letting a concurrent worker drop the half-migrated
+    template (review CR-01).  Threading keeps the migration inside the locked
+    critical section.
+
+    MANDATORY: patch settings.DATABASE_URL because alembic/env.py overwrites
+    AlembicConfig's sqlalchemy.url from settings.DATABASE_URL at load time
+    (RESEARCH Pitfall 1).  Restored in finally.
+    """
+    settings.DATABASE_URL = template_url
+    try:
+        cfg = AlembicConfig("alembic.ini")
+        cfg.set_main_option("sqlalchemy.url", template_url)
+        alembic_command.upgrade(cfg, "head")
     finally:
-        await truncate_engine.dispose()
+        settings.DATABASE_URL = original_url
+
+
+def _alembic_head() -> str:
+    """Return the current Alembic head revision from migration scripts.
+
+    Pure-Python call — no DB connection required.
+    """
+    cfg = AlembicConfig("alembic.ini")
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    assert head is not None, "No alembic head found — broken migration chain"
+    return head
+
+
+async def _ensure_template_fresh(maint_dsn: str) -> None:
+    """Bootstrap flawchess_test_template under an advisory lock.
+
+    Compares the live Alembic head against the template's alembic_version.
+    On drift (or if the template is missing), terminates lingering connections,
+    drops the old template, creates a fresh empty one from template1, and
+    migrates it to Alembic head — all inside the advisory-locked critical
+    section.
+
+    The advisory lock serializes concurrent refreshes cluster-wide: only the
+    first run performs the drop+recreate+migrate; the others block on the lock,
+    then re-check drift after acquiring it and find the template already up to
+    date (Pitfall 4 re-check).
+
+    CR-01 fix: the Alembic migration runs INSIDE the lock (via asyncio.to_thread
+    so Alembic's internal asyncio.run() gets a clean worker-thread loop).  The
+    previous approach returned the template URL and migrated in the sync caller
+    AFTER this coroutine closed its lock-holding connection — that released the
+    lock before migration finished, letting a second worker observe a template
+    with no alembic_version table, judge it stale, and DROP it mid-migration.
+    Holding the lock across the migration closes that race.
+
+    asyncpg connections are autocommit by default — no BEGIN is injected, so
+    CREATE DATABASE / DROP DATABASE work natively (RESEARCH Pattern 1).
+    """
+    head = _alembic_head()
+    original_url = settings.DATABASE_URL
+    p = urllib.parse.urlparse(maint_dsn)
+    template_url = (
+        f"postgresql+asyncpg://{p.username}:{p.password}@{p.hostname}:{p.port}/{_TEMPLATE_DB_NAME}"
+    )
+    admin = await asyncpg.connect(maint_dsn)
+    try:
+        await admin.execute(f"SELECT pg_advisory_lock({_TEMPLATE_ADVISORY_LOCK_KEY})")
+        try:
+            # Re-check AFTER acquiring the lock — a concurrent run may have
+            # already refreshed the template while we were waiting (Pitfall 4).
+            tmpl_exists = await admin.fetchval(
+                "SELECT 1 FROM pg_database WHERE datname = $1", _TEMPLATE_DB_NAME
+            )
+            tmpl_version: str | None = None
+            if tmpl_exists:
+                tmpl_conn = await asyncpg.connect(
+                    host=p.hostname,
+                    port=p.port,
+                    user=p.username,
+                    password=p.password,
+                    database=_TEMPLATE_DB_NAME,
+                )
+                try:
+                    tmpl_version = await tmpl_conn.fetchval(
+                        "SELECT version_num FROM alembic_version LIMIT 1"
+                    )
+                except asyncpg.exceptions.UndefinedTableError:
+                    tmpl_version = None
+                finally:
+                    await tmpl_conn.close()
+
+            if not tmpl_exists or tmpl_version != head:
+                # Terminate lingering connections to the template before DROP
+                # (RESEARCH Pitfall 3 / Pattern 5 — ObjectInUseError otherwise).
+                await admin.execute(
+                    """SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+                       WHERE datname = $1 AND pid <> pg_backend_pid()""",
+                    _TEMPLATE_DB_NAME,
+                )
+                await admin.execute(f"DROP DATABASE IF EXISTS {_TEMPLATE_DB_NAME}")
+                await admin.execute(f"CREATE DATABASE {_TEMPLATE_DB_NAME} TEMPLATE template1")
+                # Migrate INSIDE the lock (CR-01).  asyncio.to_thread gives
+                # Alembic's env.py asyncio.run() a fresh loop while the
+                # lock-holding `admin` connection stays open in this loop.
+                await asyncio.to_thread(_run_alembic_upgrade, template_url, original_url)
+        finally:
+            await admin.execute(f"SELECT pg_advisory_unlock({_TEMPLATE_ADVISORY_LOCK_KEY})")
+    finally:
+        await admin.close()
+
+
+async def _create_run_db(maint_dsn: str, run_db_name: str) -> None:
+    """Drop any stale run DB then clone a fresh one from the template.
+
+    The DROP DATABASE IF EXISTS is the stale-DB reaper — it cleans up residue
+    from killed pytest runs so they self-heal on the next invocation (SC-2).
+    asyncpg autocommit ensures both DDL statements run outside a transaction.
+    """
+    admin = await asyncpg.connect(maint_dsn)
+    try:
+        # Stale reaper: clean up residue from a previously killed run.
+        await admin.execute(f"DROP DATABASE IF EXISTS {run_db_name}")
+        await admin.execute(f"CREATE DATABASE {run_db_name} TEMPLATE {_TEMPLATE_DB_NAME}")
+    finally:
+        await admin.close()
+
+
+async def _drop_run_db(maint_dsn: str, run_db_name: str) -> None:
+    """Drop the per-run database at session teardown.
+
+    Called AFTER engine.sync_engine.dispose() to close the SQLAlchemy pool.
+    Uses WITH (FORCE) (PostgreSQL 14+) to terminate any residual connections
+    that survived the pool dispose — e.g. async connections from session-scoped
+    pytest-asyncio fixtures that outlive the sync test_engine teardown point
+    (RESEARCH Assumption A3 / Pitfall 2).
+    """
+    admin = await asyncpg.connect(maint_dsn)
+    try:
+        await admin.execute(f"DROP DATABASE IF EXISTS {run_db_name} WITH (FORCE)")
+    finally:
+        await admin.close()
+
+
+def _quiet_connection_lost(loop: asyncio.AbstractEventLoop, context: dict[str, object]) -> None:
+    """Swallow the benign 'unexpected connection_lost() call' teardown noise.
+
+    Per-run DB teardown drops the database WITH (FORCE) (see _drop_run_db),
+    which server-side terminates any asyncpg connection still attached to it —
+    e.g. the per-run engine's pool connections (sync dispose doesn't send a
+    graceful Terminate) or a session-scoped fixture connection that outlived
+    dispose (RESEARCH Assumption A3).  asyncpg raises
+    ConnectionError('unexpected connection_lost() call') into that connection's
+    orphaned waiter future; with nothing awaiting it, asyncio's default handler
+    logs it to stderr at loop close.  The drop is intentional and the session
+    is already over, so this is pure teardown noise — suppress exactly this
+    error and defer everything else to the default handler.
+    """
+    exc = context.get("exception")
+    if isinstance(exc, ConnectionError) and "connection_lost" in str(exc):
+        return
+    loop.default_exception_handler(context)
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def _silence_connection_lost_noise() -> AsyncGenerator[None, None]:
+    """Install the connection_lost teardown-noise filter on the session loop.
+
+    Session-scoped + autouse so it runs on the same session event loop that
+    owns the connections the per-run-DB WITH (FORCE) drop terminates
+    (asyncio_default_*_loop_scope = "session").  The handler stays set for the
+    loop's lifetime, including the loop-close pass where the orphaned
+    connection_lost futures would otherwise be logged to stderr.
+    """
+    asyncio.get_running_loop().set_exception_handler(_quiet_connection_lost)
+    yield
 
 
 @pytest.fixture(scope="session")
 def test_engine():
-    """Create an async engine for the test DB and run Alembic migrations.
+    """Create a per-run async engine cloned from the migrated template DB.
 
-    Session-scoped: created once per test session, disposed at teardown.
-    Runs alembic upgrade head against flawchess_test to ensure schema is current.
-    Alembic uses a sync URL (postgresql://) because alembic.command.upgrade is synchronous.
+    Session-scoped: created once per pytest session (and once per xdist worker
+    subprocess), disposed at teardown.
+
+    Setup:
+      1. Ensure flawchess_test_template is up to date with Alembic head
+         (advisory-lock-guarded refresh; re-checked after lock acquisition).
+      2. DROP DATABASE IF EXISTS the per-run DB (stale reaper — SC-2 self-heal
+         for killed runs) then CREATE DATABASE <run_db> TEMPLATE <template>.
+      3. Patch settings.DATABASE_URL to the per-run DB URL so all code that
+         opens its own sessions (on_after_login, LastActivityMiddleware, etc.)
+         also hits the per-run DB.
+      4. Yield the async engine.
+
+    Teardown ordering is STRICT (RESEARCH Pitfall 2):
+      - engine.sync_engine.dispose() FIRST (releases SQLAlchemy pool connections)
+      - DROP DATABASE IF EXISTS <run_db> (fails if connections are still open)
+      - Restore settings.DATABASE_URL
+
+    asyncpg DDL runs via asyncio.run() throwaway loops — asyncpg pools are
+    event-loop-bound so each DDL block uses its own short-lived loop
+    (RESEARCH Pattern 7, same pattern used by the old per-session table-wipe).
     """
-    # Patch settings.DATABASE_URL for the entire test session so that any code
-    # creating its own DB connections (e.g. on_after_login callback) also hits
-    # the test DB, not the dev DB which may lack tables.
     original_url = settings.DATABASE_URL
-    settings.DATABASE_URL = settings.TEST_DATABASE_URL
+    run_db_name = _get_run_db_name()
+    maint = _maint_dsn(settings.TEST_DATABASE_URL)
 
-    alembic_cfg = AlembicConfig("alembic.ini")
-    alembic_cfg.set_main_option("sqlalchemy.url", settings.TEST_DATABASE_URL)
-    alembic_command.upgrade(alembic_cfg, "head")
+    # Ensure the template DB exists and is at Alembic head.  The advisory-lock-
+    # guarded refresh (drop + recreate + migrate) all happens inside
+    # _ensure_template_fresh under the lock (CR-01) — the migration no longer
+    # leaks out into this sync fixture.
+    asyncio.run(_ensure_template_fresh(maint))
 
-    # Phase 61: wipe residue from previous pytest runs before any test executes.
-    # Preserves alembic_version + openings; everything else is truncated.
-    # Runs in a throwaway event loop via asyncio.run(); the truncate helper
-    # creates and disposes its own engine inside that loop because asyncpg
-    # pools are event-loop-bound — reusing an engine across loops corrupts it.
-    asyncio.run(_truncate_all_tables(settings.TEST_DATABASE_URL))
+    # Clone a per-run DB from the (now fresh) template.
+    asyncio.run(_create_run_db(maint, run_db_name))
 
-    # Create the async engine for the rest of the test session
-    engine = create_async_engine(settings.TEST_DATABASE_URL, echo=False)
-    yield engine
-    # Dispose the engine synchronously at teardown
-    engine.sync_engine.dispose()
-    settings.DATABASE_URL = original_url
+    p = urllib.parse.urlparse(settings.TEST_DATABASE_URL)
+    run_db_url = (
+        f"postgresql+asyncpg://{p.username}:{p.password}@{p.hostname}:{p.port}/{run_db_name}"
+    )
+
+    # Patch settings.DATABASE_URL to the per-run DB.  All downstream code that
+    # opens its own sessions flows through this single patch point unchanged —
+    # override_get_async_session, db_session, and fresh_test_user all resolve
+    # through the engine yielded here.
+    settings.DATABASE_URL = run_db_url
+    engine = create_async_engine(run_db_url, echo=False)
+
+    try:
+        yield engine
+    finally:
+        # Teardown: dispose engine BEFORE drop (open connections block DROP
+        # DATABASE — RESEARCH Pitfall 2).  Wrapped so settings.DATABASE_URL is
+        # always restored even if dispose/drop raises (review IN-01).
+        try:
+            engine.sync_engine.dispose()
+            asyncio.run(_drop_run_db(maint, run_db_name))
+        finally:
+            settings.DATABASE_URL = original_url
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -152,6 +414,28 @@ def override_get_async_session(test_engine):
     llm_log_repo_module.async_session_maker = original_llm_log_repo_session_maker
 
 
+@pytest.fixture(scope="session", autouse=True)
+def seed_openings_for_tests(test_engine: object) -> None:  # noqa: ARG001
+    """Seed the openings table once per session (per xdist worker).
+
+    Under xdist, each worker gets its own per-run DB (flawchess_test_gw0,
+    gw1, etc.).  Any test that queries openings_dedup (e.g.
+    TestQueryTopOpeningsSqlWDL) requires this seed to have run on the SAME
+    worker.  Placing this fixture in conftest.py ensures every worker seeds
+    its own DB, regardless of which test modules it collects.
+
+    The fixture in tests/test_seed_openings.py is identical and remains as the
+    canonical autouse hook for serial runs; this conftest copy guarantees xdist
+    workers that do NOT collect test_seed_openings.py also get seeded.
+
+    seed_openings() uses INSERT ... ON CONFLICT DO UPDATE, so calling it
+    multiple times is safe.
+    """
+    from scripts.seed_openings import seed_openings
+
+    asyncio.run(seed_openings())
+
+
 @pytest.fixture
 def starting_board() -> chess.Board:
     """Return a fresh starting-position chess board."""
@@ -183,9 +467,10 @@ async def ensure_test_user(session: AsyncSession, user_id: int) -> None:
 async def db_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """Provide an AsyncSession wrapped in a transaction that is rolled back after each test.
 
-    Uses the test DB engine (flawchess_test) bound by the test_engine fixture.
-    Each test runs inside a transaction that is always rolled back, so tests
-    do not pollute each other even without cleanup code.
+    Uses the per-run test DB engine (the flawchess_test_<pid|worker> clone)
+    bound by the test_engine fixture. Each test runs inside a transaction that
+    is always rolled back, so tests do not pollute each other even without
+    cleanup code.
     """
     async with test_engine.connect() as conn:
         # Begin a transaction that we'll roll back at the end

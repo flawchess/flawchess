@@ -78,9 +78,12 @@ The script starts PostgreSQL (Docker), installs dependencies, runs migrations, s
 ### Running Tests
 
 ```bash
-uv run pytest        # Run all tests
-uv run pytest -x     # Stop on first failure
+uv run pytest          # Run all tests (serial)
+uv run pytest -x       # Stop on first failure
+uv run pytest -n auto  # Run in parallel across all CPU cores (much faster locally)
 ```
+
+Each test run, and each `pytest-xdist` worker under `-n auto`, gets its own database cloned from a migrated template, so parallel and concurrent runs are fully isolated. `-n auto` is roughly 2x faster than serial on a multi-core machine. The template auto-refreshes whenever you add a migration, so there is no manual rebuild step. CI runs the suite serially for deterministic, bisectable logs; `-n auto` is a local convenience.
 
 ### Test Coverage
 

@@ -38,7 +38,11 @@ import pytest_asyncio
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-pytestmark = pytest.mark.asyncio
+# No module-level `pytestmark = pytest.mark.asyncio`: asyncio_mode = "auto"
+# (pyproject.toml) auto-marks every `async def` test, so the module mark was
+# redundant — and it also stamped the sync tests in this file (e.g.
+# test_gather_outside_session), emitting "marked with asyncio but not an async
+# function" PytestWarnings.
 
 # ─── Module-level test constants (CLAUDE.md: no magic numbers) ───────────────
 LIFO_FIXTURE_GAME_COUNT: int = 15

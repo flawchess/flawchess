@@ -1162,24 +1162,60 @@ class TestQueryWDLCounts:
 
     @pytest.mark.asyncio
     async def test_wdl_counts_no_target_hash(self, db_session: AsyncSession) -> None:
-        """target_hash=None (all-games mode) sums all user's games regardless of position."""
-        from app.repositories.openings_repository import query_wdl_counts
+        """target_hash=None (all-games mode) sums all user's games regardless of position.
 
-        # Seed 2 wins for user 1 (at different hashes — no position filter)
+        Per-run isolation bug: target_hash=None queries ALL games for a given
+        user_id with no position filter.  Under xdist, each worker gets its own
+        fresh DB clone, and module-scoped fixtures (e.g. seeded_user) that
+        commit games for dynamically-registered users can produce user_id=1 or
+        user_id=2 in a fresh sequence.  Those committed games persist for the
+        worker's lifetime and are visible inside the db_session transaction,
+        causing the count to exceed the 2 games seeded here.
+
+        Fix: use dedicated high-range user IDs (830001, 830002) that are outside
+        the range used by any other test, seeded_user, or auto-increment.  These
+        are created via ensure_test_user inside the rollback-scoped db_session,
+        so they are cleaned up automatically and cannot collide with other tests.
+        """
+        from app.repositories.openings_repository import query_wdl_counts
+        from tests.conftest import ensure_test_user
+
+        # Dedicated user IDs for this test only — high range to avoid any
+        # collision with seeded_user (dynamic sequence), test_aggregation_sanity
+        # (700-series), or other hardcoded IDs across the test suite.
+        _USER_A = 830001
+        _USER_B = 830002
+
+        await ensure_test_user(db_session, _USER_A)
+        await ensure_test_user(db_session, _USER_B)
+
+        # Seed 2 wins for user A (at different hashes — no position filter)
         await _seed_game(
-            db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH + 1
+            db_session,
+            user_id=_USER_A,
+            result="1-0",
+            user_color="white",
+            full_hash=WDL_TARGET_HASH + 1,
         )
         await _seed_game(
-            db_session, result="1-0", user_color="white", full_hash=WDL_TARGET_HASH + 2
+            db_session,
+            user_id=_USER_A,
+            result="1-0",
+            user_color="white",
+            full_hash=WDL_TARGET_HASH + 2,
         )
-        # Seed 1 loss for user 2 (must not appear in user 1's count)
+        # Seed 1 loss for user B (must not appear in user A's count)
         await _seed_game(
-            db_session, user_id=2, result="0-1", user_color="white", full_hash=WDL_TARGET_HASH + 1
+            db_session,
+            user_id=_USER_B,
+            result="0-1",
+            user_color="white",
+            full_hash=WDL_TARGET_HASH + 1,
         )
 
         row = await query_wdl_counts(
             db_session,
-            user_id=1,
+            user_id=_USER_A,
             hash_column=None,
             target_hash=None,
             time_control=None,

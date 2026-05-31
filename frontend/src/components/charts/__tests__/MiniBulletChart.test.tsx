@@ -123,18 +123,21 @@ describe('MiniBulletChart — tickPawns prop (260504-rvh)', () => {
     render(<MiniBulletChart value={0} tickPawns={0.25} domain={1.5} />);
     const tick = screen.queryByTestId('mini-bullet-tick');
     expect(tick).not.toBeNull();
-    const style = tick?.getAttribute('style') ?? '';
-    expect(style).toContain('currentcolor');
-    expect(style).not.toContain('rgb(0, 0, 0)');
+    // jsdom 29 changed shorthand CSS serialization: getAttribute('style') no
+    // longer includes 'currentcolor' for border-left shorthand. Check the
+    // individual borderLeftColor style property instead.
+    const borderColor = (tick as HTMLElement | null)?.style.borderLeftColor ?? '';
+    expect(borderColor).toBe('currentcolor');
   });
 
   it('negative tickPawns (black opening) renders the dashed line in black', () => {
     render(<MiniBulletChart value={0} tickPawns={-0.25} domain={1.5} />);
     const tick = screen.queryByTestId('mini-bullet-tick');
     expect(tick).not.toBeNull();
-    const style = tick?.getAttribute('style') ?? '';
-    expect(style).toContain('rgb(0, 0, 0)');
-    expect(style).not.toContain('currentcolor');
+    const borderColor = (tick as HTMLElement | null)?.style.borderLeftColor ?? '';
+    expect(borderColor).not.toBe('currentcolor');
+    // jsdom normalises #000 to rgb(0, 0, 0) in style properties
+    expect(['#000000', '#000', 'rgb(0, 0, 0)']).toContain(borderColor);
   });
 });
 

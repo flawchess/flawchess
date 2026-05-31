@@ -86,8 +86,10 @@ function zoneColor(diffPct: number): string {
  * Compute a Y-axis domain that expands past the ±30% baseline when needed to
  * include any data point that would otherwise be clipped. Mirrors the pre-
  * deletion chart's behavior (main branch).
+ * @internal Exported only for unit-testing the domain-expansion logic.
  */
-function computeYDomain(values: number[]): [number, number] {
+// eslint-disable-next-line react-refresh/only-export-components -- exported for unit test only; not a component
+export function computeYDomain(values: number[]): [number, number] {
   if (values.length === 0) return Y_DOMAIN_BASE;
   const dataMax = Math.max(...values);
   const dataMin = Math.min(...values);
@@ -191,7 +193,8 @@ export function EndgameClockDiffOverTimeChart({
             data={data}
             margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
           >
-            <CartesianGrid vertical={false} />
+            {/* recharts 3: CartesianGrid must bind to the named primary YAxis via yAxisId */}
+            <CartesianGrid vertical={false} yAxisId="value" />
             {/* Three zone bands (danger / neutral / success). The pre-deletion
                 chart used these to make the verdict readable at a glance. */}
             <ReferenceArea

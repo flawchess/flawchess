@@ -4,8 +4,8 @@ Covers SC #1 (LOG-01 table + columns) and partial SC #1 (LOG-03 named indexes â€
 DESC ordering is verified manually against the dev DB via pg_indexes in Plan 02
 Task 3; SQLAlchemy's inspect API does not expose index column ordering).
 
-Uses the session-scoped test_engine fixture which runs `alembic upgrade head`
-against flawchess_test once per pytest session (see tests/conftest.py lines 69-99).
+Uses the session-scoped test_engine fixture, which clones this run's private
+database from a migrated template once per pytest session (see tests/conftest.py).
 """
 
 import pytest

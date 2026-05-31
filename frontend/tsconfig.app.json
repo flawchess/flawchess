@@ -25,6 +25,10 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
+    // TODO(TS7): `ignoreDeprecations: "6.0"` only silences the baseUrl deprecation
+    // through the TS6 line. baseUrl is slated for removal in TS7 — migrate the
+    // `@/*` paths off baseUrl (or to a supported resolution) before upgrading.
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["./src/*"]
     }

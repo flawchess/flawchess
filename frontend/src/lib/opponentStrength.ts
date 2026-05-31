@@ -68,11 +68,6 @@ export function rangeToSlider(range: OpponentStrengthRange): [number, number] {
   return [range.min ?? SLIDER_MIN, range.max ?? SLIDER_MAX];
 }
 
-/** True when the range filter is active (i.e. not "Any"). */
-export function isRangeActive(range: OpponentStrengthRange): boolean {
-  return range.min !== null || range.max !== null;
-}
-
 /**
  * Format a single bound for the summary line. `null` becomes `≤−200` or
  * `≥+200` to communicate the unbounded semantics; finite values are signed.

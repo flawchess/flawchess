@@ -54,7 +54,6 @@ export interface FilterState {
   color: Color;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export const DEFAULT_FILTERS: FilterState = {
   matchSide: 'both',
   timeControls: null,
@@ -93,7 +92,6 @@ export const FILTER_DOT_FIELDS: ReadonlyArray<keyof FilterState> = [
  * If `fields` is provided, only those FilterState keys are compared — used by GlobalStats
  * which only exposes platform + recency (other fields must be ignored even if non-default).
  */
-// eslint-disable-next-line react-refresh/only-export-components
 export function areFiltersEqual(
   a: FilterState,
   b: FilterState,

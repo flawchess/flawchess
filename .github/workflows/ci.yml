@@ -23,7 +23,9 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: flawchess_test
+          # No POSTGRES_DB: the suite clones its own per-run / per-worker test
+          # database from a migrated template at runtime (tests/conftest.py),
+          # connecting via the always-present `postgres` maintenance DB.
         options: >-
           --health-cmd pg_isready
           --health-interval 10s

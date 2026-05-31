@@ -23,6 +23,7 @@ import functools
 import math
 import time
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Literal, cast
 
 import sentry_sdk
@@ -847,7 +848,7 @@ def _proximity_hint(metric_id: str, value_scaled: float, dimension: dict[str, st
     return ""
 
 
-def _weakest_type_tag(sorted_cats: list[object]) -> str:
+def _weakest_type_tag(sorted_cats: Sequence[object]) -> str:
     """Emit a weakest-type tag across the per-type WDL chart.
 
     Three outcomes across the eligible types (>= _WEAKEST_TYPE_MIN_GAMES):

@@ -13,6 +13,8 @@
 
 ### LLM Statistical Reasoning (LLM)
 
+> **Status (2026-05-31): deprioritized to backlog.** This scope was the sole phase of the planned v1.22 LLM Statistical Reasoning milestone; it was bumped in favour of the v1.22 Maintenance milestone (test isolation + frontend major upgrades) and parked as ROADMAP **Phase 999.7 (BACKLOG)**. Requirements stay open/pending here; promote via `/gsd-review-backlog` when ready.
+
 Reworks the endgame-insights LLM payload + prompt so the model can reason over the v1.17 statistical-rigor metric set (Endgame Score Gap, Achievable Score Gap, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence intervals, and the v1.19 peer-relative percentile annotations, while preserving the prior decision that the cohort `zone` field — not significance — gates whether a metric is narrated.
 
 - [ ] **LLM-01**: The endgame-insights payload exposes per-metric p-values, confidence interval bounds, and percentile fields for the v1.17 statistical-rigor metric set, alongside the existing `zone` + `sample_quality` fields. Existing metrics retain their current shape; the additions are non-breaking optional fields.
@@ -37,14 +39,14 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LLM-01 | Phase 95 | Pending |
-| LLM-02 | Phase 95 | Pending |
-| LLM-03 | Phase 95 | Pending |
-| LLM-04 | Phase 95 | Pending |
-| LLM-05 | Phase 95 | Pending |
-| LLM-06 | Phase 95 | Pending |
-| LLM-07 | Phase 95 | Pending |
+| LLM-01 | Phase 999.7 (backlog) | Pending |
+| LLM-02 | Phase 999.7 (backlog) | Pending |
+| LLM-03 | Phase 999.7 (backlog) | Pending |
+| LLM-04 | Phase 999.7 (backlog) | Pending |
+| LLM-05 | Phase 999.7 (backlog) | Pending |
+| LLM-06 | Phase 999.7 (backlog) | Pending |
+| LLM-07 | Phase 999.7 (backlog) | Pending |
 
-**Coverage:** 7/7 v1 requirements mapped to Phase 95. No orphans.
+**Coverage:** 7/7 v1 requirements mapped to Phase 999.7 (backlog — see ROADMAP). No orphans. The active v1.22 Maintenance milestone (Phases 100, 101) is standalone test-infra + dependency maintenance with no formal requirement IDs.
 
 **Prior milestone (v1.19) closure:** PCTL-01..10 + TPCTL-01..07 + PRPCR-01..09 (26 requirements) all shipped 2026-05-27; archived at `.planning/milestones/v1.19-REQUIREMENTS.md`. The v1.19 ship surfaces per-(metric, ELO anchor, TC) cohort percentile fields on the endgames API which this milestone's LLM-05 consumes.

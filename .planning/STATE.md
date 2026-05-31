@@ -1,39 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.21
-milestone_name: Time-Control-Aware Endgame Metrics
-status: milestone_complete
-last_updated: 2026-05-31T10:30:00.000Z
+milestone: v1.22
+milestone_name: Maintenance — Test Isolation & Frontend Major Upgrades
+status: shipped
+last_updated: "2026-05-31T21:30:00.000Z"
 last_activity: 2026-05-31
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 15
-  completed_plans: 15
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
   percent: 100
-stopped_at: v1.21 shipped and archived (tag v1.21) — ready to start v1.22 (Phase 100, LLM Statistical Reasoning)
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99, 99.1) — ✅ SHIPPED 2026-05-31 (tag v1.21)
-Phase: 100 (v1.22 LLM Statistical Reasoning) — not started
+Phase: none active
 Plan: Not started
-Next: `/gsd-new-milestone` (or `/gsd-discuss-phase 100`) to begin v1.22 LLM Statistical Reasoning
-Status: Milestone complete
-Last activity: 2026-05-31 — v1.21 closed: archived roadmap to milestones/v1.21-ROADMAP.md, promoted CHANGELOG [Unreleased] → [v1.21], added MILESTONES entries (incl. backfilled v1.19/v1.20), reconciled PROJECT.md v1.20→v1.22 milestone drift, tagged v1.21. Pre-close hygiene cleared the open-artifact noise (committed c4641db4).
+Status: v1.22 Maintenance shipped 2026-05-31 (tag v1.22) — milestone archived
+Next: `/gsd-new-milestone` to start the next milestone (leading candidate: backlog Phase 999.7 LLM Statistical Reasoning)
+Last activity: 2026-05-31
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-31 after v1.21 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.22 LLM Statistical Reasoning (Phase 100) — rework the endgame-insights LLM payload + prompt to reason over p-values, CI bounds, and the v1.19/v1.21 percentile annotations, with guardrails against narrating small-but-significant findings (LLM-01..07 in REQUIREMENTS.md). v1.21 just shipped: per-TC Endgame Metrics cards (Phase 97), collapsible per-TC Endgame Type Breakdown cards (Phase 98), per-TC Conv/Parity/Recov percentile chips (Phase 99), and cohort-CDF demoted to a DB table (Phase 99.1). Prod backfill of the 12 new rate-percentile metrics is deferred to deploy.
+Current focus: v1.22 Maintenance — Test Isolation & Frontend Major Upgrades (Phases 100, 101, sequential). Phase 100 (SEED-031): per-run/per-xdist-worker test DB cloned from a migrated template, retiring the session-start `TRUNCATE … CASCADE` lock to unblock concurrent agent runs + `pytest -n auto`. Phase 101 (SEED-032): bump the 11 frontend deps a major behind, one cluster at a time low→high risk (lucide → Vite 8 → jsdom 29 → eslint 10 → typescript 6 → recharts 3), recharts gets visual UAT. Backend has no outstanding major bumps. LLM Statistical Reasoning (LLM-01..07) deprioritized to backlog Phase 999.7. v1.21 just shipped: per-TC Endgame Metrics cards (Phase 97), collapsible per-TC Endgame Type Breakdown cards (Phase 98), per-TC Conv/Parity/Recov percentile chips (Phase 99), and cohort-CDF demoted to a DB table (Phase 99.1). Prod backfill of the 12 new rate-percentile metrics is deferred to deploy.
 
 ## Milestone Progress
 
-Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame Metrics shipped 2026-05-31 — 4 phases (97, 98, 99, 99.1), 15 plans, PRs #160/#163/#164/#167/#168; archived to milestones/v1.21-ROADMAP.md, tagged v1.21. v1.20 Import Pipeline Hardening Follow-Up and Readiness shipped 2026-05-29 — 2 phases (95 asyncpg COPY, 96 Import Readiness Gate), 5 plans, PRs #148/#149/#151; regrouped post-hoc from standalone phases on 2026-05-30, tagged at `dcd22fef`. v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
+Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame Metrics shipped 2026-05-31 — 4 phases (97, 98, 99, 99.1), 15 plans, PRs #160/#163/#164/#167/#168; archived to milestones/v1.21-ROADMAP.md, tagged v1.21. v1.20 Import Pipeline Hardening Follow-Up and Readiness shipped 2026-05-29 — 2 phases (95 asyncpg COPY, 96 Import Readiness Gate), 5 plans, PRs #148/#149/#151; regrouped post-hoc from standalone phases on 2026-05-30, tagged at `dcd22fef`. v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). the Polish phase (#89) dropped from scope at close; the percentile-composite phase (#87.3) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
 
 ## Key Context
 
@@ -53,6 +51,15 @@ Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame 
 
 ### Deferred Items
 
+Acknowledged and deferred at v1.22 milestone close on 2026-05-31 (open-artifact audit: 13 items — all dormant seeds + long-range todos, none v1.22-scoped):
+
+| Category | Item | Status |
+|----------|------|--------|
+| quick_task | 260531-jga-update-all-backend-and-frontend-dependencies | Resolved in spirit — superseded by Phase 101 (the SEED-032 capture this task seeded); frontmatter status not backfilled |
+| todos | 2026-03-11-bitboard-storage, 2026-04-26-phase-70-roadmap-amendments, 2026-04-30-benchmark-rebuild-per-tc-selection, 2026-04-30-benchmark-skill-v2-build, 2026-05-03-rerun-benchmarks-equal-footing (+5 more incl. phase prod-backfills, recovery-score-gap-popover-copy, pt-33-tailwind-axis-label) | Carried forward — long-range ideas + per-phase backfill tasks; not v1.22-scoped |
+| seeds | SEED-010 (library page), SEED-012 (client-side Stockfish tactics), SEED-029 (benchmarks deterministic rebuild), SEED-030 (structural code-health Track A), SEED-033 (cap explorer + partial-index Zobrist hashes) | Dormant — genuine future-work backlog |
+| seeds | SEED-031 (isolated test DB), SEED-032 (frontend major dep upgrades) | DELIVERED by Phases 100 / 101 this milestone — audit still lists them dormant (known gsd-sdk staleness); not actually open |
+
 Acknowledged at v1.21 milestone close on 2026-05-31 (open-artifact audit: 10 genuine backlog items; the historical "172 quick-task" noise was a stale `gsd-sdk` filename-match bug and was cleared, not deferred — see commit c4641db4):
 
 | Category | Item | Status |
@@ -62,13 +69,14 @@ Acknowledged at v1.21 milestone close on 2026-05-31 (open-artifact audit: 10 gen
 | seeds | SEED-010 (library page), SEED-012 (client-side Stockfish tactics), SEED-031 (isolated test DB per run) | Dormant — genuine future-work backlog, not noise |
 | seeds | SEED-029 (benchmarks deterministic rebuild) | Open — endgame generator ported in PR #166; faithful-port Phase A + methodology phase remain |
 | seeds | SEED-030 (structural code-health) | Open (Track A) — module-splitting remains; Track B (CDF demotion) closed by Phase 99.1 |
+| seeds | SEED-032 (frontend major dependency upgrades) | Open — 11 frontend deps a major behind (recharts 3, vite 8, typescript 6, eslint 10, jsdom 29, lucide 1, …); backend has none. Recommended structure: one phase, sequential plan-per-cluster (not a milestone). Captured from quick task 260531-jga. Research typescript-eslint↔TS6/eslint10 compat before planning |
 | resolved | 13 done quick tasks (unmarked), quick-260519-ni3, Phases 97/98/99 verification+UAT frontmatter, import-job-db-conn-closed debug session, remove-recency todo | NOT deferred — resolved/archived at this close (commit c4641db4) |
 
 Acknowledged at v1.17 milestone close on 2026-05-19:
 
 | Category | Item | Status |
 |----------|------|--------|
-| phase | Phase 89 (Polish — popovers, gating decisions, automation rules, 375px parity) | Dropped from scope — polish absorbed incrementally across inserted-phase UAT cycles |
+| phase | Polish phase #89 (popovers, gating decisions, automation rules, 375px parity) | Dropped from scope — polish absorbed incrementally across inserted-phase UAT cycles |
 | phase | Phase 87.3 (Endgame Skill v2 percentile composite) | Superseded by 87.4→87.6 — percentile design retracted at UAT (PR #102) |
 | uat | Phase 88.3 / 88.4 in-browser visual UAT (4 + 3 scenarios) | Deferred — automated gates green (569 frontend tests, knip/tsc clean); not blocking close |
 | debug | import-job-db-conn-closed (diagnosed 2026-05-16) | Diagnosed — prod OOM hotfixed via PRs #99/#100/#101; resilient failure-state recording deferred to a future phase (see CLAUDE.md) |
@@ -131,6 +139,7 @@ Carried forward from v1.11 close (still relevant):
 
 ### Roadmap Evolution
 
+- 2026-05-31: **v1.22 repurposed from "LLM Statistical Reasoning" to "Maintenance — Test Isolation & Frontend Major Upgrades."** New v1.22 holds Phase 100 (Isolated Test DB Per Run, SEED-031) + Phase 101 (Frontend Major Dependency Upgrades, SEED-032), executed sequentially. The previously-planned LLM Endgame-Insights Statistical-Reasoning Rework (the sole v1.22 phase, carried through renumbers 95 → 97 → 98 → 100) was **deprioritized to backlog Phase 999.7** intact rather than renumbered inline; LLM-01..07 stay pending and the REQUIREMENTS.md traceability repoints to 999.7. No v1.23 placeholder created (user chose "backlog only" — the next feature milestone gets named when started). Note: SEED-032 itself recommended *not* cutting a release for tooling upgrades; making this a tagged maintenance milestone is a deliberate override (recharts 3 is user-facing and worth a release). Source: user `/gsd-explore` restructure request.
 - 2026-05-22: v1.19 Endgame Percentiles & LLM Statistical Reasoning opened with a 3-phase directional roadmap. Phase 93 (Global Percentile Benchmark Artifact) — global empirical-CDF artifact via the canonical `/benchmarks` CTE locked into `endgame_zones.py` with TS codegen drift-guard (PCTL-01); blocks the rest. Phase 94 (Backend & Frontend Percentile Annotations) — nullable `{metric}_percentile` field + chip on Tier-1 / Tier-2 endgame cards with desktop + mobile parity, honest Tier-2 copy, minimum-N reliability gate (PCTL-02..06). Phase 95 (LLM Endgame-Insights Statistical-Reasoning Rework) — payload extension with p-values + CI bounds + percentiles, prompt rewrite reasoning over CIs / percentiles with guardrails resolving the `feedback_llm_significance_signal` tension, version bump from `endgame_v35`, UAT pass (LLM-01..07). All 13 requirements mapped, no orphans. Per-phase details intentionally directional — refined at `/gsd:discuss-phase` time. Source: SEED-019 §Proposed Scope and recent v1.17 statistical-rigor work (Phases 85.1 / 86 / 87.2 / 87.6 / 88).
 - 2026-05-22 (later): v1.19 Phase 93/94 scope **narrowed via empirical pre-flight**. A focused /benchmarks pass on the 5 candidate ΔES metrics (`reports/benchmarks-gap-metrics-percentile-candidacy.md`) measured per-user distributions, per-rating-bucket Cohen's d, and skew/kurtosis. Findings: (a) Endgame Score Gap is the cleanest skill-isolating metric (d=0.19, normal-shaped), not "self-relative noise" as a pre-data Socratic critique suggested; (b) Conversion Score Gap is a heavy rating-proxy (d=1.37) but useful for weaker players under an improvement-focus framing; (c) Recovery Score Gap is decisively dropped (d=0.95 inverted, opponent-confounded — the chip would read as the opposite of truth for both weak and strong players); (d) Parity ΔES is the cleanest Section-2 candidate (d=0.30). Chip set narrowed to **4 ΔES rows**: Endgame Score Gap + Achievable Score Gap (page-level) and Parity ΔES + Conversion ΔES (Section 2 cards). Recovery card and the 3 raw % gauges (Conv/Parity/Recov) get no chips. Plan 1 split into Task A (extend `/benchmarks` SKILL.md with a CDF subchapter — methodology source of truth) and Task B (write `scripts/gen_global_percentile_cdf.py` — deterministic regeneration; commits to a new module `app/services/global_percentile_cdf.py`, separate from `endgame_zones.py`). Popover copy reframed: metric-aware (skill-isolating for low-d trio; improvement-focus for high-d Conversion). PCTL-01 + PCTL-04 in REQUIREMENTS.md and Phase 93/94 detail blocks in ROADMAP.md synced to SEED-019. v1.19 is ready for `/gsd:discuss-phase 93`.
 - v1.0–v1.14 shipped (see .planning/MILESTONES.md)
@@ -242,6 +251,7 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 | 66 | Remove concepts info icon; make Insights a collapsible card (open by default) | 2026-05-30 | 3c610ccc | — |
 | 67 | Render insights 3 sections as plain headings/paragraphs (no inner cards) | 2026-05-30 | 98daa838 | — |
 | 68 | Per-section insight slots as collapsible header-band cards (open by default) | 2026-05-30 | 32d38f66 | — |
+| 260531-jga | Update all backend + frontend deps (incl. dev) to latest within current majors. Scope locked via AskUserQuestion: `uv lock --upgrade` honoring the deliberate caps (`pydantic-ai-slim<2.0`, `genai-prices<0.1.0`); frontend caret ranges bumped in-major only, `overrides`/Dependabot transitive pins preserved verbatim; no major bumps. Notable backend: fastapi 0.135.1→0.136.3, uvicorn 0.41.0→0.48.0, sqlalchemy 2.0.48→2.0.50, pydantic 2.12.5→2.13.4, sentry-sdk 2.54.0→2.61.0, google-genai 1.73.1→2.7.0, ty 0.0.26→0.0.40, ruff 0.15.5→0.15.15. Notable frontend: react 19.2.0→19.2.6, react-router-dom 7.13.1→7.16.0, vite 7.3.1→7.3.3, @tanstack/react-query 5.90.21→5.100.14, tailwindcss 4.2.1→4.3.0, knip 6.2.0→6.15.0. Code fixups: 3 ty errors from ty 0.0.40 (Sentry `Event` type in `app/main.py`, stale ignore + overload in `endgame_repository.py`, list invariance in `insights_llm.py`); eslint-plugin-react-hooks 7.1.1's new `react-hooks/set-state-in-effect` rule disabled globally (pre-existing intentional derive-from-server/filter-sync patterns) + removed now-stale per-line disables in `useDeepLinkHighlight.ts`; knip 6.15.0 surfaced 8 dead exports (removed) + 2 duplicate-export pairs (fixed). No pin-backs. Full local gate re-run by orchestrator and confirmed GREEN: ruff format/check + ty clean, pytest 2198 passed/16 skipped, frontend eslint clean + vitest 744/744 + build OK + knip clean. Commits `2d0fc592` (backend) + `2678b070` (frontend) + `3756afff` (stale CLAUDE.md Tech Stack callouts) on `main`; not pushed. | 2026-05-31 | 3756afff | [260531-jga-update-all-backend-and-frontend-dependen](./quick/260531-jga-update-all-backend-and-frontend-dependen/) |
 
 ## Performance Metrics
 
@@ -250,7 +260,14 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 | Phase 99 P02 | 25 | 2 tasks | 6 files |
 | Phase 99 P03 | 15 | 2 tasks | 18 files |
 | Phase 99 P04 | 5 | 2 tasks | 2 files |
+| Phase 100 P01 | 566 | 3 tasks | 3 files |
+| Phase 100 P02 | 14min | 2 tasks | 4 files |
 
 ## Decisions
 
 - [Phase ?]: rate_percentile field trio named distinctly from percentile star (D-01 coexistence)
+- [Phase ?]: alembic_command.upgrade() in sync context — Alembic env.py calls asyncio.run() internally; _ensure_template_fresh returns template URL or None to signal migration need
+- [Phase ?]: DROP DATABASE WITH (FORCE) at teardown: handles residual async connections from session-scoped pytest-asyncio fixtures
+- [Phase ?]: seed_openings_for_tests in conftest.py ensures all xdist workers seed openings per-run DB
+- [Phase ?]: sorted() required for set-based pytest.mark.parametrize: non-deterministic iteration causes xdist collection mismatch
+- [Phase ?]: -n auto: 18.56s vs 40.29s serial (2.2x speedup); two concurrent serial runs both RC=0 (SC-1 + SC-3 satisfied)

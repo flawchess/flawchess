@@ -122,6 +122,34 @@ describe('ScoreGapByTimePressureChart', () => {
     expect(bands.length).toBe(3);
   });
 
+  // Test 2b: zone bands span the full chart width (recharts 3 regression guard — D-01 Wave 6 UAT)
+  //
+  // The hidden "bleed" XAxis requires dataKey="__bleed__" in recharts 3 so that
+  // combineAxisDomain does NOT fall into the early-return "isCategorical && dataKey==null"
+  // branch (which yields range(0, dataLength) instead of the user's [0,1] domain).
+  // Without it the bands map x1=0→x2=1 to category indices 0→1 ("10%"→"30%"),
+  // coloring only the left third. With it, x1=0 maps to the plot left edge and
+  // x2=1 maps to the plot right edge, making the bands full-bleed.
+  //
+  // We verify: every band rect starts at x<80 (close to the left edge of a 800px
+  // mock chart) and has width>600 (covers most of the plot area). This catches a
+  // return to the "left-third" regression without testing exact pixel values.
+  it('zone bands span the full chart width, not just the left third (recharts 3 bleed-axis fix)', () => {
+    const { container } = render(
+      <ScoreGapByTimePressureChart quintiles={FOUR_BIN_FIXTURE} tc="bullet" />,
+    );
+    const bands = container.querySelectorAll<SVGRectElement>('.recharts-reference-area-rect');
+    expect(bands.length).toBe(3);
+    for (const band of bands) {
+      const x = parseFloat(band.getAttribute('x') ?? '0');
+      const width = parseFloat(band.getAttribute('width') ?? '0');
+      // Band must start near the left edge (x < 80 in an 800px-wide mock chart).
+      expect(x).toBeLessThan(80);
+      // Band must be wide (>600px) — the "left-third" bug produces ~220px.
+      expect(width).toBeGreaterThan(600);
+    }
+  });
+
   // Test 3: white line stroke
   it('renders the line with white stroke', () => {
     const { container } = render(
@@ -137,8 +165,9 @@ describe('ScoreGapByTimePressureChart', () => {
     const { container } = render(
       <ScoreGapByTimePressureChart quintiles={FOUR_BIN_FIXTURE} tc="bullet" />,
     );
-    // Custom dot render returns <circle> elements inside .recharts-line
-    const dots = container.querySelectorAll('.recharts-line circle');
+    // recharts 3: dots are rendered in a separate zIndex layer (recharts-line-dots)
+    // as siblings of .recharts-line, not as its descendants. Query .recharts-line-dots.
+    const dots = container.querySelectorAll('.recharts-line-dots circle');
     expect(dots.length).toBe(4);
   });
 
@@ -165,7 +194,8 @@ describe('ScoreGapByTimePressureChart', () => {
     const { container } = render(
       <ScoreGapByTimePressureChart quintiles={sparseFixture} tc="blitz" />,
     );
-    const dots = container.querySelectorAll('.recharts-line circle');
+    // recharts 3: dots are in .recharts-line-dots (separate zIndex layer from .recharts-line)
+    const dots = container.querySelectorAll('.recharts-line-dots circle');
     expect(dots.length).toBe(3);
     // ErrorBars only for bins with non-null CI (Q0, Q2, Q3 = 3 error bars)
     const errorBars = container.querySelectorAll('.recharts-errorBar');
