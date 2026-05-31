@@ -15,13 +15,13 @@ Audit columns:
     (e.g. "2026-05"). NULLable plain audit column, NOT part of any idempotency
     gate (CONTEXT note #1).
 
-~130k rows total (11 metrics × ≤ 181 anchor_elo grid points × 4 TC buckets
+~123k rows total (11 metrics × ≤ 36 anchor_elo grid points × 4 TC buckets
 × 99 percentiles, minus grid cells that lack the K=200 user floor).
 """
 
 from __future__ import annotations
 
-from sqlalchemy import Double, Integer, SmallInteger, String
+from sqlalchemy import Double, Index, Integer, SmallInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -41,6 +41,13 @@ class BenchmarkCohortCdf(Base):
     """
 
     __tablename__ = "benchmark_cohort_cdf"
+
+    # The composite PK leads with ``metric``, but the only read path
+    # (``load_cohort_cells``) filters on ``anchor_elo`` + ``tc`` and returns all
+    # metrics, so the PK cannot serve that filter -- without this index Postgres
+    # seq-scans the full ~123k-row table on every import. Index the filter
+    # columns so the prefetch is an index scan over the user's anchor x TC grid.
+    __table_args__ = (Index("ix_benchmark_cohort_cdf_anchor_tc", "anchor_elo", "tc"),)
 
     # --- composite primary key (metric, anchor_elo, tc, percentile) ----------
 
