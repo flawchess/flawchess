@@ -133,6 +133,7 @@ class _FakeResult:
     output: EndgameInsightsReport
     _usage: _FakeUsage
 
+    @property
     def usage(self) -> _FakeUsage:  # pragma: no cover - trivial
         return self._usage
 

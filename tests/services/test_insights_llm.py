@@ -3154,10 +3154,10 @@ class TestErrors:
             "model_used": "test",
             "prompt_version": "endgame_v16",
         }
-        fake = Agent(  # ty: ignore[no-matching-overload]
+        fake = Agent(
             TestModel(custom_output_args=bad_output),
             output_type=EndgameInsightsReport,
-            output_retries=0,  # no retries — fail immediately
+            retries={"output": 0},  # no retries — fail immediately
         )
         monkeypatch.setattr("app.services.insights_llm.get_insights_agent", lambda: fake)
         monkeypatch.setattr(

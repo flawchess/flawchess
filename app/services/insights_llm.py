@@ -317,18 +317,18 @@ def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
         google_settings = GoogleModelSettings(
             google_thinking_config=_build_google_thinking_config(model_name),  # ty: ignore[invalid-argument-type]
         )
-        return Agent(  # ty: ignore[invalid-return-type, no-matching-overload]
+        return Agent(  # ty: ignore[invalid-return-type]
             google_model,
             output_type=EndgameInsightsReport,
             system_prompt=_SYSTEM_PROMPT,
-            output_retries=_OUTPUT_RETRIES,
+            retries={"output": _OUTPUT_RETRIES},
             model_settings=google_settings,
         )
-    return Agent(  # ty: ignore[invalid-return-type, no-matching-overload] — pydantic-ai Agent generic params depend on runtime model string; ty cannot infer Agent[None, EndgameInsightsReport] from a str variable
+    return Agent(  # ty: ignore[invalid-return-type] — pydantic-ai Agent generic params depend on runtime model string; ty cannot infer Agent[None, EndgameInsightsReport] from a str variable
         model_str,
         output_type=EndgameInsightsReport,
         system_prompt=_SYSTEM_PROMPT,
-        output_retries=_OUTPUT_RETRIES,
+        retries={"output": _OUTPUT_RETRIES},
     )
 
 
@@ -2065,7 +2065,7 @@ async def _run_agent(
         sentry_sdk.capture_exception(exc)
         return None, 0, 0, None, latency_ms, "provider_error"
     latency_ms = int((time.monotonic() - t0) * 1000)
-    usage = result.usage()
+    usage = result.usage
     thinking = usage.details.get(_THOUGHTS_DETAIL_KEY) or None
     return result.output, usage.input_tokens, usage.output_tokens, thinking, latency_ms, None
 
