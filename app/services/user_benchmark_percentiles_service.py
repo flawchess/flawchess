@@ -1,27 +1,26 @@
 """Per-user pooled percentile compute service.
 
 Phase 94.4 Plan 05b — cohort-keyed percentile cutover
------------------------------------------------------
+Phase 99.1 Plan 04  — CDF registry relocated to DB (D-03/D-04 prefetch wiring)
+-------------------------------------------------------------------------------
 
 Rewrite of the post-94.3 service to consume the new cohort CDF artifact
-(``COHORT_PERCENTILE_CDF`` via ``interpolate_cohort_percentile``) and the
-per-(user, TC) median rating anchor (``user_rating_anchors``). The old
-flat 12-name TC-suffixed Stage B metric tuple retires; Stage B now iterates
-``STAGE_B_METRIC_FAMILIES`` (10-tuple) × the user's above-floor TCs and
-the legacy 2-arg ``interpolate_percentile`` helper is no longer called.
+(``benchmark_cohort_cdf`` DB table via ``load_cohort_cells`` repository loader
++ ``interpolate_cohort_percentile``) and the per-(user, TC) median rating
+anchor (``user_rating_anchors``). The old flat 12-name TC-suffixed Stage B
+metric tuple retires; Stage B now iterates ``STAGE_B_METRIC_FAMILIES``
+(10-tuple) × the user's above-floor TCs and the legacy 2-arg
+``interpolate_percentile`` helper is no longer called.
 
 Stage A (eval-independent — wired into import completion per D-03):
 
   1. Compute and UPSERT per-(user, TC) median rating anchors via the
      ``compute_anchors_for_user`` helper. Anchors come FIRST (RESEARCH
      Pitfall 9 backfill ordering) so the per-TC ``score_gap`` percentile
-     lookup downstream can read the anchor's ``anchor_rating`` to key
-     into ``COHORT_PERCENTILE_CDF[(anchor, tc)]``.
-  2. For each TC where an anchor exists, run
-     ``per_user_cte_score_gap_tc(tc, source='single_user', ...)`` to read
-     the user's per-TC ``score_gap``, then interpolate against the
-     cohort CDF at ``(metric='score_gap', anchor=<lichess-equivalent>,
-     tc=<bucket>)`` and UPSERT one
+     lookup can read the anchor's ``anchor_rating``.
+  2. Issue ONE batched ``load_cohort_cells`` prefetch for all (anchor, TC)
+     pairs, then resolve from the in-memory dict (D-03).
+  3. For each TC, interpolate against the cohort CDF and UPSERT one
      ``user_benchmark_percentiles(user_id, metric, time_control_bucket)``
      row.
 
@@ -114,7 +113,12 @@ from app.services.canonical_slice_sql import (
     per_user_cte_time_pressure_score_gap,
     selected_users_cte,
 )
-from app.services.global_percentile_cdf import CdfMetricId, interpolate_cohort_percentile
+from app.repositories.benchmark_cohort_cdf_repository import load_cohort_cells
+from app.services.global_percentile_cdf import (
+    CdfMetricId,
+    _round_anchor_to_grid,
+    interpolate_cohort_percentile,
+)
 
 # ---------------------------------------------------------------------------
 # Module-level constants (CLAUDE.md: no magic numbers).
@@ -412,6 +416,10 @@ async def compute_stage_a(
     try:
         async with maker() as session:
             anchors = await compute_anchors_for_user(session, user_id)
+            # D-03: one batched prefetch per import for all (anchor, TC) cells.
+            # The ~few per-TC lookups inside the loop then hit the in-memory dict.
+            rounded_anchors = [_round_anchor_to_grid(a.anchor_rating) for a in anchors.values()]
+            cohort_a = await load_cohort_cells(session, rounded_anchors, list(anchors.keys()))
             for tc, anchor in anchors.items():
                 try:
                     result = await _compute_metric_for_user_per_tc(
@@ -421,9 +429,8 @@ async def compute_stage_a(
                         # Below per-TC floor for score_gap → no row.
                         continue
                     value, n_games = result
-                    percentile: float | None = interpolate_cohort_percentile(
-                        STAGE_A_METRIC, value, anchor.anchor_rating, tc
-                    )
+                    table_a = cohort_a.get((STAGE_A_METRIC, _round_anchor_to_grid(anchor.anchor_rating), tc))
+                    percentile: float | None = interpolate_cohort_percentile(value, table_a)
                     await upsert_percentile(
                         session,
                         user_id=user_id,
@@ -495,6 +502,10 @@ async def compute_stage_b(
                 # No above-floor anchors — Stage A wrote nothing, Stage B has
                 # no per-TC cohort key to interpolate against; no-op.
                 return
+            # D-03: one batched prefetch per import for all (anchor, TC) cells.
+            # The ~32 per-import lookups inside the loop then hit the in-memory dict.
+            rounded_anchors_b = [_round_anchor_to_grid(a.anchor_rating) for a in anchors.values()]
+            cohort_b = await load_cohort_cells(session, rounded_anchors_b, list(anchors.keys()))
             for family in STAGE_B_METRIC_FAMILIES:
                 for tc, anchor in anchors.items():
                     try:
@@ -503,9 +514,8 @@ async def compute_stage_b(
                             # Below per-TC floor for this (family, tc) → no row.
                             continue
                         value, n_games = result
-                        percentile: float | None = interpolate_cohort_percentile(
-                            family, value, anchor.anchor_rating, tc
-                        )
+                        table_b = cohort_b.get((family, _round_anchor_to_grid(anchor.anchor_rating), tc))
+                        percentile: float | None = interpolate_cohort_percentile(value, table_b)
                         await upsert_percentile(
                             session,
                             user_id=user_id,
