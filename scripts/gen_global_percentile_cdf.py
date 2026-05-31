@@ -528,7 +528,9 @@ def _write_seed_tsv(
     tc_order = {tc: i for i, tc in enumerate(ALL_TIME_CONTROLS)}
     with path.open("w", newline="") as f:
         writer = csv.writer(f, delimiter="\t")
-        writer.writerow(["metric", "anchor_elo", "tc", "percentile", "value", "n_users", "snapshot_month"])
+        writer.writerow(
+            ["metric", "anchor_elo", "tc", "percentile", "value", "n_users", "snapshot_month"]
+        )
         for metric in IN_SCOPE_METRICS:
             per_metric = cells.get(metric, {})
             sorted_keys = sorted(per_metric.keys(), key=lambda k: (k[0], tc_order[k[1]]))
