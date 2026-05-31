@@ -145,10 +145,17 @@ Plans:
   6. Backend + frontend gates pass (`ruff`, `ty`, `pytest`, frontend lint/tests); chip output is byte-for-byte equivalent to pre-refactor for a representative user (pure relocation, no behavior change).
 
 **Plans**: 4 plans
+**Wave 1**
 
   - [ ] 99.1-01-PLAN.md — benchmark_cohort_cdf model + schema-only Alembic migration (D-01)
   - [ ] 99.1-02-PLAN.md — generator emits app/data/cohort_cdf.tsv + committed seed artifact + TSV drift test (D-02, SC#4)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
   - [ ] 99.1-03-PLAN.md — idempotent seed script + load_cohort_cells repository (D-03/D-04) + run_local.sh seed block (SC#5)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
   - [ ] 99.1-04-PLAN.md — shrink global_percentile_cdf.py (sync interpolator) + wire stage A/B prefetch + byte-for-byte parity (SC#1/#3/#6)
 
 > Planning note: SC#3's literal "interpolate_cohort_percentile becomes async" is reconciled per CONTEXT D-04 — the module stays pure/sync and takes a prefetched CdfTable; the async DB access lives in the new `benchmark_cohort_cdf_repository.load_cohort_cells` (batched prefetch, D-03).
