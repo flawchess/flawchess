@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
-status: executing
-last_updated: "2026-05-31T07:49:13.516Z"
+status: ready_to_plan
+last_updated: 2026-05-31T08:13:06.612Z
 last_activity: 2026-05-31
 progress:
   total_phases: 9
@@ -11,6 +11,7 @@ progress:
   total_plans: 15
   completed_plans: 15
   percent: 44
+stopped_at: Phase 99.1 complete (4/4) — ready to discuss Phase 100
 ---
 
 # Project State: FlawChess
@@ -18,10 +19,10 @@ progress:
 ## Current Position
 
 Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
-Phase: 99.1 (move-cohort-cdf-out-of-source-into-a-db-table) — EXECUTING
-Plan: 2 of 4
+Phase: 100
+Plan: Not started
 Next: Plan 03 (PerTcBucketStats field widening + endgame_service dispatch)
-Status: Ready to execute
+Status: Ready to plan
 Last activity: 2026-05-31
 
 ## Project Reference
