@@ -1,5 +1,8 @@
 import * as React from "react"
 import * as RechartsPrimitive from "recharts"
+// recharts 3: LegendProps no longer exposes 'payload' (it is Omit<DefaultLegendContentProps,
+// 'payload'>). Import from DefaultLegendContentProps which still carries payload.
+import type { Props as DefaultLegendContentProps } from "recharts/types/component/DefaultLegendContent"
 
 import { cn } from "@/lib/utils"
 
@@ -113,7 +116,9 @@ function ChartLegendContent({
   hiddenKeys,
   onClickItem,
 }: React.ComponentProps<"div"> &
-  Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> & {
+  // recharts 3: payload lives on DefaultLegendContentProps, not LegendProps.
+  // payload is injected by recharts via cloneElement when used as Legend content.
+  Pick<DefaultLegendContentProps, "payload" | "verticalAlign"> & {
     hideIcon?: boolean
     nameKey?: string
     hiddenKeys?: Set<string>

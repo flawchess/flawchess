@@ -189,7 +189,8 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
             data={data}
             margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
           >
-            <CartesianGrid vertical={false} />
+            {/* recharts 3: CartesianGrid must bind to the named primary YAxis via yAxisId */}
+            <CartesianGrid vertical={false} yAxisId="value" />
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis
               yAxisId="value"

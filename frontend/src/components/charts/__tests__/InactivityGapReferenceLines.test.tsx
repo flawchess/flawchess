@@ -3,38 +3,16 @@
  * Unit and render tests for the shared inactivityGapReferenceLines helper (SC-4).
  *
  * Pure cases (empty/single/short arrays) assert on the returned array length
- * directly without mounting. Render cases mount a minimal ComposedChart and
- * assert on data-testid anchors so the tests stay independent of lucide's
- * internal class names and Recharts' SVG internals.
+ * directly without mounting. Render cases extract the label ReactElement from
+ * the returned ReferenceLine elements and render it in a plain <svg>; this
+ * approach was required after recharts 3 moved label rendering to React portals
+ * (ZIndexLayer/zIndex-layer) which don't land in the jsdom query container.
  */
+import type { ReactElement } from 'react';
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { cloneElement, isValidElement } from 'react';
-import type { ReactElement } from 'react';
 
-// Recharts' <ResponsiveContainer> measures its parent with ResizeObserver;
-// in jsdom the parent has zero dimensions so the inner chart refuses to render
-// and downstream queries fail. Swap it for a fixed-size wrapper that injects
-// explicit width/height into the chart child so Recharts skips its sizing guard.
-// (Same pattern as EndgameScoreOverTimeChart.test.tsx.)
-vi.mock('recharts', async () => {
-  const actual = await vi.importActual<typeof import('recharts')>('recharts');
-  return {
-    ...actual,
-    ResponsiveContainer: ({ children }: { children: ReactElement }) => (
-      <div style={{ width: 800, height: 400 }}>
-        {isValidElement(children)
-          ? cloneElement(children as ReactElement<{ width?: number; height?: number }>, {
-              width: 800,
-              height: 400,
-            })
-          : children}
-      </div>
-    ),
-  };
-});
-
-import { ComposedChart, XAxis, YAxis } from 'recharts';
 import { inactivityGapReferenceLines } from '../InactivityGapReferenceLines';
 
 beforeAll(() => {
@@ -108,13 +86,14 @@ describe('inactivityGapReferenceLines — pure cases', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Render cases: mount a minimal chart and assert on data-testid anchors
+// Render cases: render the ReferenceLine label content directly
 // ---------------------------------------------------------------------------
-
-/** Build a chart data array from an array of date strings (score is irrelevant for gap tests). */
-function makeChartData(dates: string[]): { date: string; value: number }[] {
-  return dates.map((date) => ({ date, value: 50 }));
-}
+//
+// recharts 3 uses React portals (ZIndexLayer) for ReferenceLine rendering —
+// label content doesn't land in the query container in jsdom without a real
+// browser layout engine. Instead, we extract the `label` ReactElement from the
+// returned <ReferenceLine> props and render it directly in a plain <svg> to
+// verify the label content independently of recharts' internal layout system.
 
 /** Fixture with a >90-day gap between index 0 and 1 (121 days). */
 const GAP_DATES = ['2024-01-01', '2024-05-01', '2024-05-08'];
@@ -122,51 +101,50 @@ const GAP_DATES = ['2024-01-01', '2024-05-01', '2024-05-08'];
 /** Fixture where all consecutive pairs are 7 days apart — no gap. */
 const NO_GAP_DATES = ['2024-01-01', '2024-01-08', '2024-01-15', '2024-01-22'];
 
+/**
+ * Extract the `label` ReactElement from the first ReferenceLine returned by
+ * inactivityGapReferenceLines and render it with a mock viewBox. This bypasses
+ * recharts' portal-based rendering (which requires a real layout engine) while
+ * still testing the actual label component that recharts would render.
+ */
+function renderFirstGapLabel(dates: string[]) {
+  const elements = inactivityGapReferenceLines({ dates });
+  if (!elements.length) return null;
+  const first = elements[0] as ReactElement<{ label?: ReactElement }>;
+  const label = first?.props?.label;
+  if (!label) return null;
+  // Inject viewBox so the label receives coordinates (recharts would do this)
+  const labelWithViewBox = isValidElement(label)
+    ? cloneElement(label as ReactElement<{ viewBox?: { x: number; y: number } }>, {
+        viewBox: { x: 100, y: 50 },
+      })
+    : label;
+  return render(<svg>{labelWithViewBox}</svg>);
+}
+
 describe('inactivityGapReferenceLines — render cases (no yAxisId)', () => {
   it('renders data-testid="inactivity-gap-label" for a gap fixture', () => {
-    const { container } = render(
-      <ComposedChart width={800} height={400} data={makeChartData(GAP_DATES)}>
-        <XAxis dataKey="date" />
-        <YAxis />
-        {inactivityGapReferenceLines({ dates: GAP_DATES })}
-      </ComposedChart>,
-    );
-    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
+    const result = renderFirstGapLabel(GAP_DATES);
+    expect(result).not.toBeNull();
+    expect(result!.container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
   });
 
   it('renders data-testid="inactivity-gap-glyph" (Palmtree icon) for a gap fixture', () => {
-    const { container } = render(
-      <ComposedChart width={800} height={400} data={makeChartData(GAP_DATES)}>
-        <XAxis dataKey="date" />
-        <YAxis />
-        {inactivityGapReferenceLines({ dates: GAP_DATES })}
-      </ComposedChart>,
-    );
-    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).not.toBeNull();
+    const result = renderFirstGapLabel(GAP_DATES);
+    expect(result).not.toBeNull();
+    expect(result!.container.querySelector('[data-testid="inactivity-gap-glyph"]')).not.toBeNull();
   });
 
   it('renders the compact gap label (e.g. "Nmo") for a gap fixture', () => {
-    render(
-      <ComposedChart width={800} height={400} data={makeChartData(GAP_DATES)}>
-        <XAxis dataKey="date" />
-        <YAxis />
-        {inactivityGapReferenceLines({ dates: GAP_DATES })}
-      </ComposedChart>,
-    );
+    renderFirstGapLabel(GAP_DATES);
     // computeInactivityGaps labels gaps < 365 days as compact "Nmo"
     expect(screen.getByText(/^\d+mo$/)).toBeTruthy();
   });
 
   it('renders no gap label for a gap-free fixture', () => {
-    const { container } = render(
-      <ComposedChart width={800} height={400} data={makeChartData(NO_GAP_DATES)}>
-        <XAxis dataKey="date" />
-        <YAxis />
-        {inactivityGapReferenceLines({ dates: NO_GAP_DATES })}
-      </ComposedChart>,
-    );
-    expect(container.querySelector('[data-testid="inactivity-gap-label"]')).toBeNull();
-    expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).toBeNull();
+    const elements = inactivityGapReferenceLines({ dates: NO_GAP_DATES });
+    // No ReferenceLine elements produced → no label content to render
+    expect(elements.length).toBe(0);
   });
 });
 

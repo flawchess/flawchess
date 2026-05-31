@@ -463,7 +463,8 @@ export function EndgameEloTimelineSection({
             data={barChartData}
             margin={{ top: 5, right: 10, left: isMobile ? 0 : 10, bottom: 10 }}
           >
-            <CartesianGrid vertical={false} />
+            {/* recharts 3: CartesianGrid must bind to the named primary YAxis via yAxisId */}
+            <CartesianGrid vertical={false} yAxisId="elo" />
             <XAxis dataKey="date" tickFormatter={formatDateTick} tick={{ fontSize: 12 }} />
             <YAxis
               yAxisId="elo"
