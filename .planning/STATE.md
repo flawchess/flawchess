@@ -62,6 +62,7 @@ Acknowledged at v1.21 milestone close on 2026-05-31 (open-artifact audit: 10 gen
 | seeds | SEED-010 (library page), SEED-012 (client-side Stockfish tactics), SEED-031 (isolated test DB per run) | Dormant — genuine future-work backlog, not noise |
 | seeds | SEED-029 (benchmarks deterministic rebuild) | Open — endgame generator ported in PR #166; faithful-port Phase A + methodology phase remain |
 | seeds | SEED-030 (structural code-health) | Open (Track A) — module-splitting remains; Track B (CDF demotion) closed by Phase 99.1 |
+| seeds | SEED-032 (frontend major dependency upgrades) | Open — 11 frontend deps a major behind (recharts 3, vite 8, typescript 6, eslint 10, jsdom 29, lucide 1, …); backend has none. Recommended structure: one phase, sequential plan-per-cluster (not a milestone). Captured from quick task 260531-jga. Research typescript-eslint↔TS6/eslint10 compat before planning |
 | resolved | 13 done quick tasks (unmarked), quick-260519-ni3, Phases 97/98/99 verification+UAT frontmatter, import-job-db-conn-closed debug session, remove-recency todo | NOT deferred — resolved/archived at this close (commit c4641db4) |
 
 Acknowledged at v1.17 milestone close on 2026-05-19:
