@@ -161,8 +161,15 @@ async def query_endgame_entry_rows(
 
     Returns rows of:
         (game_id, endgame_class, result, user_color,
-         eval_cp, eval_mate, next_entry_eval_cp, next_entry_eval_mate, played_at)
+         eval_cp, eval_mate, next_entry_eval_cp, next_entry_eval_mate, played_at,
+         time_control_bucket)
     where endgame_class is an integer (1-6, see EndgameClassInt).
+
+    Phase 98 fix: `time_control_bucket` (col 9) lets the per-(class × TC) type
+    breakdown (`_aggregate_endgame_stats_by_tc`) group these per-class spans by TC.
+    The earlier implementation grouped `query_endgame_bucket_rows` (one row per
+    game, class = first endgame position) which classified almost every game as
+    "mixed", leaving the rook/minor/pawn/queen tiles empty.
 
     eval_cp and eval_mate are white-perspective Stockfish eval at the span-entry ply.
     NO sign flip in SQL — the service layer's _classify_endgame_bucket applies the
@@ -262,6 +269,10 @@ async def query_endgame_entry_rows(
             # Quick task 260519-lu0: played_at for MAX(played_at) per category
             # (drives last_played_at in EndgameCategoryStats / PositionResultsPanel).
             Game.played_at.label("played_at"),
+            # Phase 98 fix: per-(class × TC) type breakdown groups these per-class
+            # spans by TC. Appended (col 9) so existing positional/test consumers of
+            # cols 0-8 are unaffected; all prod consumers use named Row access.
+            Game.time_control_bucket.label("time_control_bucket"),
         )
         .join(span_with_next, Game.id == span_with_next.c.game_id)
         .where(Game.user_id == user_id)
@@ -304,13 +315,24 @@ async def query_endgame_bucket_rows(
     preserving the invariant `sum(material_rows.games) == endgame_wdl.total` by
     construction.
 
-    Returns rows of: (game_id, endgame_class, result, user_color, eval_cp, eval_mate)
+    Returns rows of:
+        (game_id, endgame_class, result, user_color, eval_cp, eval_mate,
+         time_control_bucket, next_entry_eval_cp, next_entry_eval_mate)
 
-    Tuple shape matches `query_endgame_entry_rows` so callers of
-    `_compute_score_gap_material` can swap queries without change. The
-    `endgame_class` column here is the class of the FIRST endgame position
-    for the game (purely informational — bucketing is game-level and no
-    longer tiebreaks on it).
+    Tuple shape matches `query_endgame_entry_rows` for columns 0-5. Columns 6-8
+    are additive and not consumed by existing callers (`_aggregate_bucket_counts`
+    uses named attribute access on columns 0-5 only). The `endgame_class` column
+    here is the class of the FIRST endgame position for the game (purely
+    informational — bucketing is game-level and no longer tiebreaks on it).
+
+    Phase 97: `time_control_bucket` (column 6) enables per-TC grouping in
+    `_compute_per_tc_metric_cards`. `next_entry_eval_cp` / `next_entry_eval_mate`
+    (columns 7-8) are LEAD() window columns mirroring `query_endgame_entry_rows`.
+    Since this query groups by game_id (one row per game), the LEAD partition
+    always contains a single row — both next-eval columns are always NULL,
+    making every bucket row a "terminal span" that uses the game result as exit
+    score in `_compute_span_gap`. This is semantically correct for the per-game
+    bucket aggregation.
 
     Semantics:
     - One row per endgame game (no per-class split).
@@ -344,6 +366,11 @@ async def query_endgame_bucket_rows(
             entry_endgame_class_agg.label("endgame_class"),
             entry_eval_cp_agg.label("entry_eval_cp"),
             entry_eval_mate_agg.label("entry_eval_mate"),
+            # Phase 97: span_min_ply used as the LEAD() window ordering key.
+            # Since bucket_rows groups by game_id (one row per game), the LEAD
+            # partition contains exactly one row so next_entry_eval_* are always
+            # NULL — but the LEAD() syntax requires an ORDER BY column.
+            func.min(GamePosition.ply).label("span_min_ply"),
         )
         .where(
             GamePosition.user_id == user_id,
@@ -354,19 +381,48 @@ async def query_endgame_bucket_rows(
         .subquery("first_endgame")
     )
 
+    # Phase 97: wrap span_subq with a LEAD() window to add next-eval columns,
+    # mirroring the pattern in query_endgame_entry_rows (lines 226-244).
+    # The partition is per game_id; since there is one row per game, LEAD always
+    # returns NULL on both columns (terminal span semantics).
+    span_with_next = select(
+        span_subq.c.game_id,
+        span_subq.c.endgame_class,
+        span_subq.c.entry_eval_cp,
+        span_subq.c.entry_eval_mate,
+        func.lead(span_subq.c.entry_eval_cp)
+        .over(
+            partition_by=span_subq.c.game_id,
+            order_by=span_subq.c.span_min_ply.asc(),
+        )
+        .label("next_entry_eval_cp"),
+        func.lead(span_subq.c.entry_eval_mate)
+        .over(
+            partition_by=span_subq.c.game_id,
+            order_by=span_subq.c.span_min_ply.asc(),
+        )
+        .label("next_entry_eval_mate"),
+    ).subquery("bucket_with_next")
+
     # eval_cp and eval_mate are projected raw (white-perspective, no SQL color flip).
     # The service layer's _classify_endgame_bucket(eval_cp, eval_mate, user_color)
     # applies the sign flip at read time (REFAC-02).
     stmt = (
         select(
             Game.id.label("game_id"),
-            span_subq.c.endgame_class,
+            span_with_next.c.endgame_class,
             Game.result,
             Game.user_color,
-            span_subq.c.entry_eval_cp.label("eval_cp"),
-            span_subq.c.entry_eval_mate.label("eval_mate"),
+            span_with_next.c.entry_eval_cp.label("eval_cp"),
+            span_with_next.c.entry_eval_mate.label("eval_mate"),
+            # Phase 97: time_control_bucket (column 6) for per-TC grouping.
+            Game.time_control_bucket,
+            # Phase 97: LEAD next-entry-eval columns (columns 7-8) for span gap computation.
+            # Always NULL for bucket_rows (one row per game -> terminal span).
+            span_with_next.c.next_entry_eval_cp.label("next_entry_eval_cp"),
+            span_with_next.c.next_entry_eval_mate.label("next_entry_eval_mate"),
         )
-        .join(span_subq, Game.id == span_subq.c.game_id)
+        .join(span_with_next, Game.id == span_with_next.c.game_id)
         .where(Game.user_id == user_id)
     )
 

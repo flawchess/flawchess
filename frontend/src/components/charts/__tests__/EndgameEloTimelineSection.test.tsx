@@ -4,6 +4,10 @@
  *
  * Phase 87.6 extension: adds tests for the 3-line + signed-band layout,
  * gradient ID uniqueness, hidden-combo cleanup, and tooltip content.
+ *
+ * 260530-pll: replaces computeDefaultHidden tests with computeDefaultHiddenByPrimaryTc
+ * tests. Default visibility is now based on the primary TC (computePrimaryTc heuristic),
+ * not the old active-weeks / top-1-by-games heuristic.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -65,73 +69,47 @@ afterEach(() => {
 
 import { EndgameEloTimelineSection } from '../EndgameEloTimelineSection';
 
+// ── Fixture helpers ────────────────────────────────────────────────────────────
+
+/** Build a minimal combo point. */
+function buildPoint(
+  date: string,
+  perWeekTotalGames: number,
+): EndgameEloTimelineResponse['combos'][number]['points'][number] {
+  return {
+    date,
+    endgame_elo: 1620,
+    non_endgame_elo: 1600,
+    actual_elo: 1610,
+    endgame_games_in_window: 50,
+    per_week_endgame_games: Math.floor(perWeekTotalGames / 2),
+    per_week_total_games: perWeekTotalGames,
+  };
+}
+
+/** Build a combo with N weeks of data. */
+function buildCombo(
+  combo_key: string,
+  platform: 'chess.com' | 'lichess',
+  time_control: 'bullet' | 'blitz' | 'rapid' | 'classical',
+  weeks: number,
+  perWeekGames: number,
+): EndgameEloTimelineResponse['combos'][number] {
+  const points = Array.from({ length: weeks }, (_, i) => {
+    const base = new Date('2026-01-05T00:00:00Z');
+    base.setUTCDate(base.getUTCDate() + i * 7);
+    return buildPoint(base.toISOString().slice(0, 10), perWeekGames);
+  });
+  return { combo_key, platform, time_control, points };
+}
+
 function buildResponse(): EndgameEloTimelineResponse {
+  // chess_com_blitz: 2 weeks * 18 games = 36 total, weight = 36 * 180 = 6480
+  // lichess_rapid:   3 weeks * 20 games = 60 total, weight = 60 * 600 = 36000 (PRIMARY)
   return {
     combos: [
-      {
-        combo_key: 'chess_com_blitz',
-        platform: 'chess.com',
-        time_control: 'blitz',
-        points: [
-          {
-            // Endgame leads; midpoint property: 1620 + 1600 == 2 * 1610.
-            date: '2026-04-06',
-            endgame_elo: 1620,
-            non_endgame_elo: 1600,
-            actual_elo: 1610,
-            endgame_games_in_window: 50,
-            per_week_endgame_games: 4,
-            per_week_total_games: 18,
-          },
-          {
-            // Endgame leads; midpoint property: 1640 + 1610 == 2 * 1625.
-            date: '2026-04-13',
-            endgame_elo: 1640,
-            non_endgame_elo: 1610,
-            actual_elo: 1625,
-            endgame_games_in_window: 55,
-            per_week_endgame_games: 5,
-            per_week_total_games: 22,
-          },
-        ],
-      },
-      {
-        combo_key: 'lichess_rapid',
-        platform: 'lichess',
-        time_control: 'rapid',
-        points: [
-          {
-            // Endgame leads (green band)
-            date: '2026-04-06',
-            endgame_elo: 1700,
-            non_endgame_elo: 1650,
-            actual_elo: 1675,
-            endgame_games_in_window: 50,
-            per_week_endgame_games: 4,
-            per_week_total_games: 16,
-          },
-          {
-            // Endgame trails (red band — crossover)
-            date: '2026-04-13',
-            endgame_elo: 1700,
-            non_endgame_elo: 1750,
-            actual_elo: 1725,
-            endgame_games_in_window: 55,
-            per_week_endgame_games: 5,
-            per_week_total_games: 20,
-          },
-          {
-            // Endgame leads again (crossover back)
-            date: '2026-04-20',
-            endgame_elo: 1750,
-            non_endgame_elo: 1700,
-            actual_elo: 1725,
-            endgame_games_in_window: 60,
-            per_week_endgame_games: 6,
-            per_week_total_games: 24,
-          },
-        ],
-      },
+      buildCombo('chess_com_blitz', 'chess.com', 'blitz', 2, 18),
+      buildCombo('lichess_rapid', 'lichess', 'rapid', 3, 20),
     ],
     timeline_window: 100,
   };
@@ -186,9 +164,9 @@ describe('EndgameEloTimelineSection — rename', () => {
 });
 
 describe('EndgameEloTimelineSection — 3-line + signed-band layout', () => {
-  // buildResponse() has 2 combos: chess_com_blitz (2 pts, 40 total games) and
-  // lichess_rapid (3 pts, 60 total games). With MAX_DEFAULT_VISIBLE=1, only
-  // lichess_rapid (more total games) is visible on initial render.
+  // buildResponse() has 2 combos: chess_com_blitz and lichess_rapid.
+  // lichess_rapid is the primary TC (60 total * 600 weight = 36000 > 36 * 180 = 6480).
+  // With primary-TC visibility, only lichess_rapid combos are visible on initial render.
 
   it('renders 3 Line elements for the single default-visible combo (recharts-line-curve class)', () => {
     const { container } = render(
@@ -199,7 +177,7 @@ describe('EndgameEloTimelineSection — 3-line + signed-band layout', () => {
       />,
     );
     const lineCurves = container.querySelectorAll('.recharts-line-curve');
-    // 1 visible combo × 3 lines = 3 (chess_com_blitz is hidden by default)
+    // 1 visible combo (lichess_rapid) × 3 lines = 3 (chess_com_blitz is hidden)
     expect(lineCurves.length).toBe(3);
   });
 
@@ -261,18 +239,17 @@ describe('EndgameEloTimelineSection — 3-line + signed-band layout', () => {
       />,
     );
 
-    // Initially: 1 visible (lichess_rapid) × 3 lines = 3 curves; 1 area.
-    // chess_com_blitz is hidden by default (less total games).
+    // Initially: 1 visible (lichess_rapid = primary TC) × 3 lines = 3; 1 area.
     const beforeLines = container.querySelectorAll('.recharts-line-curve');
     const beforeAreas = container.querySelectorAll('.recharts-area-area');
     expect(beforeLines.length).toBe(3);
     expect(beforeAreas.length).toBe(1);
 
-    // Click the legend button for the hidden chess_com_blitz to show it
+    // Click the legend button for the hidden chess_com_blitz to show it.
     const legendBtn = screen.getByTestId('endgame-elo-legend-chess_com_blitz');
     fireEvent.click(legendBtn);
 
-    // After revealing one combo: visible = 2 combos × 3 lines = 6; 2 areas
+    // After revealing one combo: visible = 2 combos × 3 lines = 6; 2 areas.
     const afterLines = container.querySelectorAll('.recharts-line-curve');
     const afterAreas = container.querySelectorAll('.recharts-area-area');
     expect(afterLines.length).toBe(6);
@@ -288,12 +265,12 @@ describe('EndgameEloTimelineSection — 3-line + signed-band layout', () => {
       />,
     );
 
-    // chess_com_blitz starts hidden (less total games than lichess_rapid)
+    // chess_com_blitz is hidden (not the primary TC).
     const legendBtn = screen.getByTestId('endgame-elo-legend-chess_com_blitz');
     expect(legendBtn.getAttribute('aria-pressed')).toBe('false');
     expect(legendBtn.className).toContain('opacity-50');
 
-    // Click to reveal — aria-pressed becomes true, opacity class removed
+    // Click to reveal — aria-pressed becomes true, opacity class removed.
     fireEvent.click(legendBtn);
     expect(legendBtn.getAttribute('aria-pressed')).toBe('true');
     expect(legendBtn.className).not.toContain('opacity-50');
@@ -346,227 +323,98 @@ describe('EndgameEloTimelineSection — gradient ID uniqueness', () => {
   });
 });
 
-describe('EndgameEloTimelineSection — default-hidden filter (Phase 87.6 amendment)', () => {
-  // Builds a response with `count` combos, each carrying a configurable
-  // (active_weeks, per_week_games) profile. combo_keys cycle through the 8
-  // valid EloComboKey values so legend testids are deterministic.
-  const ALL_KEYS = [
-    'chess_com_bullet',
-    'chess_com_blitz',
-    'chess_com_rapid',
-    'chess_com_classical',
-    'lichess_bullet',
-    'lichess_blitz',
-    'lichess_rapid',
-    'lichess_classical',
-  ] as const;
+// ── 260530-pll: primary-TC default visibility tests ───────────────────────────
+// These replace the old computeDefaultHidden (active-weeks/top-1-by-games)
+// tests. The new heuristic uses computePrimaryTc via computeDefaultHiddenByPrimaryTc.
 
-  function buildCombo(
-    combo_key: (typeof ALL_KEYS)[number],
-    activeWeeks: number,
-    perWeekGames: number,
-  ): EndgameEloTimelineResponse['combos'][number] {
-    const points = Array.from({ length: activeWeeks }, (_, i) => {
-      // Monday dates spaced 7 days apart starting 2026-01-05.
-      const base = new Date('2026-01-05T00:00:00Z');
-      base.setUTCDate(base.getUTCDate() + i * 7);
-      const date = base.toISOString().slice(0, 10);
-      return {
-        date,
-        endgame_elo: 1600,
-        non_endgame_elo: 1580,
-        actual_elo: 1590,
-        endgame_games_in_window: 50,
-        per_week_endgame_games: Math.floor(perWeekGames / 2),
-        per_week_total_games: perWeekGames,
-      };
-    });
-    const [platform, ...tcParts] = combo_key.split('_');
-    const platformLabel = platform === 'chess' ? 'chess.com' : 'lichess';
-    const tc = (platform === 'chess' ? tcParts.slice(1) : tcParts).join('_');
-    return {
-      combo_key,
-      platform: platformLabel as 'chess.com' | 'lichess',
-      time_control: tc as 'bullet' | 'blitz' | 'rapid' | 'classical',
-      points,
+describe('EndgameEloTimelineSection — primary-TC default visibility (260530-pll)', () => {
+  it('shows primary-TC combo visible and non-primary hidden by default', () => {
+    // rapid is primary (60 * 600 = 36000 weight) vs blitz (36 * 180 = 6480).
+    render(
+      <EndgameEloTimelineSection
+        data={buildResponse()}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+    // lichess_rapid (primary) is visible
+    expect(
+      screen.getByTestId('endgame-elo-legend-lichess_rapid').getAttribute('aria-pressed'),
+    ).toBe('true');
+    // chess_com_blitz (non-primary) is hidden
+    expect(
+      screen.getByTestId('endgame-elo-legend-chess_com_blitz').getAttribute('aria-pressed'),
+    ).toBe('false');
+  });
+
+  it('shows BOTH platform combos when primary TC was played on both chess.com and lichess', () => {
+    // Both chess_com_rapid and lichess_rapid qualify: 50 * 600 = 30000 each.
+    // blitz: 30 * 180 = 5400 — not primary.
+    const data: EndgameEloTimelineResponse = {
+      combos: [
+        buildCombo('chess_com_rapid', 'chess.com', 'rapid', 5, 10),   // 50 * 600 = 30000
+        buildCombo('lichess_rapid', 'lichess', 'rapid', 5, 10),        // 50 * 600 = 30000
+        buildCombo('chess_com_blitz', 'chess.com', 'blitz', 5, 6),    // 30 * 180 = 5400
+      ],
+      timeline_window: 100,
     };
-  }
-
-  it('caps default-visible combos to 1 when more qualify', () => {
-    // 5 combos, all identical 20 active weeks (no filter trims) → expect
-    // exactly 1 visible (top by total games), 4 hidden.
-    const combos = ALL_KEYS.slice(0, 5).map((k, i) =>
-      // Decreasing per-week games so rank is deterministic.
-      buildCombo(k, 20, 30 - i * 4),
-    );
-    const data: EndgameEloTimelineResponse = { combos, timeline_window: 100 };
-    const { container } = render(
+    render(
       <EndgameEloTimelineSection data={data} isLoading={false} isError={false} />,
     );
-    // 1 visible × 3 lines each = 3
-    expect(container.querySelectorAll('.recharts-line-curve').length).toBe(3);
-    // Legend still shows all 5
-    for (const k of ALL_KEYS.slice(0, 5)) {
-      expect(screen.getByTestId(`endgame-elo-legend-${k}`)).not.toBeNull();
-    }
-    // Top 1 (highest per-week-games) is aria-pressed=true; rest are false
+    // Both rapid combos are visible (primary TC = rapid, both platforms).
     expect(
-      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[0]}`).getAttribute('aria-pressed'),
+      screen.getByTestId('endgame-elo-legend-chess_com_rapid').getAttribute('aria-pressed'),
     ).toBe('true');
     expect(
-      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[1]}`).getAttribute('aria-pressed'),
-    ).toBe('false');
-    expect(
-      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[3]}`).getAttribute('aria-pressed'),
-    ).toBe('false');
-  });
-
-  it('hides combos whose active weeks fall below 33% of the leader', () => {
-    // Leader: 30 active weeks. Threshold: 9.9 weeks.
-    //   combo A: 30 weeks (keep — but cap=1 shows only A)
-    //   combo B: 20 weeks (pass ratio, but hidden by MAX_DEFAULT_VISIBLE=1 cap)
-    //   combo C:  3 weeks (HIDE — sparse stray, below active-weeks threshold)
-    const combos = [
-      buildCombo(ALL_KEYS[0], 30, 25),
-      buildCombo(ALL_KEYS[1], 20, 25),
-      buildCombo(ALL_KEYS[2], 3, 25),
-    ];
-    const data: EndgameEloTimelineResponse = { combos, timeline_window: 100 };
-    const { container } = render(
-      <EndgameEloTimelineSection data={data} isLoading={false} isError={false} />,
-    );
-    // 1 visible (cap=1 keeps only the top ranked A) × 3 lines = 3
-    expect(container.querySelectorAll('.recharts-line-curve').length).toBe(3);
-    // Sparse stray (C) is hidden
-    expect(
-      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[2]}`).getAttribute('aria-pressed'),
-    ).toBe('false');
-    // B is also hidden (cap bite, not ratio filter)
-    expect(
-      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[1]}`).getAttribute('aria-pressed'),
-    ).toBe('false');
-    // A is visible (leader)
-    expect(
-      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[0]}`).getAttribute('aria-pressed'),
+      screen.getByTestId('endgame-elo-legend-lichess_rapid').getAttribute('aria-pressed'),
     ).toBe('true');
-  });
-
-  it('keeps a hidden combo in the legend, clickable to re-show', () => {
-    const combos = [
-      buildCombo(ALL_KEYS[0], 30, 25),
-      buildCombo(ALL_KEYS[1], 3, 25),
-    ];
-    const data: EndgameEloTimelineResponse = { combos, timeline_window: 100 };
+    // Blitz combo is hidden.
+    expect(
+      screen.getByTestId('endgame-elo-legend-chess_com_blitz').getAttribute('aria-pressed'),
+    ).toBe('false');
+    // 2 visible combos × 3 lines = 6.
     const { container } = render(
       <EndgameEloTimelineSection data={data} isLoading={false} isError={false} />,
     );
-    // Only leader is visible: 3 lines
-    expect(container.querySelectorAll('.recharts-line-curve').length).toBe(3);
-    // Click the dimmed legend item — it should activate.
-    const dimmedBtn = screen.getByTestId(`endgame-elo-legend-${ALL_KEYS[1]}`);
-    expect(dimmedBtn.className).toContain('opacity-50');
-    fireEvent.click(dimmedBtn);
-    // Now both visible: 6 lines
     expect(container.querySelectorAll('.recharts-line-curve').length).toBe(6);
   });
-});
 
-describe('MAX_DEFAULT_VISIBLE = 1', () => {
-  // Helper used by both cases: builds a response with N combos, each with a
-  // configurable (activeWeeks, perWeekGames) profile. combo_keys cycle from
-  // ALL_KEYS so testids are deterministic.
-  const ALL_KEYS_MDV = [
-    'chess_com_bullet',
-    'chess_com_blitz',
-    'chess_com_rapid',
-    'chess_com_classical',
-    'lichess_bullet',
-    'lichess_blitz',
-    'lichess_rapid',
-    'lichess_classical',
-  ] as const;
-
-  function buildMdvCombo(
-    combo_key: (typeof ALL_KEYS_MDV)[number],
-    activeWeeks: number,
-    perWeekGames: number,
-  ): EndgameEloTimelineResponse['combos'][number] {
-    const points = Array.from({ length: activeWeeks }, (_, i) => {
-      const base = new Date('2026-01-05T00:00:00Z');
-      base.setUTCDate(base.getUTCDate() + i * 7);
-      const date = base.toISOString().slice(0, 10);
-      return {
-        date,
-        endgame_elo: 1600,
-        non_endgame_elo: 1580,
-        actual_elo: 1590,
-        endgame_games_in_window: 50,
-        per_week_endgame_games: Math.floor(perWeekGames / 2),
-        per_week_total_games: perWeekGames,
-      };
-    });
-    const [platform, ...tcParts] = combo_key.split('_');
-    const platformLabel = platform === 'chess' ? 'chess.com' : 'lichess';
-    const tc = (platform === 'chess' ? tcParts.slice(1) : tcParts).join('_');
-    return {
-      combo_key,
-      platform: platformLabel as 'chess.com' | 'lichess',
-      time_control: tc as 'bullet' | 'blitz' | 'rapid' | 'classical',
-      points,
-    };
-  }
-
-  it('(a) 3-combo payload: only the most-active combo is visible; the other two are hidden', () => {
-    // Combo A: 20 active weeks, 30 per-week games → highest total (600)
-    // Combo B: 20 active weeks, 20 per-week games → total 400
-    // Combo C: 20 active weeks, 10 per-week games → total 200
-    // MAX_DEFAULT_VISIBLE=1: only A is visible on first render.
-    const combos = [
-      buildMdvCombo(ALL_KEYS_MDV[0], 20, 30), // A — most-active
-      buildMdvCombo(ALL_KEYS_MDV[1], 20, 20), // B
-      buildMdvCombo(ALL_KEYS_MDV[2], 20, 10), // C
-    ];
-    const data: EndgameEloTimelineResponse = { combos, timeline_window: 100 };
+  it('keeps hidden combos in the legend, clickable to re-show', () => {
     const { container } = render(
-      <EndgameEloTimelineSection data={data} isLoading={false} isError={false} />,
+      <EndgameEloTimelineSection
+        data={buildResponse()}
+        isLoading={false}
+        isError={false}
+      />,
     );
-    // 1 visible × 3 lines = 3
+    // Only primary (lichess_rapid) visible: 3 lines.
     expect(container.querySelectorAll('.recharts-line-curve').length).toBe(3);
-    // Most-active (A) is visible
-    expect(
-      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS_MDV[0]}`).getAttribute('aria-pressed'),
-    ).toBe('true');
-    // Less-active combos are hidden
-    expect(
-      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS_MDV[1]}`).getAttribute('aria-pressed'),
-    ).toBe('false');
-    expect(
-      screen.getByTestId(`endgame-elo-legend-${ALL_KEYS_MDV[2]}`).getAttribute('aria-pressed'),
-    ).toBe('false');
-    // All 3 legend entries are still shown (togglable)
-    for (const k of [ALL_KEYS_MDV[0], ALL_KEYS_MDV[1], ALL_KEYS_MDV[2]]) {
-      expect(screen.getByTestId(`endgame-elo-legend-${k}`)).not.toBeNull();
-    }
+    // Click the dimmed legend item.
+    const dimmedBtn = screen.getByTestId('endgame-elo-legend-chess_com_blitz');
+    expect(dimmedBtn.className).toContain('opacity-50');
+    fireEvent.click(dimmedBtn);
+    // Now both visible: 6 lines.
+    expect(container.querySelectorAll('.recharts-line-curve').length).toBe(6);
   });
 
-  it('(b) 1-combo payload: nothing is hidden (single-series auto-behaviour unchanged)', () => {
-    // With only 1 combo, ranked.slice(0, 1) = [that combo], hidden = {}.
-    const combos = [buildMdvCombo(ALL_KEYS_MDV[0], 10, 20)];
-    const data: EndgameEloTimelineResponse = { combos, timeline_window: 100 };
+  it('shows nothing hidden when only one combo exists', () => {
+    const data: EndgameEloTimelineResponse = {
+      combos: [buildCombo('chess_com_rapid', 'chess.com', 'rapid', 5, 10)],
+      timeline_window: 100,
+    };
     const { container } = render(
       <EndgameEloTimelineSection data={data} isLoading={false} isError={false} />,
     );
-    // 1 combo × 3 lines = 3
+    // 1 combo × 3 lines = 3; the single legend entry is visible.
     expect(container.querySelectorAll('.recharts-line-curve').length).toBe(3);
-    // The single legend entry is visible (not dimmed)
-    const legendBtn = screen.getByTestId(`endgame-elo-legend-${ALL_KEYS_MDV[0]}`);
+    const legendBtn = screen.getByTestId('endgame-elo-legend-chess_com_rapid');
     expect(legendBtn.getAttribute('aria-pressed')).toBe('true');
     expect(legendBtn.className).not.toContain('opacity-50');
   });
 });
 
 describe('gap annotations', () => {
-  // A response where two points are more than 56 days apart.
+  // A response where two points are more than 90 days apart.
   function buildResponseWithGap(): EndgameEloTimelineResponse {
     return {
       combos: [
@@ -585,8 +433,8 @@ describe('gap annotations', () => {
               per_week_total_games: 18,
             },
             {
-              // 90 days later — exceeds the 56-day threshold
-              date: '2025-04-06',
+              // 120 days later — exceeds the 90-day threshold
+              date: '2025-05-06',
               endgame_elo: 1640,
               non_endgame_elo: 1610,
               actual_elo: 1625,
@@ -601,7 +449,7 @@ describe('gap annotations', () => {
     };
   }
 
-  it('renders inactivity-gap-label testid when allDates contains a >56-day gap', () => {
+  it('renders inactivity-gap-label testid when allDates contains a >90-day gap', () => {
     const { container } = render(
       <EndgameEloTimelineSection
         data={buildResponseWithGap()}
@@ -613,7 +461,7 @@ describe('gap annotations', () => {
     expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
   });
 
-  it('renders inactivity-gap-glyph (Palmtree) when allDates contains a >56-day gap', () => {
+  it('renders inactivity-gap-glyph (Palmtree) when allDates contains a >90-day gap', () => {
     const { container } = render(
       <EndgameEloTimelineSection
         data={buildResponseWithGap()}

@@ -26,6 +26,7 @@ from app.schemas.endgames import (
 from app.services.endgame_service import (
     SCORE_GAP_TIMELINE_WINDOW,
     _aggregate_endgame_stats,
+    _aggregate_endgame_stats_by_tc,
     _classify_endgame_bucket,
     _compute_endgame_elo_weekly_series,
     _compute_rolling_series,
@@ -1333,6 +1334,11 @@ class TestGetEndgamePerformance:
             patch(
                 "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
             ) as mock_bucket,
+            patch(
+                "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_perf.return_value = ([], [])
             mock_bucket.return_value = []
@@ -1366,6 +1372,11 @@ class TestGetEndgamePerformance:
             patch(
                 "app.services.endgame_service.query_endgame_bucket_rows", new_callable=AsyncMock
             ) as mock_bucket,
+            patch(
+                "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_perf.return_value = (endgame_rows, non_endgame_rows)
             mock_bucket.return_value = []
@@ -1683,6 +1694,19 @@ class TestGetEndgameOverview:
             patch(
                 "app.services.endgame_service.get_endgame_elo_timeline", new_callable=AsyncMock
             ) as mock_elo_timeline,
+            patch(
+                "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            # Phase 94.4 D-07: rating_anchors block fetched from
+            # user_rating_anchors via fetch_anchors_for_user. Patch to an
+            # empty dict so the mock session never executes a real query.
+            patch(
+                "app.services.endgame_service.fetch_anchors_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_entry.return_value = []
             mock_bucket.return_value = []
@@ -1762,6 +1786,17 @@ class TestGetEndgameOverview:
             patch(
                 "app.services.endgame_service.get_endgame_elo_timeline", new_callable=AsyncMock
             ) as mock_elo_timeline,
+            patch(
+                "app.services.endgame_service.user_benchmark_percentiles_repository.fetch_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            # Phase 94.4 D-07: see test_overview_composes_all_payloads.
+            patch(
+                "app.services.endgame_service.fetch_anchors_for_user",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
         ):
             mock_entry.return_value = []
             mock_bucket.return_value = []
@@ -2119,7 +2154,7 @@ class TestScoreGapMaterialOpponentBaseline(TestScoreGapMaterial):
     the Wald-z test was mathematically degenerate: Conv-Gap == Recov-Gap by
     symmetry, and Parity-Gap is an affine transformation of the gauge.
     Replaced by the eval-baseline Delta-ES Score Gap family on
-    ScoreGapMaterialResponse (section2_score_gap_* — Phase 87.2 D-06).
+    ScoreGapMaterialResponse (score_gap_* — Phase 87.2 D-06).
 
     Retained as a class to avoid renumbering downstream test IDs; its bucket-
     classification + score logic is preserved in TestScoreGapMaterial and
@@ -3554,7 +3589,7 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
 
     def test_score_gap_material_response_defaults_for_phase872_score_gap_fields(self) -> None:
         """Phase 87.2 (SEC2-ΔES-02 / D-06): ScoreGapMaterialResponse carries 20 new
-        section2_score_gap_* fields (4 buckets x 5 fields), all None by default.
+        score_gap_* fields (4 buckets x 5 fields), all None by default.
         The deleted Phase 86 fields (skill, opp_skill, skill_diff_*) are gone."""
         from app.schemas.endgames import ScoreGapMaterialResponse
 
@@ -3569,23 +3604,23 @@ class TestPValueReliabilityMinNConstantAndSchemaDefaults:
         # New fields all default to None.
         # Phase 87.4 (D-05): "skill" bucket dropped — composite retired.
         for bucket in ("conv", "parity", "recov"):
-            assert getattr(resp, f"section2_score_gap_{bucket}_mean") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_n") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_p_value") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_ci_low") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_ci_high") is None
+            assert getattr(resp, f"score_gap_{bucket}_mean") is None
+            assert getattr(resp, f"score_gap_{bucket}_n") is None
+            assert getattr(resp, f"score_gap_{bucket}_p_value") is None
+            assert getattr(resp, f"score_gap_{bucket}_ci_low") is None
+            assert getattr(resp, f"score_gap_{bucket}_ci_high") is None
         # Deleted Phase 86 fields must not exist
         assert not hasattr(resp, "skill")
         assert not hasattr(resp, "opp_skill")
         assert not hasattr(resp, "skill_diff_p_value")
-        # Phase 87.4 (D-05): the section2_score_gap_skill_* family + the
+        # Phase 87.4 (D-05): the score_gap_skill_* family + the
         # endgame_skill_rate_mean gauge driver were dropped end-to-end.
         for f in (
-            "section2_score_gap_skill_mean",
-            "section2_score_gap_skill_n",
-            "section2_score_gap_skill_p_value",
-            "section2_score_gap_skill_ci_low",
-            "section2_score_gap_skill_ci_high",
+            "score_gap_skill_mean",
+            "score_gap_skill_n",
+            "score_gap_skill_p_value",
+            "score_gap_skill_ci_low",
+            "score_gap_skill_ci_high",
             "endgame_skill_rate_mean",
         ):
             assert not hasattr(resp, f), f"unexpected residual field: {f}"
@@ -3653,7 +3688,7 @@ class TestSkillDiffTestWireFields(TestScoreGapMaterial):
 
 
 class TestPhase872SchemaFields:
-    """Phase 87.2 (SEC2-ΔES-02): 20 new section2_score_gap_* fields on
+    """Phase 87.2 (SEC2-ΔES-02): 20 new score_gap_* fields on
     ScoreGapMaterialResponse; 5 deletions on MaterialRow (opponent_score,
     opponent_games, diff_p_value, diff_ci_low, diff_ci_high); 5 deletions
     on ScoreGapMaterialResponse (skill, opp_skill, skill_diff_p_value,
@@ -3663,7 +3698,7 @@ class TestPhase872SchemaFields:
 
     def test_score_gap_material_response_has_20_new_fields_with_none_defaults(self) -> None:
         """ScoreGapMaterialResponse(without any 87.2 kwargs) defaults all 20
-        new section2_score_gap_* fields to None (backward compat)."""
+        new score_gap_* fields to None (backward compat)."""
         from app.schemas.endgames import ScoreGapMaterialResponse
 
         resp = ScoreGapMaterialResponse(
@@ -3676,14 +3711,14 @@ class TestPhase872SchemaFields:
         )
         # 3 buckets x 5 fields = 15 fields (Phase 87.4 D-05: "skill" dropped).
         for bucket in ("conv", "parity", "recov"):
-            assert getattr(resp, f"section2_score_gap_{bucket}_mean") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_n") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_p_value") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_ci_low") is None
-            assert getattr(resp, f"section2_score_gap_{bucket}_ci_high") is None
+            assert getattr(resp, f"score_gap_{bucket}_mean") is None
+            assert getattr(resp, f"score_gap_{bucket}_n") is None
+            assert getattr(resp, f"score_gap_{bucket}_p_value") is None
+            assert getattr(resp, f"score_gap_{bucket}_ci_low") is None
+            assert getattr(resp, f"score_gap_{bucket}_ci_high") is None
 
     def test_score_gap_material_response_new_fields_round_trip(self) -> None:
-        """Setting section2_score_gap_conv_mean=0.05 and _conv_n=42 round-trips
+        """Setting score_gap_conv_mean=0.05 and _conv_n=42 round-trips
         through model_dump() and model_validate()."""
         from app.schemas.endgames import ScoreGapMaterialResponse
 
@@ -3694,22 +3729,22 @@ class TestPhase872SchemaFields:
             material_rows=[],
             timeline=[],
             timeline_window=100,
-            section2_score_gap_conv_mean=0.05,
-            section2_score_gap_conv_n=42,
-            section2_score_gap_conv_p_value=0.03,
-            section2_score_gap_conv_ci_low=0.01,
-            section2_score_gap_conv_ci_high=0.09,
+            score_gap_conv_mean=0.05,
+            score_gap_conv_n=42,
+            score_gap_conv_p_value=0.03,
+            score_gap_conv_ci_low=0.01,
+            score_gap_conv_ci_high=0.09,
         )
         dumped = resp.model_dump()
-        assert dumped["section2_score_gap_conv_mean"] == pytest.approx(0.05)
-        assert dumped["section2_score_gap_conv_n"] == 42
-        assert dumped["section2_score_gap_conv_p_value"] == pytest.approx(0.03)
-        assert dumped["section2_score_gap_conv_ci_low"] == pytest.approx(0.01)
-        assert dumped["section2_score_gap_conv_ci_high"] == pytest.approx(0.09)
+        assert dumped["score_gap_conv_mean"] == pytest.approx(0.05)
+        assert dumped["score_gap_conv_n"] == 42
+        assert dumped["score_gap_conv_p_value"] == pytest.approx(0.03)
+        assert dumped["score_gap_conv_ci_low"] == pytest.approx(0.01)
+        assert dumped["score_gap_conv_ci_high"] == pytest.approx(0.09)
         # Round-trip
         resp2 = ScoreGapMaterialResponse.model_validate(dumped)
-        assert resp2.section2_score_gap_conv_mean == pytest.approx(0.05)
-        assert resp2.section2_score_gap_conv_n == 42
+        assert resp2.score_gap_conv_mean == pytest.approx(0.05)
+        assert resp2.score_gap_conv_n == 42
 
     def test_material_row_does_not_have_opponent_score_field(self) -> None:
         """After Phase 87.2 migration, MaterialRow no longer has opponent_score
@@ -3878,7 +3913,7 @@ class TestPhase872PerBucketDeltaES:
     def test_per_bucket_full_cohort_paired_z(self) -> None:
         """15 Conv-bucket spans all with gap=+0.1 (zero variance).
 
-        section2_score_gap_conv_mean = 0.1, n=15, p_value populated (n>=10),
+        score_gap_conv_mean = 0.1, n=15, p_value populated (n>=10),
         ci_low == ci_high == 0.1 (zero-variance collapse per helper contract).
         """
 
@@ -3909,17 +3944,17 @@ class TestPhase872PerBucketDeltaES:
         empty = self._make_wdl(0, 0, 0)
         gaps_by_bucket = {"conversion": [0.1] * n, "parity": [], "recovery": []}
         result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
-        assert result.section2_score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
-        assert result.section2_score_gap_conv_n == n
-        assert result.section2_score_gap_conv_p_value is not None  # n >= 10
+        assert result.score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
+        assert result.score_gap_conv_n == n
+        assert result.score_gap_conv_p_value is not None  # n >= 10
         # Zero-variance collapse: ci_low == ci_high == mean.
-        assert result.section2_score_gap_conv_ci_low is not None
-        assert result.section2_score_gap_conv_ci_high is not None
-        assert result.section2_score_gap_conv_ci_low == pytest.approx(0.1, abs=1e-9)
-        assert result.section2_score_gap_conv_ci_high == pytest.approx(0.1, abs=1e-9)
+        assert result.score_gap_conv_ci_low is not None
+        assert result.score_gap_conv_ci_high is not None
+        assert result.score_gap_conv_ci_low == pytest.approx(0.1, abs=1e-9)
+        assert result.score_gap_conv_ci_high == pytest.approx(0.1, abs=1e-9)
 
     def test_per_bucket_zero_cohort_returns_none_mean(self) -> None:
-        """Bucket with n=0 returns section2_score_gap_*_mean=None (not 0.0).
+        """Bucket with n=0 returns score_gap_*_mean=None (not 0.0).
 
         The helper compute_paired_difference_test returns (0.0, None, None, None)
         for empty input. The service must gate this to None on the wire to prevent
@@ -3931,18 +3966,18 @@ class TestPhase872PerBucketDeltaES:
         # Only Conv bucket has data; parity and recovery are empty.
         gaps_by_bucket = {"conversion": [0.1] * 5, "parity": [], "recovery": []}
         result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
-        assert result.section2_score_gap_parity_mean is None
-        assert result.section2_score_gap_parity_n == 0
-        assert result.section2_score_gap_recov_mean is None
-        assert result.section2_score_gap_recov_n == 0
+        assert result.score_gap_parity_mean is None
+        assert result.score_gap_parity_n == 0
+        assert result.score_gap_recov_mean is None
+        assert result.score_gap_recov_n == 0
 
     # Phase 87.4 (D-05): test_skill_equal_weighted_mean_three_active_buckets,
     # test_skill_denominator_drop_below_floor, test_skill_all_below_floor_returns_none,
     # and test_skill_ci_propagation_variance_of_sum deleted alongside the
-    # ScoreGapMaterialResponse.section2_score_gap_skill_* field family.
+    # ScoreGapMaterialResponse.score_gap_skill_* field family.
 
     def test_sign_convention_positive_means_above_stockfish(self) -> None:
-        """Positive section2_score_gap_conv_mean means user outperformed Stockfish baseline.
+        """Positive score_gap_conv_mean means user outperformed Stockfish baseline.
 
         Fixture: gaps_by_bucket with one conv gap = +0.1
         (exit_score 0.1 above ES_entry). Mean must be +0.1 (NOT -0.1).
@@ -3954,9 +3989,9 @@ class TestPhase872PerBucketDeltaES:
         gaps_by_bucket = {"conversion": [0.1], "parity": [], "recovery": []}
         result = _compute_score_gap_material(wdl, empty, rows, gaps_by_bucket=gaps_by_bucket)
         # n=1 → mean populated, p/CI gated (per compute_paired_difference_test contract).
-        assert result.section2_score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
-        assert result.section2_score_gap_conv_mean is not None
-        assert result.section2_score_gap_conv_mean > 0  # sign check
+        assert result.score_gap_conv_mean == pytest.approx(0.1, abs=1e-9)
+        assert result.score_gap_conv_mean is not None
+        assert result.score_gap_conv_mean > 0  # sign check
 
 
 # Phase 87.4 (D-05): TestEndgameSkillRateMean class deleted alongside the
@@ -4141,3 +4176,428 @@ class TestEndgameCategoryStatsWdlAlignedFields:
         assert rook.avg_eval_pawns is not None
         assert rook.eval_ci_low_pawns is None
         assert rook.eval_ci_high_pawns is None
+
+
+# --- Phase 94 (PCTL-02 / PCTL-06): percentile gate tests ----------------------
+
+
+class TestPercentileGates:
+    """Phase 94 / 94.1 — percentile chip emission at the 2 compute sites.
+
+    Phase 94.1 D-12 (PCTL-07): the chip is a "trait" sourced from the
+    materialised `user_benchmark_percentiles` table, not a per-request
+    computed value. The compute helpers (_compute_score_gap_material and
+    _get_endgame_performance_from_rows) always return None for chip fields
+    when called without `percentile_rows`. When `percentile_rows` is provided,
+    the chip fields are read directly from the mapping — no per-request
+    `interpolate_percentile` call happens anymore.
+
+    The "below_floor_is_none" tests still pass unchanged — they confirm None
+    when no percentile_rows are passed. The old "at_floor_is_not_none" tests
+    have been updated to verify the new contract: chip reflects the value in
+    `percentile_rows` rather than a per-request N-gate computation.
+    """
+
+    # --- Helpers ---------------------------------------------------------
+
+    @staticmethod
+    def _make_wdl(wins: int, draws: int, losses: int) -> EndgameWDLSummary:
+        """Build an EndgameWDLSummary with the requested counts. Mirrors the
+        pattern used by TestComputeScoreGapMaterial._make_wdl."""
+        total = wins + draws + losses
+        if total > 0:
+            win_pct = round(wins / total * 100, 1)
+            draw_pct = round(draws / total * 100, 1)
+            loss_pct = round(losses / total * 100, 1)
+        else:
+            win_pct = draw_pct = loss_pct = 0.0
+        return EndgameWDLSummary(
+            wins=wins,
+            draws=draws,
+            losses=losses,
+            total=total,
+            win_pct=win_pct,
+            draw_pct=draw_pct,
+            loss_pct=loss_pct,
+        )
+
+    @staticmethod
+    def _wdl_rows_white_wins(n: int) -> list[Any]:
+        """Build n white-win WDL rows for endgame_rows / non_endgame_rows."""
+        return [_row("1-0", "white", d) for d in range(n)]
+
+    @staticmethod
+    def _bucket(game_id: int, eval_cp: int = 0) -> _FakeRow:
+        return _FakeRow(
+            game_id=game_id,
+            endgame_class=1,
+            result="1-0",
+            user_color="white",
+            eval_cp=eval_cp,
+            eval_mate=None,
+        )
+
+    # --- Site A: achievable_score_gap_percentile (single-N gate on ex_n) -
+
+    def test_achievable_percentile_below_floor_is_none(self) -> None:
+        """ex_n = PVALUE_RELIABILITY_MIN_N - 1 (=9) -> percentile gated to None."""
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(9)]
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows_white_wins(9),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+        )
+        assert resp.entry_expected_score_n == 9
+        # Gate should suppress the percentile (same shape as _p_value gate).
+        assert resp.achievable_score_gap_percentile is None
+
+    def test_achievable_percentile_with_percentile_rows_reflects_table_value(self) -> None:
+        """D-12 / PCTL-07: chip is sourced from percentile_rows, not per-request N-gate.
+
+        When percentile_rows is provided with achievable_score_gap, the chip
+        field reflects the table value regardless of ex_n.
+        """
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
+        from app.models.user_rating_anchors import TimeControlBucket
+        import datetime
+
+        bucket_rows = [self._bucket(game_id=i, eval_cp=0) for i in range(10)]
+        # Phase 94.4 D-08: percentile_rows is now nested
+        # (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]); the
+        # _aggregate_per_tc_percentile helper produces the page-level chip
+        # scalar. Single-TC row -> aggregator returns that row's percentile
+        # unchanged.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "achievable_score_gap": {
+                "blitz": PercentileRow(
+                    value=0.05,
+                    percentile=63.0,
+                    cdf_snapshot=datetime.date(2026, 3, 31),
+                    n_games=42,
+                ),
+            },
+        }
+        resp = _get_endgame_performance_from_rows(
+            endgame_rows=self._wdl_rows_white_wins(10),
+            non_endgame_rows=[],
+            bucket_rows=bucket_rows,
+            percentile_rows=percentile_rows,
+        )
+        assert resp.entry_expected_score_n == 10
+        assert resp.achievable_score_gap_percentile == 63.0
+
+    # --- Site B: score_gap_percentile (dual-N gate on endgame + non_endgame) -
+
+    def test_score_gap_percentile_dual_gate_endgame_short(self) -> None:
+        """endgame_wdl.total = 9, non_endgame_wdl.total = 10 -> percentile None
+        (dual-N gate fails on the endgame wing)."""
+        endgame_wdl = self._make_wdl(wins=4, draws=2, losses=3)  # total=9
+        non_endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.score_gap_percentile is None
+
+    def test_score_gap_percentile_dual_gate_non_endgame_short(self) -> None:
+        """endgame_wdl.total = 10, non_endgame_wdl.total = 9 -> percentile None
+        (dual-N gate fails on the non-endgame wing)."""
+        endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
+        non_endgame_wdl = self._make_wdl(wins=4, draws=2, losses=3)  # total=9
+        result = _compute_score_gap_material(endgame_wdl, non_endgame_wdl, [])
+        assert result.score_gap_percentile is None
+
+    def test_score_gap_percentile_with_percentile_rows_reflects_table_value(self) -> None:
+        """D-12 / PCTL-07: score_gap chip is sourced from percentile_rows, not per-request N-gate.
+
+        When percentile_rows is provided with score_gap, the chip field
+        reflects the table value regardless of WDL totals.
+        """
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
+        from app.models.user_rating_anchors import TimeControlBucket
+        import datetime
+
+        endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
+        non_endgame_wdl = self._make_wdl(wins=5, draws=0, losses=5)  # total=10
+        # Phase 94.4 D-08: nested shape; single-TC row -> aggregator returns
+        # that row's percentile unchanged.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "score_gap": {
+                "blitz": PercentileRow(
+                    value=0.0,
+                    percentile=72.5,
+                    cdf_snapshot=datetime.date(2026, 3, 31),
+                    n_games=42,
+                ),
+            },
+        }
+        result = _compute_score_gap_material(
+            endgame_wdl, non_endgame_wdl, [], percentile_rows=percentile_rows
+        )
+        assert result.score_gap_percentile == 72.5
+
+    # Phase 97 D-10: score_gap_conv_percentile, score_gap_parity_percentile, and
+    # recovery_score_gap_percentile tests removed — those fields were Metrics-section-only
+    # and are deleted along with EndgameMetricsSection.tsx (superseded by per-TC cards).
+    # The conv/parity mean and n fields remain (statistical backbone for per-TC cards).
+
+
+# ── Phase 94.4 Plan 05c Task 2: _aggregate_per_tc_percentile helper ───────────
+
+
+class TestAggregatePerTcPercentile:
+    """Phase 94.4 D-08 / D-08a / D-08b — page-level chip aggregator.
+
+    The helper computes a game-count-weighted mean across the per-TC
+    PercentileRow entries returned by Plan 05a's nested fetch_for_user
+    shape. Below-floor TCs (no row -> absent from the inner dict) carry an
+    implicit zero weight (D-08a). All-None-percentile rows yield None
+    (no signal to surface). Single-TC dicts pass through unchanged.
+    """
+
+    @staticmethod
+    def _row(percentile: float | None, n_games: int) -> Any:
+        """Build a PercentileRow with the requested fields."""
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+
+        return PercentileRow(
+            value=0.0,
+            percentile=percentile,
+            cdf_snapshot=datetime.date(2026, 5, 27),
+            n_games=n_games,
+        )
+
+    def test_empty_dict_returns_none(self) -> None:
+        """D-08a: empty per-TC dict (user passed no TC's inclusion floor)."""
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        empty: dict[TimeControlBucket, PercentileRow] = {}
+        assert _aggregate_per_tc_percentile(empty) is None
+
+    def test_none_input_returns_none(self) -> None:
+        """Defensive: outer .get() miss returns None (no metric key at all)."""
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        assert _aggregate_per_tc_percentile(None) is None
+
+    def test_weighted_mean_three_tcs(self) -> None:
+        """D-08: game-count weighted mean of 20/40/60 with weights 30/20/50.
+
+        (20*30 + 40*20 + 60*50) / (30 + 20 + 50)
+          = (600 + 800 + 3000) / 100
+          = 4400 / 100 = 44.0
+        """
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        per_tc: dict[TimeControlBucket, PercentileRow] = {
+            "bullet": self._row(percentile=20.0, n_games=30),
+            "blitz": self._row(percentile=40.0, n_games=20),
+            "rapid": self._row(percentile=60.0, n_games=50),
+        }
+        result = _aggregate_per_tc_percentile(per_tc)
+        assert result == pytest.approx(44.0)
+
+    def test_all_none_percentiles_returns_none(self) -> None:
+        """All-None percentile rows -> no signal -> None."""
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        per_tc: dict[TimeControlBucket, PercentileRow] = {
+            "bullet": self._row(percentile=None, n_games=30),
+            "blitz": self._row(percentile=None, n_games=20),
+        }
+        assert _aggregate_per_tc_percentile(per_tc) is None
+
+    def test_mixed_none_and_valid_drops_none_rows(self) -> None:
+        """D-08a: None-percentile rows drop out of both numerator and denominator;
+        a single surviving row's percentile passes through unchanged."""
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        per_tc: dict[TimeControlBucket, PercentileRow] = {
+            "bullet": self._row(percentile=None, n_games=30),
+            "blitz": self._row(percentile=50.0, n_games=20),
+        }
+        # Only the blitz row contributes -> 50.0 (n_games of the bullet row is
+        # ignored per the implicit-zero-weight rule).
+        assert _aggregate_per_tc_percentile(per_tc) == pytest.approx(50.0)
+
+    def test_single_row_dict_returns_percentile_unchanged(self) -> None:
+        """Single-TC dict (e.g. user only plays rapid) -> aggregator passes
+        the percentile through verbatim regardless of n_games."""
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.endgame_service import _aggregate_per_tc_percentile
+
+        per_tc: dict[TimeControlBucket, PercentileRow] = {
+            "rapid": self._row(percentile=37.5, n_games=100)
+        }
+        assert _aggregate_per_tc_percentile(per_tc) == pytest.approx(37.5)
+
+
+class TestAggregateEndgameStatsByTc:
+    """Unit tests for _aggregate_endgame_stats_by_tc (Phase 98).
+
+    Prod feeds per-class `entry_rows` (one row per (game, endgame_class) span,
+    carrying time_control_bucket). Tests use plain tuples with the column layout:
+    game_id[0], endgame_class_int[1], result[2], user_color[3],
+    eval_cp[4], eval_mate[5], time_control_bucket[6],
+    next_entry_eval_cp[7], next_entry_eval_mate[8]
+
+    rook=1, minor_piece=2, pawn=3, queen=4, mixed=5, pawnless=6.
+    Mixed and pawnless are EXCLUDED from the output (only rook/minor/pawn/queen
+    tiles render — D-05); see test_mixed_and_pawnless_excluded.
+    """
+
+    # Conversion threshold is >=100cp for white (see _classify_endgame_bucket).
+    # Recovery threshold is <=-100cp for white.
+
+    @staticmethod
+    def _row(
+        game_id: int,
+        class_int: int,
+        result: str,
+        user_color: str,
+        eval_cp: int | None,
+        tc: str,
+    ) -> tuple[int, int, str, str, int | None, None, str, None, None]:
+        """Helper: build a 9-tuple bucket row with NULL eval_mate and next-eval cols."""
+        return (game_id, class_int, result, user_color, eval_cp, None, tc, None, None)
+
+    def test_empty_rows_returns_empty_dict(self) -> None:
+        result = _aggregate_endgame_stats_by_tc([])
+        assert result == {}
+
+    def test_mixed_and_pawnless_excluded(self) -> None:
+        """Mixed (5) and pawnless (6) spans are dropped; only the four type tiles remain.
+
+        Regression for the empty-tile bug: when fed per-class spans, the header
+        count must equal the sum of the four rendered tiles (no Mixed/pawnless).
+        """
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "rapid"),  # rook (kept)
+            self._row(2, 2, "1-0", "white", 200, "rapid"),  # minor_piece (kept)
+            self._row(3, 3, "1-0", "white", 200, "rapid"),  # pawn (kept)
+            self._row(4, 4, "1-0", "white", 200, "rapid"),  # queen (kept)
+            self._row(5, 5, "1-0", "white", 200, "rapid"),  # mixed (excluded)
+            self._row(6, 6, "1-0", "white", 200, "rapid"),  # pawnless (excluded)
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        classes = {c.endgame_class for c in result["rapid"]}
+        assert classes == {"rook", "minor_piece", "pawn", "queen"}
+        # Header count (sum of categories) excludes the 2 dropped spans.
+        assert sum(c.total for c in result["rapid"]) == 4
+
+    def test_dict_keys_are_tc_strings(self) -> None:
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "blitz"),
+            self._row(2, 1, "1-0", "white", 200, "rapid"),
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        assert set(result.keys()) == {"blitz", "rapid"}
+
+    def test_per_tc_totals_match_row_counts(self) -> None:
+        """Each TC's total across classes must equal the number of rows for that TC."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "blitz"),  # blitz, rook
+            self._row(2, 2, "0-1", "white", -200, "blitz"),  # blitz, minor_piece
+            self._row(3, 1, "1-0", "white", 200, "rapid"),  # rapid, rook
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        blitz_total = sum(c.total for c in result["blitz"])
+        rapid_total = sum(c.total for c in result["rapid"])
+        assert blitz_total == 2
+        assert rapid_total == 1
+
+    def test_conversion_rate_computed_correctly(self) -> None:
+        """Three conversion wins out of four conversion games = 75%."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "blitz"),  # conversion win
+            self._row(2, 1, "1-0", "white", 200, "blitz"),  # conversion win
+            self._row(3, 1, "1-0", "white", 200, "blitz"),  # conversion win
+            self._row(4, 1, "0-1", "white", 200, "blitz"),  # conversion loss
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        assert "blitz" in result
+        cats = result["blitz"]
+        rook_cat = next((c for c in cats if c.endgame_class == "rook"), None)
+        assert rook_cat is not None
+        assert rook_cat.conversion.conversion_games == 4
+        assert rook_cat.conversion.conversion_pct == pytest.approx(75.0)
+
+    def test_recovery_rate_computed_correctly(self) -> None:
+        """One recovery save (win/draw) out of two recovery games = 50%."""
+        rows = [
+            self._row(1, 3, "1/2-1/2", "white", -200, "rapid"),  # recovery draw (save)
+            self._row(2, 3, "0-1", "white", -200, "rapid"),  # recovery loss
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        assert "rapid" in result
+        cats = result["rapid"]
+        pawn_cat = next((c for c in cats if c.endgame_class == "pawn"), None)
+        assert pawn_cat is not None
+        assert pawn_cat.conversion.recovery_games == 2
+        assert pawn_cat.conversion.recovery_pct == pytest.approx(50.0)
+
+    def test_wdl_split_correct(self) -> None:
+        """WDL counts and percentages are correct for a two-TC, two-class fixture."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 50, "bullet"),  # rook win (parity)
+            self._row(2, 1, "1/2-1/2", "white", 50, "bullet"),  # rook draw (parity)
+            self._row(3, 1, "0-1", "white", 50, "bullet"),  # rook loss (parity)
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        cats = result["bullet"]
+        rook = next((c for c in cats if c.endgame_class == "rook"), None)
+        assert rook is not None
+        assert rook.wins == 1
+        assert rook.draws == 1
+        assert rook.losses == 1
+        assert rook.total == 3
+
+    def test_score_p_value_none_below_reliability_floor(self) -> None:
+        """score_p_value is None when total < PVALUE_RELIABILITY_MIN_N (=10)."""
+        rows = [self._row(i, 1, "1-0", "white", 200, "rapid") for i in range(5)]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        rook = next((c for c in result["rapid"] if c.endgame_class == "rook"), None)
+        assert rook is not None
+        assert rook.score_p_value is None
+
+    def test_score_p_value_populated_above_reliability_floor(self) -> None:
+        """score_p_value is populated when total >= PVALUE_RELIABILITY_MIN_N (=10)."""
+        rows = [self._row(i, 1, "1-0", "white", 200, "rapid") for i in range(10)]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        rook = next((c for c in result["rapid"] if c.endgame_class == "rook"), None)
+        assert rook is not None
+        assert rook.score_p_value is not None
+
+    def test_tc_ordering_matches_time_control_order(self) -> None:
+        """Result dict keys appear in bullet/blitz/rapid/classical order."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "classical"),
+            self._row(2, 1, "1-0", "white", 200, "rapid"),
+            self._row(3, 1, "1-0", "white", 200, "bullet"),
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        # Dict insertion order must match _TIME_CONTROL_ORDER
+        assert list(result.keys()) == ["bullet", "rapid", "classical"]
+
+    def test_two_tc_two_class_fixture(self) -> None:
+        """Verify per-(TC, class) isolation: blitz/rook and rapid/pawn stay separate."""
+        rows = [
+            self._row(1, 1, "1-0", "white", 200, "blitz"),  # blitz rook conv win
+            self._row(2, 1, "0-1", "white", 200, "blitz"),  # blitz rook conv loss
+            self._row(3, 3, "1-0", "white", -200, "rapid"),  # rapid pawn recov win
+        ]
+        result = _aggregate_endgame_stats_by_tc(rows)
+        blitz_rook = next(c for c in result["blitz"] if c.endgame_class == "rook")
+        assert blitz_rook.total == 2
+        assert blitz_rook.conversion.conversion_games == 2
+        rapid_pawn = next(c for c in result["rapid"] if c.endgame_class == "pawn")
+        assert rapid_pawn.total == 1
+        assert rapid_pawn.conversion.recovery_games == 1

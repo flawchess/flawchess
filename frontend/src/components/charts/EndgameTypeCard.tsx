@@ -6,16 +6,27 @@
  * "Games with Endgame" card (see EndgameOverallCard / EndgameCard). The two
  * per-class gauges (Conversion, Recovery) at the top of each card are kept.
  *
- * Card structure (top-to-bottom):
- *   1. Title + per-card title InfoPopover + optional n={total} chip.
- *   2. Side-by-side Conv + Recov gauges (unchanged).
+ * Phase 98: Conv/Recov gauges restored (removed in 260529-une commit d3453597).
+ * Tile is now rendered inside a per-TC collapsible card (EndgameTypeTcCard) and
+ * receives a `tc` prop so gauges and Score Gap are banded against the correct
+ * per-(class × TC) benchmark IQR from PER_CLASS_TC_GAUGE_ZONES.
+ *
+ * Phase 98 follow-up: the tile renders as a plain BLOCK (no container, no
+ * recessed header band) — the per-TC card (EndgameTypeTcCard) owns the charcoal
+ * container, the TC header, and the dividers between tiles, mirroring the
+ * Conversion/Parity/Recovery blocks in EndgameMetricsByTcCard.
+ *
+ * Block structure (top-to-bottom):
+ *   1. Bold type label + title InfoPopover + optional n={total} chip.
+ *   2. Side-by-side Conv + Recov gauges (EndgameGauge), banded per-(class × TC).
  *   3. WDL bar row with the Games deep-link.
  *   4. Score bullet (W + 0.5*D / N) sig-gated against 50%.
- *   5. Per-span Score Gap bullet (eval-based, Cpu-iconed) — Phase 87.1.
+ *   5. Per-span Score Gap bullet (eval-based, Cpu-iconed) — Phase 87.1,
+ *      now banded per-(class × TC) achievable_score_gap.
  *
  * Empty / sparse handling (CONTEXT D-13 / D-14 / D-15):
- * - total === 0: gauge row opacity-50, "Not enough data yet" placeholder, no
- *   WDL / Score row, no Games link.
+ * - total === 0: "Not enough data yet" placeholder, no WDL / Score row,
+ *   no Games link.
  * - 0 < total < MIN_GAMES_FOR_RELIABLE_STATS: body wrapper gets UNRELIABLE_OPACITY,
  *   `n={total}` chip appears next to the title (full opacity). Score row hidden.
  */
@@ -32,14 +43,10 @@ import { useEvalCoverage } from '@/hooks/useEvalCoverage';
 import { MiniWDLBar } from '@/components/stats/MiniWDLBar';
 import { InfoPopover } from '@/components/ui/info-popover';
 import { Tooltip } from '@/components/ui/tooltip';
-// Frontend constant names use the user-facing "ENDGAME_TYPE_SCORE_GAP" form;
-// internal identifier is `endgame_type_achievable_score_gap` (see
-// app/services/endgame_zones.py). Dual-label scheme per CONTEXT D-02.
-import {
-  ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX,
-  ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN,
-  PER_CLASS_GAUGE_ZONES,
-} from '@/generated/endgameZones';
+// Phase 98: replaced ENDGAME_TYPE_SCORE_GAP_NEUTRAL_* and PER_CLASS_GAUGE_ZONES
+// with PER_CLASS_TC_GAUGE_ZONES so gauge zones and Score Gap neutral band are
+// banded per-(class × TC) (D-04).
+import { PER_CLASS_TC_GAUGE_ZONES } from '@/generated/endgameZones';
 import {
   SCORE_BULLET_CENTER,
   SCORE_BULLET_NEUTRAL_MAX,
@@ -81,14 +88,15 @@ const SCORE_NEUTRAL_UPPER = 0.55;
 
 export interface EndgameTypeCardProps {
   category: EndgameCategoryStats;
-  sharePct: number;
+  // Phase 98 (D-04): TC for this tile — resolves per-(class × TC) gauge bands.
+  tc: 'bullet' | 'blitz' | 'rapid' | 'classical';
   onCategorySelect: (cls: EndgameClass) => void;
   tileTestId: string;
 }
 
 export function EndgameTypeCard({
   category,
-  sharePct,
+  tc,
   onCategorySelect,
   tileTestId,
 }: EndgameTypeCardProps) {
@@ -129,24 +137,45 @@ export function EndgameTypeCard({
     gapMean != null
       ? (gapMean >= 0 ? '+' : '') + `${Math.round(gapMean * 100)}%`
       : '—';
+
+  // Phase 98 (D-04): per-(class × TC) gauge zone bands.
+  // Guard pawnless (no TC entry) and any missing lookup (noUncheckedIndexedAccess).
+  const classBandsByTc =
+    category.endgame_class !== 'pawnless'
+      ? PER_CLASS_TC_GAUGE_ZONES[category.endgame_class]
+      : undefined;
+  const classBands = classBandsByTc?.[tc];
+
+  const convZones = classBands
+    ? colorizeGaugeZones([
+        { from: 0, to: classBands.conversion[0] },
+        { from: classBands.conversion[0], to: classBands.conversion[1] },
+        { from: classBands.conversion[1], to: 1.0 },
+      ])
+    : colorizeGaugeZones([{ from: 0, to: 1.0 }]);
+
+  const recovZones = classBands
+    ? colorizeGaugeZones([
+        { from: 0, to: classBands.recovery[0] },
+        { from: classBands.recovery[0], to: classBands.recovery[1] },
+        { from: classBands.recovery[1], to: 1.0 },
+      ])
+    : colorizeGaugeZones([{ from: 0, to: 1.0 }]);
+
+  // Phase 98 Score Gap neutral band: per-(class × TC) achievable_score_gap, or
+  // fallback when pawnless or lookup misses.
+  const [sgNeutralMin, sgNeutralMax] = classBands?.achievable_score_gap ?? [-0.04, 0.04];
+
   const gapColor: string | undefined =
     gapMean != null
-      ? gapMean < ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN
+      ? gapMean < sgNeutralMin
         ? ZONE_DANGER
-        : gapMean >= ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX
+        : gapMean >= sgNeutralMax
           ? ZONE_SUCCESS
           : undefined
       : undefined;
   const gapLevel = deriveLevel(category.type_achievable_score_gap_p_value, gapN);
 
-  // Per-class gauge zones (p25/p75 bands from the generated registry). With
-  // `pawnless` filtered upstream and the union of registry keys covering the
-  // remaining 5 classes, the explicit guard documents the contract instead of
-  // relying on a runtime fallback (REVIEW WR-04).
-  const bands =
-    category.endgame_class !== 'pawnless'
-      ? PER_CLASS_GAUGE_ZONES[category.endgame_class]
-      : undefined;
   // REVIEW WR-03: pawnless guard surfaces missing descriptions during dev
   // rather than silently emitting an empty popover via a `?? ''` fallback.
   const typeDescription =
@@ -154,11 +183,17 @@ export function EndgameTypeCard({
       ? ENDGAME_TYPE_DESCRIPTIONS[category.endgame_class]
       : '';
 
-  const sharePctFormatted = Math.round(sharePct);
   const gamesCountFormatted = category.total.toLocaleString();
 
+  // Phase 98 follow-up: the tile is a block inside the per-TC card (like the
+  // Conversion/Parity/Recovery blocks in EndgameMetricsByTcCard), NOT its own
+  // card. Plain bold label, no recessed header band or container — the per-TC
+  // card supplies the charcoal container, header, and the dividers between tiles.
   const titleRow = (
-    <h3 className="text-base font-semibold mb-2 inline-flex items-center gap-1">
+    <h4
+      className="flex items-center gap-1 mb-2 text-base font-semibold"
+      data-testid={`${tileTestId}-header`}
+    >
       <span>{category.label}</span>
       <InfoPopover
         ariaLabel={`${category.label} info`}
@@ -177,7 +212,7 @@ export function EndgameTypeCard({
           n={category.total}
         </span>
       )}
-    </h3>
+    </h4>
   );
 
   // Empty-class shell (no games at all). REVIEW WR-04: dropped the redundant
@@ -187,7 +222,7 @@ export function EndgameTypeCard({
   if (!hasGames) {
     return (
       <div
-        className="charcoal-texture rounded-md p-4"
+        className="p-4"
         data-testid={tileTestId}
         role="group"
         aria-label={`${category.label} endgame breakdown`}
@@ -235,50 +270,39 @@ export function EndgameTypeCard({
     );
   }
 
-  // bands is non-undefined here: hasGames implies a non-pawnless class with a
-  // registry entry (HIDDEN_ENDGAME_CLASSES filters pawnless upstream).
-  const [convLower, convUpper] = bands!.conversion;
-  const [recovLower, recovUpper] = bands!.recovery;
-  const convZones = colorizeGaugeZones([
-    { from: 0, to: convLower },
-    { from: convLower, to: convUpper },
-    { from: convUpper, to: 1.0 },
-  ]);
-  const recovZones = colorizeGaugeZones([
-    { from: 0, to: recovLower },
-    { from: recovLower, to: recovUpper },
-    { from: recovUpper, to: 1.0 },
-  ]);
-
+  // Games indicator mirrors the "Results played as White/Black" card on the Moves
+  // tab (PositionResultsPanel): label + right-aligned count + sword, no percentage.
+  // no-underline overrides AccordionContent's [&_a]:underline (this tile renders
+  // inside the per-TC accordion body, unlike the Moves-tab reference).
   const gamesLink = (
     <Tooltip content={`View ${category.label} endgame games`}>
       <Link
         to={`/endgames/games?type=${slug}`}
         onClick={() => onCategorySelect(category.endgame_class)}
-        className="ml-auto inline-flex items-center gap-1 text-sm text-brand-brown-light hover:text-brand-brown-highlight tabular-nums whitespace-nowrap transition-colors"
+        className="ml-auto inline-flex items-center gap-1 text-sm tabular-nums no-underline whitespace-nowrap text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
         aria-label={`View ${category.label} endgame games`}
         data-testid={`${tileTestId}-games-link`}
       >
-        <span>
-          Games: {sharePctFormatted}% ({gamesCountFormatted})
+        <span>Games:</span>
+        <span className="font-semibold tabular-nums inline-flex items-center gap-0.3">
+          {gamesCountFormatted}
+          <Swords className="h-3.5 w-3.5" aria-hidden="true" />
         </span>
-        <Swords className="h-3.5 w-3.5" aria-hidden="true" />
       </Link>
     </Tooltip>
   );
 
   return (
     <div
-      className="charcoal-texture rounded-md p-4"
+      className="p-4"
       data-testid={tileTestId}
       role="group"
       aria-label={`${category.label} endgame breakdown`}
     >
       {titleRow}
       <div className="flex flex-col gap-4" style={bodyStyle}>
-        {/* Gauge row (Conv | Recov side-by-side). Gauges are always rendered
-            with full opacity here; the empty-class shell above handles
-            total === 0. */}
+        {/* Phase 98: Gauge row (Conv | Recov side-by-side) restored.
+            Zones banded against PER_CLASS_TC_GAUGE_ZONES[class][tc] (D-04). */}
         <div
           className="grid grid-cols-2 gap-2"
           data-testid={`${tileTestId}-gauges`}
@@ -341,7 +365,9 @@ export function EndgameTypeCard({
             data-testid={`${tileTestId}-score-row`}
           >
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-              <span className="text-muted-foreground">{category.label} Endgame Score:</span>
+              {/* Short visible label; the popover name/explanation keeps the full
+                  "{type} Endgame Score" wording (UAT 98). */}
+              <span className="text-muted-foreground">Score:</span>
               <span
                 className="font-semibold"
                 style={scoreColor ? { color: scoreColor } : undefined}
@@ -394,32 +420,58 @@ export function EndgameTypeCard({
           </div>
         )}
 
-        {/* Phase 87.1 (SEED-016 D-08): per-span Score Gap bullet row.
-            Positioned last in the card. Card row label is "Score Gap" (short
-            form per D-02); card title ("Rook Endgames" etc.) supplies the
-            disambiguating type context.
-            quick-260519-ni3: startSlot/endSlot show Start/End predicted scores
-            flanking the center Score Gap (hidden when their mean is null). The
-            Cpu icon now flags only Start (the eval-based entry anchor); Score
-            Gap and End drop it to keep the row uncluttered. */}
+        {/* Phase 87.1 (SEED-016 D-08): per-span Eval Score Gap bullet row.
+            Positioned last in the card. Left-aligned label "<Cpu> Eval Score Gap:"
+            (UAT 98 terminology: Score = actual result; Eval Score = the eval put
+            through the Lichess expected-score formula; Eval Score Gap = entry→exit
+            difference of two Eval Scores. Eval-family metrics carry the Cpu icon).
+            The Start/End Eval Scores moved from inline slots into the popover
+            (second paragraph of the explanation), so the row no longer uses
+            startSlot/endSlot and falls back to the left-aligned
+            label/value/bullet layout. */}
         {showGapRow && (
           <div data-testid={`${tileTestId}-asg-bullet`}>
             <ScoreGapRow
-              label="Gap:"
+              label={
+                <span className="inline-flex items-center gap-1">
+                  <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
+                  Eval Score Gap:
+                </span>
+              }
               value={gapMean ?? 0}
               formatted={gapFormatted}
               resultColor={gapColor}
               valueTestId={`${tileTestId}-asg-value`}
-              ariaLabel={`${category.label} Score Gap: ${gapFormatted}`}
-              neutralMin={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
-              neutralMax={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
+              ariaLabel={`${category.label} Eval Score Gap: ${gapFormatted}`}
+              neutralMin={sgNeutralMin}
+              neutralMax={sgNeutralMax}
               domain={ENDGAME_TYPE_SCORE_GAP_DOMAIN}
               ciLow={category.type_achievable_score_gap_ci_low ?? undefined}
               ciHigh={category.type_achievable_score_gap_ci_high ?? undefined}
               tooltip={
                 <MetricStatPopover
-                  name="Score Gap"
-                  explanation={`Each ${category.label} Endgame Sequence has a start Stockfish eval and an end eval, or the actual game result for the final sequence in a game. Both get converted to expected scores via the Lichess expected-score formula. The Score Gap is the average of (end − start) across all your ${category.label} sequences: positive = you outperformed expectation, negative = you gave back score.`}
+                  name="Eval Score Gap"
+                  explanation={
+                    <>
+                      Each {category.label} Endgame Sequence has a start Stockfish
+                      eval and an end eval, or the actual game result for the final
+                      sequence in a game. Both get converted to Eval Scores via the
+                      Lichess expected-score formula. The Eval Score Gap is the
+                      average of (end − start) across all your {category.label}{' '}
+                      sequences: positive = you outplayed Stockfish's expectation,
+                      negative = you gave back score.
+                      {startMean != null && endMean != null && (
+                        <span
+                          className="mt-1 block"
+                          data-testid={`${tileTestId}-asg-startend`}
+                        >
+                          Your average Eval Score runs from{' '}
+                          {Math.round(startMean * 100)}% at entry to{' '}
+                          {Math.round(endMean * 100)}% at exit.
+                        </span>
+                      )}
+                    </>
+                  }
                   value={gapMean ?? 0}
                   baseline={0}
                   unit="percent"
@@ -427,8 +479,8 @@ export function EndgameTypeCard({
                   level={gapLevel}
                   pValue={category.type_achievable_score_gap_p_value}
                   vocabulary="score"
-                  neutralLower={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN}
-                  neutralUpper={ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX}
+                  neutralLower={sgNeutralMin}
+                  neutralUpper={sgNeutralMax}
                   baselineLabel="0%"
                   methodology={
                     <>
@@ -438,31 +490,10 @@ export function EndgameTypeCard({
                     </>
                   }
                   testId={`${tileTestId}-asg-info`}
-                  ariaLabel={`What is ${category.label} Score Gap?`}
+                  ariaLabel={`What is ${category.label} Eval Score Gap?`}
                   isPending={isPending}
                   pendingCount={pendingCount}
                 />
-              }
-              startSlot={
-                startMean != null ? (
-                  <span
-                    className="inline-flex items-center gap-1 text-muted-foreground text-sm"
-                    data-testid={`${tileTestId}-asg-start`}
-                  >
-                    <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                    Start: {Math.round(startMean * 100)}%
-                  </span>
-                ) : undefined
-              }
-              endSlot={
-                endMean != null ? (
-                  <span
-                    className="inline-flex items-center gap-1 text-muted-foreground text-sm"
-                    data-testid={`${tileTestId}-asg-end`}
-                  >
-                    End: {Math.round(endMean * 100)}%
-                  </span>
-                ) : undefined
               }
             />
           </div>

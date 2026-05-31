@@ -2,6 +2,7 @@ import type { UseMutationResult } from '@tanstack/react-query';
 import { BarChart3, Info, Lightbulb, ListChecks, Loader2, Sparkles, UserCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { DEFAULT_FILTERS, type FilterState } from '@/components/filters/FilterPanel';
 import { derivePreset } from '@/lib/opponentStrength';
 import { useActiveJobs } from '@/hooks/useImport';
@@ -97,43 +98,50 @@ export function EndgameInsightsBlock({
   const isStale = hasRendered && rendered.status === 'stale_rate_limited';
 
   return (
-    <div
-      data-testid="insights-block"
-      className="charcoal-texture rounded-md p-4"
-    >
-      <div className="flex flex-wrap items-center gap-2 mb-2">
-        <h2 className="text-lg font-semibold text-foreground mt-2 flex items-center gap-2">
-          <span className="insight-lightbulb" aria-hidden="true">
-            <Lightbulb className="size-5" />
+    <Accordion type="single" collapsible defaultValue="insights">
+      <AccordionItem
+        value="insights"
+        data-testid="insights-block"
+        className="charcoal-texture rounded-md overflow-hidden border-none"
+      >
+        <AccordionTrigger
+          data-testid="insights-block-trigger"
+          className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0"
+        >
+          <span className="flex items-center gap-2 flex-1">
+            <span className="insight-lightbulb" aria-hidden="true">
+              <Lightbulb className="size-5" />
+            </span>
+            <h2 className="text-base font-semibold text-foreground">Insights</h2>
           </span>
-          Insights
-        </h2>
-      </div>
-
-      {isError ? (
-        <ErrorState
-          retryMinutes={errorRetryMinutes}
-          onRetry={handleGenerateClick}
-        />
-      ) : isPending && !hasRendered ? (
-        <SkeletonBlock />
-      ) : hasRendered ? (
-        <RenderedState
-          response={rendered}
-          isStale={isStale}
-          isPending={isPending}
-          blockedReason={blockedReason}
-          onRegenerate={handleGenerateClick}
-        />
-      ) : (
-        <HeroState
-          isPending={isPending}
-          blockedReason={blockedReason}
-          showDot={!insightsUsed}
-          onGenerate={handleGenerateClick}
-        />
-      )}
-    </div>
+        </AccordionTrigger>
+        <AccordionContent className="p-4">
+          {isError ? (
+            <ErrorState
+              retryMinutes={errorRetryMinutes}
+              onRetry={handleGenerateClick}
+            />
+          ) : isPending && !hasRendered ? (
+            <SkeletonBlock />
+          ) : hasRendered ? (
+            <RenderedState
+              response={rendered}
+              isStale={isStale}
+              isPending={isPending}
+              blockedReason={blockedReason}
+              onRegenerate={handleGenerateClick}
+            />
+          ) : (
+            <HeroState
+              isPending={isPending}
+              blockedReason={blockedReason}
+              showDot={!insightsUsed}
+              onGenerate={handleGenerateClick}
+            />
+          )}
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
   );
 }
 
@@ -258,9 +266,9 @@ function RenderedState({
           <span>{staleCopy}</span>
         </div>
       )}
-      <div className="space-y-3 mb-3">
+      <div className="space-y-5 mb-3">
         {showPlayerProfile && (
-          <InsightsCard
+          <InsightsSection
             testId="insights-player-profile"
             title="Player Profile"
             icon={UserCircle2}
@@ -270,10 +278,10 @@ function RenderedState({
                 <p key={idx}>{paragraph}</p>
               ))}
             </div>
-          </InsightsCard>
+          </InsightsSection>
         )}
         {showOverview && (
-          <InsightsCard
+          <InsightsSection
             testId="insights-overview"
             title="Data Analysis"
             icon={BarChart3}
@@ -283,10 +291,10 @@ function RenderedState({
                 <p key={idx}>{paragraph}</p>
               ))}
             </div>
-          </InsightsCard>
+          </InsightsSection>
         )}
         {showRecommendations && (
-          <InsightsCard
+          <InsightsSection
             testId="insights-recommendations"
             title="Recommendations"
             icon={ListChecks}
@@ -296,7 +304,7 @@ function RenderedState({
                 <li key={idx}>{rec}</li>
               ))}
             </ul>
-          </InsightsCard>
+          </InsightsSection>
         )}
       </div>
       <div className="flex items-center gap-2">
@@ -327,7 +335,7 @@ function RenderedState({
   );
 }
 
-function InsightsCard({
+function InsightsSection({
   testId,
   title,
   icon: Icon,
@@ -339,11 +347,8 @@ function InsightsCard({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      data-testid={testId}
-      className="rounded-md border border-border/40 bg-background/40 p-3"
-    >
-      <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground mb-2">
+    <div data-testid={testId}>
+      <h3 className="flex items-center gap-2 text-base font-semibold text-foreground mb-2">
         <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         {title}
       </h3>

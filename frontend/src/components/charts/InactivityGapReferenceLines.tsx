@@ -22,7 +22,7 @@ export interface InactivityGapReferenceLinesProps {
   dates: string[];
   /** Forward to ReferenceLine when the chart has named axes; omit for single-default-axis charts. */
   yAxisId?: string;
-  /** Gaps strictly greater than this value are annotated. Defaults to INACTIVITY_GAP_THRESHOLD_DAYS (56). */
+  /** Gaps strictly greater than this value are annotated. Defaults to INACTIVITY_GAP_THRESHOLD_DAYS (90). */
   thresholdDays?: number;
 }
 
@@ -54,10 +54,11 @@ export function inactivityGapReferenceLines({
       const glyphSize = BREAK_LABEL_GLYPH_SIZE;
       const labelX = x + 4;
       const labelY = y + 4;
-      const textX = labelX + glyphSize + 4;
-      // Text stays at BREAK_LABEL_FONT_SIZE while the glyph is larger; center the
-      // text on the glyph's vertical midpoint so the two stay visually aligned.
-      const textY = labelY + glyphSize / 2;
+      // Duration sits below the glyph, horizontally centered on it: textX is the
+      // glyph's horizontal midpoint (text-anchor="middle"), textY clears the
+      // glyph's bottom edge plus a small gap.
+      const textX = labelX + glyphSize / 2;
+      const textY = labelY + glyphSize + BREAK_LABEL_FONT_SIZE;
       return (
         <g data-testid="inactivity-gap-label">
           {/* Palmtree glyph: lucide renders as <svg class="lucide ..."> which is
@@ -78,6 +79,7 @@ export function inactivityGapReferenceLines({
             fontSize={BREAK_LABEL_FONT_SIZE}
             fill="currentColor"
             fillOpacity={0.6}
+            textAnchor="middle"
             dominantBaseline="central"
           >
             {label}

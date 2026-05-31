@@ -32,6 +32,13 @@ vi.mock('@/api/client', async () => {
 });
 import { apiClient } from '@/api/client';
 
+// OpeningFindingCard (rendered by this block) gates its eval row on
+// useReadiness.tier2. Mock it tier2=true so the eval rows render as before; the
+// mocked apiClient here has no `get`, so the real readiness query would error.
+vi.mock('@/hooks/useReadiness', () => ({
+  useReadiness: () => ({ tier1: true, tier2: true, pendingCount: 0, totalCount: 0, isLoading: false }),
+}));
+
 const DEFAULT_FILTERS: FilterState = {
   color: 'white',
   matchSide: 'both',

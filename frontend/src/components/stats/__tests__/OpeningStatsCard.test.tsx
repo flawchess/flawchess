@@ -23,10 +23,11 @@ vi.mock('@/components/ui/tooltip', () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-// useEvalCoverage calls useQuery which requires a QueryClientProvider.
-// Return safe defaults so the component renders without a provider.
-vi.mock('@/hooks/useEvalCoverage', () => ({
-  useEvalCoverage: () => ({ isPending: false, pendingCount: 0, pct: 100, totalCount: 0, isLoading: false }),
+// useReadiness calls useQuery which requires a QueryClientProvider.
+// Return safe defaults (tier2=true) so the component renders without a provider
+// and the eval rows are visible by default (tests that want !tier2 override the mock).
+vi.mock('@/hooks/useReadiness', () => ({
+  useReadiness: () => ({ tier1: true, tier2: true, pendingCount: 0, totalCount: 0, isLoading: false }),
 }));
 
 vi.mock('@/components/board/LazyMiniBoard', () => ({
@@ -211,6 +212,7 @@ describe('OpeningStatsCard — low-data muting', () => {
 
 describe('OpeningStatsCard — border-left color (score-zone, 260507-t4r)', () => {
   // Test S1a: Reliable score (total >= MIN_GAMES_FOR_RELIABLE_STATS) uses score-zone color
+  // Full-height left spine: reliable cards carry the score-zone accent on the card root (whole left edge, header included); unreliable cards have no spine.
   it('S1a: total >= MIN_GAMES_FOR_RELIABLE_STATS uses scoreZoneColor(derivedScore)', () => {
     // derivedScore = (wins + 0.5*draws) / total = (10 + 0.5*5) / 20 = 12.5/20 = 0.625 -> ZONE_SUCCESS
     const opening = makeOpening({ wins: 10, draws: 5, losses: 5, total: 20 });
@@ -219,6 +221,8 @@ describe('OpeningStatsCard — border-left color (score-zone, 260507-t4r)', () =
       '[data-testid="opening-stats-card-7"]',
     ) as HTMLElement | null;
     const derivedScore = (10 + 0.5 * 5) / 20;
+    // Reliable card: full-height left spine on the root, colored by score zone.
+    expect(card?.className).toContain('border-l-4');
     expect(normalizeColor(card?.style.borderLeftColor ?? '')).toBe(
       normalizeColor(scoreZoneColor(derivedScore)),
     );
@@ -231,7 +235,9 @@ describe('OpeningStatsCard — border-left color (score-zone, 260507-t4r)', () =
     const card = document.querySelector(
       '[data-testid="opening-stats-card-8"]',
     ) as HTMLElement | null;
-    expect(card?.style.borderLeftColor).toBe('transparent');
+    // Unreliable (n < MIN_GAMES): no spine — no border-l-4 class, no inline color.
+    expect(card?.className).not.toContain('border-l-4');
+    expect(card?.style.borderLeftColor).toBe('');
   });
 
   // Test S1c: Even when eval data is present, border uses score-zone (not eval-zone)

@@ -34,7 +34,9 @@ from app.services.endgame_zones import (  # noqa: E402
     NEUTRAL_PCT_THRESHOLD,
     NEUTRAL_TIMEOUT_THRESHOLD,
     PER_CLASS_GAUGE_ZONES,
+    PER_CLASS_TC_GAUGE_ZONES,  # Phase 98: per-(class × TC) conv/recov/score-gap bands
     PRESSURE_BIN_SCORE_NEUTRAL_ZONES,  # Phase 88
+    TC_METRIC_BANDS,  # Phase 97: per-TC conv/recov gauge + DeltaES bullet bands
     ZONE_REGISTRY,
 )
 
@@ -62,11 +64,11 @@ _ENTRY_XS_SPEC = ZONE_REGISTRY["entry_expected_score"]
 # Phase 87.2 (D-02): per-bucket Section 2 ΔES Score Gap neutral bands.
 # Each bucket gets its own ZoneSpec from ZONE_REGISTRY; placeholder ±5pp bands
 # until /benchmarks §3.4.4 Cohen's-d calibration updates them.
-_SECTION2_SCORE_GAP_CONV_SPEC = ZONE_REGISTRY["section2_score_gap_conv"]
-_SECTION2_SCORE_GAP_PARITY_SPEC = ZONE_REGISTRY["section2_score_gap_parity"]
-_SECTION2_SCORE_GAP_RECOV_SPEC = ZONE_REGISTRY["section2_score_gap_recov"]
-# Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_SPEC dropped alongside the
-# section2_score_gap_skill ZoneSpec deletion.
+_SCORE_GAP_CONV_SPEC = ZONE_REGISTRY["score_gap_conv"]
+_SCORE_GAP_PARITY_SPEC = ZONE_REGISTRY["score_gap_parity"]
+_SCORE_GAP_RECOV_SPEC = ZONE_REGISTRY["score_gap_recov"]
+# Phase 87.4 (D-05): SCORE_GAP_SKILL_SPEC dropped alongside the
+# score_gap_skill ZoneSpec deletion.
 
 # Phase 88: clock_gap_pct scalar zone spec for the Clock Gap bullet.
 # PLACEHOLDER band until benchmarks §3.3.1 clock-gap-% runs calibrate it.
@@ -128,6 +130,51 @@ def _format_pressure_bin_zones() -> str:
     return "\n".join(lines) + "\n"
 
 
+def _format_tc_metric_bands() -> str:
+    """Emit TC_METRIC_BANDS as a nested TS Record literal (Phase 97).
+
+    Each TC entry has { convRate, recovRate, parityRate, convScoreGap,
+    recovScoreGap } with [lower, upper] tuples. Mirrors
+    _format_per_class_gauge_zones() structure.
+    """
+    lines: list[str] = []
+    for tc, bands in TC_METRIC_BANDS.items():
+        cr_lo, cr_hi = bands.conv_rate
+        rr_lo, rr_hi = bands.recov_rate
+        pr_lo, pr_hi = bands.parity_rate
+        cg_lo, cg_hi = bands.conv_score_gap
+        rg_lo, rg_hi = bands.recov_score_gap
+        lines.append(
+            f"  {tc}: {{ convRate: [{cr_lo}, {cr_hi}], recovRate: [{rr_lo}, {rr_hi}],"
+            f" parityRate: [{pr_lo}, {pr_hi}],"
+            f" convScoreGap: [{cg_lo}, {cg_hi}], recovScoreGap: [{rg_lo}, {rg_hi}] }},"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def _format_per_class_tc_gauge_zones() -> str:
+    """Emit PER_CLASS_TC_GAUGE_ZONES as a nested TS Record literal (Phase 98).
+
+    Outer key: EndgameClassKey (rook/minor_piece/pawn/queen/mixed).
+    Inner key: TC string ('bullet'|'blitz'|'rapid'|'classical').
+    Each entry has { conversion: [lo, hi], recovery: [lo, hi], achievable_score_gap: [lo, hi] }.
+    Mirrors _format_tc_metric_bands() structure for TC nesting.
+    """
+    lines: list[str] = []
+    for cls, tc_map in PER_CLASS_TC_GAUGE_ZONES.items():
+        tc_entries: list[str] = []
+        for tc, bands in tc_map.items():
+            c_lo, c_hi = bands.conversion
+            r_lo, r_hi = bands.recovery
+            g_lo, g_hi = bands.achievable_score_gap
+            tc_entries.append(
+                f"    {tc}: {{ conversion: [{c_lo}, {c_hi}], recovery: [{r_lo}, {r_hi}],"
+                f" achievable_score_gap: [{g_lo}, {g_hi}] }},"
+            )
+        lines.append(f"  {cls}: {{\n" + "\n".join(tc_entries) + "\n  },")
+    return "\n".join(lines) + "\n"
+
+
 def _render() -> str:
     """Build the full TypeScript source as a single string.
 
@@ -168,13 +215,13 @@ def _render() -> str:
         f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_lower};\n"
         f"export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX = {_ENDGAME_TYPE_SCORE_GAP_SPEC.typical_upper};\n"
         "// Phase 87.2 (D-02): per-bucket Section 2 ΔES Score Gap neutral bands.\n"
-        f"export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_CONV_SPEC.typical_lower};\n"
-        f"export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_CONV_SPEC.typical_upper};\n"
-        f"export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_PARITY_SPEC.typical_lower};\n"
-        f"export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_PARITY_SPEC.typical_upper};\n"
-        f"export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN = {_SECTION2_SCORE_GAP_RECOV_SPEC.typical_lower};\n"
-        f"export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX = {_SECTION2_SCORE_GAP_RECOV_SPEC.typical_upper};\n"
-        "// Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_NEUTRAL_* emission dropped\n"
+        f"export const SCORE_GAP_CONV_NEUTRAL_MIN = {_SCORE_GAP_CONV_SPEC.typical_lower};\n"
+        f"export const SCORE_GAP_CONV_NEUTRAL_MAX = {_SCORE_GAP_CONV_SPEC.typical_upper};\n"
+        f"export const SCORE_GAP_PARITY_NEUTRAL_MIN = {_SCORE_GAP_PARITY_SPEC.typical_lower};\n"
+        f"export const SCORE_GAP_PARITY_NEUTRAL_MAX = {_SCORE_GAP_PARITY_SPEC.typical_upper};\n"
+        f"export const SCORE_GAP_RECOV_NEUTRAL_MIN = {_SCORE_GAP_RECOV_SPEC.typical_lower};\n"
+        f"export const SCORE_GAP_RECOV_NEUTRAL_MAX = {_SCORE_GAP_RECOV_SPEC.typical_upper};\n"
+        "// Phase 87.4 (D-05): SCORE_GAP_SKILL_NEUTRAL_* emission dropped\n"
         "// alongside the Endgame Skill concept retirement.\n"
         "\n"
         "// Phase 83 D-14/D-17: per-user entry_expected_score cohort band.\n"
@@ -241,6 +288,29 @@ def _render() -> str:
         "// Calibrated from reports/benchmarks-latest.md §3.3.1 clock-gap-% (Phase 88-08, 2026-05-17).\n"
         f"export const CLOCK_GAP_NEUTRAL_MIN = {_CLOCK_GAP_SPEC.typical_lower};\n"
         f"export const CLOCK_GAP_NEUTRAL_MAX = {_CLOCK_GAP_SPEC.typical_upper};\n"
+        "\n"
+        "// Phase 97: per-TC gauge + DeltaES bullet bands for Conversion, Recovery, Parity.\n"
+        "// Source: reports/benchmark/benchmarks-latest.md §3.2.1 (rates) and §3.2.2 (DeltaES gaps).\n"
+        "// parityRate is per-TC (gauge band only); the parity DeltaES band stays global.\n"
+        "export const TC_METRIC_BANDS: Record<\n"
+        "  'bullet' | 'blitz' | 'rapid' | 'classical',\n"
+        "  { convRate: [number, number]; recovRate: [number, number]; parityRate: [number, number]; convScoreGap: [number, number]; recovScoreGap: [number, number] }\n"
+        "> = {\n" + _format_tc_metric_bands() + "} as const;\n"
+        "\n"
+        "// Phase 98: per-(class × TC) gauge bands for Conv/Recov/ScoreGap.\n"
+        "// Source: reports/benchmark/benchmarks-latest.md §3.4.1 (TC marginal p25/p75).\n"
+        "// Cohen's d ≈ 1.2–1.7 per class across TCs → all classes keep-separate.\n"
+        "// Score Gap TC d ≈ 0.07–0.18 (collapse) — four near-identical ΔES bands per\n"
+        "// class by design (Score Gap forced per-TC for visual consistency, D-04/D-14).\n"
+        "// pawnless omitted: n below per-class TC floor; hidden in the collapsible tile UI.\n"
+        "// Type excludes 'pawnless' to match the emitted keys (the value omits it).\n"
+        "export const PER_CLASS_TC_GAUGE_ZONES: Record<\n"
+        "  Exclude<EndgameClassKey, 'pawnless'>,\n"
+        "  Record<\n"
+        "    'bullet' | 'blitz' | 'rapid' | 'classical',\n"
+        "    { conversion: [number, number]; recovery: [number, number]; achievable_score_gap: [number, number] }\n"
+        "  >\n"
+        "> = {\n" + _format_per_class_tc_gauge_zones() + "} as const;\n"
     )
 
 

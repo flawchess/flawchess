@@ -143,32 +143,34 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
 
   return (
     <div data-testid="endgame-score-timeline-chart">
-      <div className="mb-3">
-        <h3 className="text-base font-semibold">
-          <span className="inline-flex items-center gap-1">
-            Endgame Score Gap over Time
-            <InfoPopover
-              ariaLabel="Endgame vs Non-Endgame Score timeline info"
-              testId="score-timeline-info"
-              side="top"
-            >
-              <p>
-                <strong>Endgame Score Gap over Time:</strong> how your Endgame
-                Score compares to your Non-Endgame Score over time, so you can
-                see whether the gap is closing or widening.
-              </p>
-              <p className="mt-1">
-                The shaded area between the lines is color-coded: green when
-                your Endgame Score leads your Non-Endgame Score, red when it
-                trails.
-              </p>
-            </InfoPopover>
-          </span>
-        </h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Are your endgames a weakness or a strength, and is the gap closing?
-        </p>
-      </div>
+      {/* Card header band: recessed background + bottom separator, full-bleed to
+          the card edges (matches EndgameMetricsByTcCard / EndgameTimePressureCard). */}
+      <h3
+        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+        data-testid="endgame-score-timeline-header"
+      >
+        Endgame Score Gap over Time
+        <InfoPopover
+          ariaLabel="Endgame vs Non-Endgame Score timeline info"
+          testId="score-timeline-info"
+          side="top"
+        >
+          <p>
+            <strong>Endgame Score Gap over Time:</strong> how your Endgame
+            Score compares to your Non-Endgame Score over time, so you can
+            see whether the gap is closing or widening.
+          </p>
+          <p className="mt-1">
+            The shaded area between the lines is color-coded: green when
+            your Endgame Score leads your Non-Endgame Score, red when it
+            trails.
+          </p>
+        </InfoPopover>
+      </h3>
+      <div className="p-4">
+      <p className="text-sm text-muted-foreground mb-3">
+        Are your endgames a weakness or a strength, and is the gap closing?
+      </p>
       <div className={isMobile ? '' : 'flex items-stretch'}>
         {!isMobile && (
           <div
@@ -335,6 +337,7 @@ export function EndgameScoreOverTimeChart({ timeline, window }: EndgameScoreOver
       <p className="text-xs text-muted-foreground text-center mt-1">
         Week (rolling average of the last {window} games per side)
       </p>
+      </div>
     </div>
   );
 }

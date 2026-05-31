@@ -35,11 +35,19 @@ export function useEvalCoverage() {
   });
 
   const data = query.data;
+  const isPending = (data?.pct_complete ?? 100) < 100;
+
+  // NOTE: Auto-reload on eval completion was removed in Phase 96 Plan 03
+  // (Constraint 4 / SC-5). Reactive reveal via useReadiness tier2 flag replaces
+  // the forced full-page reload. EvalCoverageHeader (driven by this hook) still
+  // shows the global progress bar while analysis is pending; per-row reveal on
+  // Openings cards is handled by EvalCpuPlaceholder gated on useReadiness.tier2.
+
   return {
     pendingCount: data?.pending_count ?? 0,
     totalCount: data?.total_count ?? 0,
     pct: data?.pct_complete ?? 100,
-    isPending: (data?.pct_complete ?? 100) < 100,
+    isPending,
     isLoading: query.isLoading,
   };
 }

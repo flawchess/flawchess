@@ -2,19 +2,30 @@
 /**
  * Phase 88 — Vitest suite for EndgameTimePressureCard.
  *
+ * 260531-f7s: Card now renders as an AccordionItem. Wrapping renders in an
+ * open Accordion (type="multiple" value={[card.tc]}) so AccordionContent
+ * mounts and body assertions can reach the 2-column layout.
+ *
  * Covers:
  * - TC-level hide when total < MIN_GAMES_PER_TC_CARD.
  * - Clock Gap bullet always renders when card is visible.
  * - SC-2: 3-column header row (You / Gap+info / Opp) above Clock Gap bullet.
  * - SC-3: ScoreGapByTimePressureChart renders in place of the bullet stack.
  * - Plan 88-14 A-3: top-zone stats (now via ClockGapHeaderRow + NetFlagRateRow).
+ * - 2-column body layout (Score Gap chart left, gauges right, dividers).
  * - Post-UAT structural refinements.
  */
 
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import type { ClockGapBullet, PressureQuintileBullet, TimePressureTcCard } from '@/types/endgames';
+import { Accordion } from '@/components/ui/accordion';
+import type {
+  ClockGapBullet,
+  PressureQuintileBullet,
+  RatingAnchorOut,
+  TimePressureTcCard,
+} from '@/types/endgames';
 
 // Constants match the component — reference symbolically, not as magic numbers.
 const MIN_GAMES_PER_TC_CARD = 20;
@@ -105,8 +116,31 @@ function makeCard(overrides?: Partial<TimePressureTcCard>): TimePressureTcCard {
   };
 }
 
-function renderCard(card: TimePressureTcCard) {
-  return render(<EndgameTimePressureCard card={card} />);
+// Phase 94.4 Plan 07: chip slots require both a non-null percentile AND a
+// rating anchor for the popover's 4th-bullet disclosure. The default fixture
+// supplies a Lichess anchor so chips render whenever their percentile field
+// is non-null.
+const DEFAULT_RATING_ANCHOR: RatingAnchorOut = {
+  anchor_rating: 1600,
+  source_platform: 'lichess',
+  chesscom_raw_rating: null,
+  n_games: 1000,
+};
+
+/**
+ * 260531-f7s: EndgameTimePressureCard is now an AccordionItem. Wrap in an
+ * open Accordion so AccordionContent renders and body assertions work.
+ */
+function renderCard(
+  card: TimePressureTcCard,
+  ratingAnchor: RatingAnchorOut | undefined = DEFAULT_RATING_ANCHOR,
+  props?: { grandTotal?: number },
+) {
+  return render(
+    <Accordion type="multiple" value={[card.tc]}>
+      <EndgameTimePressureCard card={card} ratingAnchor={ratingAnchor} {...props} />
+    </Accordion>,
+  );
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -157,16 +191,17 @@ describe('EndgameTimePressureCard — Clock Gap bullet', () => {
 // ─── SC-2: 3-column header row ───────────────────────────────────────────────
 
 describe('EndgameTimePressureCard — SC-2: 3-column header row', () => {
-  it('renders You/Gap/Opp in a 3-column header row ABOVE the Clock Gap bullet', () => {
+  it('renders a single "Clock Gap: X%" label ABOVE the Clock Gap bullet', () => {
     renderCard(makeCard({ user_avg_pct: 0.33, user_avg_seconds: 99, opp_avg_pct: 0.57, opp_avg_seconds: 170 }));
     const header = screen.getByTestId('time-pressure-card-bullet-clock-gap-header');
     expect(header).not.toBeNull();
-    expect(header.textContent).toContain('You');
-    expect(header.textContent).toContain('Gap');
-    expect(header.textContent).toContain('Opp');
+    expect(header.textContent).toContain('Clock Gap');
+    // You/Opp avg time moved into the info popover; no longer in the header line.
+    expect(header.textContent).not.toMatch(/\bYou:\s/);
+    expect(header.textContent).not.toMatch(/\bOpp:\s/);
   });
 
-  it('Clock Gap MetricStatPopover info icon is in the header row (centered Gap cell)', () => {
+  it('Clock Gap MetricStatPopover info icon is in the header row', () => {
     renderCard(makeCard());
     expect(screen.getByTestId('time-pressure-card-bullet-clock-gap-info')).not.toBeNull();
   });
@@ -193,57 +228,89 @@ describe('EndgameTimePressureCard — SC-3: ScoreGapByTimePressureChart replaces
   });
 });
 
+// ─── 2-column body layout (260531-f7s) ───────────────────────────────────────
+
+describe('EndgameTimePressureCard — 2-column body layout', () => {
+  it('body container uses flex-col md:flex-row layout', () => {
+    const { container } = renderCard(makeCard());
+    // The AccordionContent body div has the 2-column flex class.
+    const body = container.querySelector('.flex-col.md\\:flex-row');
+    expect(body).not.toBeNull();
+    expect(body?.className).toContain('md:flex-row');
+  });
+
+  it('vertical separator (w-px) is present in the body for desktop layout', () => {
+    const { container } = renderCard(makeCard());
+    const verticalSep = container.querySelector('.w-px.bg-border\\/40');
+    expect(verticalSep).not.toBeNull();
+  });
+
+  it('horizontal separator (border-t) is present in the body for mobile layout', () => {
+    const { container } = renderCard(makeCard());
+    // The mobile separator inside the body (between columns) is block md:hidden
+    const mobileSep = container.querySelector('.block.md\\:hidden.border-t');
+    expect(mobileSep).not.toBeNull();
+  });
+});
+
 // ─── Plan 88-14 (A-3): top-zone stats via ClockGapHeaderRow + NetFlagRateRow ──
 
 describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone stats', () => {
-  it('renders You, Opp, and Net flag rate with correct formatted values', () => {
-    renderCard(
-      makeCard({
-        user_avg_pct: 0.47,
-        user_avg_seconds: 215,
-        opp_avg_pct: 0.52,
-        opp_avg_seconds: 231,
-        avg_clock_diff_seconds: -16,
-        net_timeout_rate: -0.03,
-      }),
+  /** Hover the Clock Gap info icon to open the popover, then return the
+   * rendered You/Opp value spans from the popover body. */
+  async function openClockGapPopover() {
+    vi.useFakeTimers();
+    try {
+      const trigger = screen.getByTestId('time-pressure-card-bullet-clock-gap-info');
+      fireEvent.mouseEnter(trigger);
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    const myAvg = await waitFor(() =>
+      screen.getByTestId('time-pressure-card-bullet-my-avg-time'),
     );
-    // SC-2: my-avg-time and opp-avg-time now live in ClockGapHeaderRow.
-    const myAvg = screen.getByTestId('time-pressure-card-bullet-my-avg-time');
     const oppAvg = screen.getByTestId('time-pressure-card-bullet-opp-avg-time');
+    return { myAvg, oppAvg };
+  }
+
+  it('Net flag rate renders with correct formatted value in the row below the bullet', () => {
+    renderCard(makeCard({ net_timeout_rate: -0.03 }));
     const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
-
-    // Header row uses "You" / "Opp" labels (SC-2 spec).
-    expect(myAvg.textContent).toContain('You');
-    expect(oppAvg.textContent).toContain('Opp');
     expect(netRate.textContent).toContain('Net flag rate');
-
-    // Post-UAT 88.4: pct rounded to int only — raw seconds dropped from cell.
-    expect(myAvg.textContent).toContain('47%');
-    expect(myAvg.textContent).not.toContain('215s');
-    expect(oppAvg.textContent).toContain('52%');
-    expect(oppAvg.textContent).not.toContain('231s');
     // Net flag rate is integer-rounded (16bf43f0); negative shows a minus sign.
     expect(netRate.textContent).toContain('-3%');
   });
 
-  it('shows em-dash when an average is null', () => {
+  it('You/Opp avg clock pct appear in the Clock Gap info popover', async () => {
+    renderCard(
+      makeCard({
+        user_avg_pct: 0.47,
+        opp_avg_pct: 0.52,
+      }),
+    );
+    const { myAvg, oppAvg } = await openClockGapPopover();
+    // Post-UAT 88.4: pct rounded to int only.
+    expect(myAvg.textContent).toContain('47%');
+    expect(oppAvg.textContent).toContain('52%');
+  });
+
+  it('Clock Gap info popover shows em-dash when an avg is null', async () => {
     renderCard(
       makeCard({
         user_avg_pct: null,
-        user_avg_seconds: null,
         opp_avg_pct: 0.5,
-        opp_avg_seconds: 150,
-        avg_clock_diff_seconds: null,
         net_timeout_rate: 0,
       }),
     );
-    const myAvg = screen.getByTestId('time-pressure-card-bullet-my-avg-time');
+    const { myAvg, oppAvg } = await openClockGapPopover();
     // Em-dash (U+2014) when the underlying value is null.
     expect(myAvg.textContent).toContain('—');
-    // Opp side still renders normally.
-    const oppAvg = screen.getByTestId('time-pressure-card-bullet-opp-avg-time');
     expect(oppAvg.textContent).toContain('50%');
-    // 0% for net_timeout_rate === 0 (integer-rounded, no sign — 16bf43f0).
+    // 0% for net_timeout_rate === 0 (integer-rounded, no sign — 16bf43f0) still
+    // verified inline since the Net Flag Rate row is unaffected by this change.
     const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
     expect(netRate.textContent).toContain('0%');
   });
@@ -281,11 +348,12 @@ describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone stats', () => {
 // ─── Post-UAT structural refinements ────────────────────────────────────────
 
 describe('EndgameTimePressureCard — post-UAT structural refinements', () => {
-  it('renders a time-control icon next to the TC label in the title', () => {
+  it('renders a time-control icon next to the TC label in the trigger header', () => {
     renderCard(makeCard({ tc: 'blitz' }));
-    // The TimeControlIcon renders an <svg aria-label="blitz">.
-    const card = screen.getByTestId('time-pressure-card-blitz');
-    const icon = card.querySelector('h3 svg[aria-label="blitz"]');
+    // 260531-f7s: TimeControlIcon is now inside the AccordionTrigger inner div,
+    // not inside an h3. Query the header div that carries the existing testid.
+    const header = screen.getByTestId('time-pressure-card-blitz-header');
+    const icon = header.querySelector('svg[aria-label="blitz"]');
     expect(icon).not.toBeNull();
   });
 
@@ -297,7 +365,7 @@ it('Clock Gap value renders in the header row (no separate "(N games)" suffix)',
   });
 
   it('title game count uses "Games: X% (N)" framing with a right-aligned sword icon when grandTotal is supplied', () => {
-    render(<EndgameTimePressureCard card={makeCard({ total: 1234 })} grandTotal={4936} />);
+    renderCard(makeCard({ total: 1234 }), DEFAULT_RATING_ANCHOR, { grandTotal: 4936 });
     const total = screen.getByTestId('time-pressure-card-bullet-total');
     // 1234 / 4936 ≈ 25%; rounded to integer percent.
     expect(total.textContent).toContain('Games: 25% (1,234)');
@@ -314,5 +382,167 @@ it('Clock Gap value renders in the header row (no separate "(N games)" suffix)',
     // Without a grand total the percentage is suppressed; count-only fallback.
     expect(total.textContent).toContain('Games: 1,234');
     expect(total.textContent).not.toMatch(/Games: \d+%/);
+  });
+});
+
+// ─── Phase 94.3 Plan 06: per-(metric × TC) chip slots (TPCTL-06 / TPCTL-07) ──
+//
+// 3 chips per card × 4 TCs = 12 placements. Each chip is gated on the
+// corresponding `<...>_percentile != null` field; below-floor (null) suppresses
+// the chip silently. The `time_pressure_score_gap_classical` cell is flagged
+// in Plan A as a chip-suppression candidate (n_users=24 < 150 floor), but the
+// backend handles the gate by returning null; the frontend gates uniformly on
+// `!= null` so no per-TC special-case is needed in the component.
+
+const TC_CASES = ['bullet', 'blitz', 'rapid', 'classical'] as const;
+
+describe('EndgameTimePressureCard — Phase 94.3 chip slots', () => {
+  it('renders all 3 chips when all 3 percentile fields are non-null (tc=bullet)', () => {
+    renderCard(
+      makeCard({
+        tc: 'bullet',
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).not.toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).not.toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).not.toBeNull();
+  });
+
+  it('suppresses ONLY the Clock Gap chip when clock_gap_percentile is null', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: null,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).not.toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).not.toBeNull();
+  });
+
+  it('suppresses ONLY the Net Flag chip when net_flag_rate_percentile is null', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: null,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).not.toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).not.toBeNull();
+  });
+
+  it('suppresses ONLY the Time Pressure Score Gap chip when its percentile is null', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: null,
+      }),
+    );
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).not.toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).not.toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).toBeNull();
+  });
+
+  it('suppresses all 3 chips when all 3 percentile fields are null (default)', () => {
+    renderCard(makeCard()); // defaults leave all 3 fields undefined → no chip
+    expect(screen.queryByTestId('time-pressure-card-bullet-clock-gap-chip')).toBeNull();
+    expect(screen.queryByTestId('time-pressure-card-bullet-net-flag-rate-chip')).toBeNull();
+    expect(
+      screen.queryByTestId('time-pressure-card-bullet-time-pressure-score-gap-chip'),
+    ).toBeNull();
+  });
+
+  // Pitfall 7: net_flag_rate_percentile === 0 is a VALID percentile (the
+  // worst end of the cohort under higher_is_better). The chip MUST render —
+  // gate is `!= null`, not falsy. Phase 94.4 chip face is the bare `p1` form
+  // (MIN_PERCENT floor at 1 to avoid "p0"); direction is higher_is_better
+  // throughout (Net Flag Rate's inversion is handled at the Plan 04 CDF-gen
+  // layer, so a low chip value still reads as "bottom of cohort").
+  it('renders the Net Flag chip when net_flag_rate_percentile === 0 (NOT null)', () => {
+    renderCard(
+      makeCard({
+        net_flag_rate_percentile: 0,
+        clock_gap_percentile: null,
+        time_pressure_score_gap_percentile: null,
+      }),
+    );
+    const chip = screen.getByTestId('time-pressure-card-bullet-net-flag-rate-chip');
+    expect(chip).not.toBeNull();
+    // percentile=0 → chip face floors to "1" (with SquarePercent icon).
+    expect(chip.textContent).toBe('1');
+  });
+
+  // Per-TC placement parity — confirm the testid template substitutes the TC
+  // name correctly for all 4 cards. 12 assertions (3 chips × 4 TCs).
+  it.each(TC_CASES)('renders all 3 chips for tc=%s when percentiles are non-null', (tc) => {
+    renderCard(
+      makeCard({
+        tc,
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    expect(screen.queryByTestId(`time-pressure-card-${tc}-clock-gap-chip`)).not.toBeNull();
+    expect(screen.queryByTestId(`time-pressure-card-${tc}-net-flag-rate-chip`)).not.toBeNull();
+    expect(
+      screen.queryByTestId(`time-pressure-card-${tc}-time-pressure-score-gap-chip`),
+    ).not.toBeNull();
+  });
+
+  // Chip slots structurally placed near their owning labels.
+  it('Clock Gap chip lives inside the ClockGapHeaderRow', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    const header = screen.getByTestId('time-pressure-card-bullet-clock-gap-header');
+    expect(header.querySelector('[data-testid="time-pressure-card-bullet-clock-gap-chip"]')).not.toBeNull();
+  });
+
+  it('Net Flag chip lives inside the NetFlagRateRow', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    const row = screen.getByTestId('time-pressure-card-bullet-net-flag-rate-row');
+    expect(row.querySelector('[data-testid="time-pressure-card-bullet-net-flag-rate-chip"]')).not.toBeNull();
+  });
+
+  it('Time Pressure Score Gap chip lives inside the quintiles subtitle', () => {
+    renderCard(
+      makeCard({
+        clock_gap_percentile: 80,
+        net_flag_rate_percentile: 10,
+        time_pressure_score_gap_percentile: 70,
+      }),
+    );
+    const subtitle = screen.getByTestId('time-pressure-card-bullet-quintiles-subtitle');
+    expect(
+      subtitle.querySelector(
+        '[data-testid="time-pressure-card-bullet-time-pressure-score-gap-chip"]',
+      ),
+    ).not.toBeNull();
   });
 });

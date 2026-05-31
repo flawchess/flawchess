@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { AlertTriangle } from 'lucide-react';
 import {
   EVAL_BASELINE_PAWNS_BLACK,
   EVAL_BASELINE_PAWNS_WHITE,
@@ -50,13 +49,8 @@ interface EvalConfidenceTooltipProps {
   /** Which game phase the averaged eval is sampled at. 'opening-end' (default)
    * = end of the openings containing this position (move explorer / Openings).
    * 'endgame-entry' = the position where the endgame begins (Endgames Games
-   * subtab), matching the Stats-tab "Endgame Entry Eval" metric. */
+   * subtab), matching the Stats-tab "Entry Eval" metric. */
   evalContext?: 'opening-end' | 'endgame-entry';
-  /** When true (and pendingCount > 0), shows a one-line pending-analysis caveat
-   * at the bottom of the tooltip body. Default false — backwards-compatible. */
-  isPending?: boolean;
-  /** Number of games still pending Stockfish analysis. Used in caveat copy. */
-  pendingCount?: number;
 }
 
 /**
@@ -78,8 +72,6 @@ export function EvalConfidenceTooltip({
   color,
   showBaselineTick = true,
   evalContext = 'opening-end',
-  isPending = false,
-  pendingCount = 0,
 }: EvalConfidenceTooltipProps): ReactNode {
   const baselinePawns =
     color === 'white' ? EVAL_BASELINE_PAWNS_WHITE : EVAL_BASELINE_PAWNS_BLACK;
@@ -111,20 +103,6 @@ export function EvalConfidenceTooltip({
         Test: two-sided Wald z vs 0 pawns.<br />
         Confidence interval: Wald 95% (whiskers).
       </p>
-      {isPending === true && (pendingCount ?? 0) > 0 && (
-        <p
-          className="flex items-start gap-1.5 rounded-sm bg-amber-100/60 px-1.5 py-1 text-amber-900"
-          data-testid="eval-pending-caveat"
-        >
-          <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-700" aria-hidden="true" />
-          <span>
-            Based on <strong>{gameCount.toLocaleString()}</strong> currently-evaluated{' '}
-            {gameCount === 1 ? 'game' : 'games'}. Stockfish is still analysing{' '}
-            <strong>{(pendingCount ?? 0).toLocaleString()}</strong> more across your library — this
-            metric may shift as analysis completes.
-          </span>
-        </p>
-      )}
     </div>
   );
 }

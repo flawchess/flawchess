@@ -41,13 +41,13 @@ export const ACHIEVABLE_SCORE_GAP_NEUTRAL_MAX = 0.05;
 export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MIN = -0.04;
 export const ENDGAME_TYPE_SCORE_GAP_NEUTRAL_MAX = 0.04;
 // Phase 87.2 (D-02): per-bucket Section 2 ΔES Score Gap neutral bands.
-export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MIN = -0.11;
-export const SECTION2_SCORE_GAP_CONV_NEUTRAL_MAX = 0.0;
-export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MIN = -0.04;
-export const SECTION2_SCORE_GAP_PARITY_NEUTRAL_MAX = 0.04;
-export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MIN = 0.01;
-export const SECTION2_SCORE_GAP_RECOV_NEUTRAL_MAX = 0.11;
-// Phase 87.4 (D-05): SECTION2_SCORE_GAP_SKILL_NEUTRAL_* emission dropped
+export const SCORE_GAP_CONV_NEUTRAL_MIN = -0.11;
+export const SCORE_GAP_CONV_NEUTRAL_MAX = 0.0;
+export const SCORE_GAP_PARITY_NEUTRAL_MIN = -0.04;
+export const SCORE_GAP_PARITY_NEUTRAL_MAX = 0.04;
+export const SCORE_GAP_RECOV_NEUTRAL_MIN = 0.01;
+export const SCORE_GAP_RECOV_NEUTRAL_MAX = 0.11;
+// Phase 87.4 (D-05): SCORE_GAP_SKILL_NEUTRAL_* emission dropped
 // alongside the Endgame Skill concept retirement.
 
 // Phase 83 D-14/D-17: per-user entry_expected_score cohort band.
@@ -124,3 +124,62 @@ export function getPressureBinBand(
 // Calibrated from reports/benchmarks-latest.md §3.3.1 clock-gap-% (Phase 88-08, 2026-05-17).
 export const CLOCK_GAP_NEUTRAL_MIN = -0.065;
 export const CLOCK_GAP_NEUTRAL_MAX = 0.047;
+
+// Phase 97: per-TC gauge + DeltaES bullet bands for Conversion, Recovery, Parity.
+// Source: reports/benchmark/benchmarks-latest.md §3.2.1 (rates) and §3.2.2 (DeltaES gaps).
+// parityRate is per-TC (gauge band only); the parity DeltaES band stays global.
+export const TC_METRIC_BANDS: Record<
+  'bullet' | 'blitz' | 'rapid' | 'classical',
+  { convRate: [number, number]; recovRate: [number, number]; parityRate: [number, number]; convScoreGap: [number, number]; recovScoreGap: [number, number] }
+> = {
+  bullet: { convRate: [0.588, 0.719], recovRate: [0.295, 0.412], parityRate: [0.436, 0.572], convScoreGap: [-0.195, -0.057], recovScoreGap: [0.074, 0.177] },
+  blitz: { convRate: [0.667, 0.769], recovRate: [0.251, 0.357], parityRate: [0.448, 0.569], convScoreGap: [-0.085, 0.003], recovScoreGap: [0.011, 0.084] },
+  rapid: { convRate: [0.696, 0.8], recovRate: [0.218, 0.333], parityRate: [0.449, 0.575], convScoreGap: [-0.063, 0.021], recovScoreGap: [-0.008, 0.062] },
+  classical: { convRate: [0.685, 0.833], recovRate: [0.174, 0.316], parityRate: [0.404, 0.591], convScoreGap: [-0.053, 0.038], recovScoreGap: [-0.037, 0.035] },
+} as const;
+
+// Phase 98: per-(class × TC) gauge bands for Conv/Recov/ScoreGap.
+// Source: reports/benchmark/benchmarks-latest.md §3.4.1 (TC marginal p25/p75).
+// Cohen's d ≈ 1.2–1.7 per class across TCs → all classes keep-separate.
+// Score Gap TC d ≈ 0.07–0.18 (collapse) — four near-identical ΔES bands per
+// class by design (Score Gap forced per-TC for visual consistency, D-04/D-14).
+// pawnless omitted: n below per-class TC floor; hidden in the collapsible tile UI.
+// Type excludes 'pawnless' to match the emitted keys (the value omits it).
+export const PER_CLASS_TC_GAUGE_ZONES: Record<
+  Exclude<EndgameClassKey, 'pawnless'>,
+  Record<
+    'bullet' | 'blitz' | 'rapid' | 'classical',
+    { conversion: [number, number]; recovery: [number, number]; achievable_score_gap: [number, number] }
+  >
+> = {
+  rook: {
+    bullet: { conversion: [0.56, 0.75], recovery: [0.27, 0.43], achievable_score_gap: [-0.05, 0.05] },
+    blitz: { conversion: [0.67, 0.82], recovery: [0.2, 0.37], achievable_score_gap: [-0.05, 0.05] },
+    rapid: { conversion: [0.69, 0.83], recovery: [0.17, 0.3], achievable_score_gap: [-0.05, 0.05] },
+    classical: { conversion: [0.74, 0.87], recovery: [0.13, 0.25], achievable_score_gap: [-0.05, 0.05] },
+  },
+  minor_piece: {
+    bullet: { conversion: [0.51, 0.73], recovery: [0.29, 0.5], achievable_score_gap: [-0.04, 0.06] },
+    blitz: { conversion: [0.64, 0.81], recovery: [0.21, 0.4], achievable_score_gap: [-0.04, 0.06] },
+    rapid: { conversion: [0.68, 0.83], recovery: [0.15, 0.33], achievable_score_gap: [-0.04, 0.06] },
+    classical: { conversion: [0.75, 0.89], recovery: [0.12, 0.28], achievable_score_gap: [-0.04, 0.06] },
+  },
+  pawn: {
+    bullet: { conversion: [0.57, 0.8], recovery: [0.25, 0.46], achievable_score_gap: [-0.04, 0.05] },
+    blitz: { conversion: [0.68, 0.87], recovery: [0.17, 0.36], achievable_score_gap: [-0.04, 0.05] },
+    rapid: { conversion: [0.75, 0.91], recovery: [0.1, 0.28], achievable_score_gap: [-0.04, 0.05] },
+    classical: { conversion: [0.8, 0.92], recovery: [0.08, 0.21], achievable_score_gap: [-0.04, 0.05] },
+  },
+  queen: {
+    bullet: { conversion: [0.64, 0.83], recovery: [0.19, 0.36], achievable_score_gap: [-0.04, 0.05] },
+    blitz: { conversion: [0.7, 0.9], recovery: [0.14, 0.31], achievable_score_gap: [-0.04, 0.05] },
+    rapid: { conversion: [0.75, 0.92], recovery: [0.08, 0.25], achievable_score_gap: [-0.04, 0.05] },
+    classical: { conversion: [0.88, 1.0], recovery: [0.0, 0.09], achievable_score_gap: [-0.04, 0.05] },
+  },
+  mixed: {
+    bullet: { conversion: [0.6, 0.72], recovery: [0.3, 0.4], achievable_score_gap: [-0.03, 0.04] },
+    blitz: { conversion: [0.68, 0.76], recovery: [0.25, 0.35], achievable_score_gap: [-0.03, 0.04] },
+    rapid: { conversion: [0.7, 0.79], recovery: [0.23, 0.31], achievable_score_gap: [-0.03, 0.04] },
+    classical: { conversion: [0.7, 0.83], recovery: [0.18, 0.3], achievable_score_gap: [-0.03, 0.04] },
+  },
+} as const;

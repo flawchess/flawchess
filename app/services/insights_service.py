@@ -776,22 +776,18 @@ def _findings_endgame_metrics(
     # ΔES Score Gap findings alongside the existing rate findings above.
     # Wire shape per finding: (mean, n, zone, neutral_band). No p_value / verdict —
     # band IS the significance signal (memory feedback_llm_significance_signal.md).
-    # Phase 87.4 (D-05): the "skill"/"section2_score_gap_skill" tuple was
+    # Phase 87.4 (D-05): the "skill"/"score_gap_skill" tuple was
     # dropped — Endgame Skill composite retired end-to-end.
-    _SECTION2_BUCKETS: list[tuple[str, MetricId]] = [
-        ("conv", "section2_score_gap_conv"),
-        ("parity", "section2_score_gap_parity"),
-        ("recov", "section2_score_gap_recov"),
+    _SCORE_GAP_BUCKETS: list[tuple[str, MetricId]] = [
+        ("conv", "score_gap_conv"),
+        ("parity", "score_gap_parity"),
+        ("recov", "score_gap_recov"),
     ]
-    for bucket_id, metric_id in _SECTION2_BUCKETS:
-        # Dynamic attribute access: section2_score_gap_{bucket_id}_{mean,n} are
+    for bucket_id, metric_id in _SCORE_GAP_BUCKETS:
+        # Dynamic attribute access: score_gap_{bucket_id}_{mean,n} are
         # defined on ScoreGapMaterialResponse in endgames.py (Plan 02 fields).
-        mean_raw: float | None = getattr(
-            response.score_gap_material, f"section2_score_gap_{bucket_id}_mean"
-        )
-        n_raw_or_none: int | None = getattr(
-            response.score_gap_material, f"section2_score_gap_{bucket_id}_n"
-        )
+        mean_raw: float | None = getattr(response.score_gap_material, f"score_gap_{bucket_id}_mean")
+        n_raw_or_none: int | None = getattr(response.score_gap_material, f"score_gap_{bucket_id}_n")
         n_raw = n_raw_or_none if n_raw_or_none is not None else 0
         value_for_payload = mean_raw if mean_raw is not None else float("nan")
         findings.append(

@@ -3,7 +3,7 @@
  * Regression tests for ScoreChart inactivity-gap annotation (SC-4 Task 3).
  *
  * Asserts that the shared inactivityGapReferenceLines helper renders the
- * Palmtree break annotation for a >56-day gap fixture and no-ops gracefully
+ * Palmtree break annotation for a >90-day gap fixture and no-ops gracefully
  * for a gap-free fixture and an empty series.
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
@@ -88,21 +88,21 @@ function makeSeries(bookmark_id: number, dates: string[]): BookmarkTimeSeries {
   };
 }
 
-/** Dates with a >56-day gap between index 0 and 1 (60 days). */
-const GAP_DATES = ['2024-01-01', '2024-03-01', '2024-03-08'];
+/** Dates with a >90-day gap between index 0 and 1 (121 days). */
+const GAP_DATES = ['2024-01-01', '2024-05-01', '2024-05-08'];
 
 /** Dates with all consecutive pairs 7 days apart — no gap. */
 const NO_GAP_DATES = ['2024-01-01', '2024-01-08', '2024-01-15', '2024-01-22'];
 
 describe('ScoreChart inactivity gap annotations', () => {
-  it('renders inactivity-gap-label for a >56-day gap fixture', () => {
+  it('renders inactivity-gap-label for a >90-day gap fixture', () => {
     const bookmarks = [makeBookmark(1)];
     const series = [makeSeries(1, GAP_DATES)];
     const { container } = render(<ScoreChart bookmarks={bookmarks} series={series} />);
     expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
   });
 
-  it('renders inactivity-gap-glyph (Palmtree) for a >56-day gap fixture', () => {
+  it('renders inactivity-gap-glyph (Palmtree) for a >90-day gap fixture', () => {
     const bookmarks = [makeBookmark(1)];
     const series = [makeSeries(1, GAP_DATES)];
     const { container } = render(<ScoreChart bookmarks={bookmarks} series={series} />);

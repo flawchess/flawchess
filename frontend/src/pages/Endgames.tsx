@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams, Navigate, Link } from 'react-router-dom';
-import { SlidersHorizontal, X, BarChart2Icon, SwordsIcon, HelpCircle, Lightbulb } from 'lucide-react';
+import { SlidersHorizontal, X, BarChart2Icon, SwordsIcon, Lightbulb, Cpu } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,9 @@ import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { EndgameOverallPerformanceSection } from '@/components/charts/EndgameOverallPerformanceSection';
 import { EndgameScoreOverTimeChart } from '@/components/charts/EndgameScoreOverTimeChart';
-import { EndgameMetricsSection } from '@/components/charts/EndgameMetricsSection';
+import { EndgameMetricsByTcSection } from '@/components/charts/EndgameMetricsByTcSection';
+// EndgameMetricsSection removed in favour of EndgameMetricsByTcSection (Phase 97 Plan 03).
+// The old component is deleted in Plan 04.
 import { EndgameTypeBreakdownSection } from '@/components/charts/EndgameTypeBreakdownSection';
 import {
   ENDGAME_CLASS_TO_SLUG,
@@ -35,6 +37,8 @@ import { EndgameInsightsBlock } from '@/components/insights/EndgameInsightsBlock
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { useCachedEndgameInsights, useEndgameInsights } from '@/hooks/useEndgameInsights';
 import { useActiveJobs } from '@/hooks/useImport';
+import { useReadiness } from '@/hooks/useReadiness';
+import { EndgamesProcessingState } from '@/components/EndgamesProcessingState';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { EndgameClass } from '@/types/endgames';
 import type { EndgameInsightsResponse, SectionId } from '@/types/insights';
@@ -82,6 +86,7 @@ const TAB_INFO: Record<'stats' | 'games', { aria: string; text: string }> = {
 };
 
 export function EndgamesPage() {
+  const { tier2, pendingCount, totalCount } = useReadiness();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -269,7 +274,7 @@ export function EndgamesPage() {
     data: overviewData,
     isLoading: overviewLoading,
     isError: overviewError,
-  } = useEndgameOverview(appliedFilters);
+  } = useEndgameOverview(appliedFilters, { enabled: tier2 });
 
   const rawStatsData = overviewData?.stats;
   const statsData = useMemo(() => {
@@ -374,16 +379,17 @@ export function EndgamesPage() {
           {showPerfSection && (
             <>
               <Accordion type="single" collapsible>
-                <AccordionItem value="concepts" className="charcoal-texture rounded-md px-4" data-testid="endgame-concepts-trigger">
-                  <AccordionTrigger className="text-foreground justify-start flex-none gap-2 **:data-[slot=accordion-trigger-icon]:ml-0 **:data-[slot=accordion-trigger-icon]:order-first">
-                    <HelpCircle className="h-4 w-4 text-brand-brown/70 shrink-0 order-last" />
-                    Endgame statistics concepts
+                <AccordionItem value="concepts" className="charcoal-texture rounded-md overflow-hidden border-none" data-testid="endgame-concepts-trigger">
+                  <AccordionTrigger className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0">
+                    <span className="flex items-center gap-2 flex-1">
+                      <h3 className="text-base font-semibold text-foreground">Endgame Statistics Concepts</h3>
+                    </span>
                   </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground space-y-2">
+                  <AccordionContent className="text-muted-foreground space-y-2 p-4">
                     <p>
-                      <strong>Color Zones and FlawChess Benchmark:</strong> the blue band on each gauge and chart marks the typical range,
-                      defined by the middle 50% of players (interquartile range). Values inside the blue zone are typical, while red and green zones flag below- and
-                      above-average performance. Zone bounds are calibrated from the latest {' '}
+                      <strong>FlawChess Benchmark:</strong> a stratified sample of Lichess players across rating
+                      and time control buckets, used to calibrate the typical range for each metric. The latest
+                      run is published as the {' '}
                       <a
                         href="https://github.com/flawchess/flawchess/blob/main/reports/benchmarks-latest.md"
                         className="text-primary underline-offset-4 hover:underline"
@@ -392,9 +398,67 @@ export function EndgamesPage() {
                       >
                         FlawChess Benchmark
                       </a>
-                      , which provides metric distributions from a stratified sample of Lichess players across rating
-                      and time control buckets.
+                      {' '}report and powers both the color zones on gauges/charts and the percentile badges shown
+                      next to individual metrics.
                     </p>
+                    <p>
+                      <strong>Color Zones:</strong> the blue band on each gauge and chart marks the typical range,
+                      defined by the middle 50% of benchmark players (interquartile range). Values inside the blue
+                      zone are typical, while red and green zones flag below- and above-average performance relative
+                      to the benchmark cohort.
+                    </p>
+                    <p>
+                      <strong>Percentile Badges:</strong> the small badge next to a metric (e.g. a blue "23" or
+                      green "82") shows where you rank against a peer cohort of benchmark players at your rating
+                      and time control. Red ({'<'} 25), neutral (25-75), green ({'>'} 75). Computed in five steps:
+                    </p>
+                    <ol className="list-decimal pl-6 space-y-1">
+                      <li>
+                        <strong>Anchor your rating per time control.</strong> For each time control
+                        (bullet/blitz/rapid/classical) we take your most recent 3000 rated games in that time
+                        control over the last 36 months (the same pool used to compute your metrics in step 3,
+                        excluding chess.com Daily), then compute the median of your rating at game time across
+                        those games. chess.com ratings are converted to Lichess-equivalent via the{' '}
+                        <a
+                          href="https://chessgoals.com/rating-comparison"
+                          className="text-primary underline-offset-4 hover:underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          ChessGoals rating conversion tables
+                        </a>
+                        {' '}so everyone is compared on the same scale.
+                      </li>
+                      <li>
+                        <strong>Pick the matching peer cohort.</strong> From the FlawChess Benchmark, we select
+                        all Lichess players within +/-200 Elo of your anchor in the same time control. A cell
+                        only qualifies if at least 100 benchmark users fall in that window, otherwise the badge
+                        is suppressed.
+                      </li>
+                      <li>
+                        <strong>Compute your recent metric value.</strong> Your most recent 3000 rated games
+                        per time control over the last 36 months, vs opponents within +/-100 Elo, are used to
+                        compute the same metric (Endgame Score Gap, Conversion, Recovery, Eval Score Gap,
+                        etc.) the same way it is computed for each benchmark user.
+                      </li>
+                      <li>
+                        <strong>Look up your percentile in the cohort distribution, per time control.</strong>
+                        {' '}Steps 1-3 are performed independently for each time control you play. For each TC,
+                        the benchmark cell stores 99 precomputed percentile breakpoints for that metric; your
+                        per-TC value is interpolated against those breakpoints to produce a per-TC percentile.
+                        For page-level chips that span time controls (Endgame Score Gap, Eval Score Gap,
+                        Conversion, Parity, Recovery), the per-TC percentiles are then combined into a single
+                        chip value via a game-count-weighted mean, so the time controls you play most weigh
+                        most heavily. Per-TC chips on the Time Pressure cards skip this aggregation step and
+                        render their own TC's percentile directly.
+                      </li>
+                      <li>
+                        <strong>Color and display.</strong> The integer percentile is rendered on the badge with
+                        the red/neutral/green band described above. UI filters (color, opponent strength, recency)
+                        do not affect the badge: it always reflects the standardized "recent rated games vs
+                        near-peers" basis from step 3, so the comparison stays apples-to-apples.
+                      </li>
+                    </ol>
                     <p>
                       <strong>Endgame Phase:</strong> positions where the total count of major and minor pieces
                       (queens, rooks, bishops, knights) across both sides is at most 6. Kings and pawns are not
@@ -413,6 +477,43 @@ export function EndgamesPage() {
                       under more than one type.
                     </p>
                     <p>
+                      <strong>Score:</strong> your result as a percentage, counting each win as a
+                      full point and each draw as a half point (so 3 wins, 2 draws and 1 loss over
+                      6 games is 67%). 50% is an even result against equally matched opponents.
+                    </p>
+                    <p>
+                      <strong>Score Gap:</strong> the difference between two Scores. Positive means
+                      the first Score is the higher of the two, negative means it is lower.
+                    </p>
+                    <p>
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
+                      <strong>Eval:</strong> the Stockfish evaluation of a position, in pawns and from
+                      your perspective, where positive means you stand better (+1.0 is a one-pawn
+                      advantage). Metrics that are based on the engine are marked with this chip icon.
+                    </p>
+                    <p>
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
+                      <strong>Eval Score:</strong> an Eval converted into a Score with the{' '}
+                      <a
+                        href="https://lichess.org/page/accuracy"
+                        className="text-primary underline-offset-4 hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Lichess expected-score formula
+                      </a>
+                      , so engine evaluations and actual results sit on the same scale. A +1.0 Eval
+                      is roughly a 60% Eval Score.
+                    </p>
+                    <p>
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
+                      <strong>Eval Score Gap:</strong> the gap between an Eval Score and another Score.
+                      Across your overall endgames it is your Endgame Score minus your Entry Eval Score
+                      (did you beat the engine's expectation for the positions you reached?); within an
+                      Endgame Sequence it is the change in Eval Score from start to end. Positive means
+                      you came out ahead of the engine's expectation, negative means you fell short.
+                    </p>
+                    <p>
                       <strong>Conversion:</strong> percentage of games where you entered the endgame with a
                       Stockfish evaluation of +1.0 or better (you ahead by at least one pawn of advantage)
                       and went on to win. Measures how well you close out winning endgames.
@@ -428,15 +529,14 @@ export function EndgamesPage() {
                       and drew or won. Measures how well you defend losing endgames.
                     </p>
                     <p>
-                      <strong>Endgame Entry Eval:</strong> the average Stockfish evaluation of
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
+                      <strong>Entry Eval:</strong> the average Stockfish evaluation of
                       the position where the endgame begins, measured in pawns from your perspective
                       (positive means you have the better position). Mate scores are excluded.
                     </p>
                     <p>
-                      <strong>Achievable Score:</strong> what a 2300+ rated player would score
-                      from your endgame-entry positions against a peer of similar rating.
-                      Calculated from your Endgame Entry Eval
-                      using the{' '}
+                      <Cpu className="inline h-4 w-4 -mt-0.5 mr-1" aria-hidden="true" />
+                      <strong>Entry Eval Score:</strong> your Entry Eval converted to a Score with the{' '}
                       <a
                         href="https://lichess.org/page/accuracy"
                         className="text-primary underline-offset-4 hover:underline"
@@ -445,9 +545,10 @@ export function EndgamesPage() {
                       >
                         Lichess expected-score formula
                       </a>
-                      . The curve is fitted on 2300+ rapid games, so scoring a little below this
-                      baseline from positive evals is normal at lower ratings. Compare against your
-                      achieved Endgame Score to see how well you convert the positions you reach.
+                      , i.e. what a strong player would expect to score from your endgame-entry
+                      positions. The curve is fitted on 2300+ rapid games, so scoring a little below
+                      it from positive evals is normal at lower ratings. Compare it against your
+                      Endgame Score to see how well you convert the positions you reach.
                     </p>
                     <p>
                       <strong>Endgame Score:</strong> your win rate (with draws counted as half)
@@ -457,12 +558,6 @@ export function EndgamesPage() {
                     <p>
                       <strong>Endgame Score Gap:</strong> the score difference between games that reach an endgame (Endgame Score) vs. games that end before (Non-Endgame Score). Positive means endgames are your strength; negative
                       means you perform worse once games reach an endgame.
-                    </p>
-                    <p>
-                      <strong>Achievable Score Gap:</strong> your average per-game score minus the achievable
-                      score from each endgame-entry position. Positive means you converted your endgame entry
-                      positions better than a 2300+ rated rapid player would on average; negative means you
-                      converted them worse.
                     </p>
                     <p>
                       <strong>Endgame ELO and Non-Endgame ELO:</strong> what your rating would be if your whole
@@ -481,22 +576,18 @@ export function EndgamesPage() {
                       endgame play is lifting your rating (green band); when it sits below, your endgame is
                       holding it back (red band).
                     </p>
-                    <p>
-                      Conversion and Recovery rates usually reflect your performance against opponents at your rating
-                      level. As your rating changes, you face stronger or weaker opponents, so trends may not
-                      directly indicate improvement or stagnation in absolute terms. If you often play against
-                      stronger or weaker opponents, set the Opponent Strength filter to "Similar" to adjust your
-                      analysis.
-                    </p>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
               <h2 className="text-lg font-semibold text-foreground mt-2">Endgame Overall Performance</h2>
               {scoreGapData && (
-                <EndgameOverallPerformanceSection data={perfData} scoreGap={scoreGapData} />
+                <EndgameOverallPerformanceSection
+                  data={perfData}
+                  scoreGap={scoreGapData}
+                />
               )}
               {scoreGapData && scoreGapData.timeline.length > 0 && (
-                <div className="charcoal-texture rounded-md p-4">
+                <div className="charcoal-texture rounded-md overflow-hidden">
                   <EndgameScoreOverTimeChart
                     timeline={scoreGapData.timeline}
                     window={scoreGapData.timeline_window}
@@ -509,7 +600,7 @@ export function EndgamesPage() {
                   plumbing (overviewData) as EndgameScoreOverTimeChart above. */}
               {eloTimelineData && (
                 <div
-                  className="charcoal-texture rounded-md p-4"
+                  className="charcoal-texture rounded-md overflow-hidden"
                   data-testid="endgame-elo-timeline-section"
                 >
                   <EndgameEloTimelineSection
@@ -520,12 +611,19 @@ export function EndgamesPage() {
                 </div>
               )}
               <SectionInsightSlot sectionId="overall" data={sectionBySection.overall} />
-              {scoreGapData && perfData && (
+              {perfData && (
                 <>
                   <h2 className="text-lg font-semibold text-foreground mt-2">
                     Endgame Metrics
                   </h2>
-                  <EndgameMetricsSection data={scoreGapData} />
+                  {/* Phase 97 Plan 03: replaced aggregated EndgameMetricsSection with per-TC
+                      cards fed by endgame_metrics_cards. The ?? fallback handles older server
+                      responses where endgame_metrics_cards is absent. */}
+                  <EndgameMetricsByTcSection
+                    data={overviewData?.endgame_metrics_cards ?? { cards: [] }}
+                    ratingAnchors={overviewData?.rating_anchors}
+                    filterKey={JSON.stringify(appliedFilters)}
+                  />
                   <SectionInsightSlot sectionId="metrics_elo" data={sectionBySection.metrics_elo} />
                 </>
               )}
@@ -544,11 +642,15 @@ export function EndgamesPage() {
                   per-TC cards so the user sees the trend story first, then
                   drills into per-TC breakdowns. Hides when no eligible points. */}
               {showClockDiffTimeline && clockDiffTimelineData && (
-                <div className="charcoal-texture rounded-md p-4">
+                <div className="charcoal-texture rounded-md overflow-hidden">
                   <EndgameClockDiffOverTimeChart timeline={clockDiffTimelineData.points} />
                 </div>
               )}
-              <EndgameTimePressureSection data={timePressureCardsData} />
+              <EndgameTimePressureSection
+                data={timePressureCardsData}
+                ratingAnchors={overviewData?.rating_anchors}
+                filterKey={JSON.stringify(appliedFilters)}
+              />
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>
           )}
@@ -571,17 +673,15 @@ export function EndgamesPage() {
                     kinds of endgames (rook, minor piece, pawn, queen, mixed).
                   </p>
                   <p>
-                    Each card shows your win, draw, and loss rate for that type, plus your
-                    Conversion rate (closing out winning endgames) and Recovery rate (saving
-                    losing endgames).
+                    Each card shows your win, draw, and loss rate for that endgame type.
                   </p>
                 </div>
               </InfoPopover>
             </span>
           </h2>
           <EndgameTypeBreakdownSection
-            categories={statsData.categories}
-            totalGames={statsData.endgame_games}
+            categoriesByTc={statsData.categories_by_tc}
+            filterKey={JSON.stringify(appliedFilters)}
             onCategorySelect={handleCategorySelect}
           />
           <SectionInsightSlot sectionId="type_breakdown" data={sectionBySection.type_breakdown} />
@@ -650,7 +750,7 @@ export function EndgamesPage() {
           evalBaselinePawns={selectedCategoryStats.eval_baseline_pawns}
           filterColor="white"
           label={`${ENDGAME_CLASS_LABELS[selectedCategory]} Endgame Results`}
-          className="charcoal-texture rounded-md p-4"
+          className=""
           evalContext="endgame-entry"
         />
       )}
@@ -694,6 +794,13 @@ export function EndgamesPage() {
   );
 
   // ── Render ───────────────────────────────────────────────────────────────────
+
+  // Whole-page lock until Tier 2 (D-01/D-02): uniform for first-import and
+  // incremental import — the nav link stays enabled but the page shows the
+  // processing state. No forced navigation; unlock is reactive once tier2=true.
+  if (!tier2) {
+    return <EndgamesProcessingState pendingCount={pendingCount} totalCount={totalCount} />;
+  }
 
   if (needsRedirect) {
     return <Navigate to="/endgames/stats" replace />;
@@ -869,24 +976,54 @@ function SectionInsightSlot({
   data: { headline: string; bullets: string[] } | null;
 }) {
   if (!data) return null;
+
+  // Header band content shared by both the plain (headline-only) and the
+  // collapsible (headline + bullets) variants.
+  const headline = (
+    <span className="flex items-center gap-2 flex-1 text-sm font-semibold text-foreground">
+      <span className="insight-lightbulb shrink-0" aria-hidden="true">
+        <Lightbulb className="size-4" />
+      </span>
+      {data.headline}
+    </span>
+  );
+
+  // No bullets: nothing to fold, so render a plain header card without a
+  // chevron rather than a collapsible with an empty body.
+  if (data.bullets.length === 0) {
+    return (
+      <div
+        data-testid={`insights-section-${sectionId}`}
+        className="charcoal-texture rounded-md overflow-hidden border-none"
+      >
+        <div className="w-full flex items-center gap-2 px-4 py-3 bg-black/20">
+          {headline}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div
-      data-testid={`insights-section-${sectionId}`}
-      className="charcoal-texture rounded-md p-4"
-    >
-      <p className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-        <span className="insight-lightbulb" aria-hidden="true">
-          <Lightbulb className="size-4" />
-        </span>
-        {data.headline}
-      </p>
-      {data.bullets.length > 0 && (
-        <ul className="list-disc list-outside pl-5 space-y-1 text-sm text-muted-foreground">
-          {data.bullets.map((b, i) => (
-            <li key={i}>{b}</li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Accordion type="single" collapsible defaultValue="insight">
+      <AccordionItem
+        value="insight"
+        data-testid={`insights-section-${sectionId}`}
+        className="charcoal-texture rounded-md overflow-hidden border-none"
+      >
+        <AccordionTrigger
+          data-testid={`insights-section-${sectionId}-trigger`}
+          className="w-full flex items-center gap-2 px-4 py-3 bg-black/20 border-0 rounded-none data-[state=open]:border-b data-[state=open]:border-b-border/40 text-left hover:no-underline hover:bg-black/30 cursor-pointer [&>svg:last-child]:ml-0"
+        >
+          {headline}
+        </AccordionTrigger>
+        <AccordionContent className="p-4">
+          <ul className="list-disc list-outside pl-5 space-y-1 text-sm text-muted-foreground">
+            {data.bullets.map((b, i) => (
+              <li key={i}>{b}</li>
+            ))}
+          </ul>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
   );
 }

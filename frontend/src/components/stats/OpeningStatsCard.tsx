@@ -6,7 +6,8 @@ import { MiniBulletChart } from '@/components/charts/MiniBulletChart';
 import { Tooltip } from '@/components/ui/tooltip';
 import { BulletConfidencePopover } from '@/components/insights/BulletConfidencePopover';
 import { ScoreConfidencePopover } from '@/components/insights/ScoreConfidencePopover';
-import { useEvalCoverage } from '@/hooks/useEvalCoverage';
+import { EvalCpuPlaceholder } from './EvalCpuPlaceholder';
+import { useReadiness } from '@/hooks/useReadiness';
 import {
   EVAL_BULLET_DOMAIN_PAWNS,
   EVAL_NEUTRAL_MAX_PAWNS,
@@ -57,7 +58,7 @@ export function OpeningStatsCard({
   onOpenGames,
   evalBaselinePawns,
 }: OpeningStatsCardProps) {
-  const { isPending, pendingCount } = useEvalCoverage();
+  const { tier2 } = useReadiness();
 
   const cardTestId = `${testIdPrefix}-${idx}`;
 
@@ -105,8 +106,13 @@ export function OpeningStatsCard({
     isConfident(opening.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
-  const cardStyle: React.CSSProperties = {
-    borderLeftColor,
+  // Full-height left spine on the card root (see OpeningFindingCard). Reliable
+  // cards get the score-zone accent down the whole left edge; unreliable cards
+  // (n < MIN_GAMES) get no spine — the uniform 1px border stays, avoiding a 4px
+  // transparent gap and any color signal on sparse data. Opacity dimming is a
+  // separate, broader gate (isCardMuted also covers low confidence).
+  const rootStyle: React.CSSProperties = {
+    ...(isReliableScore ? { borderLeftColor } : {}),
     ...(isCardMuted ? { opacity: UNRELIABLE_OPACITY } : {}),
   };
 
@@ -140,18 +146,6 @@ export function OpeningStatsCard({
     />
   ) : (
     <span className="text-muted-foreground">—</span>
-  );
-
-  const headerLine = (
-    <div className="flex items-center gap-2 text-sm min-w-0">
-      <span className="truncate text-foreground font-medium min-w-0">
-        {/* display_name carries the "vs. " prefix for off-color rows (PRE-01). */}
-        {opening.display_name}
-        {opening.opening_eco && (
-          <span className="ml-1 text-muted-foreground">({opening.opening_eco})</span>
-        )}
-      </span>
-    </div>
   );
 
   const wdlData = {
@@ -215,32 +209,39 @@ export function OpeningStatsCard({
         />
       </span>
 
-      {/* Eval row */}
-      <div
-        className="min-w-0 tabular-nums"
-        data-testid={`${cardTestId}-bullet`}
-      >
-        {mgBulletContent}
-      </div>
-      <span
-        className="flex items-center gap-1 text-sm tabular-nums w-full"
-        data-testid={`${cardTestId}-eval-text`}
-      >
-        <span className="hidden sm:inline text-muted-foreground">Eval:</span>
-        <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
-        {hasMgEval && (
-          <BulletConfidencePopover
-            level={opening.eval_confidence}
-            pValue={opening.eval_p_value}
-            gameCount={opening.eval_n}
-            evalMeanPawns={opening.avg_eval_pawns}
-            color={color}
-            testId={`${cardTestId}-bullet-popover`}
-            isPending={isPending}
-            pendingCount={pendingCount}
-          />
-        )}
-      </span>
+      {/* Eval row — gated on Tier 2 (eval analysis complete).
+          When !tier2, the two eval-row cells are replaced by a single
+          pulsating-Cpu placeholder spanning the full 2-col grid.
+          The WDL score row above is not eval-dependent and stays visible. */}
+      {tier2 ? (
+        <>
+          <div
+            className="min-w-0 tabular-nums"
+            data-testid={`${cardTestId}-bullet`}
+          >
+            {mgBulletContent}
+          </div>
+          <span
+            className="flex items-center gap-1 text-sm tabular-nums w-full"
+            data-testid={`${cardTestId}-eval-text`}
+          >
+            <span className="hidden sm:inline text-muted-foreground">Eval:</span>
+            <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
+            {hasMgEval && (
+              <BulletConfidencePopover
+                level={opening.eval_confidence}
+                pValue={opening.eval_p_value}
+                gameCount={opening.eval_n}
+                evalMeanPawns={opening.avg_eval_pawns}
+                color={color}
+                testId={`${cardTestId}-bullet-popover`}
+              />
+            )}
+          </span>
+        </>
+      ) : (
+        <EvalCpuPlaceholder />
+      )}
     </div>
   );
 
@@ -277,39 +278,55 @@ export function OpeningStatsCard({
   return (
     <div
       data-testid={cardTestId}
-      className="block relative border-l-4 charcoal-texture border border-border/20 rounded px-4 py-4"
-      style={cardStyle}
+      className={`relative charcoal-texture border border-border/20 rounded-md overflow-hidden${
+        isReliableScore ? ' border-l-4' : ''
+      }`}
+      style={rootStyle}
     >
-      {/* Header above board on both viewports (260507-tu1). */}
-      {headerLine}
+      <h4
+        className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-border/40 text-sm font-semibold"
+        data-testid={`${cardTestId}-header`}
+      >
+        <span className="truncate text-foreground min-w-0">
+          {opening.display_name}
+          {opening.opening_eco && (
+            <span className="ml-1 text-muted-foreground font-normal">({opening.opening_eco})</span>
+          )}
+        </span>
+      </h4>
 
-      {/* Mobile: board left, content right */}
-      <div className="flex flex-col gap-2 sm:hidden mt-2">
-        <div className="flex gap-3 items-start">
+      <div
+        data-testid={`${cardTestId}-content`}
+        className="px-4 py-4"
+      >
+        {/* Mobile: board left, content right */}
+        <div className="flex flex-col gap-2 sm:hidden">
+          <div className="flex gap-3 items-start">
+            <LazyMiniBoard
+              fen={opening.fen}
+              flipped={color === 'black'}
+              size={MOBILE_BOARD_SIZE}
+            />
+            <div className="flex-1 min-w-0 flex flex-col gap-2">
+              {wdlLine}
+              {scoreEvalBlock}
+              {linksRow}
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop: board left, content right (header lives above on both) */}
+        <div className="hidden sm:flex gap-3 items-center">
           <LazyMiniBoard
             fen={opening.fen}
             flipped={color === 'black'}
-            size={MOBILE_BOARD_SIZE}
+            size={DESKTOP_BOARD_SIZE}
           />
-          <div className="flex-1 min-w-0 flex flex-col gap-2">
+          <div className="min-w-0 flex-1 flex flex-col gap-2">
             {wdlLine}
             {scoreEvalBlock}
             {linksRow}
           </div>
-        </div>
-      </div>
-
-      {/* Desktop: board left, content right (header lives above on both) */}
-      <div className="hidden sm:flex gap-3 items-center mt-2">
-        <LazyMiniBoard
-          fen={opening.fen}
-          flipped={color === 'black'}
-          size={DESKTOP_BOARD_SIZE}
-        />
-        <div className="min-w-0 flex-1 flex flex-col gap-2">
-          {wdlLine}
-          {scoreEvalBlock}
-          {linksRow}
         </div>
       </div>
     </div>

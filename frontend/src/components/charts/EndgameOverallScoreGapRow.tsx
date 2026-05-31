@@ -1,11 +1,11 @@
 /**
  * Phase 85 — Score Gap row (label + result + bullet chart).
  *
- * Used for both the *Endgame Score Gap* (with − without) and *Achievable Score
- * Gap* (actual − achievable) rows in the Score Differences card. Both share
+ * Used for both the *Endgame Score Gap* (with − without) and *Eval Score
+ * Gap* (actual − Entry Eval Score) rows in the Score Differences card. Both share
  * the same bullet-chart shell (center=0, domain=SCORE_GAP_DOMAIN) and the
  * same coloring rule (zone tint regardless of confidence, per D-04), but the
- * neutral band now differs per row (Achievable ±5pp vs Endgame ±10pp — see
+ * neutral band now differs per row (Eval ±5pp vs Endgame ±10pp — see
  * 260514-kei). The band is supplied by the caller via `neutralMin`/`neutralMax`
  * to keep a single source of truth for which row gets which band.
  */
@@ -52,6 +52,13 @@ interface ScoreGapRowProps {
    *  EndgameTypeCard to show the End predicted score. Defaults to undefined
    *  (renders nothing) so the 3 other callers remain pixel-identical. */
   endSlot?: ReactNode;
+  /** Optional chip rendered alongside the row. Sits inline at the right edge of
+   *  the label/value row on all widths (the compact icon + integer form fits
+   *  inline at 375px). Used by EndgameOverallPerformanceSection (page-level
+   *  rows) and EndgameMetricCard (conv/parity buckets) to surface a
+   *  PercentileChip. Defaults to undefined so EndgameTypeCard + Recovery card
+   *  render pixel-identical. */
+  chipSlot?: ReactNode;
 }
 
 export function ScoreGapRow({
@@ -70,15 +77,16 @@ export function ScoreGapRow({
   domain = SCORE_GAP_DOMAIN,
   startSlot,
   endSlot,
+  chipSlot,
 }: ScoreGapRowProps) {
   // quick-260519-ni3: 3-column label line when start/end slots are provided.
-  // When both are undefined the layout collapses to the original single-line
-  // flex row so the 3 other callers (EndgameOverallPerformanceSection x2,
-  // EndgameMetricCard) render pixel-identical to before.
+  // EndgameTypeCard uses this branch (start/end predicted scores around the
+  // center label). chipSlot is never passed here today; if it ever is, it
+  // renders inline at the right edge of the center group.
   const hasSlots = startSlot !== undefined || endSlot !== undefined;
-  return (
-    <div className="flex flex-col gap-2">
-      {hasSlots ? (
+  if (hasSlots) {
+    return (
+      <div className="flex flex-col gap-2">
         <div className="flex items-center gap-1 text-sm tabular-nums w-full">
           <div className="flex-1">{startSlot}</div>
           <span className="flex items-center gap-1 shrink-0">
@@ -91,23 +99,53 @@ export function ScoreGapRow({
               {formatted}
             </span>
             {tooltip}
+            {chipSlot && <span className="ml-auto">{chipSlot}</span>}
           </span>
           <div className="flex-1 flex justify-end">{endSlot}</div>
         </div>
-      ) : (
-        <span className="flex items-center gap-1 text-sm tabular-nums w-full">
-          <span className="text-muted-foreground">{label}</span>
-          <span
-            className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
-            style={resultColor ? { color: resultColor } : undefined}
-            data-testid={valueTestId}
-          >
-            {formatted}
-          </span>
-          {tooltip}
+        <div className="min-w-0 tabular-nums">
+          <MiniBulletChart
+            value={value}
+            center={0}
+            neutralMin={neutralMin}
+            neutralMax={neutralMax}
+            domain={domain}
+            barColor="neutral"
+            ariaLabel={ariaLabel}
+            ciLow={ciLow}
+            ciHigh={ciHigh}
+          />
+        </div>
+      </div>
+    );
+  }
+  // Non-hasSlots layout uses CSS Grid. Two rows on both mobile and desktop:
+  //   row 1 = label/value/tooltip (col 1)  +  chip (col 2, right-aligned)
+  //   row 2 = bullet chart        (spans both cols)
+  // Callers that don't pass chipSlot collapse cleanly — col 2 of row 1 is
+  // simply empty.
+  return (
+    <div className="grid grid-cols-[1fr_auto] gap-x-1 gap-y-2 w-full">
+      {/* min-h-5 reserves the chip's height (20px) on the label row whether
+          or not chipSlot is rendered. Without this, a chip-less row collapses
+          to text-sm leading-normal (20px anyway, so visually identical), but
+          we set it explicitly so future leading/padding tweaks on the chip
+          don't desync row heights across adjacent chipped/un-chipped tiles. */}
+      <span className="row-start-1 col-start-1 min-h-5 flex items-center gap-1 text-sm tabular-nums min-w-0">
+        <span className="text-muted-foreground">{label}</span>
+        <span
+          className={`font-semibold${valueClassName ? ` ${valueClassName}` : ''}`}
+          style={resultColor ? { color: resultColor } : undefined}
+          data-testid={valueTestId}
+        >
+          {formatted}
         </span>
+        {tooltip}
+      </span>
+      {chipSlot && (
+        <span className="row-start-1 col-start-2 justify-self-end">{chipSlot}</span>
       )}
-      <div className="min-w-0 tabular-nums">
+      <div className="row-start-2 col-span-2 min-w-0 tabular-nums">
         <MiniBulletChart
           value={value}
           center={0}

@@ -23,11 +23,6 @@ interface BulletConfidencePopoverProps {
   /** Forwarded to EvalConfidenceTooltip — which game phase the eval is sampled
    * at ('opening-end' default, or 'endgame-entry' on the Endgames Games subtab). */
   evalContext?: 'opening-end' | 'endgame-entry';
-  /** Forwarded to EvalConfidenceTooltip — when true (and pendingCount > 0),
-   * shows the pending-analysis caveat in the tooltip body. */
-  isPending?: boolean;
-  /** Forwarded to EvalConfidenceTooltip — number of games still pending Stockfish analysis. */
-  pendingCount?: number;
 }
 
 // Hover- and tap-activated popover for the MG-entry bullet chart confidence
@@ -44,8 +39,6 @@ export function BulletConfidencePopover({
   triggerClassName,
   showBaselineTick,
   evalContext,
-  isPending,
-  pendingCount,
 }: BulletConfidencePopoverProps) {
   const [open, setOpen] = React.useState(false);
   const hoverTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,8 +94,6 @@ export function BulletConfidencePopover({
             color={color}
             showBaselineTick={showBaselineTick}
             evalContext={evalContext}
-            isPending={isPending}
-            pendingCount={pendingCount}
           />
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>

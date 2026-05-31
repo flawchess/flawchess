@@ -29,11 +29,12 @@ from app.models.game import Game
 from app.repositories import game_repository, import_job_repository
 from app.repositories.import_job_repository import ImportJobNotFound
 from app.schemas.normalization import NormalizedGame
-from app.services import chesscom_client, lichess_client
+from app.services import chesscom_client, lichess_client, percentile_compute_registry
 from app.services.eval_drain import (
     _collect_midgame_eval_targets,
     _collect_endgame_span_eval_targets,
 )  # Phase 91: cross-module use of eval_drain internals is intentional — see SEED-023.
+from app.services.user_benchmark_percentiles_service import compute_stage_a, compute_stage_b
 from app.services.zobrist import PlyData, process_game_pgn
 
 logger = logging.getLogger(__name__)
@@ -61,17 +62,20 @@ _RETRIABLE_DB_OUTAGE_ERRORS: tuple[type[BaseException], ...] = (
 
 
 # Number of games per DB insert batch. Each game produces ~80 position rows,
-# so batch_size=12 means ~960 position rows per INSERT.
+# so batch_size=30 means ~2400 position rows per COPY.
 #
-# Bug fix (2026-05-16, FLAWCHESS-56 / FLAWCHESS-3Q): reduced from 28 back to 12.
-# The old comment claimed "~1.8MB per batch — safe" but that only counted the
-# position rows; it ignored the per-batch Stockfish eval pass added in Phase
-# 41.1, which runs STOCKFISH_POOL_SIZE engines concurrently over the batch.
-# At batch_size=28 with prod's 4-engine pool this drove a Postgres OOM-kill
-# mid-import. Keep this low until the orphan-reaper / atomic-import-guard
-# follow-up phase lands. The dominant memory cost is the engine pass, not the
-# INSERT, so batch size is the cheapest lever.
-_BATCH_SIZE = 12
+# History: temporarily dropped to 12 on 2026-05-16 (FLAWCHESS-56 / FLAWCHESS-3Q)
+# because Phase 41.1's per-batch Stockfish eval pass — STOCKFISH_POOL_SIZE engines
+# run concurrently over the batch — drove a Postgres OOM-kill at batch_size=28.
+# That eval pass no longer runs in this hot lane: it was moved to the decoupled
+# run_eval_drain() cold lane (see _flush_batch below), so the OOM driver is gone.
+# Position writes now use asyncpg binary COPY (game_repository.bulk_insert_positions),
+# which is lighter than the old ORM INSERT and has no VALUES parameter ceiling.
+# The 2026-05-27 dual-platform 20k-each prod stress test ran at 12 with the import
+# phase nowhere near memory-bound (backend 36% / DB 27% of caps, zero swap); the
+# bottleneck is the Stockfish eval drain, which batch size does not affect. Raised
+# 12 -> 30 for fewer transactions during fetch+import with comfortable headroom.
+_BATCH_SIZE = 30
 IMPORT_TIMEOUT_SECONDS = 3 * 60 * 60  # 3 hours per D-24
 
 # Phase 90 / SEED-017 resilience constants — no magic numbers (CLAUDE.md).
@@ -497,6 +501,38 @@ async def _complete_import_job(job: JobState, job_id: str) -> None:
             last_synced_at=now,
         )
         await session.commit()
+    # Phase 94.1 D-03 / ROADMAP SC 3: Stage A fires AFTER commit, NOT inside the
+    # import transaction. Fire-and-forget — errors are captured to Sentry inside
+    # compute_stage_a; never propagated.
+    asyncio.create_task(compute_stage_a(job.user_id))
+
+    # Quick fix 260527-u3u: Stage B re-fires here for the all-Stage-5c-covered case
+    # where eval_drain never ticks for this user — keeps the cold-drain trigger at
+    # eval_drain.py:566-568 in place; both sites are idempotent (Stage A/B write
+    # disjoint rows; compute_stage_b is upsert-safe). Gated on the same
+    # users_with_zero_pending check the cold drain uses, which excludes users with
+    # an active import (Plan 13 Stage B gate). A fresh read session is used (never
+    # the import-write session) to mirror the eval_drain pattern.
+    try:
+        async with async_session_maker() as read_session:
+            zero_pending = await game_repository.users_with_zero_pending(
+                read_session, [job.user_id]
+            )
+            if zero_pending:
+                # Quick 260529-015: mark BEFORE scheduling so the 3s readiness
+                # poll can't observe pending==0 and unlock Tier 2 in the window
+                # before compute_stage_b starts writing rows.
+                percentile_compute_registry.mark(job.user_id)
+                asyncio.create_task(compute_stage_b(job.user_id))
+    except asyncio.CancelledError:
+        # Lifespan shutdown — propagate (mirrors WR-07 cancellation contract).
+        raise
+    except Exception as exc:
+        sentry_sdk.set_context(
+            "percentile_compute",
+            {"user_id": job.user_id, "stage": "B", "trigger": "import_complete"},
+        )
+        sentry_sdk.capture_exception(exc)
 
 
 async def run_import(job_id: str) -> None:

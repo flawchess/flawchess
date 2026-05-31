@@ -138,6 +138,7 @@ function makeData(
     achievable_score_gap_p_value: null,
     achievable_score_gap_ci_low: null,
     achievable_score_gap_ci_high: null,
+    achievable_score_gap_percentile: null,
     ...overrides,
   };
 }
@@ -155,6 +156,25 @@ function makeScoreGap(
     score_difference_p_value: null,
     score_difference_ci_low: null,
     score_difference_ci_high: null,
+    score_gap_percentile: null,
+    score_gap_per_tc: [],
+    score_gap_conv_mean: null,
+    score_gap_conv_n: null,
+    score_gap_conv_p_value: null,
+    score_gap_conv_ci_low: null,
+    score_gap_conv_ci_high: null,
+    score_gap_parity_mean: null,
+    score_gap_parity_n: null,
+    score_gap_parity_p_value: null,
+    score_gap_parity_ci_low: null,
+    score_gap_parity_ci_high: null,
+    score_gap_recov_mean: null,
+    score_gap_recov_n: null,
+    score_gap_recov_p_value: null,
+    score_gap_recov_ci_low: null,
+    score_gap_recov_ci_high: null,
+    // Phase 97 D-10: score_gap_conv_percentile, score_gap_parity_percentile,
+    // recovery_score_gap_percentile and per-TC counterparts removed.
     ...overrides,
   };
 }
@@ -176,7 +196,7 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(screen.getByText('Games with Endgame')).toBeTruthy();
     expect(screen.getByText('Endgame Score Differences')).toBeTruthy();
     expect(screen.getByText('Endgame Score Gap:')).toBeTruthy();
-    expect(screen.getByText('Achievable Score Gap:')).toBeTruthy();
+    expect(screen.getByText('Eval Score Gap:')).toBeTruthy();
     expect(screen.getByText(/Do you perform better or worse when games reach an endgame/)).toBeTruthy();
   });
 
@@ -368,7 +388,7 @@ describe('EndgameOverallPerformanceSection', () => {
     // so we can locate the achievable bullet specifically.
     const bullets = screen.getAllByTestId('mock-mini-bullet');
     const achievableBullet = bullets.find((b) =>
-      (b.getAttribute('data-aria-label') ?? '').startsWith('Achievable Score Gap'),
+      (b.getAttribute('data-aria-label') ?? '').startsWith('Eval Score Gap'),
     );
     expect(achievableBullet).toBeTruthy();
     expect(achievableBullet?.getAttribute('data-ci-low')).toBe('-0.02');
@@ -411,7 +431,7 @@ describe('EndgameOverallPerformanceSection', () => {
     );
     const bullets = screen.getAllByTestId('mock-mini-bullet');
     const achievableBullet = bullets.find((b) =>
-      (b.getAttribute('data-aria-label') ?? '').startsWith('Achievable Score Gap'),
+      (b.getAttribute('data-aria-label') ?? '').startsWith('Eval Score Gap'),
     );
     const endgameBullet = bullets.find((b) =>
       (b.getAttribute('data-aria-label') ?? '').startsWith('Endgame Score Gap'),
@@ -573,5 +593,47 @@ describe('EndgameOverallPerformanceSection', () => {
     expect(
       within(screen.getByTestId('tile-at-endgame-entry')).queryByText('Win/Draw/Loss'),
     ).toBeNull();
+  });
+
+  // ── Phase 94 PCTL-03/04/06: percentile chip rendering ─────────────────────
+
+  it('renders Endgame Score Gap percentile chip when score_gap_percentile is non-null', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData()}
+        scoreGap={makeScoreGap({ score_gap_percentile: 73 })}
+      />,
+    );
+    expect(screen.getByTestId('endgame-score-gap-percentile-chip')).toBeTruthy();
+  });
+
+  it('does NOT render Endgame Score Gap percentile chip when score_gap_percentile is null', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData()}
+        scoreGap={makeScoreGap({ score_gap_percentile: null })}
+      />,
+    );
+    expect(screen.queryByTestId('endgame-score-gap-percentile-chip')).toBeNull();
+  });
+
+  it('renders Achievable Score Gap percentile chip when achievable_score_gap_percentile is non-null', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData({ achievable_score_gap_percentile: 88 })}
+        scoreGap={makeScoreGap()}
+      />,
+    );
+    expect(screen.getByTestId('achievable-score-gap-percentile-chip')).toBeTruthy();
+  });
+
+  it('does NOT render Achievable Score Gap percentile chip when achievable_score_gap_percentile is null', () => {
+    render(
+      <EndgameOverallPerformanceSection
+        data={makeData({ achievable_score_gap_percentile: null })}
+        scoreGap={makeScoreGap()}
+      />,
+    );
+    expect(screen.queryByTestId('achievable-score-gap-percentile-chip')).toBeNull();
   });
 });

@@ -53,7 +53,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import async_session_maker
 from app.models.game import Game
 from app.models.game_position import GamePosition
+from app.repositories.game_repository import users_with_zero_pending
 from app.services import engine as engine_service
+from app.services import percentile_compute_registry
+from app.services.user_benchmark_percentiles_service import compute_stage_b
 from app.services.zobrist import PlyData
 
 logger = logging.getLogger(__name__)
@@ -546,6 +549,28 @@ async def run_eval_drain() -> None:
                 # per D-09 / R-02 — no permanent retry loop.
                 await _mark_evals_completed(session, game_ids)
                 await session.commit()
+
+            # Phase 94.1 D-01 / Pitfall 1: Stage B fires for users whose pending-eval
+            # count just transitioned to zero. Group just-drained game_ids by user_id,
+            # then in ONE aggregated query (WR-01 fix, 94.1-12) filter to users whose
+            # pending-eval count is now zero AND no active import_job exists (Plan 13
+            # Stage B gate). Without the active-import guard, Stage B fires multiple
+            # times as eval batches drain mid-import, producing transient intermediate
+            # values on the chip (user 28 case — see 94.1-13-PLAN.md gap_source).
+            # Fresh read session: never share the eval-write session across coroutines.
+            async with async_session_maker() as read_session:
+                user_id_rows = await read_session.execute(
+                    select(Game.user_id).distinct().where(Game.id.in_(game_ids))
+                )
+                affected_user_ids = [row[0] for row in user_id_rows.all()]
+                if affected_user_ids:
+                    zero_pending = await users_with_zero_pending(read_session, affected_user_ids)
+                    for uid in zero_pending:
+                        # Quick 260529-015: mark BEFORE scheduling so the 3s
+                        # readiness poll can't observe pending==0 and unlock Tier 2
+                        # in the window before compute_stage_b starts writing rows.
+                        percentile_compute_registry.mark(uid)
+                        asyncio.create_task(compute_stage_b(uid))
 
         except asyncio.CancelledError:
             # Lifespan shutdown — propagate without retry (cancellation contract

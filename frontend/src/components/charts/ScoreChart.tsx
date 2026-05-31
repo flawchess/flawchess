@@ -75,9 +75,21 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
   // Empty state: no series data
   if (allDates.length === 0) {
     return (
-      <div className="text-center text-muted-foreground py-8">
-        No game history available for saved positions yet.
-      </div>
+      <>
+        <h3
+          className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+          data-testid="score-chart-header"
+        >
+          <BookMarked className="h-5 w-5" />
+          Bookmarked Openings: Score over Time
+          <InfoPopover ariaLabel="Score chart info" testId="score-chart-info" side="top">
+            Shows your chess score (W + 0.5·D) / N for each saved or most played position over time. Each point is the score over your last 50 games through that position. Only data points with at least 10 games are shown to avoid noisy early values.
+          </InfoPopover>
+        </h3>
+        <div className="p-4 text-center text-muted-foreground py-8">
+          No game history available for saved positions yet.
+        </div>
+      </>
     );
   }
 
@@ -104,16 +116,18 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
   });
 
   return (
-    <div>
-      <h2 className="text-lg font-medium mb-3">
-        <span className="inline-flex items-center gap-1">
-          <BookMarked className="h-5 w-5" />
-          Bookmarked Openings: Score over Time
-          <InfoPopover ariaLabel="Score chart info" testId="score-chart-info" side="top">
-            Shows your chess score (W + 0.5·D) / N for each saved or most played position over time. Each point is the score over your last 50 games through that position. Only data points with at least 10 games are shown to avoid noisy early values.
-          </InfoPopover>
-        </span>
-      </h2>
+    <>
+      <h3
+        className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold"
+        data-testid="score-chart-header"
+      >
+        <BookMarked className="h-5 w-5" />
+        Bookmarked Openings: Score over Time
+        <InfoPopover ariaLabel="Score chart info" testId="score-chart-info" side="top">
+          Shows your chess score (W + 0.5·D) / N for each saved or most played position over time. Each point is the score over your last 50 games through that position. Only data points with at least 10 games are shown to avoid noisy early values.
+        </InfoPopover>
+      </h3>
+      <div className="p-4">
       <div className={isMobile ? '' : 'flex items-stretch'}>
         {!isMobile && (
           <div
@@ -129,7 +143,7 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
             <XAxis dataKey="date" tickFormatter={formatDateTick} />
             <YAxis domain={yAxis.domain} ticks={yAxis.ticks} tickFormatter={(v) => `${Math.round(v * 100)}%`} />
             {/* Inactivity-gap annotations via shared helper: Palmtree glyph + label per
-                >56-day gap. Placed BEFORE the bookmark Line series so annotations
+                >90-day gap. Placed BEFORE the bookmark Line series so annotations
                 sit behind the data in SVG z-order. allDates is pre-sorted
                 (ascending) — no yAxisId (single default axis). */}
             {inactivityGapReferenceLines({ dates: allDates })}
@@ -184,6 +198,7 @@ export function ScoreChart({ bookmarks, series }: ScoreChartProps) {
           </LineChart>
         </ChartContainer>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

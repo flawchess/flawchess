@@ -1707,11 +1707,14 @@ class TestFlushBatchStage5:
                     update_sql_texts.append(str(compiled))
             return update_sql_texts
 
-        ids_a = [101, 102, 103]
-        ids_b = [201, 202, 203, 204]
-        # Batch A: games [101, 102, 103]
+        # Use 7-digit ids so they cannot appear as a substring of a 6-digit
+        # microsecond fraction in a literal-rendered timestamp (e.g. the
+        # `evals_completed_at` value the bindparam-less literal_binds compile
+        # below produces). Earlier 3-digit ids like 101/102 flaked CI when a
+        # microsecond happened to start with the same digits.
+        ids_a = [9000001, 9000002, 9000003]
+        ids_b = [9000004, 9000005, 9000006, 9000007]
         sql_texts_batch_a = await _run_batch_and_capture_update_sql(ids_a)
-        # Batch B: games [201, 202, 203, 204] — different ids AND different count
         sql_texts_batch_b = await _run_batch_and_capture_update_sql(ids_b)
 
         assert len(sql_texts_batch_a) > 0, "Expected at least one UPDATE call in batch A"
@@ -2455,14 +2458,15 @@ class TestRunImportSessionPerBatch:
 
     @pytest.mark.asyncio
     async def test_one_session_per_batch(self):
-        """run_import opens one session for each logical scope: bootstrap + per-batch + completion.
+        """run_import opens one session for each logical scope: bootstrap + per-batch + completion + Stage-B gate.
 
         With N=30 games and _BATCH_SIZE=12:
           12 (batch 1) + 12 (batch 2) + 6 (trailing) = 3 batch sessions
-          + 1 bootstrap + 1 completion = 5 total session opens.
+          + 1 bootstrap + 1 completion + 1 Stage-B gate read session (quick-260527-u3u) = 6 total session opens.
 
-        Currently: run_import uses ONE session for the whole import.
-        After Task 2: 5 sessions for 30 games / batch_size=12.
+        The trailing +1 is the fresh read session opened inside _complete_import_job to
+        evaluate users_with_zero_pending before firing compute_stage_b — see
+        app/services/import_service.py around line 510.
         """
         from app.services.import_service import _BATCH_SIZE
 
@@ -2470,7 +2474,8 @@ class TestRunImportSessionPerBatch:
         n_full_batches = total_games // _BATCH_SIZE  # = 2
         n_trailing = total_games % _BATCH_SIZE  # = 6
         n_batch_sessions = n_full_batches + (1 if n_trailing > 0 else 0)  # = 3
-        expected_session_calls = 1 + n_batch_sessions + 1  # bootstrap + batches + completion = 5
+        # bootstrap + batches + completion + Stage-B gate read session = 6
+        expected_session_calls = 1 + n_batch_sessions + 1 + 1
 
         call_count = [0]
         mock_maker = self._make_simple_session_maker(call_count)
@@ -2529,9 +2534,8 @@ class TestRunImportSessionPerBatch:
 
         assert call_count[0] == expected_session_calls, (
             f"Expected {expected_session_calls} async_session_maker() calls "
-            f"(1 bootstrap + {n_batch_sessions} per-batch + 1 completion). "
-            f"Got {call_count[0]}. "
-            f"Current code uses 1 session for the whole import."
+            f"(1 bootstrap + {n_batch_sessions} per-batch + 1 completion + 1 Stage-B gate). "
+            f"Got {call_count[0]}."
         )
 
     @pytest.mark.asyncio

@@ -8,6 +8,12 @@
  * - Legacy data-testid="clock-pressure-section" is absent (proxy for
  *   knip-clean post-deletion of EndgameClockPressureSection).
  * - Section wrapper testid="time-pressure-cards-section" is always present.
+ *
+ * 260531-f7s: SC-1 grid layout tests replaced with Accordion assertions:
+ * - Section renders a controlled Accordion with accordion trigger testids.
+ * - The time-weighted primary TC starts expanded (data-state="open").
+ * - Other TCs start collapsed (data-state="closed").
+ * - Empty state asserts no trigger testids present.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -83,10 +89,10 @@ function buildQuintile(index: 0 | 1 | 2 | 3 | 4): PressureQuintileBullet {
   };
 }
 
-function buildCard(tc: TimePressureTcCard['tc']): TimePressureTcCard {
+function buildCard(tc: TimePressureTcCard['tc'], total = 100): TimePressureTcCard {
   return {
     tc,
-    total: 100,
+    total,
     // Plan 88-14 A-3: top-zone summary stats defaults.
     user_avg_pct: 0.47,
     user_avg_seconds: 215,
@@ -115,7 +121,7 @@ function makePayload(
   const tcsToUse =
     tcs.length > 0 ? tcs : (['bullet', 'blitz', 'rapid', 'classical'] as const);
   return {
-    cards: tcsToUse.map(buildCard),
+    cards: tcsToUse.map((tc) => buildCard(tc)),
   };
 }
 
@@ -123,11 +129,12 @@ function makePayload(
 
 function renderSection(
   data: TimePressureCardsResponse,
+  filterKey?: string,
 ): ReturnType<typeof render> {
   return render(
     <MemoryRouter>
       <TooltipProvider>
-        <EndgameTimePressureSection data={data} />
+        <EndgameTimePressureSection data={data} filterKey={filterKey} />
       </TooltipProvider>
     </MemoryRouter>,
   );
@@ -152,8 +159,8 @@ describe('EndgameTimePressureSection — Empty state', () => {
     renderSection({ cards: [] });
 
     expect(screen.getByTestId('time-pressure-cards-empty')).not.toBeNull();
-    // The grid should not be rendered when there are no cards.
-    expect(screen.queryByTestId('time-pressure-card-bullet')).toBeNull();
+    // No accordion trigger present when there are no cards.
+    expect(screen.queryByTestId('time-pressure-card-bullet-trigger')).toBeNull();
   });
 });
 
@@ -210,42 +217,48 @@ describe('EndgameTimePressureSection — Section wrapper', () => {
   });
 });
 
-describe('EndgameTimePressureSection — SC-1: dynamic grid layout', () => {
-  it('1-card payload wraps card in w-1/2 container', () => {
+describe('EndgameTimePressureSection — SC-1: Accordion layout (replaces dynamic grid)', () => {
+  it('renders accordion trigger testids for all present TC cards', () => {
+    renderSection(makePayload('bullet', 'blitz', 'rapid', 'classical'));
+
+    // All 4 triggers must be present (AccordionTrigger always renders).
+    expect(screen.getByTestId('time-pressure-card-bullet-trigger')).not.toBeNull();
+    expect(screen.getByTestId('time-pressure-card-blitz-trigger')).not.toBeNull();
+    expect(screen.getByTestId('time-pressure-card-rapid-trigger')).not.toBeNull();
+    expect(screen.getByTestId('time-pressure-card-classical-trigger')).not.toBeNull();
+  });
+
+  it('time-weighted primary TC starts expanded; others start collapsed', () => {
+    // Give blitz the highest total so it is the time-weighted primary.
+    const data: TimePressureCardsResponse = {
+      cards: [
+        buildCard('bullet', 50),
+        buildCard('blitz', 500),
+        buildCard('rapid', 100),
+        buildCard('classical', 20),
+      ],
+    };
+    const { container } = renderSection(data, 'initial');
+
+    // Accordion state is stored on the AccordionItem (data-testid = card testid).
+    const blitzItem = container.querySelector('[data-testid="time-pressure-card-blitz"]');
+    const bulletItem = container.querySelector('[data-testid="time-pressure-card-bullet"]');
+    const rapidItem = container.querySelector('[data-testid="time-pressure-card-rapid"]');
+    const classicalItem = container.querySelector('[data-testid="time-pressure-card-classical"]');
+
+    expect(blitzItem?.getAttribute('data-state')).toBe('open');
+    expect(bulletItem?.getAttribute('data-state')).toBe('closed');
+    expect(rapidItem?.getAttribute('data-state')).toBe('closed');
+    expect(classicalItem?.getAttribute('data-state')).toBe('closed');
+  });
+
+  it('does not render old grid class constants (w-1/2 / grid-cols-2 etc.)', () => {
     const { container } = renderSection(makePayload('bullet'));
-    const grid = container.querySelector(
+    // The accordion wrapper must not use the old half-width grid class.
+    const accordionRoot = container.querySelector(
       '[data-testid="time-pressure-cards-section"] > p + div',
     );
-    // Single card uses half-width, not a grid layout.
-    expect(grid?.className).toContain('w-1/2');
-    expect(grid?.className).not.toContain('grid');
-  });
-
-  it('2-card payload uses grid-cols-2', () => {
-    const { container } = renderSection(makePayload('bullet', 'blitz'));
-    const grid = container.querySelector(
-      '[data-testid="time-pressure-cards-section"] > p + div',
-    );
-    expect(grid?.className).toContain('grid-cols-2');
-  });
-
-  it('3-card payload uses sm:grid-cols-3', () => {
-    const { container } = renderSection(makePayload('bullet', 'blitz', 'rapid'));
-    const grid = container.querySelector(
-      '[data-testid="time-pressure-cards-section"] > p + div',
-    );
-    expect(grid?.className).toContain('grid-cols-3');
-  });
-
-  it('4-card payload uses a 2×2 grid (md:grid-cols-2, never >2 per row)', () => {
-    const { container } = renderSection(
-      makePayload('bullet', 'blitz', 'rapid', 'classical'),
-    );
-    const grid = container.querySelector(
-      '[data-testid="time-pressure-cards-section"] > p + div',
-    );
-    expect(grid?.className).toContain('md:grid-cols-2');
-    expect(grid?.className).not.toContain('grid-cols-3');
-    expect(grid?.className).not.toContain('grid-cols-4');
+    expect(accordionRoot?.className).not.toContain('w-1/2');
+    expect(accordionRoot?.className).not.toContain('grid');
   });
 });

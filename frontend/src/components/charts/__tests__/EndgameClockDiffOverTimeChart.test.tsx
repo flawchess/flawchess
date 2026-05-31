@@ -189,11 +189,11 @@ describe('EndgameClockDiffOverTimeChart', () => {
 });
 
 describe('EndgameClockDiffOverTimeChart — inactivity gap annotations', () => {
-  /** Timeline with a >56-day gap between index 0 and 1 (90 days). */
+  /** Timeline with a >90-day gap between index 0 and 1 (120 days). */
   const GAP_FIXTURE: ClockDiffTimelinePoint[] = [
     makePoint('2025-01-06', 5.0),
-    makePoint('2025-04-06', 3.0), // 90 days later — exceeds the 56-day threshold
-    makePoint('2025-04-13', 2.0),
+    makePoint('2025-05-06', 3.0), // 120 days later — exceeds the 90-day threshold
+    makePoint('2025-05-13', 2.0),
   ];
 
   /** Timeline with all consecutive points 7 days apart — no gap. */
@@ -204,12 +204,12 @@ describe('EndgameClockDiffOverTimeChart — inactivity gap annotations', () => {
     makePoint('2025-01-27', 1.0),
   ];
 
-  it('renders inactivity-gap-label for a >56-day gap fixture', () => {
+  it('renders inactivity-gap-label for a >90-day gap fixture', () => {
     const { container } = render(<EndgameClockDiffOverTimeChart timeline={GAP_FIXTURE} />);
     expect(container.querySelector('[data-testid="inactivity-gap-label"]')).not.toBeNull();
   });
 
-  it('renders inactivity-gap-glyph (Palmtree) for a >56-day gap fixture', () => {
+  it('renders inactivity-gap-glyph (Palmtree) for a >90-day gap fixture', () => {
     const { container } = render(<EndgameClockDiffOverTimeChart timeline={GAP_FIXTURE} />);
     expect(container.querySelector('[data-testid="inactivity-gap-glyph"]')).not.toBeNull();
   });

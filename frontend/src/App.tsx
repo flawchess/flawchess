@@ -31,15 +31,11 @@ import { AdminPage } from '@/pages/Admin';
 import { PrivacyPage } from '@/pages/Privacy';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
-import type { UserProfile } from '@/types/users';
+import { useReadiness } from '@/hooks/useReadiness';
 
 const FLAG_OPENINGS_VISITED = 'openings_visited';
 const FLAG_ENDGAMES_VISITED = 'endgames_visited';
 const IMPORT_REQUIRED_MESSAGE = 'Import your games first to unlock this feature.';
-
-function profileHasCompletedImport(profile: UserProfile | null | undefined): boolean {
-  return profile != null && (profile.chess_com_last_sync_at !== null || profile.lichess_last_sync_at !== null);
-}
 
 // ─── Non-visual job completion watcher ────────────────────────────────────────
 
@@ -99,16 +95,20 @@ function NavHeader() {
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
-  const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
+  const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
+  const noGames = profile != null && totalGames === 0;
+  // Nav unlocks only once the user has games AND import phase 1 (Tier 1) is
+  // complete — matching the "Explore Openings" button. tier1 alone is true for a
+  // fresh zero-game account (no job in-flight), and games alone appear mid-import
+  // before phase 1 finishes; both gates together avoid unlocking too early.
+  const { tier1 } = useReadiness();
+  const navUnlocked = totalGames > 0 && tier1;
   const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
-  // Backed by completed-import timestamps so the dots wait for the first
-  // import to actually finish (game counts can climb mid-import).
-  const hasCompletedImport = profileHasCompletedImport(profile);
-  const showOpeningsDot = hasCompletedImport && !openingsVisited;
+  const showOpeningsDot = navUnlocked && !openingsVisited;
   // Endgames dot is gated behind the Openings dot — we want users to discover
   // Openings first, then Endgames after that dot is cleared.
-  const showEndgamesDot = hasCompletedImport && openingsVisited && !endgamesVisited;
+  const showEndgamesDot = navUnlocked && openingsVisited && !endgamesVisited;
   // D-16: Admin tab rightmost for superusers, absent otherwise.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
@@ -122,7 +122,7 @@ function NavHeader() {
           </Link>
           <nav aria-label="Main navigation" className="flex items-stretch h-full">
             {navItems.map(({ to, label, Icon }) => {
-              const locked = to !== '/import' && profile != null && !hasCompletedImport;
+              const locked = to !== '/import' && to !== '/admin' && !navUnlocked;
               return (
               <Link
                 key={to}
@@ -130,7 +130,7 @@ function NavHeader() {
                 data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
                 aria-disabled={locked || undefined}
                 title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
-                onClick={locked ? (e) => { e.preventDefault(); toast.info(IMPORT_REQUIRED_MESSAGE); } : undefined}
+                onClick={locked ? (e) => e.preventDefault() : undefined}
                 className={cn(
                   'relative flex items-center gap-1.5 px-3 text-sm transition-colors',
                   locked && 'opacity-40 cursor-not-allowed',
@@ -241,13 +241,15 @@ function MobileHeader() {
 function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
   const location = useLocation();
   const { data: profile } = useUserProfile();
-  const noGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count === 0;
+  const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
+  const noGames = profile != null && totalGames === 0;
+  // See NavHeader — unlock only once games exist AND import phase 1 is complete.
+  const { tier1 } = useReadiness();
+  const navUnlocked = totalGames > 0 && tier1;
   const openingsVisited = useUserFlag(FLAG_OPENINGS_VISITED, profile?.email);
   const endgamesVisited = useUserFlag(FLAG_ENDGAMES_VISITED, profile?.email);
-  // See NavHeader — gate on completed-import timestamps, not game counts.
-  const hasCompletedImport = profileHasCompletedImport(profile);
-  const showOpeningsDot = hasCompletedImport && !openingsVisited;
-  const showEndgamesDot = hasCompletedImport && openingsVisited && !endgamesVisited;
+  const showOpeningsDot = navUnlocked && !openingsVisited;
+  const showEndgamesDot = navUnlocked && openingsVisited && !endgamesVisited;
 
   return (
     <nav
@@ -256,7 +258,7 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
       className="fixed bottom-0 inset-x-0 flex sm:hidden z-40 bg-background border-t border-border pb-safe"
     >
       {BOTTOM_NAV_ITEMS.map(({ to, label, Icon }) => {
-        const locked = to !== '/import' && profile != null && !hasCompletedImport;
+        const locked = to !== '/import' && !navUnlocked;
         return (
         <Link
           key={to}
@@ -264,7 +266,7 @@ function MobileBottomBar({ onMoreClick }: { onMoreClick: () => void }) {
           data-testid={`mobile-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
           aria-disabled={locked || undefined}
           title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
-          onClick={locked ? (e) => { e.preventDefault(); toast.info(IMPORT_REQUIRED_MESSAGE); } : undefined}
+          onClick={locked ? (e) => e.preventDefault() : undefined}
           className={cn(
             'relative flex flex-1 flex-col items-center gap-1 py-2',
             locked && 'opacity-40 cursor-not-allowed',
@@ -322,7 +324,10 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
   const location = useLocation();
   const { logout } = useAuth();
   const { data: profile } = useUserProfile();
-  const hasCompletedImport = profileHasCompletedImport(profile);
+  const totalGames = profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
+  // See NavHeader — unlock only once games exist AND import phase 1 is complete.
+  const { tier1 } = useReadiness();
+  const navUnlocked = totalGames > 0 && tier1;
   // D-17: Admin entry surfaced in the More drawer (not the bottom bar) for superusers.
   const navItems = profile?.is_superuser ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
@@ -337,7 +342,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
         <div className="px-4 pb-4">
           <nav className="flex flex-col gap-1">
             {navItems.map(({ to, label }) => {
-              const locked = to !== '/import' && profile != null && !hasCompletedImport;
+              const locked = to !== '/import' && to !== '/admin' && !navUnlocked;
               return (
               <DrawerClose key={to} asChild>
                 <Link
@@ -345,7 +350,7 @@ function MobileMoreDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
                   data-testid={`drawer-nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
                   aria-disabled={locked || undefined}
                   title={locked ? IMPORT_REQUIRED_MESSAGE : undefined}
-                  onClick={locked ? (e) => { e.preventDefault(); toast.info(IMPORT_REQUIRED_MESSAGE); } : undefined}
+                  onClick={locked ? (e) => e.preventDefault() : undefined}
                   className={cn(
                     'rounded-md px-3 py-2 text-base',
                     locked && 'opacity-40 cursor-not-allowed',
@@ -445,15 +450,18 @@ function ProtectedLayout() {
 // ─── Import-required route guard ──────────────────────────────────────────────
 
 /**
- * Locks non-Import pages until at least one game import has finished successfully.
- * Backed by completed-import timestamps on the profile (chess_com_last_sync_at /
- * lichess_last_sync_at), so users can browse the rest of the app only after their
- * first import returns. Redirects to /import with a toast when locked.
+ * Locks non-Import pages until the user has imported games AND import phase 1
+ * (Tier 1) is complete — the same gate as the nav links and the "Explore
+ * Openings" button. This keeps a fresh zero-game account out (no games) and an
+ * in-progress import out (tier1=false), and re-locks after deleting all games.
+ * The isLoading guard prevents a redirect flash while the first fetches resolve.
  */
 function ImportRequiredRoute({ children }: { children: React.ReactNode }) {
-  const { data: profile, isLoading } = useUserProfile();
-  const hasCompletedImport = profileHasCompletedImport(profile);
-  const shouldRedirect = !isLoading && profile != null && !hasCompletedImport;
+  const { data: profile, isLoading: profileLoading } = useUserProfile();
+  const { tier1, isLoading: readinessLoading } = useReadiness();
+  const isLoading = profileLoading || readinessLoading;
+  const hasGames = profile != null && profile.chess_com_game_count + profile.lichess_game_count > 0;
+  const shouldRedirect = !isLoading && profile != null && !(hasGames && tier1);
 
   useEffect(() => {
     if (shouldRedirect) {
@@ -500,6 +508,7 @@ function AppRoutes() {
   const hasRestoredRef = useRef(false);
   // Track which token restoration has been performed for — reset guard on re-login
   const restoredForTokenRef = useRef<string | null>(null);
+
   // eslint-disable-next-line react-hooks/refs -- intentional: reset restoration guard on token change
   if (restoredForTokenRef.current !== token) {
     restoredForTokenRef.current = token; // eslint-disable-line react-hooks/refs
@@ -539,6 +548,13 @@ function AppRoutes() {
     queryClient.invalidateQueries({ queryKey: ['games'] });
     queryClient.invalidateQueries({ queryKey: ['gameCount'] });
     queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+    // Bug fix (Phase 94.1-11): the percentile background tasks (Stage A on
+    // import-complete, Stage B on eval-drain) write to user_benchmark_percentiles
+    // asynchronously after the job completes. Without invalidating endgameOverview
+    // here, the 30s queryClient staleTime serves the stale pre-import response and
+    // percentile badges only appear on /endgames after a hard refresh. Partial-match
+    // on ['endgameOverview'] invalidates every cached (params, window) variant.
+    queryClient.invalidateQueries({ queryKey: ['endgameOverview'] });
   }, [queryClient]);
 
   // Called when user dismisses a completed progress bar
@@ -571,7 +587,7 @@ function AppRoutes() {
           <Route path="/rating" element={<Navigate to="/overview" replace />} />
           <Route path="/global-stats" element={<Navigate to="/overview" replace />} />
           <Route path="/overview" element={<ImportRequiredRoute><GlobalStatsPage /></ImportRequiredRoute>} />
-          <Route path="/admin" element={<SuperuserRoute><ImportRequiredRoute><AdminPage /></ImportRequiredRoute></SuperuserRoute>} />
+          <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />
         </Route>
         {/* Catch-all redirects to homepage */}
         <Route path="*" element={<Navigate to="/" replace />} />

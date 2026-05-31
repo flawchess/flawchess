@@ -3,23 +3,29 @@
  * Phase 87 follow-up — tests for the redesigned EndgameTypeCard (single Score
  * bullet replacing the dual Conv/Recov peer-diff bullets).
  *
+ * Phase 98 additions:
+ * - Gauge row (conv-gauge / recov-gauge testids) restored with per-(class × TC)
+ *   zone bands via PER_CLASS_TC_GAUGE_ZONES.
+ * - `tc` prop added to all fixtures and renderCard.
+ * - Score Gap neutralMin/Max now come from per-(class × TC) band.
+ *
  * Covers:
  * - Full render when total >= MIN_GAMES_FOR_RELIABLE_STATS (gauges + WDL bar +
  *   Score bullet + Games deep-link + title InfoPopover).
+ * - Conv/Recov gauge testids present.
  * - Games-link onClick fires onCategorySelect with the endgame_class and the
  *   href targets /endgames/games?type={slug}.
  * - Title InfoPopover content matches ENDGAME_TYPE_DESCRIPTIONS[class].
- * - Empty class (total = 0) → empty-class shell with "Not enough data yet" +
- *   opacity-50 gauge row; no WDL, no Score bullet, no Games link.
+ * - Empty class (total = 0) → empty-class shell with gauges at opacity-50 +
+ *   "Not enough data yet"; no WDL, no Score bullet, no Games link.
  * - Sparse class (0 < total < MIN_GAMES_FOR_RELIABLE_STATS) → n=total chip,
- *   UNRELIABLE_OPACITY on the body, Score row hidden, gauges + WDL still
- *   render.
+ *   UNRELIABLE_OPACITY on the body, Score row hidden, WDL still renders.
  * - Score bullet sig-gating: confident + outside-neutral → inline color;
  *   weak p-value → no inline color.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 // useEvalCoverage calls useQuery which requires a QueryClientProvider.
@@ -120,7 +126,7 @@ function buildCategory(
 interface RenderOptions {
   onCategorySelect?: (cls: EndgameCategoryStats['endgame_class']) => void;
   tileTestId?: string;
-  sharePct?: number;
+  tc?: 'bullet' | 'blitz' | 'rapid' | 'classical';
 }
 
 function renderCard(
@@ -129,13 +135,13 @@ function renderCard(
 ): ReturnType<typeof render> {
   const onCategorySelect = opts.onCategorySelect ?? vi.fn();
   const tileTestId = opts.tileTestId ?? TILE_TESTID;
-  const sharePct = opts.sharePct ?? 45.5;
+  const tc = opts.tc ?? 'rapid';
   return render(
     <MemoryRouter>
       <TooltipProvider>
         <EndgameTypeCard
           category={category}
-          sharePct={sharePct}
+          tc={tc}
           onCategorySelect={onCategorySelect}
           tileTestId={tileTestId}
         />
@@ -145,9 +151,11 @@ function renderCard(
 }
 
 describe('EndgameTypeCard — Layout', () => {
-  it('renders gauges, WDL bar, and Score bullet when total >= MIN_GAMES_FOR_RELIABLE_STATS', () => {
+  it('renders Conv/Recov gauges + WDL bar + Score bullet when total >= MIN_GAMES_FOR_RELIABLE_STATS', () => {
     renderCard(buildCategory());
     expect(screen.getByTestId(TILE_TESTID)).not.toBeNull();
+    // Phase 98: gauge testids restored.
+    expect(screen.getByTestId(`${TILE_TESTID}-gauges`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-conv-gauge`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-recov-gauge`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-wdl`)).not.toBeNull();
@@ -219,9 +227,10 @@ describe('EndgameTypeCard — Empty / sparse states', () => {
       }),
     );
     expect(screen.getByTestId(TILE_TESTID)).not.toBeNull();
-    const gaugeRow = screen.getByTestId(`${TILE_TESTID}-gauges`);
-    expect(gaugeRow.className).toMatch(/opacity-50/);
     expect(screen.getByText(/Not enough data yet/i)).not.toBeNull();
+    // Phase 98: gauge testids rendered at opacity-50 even in empty shell.
+    expect(screen.getByTestId(`${TILE_TESTID}-conv-gauge`)).not.toBeNull();
+    expect(screen.getByTestId(`${TILE_TESTID}-recov-gauge`)).not.toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-wdl`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-row`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-bullet`)).toBeNull();
@@ -250,7 +259,7 @@ describe('EndgameTypeCard — Empty / sparse states', () => {
     const body = tile.querySelector<HTMLElement>('.flex.flex-col.gap-4');
     expect(body).not.toBeNull();
     expect(body!.style.opacity).toBe(`${UNRELIABLE_OPACITY}`);
-    // Gauges + WDL still render; Score row hidden below the sample-size gate.
+    // WDL still renders; Score row hidden below the sample-size gate.
     expect(screen.getByTestId(`${TILE_TESTID}-wdl`)).not.toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-row`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-score-bullet`)).toBeNull();
@@ -333,23 +342,19 @@ describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
   it('positions the ScoreGapRow as the last row in the card', () => {
     renderCard(buildCategory());
     const tile = screen.getByTestId(TILE_TESTID);
-    const gauges = screen.getByTestId(`${TILE_TESTID}-gauges`);
-    const asgBullet = screen.getByTestId(`${TILE_TESTID}-asg-bullet`);
     const wdl = screen.getByTestId(`${TILE_TESTID}-wdl`);
+    const asgBullet = screen.getByTestId(`${TILE_TESTID}-asg-bullet`);
     const scoreRow = screen.getByTestId(`${TILE_TESTID}-score-row`);
     const body = tile.querySelector('.flex.flex-col.gap-4');
     expect(body).not.toBeNull();
-    expect(gauges.parentElement).toBe(body);
     expect(asgBullet.parentElement).toBe(body);
-    // DOM ordering: gauges -> wdl block -> score row -> asg row (Score Gap last).
+    // DOM ordering: wdl block -> score row -> asg row (Score Gap last).
     const children = Array.from(body!.children);
-    const gaugesIdx = children.indexOf(gauges);
     const wdlWrapper = children.find((c) => c.contains(wdl)) as HTMLElement;
     const wdlIdx = children.indexOf(wdlWrapper);
     const scoreIdx = children.indexOf(scoreRow);
     const asgIdx = children.indexOf(asgBullet);
-    expect(gaugesIdx).toBeGreaterThanOrEqual(0);
-    expect(wdlIdx).toBeGreaterThan(gaugesIdx);
+    expect(wdlIdx).toBeGreaterThanOrEqual(0);
     expect(scoreIdx).toBeGreaterThan(wdlIdx);
     expect(asgIdx).toBeGreaterThan(scoreIdx);
   });
@@ -400,34 +405,63 @@ describe('EndgameTypeCard — Score Gap row (Phase 87.1)', () => {
 
 });
 
-describe('EndgameTypeCard — Start/End predicted scores (quick-260519-ni3)', () => {
-  it('renders asg-start and asg-end with unsigned whole-percent text when means non-null', () => {
-    // start=0.41 → "Start: 41%", end=0.49 → "End: 49%"
+describe('EndgameTypeCard — Start/End predicted scores in Score Gap popover (UAT 98)', () => {
+  /** Hover the Score Gap info icon to open the popover, waiting until the
+   * popover body has mounted (signalled by its always-present methodology line).
+   * The start/end sentence may or may not be present depending on the fixture. */
+  async function openScoreGapPopover(): Promise<void> {
+    vi.useFakeTimers();
+    try {
+      const trigger = screen.getByTestId(`${TILE_TESTID}-asg-info`);
+      fireEvent.mouseEnter(trigger);
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    await waitFor(() => screen.getByText(/game result for terminal spans/i));
+  }
+
+  it('does NOT render Start/End inline next to the bullet anymore', () => {
     renderCard(buildCategory());
-    const startEl = screen.getByTestId(`${TILE_TESTID}-asg-start`);
-    const endEl = screen.getByTestId(`${TILE_TESTID}-asg-end`);
-    expect(startEl.textContent).toContain('41%');
-    expect(endEl.textContent).toContain('49%');
-    // Labels are unsigned (no + sign)
-    expect(startEl.textContent).not.toContain('+');
-    expect(endEl.textContent).not.toContain('+');
-  });
-
-  it('hides asg-start when type_achievable_score_start_mean is null', () => {
-    renderCard(buildCategory({ type_achievable_score_start_mean: null }));
     expect(screen.queryByTestId(`${TILE_TESTID}-asg-start`)).toBeNull();
-    // asg-end should still render when its mean is non-null
-    expect(screen.getByTestId(`${TILE_TESTID}-asg-end`)).not.toBeNull();
-  });
-
-  it('hides asg-end when type_achievable_score_end_mean is null', () => {
-    renderCard(buildCategory({ type_achievable_score_end_mean: null }));
     expect(screen.queryByTestId(`${TILE_TESTID}-asg-end`)).toBeNull();
-    // asg-start should still render
-    expect(screen.getByTestId(`${TILE_TESTID}-asg-start`)).not.toBeNull();
   });
 
-  it('hides both asg-start and asg-end when showGapRow is false (n==0)', () => {
+  it('shows Start/End predicted scores (unsigned whole-percent) in the popover', async () => {
+    // start=0.41 → 41%, end=0.49 → 49%.
+    renderCard(buildCategory());
+    await openScoreGapPopover();
+    const startEnd = screen.getByTestId(`${TILE_TESTID}-asg-startend`);
+    expect(startEnd.textContent).toContain('41% at entry to 49% at exit');
+    // Unsigned (no + sign on the predicted scores).
+    expect(startEnd.textContent).not.toContain('+');
+  });
+
+  it('rounds start/end means to whole percent (Math.round) in the popover', async () => {
+    // 0.415 → 42 (half-up), 0.495 → 50.
+    renderCard(
+      buildCategory({
+        type_achievable_score_start_mean: 0.415,
+        type_achievable_score_end_mean: 0.495,
+      }),
+    );
+    await openScoreGapPopover();
+    const startEnd = screen.getByTestId(`${TILE_TESTID}-asg-startend`);
+    expect(startEnd.textContent).toContain('42% at entry to 50% at exit');
+  });
+
+  it('omits the Start/End popover sentence when a predicted-score mean is null', async () => {
+    renderCard(buildCategory({ type_achievable_score_start_mean: null }));
+    // The Score Gap row still renders (gap n > 0)...
+    expect(screen.getByTestId(`${TILE_TESTID}-asg-value`)).not.toBeNull();
+    // ...and the popover opens, but the start/end sentence is absent.
+    await openScoreGapPopover();
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-startend`)).toBeNull();
+  });
+
+  it('hides the whole Score Gap row when showGapRow is false (n==0)', () => {
     renderCard(
       buildCategory({
         type_achievable_score_gap_mean: null,
@@ -439,32 +473,16 @@ describe('EndgameTypeCard — Start/End predicted scores (quick-260519-ni3)', ()
         type_achievable_score_end_mean: 0.49,
       }),
     );
-    expect(screen.queryByTestId(`${TILE_TESTID}-asg-start`)).toBeNull();
-    expect(screen.queryByTestId(`${TILE_TESTID}-asg-end`)).toBeNull();
     expect(screen.queryByTestId(`${TILE_TESTID}-asg-value`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-info`)).toBeNull();
+    expect(screen.queryByTestId(`${TILE_TESTID}-asg-startend`)).toBeNull();
   });
 
-  it('existing asg-value and asg-info still render unchanged with start/end present', () => {
+  it('existing asg-value and asg-info still render', () => {
     renderCard(buildCategory());
-    // Signed gap value still renders
     expect(screen.getByTestId(`${TILE_TESTID}-asg-value`)).not.toBeNull();
     expect(screen.getByTestId(`${TILE_TESTID}-asg-value`).textContent).toBe('+8%');
-    // Info popover trigger still renders
     expect(screen.getByTestId(`${TILE_TESTID}-asg-info`)).not.toBeNull();
-  });
-
-  it('rounds start/end means to whole percent (Math.round)', () => {
-    // 0.415 → Math.round(0.415 * 100) = 42 (JS Math.round rounds half-up)
-    renderCard(
-      buildCategory({
-        type_achievable_score_start_mean: 0.415,
-        type_achievable_score_end_mean: 0.495,
-      }),
-    );
-    const startEl = screen.getByTestId(`${TILE_TESTID}-asg-start`);
-    const endEl = screen.getByTestId(`${TILE_TESTID}-asg-end`);
-    expect(startEl.textContent).toContain('42%');
-    expect(endEl.textContent).toContain('50%');
   });
 });
 
@@ -484,7 +502,7 @@ describe('EndgameTypeCard — WDL flag gating (mocked false)', () => {
         <TooltipProvider>
           <MockedCard
             category={buildCategory()}
-            sharePct={45.5}
+            tc="rapid"
             onCategorySelect={onCategorySelect}
             tileTestId={TILE_TESTID}
           />

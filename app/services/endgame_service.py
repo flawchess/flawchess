@@ -16,8 +16,8 @@ import bisect
 import math
 import statistics
 from collections import defaultdict
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from datetime import date as _date
 from enum import IntEnum
@@ -51,6 +51,8 @@ from app.schemas.endgames import (
     EndgameEloTimelineResponse,
     EndgameGamesResponse,
     EndgameLabel,
+    EndgameMetricsCardsResponse,
+    EndgameMetricsTcCard,
     EndgameOverallPoint,
     EndgameOverviewResponse,
     EndgamePerformanceResponse,
@@ -60,7 +62,10 @@ from app.schemas.endgames import (
     EndgameWDLSummary,
     MaterialBucket,
     MaterialRow,
+    PerTcBreakdownOut,
+    PerTcBucketStats,
     PressureQuintileBullet,
+    RatingAnchorOut,
     ScoreGapMaterialResponse,
     ScoreGapTimelinePoint,
     TimePressureCardsResponse,
@@ -71,6 +76,14 @@ from app.services.endgame_zones import (
     MIN_GAMES_PER_PRESSURE_BIN,
     MIN_GAMES_PER_TC_CARD,
 )
+from app.repositories import user_benchmark_percentiles_repository
+from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+from app.repositories.user_rating_anchors_repository import (
+    RatingAnchorRow,
+    fetch_anchors_for_user,
+)
+from app.models.user_rating_anchors import TimeControlBucket
+from app.services.global_percentile_cdf import CdfMetricId
 from app.services.eval_confidence import compute_eval_confidence_bucket
 from app.services.eval_utils import (
     eval_cp_to_expected_score,
@@ -114,6 +127,13 @@ _INT_TO_CLASS: dict[int, EndgameClass] = {
 }
 
 _CLASS_TO_INT: dict[EndgameClass, int] = {v: k for k, v in _INT_TO_CLASS.items()}
+
+# Phase 98: endgame classes excluded from the collapsible per-(class × TC) type
+# cards. Mixed is the least-actionable catch-all (dropped per D-05) and pawnless is
+# hidden in the UI; excluding them from _aggregate_endgame_stats_by_tc keeps the
+# per-TC card header count equal to the sum of the four rendered tiles. This does
+# NOT affect the pooled `categories` (LLM path), which still includes Mixed.
+_TYPE_CARD_EXCLUDED_CLASSES: frozenset[EndgameClass] = frozenset({"mixed", "pawnless"})
 
 
 # Display labels for each endgame category (D-07).
@@ -760,6 +780,265 @@ def _aggregate_endgame_stats(
     return categories, dict(gaps_by_bucket)
 
 
+def _aggregate_endgame_stats_by_tc(
+    rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]]:
+    """Group endgame stats by (TC, class) for the collapsible type-breakdown cards.
+
+    Phase 98: single pass over the per-class `entry_rows` (already fetched) —
+    one row per (game, endgame_class) span, the SAME source the pooled
+    `categories` use — keyed on (TC, class). NOT `bucket_rows` (one row per
+    game, class = first endgame position): that classified almost every game as
+    "mixed", leaving the rook/minor/pawn/queen tiles empty. Returns
+    dict[tc_str, list[EndgameCategoryStats]] in bullet/blitz/rapid/classical
+    order. Mixed and pawnless are excluded (_TYPE_CARD_EXCLUDED_CLASSES) so the
+    per-TC card header equals the sum of the four rendered tiles.
+
+    Prod rows are SA Rows read by attribute (`row.time_control_bucket`,
+    `row.next_entry_eval_cp`, ...). Test fixtures use plain tuples with the
+    layout: game_id[0], endgame_class_int[1], result[2], user_color[3],
+    eval_cp[4], eval_mate[5], time_control_bucket[6], next_entry_eval_cp[7],
+    next_entry_eval_mate[8].
+
+    D-15 invariant: does NOT touch the pooled `categories` list or
+    `assign_per_class_zone`. The LLM path reads `EndgameStatsResponse.categories`
+    (pooled, Mixed included) and is unaffected by this function.
+    """
+    if not rows:
+        return {}
+
+    # tc -> class -> accumulator dicts  (using the same accumulator structure as
+    # _aggregate_endgame_stats but keyed on (tc, class))
+    wdl: dict[str, dict[EndgameClass, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {"wins": 0, "draws": 0, "losses": 0})
+    )
+    conv: dict[str, dict[EndgameClass, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {"games": 0, "wins": 0, "draws": 0})
+    )
+    recov: dict[str, dict[EndgameClass, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {"games": 0, "wins": 0, "draws": 0})
+    )
+    # Per-(tc, class) Score Gap accumulator (same span_scores logic)
+    gaps_by_tc_class: dict[str, dict[EndgameClass, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    starts_by_tc_class: dict[str, dict[EndgameClass, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    ends_by_tc_class: dict[str, dict[EndgameClass, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+
+    for row in rows:
+        # bucket_rows: SA Row or tuple. For tuples (test fixtures) col 6 is TC.
+        if isinstance(row, tuple):
+            if len(row) < 7:
+                # Legacy 6-column fixture (no TC column) — skip; not per-TC data
+                continue
+            _game_id = row[0]
+            endgame_class_int = row[1]
+            result = row[2]
+            user_color = row[3]
+            eval_cp = row[4]
+            eval_mate = row[5]
+            tc = row[6]
+            next_entry_eval_cp: int | None = row[7] if len(row) > 7 else None
+            next_entry_eval_mate: int | None = row[8] if len(row) > 8 else None
+        else:
+            _game_id = row.game_id
+            endgame_class_int = row.endgame_class
+            result = row.result
+            user_color = row.user_color
+            eval_cp = row.eval_cp
+            eval_mate = row.eval_mate
+            tc = row.time_control_bucket
+            next_entry_eval_cp = row.next_entry_eval_cp
+            next_entry_eval_mate = row.next_entry_eval_mate
+
+        if tc not in _TIME_CONTROL_ORDER:
+            continue
+
+        endgame_class = _INT_TO_CLASS.get(endgame_class_int)
+        if endgame_class is None:
+            continue  # Unknown class int; already captured by _aggregate_endgame_stats
+
+        # Phase 98: the collapsible type cards render only rook/minor_piece/pawn/queen
+        # tiles — Mixed is dropped (least-actionable catch-all, D-05) and pawnless is
+        # hidden. Excluding them here (not just in the frontend) keeps the card header
+        # "Games: X% (count)" equal to the sum of the four visible tiles. The pooled
+        # `categories` / LLM path still see Mixed via _aggregate_endgame_stats.
+        if endgame_class in _TYPE_CARD_EXCLUDED_CLASSES:
+            continue
+
+        outcome = derive_user_result(result, user_color)
+        if outcome == "win":
+            wdl[tc][endgame_class]["wins"] += 1
+        elif outcome == "draw":
+            wdl[tc][endgame_class]["draws"] += 1
+        else:
+            wdl[tc][endgame_class]["losses"] += 1
+
+        bucket = _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+        if bucket == "conversion":
+            conv[tc][endgame_class]["games"] += 1
+            if outcome == "win":
+                conv[tc][endgame_class]["wins"] += 1
+            elif outcome == "draw":
+                conv[tc][endgame_class]["draws"] += 1
+        elif bucket == "recovery":
+            recov[tc][endgame_class]["games"] += 1
+            if outcome == "win":
+                recov[tc][endgame_class]["wins"] += 1
+            elif outcome == "draw":
+                recov[tc][endgame_class]["draws"] += 1
+
+        # Score Gap (same span_scores logic as _aggregate_endgame_stats)
+        span_scores = _compute_span_scores(
+            entry_eval_cp=eval_cp,
+            entry_eval_mate=eval_mate,
+            next_entry_eval_cp=next_entry_eval_cp,
+            next_entry_eval_mate=next_entry_eval_mate,
+            result=result,
+            user_color=user_color,
+        )
+        if span_scores is not None:
+            es_entry, exit_score = span_scores
+            gaps_by_tc_class[tc][endgame_class].append(exit_score - es_entry)
+            starts_by_tc_class[tc][endgame_class].append(es_entry)
+            ends_by_tc_class[tc][endgame_class].append(exit_score)
+
+    # Build per-TC lists in fixed order
+    result_by_tc: dict[
+        Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]
+    ] = {}
+    for tc in _TIME_CONTROL_ORDER:
+        tc_literal = cast(Literal["bullet", "blitz", "rapid", "classical"], tc)
+        tc_wdl = wdl.get(tc, {})
+        if not tc_wdl:
+            continue
+
+        cats: list[EndgameCategoryStats] = []
+        for endgame_class in tc_wdl:
+            c = tc_wdl[endgame_class]
+            wins = c["wins"]
+            draws = c["draws"]
+            losses = c["losses"]
+            total = wins + draws + losses
+
+            if total > 0:
+                win_pct = round(wins / total * 100, 1)
+                draw_pct = round(draws / total * 100, 1)
+                loss_pct = round(losses / total * 100, 1)
+            else:
+                win_pct = draw_pct = loss_pct = 0.0
+
+            conv_data = conv[tc][endgame_class]
+            recov_data = recov[tc][endgame_class]
+
+            conversion_games = conv_data["games"]
+            conversion_wins = conv_data["wins"]
+            conversion_draws = conv_data["draws"]
+            conversion_losses = conversion_games - conversion_wins - conversion_draws
+            conversion_pct = (
+                round(conversion_wins / conversion_games * 100, 1) if conversion_games > 0 else 0.0
+            )
+
+            recovery_games = recov_data["games"]
+            recovery_wins = recov_data["wins"]
+            recovery_draws = recov_data["draws"]
+            recovery_saves = recovery_wins + recovery_draws
+            recovery_pct = (
+                round(recovery_saves / recovery_games * 100, 1) if recovery_games > 0 else 0.0
+            )
+            recovery_losses = recovery_games - recovery_wins - recovery_draws
+
+            opponent_conversion_pct: float | None = (
+                round(recovery_losses / recovery_games * 100, 1)
+                if recovery_games >= _MIN_OPPONENT_SAMPLE
+                else None
+            )
+            opponent_recovery_pct: float | None = (
+                round((conversion_losses + conversion_draws) / conversion_games * 100, 1)
+                if conversion_games >= _MIN_OPPONENT_SAMPLE
+                else None
+            )
+
+            conversion_stats = ConversionRecoveryStats(
+                conversion_pct=conversion_pct,
+                conversion_games=conversion_games,
+                conversion_wins=conversion_wins,
+                conversion_draws=conversion_draws,
+                conversion_losses=conversion_losses,
+                recovery_pct=recovery_pct,
+                recovery_games=recovery_games,
+                recovery_saves=recovery_saves,
+                recovery_wins=recovery_wins,
+                recovery_draws=recovery_draws,
+                opponent_conversion_pct=opponent_conversion_pct,
+                opponent_conversion_games=recovery_games,
+                opponent_recovery_pct=opponent_recovery_pct,
+                opponent_recovery_games=conversion_games,
+            )
+
+            label = _ENDGAME_CATEGORY_LABELS[endgame_class]
+            wdl_stats = _build_wdl_stats(wins, draws, losses, total, last_played_at=None)
+            score_p_value: float | None = (
+                wdl_stats.p_value if total >= PVALUE_RELIABILITY_MIN_N else None
+            )
+
+            # Score Gap per (tc, class) — same paired z-test as _aggregate_endgame_stats
+            type_gaps = gaps_by_tc_class[tc][endgame_class]
+            type_gap_n = len(type_gaps)
+            (
+                type_gap_mean_raw,
+                type_gap_p,
+                type_gap_ci_low,
+                type_gap_ci_high,
+            ) = compute_paired_difference_test(type_gaps)
+            type_gap_mean: float | None = type_gap_mean_raw if type_gap_n > 0 else None
+
+            type_starts = starts_by_tc_class[tc][endgame_class]
+            type_ends = ends_by_tc_class[tc][endgame_class]
+            type_start_mean: float | None = (
+                sum(type_starts) / type_gap_n if type_gap_n > 0 else None
+            )
+            type_end_mean: float | None = sum(type_ends) / type_gap_n if type_gap_n > 0 else None
+
+            cats.append(
+                EndgameCategoryStats(
+                    endgame_class=endgame_class,
+                    label=label,
+                    wins=wins,
+                    draws=draws,
+                    losses=losses,
+                    total=total,
+                    win_pct=win_pct,
+                    draw_pct=draw_pct,
+                    loss_pct=loss_pct,
+                    conversion=conversion_stats,
+                    score_p_value=score_p_value,
+                    type_achievable_score_gap_mean=type_gap_mean,
+                    type_achievable_score_gap_n=type_gap_n,
+                    type_achievable_score_gap_p_value=type_gap_p,
+                    type_achievable_score_gap_ci_low=type_gap_ci_low,
+                    type_achievable_score_gap_ci_high=type_gap_ci_high,
+                    type_achievable_score_start_mean=type_start_mean,
+                    type_achievable_score_end_mean=type_end_mean,
+                    # No eval aggregation per (tc, class) — keeping it simple;
+                    # the tile only needs WDL + conv/recov + score_p_value + score gap.
+                    score=wdl_stats.score,
+                    confidence=wdl_stats.confidence,
+                    p_value=wdl_stats.p_value,
+                    ci_low=wdl_stats.ci_low,
+                    ci_high=wdl_stats.ci_high,
+                )
+            )
+
+        result_by_tc[tc_literal] = cats
+
+    return result_by_tc
+
+
 async def get_endgame_stats(
     session: AsyncSession,
     user_id: int,
@@ -1256,11 +1535,155 @@ def _compute_per_bucket_score_gap(
 # .planning/notes/endgame-skill-dropped-conversion-elo.md.
 
 
+def _aggregate_per_tc_percentile(
+    per_tc_rows: Mapping[TimeControlBucket, PercentileRow] | None,
+) -> float | None:
+    """Game-count-weighted mean across per-TC percentiles for a single metric.
+
+    Phase 94.4 CONTEXT D-08 / D-08b: the per-(metric, TC) rows materialised by
+    Stage A/B share a single page-level chip — one scalar percentile is what
+    the frontend renders for the headline ΔES chips (Endgame Score Gap,
+    Achievable Score Gap, Parity ΔES, Conversion ΔES, Recovery Score Gap).
+    The aggregation is weighted by ``n_games`` per TC so a TC the user plays
+    often dominates the chip value.
+
+    D-08a: below-floor TCs (no row → entry absent from ``per_tc_rows``) carry
+    an implicit zero weight. The dict is built upstream by
+    ``user_benchmark_percentiles_repository.fetch_for_user`` which only
+    includes TCs the user passed the inclusion floor for; this helper does
+    not need to re-check the floor.
+
+    Time Pressure family chips bypass this helper per D-08 — they use the
+    per-TC percentile directly (see ``_compute_time_pressure_cards`` per-TC
+    lookup) because each TC's card renders an independent chip.
+
+    Args:
+        per_tc_rows: Inner dict from the Plan 05a nested
+            ``fetch_for_user`` shape ``dict[CdfMetricId,
+            dict[TimeControlBucket, PercentileRow]]``. May be None when the
+            outer metric key is absent (user below floor on every TC for
+            this metric) or an empty dict (defensive).
+
+    Returns:
+        Weighted-mean percentile in [0, 100], or None when:
+        - ``per_tc_rows`` is None or empty (no above-floor TCs),
+        - every TC row has ``percentile is None`` (CDF out-of-range for the
+          user's value on every TC),
+        - the surviving weight sum is zero.
+    """
+    if per_tc_rows is None or not per_tc_rows:
+        return None
+    weighted_sum = 0.0
+    weight_sum = 0
+    for tc_row in per_tc_rows.values():
+        # D-08a: percentile-None TCs are dropped from both numerator and
+        # denominator; ignoring n_games of the None row preserves the
+        # implicit-zero-weight semantics.
+        if tc_row.percentile is None:
+            continue
+        weighted_sum += tc_row.percentile * tc_row.n_games
+        weight_sum += tc_row.n_games
+    if weight_sum == 0:
+        return None
+    return weighted_sum / weight_sum
+
+
+def _build_per_tc_breakdown(
+    per_tc_rows: Mapping[TimeControlBucket, PercentileRow] | None,
+    per_tc_games: Mapping[TimeControlBucket, int],
+    *,
+    anchors_by_tc: Mapping[TimeControlBucket, RatingAnchorRow] | None = None,
+) -> list[PerTcBreakdownOut]:
+    """Construct the per-TC breakdown list for a single aggregated metric.
+
+    Quick task 260527-q0b: emits one ``PerTcBreakdownOut`` per TC the user has
+    games in, in the fixed display order
+    ``("bullet", "blitz", "rapid", "classical")`` shared with
+    ``_TIME_CONTROL_ORDER``. Used by ``_compute_score_gap_material`` and
+    ``_get_endgame_performance_from_rows`` to feed the percentile chip
+    tooltip's bullet 2 per-TC list.
+
+    Args:
+        per_tc_rows: per-(metric, TC) PercentileRow dict for ONE metric. None
+            or empty when no TC passed the inclusion floor.
+        per_tc_games: user's game count by TC, derived from
+            ``endgame_rows`` index 4 (``time_control_bucket``). 0 entries are
+            omitted entirely from output (NOT emitted).
+
+    Returns:
+        Ordered list of breakdown entries. Branch semantics:
+          - TC in ``per_tc_rows``: emit row with value, n_games, percentile
+            (emit even when ``percentile is None`` — frontend drops the line;
+            backend stays honest about wire shape).
+          - Else TC in ``per_tc_games`` with games > 0: emit value=None,
+            n_games=count, percentile=None (frontend renders
+            ``<tc>: insufficient games``).
+          - Else: omit.
+    """
+    out: list[PerTcBreakdownOut] = []
+    for tc_str in _TIME_CONTROL_ORDER:
+        tc = cast(TimeControlBucket, tc_str)
+        # 260529-l1i: per-TC anchor for the two-line tooltip row; None when this
+        # TC has no anchor row.
+        anchor_row = anchors_by_tc.get(tc) if anchors_by_tc else None
+        anchor = anchor_row.anchor_rating if anchor_row is not None else None
+        row = per_tc_rows.get(tc) if per_tc_rows else None
+        if row is not None:
+            out.append(
+                PerTcBreakdownOut(
+                    tc=tc,
+                    value=row.value,
+                    n_games=row.n_games,
+                    percentile=row.percentile,
+                    anchor=anchor,
+                )
+            )
+            continue
+        n_games = per_tc_games.get(tc, 0)
+        if n_games > 0:
+            out.append(
+                PerTcBreakdownOut(
+                    tc=tc,
+                    value=None,
+                    n_games=n_games,
+                    percentile=None,
+                    anchor=anchor,
+                )
+            )
+    return out
+
+
+def _per_tc_game_counts(
+    endgame_rows: Sequence[Row[Any] | tuple[Any, ...]],
+) -> dict[TimeControlBucket, int]:
+    """Derive per-TC user game counts from the endgame rows for the chip tooltip.
+
+    Quick task 260527-q0b: single source of truth for "n_games per TC" feeding
+    the chip tooltip's bullet 2 per-TC breakdown. ``endgame_rows`` shape is
+    ``(played_at, result, user_color, platform, time_control_bucket)``; we
+    count by index 4 and drop rows whose bucket is None or outside the 4-bucket
+    Literal (defensive — should never happen post-Phase 87.5 schema).
+    """
+    counts: dict[TimeControlBucket, int] = {}
+    for row in endgame_rows:
+        tc_raw = row[4] if len(row) > 4 else None
+        if tc_raw is None:
+            continue
+        if tc_raw not in ("bullet", "blitz", "rapid", "classical"):
+            continue
+        tc = cast(TimeControlBucket, tc_raw)
+        counts[tc] = counts.get(tc, 0) + 1
+    return counts
+
+
 def _compute_score_gap_material(
     endgame_wdl: EndgameWDLSummary,
     non_endgame_wdl: EndgameWDLSummary,
     entry_rows: Sequence[Row[Any] | tuple[Any, ...]],
     *,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
+    per_tc_games: Mapping[TimeControlBucket, int] | None = None,
+    anchors_by_tc: Mapping[TimeControlBucket, RatingAnchorRow] | None = None,
     gaps_by_bucket: dict[str, list[float]] | None = None,
     timeline: list[ScoreGapTimelinePoint] | None = None,
     timeline_window: int = SCORE_GAP_TIMELINE_WINDOW,
@@ -1358,6 +1781,40 @@ def _compute_score_gap_material(
     # gauge driver (quick-260515-wye) were both dropped end-to-end. See
     # .planning/notes/endgame-skill-dropped-conversion-elo.md.
 
+    # Phase 94.1 D-12 / PCTL-07: chip is a trait, not a view. Read materialised
+    # (value, percentile) per metric from user_benchmark_percentiles; scoped by
+    # current_user.id (V4 — never accept user_id as query param).
+    # The per-request N-gate is removed here: the table's percentile column is
+    # already NULL when below the inclusion floor (set during Stage A/B compute).
+    # Removing the duplicate N-gate aligns with D-12 "chip is a trait" semantics.
+    # percentile_rows is None when called without a DB session (e.g., unit tests).
+    # Phase 94.4 D-08 / D-08b: percentile_rows is now nested
+    # (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]); aggregate
+    # via the game-count-weighted mean helper to produce the page-level chip
+    # scalar.
+    _effective_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] = (
+        percentile_rows if percentile_rows is not None else {}
+    )
+    score_gap_percentile: float | None = _aggregate_per_tc_percentile(
+        _effective_rows.get("score_gap")
+    )
+
+    # Quick task 260527-q0b: per-TC breakdown list for the score_gap chip tooltip
+    # bullet 2. `per_tc_games` is computed once by the orchestrator (single
+    # source of truth) and passed in; for independent callers / older tests
+    # we derive it locally from `entry_rows`'s game ids (not equivalent to the
+    # full endgame_rows per-TC count, but `entry_rows` lacks `time_control_bucket`
+    # so the lookup falls through to row-by-row counting only when the caller
+    # provides it). When neither is available the list is empty.
+    # Phase 97 D-10: conv/parity/recovery per-TC breakdowns removed — those
+    # fields were Metrics-section-only and are superseded by the per-TC cards.
+    _per_tc_games: Mapping[TimeControlBucket, int] = (
+        per_tc_games if per_tc_games is not None else {}
+    )
+    score_gap_per_tc = _build_per_tc_breakdown(
+        _effective_rows.get("score_gap"), _per_tc_games, anchors_by_tc=anchors_by_tc
+    )
+
     return ScoreGapMaterialResponse(
         endgame_score=endgame_score,
         non_endgame_score=non_endgame_score,
@@ -1368,23 +1825,28 @@ def _compute_score_gap_material(
         score_difference_p_value=score_diff_p,
         score_difference_ci_low=score_diff_ci_low,
         score_difference_ci_high=score_diff_ci_high,
+        score_gap_percentile=score_gap_percentile,
         # Phase 87.2 (D-06): per-bucket ΔES Score Gap fields.
-        section2_score_gap_conv_mean=conv_mean,
-        section2_score_gap_conv_n=conv_n,
-        section2_score_gap_conv_p_value=conv_p,
-        section2_score_gap_conv_ci_low=conv_ci_lo,
-        section2_score_gap_conv_ci_high=conv_ci_hi,
-        section2_score_gap_parity_mean=parity_mean,
-        section2_score_gap_parity_n=parity_n,
-        section2_score_gap_parity_p_value=parity_p,
-        section2_score_gap_parity_ci_low=parity_ci_lo,
-        section2_score_gap_parity_ci_high=parity_ci_hi,
-        section2_score_gap_recov_mean=recov_mean,
-        section2_score_gap_recov_n=recov_n,
-        section2_score_gap_recov_p_value=recov_p,
-        section2_score_gap_recov_ci_low=recov_ci_lo,
-        section2_score_gap_recov_ci_high=recov_ci_hi,
-        # Phase 87.4 (D-05): section2_score_gap_skill_* and
+        score_gap_conv_mean=conv_mean,
+        score_gap_conv_n=conv_n,
+        score_gap_conv_p_value=conv_p,
+        score_gap_conv_ci_low=conv_ci_lo,
+        score_gap_conv_ci_high=conv_ci_hi,
+        score_gap_parity_mean=parity_mean,
+        score_gap_parity_n=parity_n,
+        score_gap_parity_p_value=parity_p,
+        score_gap_parity_ci_low=parity_ci_lo,
+        score_gap_parity_ci_high=parity_ci_hi,
+        score_gap_recov_mean=recov_mean,
+        score_gap_recov_n=recov_n,
+        score_gap_recov_p_value=recov_p,
+        score_gap_recov_ci_low=recov_ci_lo,
+        score_gap_recov_ci_high=recov_ci_hi,
+        # Quick task 260527-q0b: per-TC breakdown for the score_gap chip tooltip.
+        # Phase 97 D-10: conv/parity/recovery per-TC fields removed (Metrics-section-only,
+        # superseded by per-TC cards).
+        score_gap_per_tc=score_gap_per_tc,
+        # Phase 87.4 (D-05): score_gap_skill_* and
         # endgame_skill_rate_mean kwargs dropped — fields removed from the
         # Pydantic model in app/schemas/endgames.py.
     )
@@ -1453,6 +1915,34 @@ class _ClockAggregate:
     total_games: int = 0
     timeout_wins: int = 0
     timeout_losses: int = 0
+
+
+@dataclass(slots=True)
+class _MetricTcAccumulator:
+    """Phase 97: per-TC accumulator for the EndgameMetricsTcCard trifecta.
+
+    Single-pass accumulator for one time control bucket. Tallies per-bucket
+    WDL counts and span-gap lists using the same conversion > recovery > parity
+    priority as _aggregate_bucket_counts. Fields are summable in a single pass.
+
+    Per-bucket WDL counters track games that landed in each bucket.
+    Per-bucket gap lists accumulate ΔES span-gap values for ΔES stats.
+    total: count of all endgame games in this TC.
+    """
+
+    conv_wins: int = 0
+    conv_draws: int = 0
+    conv_total: int = 0
+    parity_wins: int = 0
+    parity_draws: int = 0
+    parity_total: int = 0
+    recov_wins: int = 0
+    recov_draws: int = 0
+    recov_total: int = 0
+    total: int = 0
+    gaps_conv: list[float] = field(default_factory=list)
+    gaps_parity: list[float] = field(default_factory=list)
+    gaps_recov: list[float] = field(default_factory=list)
 
 
 # Rolling window size for the Endgame ELO timeline chart (Phase 57 ELO-05).
@@ -1852,8 +2342,19 @@ def _build_quintile_bullets(
     return bullets
 
 
+# Phase 94.4 D-08 / RESEARCH line 1117: Time Pressure family chips BYPASS the
+# per-page aggregation helper. Each TC card renders an independent chip, so
+# the per-(metric, tc) row is read directly from the nested fetch_for_user
+# dict (Plan 05a shape: dict[CdfMetricId, dict[TimeControlBucket,
+# PercentileRow]]). The legacy ``_TC_TO_METRIC_KEYS`` lookup table is gone —
+# the 8-value CdfMetricId ENUM (D-13) no longer carries TC-suffixed members,
+# and dimensionality moved into the inner-dict TC key.
+
+
 def _compute_time_pressure_cards(
     clock_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    *,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
 ) -> TimePressureCardsResponse:
     """Compute per-TC time pressure cards from clock_rows.
 
@@ -1861,11 +2362,21 @@ def _compute_time_pressure_cards(
     cohort-reference parameter was removed when the cohort layer was retired
     (REVIEW.md CR-01, 88-CONTEXT.md D-07).
 
+    Phase 94.3 (CONTEXT.md D-1, D-12): the ``percentile_rows`` kwarg threads
+    materialised per-(metric × TC) percentiles from
+    ``user_benchmark_percentiles_repository.fetch_for_user`` onto each per-TC
+    card. Three nullable fields per card — ``time_pressure_score_gap_percentile``,
+    ``clock_gap_percentile``, ``net_flag_rate_percentile`` — render None when
+    (a) no row exists for the (user, metric × TC) cell (user below the pooled
+    ≥30 floor for that TC), or (b) ``percentile_rows`` is None (unit tests that
+    don't open a DB session).
+
     One card per TC where total endgame games >= MIN_GAMES_PER_TC_CARD.
     Each card carries:
     - ClockGapBullet: paired (user-opp)/base clock diff test via compute_paired_difference_test.
     - 5 PressureQuintileBullet entries (Q0=max pressure .. Q4=min pressure)
       computed from the same-game opp-quintile split (see _build_quintile_bullets).
+    - 3 per-(metric × TC) percentile annotations (Phase 94.3).
 
     Returns cards in fixed order: bullet -> blitz -> rapid -> classical.
     """
@@ -1876,6 +2387,14 @@ def _compute_time_pressure_cards(
         tc_opp_quintile_wdl,
         tc_clock_agg,
     ) = _iterate_clock_rows(clock_rows)
+
+    # Phase 94.4 D-08: nested per-(metric, TC) shape. Mirror the
+    # _compute_score_gap_material pattern: an empty mapping when
+    # percentile_rows is None lets .get() return None uniformly without
+    # per-call None-guards.
+    _effective_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] = (
+        percentile_rows if percentile_rows is not None else {}
+    )
 
     cards: list[TimePressureTcCard] = []
     for tc in _TIME_CONTROL_ORDER:
@@ -1910,9 +2429,23 @@ def _compute_time_pressure_cards(
             else 0.0
         )
 
+        # Phase 94.4 D-08 / RESEARCH line 1117: per-(metric × TC) percentile
+        # lookup BYPASSES the page-level _aggregate_per_tc_percentile helper.
+        # Each TC card renders its own independent chip, so we read the
+        # per-TC PercentileRow directly from the nested dict
+        # (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]). The
+        # legacy TC-suffixed CdfMetricId keys (time_pressure_score_gap_bullet,
+        # clock_gap_blitz, etc.) are gone — Plan 05a collapsed the ENUM to 8
+        # family-level values and moved TC dimensionality into the inner key.
+        tc_literal = cast(Literal["bullet", "blitz", "rapid", "classical"], tc)
+        tc_bucket: TimeControlBucket = tc_literal
+        tps_row = _effective_rows.get("time_pressure_score_gap", {}).get(tc_bucket)
+        cg_row = _effective_rows.get("clock_gap", {}).get(tc_bucket)
+        nf_row = _effective_rows.get("net_flag_rate", {}).get(tc_bucket)
+
         cards.append(
             TimePressureTcCard(
-                tc=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+                tc=tc_literal,
                 total=total,
                 user_avg_pct=user_avg_pct,
                 user_avg_seconds=user_avg_seconds,
@@ -1922,9 +2455,261 @@ def _compute_time_pressure_cards(
                 net_timeout_rate=net_timeout_rate,
                 clock_gap=clock_gap,
                 quintiles=quintiles,
+                time_pressure_score_gap_percentile=(
+                    tps_row.percentile if tps_row is not None else None
+                ),
+                clock_gap_percentile=(cg_row.percentile if cg_row is not None else None),
+                net_flag_rate_percentile=(nf_row.percentile if nf_row is not None else None),
+                # Quick task 260527-q0b: per-TC chip tooltip bullet 2 — simplified
+                # framing reads the chip-cohort (n_games, value) directly from the
+                # PercentileRow consumed above. May differ from the card's headline
+                # number — disclosure of the percentile basis, not the card stat.
+                time_pressure_score_gap_n_games=(tps_row.n_games if tps_row is not None else None),
+                time_pressure_score_gap_value=(tps_row.value if tps_row is not None else None),
+                clock_gap_n_games=(cg_row.n_games if cg_row is not None else None),
+                clock_gap_value=(cg_row.value if cg_row is not None else None),
+                net_flag_rate_n_games=(nf_row.n_games if nf_row is not None else None),
+                net_flag_rate_value=(nf_row.value if nf_row is not None else None),
             )
         )
     return TimePressureCardsResponse(cards=cards)
+
+
+def _build_per_tc_bucket_stats(
+    acc: "_MetricTcAccumulator",
+    bucket: MaterialBucket,
+    gaps: list[float],
+    percentile_row: PercentileRow | None,
+    rate_percentile_row: PercentileRow | None = None,
+) -> PerTcBucketStats:
+    """Build a PerTcBucketStats from per-bucket accumulator fields.
+
+    Phase 97: helper to keep _compute_per_tc_metric_cards shallow (depth-3 guard).
+    Computes WDL pcts (0-100), the headline rate, and ΔES stats.
+
+    bucket: which sub-bucket ("conversion", "parity", "recovery").
+    gaps: per-TC span-gap list for ΔES computation.
+    percentile_row: per-(metric, TC) PercentileRow for the ΔES-gap chip from
+        user_benchmark_percentiles, None when the user is below the inclusion
+        floor. Its ``percentile``, ``n_games`` and ``value`` feed the chip +
+        its tooltip.
+    rate_percentile_row: per-(rate metric, TC) PercentileRow for the raw-rate
+        chip (Phase 99), None when below the inclusion floor or not yet
+        backfilled. Its ``percentile``, ``n_games`` and ``value`` feed the
+        rate chip + its tooltip (D-01: separate from gap percentile).
+    """
+    if bucket == "conversion":
+        games = acc.conv_total
+        wins = acc.conv_wins
+        draws = acc.conv_draws
+    elif bucket == "parity":
+        games = acc.parity_total
+        wins = acc.parity_wins
+        draws = acc.parity_draws
+    else:  # recovery
+        games = acc.recov_total
+        wins = acc.recov_wins
+        draws = acc.recov_draws
+
+    losses = games - wins - draws
+
+    if games > 0:
+        win_pct = wins / games * 100.0
+        draw_pct = draws / games * 100.0
+        loss_pct = losses / games * 100.0
+    else:
+        win_pct = 0.0
+        draw_pct = 0.0
+        loss_pct = 0.0
+
+    # Headline rate per bucket type
+    if bucket == "conversion":
+        rate: float | None = wins / games if games > 0 else None
+    elif bucket == "parity":
+        rate = (wins + 0.5 * draws) / games if games > 0 else None
+    else:  # recovery
+        rate = (wins + draws) / games if games > 0 else None
+
+    # ΔES score-gap stats
+    n = len(gaps)
+    mean_raw, p_val, ci_lo, ci_hi = compute_paired_difference_test(gaps)
+    score_gap_mean: float | None = mean_raw if n > 0 else None
+    score_gap_n: int | None = n if n > 0 else None
+    score_gap_p_value: float | None = p_val if n > 0 else None
+    score_gap_ci_low: float | None = ci_lo if n > 0 else None
+    score_gap_ci_high: float | None = ci_hi if n > 0 else None
+
+    return PerTcBucketStats(
+        games=games,
+        win_pct=win_pct,
+        draw_pct=draw_pct,
+        loss_pct=loss_pct,
+        rate=rate,
+        score_gap_mean=score_gap_mean,
+        score_gap_n=score_gap_n,
+        score_gap_p_value=score_gap_p_value,
+        score_gap_ci_low=score_gap_ci_low,
+        score_gap_ci_high=score_gap_ci_high,
+        percentile=percentile_row.percentile if percentile_row is not None else None,
+        percentile_n_games=percentile_row.n_games if percentile_row is not None else None,
+        percentile_value=percentile_row.value if percentile_row is not None else None,
+        # Phase 99: raw-rate percentile (D-01 — separate from ΔES-gap percentile above).
+        rate_percentile=rate_percentile_row.percentile if rate_percentile_row is not None else None,
+        rate_percentile_n_games=rate_percentile_row.n_games
+        if rate_percentile_row is not None
+        else None,
+        rate_percentile_value=rate_percentile_row.value
+        if rate_percentile_row is not None
+        else None,
+    )
+
+
+def _compute_per_tc_metric_cards(
+    bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    *,
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
+) -> EndgameMetricsCardsResponse:
+    """Compute per-TC endgame metric cards from bucket_rows.
+
+    Phase 97 (D-15 Sub-option A): mirrors _compute_time_pressure_cards structure.
+    Single pass through bucket_rows (extended with time_control_bucket at col 6
+    and LEAD next-eval columns at cols 7-8) grouping _MetricTcAccumulator by TC.
+
+    For each TC with total >= MIN_GAMES_PER_TC_CARD, builds one EndgameMetricsTcCard
+    with three PerTcBucketStats (conversion/parity/recovery). Card ordering follows
+    _TIME_CONTROL_ORDER (bullet -> blitz -> rapid -> classical).
+
+    Bucket classification reuses _classify_endgame_bucket (eval_cp, eval_mate,
+    user_color) with the existing conversion > recovery > parity priority from
+    _aggregate_bucket_counts. ΔES span gaps are computed from the LEAD next-eval
+    columns (cols 7-8) via _compute_span_gap — since bucket_rows has one row per
+    game, next_entry_eval columns are always NULL, so all spans are terminal and
+    use the game result as exit score.
+
+    Per-TC percentile lookup reads directly from
+    percentile_rows[metric][tc_bucket] (D-09, no _aggregate_per_tc_percentile
+    blending). T-97-03 mitigation: receives already-fetched bucket_rows scoped
+    to the authenticated user_id — never sources user_id itself.
+    """
+    _effective_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] = (
+        percentile_rows if percentile_rows is not None else {}
+    )
+
+    # Single pass: accumulate per-TC stats
+    tc_accumulators: dict[str, _MetricTcAccumulator] = {}
+    for row in bucket_rows:
+        # Column indices: game_id[0], endgame_class[1], result[2], user_color[3],
+        # eval_cp[4], eval_mate[5], time_control_bucket[6],
+        # next_entry_eval_cp[7], next_entry_eval_mate[8]
+        tc = row[6]
+        result_str = row[2]
+        user_color = row[3]
+        eval_cp = row[4]
+        eval_mate = row[5]
+        next_eval_cp = row[7]
+        next_eval_mate = row[8]
+
+        if tc not in tc_accumulators:
+            tc_accumulators[tc] = _MetricTcAccumulator()
+        acc = tc_accumulators[tc]
+        acc.total += 1
+
+        bucket = _classify_endgame_bucket(eval_cp, eval_mate, user_color)
+        outcome = derive_user_result(result_str, user_color)
+        is_win = outcome == "win"
+        is_draw = outcome == "draw"
+
+        if bucket == "conversion":
+            acc.conv_total += 1
+            if is_win:
+                acc.conv_wins += 1
+            elif is_draw:
+                acc.conv_draws += 1
+        elif bucket == "recovery":
+            acc.recov_total += 1
+            if is_win:
+                acc.recov_wins += 1
+            elif is_draw:
+                acc.recov_draws += 1
+        else:
+            acc.parity_total += 1
+            if is_win:
+                acc.parity_wins += 1
+            elif is_draw:
+                acc.parity_draws += 1
+
+        # ΔES span gap: next_eval columns are always NULL for bucket_rows
+        # (terminal span semantics), so _compute_span_gap falls back to game result.
+        span_gap = _compute_span_gap(
+            eval_cp,
+            eval_mate,
+            next_eval_cp,
+            next_eval_mate,
+            result_str,
+            user_color,
+        )
+        if span_gap is not None:
+            if bucket == "conversion":
+                acc.gaps_conv.append(span_gap)
+            elif bucket == "recovery":
+                acc.gaps_recov.append(span_gap)
+            else:
+                acc.gaps_parity.append(span_gap)
+
+    # Build cards in fixed TC order, gating on MIN_GAMES_PER_TC_CARD
+    cards: list[EndgameMetricsTcCard] = []
+    for tc in _TIME_CONTROL_ORDER:
+        acc = tc_accumulators.get(tc)
+        if acc is None or acc.total < MIN_GAMES_PER_TC_CARD:
+            continue
+
+        tc_literal = cast(Literal["bullet", "blitz", "rapid", "classical"], tc)
+        tc_bucket: TimeControlBucket = tc_literal
+
+        # Direct per-TC percentile lookup bypassing _aggregate_per_tc_percentile
+        # (D-09, D-10). CdfMetricId keys use legacy inconsistent naming — preserved as-is.
+        conv_row = _effective_rows.get("score_gap_conv", {}).get(tc_bucket)
+        parity_row = _effective_rows.get("score_gap_parity", {}).get(tc_bucket)
+        recov_row = _effective_rows.get("recovery_score_gap", {}).get(tc_bucket)
+
+        # Phase 99: raw-rate percentile rows — same fetch_for_user [metric][tc] path
+        # as the gap rows. Returns None until Plan 05 backfills these metrics.
+        conv_rate_row = _effective_rows.get("conversion_rate", {}).get(tc_bucket)
+        parity_rate_row = _effective_rows.get("parity_rate", {}).get(tc_bucket)
+        recov_rate_row = _effective_rows.get("recovery_rate", {}).get(tc_bucket)
+
+        conversion_stats = _build_per_tc_bucket_stats(
+            acc,
+            "conversion",
+            acc.gaps_conv,
+            conv_row,
+            conv_rate_row,
+        )
+        parity_stats = _build_per_tc_bucket_stats(
+            acc,
+            "parity",
+            acc.gaps_parity,
+            parity_row,
+            parity_rate_row,
+        )
+        recovery_stats = _build_per_tc_bucket_stats(
+            acc,
+            "recovery",
+            acc.gaps_recov,
+            recov_row,
+            recov_rate_row,
+        )
+
+        cards.append(
+            EndgameMetricsTcCard(
+                tc=tc_literal,
+                total=acc.total,
+                conversion=conversion_stats,
+                parity=parity_stats,
+                recovery=recovery_stats,
+            )
+        )
+    return EndgameMetricsCardsResponse(cards=cards)
 
 
 def _compute_clock_diff_timeline(
@@ -2143,6 +2928,9 @@ def _get_endgame_performance_from_rows(
     endgame_rows: list[Row[Any]],
     non_endgame_rows: list[Row[Any]],
     bucket_rows: Sequence[Row[Any] | tuple[Any, ...]],
+    percentile_rows: Mapping[CdfMetricId, Mapping[TimeControlBucket, PercentileRow]] | None = None,
+    per_tc_games: Mapping[TimeControlBucket, int] | None = None,
+    anchors_by_tc: Mapping[TimeControlBucket, RatingAnchorRow] | None = None,
 ) -> EndgamePerformanceResponse:
     """Compute EndgamePerformanceResponse from pre-fetched rows.
 
@@ -2299,6 +3087,32 @@ def _get_endgame_performance_from_rows(
         entry_expected_score_ci_low = None
         entry_expected_score_ci_high = None
 
+    # Phase 94.1 D-12 / PCTL-07: chip is a trait, not a view. Read materialised
+    # (value, percentile) per metric from user_benchmark_percentiles; scoped by
+    # current_user.id (V4 — never accept user_id as query param).
+    # The per-request N-gate is removed: the table's percentile column is already
+    # NULL when below the inclusion floor (set during Stage A/B compute).
+    # Phase 94.4 D-08 / D-08b: percentile_rows is nested
+    # (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]); aggregate
+    # via the game-count-weighted mean helper to produce the page-level chip
+    # scalar for Achievable Score Gap.
+    achievable_score_gap_percentile: float | None = _aggregate_per_tc_percentile(
+        percentile_rows.get("achievable_score_gap") if percentile_rows is not None else None
+    )
+
+    # Quick task 260527-q0b: per-TC breakdown list for Achievable Score Gap
+    # chip tooltip bullet 2. Use the orchestrator-provided per_tc_games dict
+    # when available (single source of truth across both helpers); else derive
+    # internally from endgame_rows to keep this helper independently testable.
+    _resolved_per_tc_games: Mapping[TimeControlBucket, int] = (
+        per_tc_games if per_tc_games is not None else _per_tc_game_counts(endgame_rows)
+    )
+    achievable_score_gap_per_tc = _build_per_tc_breakdown(
+        percentile_rows.get("achievable_score_gap") if percentile_rows is not None else None,
+        _resolved_per_tc_games,
+        anchors_by_tc=anchors_by_tc,
+    )
+
     return EndgamePerformanceResponse(
         endgame_wdl=endgame_wdl,
         non_endgame_wdl=non_endgame_wdl,
@@ -2319,6 +3133,9 @@ def _get_endgame_performance_from_rows(
         achievable_score_gap_p_value=achievable_p,
         achievable_score_gap_ci_low=achievable_ci_low,
         achievable_score_gap_ci_high=achievable_ci_high,
+        achievable_score_gap_percentile=achievable_score_gap_percentile,
+        # Quick task 260527-q0b: per-TC breakdown for chip tooltip bullet 2.
+        achievable_score_gap_per_tc=achievable_score_gap_per_tc,
     )
 
 
@@ -2367,8 +3184,15 @@ async def get_endgame_performance(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
+    # Phase 94.1 D-12 / PCTL-07: fetch materialised percentile rows.
+    # Scoped WHERE user_id = user_id (V4 — from FastAPI-Users dep, not a param).
+    percentile_rows = await user_benchmark_percentiles_repository.fetch_for_user(
+        session, user_id=user_id
+    )
 
-    return _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, bucket_rows)
+    return _get_endgame_performance_from_rows(
+        endgame_rows, non_endgame_rows, bucket_rows, percentile_rows=percentile_rows
+    )
 
 
 async def get_endgame_timeline(
@@ -2739,7 +3563,37 @@ async def get_endgame_overview(
         opponent_gap_max=opponent_gap_max,
     )
 
-    performance = _get_endgame_performance_from_rows(endgame_rows, non_endgame_rows, bucket_rows)
+    # Phase 94.1 D-12 / PCTL-07: fetch materialised percentile rows once per request.
+    # One SELECT round-trip fetches all 4 metrics. Scoped WHERE user_id = user_id
+    # (V4 — user_id is the authenticated user's PK from the FastAPI-Users dep,
+    # never sourced from a query/path param).
+    percentile_rows = await user_benchmark_percentiles_repository.fetch_for_user(
+        session, user_id=user_id
+    )
+
+    # Quick task 260527-q0b: derive per-TC user game counts ONCE from
+    # endgame_rows and pass the dict to both _get_endgame_performance_from_rows
+    # and _compute_score_gap_material. Single source of truth so the per-TC
+    # "n_games" surfaced in the chip tooltip's bullet 2 is identical across
+    # the 5 aggregated chips on the page.
+    per_tc_games = _per_tc_game_counts(endgame_rows)
+
+    # 260529-l1i: fetch the per-TC rating anchors BEFORE building performance +
+    # score_gap_material so both can thread the anchor into each per-TC
+    # breakdown entry (two-line tooltip rows). Single fetch — the top-level
+    # rating_anchors block below consumes the same `anchors` dict. The
+    # repository call is V4-scoped: user_id is the authenticated user's PK from
+    # the FastAPI-Users dep, never a query/path param.
+    anchors = await fetch_anchors_for_user(session, user_id=user_id)
+
+    performance = _get_endgame_performance_from_rows(
+        endgame_rows,
+        non_endgame_rows,
+        bucket_rows,
+        percentile_rows=percentile_rows,
+        per_tc_games=per_tc_games,
+        anchors_by_tc=anchors,
+    )
     # Build score-gap timeline from unfiltered rows so the rolling 100-game
     # window per side is pre-filled with games before the cutoff; then drop
     # output points dated before the cutoff via cutoff_str.
@@ -2753,6 +3607,9 @@ async def get_endgame_overview(
         performance.endgame_wdl,
         performance.non_endgame_wdl,
         bucket_rows,
+        percentile_rows=percentile_rows,
+        per_tc_games=per_tc_games,
+        anchors_by_tc=anchors,
         gaps_by_bucket=gaps_by_bucket,
         timeline=score_gap_timeline,
         timeline_window=SCORE_GAP_TIMELINE_WINDOW,
@@ -2796,7 +3653,14 @@ async def get_endgame_overview(
     # the per-quintile delta now compares the user's score in a quintile against
     # the opponent's score in the matching opponent-clock quintile of the same
     # game-set (see _iterate_clock_rows + _build_quintile_bullets).
-    time_pressure_cards = _compute_time_pressure_cards(clock_rows)
+    # Phase 94.3 (CONTEXT.md D-1): thread the materialised percentile_rows
+    # fetched above (line ~2801) through to attach per-(metric × TC) chip
+    # percentiles on each card. The 12 new ENUM keys flow through the existing
+    # fetch_for_user dict automatically; no new repository call.
+    time_pressure_cards = _compute_time_pressure_cards(
+        clock_rows,
+        percentile_rows=percentile_rows,
+    )
 
     # Plan 88-15 (CONTEXT §2 A-2): Build the per-ISO-week rolling clock-diff
     # timeline for the restored Average Clock Difference over Time line chart.
@@ -2830,6 +3694,67 @@ async def get_endgame_overview(
         opponent_gap_max=opponent_gap_max,
     )
 
+    # Phase 94.4 D-07 bullet 4 / D-12 Reversal Amendment (2026-05-27):
+    # populate the top-level rating_anchors block so the percentile chip
+    # tooltip can render its 4th bullet. The repository call is V4-scoped —
+    # user_id is the authenticated user's PK from the FastAPI-Users dep,
+    # never sourced from a query/path param.
+    #
+    # Per-platform game counts + native medians come from the blended anchor
+    # compute (`compute_anchors_for_user`, Plan 10) — they exist purely to
+    # support tooltip composition disclosure. V4 mitigation: `user_id` flows
+    # through the FastAPI-Users dep, never as a query parameter.
+    #
+    # W4 deferral (multi-TC footnote): for aggregated page-level chips, the
+    # dominant-TC anchor approach lives at the frontend (Plan 07 picks the
+    # dominant TC's anchor from this dict). The "+ N other TCs" footnote is
+    # intentionally DEFERRED to a v1.1 of the tooltip — current scope ships
+    # the dominant-TC disclosure with the aggregated framing of bullet 1
+    # ("Compared to other ~{anchor}-rated players, aggregated across the
+    # time controls you play.") covering honesty.
+    #
+    # 260529-l1i: `anchors` is fetched ONCE earlier (before performance +
+    # score_gap_material) so the per-TC breakdown rows carry the anchor. This
+    # block reuses that same dict — no second fetch.
+    rating_anchors: dict[TimeControlBucket, RatingAnchorOut] = {
+        tc: RatingAnchorOut(
+            anchor_rating=row.anchor_rating,
+            n_chesscom_games=row.n_chesscom_games,
+            n_lichess_games=row.n_lichess_games,
+            chesscom_median_native=row.chesscom_median_native,
+            lichess_median_native=row.lichess_median_native,
+        )
+        for tc, row in anchors.items()
+    }
+
+    # Phase 97 (D-15): per-TC endgame metric cards (conv/parity/recovery rates,
+    # WDL, ΔES gap, per-TC percentile). Computed from the already-fetched
+    # bucket_rows (extended with time_control_bucket + LEAD next-eval cols in
+    # Plan 02 Task 1). No new DB query, no asyncio.gather (CLAUDE.md constraint).
+    # T-97-03: bucket_rows are pre-scoped to the authenticated user_id (V4 control
+    # preserved — _compute_per_tc_metric_cards never sources user_id itself).
+    endgame_metrics_cards = _compute_per_tc_metric_cards(
+        bucket_rows,
+        percentile_rows=percentile_rows,
+    )
+
+    # Phase 98: per-(class × TC) type card breakdown for the collapsible tile grid.
+    # Single pass over the already-fetched per-class `entry_rows` (one row per
+    # (game, endgame_class) span) — NOT `bucket_rows` (one row per game, class =
+    # first endgame position). bucket_rows classified almost every game as "mixed"
+    # (the first endgame position rarely is a pure rook/pawn/etc. ending), which
+    # left the rook/minor/pawn/queen tiles empty even when the card header showed
+    # hundreds of games. entry_rows is the same source the pooled `categories`
+    # use, so the two breakdowns stay consistent. No new DB query (T-98-01).
+    # D-15: additive only; `stats.categories` (pooled) remains unchanged.
+    categories_by_tc = _aggregate_endgame_stats_by_tc(entry_rows)
+    stats = EndgameStatsResponse(
+        categories=stats.categories,
+        total_games=stats.total_games,
+        endgame_games=stats.endgame_games,
+        categories_by_tc=categories_by_tc,
+    )
+
     return EndgameOverviewResponse(
         stats=stats,
         performance=performance,
@@ -2838,4 +3763,6 @@ async def get_endgame_overview(
         time_pressure_cards=time_pressure_cards,
         clock_diff_timeline=clock_diff_timeline,
         endgame_elo_timeline=endgame_elo_timeline,
+        rating_anchors=rating_anchors,
+        endgame_metrics_cards=endgame_metrics_cards,
     )

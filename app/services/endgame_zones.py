@@ -42,9 +42,9 @@ MetricId = Literal[
     # MetricIds (not a bucket-dispatched parent) because dispatch here is eval-entry-
     # bucket-keyed, not class-keyed like PER_CLASS_GAUGE_ZONES. See BucketedMetricId
     # note below.
-    "section2_score_gap_conv",
-    "section2_score_gap_parity",
-    "section2_score_gap_recov",
+    "score_gap_conv",
+    "score_gap_parity",
+    "score_gap_recov",
     "entry_eval_pawns",  # Phase 82 D-04: new endgame_start_vs_end Tile 1
     "entry_expected_score",  # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",  # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
@@ -93,7 +93,7 @@ SubsectionId = Literal[
 # added to BucketedMetricId — it is per-class only (via PER_CLASS_GAUGE_ZONES),
 # not per-(class × material-axis). If benchmark §3.4.2 later requires per-rating-
 # bucket bands, add it then in a follow-up.
-# Phase 87.2 (D-02): the 3 Section 2 per-bucket ΔES MetricIds (`section2_score_gap_*`)
+# Phase 87.2 (D-02): the 3 Section 2 per-bucket ΔES MetricIds (`score_gap_*`)
 # are also NOT added here. They use 3 scalar MetricIds in ZONE_REGISTRY (option (a)),
 # not a bucket-dispatched parent. The existing bucket-dispatch shape is class-keyed
 # (PER_CLASS_GAUGE_ZONES), not eval-entry-bucket-keyed, so a new dispatch shape would
@@ -228,22 +228,22 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
     # band is drawn offset where the calibration says it sits. The
     # MiniBulletChart asymmetric rendering contract is locked in by tests
     # added in quick task 260516-0ax.
-    "section2_score_gap_conv": ZoneSpec(
+    "score_gap_conv": ZoneSpec(
         typical_lower=-0.11,
         typical_upper=0.00,
         direction="higher_is_better",
     ),
-    "section2_score_gap_parity": ZoneSpec(
+    "score_gap_parity": ZoneSpec(
         typical_lower=-0.04,
         typical_upper=0.04,
         direction="higher_is_better",
     ),
-    "section2_score_gap_recov": ZoneSpec(
+    "score_gap_recov": ZoneSpec(
         typical_lower=0.01,
         typical_upper=0.11,
         direction="higher_is_better",
     ),
-    # Phase 87.4 (D-05): section2_score_gap_skill ZoneSpec deleted. The Skill
+    # Phase 87.4 (D-05): score_gap_skill ZoneSpec deleted. The Skill
     # composite was retracted — no composite definition survived scrutiny on
     # cohort de-confounding, individual interpretation, temporal stability, or
     # the Phase 57 median-coincide invariant. See
@@ -509,6 +509,116 @@ PER_CLASS_GAUGE_ZONES: Mapping[EndgameClass, PerClassBands] = {
 
 
 # ---------------------------------------------------------------------------
+# PER_CLASS_TC_GAUGE_ZONES — per-(class × TC) typical bands for Conv/Recov/ScoreGap.
+# Phase 98. Source: reports/benchmark/benchmarks-latest.md §3.4.1 (TC marginal
+# tables, p25/p75 per class per TC). Cohen's d per class ≈ 1.2–1.7 across TCs
+# → all classes "keep separate" → per-(class × TC) bands are required.
+#
+# Added ALONGSIDE PER_CLASS_GAUGE_ZONES (not replacing it). PER_CLASS_GAUGE_ZONES
+# and assign_per_class_zone remain unchanged for the LLM insights path (D-15).
+#
+# pawnless is OMITTED: n far below floor for per-(class × TC) analysis; hidden
+# in the collapsible tile UI (Phase 98 shows rook/minor_piece/pawn/queen only).
+#
+# Score Gap (achievable_score_gap): TC d ≈ 0.07–0.18 (all collapse verdict).
+# The four per-(class × TC) ΔES bands are near-identical per class by design
+# (Score Gap forced per-TC for visual consistency — "redundancy is chosen" per D-04/D-14).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PerClassTcBands:
+    """Per-(class × TC) typical bands. Same shape as PerClassBands but TC-keyed."""
+
+    conversion: tuple[float, float]
+    recovery: tuple[float, float]
+    achievable_score_gap: tuple[float, float]
+
+
+PER_CLASS_TC_GAUGE_ZONES: Mapping[
+    EndgameClass,
+    Mapping[Literal["bullet", "blitz", "rapid", "classical"], PerClassTcBands],
+] = {
+    "rook": {
+        "bullet": PerClassTcBands(
+            conversion=(0.56, 0.75), recovery=(0.27, 0.43), achievable_score_gap=(-0.05, 0.05)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.67, 0.82), recovery=(0.20, 0.37), achievable_score_gap=(-0.05, 0.05)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.69, 0.83), recovery=(0.17, 0.30), achievable_score_gap=(-0.05, 0.05)
+        ),
+        "classical": PerClassTcBands(
+            conversion=(0.74, 0.87), recovery=(0.13, 0.25), achievable_score_gap=(-0.05, 0.05)
+        ),
+    },
+    "minor_piece": {
+        "bullet": PerClassTcBands(
+            conversion=(0.51, 0.73), recovery=(0.29, 0.50), achievable_score_gap=(-0.04, 0.06)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.64, 0.81), recovery=(0.21, 0.40), achievable_score_gap=(-0.04, 0.06)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.68, 0.83), recovery=(0.15, 0.33), achievable_score_gap=(-0.04, 0.06)
+        ),
+        "classical": PerClassTcBands(
+            conversion=(0.75, 0.89), recovery=(0.12, 0.28), achievable_score_gap=(-0.04, 0.06)
+        ),
+    },
+    "pawn": {
+        "bullet": PerClassTcBands(
+            conversion=(0.57, 0.80), recovery=(0.25, 0.46), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.68, 0.87), recovery=(0.17, 0.36), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.75, 0.91), recovery=(0.10, 0.28), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "classical": PerClassTcBands(
+            conversion=(0.80, 0.92), recovery=(0.08, 0.21), achievable_score_gap=(-0.04, 0.05)
+        ),
+    },
+    "queen": {
+        "bullet": PerClassTcBands(
+            conversion=(0.64, 0.83), recovery=(0.19, 0.36), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.70, 0.90), recovery=(0.14, 0.31), achievable_score_gap=(-0.04, 0.05)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.75, 0.92), recovery=(0.08, 0.25), achievable_score_gap=(-0.04, 0.05)
+        ),
+        # conversion=(0.88, 1.00) and recovery=(0.00, 0.09) are small-n benchmark
+        # artifacts (n≈30–35 users). Accepted as-is per "use benchmark numbers" rule
+        # (RESEARCH Open Question 1). The narrow recovery band will paint most users
+        # as "typical" or "weak" in classical queen recovery, which is accurate for
+        # this small classical cohort.
+        "classical": PerClassTcBands(
+            conversion=(0.88, 1.00), recovery=(0.00, 0.09), achievable_score_gap=(-0.04, 0.05)
+        ),
+    },
+    "mixed": {
+        "bullet": PerClassTcBands(
+            conversion=(0.60, 0.72), recovery=(0.30, 0.40), achievable_score_gap=(-0.03, 0.04)
+        ),
+        "blitz": PerClassTcBands(
+            conversion=(0.68, 0.76), recovery=(0.25, 0.35), achievable_score_gap=(-0.03, 0.04)
+        ),
+        "rapid": PerClassTcBands(
+            conversion=(0.70, 0.79), recovery=(0.23, 0.31), achievable_score_gap=(-0.03, 0.04)
+        ),
+        "classical": PerClassTcBands(
+            conversion=(0.70, 0.83), recovery=(0.18, 0.30), achievable_score_gap=(-0.03, 0.04)
+        ),
+    },
+    # pawnless: OMITTED — n below per-class TC floor; hidden in live UI (Phase 98).
+}
+
+
+# ---------------------------------------------------------------------------
 # PRESSURE_BIN_SCORE_NEUTRAL_ZONES — per-(TC, pressure-quintile) neutral bands.
 # Phase 88 D-02. Calibrated from /benchmarks §3.3.3 (Plan 08, 2026-05-17).
 # ELO is pooled by acceptance (accept-pooled-with-caveat decision, 2026-05-17).
@@ -587,6 +697,65 @@ PRESSURE_BIN_SCORE_NEUTRAL_ZONES: Mapping[
         # p25/p50/p75: 0.4205/0.5183/0.6094 → delta IQR (-0.0978, +0.0911)
         4: PressureBinBand(-0.06, 0.06),  # both edges capped
     },
+}
+
+
+# ---------------------------------------------------------------------------
+# TC_METRIC_BANDS — per-TC typical bands for Conversion/Recovery/Parity rate and ΔES gap.
+# Phase 97 D-06 (conv/recov rate bands), D-07 (ΔES gap bands).
+# Cohen's d ≈ 0.9 on the TC axis makes per-TC bands necessary for Conv/Recov.
+# parity_rate is now ALSO per-TC (user request, 2026-05-29): the per-TC card shows
+# each TC's actual §3.2.1 parity IQR rather than the editorial global band. NOTE:
+# parity rate collapses on TC (d = 0.08 per §3.2.1), so the bullet/blitz/rapid
+# bands are near-identical; only classical (n=579, noisier tails) widens visibly.
+# The parity ΔES-gap neutral band stays global (SCORE_GAP_PARITY_NEUTRAL_*) — only
+# the gauge rate band went per-TC.
+#
+# Source: reports/benchmark/benchmarks-latest.md §3.2.1 (rates p25/p75) and
+#         §3.2.2 (ΔES gap p25/p75). Sparse cell (2400, classical) excluded.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TcConvRecovBands:
+    """Per-TC typical [lower, upper] bands for Conv/Recov/Parity rate and DeltaES gap."""
+
+    conv_rate: tuple[float, float]
+    recov_rate: tuple[float, float]
+    parity_rate: tuple[float, float]
+    conv_score_gap: tuple[float, float]
+    recov_score_gap: tuple[float, float]
+
+
+TC_METRIC_BANDS: Mapping[Literal["bullet", "blitz", "rapid", "classical"], TcConvRecovBands] = {
+    "bullet": TcConvRecovBands(
+        conv_rate=(0.588, 0.719),
+        recov_rate=(0.295, 0.412),
+        parity_rate=(0.436, 0.572),
+        conv_score_gap=(-0.195, -0.057),
+        recov_score_gap=(0.074, 0.177),
+    ),
+    "blitz": TcConvRecovBands(
+        conv_rate=(0.667, 0.769),
+        recov_rate=(0.251, 0.357),
+        parity_rate=(0.448, 0.569),
+        conv_score_gap=(-0.085, 0.003),
+        recov_score_gap=(0.011, 0.084),
+    ),
+    "rapid": TcConvRecovBands(
+        conv_rate=(0.696, 0.800),
+        recov_rate=(0.218, 0.333),
+        parity_rate=(0.449, 0.575),
+        conv_score_gap=(-0.063, 0.021),
+        recov_score_gap=(-0.008, 0.062),
+    ),
+    "classical": TcConvRecovBands(
+        conv_rate=(0.685, 0.833),
+        recov_rate=(0.174, 0.316),
+        parity_rate=(0.404, 0.591),
+        conv_score_gap=(-0.053, 0.038),
+        recov_score_gap=(-0.037, 0.035),
+    ),
 }
 
 

@@ -20,105 +20,65 @@
 - ✅ **v1.15 Eval-Based Endgame Classification** — Phases 78, 79 (shipped 2026-05-03; VAL-01 / PHASE-VAL-01 rescinded) — see [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md)
 - ✅ **v1.16 Stockfish Eval Analyses** — Phases 80, 80.1, 81, 82, 83 (shipped 2026-05-11) — see [milestones/v1.16-ROADMAP.md](milestones/v1.16-ROADMAP.md)
 - ✅ **v1.17 Endgame Stats Card Redesign** — Phases 84-88.4 (shipped 2026-05-19; Phase 89 dropped, 87.3 superseded) — see [milestones/v1.17-ROADMAP.md](milestones/v1.17-ROADMAP.md)
+- ✅ **v1.18 Import Pipeline Hardening** — Phases 90, 91, 92 (shipped 2026-05-22; PRs #130, #137, #138 + hotfix #139) — see [milestones/v1.18-ROADMAP.md](milestones/v1.18-ROADMAP.md)
+- ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split out before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
+- ✅ **v1.20 Import Pipeline Hardening Follow-Up and Readiness** — Phases 95, 96 (shipped 2026-05-29) — see [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md)
+- ✅ **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99, 99.1 (shipped 2026-05-31; PRs #160, #163/#164, #167, #168) — see [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md)
+- 🔄 **v1.22 LLM Statistical Reasoning** — Phase 100 (not started)
 
 ## Phases
 
-### Phase 90: Import Pipeline Memory Leak Fix + Resilience
+*v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md); see the collapsed block below. v1.20 (Phases 95, 96) shipped 2026-05-29 — archived to [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md).*
 
-**Goal:** Eliminate the per-batch unique-SQL leak in `_flush_batch` Stage 5 that OOM-killed prod twice (2026-03-22, 2026-05-16; FLAWCHESS-56 / FLAWCHESS-3Q), and ship the two leak-independent resilience defects carried forward from SEED-017 so a Postgres OOM no longer strands jobs `in_progress` indefinitely.
+- [ ] **Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.22)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
 
-**Scope (in):**
+## Phase Details
 
-1. **Primary leak fix** — replace the literal `case()`+`IN` bulk UPDATE in `_flush_batch` Stage 5 with bound-parameter `executemany`, preserving the `result_fen` None-handling (two executemany groups, or COALESCE/keep-existing) so games without a result_fen aren't silently NULLed.
-2. **Defense-in-depth session-recycle** — scope `AsyncSession` per batch inside `run_import`'s loop (currently one session for the whole import at `import_service.py:281`); touches job-record creation, the previous-job/`since` lookup, and per-batch progress commits.
-3. **Scheduled / on-reconnect orphan-job reaper** — `cleanup_orphaned_jobs()` currently runs only at backend startup; add a periodic task and/or on-DB-reconnect hook so a Postgres-only restart doesn't strand `in_progress` jobs.
-4. **Resilient failure-state recording** — bounded retry with backoff around the `except Exception` UPDATE in `run_import` (~386–410) so a still-recovering DB doesn't swallow the `failed` transition.
+### Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework
 
-**Scope (out):**
+**Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
+**Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
+**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, LLM-05, LLM-06, LLM-07
+**Success Criteria** (what must be TRUE):
 
-- Atomic duplicate-import guard (SEED-017 part 1, demoted to optional UX/data-hygiene in SEED-018) — not recurrence-preventing; single import OOMs alone.
-- Automated regression test for the leak — verified manually instead (see Verification).
+  1. The endgame-insights API payload exposes per-metric p-values, confidence interval bounds, and percentile fields on the v1.17 statistical-rigor metric set, additive and non-breaking alongside existing `zone` + `sample_quality` fields.
+  2. The endgame-insights system prompt teaches the LLM to reason explicitly over CIs and percentiles in narration (e.g. "your value sits at X with 95% CI [Y, Z], top P% of all players") without re-licensing the small-but-significant narration pattern from `feedback_llm_significance_signal`.
+  3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
+  4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
+  5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
 
-**Verification:** manual import of a real ~5k+ game account in dev, watching backend RSS stay flat across the full import (vs. linear climb today). Repeat in prod after deploy, then resolve Sentry FLAWCHESS-56 (120262007) and FLAWCHESS-3Q (115610288).
+**Plans**: TBD
 
-**References:** [.planning/seeds/SEED-018-import-statement-cache-memory-leak.md](seeds/SEED-018-import-statement-cache-memory-leak.md), [.planning/seeds/SEED-017-import-resilience-hardening.md](seeds/SEED-017-import-resilience-hardening.md) (closed, superseded), [.planning/debug/import-job-db-conn-closed.md](debug/import-job-db-conn-closed.md), [.planning/notes/v1.18-import-pipeline-fix-scope.md](notes/v1.18-import-pipeline-fix-scope.md).
+<details>
+<summary>✅ v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99, 99.1) — SHIPPED 2026-05-31</summary>
 
-Plans:
+- [x] Phase 97: Endgame Metrics by Time Control (4/4 plans, PR #160) — completed 2026-05-29
+- [x] Phase 98: Per-TC Collapsible Endgame Type Cards (2/2 plans, PR #163; release #164) — completed 2026-05-30
+- [x] Phase 99: Percentile Badges for Conversion, Parity, and Recovery (5/5 plans, PR #167) — completed 2026-05-30
+- [x] Phase 99.1: Move Cohort CDF Out of Source into a DB Table (4/4 plans, PR #168; INSERTED) — completed 2026-05-31
 
-- [x] All plans completed — see Phase 90 phase dir.
+See [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md) for full details.
 
-### Phase 91: Two-lane import — defer Stockfish eval to in-process cold drain
+</details>
 
-**Goal:** Restructure the import pipeline so the hot path (fetch → parse → insert positions → commit) holds no Stockfish work, and a separate in-process cold-drain coroutine evaluates entry plies in the background. Two concurrent 20k-game imports must complete without OOM-killing Postgres (the 2026-05-20 stress-test failure mode), the user must see opening-explorer / raw endgame WDL / flag-rate / time-per-move stats within seconds of import start, and Stockfish-dependent stats (conversion, recovery, score-gap, time-pressure-vs-performance) must fill in over the following minutes with honest per-metric sample-size labels.
+<details>
+<summary>✅ v1.20 Import Pipeline Hardening Follow-Up and Readiness (Phases 95-96) — SHIPPED 2026-05-29</summary>
 
-**Scope (in):**
+- [x] Phase 95: asyncpg COPY for `bulk_insert_positions` (2/2 plans, PRs #148/#149) — completed 2026-05-27
+- [x] Phase 96: Import Readiness Gate (3/3 plans, PR #151) — completed 2026-05-28
 
-1. **Schema** — add `games.evals_completed_at TIMESTAMPTZ NULL` + partial index `WHERE evals_completed_at IS NULL`. Backfill existing rows to `COALESCE(updated_at, created_at, NOW())` so the cold lane doesn't re-eval the historical corpus.
-2. **Hot-lane refactor** — strip Stages 3a (`_collect_midgame_eval_targets` / `_collect_endgame_span_eval_targets`), 4 (`asyncio.gather` over `engine.evaluate`), and the per-target UPDATE in `_apply_eval_results` out of `_flush_batch`. Add per-game evaluation of "are all entry plies already lichess-`%eval`-covered?" to set `evals_completed_at` in the same write.
-3. **Cold-lane drain** — new `run_eval_drain()` coroutine wired in `app/main.py` lifespan alongside `run_periodic_reaper`. Picks 10 games per tick from `WHERE evals_completed_at IS NULL ORDER BY id LIMIT 10`, derives entry-ply targets, `asyncio.gather` outside any session scope, opens session only as a short write window for the combined UPDATE batch. Runs in parallel with active imports (no admission gate — lanes don't compete once eval is out of the hot tx). Idempotent on crash.
-4. **Frontend header bar** — small `<Cpu /> X% Stockfish analysis complete (N games pending)` indicator driven by per-user `COUNT(*) WHERE evals_completed_at IS NULL`. Hidden when pending == 0. Polled every ~10s while >0.
-5. **Per-metric pending caveat** — extend the existing `EvalConfidenceTooltip` / `MetricStatPopover` body on every Stockfish-dependent stat with a one-line "based on N of M eligible games, K still being evaluated" when pending > 0.
-6. **Tests** — hot-lane RSS plateau under dual-import dev test, cold-lane idempotency on simulated crash mid-batch, schema migration up/down, partial index used by drain query (EXPLAIN check).
+See [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md) for full details.
 
-**Scope (out):**
+</details>
 
-- Concurrent-import admission control (SEED-022 option F) — optional, deferred. Hot-lane batches become too cheap to OOM under realistic concurrent load; revisit if production traffic surfaces a separate bottleneck.
-- Scheduled backend restart cadence (SEED-022 option G) and idempotent `on_game_fetched` (SEED-022 option A′) — small, independent, can land any time as `/gsd-fast`.
-- Profiling phase originally drafted under SEED-022 — **withdrawn**, this phase replaces it. Architecture rewrite addresses the root cause directly; profiling would document a workload that no longer exists.
+<details>
+<summary>✅ v1.18 Import Pipeline Hardening (Phases 90-92) — SHIPPED 2026-05-22</summary>
 
-**Verification:** dev-side re-run of the 2× 20k stress test pattern (lichess + chess.com concurrent on a freshly-cloned account) with `docker stats` + `pg_stat_activity` polling. Acceptance: backend RSS plateaus ≤ 1.6 GB, Postgres anon+shmem ≤ 1.2 GB sustained, swap never exceeds 50 % of allocated swap, both imports complete `status=completed`, eval coverage bar reaches 100 % within N minutes after the second import finishes. Production re-run after deploy on a real ≥10k-game account.
+- [x] Phase 90: Import Pipeline Memory Leak Fix + Resilience (3/3 plans, PR #130) — completed 2026-05-20
+- [x] Phase 91: Two-lane import — defer Stockfish eval to in-process cold drain (8/8 plans, PR #137) — completed 2026-05-21
+- [x] Phase 92: Custom date range filter (from/to dates replace closed Recency union) (6/6 plans, PR #138) — completed 2026-05-22
 
-**References:** [.planning/seeds/SEED-023-two-lane-import-defer-stockfish.md](seeds/SEED-023-two-lane-import-defer-stockfish.md), [.planning/seeds/SEED-022-import-concurrency-and-postgres-headroom.md](seeds/SEED-022-import-concurrency-and-postgres-headroom.md) (superseded — diagnostic narrative retained for history), [.planning/notes/2026-05-20-import-pipeline-rethink.md](notes/2026-05-20-import-pipeline-rethink.md), [logs/import-stress-20k-each-2026-05-20.log](../logs/import-stress-20k-each-2026-05-20.log).
-
-Plans:
-**Wave 1**
-
-- [x] 91-01-PLAN.md — Schema: add games.evals_completed_at column + partial index + backfill (D-08/D-10)
-- [x] 91-04-PLAN.md — GET /imports/eval-coverage endpoint + repository + integration tests
-- [x] 91-06-PLAN.md — useEvalCoverage hook + EvalCoverageHeader component + mount on Endgames + Openings/Stats
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 91-02-PLAN.md — Cold-lane drain module (run_eval_drain + LIFO pick + gather-outside-session)
-- [x] 91-03-PLAN.md — Hot-lane refactor: strip eval stages from _flush_batch; add Stage 5c covered-game gate
-- [x] 91-05-PLAN.md — Wire run_eval_drain into FastAPI lifespan alongside reaper
-- [x] 91-07-PLAN.md — Per-metric pending caveat in EvalConfidenceTooltip + MetricStatTooltip bodies (7 Cpu consumers)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 91-08-PLAN.md — Dual-20k stress-test harness (scripts/measure_dual_import_rss.py) + operator-gated run
-
-### Phase 92: Custom date range filter (from/to dates replace closed Recency union)
-
-**Goal:** Add a "Custom range…" entry to the existing recency dropdown in `FilterPanel.tsx` that opens a popover with start/end date inputs, and replace the closed `Recency` string union on the API wire with two optional `from`/`to` date params. Users get specific historical windows (tournaments, ranges before/after a coaching change, exclude recent slump) while the 95% preset case remains visually unchanged. Backend stays single-shape: `WHERE played_at BETWEEN start AND end` — no preset translation logic, frontend owns "now" and computes preset dates locally.
-
-**Scope (in):**
-
-1. **Bookmark time-series recency removal** — pre-work from pending todo `2026-05-02-remove-recency-from-bookmark-timeseries.md`: drop `recency` from `TimeSeriesRequest` (`frontend/src/types/position_bookmarks.ts:52`), the matching field in `app/schemas/openings.py` (~line 181, the time-series one only), and any service/repo call site. Done first so the date-range refactor doesn't accidentally extend `from`/`to` into the time-series request.
-2. **API contract** — drop `recency` from the request schemas in `app/schemas/openings.py` for the regular openings and next-moves requests, and from `app/repositories/query_utils.py::apply_game_filters()`. Add two optional `date.date` params `from_date` / `to_date` (param name TBD in discuss) on the wire; `WHERE played_at BETWEEN from AND to`, both omitted = no filter (no `1970-01-01` sentinel).
-3. **Frontend preset → date conversion** — compute `from`/`to` in user-local timezone for each of the 8 existing recency presets, memoized to today's date string so TanStack Query keys don't churn per render. Canonicalize start to `00:00` local and end to `23:59:59` local.
-4. **Custom range UI** — add 9th item "Custom range…" at the bottom of the Select in `FilterPanel.tsx:173-195`. Selecting opens a popover with two date inputs. Trigger label shows resolved range (e.g. `"Mar 1 – Apr 1, 2026"`). Picking any preset clears the custom range. Mobile: popover must work inside the filter drawer.
-5. **Hook + URL param migration** — update `useOpenings`, `useEndgames`, `useEndgameInsights`, `useOpeningInsights`, `useStats`, `useNextMoves` to pass `from`/`to` instead of `recency`. Any URL params currently exposing `recency` switch to `from`/`to`.
-6. **`Recency` → UI-only type** — rename to `RecencyPreset` (or move into FilterPanel-local types) so it's clear the type no longer crosses the API boundary. Final naming TBD in discuss.
-7. **LLM insight prompt audit** — `useEndgameInsights` / `useOpeningInsights` prompts may reference "past month" in human terms. Audit and decide: derive a human label from the date span (`endDate - startDate ≈ 30 days → "past month"`) or pass absolute dates. No silent regression.
-
-**Scope (out):**
-
-- Side-by-side "before vs after" period comparison — captured as a deferred idea in `.planning/notes/custom-date-range-filter.md`; revisit if users request it.
-- Quick-shortcut buttons inside the custom popover ("last 30 days", "this year") — the 8 presets in the dropdown already cover the common cases; popover is for arbitrary windows only.
-
-**Verification:** manual UAT — pick each of the 8 presets and verify WDL counts match pre-refactor for the same user/account; pick "Custom range…", verify popover opens on desktop and inside the filter drawer on mobile; select a known tournament window and verify the dropdown trigger shows the resolved label and stats filter to that window; switch back to a preset and verify the custom range clears; reload the page and verify URL state restores correctly. Backend integration tests cover `from`/`to` boundary behavior and both-omitted = no filter.
-
-**References:** [.planning/notes/custom-date-range-filter.md](notes/custom-date-range-filter.md), [.planning/todos/pending/2026-05-02-remove-recency-from-bookmark-timeseries.md](todos/pending/2026-05-02-remove-recency-from-bookmark-timeseries.md).
-
-Plans: 6 plans
-
-- [x] 92-01-PLAN.md — D-19 pre-work: drop recency from bookmark TimeSeriesRequest (both stacks)
-- [x] 92-02-PLAN.md — Atomic backend wire-format flip: apply_game_filters + 5 schemas + 3 routers + insights gate + LLM windows
-- [x] 92-03-PLAN.md — Atomic frontend type/hook migration: Recency→RecencyPreset, recency.ts utility, all 7 hooks, FilterState.customRange
-- [x] 92-04-PLAN.md — Install shadcn Calendar (with legitimacy checkpoint) + add DrawerNested wrapper
-- [x] 92-05-PLAN.md — FilterPanel UI: 9th SelectItem, desktop Popover anchored to Select, mobile nested Drawer, trigger label
-- [x] 92-06-PLAN.md — Boundary integration tests + 422 + insights gate test + CHANGELOG + human UAT
+</details>
 
 <details>
 <summary>✅ v1.17 Endgame Stats Card Redesign (Phases 84-88.4) — SHIPPED 2026-05-19</summary>
@@ -370,6 +330,11 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 78-79. v1.15 phases | v1.15 | 10/10 | Complete (VAL-01 / PHASE-VAL-01 rescinded) | 2026-05-03 |
 | 80-83. v1.16 phases | v1.16 | 24/24 | Complete | 2026-05-11 |
 | 84-88.4. v1.17 phases | v1.17 | ~54/~54 | Complete (89 dropped, 87.3 superseded) | 2026-05-19 |
+| 90-92. v1.18 phases | v1.18 | 17/17 | Complete | 2026-05-22 |
+| 93. Global Percentile Benchmark Artifact | v1.19 | 2/2 | Complete    | 2026-05-22 |
+| 94. Backend & Frontend Percentile Annotations | v1.19 | 3/3 | Complete   | 2026-05-23 |
+| 95-96. v1.20 phases | v1.20 | 5/5 | Complete | 2026-05-29 |
+| 97-99.1. v1.21 phases | v1.21 | 15/15 | Complete (99.1 INSERTED) | 2026-05-31 |
 
 ## Backlog
 
@@ -377,7 +342,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 5/6 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 

@@ -314,13 +314,30 @@ class TestRepositoryNoCohortFunction:
 
 
 class TestComputeTimePressureCardsSignature:
-    def test_signature_is_single_arg(self) -> None:
-        """_compute_time_pressure_cards takes a single positional argument (no cohort_lookup)."""
+    def test_signature_positional_args_unchanged(self) -> None:
+        """_compute_time_pressure_cards still takes exactly ONE positional arg.
+
+        Phase 88.1 dropped the cohort_lookup positional. Phase 94.3 added a
+        keyword-only ``percentile_rows`` kwarg for per-(metric × TC) chip
+        attach (CONTEXT.md D-1). The contract this test pins: the positional
+        signature stays single-arg so legacy ``_compute_time_pressure_cards(rows)``
+        call sites in tests/fixtures don't break.
+        """
         import inspect
 
         sig = inspect.signature(_compute_time_pressure_cards)
-        # Should have exactly one parameter (clock_rows).
-        assert len(sig.parameters) == 1
+        positional = [
+            p
+            for p in sig.parameters.values()
+            if p.kind
+            in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        ]
+        assert len(positional) == 1, f"expected one positional arg, got {positional!r}"
+        # The keyword-only `percentile_rows` kwarg is the Phase 94.3 addition.
+        kw_only = [p for p in sig.parameters.values() if p.kind == inspect.Parameter.KEYWORD_ONLY]
+        assert {p.name for p in kw_only} == {"percentile_rows"}, (
+            f"expected keyword-only `percentile_rows` only, got {[p.name for p in kw_only]!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1167,3 +1184,224 @@ class TestComputeClockDiffTimeline:
         resp = _compute_clock_diff_timeline(rows, cutoff=None)
         assert len(resp.points) == 2
         assert {p.date for p in resp.points} == {"2024-12-30", "2025-01-13"}
+
+
+# ---------------------------------------------------------------------------
+# Phase 94.3 Plan 04 — percentile_rows kwarg + per-(metric × TC) chip attach
+# ---------------------------------------------------------------------------
+
+
+class TestComputeTimePressureCardsPercentileAttach:
+    """Phase 94.3 CONTEXT.md D-1: ``percentile_rows`` kwarg threads materialised
+    per-(metric × TC) percentiles onto each ``TimePressureTcCard`` instance.
+
+    Three nullable fields per card — ``time_pressure_score_gap_percentile``,
+    ``clock_gap_percentile``, ``net_flag_rate_percentile`` — render None when
+    the corresponding key is missing from ``percentile_rows`` (user below the
+    pooled ≥30 floor for that TC) or when ``percentile_rows`` is None / omitted
+    (unit-test path with no DB session).
+    """
+
+    def _bullet_rows(self) -> list[tuple[Any, ...]]:
+        """Build MIN_GAMES_PER_TC_CARD bullet rows (so the card is emitted)."""
+        return [
+            _make_row("bullet", 0.5, 0.5, game_id=i, base_time_seconds=300)
+            for i in range(MIN_GAMES_PER_TC_CARD)
+        ]
+
+    def _all_tc_rows(self) -> list[tuple[Any, ...]]:
+        """Build MIN_GAMES_PER_TC_CARD rows in EACH of the 4 TCs."""
+        rows: list[tuple[Any, ...]] = []
+        for tc_offset, tc in enumerate(("bullet", "blitz", "rapid", "classical")):
+            for i in range(MIN_GAMES_PER_TC_CARD):
+                rows.append(
+                    _make_row(
+                        tc,
+                        0.5,
+                        0.5,
+                        game_id=1000 * (tc_offset + 1) + i,
+                        base_time_seconds=300,
+                    )
+                )
+        return rows
+
+    def test_percentile_rows_omitted_defaults_to_all_none(self) -> None:
+        """Calling without ``percentile_rows`` (back-compat path) emits None
+        on all 3 new fields. The B-2 lock — old fixtures must keep working.
+        """
+        result = _compute_time_pressure_cards(self._bullet_rows())
+        assert len(result.cards) == 1
+        card = result.cards[0]
+        assert card.time_pressure_score_gap_percentile is None
+        assert card.clock_gap_percentile is None
+        assert card.net_flag_rate_percentile is None
+
+    def test_percentile_rows_none_explicit_defaults_to_all_none(self) -> None:
+        """Explicit ``percentile_rows=None`` behaves identically to omission."""
+        result = _compute_time_pressure_cards(self._bullet_rows(), percentile_rows=None)
+        assert len(result.cards) == 1
+        card = result.cards[0]
+        assert card.time_pressure_score_gap_percentile is None
+        assert card.clock_gap_percentile is None
+        assert card.net_flag_rate_percentile is None
+
+    def test_percentile_rows_empty_dict_defaults_to_all_none(self) -> None:
+        """Empty dict (user below floor on every metric × TC) -> all None."""
+        result = _compute_time_pressure_cards(self._bullet_rows(), percentile_rows={})
+        card = result.cards[0]
+        assert card.time_pressure_score_gap_percentile is None
+        assert card.clock_gap_percentile is None
+        assert card.net_flag_rate_percentile is None
+
+    def test_percentile_rows_populates_per_tc_lookup_correctly(self) -> None:
+        """Mixed percentile_rows: partial coverage attaches to the right card.
+
+        Phase 94.4 D-08: the shape is now nested
+        (dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]]); each
+        TC card reads its own per-(metric, tc) row directly (no aggregation
+        per RESEARCH line 1117).
+
+        Bullet card receives time_pressure_score_gap=42.0 and clock_gap=88.0;
+        net_flag_rate.bullet is intentionally omitted so the bullet card's
+        net_flag_rate_percentile is None. Classical card receives only
+        net_flag_rate.classical=3.0. Blitz and rapid have no rows so all 3
+        are None.
+        """
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
+
+        rows = self._all_tc_rows()
+        # Phase 94.4 D-08: TC dimensionality moved from the CdfMetricId key
+        # (legacy _bullet / _classical / etc. suffixes) into the inner-dict
+        # TimeControlBucket key.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "time_pressure_score_gap": {
+                "bullet": PercentileRow(
+                    value=0.05,
+                    percentile=42.0,
+                    cdf_snapshot=datetime.date(2026, 5, 24),
+                    n_games=42,
+                ),
+            },
+            "clock_gap": {
+                "bullet": PercentileRow(
+                    value=0.04,
+                    percentile=88.0,
+                    cdf_snapshot=datetime.date(2026, 5, 24),
+                    n_games=42,
+                ),
+            },
+            "net_flag_rate": {
+                "classical": PercentileRow(
+                    value=0.01,
+                    percentile=3.0,
+                    cdf_snapshot=datetime.date(2026, 5, 24),
+                    n_games=42,
+                ),
+            },
+        }
+
+        result = _compute_time_pressure_cards(
+            rows,
+            percentile_rows=percentile_rows,
+        )
+        # All 4 TC cards present (each TC padded to MIN_GAMES_PER_TC_CARD).
+        cards_by_tc = {card.tc: card for card in result.cards}
+        assert set(cards_by_tc.keys()) == {"bullet", "blitz", "rapid", "classical"}
+
+        bullet = cards_by_tc["bullet"]
+        assert bullet.time_pressure_score_gap_percentile == pytest.approx(42.0)
+        assert bullet.clock_gap_percentile == pytest.approx(88.0)
+        assert bullet.net_flag_rate_percentile is None  # omitted from dict
+
+        blitz = cards_by_tc["blitz"]
+        assert blitz.time_pressure_score_gap_percentile is None
+        assert blitz.clock_gap_percentile is None
+        assert blitz.net_flag_rate_percentile is None
+
+        rapid = cards_by_tc["rapid"]
+        assert rapid.time_pressure_score_gap_percentile is None
+        assert rapid.clock_gap_percentile is None
+        assert rapid.net_flag_rate_percentile is None
+
+        classical = cards_by_tc["classical"]
+        assert classical.time_pressure_score_gap_percentile is None
+        assert classical.clock_gap_percentile is None
+        assert classical.net_flag_rate_percentile == pytest.approx(3.0)
+
+    def test_percentile_rows_with_null_percentile_value_propagates_null(self) -> None:
+        """PercentileRow.percentile may itself be None (CDF returned None). Attach as None."""
+        from app.models.user_rating_anchors import TimeControlBucket
+        from app.repositories.user_benchmark_percentiles_repository import PercentileRow
+        from app.services.global_percentile_cdf import CdfMetricId
+
+        rows = self._bullet_rows()
+        # Phase 94.4 D-08: nested per-(metric, TC) shape.
+        percentile_rows: dict[CdfMetricId, dict[TimeControlBucket, PercentileRow]] = {
+            "clock_gap": {
+                "bullet": PercentileRow(
+                    value=0.04,
+                    percentile=None,
+                    cdf_snapshot=datetime.date(2026, 5, 24),
+                    n_games=42,
+                ),
+            },
+        }
+        result = _compute_time_pressure_cards(
+            rows,
+            percentile_rows=percentile_rows,
+        )
+        bullet = result.cards[0]
+        # Row exists but its percentile is None -> field is None (not raise, not skip).
+        assert bullet.clock_gap_percentile is None
+
+
+class TestTimePressureTcCardSchemaDefaults:
+    """Phase 94.3 CONTEXT.md D-1: 3 new nullable fields default to None.
+
+    Preserves the B-2 lock: existing keyword-only construction sites that don't
+    pass the 3 new args must continue to construct cleanly.
+    """
+
+    def _stub_clock_gap(self) -> Any:
+        from app.schemas.endgames import ClockGapBullet
+
+        return ClockGapBullet(
+            n=10,
+            mean_diff_pct=0.0,
+            p_value=None,
+            ci_low=None,
+            ci_high=None,
+        )
+
+    def test_card_constructs_without_percentile_kwargs(self) -> None:
+        """Pre-94.3 fixtures (no percentile kwargs) still build a valid card."""
+        from app.schemas.endgames import TimePressureTcCard
+
+        card = TimePressureTcCard(
+            tc="bullet",
+            total=100,
+            clock_gap=self._stub_clock_gap(),
+            quintiles=[],
+        )
+        assert card.time_pressure_score_gap_percentile is None
+        assert card.clock_gap_percentile is None
+        assert card.net_flag_rate_percentile is None
+
+    def test_card_constructs_with_explicit_percentile_kwargs(self) -> None:
+        """Plan F call sites can set all 3 percentile fields explicitly."""
+        from app.schemas.endgames import TimePressureTcCard
+
+        card = TimePressureTcCard(
+            tc="bullet",
+            total=100,
+            clock_gap=self._stub_clock_gap(),
+            quintiles=[],
+            time_pressure_score_gap_percentile=42.0,
+            clock_gap_percentile=None,
+            net_flag_rate_percentile=8.5,
+        )
+        assert card.time_pressure_score_gap_percentile == pytest.approx(42.0)
+        assert card.clock_gap_percentile is None
+        assert card.net_flag_rate_percentile == pytest.approx(8.5)

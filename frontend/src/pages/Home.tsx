@@ -461,6 +461,17 @@ export function HomePageContent() {
           </li>
           <li>
             <a
+              href="https://chessgoals.com/rating-comparison"
+              className="text-primary underline-offset-4 hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              ChessGoals
+            </a>{' '}
+            &mdash; cross-platform rating comparison data
+          </li>
+          <li>
+            <a
               href="https://python-chess.readthedocs.io"
               className="text-primary underline-offset-4 hover:underline"
               target="_blank"

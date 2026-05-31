@@ -857,9 +857,10 @@ class TestQueryEndgameBucketRows:
         )
 
         assert len(rows) == 1
-        _game_id, _endgame_class, _result, _user_color, eval_cp, eval_mate = rows[0]
-        assert eval_cp == 150  # entry-ply eval (white-perspective, no sign flip)
-        assert eval_mate is None
+        # Phase 97: query now returns 9 columns (added time_control_bucket + LEAD next-eval).
+        # Use attribute access to stay forward-compatible with future column additions.
+        assert rows[0].eval_cp == 150  # entry-ply eval (white-perspective, no sign flip)
+        assert rows[0].eval_mate is None
 
     @pytest.mark.asyncio
     async def test_eval_projects_white_perspective_no_sign_flip(
@@ -890,12 +891,13 @@ class TestQueryEndgameBucketRows:
         )
 
         assert len(rows) == 1
-        _game_id, _endgame_class, _result, user_color, eval_cp, eval_mate = rows[0]
-        assert user_color == "black"
+        # Phase 97: query now returns 9 columns (added time_control_bucket + LEAD next-eval).
+        # Use attribute access to stay forward-compatible with future column additions.
+        assert rows[0].user_color == "black"
         # eval_cp is raw white-perspective (-150): service _classify_endgame_bucket
         # applies sign=-1 for black → user_cp=150 → conversion
-        assert eval_cp == -150
-        assert eval_mate is None
+        assert rows[0].eval_cp == -150
+        assert rows[0].eval_mate is None
 
     @pytest.mark.asyncio
     async def test_invariant_matches_performance_rows_count(self, db_session: AsyncSession) -> None:

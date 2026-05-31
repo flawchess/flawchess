@@ -1,5 +1,76 @@
 # Milestones: FlawChess
 
+## v1.21 Time-Control-Aware Endgame Metrics (Shipped: 2026-05-31)
+
+**Phases completed:** 4 phases (97, 98, 99, 99.1), 15 plans. Delivered via PRs #160 (Phase 97), #163/#164 (Phase 98), #167 (Phase 99), #168 (Phase 99.1); benchmark-generator side work in #166.
+**Stats:** ~383 files changed, +156,697 / -101,643 lines (dominated by the Phase 99 cohort-CDF regen and the Phase 99.1 demotion of that generated data), 54 commits over 3 days (2026-05-29 → 2026-05-31) since v1.20 (commit `dcd22fef` → `83fe9f01`).
+**Milestone goal:** Make the entire Endgame Metrics and Endgame Type Breakdown reporting time-control-aware, so a player is judged against the norms of the speed they actually play rather than a blended average.
+
+**Key accomplishments:**
+
+- **Phase 97 — Endgame Metrics by Time Control** (PR #160): replaced the single aggregated Conversion/Parity/Recovery cards with one card per time control (bullet/blitz/rapid/classical), each carrying its own gauge trifecta, WDL bar, and Score Gap chart. Conversion/Recovery gauges use TC-specific neutral bands (benchmark TC d≈0.9); Parity and Score Gap keep the shared global band (both collapse on TC). Cards self-suppress below a per-TC games floor. New backend `_compute_per_tc_metric_cards` + a `TC_METRIC_BANDS` registry codegen'd into `endgameZones.ts`.
+- **Phase 98 — Per-TC Collapsible Endgame Type Cards** (PR #163, release #164): restructured the Endgame Type Breakdown from a 3-col grid of five per-type cards into full-width vertically-stacked collapsible cards, one per TC, primary TC (time-weighted) expanded by default. Each card holds a 2×2 grid of four type tiles (rook/minor_piece/pawn/queen — Mixed dropped); Conv/Recov gauges return, banded against each card's own per-(class × TC) IQR, Score Gap banded per-TC for one consistent card grammar.
+- **Phase 99 — Percentile Badges for Conversion, Parity, and Recovery** (PR #167): added peer-relative percentile chips to the per-TC Conv/Parity/Recov rate cards. 12 new per-(metric, TC) ENUM values computed via the shared pooled-per-user `canonical_slice_sql.py` builder parameterised by TC, cohort-matched on the per-(user, TC) rating anchor, 4-bullet disclosure tooltip. Prod backfill deferred to deploy (todo `2026-05-31-phase-99-prod-backfill-rate-percentiles`).
+- **Phase 99.1 — Move Cohort CDF Out of Source into a DB Table** (PR #168; INSERTED): relocated the generated `COHORT_PERCENTILE_CDF` registry (3.1 MB / ~130k lines) out of `app/services/global_percentile_cdf.py` into a `benchmark_cohort_cdf` DB table seeded from a compact `app/data/` artifact via `scripts/seed_cohort_cdf.py`; the module shrank to ~250 lines. Internal refactor, byte-for-byte chip parity, no behaviour change. Closes SEED-030 Track B.
+
+**Tech debt (carried forward, informational):**
+
+- Prod backfill of the 12 new rate-percentile metrics deferred to deploy.
+- SEED-030 Track A (split oversized multi-concern modules) remains open.
+
+See `.planning/milestones/v1.21-ROADMAP.md`. No formal requirements (all phases standalone endgame-stats UX refinements / internal refactor — no requirement IDs); REQUIREMENTS.md continues to track the pending v1.22 LLM Statistical Reasoning scope.
+
+---
+
+## v1.20 Import Pipeline Hardening Follow-Up and Readiness (Shipped: 2026-05-29)
+
+**Phases completed:** 2 phases (95, 96), 5 plans. Delivered via PRs #148/#149 (Phase 95) and #151 (Phase 96). Two standalone phases regrouped post-hoc into a milestone on 2026-05-30.
+**Milestone goal:** Finish closing the FLAWCHESS-3Q OOM family (asyncpg COPY for the heaviest import write) and replace the eval-coverage auto-reload hack with an honest per-page readiness gate.
+
+**Key accomplishments:**
+
+- **Phase 95 — asyncpg COPY for `bulk_insert_positions`**: switched the heaviest INSERT in the import pipeline to asyncpg binary `copy_records_to_table`, the SEED-027 Thread B follow-up to the Thread A container-memory-budget hotfix (PR #144). Enrolled in the active session transaction for atomicity; `bulk_insert_games` keeps its `ON CONFLICT DO NOTHING` path.
+- **Phase 96 — Import Readiness Gate**: replaced the `window.location.reload()`-on-eval-complete hack with a two-tier per-page gate — Tier 1 (hot lane drained) unlocks Openings + Overview, Tier 2 (evals drained + Stage A/B percentiles persisted) unlocks Endgames. Consolidated eval-progress UI into a single global header.
+
+See `.planning/milestones/v1.20-ROADMAP.md`. No requirements archive (both phases standalone hardening/UX — no requirement IDs).
+
+---
+
+## v1.19 Endgame Percentiles (Shipped: 2026-05-27)
+
+**Phases completed:** 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4). 26/26 PCTL/TPCTL/PRPCR requirements satisfied. Final phase merged via PR #145.
+**Milestone goal:** Surface peer-relative percentile annotations on Endgame metrics so users see how their performance compares to same-rated cohort peers.
+
+**Key accomplishments:**
+
+- **Phase 93 — Global Percentile Benchmark Artifact** and **Phase 94 — Backend & Frontend Percentile Annotations**: the cohort-percentile pipeline + the `PercentileChip` primitive.
+- **Phase 94.1/94.2 — Canonical-Slice / Pooled-Per-User Percentile Materialisation**: redesigned per-user percentile computation so CDF construction and per-user lookup share one SQL path (drift structurally impossible).
+- **Phase 94.3 — Per-TC Percentile Chips on Time Pressure Cards** (INSERTED, SEED-025) and **Phase 94.4 — Peer-Relative Percentile Chip Refinement** (INSERTED, SEED-026 v2 + D-12 reversal): the per-TC chip pattern later reused by Phase 99.
+
+Phase 95 (LLM Statistical Reasoning) was split out into v1.20 on 2026-05-27 (commit `dd88ffda`) before milestone close. Audit at `.planning/v1.19-MILESTONE-AUDIT.md`; traceability in `.planning/milestones/v1.19-REQUIREMENTS.md`.
+
+---
+
+## v1.18 Import Pipeline Hardening (Shipped: 2026-05-22)
+
+**Phases completed:** 3 phases (90, 91, 92), 17 plans, delivered via PRs #130, #137, #138 (plus the production-branch hotfix #139 capping DB pool / max_connections / container memory for FLAWCHESS-3Q).
+**Stats:** 240 files changed, +30,193 / -9,406 lines, 54 commits over 3 days (2026-05-19 → 2026-05-22) since v1.17 (commit 114211c2 → f5224b4f).
+**Source:** Two prod-side OOM recurrences after v1.17 (FLAWCHESS-56 2026-05-16, FLAWCHESS-3Q 2026-05-21) — single-import RSS climbing linearly under heavy fetch, Postgres OOM-killed when one uvicorn process fanned out to 13 active backends. Seeds SEED-017/018/022/023 captured the diagnostic; this milestone retired all four.
+
+**Key accomplishments:**
+
+- **Phase 90 — Import pipeline memory leak fix + resilience** (PR #130): replaced the literal `case()`+`IN` bulk UPDATE in `_flush_batch` Stage 5 with bound-parameter `executemany` (root cause of the linear RSS climb — a per-batch unique SQL statement that the prepared-statement cache kept forever). Scoped `AsyncSession` per batch in `run_import`. Promoted `cleanup_orphaned_jobs()` from a startup-only call to a periodic + on-DB-reconnect reaper so a Postgres-only restart no longer strands jobs `in_progress`. Bounded-retry-with-backoff around the failure-state UPDATE.
+- **Phase 91 — Two-lane import: defer Stockfish eval to in-process cold drain** (PR #137 + follow-on #134/#135): added `games.evals_completed_at` + partial index. Hot path now does fetch → parse → insert positions → commit with no Stockfish work; a separate `run_eval_drain()` lifespan coroutine picks 10 games per tick from the partial index and evaluates outside any session scope. Frontend Stockfish-coverage header bar + per-metric "based on N of M eligible games" caveat on every eval-dependent stat. Dual-20k stress-test harness in `scripts/measure_dual_import_rss.py`.
+- **Phase 92 — Custom date range filter** (PR #138): replaced the closed `Recency` string union on the API wire with `from_date` / `to_date` params; added a 9th "Custom range…" entry to the recency dropdown with a desktop Popover + mobile nested Drawer, shadcn Calendar component installed. `Recency` → `RecencyPreset` UI-only type. LLM insights prompts derive human window labels from absolute dates. Closes a pending bookmark-timeseries cleanup todo (`2026-05-02-remove-recency-from-bookmark-timeseries`).
+- **Hotfix PR #139 (FLAWCHESS-3Q)**: SQLAlchemy pool 20+30 → 10+10, Postgres `max_connections` 100 → 30, backend/db container `mem_limit` + `memswap_limit` set, Hetzner CPX32 → CPX42 (4→8 vCPU, 7.6→16 GB RAM). Postgres tuned for the 16 GB host (`shared_buffers=4GB`, `effective_cache_size=12GB`, `work_mem=16MB`).
+
+**Tech debt (carried forward, informational):**
+
+- SEED-024 (`ProcessPoolExecutor` for chess.com fetch lane) planted but deferred — pure throughput win, blocked on per-worker RSS measurement after the CPX42 RAM upgrade.
+- Concurrent-import admission control (SEED-022 option F), scheduled backend-restart cadence (option G), and idempotent `on_game_fetched` (option A′) intentionally not shipped — hot-lane batches now too cheap to OOM under realistic concurrent load.
+
+---
+
 ## v1.17 Endgame Stats Card Redesign (Shipped: 2026-05-19)
 
 **Phases completed:** 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans. Phase 87.3 superseded by 87.4; Phase 89 (Polish) dropped from scope. Delivered via PRs #89–#117.

@@ -1,13 +1,39 @@
 ---
 name: benchmarks
-description: Generate FlawChess endgame population benchmarks from the benchmark DB. Computes per-user distributions for score-gap (endgame vs non-endgame), Conversion/Parity/Recovery rates, composite Endgame Skill, time-pressure stats at endgame entry, time-pressure-vs-performance curves, and per-endgame-class (rook/minor_piece/pawn/queen/mixed/pawnless) score and conv/recov rates. All metrics are bucketed via 400-wide ELO buckets (anchored at 800/1200/1600/2000/2400) computed from the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, never the frozen selection-snapshot rating — see "Rating-lag selection bias" in chapter 1) and the 4 TC buckets (anchored from `benchmark_selected_users.tc_bucket`). For every metric, the skill produces a Cohen's-d-based collapse verdict per axis ({TC, ELO}) that determines whether the metric needs cell-specific zones or collapses to a single global zone. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse zones across TC or ELO, or breaking down stats by endgame class. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "collapse verdict", "Cohen's d", "calibrate thresholds", "endgame type breakdown", "by endgame class", "rook vs minor piece". Writes the latest markdown report to reports/benchmarks-latest.md, rotating any prior latest file to reports/benchmarks-YYYY-MM-DD.md based on its first-line date.
+description: Generate FlawChess endgame population benchmarks from the benchmark DB. Computes per-user distributions for score-gap (endgame vs non-endgame), Conversion/Parity/Recovery rates, composite Endgame Skill, time-pressure stats at endgame entry, time-pressure-vs-performance curves, and per-endgame-class (rook/minor_piece/pawn/queen/mixed/pawnless) score and conv/recov rates. All metrics are bucketed via 400-wide ELO buckets (anchored at 800/1200/1600/2000/2400) computed from the cohort user's **rating at game time** (`games.white_rating`/`games.black_rating`, never the frozen selection-snapshot rating — see "Rating-lag selection bias" in chapter 1) and the 4 TC buckets (anchored from `benchmark_selected_users.tc_bucket`). For every metric, the skill produces a Cohen's-d-based collapse verdict per axis ({TC, ELO}) that determines whether the metric needs cell-specific zones or collapses to a single global zone. Use this skill whenever the user asks about endgame benchmarks, neutral zones, gauge ranges, "what's typical", baseline distributions, calibrating thresholds, comparing time controls, deciding whether to collapse zones across TC or ELO, or breaking down stats by endgame class. Trigger on phrases like "benchmark", "benchmarks", "baseline", "neutral zone", "gauge range", "collapse verdict", "Cohen's d", "calibrate thresholds", "endgame type breakdown", "by endgame class", "rook vs minor piece". Writes the latest markdown report to reports/benchmark/benchmarks-latest.md, rotating any prior latest file to reports/benchmark/benchmarks-YYYY-MM-DD.md based on its first-line date.
 ---
 
 # Benchmarks
 
+> **Phase 94.2 callout:** This SKILL describes the per-cohort analytical methodology used for `/benchmarks` reports — distribution exploration, neutral-zone calibration, "what's typical" breakdowns by (TC × ELO) bucket. The **production percentile chip uses a different methodology** since Phase 94.2: a pooled-per-user model (recent 1000/TC across all played TCs, 36-month window, single ≥30 floor on the pooled set, single globally pooled CDF). See `app/services/canonical_slice_sql.py` for the chip's SQL builders, `app/services/global_percentile_cdf.py` for the committed CDF literal, and `.planning/phases/94.2-pooled-per-user-percentile-redesign/94.2-CONTEXT.md` for the design rationale. The per-cohort stratification described below remains correct for analytical purposes — it just no longer mirrors what the production chip computes.
+
 Generate population-level benchmarks for FlawChess from the benchmark DB. The headline deliverable is a **per-metric collapse verdict** answering: does this metric need cell-specific zones across (TC × ELO), or can it use a single global zone?
 
 The skill is organized into three chapters that mirror the FlawChess UI: **Chapter 1 — Stratified Sample** holds the cell-coverage methodology that every metric depends on; **Chapter 2 — Openings** holds calibrations that feed the Openings page; **Chapter 3 — Endgames** holds calibrations that feed the Endgames → Stats page, with subchapters in the same display order as the page's H2 sections (Overall Performance → Metrics and ELO → Time Pressure → Type Breakdown).
+
+---
+
+## Workflow (generator-driven — read this first)
+
+> **The numbers come from a deterministic generator, not from running SQL by hand.** As of SEED-029 Phase A, `scripts/gen_benchmarks.py` computes every distribution, marginal, IQR, Cohen's d, and correlation in §§1–4 directly against the benchmark DB and writes a structured artifact. Your job is to **narrate that artifact into the report**, not to re-run ~36 inline SQL blocks and hand-compute statistics (the old flow, which was a transcription/arithmetic fragility — that's exactly what the generator removes). The per-subchapter SQL, building blocks, and methodology in §§1–4 below are now **reference** for *what the generator computes* (and for QA / narration) — you do not execute them by hand.
+
+**The code/LLM seam.** Code emits numbers; you apply the fixed collapse-verdict thresholds and write the prose. The generator's output is validated against this report by `tests/scripts/benchmarks/test_chapter*_diff.py` (a numeric diff, within rounding). It does **not** apply verdict *words*, author recommendations, or assemble the final report — those are yours.
+
+**Procedure for a full snapshot:**
+
+1. **Start the benchmark DB.** `bin/benchmark_db.sh start`; wait for `(healthy)`. (Never run two heavy benchmark-DB scans concurrently — it can stop the container.)
+2. **Run the generator.** `uv run python scripts/gen_benchmarks.py --db benchmark`. It writes the **gitignored intermediate** artifact pair `reports/benchmark/benchmarks-generated.json` (numbers) + `reports/benchmark/benchmarks-generated.md` (numeric chapter tables, in report order). This takes several minutes (heavy span scans in §3.2/§3.4); run it without a short timeout.
+3. **Read the artifact.** The `.md` carries every per-subchapter table (pooled distribution, ELO/TC marginals, IQRs, per-axis Cohen's d **values**) already rendered per the Display-formatting rules. The `.json` is the same data machine-readable (chapter → `values_*`), including the `max_abs_d` per (metric, axis) you need for verdicts.
+4. **Grep the live constants.** For each subchapter, grep the gauge constants per the **Live-threshold grep table** (below) into a "Currently set in code" block, so recommendations compare data-driven proposals against the live values. (The generator does not read frontend/zone code.)
+5. **Apply the verdict thresholds.** For each metric/axis, map the emitted `max |d|` to a word via **Collapse verdict methodology → Verdict thresholds** (< 0.2 collapse / 0.2–0.5 review / ≥ 0.5 keep). This is the one place arithmetic becomes a word — it is deterministic; do not eyeball.
+6. **Assemble `benchmarks-latest.md`.** Build the header block (provenance + methodology notes), splice the generator's chapter tables in order, then author the per-subchapter **Recommendations** and the two headline summary tables (**Top-axis collapse summary**, **Recommended thresholds summary**) — the verdict words from step 5, the live values from step 4, the `Implication`/`Action` columns from your judgment. Follow **Report file layout** for the exact structure and **Display formatting** + the markdown-tables-not-prose hard rule for rendering.
+7. **Rotate, then write.** Per **Report file layout**: if `reports/benchmark/benchmarks-latest.md` exists, rename it to `benchmarks-YYYY-MM-DD.md` (date from its first line; never overwrite an existing dated archive — overwrite latest in place if the dated file exists), then write the new snapshot to `benchmarks-latest.md`.
+
+**QA the artifact (optional but cheap).** To confirm a chapter's numbers reproduce this report, run its diff gate — e.g. `uv run --active pytest tests/scripts/benchmarks/test_chapter3_4_diff.py -q` (DB up; one job at a time). A green gate means the generator's numbers match; a red gate is a port regression to fix in `scripts/benchmarks/`, not a number to transcribe around. Note: `tests/scripts/benchmarks/` is **excluded from normal `uv run pytest` runs** (`--ignore` in `pyproject.toml`) because the gates hit the heavy benchmark DB; run them on demand by passing an explicit path — `uv run pytest tests/scripts/benchmarks` for the whole gate, or a single file as above.
+
+**Subchapter subset / re-narration.** If the artifact is fresh and the user wants only some subchapters re-narrated, you do not need to re-run the generator — splice the relevant tables from the existing `benchmarks-generated.md` and rebuild the two summary tables from whatever subchapters are present (see **Re-running**).
+
+**§4 is a separate deliverable.** The percentile CDF (`COHORT_PERCENTILE_CDF`) is NOT part of `benchmarks-latest.md`. The generator's §4 chapter is reference-only (`status: "REFERENCE"`, no report body); the CDF has its own generator (`scripts/gen_global_percentile_cdf.py`), artifact (`app/services/global_percentile_cdf.py`), report (`reports/percentile/cohort-percentile-cdf-latest.md`), and gates. See §4 below for the (now-historical) prose and the current-reality callout.
 
 ---
 
@@ -59,7 +85,7 @@ The output of Stage 2 is the final benchmark dataset: `users` + `games` + `game_
 A few properties of this two-stage design that every metric query must respect (and that the canonical CTE / sparse-cell rule / equal-footing filter formalize):
 
 - **Per-user TC anchoring.** Every game in the benchmark DB has a `time_control_bucket` that may or may not match the user's selected TC. Queries MUST filter `g.time_control_bucket = bsu.tc_bucket` so a user selected for `(2000, blitz)` only contributes blitz games even if they also have rapid games in the same row. Without this filter, multi-TC qualifiers would double-count across cells.
-- **Selection vs game-time rating — RATING-LAG SELECTION BIAS (resolved by game-time bucketing — see the dedicated subsection below).** `benchmark_selected_users.rating_bucket` is the per-TC median at the 2026-03 snapshot, not the rating at each game's time. It is **no longer the analysis ELO bucket** — every per-metric query now buckets by the cohort user's rating *at game time* (`games.white_rating`/`games.black_rating`). `rating_bucket` / `median_elo` are retained only as longitudinal/trajectory columns. The corrected per-color middlegame-entry eval distribution (game-time-bucketed) is in `reports/opening-end-eval-by-elo-blitz-rapid-classical-gametime-2026-05-20.md` — White flat at ≈+31 cp across all five ELO buckets, Black flat at ≈−21 cp; the rating-lag-attributable component of the per-color asymmetry collapses, leaving only the documented winrate-neutral opening-style residual. Full confound mechanism, the distorted-vs-robust analysis list, the mitigation, the residual out-of-scope confounds, and the acceptance test are in the **"Rating-lag selection bias (game-time bucketing)"** subsection immediately below.
+- **Selection vs game-time rating — RATING-LAG SELECTION BIAS (resolved by game-time bucketing — see the dedicated subsection below).** `benchmark_selected_users.rating_bucket` is the per-TC median at the 2026-03 snapshot, not the rating at each game's time. It is **no longer the analysis ELO bucket** — every per-metric query now buckets by the cohort user's rating *at game time* (`games.white_rating`/`games.black_rating`). `rating_bucket` / `median_elo` are retained only as longitudinal/trajectory columns. The corrected per-color middlegame-entry eval distribution (game-time-bucketed) is in `reports/noel/opening-end-eval-by-elo-blitz-rapid-classical-gametime-2026-05-20.md` — White flat at ≈+31 cp across all five ELO buckets, Black flat at ≈−21 cp; the rating-lag-attributable component of the per-color asymmetry collapses, leaving only the documented winrate-neutral opening-style residual. Full confound mechanism, the distorted-vs-robust analysis list, the mitigation, the residual out-of-scope confounds, and the acceptance test are in the **"Rating-lag selection bias (game-time bucketing)"** subsection immediately below.
 - **Pool exhaustion vs target shortfall.** `(2400, classical)` is structurally pool-exhausted at the 2026-03 dump (12 completed / 23 candidate / 0 unattempted) — there are simply not enough 2400-classical Lichess players to populate the cell. Sparse-cell exclusion (see below) formalizes the rule that this cell is kept in cell-level grids with a footnote but dropped from marginals and Cohen's d.
 - **Matchmaking confound.** Higher-rated cohorts on Lichess play opponents that average 50–130 Elo weaker (worse for 2400-classical). The "Equal-footing opponent filter (all subchapters)" subsection makes the `abs(opp_rating − user_rating) ≤ 100` filter universal across every per-metric query so the resulting benchmark zones represent skill at equal footing, not skill at typical Lichess matchmaking.
 
@@ -151,7 +177,7 @@ WITH selected_users AS (
 
 Then JOIN `selected_users su` on `g.user_id = su.user_id` and filter `g.time_control_bucket::text = su.tc_bucket`. **The ELO axis is NOT `su.selection_rating_bucket`** — every per-metric query derives `elo_bucket` per-game from the cohort user's rating at game time via the canonical `user_elo_at_game` / `elo_bucket` building block (see "Shared SQL building blocks"), and drops sub-800 rows. Cells are `(game-time elo_bucket, su.tc_bucket)`. **Cast note**: `games.time_control_bucket` is a custom enum (`timecontrolbucket`) and `benchmark_selected_users.tc_bucket` is `varchar` — without the `::text` cast Postgres errors with `operator does not exist: timecontrolbucket = character varying`.
 
-**Current-DB-state checkpoint exception**: the checkpoint join below is the correct canonical rule for a fully-ingested benchmark DB. When the DB has games for ELO buckets whose `benchmark_ingest_checkpoints` rows have not been written (e.g. the present state: games for all 5 buckets but checkpoints only for 800/1200), the checkpoint join silently drops the unattested buckets. In that state only, link the cohort as `benchmark_selected_users ⋈ users ON lower(u.lichess_username)=lower(bsu.lichess_username)` with **no checkpoint join**, and note the deviation in the report header. Restore the checkpoint join once Stage-2 checkpoints are complete.
+**Current-DB-state checkpoint exception — OBSOLETE (SEED-029).** This exception described an earlier partial-ingest state (games for all 5 ELO buckets but `benchmark_ingest_checkpoints` rows only for 800/1200), under which the canonical checkpoint join was temporarily dropped in favor of a bare `benchmark_selected_users ⋈ users ON lower(lichess_username)` join. **That state no longer exists** — the benchmark DB now has `status='completed'` checkpoints for all five ELO buckets, so the canonical checkpoint-joined CTE (next subsection) is the **only** correct path and the generator uses it unconditionally (`sql.SELECTED_USERS_CTE`). Do not omit the checkpoint join. The acceptance-test note above and the `current-DB-state: lower() join, no checkpoint` SQL comment are kept only as historical audit trail.
 
 **Why the checkpoint join is non-optional**: `benchmark_selected_users` is the candidate *pool*. The ingest orchestrator (`scripts/import_benchmark_users.py`) walks the pool, marking each `(lichess_username, tc_bucket)` row as `completed`, `skipped` (low yield, games purged), `failed` (404/error), or leaving it `null` (never attempted because earlier candidates filled the slot). Only `completed` rows have games in this TC. Skipping the filter pulls in 'skipped' multi-TC qualifiers (whose games for this TC were deleted) and never-attempted pool members, both of which appear as 0-game users in cell aggregates.
 
@@ -303,6 +329,8 @@ Then for each pair `(a, b)`: `pooled_sd = sqrt(((n_a-1)*var_a + (n_b-1)*var_b) /
 2. **ELO marginal** — 5 rows (800/1200/1600/2000/2400) pooled across TC, excluding the sparse cell. Columns: `n_users / mean / SD / p25 / p50 / p75` (plus `p05 / p95` for distributions with wide tails).
 3. **TC marginal** — 4 rows (bullet/blitz/rapid/classical) pooled across ELO, excluding the sparse cell. Same columns.
 
+Plus a **pooled distribution table** (single row: `n / mean / SD / p05 / p25 / p50 / p75 / p95`) — the one that feeds the cohort-band recommendation. This is the fourth mandatory table for every per-user metric.
+
 Then the collapse verdict block:
 
 ```
@@ -314,6 +342,63 @@ Then the collapse verdict block:
 Score heatmaps render as percent; eval heatmaps render as integer cp (e.g. `+25 / −10 / +18 / +4`); score-gap heatmaps render as `pp` per the display-formatting rules above.
 
 **"Where applicable" exceptions:** subchapters with intrinsically different structure (e.g. 3.4.1 / 3.4.2 / 3.4.3 partition by endgame class; 3.3.2 partitions by time-pressure bucket; 3.2.2 partitions by entry bucket) emit the per-partition equivalent — one p50 cell table + ELO marginal + TC marginal **per partition** (class / bucket / time-bin). The principle is unconditional: the reader must always see the cell-level p50 grid plus both marginals for every metric, just sliced by the subchapter's natural partition. Sub-table suppression for cells below `n_users` floor is fine; skipping marginals entirely is not.
+
+##### Rendering rule — MARKDOWN TABLES, NOT PROSE LISTS (hard rule)
+
+The p50 cell grid, ELO marginal, TC marginal, and pooled distribution MUST be rendered as **GitHub-flavored markdown tables** (pipe-delimited, header + `---` separator row). Do **NOT** collapse them into single-line prose summaries like `ELO marginal (cp): 800 n764 m0 SD88 · 1200 n1093 m+7 SD70 · …`. The middle-dot bullet form is unscannable, defeats column alignment, and silently drops most of the per-level statistics (p25/p75/p05/p95). Every numeric breakdown that has a row/column structure goes into a markdown table — there is no token-budget exception. If the recommendation prose still fits, the tables fit too.
+
+**Copy tables verbatim from the intermediate — never retype them, and self-check the separator row.** When splicing a table out of `benchmarks-generated.md` (step 6), copy the header row, the `|---:|...|` separator row, and every body row byte-for-byte. A recurring failure mode is silently dropping one `---:` cell from the separator, leaving it one column short of the header — which breaks GitHub markdown rendering for the whole table. After assembling the report, verify every table: the separator must have exactly as many `---`/`---:` cells as the header has columns. For an N-column header (N+1 pipes), the separator is `|` + `---:|`×N. Fix any short separator before writing the file.
+
+**Canonical templates** (use as drop-in skeletons — copy the column set verbatim, fill in the values):
+
+Pooled distribution (1 row):
+
+```markdown
+| n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2,025 | 52.1% | 7.5% | 38.4% | 46.4% | 51.9% | 57.2% | 66.9% |
+```
+
+ELO marginal (5 rows, sparse-excluded):
+
+```markdown
+| ELO | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 800 | 342 | 51.7% | 6.8% | 40.1% | 47.2% | 51.8% | 56.5% | 64.4% |
+| 1200 | 484 | 51.9% | 7.2% | … | 46.4% | 51.9% | 56.8% | … |
+| 1600 | 501 | 51.7% | 7.0% | … | 45.4% | 51.5% | 56.8% | … |
+| 2000 | 414 | 52.8% | 7.4% | … | 47.1% | 52.3% | 58.4% | … |
+| 2400 | 262 | 52.3% | 7.3% | … | 46.8% | 52.3% | 57.9% | … |
+```
+
+TC marginal (4 rows, sparse-excluded):
+
+```markdown
+| TC | n | mean | SD | p05 | p25 | p50 | p75 | p95 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| bullet | 614 | 51.2% | … | … | 46.3% | 51.2% | 56.1% | … |
+| blitz | 611 | 51.7% | … | … | 46.0% | 51.8% | 56.8% | … |
+| rapid | 584 | 52.6% | … | … | 46.7% | 52.2% | 58.1% | … |
+| classical | 194 | 54.4% | … | … | 47.8% | 53.9% | 61.5% | … |
+```
+
+p50 cell grid (5×4 with `p50 (n_users)`):
+
+```markdown
+| ELO \ TC | bullet | blitz | rapid | classical |
+|---:|---:|---:|---:|---:|
+| 800 | 51.0 (137) | 51.5 (126) | 52.1 (162) | 53.0 (140) |
+| 1200 | … | … | … | … |
+| 1600 | … | … | … | … |
+| 2000 | … | … | … | … |
+| 2400 | … | … | … | 53.0 (6)* |
+```
+
+`p05/p95` columns can be omitted from marginal tables for tight-distribution metrics (Cohen's d / score) but MUST be included for wide-tail distributions (eval cp, score gaps in pp). When in doubt, include them.
+
+For multi-metric subchapters (e.g. 3.2.1 Conv/Parity/Recovery — 4 metrics × 3 tables = 12 tables), emit all 12. Prose summaries can accompany the tables, but never replace them. The headline collapse-verdict summary table (chapter end) is a separate deliverable and does NOT substitute for per-subchapter marginals.
+
+**Prose is reserved for** narrative interpretation (what the numbers mean, recommendations, caveats), not for transmitting the numbers themselves. If you find yourself writing `metric (unit): level1 statA · level2 statA · …`, stop and emit a markdown table instead.
 
 ### Equal-footing opponent filter (all subchapters)
 
@@ -374,7 +459,7 @@ The benchmark SQL is internally consistent — score columns return proportions 
 - **Cohen's d** → render to **2 decimals** (e.g. `0.42`). Already unit-free.
 - **Eval values** (centipawns at MG entry / EG entry, including baselines, means, SDs, and all percentile columns derived from eval) → render as **integer cp**, signed for delta/diff values (e.g. `+25 cp`, `−418 cp`, `SD = 238 cp`). Round-half-to-even.
 - **Pawn-unit eval bullets** (live constants in `endgameEntryEvalZones.ts` are in pawns) — when comparing to live constants, render both in their native unit: live constant in pawns (e.g. `±0.75 pawns`), measured value in pawns derived from `cp / 100` rounded to 2 decimals (e.g. `±0.42 pawns`). This is the one exception to "evals as integer cp" — keep the pawn unit when comparing to a pawn-unit constant.
-- **Sample sizes (`n`)** → integer, no thousands separators unless ≥ 100,000 (then use commas e.g. `1,250,431`).
+- **Sample sizes (`n`)** → integer with thousands separators at **≥ 1,000** (e.g. `3,655`, `187,177`, `1,060,245`). This reconciles an earlier "no separators unless ≥ 100,000" wording with the actual report convention: every count ≥ 1,000 is grouped (the generator's `scripts/benchmarks/render.py::fmt_int` is authoritative — `_GROUP_FLOOR = 1000` — and the committed `benchmarks-latest.md` groups every such count).
 - **Clock-diff %, time-pressure curves, net-timeout rate** → already in percent units in the SQL (multiplied by 100 inside the query). Render with one decimal, append `%` for absolute and `pp` for diffs (e.g. `−1.5%`, `+4.2pp` net timeout).
 
 **Why not bake into SQL.** Scaling `score * 100` inside the SQL changes the variance returned by `var_samp(...)` by a factor of 10,000, which would silently break Cohen's d computations that pass the raw `var_samp` column. Keeping SQL in proportion-units preserves drop-in compatibility with the Cohen's d recipe in "Computing Cohen's d in SQL" (d is unit-invariant under linear scaling — both numerator and `pooled_sd` scale together — but only if the formatter is consistent). Apply formatting at the rendering layer.
@@ -1619,7 +1704,7 @@ Apply the same 3-level pattern as §3.4.2: `d < 0.2` collapse, `0.2 ≤ d < 0.5`
 **Output instructions:**
 1. Update the 4 placeholder ZoneSpec entries in `app/services/endgame_zones.py` with calibrated `(typical_lower, typical_upper)` tuples for each bucket: `ZONE_REGISTRY["section2_score_gap_conv"]`, `ZONE_REGISTRY["section2_score_gap_parity"]`, `ZONE_REGISTRY["section2_score_gap_recov"]`, `ZONE_REGISTRY["section2_score_gap_skill"]`.
 2. Run `uv run python scripts/gen_endgame_zones_ts.py` and commit the regenerated `frontend/src/generated/endgameZones.ts` (drift gate enforces parity).
-3. Add the per-bucket IQR table and collapse verdict to `reports/benchmarks-latest.md` under a new §3.2.2 block; archive the previous report per the "Report file layout" rotation rule.
+3. Add the per-bucket IQR table and collapse verdict to `reports/benchmark/benchmarks-latest.md` under a new §3.2.2 block; archive the previous report per the "Report file layout" rotation rule.
 
 **Note:** Actually running the benchmark query is OUT OF SCOPE for the Phase 87.2 Plan 01 ROADMAP gate — this subchapter documents the method so a future calibration session can produce real bands. Placeholder ±5pp bands from Plan 01 Task 1 remain in effect until then; the codegen drift gate from Plan 01 Task 2 ensures any band update flows through to `endgameZones.ts` automatically.
 
@@ -1773,7 +1858,7 @@ ORDER BY bucket;
 
 ##### Output
 
-For the §3.2.2 block in `reports/benchmarks-latest.md`:
+For the §3.2.2 block in `reports/benchmark/benchmarks-latest.md`:
 
 1. **Per-bucket per-cell table** (rows = bucket × elo_bucket × tc_bucket): `n_users | mean | sd | p05 | p25 | p50 | p75 | p95`. Sparse cell `(2400, classical)` shown with footnote if present in cell-level grid but excluded from marginals.
 
@@ -1797,7 +1882,7 @@ For the §3.2.2 block in `reports/benchmarks-latest.md`:
 
 Reuse the §3.2.1 per-user `conv_p50` / `recov_p50` cell tables and marginals, and the §3.2.2 per-bucket `mean_gap` cell tables and marginals. For conversion and recovery each, build a 2×2 of `{ELO axis, TC axis} × {raw rate, score gap}` reporting the marginal sweep (min→max level) and the Cohen's `d_max` + verdict already computed upstream. No SQL re-run — pull the numbers from the §3.2.1 and §3.2.2 blocks of the same report.
 
-##### What to report in `reports/benchmarks-latest.md` under §3.2.3
+##### What to report in `reports/benchmark/benchmarks-latest.md` under §3.2.3
 
 1. **Axis-driver table** — for Conversion and Recovery, side by side:
 
@@ -2461,6 +2546,49 @@ GROUP BY endgame_class_int
 ORDER BY endgame_class_int;
 ```
 
+##### Per-class per-axis conv/recov rate distribution (for TC / ELO collapse verdicts)
+
+The pooled-by-class and per-cell tables above answer "does the metric vary **across class**". They do **not** answer "does conversion (resp. recovery) **within** a class vary across TC / ELO" — the question that decides whether `PER_CLASS_GAUGE_ZONES` needs to become per-(class × TC). Run two per-user passes to produce that verdict properly. Use a **per-user rate** unit (not the per-cell pooled rate): the cohort doubling (2026-05) makes per-user-per-class feasible at a ≥10-bucket-game floor for rook / minor_piece / pawn / queen / mixed across all four TCs (hundreds of users per cell). **Pawnless stays excluded** from these verdicts (n far below floor; hidden in the live UI).
+
+Sparse-cell handling: exclude the `(elo_bucket=2400, tc='classical')` rows **at the game-row level** (`AND NOT (elo_bucket=2400 AND tc='classical')` inside `classified`) before forming per-user rates. This honors the canonical exclusion exactly while keeping the per-user units well-powered (the alternative — a 5-way `(user, elo_bucket, tc, class)` unit — is too thin per the skill's original concern; row-level exclusion sidesteps it).
+
+**TC-axis unit** = per-`(user, tc, class)` rate (pool ELO). **ELO-axis unit** = per-`(user, elo_bucket, class)` rate (pool TC). Conversion rate = `avg(score=1.0)` over `bucket='conversion'` spans; recovery rate = `avg(score>=0.5)` over `bucket='recovery'` spans; `≥10` bucket-games per unit. Both passes share the `selected_users` / `class_span` / `bucketed` / `classified` CTEs from the cell-level query above (with the row-level sparse exclusion added to `classified`); only the final per-user grouping differs.
+
+```sql
+-- TC-axis pass: unit = (user, tc, class), pooling ELO.
+-- (CTEs selected_users / class_span / bucketed identical to the cell-level query,
+--  EXCEPT classified adds: WHERE uelo>=800 AND NOT (elo_bucket=2400 AND tc='classical'))
+, per_user_tc AS (
+  SELECT user_id, tc, cls,
+    avg(CASE WHEN score=1.0  THEN 1.0 ELSE 0.0 END) FILTER (WHERE bucket='conversion') AS conv_rate,
+    count(*) FILTER (WHERE bucket='conversion') AS conv_n,
+    avg(CASE WHEN score>=0.5 THEN 1.0 ELSE 0.0 END) FILTER (WHERE bucket='recovery')   AS recov_rate,
+    count(*) FILTER (WHERE bucket='recovery')   AS recov_n
+  FROM classified GROUP BY user_id, tc, cls
+)
+SELECT cls, tc,
+  count(*) FILTER (WHERE conv_n>=10)  AS conv_users,
+  round(avg(conv_rate)      FILTER (WHERE conv_n>=10)::numeric,4)  AS conv_mean,
+  round(var_samp(conv_rate) FILTER (WHERE conv_n>=10)::numeric,6)  AS conv_var,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY conv_rate) FILTER (WHERE conv_n>=10)::numeric,4) AS conv_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY conv_rate) FILTER (WHERE conv_n>=10)::numeric,4) AS conv_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY conv_rate) FILTER (WHERE conv_n>=10)::numeric,4) AS conv_p75,
+  count(*) FILTER (WHERE recov_n>=10) AS recov_users,
+  round(avg(recov_rate)      FILTER (WHERE recov_n>=10)::numeric,4) AS recov_mean,
+  round(var_samp(recov_rate) FILTER (WHERE recov_n>=10)::numeric,6) AS recov_var,
+  round(percentile_cont(0.25) WITHIN GROUP (ORDER BY recov_rate) FILTER (WHERE recov_n>=10)::numeric,4) AS recov_p25,
+  round(percentile_cont(0.50) WITHIN GROUP (ORDER BY recov_rate) FILTER (WHERE recov_n>=10)::numeric,4) AS recov_p50,
+  round(percentile_cont(0.75) WITHIN GROUP (ORDER BY recov_rate) FILTER (WHERE recov_n>=10)::numeric,4) AS recov_p75
+FROM per_user_tc WHERE cls <= 5
+GROUP BY cls, tc
+ORDER BY cls, CASE tc WHEN 'bullet' THEN 1 WHEN 'blitz' THEN 2 WHEN 'rapid' THEN 3 ELSE 4 END;
+
+-- ELO-axis pass: identical, but per_user_elo groups by (user_id, elo_bucket, cls)
+-- and the final SELECT groups by (cls, elo_bucket) ORDER BY cls, elo_bucket.
+```
+
+**Cohen's d (per class, per axis, per metric)**: `d = (max_group_mean − min_group_mean) / sqrt(mean(group variances))` over the TC (resp. ELO) group means/variances from the pass above. Apply the canonical 3-level threshold (`<0.2` collapse / `0.2–0.5` review / `≥0.5` keep separate). This is the same recipe every other subchapter uses; the only difference is the per-user unit is a within-class rate rather than a score.
+
 ##### Output
 
 For each of the three metrics (score / conversion / recovery):
@@ -2474,10 +2602,9 @@ For each of the three metrics (score / conversion / recovery):
      - If a class's `[p25, p75]` shifts the midpoint by > 1pp from 0.50 OR widens / narrows by > 2pp, propose a per-class override. Suggested per-class shape mirrors `PER_CLASS_GAUGE_ZONES`: a new `PER_CLASS_SCORE_BULLET_ZONES: Record<EndgameClass, { neutralMin: number; neutralMax: number }>` in `endgame_zones.py`, codegen'd to TS via `scripts/gen_endgame_zones_ts.py`, consumed in `EndgameTypeCard.tsx` via a lookup analogous to `PER_CLASS_GAUGE_ZONES[class]`.
      - If all classes stay within `[0.495, 0.505]` midpoint and `± 1pp` width vs the global band, keep the global band and document the verdict.
    - **Per-class score-diff neutral zone** (legacy `NEUTRAL_ZONE_MIN/MAX = ±0.05` in the now-deleted `EndgameWDLChart.tsx`): DEPRECATED after Phase 87 — the score-diff bullet was removed in the redesign and replaced with an absolute chess-score bullet vs the 50% baseline. Score-diff zone is no longer used by any live UI surface.
-   - **Per-class conv/recov gauge zones** (`PER_CLASS_GAUGE_ZONES` in `endgame_zones.py`): already per-class as of 2026-05-01. Compare current values against fresh pooled rates — recommend a delta only when the pooled rate drifts more than ~3pp from the live midpoint.
-5. **Collapse verdict per (metric × class)**: 6 classes × 3 metrics = 18 verdicts. For each metric × class, run Cohen's d across {TC, ELO} marginals on the per-cell pooled rate (n ≥ 30 cell-floor). This is rate-level rather than per-user because per-user-per-class would be too sparse at the current sample size.
-
-If 18 verdicts is too noisy, aggregate to one verdict per metric (across-class max d) plus per-class footnote when an outlier class fails the metric-level verdict.
+   - **Per-class conv/recov gauge zones** (`PER_CLASS_GAUGE_ZONES` in `endgame_zones.py`): already per-class as of 2026-05-01, but **TC-agnostic** (one band per class, pooling all four TCs). Compare current values against fresh pooled rates — recommend a level delta when the pooled rate drifts more than ~3pp from the live midpoint. **Additionally check the TC collapse verdict below**: if conv/recov keep-separate on the TC axis within a class (they do, as of 2026-05-27, d≈1.2–1.7 every class), the single per-class band mispaints by TC — a bullet player is judged against a band centered on the much higher slow-TC conversion (and lower slow-TC recovery). Flag this as a stratification recommendation (`PER_CLASS_GAUGE_ZONES` → per-`(class × TC)`), scoped to whether the live Endgame Type cards expose a TC filter.
+5. **Per-class TC marginal + ELO marginal tables** (from the per-axis passes above): for conversion and for recovery, one table per axis with rows = class (rook/minor_piece/pawn/queen/mixed), columns = axis level (TC: bullet/blitz/rapid/classical; ELO: 800–2400). Cell = `mean (p25–p75, n_users)`. These are the per-class analogues of the §3.2.1 global conv/recov marginals and the §3.4.2 per-class gap marginals; the reader must see them, not just the verdict.
+6. **Collapse verdict per (metric × class × axis)**: 5 classes × 2 rate metrics × 2 axes. For each, compute the per-user Cohen's d per the recipe above and apply the 3-level threshold. Render as a table: `class | conv TC d | conv TC verdict | conv ELO d | conv ELO verdict | recov TC d | recov TC verdict | recov ELO d | recov ELO verdict`. Keep the across-class score verdict (score is flat across class → collapse) as a separate one-liner. Pawnless is excluded (n below floor) with a footnote.
 
 #### 3.4.2 Per-span Score Gap by Endgame Type (Phase 87.1 SEED-016)
 
@@ -2512,7 +2639,7 @@ If 18 verdicts is too noisy, aggregate to one verdict per metric (across-class m
 1. Update `PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap` in `app/services/endgame_zones.py` per the per-class calibrated band (or set all 6 entries to the same pooled band if collapse verdict justifies).
 2. Optionally update `ZONE_REGISTRY["endgame_type_achievable_score_gap"]` (the global default surfaced to the LLM payload via `assign_zone`).
 3. Run `uv run python scripts/gen_endgame_zones_ts.py` to regenerate `frontend/src/generated/endgameZones.ts`. CI gates drift via `git diff --exit-code` on the generated file.
-4. Add the per-class IQR table and collapse verdict to `reports/benchmarks-latest.md` under a new §3.4.2 block; archive the previous report per the "Report file layout" rotation rule below.
+4. Add the per-class IQR table and collapse verdict to `reports/benchmark/benchmarks-latest.md` under a new §3.4.2 block; archive the previous report per the "Report file layout" rotation rule below.
 
 ##### Query
 
@@ -2933,7 +3060,7 @@ ORDER BY score_zone, gap_zone;
 
 ##### Output
 
-For the §3.4.3 block in `reports/benchmarks-latest.md`:
+For the §3.4.3 block in `reports/benchmark/benchmarks-latest.md`:
 
 1. **Per-class summary table** (5 rows — `pawnless` hidden):
 
@@ -2960,9 +3087,145 @@ For the §3.4.3 block in `reports/benchmarks-latest.md`:
 
 ---
 
+## 4. Global Percentile CDF
+
+> **CURRENT REALITY (SEED-029) — read this before the historical prose below.** §4 is a **separate deliverable**: it is NOT part of `benchmarks-latest.md` and `scripts/gen_benchmarks.py` does **not** compute it (its §4 chapter is reference-only, `status: "REFERENCE"`, emitting no report body — see `scripts/benchmarks/chapter4.py`). The live percentile artifact is the **Phase 94.4 cohort sliding-window** registry `COHORT_PERCENTILE_CDF` (8 metrics × ~37 Elo anchors × 4 TC, K-nearest-anchor cohorts) in `app/services/global_percentile_cdf.py`, generated by `scripts/gen_global_percentile_cdf.py --target benchmark`, reported at `reports/percentile/cohort-percentile-cdf-latest.md`, and gated by `tests/scripts/test_gen_global_percentile_cdf_{pooled,unchanged}.py`. **Everything below this callout — including the Phase 94.2 note, the flat `GLOBAL_PERCENTILE_CDF`, the 99-breakpoint pooled methodology, and `global-percentile-cdf-latest.md` — is HISTORICAL** (Phase 93 v1 → 94.2 → 94.3, all retired). Consult it for design lineage only; for current behaviour read `scripts/gen_global_percentile_cdf.py` and its module docstring.
+
+> **Correspondence with the production CDF changed in Phase 94.2 (see top-of-file callout).** This chapter describes the **per-cohort empirical CDF methodology** that produced the Phase 93 v1 `GLOBAL_PERCENTILE_CDF` artifact: one per-(user, game-time elo_bucket, tc) value pooled across the sparse-excluded (TC × ELO) grid. **As of Phase 94.2, the production CDF in `app/services/global_percentile_cdf.py` is no longer this distribution** — Plan 02 of 94.2 regenerated it under pooled-per-user methodology (recent 1000/TC across all played TCs, 36-month window, single ≥30 floor on the pooled set, one row per user; see `app/services/canonical_slice_sql.py` for the authoritative builders and `.planning/phases/94.2-pooled-per-user-percentile-redesign/` for the rationale). The numbers in `scripts/gen_global_percentile_cdf.py` were regenerated then too, so the breakpoint array on this chapter's SQL no longer matches the committed `GLOBAL_PERCENTILE_CDF` array. The per-cohort, per-rating-bucket sanity-check methodology below remains a **valid analytical breakdown** (same role as `_build_per_bucket_sanity_query` after 94.2 Plan 02) — it is just no longer the production-chip distribution. When this chapter mentions "the chip" / "Phase 94 backend interpolation" / "the committed artifact" / "GLOBAL_PERCENTILE_CDF", treat those references as **historical** to Phase 93 v1 and consult `app/services/canonical_slice_sql.py` for current production behaviour.
+
+This chapter produces per-metric empirical CDFs (cumulative distribution functions) over the four chipped ΔES metrics, **globally pooled** across the (TC × ELO) grid. The committed artifact lives at `app/services/global_percentile_cdf.py` (a sibling of `app/services/endgame_zones.py`, NOT a graft into it — the CDF tables have a different artifact shape than ZoneSpec). Mechanization is `scripts/gen_global_percentile_cdf.py` (Plan 02 — DB → Python regen is a manual recalibration step, mirroring `scripts/backfill_eval.py --db benchmark`; no CI gate, no auto-regen). The report deliverable is `reports/percentile/global-percentile-cdf-latest.md`, with the same rotation rule as `reports/benchmark/benchmarks-latest.md` (see §"Report file layout").
+
+The downstream consumer is **Phase 94 backend only**: it interpolates the user's per-metric value against `GLOBAL_PERCENTILE_CDF` at request time and emits a scalar `{metric}_percentile` field on the endgame response schemas, which the chip + popover render from. Phase 93 ships **no client-side code, no TS mirror, no Python→TS codegen, no CI drift-guard** (D-01) — unlike `endgame_zones.py` whose IQR bands are painted client-side, the CDF output is a single scalar computed server-side. A future client-side viz (sparkline of the user's position on the global distribution, "what value puts me in the top X%" widget, offline what-if calculator) is the trigger to add a TS mirror; it is not pre-built here.
+
+**Out of scope (explicit — D-02 rationale):**
+- **Recovery Score Gap percentiles** (`section2_score_gap_recov`) — opponent-confounded with Cohen's d ≈ 0.95 inverted rating coupling per `reports/benchmark/benchmarks-gap-metrics-percentile-candidacy.md` (2026-05-22). Defer until Recovery is repaired or re-framed.
+- **Raw % gauge percentiles** (Conversion / Parity / Recovery rate gauges — `conversion_win_pct`, `parity_score_pct`, `recovery_save_pct`) — redundant chips on cards whose ΔES row is already chipped.
+- **Per-(TC, ELO)-cell CDFs** — SEED-019 deliberately ships global-only comparison. The bragging-rights "top X% of all players" framing is the explicit product call; per-cell CDFs are not in v1.19 scope.
+- **Tier-4 per-endgame-class CDFs** — per-class samples too thin (~8 rook conversion spans per user is noise); deferred per `REQUIREMENTS.md` §Future Requirements.
+- **Opening insights percentile annotations** — candidate for a future Opening Insights v2 milestone.
+- **TS mirror / client-side codegen / Python→TS drift-guard** — D-01; add when a client-side CDF consumer ships.
+
+### In-scope metrics
+
+The artifact ships exactly **4** `MetricId` literals from `app/schemas/endgames.py` (no new IDs introduced — D-03):
+
+- **`score_gap`** — page-level Endgame Score Gap (`eg_score − non_eg_score`); see §3.1.6. Per-user inclusion floor: **≥30 endgame AND ≥30 non-endgame games** per user in their selected TC (matches the §3.1.6 cohort-band floor).
+- **`achievable_score_gap`** — page-level Achievable Score Gap (paired per-game `actual − expected` against the Stockfish-baseline expected score); see §3.1.5. Per-user inclusion floor: **≥20 endgame-entry games** per user with a paired (actual, expected) score (matches the §3.1.5 floor).
+- **`section2_score_gap_parity`** — Section 2 Parity ΔES Score Gap (per-span `exit_score − ES_entry`, partitioned to spans whose entry-eval bucket is `parity`); see §3.2.2. Per-user inclusion floor: **≥20 qualifying spans per user in the parity bucket** (matches the §3.2.2 span floor).
+- **`section2_score_gap_conv`** — Section 2 Conversion ΔES Score Gap (per-span `exit_score − ES_entry`, partitioned to spans whose entry-eval bucket is `conversion`); see §3.2.2. Per-user inclusion floor: **≥20 qualifying spans per user in the conversion bucket** (matches the §3.2.2 span floor).
+
+Per-metric floors are kept from the pre-flight (rather than unified) to preserve continuity with `reports/benchmark/benchmarks-gap-metrics-percentile-candidacy.md` (Claude's Discretion item #2 from CONTEXT.md).
+
+### Canonical CTE — inherited verbatim from §1
+
+The CDF query uses the Chapter 1 building blocks unchanged — **do not duplicate the SQL here** (the authoritative SQL lives in `scripts/gen_global_percentile_cdf.py`; the illustrative snippet at the end of this chapter is a composition example, not a substitute):
+
+- **Standard CTE — `selected_users`** (§1) — `benchmark_selected_users ⋈ benchmark_ingest_checkpoints` on `lichess_username + tc_bucket` with `bic.status = 'completed'`, joined to `users` on `lower(lichess_username)`. Bypassing the canonical CTE produces a wrong global distribution and therefore wrong percentiles for every user; the CDF tails are more sensitive to CTE drift than the IQR zone bands are (D-05).
+- **Sparse-cell exclusion** (§1) — `(elo_bucket = 2400 AND tc_bucket = 'classical')` is dropped from the pooled distribution (n=12 completed users, ~55 games/user, pool exhausted). Same rule applied to TC marginals, ELO marginals, and Cohen's d throughout Chapters 2–3.
+- **Equal-footing opponent filter** (§1) — `abs(opp_rating − user_rating) ≤ 100` (both ratings `NOT NULL`). Universal across every per-metric subchapter as of 2026-05-03; the CDF inherits it so the global distribution represents skill at equal footing, not skill at typical Lichess matchmaking.
+- **Rating-lag selection bias — game-time ELO bucketing** (§1, "Rating-lag selection bias (game-time bucketing)" and "user_elo_at_game / elo_bucket" in Shared SQL building blocks) — every per-user row is bucketed by the cohort user's **rating at game time** (`games.white_rating` / `games.black_rating`), NOT by `benchmark_selected_users.rating_bucket`. Sub-800 rows are dropped (`elo_bucket IS NULL`). A single user spans 2–3 game-time ELO buckets across their career; per-user metric values are computed per `(user_id, elo_bucket, tc)`.
+
+The pooled distribution is **global** (pooled across all `(elo_bucket, tc_bucket)` cells except the sparse `(2400, classical)` cell) — not per-cell. The chip phrasing "top X% of all players" requires a single global CDF, not per-(TC, ELO) CDFs. The per-rating-bucket tables in the next subsection are sanity checks on the pooled distribution, not separate CDFs.
+
+### Breakpoint set
+
+The locked breakpoint set is **every integer percentile from p1 through p99** — 99 breakpoints total (`p1, p2, p3, ..., p97, p98, p99`), no sub-percent steps. Per `ROADMAP.md` Phase 93 success criterion #5.
+
+**Rationale for the bounded tails (p1/p99, NOT extreme-tail extensions):** at the current pooled cohort size (n ≈ 2000 across the 4 metrics) the deep-tail breakpoints have approximately ±5pp sampling SE and would swing on single outliers — the bounded p1..p99 range deliberately keeps such extreme-tail breakpoints **out of scope**. Tighter tails are a future ops task — cohort re-selection at a higher `--per-cell` from `scripts/select_benchmark_users.py` — deferred until that cohort exists.
+
+**Rationale for integer-only steps (no sub-percent intermediates):** chip-rendered phrasing operates on whole-percent precision ("top 3%", not "top 2.5%"). Half-percent shoulders are **out of scope** because they would be stored but never rendered.
+
+**Chip phrasing convention:** all chip copy uses the **"top X%"** form (NEVER "bottom X%"). A user at p3 renders as "top 97%"; a user at p97 renders as "top 3%". The CDF table stores the empirical percentile; the renderer (Phase 94) converts to the top-X% framing.
+
+> **Superseded breakpoint sets** (earlier drafts, kept here for audit trail only — do not implement): an earlier 19-breakpoint *tail-densified* set (including p0.1, p0.5, p99.5, p99.9 and the `p2.5 / p97.5` half-percent shoulders) was proposed in `SEED-019` and an intermediate 15-breakpoint p1..p99-with-half-steps draft followed in CONTEXT.md D-06. Both are out of scope as of 2026-05-22 (CONTEXT.md D-06 revised to match ROADMAP success criterion #5); any incidental mention of `p0.1` / `p99.9` / `p2.5` / `p97.5` / `p0.5` / `p99.5` should appear only inside this superseded / out-of-scope footnote or an earlier-draft callout.
+
+### Per-rating-bucket sanity-check methodology
+
+For each of the 4 metrics, the report includes a per-rating-bucket table showing:
+
+| rating bucket | n_users | median | skew | kurtosis |
+|---|---:|---:|---:|---:|
+| 800 (game-time) | ... | ... | ... | ... |
+| 1200 (game-time) | ... | ... | ... | ... |
+| 1600 (game-time) | ... | ... | ... | ... |
+| 2000 (game-time) | ... | ... | ... | ... |
+| 2400 (game-time) | ... | ... | ... | ... |
+
+This mirrors `reports/benchmark/benchmarks-gap-metrics-percentile-candidacy.md` (2026-05-22). Purpose: verify that the pooled distribution behaves reasonably across rating strata. Conversion ΔES is known to have skew ≈ −0.95 and excess kurtosis ≈ +1.42 per the pre-flight (sigmoid-asymmetry artifact, ceiling at 1.0); sanity-check tables document this is expected, not a data bug. The sparse `(2400, classical)` cell is excluded from these marginals per §1 rules.
+
+Rating buckets follow the §1 canonical anchors `800 / 1200 / 1600 / 2000 / 2400` (game-time, 400-wide, sub-800 dropped).
+
+### Expected report shape
+
+`reports/percentile/global-percentile-cdf-latest.md` MUST contain, at minimum (slim format — Claude's Discretion item #3):
+
+1. **Header block** — DB provenance (benchmark, localhost:5433, flawchess_benchmark), snapshot ISO timestamp, `BENCHMARK_DB_SNAPSHOT_MONTH` (currently `"2026-03"`), per-metric n_users, the canonical-CTE inheritance note, and the same sparse-cell + equal-footing + game-time-bucketing methodology notes as `reports/benchmark/benchmarks-latest.md`.
+2. **Per-metric breakpoint table** — 99 rows × value columns: percentile label (`p1, p2, ..., p99`) and value at that percentile. Values rendered in pp with one decimal (`−2.3pp`) per the §1 Display formatting rule (`max(|p25|, |p75|)` family). The CDF stores raw 0–1 score-difference values internally; the report renders them in pp.
+3. **Per-metric per-rating-bucket sanity-check table** — 5 rows × 4 columns (`n_users / median / skew / kurtosis`) as shown above. One table per metric. Sparse `(2400, classical)` excluded.
+4. **Per-metric n_users header line** — explicit cohort size after the per-user inclusion floor is applied, so the reader can verify the cohort matches the pre-flight expectations (~2000 users per metric ±200 depending on per-metric floors).
+
+The slim format is sufficient for `ROADMAP.md` Phase 93 success criterion #3. The richer pre-flight-style layout (full per-bucket distribution percentiles + per-axis ELO collapse verdicts) is not required — those live in `reports/benchmark/benchmarks-latest.md` already and are not re-derived here.
+
+### Mechanization & rotation rule
+
+Methodology is mechanized by `scripts/gen_global_percentile_cdf.py` (Plan 02). The script:
+
+- Reuses the `--db benchmark` safety guard pattern from `scripts/backfill_eval.py`: refuses to run unless `DATABASE_URL` contains both `flawchess_benchmark` AND `:5433`, preventing accidental writes against dev/prod.
+- Runs the canonical CTE (§1) per metric, projects the 99 integer percentiles via `percentile_cont(ARRAY[0.01, 0.02, ..., 0.99]) WITHIN GROUP (ORDER BY <metric>)`, and emits the result as committed Python source at `app/services/global_percentile_cdf.py` (typed `Mapping[MetricId, CdfTable]` registry, dataclass shape mirroring `endgame_zones.ZONE_REGISTRY` — Claude's Discretion item #4).
+- Embeds two audit-trail constants in the committed Python source (Claude's Discretion item #4): `BENCHMARK_DB_SNAPSHOT_MONTH = "2026-03"` (str) and a per-metric `n_users: int` field on each `CdfTable`. Both also appear in the report header so a future recalibration session can verify what cohort the live chips were trained against.
+- DB → Python regen is a **manual recalibration step**. Re-run on demand (new benchmark snapshot month, metric floor change, methodology fix). No CI gate, no auto-regen, no scheduled job.
+
+**Report rotation rule (D-07).** On each run:
+1. If `reports/percentile/global-percentile-cdf-latest.md` exists, read the date from its first-line header (`# FlawChess Global Percentile CDF — YYYY-MM-DD`).
+2. Rename it to `reports/percentile/global-percentile-cdf-YYYY-MM-DD.md`. If that dated archive already exists, leave the archive alone and overwrite `reports/percentile/global-percentile-cdf-latest.md` in place (same convention as `reports/benchmark/benchmarks-latest.md`).
+3. Write the new snapshot to `reports/percentile/global-percentile-cdf-latest.md`.
+
+Never mutate an existing dated archive.
+
+### Illustrative SQL snippet (composition example — not authoritative)
+
+The authoritative SQL is in `scripts/gen_global_percentile_cdf.py`. The snippet below illustrates how the 99-breakpoint `percentile_cont` composes onto the canonical CTE for a single metric (`achievable_score_gap`); the script generalizes this across all 4 in-scope metrics with their per-metric floors:
+
+```sql
+WITH selected_users AS (
+  -- §1 Standard CTE — selected_users (status='completed', sub-800 dropped via game-time bucketing below)
+  -- ... see §1 "Standard CTE — selected_users" for the verbatim block ...
+),
+per_user AS (
+  -- §3.1.5 Achievable Score Gap per-user (paired d_i = actual − expected; mate included, |eval_cp| < 2000)
+  -- with §1 "user_elo_at_game / elo_bucket" + universal equal-footing filter abs(opp - user) <= 100
+  -- HAVING count(d_i) >= 20  (per-metric inclusion floor)
+  -- ... see §3.1.5 query for the verbatim block ...
+),
+per_user_excl_sparse AS (
+  SELECT * FROM per_user WHERE NOT (elo_bucket = 2400 AND tc = 'classical')
+)
+SELECT
+  percentile_cont(
+    ARRAY[
+      0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10,
+      0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.20,
+      0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.30,
+      0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39, 0.40,
+      0.41, 0.42, 0.43, 0.44, 0.45, 0.46, 0.47, 0.48, 0.49, 0.50,
+      0.51, 0.52, 0.53, 0.54, 0.55, 0.56, 0.57, 0.58, 0.59, 0.60,
+      0.61, 0.62, 0.63, 0.64, 0.65, 0.66, 0.67, 0.68, 0.69, 0.70,
+      0.71, 0.72, 0.73, 0.74, 0.75, 0.76, 0.77, 0.78, 0.79, 0.80,
+      0.81, 0.82, 0.83, 0.84, 0.85, 0.86, 0.87, 0.88, 0.89, 0.90,
+      0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99
+    ]::double precision[]
+  ) WITHIN GROUP (ORDER BY achievable_gap) AS breakpoints,
+  count(*) AS n_users
+FROM per_user_excl_sparse;
+```
+
+The 99-element `breakpoints` array is the row that lands in `GLOBAL_PERCENTILE_CDF["achievable_score_gap"].values` (with index `i ∈ {0..98}` mapping to percentile `i + 1`). Phase 94's interpolation helper consumes this array plus `n_users`.
+
+---
+
 ## Report file layout
 
-Write to `reports/benchmarks-latest.md`. Before writing, if that file already exists, read the date from its first line (`# FlawChess Benchmarks — YYYY-MM-DD`) and rename it to `reports/benchmarks-YYYY-MM-DD.md`. Don't overwrite an existing dated archive — if `benchmarks-YYYY-MM-DD.md` already exists for that date, leave the archive alone and overwrite `benchmarks-latest.md` in place. Layout:
+Write to `reports/benchmark/benchmarks-latest.md`. Before writing, if that file already exists, read the date from its first line (`# FlawChess Benchmarks — YYYY-MM-DD`) and rename it to `reports/benchmark/benchmarks-YYYY-MM-DD.md`. Don't overwrite an existing dated archive — if `benchmarks-YYYY-MM-DD.md` already exists for that date, leave the archive alone and overwrite `benchmarks-latest.md` in place. Layout:
 
 ```markdown
 # FlawChess Benchmarks — <DATE>
@@ -3061,8 +3324,10 @@ Every cell states `max |d|` and a verdict. Drives Phase 73 zone calibration in S
 One row per gauge constant. Recommended value comes from the pooled or per-cell distribution depending on the collapse verdict. Action is one of `keep` / `widen to X` / `narrow to Y` / `stratify per TC` / `stratify per ELO` / `stratify fully`.
 ```
 
+**No cross-snapshot diff section (SEED-029).** Earlier reports appended a "Cross-snapshot diff (DATE → DATE)" section hand-authored by diffing the prior `benchmarks-latest.md`. Do **not** reproduce it: the report ends at "Recommended thresholds summary". Cross-snapshot drift is recoverable by diffing the rotated dated archives directly (`git diff` / file diff between `benchmarks-YYYY-MM-DD.md` snapshots), so it does not belong in the generated report body.
+
 ## Re-running
 
-If `reports/benchmarks-latest.md` exists and the user asks for a subchapter subset, replace only those subchapters in place; preserve the header and the two final summary tables. Always rebuild the summary tables from whatever subchapters are present.
+For a **fresh snapshot**, follow **Workflow (generator-driven)** end to end: re-run `scripts/gen_benchmarks.py --db benchmark`, then narrate the new artifact into a rotated `benchmarks-latest.md` (archive the current one to its dated filename based on its first-line date, then write the new snapshot; never mutate an existing dated archive).
 
-If the user asks for a fresh snapshot, follow the rotation rule in "Report file layout": archive the current `benchmarks-latest.md` to its dated filename (based on its first-line date), then write the new snapshot to `benchmarks-latest.md`. Never mutate an existing dated archive.
+For a **subchapter subset**, you do not need to re-run the generator if `benchmarks-generated.{json,md}` is already fresh: splice the relevant subchapter tables from the artifact into `benchmarks-latest.md` in place, preserve the header, and **always rebuild the two summary tables** (Top-axis collapse, Recommended thresholds) from whatever subchapters are present. If the artifact is stale, re-run the generator first (it computes all chapters in one pass — there is no per-subchapter generator flag).

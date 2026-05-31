@@ -35,7 +35,7 @@ import type { EndgamePerformanceResponse } from '@/types/endgames';
 
 import { ENDGAME_TILE_SCORE_DOMAIN, deriveLevel } from './EndgameOverallShared';
 
-// Neutral band for score-vs-50% (Achievable Score). See EndgameOverallCard.tsx
+// Neutral band for score-vs-50% (Entry Eval Score). See EndgameOverallCard.tsx
 // for rationale; matches arrowColor.ts / WdlConfidenceTooltip bounds.
 const SCORE_NEUTRAL_LOWER = 0.45;
 const SCORE_NEUTRAL_UPPER = 0.55;
@@ -55,7 +55,7 @@ export function EntryCard({ data }: EntryCardProps) {
   const evalColor: string | undefined = evalShowZoneFontColor ? evalZoneHex : undefined;
   const showEntryEvalChart = data.entry_eval_n >= MIN_GAMES_FOR_RELIABLE_STATS;
 
-  // Row 2: achievable score (CR-01: use OFFSET-form for neutralMin/neutralMax)
+  // Row 2: entry eval score (CR-01: use OFFSET-form for neutralMin/neutralMax)
   const achievableLevel = deriveLevel(
     data.entry_expected_score_p_value,
     data.entry_expected_score_n,
@@ -72,15 +72,18 @@ export function EntryCard({ data }: EntryCardProps) {
 
   return (
     <div data-testid="tile-at-endgame-entry">
-      <h3 className="text-base font-semibold mb-2">Eval at Endgame Entry</h3>
-      <div className="flex flex-col gap-4">
+      {/* Full-bleed card header bar (matches the Time Pressure cards). */}
+      <h3 className="flex items-center gap-2 px-4 py-3 bg-black/20 border-b border-border/40 text-base font-semibold">
+        Eval at Endgame Entry
+      </h3>
+      <div className="flex flex-col gap-4 p-4">
         {/* Row 1: entry-eval bullet (pawns) */}
         {showEntryEvalChart ? (
           <div className="flex flex-col gap-2">
             <span className="flex items-center gap-1 text-sm tabular-nums w-full">
               <span className="text-muted-foreground inline-flex items-center gap-1">
                 <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                Endgame Entry Eval:
+                Entry Eval:
               </span>
               <span
                 className="font-semibold"
@@ -90,7 +93,7 @@ export function EntryCard({ data }: EntryCardProps) {
                 {formatSignedEvalPawns(data.entry_eval_mean_pawns)}
               </span>
               <MetricStatPopover
-                name="Endgame Entry Eval"
+                name="Entry Eval"
                 explanation="The average engine evaluation at the position where the endgame begins. Positive means you reached the endgame with the better position."
                 value={data.entry_eval_mean_pawns}
                 baseline={0}
@@ -124,7 +127,7 @@ export function EntryCard({ data }: EntryCardProps) {
                 ciLow={data.entry_eval_ci_low_pawns ?? undefined}
                 ciHigh={data.entry_eval_ci_high_pawns ?? undefined}
                 barColor="neutral"
-                ariaLabel={`Endgame Entry Eval: ${data.entry_eval_mean_pawns.toFixed(2)} pawns`}
+                ariaLabel={`Entry Eval: ${data.entry_eval_mean_pawns.toFixed(2)} pawns`}
               />
             </div>
           </div>
@@ -132,14 +135,14 @@ export function EntryCard({ data }: EntryCardProps) {
           <p className="text-sm text-muted-foreground py-4">Not enough data yet</p>
         )}
 
-        {/* Row 2: achievable score bullet (CR-01: OFFSET-form neutralMin/neutralMax). */}
+        {/* Row 2: entry eval score bullet (CR-01: OFFSET-form neutralMin/neutralMax). */}
         <div data-testid="endgame-achievable-score">
           {showAchievableChart ? (
             <div className="flex flex-col gap-2">
               <span className="flex items-center gap-1 text-sm tabular-nums w-full">
                 <span className="text-muted-foreground inline-flex items-center gap-1">
                   <Cpu className="h-3.5 w-3.5" aria-hidden="true" />
-                  Achievable Score:
+                  Entry Eval Score:
                 </span>
                 <span
                   className="font-semibold"
@@ -149,8 +152,8 @@ export function EntryCard({ data }: EntryCardProps) {
                   {`${(data.entry_expected_score * 100).toFixed(0)}%`}
                 </span>
                 <MetricStatPopover
-                  name="Achievable Score"
-                  explanation="What a strong (2300+ rated) player would score from your endgame-entry positions against a peer of similar rating. Compare against your Endgame Score to see how well you converted the positions you reached."
+                  name="Entry Eval Score"
+                  explanation="Your Entry Eval converted to a Score via the Lichess expected-score formula: what a strong (2300+ rated) player would expect to score from your endgame-entry positions. Compare against your Endgame Score to see how well you converted the positions you reached."
                   value={data.entry_expected_score}
                   baseline={0.5}
                   unit="percent"
@@ -169,7 +172,7 @@ export function EntryCard({ data }: EntryCardProps) {
                     </>
                   }
                   testId="popover-trigger-achievable-score"
-                  ariaLabel="What is Achievable Score?"
+                  ariaLabel="What is Entry Eval Score?"
                   isPending={isPending}
                   pendingCount={pendingCount}
                 />
@@ -195,7 +198,7 @@ export function EntryCard({ data }: EntryCardProps) {
                       : undefined
                   }
                   barColor="neutral"
-                  ariaLabel={`Achievable Score: ${(data.entry_expected_score * 100).toFixed(0)}%`}
+                  ariaLabel={`Entry Eval Score: ${(data.entry_expected_score * 100).toFixed(0)}%`}
                 />
               </div>
             </div>
