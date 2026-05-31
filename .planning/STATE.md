@@ -1,29 +1,27 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.21
-milestone_name: Time-Control-Aware Endgame Metrics
-status: milestone_complete
-last_updated: 2026-05-31T10:30:00.000Z
+milestone: v1.22
+milestone_name: Maintenance — Test Isolation & Frontend Major Upgrades
+status: planning
+last_updated: "2026-05-31T13:57:05.899Z"
 last_activity: 2026-05-31
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
-stopped_at: v1.21 shipped and archived (tag v1.21) — ready to start v1.22 Maintenance (Phase 100 isolated test DB, Phase 101 frontend major upgrades). LLM Statistical Reasoning deprioritized to backlog Phase 999.7.
+  total_phases: 2
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99, 99.1) — ✅ SHIPPED 2026-05-31 (tag v1.21)
-Phase: 100 (v1.22 Maintenance — Isolated Test DB Per Run) — not started
-Plan: Not started
-Next: `/gsd-new-milestone` (or `/gsd-discuss-phase 100`) to begin v1.22 Maintenance (Phase 100 isolated test DB / SEED-031, then Phase 101 frontend major upgrades / SEED-032)
-Status: Milestone complete
-Last activity: 2026-05-31 — Completed quick task 260531-jga: updated all backend + frontend dependencies (incl. dev) to latest within current majors. `uv lock --upgrade` honoring the deliberate caps (`pydantic-ai-slim<2.0`, `genai-prices<0.1.0`); frontend caret ranges bumped in-major only with `overrides`/Dependabot pins preserved. Code fixups for ty 0.0.40 (3 type errors), eslint-plugin-react-hooks 7.1.1 (new `set-state-in-effect` rule disabled globally — pre-existing intentional patterns), and knip 6.15.0 (8 dead exports removed, 2 duplicate-export pairs fixed). No pin-backs. Full local gate re-run and GREEN: ruff/ty clean, pytest 2198 passed/16 skipped, frontend lint + vitest 744/744 + build + knip clean. Commits `2d0fc592` + `2678b070` + `3756afff` on `main`; not pushed. Previously: v1.21 closed: archived roadmap to milestones/v1.21-ROADMAP.md, promoted CHANGELOG [Unreleased] → [v1.21], added MILESTONES entries (incl. backfilled v1.19/v1.20), reconciled PROJECT.md v1.20→v1.22 milestone drift, tagged v1.21. Pre-close hygiene cleared the open-artifact noise (committed c4641db4).
+Phase: 100 (Isolated Test DB Per Run) — not started
+Plan: —
+Status: Roadmapped — ready to plan (v1.22 requirements + roadmap already defined; Phases 100, 101)
+Next: `/gsd-discuss-phase 100` (or `/gsd-plan-phase 100`) to begin v1.22 Maintenance
+Last activity: 2026-05-31 — Milestone v1.22 started (pointer advanced to v1.22; v1.21 archived to milestones/v1.21-phases/)
 
 ## Project Reference
 
