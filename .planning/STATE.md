@@ -2,38 +2,38 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: Time-Control-Aware Endgame Metrics
-status: ready_to_plan
-last_updated: 2026-05-31T08:13:06.612Z
+status: milestone_complete
+last_updated: 2026-05-31T10:30:00.000Z
 last_activity: 2026-05-31
 progress:
-  total_phases: 9
+  total_phases: 4
   completed_phases: 4
   total_plans: 15
   completed_plans: 15
-  percent: 44
-stopped_at: Phase 99.1 complete (4/4) — ready to discuss Phase 100
+  percent: 100
+stopped_at: v1.21 shipped and archived (tag v1.21) — ready to start v1.22 (Phase 100, LLM Statistical Reasoning)
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99) — EXECUTING
-Phase: 100
+Milestone: v1.21 Time-Control-Aware Endgame Metrics (Phases 97, 98, 99, 99.1) — ✅ SHIPPED 2026-05-31 (tag v1.21)
+Phase: 100 (v1.22 LLM Statistical Reasoning) — not started
 Plan: Not started
-Next: Plan 03 (PerTcBucketStats field widening + endgame_service dispatch)
-Status: Ready to plan
-Last activity: 2026-05-31 — Completed quick task 260531-f7s: endgame Time Pressure section converted to the sibling collapsible full-width-row Accordion pattern (2×2 grid → stacked rows, primary-TC default-expand, 2-column expanded body with chart left / gauges right + vertical/horizontal separators). Frontend-only; branch `quick/endgame-time-pressure-collapsible-rows`, not pushed.
+Next: `/gsd-new-milestone` (or `/gsd-discuss-phase 100`) to begin v1.22 LLM Statistical Reasoning
+Status: Milestone complete
+Last activity: 2026-05-31 — v1.21 closed: archived roadmap to milestones/v1.21-ROADMAP.md, promoted CHANGELOG [Unreleased] → [v1.21], added MILESTONES entries (incl. backfilled v1.19/v1.20), reconciled PROJECT.md v1.20→v1.22 milestone drift, tagged v1.21. Pre-close hygiene cleared the open-artifact noise (committed c4641db4).
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-27 after v1.19 milestone)
+See: .planning/PROJECT.md (updated 2026-05-31 after v1.21 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.21 Time-Control-Aware Endgame Metrics. Phase 97 (Endgame Metrics by Time Control — per-TC Conversion/Parity/Recovery cards with TC-specific bands) shipped 2026-05-29 (PR #160). Remaining: Phase 98 (TC-mix-weighted Conv/Recov gauges re-added to the 5 Endgame Type cards) and Phase 99 (peer-relative percentile badges on the per-TC Conv/Parity/Recovery cards, deferred from Phase 97). The three earlier standalone phases were regrouped post-hoc on 2026-05-30: v1.20 Import Pipeline Hardening Follow-Up and Readiness = Phase 95 (asyncpg COPY for `bulk_insert_positions`, closes FLAWCHESS-3Q, PRs #148/#149) + Phase 96 (Import Readiness Gate, two-tier per-page gate replacing the eval-coverage auto-reload, PR #151). v1.22 LLM Statistical Reasoning = Phase 100 (renumbered from the old Phase 99). v1.20 was tagged at `dcd22fef` (pre-Phase-97 boundary on main) and released on GitHub. Run `/gsd-plan-phase 98` next.
+Current focus: v1.22 LLM Statistical Reasoning (Phase 100) — rework the endgame-insights LLM payload + prompt to reason over p-values, CI bounds, and the v1.19/v1.21 percentile annotations, with guardrails against narrating small-but-significant findings (LLM-01..07 in REQUIREMENTS.md). v1.21 just shipped: per-TC Endgame Metrics cards (Phase 97), collapsible per-TC Endgame Type Breakdown cards (Phase 98), per-TC Conv/Parity/Recov percentile chips (Phase 99), and cohort-CDF demoted to a DB table (Phase 99.1). Prod backfill of the 12 new rate-percentile metrics is deferred to deploy.
 
 ## Milestone Progress
 
-Twenty milestones complete (v1.0–v1.20). v1.20 Import Pipeline Hardening Follow-Up and Readiness shipped 2026-05-29 — 2 phases (95 asyncpg COPY, 96 Import Readiness Gate), 5 plans, PRs #148/#149/#151; regrouped post-hoc from standalone phases on 2026-05-30, tagged at `dcd22fef`. v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
+Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame Metrics shipped 2026-05-31 — 4 phases (97, 98, 99, 99.1), 15 plans, PRs #160/#163/#164/#167/#168; archived to milestones/v1.21-ROADMAP.md, tagged v1.21. v1.20 Import Pipeline Hardening Follow-Up and Readiness shipped 2026-05-29 — 2 phases (95 asyncpg COPY, 96 Import Readiness Gate), 5 plans, PRs #148/#149/#151; regrouped post-hoc from standalone phases on 2026-05-30, tagged at `dcd22fef`. v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered via PR #145 + earlier per-phase PRs. 26/26 PCTL/TPCTL/PRPCR requirements satisfied. v1.18 Import Pipeline Hardening shipped 2026-05-22 (3 phases, 17 plans, PRs #130/#137/#138 + hotfix #139 + container-budget hotfix #144). v1.17 Endgame Stats Card Redesign shipped 2026-05-19 — 13 phases (84, 85, 85.1, 86, 87, 87.1, 87.2, 87.4, 87.5, 87.6, 88, 88.3, 88.4), ~54 plans, 203 commits over 8 days, delivered via PRs #89–#117 (plus production-branch OOM hotfix #99/#100/#101). Phase 89 (Polish) dropped from scope at close; Phase 87.3 (percentile composite) superseded by 87.4→87.6. v1.16 Stockfish Eval Analyses shipped 2026-05-11 (5 phases, 24 plans, PRs #80/#82/#85/#86/#88).
 
 ## Key Context
 
@@ -52,6 +52,17 @@ Twenty milestones complete (v1.0–v1.20). v1.20 Import Pipeline Hardening Follo
 ## Accumulated Context
 
 ### Deferred Items
+
+Acknowledged at v1.21 milestone close on 2026-05-31 (open-artifact audit: 10 genuine backlog items; the historical "172 quick-task" noise was a stale `gsd-sdk` filename-match bug and was cleared, not deferred — see commit c4641db4):
+
+| Category | Item | Status |
+|----------|------|--------|
+| todos | 10 pending todos (bitboard storage, benchmark-rebuild-per-tc-selection, benchmark-skill-v2-build, rerun-benchmarks-equal-footing, recovery-score-gap-popover-copy, pt-33-tailwind-axis-label, phase-94.2/94.4/99 prod-backfills, phase-70-roadmap-amendments) | Carried forward as live backlog — long-range ideas + per-phase prod-backfill tasks; not v1.21-scoped. Note: `pt-33-tailwind-axis-label` is likely moot (pt-33 is valid in Tailwind v4) |
+| todos | 2026-05-31-phase-99-prod-backfill-rate-percentiles | Open — backfill the 12 new rate-percentile metrics on prod at next deploy (D-11 sign-off) |
+| seeds | SEED-010 (library page), SEED-012 (client-side Stockfish tactics), SEED-031 (isolated test DB per run) | Dormant — genuine future-work backlog, not noise |
+| seeds | SEED-029 (benchmarks deterministic rebuild) | Open — endgame generator ported in PR #166; faithful-port Phase A + methodology phase remain |
+| seeds | SEED-030 (structural code-health) | Open (Track A) — module-splitting remains; Track B (CDF demotion) closed by Phase 99.1 |
+| resolved | 13 done quick tasks (unmarked), quick-260519-ni3, Phases 97/98/99 verification+UAT frontmatter, import-job-db-conn-closed debug session, remove-recency todo | NOT deferred — resolved/archived at this close (commit c4641db4) |
 
 Acknowledged at v1.17 milestone close on 2026-05-19:
 
