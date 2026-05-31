@@ -391,7 +391,7 @@ export function EndgameTimePressureCard({
               className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground mb-2"
               data-testid={`time-pressure-card-${card.tc}-quintiles-subtitle`}
             >
-              <span>How you score under time pressure</span>
+              <span>How you <em>score</em> under time pressure</span>
               <InfoPopover
                 ariaLabel={`${tcLabel} score gap by remaining time info`}
                 testId={`time-pressure-card-${card.tc}-quintiles-info`}
@@ -455,7 +455,7 @@ export function EndgameTimePressureCard({
               className="text-sm font-medium text-muted-foreground"
               data-testid={`time-pressure-card-${card.tc}-clock-gap-subtitle`}
             >
-              How often you are under time pressure
+              How <em>often</em> you are under time pressure
             </div>
             {/* SC-2: top section — ClockGapHeaderRow sits ABOVE the bullet,
                 replacing the old label row. */}

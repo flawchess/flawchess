@@ -302,11 +302,12 @@ export function ScoreGapByTimePressureChart({
         {/* Vertical Y-axis label on desktop only — mirrors the "Clock Gap"
             label on EndgameClockDiffOverTimeChart. Plain HTML rotated via CSS
             rather than Recharts' SVG `label` (which produces NaN plot-area
-            rects under a responsive container). pb-8 lifts the label off the
-            x-axis caption so it centers on the plot area. */}
+            rects under a responsive container). The label is rotated 180deg,
+            which flips physical padding — so pt (not pb) raises it; pt-8
+            nudges it just above the vertical center of the plot area. */}
         {!isMobile && (
           <div
-            className="flex items-center justify-center text-sm text-muted-foreground shrink-0 pb-8 -mr-1"
+            className="flex items-center justify-center text-sm text-muted-foreground shrink-0 pt-8 -mr-1"
             style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
             data-testid={`score-gap-by-time-pressure-yaxis-label-${tc}`}
           >
