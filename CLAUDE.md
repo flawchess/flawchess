@@ -29,13 +29,13 @@ Users import their games from chess.com and/or lichess and analyze win/draw/loss
 
 ## Tech Stack
 
-- **Backend**: FastAPI 0.115.x, Python 3.13, uv, Uvicorn
-- **Frontend**: React 19 + TypeScript + Vite 5, react-chessboard 5.x, chess.js, TanStack Query, Tailwind CSS
+- **Backend**: FastAPI 0.13x, Python 3.13, uv, Uvicorn
+- **Frontend**: React 19 + TypeScript + Vite 7, react-chessboard 5.x, chess.js, TanStack Query, Tailwind CSS
 - **Database**: PostgreSQL (asyncpg). No SQLite.
 - **ORM**: SQLAlchemy 2.x async (`select()` API, not legacy 1.x) + Alembic + asyncpg
 - **Auth**: FastAPI-Users
 - **HTTP client**: httpx async only — never use `requests` or `berserk`
-- **Chess logic**: python-chess 1.10.x
+- **Chess logic**: python-chess 1.11.x
 - **Validation**: Pydantic v2 throughout
 
 ## Commands
