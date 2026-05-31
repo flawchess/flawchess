@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: quick-260519-vf2
 plan: "01"
 subsystem: endgame-zones

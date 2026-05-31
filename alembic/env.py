@@ -16,6 +16,7 @@ from app.models.oauth_account import OAuthAccount  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.opening import Opening  # noqa: F401
 from app.models.llm_log import LlmLog  # noqa: F401
+from app.models.benchmark_cohort_cdf import BenchmarkCohortCdf  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

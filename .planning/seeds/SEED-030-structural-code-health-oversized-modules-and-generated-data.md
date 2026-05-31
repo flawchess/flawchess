@@ -1,6 +1,7 @@
 # SEED-030: Structural code-health — split oversized modules + demote generated CDF from source to data asset
 
-**Status:** Open
+**Status:** Open (Track B done, Track A remains)
+**Progress (2026-05-31, v1.21 close):** Track B (demote the generated `global_percentile_cdf.py` lookup out of Python source) was **completed by Phase 99.1** — the cohort CDF now lives in the `benchmark_cohort_cdf` DB table, the module shrank from ~130k to ~250 lines, and a compact seed file + `scripts/seed_cohort_cdf.py` replaced the in-source table (commit d9c726cf, PR #168). **Track A (split oversized multi-concern modules)** is untouched and remains live backlog.
 **Created:** 2026-05-30
 **Source:** `/gsd-map-codebase` run (2026-05-30), `.planning/codebase/CONCERNS.md` — repo-quality review. Points 1 and 3 of the post-mapping quality assessment.
 **Related:** SEED-027 (DB memory budget guardrail — shares the `import_service.py` hot path), CLAUDE.md "Keep functions small and shallow" + split-recipe rules.

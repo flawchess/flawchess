@@ -649,6 +649,7 @@ export function EndgamesPage() {
               <EndgameTimePressureSection
                 data={timePressureCardsData}
                 ratingAnchors={overviewData?.rating_anchors}
+                filterKey={JSON.stringify(appliedFilters)}
               />
               <SectionInsightSlot sectionId="time_pressure" data={sectionBySection.time_pressure} />
             </>

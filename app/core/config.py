@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # is treated as "unconfigured" — app/main.py lifespan calls
     # get_insights_agent() which raises UserError on the empty string, aborting
     # startup (D-22/D-23). Accepts any pydantic-ai model string, e.g.
-    # "anthropic:claude-haiku-4-5-20251001", "google-gla:gemini-2.5-flash".
+    # "anthropic:claude-haiku-4-5-20251001", "google:gemini-3.5-flash".
     # Tests use the built-in "test" provider (see tests/conftest.py).
     PYDANTIC_AI_MODEL_INSIGHTS: str = ""
     # When true, insights service strips `report.overview = ""` before
@@ -39,17 +39,20 @@ class Settings(BaseSettings):
     INSIGHTS_HIDE_OVERVIEW: bool = False
 
     # Google Gemini thinking controls. Only applied when PYDANTIC_AI_MODEL_INSIGHTS
-    # starts with "google-gla:" or "google-vertex:". Silently ignored for other
+    # starts with "google:" or "google-cloud:". Silently ignored for other
     # providers (Anthropic, OpenAI, test).
     #
-    # GEMINI_THINKING_LEVEL:  Gemini 3+ knob (e.g. gemini-3-flash-preview) —
-    #   "low" (cheaper, faster) or "high" (more reasoning).
+    # GEMINI_THINKING_LEVEL:  Gemini 3+ knob — "minimal", "low", "medium", or
+    #   "high", in increasing reasoning depth / token cost / latency. "minimal"
+    #   is the cheapest/fastest (Google's equivalent of the old 2.5
+    #   thinking_budget=0). Gemini 3.5's own default is "medium"; we default to
+    #   "low" to keep insights cheap and fast.
     # GEMINI_THINKING_BUDGET: Gemini 2.5 knob — explicit token cap. 0 disables
     #   thinking entirely. Ignored on Gemini 3 (which uses thinking_level).
     # GEMINI_INCLUDE_THOUGHTS: when True, Google returns thoughts_token_count in
     #   usage metadata so the insights service can persist them to
     #   llm_logs.thinking_tokens for cost attribution.
-    GEMINI_THINKING_LEVEL: Literal["low", "high"] = "low"
+    GEMINI_THINKING_LEVEL: Literal["minimal", "low", "medium", "high"] = "low"
     GEMINI_THINKING_BUDGET: int = 0
     GEMINI_INCLUDE_THOUGHTS: bool = True
 

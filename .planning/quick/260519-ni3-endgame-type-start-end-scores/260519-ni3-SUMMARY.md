@@ -1,7 +1,7 @@
 ---
 phase: quick-260519-ni3
 plan: "01"
-status: incomplete
+status: complete
 subsystem: endgames
 tags: [endgame, score-gap, frontend, backend, tdd]
 dependency_graph:
@@ -41,7 +41,7 @@ metrics:
 
 ## Status
 
-**Incomplete** — Tasks 1 and 2 complete; stopped at Task 3 (checkpoint:human-verify) as required by plan constraints.
+**Complete** — Tasks 1 and 2 (backend + frontend code) shipped in commits 3514407f / 82d0968c. The only remaining "Task 3" was a `checkpoint:human-verify` gate, not code work; it was subsequently subsumed by Phase 98, which restored and reworked this exact `EndgameTypeCard` component (per-(class × TC) gauges, `tc` prop) and re-verified it end-to-end with its own UAT. Marked complete at v1.21 milestone close (2026-05-31).
 
 ## Tasks Completed
 

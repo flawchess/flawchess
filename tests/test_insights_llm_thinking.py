@@ -77,13 +77,11 @@ class TestBuildGoogleThinkingConfig:
 
 
 class TestGetInsightsAgentGoogleBranch:
-    def test_google_gla_model_builds_google_backed_agent(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_google_model_builds_google_backed_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             settings,
             "PYDANTIC_AI_MODEL_INSIGHTS",
-            "google-gla:gemini-3-flash-preview",
+            "google:gemini-3.5-flash",
         )
         # GoogleProvider.__init__ eagerly validates an API key. CI has no
         # GOOGLE_API_KEY; set a placeholder so provider construction succeeds.
@@ -133,6 +131,7 @@ class _FakeResult:
     output: EndgameInsightsReport
     _usage: _FakeUsage
 
+    @property
     def usage(self) -> _FakeUsage:  # pragma: no cover - trivial
         return self._usage
 

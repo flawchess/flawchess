@@ -209,8 +209,8 @@ ssh flawchess "cd /opt/flawchess && docker compose down && docker compose up -d"
 
 This project uses **GitLab Flow** (adopted 2026-05-16): `main` is the integration trunk, a long-lived `production` branch is exactly what is deployed.
 
-- **`main`** — integration trunk. All GSD phases/features branch off `main` and merge back into `main` via PR (squash-merge only when the user approves). `main` may contain unreleased, unshipped milestone work. Pushing to `main` never deploys.
-- **`production`** — tracks the exact commit running in prod. Never commit directly to it; it only ever receives merges from `main` (releases) or from `hotfix/*` branches (urgent prod fixes). `bin/deploy.sh` deploys the `production` branch, not `main`.
+- **`main`** — integration trunk. Feature/phase work branches off `main` and merges back via **local squash-merge** (`git checkout main && git merge --squash <branch> && git commit && git push`, then delete the merged branch: `git branch -D <branch>` plus `git push origin --delete <branch>` if it was pushed), not a GitHub PR — the PR round-trip is too slow and only gets slower as the suite grows. `main` may contain unreleased, unshipped milestone work. Pushing to `main` never deploys. **The full-suite gate runs once, right before the squash-merge that integrates a unit of work into `main`** — the *complete* Pre-PR checklist below (backend `ruff`/`ty`/`pytest` **and** frontend `npm run lint && npm test`). That run is the safety net replacing pre-merge CI, so at that integration point a subset run (e.g. one test file) is not acceptable. It is NOT a per-commit tax: incremental commits on a feature branch, and small direct commits to `main`, run only the tests you judge relevant (or none for trivial no-logic changes — docs, comments, a constant, CHANGELOG line). Use judgment on what's "small"; when a commit *is* the integration of real work, run the full gate. This relies on `main` having branch protection with `enforce_admins: false` (admins bypass the required `test` check); if that ever flips to `true`, revert to the PR route. CodeQL still runs post-merge on the push to `main`.
+- **`production`** — tracks the exact commit running in prod, and is the real gate: every release goes `main → production` via PR, and `bin/deploy.sh` re-runs the full CI matrix before anything ships, so a broken `main` commit can never reach users. Never commit directly to it; it only ever receives merges from `main` (releases) or from `hotfix/*` branches (urgent prod fixes). `bin/deploy.sh` deploys the `production` branch, not `main`. Always use a PR for `production`.
 - **Release promotion**: at a milestone boundary (or any approved release point), open a PR `main → production`, then run `bin/deploy.sh`.
 - **Hotfix flow** (urgent prod fix without shipping unreleased `main`):
   1. `git checkout -b hotfix/<slug> production`
@@ -218,7 +218,7 @@ This project uses **GitLab Flow** (adopted 2026-05-16): `main` is the integratio
   3. `bin/deploy.sh` (deploys `production`).
   4. Forward-port: merge `production` back into `main` (or cherry-pick the fix) so the fix isn't lost at the next release. Expect conflicts when `main` has diverged — resolve in favour of the prod-safe value.
 - **First deploy after adopting GitLab Flow**: the server checkout was on `main`. The deploy workflow now does `git checkout production` + `git reset --hard origin/production`, so the switch is automatic on the next `bin/deploy.sh`. No manual server step needed unless the server working tree is dirty (the deploy aborts on a dirty tree by design).
-- Always create a pull request before merging into `main` or `production`. Squash and merge only when approved or requested by the user.
+- **`main`**: local squash-merge after the full local gate passes (see the `main` bullet above). No GitHub PR required. **`production`**: always via PR `main → production`, then `bin/deploy.sh`.
 
 ## Changelog & Releases
 

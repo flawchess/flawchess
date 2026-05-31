@@ -6,8 +6,12 @@ Phase 94.x score-gap metrics plus 12 per-(metric × TC) time-pressure metrics
 ({time_pressure_score_gap, clock_gap, net_flag_rate} × {bullet, blitz, rapid,
 classical}).
 
+Phase 99 Plan 02: widened to 20 values — the 8 Phase 94.4 family-level values
+plus 12 per-(rate metric × TC) values ({conversion_rate, parity_rate,
+recovery_rate} × {bullet, blitz, rapid, classical}).
+
 Asserts that after migrations, the ``benchmark_metric`` Postgres ENUM type
-contains EXACTLY the 16 expected labels in alphabetical order.
+contains EXACTLY the expected labels in alphabetical order.
 
 This test catches:
 - Pitfall 3 (RESEARCH 94.1): ENUM rejects valid values if labels drift
@@ -63,10 +67,28 @@ def _migration_present() -> bool:
 # to 8 family-level values — TC dimensionality moved into the new
 # user_benchmark_percentiles.time_control_bucket PK column. Recovery Score
 # Gap is rescued (D-05a) and joins the ENUM as ``recovery_score_gap``.
+# Phase 99 Plan 02 (migration 3981239fd391): 12 new TC-suffixed rate values
+# added ({conversion_rate, parity_rate, recovery_rate} × {bullet, blitz,
+# rapid, classical}).
 EXPECTED_ENUM_LABELS: list[str] = [
     "achievable_score_gap",
     "clock_gap",
+    "conversion_rate",
+    "conversion_rate_blitz",
+    "conversion_rate_bullet",
+    "conversion_rate_classical",
+    "conversion_rate_rapid",
     "net_flag_rate",
+    "parity_rate",
+    "parity_rate_blitz",
+    "parity_rate_bullet",
+    "parity_rate_classical",
+    "parity_rate_rapid",
+    "recovery_rate",
+    "recovery_rate_blitz",
+    "recovery_rate_bullet",
+    "recovery_rate_classical",
+    "recovery_rate_rapid",
     "recovery_score_gap",
     "score_gap",
     "score_gap_conv",
@@ -92,12 +114,16 @@ pytestmark = pytest.mark.asyncio
 async def test_benchmark_metric_enum_has_exactly_four_labels(
     test_engine: AsyncEngine,
 ) -> None:
-    """After migrations, benchmark_metric ENUM has exactly the 8 expected labels.
+    """After migrations, benchmark_metric ENUM has exactly the 23 expected labels.
 
     (Test name retained from Phase 94.1 for git-blame stability; the assertion
-    now covers 8 family-level labels per Phase 94.4 D-13 Plan 05a — TC
-    dimensionality moved into the new user_benchmark_percentiles
-    .time_control_bucket PK column.)
+    now covers 8 Phase-94.4 family-level labels + 12 Phase-99 TC-suffixed rate
+    labels + 3 Phase-99 Plan-05 bare family-name labels = 23 total.
+    TC dimensionality for score-gap metrics lives in the
+    user_benchmark_percentiles.time_control_bucket PK column; the rate metrics
+    use bare family names (conversion_rate, parity_rate, recovery_rate) as the
+    ENUM/metric column value, with time_control_bucket carrying the TC dimension.
+    The 12 TC-suffixed values remain for forward compatibility.)
 
     Query shape: SELECT enumlabel FROM pg_enum e
                  JOIN pg_type t ON e.enumtypid = t.oid
@@ -105,13 +131,13 @@ async def test_benchmark_metric_enum_has_exactly_four_labels(
                  ORDER BY enumlabel
 
     Asserts:
-    - Exactly 8 labels returned (not more, not fewer)
-    - Labels match the locked Phase 94.4 D-13 set (incl. Recovery rescue)
+    - Exactly 23 labels returned (not more, not fewer)
+    - Labels match the locked Phase 94.4 D-13 + Phase 99 set (including Plan-05 fix)
     - No label drift between the migrations and CdfMetricId Literal in
       global_percentile_cdf.py
 
     Threat T-94.1-02 mitigation: downstream code that inserts ``metric`` values
-    outside this 8-value set will fail with a Postgres ENUM rejection error,
+    outside this 23-value set will fail with a Postgres ENUM rejection error,
     not a silent data corruption. This test is the CI-time guard that the ENUM
     contract has not drifted.
     """

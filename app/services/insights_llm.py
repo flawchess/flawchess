@@ -261,7 +261,7 @@ class InsightsValidationFailure(Exception):
 
 # -- Agent singleton (CONTEXT.md D-21, D-22) --
 
-_GOOGLE_PREFIXES = ("google-gla:", "google-vertex:")
+_GOOGLE_PREFIXES = ("google:", "google-cloud:")
 _GEMINI3_MODEL_MARKER = "gemini-3"  # Gemini 3+ uses thinking_level; older uses thinking_budget
 
 
@@ -285,7 +285,7 @@ def _build_google_thinking_config(model_name: str) -> dict[str, object]:
 def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
     """Return the singleton pydantic-ai Agent, constructing on first call.
 
-    For Google-provider models ("google-gla:" / "google-vertex:" prefix) the
+    For Google-provider models ("google:" / "google-cloud:" prefix) the
     Agent is constructed from an explicit `GoogleModel` plus a
     `GoogleModelSettings` carrying `google_thinking_config`. This lets us cap
     thinking cost (thinking_level=low on Gemini 3; thinking_budget=0 on 2.5)
@@ -308,11 +308,12 @@ def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
     model_str = settings.PYDANTIC_AI_MODEL_INSIGHTS
     if model_str.startswith(_GOOGLE_PREFIXES):
         provider_prefix, _, model_name = model_str.partition(":")
-        # provider_prefix is "google-gla" or "google-vertex" — both are valid
-        # pydantic-ai GoogleProvider names (see pydantic_ai.providers.google).
-        # cast to satisfy pydantic-ai's Literal param — the startswith check
-        # above guarantees provider_prefix is one of the two accepted values.
-        provider_literal = cast(Literal["google-gla", "google-vertex"], provider_prefix)
+        # provider_prefix is "google" (Gemini API) or "google-cloud" (Vertex) —
+        # the current pydantic-ai GoogleModel provider names (the legacy
+        # "google-gla"/"google-vertex" spellings were removed in 1.99.0). cast
+        # to satisfy the Literal param; the startswith check above guarantees
+        # provider_prefix is one of the two accepted values.
+        provider_literal = cast(Literal["google", "google-cloud"], provider_prefix)
         google_model = GoogleModel(model_name, provider=provider_literal)
         google_settings = GoogleModelSettings(
             google_thinking_config=_build_google_thinking_config(model_name),  # ty: ignore[invalid-argument-type]
@@ -321,14 +322,14 @@ def get_insights_agent() -> Agent[None, EndgameInsightsReport]:
             google_model,
             output_type=EndgameInsightsReport,
             system_prompt=_SYSTEM_PROMPT,
-            output_retries=_OUTPUT_RETRIES,
+            retries={"output": _OUTPUT_RETRIES},
             model_settings=google_settings,
         )
     return Agent(  # ty: ignore[invalid-return-type] — pydantic-ai Agent generic params depend on runtime model string; ty cannot infer Agent[None, EndgameInsightsReport] from a str variable
         model_str,
         output_type=EndgameInsightsReport,
         system_prompt=_SYSTEM_PROMPT,
-        output_retries=_OUTPUT_RETRIES,
+        retries={"output": _OUTPUT_RETRIES},
     )
 
 
@@ -2065,7 +2066,7 @@ async def _run_agent(
         sentry_sdk.capture_exception(exc)
         return None, 0, 0, None, latency_ms, "provider_error"
     latency_ms = int((time.monotonic() - t0) * 1000)
-    usage = result.usage()
+    usage = result.usage
     thinking = usage.details.get(_THOUGHTS_DETAIL_KEY) or None
     return result.output, usage.input_tokens, usage.output_tokens, thinking, latency_ms, None
 

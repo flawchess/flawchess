@@ -2,18 +2,24 @@
 /**
  * Phase 88 — Vitest suite for EndgameTimePressureCard.
  *
+ * 260531-f7s: Card now renders as an AccordionItem. Wrapping renders in an
+ * open Accordion (type="multiple" value={[card.tc]}) so AccordionContent
+ * mounts and body assertions can reach the 2-column layout.
+ *
  * Covers:
  * - TC-level hide when total < MIN_GAMES_PER_TC_CARD.
  * - Clock Gap bullet always renders when card is visible.
  * - SC-2: 3-column header row (You / Gap+info / Opp) above Clock Gap bullet.
  * - SC-3: ScoreGapByTimePressureChart renders in place of the bullet stack.
  * - Plan 88-14 A-3: top-zone stats (now via ClockGapHeaderRow + NetFlagRateRow).
+ * - 2-column body layout (Score Gap chart left, gauges right, dividers).
  * - Post-UAT structural refinements.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
+import { Accordion } from '@/components/ui/accordion';
 import type {
   ClockGapBullet,
   PressureQuintileBullet,
@@ -121,11 +127,20 @@ const DEFAULT_RATING_ANCHOR: RatingAnchorOut = {
   n_games: 1000,
 };
 
+/**
+ * 260531-f7s: EndgameTimePressureCard is now an AccordionItem. Wrap in an
+ * open Accordion so AccordionContent renders and body assertions work.
+ */
 function renderCard(
   card: TimePressureTcCard,
   ratingAnchor: RatingAnchorOut | undefined = DEFAULT_RATING_ANCHOR,
+  props?: { grandTotal?: number },
 ) {
-  return render(<EndgameTimePressureCard card={card} ratingAnchor={ratingAnchor} />);
+  return render(
+    <Accordion type="multiple" value={[card.tc]}>
+      <EndgameTimePressureCard card={card} ratingAnchor={ratingAnchor} {...props} />
+    </Accordion>,
+  );
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -210,6 +225,31 @@ describe('EndgameTimePressureCard — SC-3: ScoreGapByTimePressureChart replaces
     renderCard(makeCard());
     expect(screen.queryByTestId('time-pressure-card-bullet-bin-0-bullet')).toBeNull();
     expect(screen.queryByTestId('time-pressure-card-bullet-bin-0-info')).toBeNull();
+  });
+});
+
+// ─── 2-column body layout (260531-f7s) ───────────────────────────────────────
+
+describe('EndgameTimePressureCard — 2-column body layout', () => {
+  it('body container uses flex-col md:flex-row layout', () => {
+    const { container } = renderCard(makeCard());
+    // The AccordionContent body div has the 2-column flex class.
+    const body = container.querySelector('.flex-col.md\\:flex-row');
+    expect(body).not.toBeNull();
+    expect(body?.className).toContain('md:flex-row');
+  });
+
+  it('vertical separator (w-px) is present in the body for desktop layout', () => {
+    const { container } = renderCard(makeCard());
+    const verticalSep = container.querySelector('.w-px.bg-border\\/40');
+    expect(verticalSep).not.toBeNull();
+  });
+
+  it('horizontal separator (border-t) is present in the body for mobile layout', () => {
+    const { container } = renderCard(makeCard());
+    // The mobile separator inside the body (between columns) is block md:hidden
+    const mobileSep = container.querySelector('.block.md\\:hidden.border-t');
+    expect(mobileSep).not.toBeNull();
   });
 });
 
@@ -308,11 +348,12 @@ describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone stats', () => {
 // ─── Post-UAT structural refinements ────────────────────────────────────────
 
 describe('EndgameTimePressureCard — post-UAT structural refinements', () => {
-  it('renders a time-control icon next to the TC label in the title', () => {
+  it('renders a time-control icon next to the TC label in the trigger header', () => {
     renderCard(makeCard({ tc: 'blitz' }));
-    // The TimeControlIcon renders an <svg aria-label="blitz">.
-    const card = screen.getByTestId('time-pressure-card-blitz');
-    const icon = card.querySelector('h3 svg[aria-label="blitz"]');
+    // 260531-f7s: TimeControlIcon is now inside the AccordionTrigger inner div,
+    // not inside an h3. Query the header div that carries the existing testid.
+    const header = screen.getByTestId('time-pressure-card-blitz-header');
+    const icon = header.querySelector('svg[aria-label="blitz"]');
     expect(icon).not.toBeNull();
   });
 
@@ -324,7 +365,7 @@ it('Clock Gap value renders in the header row (no separate "(N games)" suffix)',
   });
 
   it('title game count uses "Games: X% (N)" framing with a right-aligned sword icon when grandTotal is supplied', () => {
-    render(<EndgameTimePressureCard card={makeCard({ total: 1234 })} grandTotal={4936} />);
+    renderCard(makeCard({ total: 1234 }), DEFAULT_RATING_ANCHOR, { grandTotal: 4936 });
     const total = screen.getByTestId('time-pressure-card-bullet-total');
     // 1234 / 4936 ≈ 25%; rounded to integer percent.
     expect(total.textContent).toContain('Games: 25% (1,234)');

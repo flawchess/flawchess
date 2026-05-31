@@ -8,19 +8,24 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.21] Time-Control-Aware Endgame Metrics — 2026-05-31
+
+Made the entire Endgame Metrics and Endgame Type Breakdown reporting time-control-aware, so a bullet player is judged against bullet norms rather than a blended average. The aggregated Conversion/Parity/Recovery cards became per-time-control cards, the type breakdown became collapsible per-TC accordion cards, and peer-relative percentile chips landed on the per-TC rates. (Phase 99.1 also moved the large generated cohort-percentile lookup table out of Python source into a database table — internal only, no behaviour change.)
+
 ### Added
 
+- **Peer-relative percentile chips on the per-TC Conversion, Parity, and Recovery rates** (Phase 99). Each per-time-control card (Bullet, Blitz, Rapid, Classical) now shows a percentile chip on its Conversion, Parity, and Recovery rate alongside the existing engine-adjusted score-gap chip, so you can see how your raw conversion/parity/recovery rate ranks against players in your rating band and time control, not just against the engine. Chips are cohort-matched on your per-time-control rating and only appear once you have enough endgames in that bucket; sparse cells (commonly Classical) stay hidden rather than show a noisy number.
 - **Conversion and Recovery gauges back in Endgame Type Breakdown** (Phase 98). Each endgame type tile (Rook, Minor Piece, Pawn, Queen) now shows its Conversion and Recovery gauges again, this time banded against the correct per-(class x time control) benchmark range so a bullet player is judged against bullet norms, not slow-game ones.
 
 ### Changed
 
+- **Endgame Metrics section restructured into per-time-control cards** (Phase 97). The single aggregated Conversion / Parity / Recovery cards are replaced by one card per time control (Bullet, Blitz, Rapid, Classical), each with its own Conversion/Parity/Recovery gauges, WDL bar, and Score Gap chart. Conversion and Recovery gauges use time-control-specific neutral bands (they genuinely differ by speed), while Parity and Score Gap keep a shared band; each card self-suppresses below a per-time-control games floor.
 - **Endgame Type Breakdown restructured into collapsible per-TC cards** (Phase 98). The 3-column grid of five per-type cards is replaced by full-width vertically-stacked accordion cards, one per time control (Bullet, Blitz, Rapid, Classical). Your primary time control (the one weighted by game count and typical duration) expands by default; others start collapsed. Mixed is no longer shown; each TC card with fewer than 20 games is suppressed. The accordion resets to your primary TC whenever you change filters.
 - **Simpler Endgame Type Breakdown cards** (quick-260529-une). Each per-type card (Rook, Minor Piece, Pawn, Queen, Mixed) drops its Conversion and Recovery gauges, leaving the win/draw/loss bar, the type Score, and the Score Gap bullet. The Score Gap already captures conversion and defensive performance in a single engine-adjusted number, and the removed gauges were the only metrics on the card that shifted with time control, so they could mispaint a bullet player against slow-game expectations. AI insights still use the full conversion/recovery breakdown.
 
 ### Fixed
 
 - **Endgame Type Breakdown showed "no data" despite a game count** (Phase 98). The per-time-control type cards displayed their header game count but an empty tile grid ("No endgame type data for this time control"). The per-(class x TC) breakdown was computed from one row per game classified by the *first* endgame position, which is almost always a mixed-material position, so nearly every game landed in Mixed (which the cards intentionally drop) and the Rook/Minor/Pawn/Queen tiles came up empty. It now aggregates the same per-class endgame spans the pooled stats use, and Mixed and pawnless are excluded from the computation so each card's header count equals the sum of its four tiles.
-- **Endgames page locked forever for users with too few games** (quick-260529). A user with games but fewer than the 30-game per-time-control anchor floor (e.g. 13 imported games) produces no rating anchors and therefore no percentile rows by design, so the readiness gate kept the page on the "Analyzing endgames" screen permanently even after Stockfish finished. The gate now recognises a below-floor user as fully processed and unlocks the page once evals are drained, alongside the existing empty-account escape.
 - **Endgames page locked forever when few games reach an endgame** (debug endgame-percentiles-missing). A user above the 30-game rating-anchor floor but with too few games that actually reach an endgame (e.g. 33 rapid games rated, only 22 reaching an endgame) clears the anchor floor yet falls below every endgame metric's own 30-game floor, so no percentile rows are written by design. The readiness gate treated this as "still analyzing" and kept the "Analyzing endgames" screen up forever even after Stockfish finished. The gate now recognises that a committed rating anchor with no percentile rows means analysis has run and the player is simply too sparse for benchmarked metrics, and unlocks the page once evals are drained.
 
 ## [v1.20] Import Pipeline Hardening Follow-Up and Readiness — 2026-05-29
@@ -645,7 +650,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.20...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.21...HEAD
+[v1.21]: https://github.com/flawchess/flawchess/compare/v1.20...v1.21
 [v1.20]: https://github.com/flawchess/flawchess/compare/v1.19...v1.20
 [v1.19]: https://github.com/flawchess/flawchess/compare/v1.18...v1.19
 [v1.18]: https://github.com/flawchess/flawchess/compare/v1.17...v1.18

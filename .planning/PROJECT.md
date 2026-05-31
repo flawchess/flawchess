@@ -141,7 +141,9 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 
 - ✓ Peer-relative percentile chips on Endgame metrics — per-(metric, ELO anchor, TC) cohort CDF family built from 50-Elo sliding windows (K=200 floor-passing users), per-(user, TC) rating anchor (game-weighted blended median over converted-chess.com + native-lichess games), bare `p23` pill chip face + 4-bullet tooltip with rating-anchor disclosure, filter-independent (chip is a trait of the user, not a view of their data) — v1.19 Phases 93, 94, 94.1, 94.2, 94.3, 94.4
 
-### Active (next milestone — v1.20 LLM Statistical Reasoning)
+- ✓ Time-control-aware endgame reporting — Endgame Metrics section split into per-TC cards (Conv/Recov on TC-specific bands, Parity/Score Gap on the shared band); Endgame Type Breakdown restructured into collapsible per-TC accordion cards with a 2×2 type-tile grid (Mixed dropped) banded per-(class × TC); peer-relative percentile chips on the per-TC Conversion/Parity/Recovery rates (12 new per-(metric, TC) cohort metrics); generated cohort-CDF lookup demoted from Python source to a `benchmark_cohort_cdf` DB table — v1.21 Phases 97, 98, 99, 99.1
+
+### Active (next milestone — v1.22 LLM Statistical Reasoning)
 
 Directional scope, refined per-phase via `/gsd:discuss-phase`:
 
@@ -163,7 +165,7 @@ Directional scope, refined per-phase via `/gsd:discuss-phase`:
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.20 LLM Statistical Reasoning
+## Current Milestone: v1.22 LLM Statistical Reasoning
 
 **Goal:** Rework the endgame-insights LLM prompt + payload so it can reason over the full v1.17 metric set (Endgame Score Gap, Achievable Score, ΔES Score Gap family, time-pressure tests) using p-values, confidence intervals, and the v1.19 peer-relative percentile annotations, behind prompt guardrails that prevent narrating small-but-significant findings.
 
@@ -177,6 +179,8 @@ Directional scope, refined per-phase via `/gsd:discuss-phase`:
 - How to reconcile p-value/CI payload exposure with the prior `feedback_llm_significance_signal` decision (tighten cohort bands further, or pass raw stats with prompt guardrails)
 
 ## Current State
+
+v1.21 Time-Control-Aware Endgame Metrics shipped 2026-05-31 — 4 phases (97, 98, 99, 99.1), 15 plans, delivered via PRs #160 (Phase 97), #163/#164 (Phase 98), #167 (Phase 99), #168 (Phase 99.1). The Endgames page is now time-control-honest end to end: the aggregated Conversion/Parity/Recovery cards became one card per TC (bullet/blitz/rapid/classical) with TC-specific Conv/Recov neutral bands (benchmark TC d≈0.9) and the shared global band on Parity + Score Gap; the Endgame Type Breakdown became full-width collapsible per-TC accordion cards with the user's primary (time-weighted) TC expanded by default, each holding a 2×2 grid of rook/minor_piece/pawn/queen tiles (Mixed dropped) with Conv/Recov gauges restored on per-(class × TC) bands; and peer-relative percentile chips landed on the per-TC Conversion/Parity/Recovery rates (12 new per-(metric, TC) cohort metrics via the pooled-per-user builder). Phase 99.1 then relocated the 3.1 MB generated `COHORT_PERCENTILE_CDF` registry out of Python source into a `benchmark_cohort_cdf` DB table (module ~130k → ~250 lines, byte-for-byte chip parity, no behaviour change), closing SEED-030 Track B. Prod backfill of the 12 new rate-percentile metrics is deferred to deploy. v1.20 (Phases 95, 96 — asyncpg COPY + Import Readiness Gate) shipped 2026-05-29. Twenty-two milestones complete (v1.0–v1.21), live at flawchess.com; next is v1.22 LLM Statistical Reasoning (Phase 100).
 
 v1.19 Endgame Percentiles shipped 2026-05-27 — 6 phases (93, 94, 94.1, 94.2, 94.3, 94.4), ~45 plans, delivered through PR #145 plus earlier per-phase PRs. Peer-relative percentile chips are now live on the Endgames page: per-(metric, ELO anchor, TC) cohort CDFs built from 50-Elo sliding windows replace the global pool; per-(user, TC) rating anchors use a game-weighted blended median over converted-chess.com + native-lichess games (D-12 reversal); the chip face shrinks to a bare `p23` pill with a 4-bullet tooltip that discloses the rating anchor + per-platform composition; chips are a *trait* of the user computed once per Stage A/B trigger and independent of UI filter state. The Time Pressure section gains 12 per-TC chips (3 per `TimePressureTcCard`). Phase 95 (LLM Statistical Reasoning) was split into v1.20 before milestone close. SEED-019 closed; SEED-025 + SEED-026 v2 closed. Nineteen milestones complete (v1.0–v1.19), live at flawchess.com.
 
@@ -358,6 +362,10 @@ v1.12 Benchmark DB Infrastructure & Ingestion Pipeline shipped 2026-04-26 (PR #6
 | Endgame ELO = logistic stretch around Actual ELO, `eg_elo + non_eg_elo == 2·actual_elo` (v1.17 Phase 87.6) | Additive-K and FIDE-PR mappings both broke the "Actual ELO between the lines" invariant (~88% of points) and carried sigmoid bias; the stretch is symmetric and invariant-preserving by construction | ✓ Good |
 | Time-pressure zones calibrated from the Lichess benchmark cohort, pooled across ELO within (TC, quintile) (v1.17 Phase 88) | Benchmarks are the source of truth for "typical"; the within-band ELO gradient (stronger players greener) is intended, not noise | ✓ Good |
 | Phase 89 (Polish) dropped at v1.17 close | Popover/gating/automation/375px-parity polish was absorbed incrementally across the inserted phases' UAT cycles; a dedicated phase added no remaining value | — Pending |
+| Per-TC Conv/Recov bands but shared Parity/Score Gap band (v1.21 Phase 97) | Benchmark Cohen's d ≈ 0.9 on the TC axis for Conv/Recov (they genuinely differ per speed) vs d < 0.15 for Parity/Score Gap (collapse on TC, so one band is correct everywhere) | ✓ Good |
+| Per-(class × TC) bands with no TC-mix blending; Mixed dropped from type tiles (v1.21 Phase 98) | Each single-TC card judged against that TC's own reference is the TC-honest replacement for the superseded blended-band approach; Mixed is the least-actionable catch-all and its WDL tracks the overall endgame number | ✓ Good |
+| Score Gap banded per-TC despite being TC-flat (v1.21 Phase 98) | One consistent per-tile card grammar beats hoisting a single band that breaks per-TC cohesion; the four near-identical bands are a known, chosen redundancy | ✓ Good |
+| Generated cohort CDF demoted from Python source to `benchmark_cohort_cdf` DB table (v1.21 Phase 99.1) | A 3.1 MB / ~130k-line generated dict parsed into the heap on every process start is maintainability debt; the lookup is background-only so a sync interpolator over a batched-prefetched table is sufficient. Closes SEED-030 Track B | ✓ Good |
 
 ## Evolution
 
@@ -377,7 +385,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-24 — v1.19 in progress; Phase 94.3 (Per-TC Percentile Chips on Time Pressure Cards) complete. Extended the 94.2 pooled-per-user contract per-TC: 12 new `benchmark_metric` ENUM values via reversible Alembic migration `fd5b551f381c`, 3 new per-TC pooled-aggregate SQL builder families in canonical_slice_sql.py, GLOBAL_PERCENTILE_CDF widened from 4 to 16 entries against the benchmark DB (snapshot 2026-03-31), STAGE_B_METRICS from 3 to 15, and PercentileChip widened to 16 flavor variants with a DIRECTION_BY_FLAVOR axis that inverts the formatter/band-color/flame trigger for the 4 net_flag_rate chips (lower is better). 12 chip placements (3 chips × 4 TC cards) gated on backend null. Two post-merge fixes from code review: CR-01 (popover bullet-1 contradicted chip face for lower_is_better flavors — fixed via cohortOutranked = isLowerBetter ? 100 - percentile : percentile) and WR-01 (compute_stage_b ran 15× per user when STAGE_B_METRICS widened — fixed by moving the call out of the per-metric loop, ~15× backfill speedup). Prod backfill rerun deferred as release-time HUMAN-UAT (`.planning/phases/94.3-per-tc-percentile-chips-time-pressure/94.3-05-HUMAN-UAT.md`). Next phase: 95 (LLM endgame-insights statistical-reasoning rework).*
+*Last updated: 2026-05-31 — after v1.21 Time-Control-Aware Endgame Metrics milestone (Phases 97, 98, 99, 99.1; tag v1.21). The Endgames page is now time-control-honest end to end: per-TC Endgame Metrics cards (TC-specific Conv/Recov bands, shared Parity/Score Gap band), collapsible per-TC Endgame Type Breakdown cards (2×2 type tiles, Mixed dropped, per-(class × TC) bands), peer-relative percentile chips on the per-TC Conv/Parity/Recov rates (12 new per-(metric, TC) cohort metrics), and the generated cohort-CDF lookup demoted from Python source (~130k lines) to a `benchmark_cohort_cdf` DB table (SEED-030 Track B closed). Prod backfill of the 12 rate-percentile metrics deferred to deploy. The v1.20→v1.21 "Current Milestone" header drift flagged at the prior close is now reconciled: header points to v1.22 LLM Statistical Reasoning (Phase 100). (Prior footer: 2026-05-31 mid-v1.21, Phase 99 complete — 3 TC-parameterised pooled-per-user rate builders, 12 new `benchmark_metric` ENUM values via migrations `3981239fd391` / `52c928794fe7`, COHORT_PERCENTILE_CDF regenerated against the benchmark DB snapshot 2026-05-30.)*
 
 *Previous: 2026-05-19 after v1.17 milestone. v1.17 Endgame Stats Card Redesign shipped — 13 phases (84–88.4), ~54 plans, delivered via PRs #89–#117. Phase 89 (Polish) dropped from scope; Phase 87.3 (percentile composite) superseded by 87.4→87.6.*
 
