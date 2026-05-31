@@ -152,7 +152,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-  - [ ] 99.1-03-PLAN.md — idempotent seed script + load_cohort_cells repository (D-03/D-04) + run_local.sh seed block (SC#5)
+  - [x] 99.1-03-PLAN.md — idempotent seed script + load_cohort_cells repository (D-03/D-04) + run_local.sh seed block (SC#5)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
