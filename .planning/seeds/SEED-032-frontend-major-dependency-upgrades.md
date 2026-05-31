@@ -1,6 +1,6 @@
 # SEED-032: Frontend major dependency upgrades (clustered, sequential)
 
-**Status:** Open
+**Status:** Scheduled — v1.22 Maintenance, Phase 101 (Frontend Major Dependency Upgrades)
 **Created:** 2026-05-31
 **Source:** Follow-up to quick task 260531-jga (updated all deps to *latest within current majors*). After that refresh, 11 frontend deps still have a newer **major** available that we deliberately did not adopt. Backend has **zero** outstanding major bumps. This seed captures the cluster list + ordering + compat risk so the work can be planned later.
 **Related:** quick task 260531-jga (the in-major refresh that preceded this); `frontend/package.json`; `frontend/eslint.config.js`; CLAUDE.md "Pre-PR checklist / full local gate", "Frontend" rules, GitLab-Flow merge rules.

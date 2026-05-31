@@ -24,28 +24,44 @@
 - ✅ **v1.19 Endgame Percentiles** — Phases 93, 94, 94.1, 94.2, 94.3, 94.4 (shipped 2026-05-27; Phase 95 split out before milestone close) — see [milestones/v1.19-ROADMAP.md](milestones/v1.19-ROADMAP.md)
 - ✅ **v1.20 Import Pipeline Hardening Follow-Up and Readiness** — Phases 95, 96 (shipped 2026-05-29) — see [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md)
 - ✅ **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99, 99.1 (shipped 2026-05-31; PRs #160, #163/#164, #167, #168) — see [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md)
-- 🔄 **v1.22 LLM Statistical Reasoning** — Phase 100 (not started)
+- 🔄 **v1.22 Maintenance — Test Isolation & Frontend Major Upgrades** — Phases 100, 101 (not started)
 
 ## Phases
 
 *v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md); see the collapsed block below. v1.20 (Phases 95, 96) shipped 2026-05-29 — archived to [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md).*
 
-- [ ] **Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework** *(v1.22)* — Payload extension (p-values, CI bounds, percentiles) + prompt rewrite reasoning over CIs/percentiles with guardrails, prompt version bump from `endgame_v35`, UAT pass
+- [ ] **Phase 100: Isolated Test DB Per Run** *(v1.22)* — Per-run/per-xdist-worker database cloned from a migrated template; retire the session-start `TRUNCATE … CASCADE` lock; unblock concurrent agent runs + `pytest -n auto` (SEED-031)
+- [ ] **Phase 101: Frontend Major Dependency Upgrades** *(v1.22)* — Bump the 11 frontend deps that are a major behind, one cluster at a time (low→high risk), each atomically committed + gated; recharts 3 earns visual UAT (SEED-032)
 
 ## Phase Details
 
-### Phase 100: LLM Endgame-Insights Statistical-Reasoning Rework
+### Phase 100: Isolated Test DB Per Run
 
-**Goal**: Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the new Phase 94 percentile annotations. Preserve the prior `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, and validate via at least one UAT pass over representative production users.
-**Depends on**: Phase 94 (LLM-05 percentile narration requires PCTL-02 emission)
-**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, LLM-05, LLM-06, LLM-07
+**Goal**: Give each `pytest` run (and each xdist worker) its own database, cloned from a migrated template via `CREATE DATABASE … TEMPLATE`, so concurrent runs (multiple agents + IDE coverage) are fully isolated and `pytest -n auto` becomes safe. Retire the hostile session-start `TRUNCATE … RESTART IDENTITY CASCADE` whole-schema `ACCESS EXCLUSIVE` lock — a fresh clone is already clean — and add a stale-DB reaper (drop-if-exists on create) so killed runs self-heal. Source: SEED-031.
+**Depends on**: None
+**Requirements**: TBD (no formal requirement IDs — internal test-infra; standalone like other maintenance phases)
 **Success Criteria** (what must be TRUE):
 
-  1. The endgame-insights API payload exposes per-metric p-values, confidence interval bounds, and percentile fields on the v1.17 statistical-rigor metric set, additive and non-breaking alongside existing `zone` + `sample_quality` fields.
-  2. The endgame-insights system prompt teaches the LLM to reason explicitly over CIs and percentiles in narration (e.g. "your value sits at X with 95% CI [Y, Z], top P% of all players") without re-licensing the small-but-significant narration pattern from `feedback_llm_significance_signal`.
-  3. The `feedback_llm_significance_signal` tension is explicitly resolved with the chosen strategy (tighter cohort bands vs. raw-stat passthrough with prompt guardrails) recorded in the phase decision log, with both alternatives considered.
-  4. At least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts narrate visibly differently — and better — than under `endgame_v35`, verified via UAT against short-history, sparse-section, and full-history production users.
-  5. The endgame prompt version bumps cleanly from `endgame_v35` and prior cached reports remain valid until their `_PROMPT_VERSION` cache key naturally invalidates.
+  1. Two or more full `pytest` runs execute simultaneously against the dev Postgres with zero deadlocks and zero cross-run data corruption.
+  2. Session-start `TRUNCATE … RESTART IDENTITY CASCADE` is removed; per-run DB is created from a migrated template and dropped at teardown; killed runs self-heal (drop-if-exists on next create).
+  3. `pytest -n auto` runs green and measurably faster than serial (record the actual wall-clock number).
+  4. ruff / ty / pytest all green; no behavior change to individual tests.
+  5. Template-refresh trigger on Alembic head drift is resolved (auto re-migrate vs explicit `bin/` step) and documented.
+
+**Plans**: TBD
+
+### Phase 101: Frontend Major Dependency Upgrades
+
+**Goal**: Bring the 11 frontend deps that are one or more **majors** behind up to latest, one coupled cluster at a time, ordered low-risk → high-risk so the gate signal sharpens as work proceeds: (1) lucide-react 1.x, (2) Vite 8 + plugin-react 6, (3) jsdom 29 + @types/node (pinned to runtime Node line), (4) eslint 10 + @eslint/js + globals + react-refresh plugin, (5) typescript 6, (6) recharts 3. Each cluster is atomically committed and gated; recharts additionally gets visual UAT (desktop + mobile). Resolve the typescript-eslint ↔ TS6/eslint-10 peer-compat question up front (research pass) before planning the lint/TS clusters. Backend needs nothing. Source: SEED-032.
+**Depends on**: None (independent of Phase 100; sequential within the milestone)
+**Requirements**: TBD (no formal requirement IDs — tooling/dependency maintenance)
+**Success Criteria** (what must be TRUE):
+
+  1. All 11 listed frontend deps are on their latest major, or any package that can't be made green is pinned back with a documented reason (the same escape hatch quick task 260531-jga used).
+  2. Each cluster is a separate atomic commit in low→high-risk order, so a gate failure bisects to exactly one cluster.
+  3. The full local gate is green: `ruff format/check` + `ty` (backend) + `pytest -x`, and `( cd frontend && npm run lint && npm test -- --run && npm run build && npm run knip )`.
+  4. recharts 3 passes a visual UAT checklist across the endgame + openings charts (MiniBulletChart, WDLChartRow, ScoreChart, ScoreGapByTimePressureChart, gauges, custom tooltips/gradients) on desktop and mobile.
+  5. The typescript-eslint ↔ TS6/eslint-10 peer-compat question is resolved before the lint/TS clusters land; if a peer dep blocks, that cluster is deferred with the blocker recorded rather than forced.
 
 **Plans**: TBD
 
@@ -337,6 +353,17 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 97-99.1. v1.21 phases | v1.21 | 15/15 | Complete (99.1 INSERTED) | 2026-05-31 |
 
 ## Backlog
+
+### Phase 999.7: LLM Endgame-Insights Statistical-Reasoning Rework (BACKLOG)
+
+**Goal:** Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17 statistical-rigor metric set (Phase 85.1 / 86 / 87.2 / 87.6 / 88 — Endgame Score Gap & Achievable Score family, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence interval bounds, and the v1.19/v1.21 percentile annotations. Preserve the `feedback_llm_significance_signal` decision — the cohort `zone` field remains the gate on whether a metric is narrated; CIs / p-values / percentiles inform *how* once a zone-driven narration decision has been made. Bump the endgame prompt version from `endgame_v35`, leave cache invalidation to the `_PROMPT_VERSION` cache key, validate via at least one UAT pass over representative production users.
+**Requirements:** LLM-01..07 (still pending in REQUIREMENTS.md)
+**Plans:** 0 plans
+**Context:** Was the sole phase of the planned v1.22 LLM Statistical Reasoning milestone (originally Phase 95 → 97 → 98 → 100 across renumbers). Deprioritized 2026-05-31 in favour of the v1.22 Maintenance milestone (test isolation + frontend major upgrades); parked here intact rather than renumbered inline. Promote with `/gsd-review-backlog` (likely into the next feature milestone) when ready. Depends on the v1.19 PCTL-02 percentile emission already shipped.
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
 
 ### Phase 999.1: Password Reset (BACKLOG)
 
