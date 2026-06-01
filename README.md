@@ -73,7 +73,7 @@ The script starts PostgreSQL (Docker), installs dependencies, runs migrations, s
 
 > **Note:** Google OAuth and Sentry are optional — the app works with email/password auth and without error monitoring. Leave those `.env` values empty to skip them.
 
-> **Stockfish on non-Linux hosts:** `bin/install_stockfish.sh` downloads the Linux x86_64 AVX2 build to match prod. On macOS, install Stockfish manually (`brew install stockfish`) and export `STOCKFISH_PATH=$(command -v stockfish)` before running `bin/run_local.sh`.
+> **Stockfish:** `bin/install_stockfish.sh` installs the pinned `sf_18` binary for your platform (Linux x86_64, macOS Apple Silicon, or macOS Intel) to `~/.local/stockfish/sf`, SHA-256 verified. The backend auto-discovers it (no `STOCKFISH_PATH` needed in dev); set `STOCKFISH_PATH` only to point at a binary in a non-standard location. Other platforms: install Stockfish manually and set `STOCKFISH_PATH`.
 
 ### Running Tests
 

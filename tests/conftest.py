@@ -518,14 +518,16 @@ async def engine_started():
     """Start Stockfish once per pytest session (D-02).
 
     Session-scoped so the UCI process is shared across all engine wrapper tests
-    instead of restarting per test. Skips silently if Stockfish is not on PATH
-    (the individual tests handle the skipif marker).
+    instead of restarting per test. Skips silently if the resolved Stockfish
+    binary is missing (the individual tests handle the skipif marker). Keys on
+    the same path the engine resolves so it works with a dev install at
+    ~/.local/stockfish/sf, not only a binary literally named `stockfish` on PATH.
     """
-    import shutil
+    import os
 
-    from app.services.engine import start_engine, stop_engine
+    from app.services.engine import _STOCKFISH_PATH, start_engine, stop_engine
 
-    if shutil.which("stockfish") is None:
+    if not (os.path.isfile(_STOCKFISH_PATH) and os.access(_STOCKFISH_PATH, os.X_OK)):
         yield
         return
     await start_engine()

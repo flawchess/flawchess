@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import sys
 from typing import Any
 
@@ -47,8 +48,29 @@ import chess.engine
 
 from app.services.zobrist import EVAL_CP_MAX_ABS, EVAL_MATE_MAX_ABS
 
-# D-06: env var with sensible default; Docker image sets STOCKFISH_PATH=/usr/local/bin/stockfish
-_STOCKFISH_PATH: str = os.environ.get("STOCKFISH_PATH", "/usr/local/bin/stockfish")
+# D-06: STOCKFISH_PATH env var wins when set (prod Docker sets it, CI sets it).
+# When unset we probe well-known locations so local dev needs no env var: the
+# prod Docker path, then bin/install_stockfish.sh's dev install location, then
+# anything named `stockfish` on PATH (e.g. Homebrew / apt). Falls back to the
+# Docker path so a missing-binary error still points somewhere sane.
+_DOCKER_STOCKFISH_PATH: str = "/usr/local/bin/stockfish"
+_DEV_STOCKFISH_PATH: str = os.path.expanduser("~/.local/stockfish/sf")
+
+
+def _resolve_stockfish_path() -> str:
+    env_path = os.environ.get("STOCKFISH_PATH")
+    if env_path:
+        return env_path
+    for candidate in (_DOCKER_STOCKFISH_PATH, _DEV_STOCKFISH_PATH):
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    on_path = shutil.which("stockfish")
+    if on_path:
+        return on_path
+    return _DOCKER_STOCKFISH_PATH
+
+
+_STOCKFISH_PATH: str = _resolve_stockfish_path()
 # D-03: UCI options live ONLY in this module (ENG-03 grep gate)
 # Bug fix (2026-05-16, FLAWCHESS-56 / FLAWCHESS-3Q): reduced 64 -> 32. With
 # prod STOCKFISH_POOL_SIZE=4 the pool reserved 4 * 64 = 256MB of hash tables
