@@ -475,17 +475,39 @@ def _stub_endgame_overview_response() -> EndgameOverviewResponse:
     """Build a minimal EndgameOverviewResponse for compute_findings wiring tests.
 
     `model_construct` skips validation but does not set defaults, so any field
-    `compute_findings` reads (`time_pressure_chart`, `performance`,
-    `stats.categories`) must be populated explicitly. Subsection extraction is
-    patched to [] in the wiring tests, so per-subsection field accesses inside
-    `_compute_subsection_findings` don't matter here — only the top-level
-    fields read by `compute_findings` itself need stub values.
+    `compute_findings` reads must be populated explicitly. Subsection extraction
+    is patched to [] in the wiring tests, so per-subsection field accesses inside
+    `_compute_subsection_findings` don't matter here — only the top-level fields
+    read by `compute_findings` itself need stub values.
+
+    Phase 102 (Plan 01): added score_gap_material (for score_gap_percentile),
+    time_pressure_cards (passed through to EndgameTabFindings), and rating_anchors
+    (for cohort_anchors) to the stub so compute_findings' new field population
+    does not AttributeError on model_construct instances.
     """
+    from app.schemas.endgames import (
+        ScoreGapMaterialResponse,
+        TimePressureCardsResponse,
+    )
+
+    stub_score_gap_material = ScoreGapMaterialResponse(
+        endgame_score=0.5,
+        non_endgame_score=0.5,
+        score_difference=0.0,
+        material_rows=[],
+        timeline=[],
+        timeline_window=50,
+    )
+    stub_time_pressure_cards = TimePressureCardsResponse(cards=[])
+
     return EndgameOverviewResponse.model_construct(
         time_pressure_chart=None,
         performance=None,
         stats=type("StatsStub", (), {"categories": []})(),
         endgame_elo_timeline=type("EloTimelineStub", (), {"combos": []})(),
+        score_gap_material=stub_score_gap_material,
+        time_pressure_cards=stub_time_pressure_cards,
+        rating_anchors={},
     )
 
 

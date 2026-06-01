@@ -184,6 +184,27 @@ async def compute_findings(
 
     player_profile = compute_player_profile(all_time_resp.endgame_elo_timeline.combos)
 
+    # Phase 102 (Plan 01): build page-level metric → percentile lookup and
+    # cohort anchors from the all_time response so the LLM assembler can render
+    # pctl= annotations and cohort-framing strings without re-reading
+    # EndgameOverviewResponse. All three new fields are optional — existing
+    # test fixtures that construct EndgameTabFindings without them still work.
+    metric_percentiles: dict[str, float] = {}
+    if all_time_resp.score_gap_material.score_gap_percentile is not None:
+        metric_percentiles["score_gap"] = all_time_resp.score_gap_material.score_gap_percentile
+    if (
+        all_time_resp.performance is not None
+        and all_time_resp.performance.achievable_score_gap_percentile is not None
+    ):
+        metric_percentiles["achievable_score_gap"] = (
+            all_time_resp.performance.achievable_score_gap_percentile
+        )
+
+    cohort_anchors: dict[str, int] = {
+        tc: anchor.anchor_rating
+        for tc, anchor in all_time_resp.rating_anchors.items()
+    }
+
     findings = EndgameTabFindings(
         as_of=datetime.datetime.now(datetime.UTC),
         filters=filter_context,
@@ -200,6 +221,11 @@ async def compute_findings(
         overall_performance=all_time_resp.performance,
         type_categories=all_time_resp.stats.categories,
         player_profile=player_profile,
+        # Phase 102 (Plan 01): new optional fields; defaults (None / {}) apply
+        # for existing test fixtures that construct EndgameTabFindings without them.
+        time_pressure_cards=all_time_resp.time_pressure_cards,
+        metric_percentiles=metric_percentiles if metric_percentiles else None,
+        cohort_anchors=cohort_anchors if cohort_anchors else None,
         findings_hash="",  # placeholder; replaced below
     )
     findings_hash = _compute_hash(findings)

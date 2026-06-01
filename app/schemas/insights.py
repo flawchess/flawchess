@@ -45,6 +45,7 @@ from app.services.endgame_zones import (
 from app.schemas.endgames import (
     EndgameCategoryStats,
     EndgamePerformanceResponse,
+    TimePressureCardsResponse,
     TimePressureChartResponse,
 )
 
@@ -230,6 +231,25 @@ class EndgameTabFindings(BaseModel):
     # narrative tone to skill level. None when no qualifying combo exists
     # (new user with too few games). See PlayerProfileEntry for shape.
     player_profile: list["PlayerProfileEntry"] | None = None
+    # Phase 102 (Plan 01): per-TC time-pressure cards from the all_time window.
+    # Carries the 5 quintiles + per-TC TPCTL percentiles so the assembler can
+    # render the Score-Gap-by-time chart block and read per-TC percentiles.
+    # Optional so existing test fixtures that construct EndgameTabFindings
+    # without this kwarg still work. Append-only: adding it after player_profile
+    # preserves declaration order for findings_hash stability.
+    time_pressure_cards: TimePressureCardsResponse | None = None
+    # Phase 102 (Plan 01): page-level MetricId → percentile lookup (game-count
+    # weighted, same value the chip shows). Keys present only when the source
+    # percentile is non-None (e.g. "score_gap", "achievable_score_gap").
+    # Per-TC time-pressure metric percentiles live directly on time_pressure_cards
+    # instead (direct per-TC TPCTL, no weighting — D-06). Optional for hash
+    # stability and backwards compat.
+    metric_percentiles: dict[str, float] | None = None
+    # Phase 102 (Plan 01): time-control bucket → anchor_rating mapping derived
+    # from EndgameOverviewResponse.rating_anchors. Lets the assembler build cohort
+    # framing ("vs ~{anchor}-rated {tc} peers") without re-reading the full
+    # EndgameOverviewResponse. Optional for backwards compat.
+    cohort_anchors: dict[str, int] | None = None
     findings_hash: str
 
 
