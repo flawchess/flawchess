@@ -58,6 +58,7 @@ __all__ = [
     "InsightsErrorResponse",
     "InsightsStatus",
     "MetricId",
+    "MetricPercentileRecord",
     "PlayerProfileEntry",
     "SampleQuality",
     "SectionId",
@@ -105,6 +106,33 @@ InsightsError = Literal[
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+
+
+class MetricPercentileRecord(BaseModel):
+    """Enriched per-metric percentile record carrying cohort context.
+
+    Phase 102 (Plan 04): replaces the flat float in metric_percentiles with a
+    richer record so the LLM prompt can cite anchor, n_games, and value
+    alongside the percentile number for reliability context.
+
+    Fields:
+      percentile: cohort percentile in [0, 100].
+      value: chip-cohort value (PercentileRow.value) in the metric's UI scale
+        (e.g. percentage points for score_gap, fraction×100 for conv/parity/recov).
+        None when the source PercentileRow carries a null value.
+      n_games: game count on the cohort pool used to compute this percentile.
+        None when not available from the source row.
+      anchor: blended rating anchor (Lichess-equivalent) for the cohort.
+        None when no anchor is available for this (metric, tc) cell.
+      tc: time-control bucket for per-TC metrics; None for page-level weighted
+        metrics (score_gap, achievable_score_gap).
+    """
+
+    percentile: float
+    value: float | None = None
+    n_games: int | None = None
+    anchor: int | None = None
+    tc: Literal["bullet", "blitz", "rapid", "classical"] | None = None
 
 
 class FilterContext(BaseModel):
@@ -244,7 +272,17 @@ class EndgameTabFindings(BaseModel):
     # Per-TC time-pressure metric percentiles live directly on time_pressure_cards
     # instead (direct per-TC TPCTL, no weighting — D-06). Optional for hash
     # stability and backwards compat.
-    metric_percentiles: dict[str, float] | None = None
+    # Phase 102 (Plan 04): changed from dict[str, float] to dict[str, MetricPercentileRecord]
+    # to carry value + n_games + anchor alongside the percentile. Backwards-incompatible
+    # field-type change is safe: the field is optional and no external consumer
+    # reads it directly (it is internal to the prompt assembly pipeline).
+    metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None
+    # Phase 102 (Plan 04): per-TC metric percentiles for the 6 per-TC metrics
+    # (score_gap_conv, score_gap_parity, recovery_score_gap per TC, plus
+    # conversion_rate, parity_rate, recovery_rate per TC). Keyed as
+    # "{metric_id}:{tc}" (e.g. "score_gap_conv:blitz"). Optional for
+    # backwards compat; None when no per-TC percentiles are available.
+    per_tc_metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None
     # Phase 102 (Plan 01): time-control bucket → anchor_rating mapping derived
     # from EndgameOverviewResponse.rating_anchors. Lets the assembler build cohort
     # framing ("vs ~{anchor}-rated {tc} peers") without re-reading the full

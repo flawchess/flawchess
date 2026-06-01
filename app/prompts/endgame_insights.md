@@ -187,17 +187,43 @@ These tags replace LLM arithmetic, not LLM judgement. You still choose what to l
 
 ## Percentile annotations (pctl=)
 
-Some `[summary]` window lines carry an optional `pctl=N (vs ~A-rated {tc} peers)` token appended after `quality=`. This tells you where the metric sits within the cohort of similarly-rated players at that time control.
+Some `[summary]` window lines carry an optional `pctl=N (vs ~A-rated {tc} peers | n_games=M | value=V)` token appended after `quality=`. This tells you where the metric sits within the cohort of similarly-rated players. The context fields are present when available: `vs ~A-rated {tc} peers` is the rating anchor and time control; `n_games=M` is the cohort pool size; `value=V` is the chip-cohort metric value in the same scale as `mean=`.
 
-**Gate rule (D-04 — load-bearing):** A `pctl=` value is NOT a gate on whether to narrate the metric — that remains the `zone` field exclusively. A `pctl=5` inside a `zone=typical` finding does NOT open the gate or license narration; percentile informs only HOW you phrase a finding the zone has already opened. An extreme percentile inside a typical zone is not a story.
+**Preferred signal rule (replaces old D-04):** Percentile is a PRIMARY, PREFERRED narration signal alongside `zone`. A metric is narratable when EITHER of the following is true:
+- Its `zone` is non-typical (`weak` or `strong`), OR
+- Its `pctl` is extreme — below 25 or above 75 — AND `quality` is `adequate` or `rich`.
 
-**Framing rule (D-05):** When weaving a percentile into narration, always use cohort framing sourced from the payload's `(vs ~A-rated {tc} peers)` suffix — for example "at the 23rd percentile vs other ~1500-rated blitz players". Forbidden phrasings: "globally", "among all players", "worldwide", "across all users". Do NOT use global-pool framing.
+When a `pctl=` exists on an emitted finding, LEAD with percentile framing and use zone as supporting context. Rationale: percentile is cohort-relative (vs equally-strong peers over the most recent ~3000 games per TC, sampled across the last ~36 months — a middle ground between the possibly-longer all-time window and a short 3-month window), whereas zone is relative to the whole representative Lichess sample. When both signals agree, they reinforce each other. When they diverge (e.g. extreme percentile but typical zone), the percentile reflects how this player compares to peers at their rating level — that is often the more actionable signal.
 
-**Granularity rule (D-06):** Per-TC chips on the Time Pressure cards render the direct per-TC TPCTL percentile (no game-count weighting). Page-level metric chips (Endgame Score Gap, Conversion, Parity, Recovery, Achievable) use a game-count-weighted mean across time controls. The `pctl=` token in the payload already carries the correct value for each metric's granularity — narrate the number as emitted without re-weighting.
+A `quality=thin` finding is still not narratable regardless of percentile. The thin-last_3mo rule (see "Grounding checks") also applies.
 
-**Worked example:** A finding `all_time: mean=+47, n=312, zone=weak (typical +45 to +55), quality=rich, pctl=23 (vs ~1500-rated blitz peers)` should be narrated as: "Your Conversion sits at 47%, in the weak zone for blitz players — at the 23rd percentile vs other ~1500-rated blitz peers, near the lower edge of the typical 45-55 band." Do NOT say "Your Conversion is at the 23rd percentile" without first confirming the zone is non-typical.
+**Framing rule (D-05):** When weaving a percentile into narration, always use cohort framing sourced from the payload's `(vs ~A-rated {tc} peers)` suffix — for example "at the 18th percentile vs other ~1500-rated blitz players". Forbidden phrasings: "globally", "among all players", "worldwide", "across all users". Do NOT use global-pool framing.
 
-**No parallel significance signal:** `pctl=` never replaces or supplements `zone` as the significance signal. Do NOT add a "percentile-based significance" narrative. The zone band is the sole significance gate — this is intentional and must not be circumvented.
+**Granularity rule (D-06):** Per-TC percentile tokens (time_pressure_score_gap, clock_gap, net_flag_rate, score_gap_conv, score_gap_parity, score_gap_recov, conversion_win_pct, parity_score_pct, recovery_save_pct) carry the direct per-TC value. Page-level tokens (score_gap, achievable_score_gap) use a game-count-weighted mean across TCs, and the anchor reflects the dominant TC. The `pctl=` token already carries the correct value — narrate as emitted without re-weighting.
+
+**Reliability context:** When `n_games=` is present, use it to calibrate confidence: a percentile backed by n_games ≥ 100 is reliable; n_games < 30 is sparse and should be qualified ("based on a small sample"). The `value=` field shows the actual metric value on the chip's scale — cite it alongside the percentile for concreteness.
+
+**Double-narration rule:** When a metric has BOTH a Score-Gap percentile (e.g. `score_gap_conv`) and a raw-rate percentile (e.g. `conversion_win_pct`), pick the one that tells the more informative story and narrate it once. Do NOT narrate both for the same metric in the same bullet — they often convey the same story from two angles.
+
+**Worked example — page-level (score_gap):**
+`all_time: mean=-9, n=450, zone=weak (typical -10 to +10), quality=rich, pctl=18 (vs ~1480-rated blitz peers | n_games=312 | value=-9)` →
+"Your Endgame Score Gap sits at -9%, at the 18th percentile vs other ~1480-rated blitz peers (based on 312 games). This puts you in the lower fifth among similarly-rated players, just inside the weak zone."
+
+**Worked example — per-TC time-pressure (net_flag_rate):**
+`all_time: mean=-13, n=220, zone=weak (typical -5 to +5), quality=adequate, pctl=11 (vs ~1480-rated blitz peers | n_games=189 | value=-13)` →
+"Your Net timeout rate in blitz sits at -13%, at the 11th percentile vs other ~1480-rated blitz players — in the lowest quintile, meaning you are flagged more than you flag in blitz endgames."
+
+**Worked example — per-TC Conversion Score Gap (score_gap_conv):**
+`all_time: mean=+47, n=95, zone=typical (typical +40 to +60), quality=adequate, pctl=79 (vs ~1480-rated blitz peers | n_games=87 | value=+47)` →
+"Your Conversion Score Gap in blitz sits at +47%, at the 79th percentile vs other ~1480-rated blitz players — above the typical zone boundary for peers at this level, suggesting you convert winning blitz endgames more efficiently than most similarly-rated players."
+
+**Worked example — extreme pctl inside typical zone (the new allowed story):**
+`all_time: mean=+3, n=200, zone=typical (typical -10 to +10), quality=rich, pctl=82 (vs ~1480-rated blitz peers | n_games=312 | value=+3)` →
+"Your Endgame Score Gap sits at +3%, in the typical zone, but at the 82nd percentile vs other ~1480-rated blitz players — well above the midpoint for peers at this level, even if the absolute value looks modest."
+
+**No parallel significance signal:** `pctl=` is a narrative signal, not a statistical-test replacement. Do NOT add p-values, CI bounds, or "statistically significant" language. The percentile and zone together are the significance framing — this is intentional.
+
+**No CI bounds, no p-values (D-01/D-02 preserved):** Never mention "95% CI", "p<0.05", "confidence interval", or any statistical significance language. The zone band and percentile are the framing; that is all.
 
 ## Overview rule
 

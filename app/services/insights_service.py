@@ -52,12 +52,14 @@ from app.schemas.endgames import (
     EndgameOverviewResponse,
     MaterialBucket,
     MaterialRow,
+    PerTcBreakdownOut,
     ScoreGapTimelinePoint,
     TimePressureTcCard,
 )
 from app.schemas.insights import (
     EndgameTabFindings,
     FilterContext,
+    MetricPercentileRecord,
     PlayerProfileEntry,
     SubsectionFinding,
     TimePoint,
@@ -115,6 +117,26 @@ _BUCKET_TO_METRIC: dict[MaterialBucket, BucketedMetricId] = {
     "parity": "parity_score_pct",
     "recovery": "recovery_save_pct",
 }
+
+
+# ---------------------------------------------------------------------------
+# Percentile helpers.
+# ---------------------------------------------------------------------------
+
+
+def _dominant_per_tc_row(
+    rows: list[PerTcBreakdownOut],
+) -> PerTcBreakdownOut | None:
+    """Return the per-TC breakdown row with the highest n_games (dominant TC).
+
+    Used to pick a representative anchor/value/n_games for page-level weighted
+    percentile records (score_gap, achievable_score_gap) where the chip shows a
+    single weighted number but we want to attribute it to the most-played TC.
+    Returns None when the list is empty.
+    """
+    if not rows:
+        return None
+    return max(rows, key=lambda r: r.n_games)
 
 
 # ---------------------------------------------------------------------------
@@ -184,25 +206,127 @@ async def compute_findings(
 
     player_profile = compute_player_profile(all_time_resp.endgame_elo_timeline.combos)
 
-    # Phase 102 (Plan 01): build page-level metric → percentile lookup and
+    # Phase 102 (Plan 01 + Plan 04): build enriched metric-percentile lookups and
     # cohort anchors from the all_time response so the LLM assembler can render
-    # pctl= annotations and cohort-framing strings without re-reading
-    # EndgameOverviewResponse. All three new fields are optional — existing
-    # test fixtures that construct EndgameTabFindings without them still work.
-    metric_percentiles: dict[str, float] = {}
-    if all_time_resp.score_gap_material.score_gap_percentile is not None:
-        metric_percentiles["score_gap"] = all_time_resp.score_gap_material.score_gap_percentile
-    if (
-        all_time_resp.performance is not None
-        and all_time_resp.performance.achievable_score_gap_percentile is not None
-    ):
-        metric_percentiles["achievable_score_gap"] = (
-            all_time_resp.performance.achievable_score_gap_percentile
-        )
-
+    # pctl= annotations with anchor/n_games/value context without re-reading
+    # EndgameOverviewResponse. All new fields are optional — existing test fixtures
+    # that construct EndgameTabFindings without them still work.
     cohort_anchors: dict[str, int] = {
         tc: anchor.anchor_rating for tc, anchor in all_time_resp.rating_anchors.items()
     }
+
+    # --- Page-level (weighted) metric percentiles ---
+    # score_gap and achievable_score_gap carry a game-count-weighted mean
+    # across TCs (D-06). Per-TC breakdown rows carry anchor + n_games + value.
+    metric_percentiles: dict[str, MetricPercentileRecord] = {}
+    sgm = all_time_resp.score_gap_material
+    if sgm.score_gap_percentile is not None:
+        # Use the dominant-by-n_games TC breakdown row for anchor/value/n_games.
+        dominant_sg = _dominant_per_tc_row(sgm.score_gap_per_tc)
+        metric_percentiles["score_gap"] = MetricPercentileRecord(
+            percentile=sgm.score_gap_percentile,
+            value=dominant_sg.value * 100.0
+            if dominant_sg and dominant_sg.value is not None
+            else None,
+            n_games=dominant_sg.n_games if dominant_sg else None,
+            anchor=cohort_anchors.get(dominant_sg.tc) if dominant_sg else None,
+            tc=None,  # page-level weighted metric
+        )
+    perf = all_time_resp.performance
+    if perf is not None and perf.achievable_score_gap_percentile is not None:
+        dominant_asg = _dominant_per_tc_row(perf.achievable_score_gap_per_tc)
+        metric_percentiles["achievable_score_gap"] = MetricPercentileRecord(
+            percentile=perf.achievable_score_gap_percentile,
+            value=dominant_asg.value * 100.0
+            if dominant_asg and dominant_asg.value is not None
+            else None,
+            n_games=dominant_asg.n_games if dominant_asg else None,
+            anchor=cohort_anchors.get(dominant_asg.tc) if dominant_asg else None,
+            tc=None,  # page-level weighted metric
+        )
+
+    # --- Per-TC metric percentiles for the Section 2 ΔES Score Gap family ---
+    # Keyed as "{metric_id}:{tc}". Bridges the naming gap: DB metric is
+    # "recovery_score_gap"; SubsectionFinding metric id is "score_gap_recov".
+    # Both bridge keys are written so renderers can look up either name.
+    per_tc_metric_percentiles: dict[str, MetricPercentileRecord] = {}
+    for card in all_time_resp.endgame_metrics_cards.cards:
+        tc = card.tc
+        anchor = cohort_anchors.get(tc)
+        # Tuples: (bucket attr name, ΔES-gap finding metric id, rate finding metric id,
+        #          DB metric id for the bridge alias — only differs for recovery)
+        _BUCKET_ROWS: tuple[tuple[str, str, str, str], ...] = (
+            ("conversion", "score_gap_conv", "conversion_win_pct", "score_gap_conv"),
+            ("parity", "score_gap_parity", "parity_score_pct", "score_gap_parity"),
+            # Bridge: DB stores "recovery_score_gap"; finding uses "score_gap_recov".
+            ("recovery", "score_gap_recov", "recovery_save_pct", "recovery_score_gap"),
+        )
+        for bucket_attr, gap_finding_metric, rate_finding_metric, db_gap_metric in _BUCKET_ROWS:
+            bucket_stats = getattr(card, bucket_attr)
+            # ΔES-gap percentile
+            pctl = bucket_stats.percentile
+            if pctl is not None:
+                rec = MetricPercentileRecord(
+                    percentile=pctl,
+                    value=bucket_stats.percentile_value * 100.0
+                    if bucket_stats.percentile_value is not None
+                    else None,
+                    n_games=bucket_stats.percentile_n_games,
+                    anchor=anchor,
+                    tc=tc,
+                )
+                per_tc_metric_percentiles[f"{gap_finding_metric}:{tc}"] = rec
+                # Write the bridge key for the recovery naming gap so renderers
+                # looking up either "score_gap_recov:blitz" or
+                # "recovery_score_gap:blitz" both find the record.
+                if gap_finding_metric != db_gap_metric:
+                    per_tc_metric_percentiles[f"{db_gap_metric}:{tc}"] = rec
+            # Raw-rate percentile
+            rate_pctl = bucket_stats.rate_percentile
+            if rate_pctl is not None:
+                per_tc_metric_percentiles[f"{rate_finding_metric}:{tc}"] = MetricPercentileRecord(
+                    percentile=rate_pctl,
+                    value=bucket_stats.rate_percentile_value * 100.0
+                    if bucket_stats.rate_percentile_value is not None
+                    else None,
+                    n_games=bucket_stats.rate_percentile_n_games,
+                    anchor=anchor,
+                    tc=tc,
+                )
+
+    # --- Per-TC time-pressure metric percentiles ---
+    # time_pressure_score_gap, clock_gap, net_flag_rate per TC card.
+    for tp_card in all_time_resp.time_pressure_cards.cards:
+        tc = tp_card.tc
+        anchor = cohort_anchors.get(tc)
+        for metric_id, pctl, n_games, value in (
+            (
+                "time_pressure_score_gap",
+                tp_card.time_pressure_score_gap_percentile,
+                tp_card.time_pressure_score_gap_n_games,
+                tp_card.time_pressure_score_gap_value,
+            ),
+            (
+                "clock_gap",
+                tp_card.clock_gap_percentile,
+                tp_card.clock_gap_n_games,
+                tp_card.clock_gap_value,
+            ),
+            (
+                "net_flag_rate",
+                tp_card.net_flag_rate_percentile,
+                tp_card.net_flag_rate_n_games,
+                tp_card.net_flag_rate_value,
+            ),
+        ):
+            if pctl is not None:
+                per_tc_metric_percentiles[f"{metric_id}:{tc}"] = MetricPercentileRecord(
+                    percentile=pctl,
+                    value=value * 100.0 if value is not None else None,
+                    n_games=n_games,
+                    anchor=anchor,
+                    tc=tc,
+                )
 
     findings = EndgameTabFindings(
         as_of=datetime.datetime.now(datetime.UTC),
@@ -220,10 +344,11 @@ async def compute_findings(
         overall_performance=all_time_resp.performance,
         type_categories=all_time_resp.stats.categories,
         player_profile=player_profile,
-        # Phase 102 (Plan 01): new optional fields; defaults (None / {}) apply
+        # Phase 102 (Plan 01 + Plan 04): new optional fields; defaults (None) apply
         # for existing test fixtures that construct EndgameTabFindings without them.
         time_pressure_cards=all_time_resp.time_pressure_cards,
         metric_percentiles=metric_percentiles if metric_percentiles else None,
+        per_tc_metric_percentiles=per_tc_metric_percentiles if per_tc_metric_percentiles else None,
         cohort_anchors=cohort_anchors if cohort_anchors else None,
         findings_hash="",  # placeholder; replaced below
     )

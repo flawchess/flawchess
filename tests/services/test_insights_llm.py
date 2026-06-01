@@ -26,6 +26,7 @@ from app.schemas.insights import (
     EndgameInsightsReport,
     EndgameTabFindings,
     FilterContext,
+    MetricPercentileRecord,
     SectionInsight,
     SubsectionFinding,
     TimePoint,
@@ -38,6 +39,7 @@ from app.services.insights_llm import (
     InsightsValidationFailure,
     _SYSTEM_PROMPT,
     _assemble_user_prompt,
+    _lookup_pctl_record,
     _maybe_strip_overview,
     generate_insights,
     get_insights_agent,
@@ -213,7 +215,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v36"
+        assert insights_llm._PROMPT_VERSION == "endgame_v37"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -373,7 +375,7 @@ class TestPromptVersionAndBody:
         Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
         changelog comment (append-only-at-FRONT pattern).
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v36"
+        assert insights_llm._PROMPT_VERSION == "endgame_v37"
         # Changelog comment must mention the Phase 87.6 rebuild.
         import inspect as _inspect
 
@@ -454,8 +456,8 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """Phase 102: _PROMPT_VERSION is endgame_v36; prior v35 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v36"
+        """Phase 102: _PROMPT_VERSION is endgame_v37; prior v35 stays in changelog."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v37"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2534,8 +2536,8 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        # Phase 102: bumped from endgame_v35 to endgame_v36.
-        assert response.report.prompt_version == "endgame_v36"
+        # Phase 102: bumped from endgame_v35 to endgame_v37.
+        assert response.report.prompt_version == "endgame_v37"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2559,7 +2561,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v36"
+        assert log.response_json["prompt_version"] == "endgame_v37"
 
 
 class TestCacheBehavior:
@@ -3604,8 +3606,8 @@ class TestPhase874PromptVersion:
     """
 
     def test_prompt_version_is_v33(self) -> None:
-        """SC#7: bumped to endgame_v36 by Phase 102 (was endgame_v35 after Phase 87.6)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v36"
+        """SC#7: bumped to endgame_v37 by Phase 102 (was endgame_v35 after Phase 87.6)."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v37"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3651,9 +3653,9 @@ class TestPhase876LLMPayloadExtension:
     and wires the non_endgame_elo renderer.
     """
 
-    def test_prompt_version_is_endgame_v36(self) -> None:
-        """Phase 102: _PROMPT_VERSION bumped from endgame_v35 to endgame_v36."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v36"
+    def test_prompt_version_is_endgame_v37(self) -> None:
+        """Phase 102: _PROMPT_VERSION bumped from endgame_v35 to endgame_v37."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v37"
 
     def test_prompt_changelog_preserves_v33_entry(self) -> None:
         """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
@@ -3976,20 +3978,43 @@ def _make_score_gap_finding(
     )
 
 
+def _make_pctl_record(
+    percentile: float = 31.0,
+    value: float | None = None,
+    n_games: int | None = None,
+    anchor: int | None = None,
+    tc: str | None = None,
+) -> "MetricPercentileRecord":
+    """Build a MetricPercentileRecord for test use."""
+    from typing import Literal, cast
+
+    from app.schemas.insights import MetricPercentileRecord
+
+    tc_lit = cast(Literal["bullet", "blitz", "rapid", "classical"] | None, tc)
+    return MetricPercentileRecord(
+        percentile=percentile,
+        value=value,
+        n_games=n_games,
+        anchor=anchor,
+        tc=tc_lit,
+    )
+
+
 class TestPercentileAnnotation:
-    """Phase 102 (Plan 01): pctl= annotation in summary lines (D-03, D-04, D-05)."""
+    """Phase 102 (Plan 01 + Plan 04): pctl= annotation in summary lines (D-03, D-05)."""
 
     def test_pctl_annotation_present_when_metric_in_metric_percentiles(self) -> None:
         """A finding whose metric is in metric_percentiles renders a pctl= token.
 
-        D-05: cohort framing 'vs ~{anchor}-rated peers' when cohort_anchors present.
+        D-05: cohort framing 'vs ~{anchor}-rated peers' when anchor present on record.
         """
         finding = _make_score_gap_finding(zone="weak")
+        rec = _make_pctl_record(percentile=31.0, anchor=1500)
         findings = EndgameTabFindings(
             as_of=datetime.datetime.now(datetime.UTC),
             filters=_sample_filter_context(),
             findings=[finding],
-            metric_percentiles={"score_gap": 31.0},
+            metric_percentiles={"score_gap": rec},
             cohort_anchors={"blitz": 1500},
             findings_hash="a" * 64,
         )
@@ -4008,7 +4033,9 @@ class TestPercentileAnnotation:
             as_of=datetime.datetime.now(datetime.UTC),
             filters=_sample_filter_context(),
             findings=[finding],
-            metric_percentiles={"achievable_score_gap": 55.0},  # score_gap absent
+            metric_percentiles={
+                "achievable_score_gap": _make_pctl_record(55.0)
+            },  # score_gap absent
             cohort_anchors={"blitz": 1500},
             findings_hash="a" * 64,
         )
@@ -4031,22 +4058,97 @@ class TestPercentileAnnotation:
         assert "pctl=" not in prompt
 
     def test_zone_typical_finding_with_extreme_percentile_still_emitted(self) -> None:
-        """Zone-as-sole-gate (D-04): a zone=typical finding with extreme percentile
-        is still emitted unchanged — percentile does NOT suppress or promote emission.
+        """The finding must still be emitted even with extreme percentile.
+
+        (Previously D-04 gate rule: zone was the sole emission gate. Now
+        the prompt teaches zone OR extreme-pctl as the narration gate,
+        but emission itself is never suppressed by zone status alone.)
         """
         finding = _make_score_gap_finding(zone="typical", value=0.02)
         findings = EndgameTabFindings(
             as_of=datetime.datetime.now(datetime.UTC),
             filters=_sample_filter_context(),
             findings=[finding],
-            metric_percentiles={"score_gap": 5.0},  # extreme percentile
+            metric_percentiles={"score_gap": _make_pctl_record(5.0)},  # extreme percentile
             cohort_anchors={"blitz": 1500},
             findings_hash="a" * 64,
         )
         prompt = _assemble_user_prompt(findings)
         # The finding must be present (zone=typical is emitted — typical is not filtered)
         assert "[summary score_gap]" in prompt, (
-            "zone=typical finding must still be emitted even with extreme percentile (D-04)"
+            "zone=typical finding must still be emitted even with extreme percentile"
         )
         # The pctl= annotation should be present (it's metadata on an emitted finding)
         assert "pctl=5" in prompt, "pctl= token should appear as metadata on the emitted finding"
+
+    def test_enriched_pctl_token_carries_n_games_and_value(self) -> None:
+        """Phase 102 (Plan 04): enriched pctl= token includes n_games and value."""
+        finding = _make_score_gap_finding(zone="weak", value=-0.09)
+        rec = _make_pctl_record(percentile=18.0, value=-9.0, n_games=312, anchor=1480, tc="blitz")
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles={"score_gap": rec},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=18" in prompt
+        assert "n_games=312" in prompt
+        assert "value=-9" in prompt
+        assert "vs ~1480-rated blitz peers" in prompt
+
+    def test_per_tc_pctl_via_dim_key(self) -> None:
+        """Phase 102 (Plan 04): per-TC metric percentile rendered via per_tc_metric_percentiles
+        when the finding has a time_control dimension.
+        """
+        from typing import cast
+        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
+
+        # Build a score_gap_conv finding with time_control=blitz dimension.
+        conv_finding = SubsectionFinding(
+            subsection_id=cast(SubsectionId, "endgame_metrics"),
+            window=cast(Window, "all_time"),
+            metric=cast(MetricId, "score_gap_conv"),
+            value=0.05,
+            zone=cast(Zone, "typical"),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=95,
+            sample_quality=cast(SampleQuality, "adequate"),
+            is_headline_eligible=True,
+            dimension={"bucket": "conversion", "time_control": "blitz"},
+        )
+        rec = _make_pctl_record(percentile=79.0, value=47.0, n_games=87, anchor=1480, tc="blitz")
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[conv_finding],
+            per_tc_metric_percentiles={"score_gap_conv:blitz": rec},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=79" in prompt, "per-TC pctl= token must appear from per_tc_metric_percentiles"
+        assert "vs ~1480-rated blitz peers" in prompt
+
+    def test_recovery_naming_bridge(self) -> None:
+        """Phase 102 (Plan 04): 'recovery_score_gap:blitz' and 'score_gap_recov:blitz'
+        both resolve to the same MetricPercentileRecord via the bridge alias.
+        """
+
+        rec = _make_pctl_record(percentile=25.0, anchor=1500, tc="blitz")
+        per_tc: dict[str, MetricPercentileRecord] = {
+            "score_gap_recov:blitz": rec,
+            "recovery_score_gap:blitz": rec,
+        }
+        # Both keys must resolve to the same record.
+        found_1 = _lookup_pctl_record(
+            "score_gap_recov", "bucket=recovery, time_control=blitz", None, per_tc
+        )
+        found_2 = _lookup_pctl_record(
+            "recovery_score_gap", "bucket=recovery, time_control=blitz", None, per_tc
+        )
+        assert found_1 is not None, "score_gap_recov should resolve via per_tc lookup"
+        assert found_2 is not None, "recovery_score_gap bridge key should also resolve"
+        assert found_1.percentile == 25.0
+        assert found_2.percentile == 25.0

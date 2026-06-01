@@ -239,6 +239,10 @@ class TestEndgameTabFindings:
             # (load-bearing for findings_hash stability); optional non-breaking payload adds.
             "time_pressure_cards",
             "metric_percentiles",
+            # Phase 102 (Plan 04): per-TC metric percentiles for Section 2 ΔES-gap +
+            # raw-rate + time-pressure metrics. Appended after metric_percentiles,
+            # before cohort_anchors, to preserve findings_hash stability.
+            "per_tc_metric_percentiles",
             "cohort_anchors",
             "findings_hash",
         ]
@@ -304,6 +308,7 @@ class TestModuleAll:
             "InsightsErrorResponse",
             "InsightsStatus",
             "MetricId",
+            "MetricPercentileRecord",
             "PlayerProfileEntry",
             "SampleQuality",
             "SectionId",
