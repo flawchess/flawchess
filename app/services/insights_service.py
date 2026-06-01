@@ -895,8 +895,12 @@ def _findings_time_pressure_at_entry(
 
     Phase 88: source switched from ClockStatsRow.clock_pressure to TimePressureTcCard
     time_pressure_cards. avg_clock_diff_pct is the n-weighted mean of
-    ClockGapBullet.mean_diff_pct * 100 across cards. net_timeout_rate is no longer
-    available in the new response shape — always emits an empty finding.
+    ClockGapBullet.mean_diff_pct * 100 across cards.
+
+    Phase 102 (Plan 01): net_timeout_rate is now a real n-weighted scalar computed
+    from card.net_timeout_rate (fraction → x100 to match avg_clock_diff_pct scale).
+    Previously this was an always-empty stub since the Phase 88 ClockStatsRow
+    migration.
     """
     cards: list[TimePressureTcCard] = response.time_pressure_cards.cards
 
@@ -944,9 +948,47 @@ def _findings_time_pressure_at_entry(
         )
     )
 
-    # net_timeout_rate: not available in Phase 88 response shape (removed with
-    # ClockStatsRow / ClockPressureResponse migration). Always emit empty finding.
-    findings.append(_empty_finding("time_pressure_at_entry", window, "net_timeout_rate"))
+    # Phase 102 (Plan 01): net_timeout_rate wired from card.net_timeout_rate
+    # (fraction -> x100 to match avg_clock_diff_pct scale); was an always-empty
+    # stub since the Phase 88 ClockStatsRow migration.
+    # net_timeout_rate is in _NON_FRACTIONAL_METRICS in insights_llm.py so the
+    # assembler does NOT re-scale it — the x100 happens here, exactly like
+    # avg_clock_diff_pct.
+    # Denominator uses card.total (total endgame games for this TC) to weight
+    # the per-TC net timeout rate proportionally to each TC's game volume.
+    timeout_num = 0.0
+    timeout_den = 0
+    for card in cards:
+        n = card.total
+        if n <= 0:
+            continue
+        timeout_num += card.net_timeout_rate * 100.0 * n
+        timeout_den += n
+
+    if timeout_den > 0:
+        timeout_value = timeout_num / timeout_den
+    else:
+        timeout_value = float("nan")
+
+    timeout_quality = sample_quality("time_pressure_at_entry", timeout_den)
+    is_timeout_headline = timeout_quality != "thin"
+
+    findings.append(
+        SubsectionFinding(
+            subsection_id="time_pressure_at_entry",
+            parent_subsection_id=None,
+            window=window,
+            metric="net_timeout_rate",
+            value=timeout_value,
+            zone=assign_zone("net_timeout_rate", timeout_value),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=timeout_den,
+            sample_quality=timeout_quality,
+            is_headline_eligible=is_timeout_headline and not math.isnan(timeout_value),
+            dimension=None,
+        )
+    )
 
     return findings
 

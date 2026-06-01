@@ -1451,3 +1451,144 @@ class TestD15LlmPathInvariant:
             "D-15 violated: _findings_conversion_recovery_by_type references "
             "categories_by_tc — the LLM path must read only response.stats.categories"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestNetTimeoutRateFinding — Phase 102 (Plan 01): net_timeout_rate is now a
+# real n-weighted scalar finding derived from card.net_timeout_rate (fraction
+# → x100 to match avg_clock_diff_pct scale). Previously an always-empty stub.
+# ---------------------------------------------------------------------------
+
+
+class TestNetTimeoutRateFinding:
+    """net_timeout_rate is a real n-weighted (×100) scalar finding when cards exist."""
+
+    def _make_time_pressure_cards_response(
+        self,
+        cards_data: list[dict[str, Any]],
+    ) -> Any:
+        """Build a minimal TimePressureCardsResponse with given card data."""
+        from app.schemas.endgames import (
+            ClockGapBullet,
+            PressureQuintileBullet,
+            TimePressureCardsResponse,
+            TimePressureTcCard,
+        )
+
+        cards = []
+        for cd in cards_data:
+            card = TimePressureTcCard(
+                tc=cd["tc"],
+                total=cd["total"],
+                net_timeout_rate=cd["net_timeout_rate"],
+                clock_gap=ClockGapBullet(
+                    n=cd.get("clock_gap_n", cd["total"]),
+                    mean_diff_pct=cd.get("mean_diff_pct", 0.0),
+                    p_value=None,
+                    ci_low=None,
+                    ci_high=None,
+                ),
+                quintiles=[
+                    PressureQuintileBullet(
+                        quintile_index=q,
+                        quintile_label=f"{q*20}-{q*20+20}%",
+                        n=0,
+                        n_opp=0,
+                        delta=0.0,
+                        p_value=None,
+                        ci_low=None,
+                        ci_high=None,
+                        opp_score=None,
+                    )
+                    for q in range(5)
+                ],
+            )
+            cards.append(card)
+        return TimePressureCardsResponse(cards=cards)
+
+    def _make_overview_with_cards(self, cards_data: list[dict[str, Any]]) -> Any:
+        """Build a minimal EndgameOverviewResponse containing TimePressureCardsResponse."""
+        time_pressure_cards = self._make_time_pressure_cards_response(cards_data)
+        return EndgameOverviewResponse.model_construct(
+            time_pressure_cards=time_pressure_cards,
+        )
+
+    def test_net_timeout_rate_non_nan_when_cards_exist(self) -> None:
+        """With ≥1 card carrying a non-zero net_timeout_rate and total>0, the
+        emitted finding has a non-NaN value and a zone assigned (not thin/empty).
+
+        Phase 102 (Plan 01): this was previously always NaN (empty stub).
+        """
+        from app.services.insights_service import _findings_time_pressure_at_entry
+
+        response = self._make_overview_with_cards([
+            {"tc": "blitz", "total": 100, "net_timeout_rate": 0.02},
+        ])
+        findings = _findings_time_pressure_at_entry(response, window="all_time")
+
+        timeout_findings = [f for f in findings if f.metric == "net_timeout_rate"]
+        assert len(timeout_findings) == 1
+        f = timeout_findings[0]
+        assert not math.isnan(f.value), "net_timeout_rate must not be NaN when cards exist"
+        assert f.zone != "thin", "net_timeout_rate zone must be assigned when cards exist"
+        assert f.sample_quality != "thin" or f.sample_size > 0, (
+            "net_timeout_rate finding with >0 total games must not be thin"
+        )
+
+    def test_net_timeout_rate_scaled_by_100(self) -> None:
+        """net_timeout_rate fraction is multiplied ×100 to match avg_clock_diff_pct scale.
+
+        0.005 fraction should yield 0.5 (percentage-point scalar) in the finding.
+        """
+        from app.services.insights_service import _findings_time_pressure_at_entry
+
+        response = self._make_overview_with_cards([
+            {"tc": "blitz", "total": 200, "net_timeout_rate": 0.005},
+        ])
+        findings = _findings_time_pressure_at_entry(response, window="all_time")
+        timeout_findings = [f for f in findings if f.metric == "net_timeout_rate"]
+        assert len(timeout_findings) == 1
+        # 0.005 fraction × 100 = 0.5 percentage points
+        assert abs(timeout_findings[0].value - 0.5) < 1e-9
+
+    def test_net_timeout_rate_n_weighted_across_cards(self) -> None:
+        """n-weighted mean: two cards with different net_timeout_rate and total."""
+        from app.services.insights_service import _findings_time_pressure_at_entry
+
+        # blitz: 0.01 fraction × 100 = 1.0 pp, 100 games
+        # rapid: 0.03 fraction × 100 = 3.0 pp, 300 games
+        # expected weighted mean: (1.0 * 100 + 3.0 * 300) / 400 = 1000/400 = 2.5
+        response = self._make_overview_with_cards([
+            {"tc": "blitz", "total": 100, "net_timeout_rate": 0.01},
+            {"tc": "rapid", "total": 300, "net_timeout_rate": 0.03},
+        ])
+        findings = _findings_time_pressure_at_entry(response, window="all_time")
+        timeout_findings = [f for f in findings if f.metric == "net_timeout_rate"]
+        assert len(timeout_findings) == 1
+        assert abs(timeout_findings[0].value - 2.5) < 1e-9
+
+    def test_net_timeout_rate_empty_stub_when_no_cards(self) -> None:
+        """Empty cards list → empty finding (NaN, thin, not headline eligible)."""
+        from app.services.insights_service import _findings_time_pressure_at_entry
+
+        response = self._make_overview_with_cards([])
+        findings = _findings_time_pressure_at_entry(response, window="all_time")
+        timeout_findings = [f for f in findings if f.metric == "net_timeout_rate"]
+        assert len(timeout_findings) == 1
+        f = timeout_findings[0]
+        assert math.isnan(f.value)
+        assert f.sample_quality == "thin"
+        assert f.is_headline_eligible is False
+
+    def test_net_timeout_rate_is_headline_eligible_with_sufficient_games(self) -> None:
+        """Sufficient total games makes net_timeout_rate headline eligible."""
+        from app.services.insights_service import _findings_time_pressure_at_entry
+
+        # Use a total large enough to produce "adequate" or "rich" quality
+        response = self._make_overview_with_cards([
+            {"tc": "blitz", "total": 200, "net_timeout_rate": 0.01},
+        ])
+        findings = _findings_time_pressure_at_entry(response, window="all_time")
+        timeout_findings = [f for f in findings if f.metric == "net_timeout_rate"]
+        assert len(timeout_findings) == 1
+        assert timeout_findings[0].is_headline_eligible is True
