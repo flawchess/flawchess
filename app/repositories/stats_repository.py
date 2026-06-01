@@ -26,7 +26,7 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
-from app.models.game_position import GamePosition
+from app.models.game_position import MAX_EXPLORER_PLY, GamePosition
 from app.repositories.query_utils import apply_game_filters
 
 # D-08: trim |eval_cp| >= 2000 (>= ±20 pawns) from eval mean. Decisive positions
@@ -326,8 +326,10 @@ async def query_top_openings_sql_wdl(
             GamePosition,
             and_(
                 GamePosition.full_hash == _openings_dedup.c.full_hash,
-                # Match the (user_id, full_hash) index — keeps the JOIN cheap.
+                # Match the (user_id, full_hash) partial index — keeps the JOIN cheap.
+                # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used (SEED-033).
                 GamePosition.user_id == user_id,
+                GamePosition.ply <= MAX_EXPLORER_PLY,
             ),
         )
         .join(Game, Game.id == GamePosition.game_id)
@@ -442,6 +444,9 @@ async def query_position_wdl_batch(
         .where(
             GamePosition.user_id == user_id,
             GamePosition.full_hash.in_(hashes),
+            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used (SEED-033).
+            # The explorer is capped at this depth so hashes past this boundary never appear.
+            GamePosition.ply <= MAX_EXPLORER_PLY,
         )
         .group_by(GamePosition.full_hash)
     )
@@ -543,6 +548,8 @@ async def query_opening_phase_entry_metrics_batch(
         .where(
             GamePosition.user_id == user_id,
             hash_col.in_(hashes),
+            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used (SEED-033).
+            GamePosition.ply <= MAX_EXPLORER_PLY,
         )
         .distinct(hash_col, Game.id)
     )

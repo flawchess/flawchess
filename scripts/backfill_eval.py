@@ -21,17 +21,15 @@ DB URL is derived from settings.DATABASE_URL by swapping the port.  To override,
 set BACKFILL_DEV_DB_URL, BACKFILL_BENCHMARK_DB_URL, or BACKFILL_PROD_DB_URL.
 
 Stockfish binary:
-    The script invokes app.services.engine, which reads STOCKFISH_PATH (default
-    /usr/local/bin/stockfish — the path baked into the prod Docker image).
-    Locally that binary does not exist; bin/run_local.sh exports
-    STOCKFISH_PATH=$HOME/.local/stockfish/sf, but standalone script runs do not
-    inherit that, so you must set it yourself:
+    The script invokes app.services.engine, which auto-discovers the binary:
+    STOCKFISH_PATH if set, else /usr/local/bin/stockfish (prod Docker), else
+    ~/.local/stockfish/sf (bin/install_stockfish.sh dev location), else
+    `stockfish` on PATH. So a standard local install needs no env var:
 
-        export STOCKFISH_PATH=$HOME/.local/stockfish/sf
+        bin/install_stockfish.sh   # one-time, idempotent
         uv run python scripts/backfill_eval.py --db dev --user-id 13
 
-    See .planning/milestones/v1.15-phases/78-stockfish-eval-cutover-for-endgame-classification/78-06-SUMMARY.md
-    for install steps if the binary is missing.
+    Set STOCKFISH_PATH only to point at a binary in a non-standard location.
 
 Usage:
     uv run python scripts/backfill_eval.py --db dev --limit 50

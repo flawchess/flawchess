@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
-from app.models.game_position import GamePosition
+from app.models.game_position import MAX_EXPLORER_PLY, GamePosition
 from app.repositories.openings_repository import (
     HASH_COLUMN_MAP,
     query_matching_games,
@@ -362,12 +362,14 @@ async def _fetch_result_fens(
     if not result_hashes:
         return {}
 
-    # One sample (full_hash, game_id, ply) per result_hash
+    # One sample (full_hash, game_id, ply) per result_hash.
+    # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used (SEED-033).
     stmt = (
         select(GamePosition.full_hash, GamePosition.game_id, GamePosition.ply)
         .where(
             GamePosition.user_id == user_id,
             GamePosition.full_hash.in_(result_hashes),
+            GamePosition.ply <= MAX_EXPLORER_PLY,
         )
         .distinct(GamePosition.full_hash)
         .order_by(GamePosition.full_hash, GamePosition.game_id)

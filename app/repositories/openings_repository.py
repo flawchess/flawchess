@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.models.game import Game
-from app.models.game_position import GamePosition
+from app.models.game_position import MAX_EXPLORER_PLY, GamePosition
 from app.models.opening import Opening
 from app.repositories.query_utils import apply_game_filters
 from app.services.opening_insights_constants import (
@@ -83,13 +83,15 @@ def _build_base_query(
     entities = select_entity if isinstance(select_entity, list) else [select_entity]
 
     if target_hash is not None and hash_column is not None:
-        # Position-filtered query: join game_positions and filter by hash
+        # Position-filtered query: join game_positions and filter by hash.
+        # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used (SEED-033).
         base = (
             select(*entities)
             .join(GamePosition, GamePosition.game_id == Game.id)
             .where(
                 GamePosition.user_id == user_id,
                 hash_column == target_hash,
+                GamePosition.ply <= MAX_EXPLORER_PLY,
             )
             .distinct(Game.id)
         )
@@ -164,6 +166,8 @@ async def query_time_series(
         .where(
             GamePosition.user_id == user_id,
             hash_column == target_hash,
+            # ply <= MAX_EXPLORER_PLY ensures the partial hash index is used (SEED-033).
+            GamePosition.ply <= MAX_EXPLORER_PLY,
             Game.played_at.isnot(None),
         )
         .distinct(Game.id)
@@ -461,6 +465,10 @@ async def query_next_moves(
         .where(
             gp1.user_id == user_id,
             gp1.full_hash == target_hash,
+            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used (SEED-033).
+            # gp2.ply == gp1.ply + 1, so gp2 is implicitly <= MAX_EXPLORER_PLY + 1 —
+            # only gp1 needs the predicate for index selection.
+            gp1.ply <= MAX_EXPLORER_PLY,
             gp1.move_san.isnot(None),
         )
         .group_by(gp1.move_san, gp2.full_hash)
@@ -556,6 +564,8 @@ async def query_resulting_position_wdl(
         .where(
             GamePosition.user_id == user_id,
             GamePosition.full_hash.in_(hash_list),
+            # ply <= MAX_EXPLORER_PLY: ensures the partial hash index is used (SEED-033).
+            GamePosition.ply <= MAX_EXPLORER_PLY,
         )
         .group_by(GamePosition.full_hash)
     )

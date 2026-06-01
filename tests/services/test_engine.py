@@ -1,15 +1,18 @@
 """Engine wrapper contract tests (ENG-02). Phase 78 Wave 0."""
 
-import shutil
+import os
 
 import chess
 import pytest
 
-from app.services.engine import evaluate
+from app.services.engine import _STOCKFISH_PATH, evaluate
 from app.services.zobrist import EVAL_CP_MAX_ABS, EVAL_MATE_MAX_ABS
 
-stockfish_missing = shutil.which("stockfish") is None
-skip_if_no_stockfish = pytest.mark.skipif(stockfish_missing, reason="Stockfish not on PATH")
+# Use the same path the engine resolves (env var / Docker / dev install / PATH),
+# so these run locally after bin/install_stockfish.sh, not only when a binary
+# literally named `stockfish` is on PATH.
+stockfish_missing = not (os.path.isfile(_STOCKFISH_PATH) and os.access(_STOCKFISH_PATH, os.X_OK))
+skip_if_no_stockfish = pytest.mark.skipif(stockfish_missing, reason="Stockfish binary not found")
 
 # Known positions (chosen for deterministic depth-15 outcome)
 KQ_VS_K_WHITE_WINS = "8/8/8/8/8/8/4Q3/4K2k w - - 0 1"

@@ -399,7 +399,7 @@ export function EndgameTimePressureCard({
               >
                 <div className="space-y-2">
                   <p>
-                    The <strong>Score Gap by Remaining Time</strong> shows you if
+                    The <strong>Score Gap by Remaining Time</strong> shows if you
                     handle the <em>same amount</em> of time pressure better or worse
                     than your opponents.
                   </p>
