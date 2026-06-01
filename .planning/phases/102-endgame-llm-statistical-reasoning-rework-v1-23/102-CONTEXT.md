@@ -69,6 +69,16 @@ so the planner does not have to re-derive them.
 - **D-05 (cohort framing): match the chips.** Where percentile is woven into narration, use
   cohort framing ("vs other ~{anchor}-rated players"), NOT global-pool framing — consistent
   with `feedback_percentile_chip_tooltip_disclosure` and the chip tooltip copy.
+- **D-05a (added during execution 2026-06-01, user direction, Plan 102-05 / `endgame_v38`):
+  the anchor is Lichess-equivalent.** `user_rating_anchors.anchor_rating` is a game-weighted
+  median of converted-chess.com (Glicko-1 → typically-higher Lichess Glicko-2 scale) + native
+  lichess ratings. chess.com-heavy users were confused at being compared to higher-numbered
+  peers. Payload now exposes the per-TC platform composition (`RatingAnchorContext`: anchor +
+  n_chesscom/n_lichess games + chesscom/lichess native medians) via a rendered `## Rating basis`
+  block; the prompt teaches a ONE-TIME chess.com→Lichess conversion clarification mirroring the
+  four `PercentileChipPopoverBody` disclosure branches (pure-cc / mixed / pure-lichess / suppressed),
+  so pure-lichess users get no conversion note. Consistent with `feedback_percentile_chip_tooltip_disclosure`
+  and D-10. See `[[feedback_percentile_primary_narration_signal]]`.
 
 ### Time-pressure narration
 - **D-06: Time-pressure metrics get percentile annotations where available, granularity-matched.**

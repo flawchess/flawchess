@@ -2,12 +2,12 @@
 phase: 102-endgame-llm-statistical-reasoning-rework-v1-23
 plan: 03
 type: human-uat
-version: endgame_v37
+version: endgame_v38
 ---
 
-# Phase 102 UAT: endgame_v37 Narration Quality
+# Phase 102 UAT: endgame_v38 Narration Quality
 
-**Purpose:** Confirm that the endgame_v37 payload + prompt changes land an observable narration
+**Purpose:** Confirm that the endgame_v38 payload + prompt changes land an observable narration
 improvement and that all guards hold before the phase ships.
 
 **No DB reset required.** UAT runs against existing prod data via admin impersonation. The prod
@@ -22,6 +22,7 @@ DB is never mutated. The dev DB is not involved.
 | D-03 | Percentile fields in payload for **all 11** percentile-bearing metrics (not just score_gap), enriched with anchor + n_games + value | `pctl=N (vs ~A-rated {tc} peers \| n_games=M \| value=V)` on summary lines |
 | D-04 **(REVERSED v37)** | Percentile is a **primary, preferred** narration signal. Narrate when zone non-typical **OR** pctl extreme (`<25`/`>75`) with adequate/rich quality. Lead with percentile framing. | An extreme-pctl metric **IS** narrated even when its zone is typical; percentile framing leads, zone is supporting context |
 | D-05 | Cohort framing: "vs ~{anchor}-rated {tc} players", never "globally" | Framing matches the chip on the page |
+| D-05a **(new v38)** | Anchor is **Lichess-equivalent**. chess.com-heavy users get a one-time chess.com→Lichess conversion note (cite chess.com native median → anchor); pure-lichess users get no conversion note | For a chess.com user, the report explains once that their ~X chess.com rating ≈ ~A Lichess; for a lichess-only user, NO conversion note appears |
 | D-06 | Time-pressure narration when gated: Score-Gap-by-time chart, Clock Gap, Net Flag Rate (each with its per-TC pctl) | All three appear when gated; Net Flag Rate no longer NaN/missing; per-TC pctl uses that TC's anchor |
 | (new v37) | No double-narration: a metric's ΔES-gap pctl and raw-rate pctl are not both narrated for the same metric in one bullet | Conv/Parity/Recovery narrated once, picking the more informative angle |
 | D-08 | Longer Data Analysis (up to ~500 words / 5 paragraphs) only when ≥3 distinct signals exist; sparse stays concise | Full-history report may be longer; sparse report stays short, no padding |
@@ -36,7 +37,7 @@ DB is never mutated. The dev DB is not involved.
 1. The backend is running the Phase 102 build (locally or on prod post-deploy). Confirm:
    ```bash
    grep "_PROMPT_VERSION" app/services/insights_llm.py
-   # must return: _PROMPT_VERSION = "endgame_v37"
+   # must return: _PROMPT_VERSION = "endgame_v38"
    ```
 
 2. For local testing, start the dev server (no reset needed):
@@ -75,13 +76,13 @@ DB is never mutated. The dev DB is not involved.
 ### Forcing a fresh report (bypassing cache)
 
 The cache key is `(user_id, prompt_version, model, opponent_strength)`. Because this is a new
-prompt version (`endgame_v37`), there should be no cached report for any user on this version.
+prompt version (`endgame_v38`), there should be no cached report for any user on this version.
 
 To verify the report version, check `llm_logs`:
 ```sql
 SELECT user_id, prompt_version, created_at, status
 FROM llm_logs
-WHERE prompt_version = 'endgame_v37'
+WHERE prompt_version = 'endgame_v38'
 ORDER BY created_at DESC
 LIMIT 10;
 ```
@@ -96,11 +97,11 @@ The `POST /api/insights/endgame` response includes:
 ```json
 {
   "status": "fresh",     // or "cache_hit" if already generated
-  "prompt_version": "endgame_v37",
+  "prompt_version": "endgame_v38",
   ...
 }
 ```
-Confirm `prompt_version == "endgame_v37"` and `status == "fresh"` for the first generation.
+Confirm `prompt_version == "endgame_v38"` and `status == "fresh"` for the first generation.
 
 ---
 
