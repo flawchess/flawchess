@@ -1513,7 +1513,7 @@ class TestNetTimeoutRateFinding:
                 quintiles=[
                     PressureQuintileBullet(
                         quintile_index=q,
-                        quintile_label=f"{q*20}-{q*20+20}%",
+                        quintile_label=f"{q * 20}-{q * 20 + 20}%",
                         n=0,
                         n_opp=0,
                         delta=0.0,
@@ -1543,9 +1543,11 @@ class TestNetTimeoutRateFinding:
         """
         from app.services.insights_service import _findings_time_pressure_at_entry
 
-        response = self._make_overview_with_cards([
-            {"tc": "blitz", "total": 100, "net_timeout_rate": 0.02},
-        ])
+        response = self._make_overview_with_cards(
+            [
+                {"tc": "blitz", "total": 100, "net_timeout_rate": 0.02},
+            ]
+        )
         findings = _findings_time_pressure_at_entry(response, window="all_time")
 
         timeout_findings = [f for f in findings if f.metric == "net_timeout_rate"]
@@ -1564,9 +1566,11 @@ class TestNetTimeoutRateFinding:
         """
         from app.services.insights_service import _findings_time_pressure_at_entry
 
-        response = self._make_overview_with_cards([
-            {"tc": "blitz", "total": 200, "net_timeout_rate": 0.005},
-        ])
+        response = self._make_overview_with_cards(
+            [
+                {"tc": "blitz", "total": 200, "net_timeout_rate": 0.005},
+            ]
+        )
         findings = _findings_time_pressure_at_entry(response, window="all_time")
         timeout_findings = [f for f in findings if f.metric == "net_timeout_rate"]
         assert len(timeout_findings) == 1
@@ -1580,10 +1584,12 @@ class TestNetTimeoutRateFinding:
         # blitz: 0.01 fraction × 100 = 1.0 pp, 100 games
         # rapid: 0.03 fraction × 100 = 3.0 pp, 300 games
         # expected weighted mean: (1.0 * 100 + 3.0 * 300) / 400 = 1000/400 = 2.5
-        response = self._make_overview_with_cards([
-            {"tc": "blitz", "total": 100, "net_timeout_rate": 0.01},
-            {"tc": "rapid", "total": 300, "net_timeout_rate": 0.03},
-        ])
+        response = self._make_overview_with_cards(
+            [
+                {"tc": "blitz", "total": 100, "net_timeout_rate": 0.01},
+                {"tc": "rapid", "total": 300, "net_timeout_rate": 0.03},
+            ]
+        )
         findings = _findings_time_pressure_at_entry(response, window="all_time")
         timeout_findings = [f for f in findings if f.metric == "net_timeout_rate"]
         assert len(timeout_findings) == 1
@@ -1607,9 +1613,11 @@ class TestNetTimeoutRateFinding:
         from app.services.insights_service import _findings_time_pressure_at_entry
 
         # Use a total large enough to produce "adequate" or "rich" quality
-        response = self._make_overview_with_cards([
-            {"tc": "blitz", "total": 200, "net_timeout_rate": 0.01},
-        ])
+        response = self._make_overview_with_cards(
+            [
+                {"tc": "blitz", "total": 200, "net_timeout_rate": 0.01},
+            ]
+        )
         findings = _findings_time_pressure_at_entry(response, window="all_time")
         timeout_findings = [f for f in findings if f.metric == "net_timeout_rate"]
         assert len(timeout_findings) == 1

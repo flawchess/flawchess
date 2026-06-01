@@ -201,8 +201,7 @@ async def compute_findings(
         )
 
     cohort_anchors: dict[str, int] = {
-        tc: anchor.anchor_rating
-        for tc, anchor in all_time_resp.rating_anchors.items()
+        tc: anchor.anchor_rating for tc, anchor in all_time_resp.rating_anchors.items()
     }
 
     findings = EndgameTabFindings(
