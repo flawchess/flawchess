@@ -2,12 +2,12 @@
 phase: 102-endgame-llm-statistical-reasoning-rework-v1-23
 plan: 03
 type: human-uat
-version: endgame_v36
+version: endgame_v37
 ---
 
-# Phase 102 UAT: endgame_v36 Narration Quality
+# Phase 102 UAT: endgame_v37 Narration Quality
 
-**Purpose:** Confirm that the endgame_v36 payload + prompt changes land an observable narration
+**Purpose:** Confirm that the endgame_v37 payload + prompt changes land an observable narration
 improvement and that all guards hold before the phase ships.
 
 **No DB reset required.** UAT runs against existing prod data via admin impersonation. The prod
@@ -19,10 +19,11 @@ DB is never mutated. The dev DB is not involved.
 
 | ID | Locked Decision | Observable in Report |
 |----|----------------|----------------------|
-| D-03 | Percentile fields in payload (page-level, game-count-weighted) | `pctl=` on summary lines |
-| D-04 | Zone is the sole gate — extreme pctl in typical zone does NOT narrate | Typical-zone metric absent even when percentile is extreme |
+| D-03 | Percentile fields in payload for **all 11** percentile-bearing metrics (not just score_gap), enriched with anchor + n_games + value | `pctl=N (vs ~A-rated {tc} peers \| n_games=M \| value=V)` on summary lines |
+| D-04 **(REVERSED v37)** | Percentile is a **primary, preferred** narration signal. Narrate when zone non-typical **OR** pctl extreme (`<25`/`>75`) with adequate/rich quality. Lead with percentile framing. | An extreme-pctl metric **IS** narrated even when its zone is typical; percentile framing leads, zone is supporting context |
 | D-05 | Cohort framing: "vs ~{anchor}-rated {tc} players", never "globally" | Framing matches the chip on the page |
-| D-06 | Time-pressure narration when zone opens: Score-Gap-by-time chart, Clock Gap, Net Flag Rate | All three appear in the report when zone-gated; Net Flag Rate is no longer NaN/missing |
+| D-06 | Time-pressure narration when gated: Score-Gap-by-time chart, Clock Gap, Net Flag Rate (each with its per-TC pctl) | All three appear when gated; Net Flag Rate no longer NaN/missing; per-TC pctl uses that TC's anchor |
+| (new v37) | No double-narration: a metric's ΔES-gap pctl and raw-rate pctl are not both narrated for the same metric in one bullet | Conv/Parity/Recovery narrated once, picking the more informative angle |
 | D-08 | Longer Data Analysis (up to ~500 words / 5 paragraphs) only when ≥3 distinct signals exist; sparse stays concise | Full-history report may be longer; sparse report stays short, no padding |
 | D-10 | Vocabulary aligned to concepts accordion + tooltip popovers | No contradiction between report text and tooltip/accordion definitions |
 
@@ -35,7 +36,7 @@ DB is never mutated. The dev DB is not involved.
 1. The backend is running the Phase 102 build (locally or on prod post-deploy). Confirm:
    ```bash
    grep "_PROMPT_VERSION" app/services/insights_llm.py
-   # must return: _PROMPT_VERSION = "endgame_v36"
+   # must return: _PROMPT_VERSION = "endgame_v37"
    ```
 
 2. For local testing, start the dev server (no reset needed):
@@ -74,13 +75,13 @@ DB is never mutated. The dev DB is not involved.
 ### Forcing a fresh report (bypassing cache)
 
 The cache key is `(user_id, prompt_version, model, opponent_strength)`. Because this is a new
-prompt version (`endgame_v36`), there should be no cached report for any user on this version.
+prompt version (`endgame_v37`), there should be no cached report for any user on this version.
 
 To verify the report version, check `llm_logs`:
 ```sql
 SELECT user_id, prompt_version, created_at, status
 FROM llm_logs
-WHERE prompt_version = 'endgame_v36'
+WHERE prompt_version = 'endgame_v37'
 ORDER BY created_at DESC
 LIMIT 10;
 ```
@@ -95,11 +96,11 @@ The `POST /api/insights/endgame` response includes:
 ```json
 {
   "status": "fresh",     // or "cache_hit" if already generated
-  "prompt_version": "endgame_v36",
+  "prompt_version": "endgame_v37",
   ...
 }
 ```
-Confirm `prompt_version == "endgame_v36"` and `status == "fresh"` for the first generation.
+Confirm `prompt_version == "endgame_v37"` and `status == "fresh"` for the first generation.
 
 ---
 
@@ -207,20 +208,27 @@ LIMIT 10;
 
 **Pass criteria:**
 
-#### A-1 — Percentile present and cohort-framed (D-03, D-05)
-- [ ] At least one metric line in the report mentions a percentile rank.
+#### A-1 — Percentile present, enriched, and cohort-framed (D-03, D-05)
+- [ ] At least one metric line in the report mentions a percentile rank, and the report **leads**
+  with the percentile (not the zone) where a pctl exists.
 - [ ] The framing reads "vs ~{anchor}-rated {tc} players" (e.g. "vs ~1200-rated blitz players"),
   NOT "globally" or "among all users".
 - [ ] The percentile rank cited matches (within rounding) the chip shown on the Endgames page
   for the same metric and time control. (Compare the chip value to the report text.)
+- [ ] Percentiles appear for **more than just score_gap** — verify the report cites percentiles
+  for at least a couple of distinct metric families (e.g. Conversion/Recovery and a time-pressure
+  metric), reflecting the all-11-metric coverage.
+- [ ] Where the LLM cites reliability, it reflects the `n_games` basis (small samples qualified).
 
-#### A-2 — Zone-as-gate holds (D-04)
-- [ ] Identify the metric with the most extreme percentile (check the page chips).
-  If that metric's zone is "typical" (the chip sits in the gray/neutral zone band), confirm the
-  report does NOT narrate that metric. (It may mention it incidentally, but should not treat it
-  as a finding worthy of its own paragraph.)
-- [ ] No sentence of the form "at the Nth percentile, this is [strong/weak]" appears for a
-  typical-zone metric.
+#### A-2 — Percentile-primary gate fires (D-04, REVERSED v37)
+- [ ] Identify the metric with the most extreme percentile (check the page chips). If its pctl is
+  `<25` or `>75` with adequate/rich data, confirm the report **DOES** narrate it — **even if its
+  zone is typical**. (This is the v37 reversal: extreme percentile in a typical zone is now a
+  legitimate story, the opposite of the pre-reversal rule.)
+- [ ] Narration that combines both signals reads naturally — e.g. "in the typical zone, but at the
+  82nd percentile vs peers at your level" — leading with percentile, zone as context.
+- [ ] No double-narration: for Conv/Parity/Recovery, the report does not narrate both the
+  ΔES-gap percentile and the raw-rate percentile for the same metric in the same bullet.
 
 #### A-3 — Time-pressure narration (D-06)
 - [ ] If the user has any non-typical time-pressure zone (Clock Gap or Net Flag Rate in a
@@ -260,10 +268,13 @@ LIMIT 10;
 - [ ] The framing uses the correct anchor for the section granularity (per-TC for time-pressure
   metrics, aggregated-across-TCs framing for page-level metrics).
 
-#### B-2 — Zone-as-gate on sparse sections (D-04)
-- [ ] For a section where data is sparse (e.g. a per-type card with "thin" sample quality),
-  the report does NOT narrate that metric as a finding, even if its percentile is extreme.
+#### B-2 — Quality floor holds on sparse sections (D-04 v37 — the surviving guard)
+- [ ] The v37 percentile-primary gate requires **adequate/rich** quality. For a section where data
+  is sparse (a per-type card with "thin" sample quality), confirm the report does NOT narrate that
+  metric as a finding **even if its percentile is extreme** — the quality floor still gates it.
 - [ ] Confirm no "although the sample is small, you appear to be at the Nth percentile" framing.
+- [ ] For any section that IS adequate/rich with an extreme pctl, confirm it IS now narrated
+  (the reversal applies once the quality floor is met).
 
 #### B-3 — Time-pressure narration (D-06)
 - [ ] If this user has a non-typical Clock Gap zone: the report narrates Clock Gap with a
@@ -312,12 +323,15 @@ LIMIT 10;
 - [ ] Cohort framing is "vs ~{anchor}-rated {tc} players" — the anchor value in the report
   should be close to the anchor in the chip tooltip (hover the chip to see).
 
-#### C-2 — Zone-as-gate: typical metric NOT narrated (D-04)
-- [ ] Pick the metric on the page that has the most extreme chip color (furthest from typical)
-  but sits in a typical zone band (the chip is still in the gray/neutral color range).
-  If no such metric exists, note "no typical-zone-extreme-pctl metric found for this user".
-- [ ] Confirm that metric does not receive its own paragraph in the Data Analysis section.
-- [ ] If all non-typical metrics are narrated and all typical metrics are not narrated, mark PASS.
+#### C-2 — Percentile-primary: typical-zone but extreme-pctl metric IS narrated (D-04, REVERSED v37)
+- [ ] Pick the metric whose chip sits in a typical zone band (gray/neutral) but whose percentile
+  is extreme (`<25` or `>75`) with adequate/rich data. If no such metric exists, note "no
+  typical-zone-extreme-pctl metric found for this user".
+- [ ] Confirm that metric **IS** now narrated (it earns a mention as a finding), led by its
+  percentile framing — this is the v37 reversal in action.
+- [ ] Cross-check: a typical-zone metric whose percentile is **not** extreme (25-75) is still NOT
+  narrated as a finding (the gate only opens for extreme pctl OR non-typical zone).
+- [ ] Confirm no double-narration of a metric's ΔES-gap and raw-rate percentiles in one bullet.
 
 #### C-3 — Time-pressure narration with real Net Flag Rate (D-06)
 - [ ] The report narrates Score Gap by Remaining Time (low-clock quintile performance) if the

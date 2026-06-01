@@ -55,6 +55,17 @@ so the planner does not have to re-derive them.
   and `feedback_llm_prompt_design` (no precomputed stories). No parallel sig field is added
   (consistent with `feedback_llm_significance_signal`: tighten the cohort band, don't add a
   parallel `verdict`).
+  - **⚠ REVERSED during execution (2026-06-01, user direction, Plan 102-04 / `endgame_v37`).**
+    D-04 above is **superseded**. Percentile is now a **primary, preferred** narration signal:
+    a metric is narratable when EITHER its `zone` is non-typical OR its `pctl` is extreme
+    (`< 25` or `> 75`) AND `quality` is `adequate`/`rich`. When a percentile exists, the prompt
+    LEADS with percentile framing (cohort-relative — vs equally-strong peers) and uses zone as
+    supporting context. Rationale: percentile controls for rating where the zone does not.
+    D-01/D-02 (no CI, no p-values) and D-05 (cohort framing) are unchanged; the percentile is
+    still not a *statistical-test* signal, so the spirit of `feedback_llm_significance_signal`
+    (no `p_value`/`verdict` field) holds. Also enriched: each `pctl=` now carries the rating
+    anchor + `n_games` + `value`, and coverage extended from {score_gap, achievable_score_gap}
+    to all 11 percentile-bearing metrics. See `feedback_percentile_primary_narration_signal`.
 - **D-05 (cohort framing): match the chips.** Where percentile is woven into narration, use
   cohort framing ("vs other ~{anchor}-rated players"), NOT global-pool framing — consistent
   with `feedback_percentile_chip_tooltip_disclosure` and the chip tooltip copy.
