@@ -213,7 +213,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+        assert insights_llm._PROMPT_VERSION == "endgame_v36"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -261,7 +261,9 @@ class TestPromptVersionAndBody:
         body = prompt_path.read_text(encoding="utf-8")
         # The two example narrations from CONTEXT.md D-18 must be present verbatim.
         assert "Stockfish-baseline says positions like yours score 58%" in body
-        assert "Achievable 49%, you scored 52%" in body
+        assert (
+            "Entry Eval Score 49%, you scored 52%" in body
+        )  # Phase 102: vocab audit renamed "Achievable" → "Entry Eval Score"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -371,7 +373,7 @@ class TestPromptVersionAndBody:
         Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
         changelog comment (append-only-at-FRONT pattern).
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+        assert insights_llm._PROMPT_VERSION == "endgame_v36"
         # Changelog comment must mention the Phase 87.6 rebuild.
         import inspect as _inspect
 
@@ -452,8 +454,8 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """Phase 87.6: _PROMPT_VERSION is endgame_v35; prior v33 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+        """Phase 102: _PROMPT_VERSION is endgame_v36; prior v35 stays in changelog."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v36"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2532,8 +2534,8 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        # Phase 87.6: bumped from endgame_v33 to endgame_v35.
-        assert response.report.prompt_version == "endgame_v35"
+        # Phase 102: bumped from endgame_v35 to endgame_v36.
+        assert response.report.prompt_version == "endgame_v36"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2557,7 +2559,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v35"
+        assert log.response_json["prompt_version"] == "endgame_v36"
 
 
 class TestCacheBehavior:
@@ -3602,8 +3604,8 @@ class TestPhase874PromptVersion:
     """
 
     def test_prompt_version_is_v33(self) -> None:
-        """SC#7: bumped to endgame_v35 by Phase 87.6 (was endgame_v33 after Phase 87.5)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+        """SC#7: bumped to endgame_v36 by Phase 102 (was endgame_v35 after Phase 87.6)."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v36"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3649,9 +3651,9 @@ class TestPhase876LLMPayloadExtension:
     and wires the non_endgame_elo renderer.
     """
 
-    def test_prompt_version_is_endgame_v35(self) -> None:
-        """Phase 87.6: _PROMPT_VERSION bumped from endgame_v33 to endgame_v35."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+    def test_prompt_version_is_endgame_v36(self) -> None:
+        """Phase 102: _PROMPT_VERSION bumped from endgame_v35 to endgame_v36."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v36"
 
     def test_prompt_changelog_preserves_v33_entry(self) -> None:
         """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
