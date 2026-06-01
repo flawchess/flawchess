@@ -645,6 +645,81 @@ def _format_type_wdl_chart_block(findings: EndgameTabFindings) -> list[str]:
     return lines
 
 
+# Phase 102 (Plan 01): Score-Gap-by-time per-quintile block restored to the payload
+# (the decomposition Phase 88.1 stripped). 5 quintiles per TC, n-gated.
+# Modeled on _format_type_wdl_chart_block: iterate cards, skip n-gated quintiles,
+# build per-TC sub-table with typical_band from PRESSURE_BIN_SCORE_NEUTRAL_ZONES.
+def _format_time_pressure_score_gap_chart_block(
+    findings: EndgameTabFindings,
+) -> list[str]:
+    """Render per-TC Score-Gap-by-Remaining-Time (5 quintiles) chart.
+
+    Phase 102 (Plan 01): restores the per-quintile Score-Delta decomposition that
+    Phase 88.1 stripped from the payload. For each TC card, emits a sub-table with
+    5 quintile rows (Q0=0-20% clock remaining / max pressure, Q4=80-100% / min
+    pressure). Rows where opp_score is None (n-gate unmet) are skipped.
+
+    Per-quintile user_score and opp_score are fractions (0..1) — multiplied by 100
+    here for the 0-100 scale. The typical_band column is sourced from
+    PRESSURE_BIN_SCORE_NEUTRAL_ZONES[(tc, quintile_index)] so the LLM sees the same
+    neutral band bounds the UI tooltip shows.
+
+    This helper is NOT a _NON_FRACTIONAL_METRICS site — quintile scores are fractions
+    scaled here, not listed in that set (which controls SubsectionFinding scaling).
+    """
+    from app.services.endgame_zones import PRESSURE_BIN_SCORE_NEUTRAL_ZONES
+
+    if findings.time_pressure_cards is None or not findings.time_pressure_cards.cards:
+        return []
+
+    lines: list[str] = []
+    for card in findings.time_pressure_cards.cards:
+        tc = card.tc
+        tc_rows: list[str] = []
+        for bullet in card.quintiles:
+            # Skip quintiles where the n-gate is unmet (opp_score is None when
+            # min(n_user, n_opp) < MIN_GAMES_PER_PRESSURE_BIN in _build_quintile_bullets).
+            if bullet.opp_score is None:
+                continue
+            user_score_pct = (
+                bullet.delta + bullet.opp_score
+            ) * 100.0  # delta = user_score - opp_score; derive user_score fraction
+            opp_score_pct = bullet.opp_score * 100.0
+            score_delta_pct = bullet.delta * 100.0
+            band = PRESSURE_BIN_SCORE_NEUTRAL_ZONES.get(tc, {}).get(bullet.quintile_index)
+            if band is not None:
+                typical_band = f"{band.lower * 100:+.1f} to {band.upper * 100:+.1f}"
+            else:
+                typical_band = "n/a"
+            tc_rows.append(
+                f"| {bullet.quintile_label:<7} | {user_score_pct:5.1f}      | "
+                f"{opp_score_pct:5.1f}      | {score_delta_pct:+6.1f}       | "
+                f"{bullet.n:<5} | {bullet.n_opp:<5} | {typical_band} |"
+            )
+
+        if not tc_rows:
+            continue
+
+        lines.append(f"### Chart: time_pressure_score_gap_by_time ({tc}, all_time)")
+        lines.append(
+            f"Per-quintile Score % for user vs opponent in {tc} endgames, bucketed by "
+            "remaining clock % at endgame entry (Q0=0-20% clock=max pressure, "
+            "Q4=80-100%=min pressure). user_score and opp_score are 0-100 (wins=100, "
+            "draws=50, losses=0). score_delta = user_score − opp_score. "
+            "typical_band = neutral delta range (pct pts) from cohort data."
+        )
+        lines.append(
+            "| quintile | user_score | opp_score | score_delta | n     | n_opp | typical_band |"
+        )
+        lines.append(
+            "| -------- | ---------- | --------- | ----------- | ----- | ----- | ------------ |"
+        )
+        lines.extend(tc_rows)
+        lines.append("")
+
+    return lines
+
+
 # Phase 87.1 (SEED-016 D-10): per-class Score Gap block. Field name uses internal
 # "type_achievable_score_gap" for grep-ability with achievable_score_gap (Phase 85.1).
 # User-facing narration: "Score Gap" (per card row); "Endgame Type Score Gap"
@@ -1022,6 +1097,8 @@ def _summary_window_line(
     finding: SubsectionFinding,
     series_points: list[TimePoint] | None,
     stale_suffix: str,
+    percentile: float | None = None,
+    cohort_label: str | None = None,
 ) -> str:
     """Render one `  <window>: ...` line inside a [summary] block.
 
@@ -1029,6 +1106,11 @@ def _summary_window_line(
     points are provided and qualifying) buckets / granularity / trend / std
     from the series. Appends `stale: ...` and `[near edge]` suffixes when
     applicable. All numbers on the UI 0-100 scale (or Elo points).
+
+    Phase 102 (Plan 01): optional `percentile` + `cohort_label` append a
+    `pctl=N (vs ~A-rated ... peers)` token after `quality=` when present.
+    pctl= is metadata appended to an already-emitted finding; it never
+    gates emission (D-04).
     """
     scale = _scale_for_metric(finding.metric)
     precision = _precision_for_metric(finding.metric)
@@ -1037,6 +1119,15 @@ def _summary_window_line(
     zone_part = f"zone={finding.zone}"
     if bounds:
         zone_part += f" {bounds}"
+
+    # Phase 102 (Plan 01): pctl= is metadata appended to an already-emitted
+    # finding; it never gates emission (D-04). Cohort framing matches the chip
+    # tooltip disclosure (D-05).
+    pctl_part = ""
+    if percentile is not None:
+        pctl_part = f"pctl={percentile:.0f}"
+        if cohort_label:
+            pctl_part += f" ({cohort_label})"
 
     parts: list[str] = [f"mean={value_scaled:+.{precision}f}", f"n={finding.sample_size}"]
     if series_points and len(series_points) >= _TREND_MIN_POINTS:
@@ -1051,6 +1142,8 @@ def _summary_window_line(
             parts.append(f"std={series_std:.{precision}f}")
             if within_noise:
                 parts.append("within-noise")
+            if pctl_part:
+                parts.append(pctl_part)
             if stale_suffix:
                 parts.append(stale_suffix)
             near = _proximity_hint(finding.metric, value_scaled, finding.dimension).strip()
@@ -1060,6 +1153,8 @@ def _summary_window_line(
     # Scalar (or too-short series) fallback.
     parts.append(zone_part)
     parts.append(f"quality={finding.sample_quality}")
+    if pctl_part:
+        parts.append(pctl_part)
     if stale_suffix:
         parts.append(stale_suffix)
     near = _proximity_hint(finding.metric, value_scaled, finding.dimension).strip()
@@ -1348,6 +1443,8 @@ def _render_summary_block(
     all_time_series: list[TimePoint] | None,
     last_3mo_series: list[TimePoint] | None,
     stale_markers: dict[int, str],
+    metric_percentiles: dict[str, float] | None = None,
+    cohort_anchors: dict[str, int] | None = None,
 ) -> list[str]:
     """Emit `[summary <metric>[ | dim]]` with all_time / last_3mo / shift lines.
 
@@ -1355,12 +1452,42 @@ def _render_summary_block(
     and per-dim metrics so the system prompt only needs to document one
     shape. `no data` stands in on the last_3mo line when only the all_time
     window has a finding (keeps the paired-line visual consistent).
+
+    Phase 102 (Plan 01): optional metric_percentiles + cohort_anchors thread
+    pctl= annotations into the all_time and last_3mo window lines. D-04 applies:
+    percentile is metadata only and never gates emission.
     """
     header = f"[summary {metric}"
     if dim_key:
         header += f" | {dim_key}"
     header += "]"
     lines: list[str] = [header]
+
+    # Phase 102 (Plan 01): look up the percentile for this metric and build
+    # the cohort framing label. Page-aggregated metrics use metric_percentiles;
+    # per-TC time-pressure metrics use the direct per-TC TPCTL from time_pressure_cards
+    # (those are rendered in the chart block, not here). D-04: pctl is metadata only.
+    percentile: float | None = None
+    cohort_label: str | None = None
+    if metric_percentiles is not None:
+        percentile = metric_percentiles.get(metric)
+    if percentile is not None and cohort_anchors:
+        # No tc dimension on page-aggregated metrics — use the first anchor as a
+        # representative label. When a tc dimension is present, find it.
+        tc_dim = (all_time.dimension or {}).get("time_control") if all_time is not None else None
+        anchor: int | None = None
+        if tc_dim is not None:
+            anchor = cohort_anchors.get(tc_dim)
+        if anchor is None:
+            # Fallback: use the first available anchor (most common TC)
+            first_anchor = next(iter(cohort_anchors.values()), None)
+            if first_anchor is not None:
+                anchor = first_anchor
+        if anchor is not None:
+            if tc_dim is not None:
+                cohort_label = f"vs ~{anchor}-rated {tc_dim} peers"
+            else:
+                cohort_label = f"vs ~{anchor}-rated peers"
 
     if all_time is not None:
         stale = stale_markers.get(id(all_time), "")
@@ -1370,6 +1497,8 @@ def _render_summary_block(
                 finding=all_time,
                 series_points=all_time_series,
                 stale_suffix=stale,
+                percentile=percentile,
+                cohort_label=cohort_label,
             )
         )
     if last_3mo is not None:
@@ -1380,6 +1509,8 @@ def _render_summary_block(
                 finding=last_3mo,
                 series_points=last_3mo_series,
                 stale_suffix=stale,
+                percentile=percentile,
+                cohort_label=cohort_label,
             )
         )
     elif all_time is not None:
@@ -1493,6 +1624,9 @@ _SECTION_LAYOUT: list[tuple[str, list[tuple[str, str]]]] = [
             # Phase 88.1 (Plan 09, REVIEW.md WR-06): clock-diff timeline subsection
             # and time-pressure-vs-performance chart block removed alongside the
             # corresponding compose_findings entries and chart-block helper.
+            # Phase 102 (Plan 01): Score-Gap-by-time per-quintile chart block
+            # re-added as a new helper _format_time_pressure_score_gap_chart_block.
+            ("chart", "time_pressure_score_gap_by_time"),
         ],
     ),
     (
@@ -1619,6 +1753,8 @@ def _render_subsection_block(
     all_time_cutoff: str,
     asymmetry_lines: list[str],
     recovery_pattern: str,
+    metric_percentiles: dict[str, float] | None = None,
+    cohort_anchors: dict[str, int] | None = None,
 ) -> list[str]:
     """Render one subsection: header + inline tags + [summary] blocks + [series] raw data.
 
@@ -1721,6 +1857,8 @@ def _render_subsection_block(
                 all_time_series=all_time_series,
                 last_3mo_series=last_3mo_series,
                 stale_markers=stale_markers,
+                metric_percentiles=metric_percentiles,
+                cohort_anchors=cohort_anchors,
             )
         )
         if (
@@ -1794,9 +1932,12 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
     type_wdl_block = _format_type_wdl_chart_block(findings)
     # Phase 88.1 (Plan 09, REVIEW.md WR-06): the time-pressure 10-bucket
     # chart block was dropped alongside its formatter helper.
+    # Phase 102 (Plan 01): Score-Gap-by-time per-quintile block re-added.
+    time_pressure_score_gap_block = _format_time_pressure_score_gap_chart_block(findings)
     chart_blocks: dict[str, list[str]] = {
         "overall_wdl": overall_wdl_block,
         "results_by_endgame_type_wdl": type_wdl_block,
+        "time_pressure_score_gap_by_time": time_pressure_score_gap_block,
     }
 
     # Phase 87.1 (SEED-016 D-10): synthesize per-class Score Gap findings from
@@ -1934,6 +2075,8 @@ def _assemble_user_prompt(findings: EndgameTabFindings) -> str:
                         all_time_cutoff=all_time_cutoff,
                         asymmetry_lines=asymmetry_lines,
                         recovery_pattern=recovery_pattern,
+                        metric_percentiles=findings.metric_percentiles,
+                        cohort_anchors=findings.cohort_anchors,
                     )
                 )
         if not section_body:

@@ -3766,3 +3766,285 @@ class TestPhase876LLMPayloadExtension:
             f"Block ordering wrong: endgame_elo({elo_idx}) < non_endgame_elo({neg_idx}) < "
             f"endgame_elo_gap({gap_idx}) required"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestTimePressureScoreGapChartBlock — Phase 102 (Plan 01): new chart block
+# helper _format_time_pressure_score_gap_chart_block renders 5-quintile per-TC
+# Score-Gap-by-time table from EndgameTabFindings.time_pressure_cards.
+# ---------------------------------------------------------------------------
+
+
+def _make_pressure_quintile_bullet(
+    q: int,
+    n: int = 50,
+    n_opp: int = 50,
+    user_score: float = 0.55,
+    opp_score: float = 0.50,
+) -> "Any":
+    """Build a PressureQuintileBullet with gate met (opp_score not None)."""
+    from app.schemas.endgames import PressureQuintileBullet
+
+    delta = user_score - opp_score
+    return PressureQuintileBullet(
+        quintile_index=q,
+        quintile_label=f"{q * 20}-{q * 20 + 20}%",
+        n=n,
+        n_opp=n_opp,
+        delta=delta,
+        p_value=0.05,
+        ci_low=delta - 0.02,
+        ci_high=delta + 0.02,
+        opp_score=opp_score,
+    )
+
+
+def _make_time_pressure_tc_card(
+    tc: str,
+    total: int = 200,
+    quintiles_gate_met: bool = True,
+) -> "Any":
+    """Build a TimePressureTcCard with 5 quintiles (gate met or not)."""
+    from typing import Literal, cast
+
+    from app.schemas.endgames import (
+        ClockGapBullet,
+        PressureQuintileBullet,
+        TimePressureTcCard,
+    )
+
+    if quintiles_gate_met:
+        quintiles = [_make_pressure_quintile_bullet(q) for q in range(5)]
+    else:
+        quintiles = [
+            PressureQuintileBullet(
+                quintile_index=q,
+                quintile_label=f"{q * 20}-{q * 20 + 20}%",
+                n=0,
+                n_opp=0,
+                delta=0.0,
+                p_value=None,
+                ci_low=None,
+                ci_high=None,
+                opp_score=None,  # n-gate unmet
+            )
+            for q in range(5)
+        ]
+    return TimePressureTcCard(
+        tc=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+        total=total,
+        net_timeout_rate=0.0,
+        clock_gap=ClockGapBullet(
+            n=total, mean_diff_pct=0.0, p_value=None, ci_low=None, ci_high=None
+        ),
+        quintiles=quintiles,
+    )
+
+
+def _findings_with_time_pressure_cards(
+    cards_data: list[tuple[str, bool]],
+) -> EndgameTabFindings:
+    """Build EndgameTabFindings with time_pressure_cards populated."""
+    from app.schemas.endgames import TimePressureCardsResponse
+
+    cards = [_make_time_pressure_tc_card(tc, quintiles_gate_met=gate) for tc, gate in cards_data]
+    return EndgameTabFindings(
+        as_of=datetime.datetime.now(datetime.UTC),
+        filters=_sample_filter_context(),
+        findings=[],
+        time_pressure_cards=TimePressureCardsResponse(cards=cards),
+        findings_hash="a" * 64,
+    )
+
+
+class TestTimePressureScoreGapChartBlock:
+    """Phase 102 (Plan 01): _format_time_pressure_score_gap_chart_block."""
+
+    def test_returns_empty_when_no_cards(self) -> None:
+        """Empty time_pressure_cards → empty block."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([])
+        assert _format_time_pressure_score_gap_chart_block(findings) == []
+
+    def test_returns_empty_when_cards_is_none(self) -> None:
+        """None time_pressure_cards → empty block."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            time_pressure_cards=None,
+            findings_hash="a" * 64,
+        )
+        assert _format_time_pressure_score_gap_chart_block(findings) == []
+
+    def test_emits_chart_header_with_tc(self) -> None:
+        """Chart header includes TC name and all_time suffix."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        assert any(
+            "### Chart: time_pressure_score_gap_by_time (blitz, all_time)" in line for line in lines
+        )
+
+    def test_emits_exactly_5_quintile_data_rows_when_all_gate_met(self) -> None:
+        """With all 5 quintiles gate-met, exactly 5 data rows are emitted per TC.
+
+        Phase 102 (Plan 01): 5 quintiles confirmed (not 4).
+        """
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        # Count non-header table rows (exclude header and separator lines)
+        table_rows = [
+            line
+            for line in lines
+            if line.startswith("| ")
+            and not line.startswith("| quintile")
+            and not line.startswith("| ---")
+        ]
+        assert len(table_rows) == 5, (
+            f"Expected exactly 5 quintile data rows, got {len(table_rows)}: {table_rows}"
+        )
+
+    def test_skips_rows_where_opp_score_is_none(self) -> None:
+        """Quintiles with opp_score=None (n-gate unmet) are skipped."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("rapid", False)])  # all gate unmet
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        # No TC sub-table should be emitted when all quintile rows are skipped
+        assert not any("### Chart: time_pressure_score_gap_by_time" in line for line in lines)
+
+    def test_prompt_contains_chart_block_for_tc_with_data(self) -> None:
+        """Full prompt pipeline renders the chart block inside ## Section: time_pressure."""
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        prompt = _assemble_user_prompt(findings)
+        assert "### Chart: time_pressure_score_gap_by_time (blitz, all_time)" in prompt
+
+    def test_multiple_tc_emits_separate_sub_tables(self) -> None:
+        """Two TC cards produce two separate sub-tables."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True), ("rapid", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        assert sum(1 for line in lines if "### Chart: time_pressure_score_gap_by_time" in line) == 2
+
+    def test_typical_band_column_present(self) -> None:
+        """typical_band column appears in the table header."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        assert any("typical_band" in line for line in lines)
+
+
+# ---------------------------------------------------------------------------
+# TestPercentileAnnotation — Phase 102 (Plan 01): pctl= annotation in summary
+# window lines when metric_percentiles is populated on EndgameTabFindings.
+# ---------------------------------------------------------------------------
+
+
+def _make_score_gap_finding(
+    window: str = "all_time",
+    value: float = 0.05,
+    zone: str = "typical",
+) -> SubsectionFinding:
+    """Build a score_gap SubsectionFinding for percentile annotation tests."""
+    from typing import cast
+    from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
+
+    return SubsectionFinding(
+        subsection_id=cast(SubsectionId, "overall"),
+        parent_subsection_id=None,
+        window=cast(Window, window),
+        metric=cast(MetricId, "score_gap"),
+        value=value,
+        zone=cast(Zone, zone),
+        trend="n_a",
+        weekly_points_in_window=0,
+        sample_size=200,
+        sample_quality=cast(SampleQuality, "rich"),
+        is_headline_eligible=True,
+        dimension=None,
+    )
+
+
+class TestPercentileAnnotation:
+    """Phase 102 (Plan 01): pctl= annotation in summary lines (D-03, D-04, D-05)."""
+
+    def test_pctl_annotation_present_when_metric_in_metric_percentiles(self) -> None:
+        """A finding whose metric is in metric_percentiles renders a pctl= token.
+
+        D-05: cohort framing 'vs ~{anchor}-rated peers' when cohort_anchors present.
+        """
+        finding = _make_score_gap_finding(zone="weak")
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles={"score_gap": 31.0},
+            cohort_anchors={"blitz": 1500},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=31" in prompt, "pctl= token must appear when metric is in metric_percentiles"
+        assert "vs ~1500-rated peers" in prompt, "cohort framing must appear with anchor"
+
+    def test_no_pctl_token_when_metric_not_in_metric_percentiles(self) -> None:
+        """A finding not in metric_percentiles renders NO pctl= token.
+
+        Verifies that adding metric_percentiles for other metrics does not
+        affect metrics outside the lookup dict.
+        """
+        finding = _make_score_gap_finding()
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles={"achievable_score_gap": 55.0},  # score_gap absent
+            cohort_anchors={"blitz": 1500},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=" not in prompt, (
+            "pctl= token must NOT appear when metric is absent from metric_percentiles"
+        )
+
+    def test_no_pctl_token_when_metric_percentiles_is_none(self) -> None:
+        """No metric_percentiles → no pctl= token (backwards compat)."""
+        finding = _make_score_gap_finding()
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles=None,
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=" not in prompt
+
+    def test_zone_typical_finding_with_extreme_percentile_still_emitted(self) -> None:
+        """Zone-as-sole-gate (D-04): a zone=typical finding with extreme percentile
+        is still emitted unchanged — percentile does NOT suppress or promote emission.
+        """
+        finding = _make_score_gap_finding(zone="typical", value=0.02)
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles={"score_gap": 5.0},  # extreme percentile
+            cohort_anchors={"blitz": 1500},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        # The finding must be present (zone=typical is emitted — typical is not filtered)
+        assert "[summary score_gap]" in prompt, (
+            "zone=typical finding must still be emitted even with extreme percentile (D-04)"
+        )
+        # The pctl= annotation should be present (it's metadata on an emitted finding)
+        assert "pctl=5" in prompt, "pctl= token should appear as metadata on the emitted finding"
