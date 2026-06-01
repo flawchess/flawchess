@@ -37,11 +37,17 @@
 **Requirements:** LLM-01..07
 **Plans:** 3 plans
 **Context:** Promoted from backlog Phase 999.7 on 2026-06-01 via `/gsd-explore`. Full scope + locked decisions: `.planning/notes/v1.23-phase-102-endgame-llm-statistical-reasoning.md`. A follow-up Recommendations-section rework is captured separately as `SEED-034` and is explicitly **not** in Phase 102 scope.
-
 Plans:
+**Wave 1**
 
 - [ ] 102-01-PLAN.md — Payload wiring: real Net Flag Rate, 5-quintile Score-Gap-by-time chart block, cohort-framed percentile annotations (zone stays the sole gate)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 102-02-PLAN.md — Prompt teaching: percentile + time-pressure narration, vocabulary audit, relaxed overview cap, bump _PROMPT_VERSION endgame_v35 → endgame_v36
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 102-03-PLAN.md — HUMAN-UAT (LLM-07): generate endgame_v36 reports for short-history / sparse-section / full-history prod users and judge against the locked decisions
 
 *v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md); see the collapsed block below. v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
