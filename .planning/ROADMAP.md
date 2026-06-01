@@ -44,7 +44,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 102-02-PLAN.md — Prompt teaching: percentile + time-pressure narration, vocabulary audit, relaxed overview cap, bump _PROMPT_VERSION endgame_v35 → endgame_v36
+- [x] 102-02-PLAN.md — Prompt teaching: percentile + time-pressure narration, vocabulary audit, relaxed overview cap, bump _PROMPT_VERSION endgame_v35 → endgame_v36
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
