@@ -187,17 +187,26 @@ These tags replace LLM arithmetic, not LLM judgement. You still choose what to l
 
 ## Percentile annotations (pctl=)
 
-Some `[summary]` window lines carry an optional `pctl=N (vs ~A-rated {tc} peers | n_games=M | value=V)` token appended after `quality=`. This tells you where the metric sits within the cohort of similarly-rated players. The context fields are present when available: `vs ~A-rated {tc} peers` is the rating anchor and time control; `n_games=M` is the cohort pool size; `value=V` is the chip-cohort metric value in the same scale as `mean=`.
+Some `[summary]` window lines carry an optional `pctl=N (vs ~A-rated {tc} peers | n_games=M | value=V)` token appended after `quality=`. This tells you where the metric sits within the cohort of similarly-rated players. The context fields are present when available: `vs ~A-rated {tc} peers` is the Lichess ELO rating anchor and time control; `n_games=M` is the cohort pool size; `value=V` is the chip-cohort metric value in the same scale as `mean=`.
 
-**Preferred signal rule (replaces old D-04):** Percentile is a PRIMARY, PREFERRED narration signal alongside `zone`. A metric is narratable when EITHER of the following is true:
-- Its `zone` is non-typical (`weak` or `strong`), OR
-- Its `pctl` is extreme — below 25 or above 75 — AND `quality` is `adequate` or `rich`.
+**Preferred signal rule (replaces old D-04):** Percentile is a PRIMARY narration signal, PREFERRED over `zone`. The `pctl` is narratable when it is below 25 or above 75 — AND `quality` is `adequate` or `rich`.
 
 When a `pctl=` exists on an emitted finding, LEAD with percentile framing and use zone as supporting context. Rationale: percentile is cohort-relative (vs equally-strong peers over the most recent ~3000 games per TC, sampled across the last ~36 months — a middle ground between the possibly-longer all-time window and a short 3-month window), whereas zone is relative to the whole representative Lichess sample. When both signals agree, they reinforce each other. When they diverge (e.g. extreme percentile but typical zone), the percentile reflects how this player compares to peers at their rating level — that is often the more actionable signal.
 
 A `quality=thin` finding is still not narratable regardless of percentile. The thin-last_3mo rule (see "Grounding checks") also applies.
 
 **Framing rule (D-05):** When weaving a percentile into narration, always use cohort framing sourced from the payload's `(vs ~A-rated {tc} peers)` suffix — for example "at the 18th percentile vs other ~1500-rated blitz players". Forbidden phrasings: "globally", "among all players", "worldwide", "across all users". Do NOT use global-pool framing.
+
+**Lichess-equivalent anchor (D-05a):** The cohort anchor `A` is always a **Lichess-equivalent** rating. chess.com ratings (Glicko-1) convert to higher numbers on the Lichess scale (Glicko-2), which typically runs 100-200 Elo higher below ~1800. Use the `## Rating basis` block (rendered once near the top of the user prompt, after `## Player profile`) to learn the per-TC composition and the concrete chess.com native median for each time control the user plays.
+
+Apply the following disclosure branches (mirrors the percentile chip tooltip's four branches):
+
+- **Pure or mostly chess.com user** (`n_lichess_games == 0` in the rating-basis block): Clarify ONCE in the report (in the overview or at the first percentile mention — NOT on every percentile line) that their chess.com rating (~`chesscom_median_native` in the rating-basis block) corresponds to roughly the Lichess-equivalent anchor, which is the cohort they are compared against. Example: "Your chess.com blitz rating of ~1400 maps to roughly ~1550 on the Lichess scale — your endgame percentiles compare you against players at that Lichess-equivalent level." Use the concrete numbers from the `[rating basis]` line, not generic ranges. Do NOT repeat this explanation on every subsequent percentile mention.
+- **Mixed user** (`n_chesscom_games > 0` AND `n_lichess_games > 0`): Note ONCE that the anchor blends both platforms, weighting by game count, and that chess.com games are converted to the Lichess scale before blending.
+- **Pure lichess user** (`n_chesscom_games == 0`): The anchor is the user's native Lichess rating. Do NOT mention chess.com conversion. No conversion note is needed.
+- **If the `## Rating basis` block is absent** (cohort_anchors unavailable): narrate the `pctl=` token without any platform-conversion framing — fall back to plain "at the Nth percentile vs other ~A-rated {tc} players".
+
+The conversion clarification MUST appear AT MOST ONCE in the full report. After stating it, subsequent percentile mentions use only the short cohort framing from D-05 ("at the Nth percentile vs other ~A-rated blitz peers"). Do not editorialize about which platform's rating "counts more" — both are valid representations of the same player's skill.
 
 **Granularity rule (D-06):** Per-TC percentile tokens (time_pressure_score_gap, clock_gap, net_flag_rate, score_gap_conv, score_gap_parity, score_gap_recov, conversion_win_pct, parity_score_pct, recovery_save_pct) carry the direct per-TC value. Page-level tokens (score_gap, achievable_score_gap) use a game-count-weighted mean across TCs, and the anchor reflects the dominant TC. The `pctl=` token already carries the correct value — narrate as emitted without re-weighting.
 

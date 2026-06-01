@@ -61,6 +61,7 @@ from app.schemas.insights import (
     FilterContext,
     MetricPercentileRecord,
     PlayerProfileEntry,
+    RatingAnchorContext,
     SubsectionFinding,
     TimePoint,
 )
@@ -211,8 +212,20 @@ async def compute_findings(
     # pctl= annotations with anchor/n_games/value context without re-reading
     # EndgameOverviewResponse. All new fields are optional — existing test fixtures
     # that construct EndgameTabFindings without them still work.
-    cohort_anchors: dict[str, int] = {
-        tc: anchor.anchor_rating for tc, anchor in all_time_resp.rating_anchors.items()
+    # Phase 102 (Plan 05): changed from dict[str, int] to dict[str, RatingAnchorContext]
+    # to carry full platform-composition disclosure (n_chesscom_games, n_lichess_games,
+    # chesscom_median_native, lichess_median_native) alongside anchor_rating so the
+    # [rating basis] block in insights_llm can teach the LLM about the Lichess-equivalent
+    # framing for chess.com-heavy users.
+    cohort_anchors: dict[str, RatingAnchorContext] = {
+        tc: RatingAnchorContext(
+            anchor_rating=anchor.anchor_rating,
+            n_chesscom_games=anchor.n_chesscom_games,
+            n_lichess_games=anchor.n_lichess_games,
+            chesscom_median_native=anchor.chesscom_median_native,
+            lichess_median_native=anchor.lichess_median_native,
+        )
+        for tc, anchor in all_time_resp.rating_anchors.items()
     }
 
     # --- Page-level (weighted) metric percentiles ---
@@ -223,25 +236,29 @@ async def compute_findings(
     if sgm.score_gap_percentile is not None:
         # Use the dominant-by-n_games TC breakdown row for anchor/value/n_games.
         dominant_sg = _dominant_per_tc_row(sgm.score_gap_per_tc)
+        # Phase 102 (Plan 05): cohort_anchors[tc] is now a RatingAnchorContext; read .anchor_rating.
+        _sg_ctx = cohort_anchors.get(dominant_sg.tc) if dominant_sg else None
         metric_percentiles["score_gap"] = MetricPercentileRecord(
             percentile=sgm.score_gap_percentile,
             value=dominant_sg.value * 100.0
             if dominant_sg and dominant_sg.value is not None
             else None,
             n_games=dominant_sg.n_games if dominant_sg else None,
-            anchor=cohort_anchors.get(dominant_sg.tc) if dominant_sg else None,
+            anchor=_sg_ctx.anchor_rating if _sg_ctx is not None else None,
             tc=None,  # page-level weighted metric
         )
     perf = all_time_resp.performance
     if perf is not None and perf.achievable_score_gap_percentile is not None:
         dominant_asg = _dominant_per_tc_row(perf.achievable_score_gap_per_tc)
+        # Phase 102 (Plan 05): cohort_anchors[tc] is now a RatingAnchorContext; read .anchor_rating.
+        _asg_ctx = cohort_anchors.get(dominant_asg.tc) if dominant_asg else None
         metric_percentiles["achievable_score_gap"] = MetricPercentileRecord(
             percentile=perf.achievable_score_gap_percentile,
             value=dominant_asg.value * 100.0
             if dominant_asg and dominant_asg.value is not None
             else None,
             n_games=dominant_asg.n_games if dominant_asg else None,
-            anchor=cohort_anchors.get(dominant_asg.tc) if dominant_asg else None,
+            anchor=_asg_ctx.anchor_rating if _asg_ctx is not None else None,
             tc=None,  # page-level weighted metric
         )
 
@@ -252,7 +269,9 @@ async def compute_findings(
     per_tc_metric_percentiles: dict[str, MetricPercentileRecord] = {}
     for card in all_time_resp.endgame_metrics_cards.cards:
         tc = card.tc
-        anchor = cohort_anchors.get(tc)
+        # Phase 102 (Plan 05): cohort_anchors[tc] is now a RatingAnchorContext; read .anchor_rating.
+        _card_ctx = cohort_anchors.get(tc)
+        anchor = _card_ctx.anchor_rating if _card_ctx is not None else None
         # Tuples: (bucket attr name, ΔES-gap finding metric id, rate finding metric id,
         #          DB metric id for the bridge alias — only differs for recovery)
         _BUCKET_ROWS: tuple[tuple[str, str, str, str], ...] = (
@@ -298,7 +317,9 @@ async def compute_findings(
     # time_pressure_score_gap, clock_gap, net_flag_rate per TC card.
     for tp_card in all_time_resp.time_pressure_cards.cards:
         tc = tp_card.tc
-        anchor = cohort_anchors.get(tc)
+        # Phase 102 (Plan 05): cohort_anchors[tc] is now a RatingAnchorContext; read .anchor_rating.
+        _tp_ctx = cohort_anchors.get(tc)
+        anchor = _tp_ctx.anchor_rating if _tp_ctx is not None else None
         for metric_id, pctl, n_games, value in (
             (
                 "time_pressure_score_gap",

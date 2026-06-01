@@ -215,7 +215,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v37"
+        assert insights_llm._PROMPT_VERSION == "endgame_v38"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -375,7 +375,7 @@ class TestPromptVersionAndBody:
         Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
         changelog comment (append-only-at-FRONT pattern).
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v37"
+        assert insights_llm._PROMPT_VERSION == "endgame_v38"
         # Changelog comment must mention the Phase 87.6 rebuild.
         import inspect as _inspect
 
@@ -456,8 +456,8 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """Phase 102: _PROMPT_VERSION is endgame_v37; prior v35 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v37"
+        """Phase 102: _PROMPT_VERSION is endgame_v38; prior v35 stays in changelog."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v38"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2536,8 +2536,8 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        # Phase 102: bumped from endgame_v35 to endgame_v37.
-        assert response.report.prompt_version == "endgame_v37"
+        # Phase 102: bumped from endgame_v35 to endgame_v38.
+        assert response.report.prompt_version == "endgame_v38"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2561,7 +2561,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v37"
+        assert log.response_json["prompt_version"] == "endgame_v38"
 
 
 class TestCacheBehavior:
@@ -3606,8 +3606,8 @@ class TestPhase874PromptVersion:
     """
 
     def test_prompt_version_is_v33(self) -> None:
-        """SC#7: bumped to endgame_v37 by Phase 102 (was endgame_v35 after Phase 87.6)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v37"
+        """SC#7: bumped to endgame_v38 by Phase 102 (was endgame_v35 after Phase 87.6)."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v38"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3653,9 +3653,9 @@ class TestPhase876LLMPayloadExtension:
     and wires the non_endgame_elo renderer.
     """
 
-    def test_prompt_version_is_endgame_v37(self) -> None:
-        """Phase 102: _PROMPT_VERSION bumped from endgame_v35 to endgame_v37."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v37"
+    def test_prompt_version_is_endgame_v38(self) -> None:
+        """Phase 102: _PROMPT_VERSION bumped from endgame_v35 to endgame_v38."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v38"
 
     def test_prompt_changelog_preserves_v33_entry(self) -> None:
         """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
@@ -4008,6 +4008,8 @@ class TestPercentileAnnotation:
 
         D-05: cohort framing 'vs ~{anchor}-rated peers' when anchor present on record.
         """
+        from app.schemas.insights import RatingAnchorContext
+
         finding = _make_score_gap_finding(zone="weak")
         rec = _make_pctl_record(percentile=31.0, anchor=1500)
         findings = EndgameTabFindings(
@@ -4015,7 +4017,12 @@ class TestPercentileAnnotation:
             filters=_sample_filter_context(),
             findings=[finding],
             metric_percentiles={"score_gap": rec},
-            cohort_anchors={"blitz": 1500},
+            # Phase 102 (Plan 05): cohort_anchors requires RatingAnchorContext.
+            cohort_anchors={
+                "blitz": RatingAnchorContext(
+                    anchor_rating=1500, n_chesscom_games=0, n_lichess_games=200
+                )
+            },
             findings_hash="a" * 64,
         )
         prompt = _assemble_user_prompt(findings)
@@ -4036,7 +4043,7 @@ class TestPercentileAnnotation:
             metric_percentiles={
                 "achievable_score_gap": _make_pctl_record(55.0)
             },  # score_gap absent
-            cohort_anchors={"blitz": 1500},
+            cohort_anchors=None,
             findings_hash="a" * 64,
         )
         prompt = _assemble_user_prompt(findings)
@@ -4070,7 +4077,8 @@ class TestPercentileAnnotation:
             filters=_sample_filter_context(),
             findings=[finding],
             metric_percentiles={"score_gap": _make_pctl_record(5.0)},  # extreme percentile
-            cohort_anchors={"blitz": 1500},
+            # Phase 102 (Plan 05): cohort_anchors now requires RatingAnchorContext.
+            cohort_anchors=None,
             findings_hash="a" * 64,
         )
         prompt = _assemble_user_prompt(findings)
@@ -4152,3 +4160,160 @@ class TestPercentileAnnotation:
         assert found_2 is not None, "recovery_score_gap bridge key should also resolve"
         assert found_1.percentile == 25.0
         assert found_2.percentile == 25.0
+
+
+# ---------------------------------------------------------------------------
+# Phase 102 (Plan 05): Rating-basis block tests
+# ---------------------------------------------------------------------------
+
+
+class TestRatingBasisBlock:
+    """Phase 102 (Plan 05): _format_rating_basis_block renders per-TC Lichess-equivalent framing."""
+
+    def _make_cc_heavy_anchor(self, tc: str = "blitz") -> tuple[str, "Any"]:
+        """Pure chess.com anchor — n_lichess_games == 0."""
+        from app.schemas.insights import RatingAnchorContext
+
+        return tc, RatingAnchorContext(
+            anchor_rating=1550,
+            n_chesscom_games=320,
+            n_lichess_games=0,
+            chesscom_median_native=1400,
+        )
+
+    def _make_lichess_anchor(self, tc: str = "blitz") -> tuple[str, "Any"]:
+        """Pure lichess anchor — n_chesscom_games == 0."""
+        from app.schemas.insights import RatingAnchorContext
+
+        return tc, RatingAnchorContext(
+            anchor_rating=1620,
+            n_chesscom_games=0,
+            n_lichess_games=450,
+            lichess_median_native=1620,
+        )
+
+    def _make_mixed_anchor(self, tc: str = "blitz") -> tuple[str, "Any"]:
+        """Mixed anchor — both platforms have games."""
+        from app.schemas.insights import RatingAnchorContext
+
+        return tc, RatingAnchorContext(
+            anchor_rating=1580,
+            n_chesscom_games=200,
+            n_lichess_games=300,
+            chesscom_median_native=1410,
+            lichess_median_native=1600,
+        )
+
+    def _render(self, anchors: "dict[str, Any] | None") -> str:
+        from app.services.insights_llm import _format_rating_basis_block
+
+        return "\n".join(_format_rating_basis_block(anchors))
+
+    def test_empty_when_no_anchors(self) -> None:
+        assert self._render(None) == ""
+        assert self._render({}) == ""
+
+    def test_pure_chesscom_shows_conversion_note(self) -> None:
+        tc, ctx = self._make_cc_heavy_anchor("blitz")
+        output = self._render({tc: ctx})
+        assert "## Rating basis" in output
+        assert "[rating basis] blitz:" in output
+        assert "anchor ~1550 (Lichess-equivalent)" in output
+        assert "chess.com median ~1400 (converted)" in output
+        assert "lichess median n/a" in output
+        assert "320 cc / 0 li" in output
+
+    def test_pure_lichess_shows_native_label_no_conversion(self) -> None:
+        tc, ctx = self._make_lichess_anchor("rapid")
+        output = self._render({tc: ctx})
+        assert "## Rating basis" in output
+        assert "[rating basis] rapid:" in output
+        assert "anchor ~1620 (Lichess-equivalent)" in output
+        assert "lichess median ~1620 (native)" in output
+        # No conversion note for pure-lichess user.
+        assert "(converted)" not in output
+        assert "chess.com median n/a" in output
+        assert "0 cc / 450 li" in output
+
+    def test_mixed_user_shows_both_platforms(self) -> None:
+        tc, ctx = self._make_mixed_anchor("blitz")
+        output = self._render({tc: ctx})
+        assert "chess.com median ~1410 (converted)" in output
+        assert "lichess median ~1600" in output
+        assert "200 cc / 300 li" in output
+
+    def test_tc_ordering_follows_canonical_order(self) -> None:
+        """TCs appear in bullet/blitz/rapid/classical order, not insertion order."""
+        from app.schemas.insights import RatingAnchorContext
+
+        anchors = {
+            "rapid": RatingAnchorContext(
+                anchor_rating=1500, n_chesscom_games=100, n_lichess_games=0
+            ),
+            "bullet": RatingAnchorContext(
+                anchor_rating=1520, n_chesscom_games=50, n_lichess_games=0
+            ),
+        }
+        output = self._render(anchors)
+        bullet_pos = output.find("[rating basis] bullet:")
+        rapid_pos = output.find("[rating basis] rapid:")
+        assert bullet_pos < rapid_pos, "bullet should appear before rapid"
+
+    def test_rating_basis_block_in_assembled_prompt(self) -> None:
+        """Rating-basis block appears in the assembled prompt for a cc-heavy user."""
+        import datetime
+
+        tc, ctx = self._make_cc_heavy_anchor("blitz")
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            cohort_anchors={tc: ctx},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "## Rating basis" in prompt
+        assert "[rating basis] blitz:" in prompt
+        assert "anchor ~1550 (Lichess-equivalent)" in prompt
+        assert "chess.com median ~1400 (converted)" in prompt
+
+    def test_rating_basis_block_absent_for_pure_lichess_in_assembled_prompt(self) -> None:
+        """Rating-basis block still renders for pure-lichess but without conversion copy."""
+        import datetime
+
+        tc, ctx = self._make_lichess_anchor("blitz")
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            cohort_anchors={tc: ctx},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "## Rating basis" in prompt
+        assert "(converted)" not in prompt
+        assert "lichess median ~1620 (native)" in prompt
+
+    def test_prompt_teaches_lichess_equivalent_framing(self) -> None:
+        """The prompt file contains the D-05a Lichess-equivalent teaching."""
+        from pathlib import Path
+
+        prompt_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        body = prompt_path.read_text(encoding="utf-8")
+        assert "Lichess-equivalent anchor (D-05a)" in body, (
+            "Prompt must contain D-05a teaching about the Lichess-equivalent framing"
+        )
+        assert "n_lichess_games == 0" in body, (
+            "Pure chess.com disclosure branch must be documented in the prompt"
+        )
+        assert "n_chesscom_games == 0" in body, (
+            "Pure lichess disclosure branch must be documented in the prompt"
+        )
+
+    def test_version_is_endgame_v38(self) -> None:
+        """Phase 102 Plan 05: _PROMPT_VERSION bumped to endgame_v38."""
+        from app.services import insights_llm
+
+        assert insights_llm._PROMPT_VERSION == "endgame_v38"

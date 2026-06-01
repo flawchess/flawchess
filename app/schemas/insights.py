@@ -60,6 +60,7 @@ __all__ = [
     "MetricId",
     "MetricPercentileRecord",
     "PlayerProfileEntry",
+    "RatingAnchorContext",
     "SampleQuality",
     "SectionId",
     "SectionInsight",
@@ -106,6 +107,31 @@ InsightsError = Literal[
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+
+
+class RatingAnchorContext(BaseModel):
+    """Per-TC anchor context forwarded to the LLM prompt for Lichess-equivalent framing.
+
+    Phase 102 (Plan 05): mirrors RatingAnchorOut from app/schemas/endgames.py so the
+    insights pipeline carries full platform-composition disclosure to the LLM without
+    re-reading EndgameOverviewResponse. Fields are a subset of RatingAnchorOut — only
+    the fields needed for the [rating basis] block.
+
+    `anchor_rating` is the blended Lichess-equivalent (post-conversion for chess.com
+    games; native for lichess games). The four disclosure branches mirror the chip
+    tooltip's PercentileChipPopoverBody:
+      (a) Mixed user (n_chesscom_games > 0 AND n_lichess_games > 0): both platforms.
+      (b) Pure-lichess user (n_chesscom_games == 0): no conversion note.
+      (c) Pure-chess.com user (n_lichess_games == 0): chesscom_median_native and
+          conversion note.
+      (d) Suppression (both counts == 0): suppressed upstream (cohort_anchors omits TC).
+    """
+
+    anchor_rating: int
+    n_chesscom_games: int
+    n_lichess_games: int
+    chesscom_median_native: int | None = None
+    lichess_median_native: int | None = None
 
 
 class MetricPercentileRecord(BaseModel):
@@ -287,7 +313,13 @@ class EndgameTabFindings(BaseModel):
     # from EndgameOverviewResponse.rating_anchors. Lets the assembler build cohort
     # framing ("vs ~{anchor}-rated {tc} peers") without re-reading the full
     # EndgameOverviewResponse. Optional for backwards compat.
-    cohort_anchors: dict[str, int] | None = None
+    # Phase 102 (Plan 05): type changed from dict[str, int] to
+    # dict[str, RatingAnchorContext] to carry platform-composition disclosure
+    # (n_chesscom_games, n_lichess_games, chesscom_median_native, lichess_median_native)
+    # so the LLM can render the [rating basis] block and frame the Lichess-equivalent
+    # anchor for chess.com-heavy users. Backwards-incompatible field-type change is safe:
+    # field is optional and no external consumer reads it directly.
+    cohort_anchors: dict[str, "RatingAnchorContext"] | None = None
     findings_hash: str
 
 
