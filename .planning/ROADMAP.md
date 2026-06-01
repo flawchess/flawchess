@@ -40,7 +40,7 @@
 Plans:
 **Wave 1**
 
-- [ ] 102-01-PLAN.md — Payload wiring: real Net Flag Rate, 5-quintile Score-Gap-by-time chart block, cohort-framed percentile annotations (zone stays the sole gate)
+- [x] 102-01-PLAN.md — Payload wiring: real Net Flag Rate, 5-quintile Score-Gap-by-time chart block, cohort-framed percentile annotations (zone stays the sole gate)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
