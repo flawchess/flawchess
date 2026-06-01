@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.22
-milestone_name: Maintenance — Test Isolation & Frontend Major Upgrades
-status: shipped
-last_updated: "2026-05-31T21:30:00.000Z"
-last_activity: 2026-05-31
+milestone_name: milestone
+status: v1.22 Maintenance shipped 2026-05-31 (tag v1.22) — milestone archived
+last_updated: "2026-06-01T17:17:40.114Z"
+last_activity: "2026-06-01 — Completed quick task 260601-og7: capped move explorer at ply 28 + partial-indexed the 3 Zobrist hashes (SEED-033). Code on `main`; prod bookmark-depth check PASSED (91/91 within cap) — cleared to ship via `bin/deploy.sh`."
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 5
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
