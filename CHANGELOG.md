@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- Reduced opening-position index footprint by ~3 GB by capping the move explorer at 28 plies and rebuilding the three Zobrist-hash indexes as partial indexes (`WHERE ply <= 28`). The cap is invisible in normal use (dev DB max bookmark depth: 6 plies). (SEED-033)
+
 ## [v1.22] Maintenance — Test Isolation & Frontend Major Upgrades — 2026-05-31
 
 A maintenance milestone clearing two accrued debts before the next feature work: making the test suite safe under concurrent and parallel runs, and bringing the frontend onto its latest major dependency versions. No user-facing behaviour change.
