@@ -6,20 +6,55 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
+# Opening-phase explorer depth cap (SEED-033).
+#
+# Value 28: ECO's named-position ceiling is 28 plies; only elite forcing lines
+# (Najdorf Poisoned Pawn, Botvinnik Semi-Slav, Marshall) run deeper, and those
+# live at ply 40-80 so no practical cutoff catches them. FlawChess openings.ply_count
+# max = 36, but 28 covers the full ECO ceiling with headroom. See SEED-033 §2.
+#
+# COUPLING INVARIANT (SEED-033 §3): this constant MUST equal:
+#   1. The partial-index WHERE predicate on the three Zobrist hash indexes below
+#      (postgresql_where=text(f"ply <= {MAX_EXPLORER_PLY}")).
+#   2. The frontend explorer cap in frontend/src/lib/explorer.ts.
+# If the explorer cap ever exceeds the index boundary, hash lookups for positions
+# past the boundary silently miss the partial index.
+MAX_EXPLORER_PLY: int = 28
+
 
 class GamePosition(Base):
     __tablename__ = "game_positions"
     __table_args__ = (
-        # Composite indexes for "my pieces only" queries (Phase 3)
-        Index("ix_gp_user_white_hash", "user_id", "white_hash"),
-        Index("ix_gp_user_black_hash", "user_id", "black_hash"),
+        # Composite indexes for "my pieces only" queries (Phase 3).
+        # Partial WHERE ply <= MAX_EXPLORER_PLY (SEED-033): the explorer is hard-capped
+        # at that depth, so no hash lookup ever targets a position past the boundary —
+        # making the win unconditional. Migration: partial_index_hash_columns_at_ply28.
+        Index(
+            "ix_gp_user_white_hash",
+            "user_id",
+            "white_hash",
+            postgresql_where=text(f"ply <= {MAX_EXPLORER_PLY}"),
+        ),
+        Index(
+            "ix_gp_user_black_hash",
+            "user_id",
+            "black_hash",
+            postgresql_where=text(f"ply <= {MAX_EXPLORER_PLY}"),
+        ),
         # Covering index for Phase 12 next-moves aggregation queries.
         # Also serves (user_id, full_hash) prefix lookups — the narrower
         # ix_gp_user_full_hash was dropped as redundant (prod stats showed
         # this wider index handled the GROUP BY move_san aggregation via
         # index-only scans, while the narrow one's 132 scans/period could
         # safely fall back to the prefix of this index).
-        Index("ix_gp_user_full_hash_move_san", "user_id", "full_hash", "move_san"),
+        # Partial WHERE ply <= MAX_EXPLORER_PLY (SEED-033) — same rationale as above.
+        Index(
+            "ix_gp_user_full_hash_move_san",
+            "user_id",
+            "full_hash",
+            "move_san",
+            postgresql_where=text(f"ply <= {MAX_EXPLORER_PLY}"),
+        ),
         # Covering index for endgame GROUP BY queries — enables index-only scans for:
         # 1. Span aggregation: GROUP BY game_id, endgame_class HAVING COUNT(ply) >= threshold
         # 2. Entry-ply eval lookup: array_agg(eval_cp ORDER BY ply)[1], array_agg(eval_mate ORDER BY ply)[1]

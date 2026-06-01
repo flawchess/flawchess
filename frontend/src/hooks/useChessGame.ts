@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Chess } from 'chess.js';
 import { computeHashes, hashToString } from '@/lib/zobrist';
 import { findOpening, preloadOpenings } from '@/lib/openings';
+import { MAX_EXPLORER_PLY } from '@/lib/explorer';
 import type { ZobristHashes } from '@/lib/zobrist';
 import type { Opening } from '@/lib/openings';
 import type { MatchSide, Color } from '@/types/api';
@@ -160,6 +161,10 @@ export function useChessGame(): ChessGameState {
 
   const makeMove = useCallback(
     (sourceSquare: string, targetSquare: string): boolean => {
+      // Hard cap: do not allow advancing past the index boundary (SEED-033).
+      // Silent rejection snaps the board piece back, same as an illegal move.
+      if (currentPly >= MAX_EXPLORER_PLY) return false;
+
       const chess = chessRef.current;
       try {
         const result = chess.move({
