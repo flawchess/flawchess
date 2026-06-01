@@ -235,6 +235,11 @@ class TestEndgameTabFindings:
             "overall_performance",
             "type_categories",
             "player_profile",
+            # Phase 102 (Plan 01): appended before findings_hash so the hash stays last
+            # (load-bearing for findings_hash stability); optional non-breaking payload adds.
+            "time_pressure_cards",
+            "metric_percentiles",
+            "cohort_anchors",
             "findings_hash",
         ]
 
