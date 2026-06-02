@@ -37,7 +37,6 @@ Critical invariants:
 import datetime
 import hashlib
 import json
-import math
 import statistics
 from collections import defaultdict
 from typing import Literal
@@ -54,7 +53,6 @@ from app.schemas.endgames import (
     PerTcBreakdownOut,
     PerTcBucketStats,
     ScoreGapTimelinePoint,
-    TimePressureTcCard,
 )
 from app.schemas.insights import (
     EndgameTabFindings,
@@ -562,7 +560,9 @@ def _compute_subsection_findings(
     findings.extend(_findings_score_timeline(response, window))
     findings.extend(_findings_endgame_metrics(response, window))
     findings.extend(_findings_endgame_elo_timeline(response, window))
-    findings.extend(_findings_time_pressure_at_entry(response, window))
+    # Phase 102 UAT (2026-06-02): _findings_time_pressure_at_entry removed — the
+    # time_pressure LLM section is now driven by the per-TC chart block (Clock Gap
+    # + Net Flag Rate percentile aggregates), not the blended page-level scalars.
     # Phase 88.1: removed silent empty-finding regression (REVIEW.md WR-06).
     # The clock-diff and time-pressure-vs-performance subsection helpers used to
     # be appended here, both returning permanent empty findings since Phase 88
@@ -1136,111 +1136,12 @@ def _findings_endgame_elo_timeline(
     return findings
 
 
-def _findings_time_pressure_at_entry(
-    response: EndgameOverviewResponse,
-    window: Window,
-) -> list[SubsectionFinding]:
-    """time_pressure_at_entry -> avg_clock_diff_pct + net_timeout_rate.
-
-    Phase 88: source switched from ClockStatsRow.clock_pressure to TimePressureTcCard
-    time_pressure_cards. avg_clock_diff_pct is the n-weighted mean of
-    ClockGapBullet.mean_diff_pct * 100 across cards.
-
-    Phase 102 (Plan 01): net_timeout_rate is now a real n-weighted scalar computed
-    from card.net_timeout_rate (fraction → x100 to match avg_clock_diff_pct scale).
-    Previously this was an always-empty stub since the Phase 88 ClockStatsRow
-    migration.
-    """
-    cards: list[TimePressureTcCard] = response.time_pressure_cards.cards
-
-    findings: list[SubsectionFinding] = []
-
-    if not cards:
-        findings.append(_empty_finding("time_pressure_at_entry", window, "avg_clock_diff_pct"))
-        findings.append(_empty_finding("time_pressure_at_entry", window, "net_timeout_rate"))
-        return findings
-
-    # avg_clock_diff_pct: n-weighted mean of mean_diff_pct * 100 across TC cards.
-    # mean_diff_pct is a fraction (0.0-1.0 scale); multiply by 100 to match the
-    # avg_clock_diff_pct metric scale expected by assign_zone.
-    diff_num = 0.0
-    diff_den = 0
-    for card in cards:
-        n = card.clock_gap.n
-        if n <= 0:
-            continue
-        diff_num += card.clock_gap.mean_diff_pct * 100.0 * n
-        diff_den += n
-
-    if diff_den > 0:
-        clock_diff_value = diff_num / diff_den
-    else:
-        clock_diff_value = float("nan")
-
-    clock_diff_quality = sample_quality("time_pressure_at_entry", diff_den)
-    is_headline = clock_diff_quality != "thin"
-
-    findings.append(
-        SubsectionFinding(
-            subsection_id="time_pressure_at_entry",
-            parent_subsection_id=None,
-            window=window,
-            metric="avg_clock_diff_pct",
-            value=clock_diff_value,
-            zone=assign_zone("avg_clock_diff_pct", clock_diff_value),
-            trend="n_a",
-            weekly_points_in_window=0,
-            sample_size=diff_den,
-            sample_quality=sample_quality("time_pressure_at_entry", diff_den),
-            is_headline_eligible=is_headline and not math.isnan(clock_diff_value),
-            dimension=None,
-        )
-    )
-
-    # Phase 102 (Plan 01): net_timeout_rate wired from card.net_timeout_rate
-    # (fraction -> x100 to match avg_clock_diff_pct scale); was an always-empty
-    # stub since the Phase 88 ClockStatsRow migration.
-    # net_timeout_rate is in _NON_FRACTIONAL_METRICS in insights_llm.py so the
-    # assembler does NOT re-scale it — the x100 happens here, exactly like
-    # avg_clock_diff_pct.
-    # Denominator uses card.total (total endgame games for this TC) to weight
-    # the per-TC net timeout rate proportionally to each TC's game volume.
-    timeout_num = 0.0
-    timeout_den = 0
-    for card in cards:
-        n = card.total
-        if n <= 0:
-            continue
-        timeout_num += card.net_timeout_rate * 100.0 * n
-        timeout_den += n
-
-    if timeout_den > 0:
-        timeout_value = timeout_num / timeout_den
-    else:
-        timeout_value = float("nan")
-
-    timeout_quality = sample_quality("time_pressure_at_entry", timeout_den)
-    is_timeout_headline = timeout_quality != "thin"
-
-    findings.append(
-        SubsectionFinding(
-            subsection_id="time_pressure_at_entry",
-            parent_subsection_id=None,
-            window=window,
-            metric="net_timeout_rate",
-            value=timeout_value,
-            zone=assign_zone("net_timeout_rate", timeout_value),
-            trend="n_a",
-            weekly_points_in_window=0,
-            sample_size=timeout_den,
-            sample_quality=timeout_quality,
-            is_headline_eligible=is_timeout_headline and not math.isnan(timeout_value),
-            dimension=None,
-        )
-    )
-
-    return findings
-
+# Phase 102 UAT (2026-06-02): _findings_time_pressure_at_entry was removed. The
+# blended-across-TC avg_clock_diff_pct + net_timeout_rate page-level findings it
+# produced are superseded by the per-TC Clock Gap + Net Flag Rate percentile
+# aggregates the LLM chart block now renders (insights_llm._time_pressure_aggregate_lines),
+# which carry percentiles the blended pair never had. The `time_pressure` section
+# of the LLM payload is now driven entirely by the per-TC chart block.
 
 # Phase 88.1 (Plan 09, REVIEW.md WR-06): _finding_clock_diff_timeline and
 # _finding_time_pressure_vs_performance were removed. Both helpers had returned

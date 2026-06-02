@@ -20,7 +20,7 @@ The `recommendations` field is the only place where directive framing is welcome
 1. **Grounding** — every bullet must trace to a weak or typical-zone metric in the findings. NEVER recommend studying or improving an area that sits in the strong zone. 
 2. **Elo-tier register** — match named-concept depth to the Elo-tier defined in "Player profile — calibrate tone to skill level" below. The Below-1200 / 1200-1800 / 1800+ bands apply to recommendations the same way they apply to overview narration — see that section for the canonical rules and examples.
 3. **Within-noise and flat-trend rules apply** (see below). Do NOT recommend addressing a "decline" if the relevant metric is `flat` or `within-noise`.
-4. **Time-pressure recommendations OK** when `avg_clock_diff_pct` is weak AND/OR a weak low-clock quintile (Q0 or Q1) appears in the `time_pressure_score_gap_by_time` chart. Phrasings like "consider faster opening repertoire choices", "practice quick endgame technique with time controls".
+4. **Time-pressure recommendations OK** when, in the `time_pressure_score_gap_by_time` chart block, the Time-Pressure Score Gap percentile is low (you score poorly under pressure) AND/OR a weak low-clock quintile (Q0 or Q1) appears AND/OR the frequency-of-pressure aggregates are weak (a negative Clock Gap or Net Flag Rate / low percentile, meaning you are often the one short on time). Phrasings like "consider faster opening repertoire choices", "practice quick endgame technique with time controls".
 5. **Format** — each bullet is one short, self-contained sentence. No leading dashes/asterisks (the schema is a list).
 6. **Cohort caveat for Recovery** — when recommending defensive work because Recovery is weak, see `recovery_save_pct` cohort context in the metric glossary; don't frame weak Recovery as crisis.
 
@@ -91,8 +91,9 @@ The narrative sits next to charts and info popovers with specific labels. Use th
 | `endgame_elo`                 | "Endgame ELO"                       | "Endgame ELO of 1565"  |
 | `non_endgame_elo`             | "Non-Endgame ELO"                   | "Non-Endgame ELO of 1500" |
 | `endgame_elo_gap`             | "Endgame ELO gap"                   | "+60 Elo"              |
-| `avg_clock_diff_pct`          | "Avg clock diff"                    | "-23%"                 |
-| `net_timeout_rate`            | "Net timeout rate"                  | "-13%"                 |
+| `clock_gap` (chart block)     | "Clock Gap"                         | "-23%"                 |
+| `net_flag_rate` (chart block) | "Net Flag Rate"                     | "-13%"                 |
+| `time_pressure_score_gap`     | "Time-Pressure Score Gap"           | "-12%"                 |
 **Number rendering:** all rate and percent metrics in this prompt are whole numbers on the 0-100 scale. Always attach a `%` sign to the **value** (`62%`, `-9%`, `46%`) — never to the label. Labels are bare (`Score`, not `Score %`). Gaps between two percentages are also rendered with `%` (`-8%`, `-14%`). For Elo gaps, quote the integer Elo with the "Elo" suffix (`+60 Elo`).
 
 ## Reading zones and proximity to edges
@@ -108,6 +109,8 @@ Do NOT average or combine multiple metrics' zones into a composite description. 
 ## Section gating
 
 Include a section ONLY when at least one of its underlying subsection findings has `sample_size > 0` AND `sample_quality != "thin"`. If a section's underlying subsections are all thin or empty, omit the section entirely. Do NOT fabricate content to fill sections.
+
+**`time_pressure` is chart-only.** It has no `[summary]` subsection findings — its sole content is the `### Chart: time_pressure_score_gap_by_time` block(s). Include the `time_pressure` section whenever that chart block renders for at least one time control (i.e. it appears under `## Section: time_pressure` in the payload); omit it when the chart block is absent.
 
 ## Payload structure — sections mirror the UI
 
@@ -192,6 +195,8 @@ These tags replace LLM arithmetic, not LLM judgement. You still choose what to l
 
 Some `[summary]` window lines carry an optional `pctl=N (vs ~A-rated {tc} peers | n_games=M | value=V)` token appended after `quality=`. This tells you where the metric sits within the cohort of similarly-rated players. The context fields are present when available: `vs ~A-rated {tc} peers` is the Lichess ELO rating anchor and time control; `n_games=M` is the cohort pool size; `value=V` is the chip-cohort metric value in the same scale as `mean=`.
 
+The same `pctl=N (...)` token also appears in the `time_pressure_score_gap_by_time` chart-block aggregate lines (Time-Pressure Score Gap, Clock Gap, Net Flag Rate — see that chart's glossary entry). There the token stands alone on a bullet rather than after a `quality=` field, but it carries the identical fields and follows the identical narration rules below (cite `value=` for concreteness, use the cohort framing, qualify sparse `n_games`). Those three metrics have no `[summary]`/`zone` form — the percentile (plus the Q0-Q3 quintile `score_delta` rows for the score-gap story) is the signal.
+
 **Preferred signal rule (replaces old D-04):** Percentile is a PRIMARY narration signal, PREFERRED over `zone`. The `pctl` is narratable when it is below 25 or above 75 — AND `quality` is `adequate` or `rich`.
 
 When a `pctl=` exists on an emitted finding, LEAD with percentile framing and use zone as supporting context. Rationale: percentile is cohort-relative (vs equally-strong peers over the most recent ~3000 games per TC, sampled across the last ~36 months — a middle ground between the possibly-longer all-time window and a short 3-month window), whereas zone is relative to the whole representative Lichess sample. When both signals agree, they reinforce each other. When they diverge (e.g. extreme percentile but typical zone), the percentile reflects how this player compares to peers at their rating level — that is often the more actionable signal.
@@ -221,9 +226,9 @@ The conversion clarification MUST appear AT MOST ONCE in the full report. After 
 `all_time: mean=-9, n=450, zone=weak (typical -10 to +10), quality=rich, pctl=18 (vs ~1480-rated blitz peers | n_games=312 | value=-9)` →
 "Your Endgame Score Gap sits at -9%, at the 18th percentile vs other ~1480-rated blitz peers (based on 312 games). This puts you in the lower fifth among similarly-rated players, just inside the weak zone."
 
-**Worked example — per-TC time-pressure (net_flag_rate):**
-`all_time: mean=-13, n=220, zone=weak (typical -5 to +5), quality=adequate, pctl=11 (vs ~1480-rated blitz peers | n_games=189 | value=-13)` →
-"Your Net timeout rate in blitz sits at -13%, at the 11th percentile vs other ~1480-rated blitz players — in the lowest quintile, meaning you are flagged more than you flag in blitz endgames."
+**Worked example — per-TC time-pressure (net_flag_rate, from the chart-block aggregates):**
+`- Net Flag Rate (flag wins − flag losses; higher is better): pctl=11 (vs ~1480-rated blitz peers | n_games=189 | value=-13)` →
+"Your Net Flag Rate in blitz sits at -13%, at the 11th percentile vs other ~1480-rated blitz players — in the lowest quintile, meaning you are flagged more than you flag in blitz endgames."
 
 **Worked example — per-TC Conversion Score Gap (score_gap_conv):**
 `all_time: mean=+47, n=95, zone=typical (typical +40 to +60), quality=adequate, pctl=79 (vs ~1480-rated blitz peers | n_games=87 | value=+47)` →
@@ -250,7 +255,7 @@ The model MAY extend the overview to up to ~500 words / up to 5 short paragraphs
 
 Cross-section stories to hunt for (non-exhaustive):
 
-- **Composure-under-pressure bottleneck**: `avg_clock_diff_pct` weak + weak `score_delta` in Q0/Q1 quintiles of the `time_pressure_score_gap_by_time` chart + typical-or-strong Conv/Parity/Recov rates. The story is that endgame execution is fine; the clock is what bleeds points.
+- **Composure-under-pressure bottleneck**: a weak Time-Pressure Score Gap (low percentile) and/or weak `score_delta` in the Q0/Q1 quintiles of the `time_pressure_score_gap_by_time` chart, combined with typical-or-strong Conv/Parity/Recov rates. The story is that endgame execution is fine; the clock is what bleeds points. If the Clock Gap / Net Flag Rate aggregates are ALSO weak (you are frequently short on time), the two compound — see "Time pressure — performance vs frequency compound" below.
 - **Opening/middlegame carrying**: negative `score_gap` driven by strong non-endgame `score_pct` (≥58) rather than weak endgame `score_pct` — the drag is relative, not absolute.
 - **Defensive pattern across types**: `[recovery-pattern]` + weak per-type `recovery_save_pct` across most types — Recovery is one story, not per-type crises.
 - **Endgame lagging rating growth**: `endgame_elo_gap` regressing while actual `elo` rising (see the `endgame_elo_timeline` pairing rule) — the offset your endgame adds to your rating is shrinking against a moving target, not a decline.
@@ -353,7 +358,7 @@ Read `entry_eval_pawns` → `endgame_score` as a **setup → execution** pair. `
 - `[near edge]` suffix: the value is just outside the typical band but the sample is still supporting (adequate or rich). Narrate as "a small but real pattern" rather than a clear strength/weakness signal.
 
 **Cross-section link — Time Pressure causal story:**
-When `entry_eval_pawns` is strong (or typical) but `endgame_score` is weak, look at the `time_pressure_score_gap_by_time` chart and `avg_clock_diff_pct`. If you enter endgames ahead on material but behind on clock, the clock deficit (not skill deficit) may explain the score gap. The Q0/Q1 quintile `score_delta` values in the chart are the authoritative signal for this cross-section reading — a clearly negative delta in Q0 means the clock pressure is where points bleed.
+When `entry_eval_pawns` is strong (or typical) but `endgame_score` is weak, look at the `time_pressure_score_gap_by_time` chart block — both the Q0/Q1 quintiles and the per-TC Clock Gap aggregate. If you enter endgames ahead on material but behind on clock (negative Clock Gap), the clock deficit (not skill deficit) may explain the score gap. The Q0/Q1 quintile `score_delta` values and the Time-Pressure Score Gap percentile are the authoritative signals for this cross-section reading — a clearly negative delta in Q0 means the clock pressure is where points bleed.
 
 **Per-tile gating.** Each finding gates independently at `n < 10` (its `[summary]` block is then dropped before you see it). Narrate only the tiles that render; do NOT speculate about a missing side ("we don't know yet whether they enter ahead or behind") and do NOT fabricate a story to satisfy the 2×2 patterns above. If every tile is thin/missing, skip the subsection entirely.
 
@@ -515,20 +520,20 @@ and "Endgame Type Score Gap" terms). Card-row labels use the bucket-specific for
   - See the stale-combo rule above — per-combo series sometimes go stale.
   - Narrate within a (platform, time_control) combo, not across (see cross-platform note in Player profile section).
 
-- **avg_clock_diff_pct** (UI label: "Avg clock diff"): mean of `(user_clock − opp_clock) / base_time × 100` at endgame entry, weighted by game count across time controls. Positive = user enters endgames with more clock than opponent.
-  - Scale: signed whole-number percent (e.g. `-23` = user averaged 23% less base-clock remaining than opponent at endgame entry — quote as `"-23%"`).
-  - Drives the `time_pressure_at_entry` subsection and the `clock_diff_timeline` series. Values within ±10% are near-parity; the `zone` label captures strong/weak — narrate the direction, do not over-claim a clock-management edge when the metric is near zero.
-  - Note: `avg_clock_diff_pct` is a weighted mean across bullet/blitz/rapid/classical. Do NOT attribute the deficit or surplus to any single time control — the current build only reports the blended value.
-  - **Does NOT measure performance under time pressure.** It only tells you who *enters* the endgame with more clock. For the performance question (does the user crack when short on time?), read the `time_pressure_score_gap_by_time` chart blocks below.
+- **time_pressure_score_gap_by_time** (chart block, not a scalar metric): rendered as one `### Chart: time_pressure_score_gap_by_time ({tc}, all_time)` block per time control. The block has two parts.
 
-- **time_pressure_score_gap_by_time** (chart, not a scalar metric): rendered as one `### Chart: time_pressure_score_gap_by_time ({tc}, all_time)` block per time control. Each block contains 5 quintile rows (Q0 = 0-20% clock remaining = **max pressure**, Q1 = 20-40%, Q2 = 40-60%, Q3 = 60-80%, Q4 = 80-100% = **min pressure**). Each row shows: `user_score` (wins=100, draws=50, losses=0), `opp_score` (opponents' Score over the same games), `score_delta` (`user_score − opp_score`), `n` and `n_opp` (game counts), and `typical_band` (neutral score_delta range in percentage points from benchmark cohort data).
-  - Rows where the n-gate is unmet (too few games in that quintile) are omitted entirely from the chart — do not extrapolate from absent rows.
+  **Part 1 — per-quintile table (Q0-Q3).** Four quintile rows: Q0 = 0-20% clock remaining = **max pressure**, Q1 = 20-40%, Q2 = 40-60%, Q3 = 60-80%. (Q4 / 80-100% / min pressure is intentionally omitted — it carries no time-pressure signal and is not shown in the UI chart.) Each row shows: `user_score` (wins=100, draws=50, losses=0), `opp_score` (opponents' Score over the same games), `score_delta` (`user_score − opp_score`), `n` and `n_opp` (game counts), and `typical_band` (neutral score_delta range in percentage points from benchmark cohort data).
+  - Rows where the n-gate is unmet (too few games in that quintile) are omitted entirely — do not extrapolate from absent rows.
   - **The central story is divergence in low-clock quintiles (Q0 and Q1).** A clearly negative `score_delta` in Q0/Q1 means you crack under time pressure; a clearly positive `score_delta` means you are cooler under pressure. Quote the `score_delta` and `typical_band` directly from the relevant row — do not redo arithmetic.
-  - **Key distinction from `avg_clock_diff_pct`**: that metric asks "who enters endgames with more clock?" (a sampling fact). This chart asks "conditional on a given amount of clock remaining, who scores better?" (a performance fact). A value near zero for `avg_clock_diff_pct` does not rule out a strong or weak low-clock performance profile.
-  - Do NOT treat a single quintile row as a trend. Compare Q0/Q1 to Q3/Q4 as the primary divergence check.
+  - Do NOT treat a single quintile row as a trend. Compare Q0/Q1 to Q2/Q3 as the primary divergence check.
 
-- **net_timeout_rate** (UI label: "Net timeout rate"): `(timeout_wins − timeout_losses) / total_endgame_games × 100`. Positive = user wins more flag battles than they lose (strong); negative = user gets flagged more than they flag (weak). Higher is better. **This is a real emitted scalar** (not an empty stub) — narrate it from the `zone` and value whenever it is emitted with `quality != thin`.
-  - Scale: signed whole-number percent (e.g. `-13` = user's net timeout rate is 13 percentage points negative — quote as `"-13%"`).
+  **Part 2 — per-TC percentile aggregates** (the `Time-pressure aggregates (...)` lines below the table). Three metrics, each citing a percentile vs equally-rated peers (the value is embedded in the `pctl=` token; see "Percentile annotations"). They split into two distinct stories:
+  - **Time-Pressure Score Gap** = **PERFORMANCE under pressure** — how you *score* when short on the clock (Q0+Q1 combined, own clock <40% remaining). This is the aggregate, percentile-backed version of the Q0/Q1 quintile story. Higher is better.
+  - **Clock Gap** = **FREQUENCY of pressure** — your clock vs the opponent's at endgame entry, signed (negative = you habitually enter endgames with less time). Higher is better.
+  - **Net Flag Rate** = **FREQUENCY of pressure** — flag wins minus flag losses over endgame games (negative = you get flagged more than you flag opponents). Higher is better.
+  - When a metric sits below the cohort inclusion floor its line shows `value=…% (no peer percentile yet)` instead of a `pctl=` token — narrate the raw value if useful, but do not invent a percentile.
+
+- **Time pressure — performance vs frequency compound (read both parts together).** The two stories above are independent and they *compound*. PERFORMANCE (Time-Pressure Score Gap / Q0-Q1 `score_delta`) tells you how well you play when short on time; FREQUENCY (Clock Gap, Net Flag Rate) tells you how *often* you are the one short on time. A player who both **scores poorly under pressure** (weak Time-Pressure Score Gap) **and** is **frequently under pressure** (negative Clock Gap / Net Flag Rate, low percentiles) has a serious compounding problem — it is a leading driver of a large negative Endgame Score Gap, and the time-pressure story should be a headline. Endgame specialists show the mirror image: they **outperform** opponents under pressure (positive Time-Pressure Score Gap) AND manage the clock well (positive Clock Gap / Net Flag Rate). When the two point the same direction, say so explicitly ("you are both more often short on time AND score worse when you are — this is likely the main reason your endgame results trail your non-endgame results"). When they diverge (e.g. you crack under pressure but rarely face it, or you face it often but handle it fine), narrate that nuance rather than overstating one half.
 
 ## Subsection → section_id mapping
 
@@ -545,8 +550,6 @@ The payload groups content under `## Section:` headers that match the output `se
 | endgame_metrics_blitz                | metrics_elo    |
 | endgame_metrics_rapid                | metrics_elo    |
 | endgame_metrics_classical            | metrics_elo    |
-| time_pressure_at_entry               | time_pressure  |
-| clock_diff_timeline                  | time_pressure  |
 | Chart: time_pressure_score_gap_by_time | time_pressure  |
 | results_by_endgame_type              | type_breakdown |
 | conversion_recovery_by_type          | type_breakdown |
@@ -558,7 +561,7 @@ Subsection notes:
 
 Chart notes:
 
-- `time_pressure_score_gap_by_time` (one sub-table per time control, 5 quintile rows each) → part of the `time_pressure` section alongside `avg_clock_diff_pct` and `net_timeout_rate`.
+- `time_pressure_score_gap_by_time` (one block per time control: a Q0-Q3 quintile sub-table + three per-TC percentile aggregates — Time-Pressure Score Gap, Clock Gap, Net Flag Rate) is the **only** content in the `time_pressure` section. The section is chart-only — there is no `time_pressure_at_entry` subsection. Emit the `time_pressure` `SectionInsight` whenever this block renders for any time control.
 - `overall_wdl` (2-row table: endgame vs non_endgame) → part of the `overall` section alongside the `endgame_start_vs_end`, `score_gap`, and `score_timeline` subsections. Use it to frame whether a negative or positive `score_gap` is driven by endgame weakness, non-endgame strength, or both.
 - `results_by_endgame_type_wdl` (per-type W/D/L + Score table) → part of the `type_breakdown` section. Each row shows `games`, `win_pct`, `draw_pct`, `loss_pct`, `score_pct` (= wins=100, draws=50, losses=0), `opp_score_pct` (= 100 − score_pct, the opponents' Score over the same games), and `score_pct_diff` (= score_pct − opp_score_pct, the signed margin in percentage points; negative means the user is being outscored in that Endgame Type). The `[weakest-type]` / `[weakest-types-tied]` tag in the chart caption already surfaces the type with the lowest `score_pct` — when present, lead with that. For the deeper Conversion / Recovery story per type, read the `conversion_recovery_by_type` subsection below the chart (each [summary] block carries a type-specific typical band).
 

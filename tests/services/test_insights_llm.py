@@ -215,7 +215,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v40"
+        assert insights_llm._PROMPT_VERSION == "endgame_v41"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -375,7 +375,7 @@ class TestPromptVersionAndBody:
         Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
         changelog comment (append-only-at-FRONT pattern).
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v40"
+        assert insights_llm._PROMPT_VERSION == "endgame_v41"
         # Changelog comment must mention the Phase 87.6 rebuild.
         import inspect as _inspect
 
@@ -457,7 +457,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_bumped(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION is endgame_v40; prior v35 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v40"
+        assert insights_llm._PROMPT_VERSION == "endgame_v41"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -1461,10 +1461,13 @@ class TestPromptAssembly:
     def test_bullet_includes_inline_zone_bounds(self) -> None:
         """v7: every finding bullet renders `(typical LO to UP)` next to its zone.
 
-        Covers scalar (score_gap), bucketed (conversion_win_pct), and
-        higher_is_better (net_timeout_rate) registry paths. The inline shorthand
-        lets the LLM judge proximity to a zone edge without consulting the
-        global appendix.
+        Covers scalar (score_gap) and bucketed/higher_is_better
+        (conversion_win_pct) registry paths. The inline shorthand lets the LLM
+        judge proximity to a zone edge without consulting the global appendix.
+
+        Phase 102 UAT: the former net_timeout_rate case was dropped — the
+        page-level time_pressure_at_entry subsection is retired, so that metric
+        no longer renders as a zoned [summary] bullet.
         """
         from typing import cast
 
@@ -1504,30 +1507,13 @@ class TestPromptAssembly:
             dimension={"time_control": "blitz"},
             series=None,
         )
-        timeout = SubsectionFinding(
-            subsection_id="time_pressure_at_entry",
-            parent_subsection_id=None,
-            window="all_time",
-            metric="net_timeout_rate",
-            value=-12.82,
-            zone="weak",
-            trend="n_a",
-            weekly_points_in_window=0,
-            sample_size=2940,
-            sample_quality="rich",
-            is_headline_eligible=True,
-            dimension=None,
-            series=None,
-        )
-        tab = _fake_findings(filters, findings=[scalar, bucketed, timeout])
+        tab = _fake_findings(filters, findings=[scalar, bucketed])
         prompt = _assemble_user_prompt(tab)
 
         # v7 whole-number scale: score_gap band is -10 to +10.
         assert "weak (typical -10 to +10)" in prompt
         # Phase 102 UAT: per-TC blitz conversion band is +67 to +77 (TC_METRIC_BANDS).
         assert "weak (typical +67 to +77)" in prompt
-        # net_timeout_rate band is now higher_is_better (positive is strong): typical -5 to +5.
-        assert "weak (typical -5 to +5)" in prompt
         assert "lower is better" not in prompt  # v7: no lower_is_better metrics left.
 
     def test_score_gap_subsection_emitted_alongside_wdl_chart(self) -> None:
@@ -2549,7 +2535,7 @@ class TestMetadataOverride:
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
         # Phase 102 UAT: bumped from endgame_v35 to endgame_v40.
-        assert response.report.prompt_version == "endgame_v40"
+        assert response.report.prompt_version == "endgame_v41"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2573,7 +2559,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v40"
+        assert log.response_json["prompt_version"] == "endgame_v41"
 
 
 class TestCacheBehavior:
@@ -3626,7 +3612,7 @@ class TestPhase874PromptVersion:
 
     def test_prompt_version_is_v33(self) -> None:
         """SC#7: bumped to endgame_v40 by Phase 102 UAT (was endgame_v35 after Phase 87.6)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v40"
+        assert insights_llm._PROMPT_VERSION == "endgame_v41"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3674,7 +3660,7 @@ class TestPhase876LLMPayloadExtension:
 
     def test_prompt_version_is_endgame_v39(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION bumped from endgame_v35 to endgame_v40."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v40"
+        assert insights_llm._PROMPT_VERSION == "endgame_v41"
 
     def test_prompt_changelog_preserves_v33_entry(self) -> None:
         """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
@@ -3913,10 +3899,11 @@ class TestTimePressureScoreGapChartBlock:
             "### Chart: time_pressure_score_gap_by_time (blitz, all_time)" in line for line in lines
         )
 
-    def test_emits_exactly_5_quintile_data_rows_when_all_gate_met(self) -> None:
-        """With all 5 quintiles gate-met, exactly 5 data rows are emitted per TC.
+    def test_emits_exactly_4_quintile_data_rows_when_all_gate_met(self) -> None:
+        """With all 5 quintiles gate-met, exactly 4 data rows (Q0-Q3) are emitted per TC.
 
-        Phase 102 (Plan 01): 5 quintiles confirmed (not 4).
+        Phase 102 UAT (2026-06-02): Q4 (80-100% clock = min pressure) is dropped
+        from the payload to match the UI chart — only Q0-Q3 render.
         """
         from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
 
@@ -3930,8 +3917,23 @@ class TestTimePressureScoreGapChartBlock:
             and not line.startswith("| quintile")
             and not line.startswith("| ---")
         ]
-        assert len(table_rows) == 5, (
-            f"Expected exactly 5 quintile data rows, got {len(table_rows)}: {table_rows}"
+        assert len(table_rows) == 4, (
+            f"Expected exactly 4 quintile data rows (Q0-Q3), got {len(table_rows)}: {table_rows}"
+        )
+
+    def test_q4_min_pressure_row_excluded(self) -> None:
+        """The Q4 (80-100%) min-pressure quintile is never rendered."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        table_rows = [
+            line
+            for line in lines
+            if line.startswith("| ") and not line.startswith(("| quintile", "| ---"))
+        ]
+        assert all("80-100%" not in row for row in table_rows), (
+            f"Q4 (80-100%) must be excluded, got: {table_rows}"
         )
 
     def test_skips_rows_where_opp_score_is_none(self) -> None:
@@ -3964,6 +3966,50 @@ class TestTimePressureScoreGapChartBlock:
         findings = _findings_with_time_pressure_cards([("blitz", True)])
         lines = _format_time_pressure_score_gap_chart_block(findings)
         assert any("typical_band" in line for line in lines)
+
+    def test_aggregate_lines_render_clock_gap_and_net_flag_rate(self) -> None:
+        """Below the quintile table, Clock Gap + Net Flag Rate aggregate lines always render.
+
+        Phase 102 UAT: even with no percentile records, the two frequency-of-pressure
+        metrics render from the card's raw value with a no-percentile note.
+        """
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        text = "\n".join(lines)
+        assert "Time-pressure aggregates (blitz, all_time)" in text
+        assert "Clock Gap" in text
+        assert "Net Flag Rate" in text
+        # No percentile records passed → the no-percentile fallback note appears.
+        assert "no peer percentile yet" in text
+
+    def test_aggregate_lines_render_percentile_tokens(self) -> None:
+        """When per_tc_metric_percentiles is supplied, the three aggregates cite pctl tokens."""
+        from app.schemas.insights import MetricPercentileRecord
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        per_tc = {
+            "time_pressure_score_gap:blitz": MetricPercentileRecord(
+                percentile=18, value=-12.0, n_games=189, anchor=1480, tc="blitz"
+            ),
+            "clock_gap:blitz": MetricPercentileRecord(
+                percentile=22, value=-15.0, n_games=210, anchor=1480, tc="blitz"
+            ),
+            "net_flag_rate:blitz": MetricPercentileRecord(
+                percentile=11, value=-13.0, n_games=210, anchor=1480, tc="blitz"
+            ),
+        }
+        lines = _format_time_pressure_score_gap_chart_block(findings, per_tc)
+        text = "\n".join(lines)
+        assert "Time-Pressure Score Gap" in text
+        assert "pctl=18 (vs ~1480-rated blitz peers | n_games=189 | value=-12)" in text
+        assert "pctl=22 (vs ~1480-rated blitz peers | n_games=210 | value=-15)" in text
+        assert "pctl=11 (vs ~1480-rated blitz peers | n_games=210 | value=-13)" in text
+        # Frequency/performance framing is present so the LLM keeps them distinct.
+        assert "PERFORMANCE under pressure" in text
+        assert "FREQUENCY of pressure" in text
 
 
 # ---------------------------------------------------------------------------
@@ -4339,4 +4385,4 @@ class TestRatingBasisBlock:
         """Phase 102 Plan 05/UAT: _PROMPT_VERSION bumped to endgame_v40."""
         from app.services import insights_llm
 
-        assert insights_llm._PROMPT_VERSION == "endgame_v40"
+        assert insights_llm._PROMPT_VERSION == "endgame_v41"
