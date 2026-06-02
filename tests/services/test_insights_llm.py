@@ -215,7 +215,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v38"
+        assert insights_llm._PROMPT_VERSION == "endgame_v39"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -375,7 +375,7 @@ class TestPromptVersionAndBody:
         Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
         changelog comment (append-only-at-FRONT pattern).
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v38"
+        assert insights_llm._PROMPT_VERSION == "endgame_v39"
         # Changelog comment must mention the Phase 87.6 rebuild.
         import inspect as _inspect
 
@@ -456,8 +456,8 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """Phase 102: _PROMPT_VERSION is endgame_v38; prior v35 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v38"
+        """Phase 102: _PROMPT_VERSION is endgame_v39; prior v35 stays in changelog."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v39"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -737,7 +737,9 @@ class TestPromptAssembly:
             from_date=datetime.date(2026, 2, 20), time_controls=["blitz"], platforms=["chess.com"]
         )
         non_timeline = SubsectionFinding(
-            subsection_id="overall",
+            # Phase 102 UAT: score_gap scalar now lives in the dedicated
+            # `score_gap` subsection (the `overall` subsection was retired).
+            subsection_id="score_gap",
             parent_subsection_id=None,
             window="all_time",
             metric="score_gap",
@@ -819,7 +821,7 @@ class TestPromptAssembly:
         # `## Scoping caveat` line appears when opponent_strength != "any".
         assert "Filters:" not in prompt
         assert "Flags:" not in prompt
-        assert "### Subsection: overall" in prompt
+        assert "### Subsection: score_gap" in prompt
         assert "### Subsection: score_timeline" in prompt
         # Phase 68 (v14) / Phase 82 D-01/D-02 rename: three series blocks (one
         # per metric), all pinned to weekly.
@@ -1027,7 +1029,7 @@ class TestPromptAssembly:
         """A2 (260422-tnb): NaN values and thin empty findings are filtered out."""
         filters = _sample_filter_context()
         normal = SubsectionFinding(
-            subsection_id="overall",
+            subsection_id="score_gap",
             parent_subsection_id=None,
             window="all_time",
             metric="score_gap",
@@ -1468,7 +1470,7 @@ class TestPromptAssembly:
 
         filters = _sample_filter_context()
         scalar = SubsectionFinding(
-            subsection_id="overall",
+            subsection_id="score_gap",
             parent_subsection_id=None,
             window="all_time",
             metric="score_gap",
@@ -1523,20 +1525,22 @@ class TestPromptAssembly:
         assert "weak (typical -5 to +5)" in prompt
         assert "lower is better" not in prompt  # v7: no lower_is_better metrics left.
 
-    def test_overall_subsection_emitted_alongside_wdl_chart(self) -> None:
-        """v9: scalar `overall` subsection is now emitted EVEN WHEN the chart fires.
+    def test_score_gap_subsection_emitted_alongside_wdl_chart(self) -> None:
+        """The score_gap scalar renders EVEN WHEN the overall_wdl chart fires.
 
         Previously (v5 C4) the scalar was dropped when the chart rendered, leaving
         only the score_timeline subsection's bullet — but that bullet's
         `value` is the latest weekly bucket of the rolling timeline, mislabeled
-        as `(all_time)`. v9 keeps both: the chart shows the WDL decomposition,
-        and the `overall` scalar reports the all-time aggregate that exactly
-        matches the chart math (endgame.score_pct - non_endgame.score_pct).
+        as `(all_time)`. v9 kept both. Phase 102 UAT: the scalar moved from the
+        retired `overall` subsection into the dedicated `score_gap` subsection;
+        the chart still shows the WDL decomposition, and the scalar reports the
+        all-time aggregate that exactly matches the chart math
+        (endgame.score_pct - non_endgame.score_pct).
         """
         from app.schemas.endgames import EndgamePerformanceResponse, EndgameWDLSummary
 
         scalar = SubsectionFinding(
-            subsection_id="overall",
+            subsection_id="score_gap",
             parent_subsection_id=None,
             window="all_time",
             metric="score_gap",
@@ -1580,9 +1584,9 @@ class TestPromptAssembly:
         )
         prompt = _assemble_user_prompt(tab)
 
-        # Chart renders AND the overall [summary score_gap] block renders alongside it.
+        # Chart renders AND the score_gap [summary score_gap] block renders alongside it.
         assert "### Chart: overall_wdl" in prompt
-        assert "### Subsection: overall" in prompt
+        assert "### Subsection: score_gap" in prompt
         assert "[summary score_gap]" in prompt
         # The scalar value should be -15 (-0.15 * 100, rounded) — rendered as mean=-15 on the all_time line.
         assert "all_time: mean=-15" in prompt
@@ -2536,8 +2540,8 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        # Phase 102: bumped from endgame_v35 to endgame_v38.
-        assert response.report.prompt_version == "endgame_v38"
+        # Phase 102: bumped from endgame_v35 to endgame_v39.
+        assert response.report.prompt_version == "endgame_v39"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2561,7 +2565,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v38"
+        assert log.response_json["prompt_version"] == "endgame_v39"
 
 
 class TestCacheBehavior:
@@ -3606,8 +3610,8 @@ class TestPhase874PromptVersion:
     """
 
     def test_prompt_version_is_v33(self) -> None:
-        """SC#7: bumped to endgame_v38 by Phase 102 (was endgame_v35 after Phase 87.6)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v38"
+        """SC#7: bumped to endgame_v39 by Phase 102 (was endgame_v35 after Phase 87.6)."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v39"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3653,9 +3657,9 @@ class TestPhase876LLMPayloadExtension:
     and wires the non_endgame_elo renderer.
     """
 
-    def test_prompt_version_is_endgame_v38(self) -> None:
-        """Phase 102: _PROMPT_VERSION bumped from endgame_v35 to endgame_v38."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v38"
+    def test_prompt_version_is_endgame_v39(self) -> None:
+        """Phase 102: _PROMPT_VERSION bumped from endgame_v35 to endgame_v39."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v39"
 
     def test_prompt_changelog_preserves_v33_entry(self) -> None:
         """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
@@ -3963,7 +3967,9 @@ def _make_score_gap_finding(
     from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
 
     return SubsectionFinding(
-        subsection_id=cast(SubsectionId, "overall"),
+        # Phase 102 UAT: score_gap now lives in the dedicated `score_gap`
+        # subsection (the `overall` subsection is no longer in _SECTION_LAYOUT).
+        subsection_id=cast(SubsectionId, "score_gap"),
         parent_subsection_id=None,
         window=cast(Window, window),
         metric=cast(MetricId, "score_gap"),
@@ -4312,8 +4318,8 @@ class TestRatingBasisBlock:
             "Pure lichess disclosure branch must be documented in the prompt"
         )
 
-    def test_version_is_endgame_v38(self) -> None:
-        """Phase 102 Plan 05: _PROMPT_VERSION bumped to endgame_v38."""
+    def test_version_is_endgame_v39(self) -> None:
+        """Phase 102 Plan 05: _PROMPT_VERSION bumped to endgame_v39."""
         from app.services import insights_llm
 
-        assert insights_llm._PROMPT_VERSION == "endgame_v38"
+        assert insights_llm._PROMPT_VERSION == "endgame_v39"

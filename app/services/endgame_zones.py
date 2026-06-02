@@ -48,6 +48,11 @@ MetricId = Literal[
     "entry_eval_pawns",  # Phase 82 D-04: new endgame_start_vs_end Tile 1
     "entry_expected_score",  # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",  # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
+    # Phase 102 UAT: scalar Non-Endgame Score ("Games without Endgame" card),
+    # added to endgame_start_vs_end alongside endgame_score so the LLM reads
+    # both cards' aggregates as the comparison pair. Same 0.45-0.55 vs-50% band
+    # as endgame_score (the UI colors both cards identically).
+    "non_endgame_score",
     # Phase 68 (260424-pc6): per-part absolute score metrics emitted by the
     # score_timeline subsection. `score_gap` still carries the signed
     # aggregate; `endgame_score_timeline` / `non_endgame_score_timeline` carry
@@ -76,8 +81,15 @@ MetricId = Literal[
 ]
 
 SubsectionId = Literal[
+    # Phase 102 UAT: `overall` is no longer in the default _SECTION_LAYOUT — its
+    # sole finding (score_gap) moved to the dedicated `score_gap` subsection. The
+    # id stays a valid SubsectionId (still constructable; used by schema tests).
     "overall",
     "endgame_start_vs_end",  # Phase 82 D-05
+    # Phase 102 UAT: dedicated subsection mirroring the UI "Endgame Score
+    # Differences" card — Eval Score Gap (achievable_score_gap) + Endgame Score
+    # Gap (score_gap). Sits between endgame_start_vs_end and score_timeline.
+    "score_gap",
     "score_timeline",
     "endgame_metrics",
     # Phase 87.5 D-06: restored from the Phase 87.4 subsection name.
@@ -286,6 +298,15 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=0.55,
         direction="higher_is_better",
     ),
+    # Phase 102 UAT: scalar Non-Endgame Score ("Games without Endgame" card).
+    # Same 0.45-0.55 vs-50% band as endgame_score — the UI colors both cards
+    # with the identical SCORE_BULLET_NEUTRAL band, so the LLM's zone matches
+    # what the user sees. Unit: 0-1 scale (NOT percent).
+    "non_endgame_score": ZoneSpec(
+        typical_lower=0.45,
+        typical_upper=0.55,
+        direction="higher_is_better",
+    ),
     # Phase 68 (260424-pc6): absolute per-part rolling Score % used by the
     # score_timeline subsection's two-line chart. There is no calibrated
     # cohort band for "your endgame Score in isolation" (the zoned signal is
@@ -411,6 +432,11 @@ BUCKETED_ZONE_REGISTRY: Mapping[BucketedMetricId, Mapping[MaterialBucket, ZoneSp
 
 SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "overall": (50, 200),
+    # Phase 102 UAT: dedicated score_gap subsection inherits the retired
+    # `overall` band — score_gap's denominator is all games (endgame +
+    # non_endgame), and achievable_score_gap's cohort (endgame games with eval)
+    # is comparably large given >99% eval coverage.
+    "score_gap": (50, 200),
     # Phase 82 D-05: new subsection, gates match time_pressure_at_entry
     # (thin < 10, adequate < 50, rich >= 50) — two single-aggregate tiles,
     # no per-type breakdown, so larger thin boundary than per-type subsections.

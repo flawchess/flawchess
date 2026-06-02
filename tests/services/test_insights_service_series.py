@@ -852,7 +852,7 @@ class TestScoreTimelineIntegration:
 
         # Extract the score_timeline slice so assertions don't accidentally
         # count summary blocks that live under other subsections (notably
-        # the `overall` block also emits `[summary score_gap]`).
+        # the dedicated `score_gap` subsection also emits `[summary score_gap]`).
         timeline_start = rendered.index("### Subsection: score_timeline")
         # Find the next "### " boundary (or end of string) to scope the slice.
         next_header_search = rendered.find("### ", timeline_start + 1)
@@ -896,12 +896,13 @@ class TestScoreTimelineIntegration:
         # The dropped framing rule from Plan 03 must not leak through.
         assert "Framing rule" not in rendered
 
-        # Regression guard: the overall-subsection aggregate [summary score_gap]
-        # is preserved (explicitly kept so the LLM can still quote the
-        # authoritative signed-difference number from overall).
-        assert "### Subsection: overall" in rendered
-        overall_idx = rendered.index("### Subsection: overall")
-        overall_slice = rendered[overall_idx:timeline_start]
-        assert "[summary score_gap]" in overall_slice, (
-            "overall subsection missing the bare [summary score_gap] aggregate"
+        # Regression guard: the aggregate [summary score_gap] is preserved in
+        # the dedicated `score_gap` subsection (Phase 102 UAT relocated it from
+        # the retired `overall` subsection) so the LLM can still quote the
+        # authoritative signed-difference number.
+        assert "### Subsection: score_gap" in rendered
+        score_gap_idx = rendered.index("### Subsection: score_gap")
+        score_gap_slice = rendered[score_gap_idx:timeline_start]
+        assert "[summary score_gap]" in score_gap_slice, (
+            "score_gap subsection missing the bare [summary score_gap] aggregate"
         )

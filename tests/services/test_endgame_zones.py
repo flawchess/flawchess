@@ -244,6 +244,10 @@ class TestRegistrySanity:
             "entry_eval_pawns",
             "entry_expected_score",
             "endgame_score",
+            # Phase 102 UAT: scalar Non-Endgame Score, same [0.45, 0.55] band as
+            # endgame_score (the UI colors both Games with/without Endgame cards
+            # identically).
+            "non_endgame_score",
             "endgame_score_timeline",
             "non_endgame_score_timeline",
             "avg_clock_diff_pct",

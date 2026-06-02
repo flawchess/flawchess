@@ -2,12 +2,12 @@
 phase: 102-endgame-llm-statistical-reasoning-rework-v1-23
 plan: 03
 type: human-uat
-version: endgame_v38
+version: endgame_v39
 ---
 
-# Phase 102 UAT: endgame_v38 Narration Quality
+# Phase 102 UAT: endgame_v39 Narration Quality
 
-**Purpose:** Confirm that the endgame_v38 payload + prompt changes land an observable narration
+**Purpose:** Confirm that the endgame_v39 payload + prompt changes land an observable narration
 improvement and that all guards hold before the phase ships.
 
 **No DB reset required.** UAT runs against existing prod data via admin impersonation. The prod
@@ -30,6 +30,37 @@ DB is never mutated. The dev DB is not involved.
 
 ---
 
+## v39 Addendum — Overall-section payload restructure (UAT feedback, 2026-06-02)
+
+UAT feedback on v38 was that the Overall-section payload did not mirror the page's cards. v39
+restructures it so the payload reads like the UI:
+
+- `### Subsection: endgame_start_vs_end` now **leads with the two score cards** —
+  `[summary endgame_score]` ("Games with Endgame") then `[summary non_endgame_score]`
+  ("Games without Endgame", **new**) — followed by the entry pair (`entry_eval_pawns`,
+  `entry_expected_score`). `non_endgame_score` shares endgame_score's 45–55 band (the UI colors
+  both cards identically).
+- **New `### Subsection: score_gap`** mirrors the "Endgame Score Differences" card:
+  `[summary achievable_score_gap]` ("Eval Score Gap", **newly emitted as a finding**, sign =
+  `endgame_score − entry_expected_score`, positive = above engine baseline) then
+  `[summary score_gap]` ("Endgame Score Gap"). The score_gap scalar moved here out of the retired
+  `overall` subsection.
+
+**Addendum pass criteria (verify on any cohort report):**
+
+- [ ] The Overall section renders `### Subsection: endgame_start_vs_end` with four summary blocks
+  in order: `endgame_score`, `non_endgame_score`, `entry_eval_pawns`, `entry_expected_score`.
+- [ ] `### Subsection: score_gap` renders with `achievable_score_gap` then `score_gap`, each
+  carrying its page-level `pctl=` token.
+- [ ] No `### Subsection: overall` appears in the payload.
+- [ ] Eval Score Gap sign reads correctly: a report where the user scored below the engine
+  baseline narrates a **negative** Eval Score Gap as "below the engine ceiling" (not as a flaw,
+  per the forbidden-words list); a user above baseline narrates a **positive** value.
+- [ ] Non-Endgame Score is narrated as the baseline side of the Endgame Score Gap, not as its own
+  standalone headline when typical.
+
+---
+
 ## How to Run (step-by-step)
 
 ### Prerequisites
@@ -37,7 +68,7 @@ DB is never mutated. The dev DB is not involved.
 1. The backend is running the Phase 102 build (locally or on prod post-deploy). Confirm:
    ```bash
    grep "_PROMPT_VERSION" app/services/insights_llm.py
-   # must return: _PROMPT_VERSION = "endgame_v38"
+   # must return: _PROMPT_VERSION = "endgame_v39"
    ```
 
 2. For local testing, start the dev server (no reset needed):
@@ -76,13 +107,13 @@ DB is never mutated. The dev DB is not involved.
 ### Forcing a fresh report (bypassing cache)
 
 The cache key is `(user_id, prompt_version, model, opponent_strength)`. Because this is a new
-prompt version (`endgame_v38`), there should be no cached report for any user on this version.
+prompt version (`endgame_v39`), there should be no cached report for any user on this version.
 
 To verify the report version, check `llm_logs`:
 ```sql
 SELECT user_id, prompt_version, created_at, status
 FROM llm_logs
-WHERE prompt_version = 'endgame_v38'
+WHERE prompt_version = 'endgame_v39'
 ORDER BY created_at DESC
 LIMIT 10;
 ```
@@ -97,11 +128,11 @@ The `POST /api/insights/endgame` response includes:
 ```json
 {
   "status": "fresh",     // or "cache_hit" if already generated
-  "prompt_version": "endgame_v38",
+  "prompt_version": "endgame_v39",
   ...
 }
 ```
-Confirm `prompt_version == "endgame_v38"` and `status == "fresh"` for the first generation.
+Confirm `prompt_version == "endgame_v39"` and `status == "fresh"` for the first generation.
 
 ---
 

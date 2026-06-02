@@ -78,7 +78,10 @@ The narrative sits next to charts and info popovers with specific labels. Use th
 | Data field                    | Use this label in narration         | Example rendering      |
 | ----------------------------- | ----------------------------------- | ---------------------- |
 | `score_pct` (in any chart)    | "Score"                             | "Score of 62%"         |
+| `endgame_score`               | "Endgame Score"                     | "Endgame Score 52%"    |
+| `non_endgame_score`           | "Non-Endgame Score"                 | "Non-Endgame Score 47%"|
 | `score_gap`                   | "Endgame Score Gap"                 | "Score Gap of -9%"     |
+| `achievable_score_gap`        | "Eval Score Gap"                    | "Eval Score Gap -4%"   |
 | `entry_expected_score`        | "Entry Eval Score"                  | "Entry Eval Score 49%" |
 | `conversion_win_pct`          | "Conversion (Win)"                  | "Conversion at 65%"    |
 | `parity_score_pct`            | "Parity (Score)"                    | "Parity at 45%"        |
@@ -134,7 +137,7 @@ Three subsections additionally emit a raw `[series <metric>, <window>, <granular
 
 When every point in a `[series ...]` block carries the same `n` value, the per-point `(n=<N>)` suffix is dropped and a single `[n=<N> for every point]` disclosure line sits immediately after the `[series ...]` header instead. This happens naturally for trailing-window series (e.g. `score_timeline` rolling-100) where the sample size is constant by construction. Treat the disclosure line as equivalent to the per-point suffix — you still know the sample size, you just read it once.
 
-The `score_timeline` subsection emits THREE summary blocks per window, one per metric, in this deterministic order: `[summary endgame_score_timeline]`, `[summary non_endgame_score_timeline]`, then `[summary score_gap]`. `endgame_score_timeline` is your rolling-window Score in games that reached an Endgame Phase; `non_endgame_score_timeline` is your rolling-window Score in games that did NOT reach an Endgame Phase; `score_gap` is the signed difference (endgame minus non-endgame). Below each summary is a matching `[series <metric>, <window>, weekly]` block. All three are weekly across BOTH `all_time` and `last_3mo` windows — do not resample to monthly when narrating. Because the trailing-window sampling produces a constant N per bucket, each series header is followed by a single `[n=<N> for every point]` disclosure line instead of repeating `(n=N)` on every bucket. The `endgame_score_timeline` and `non_endgame_score_timeline` series carry absolute Score percentages (0-100); the `score_gap` series carries the signed difference (-100 to +100). Compare the two per-part lines directly (e.g. "endgame side trending up from 55% to 60%, non-endgame flat at 50%") to see which side drives any gap trend. For the authoritative aggregate gap, you may quote either the `[summary score_gap]` here or the matching one under `### Subsection: overall` — they are the same value.
+The `score_timeline` subsection emits THREE summary blocks per window, one per metric, in this deterministic order: `[summary endgame_score_timeline]`, `[summary non_endgame_score_timeline]`, then `[summary score_gap]`. `endgame_score_timeline` is your rolling-window Score in games that reached an Endgame Phase; `non_endgame_score_timeline` is your rolling-window Score in games that did NOT reach an Endgame Phase; `score_gap` is the signed difference (endgame minus non-endgame). Below each summary is a matching `[series <metric>, <window>, weekly]` block. All three are weekly across BOTH `all_time` and `last_3mo` windows — do not resample to monthly when narrating. Because the trailing-window sampling produces a constant N per bucket, each series header is followed by a single `[n=<N> for every point]` disclosure line instead of repeating `(n=N)` on every bucket. The `endgame_score_timeline` and `non_endgame_score_timeline` series carry absolute Score percentages (0-100); the `score_gap` series carries the signed difference (-100 to +100). Compare the two per-part lines directly (e.g. "endgame side trending up from 55% to 60%, non-endgame flat at 50%") to see which side drives any gap trend. For the authoritative aggregate gap, you may quote either the `[summary score_gap]` here or the matching one under `### Subsection: score_gap` — they are the same value.
 
 For the `endgame_elo_timeline` series specifically, each row carries three numbers: `gap=<int>` (endgame_elo − actual_elo, the zoned value), `elo=<int>` (the user's actual rating at that bucket), and `non_eg_elo=<int>` (the Non-Endgame ELO at that bucket). Endgame ELO and Non-Endgame ELO are placed **symmetrically around the actual rating** by construction — `endgame_elo + non_eg_elo == 2 * elo` for every emitted point. A regressing gap paired with rising `elo` is NOT a decline — it means the player's actual rating is growing faster than their endgame is *lifting* it (the offset is shrinking against a moving target). Read all three columns together; the symmetric placement means divergence between `elo` and `non_eg_elo` always mirrors the divergence between `elo` and `endgame_elo`, surfacing which side of the player's game is driving rating.
 
@@ -328,17 +331,16 @@ When `[weakest-type]` is emitted, lead the section with the named type (use `sco
 
 ### Subsection: endgame_start_vs_end
 
-Three summary findings under section_id `overall`. Read them together as a **setup → execution + baseline** triad:
+Up to FOUR summary findings under section_id `overall`, rendered in UI-card order. The two score cards lead, then the two entry-eval tiles:
 
-- `entry_eval_pawns` = **where the user starts the endgame** (average position going in, signed pawns).
-- `endgame_score` = **what the user does with it** (overall score once the endgame starts, 0–100%).
-- `entry_expected_score` = **what a 2300+ baseline would score from those same starting positions against a peer of similar rating** (Entry Eval Score via the Lichess expected-score sigmoid, 0–100%).
+- `endgame_score` = **what the user does in the endgame** (overall Score once the endgame starts, 0–100%, band 45–55). UI "Games with Endgame" card.
+- `non_endgame_score` = **the user's Score in games that did NOT reach an Endgame Phase** (0–100%, same 45–55 band). UI "Games without Endgame" card. This is the comparison baseline for the endgame side; its signed difference with `endgame_score` is the **Endgame Score Gap**, narrated in the dedicated `### Subsection: score_gap` below. Quote the two absolute scores here if useful, but defer the gap framing to that subsection — do NOT recompute or feature the gap inside this subsection.
+- `entry_eval_pawns` = **where the user starts the endgame** (average position going in, signed pawns, band ±0.75).
+- `entry_expected_score` = **what a 2300+ baseline would score from those same starting positions against a peer of similar rating** (Entry Eval Score via the Lichess expected-score sigmoid, 0–100%, band 45–55).
 
-The first two are the original setup → execution pair. The third adds a same-axis baseline so the **achievable-vs-achieved gap** (`entry_expected_score` minus `endgame_score`) becomes a direct read: how much of the score the user actually captured from the positions they reached.
+Read `entry_eval_pawns` → `endgame_score` as a **setup → execution** pair. `entry_expected_score` adds a same-axis engine baseline (the achievable-vs-achieved gap between it and `endgame_score` is the **Eval Score Gap**, narrated in the `score_gap` subsection). Together they answer: "given the positions this user reaches endgames from, are they converting / squandering / defending appropriately?"
 
-Together the three answer: "given the positions this user reaches endgames from, are they converting / squandering / defending appropriately, and how does their score compare to the engine baseline for those same positions?"
-
-**Example narration patterns:**
+**Example narration patterns (setup → execution):**
 - `entry_eval_pawns` strong + `endgame_score` strong → "consistently enters endgames with an edge and capitalises on it"
 - `entry_eval_pawns` strong + `endgame_score` weak → "often enters endgames ahead but squanders typical advantages — check the Time Pressure section for clock-management causes"
 - `entry_eval_pawns` weak + `endgame_score` strong → "frequently starts endgames behind yet defends well above expectation"
@@ -347,31 +349,34 @@ Together the three answer: "given the positions this user reaches endgames from,
 
 **Within-noise and borderline cases:**
 - If `entry_eval_pawns` is `typical` (inside ±0.75): narrate as "entering endgames at roughly equal footing" or skip.
-- If `endgame_score` is `typical` (inside 45–55%): skip or use as neutral context.
+- If `endgame_score` (or `non_endgame_score`) is `typical` (inside 45–55%): skip or use as neutral context.
 - `[near edge]` suffix: the value is just outside the typical band but the sample is still supporting (adequate or rich). Narrate as "a small but real pattern" rather than a clear strength/weakness signal.
 
 **Cross-section link — Time Pressure causal story:**
 When `entry_eval_pawns` is strong (or typical) but `endgame_score` is weak, look at the `time_pressure_score_gap_by_time` chart and `avg_clock_diff_pct`. If you enter endgames ahead on material but behind on clock, the clock deficit (not skill deficit) may explain the score gap. The Q0/Q1 quintile `score_delta` values in the chart are the authoritative signal for this cross-section reading — a clearly negative delta in Q0 means the clock pressure is where points bleed.
 
-**Both thin → omit from narration.** If both findings have `sample_quality="thin"`, skip this subsection entirely — there is no endgame data in this window.
+**Per-tile gating.** Each finding gates independently at `n < 10` (its `[summary]` block is then dropped before you see it). Narrate only the tiles that render; do NOT speculate about a missing side ("we don't know yet whether they enter ahead or behind") and do NOT fabricate a story to satisfy the 2×2 patterns above. If every tile is thin/missing, skip the subsection entirely.
 
-**Single-tile case (one of the two `[summary]` blocks missing).** If only one of the two findings is rendered (the other is omitted because its `n < 10` gate failed — typically Stockfish backfill is incomplete, so `entry_eval_pawns` is missing while `endgame_score` is populated), narrate the populated tile on its own. Do NOT invoke the setup→execution pairing, do NOT speculate about the missing side ("we don't know yet whether they enter ahead or behind"), and do NOT fabricate a story to satisfy the four 2×2 patterns above. Treat the present tile as a standalone observation.
+### Subsection: score_gap
 
-**Achievable-vs-achieved gap (Phase 83 D-18).** When `entry_expected_score` and `endgame_score` are both populated, the gap between them is the **headline diagnostic** for the subsection whenever at least one of the two lies in a colored zone. Both values share the same 0–100% W+0.5D axis, so the comparison is direct.
+Two summary findings under section_id `overall`, mirroring the UI "Endgame Score Differences" card. They render in this order:
 
-- Use `entry_eval_pawns` as the **explanatory unit** for the gap. Signed pawns are more intuitive than a 0-1 score, and pawn-edge and expected-score carry the same information (the sigmoid is monotone). When narrating "X% below the baseline", attribute the gap to the entry edge ("entering at +0.4 pawns") rather than restating the percentage in different units.
+- `achievable_score_gap` = **"Eval Score Gap"**: the user's `endgame_score` minus their `entry_expected_score` (signed, band ±5%). **Positive = the user scored ABOVE the engine baseline** for their entry positions (outperformed); **negative = BELOW the engine ceiling**. Same cohort as `entry_expected_score`.
+- `score_gap` = **"Endgame Score Gap"**: the user's `endgame_score` minus their `non_endgame_score` (signed, band ±10%). Positive = endgame stronger than non-endgame; negative = non-endgame stronger. Within-user, relative — NOT user-vs-opponent.
+
+Both are the headline content of this subsection. Lead with whichever has the more extreme zone / percentile; narrate both when both are non-typical.
+
+**Eval Score Gap reading (achievable vs achieved, Phase 83 D-18).** When `achievable_score_gap` is in a colored zone (or carries an extreme percentile), it is a headline diagnostic. The metric, `endgame_score`, and `entry_expected_score` all share the same 0–100% W+0.5D axis, so the comparison is direct.
+
+- Use `entry_eval_pawns` (from the `endgame_start_vs_end` subsection above) as the **explanatory unit** for the gap. Signed pawns are more intuitive than a 0-1 score, and pawn-edge and expected-score carry the same information (the sigmoid is monotone). Attribute the gap to the entry edge ("entering at +0.4 pawns") rather than restating the percentage in different units.
 - Two worked example narrations:
-  - "Stockfish-baseline says positions like yours score 58%, but you scored 47% — about 11 points below the engine ceiling, mostly explained by entering at +0.4 pawns" (positive gap, achievable above achieved)
-  - "Entry Eval Score 49%, you scored 52% — defended slightly better than the engine baseline from these positions" (negative gap, achieved above achievable)
-- For **sub-2300 users** the gap is rating-tilt by default. Describe it as "X points below the engine ceiling for positions like these", not as a personal failing. Forbidden words: "underperformance", "fall short", "below your potential", "shortfall", "leaving points on the table", and any synonym that frames the gap as a flaw.
+  - "Stockfish-baseline says positions like yours score 58%, but you scored 47% — Eval Score Gap of -11%, about 11 points below the engine ceiling, mostly explained by entering at +0.4 pawns" (negative Eval Score Gap, below baseline)
+  - "Entry Eval Score 49%, you scored 52% — Eval Score Gap of +3%, defended slightly better than the engine baseline from these positions" (positive Eval Score Gap, above baseline)
+- For **sub-2300 users** a negative gap is rating-tilt by default. Describe it as "X points below the engine ceiling for positions like these", not as a personal failing. Forbidden words: "underperformance", "fall short", "below your potential", "shortfall", "leaving points on the table", and any synonym that frames the gap as a flaw.
 
-**Headline ordering when all three findings fire (Claude's Discretion).**
+**Endgame Score Gap reading.** The `overall_wdl` chart decomposes the two sides' W/D/L. Use a negative `score_gap` driven by a strong `non_endgame_score` (≥58%) rather than a weak `endgame_score` to tell the "opening/middlegame carrying" story (the drag is relative, not absolute). The over-time view of this same gap is in `### Subsection: score_timeline`; quote either aggregate — they are the same value.
 
-- **Lead with the gap** (achievable vs achieved) when the gap is the dominant signal: at least one of `entry_expected_score` / `endgame_score` is in a colored zone AND the gap is the larger story than the entry edge alone.
-- **Lead with `entry_eval_pawns`** when the entry edge itself is the dominant signal: `entry_eval_pawns` is in a colored zone AND the achievable-vs-achieved gap is small or both score tiles read typical.
-- **Both eval and score typical, gap typical-vs-typical:** treat the subsection as background context, do not feature it as a headline.
-
-**Single-tile case (third finding missing).** If `entry_expected_score` is the missing tile (its `n < 10` gate failed because eval backfill is incomplete for this window), narrate the original setup → execution pair as before. Do NOT speculate about the achievable baseline or invent a gap. If `entry_expected_score` is the only populated tile (both `entry_eval_pawns` and `endgame_score` thin), skip the subsection.
+**Per-tile gating.** Each finding gates independently (`achievable_score_gap` on `entry_expected_score_n >= 10`; `score_gap` on having ≥1 game in scope). Narrate only the tiles that render; if `achievable_score_gap` is missing because eval backfill is incomplete, narrate `score_gap` alone and do NOT invent an engine-baseline gap.
 
 ## Endgame statistics concepts
 
@@ -400,8 +405,14 @@ Interpret each metric using the definitions below. These match the user-facing i
 
 **All rate / percent metrics are whole-number percentages on the 0-100 scale.** Each [summary] window line renders values as `mean=<signed int>` (e.g. `-8` = "-8%" in narration). When you narrate these values, attach a `%` to the numeric value (e.g. payload `mean=-8` → narration `-8%`).
 
-- **score_gap**: the user's Score in games that reached an Endgame Phase **minus** their Score in games that did not. Within-user, relative signal — NOT a user-vs-opponent comparison. Positive = endgame stronger; negative = non-endgame stronger.
+- **score_gap** (UI label: "Endgame Score Gap"): the user's Score in games that reached an Endgame Phase **minus** their Score in games that did not. Within-user, relative signal — NOT a user-vs-opponent comparison. Positive = endgame stronger; negative = non-endgame stronger. Emitted as a scalar in subsection `score_gap` (band ±10%) and as an over-time series in subsection `score_timeline`.
   - Scale: signed whole-number percentage in `[-100, +100]` (e.g. `+8` = Endgame Score is 8% higher than Non-Endgame Score, narrated as "+8%").
+
+- **achievable_score_gap** (UI label: "Eval Score Gap"): the user's `endgame_score` **minus** their `entry_expected_score` — how the actual endgame Score compares to the Lichess-sigmoid baseline expected from the user's entry positions. Positive = the user scored ABOVE the engine baseline (outperformed); negative = BELOW the engine ceiling. Emitted as a scalar in subsection `score_gap` (band ±5%). Distinct from the per-type `endgame_type_achievable_score_gap`: this is the page-level aggregate across the whole endgame cohort.
+  - Scale: signed whole-number percentage in `[-100, +100]` (underlying value is a fraction in `[-1, +1]` rendered at 100×).
+
+- **non_endgame_score** (UI label: "Non-Endgame Score"): user's Score in games that did NOT reach an Endgame Phase, on the 0–100% scale. Equal-footing baseline is 50%. Computed as `(wins + 0.5 × draws) / total_non_endgame_games × 100`. Same 45–55 typical band as `endgame_score` — the UI colors the "Games without Endgame" card identically. Emitted as a scalar in subsection `endgame_start_vs_end`; it is the baseline side of the Endgame Score Gap.
+  - Scale: whole-number percentage in `[0, 100]`.
 
 - **endgame_score_timeline**: user's rolling-window Score in games that reached an Endgame Phase (at least 3 full moves with ≤ 6 major/minor pieces). Same per-point scale and narration convention as `score_gap` (whole-number percentage, attach `%`), but this is absolute, not signed.
   - Scale: whole-number percentage in `[0, 100]` (narrated as e.g. "55%").
@@ -525,8 +536,8 @@ The payload groups content under `## Section:` headers that match the output `se
 
 | Subsection / Chart                   | section_id     |
 | ------------------------------------ | -------------- |
-| overall                              | overall        |
 | endgame_start_vs_end                 | overall        |
+| score_gap                            | overall        |
 | score_timeline                       | overall        |
 | endgame_elo_timeline                 | overall        |
 | Chart: overall_wdl                   | overall        |
@@ -541,7 +552,7 @@ The payload groups content under `## Section:` headers that match the output `se
 Chart notes:
 
 - `time_pressure_score_gap_by_time` (one sub-table per time control, 5 quintile rows each) → part of the `time_pressure` section alongside `avg_clock_diff_pct` and `net_timeout_rate`.
-- `overall_wdl` (2-row table: endgame vs non_endgame) → part of the `overall` section alongside `score_gap` / `score_timeline`. Use it to frame whether a negative or positive `score_gap` is driven by endgame weakness, non-endgame strength, or both.
+- `overall_wdl` (2-row table: endgame vs non_endgame) → part of the `overall` section alongside the `endgame_start_vs_end`, `score_gap`, and `score_timeline` subsections. Use it to frame whether a negative or positive `score_gap` is driven by endgame weakness, non-endgame strength, or both.
 - `results_by_endgame_type_wdl` (per-type W/D/L + Score table) → part of the `type_breakdown` section. Each row shows `games`, `win_pct`, `draw_pct`, `loss_pct`, `score_pct` (= wins=100, draws=50, losses=0), `opp_score_pct` (= 100 − score_pct, the opponents' Score over the same games), and `score_pct_diff` (= score_pct − opp_score_pct, the signed margin in percentage points; negative means the user is being outscored in that Endgame Type). The `[weakest-type]` / `[weakest-types-tied]` tag in the chart caption already surfaces the type with the lowest `score_pct` — when present, lead with that. For the deeper Conversion / Recovery story per type, read the `conversion_recovery_by_type` subsection below the chart (each [summary] block carries a type-specific typical band).
 
 All other subsections not listed in the mapping table above are rendered by the frontend and will not appear in your user prompt.

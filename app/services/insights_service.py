@@ -567,8 +567,8 @@ def _compute_subsection_findings(
     """
     findings: list[SubsectionFinding] = []
 
-    findings.append(_finding_overall(response, window))
     findings.extend(_findings_endgame_start_vs_end(response, window))  # Phase 82 D-16
+    findings.extend(_findings_score_gap(response, window))  # Phase 102 UAT
     findings.extend(_findings_score_timeline(response, window))
     findings.extend(_findings_endgame_metrics(response, window))
     findings.extend(_findings_endgame_elo_timeline(response, window))
@@ -589,65 +589,112 @@ def _compute_subsection_findings(
 # ---------------------------------------------------------------------------
 
 
-def _finding_overall(
+def _findings_score_gap(
     response: EndgameOverviewResponse,
     window: Window,
-) -> SubsectionFinding:
-    """overall -> score_gap from score_gap_material.score_difference.
+) -> list[SubsectionFinding]:
+    """score_gap subsection -> TWO findings, mirroring the UI "Endgame Score
+    Differences" card order: achievable_score_gap ("Eval Score Gap") first, then
+    score_gap ("Endgame Score Gap").
 
-    Empty-window gate intentionally diverges from `_findings_endgame_start_vs_end`'s
-    `< 10` floor. The `score_gap` denominator is endgame + non_endgame games, so a
-    `>= 1` payload is informationally meaningful even when each side alone would
-    be thin. The downstream `_assemble_user_prompt` filter (sample_size == 0 AND
-    quality == "thin") still drops sub-`SAMPLE_QUALITY_BANDS["overall"][0]` (50)
-    payloads from the rendered prompt via the per-finding sample-quality classifier,
-    so 1..9-game payloads are emitted but suppressed before the LLM sees them.
-    Keep the `== 0` floor here; tighten the rendered-output filter only.
+    Phase 102 UAT: relocated from the retired `overall` subsection. The old
+    `_finding_overall` produced only score_gap under subsection_id="overall";
+    that scalar now lives here alongside the newly-wired Eval Score Gap so the
+    LLM reads both gaps side by side, matching the UI card. The `overall`
+    SubsectionId stays valid (schema fixtures still use it) but is no longer in
+    the default _SECTION_LAYOUT.
     """
-    sample_size = (
-        response.performance.endgame_wdl.total + response.performance.non_endgame_wdl.total
-    )
-    if sample_size == 0:
-        return _empty_finding("overall", window, "score_gap")
+    perf = response.performance
+    findings: list[SubsectionFinding] = []
 
-    value = response.score_gap_material.score_difference
-    quality = sample_quality("overall", sample_size)
-    return SubsectionFinding(
-        subsection_id="overall",
-        parent_subsection_id=None,
-        window=window,
-        metric="score_gap",
-        value=value,
-        zone=assign_zone("score_gap", value),
-        trend="n_a",  # non-timeline finding
-        weekly_points_in_window=0,
-        sample_size=sample_size,
-        sample_quality=quality,
-        is_headline_eligible=quality != "thin",
-        dimension=None,
-    )
+    # Eval Score Gap (achievable_score_gap): entry_expected_score - endgame_score,
+    # paired over endgame games with non-null entry eval. Gate on the same cohort
+    # as entry_expected_score (n >= 10), matching the endgame_start_vs_end tile.
+    n_ex = perf.entry_expected_score_n
+    if n_ex < 10:
+        findings.append(_empty_finding("score_gap", window, "achievable_score_gap"))
+    else:
+        asg = perf.achievable_score_gap
+        asg_quality = sample_quality("score_gap", n_ex)
+        findings.append(
+            SubsectionFinding(
+                subsection_id="score_gap",
+                parent_subsection_id=None,
+                window=window,
+                metric="achievable_score_gap",
+                value=asg,
+                zone=assign_zone("achievable_score_gap", asg),
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=n_ex,
+                sample_quality=asg_quality,
+                is_headline_eligible=asg_quality != "thin",
+                dimension=None,
+            )
+        )
+
+    # Endgame Score Gap (score_gap): endgame - non_endgame. Empty-window gate
+    # intentionally diverges from the `< 10` floor used above. The denominator is
+    # endgame + non_endgame games, so a `>= 1` payload is informationally
+    # meaningful even when each side alone would be thin. The downstream
+    # `_assemble_user_prompt` filter (sample_size == 0 AND quality == "thin")
+    # still drops sub-`SAMPLE_QUALITY_BANDS["score_gap"][0]` (50) payloads from
+    # the rendered prompt via the per-finding sample-quality classifier, so
+    # 1..9-game payloads are emitted but suppressed before the LLM sees them.
+    # Keep the `== 0` floor here; tighten the rendered-output filter only.
+    sample_size = perf.endgame_wdl.total + perf.non_endgame_wdl.total
+    if sample_size == 0:
+        findings.append(_empty_finding("score_gap", window, "score_gap"))
+    else:
+        value = response.score_gap_material.score_difference
+        quality = sample_quality("score_gap", sample_size)
+        findings.append(
+            SubsectionFinding(
+                subsection_id="score_gap",
+                parent_subsection_id=None,
+                window=window,
+                metric="score_gap",
+                value=value,
+                zone=assign_zone("score_gap", value),
+                trend="n_a",  # non-timeline finding
+                weekly_points_in_window=0,
+                sample_size=sample_size,
+                sample_quality=quality,
+                is_headline_eligible=quality != "thin",
+                dimension=None,
+            )
+        )
+
+    return findings
 
 
 def _findings_endgame_start_vs_end(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """endgame_start_vs_end -> THREE findings (entry_eval_pawns, endgame_score, entry_expected_score).
+    """endgame_start_vs_end -> FOUR findings, in UI-card order:
+    endgame_score, non_endgame_score, entry_eval_pawns, entry_expected_score.
 
     Phase 82 (D-16): wire Phase 81 entry_eval_mean_pawns and endgame
     Score-vs-50% into the LLM payload. All findings are single-aggregate, no
     series, no dimension (D-19, D-20). Empty-window convention:
-    entry_eval_n < 10 OR endgame_wdl.total < 10 OR
+    entry_eval_n < 10 OR endgame_wdl.total < 10 OR non_endgame_wdl.total < 10 OR
     entry_expected_score_n < 10 -> _empty_finding for the affected tile
     (gated independently per Phase 82 D-17 / Phase 83 D-19).
     is_headline_eligible = sample_quality != "thin" (D-18).
 
-    Phase 83 (D-17 / D-19): adds a third finding for entry_expected_score
-    (Stockfish-baseline achievable score via Lichess sigmoid). The LLM
-    narrates the achievable-vs-achieved gap as the headline diagnostic with
-    entry_eval_pawns as the explanatory unit (D-18). No `verdict` field —
-    the LLM narrates strictly by zone (Phase 82 D-06; memory
-    feedback_llm_significance_signal.md).
+    Phase 83 (D-17 / D-19): adds entry_expected_score (Stockfish-baseline
+    achievable score via Lichess sigmoid). The LLM narrates the
+    achievable-vs-achieved gap as a headline diagnostic with entry_eval_pawns
+    as the explanatory unit (D-18). No `verdict` field — the LLM narrates
+    strictly by zone (Phase 82 D-06; memory feedback_llm_significance_signal.md).
+
+    Phase 102 UAT: adds non_endgame_score ("Games without Endgame" card) and
+    leads the subsection with the two score cards (endgame_score then
+    non_endgame_score) so the LLM reads the score pair before the entry-eval
+    pair. non_endgame_score reuses endgame_score's 0.45-0.55 vs-50% band — the
+    UI colors both cards identically. The signed difference of these two is the
+    Endgame Score Gap, now narrated in the dedicated `score_gap` subsection.
     """
     perf = response.performance
 
@@ -695,6 +742,29 @@ def _findings_endgame_start_vs_end(
             dimension=None,
         )
 
+    # Tile 2b — non-endgame score vs 50% (Phase 102 UAT: gate on
+    # non_endgame_wdl.total >= 10). Same 0.45-0.55 band as endgame_score.
+    non_total = perf.non_endgame_wdl.total
+    if non_total < 10:
+        tile2b = _empty_finding("endgame_start_vs_end", window, "non_endgame_score")
+    else:
+        non_score = (perf.non_endgame_wdl.wins + 0.5 * perf.non_endgame_wdl.draws) / non_total
+        non_quality = sample_quality("endgame_start_vs_end", non_total)
+        tile2b = SubsectionFinding(
+            subsection_id="endgame_start_vs_end",
+            parent_subsection_id=None,
+            window=window,
+            metric="non_endgame_score",
+            value=non_score,
+            zone=assign_zone("non_endgame_score", non_score),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=non_total,
+            sample_quality=non_quality,
+            is_headline_eligible=non_quality != "thin",
+            dimension=None,
+        )
+
     # Tile 3 — achievable score (Phase 83 D-19: gate on entry_expected_score_n >= 10)
     n_ex = perf.entry_expected_score_n
     if n_ex < 10:
@@ -717,7 +787,10 @@ def _findings_endgame_start_vs_end(
             dimension=None,
         )
 
-    return [tile1, tile2, tile3]
+    # UI-card order (Phase 102 UAT): the two score cards lead, then the two
+    # entry-eval tiles. tile1 = entry_eval_pawns, tile2 = endgame_score,
+    # tile2b = non_endgame_score, tile3 = entry_expected_score.
+    return [tile2, tile2b, tile1, tile3]
 
 
 def _findings_score_timeline(
