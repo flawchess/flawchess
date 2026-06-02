@@ -541,13 +541,20 @@ The payload groups content under `## Section:` headers that match the output `se
 | score_timeline                       | overall        |
 | endgame_elo_timeline                 | overall        |
 | Chart: overall_wdl                   | overall        |
-| endgame_metrics                      | metrics_elo    |
+| endgame_metrics_bullet               | metrics_elo    |
+| endgame_metrics_blitz                | metrics_elo    |
+| endgame_metrics_rapid                | metrics_elo    |
+| endgame_metrics_classical            | metrics_elo    |
 | time_pressure_at_entry               | time_pressure  |
 | clock_diff_timeline                  | time_pressure  |
 | Chart: time_pressure_score_gap_by_time | time_pressure  |
 | results_by_endgame_type              | type_breakdown |
 | conversion_recovery_by_type          | type_breakdown |
 | Chart: results_by_endgame_type_wdl   | type_breakdown |
+
+Subsection notes:
+
+- **`metrics_elo` is split by time control.** The section renders one `### Subsection: endgame_metrics_<tc>` per time control the user plays enough of (bullet → blitz → rapid → classical; a time control with too few endgame games is omitted entirely). Each per-TC subsection carries SIX `[summary]` blocks: the three rate metrics (`conversion_win_pct`, `parity_score_pct`, `recovery_save_pct`) and the three Score Gap metrics (`score_gap_conv`, `score_gap_parity`, `score_gap_recov`), interleaved rate-then-gap per bucket. Each `[summary]` carries `| time_control=<tc>` and its own per-TC `zone=`, inline `(typical …)` band, and `pctl=` token — all already specific to that time control. There is no longer an aggregate-over-time-control Endgame Metrics block. When narrating, name the time control (e.g. "in blitz, your Recovery sits at …") and never average a metric across time controls — each TC's band and percentile are independent.
 
 Chart notes:
 
@@ -561,6 +568,6 @@ All other subsections not listed in the mapping table above are rendered by the 
 
 The 1-5 bullet range per section is a ceiling, not a license to drop known signal. One section carries a hard coverage floor:
 
-- **`metrics_elo` — cover all three buckets when rich.** When the `endgame_metrics` subsection emits `quality=rich` all_time summaries for all three buckets (`conversion_win_pct`, `parity_score_pct`, `recovery_save_pct`), the section's bullets MUST address every metric. A metric sitting in the strong zone still gets a bullet — strong zones are findings, not silences, and skipping Parity because "there's nothing to fix" misses the point (it's information the user paid for). Drop a metric only when its quality is `adequate` or `thin`, or when the total bullet count would otherwise exceed 5. Note: the Endgame ELO Timeline now lives under `overall` (co-located with the Endgame Score Gap timeline that drives it), so its per-combo bullets count toward the `overall` section's 1-5 cap, not `metrics_elo`'s.
+- **`metrics_elo` — cover the rich buckets across the per-TC subsections.** `metrics_elo` now spans one `endgame_metrics_<tc>` subsection per time control. Across all of them, any rate metric (`conversion_win_pct`, `parity_score_pct`, `recovery_save_pct`) that emits a `quality=rich` all_time summary MUST be addressed by a bullet — strong zones are findings, not silences, and skipping a metric because "there's nothing to fix" misses the point (it's information the user paid for). Where the user plays more than one time control, prioritise the time control(s) with the most games and the most non-typical / extreme-percentile signal rather than mechanically emitting a bullet per (TC × metric); the 1-5 bullet ceiling for the section still applies across all per-TC subsections combined. Drop a metric only when its quality is `adequate` or `thin`, or when the bullet count would otherwise exceed 5. Note: the Endgame ELO Timeline lives under `overall` (co-located with the Endgame Score Gap timeline that drives it), so its per-combo bullets count toward the `overall` section's 1-5 cap, not `metrics_elo`'s.
 
 The other three sections (`overall`, `time_pressure`, `type_breakdown`) have their own lead-with rules already — no additional coverage minimum applies there.

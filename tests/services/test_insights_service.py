@@ -575,218 +575,182 @@ class TestComputeFindingsReturnContract:
 
 
 class TestFindingsEndgameMetrics:
-    """Unit tests for _findings_endgame_metrics A1 fix."""
+    """Unit tests for _findings_endgame_metrics.
 
-    def _make_overview_with_material_rows(
+    Phase 102 UAT (2026-06-02): the aggregate-over-TC ``endgame_metrics``
+    subsection (which read ``score_gap_material``) is retired in favour of one
+    ``endgame_metrics_<tc>`` subsection per time control, sourced from
+    ``response.endgame_metrics_cards.cards``. Each card emits 6 findings —
+    3 rate (conversion/parity/recovery) + 3 ΔES gap (score_gap_conv/parity/recov)
+    — all carrying ``dimension={"time_control": tc}``.
+    """
+
+    def _make_stats(
         self,
-        material_rows: list[Any],
-    ) -> Any:
-        """Build a minimal EndgameOverviewResponse with given material_rows."""
-        from app.schemas.endgames import ScoreGapMaterialResponse
-
-        score_gap_material = ScoreGapMaterialResponse(
-            endgame_score=0.5,
-            non_endgame_score=0.5,
-            score_difference=0.0,
-            material_rows=material_rows,
-            timeline=[],
-            timeline_window=50,
-        )
-        resp = EndgameOverviewResponse.model_construct(
-            score_gap_material=score_gap_material,
-        )
-        return resp
-
-    def _make_material_row(
-        self,
-        bucket: str,
+        *,
         games: int,
-        win_pct: float,
-        draw_pct: float,
-        score: float,
+        rate: float | None,
+        score_gap_mean: float | None,
+        score_gap_n: int | None,
     ) -> Any:
-        from app.schemas.endgames import MaterialRow
+        from app.schemas.endgames import PerTcBucketStats
 
-        return MaterialRow(
-            bucket=cast(Any, bucket),
-            label=bucket.capitalize(),
+        return PerTcBucketStats(
             games=games,
-            win_pct=win_pct,
-            draw_pct=draw_pct,
-            loss_pct=100.0 - win_pct - draw_pct,
-            score=score,
+            win_pct=0.0,
+            draw_pct=0.0,
+            loss_pct=0.0,
+            rate=rate,
+            score_gap_mean=score_gap_mean,
+            score_gap_n=score_gap_n,
+            score_gap_p_value=None,
+            score_gap_ci_low=None,
+            score_gap_ci_high=None,
+            percentile=None,
         )
 
-    def test_emits_exactly_one_finding_per_non_empty_bucket(self) -> None:
-        """3 non-zero MaterialRows -> 3 bucket rate findings + 3 score_gap_bucket
-        findings (Phase 87.2 D-09 minus the retired Skill bucket per Phase 87.4 D-05)
-        = 6 total. The aggregate ``endgame_skill`` finding was removed in 87.4."""
+    def _make_card(
+        self,
+        tc: str,
+        *,
+        conv: Any,
+        parity: Any,
+        recov: Any,
+    ) -> Any:
+        from app.schemas.endgames import EndgameMetricsTcCard
+
+        return EndgameMetricsTcCard(
+            tc=cast(Any, tc),
+            total=conv.games + parity.games + recov.games,
+            conversion=conv,
+            parity=parity,
+            recovery=recov,
+        )
+
+    def _make_overview_with_cards(self, cards: list[Any]) -> Any:
+        from app.schemas.endgames import EndgameMetricsCardsResponse
+
+        return EndgameOverviewResponse.model_construct(
+            endgame_metrics_cards=EndgameMetricsCardsResponse(cards=cards),
+        )
+
+    def _full_card(self, tc: str) -> Any:
+        """A card with all three buckets populated (rich rate samples, n>=10 gaps)."""
+        return self._make_card(
+            tc,
+            conv=self._make_stats(games=100, rate=0.68, score_gap_mean=-0.08, score_gap_n=100),
+            parity=self._make_stats(games=80, rate=0.50, score_gap_mean=-0.02, score_gap_n=80),
+            recov=self._make_stats(games=60, rate=0.35, score_gap_mean=0.04, score_gap_n=60),
+        )
+
+    def test_card_emits_six_findings_three_rate_three_gap(self) -> None:
+        """One fully-populated card -> 3 rate findings + 3 ΔES-gap findings = 6,
+        all under endgame_metrics_<tc> with dimension time_control=<tc>."""
         from app.services.insights_service import _findings_endgame_metrics
 
-        rows = [
-            self._make_material_row(
-                "conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73
-            ),
-            self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
-            self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
-        ]
-        response = self._make_overview_with_material_rows(rows)
+        response = self._make_overview_with_cards([self._full_card("blitz")])
         findings = _findings_endgame_metrics(response, window="all_time")
 
         assert len(findings) == 6
+        assert all(f.subsection_id == "endgame_metrics_blitz" for f in findings)
+        assert all(f.dimension == {"time_control": "blitz"} for f in findings)
         # Phase 87.4 (D-05): no aggregate endgame_skill finding any more.
         assert not any(f.metric == "endgame_skill" for f in findings)
 
-        # Three rate bucket findings: one per bucket, metric matches the bucket.
-        rate_findings = [
-            f
+        rate_metrics = {
+            f.metric
             for f in findings
-            if f.dimension is not None
-            and f.metric in {"conversion_win_pct", "parity_score_pct", "recovery_save_pct"}
-        ]
-        by_bucket: dict[str, str] = {
-            f.dimension["bucket"]: f.metric for f in rate_findings if f.dimension is not None
+            if f.metric in {"conversion_win_pct", "parity_score_pct", "recovery_save_pct"}
         }
-        assert by_bucket == {
-            "conversion": "conversion_win_pct",
-            "parity": "parity_score_pct",
-            "recovery": "recovery_save_pct",
-        }
+        assert rate_metrics == {"conversion_win_pct", "parity_score_pct", "recovery_save_pct"}
 
-        # Three score_gap_* findings (Phase 87.2 D-09 minus retired skill).
-        score_gap_bucket_metrics = sorted(
-            f.metric for f in findings if f.metric.startswith("score_gap_")
+        gap_metrics = sorted(f.metric for f in findings if f.metric.startswith("score_gap_"))
+        assert gap_metrics == ["score_gap_conv", "score_gap_parity", "score_gap_recov"]
+
+    def test_one_subsection_per_time_control(self) -> None:
+        """Multiple cards -> one endgame_metrics_<tc> subsection each, 6 findings per TC."""
+        from app.services.insights_service import _findings_endgame_metrics
+
+        response = self._make_overview_with_cards(
+            [self._full_card("bullet"), self._full_card("rapid")]
         )
-        assert score_gap_bucket_metrics == [
-            "score_gap_conv",
-            "score_gap_parity",
-            "score_gap_recov",
-        ]
-
-    def test_no_cross_bucket_fan_out(self) -> None:
-        """No finding has (bucket=conversion, metric=parity_score_pct) or similar.
-
-        Regression guard for the A1 semantic conflict: before the fix, every
-        bucket emitted all three metrics, producing self-contradictory rows
-        like `parity_score_pct | [bucket=conversion]`.
-        """
-        from app.services.insights_service import _findings_endgame_metrics
-
-        rows = [
-            self._make_material_row(
-                "conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73
-            ),
-            self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
-            self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
-        ]
-        response = self._make_overview_with_material_rows(rows)
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        for f in findings:
-            if f.dimension is None:
-                # Phase 87.4 (D-05): score_gap_* findings have no
-                # bucket dim (they live on the response as scalars, not
-                # per-MaterialBucket). The aggregate endgame_skill finding
-                # was retired so the dimension==None branch now covers only
-                # those.
-                continue
-            bucket = f.dimension.get("bucket")
-            if bucket == "conversion":
-                assert f.metric == "conversion_win_pct"
-            elif bucket == "parity":
-                assert f.metric == "parity_score_pct"
-            elif bucket == "recovery":
-                assert f.metric == "recovery_save_pct"
+        assert len(findings) == 12
+        subsection_ids = {f.subsection_id for f in findings}
+        assert subsection_ids == {"endgame_metrics_bullet", "endgame_metrics_rapid"}
+        bullet = [f for f in findings if f.subsection_id == "endgame_metrics_bullet"]
+        rapid = [f for f in findings if f.subsection_id == "endgame_metrics_rapid"]
+        assert len(bullet) == 6
+        assert len(rapid) == 6
+        assert all(f.dimension == {"time_control": "bullet"} for f in bullet)
+        assert all(f.dimension == {"time_control": "rapid"} for f in rapid)
 
-    def test_empty_bucket_emits_one_empty_finding(self) -> None:
-        """A MaterialRow with games=0 emits ONE empty finding for the matching metric.
-
-        Phase 87.2 (D-09): 4 score_gap_* findings are always emitted alongside
-        the rate findings, so the bucket-only assertions filter on dimension presence.
-        """
+    def test_no_cards_emits_no_findings(self) -> None:
+        """No eligible per-TC cards -> no findings (the page shows no Metrics cards)."""
         from app.services.insights_service import _findings_endgame_metrics
 
-        rows = [
-            self._make_material_row("conversion", games=0, win_pct=0.0, draw_pct=0.0, score=0.0),
-            self._make_material_row("parity", games=50, win_pct=40.0, draw_pct=20.0, score=0.50),
-            self._make_material_row("recovery", games=0, win_pct=0.0, draw_pct=0.0, score=0.0),
-        ]
-        response = self._make_overview_with_material_rows(rows)
+        response = self._make_overview_with_cards([])
+        findings = _findings_endgame_metrics(response, window="all_time")
+        assert findings == []
+
+    def test_empty_bucket_emits_empty_rate_and_nan_gap(self) -> None:
+        """A bucket with games=0 / rate=None emits an empty rate finding (NaN, n=0,
+        not headline-eligible); its ΔES gap finding (n=0, mean=None) is NaN too."""
+        from app.services.insights_service import _findings_endgame_metrics
+
+        card = self._make_card(
+            "blitz",
+            conv=self._make_stats(games=0, rate=None, score_gap_mean=None, score_gap_n=0),
+            parity=self._make_stats(games=50, rate=0.50, score_gap_mean=-0.02, score_gap_n=50),
+            recov=self._make_stats(games=0, rate=None, score_gap_mean=None, score_gap_n=0),
+        )
+        response = self._make_overview_with_cards([card])
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        # Phase 87.4 (D-05): no aggregate endgame_skill finding.
-        # 3 rate bucket findings (2 empty + 1 normal) +
-        # 3 score_gap_* findings (D-09 minus retired skill bucket).
         assert len(findings) == 6
 
-        # Rate bucket findings only — filter by metric, not by dimension, because
-        # score_gap_* findings have dimension=None.
-        bucket_findings = [
-            f
-            for f in findings
-            if f.dimension is not None
-            and f.metric in {"conversion_win_pct", "parity_score_pct", "recovery_save_pct"}
-        ]
-        # Each bucket appears exactly once.
-        buckets_seen = [f.dimension["bucket"] for f in bucket_findings if f.dimension]
-        assert sorted(buckets_seen) == ["conversion", "parity", "recovery"]
+        conv_rate = next(f for f in findings if f.metric == "conversion_win_pct")
+        assert math.isnan(conv_rate.value)
+        assert conv_rate.sample_size == 0
+        assert conv_rate.is_headline_eligible is False
 
-        # Empty-bucket findings carry the matching metric with NaN value.
-        conv = next(
-            f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "conversion"
-        )
-        assert conv.metric == "conversion_win_pct"
-        assert math.isnan(conv.value)
-        assert conv.sample_size == 0
+        conv_gap = next(f for f in findings if f.metric == "score_gap_conv")
+        assert math.isnan(conv_gap.value)
+        assert conv_gap.sample_size == 0
+        assert conv_gap.is_headline_eligible is False
 
-        recov = next(
-            f for f in bucket_findings if f.dimension and f.dimension["bucket"] == "recovery"
-        )
-        assert recov.metric == "recovery_save_pct"
-        assert math.isnan(recov.value)
+        # The populated parity bucket still emits a real rate finding.
+        parity_rate = next(f for f in findings if f.metric == "parity_score_pct")
+        assert parity_rate.value == pytest.approx(0.50)
 
-    def test_conversion_value_is_win_pct_over_100(self) -> None:
-        """Value for the conversion bucket = win_pct / 100."""
+    def test_rate_value_is_stats_rate(self) -> None:
+        """Each rate finding's value is the bucket's precomputed ``rate`` field."""
         from app.services.insights_service import _findings_endgame_metrics
 
-        rows = [
-            self._make_material_row(
-                "conversion", games=100, win_pct=68.0, draw_pct=10.0, score=0.73
-            ),
-        ]
-        response = self._make_overview_with_material_rows(rows)
+        response = self._make_overview_with_cards([self._full_card("blitz")])
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        conv = next(
-            f for f in findings if f.dimension and f.dimension.get("bucket") == "conversion"
-        )
+        conv = next(f for f in findings if f.metric == "conversion_win_pct")
+        parity = next(f for f in findings if f.metric == "parity_score_pct")
+        recov = next(f for f in findings if f.metric == "recovery_save_pct")
         assert conv.value == pytest.approx(0.68)
-
-    def test_parity_value_is_score(self) -> None:
-        """Value for the parity bucket = score (already 0.0-1.0)."""
-        from app.services.insights_service import _findings_endgame_metrics
-
-        rows = [
-            self._make_material_row("parity", games=80, win_pct=40.0, draw_pct=20.0, score=0.50),
-        ]
-        response = self._make_overview_with_material_rows(rows)
-        findings = _findings_endgame_metrics(response, window="all_time")
-
-        parity = next(f for f in findings if f.dimension and f.dimension.get("bucket") == "parity")
         assert parity.value == pytest.approx(0.50)
+        assert recov.value == pytest.approx(0.35)
 
-    def test_recovery_value_is_win_plus_draw_over_100(self) -> None:
-        """Value for the recovery bucket = (win_pct + draw_pct) / 100."""
+    def test_gap_value_is_score_gap_mean(self) -> None:
+        """Each ΔES-gap finding's value is the bucket's ``score_gap_mean``."""
         from app.services.insights_service import _findings_endgame_metrics
 
-        rows = [
-            self._make_material_row("recovery", games=60, win_pct=15.0, draw_pct=20.0, score=0.25),
-        ]
-        response = self._make_overview_with_material_rows(rows)
+        response = self._make_overview_with_cards([self._full_card("blitz")])
         findings = _findings_endgame_metrics(response, window="all_time")
 
-        recov = next(f for f in findings if f.dimension and f.dimension.get("bucket") == "recovery")
-        assert recov.value == pytest.approx(0.35)
+        conv = next(f for f in findings if f.metric == "score_gap_conv")
+        parity = next(f for f in findings if f.metric == "score_gap_parity")
+        recov = next(f for f in findings if f.metric == "score_gap_recov")
+        assert conv.value == pytest.approx(-0.08)
+        assert parity.value == pytest.approx(-0.02)
+        assert recov.value == pytest.approx(0.04)
 
 
 class TestFindingsEndgameStartVsEnd:

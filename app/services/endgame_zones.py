@@ -91,7 +91,16 @@ SubsectionId = Literal[
     # Gap (score_gap). Sits between endgame_start_vs_end and score_timeline.
     "score_gap",
     "score_timeline",
+    # Phase 102 UAT (2026-06-02): the aggregate-over-TC `endgame_metrics`
+    # subsection is retired in favour of one subsection per time control,
+    # mirroring the UI's per-TC Endgame Metrics cards. The id stays a valid
+    # SubsectionId (still constructable; used by schema tests and the
+    # SAMPLE_QUALITY_BANDS band shared by the per-TC subsections).
     "endgame_metrics",
+    "endgame_metrics_bullet",
+    "endgame_metrics_blitz",
+    "endgame_metrics_rapid",
+    "endgame_metrics_classical",
     # Phase 87.5 D-06: restored from the Phase 87.4 subsection name.
     "endgame_elo_timeline",
     "time_pressure_at_entry",
@@ -443,6 +452,16 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "endgame_start_vs_end": (10, 50),
     "score_timeline": (10, 52),
     "endgame_metrics": (30, 100),
+    # Phase 102 UAT: per-TC Endgame Metrics subsections. Denominators are
+    # per-(TC × bucket) — a single TC's conversion/parity/recovery span count —
+    # so they sit in the same small-sample regime as the per-type subsections
+    # (card-level gate is MIN_GAMES_PER_TC_CARD=20 total across the 3 buckets).
+    # Use the per-type (20, 40) band rather than the aggregate (30, 100) so a
+    # 20-game TC bucket is not mislabeled `thin`.
+    "endgame_metrics_bullet": (20, 40),
+    "endgame_metrics_blitz": (20, 40),
+    "endgame_metrics_rapid": (20, 40),
+    "endgame_metrics_classical": (20, 40),
     "endgame_elo_timeline": (10, 40),  # Phase 87.5 D-06: restored Phase 87.4 subsection name.
     "time_pressure_at_entry": (10, 50),
     "clock_diff_timeline": (10, 52),
@@ -831,6 +850,52 @@ def assign_bucketed_zone(
     if math.isnan(value):
         return "typical"
     return _zone_from_spec(BUCKETED_ZONE_REGISTRY[metric_id][bucket], value)
+
+
+# Phase 102 UAT: the five metrics_elo metrics whose zone band is per-TC. The
+# parity ΔES gap (`score_gap_parity`) is intentionally absent — its neutral
+# band stays global (SCORE_GAP_PARITY_NEUTRAL_*, see the TC_METRIC_BANDS note),
+# so callers fall back to `assign_zone` / the scalar registry for it.
+TcBucket = Literal["bullet", "blitz", "rapid", "classical"]
+
+TcBandMetricId = Literal[
+    "conversion_win_pct",
+    "parity_score_pct",
+    "recovery_save_pct",
+    "score_gap_conv",
+    "score_gap_recov",
+]
+
+
+def tc_metric_zone_spec(metric_id: TcBandMetricId, tc: TcBucket) -> ZoneSpec:
+    """Return the per-TC ZoneSpec for a metrics_elo metric.
+
+    Sources the band from TC_METRIC_BANDS so the LLM payload's `zone=` label and
+    inline `(typical …)` bound match the UI's per-TC gauges for that same time
+    control. All five bands are `higher_is_better` (the conv/recov ΔES gaps are
+    negative-valued but a higher/less-negative gap is still the better side).
+    `score_gap_parity` is NOT a TcBandMetricId — its neutral band is global.
+    """
+    bands = TC_METRIC_BANDS[tc]
+    lo_hi: dict[TcBandMetricId, tuple[float, float]] = {
+        "conversion_win_pct": bands.conv_rate,
+        "parity_score_pct": bands.parity_rate,
+        "recovery_save_pct": bands.recov_rate,
+        "score_gap_conv": bands.conv_score_gap,
+        "score_gap_recov": bands.recov_score_gap,
+    }
+    lo, hi = lo_hi[metric_id]
+    return ZoneSpec(lo, hi, "higher_is_better")
+
+
+def assign_tc_metric_zone(metric_id: TcBandMetricId, tc: TcBucket, value: float) -> Zone:
+    """Assign a zone for a per-TC metrics_elo metric using TC_METRIC_BANDS.
+
+    Returns `"typical"` for NaN (see `assign_zone` docstring for rationale).
+    """
+    if math.isnan(value):
+        return "typical"
+    return _zone_from_spec(tc_metric_zone_spec(metric_id, tc), value)
 
 
 def per_class_zone_spec(

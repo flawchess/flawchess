@@ -61,6 +61,38 @@ restructures it so the payload reads like the UI:
 
 ---
 
+## v40 Addendum — metrics_elo per-TC payload restructure (UAT feedback, 2026-06-02)
+
+UAT feedback on v39 was that the `metrics_elo` section reported Conversion / Parity / Recovery and
+the ΔES Score Gaps aggregated over all time controls, unlike the UI which splits them into per-TC
+cards. v40 splits the payload to mirror the UI:
+
+- The single aggregate `### Subsection: endgame_metrics` is **retired** (it read the TC-pooled
+  `score_gap_material`). In its place, one `### Subsection: endgame_metrics_<tc>` renders per
+  eligible time control (bullet → blitz → rapid → classical; a TC card needs
+  ≥ `MIN_GAMES_PER_TC_CARD` = 20 endgame games to appear).
+- Each per-TC subsection carries **six `[summary]` blocks**: the three rate metrics
+  (`conversion_win_pct`, `parity_score_pct`, `recovery_save_pct`) and the three ΔES-gap metrics
+  (`score_gap_conv`, `score_gap_parity`, `score_gap_recov`), interleaved rate-then-gap per bucket
+  (Conv rate, Conv gap, Parity rate, Parity gap, Recov rate, Recov gap) to mirror the UI columns.
+- Every block carries `| time_control=<tc>` and its own per-TC `zone=`, inline `(typical …)` band
+  (from `TC_METRIC_BANDS`; parity ΔES-gap keeps the global neutral band), and a per-TC `pctl=`
+  token — so each subsection self-discloses **six percentiles** vs ~anchor-rated peers for that TC.
+
+**Addendum pass criteria (verify on a full-history cohort with ≥2 time controls):**
+
+- [ ] No `### Subsection: endgame_metrics` (the aggregate, un-suffixed name) appears in the payload.
+- [ ] One `### Subsection: endgame_metrics_<tc>` appears per time control the user plays enough of,
+  in bullet → blitz → rapid → classical order; TCs below the 20-game card floor are absent.
+- [ ] Each per-TC subsection renders six `[summary]` blocks (3 rates + 3 ΔES gaps) and each carries
+  `| time_control=<tc>`.
+- [ ] The `zone=` and inline `(typical …)` band on a per-TC block match that TC's page gauge (e.g.
+  blitz Conversion band 0.667–0.769, not the old global 0.65–0.77).
+- [ ] Each block that has a cohort percentile shows its `pctl=` token; the report narrates metrics
+  per time control and never averages a metric across time controls.
+
+---
+
 ## How to Run (step-by-step)
 
 ### Prerequisites
