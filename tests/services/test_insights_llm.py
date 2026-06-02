@@ -39,8 +39,10 @@ from app.services.insights_llm import (
     InsightsValidationFailure,
     _SYSTEM_PROMPT,
     _assemble_user_prompt,
+    _asymmetry_lines,
     _lookup_pctl_record,
     _maybe_strip_overview,
+    _recovery_pattern_tag,
     generate_insights,
     get_insights_agent,
 )
@@ -215,7 +217,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v42"
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -375,7 +377,7 @@ class TestPromptVersionAndBody:
         Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
         changelog comment (append-only-at-FRONT pattern).
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v42"
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
         # Changelog comment must mention the Phase 87.6 rebuild.
         import inspect as _inspect
 
@@ -457,7 +459,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_bumped(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION is endgame_v40; prior v35 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v42"
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2533,7 +2535,7 @@ class TestMetadataOverride:
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
         # Phase 102 UAT: bumped from endgame_v35 to endgame_v40.
-        assert response.report.prompt_version == "endgame_v42"
+        assert response.report.prompt_version == "endgame_v43"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2557,7 +2559,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v42"
+        assert log.response_json["prompt_version"] == "endgame_v43"
 
 
 class TestCacheBehavior:
@@ -3610,7 +3612,7 @@ class TestPhase874PromptVersion:
 
     def test_prompt_version_is_v33(self) -> None:
         """SC#7: bumped to endgame_v40 by Phase 102 UAT (was endgame_v35 after Phase 87.6)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v42"
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3658,7 +3660,7 @@ class TestPhase876LLMPayloadExtension:
 
     def test_prompt_version_is_endgame_v39(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION bumped from endgame_v35 to endgame_v40."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v42"
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
 
     def test_prompt_changelog_preserves_v33_entry(self) -> None:
         """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
@@ -4228,6 +4230,122 @@ class TestPercentileAnnotation:
         assert found_1.percentile == 25.0
         assert found_2.percentile == 25.0
 
+    def test_class_scoped_finding_does_not_resolve_tc_aggregate_pctl(self) -> None:
+        """Phase 102 UAT fix: an Endgame Type (per-class × TC) finding must NOT pick
+        up the per-TC AGGREGATE percentile.
+
+        The per-class type findings share the conversion_win_pct / recovery_save_pct
+        metric names AND a time_control dimension with the Endgame Metrics aggregate
+        findings. Type Breakdown carries no percentiles by design, so a class-scoped
+        dim_key (containing 'endgame_class=') must resolve to None — otherwise rook
+        conversion in blitz would borrow the all-class blitz conversion percentile,
+        whose value also contradicts the finding's own class-specific mean.
+        """
+        per_tc: dict[str, MetricPercentileRecord] = {
+            "conversion_win_pct:blitz": _make_pctl_record(
+                percentile=62.0, value=58.0, n_games=200, anchor=1500, tc="blitz"
+            )
+        }
+        # Class-scoped (Endgame Type) finding → no percentile.
+        assert (
+            _lookup_pctl_record(
+                "conversion_win_pct", "endgame_class=rook, time_control=blitz", None, per_tc
+            )
+            is None
+        ), "per-class Endgame Type findings must not borrow the TC-aggregate percentile"
+        # Aggregate (Endgame Metrics) finding → still resolves.
+        assert (
+            _lookup_pctl_record("conversion_win_pct", "time_control=blitz", None, per_tc)
+            is not None
+        ), "per-TC Endgame Metrics aggregate finding must still resolve its percentile"
+
+
+# ---------------------------------------------------------------------------
+# Phase 102 UAT: per-TC recovery-pattern / asymmetry hints count all_time only
+# ---------------------------------------------------------------------------
+
+
+class TestPerTcTypeHintWindowScoping:
+    """The per-TC `endgame_type_<tc>` members span both windows; the hint helpers
+    must count all_time findings only (no cross-window double-counting)."""
+
+    @staticmethod
+    def _recov(klass: str, window: str, zone: str = "weak") -> SubsectionFinding:
+        from typing import cast
+
+        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
+
+        return SubsectionFinding(
+            subsection_id=cast(SubsectionId, "endgame_type_blitz"),
+            window=cast(Window, window),
+            metric=cast(MetricId, "recovery_save_pct"),
+            value=0.2,
+            zone=cast(Zone, zone),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=30,
+            sample_quality=cast(SampleQuality, "adequate"),
+            is_headline_eligible=True,
+            dimension={"endgame_class": klass, "time_control": "blitz"},
+        )
+
+    @staticmethod
+    def _conv(klass: str, window: str, zone: str) -> SubsectionFinding:
+        from typing import cast
+
+        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
+
+        return SubsectionFinding(
+            subsection_id=cast(SubsectionId, "endgame_type_blitz"),
+            window=cast(Window, window),
+            metric=cast(MetricId, "conversion_win_pct"),
+            value=0.6,
+            zone=cast(Zone, zone),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=30,
+            sample_quality=cast(SampleQuality, "adequate"),
+            is_headline_eligible=True,
+            dimension={"endgame_class": klass, "time_control": "blitz"},
+        )
+
+    def test_recovery_pattern_not_double_counted_across_windows(self) -> None:
+        """Two weak classes present in BOTH windows must not register as four."""
+        members = [
+            self._recov("rook", "all_time"),
+            self._recov("pawn", "all_time"),
+            self._recov("rook", "last_3mo"),
+            self._recov("pawn", "last_3mo"),
+        ]
+        assert _recovery_pattern_tag(members, "blitz") == "", (
+            "2 distinct weak classes (each in both windows) must not trip the 4-of-4 hint"
+        )
+
+    def test_recovery_pattern_fires_on_four_all_time_weak(self) -> None:
+        """All four visible classes weak in all_time still fires the hint."""
+        members = [self._recov(k, "all_time") for k in ("rook", "pawn", "queen", "minor_piece")] + [
+            self._recov("rook", "last_3mo")
+        ]
+        tag = _recovery_pattern_tag(members, "blitz")
+        assert "weak across 4 of 4 types in blitz" in tag
+
+    def test_asymmetry_uses_all_time_not_last_3mo(self) -> None:
+        """Asymmetry split must reflect the all_time finding, not last_3mo.
+
+        all_time shows the conv-strong / recov-weak split; last_3mo shows both
+        typical. Only the all_time split should surface.
+        """
+        members = [
+            self._conv("rook", "all_time", "strong"),
+            self._recov("rook", "all_time", "weak"),
+            self._conv("rook", "last_3mo", "typical"),
+            self._recov("rook", "last_3mo", "typical"),
+        ]
+        lines = _asymmetry_lines(members, "blitz")
+        assert len(lines) == 1
+        assert "[asymmetry type=rook tc=blitz]" in lines[0]
+        assert "closes winning endgames but bleeds losing ones" in lines[0]
+
 
 # ---------------------------------------------------------------------------
 # Phase 102 (Plan 05): Rating-basis block tests
@@ -4383,4 +4501,4 @@ class TestRatingBasisBlock:
         """Phase 102 Plan 05/UAT: _PROMPT_VERSION bumped to endgame_v40."""
         from app.services import insights_llm
 
-        assert insights_llm._PROMPT_VERSION == "endgame_v42"
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
