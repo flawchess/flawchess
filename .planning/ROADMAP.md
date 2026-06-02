@@ -35,12 +35,20 @@
 
 **Goal:** Upgrade the endgame-insights LLM payload + prompt to reason over the v1.17–v1.21 metric set, with **percentile annotations** wired in (the page-level, game-count-weighted value the chip shows) so the model can reference the rank the user sees, plus **LLM narration of time-pressure** (Score Gap by Remaining Time, Clock Gap, Net Flag Rate). The metric *set* is already aligned with the page, so this needs **no new frontend cards** — it is payload + prompt only. Preserve `feedback_llm_significance_signal`: the cohort `zone` field remains the sole gate on *whether* a metric is narrated; percentile informs only *how*. **p-values are OUT; CI bounds likely OUT** (final CI call at discuss-phase). Audit the system prompt's UI-vocabulary mapping against the current user-facing copy — **both** the Endgame Statistics Concepts accordion **and** the tooltip info-icon popover bodies (`MetricStatPopover`, `WdlConfidenceTooltip`, `EvalConfidenceTooltip`, `AchievableScorePopover`, percentile-chip tooltip) so report and hover-help never contradict — then bump `endgame_v35` → `endgame_v36` (cache invalidation via `_PROMPT_VERSION`). Also relax the `overview` field's ~300-word cap (rendered as the "Data Analysis" card) so the model **may** narrate more when there is enough genuinely interesting signal, keeping the no-fabrication / within-noise guards. **UAT-dominated phase** — budget multiple UAT passes over representative production users.
 **Requirements:** LLM-01..07
-**Plans:** 0 plans (run `/gsd-discuss-phase 102` then `/gsd-plan-phase 102`)
+**Plans:** 3 plans
 **Context:** Promoted from backlog Phase 999.7 on 2026-06-01 via `/gsd-explore`. Full scope + locked decisions: `.planning/notes/v1.23-phase-102-endgame-llm-statistical-reasoning.md`. A follow-up Recommendations-section rework is captured separately as `SEED-034` and is explicitly **not** in Phase 102 scope.
-
 Plans:
+**Wave 1**
 
-- [ ] TBD (run `/gsd-plan-phase 102`)
+- [x] 102-01-PLAN.md — Payload wiring: real Net Flag Rate, 5-quintile Score-Gap-by-time chart block, cohort-framed percentile annotations (zone stays the sole gate)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 102-02-PLAN.md — Prompt teaching: percentile + time-pressure narration, vocabulary audit, relaxed overview cap, bump _PROMPT_VERSION endgame_v35 → endgame_v36
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 102-03-PLAN.md — HUMAN-UAT (LLM-07): generate endgame_v36 reports for short-history / sparse-section / full-history prod users and judge against the locked decisions
 
 *v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md); see the collapsed block below. v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
 

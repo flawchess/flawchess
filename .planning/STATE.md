@@ -1,27 +1,27 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.22
-milestone_name: Maintenance — Test Isolation & Frontend Major Upgrades
-status: shipped
-last_updated: "2026-05-31T21:30:00.000Z"
-last_activity: 2026-05-31
+milestone_name: milestone
+status: verifying
+last_updated: "2026-06-02"
+last_activity: 2026-06-02 -- Phase 102 HUMAN-UAT completed (incl. endgame_v43 review fixes); PR #173 ready to merge
 progress:
-  total_phases: 2
-  completed_phases: 2
+  total_phases: 5
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 3
-  percent: 100
+  completed_plans: 4
+  percent: 20
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: none active
-Plan: Not started
-Status: v1.22 Maintenance shipped 2026-05-31 (tag v1.22) — milestone archived
-Next: `/gsd-new-milestone` to start the next milestone (leading candidate: backlog Phase 999.7 LLM Statistical Reasoning)
-Last activity: 2026-06-01 — Completed quick task 260601-og7: capped move explorer at ply 28 + partial-indexed the 3 Zobrist hashes (SEED-033). Code on `main`; prod bookmark-depth check PASSED (91/91 within cap) — cleared to ship via `bin/deploy.sh`.
+Phase: 102 (endgame-llm-statistical-reasoning-rework-v1-23) — EXECUTING
+Plan: 3 of 3
+Status: HUMAN-UAT completed (2026-06-02) — human-verify checkpoint cleared; sign-off extends to endgame_v43 (PR #173 review fixes, commit 087eb370)
+Next: Complete 102-03-SUMMARY.md, squash-merge PR #173 to main, start v1.23 milestone. (Awaiting explicit go-ahead — not yet actioned.)
+Last activity: 2026-06-02 -- Phase 102 HUMAN-UAT completed (incl. endgame_v43 review fixes); PR #173 ready to merge
 
 ## Project Reference
 
@@ -263,6 +263,8 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 | Phase 99 P04 | 5 | 2 tasks | 2 files |
 | Phase 100 P01 | 566 | 3 tasks | 3 files |
 | Phase 100 P02 | 14min | 2 tasks | 4 files |
+| Phase 102 P01 | 30 | 3 tasks | 5 files |
+| Phase 102 P04 | 60min | 5 tasks | 6 files |
 
 ## Decisions
 
@@ -272,3 +274,4 @@ Last activity: 2026-05-27 — Completed quick task 260527-q0b: rewrote `Percenti
 - [Phase ?]: seed_openings_for_tests in conftest.py ensures all xdist workers seed openings per-run DB
 - [Phase ?]: sorted() required for set-based pytest.mark.parametrize: non-deterministic iteration causes xdist collection mismatch
 - [Phase ?]: -n auto: 18.56s vs 40.29s serial (2.2x speedup); two concurrent serial runs both RC=0 (SC-1 + SC-3 satisfied)
+- [Phase ?]: Phase 102 Plan 01: real net_timeout_rate scalar + 5-quintile Score-Gap-by-time chart block + pctl= annotations wired into LLM payload

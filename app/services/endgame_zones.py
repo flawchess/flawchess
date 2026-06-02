@@ -48,6 +48,11 @@ MetricId = Literal[
     "entry_eval_pawns",  # Phase 82 D-04: new endgame_start_vs_end Tile 1
     "entry_expected_score",  # Phase 83 D-17: new endgame_start_vs_end Tile 1 row 2 — achievable score
     "endgame_score",  # Phase 82 D-03: repurposed for endgame_start_vs_end Tile 2 (was the score_timeline metric in v22)
+    # Phase 102 UAT: scalar Non-Endgame Score ("Games without Endgame" card),
+    # added to endgame_start_vs_end alongside endgame_score so the LLM reads
+    # both cards' aggregates as the comparison pair. Same 0.45-0.55 vs-50% band
+    # as endgame_score (the UI colors both cards identically).
+    "non_endgame_score",
     # Phase 68 (260424-pc6): per-part absolute score metrics emitted by the
     # score_timeline subsection. `score_gap` still carries the signed
     # aggregate; `endgame_score_timeline` / `non_endgame_score_timeline` carry
@@ -76,17 +81,45 @@ MetricId = Literal[
 ]
 
 SubsectionId = Literal[
+    # Phase 102 UAT: `overall` is no longer in the default _SECTION_LAYOUT — its
+    # sole finding (score_gap) moved to the dedicated `score_gap` subsection. The
+    # id stays a valid SubsectionId (still constructable; used by schema tests).
     "overall",
     "endgame_start_vs_end",  # Phase 82 D-05
+    # Phase 102 UAT: dedicated subsection mirroring the UI "Endgame Score
+    # Differences" card — Eval Score Gap (achievable_score_gap) + Endgame Score
+    # Gap (score_gap). Sits between endgame_start_vs_end and score_timeline.
+    "score_gap",
     "score_timeline",
+    # Phase 102 UAT (2026-06-02): the aggregate-over-TC `endgame_metrics`
+    # subsection is retired in favour of one subsection per time control,
+    # mirroring the UI's per-TC Endgame Metrics cards. The id stays a valid
+    # SubsectionId (still constructable; used by schema tests and the
+    # SAMPLE_QUALITY_BANDS band shared by the per-TC subsections).
     "endgame_metrics",
+    "endgame_metrics_bullet",
+    "endgame_metrics_blitz",
+    "endgame_metrics_rapid",
+    "endgame_metrics_classical",
     # Phase 87.5 D-06: restored from the Phase 87.4 subsection name.
     "endgame_elo_timeline",
     "time_pressure_at_entry",
     "clock_diff_timeline",
     "time_pressure_vs_performance",
+    # Phase 102 UAT (2026-06-02): the aggregate-over-TC `results_by_endgame_type`
+    # and `conversion_recovery_by_type` subsections are retired in favour of one
+    # subsection per time control, mirroring the UI's per-TC collapsible Endgame
+    # Type cards (EndgameTypeTcCard, Phase 98). Each per-TC subsection carries a
+    # WDL table (rendered from categories_by_tc) plus Conversion / Recovery /
+    # Score-Gap [summary] blocks per endgame class. The two ids below stay valid
+    # SubsectionIds (still constructable; used by schema tests and the
+    # SAMPLE_QUALITY_BANDS band shared by the per-TC subsections).
     "results_by_endgame_type",
     "conversion_recovery_by_type",
+    "endgame_type_bullet",
+    "endgame_type_blitz",
+    "endgame_type_rapid",
+    "endgame_type_classical",
 ]
 
 # Phase 87.1 (SEED-016): `endgame_type_achievable_score_gap` is intentionally NOT
@@ -286,6 +319,15 @@ ZONE_REGISTRY: Mapping[MetricId, ZoneSpec] = {
         typical_upper=0.55,
         direction="higher_is_better",
     ),
+    # Phase 102 UAT: scalar Non-Endgame Score ("Games without Endgame" card).
+    # Same 0.45-0.55 vs-50% band as endgame_score — the UI colors both cards
+    # with the identical SCORE_BULLET_NEUTRAL band, so the LLM's zone matches
+    # what the user sees. Unit: 0-1 scale (NOT percent).
+    "non_endgame_score": ZoneSpec(
+        typical_lower=0.45,
+        typical_upper=0.55,
+        direction="higher_is_better",
+    ),
     # Phase 68 (260424-pc6): absolute per-part rolling Score % used by the
     # score_timeline subsection's two-line chart. There is no calibrated
     # cohort band for "your endgame Score in isolation" (the zoned signal is
@@ -411,12 +453,27 @@ BUCKETED_ZONE_REGISTRY: Mapping[BucketedMetricId, Mapping[MaterialBucket, ZoneSp
 
 SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     "overall": (50, 200),
+    # Phase 102 UAT: dedicated score_gap subsection inherits the retired
+    # `overall` band — score_gap's denominator is all games (endgame +
+    # non_endgame), and achievable_score_gap's cohort (endgame games with eval)
+    # is comparably large given >99% eval coverage.
+    "score_gap": (50, 200),
     # Phase 82 D-05: new subsection, gates match time_pressure_at_entry
     # (thin < 10, adequate < 50, rich >= 50) — two single-aggregate tiles,
     # no per-type breakdown, so larger thin boundary than per-type subsections.
     "endgame_start_vs_end": (10, 50),
     "score_timeline": (10, 52),
     "endgame_metrics": (30, 100),
+    # Phase 102 UAT: per-TC Endgame Metrics subsections. Denominators are
+    # per-(TC × bucket) — a single TC's conversion/parity/recovery span count —
+    # so they sit in the same small-sample regime as the per-type subsections
+    # (card-level gate is MIN_GAMES_PER_TC_CARD=20 total across the 3 buckets).
+    # Use the per-type (20, 40) band rather than the aggregate (30, 100) so a
+    # 20-game TC bucket is not mislabeled `thin`.
+    "endgame_metrics_bullet": (20, 40),
+    "endgame_metrics_blitz": (20, 40),
+    "endgame_metrics_rapid": (20, 40),
+    "endgame_metrics_classical": (20, 40),
     "endgame_elo_timeline": (10, 40),  # Phase 87.5 D-06: restored Phase 87.4 subsection name.
     "time_pressure_at_entry": (10, 50),
     "clock_diff_timeline": (10, 52),
@@ -428,6 +485,14 @@ SAMPLE_QUALITY_BANDS: Mapping[SubsectionId, tuple[int, int]] = {
     # cohort (≥20 endgame games per user gate).
     "results_by_endgame_type": (20, 40),
     "conversion_recovery_by_type": (20, 40),
+    # Phase 102 UAT: per-TC Endgame Type subsections share the per-type (20, 40)
+    # band — each class's Conv/Recov span count within a single TC is small, so
+    # the same small-sample regime applies (TC-level gate is MIN_GAMES_PER_TC_CARD
+    # summed across the 4 visible classes).
+    "endgame_type_bullet": (20, 40),
+    "endgame_type_blitz": (20, 40),
+    "endgame_type_rapid": (20, 40),
+    "endgame_type_classical": (20, 40),
 }
 
 
@@ -807,6 +872,52 @@ def assign_bucketed_zone(
     return _zone_from_spec(BUCKETED_ZONE_REGISTRY[metric_id][bucket], value)
 
 
+# Phase 102 UAT: the five metrics_elo metrics whose zone band is per-TC. The
+# parity ΔES gap (`score_gap_parity`) is intentionally absent — its neutral
+# band stays global (SCORE_GAP_PARITY_NEUTRAL_*, see the TC_METRIC_BANDS note),
+# so callers fall back to `assign_zone` / the scalar registry for it.
+TcBucket = Literal["bullet", "blitz", "rapid", "classical"]
+
+TcBandMetricId = Literal[
+    "conversion_win_pct",
+    "parity_score_pct",
+    "recovery_save_pct",
+    "score_gap_conv",
+    "score_gap_recov",
+]
+
+
+def tc_metric_zone_spec(metric_id: TcBandMetricId, tc: TcBucket) -> ZoneSpec:
+    """Return the per-TC ZoneSpec for a metrics_elo metric.
+
+    Sources the band from TC_METRIC_BANDS so the LLM payload's `zone=` label and
+    inline `(typical …)` bound match the UI's per-TC gauges for that same time
+    control. All five bands are `higher_is_better` (the conv/recov ΔES gaps are
+    negative-valued but a higher/less-negative gap is still the better side).
+    `score_gap_parity` is NOT a TcBandMetricId — its neutral band is global.
+    """
+    bands = TC_METRIC_BANDS[tc]
+    lo_hi: dict[TcBandMetricId, tuple[float, float]] = {
+        "conversion_win_pct": bands.conv_rate,
+        "parity_score_pct": bands.parity_rate,
+        "recovery_save_pct": bands.recov_rate,
+        "score_gap_conv": bands.conv_score_gap,
+        "score_gap_recov": bands.recov_score_gap,
+    }
+    lo, hi = lo_hi[metric_id]
+    return ZoneSpec(lo, hi, "higher_is_better")
+
+
+def assign_tc_metric_zone(metric_id: TcBandMetricId, tc: TcBucket, value: float) -> Zone:
+    """Assign a zone for a per-TC metrics_elo metric using TC_METRIC_BANDS.
+
+    Returns `"typical"` for NaN (see `assign_zone` docstring for rationale).
+    """
+    if math.isnan(value):
+        return "typical"
+    return _zone_from_spec(tc_metric_zone_spec(metric_id, tc), value)
+
+
 def per_class_zone_spec(
     metric_id: Literal["conversion_win_pct", "recovery_save_pct"],
     endgame_class: EndgameClass,
@@ -838,6 +949,67 @@ def assign_per_class_zone(
     if math.isnan(value):
         return "typical"
     return _zone_from_spec(per_class_zone_spec(metric_id, endgame_class), value)
+
+
+# Phase 102 UAT: metrics carrying a per-(class × TC) band. Conversion / Recovery
+# rate and the per-span Score Gap all dispatch via PER_CLASS_TC_GAUGE_ZONES so the
+# per-TC Endgame Type subsections band against the same IQR the UI tile shows.
+PerClassTcMetricId = Literal[
+    "conversion_win_pct",
+    "recovery_save_pct",
+    "endgame_type_achievable_score_gap",
+]
+
+
+def per_class_tc_zone_spec(
+    metric_id: PerClassTcMetricId,
+    endgame_class: EndgameClass,
+    tc: TcBucket,
+) -> ZoneSpec:
+    """Return the per-(class × TC) ZoneSpec for Conv / Recov / Score Gap.
+
+    Sources the band from PER_CLASS_TC_GAUGE_ZONES (Phase 98 §3.4.1 calibration)
+    so the LLM payload's `zone=` label and inline `(typical …)` bound match the
+    per-TC Endgame Type card tile for that (class, TC). All three bands are
+    `higher_is_better` (the Score Gap is negative-valued but a higher / less
+    negative gap is the better side). Falls back to the pooled-class band
+    (PER_CLASS_GAUGE_ZONES) when the (class, TC) cell is absent — e.g. pawnless,
+    which is omitted from PER_CLASS_TC_GAUGE_ZONES (and from the per-TC cards).
+    """
+    per_class = PER_CLASS_TC_GAUGE_ZONES.get(endgame_class)
+    bands = per_class.get(tc) if per_class is not None else None
+    if bands is None:
+        # Defensive fallback: pawnless / missing cell → pooled-class band.
+        pooled = PER_CLASS_GAUGE_ZONES[endgame_class]
+        lo_hi = {
+            "conversion_win_pct": pooled.conversion,
+            "recovery_save_pct": pooled.recovery,
+            "endgame_type_achievable_score_gap": pooled.achievable_score_gap,
+        }[metric_id]
+        return ZoneSpec(lo_hi[0], lo_hi[1], "higher_is_better")
+    lo_hi = {
+        "conversion_win_pct": bands.conversion,
+        "recovery_save_pct": bands.recovery,
+        "endgame_type_achievable_score_gap": bands.achievable_score_gap,
+    }[metric_id]
+    return ZoneSpec(lo_hi[0], lo_hi[1], "higher_is_better")
+
+
+def assign_per_class_tc_zone(
+    metric_id: PerClassTcMetricId,
+    endgame_class: EndgameClass,
+    tc: TcBucket,
+    value: float,
+) -> Zone:
+    """Assign a zone using per-(class × TC) typical bands.
+
+    Used by the per-TC Endgame Type findings so the [summary] zone label and the
+    inline (typical LO to UP) bound both reflect the (class, TC)-specific baseline
+    that the UI tile gauges against. Returns `"typical"` for NaN (see `assign_zone`).
+    """
+    if math.isnan(value):
+        return "typical"
+    return _zone_from_spec(per_class_tc_zone_spec(metric_id, endgame_class, tc), value)
 
 
 def sample_quality(subsection_id: SubsectionId, sample_size: int) -> SampleQuality:

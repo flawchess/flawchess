@@ -12,6 +12,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - Reduced opening-position index footprint by ~3 GB by capping the move explorer at 28 plies and rebuilding the three Zobrist-hash indexes as partial indexes (`WHERE ply <= 28`). The cap is invisible in normal use (dev DB max bookmark depth: 6 plies). (SEED-033)
 
+### Fixed
+
+- Phase 102: the per-time-control Eval Score Gap (Conversion/Parity/Recovery cards) now shows the true gap value in both its label and tooltip. It previously displayed an internally recentered value measured against a "0%" baseline that was not actually zero, so the tooltip read e.g. "−10.1% … 14.2% below the 0% baseline". It now reads the raw gap against the explicit cohort baseline, e.g. "−14.2% … 10.1% below the −4.1% baseline". The bullet chart is unchanged.
+
 ## [v1.22] Maintenance — Test Isolation & Frontend Major Upgrades — 2026-05-31
 
 A maintenance milestone clearing two accrued debts before the next feature work: making the test suite safe under concurrent and parallel runs, and bringing the frontend onto its latest major dependency versions. No user-facing behaviour change.
