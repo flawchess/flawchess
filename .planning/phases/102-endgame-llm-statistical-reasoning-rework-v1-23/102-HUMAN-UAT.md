@@ -3,15 +3,24 @@ phase: 102-endgame-llm-statistical-reasoning-rework-v1-23
 plan: 03
 type: human-uat
 version: endgame_v39
-status: approved
+status: completed
 approved_on: 2026-06-02
+approved_through: endgame_v43
 ---
 
-> **Status: APPROVED by user (2026-06-02).** Human UAT signed off. The payload
-> restructures shipped past the original v39 scope during the GSD auto-chain:
+> **Status: COMPLETED — signed off by user (2026-06-02).** Human UAT approved. The
+> payload restructures shipped past the original v39 scope during the GSD auto-chain:
 > metrics_elo per-TC (endgame_v40), time-pressure per-TC chart block
 > (endgame_v41), and type_breakdown per-TC (endgame_v42). All addendum criteria
 > below treated as accepted on approval.
+>
+> **endgame_v43 (2026-06-02, post-approval review fix) included in scope.** The
+> PR #173 review surfaced two payload-correctness bugs (per-class Endgame Type
+> findings borrowing the per-TC aggregate percentile; recovery-pattern / asymmetry
+> hints double-counting weak types across windows). Both fixed in commit `087eb370`
+> with regression tests; `_PROMPT_VERSION` bumped v42 → v43. These are strict
+> correctness improvements to the signals this UAT validated, so the sign-off
+> extends to v43.
 
 # Phase 102 UAT: endgame_v39 Narration Quality
 

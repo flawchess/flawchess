@@ -4,7 +4,7 @@ milestone: v1.22
 milestone_name: milestone
 status: verifying
 last_updated: "2026-06-02"
-last_activity: 2026-06-02 -- Phase 102 HUMAN-UAT approved by user; PR #173 ready to merge
+last_activity: 2026-06-02 -- Phase 102 HUMAN-UAT completed (incl. endgame_v43 review fixes); PR #173 ready to merge
 progress:
   total_phases: 5
   completed_phases: 1
@@ -19,9 +19,9 @@ progress:
 
 Phase: 102 (endgame-llm-statistical-reasoning-rework-v1-23) — EXECUTING
 Plan: 3 of 3
-Status: HUMAN-UAT approved (2026-06-02) — human-verify checkpoint cleared
+Status: HUMAN-UAT completed (2026-06-02) — human-verify checkpoint cleared; sign-off extends to endgame_v43 (PR #173 review fixes, commit 087eb370)
 Next: Complete 102-03-SUMMARY.md, squash-merge PR #173 to main, start v1.23 milestone. (Awaiting explicit go-ahead — not yet actioned.)
-Last activity: 2026-06-02 -- Phase 102 HUMAN-UAT approved by user; PR #173 ready to merge
+Last activity: 2026-06-02 -- Phase 102 HUMAN-UAT completed (incl. endgame_v43 review fixes); PR #173 ready to merge
 
 ## Project Reference
 
