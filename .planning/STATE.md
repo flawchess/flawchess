@@ -4,7 +4,7 @@ milestone: v1.22
 milestone_name: milestone
 status: verifying
 last_updated: "2026-06-02"
-last_activity: 2026-06-02 -- Phase 102 review PR #173 opened (main <- branch); HUMAN-UAT still open
+last_activity: 2026-06-02 -- Phase 102 HUMAN-UAT approved by user; PR #173 ready to merge
 progress:
   total_phases: 5
   completed_phases: 1
@@ -19,9 +19,9 @@ progress:
 
 Phase: 102 (endgame-llm-statistical-reasoning-rework-v1-23) — EXECUTING
 Plan: 3 of 3
-Status: Blocked at human-verify checkpoint (102-03 Task 2 — HUMAN-UAT)
-Next: Review PR #173. Human runs UAT, replies "approved" or lists failures. On approval: complete 102-03-SUMMARY.md, squash-merge to main, start v1.23 milestone.
-Last activity: 2026-06-02 -- Phase 102 review PR #173 opened (main <- branch); HUMAN-UAT still open
+Status: HUMAN-UAT approved (2026-06-02) — human-verify checkpoint cleared
+Next: Complete 102-03-SUMMARY.md, squash-merge PR #173 to main, start v1.23 milestone. (Awaiting explicit go-ahead — not yet actioned.)
+Last activity: 2026-06-02 -- Phase 102 HUMAN-UAT approved by user; PR #173 ready to merge
 
 ## Project Reference
 

@@ -3,7 +3,15 @@ phase: 102-endgame-llm-statistical-reasoning-rework-v1-23
 plan: 03
 type: human-uat
 version: endgame_v39
+status: approved
+approved_on: 2026-06-02
 ---
+
+> **Status: APPROVED by user (2026-06-02).** Human UAT signed off. The payload
+> restructures shipped past the original v39 scope during the GSD auto-chain:
+> metrics_elo per-TC (endgame_v40), time-pressure per-TC chart block
+> (endgame_v41), and type_breakdown per-TC (endgame_v42). All addendum criteria
+> below treated as accepted on approval.
 
 # Phase 102 UAT: endgame_v39 Narration Quality
 
@@ -439,6 +447,8 @@ LIMIT 10;
 ---
 
 ## Results Table
+
+**Outcome: APPROVED (2026-06-02).** User signed off on the UAT; no failures recorded.
 
 Fill in after running all three cohorts. Use pass (P), fail (F), or skip (S — metric absent for
 this user, test inapplicable) in each cell.
