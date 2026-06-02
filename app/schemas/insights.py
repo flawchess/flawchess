@@ -320,6 +320,18 @@ class EndgameTabFindings(BaseModel):
     # anchor for chess.com-heavy users. Backwards-incompatible field-type change is safe:
     # field is optional and no external consumer reads it directly.
     cohort_anchors: dict[str, "RatingAnchorContext"] | None = None
+    # Phase 102 UAT (2026-06-02): per-(class × TC) endgame type breakdown from the
+    # all_time window (EndgameStatsResponse.categories_by_tc, Phase 98). Drives the
+    # per-TC `endgame_type_<tc>` subsections that replaced the aggregate-over-TC
+    # `results_by_endgame_type` + `conversion_recovery_by_type` blocks — the LLM
+    # renders one WDL table + Conv/Recov/Score-Gap bullets per eligible TC. Keyed
+    # by TC bucket; mixed/pawnless already excluded upstream by
+    # _aggregate_endgame_stats_by_tc. Optional for backwards compat with fixtures
+    # and older responses; appended before findings_hash so the hash stays last
+    # (load-bearing for findings_hash stability).
+    type_categories_by_tc: (
+        dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]] | None
+    ) = None
     findings_hash: str
 
 

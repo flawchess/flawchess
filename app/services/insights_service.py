@@ -66,6 +66,7 @@ from app.schemas.insights import (
 from app.core.opponent_strength import preset_to_range
 from app.services.endgame_service import get_endgame_overview
 from app.services.endgame_zones import (
+    MIN_GAMES_PER_TC_CARD,
     TREND_MIN_SLOPE_VOL_RATIO,
     TREND_MIN_WEEKLY_POINTS,
     BucketedMetricId,
@@ -75,7 +76,7 @@ from app.services.endgame_zones import (
     TcBucket,
     Trend,
     Window,
-    assign_per_class_zone,
+    assign_per_class_tc_zone,
     assign_tc_metric_zone,
     assign_zone,
     sample_quality,
@@ -346,10 +347,10 @@ async def compute_findings(
         time_pressure_chart=None,
         # Pass the all_time WDL detail (endgame vs non-endgame, plus per-type
         # categories) through so the LLM prompt can render the `overall_wdl`
-        # and `results_by_endgame_type_wdl` chart blocks. The corresponding
-        # SubsectionFinding rows (`overall` -> score_gap, `results_by_endgame_type`
-        # -> win_rate) stay in `all_findings`; the chart blocks add the W/D/L
-        # and Score % detail the single-value findings cannot carry.
+        # chart block. Phase 102 UAT: the aggregate-over-TC type WDL chart is
+        # retired — `type_categories_by_tc` (below) now feeds the per-TC
+        # `endgame_type_<tc>` WDL tables. `type_categories` (pooled) is kept on
+        # the model for backwards compat but is no longer rendered.
         overall_performance=all_time_resp.performance,
         type_categories=all_time_resp.stats.categories,
         player_profile=player_profile,
@@ -359,6 +360,9 @@ async def compute_findings(
         metric_percentiles=metric_percentiles if metric_percentiles else None,
         per_tc_metric_percentiles=per_tc_metric_percentiles if per_tc_metric_percentiles else None,
         cohort_anchors=cohort_anchors if cohort_anchors else None,
+        # Phase 102 UAT (2026-06-02): per-(class × TC) type breakdown feeding the
+        # per-TC `endgame_type_<tc>` subsections (WDL table + Conv/Recov/Score-Gap).
+        type_categories_by_tc=all_time_resp.stats.categories_by_tc,
         findings_hash="",  # placeholder; replaced below
     )
     findings_hash = _compute_hash(findings)
@@ -567,8 +571,12 @@ def _compute_subsection_findings(
     # The clock-diff and time-pressure-vs-performance subsection helpers used to
     # be appended here, both returning permanent empty findings since Phase 88
     # removed their backing fields from EndgameOverviewResponse.
-    findings.extend(_findings_results_by_endgame_type(response, window))
-    findings.extend(_findings_conversion_recovery_by_type(response, window))
+    # Phase 102 UAT (2026-06-02): the aggregate-over-TC `results_by_endgame_type`
+    # (win_rate) and `conversion_recovery_by_type` (Conv/Recov/Score-Gap) producers
+    # are retired. Each eligible time control now becomes its own
+    # `endgame_type_<tc>` subsection mirroring the UI's per-TC collapsible Endgame
+    # Type cards (read from response.stats.categories_by_tc).
+    findings.extend(_findings_endgame_type_by_tc(response, window))
 
     return findings
 
@@ -1153,152 +1161,163 @@ def _findings_endgame_elo_timeline(
 # lives in app/services/insights_llm.py.
 
 
-def _findings_results_by_endgame_type(
+# Phase 102 UAT (2026-06-02): each eligible time control becomes its own
+# `endgame_type_<tc>` subsection, mirroring the UI's per-TC collapsible Endgame
+# Type cards (EndgameTypeTcCard, Phase 98). The aggregate-over-TC
+# `results_by_endgame_type` + `conversion_recovery_by_type` subsections are retired.
+_TC_TO_TYPE_SUBSECTION: dict[TcBucket, SubsectionId] = {
+    "bullet": "endgame_type_bullet",
+    "blitz": "endgame_type_blitz",
+    "rapid": "endgame_type_rapid",
+    "classical": "endgame_type_classical",
+}
+
+# Fixed TC order so the per-TC subsections render bullet → blitz → rapid →
+# classical (matches the UI accordion order and _SECTION_LAYOUT).
+_TYPE_TC_ORDER: tuple[TcBucket, ...] = ("bullet", "blitz", "rapid", "classical")
+
+
+def _sorted_type_categories(
+    cats: list[EndgameCategoryStats],
+) -> list[EndgameCategoryStats]:
+    """Sort per-TC categories by total desc (endgame_class tiebreak).
+
+    Shared by the findings producer and the renderer's WDL table so the bullet
+    order matches the table row order deterministically.
+    """
+    return sorted(cats, key=lambda c: (-c.total, c.endgame_class))
+
+
+def _findings_endgame_type_by_tc(
     response: EndgameOverviewResponse,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """results_by_endgame_type -> per-category win_rate finding.
+    """endgame_type_<tc> -> per-(class × TC) Conversion / Recovery / Score-Gap findings.
 
-    Value = category win rate (0.0-1.0, W/total, draws excluded), derived from
-    EndgameCategoryStats. Emitted as metric="win_rate" so the LLM prompt does
-    not confuse it with endgame_skill (the Conv/Parity/Recov composite used
-    only in subsection `endgame_metrics`).
+    Phase 102 UAT (2026-06-02): mirrors the UI's per-TC collapsible Endgame Type
+    cards (EndgameTypeTcCard). For each eligible time control in
+    ``response.stats.categories_by_tc`` (already excluding mixed/pawnless upstream
+    and gated to TCs with >= MIN_GAMES_PER_TC_CARD endgame games across the four
+    visible classes) emits up to three findings per endgame class:
+
+      - ``conversion_win_pct`` (win rate when entered with eval >= +1.0)
+      - ``recovery_save_pct`` (draw+win rate when entered with eval <= -1.0)
+      - ``endgame_type_achievable_score_gap`` (per-span ΔES vs the Stockfish baseline)
+
+    Each carries a ``{endgame_class, time_control}`` dimension and dispatches its
+    zone via ``assign_per_class_tc_zone`` so the payload's ``zone=`` label and the
+    inline ``(typical …)`` bound match the per-TC tile gauges. ``win_rate`` is NOT
+    emitted as a finding — the renderer's per-TC WDL table (built from
+    ``type_categories_by_tc``) carries the W/D/L + Score% framing, mirroring the
+    tile's WDL bar + score bullet. TCs below the game gate emit no findings, so the
+    assembly loop omits their subsection entirely.
     """
-    categories: list[EndgameCategoryStats] = response.stats.categories
+    categories_by_tc = response.stats.categories_by_tc
+    if not categories_by_tc:
+        return []
     findings: list[SubsectionFinding] = []
-
-    if not categories:
-        findings.append(_empty_finding("results_by_endgame_type", window, "win_rate"))
-        return findings
-
-    for cat in categories:
-        # Explicit dict[str, str] annotation so ty widens the EndgameClass
-        # Literal to str — dict value types are invariant otherwise.
-        dim: dict[str, str] = {"endgame_class": cat.endgame_class}
-        if cat.total == 0:
-            findings.append(
-                _empty_finding(
-                    "results_by_endgame_type",
-                    window,
-                    "win_rate",
-                    dimension=dim,
-                )
-            )
+    for tc in _TYPE_TC_ORDER:
+        cats = categories_by_tc.get(tc)
+        if not cats or sum(c.total for c in cats) < MIN_GAMES_PER_TC_CARD:
             continue
-        value = cat.win_pct / 100.0
-        quality = sample_quality("results_by_endgame_type", cat.total)
-        findings.append(
-            SubsectionFinding(
-                subsection_id="results_by_endgame_type",
-                parent_subsection_id=None,
-                window=window,
-                metric="win_rate",
-                value=value,
-                zone=assign_zone("win_rate", value),
-                trend="n_a",
-                weekly_points_in_window=0,
-                sample_size=cat.total,
-                sample_quality=quality,
-                is_headline_eligible=quality != "thin",
-                dimension=dim,
-            )
-        )
+        subsection_id = _TC_TO_TYPE_SUBSECTION[tc]
+        for cat in _sorted_type_categories(cats):
+            findings.extend(_endgame_type_class_findings(subsection_id, tc, cat, window))
     return findings
 
 
-def _findings_conversion_recovery_by_type(
-    response: EndgameOverviewResponse,
+def _endgame_type_class_findings(
+    subsection_id: SubsectionId,
+    tc: TcBucket,
+    cat: EndgameCategoryStats,
     window: Window,
 ) -> list[SubsectionFinding]:
-    """conversion_recovery_by_type -> per-category conversion/recovery findings.
-
-    Emits two findings per category (conversion_win_pct + recovery_save_pct)
-    using `assign_bucketed_zone` with the matching MaterialBucket. Parity
-    is not emitted here — it already appears in `endgame_metrics` with
-    bucket dimension (v1.11 MVP).
-    """
-    categories: list[EndgameCategoryStats] = response.stats.categories
+    """Build the Conversion / Recovery / Score-Gap findings for one (class, TC) tile."""
     findings: list[SubsectionFinding] = []
-
-    if not categories:
-        findings.append(_empty_finding("conversion_recovery_by_type", window, "conversion_win_pct"))
-        findings.append(_empty_finding("conversion_recovery_by_type", window, "recovery_save_pct"))
-        return findings
-
-    for cat in categories:
-        # Conversion branch — bucket = "conversion"
-        conv_games = cat.conversion.conversion_games
-        # Explicit dict[str, str] annotation so ty widens the EndgameClass
-        # Literal to str — dict value types are invariant otherwise.
-        conv_dim: dict[str, str] = {
-            "endgame_class": cat.endgame_class,
-            "bucket": "conversion",
-        }
-        if conv_games == 0:
-            findings.append(
-                _empty_finding(
-                    "conversion_recovery_by_type",
-                    window,
-                    "conversion_win_pct",
-                    dimension=conv_dim,
-                )
+    # Explicit dict[str, str] annotations so ty widens the EndgameClass / TcBucket
+    # Literals to str — dict value types are invariant otherwise.
+    conv_dim: dict[str, str] = {"endgame_class": cat.endgame_class, "time_control": tc}
+    conv_games = cat.conversion.conversion_games
+    if conv_games == 0:
+        findings.append(
+            _empty_finding(subsection_id, window, "conversion_win_pct", dimension=conv_dim)
+        )
+    else:
+        conv_value = cat.conversion.conversion_pct / 100.0
+        conv_quality = sample_quality(subsection_id, conv_games)
+        findings.append(
+            SubsectionFinding(
+                subsection_id=subsection_id,
+                parent_subsection_id=None,
+                window=window,
+                metric="conversion_win_pct",
+                value=conv_value,
+                zone=assign_per_class_tc_zone(
+                    "conversion_win_pct", cat.endgame_class, tc, conv_value
+                ),
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=conv_games,
+                sample_quality=conv_quality,
+                is_headline_eligible=conv_quality != "thin",
+                dimension=conv_dim,
             )
-        else:
-            conv_value = cat.conversion.conversion_pct / 100.0
-            conv_quality = sample_quality("conversion_recovery_by_type", conv_games)
-            findings.append(
-                SubsectionFinding(
-                    subsection_id="conversion_recovery_by_type",
-                    parent_subsection_id=None,
-                    window=window,
-                    metric="conversion_win_pct",
-                    value=conv_value,
-                    zone=assign_per_class_zone("conversion_win_pct", cat.endgame_class, conv_value),
-                    trend="n_a",
-                    weekly_points_in_window=0,
-                    sample_size=conv_games,
-                    sample_quality=conv_quality,
-                    is_headline_eligible=conv_quality != "thin",
-                    dimension=conv_dim,
-                )
-            )
+        )
 
-        # Recovery branch — bucket = "recovery"
-        recov_games = cat.conversion.recovery_games
-        # Explicit dict[str, str] annotation — same rationale as conv_dim.
-        recov_dim: dict[str, str] = {
-            "endgame_class": cat.endgame_class,
-            "bucket": "recovery",
-        }
-        if recov_games == 0:
-            findings.append(
-                _empty_finding(
-                    "conversion_recovery_by_type",
-                    window,
-                    "recovery_save_pct",
-                    dimension=recov_dim,
-                )
+    recov_dim: dict[str, str] = {"endgame_class": cat.endgame_class, "time_control": tc}
+    recov_games = cat.conversion.recovery_games
+    if recov_games == 0:
+        findings.append(
+            _empty_finding(subsection_id, window, "recovery_save_pct", dimension=recov_dim)
+        )
+    else:
+        recov_value = cat.conversion.recovery_pct / 100.0
+        recov_quality = sample_quality(subsection_id, recov_games)
+        findings.append(
+            SubsectionFinding(
+                subsection_id=subsection_id,
+                parent_subsection_id=None,
+                window=window,
+                metric="recovery_save_pct",
+                value=recov_value,
+                zone=assign_per_class_tc_zone(
+                    "recovery_save_pct", cat.endgame_class, tc, recov_value
+                ),
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=recov_games,
+                sample_quality=recov_quality,
+                is_headline_eligible=recov_quality != "thin",
+                dimension=recov_dim,
             )
-        else:
-            recov_value = cat.conversion.recovery_pct / 100.0
-            recov_quality = sample_quality("conversion_recovery_by_type", recov_games)
-            findings.append(
-                SubsectionFinding(
-                    subsection_id="conversion_recovery_by_type",
-                    parent_subsection_id=None,
-                    window=window,
-                    metric="recovery_save_pct",
-                    value=recov_value,
-                    zone=assign_per_class_zone("recovery_save_pct", cat.endgame_class, recov_value),
-                    trend="n_a",
-                    weekly_points_in_window=0,
-                    sample_size=recov_games,
-                    sample_quality=recov_quality,
-                    is_headline_eligible=recov_quality != "thin",
-                    dimension=recov_dim,
-                )
-            )
+        )
 
+    # Per-span Score Gap — moved here from insights_llm._synthesize_* and now banded
+    # per-(class × TC). n-gates follow compute_paired_difference_test (n == 0 → no
+    # finding). Skipped (no finding) when the class has no eligible spans in this TC.
+    gap_mean = cat.type_achievable_score_gap_mean
+    gap_n = cat.type_achievable_score_gap_n or 0
+    if gap_mean is not None and gap_n > 0:
+        gap_dim: dict[str, str] = {"endgame_class": cat.endgame_class, "time_control": tc}
+        gap_quality = sample_quality(subsection_id, gap_n)
+        findings.append(
+            SubsectionFinding(
+                subsection_id=subsection_id,
+                parent_subsection_id=None,
+                window=window,
+                metric="endgame_type_achievable_score_gap",
+                value=gap_mean,
+                zone=assign_per_class_tc_zone(
+                    "endgame_type_achievable_score_gap", cat.endgame_class, tc, gap_mean
+                ),
+                trend="n_a",
+                weekly_points_in_window=0,
+                sample_size=gap_n,
+                sample_quality=gap_quality,
+                is_headline_eligible=gap_quality != "thin",
+                dimension=gap_dim,
+            )
+        )
     return findings
 
 

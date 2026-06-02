@@ -215,7 +215,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v41"
+        assert insights_llm._PROMPT_VERSION == "endgame_v42"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -375,7 +375,7 @@ class TestPromptVersionAndBody:
         Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
         changelog comment (append-only-at-FRONT pattern).
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v41"
+        assert insights_llm._PROMPT_VERSION == "endgame_v42"
         # Changelog comment must mention the Phase 87.6 rebuild.
         import inspect as _inspect
 
@@ -457,22 +457,21 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_bumped(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION is endgame_v40; prior v35 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v41"
+        assert insights_llm._PROMPT_VERSION == "endgame_v42"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
-    """Phase 87.1 Plan 04: per-class Score Gap block in the LLM payload.
+    """Phase 102 UAT (2026-06-02): per-(class × TC) Score Gap block in the LLM payload.
 
     The metric `endgame_type_achievable_score_gap` is emitted as a
-    SubsectionFinding per endgame class under the existing
-    `conversion_recovery_by_type` subsection. Renders to a [summary] block
-    carrying `mean`, `n`, `zone`, and an inline `(typical LO to UP)` band
-    derived from PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap.
+    SubsectionFinding per (endgame class × time control) under the per-TC
+    `endgame_type_<tc>` subsection. Renders to a [summary] block carrying `mean`,
+    `n`, `zone`, and an inline `(typical LO to UP)` band derived from
+    PER_CLASS_TC_GAUGE_ZONES[<class>][<tc>].achievable_score_gap. The header
+    carries both the endgame_class and time_control dim keys.
 
-    The wire shape mirrors how Conv/Recov findings render today — same
-    [summary <metric> | endgame_class=<class>] header, same window line,
-    same inline band. There is intentionally no separate `verdict` or
-    `p_value` field per memory `feedback_llm_significance_signal.md`.
+    There is intentionally no separate `verdict` or `p_value` field per memory
+    `feedback_llm_significance_signal.md`.
     """
 
     def _gap_finding(
@@ -483,13 +482,14 @@ class TestEndgameTypeAchievableScoreGapPayload:
         zone: str,
         sample_size: int,
         sample_quality: str = "rich",
+        tc: str = "blitz",
     ) -> SubsectionFinding:
         from typing import cast
 
-        from app.schemas.insights import MetricId, SampleQuality, Zone
+        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Zone
 
         return SubsectionFinding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id=cast(SubsectionId, f"endgame_type_{tc}"),
             parent_subsection_id=None,
             window="all_time",
             metric=cast(MetricId, "endgame_type_achievable_score_gap"),
@@ -500,7 +500,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
             sample_size=sample_size,
             sample_quality=cast(SampleQuality, sample_quality),
             is_headline_eligible=True,
-            dimension={"endgame_class": endgame_class},
+            dimension={"endgame_class": endgame_class, "time_control": tc},
             series=None,
         )
 
@@ -522,8 +522,11 @@ class TestEndgameTypeAchievableScoreGapPayload:
         tab = _fake_findings(filters, findings=[gap])
         prompt = _assemble_user_prompt(tab)
 
-        # Summary header includes the metric AND the per-class dim key.
-        assert "[summary endgame_type_achievable_score_gap | endgame_class=rook]" in prompt
+        # Summary header includes the metric AND the per-(class × TC) dim key.
+        assert (
+            "[summary endgame_type_achievable_score_gap | endgame_class=rook, time_control=blitz]"
+            in prompt
+        )
         # Window line carries the scaled mean (0.07 -> +7 on the 0-100 scale).
         assert "mean=+7" in prompt
         # Sample size surfaces.
@@ -554,7 +557,10 @@ class TestEndgameTypeAchievableScoreGapPayload:
         tab = _fake_findings(filters, findings=[gap])
         prompt = _assemble_user_prompt(tab)
 
-        assert "[summary endgame_type_achievable_score_gap | endgame_class=queen]" in prompt
+        assert (
+            "[summary endgame_type_achievable_score_gap | endgame_class=queen, time_control=blitz]"
+            in prompt
+        )
         # Mean is rendered (signed integer, scale=100): -0.02 -> -2.
         assert "mean=-2" in prompt
         # Sample size present.
@@ -629,14 +635,11 @@ class TestEndgameTypeAchievableScoreGapPayload:
         assert "[summary score_gap | endgame_class=minor_piece]" not in prompt
         assert "[summary type_score_gap" not in prompt
 
-    def test_gap_inline_band_dispatches_per_class(self) -> None:
-        """Inline band must come from PER_CLASS_GAUGE_ZONES, NOT the global band.
-
-        Per-class bands are calibrated from /benchmarks §3.4.2 (commit f48513fa);
-        renderer must dispatch via the per-class registry so each class's band
-        appears verbatim. Sanity check below pins the rook calibration so a
-        future band change forces the test (and the rendered constant) to be
-        updated together.
+    def test_gap_inline_band_dispatches_per_class_tc(self) -> None:
+        """Phase 102 UAT: inline band must come from PER_CLASS_TC_GAUGE_ZONES (per-(class × TC)),
+        NOT the pooled PER_CLASS_GAUGE_ZONES band. Sanity check below pins the rook/blitz
+        calibration so a future band change forces the test (and the rendered constant)
+        to be updated together.
         """
         from app.services import endgame_zones
 
@@ -646,14 +649,14 @@ class TestEndgameTypeAchievableScoreGapPayload:
             value=0.01,
             zone="typical",
             sample_size=20,
+            tc="blitz",
         )
         tab = _fake_findings(filters, findings=[gap])
         prompt = _assemble_user_prompt(tab)
-        # Calibrated rook band from PER_CLASS_GAUGE_ZONES["rook"].achievable_score_gap.
-        # Band updated to (-0.05, +0.05) per diff item E (upper drifted +0.6pp).
+        # Calibrated rook/blitz band from PER_CLASS_TC_GAUGE_ZONES["rook"]["blitz"].
         assert "(typical -5 to +5)" in prompt
-        # Sanity check: the per-class registry carries the calibrated band.
-        bands = endgame_zones.PER_CLASS_GAUGE_ZONES["rook"]
+        # Sanity check: the per-(class × TC) registry carries the calibrated band.
+        bands = endgame_zones.PER_CLASS_TC_GAUGE_ZONES["rook"]["blitz"]
         assert bands.achievable_score_gap == (-0.05, 0.05)
 
     def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
@@ -1242,13 +1245,10 @@ class TestPromptAssembly:
         assert "### Chart: overall_wdl" not in _assemble_user_prompt(tab_none)
 
     def test_assemble_user_prompt_renders_type_wdl_chart_block(self) -> None:
-        """Per-class WDL block is rendered, sorted by total descending.
-
-        v20 (260501-s0u pass2): the v18 conv/recov delta table was redundant
-        with the conversion_recovery_by_type [summary] blocks and got dropped.
-        The chart again carries WDL framing (games / win_pct / draw_pct /
-        loss_pct / score_pct) plus two new columns: opp_score_pct and
-        score_pct_diff.
+        """Phase 102 UAT: per-TC WDL table leads each `endgame_type_<tc>` subsection,
+        sorted by total descending. Built from type_categories_by_tc (per-(class × TC)).
+        The opp_score_pct + score_pct_diff columns are dropped (score_pct above 50
+        already means outscoring). Rows below the 10-game floor are skipped.
         """
         from app.schemas.endgames import ConversionRecoveryStats, EndgameCategoryStats
 
@@ -1322,27 +1322,23 @@ class TestPromptAssembly:
             as_of=datetime.datetime.now(datetime.UTC),
             filters=_sample_filter_context(),
             findings=[],
-            type_categories=categories,
+            type_categories_by_tc={"blitz": categories},
             findings_hash="b" * 64,
         )
         prompt = _assemble_user_prompt(tab)
 
-        assert "### Chart: results_by_endgame_type_wdl (all_time)" in prompt
-        # v20 WDL columns + two new ones (opp_score_pct, score_pct_diff).
-        assert (
-            "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct "
-            "| opp_score_pct | score_pct_diff |"
-        ) in prompt
-        # The v18 delta-table columns were dropped.
-        assert "conv_baseline_mid" not in prompt
-        assert "recov_baseline_mid" not in prompt
-        assert "conv_delta" not in prompt
-        assert "recov_delta" not in prompt
+        # Per-TC subsection header + WDL table caption.
+        assert "### Subsection: endgame_type_blitz" in prompt
+        assert "[WDL table — blitz]" in prompt
+        # Compact WDL columns (no opp_score_pct / score_pct_diff).
+        assert "| endgame_type | games | win_pct | draw_pct | loss_pct | score_pct |" in prompt
+        assert "opp_score_pct" not in prompt
+        assert "score_pct_diff" not in prompt
         # Sorted by total descending: rook (100) before pawn (30).
         rook_idx = prompt.index("| rook")
         pawn_idx = prompt.index("| pawn")
         assert rook_idx < pawn_idx
-        # Queen (total=3, below 10-game floor) dropped.
+        # Queen (total=3, below 10-game floor) dropped from the table.
         assert "| queen" not in prompt
 
     def test_pawnless_findings_are_filtered(self) -> None:
@@ -1360,25 +1356,25 @@ class TestPromptAssembly:
 
         filters = _sample_filter_context()
         rook_finding = SubsectionFinding(
-            subsection_id="results_by_endgame_type",
+            subsection_id="endgame_type_blitz",
             parent_subsection_id=None,
             window="all_time",
-            metric="win_rate",
-            value=0.41,
-            zone="weak",
+            metric="conversion_win_pct",
+            value=0.65,
+            zone="typical",
             trend="n_a",
             weekly_points_in_window=0,
-            sample_size=100,
+            sample_size=30,
             sample_quality="rich",
             is_headline_eligible=True,
-            dimension={"endgame_class": "rook"},
+            dimension={"endgame_class": "rook", "time_control": "blitz"},
             series=None,
         )
         pawnless_finding = SubsectionFinding(
-            subsection_id="results_by_endgame_type",
+            subsection_id=cast(Any, "endgame_type_blitz"),
             parent_subsection_id=None,
             window="all_time",
-            metric=cast(MetricId, "win_rate"),
+            metric=cast(MetricId, "conversion_win_pct"),
             value=0.58,
             zone="strong",
             trend="n_a",
@@ -1386,7 +1382,7 @@ class TestPromptAssembly:
             sample_size=19,
             sample_quality="adequate",
             is_headline_eligible=True,
-            dimension={"endgame_class": "pawnless"},
+            dimension={"endgame_class": "pawnless", "time_control": "blitz"},
             series=None,
         )
         # Rook: give realistic sequence counts (no longer used by the WDL chart
@@ -1448,11 +1444,13 @@ class TestPromptAssembly:
             as_of=datetime.datetime.now(datetime.UTC),
             filters=filters,
             findings=[rook_finding, pawnless_finding],
-            type_categories=categories,
+            type_categories_by_tc={"blitz": categories},
             findings_hash="b" * 64,
         )
         prompt = _assemble_user_prompt(tab)
 
+        # Rook bullet + WDL row present; pawnless stripped from both the bullets
+        # (visible-findings filter) and the WDL table (defensive class filter).
         assert "endgame_class=rook" in prompt
         assert "endgame_class=pawnless" not in prompt
         assert "| rook" in prompt
@@ -1946,25 +1944,25 @@ class TestV6Enrichments:
         """
         filters = _sample_filter_context()
         conv = self._finding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id="endgame_type_blitz",
             metric="conversion_win_pct",
             window="all_time",
             value=0.77,
             zone="strong",
-            dimension={"endgame_class": "pawn", "bucket": "conversion"},
+            dimension={"endgame_class": "pawn", "time_control": "blitz"},
         )
         rec = self._finding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id="endgame_type_blitz",
             metric="recovery_save_pct",
             window="all_time",
             value=0.16,
             zone="weak",
-            dimension={"endgame_class": "pawn", "bucket": "recovery"},
+            dimension={"endgame_class": "pawn", "time_control": "blitz"},
         )
         tab = _fake_findings(filters, findings=[conv, rec])
         prompt = _assemble_user_prompt(tab)
 
-        assert "[asymmetry type=pawn] conversion=77 strong, recovery=16 weak" in prompt
+        assert "[asymmetry type=pawn tc=blitz] conversion=77 strong, recovery=16 weak" in prompt
         assert "closes winning endgames but bleeds losing ones" in prompt
         # v16: the v11 "expected asymmetry — pawn endgames amplify material
         # imbalance" framing is gone. Pawn now uses the same story text as
@@ -1976,25 +1974,25 @@ class TestV6Enrichments:
         """Rook with strong conversion + weak recovery uses the standard story text."""
         filters = _sample_filter_context()
         conv = self._finding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id="endgame_type_blitz",
             metric="conversion_win_pct",
             window="all_time",
             value=0.80,
             zone="strong",
-            dimension={"endgame_class": "rook", "bucket": "conversion"},
+            dimension={"endgame_class": "rook", "time_control": "blitz"},
         )
         rec = self._finding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id="endgame_type_blitz",
             metric="recovery_save_pct",
             window="all_time",
             value=0.18,
             zone="weak",
-            dimension={"endgame_class": "rook", "bucket": "recovery"},
+            dimension={"endgame_class": "rook", "time_control": "blitz"},
         )
         tab = _fake_findings(filters, findings=[conv, rec])
         prompt = _assemble_user_prompt(tab)
 
-        assert "[asymmetry type=rook] conversion=80 strong, recovery=18 weak" in prompt
+        assert "[asymmetry type=rook tc=blitz] conversion=80 strong, recovery=18 weak" in prompt
         assert "closes winning endgames but bleeds losing ones" in prompt
 
     # Phase 88.1 (Plan 09, REVIEW.md WR-06): test_low_time_gap_line_emitted_in_time_pressure_chart
@@ -2535,7 +2533,7 @@ class TestMetadataOverride:
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
         # Phase 102 UAT: bumped from endgame_v35 to endgame_v40.
-        assert response.report.prompt_version == "endgame_v41"
+        assert response.report.prompt_version == "endgame_v42"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2559,7 +2557,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v41"
+        assert log.response_json["prompt_version"] == "endgame_v42"
 
 
 class TestCacheBehavior:
@@ -3612,7 +3610,7 @@ class TestPhase874PromptVersion:
 
     def test_prompt_version_is_v33(self) -> None:
         """SC#7: bumped to endgame_v40 by Phase 102 UAT (was endgame_v35 after Phase 87.6)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v41"
+        assert insights_llm._PROMPT_VERSION == "endgame_v42"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3660,7 +3658,7 @@ class TestPhase876LLMPayloadExtension:
 
     def test_prompt_version_is_endgame_v39(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION bumped from endgame_v35 to endgame_v40."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v41"
+        assert insights_llm._PROMPT_VERSION == "endgame_v42"
 
     def test_prompt_changelog_preserves_v33_entry(self) -> None:
         """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
@@ -4385,4 +4383,4 @@ class TestRatingBasisBlock:
         """Phase 102 Plan 05/UAT: _PROMPT_VERSION bumped to endgame_v40."""
         from app.services import insights_llm
 
-        assert insights_llm._PROMPT_VERSION == "endgame_v41"
+        assert insights_llm._PROMPT_VERSION == "endgame_v42"

@@ -247,6 +247,10 @@ class TestEndgameTabFindings:
             # Phase 102 (Plan 05): cohort_anchors changed from dict[str, int] to
             # dict[str, RatingAnchorContext] — field position is unchanged.
             "cohort_anchors",
+            # Phase 102 UAT (2026-06-02): per-(class × TC) type breakdown for the
+            # per-TC endgame_type_<tc> subsections. Appended after cohort_anchors,
+            # before findings_hash, to preserve findings_hash stability.
+            "type_categories_by_tc",
             "findings_hash",
         ]
 

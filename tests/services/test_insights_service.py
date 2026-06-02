@@ -503,7 +503,7 @@ def _stub_endgame_overview_response() -> EndgameOverviewResponse:
     return EndgameOverviewResponse.model_construct(
         time_pressure_chart=None,
         performance=None,
-        stats=type("StatsStub", (), {"categories": []})(),
+        stats=type("StatsStub", (), {"categories": [], "categories_by_tc": None})(),
         endgame_elo_timeline=type("EloTimelineStub", (), {"combos": []})(),
         score_gap_material=stub_score_gap_material,
         time_pressure_cards=stub_time_pressure_cards,
@@ -1354,13 +1354,11 @@ class TestComputePlayerProfile:
 
 
 class TestD15LlmPathInvariant:
-    """D-15 regression: _findings_conversion_recovery_by_type must read
-    response.stats.categories (pooled) only — never categories_by_tc.
-
-    Adding categories_by_tc to EndgameStatsResponse must NOT change the
-    findings produced by the LLM insights path. This test asserts identical
-    outputs with and without categories_by_tc populated, so any accidental
-    coupling to the new field is caught immediately.
+    """Phase 102 UAT (2026-06-02): D-15 is REVERSED. The LLM type_breakdown path
+    now reads response.stats.categories_by_tc (per-(class × TC)) and emits one
+    `endgame_type_<tc>` subsection per eligible time control, mirroring the UI's
+    per-TC collapsible cards. The pooled `categories` are no longer the source for
+    the type breakdown. These tests assert the new per-TC behavior.
     """
 
     @staticmethod
@@ -1432,57 +1430,69 @@ class TestD15LlmPathInvariant:
             performance=None,
         )
 
-    def test_findings_identical_with_and_without_categories_by_tc(self) -> None:
-        """D-15 invariant: adding categories_by_tc must NOT change LLM findings.
+    def test_per_tc_producer_emits_endgame_type_subsections(self) -> None:
+        """The per-TC producer reads categories_by_tc and emits endgame_type_<tc>
+        findings (Conv/Recov per class) carrying a {endgame_class, time_control} dim."""
+        from app.services.insights_service import _findings_endgame_type_by_tc
 
-        The _findings_conversion_recovery_by_type function must continue to
-        read response.stats.categories (pooled) and produce identical findings
-        whether categories_by_tc is None or populated with data.
-        """
-        from app.services.insights_service import _findings_conversion_recovery_by_type
-
-        categories = [
-            self._make_category("rook", conv_games=20, conv_wins=16, recov_games=10, recov_wins=3),
-            self._make_category("pawn", conv_games=15, conv_wins=12, recov_games=8, recov_wins=2),
-        ]
-
-        # Build a populated categories_by_tc (different data from pooled)
+        # blitz clears the per-TC games gate (totals 30 + 23 = 53 >= 20).
         tc_cats = {
             "blitz": [
-                self._make_category("rook", conv_games=5, conv_wins=2, recov_games=3, recov_wins=1)
-            ]
+                self._make_category(
+                    "rook", conv_games=20, conv_wins=16, recov_games=10, recov_wins=3
+                ),
+                self._make_category(
+                    "pawn", conv_games=15, conv_wins=12, recov_games=8, recov_wins=2
+                ),
+            ],
         }
+        stats = self._make_stats([], categories_by_tc=cast(Any, tc_cats))
+        resp = self._make_response(stats)
 
-        stats_without = self._make_stats(categories, categories_by_tc=None)
-        stats_with = self._make_stats(categories, categories_by_tc=tc_cats)
-        resp_without = self._make_response(stats_without)
-        resp_with = self._make_response(stats_with)
+        findings = _findings_endgame_type_by_tc(resp, "all_time")
 
-        findings_without = _findings_conversion_recovery_by_type(resp_without, "all_time")
-        findings_with = _findings_conversion_recovery_by_type(resp_with, "all_time")
-
-        # Both must produce identical findings (same length, same values)
-        assert len(findings_without) == len(findings_with), (
-            "D-15 violated: findings count differs when categories_by_tc is set"
+        assert findings, "expected per-TC Endgame Type findings"
+        assert all(f.subsection_id == "endgame_type_blitz" for f in findings)
+        assert all(f.dimension and f.dimension.get("time_control") == "blitz" for f in findings)
+        assert all(
+            f.dimension and f.dimension.get("endgame_class") in {"rook", "pawn"} for f in findings
         )
-        for f_without, f_with in zip(findings_without, findings_with, strict=True):
-            assert f_without.value == f_with.value, (
-                f"D-15 violated: finding value differs for metric={f_without.metric}, "
-                f"dim={f_without.dimension}"
-            )
-            assert f_without.zone == f_with.zone, (
-                f"D-15 violated: finding zone differs for metric={f_without.metric}"
-            )
+        metrics = {f.metric for f in findings}
+        assert "conversion_win_pct" in metrics
+        assert "recovery_save_pct" in metrics
+        # win_rate is NOT emitted — the renderer's per-TC WDL table carries that framing.
+        assert "win_rate" not in metrics
 
-    def test_llm_path_does_not_reference_categories_by_tc(self) -> None:
-        """Static assertion: _findings_conversion_recovery_by_type source must not
-        reference categories_by_tc (prevents accidental coupling)."""
-        import inspect
+    def test_no_findings_when_categories_by_tc_absent(self) -> None:
+        """D-15 reversal: the pooled `categories` are no longer the type-breakdown
+        source. With categories_by_tc=None the producer emits nothing (section omitted)."""
+        from app.services.insights_service import _findings_endgame_type_by_tc
 
-        from app.services import insights_service
-
-        source = inspect.getsource(insights_service._findings_conversion_recovery_by_type)  # type: ignore[attr-defined]
-        assert "categories_by_tc" not in source, (
-            "D-15 violated: _findings_conversion_recovery_by_type references "
-            "categories_by_tc — the LLM path must read only response.stats.categories"
+        stats = self._make_stats(
+            [
+                self._make_category(
+                    "rook", conv_games=20, conv_wins=16, recov_games=10, recov_wins=3
+                )
+            ],
+            categories_by_tc=None,
         )
+        resp = self._make_response(stats)
+
+        assert _findings_endgame_type_by_tc(resp, "all_time") == []
+
+    def test_tc_below_game_gate_is_omitted(self) -> None:
+        """A TC whose summed endgame games fall below MIN_GAMES_PER_TC_CARD emits no findings."""
+        from app.services.endgame_zones import MIN_GAMES_PER_TC_CARD
+        from app.services.insights_service import _findings_endgame_type_by_tc
+
+        # rapid total = 5 + 3 = 8, below the gate.
+        assert 8 < MIN_GAMES_PER_TC_CARD
+        tc_cats = {
+            "rapid": [
+                self._make_category("rook", conv_games=5, conv_wins=2, recov_games=3, recov_wins=1),
+            ],
+        }
+        stats = self._make_stats([], categories_by_tc=cast(Any, tc_cats))
+        resp = self._make_response(stats)
+
+        assert _findings_endgame_type_by_tc(resp, "all_time") == []
