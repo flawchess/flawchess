@@ -19,6 +19,7 @@ from app.schemas.insights import (
     EndgameTabFindings,
     FilterContext,
     MetricId,
+    RatingAnchorContext,
     SampleQuality,
     SectionId,
     SubsectionFinding,
@@ -235,6 +236,21 @@ class TestEndgameTabFindings:
             "overall_performance",
             "type_categories",
             "player_profile",
+            # Phase 102 (Plan 01): appended before findings_hash so the hash stays last
+            # (load-bearing for findings_hash stability); optional non-breaking payload adds.
+            "time_pressure_cards",
+            "metric_percentiles",
+            # Phase 102 (Plan 04): per-TC metric percentiles for Section 2 ΔES-gap +
+            # raw-rate + time-pressure metrics. Appended after metric_percentiles,
+            # before cohort_anchors, to preserve findings_hash stability.
+            "per_tc_metric_percentiles",
+            # Phase 102 (Plan 05): cohort_anchors changed from dict[str, int] to
+            # dict[str, RatingAnchorContext] — field position is unchanged.
+            "cohort_anchors",
+            # Phase 102 UAT (2026-06-02): per-(class × TC) type breakdown for the
+            # per-TC endgame_type_<tc> subsections. Appended after cohort_anchors,
+            # before findings_hash, to preserve findings_hash stability.
+            "type_categories_by_tc",
             "findings_hash",
         ]
 
@@ -299,7 +315,9 @@ class TestModuleAll:
             "InsightsErrorResponse",
             "InsightsStatus",
             "MetricId",
+            "MetricPercentileRecord",
             "PlayerProfileEntry",
+            "RatingAnchorContext",  # Phase 102 Plan 05
             "SampleQuality",
             "SectionId",
             "SectionInsight",
@@ -316,6 +334,67 @@ class TestModuleAll:
 def test_nan_constant_available_for_callers() -> None:
     """Sanity: math.nan is what the service will emit for empty windows."""
     assert math.isnan(float("nan"))
+
+
+class TestRatingAnchorContext:
+    """Phase 102 Plan 05: RatingAnchorContext carries platform-composition disclosure."""
+
+    def test_basic_construction(self) -> None:
+        ctx = RatingAnchorContext(
+            anchor_rating=1550,
+            n_chesscom_games=320,
+            n_lichess_games=0,
+            chesscom_median_native=1400,
+        )
+        assert ctx.anchor_rating == 1550
+        assert ctx.n_chesscom_games == 320
+        assert ctx.n_lichess_games == 0
+        assert ctx.chesscom_median_native == 1400
+        assert ctx.lichess_median_native is None
+
+    def test_pure_lichess(self) -> None:
+        ctx = RatingAnchorContext(
+            anchor_rating=1620,
+            n_chesscom_games=0,
+            n_lichess_games=450,
+            lichess_median_native=1620,
+        )
+        assert ctx.n_chesscom_games == 0
+        assert ctx.n_lichess_games == 450
+        assert ctx.chesscom_median_native is None
+
+    def test_mixed_user(self) -> None:
+        ctx = RatingAnchorContext(
+            anchor_rating=1580,
+            n_chesscom_games=200,
+            n_lichess_games=300,
+            chesscom_median_native=1410,
+            lichess_median_native=1600,
+        )
+        assert ctx.chesscom_median_native == 1410
+        assert ctx.lichess_median_native == 1600
+
+    def test_cohort_anchors_in_findings_carries_rating_anchor_context(self) -> None:
+        """EndgameTabFindings.cohort_anchors accepts dict[str, RatingAnchorContext]."""
+        ctx = RatingAnchorContext(
+            anchor_rating=1550,
+            n_chesscom_games=320,
+            n_lichess_games=0,
+            chesscom_median_native=1400,
+        )
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime(2026, 6, 1, tzinfo=datetime.timezone.utc),
+            filters=FilterContext(),
+            findings=[],
+            cohort_anchors={"blitz": ctx},
+            findings_hash="",
+        )
+        assert findings.cohort_anchors is not None
+        assert "blitz" in findings.cohort_anchors
+        anchor = findings.cohort_anchors["blitz"]
+        assert isinstance(anchor, RatingAnchorContext)
+        assert anchor.anchor_rating == 1550
+        assert anchor.chesscom_median_native == 1400
 
 
 # ---------------------------------------------------------------------------

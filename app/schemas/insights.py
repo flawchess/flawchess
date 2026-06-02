@@ -45,6 +45,7 @@ from app.services.endgame_zones import (
 from app.schemas.endgames import (
     EndgameCategoryStats,
     EndgamePerformanceResponse,
+    TimePressureCardsResponse,
     TimePressureChartResponse,
 )
 
@@ -57,7 +58,9 @@ __all__ = [
     "InsightsErrorResponse",
     "InsightsStatus",
     "MetricId",
+    "MetricPercentileRecord",
     "PlayerProfileEntry",
+    "RatingAnchorContext",
     "SampleQuality",
     "SectionId",
     "SectionInsight",
@@ -104,6 +107,58 @@ InsightsError = Literal[
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
+
+
+class RatingAnchorContext(BaseModel):
+    """Per-TC anchor context forwarded to the LLM prompt for Lichess-equivalent framing.
+
+    Phase 102 (Plan 05): mirrors RatingAnchorOut from app/schemas/endgames.py so the
+    insights pipeline carries full platform-composition disclosure to the LLM without
+    re-reading EndgameOverviewResponse. Fields are a subset of RatingAnchorOut — only
+    the fields needed for the [rating basis] block.
+
+    `anchor_rating` is the blended Lichess-equivalent (post-conversion for chess.com
+    games; native for lichess games). The four disclosure branches mirror the chip
+    tooltip's PercentileChipPopoverBody:
+      (a) Mixed user (n_chesscom_games > 0 AND n_lichess_games > 0): both platforms.
+      (b) Pure-lichess user (n_chesscom_games == 0): no conversion note.
+      (c) Pure-chess.com user (n_lichess_games == 0): chesscom_median_native and
+          conversion note.
+      (d) Suppression (both counts == 0): suppressed upstream (cohort_anchors omits TC).
+    """
+
+    anchor_rating: int
+    n_chesscom_games: int
+    n_lichess_games: int
+    chesscom_median_native: int | None = None
+    lichess_median_native: int | None = None
+
+
+class MetricPercentileRecord(BaseModel):
+    """Enriched per-metric percentile record carrying cohort context.
+
+    Phase 102 (Plan 04): replaces the flat float in metric_percentiles with a
+    richer record so the LLM prompt can cite anchor, n_games, and value
+    alongside the percentile number for reliability context.
+
+    Fields:
+      percentile: cohort percentile in [0, 100].
+      value: chip-cohort value (PercentileRow.value) in the metric's UI scale
+        (e.g. percentage points for score_gap, fraction×100 for conv/parity/recov).
+        None when the source PercentileRow carries a null value.
+      n_games: game count on the cohort pool used to compute this percentile.
+        None when not available from the source row.
+      anchor: blended rating anchor (Lichess-equivalent) for the cohort.
+        None when no anchor is available for this (metric, tc) cell.
+      tc: time-control bucket for per-TC metrics; None for page-level weighted
+        metrics (score_gap, achievable_score_gap).
+    """
+
+    percentile: float
+    value: float | None = None
+    n_games: int | None = None
+    anchor: int | None = None
+    tc: Literal["bullet", "blitz", "rapid", "classical"] | None = None
 
 
 class FilterContext(BaseModel):
@@ -230,6 +285,53 @@ class EndgameTabFindings(BaseModel):
     # narrative tone to skill level. None when no qualifying combo exists
     # (new user with too few games). See PlayerProfileEntry for shape.
     player_profile: list["PlayerProfileEntry"] | None = None
+    # Phase 102 (Plan 01): per-TC time-pressure cards from the all_time window.
+    # Carries the 5 quintiles + per-TC TPCTL percentiles so the assembler can
+    # render the Score-Gap-by-time chart block and read per-TC percentiles.
+    # Optional so existing test fixtures that construct EndgameTabFindings
+    # without this kwarg still work. Append-only: adding it after player_profile
+    # preserves declaration order for findings_hash stability.
+    time_pressure_cards: TimePressureCardsResponse | None = None
+    # Phase 102 (Plan 01): page-level MetricId → percentile lookup (game-count
+    # weighted, same value the chip shows). Keys present only when the source
+    # percentile is non-None (e.g. "score_gap", "achievable_score_gap").
+    # Per-TC time-pressure metric percentiles live directly on time_pressure_cards
+    # instead (direct per-TC TPCTL, no weighting — D-06). Optional for hash
+    # stability and backwards compat.
+    # Phase 102 (Plan 04): changed from dict[str, float] to dict[str, MetricPercentileRecord]
+    # to carry value + n_games + anchor alongside the percentile. Backwards-incompatible
+    # field-type change is safe: the field is optional and no external consumer
+    # reads it directly (it is internal to the prompt assembly pipeline).
+    metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None
+    # Phase 102 (Plan 04): per-TC metric percentiles for the 6 per-TC metrics
+    # (score_gap_conv, score_gap_parity, recovery_score_gap per TC, plus
+    # conversion_rate, parity_rate, recovery_rate per TC). Keyed as
+    # "{metric_id}:{tc}" (e.g. "score_gap_conv:blitz"). Optional for
+    # backwards compat; None when no per-TC percentiles are available.
+    per_tc_metric_percentiles: dict[str, "MetricPercentileRecord"] | None = None
+    # Phase 102 (Plan 01): time-control bucket → anchor_rating mapping derived
+    # from EndgameOverviewResponse.rating_anchors. Lets the assembler build cohort
+    # framing ("vs ~{anchor}-rated {tc} peers") without re-reading the full
+    # EndgameOverviewResponse. Optional for backwards compat.
+    # Phase 102 (Plan 05): type changed from dict[str, int] to
+    # dict[str, RatingAnchorContext] to carry platform-composition disclosure
+    # (n_chesscom_games, n_lichess_games, chesscom_median_native, lichess_median_native)
+    # so the LLM can render the [rating basis] block and frame the Lichess-equivalent
+    # anchor for chess.com-heavy users. Backwards-incompatible field-type change is safe:
+    # field is optional and no external consumer reads it directly.
+    cohort_anchors: dict[str, "RatingAnchorContext"] | None = None
+    # Phase 102 UAT (2026-06-02): per-(class × TC) endgame type breakdown from the
+    # all_time window (EndgameStatsResponse.categories_by_tc, Phase 98). Drives the
+    # per-TC `endgame_type_<tc>` subsections that replaced the aggregate-over-TC
+    # `results_by_endgame_type` + `conversion_recovery_by_type` blocks — the LLM
+    # renders one WDL table + Conv/Recov/Score-Gap bullets per eligible TC. Keyed
+    # by TC bucket; mixed/pawnless already excluded upstream by
+    # _aggregate_endgame_stats_by_tc. Optional for backwards compat with fixtures
+    # and older responses; appended before findings_hash so the hash stays last
+    # (load-bearing for findings_hash stability).
+    type_categories_by_tc: (
+        dict[Literal["bullet", "blitz", "rapid", "classical"], list[EndgameCategoryStats]] | None
+    ) = None
     findings_hash: str
 
 

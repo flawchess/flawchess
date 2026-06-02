@@ -235,7 +235,7 @@ function NetFlagRateRow({
         data-testid={`time-pressure-card-${card.tc}-net-flag-rate`}
         className="inline-flex items-center gap-1"
       >
-        Net flag rate:{' '}
+        Net Flag Rate:{' '}
         {/* REVIEW.md WR-04: the tinted span on its own conveys directionality
             to sighted users only. The popover carries the WDL convention
             reference so screen-reader users get the same context. */}
@@ -243,12 +243,12 @@ function NetFlagRateRow({
           {formatNetTimeoutRate(card.net_timeout_rate)}
         </span>
         <InfoPopover
-          ariaLabel="What is Net flag rate?"
+          ariaLabel="What is Net Flag Rate?"
           testId={`time-pressure-card-${card.tc}-net-flag-rate-info`}
           side="top"
         >
           <p>
-            <strong>Net flag rate:</strong> how often you run out of time
+            <strong>Net Flag Rate:</strong> how often you run out of time
             compared to your opponents. Positive = you flag less often than
             them; negative = you flag more often.
           </p>

@@ -13,17 +13,17 @@
 
 ### LLM Statistical Reasoning (LLM)
 
-> **Status (2026-05-31): deprioritized to backlog.** This scope was the sole phase of the planned v1.22 LLM Statistical Reasoning milestone; it was bumped in favour of the v1.22 Maintenance milestone (test isolation + frontend major upgrades) and parked as ROADMAP **Phase 999.7 (BACKLOG)**. Requirements stay open/pending here; promote via `/gsd-review-backlog` when ready.
+> **Status (2026-06-01): active as v1.23 Phase 102.** Promoted from backlog (was Phase 999.7) via `/gsd-explore`. Scope narrowed this session — percentile-led, p-values out, CI likely out, LLM time-pressure narration added, no new frontend, UAT-dominated. Full locked decisions: `.planning/notes/v1.23-phase-102-endgame-llm-statistical-reasoning.md`. Next: `/gsd-discuss-phase 102`.
 
 Reworks the endgame-insights LLM payload + prompt so the model can reason over the v1.17 statistical-rigor metric set (Endgame Score Gap, Achievable Score Gap, Section 2 ΔES Score Gap family, Time Pressure hypothesis tests) using p-values, confidence intervals, and the v1.19 peer-relative percentile annotations, while preserving the prior decision that the cohort `zone` field — not significance — gates whether a metric is narrated.
 
-- [ ] **LLM-01**: The endgame-insights payload exposes per-metric p-values, confidence interval bounds, and percentile fields for the v1.17 statistical-rigor metric set, alongside the existing `zone` + `sample_quality` fields. Existing metrics retain their current shape; the additions are non-breaking optional fields.
-- [ ] **LLM-02**: The endgame-insights system prompt teaches the LLM to reason over CIs and percentiles explicitly — e.g. "your value sits at X with 95% CI [Y, Z], placing you in the top P% of same-rated peers" — without re-licensing the small-but-significant narration pattern that motivated `feedback_llm_significance_signal.md`. The cohort `zone` field remains the gate for whether a metric is narrated at all; CIs and p-values inform *how* the narration is phrased once a zone-driven decision to narrate has been made.
-- [ ] **LLM-03**: The prompt resolves the tension with `feedback_llm_significance_signal` by either (a) tightening cohort bands further so the zone signal already captures practical significance, or (b) passing raw p-values + CIs with explicit guardrail copy in the system prompt forbidding "small but significant" framings. Final choice deferred to Phase 95's `/gsd:discuss-phase`; both must be considered with rationale recorded in the decision log.
-- [ ] **LLM-04**: The endgame-insights prompt narrates the Phase 85.1 / 87.2 / 87.6 / 88 metrics with the new statistical depth where the existing prompt has either silence or generic templating — at least Section 1 Endgame Score Gap & Achievable Score Gap, Section 2 ΔES Score Gap family, and Time Pressure score-curve verdicts must benefit measurably from the rework.
-- [ ] **LLM-05**: Where peer-relative percentile annotations (v1.19 PCTL/TPCTL/PRPCR) are emitted on in-scope metrics, the LLM payload includes them and the prompt teaches the model to weave the percentile into narration naturally — using the cohort framing ("vs other ~{anchor}-rated players") not global-pool framing — without doubling up on the cohort zone signal.
-- [ ] **LLM-06**: The endgame-insights prompt version bumps cleanly (current is `endgame_v35`); cache invalidation is automatic via the `_PROMPT_VERSION` cache key. Backwards compatibility with older cached reports is preserved (do not retroactively invalidate prior reports beyond the prompt-version cache mechanism already in place).
-- [ ] **LLM-07**: At least one UAT pass against real production users (the same `endgame_v23` → `endgame_v35` UAT cadence used in v1.16 / v1.17) verifies the rework lands an observable improvement on a representative sample — short-history users, sparse-section users, and full-history users included.
+- [x] **LLM-01**: The endgame-insights payload exposes per-metric **percentile** fields for the v1.17/v1.19/v1.21 metric set, alongside the existing `zone` + `sample_quality` fields. Existing metrics retain their current shape; the additions are non-breaking optional fields. **Scope narrowed (/gsd-explore 2026-06-01):** percentile is the committed addition; **p-values are explicitly OUT** (redundant with the zone band, conflicts with `feedback_llm_significance_signal`); **CI bounds are likely OUT** (the existing `sample_quality` / `within-noise` / `[near edge]` markers already cover precision/hedging) — final CI call locked at discuss-phase. See `.planning/notes/v1.23-phase-102-endgame-llm-statistical-reasoning.md`.
+- [x] **LLM-02**: The endgame-insights system prompt teaches the LLM to reason over CIs and percentiles explicitly — e.g. "your value sits at X with 95% CI [Y, Z], placing you in the top P% of same-rated peers" — without re-licensing the small-but-significant narration pattern that motivated `feedback_llm_significance_signal.md`. The cohort `zone` field remains the gate for whether a metric is narrated at all; CIs and p-values inform *how* the narration is phrased once a zone-driven decision to narrate has been made.
+- [x] **LLM-03**: The prompt preserves `feedback_llm_significance_signal` — the cohort `zone` field remains the sole gate on *whether* a metric is narrated; percentile annotations inform only *how* a zone-opened narration is phrased and must NOT act as a second significance signal (do not narrate a "typical"-zone metric because its percentile is extreme). **Session lean (/gsd-explore 2026-06-01):** approach (a) — no parallel p-value/CI significance fields in the payload; percentile-only enrichment under the zone gate. Final lock at Phase 102 `/gsd-discuss-phase`, rationale recorded in the decision log.
+- [x] **LLM-04**: The endgame-insights prompt narrates the Phase 85.1 / 87.2 / 87.6 / 88 metrics with the new statistical depth where the existing prompt has either silence or generic templating — at least Section 1 Endgame Score Gap & Eval Score Gap (overall), Section 2 Eval Score Gap family (per-phase + per-sequence-type), and **Time Pressure**. Time-pressure narration covers the three page surfaces (/gsd-explore 2026-06-01): **Score Gap by Remaining Time** (the per-bucket decomposition Phase 88.1 stripped from the payload — the genuine add), **Clock Gap**, and **Net Flag Rate**. Verify which of these are already in the payload at plan time rather than trusting prior-agent claims.
+- [x] **LLM-05**: Where peer-relative percentile annotations (v1.19 PCTL/TPCTL/PRPCR) are emitted on in-scope metrics, the LLM payload includes them and the prompt teaches the model to weave the percentile into narration naturally — using the cohort framing ("vs other ~{anchor}-rated players") not global-pool framing — without doubling up on the cohort zone signal.
+- [x] **LLM-06**: The endgame-insights prompt version bumps cleanly (current is `endgame_v35`); cache invalidation is automatic via the `_PROMPT_VERSION` cache key. Backwards compatibility with older cached reports is preserved (do not retroactively invalidate prior reports beyond the prompt-version cache mechanism already in place).
+- [ ] **LLM-07**: **UAT is the primary verification for this phase, not an afterthought** (/gsd-explore 2026-06-01 — user flagged Phase 102 as UAT-dominated). Budget for multiple UAT passes against real production users (the same `endgame_v23` → `endgame_v35` cadence used in v1.16 / v1.17), verifying the rework lands an observable narration improvement across a representative sample — short-history users, sparse-section users, and full-history users included.
 
 ## Future Requirements
 
@@ -39,13 +39,13 @@ Reworks the endgame-insights LLM payload + prompt so the model can reason over t
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LLM-01 | Phase 999.7 (backlog) | Pending |
-| LLM-02 | Phase 999.7 (backlog) | Pending |
-| LLM-03 | Phase 999.7 (backlog) | Pending |
-| LLM-04 | Phase 999.7 (backlog) | Pending |
-| LLM-05 | Phase 999.7 (backlog) | Pending |
-| LLM-06 | Phase 999.7 (backlog) | Pending |
-| LLM-07 | Phase 999.7 (backlog) | Pending |
+| LLM-01 | Phase 102 (v1.23) | Complete |
+| LLM-02 | Phase 102 (v1.23) | Complete |
+| LLM-03 | Phase 102 (v1.23) | Complete |
+| LLM-04 | Phase 102 (v1.23) | Complete |
+| LLM-05 | Phase 102 (v1.23) | Complete |
+| LLM-06 | Phase 102 (v1.23) | Complete |
+| LLM-07 | Phase 102 (v1.23) | Pending |
 
 **Coverage:** 7/7 v1 requirements mapped to Phase 999.7 (backlog — see ROADMAP). No orphans. The active v1.22 Maintenance milestone (Phases 100, 101) is standalone test-infra + dependency maintenance with no formal requirement IDs.
 

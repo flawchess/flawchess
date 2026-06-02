@@ -250,6 +250,21 @@ describe('EndgameMetricsByTcCard — Score Gap bullet gating', () => {
   });
 });
 
+describe('EndgameMetricsByTcCard — score gap shows RAW value, not centered', () => {
+  it('renders the uncentered score_gap_mean in the label, not the display-shifted value', () => {
+    // Regression guard for the centered-vs-uncentered bug: displayShift recenters
+    // ONLY the bullet graphic on visual zero, it must not leak into the textual
+    // label. The bullet conversion band is [-0.195, -0.057] → shift = +0.126, so
+    // a raw gap of -0.10 has a *centered* value of +0.026. The label must show the
+    // RAW -10%, never the centered +3%.
+    renderCard(buildCard('bullet'));
+
+    const label = screen.getByTestId('metrics-tc-bullet-conversion-score-gap-value');
+    expect(label.textContent).toBe('-10%');
+    expect(label.textContent).not.toBe('+3%');
+  });
+});
+
 describe('EndgameMetricsByTcCard — block testid presence', () => {
   it.each([
     ['bullet'] as const,

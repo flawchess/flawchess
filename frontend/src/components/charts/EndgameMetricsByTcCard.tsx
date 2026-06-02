@@ -122,12 +122,20 @@ function MetricBlock({
   const showGapRow = gapN > 0;
   const gapMean = block.score_gap_mean;
 
+  // displayShift recenters ONLY the bullet graphic on visual zero (D-04). It must
+  // not leak into the textual number or the tooltip: the label and tooltip report
+  // the RAW (uncentered) gap, and the cohort-typical baseline is the raw neutral-band
+  // midpoint = -displayShift (0 for parity). Bug fix: previously gapFormatted and the
+  // popover used the shifted value with a hard-coded "0%" baseline, so the label and
+  // tooltip showed the centered number against a phantom zero baseline.
   const displayedValue = (gapMean ?? 0) + displayShift;
   const displayedNeutralMin = neutralMin + displayShift;
   const displayedNeutralMax = neutralMax + displayShift;
+  const rawBaseline = -displayShift;
+  const rawBaselineLabel = `${(rawBaseline * 100).toFixed(1)}%`;
   const gapFormatted =
     gapMean != null
-      ? (displayedValue >= 0 ? '+' : '') + `${Math.round(displayedValue * 100)}%`
+      ? (gapMean >= 0 ? '+' : '') + `${Math.round(gapMean * 100)}%`
       : '—';
 
   // Zone tinting uses RAW values (D-04 carve-out) so the displayed bullet
@@ -269,16 +277,16 @@ function MetricBlock({
                     <MetricStatPopover
                       name={`${BUCKET_DISPLAY_LABELS[bucket]} Eval Score Gap`}
                       explanation={POPOVER_COPY[bucket]}
-                      value={displayedValue}
-                      baseline={displayShift}
+                      value={gapMean ?? 0}
+                      baseline={rawBaseline}
                       unit="percent"
                       gameCount={gapN}
                       level={gapLevel}
                       pValue={block.score_gap_p_value}
                       vocabulary="score"
-                      neutralLower={displayedNeutralMin}
-                      neutralUpper={displayedNeutralMax}
-                      baselineLabel="0%"
+                      neutralLower={neutralMin}
+                      neutralUpper={neutralMax}
+                      baselineLabel={rawBaselineLabel}
                       methodology={
                         <>
                           Eval Score Gap: difference between the Eval Scores at the start and end of an Endgame Sequence (Stockfish evals converted via the Lichess expected-score formula).<br />

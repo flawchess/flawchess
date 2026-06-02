@@ -26,6 +26,7 @@ from app.schemas.insights import (
     EndgameInsightsReport,
     EndgameTabFindings,
     FilterContext,
+    MetricPercentileRecord,
     SectionInsight,
     SubsectionFinding,
     TimePoint,
@@ -38,7 +39,10 @@ from app.services.insights_llm import (
     InsightsValidationFailure,
     _SYSTEM_PROMPT,
     _assemble_user_prompt,
+    _asymmetry_lines,
+    _lookup_pctl_record,
     _maybe_strip_overview,
+    _recovery_pattern_tag,
     generate_insights,
     get_insights_agent,
 )
@@ -213,7 +217,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
 
     def test_prompt_changelog_preserves_prior_versions(self) -> None:
         """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
@@ -261,7 +265,9 @@ class TestPromptVersionAndBody:
         body = prompt_path.read_text(encoding="utf-8")
         # The two example narrations from CONTEXT.md D-18 must be present verbatim.
         assert "Stockfish-baseline says positions like yours score 58%" in body
-        assert "Achievable 49%, you scored 52%" in body
+        assert (
+            "Entry Eval Score 49%, you scored 52%" in body
+        )  # Phase 102: vocab audit renamed "Achievable" → "Entry Eval Score"
 
     def test_prompt_file_does_not_contain_removed_framing_rule(self) -> None:
         from pathlib import Path
@@ -371,7 +377,7 @@ class TestPromptVersionAndBody:
         Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
         changelog comment (append-only-at-FRONT pattern).
         """
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
         # Changelog comment must mention the Phase 87.6 rebuild.
         import inspect as _inspect
 
@@ -452,23 +458,22 @@ class TestPromptVersionAndBody:
         assert "positive = above the Stockfish baseline" in body
 
     def test_prompt_version_bumped(self) -> None:
-        """Phase 87.6: _PROMPT_VERSION is endgame_v35; prior v33 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+        """Phase 102 UAT: _PROMPT_VERSION is endgame_v40; prior v35 stays in changelog."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
-    """Phase 87.1 Plan 04: per-class Score Gap block in the LLM payload.
+    """Phase 102 UAT (2026-06-02): per-(class × TC) Score Gap block in the LLM payload.
 
     The metric `endgame_type_achievable_score_gap` is emitted as a
-    SubsectionFinding per endgame class under the existing
-    `conversion_recovery_by_type` subsection. Renders to a [summary] block
-    carrying `mean`, `n`, `zone`, and an inline `(typical LO to UP)` band
-    derived from PER_CLASS_GAUGE_ZONES[<class>].achievable_score_gap.
+    SubsectionFinding per (endgame class × time control) under the per-TC
+    `endgame_type_<tc>` subsection. Renders to a [summary] block carrying `mean`,
+    `n`, `zone`, and an inline `(typical LO to UP)` band derived from
+    PER_CLASS_TC_GAUGE_ZONES[<class>][<tc>].achievable_score_gap. The header
+    carries both the endgame_class and time_control dim keys.
 
-    The wire shape mirrors how Conv/Recov findings render today — same
-    [summary <metric> | endgame_class=<class>] header, same window line,
-    same inline band. There is intentionally no separate `verdict` or
-    `p_value` field per memory `feedback_llm_significance_signal.md`.
+    There is intentionally no separate `verdict` or `p_value` field per memory
+    `feedback_llm_significance_signal.md`.
     """
 
     def _gap_finding(
@@ -479,13 +484,14 @@ class TestEndgameTypeAchievableScoreGapPayload:
         zone: str,
         sample_size: int,
         sample_quality: str = "rich",
+        tc: str = "blitz",
     ) -> SubsectionFinding:
         from typing import cast
 
-        from app.schemas.insights import MetricId, SampleQuality, Zone
+        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Zone
 
         return SubsectionFinding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id=cast(SubsectionId, f"endgame_type_{tc}"),
             parent_subsection_id=None,
             window="all_time",
             metric=cast(MetricId, "endgame_type_achievable_score_gap"),
@@ -496,7 +502,7 @@ class TestEndgameTypeAchievableScoreGapPayload:
             sample_size=sample_size,
             sample_quality=cast(SampleQuality, sample_quality),
             is_headline_eligible=True,
-            dimension={"endgame_class": endgame_class},
+            dimension={"endgame_class": endgame_class, "time_control": tc},
             series=None,
         )
 
@@ -518,8 +524,11 @@ class TestEndgameTypeAchievableScoreGapPayload:
         tab = _fake_findings(filters, findings=[gap])
         prompt = _assemble_user_prompt(tab)
 
-        # Summary header includes the metric AND the per-class dim key.
-        assert "[summary endgame_type_achievable_score_gap | endgame_class=rook]" in prompt
+        # Summary header includes the metric AND the per-(class × TC) dim key.
+        assert (
+            "[summary endgame_type_achievable_score_gap | endgame_class=rook, time_control=blitz]"
+            in prompt
+        )
         # Window line carries the scaled mean (0.07 -> +7 on the 0-100 scale).
         assert "mean=+7" in prompt
         # Sample size surfaces.
@@ -550,7 +559,10 @@ class TestEndgameTypeAchievableScoreGapPayload:
         tab = _fake_findings(filters, findings=[gap])
         prompt = _assemble_user_prompt(tab)
 
-        assert "[summary endgame_type_achievable_score_gap | endgame_class=queen]" in prompt
+        assert (
+            "[summary endgame_type_achievable_score_gap | endgame_class=queen, time_control=blitz]"
+            in prompt
+        )
         # Mean is rendered (signed integer, scale=100): -0.02 -> -2.
         assert "mean=-2" in prompt
         # Sample size present.
@@ -625,14 +637,11 @@ class TestEndgameTypeAchievableScoreGapPayload:
         assert "[summary score_gap | endgame_class=minor_piece]" not in prompt
         assert "[summary type_score_gap" not in prompt
 
-    def test_gap_inline_band_dispatches_per_class(self) -> None:
-        """Inline band must come from PER_CLASS_GAUGE_ZONES, NOT the global band.
-
-        Per-class bands are calibrated from /benchmarks §3.4.2 (commit f48513fa);
-        renderer must dispatch via the per-class registry so each class's band
-        appears verbatim. Sanity check below pins the rook calibration so a
-        future band change forces the test (and the rendered constant) to be
-        updated together.
+    def test_gap_inline_band_dispatches_per_class_tc(self) -> None:
+        """Phase 102 UAT: inline band must come from PER_CLASS_TC_GAUGE_ZONES (per-(class × TC)),
+        NOT the pooled PER_CLASS_GAUGE_ZONES band. Sanity check below pins the rook/blitz
+        calibration so a future band change forces the test (and the rendered constant)
+        to be updated together.
         """
         from app.services import endgame_zones
 
@@ -642,14 +651,14 @@ class TestEndgameTypeAchievableScoreGapPayload:
             value=0.01,
             zone="typical",
             sample_size=20,
+            tc="blitz",
         )
         tab = _fake_findings(filters, findings=[gap])
         prompt = _assemble_user_prompt(tab)
-        # Calibrated rook band from PER_CLASS_GAUGE_ZONES["rook"].achievable_score_gap.
-        # Band updated to (-0.05, +0.05) per diff item E (upper drifted +0.6pp).
+        # Calibrated rook/blitz band from PER_CLASS_TC_GAUGE_ZONES["rook"]["blitz"].
         assert "(typical -5 to +5)" in prompt
-        # Sanity check: the per-class registry carries the calibrated band.
-        bands = endgame_zones.PER_CLASS_GAUGE_ZONES["rook"]
+        # Sanity check: the per-(class × TC) registry carries the calibrated band.
+        bands = endgame_zones.PER_CLASS_TC_GAUGE_ZONES["rook"]["blitz"]
         assert bands.achievable_score_gap == (-0.05, 0.05)
 
     def test_constant_n_series_emits_disclosure_and_drops_per_point_suffix(self) -> None:
@@ -733,7 +742,9 @@ class TestPromptAssembly:
             from_date=datetime.date(2026, 2, 20), time_controls=["blitz"], platforms=["chess.com"]
         )
         non_timeline = SubsectionFinding(
-            subsection_id="overall",
+            # Phase 102 UAT: score_gap scalar now lives in the dedicated
+            # `score_gap` subsection (the `overall` subsection was retired).
+            subsection_id="score_gap",
             parent_subsection_id=None,
             window="all_time",
             metric="score_gap",
@@ -815,7 +826,7 @@ class TestPromptAssembly:
         # `## Scoping caveat` line appears when opponent_strength != "any".
         assert "Filters:" not in prompt
         assert "Flags:" not in prompt
-        assert "### Subsection: overall" in prompt
+        assert "### Subsection: score_gap" in prompt
         assert "### Subsection: score_timeline" in prompt
         # Phase 68 (v14) / Phase 82 D-01/D-02 rename: three series blocks (one
         # per metric), all pinned to weekly.
@@ -1023,7 +1034,7 @@ class TestPromptAssembly:
         """A2 (260422-tnb): NaN values and thin empty findings are filtered out."""
         filters = _sample_filter_context()
         normal = SubsectionFinding(
-            subsection_id="overall",
+            subsection_id="score_gap",
             parent_subsection_id=None,
             window="all_time",
             metric="score_gap",
@@ -1071,9 +1082,11 @@ class TestPromptAssembly:
 
         filters = _sample_filter_context()
 
-        def _em(metric: str, bucket: str, value: float) -> SubsectionFinding:
+        # Phase 102 UAT: metrics_elo is per-TC — findings live under
+        # endgame_metrics_<tc> and carry a time_control dimension.
+        def _em(metric: str, value: float) -> SubsectionFinding:
             return SubsectionFinding(
-                subsection_id="endgame_metrics",
+                subsection_id="endgame_metrics_blitz",
                 parent_subsection_id=None,
                 window="all_time",
                 metric=cast(MetricId, metric),
@@ -1084,23 +1097,23 @@ class TestPromptAssembly:
                 sample_size=120,
                 sample_quality="adequate",
                 is_headline_eligible=True,
-                dimension={"bucket": bucket},
+                dimension={"time_control": "blitz"},
                 series=None,
             )
 
         findings_list = [
-            _em("conversion_win_pct", "conversion", 0.66),
-            _em("parity_score_pct", "parity", 0.50),
-            _em("recovery_save_pct", "recovery", 0.30),
+            _em("conversion_win_pct", 0.66),
+            _em("parity_score_pct", 0.50),
+            _em("recovery_save_pct", 0.30),
         ]
         tab_findings = _fake_findings(filters, findings=findings_list)
         prompt = _assemble_user_prompt(tab_findings)
 
-        assert prompt.count("### Subsection: endgame_metrics") == 1
+        assert prompt.count("### Subsection: endgame_metrics_blitz") == 1
         # Each of the 3 metrics emits exactly one [summary metric | dim] block.
-        assert prompt.count("[summary conversion_win_pct | bucket=conversion]") == 1
-        assert prompt.count("[summary parity_score_pct | bucket=parity]") == 1
-        assert prompt.count("[summary recovery_save_pct | bucket=recovery]") == 1
+        assert prompt.count("[summary conversion_win_pct | time_control=blitz]") == 1
+        assert prompt.count("[summary parity_score_pct | time_control=blitz]") == 1
+        assert prompt.count("[summary recovery_save_pct | time_control=blitz]") == 1
 
     def test_assemble_user_prompt_filters_sparse_series_points(self) -> None:
         """A4 (260422-tnb): series points with n < MIN_BUCKET_N (=3) are dropped."""
@@ -1234,13 +1247,10 @@ class TestPromptAssembly:
         assert "### Chart: overall_wdl" not in _assemble_user_prompt(tab_none)
 
     def test_assemble_user_prompt_renders_type_wdl_chart_block(self) -> None:
-        """Per-class WDL block is rendered, sorted by total descending.
-
-        v20 (260501-s0u pass2): the v18 conv/recov delta table was redundant
-        with the conversion_recovery_by_type [summary] blocks and got dropped.
-        The chart again carries WDL framing (games / win_pct / draw_pct /
-        loss_pct / score_pct) plus two new columns: opp_score_pct and
-        score_pct_diff.
+        """Phase 102 UAT: per-TC WDL table leads each `endgame_type_<tc>` subsection,
+        sorted by total descending. Built from type_categories_by_tc (per-(class × TC)).
+        The opp_score_pct + score_pct_diff columns are dropped (score_pct above 50
+        already means outscoring). Rows below the 10-game floor are skipped.
         """
         from app.schemas.endgames import ConversionRecoveryStats, EndgameCategoryStats
 
@@ -1314,27 +1324,23 @@ class TestPromptAssembly:
             as_of=datetime.datetime.now(datetime.UTC),
             filters=_sample_filter_context(),
             findings=[],
-            type_categories=categories,
+            type_categories_by_tc={"blitz": categories},
             findings_hash="b" * 64,
         )
         prompt = _assemble_user_prompt(tab)
 
-        assert "### Chart: results_by_endgame_type_wdl (all_time)" in prompt
-        # v20 WDL columns + two new ones (opp_score_pct, score_pct_diff).
-        assert (
-            "| endgame_class | games | win_pct | draw_pct | loss_pct | score_pct "
-            "| opp_score_pct | score_pct_diff |"
-        ) in prompt
-        # The v18 delta-table columns were dropped.
-        assert "conv_baseline_mid" not in prompt
-        assert "recov_baseline_mid" not in prompt
-        assert "conv_delta" not in prompt
-        assert "recov_delta" not in prompt
+        # Per-TC subsection header + WDL table caption.
+        assert "### Subsection: endgame_type_blitz" in prompt
+        assert "[WDL table — blitz]" in prompt
+        # Compact WDL columns (no opp_score_pct / score_pct_diff).
+        assert "| endgame_type | games | win_pct | draw_pct | loss_pct | score_pct |" in prompt
+        assert "opp_score_pct" not in prompt
+        assert "score_pct_diff" not in prompt
         # Sorted by total descending: rook (100) before pawn (30).
         rook_idx = prompt.index("| rook")
         pawn_idx = prompt.index("| pawn")
         assert rook_idx < pawn_idx
-        # Queen (total=3, below 10-game floor) dropped.
+        # Queen (total=3, below 10-game floor) dropped from the table.
         assert "| queen" not in prompt
 
     def test_pawnless_findings_are_filtered(self) -> None:
@@ -1352,25 +1358,25 @@ class TestPromptAssembly:
 
         filters = _sample_filter_context()
         rook_finding = SubsectionFinding(
-            subsection_id="results_by_endgame_type",
+            subsection_id="endgame_type_blitz",
             parent_subsection_id=None,
             window="all_time",
-            metric="win_rate",
-            value=0.41,
-            zone="weak",
+            metric="conversion_win_pct",
+            value=0.65,
+            zone="typical",
             trend="n_a",
             weekly_points_in_window=0,
-            sample_size=100,
+            sample_size=30,
             sample_quality="rich",
             is_headline_eligible=True,
-            dimension={"endgame_class": "rook"},
+            dimension={"endgame_class": "rook", "time_control": "blitz"},
             series=None,
         )
         pawnless_finding = SubsectionFinding(
-            subsection_id="results_by_endgame_type",
+            subsection_id=cast(Any, "endgame_type_blitz"),
             parent_subsection_id=None,
             window="all_time",
-            metric=cast(MetricId, "win_rate"),
+            metric=cast(MetricId, "conversion_win_pct"),
             value=0.58,
             zone="strong",
             trend="n_a",
@@ -1378,7 +1384,7 @@ class TestPromptAssembly:
             sample_size=19,
             sample_quality="adequate",
             is_headline_eligible=True,
-            dimension={"endgame_class": "pawnless"},
+            dimension={"endgame_class": "pawnless", "time_control": "blitz"},
             series=None,
         )
         # Rook: give realistic sequence counts (no longer used by the WDL chart
@@ -1440,11 +1446,13 @@ class TestPromptAssembly:
             as_of=datetime.datetime.now(datetime.UTC),
             filters=filters,
             findings=[rook_finding, pawnless_finding],
-            type_categories=categories,
+            type_categories_by_tc={"blitz": categories},
             findings_hash="b" * 64,
         )
         prompt = _assemble_user_prompt(tab)
 
+        # Rook bullet + WDL row present; pawnless stripped from both the bullets
+        # (visible-findings filter) and the WDL table (defensive class filter).
         assert "endgame_class=rook" in prompt
         assert "endgame_class=pawnless" not in prompt
         assert "| rook" in prompt
@@ -1453,10 +1461,13 @@ class TestPromptAssembly:
     def test_bullet_includes_inline_zone_bounds(self) -> None:
         """v7: every finding bullet renders `(typical LO to UP)` next to its zone.
 
-        Covers scalar (score_gap), bucketed (conversion_win_pct), and
-        higher_is_better (net_timeout_rate) registry paths. The inline shorthand
-        lets the LLM judge proximity to a zone edge without consulting the
-        global appendix.
+        Covers scalar (score_gap) and bucketed/higher_is_better
+        (conversion_win_pct) registry paths. The inline shorthand lets the LLM
+        judge proximity to a zone edge without consulting the global appendix.
+
+        Phase 102 UAT: the former net_timeout_rate case was dropped — the
+        page-level time_pressure_at_entry subsection is retired, so that metric
+        no longer renders as a zoned [summary] bullet.
         """
         from typing import cast
 
@@ -1464,7 +1475,7 @@ class TestPromptAssembly:
 
         filters = _sample_filter_context()
         scalar = SubsectionFinding(
-            subsection_id="overall",
+            subsection_id="score_gap",
             parent_subsection_id=None,
             window="all_time",
             metric="score_gap",
@@ -1478,8 +1489,11 @@ class TestPromptAssembly:
             dimension=None,
             series=None,
         )
+        # Phase 102 UAT: conversion_win_pct is now a per-TC metric whose band
+        # comes from TC_METRIC_BANDS via the time_control dimension (blitz conv
+        # band = 0.667..0.769 → +67 to +77).
         bucketed = SubsectionFinding(
-            subsection_id="endgame_metrics",
+            subsection_id="endgame_metrics_blitz",
             parent_subsection_id=None,
             window="all_time",
             metric=cast(MetricId, "conversion_win_pct"),
@@ -1490,49 +1504,34 @@ class TestPromptAssembly:
             sample_size=100,
             sample_quality="rich",
             is_headline_eligible=True,
-            dimension={"bucket": "conversion"},
+            dimension={"time_control": "blitz"},
             series=None,
         )
-        timeout = SubsectionFinding(
-            subsection_id="time_pressure_at_entry",
-            parent_subsection_id=None,
-            window="all_time",
-            metric="net_timeout_rate",
-            value=-12.82,
-            zone="weak",
-            trend="n_a",
-            weekly_points_in_window=0,
-            sample_size=2940,
-            sample_quality="rich",
-            is_headline_eligible=True,
-            dimension=None,
-            series=None,
-        )
-        tab = _fake_findings(filters, findings=[scalar, bucketed, timeout])
+        tab = _fake_findings(filters, findings=[scalar, bucketed])
         prompt = _assemble_user_prompt(tab)
 
         # v7 whole-number scale: score_gap band is -10 to +10.
         assert "weak (typical -10 to +10)" in prompt
-        # conversion bucket band is +65 to +77 (260503 calibration).
-        assert "weak (typical +65 to +77)" in prompt
-        # net_timeout_rate band is now higher_is_better (positive is strong): typical -5 to +5.
-        assert "weak (typical -5 to +5)" in prompt
+        # Phase 102 UAT: per-TC blitz conversion band is +67 to +77 (TC_METRIC_BANDS).
+        assert "weak (typical +67 to +77)" in prompt
         assert "lower is better" not in prompt  # v7: no lower_is_better metrics left.
 
-    def test_overall_subsection_emitted_alongside_wdl_chart(self) -> None:
-        """v9: scalar `overall` subsection is now emitted EVEN WHEN the chart fires.
+    def test_score_gap_subsection_emitted_alongside_wdl_chart(self) -> None:
+        """The score_gap scalar renders EVEN WHEN the overall_wdl chart fires.
 
         Previously (v5 C4) the scalar was dropped when the chart rendered, leaving
         only the score_timeline subsection's bullet — but that bullet's
         `value` is the latest weekly bucket of the rolling timeline, mislabeled
-        as `(all_time)`. v9 keeps both: the chart shows the WDL decomposition,
-        and the `overall` scalar reports the all-time aggregate that exactly
-        matches the chart math (endgame.score_pct - non_endgame.score_pct).
+        as `(all_time)`. v9 kept both. Phase 102 UAT: the scalar moved from the
+        retired `overall` subsection into the dedicated `score_gap` subsection;
+        the chart still shows the WDL decomposition, and the scalar reports the
+        all-time aggregate that exactly matches the chart math
+        (endgame.score_pct - non_endgame.score_pct).
         """
         from app.schemas.endgames import EndgamePerformanceResponse, EndgameWDLSummary
 
         scalar = SubsectionFinding(
-            subsection_id="overall",
+            subsection_id="score_gap",
             parent_subsection_id=None,
             window="all_time",
             metric="score_gap",
@@ -1576,9 +1575,9 @@ class TestPromptAssembly:
         )
         prompt = _assemble_user_prompt(tab)
 
-        # Chart renders AND the overall [summary score_gap] block renders alongside it.
+        # Chart renders AND the score_gap [summary score_gap] block renders alongside it.
         assert "### Chart: overall_wdl" in prompt
-        assert "### Subsection: overall" in prompt
+        assert "### Subsection: score_gap" in prompt
         assert "[summary score_gap]" in prompt
         # The scalar value should be -15 (-0.15 * 100, rounded) — rendered as mean=-15 on the all_time line.
         assert "all_time: mean=-15" in prompt
@@ -1947,25 +1946,25 @@ class TestV6Enrichments:
         """
         filters = _sample_filter_context()
         conv = self._finding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id="endgame_type_blitz",
             metric="conversion_win_pct",
             window="all_time",
             value=0.77,
             zone="strong",
-            dimension={"endgame_class": "pawn", "bucket": "conversion"},
+            dimension={"endgame_class": "pawn", "time_control": "blitz"},
         )
         rec = self._finding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id="endgame_type_blitz",
             metric="recovery_save_pct",
             window="all_time",
             value=0.16,
             zone="weak",
-            dimension={"endgame_class": "pawn", "bucket": "recovery"},
+            dimension={"endgame_class": "pawn", "time_control": "blitz"},
         )
         tab = _fake_findings(filters, findings=[conv, rec])
         prompt = _assemble_user_prompt(tab)
 
-        assert "[asymmetry type=pawn] conversion=77 strong, recovery=16 weak" in prompt
+        assert "[asymmetry type=pawn tc=blitz] conversion=77 strong, recovery=16 weak" in prompt
         assert "closes winning endgames but bleeds losing ones" in prompt
         # v16: the v11 "expected asymmetry — pawn endgames amplify material
         # imbalance" framing is gone. Pawn now uses the same story text as
@@ -1977,25 +1976,25 @@ class TestV6Enrichments:
         """Rook with strong conversion + weak recovery uses the standard story text."""
         filters = _sample_filter_context()
         conv = self._finding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id="endgame_type_blitz",
             metric="conversion_win_pct",
             window="all_time",
             value=0.80,
             zone="strong",
-            dimension={"endgame_class": "rook", "bucket": "conversion"},
+            dimension={"endgame_class": "rook", "time_control": "blitz"},
         )
         rec = self._finding(
-            subsection_id="conversion_recovery_by_type",
+            subsection_id="endgame_type_blitz",
             metric="recovery_save_pct",
             window="all_time",
             value=0.18,
             zone="weak",
-            dimension={"endgame_class": "rook", "bucket": "recovery"},
+            dimension={"endgame_class": "rook", "time_control": "blitz"},
         )
         tab = _fake_findings(filters, findings=[conv, rec])
         prompt = _assemble_user_prompt(tab)
 
-        assert "[asymmetry type=rook] conversion=80 strong, recovery=18 weak" in prompt
+        assert "[asymmetry type=rook tc=blitz] conversion=80 strong, recovery=18 weak" in prompt
         assert "closes winning endgames but bleeds losing ones" in prompt
 
     # Phase 88.1 (Plan 09, REVIEW.md WR-06): test_low_time_gap_line_emitted_in_time_pressure_chart
@@ -2007,18 +2006,21 @@ class TestV6Enrichments:
         Phase 87.4 (D-05): the original fixture used metric=``endgame_skill``
         which was retired. Repointed to ``win_rate`` which has the same
         [0.45, 0.55] zone band shape so the summary / shift / within-noise
-        assertions retain their semantics.
+        assertions retain their semantics. Phase 102 UAT: the retired aggregate
+        ``endgame_metrics`` subsection is no longer in _SECTION_LAYOUT, so the
+        fixture now lives under a per-TC ``endgame_metrics_blitz`` subsection
+        (win_rate is dimensionless, so the paired-window fold is unchanged).
         """
         filters = _sample_filter_context()
         at = self._finding(
-            subsection_id="endgame_metrics",
+            subsection_id="endgame_metrics_blitz",
             metric="win_rate",
             window="all_time",
             value=0.45,
             sample_size=2948,
         )
         lm = self._finding(
-            subsection_id="endgame_metrics",
+            subsection_id="endgame_metrics_blitz",
             metric="win_rate",
             window="last_3mo",
             value=0.49,
@@ -2532,8 +2534,8 @@ class TestMetadataOverride:
         # Response carries the overridden values — never "FABRICATED" or "WRONG".
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        # Phase 87.6: bumped from endgame_v33 to endgame_v35.
-        assert response.report.prompt_version == "endgame_v35"
+        # Phase 102 UAT: bumped from endgame_v35 to endgame_v40.
+        assert response.report.prompt_version == "endgame_v43"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2557,7 +2559,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v35"
+        assert log.response_json["prompt_version"] == "endgame_v43"
 
 
 class TestCacheBehavior:
@@ -3345,31 +3347,34 @@ class TestSection2ScoreGapFindings:
     feedback_llm_significance_signal.md — band IS the significance signal.
     """
 
-    def _make_material_row(
+    def _make_stats(
         self,
-        bucket: str,
-        games: int = 10,
-        win_pct: float = 50.0,
-        draw_pct: float = 20.0,
-        score: float = 0.60,
+        *,
+        games: int,
+        rate: "float | None",
+        mean: "float | None",
+        n: "int | None",
     ) -> "Any":
-        from typing import cast
+        from app.schemas.endgames import PerTcBucketStats
 
-        from app.schemas.endgames import MaterialRow
-
-        return MaterialRow(
-            bucket=cast("Any", bucket),
-            label=bucket.capitalize(),
+        return PerTcBucketStats(
             games=games,
-            win_pct=win_pct,
-            draw_pct=draw_pct,
-            loss_pct=100.0 - win_pct - draw_pct,
-            score=score,
+            win_pct=0.0,
+            draw_pct=0.0,
+            loss_pct=0.0,
+            rate=rate,
+            score_gap_mean=mean,
+            score_gap_n=n,
+            score_gap_p_value=None,
+            score_gap_ci_low=None,
+            score_gap_ci_high=None,
+            percentile=None,
         )
 
     def _make_overview(
         self,
         *,
+        tc: str = "blitz",
         conv_mean: "float | None" = 0.08,
         conv_n: "int | None" = 15,
         parity_mean: "float | None" = -0.02,
@@ -3384,29 +3389,29 @@ class TestSection2ScoreGapFindings:
         skill_n: "int | None" = None,
     ) -> "Any":
         del skill_mean, skill_n  # Phase 87.4 D-05: no longer fed into the schema.
-        from app.schemas.endgames import EndgameOverviewResponse, ScoreGapMaterialResponse
+        from typing import cast
 
-        material_rows = [
-            self._make_material_row("conversion", games=conv_n or 0),
-            self._make_material_row("parity", games=parity_n or 0),
-            self._make_material_row("recovery", games=recov_n or 0),
-        ]
-        score_gap_material = ScoreGapMaterialResponse(
-            endgame_score=0.5,
-            non_endgame_score=0.5,
-            score_difference=0.0,
-            material_rows=material_rows,
-            timeline=[],
-            timeline_window=50,
-            score_gap_conv_mean=conv_mean,
-            score_gap_conv_n=conv_n,
-            score_gap_parity_mean=parity_mean,
-            score_gap_parity_n=parity_n,
-            score_gap_recov_mean=recov_mean,
-            score_gap_recov_n=recov_n,
+        from app.schemas.endgames import (
+            EndgameMetricsCardsResponse,
+            EndgameMetricsTcCard,
+            EndgameOverviewResponse,
+        )
+
+        # Phase 102 UAT: findings now come from the per-TC metrics card, not
+        # score_gap_material. One card carries the conv/parity/recov ΔES means
+        # and rates; each bucket's games doubles as its score_gap_n.
+        conv = self._make_stats(games=conv_n or 0, rate=0.60, mean=conv_mean, n=conv_n)
+        parity = self._make_stats(games=parity_n or 0, rate=0.50, mean=parity_mean, n=parity_n)
+        recov = self._make_stats(games=recov_n or 0, rate=0.40, mean=recov_mean, n=recov_n)
+        card = EndgameMetricsTcCard(
+            tc=cast("Any", tc),
+            total=(conv_n or 0) + (parity_n or 0) + (recov_n or 0),
+            conversion=conv,
+            parity=parity,
+            recovery=recov,
         )
         return EndgameOverviewResponse.model_construct(
-            score_gap_material=score_gap_material,
+            endgame_metrics_cards=EndgameMetricsCardsResponse(cards=[card]),
         )
 
     def test_score_gap_findings_full_cohort(self) -> None:
@@ -3467,9 +3472,13 @@ class TestSection2ScoreGapFindings:
         for f in delta_es_findings:
             assert f.is_headline_eligible is True, f"{f.metric}: expected is_headline_eligible=True"
 
-        # dimension is None (no bucket discriminator — metric_id encodes the bucket).
+        # Phase 102 UAT: findings now carry a per-TC dimension so render-time
+        # percentile lookup is keyed by time control (metric_id still encodes
+        # the conv/parity/recov bucket).
         for f in delta_es_findings:
-            assert f.dimension is None, f"{f.metric}: dimension should be None"
+            assert f.dimension == {"time_control": "blitz"}, (
+                f"{f.metric}: expected time_control dimension"
+            )
 
     def test_score_gap_findings_sparse_cohort(self) -> None:
         """Sparse cohort (each bucket n < 10): 3 findings emitted, is_headline_eligible False.
@@ -3602,8 +3611,8 @@ class TestPhase874PromptVersion:
     """
 
     def test_prompt_version_is_v33(self) -> None:
-        """SC#7: bumped to endgame_v35 by Phase 87.6 (was endgame_v33 after Phase 87.5)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+        """SC#7: bumped to endgame_v40 by Phase 102 UAT (was endgame_v35 after Phase 87.6)."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3649,9 +3658,9 @@ class TestPhase876LLMPayloadExtension:
     and wires the non_endgame_elo renderer.
     """
 
-    def test_prompt_version_is_endgame_v35(self) -> None:
-        """Phase 87.6: _PROMPT_VERSION bumped from endgame_v33 to endgame_v35."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v35"
+    def test_prompt_version_is_endgame_v39(self) -> None:
+        """Phase 102 UAT: _PROMPT_VERSION bumped from endgame_v35 to endgame_v40."""
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"
 
     def test_prompt_changelog_preserves_v33_entry(self) -> None:
         """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
@@ -3766,3 +3775,730 @@ class TestPhase876LLMPayloadExtension:
             f"Block ordering wrong: endgame_elo({elo_idx}) < non_endgame_elo({neg_idx}) < "
             f"endgame_elo_gap({gap_idx}) required"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestTimePressureScoreGapChartBlock — Phase 102 (Plan 01): new chart block
+# helper _format_time_pressure_score_gap_chart_block renders 5-quintile per-TC
+# Score-Gap-by-time table from EndgameTabFindings.time_pressure_cards.
+# ---------------------------------------------------------------------------
+
+
+def _make_pressure_quintile_bullet(
+    q: int,
+    n: int = 50,
+    n_opp: int = 50,
+    user_score: float = 0.55,
+    opp_score: float = 0.50,
+) -> "Any":
+    """Build a PressureQuintileBullet with gate met (opp_score not None)."""
+    from app.schemas.endgames import PressureQuintileBullet
+
+    delta = user_score - opp_score
+    return PressureQuintileBullet(
+        quintile_index=q,
+        quintile_label=f"{q * 20}-{q * 20 + 20}%",
+        n=n,
+        n_opp=n_opp,
+        delta=delta,
+        p_value=0.05,
+        ci_low=delta - 0.02,
+        ci_high=delta + 0.02,
+        opp_score=opp_score,
+    )
+
+
+def _make_time_pressure_tc_card(
+    tc: str,
+    total: int = 200,
+    quintiles_gate_met: bool = True,
+) -> "Any":
+    """Build a TimePressureTcCard with 5 quintiles (gate met or not)."""
+    from typing import Literal, cast
+
+    from app.schemas.endgames import (
+        ClockGapBullet,
+        PressureQuintileBullet,
+        TimePressureTcCard,
+    )
+
+    if quintiles_gate_met:
+        quintiles = [_make_pressure_quintile_bullet(q) for q in range(5)]
+    else:
+        quintiles = [
+            PressureQuintileBullet(
+                quintile_index=q,
+                quintile_label=f"{q * 20}-{q * 20 + 20}%",
+                n=0,
+                n_opp=0,
+                delta=0.0,
+                p_value=None,
+                ci_low=None,
+                ci_high=None,
+                opp_score=None,  # n-gate unmet
+            )
+            for q in range(5)
+        ]
+    return TimePressureTcCard(
+        tc=cast(Literal["bullet", "blitz", "rapid", "classical"], tc),
+        total=total,
+        net_timeout_rate=0.0,
+        clock_gap=ClockGapBullet(
+            n=total, mean_diff_pct=0.0, p_value=None, ci_low=None, ci_high=None
+        ),
+        quintiles=quintiles,
+    )
+
+
+def _findings_with_time_pressure_cards(
+    cards_data: list[tuple[str, bool]],
+) -> EndgameTabFindings:
+    """Build EndgameTabFindings with time_pressure_cards populated."""
+    from app.schemas.endgames import TimePressureCardsResponse
+
+    cards = [_make_time_pressure_tc_card(tc, quintiles_gate_met=gate) for tc, gate in cards_data]
+    return EndgameTabFindings(
+        as_of=datetime.datetime.now(datetime.UTC),
+        filters=_sample_filter_context(),
+        findings=[],
+        time_pressure_cards=TimePressureCardsResponse(cards=cards),
+        findings_hash="a" * 64,
+    )
+
+
+class TestTimePressureScoreGapChartBlock:
+    """Phase 102 (Plan 01): _format_time_pressure_score_gap_chart_block."""
+
+    def test_returns_empty_when_no_cards(self) -> None:
+        """Empty time_pressure_cards → empty block."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([])
+        assert _format_time_pressure_score_gap_chart_block(findings) == []
+
+    def test_returns_empty_when_cards_is_none(self) -> None:
+        """None time_pressure_cards → empty block."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            time_pressure_cards=None,
+            findings_hash="a" * 64,
+        )
+        assert _format_time_pressure_score_gap_chart_block(findings) == []
+
+    def test_emits_chart_header_with_tc(self) -> None:
+        """Chart header includes TC name and all_time suffix."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        assert any(
+            "### Chart: time_pressure_score_gap_by_time (blitz, all_time)" in line for line in lines
+        )
+
+    def test_emits_exactly_4_quintile_data_rows_when_all_gate_met(self) -> None:
+        """With all 5 quintiles gate-met, exactly 4 data rows (Q0-Q3) are emitted per TC.
+
+        Phase 102 UAT (2026-06-02): Q4 (80-100% clock = min pressure) is dropped
+        from the payload to match the UI chart — only Q0-Q3 render.
+        """
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        # Count non-header table rows (exclude header and separator lines)
+        table_rows = [
+            line
+            for line in lines
+            if line.startswith("| ")
+            and not line.startswith("| quintile")
+            and not line.startswith("| ---")
+        ]
+        assert len(table_rows) == 4, (
+            f"Expected exactly 4 quintile data rows (Q0-Q3), got {len(table_rows)}: {table_rows}"
+        )
+
+    def test_q4_min_pressure_row_excluded(self) -> None:
+        """The Q4 (80-100%) min-pressure quintile is never rendered."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        table_rows = [
+            line
+            for line in lines
+            if line.startswith("| ") and not line.startswith(("| quintile", "| ---"))
+        ]
+        assert all("80-100%" not in row for row in table_rows), (
+            f"Q4 (80-100%) must be excluded, got: {table_rows}"
+        )
+
+    def test_skips_rows_where_opp_score_is_none(self) -> None:
+        """Quintiles with opp_score=None (n-gate unmet) are skipped."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("rapid", False)])  # all gate unmet
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        # No TC sub-table should be emitted when all quintile rows are skipped
+        assert not any("### Chart: time_pressure_score_gap_by_time" in line for line in lines)
+
+    def test_prompt_contains_chart_block_for_tc_with_data(self) -> None:
+        """Full prompt pipeline renders the chart block inside ## Section: time_pressure."""
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        prompt = _assemble_user_prompt(findings)
+        assert "### Chart: time_pressure_score_gap_by_time (blitz, all_time)" in prompt
+
+    def test_multiple_tc_emits_separate_sub_tables(self) -> None:
+        """Two TC cards produce two separate sub-tables."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True), ("rapid", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        assert sum(1 for line in lines if "### Chart: time_pressure_score_gap_by_time" in line) == 2
+
+    def test_typical_band_column_present(self) -> None:
+        """typical_band column appears in the table header."""
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        assert any("typical_band" in line for line in lines)
+
+    def test_aggregate_lines_render_clock_gap_and_net_flag_rate(self) -> None:
+        """Below the quintile table, Clock Gap + Net Flag Rate aggregate lines always render.
+
+        Phase 102 UAT: even with no percentile records, the two frequency-of-pressure
+        metrics render from the card's raw value with a no-percentile note.
+        """
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        lines = _format_time_pressure_score_gap_chart_block(findings)
+        text = "\n".join(lines)
+        assert "Time-pressure aggregates (blitz, all_time)" in text
+        assert "Clock Gap" in text
+        assert "Net Flag Rate" in text
+        # No percentile records passed → the no-percentile fallback note appears.
+        assert "no peer percentile yet" in text
+
+    def test_aggregate_lines_render_percentile_tokens(self) -> None:
+        """When per_tc_metric_percentiles is supplied, the three aggregates cite pctl tokens."""
+        from app.schemas.insights import MetricPercentileRecord
+        from app.services.insights_llm import _format_time_pressure_score_gap_chart_block
+
+        findings = _findings_with_time_pressure_cards([("blitz", True)])
+        per_tc = {
+            "time_pressure_score_gap:blitz": MetricPercentileRecord(
+                percentile=18, value=-12.0, n_games=189, anchor=1480, tc="blitz"
+            ),
+            "clock_gap:blitz": MetricPercentileRecord(
+                percentile=22, value=-15.0, n_games=210, anchor=1480, tc="blitz"
+            ),
+            "net_flag_rate:blitz": MetricPercentileRecord(
+                percentile=11, value=-13.0, n_games=210, anchor=1480, tc="blitz"
+            ),
+        }
+        lines = _format_time_pressure_score_gap_chart_block(findings, per_tc)
+        text = "\n".join(lines)
+        assert "Time-Pressure Score Gap" in text
+        assert "pctl=18 (vs ~1480-rated blitz peers | n_games=189 | value=-12)" in text
+        assert "pctl=22 (vs ~1480-rated blitz peers | n_games=210 | value=-15)" in text
+        assert "pctl=11 (vs ~1480-rated blitz peers | n_games=210 | value=-13)" in text
+        # Frequency/performance framing is present so the LLM keeps them distinct.
+        assert "PERFORMANCE under pressure" in text
+        assert "FREQUENCY of pressure" in text
+
+
+# ---------------------------------------------------------------------------
+# TestPercentileAnnotation — Phase 102 (Plan 01): pctl= annotation in summary
+# window lines when metric_percentiles is populated on EndgameTabFindings.
+# ---------------------------------------------------------------------------
+
+
+def _make_score_gap_finding(
+    window: str = "all_time",
+    value: float = 0.05,
+    zone: str = "typical",
+) -> SubsectionFinding:
+    """Build a score_gap SubsectionFinding for percentile annotation tests."""
+    from typing import cast
+    from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
+
+    return SubsectionFinding(
+        # Phase 102 UAT: score_gap now lives in the dedicated `score_gap`
+        # subsection (the `overall` subsection is no longer in _SECTION_LAYOUT).
+        subsection_id=cast(SubsectionId, "score_gap"),
+        parent_subsection_id=None,
+        window=cast(Window, window),
+        metric=cast(MetricId, "score_gap"),
+        value=value,
+        zone=cast(Zone, zone),
+        trend="n_a",
+        weekly_points_in_window=0,
+        sample_size=200,
+        sample_quality=cast(SampleQuality, "rich"),
+        is_headline_eligible=True,
+        dimension=None,
+    )
+
+
+def _make_pctl_record(
+    percentile: float = 31.0,
+    value: float | None = None,
+    n_games: int | None = None,
+    anchor: int | None = None,
+    tc: str | None = None,
+) -> "MetricPercentileRecord":
+    """Build a MetricPercentileRecord for test use."""
+    from typing import Literal, cast
+
+    from app.schemas.insights import MetricPercentileRecord
+
+    tc_lit = cast(Literal["bullet", "blitz", "rapid", "classical"] | None, tc)
+    return MetricPercentileRecord(
+        percentile=percentile,
+        value=value,
+        n_games=n_games,
+        anchor=anchor,
+        tc=tc_lit,
+    )
+
+
+class TestPercentileAnnotation:
+    """Phase 102 (Plan 01 + Plan 04): pctl= annotation in summary lines (D-03, D-05)."""
+
+    def test_pctl_annotation_present_when_metric_in_metric_percentiles(self) -> None:
+        """A finding whose metric is in metric_percentiles renders a pctl= token.
+
+        D-05: cohort framing 'vs ~{anchor}-rated peers' when anchor present on record.
+        """
+        from app.schemas.insights import RatingAnchorContext
+
+        finding = _make_score_gap_finding(zone="weak")
+        rec = _make_pctl_record(percentile=31.0, anchor=1500)
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles={"score_gap": rec},
+            # Phase 102 (Plan 05): cohort_anchors requires RatingAnchorContext.
+            cohort_anchors={
+                "blitz": RatingAnchorContext(
+                    anchor_rating=1500, n_chesscom_games=0, n_lichess_games=200
+                )
+            },
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=31" in prompt, "pctl= token must appear when metric is in metric_percentiles"
+        assert "vs ~1500-rated peers" in prompt, "cohort framing must appear with anchor"
+
+    def test_no_pctl_token_when_metric_not_in_metric_percentiles(self) -> None:
+        """A finding not in metric_percentiles renders NO pctl= token.
+
+        Verifies that adding metric_percentiles for other metrics does not
+        affect metrics outside the lookup dict.
+        """
+        finding = _make_score_gap_finding()
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles={
+                "achievable_score_gap": _make_pctl_record(55.0)
+            },  # score_gap absent
+            cohort_anchors=None,
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=" not in prompt, (
+            "pctl= token must NOT appear when metric is absent from metric_percentiles"
+        )
+
+    def test_no_pctl_token_when_metric_percentiles_is_none(self) -> None:
+        """No metric_percentiles → no pctl= token (backwards compat)."""
+        finding = _make_score_gap_finding()
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles=None,
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=" not in prompt
+
+    def test_zone_typical_finding_with_extreme_percentile_still_emitted(self) -> None:
+        """The finding must still be emitted even with extreme percentile.
+
+        (Previously D-04 gate rule: zone was the sole emission gate. Now
+        the prompt teaches zone OR extreme-pctl as the narration gate,
+        but emission itself is never suppressed by zone status alone.)
+        """
+        finding = _make_score_gap_finding(zone="typical", value=0.02)
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles={"score_gap": _make_pctl_record(5.0)},  # extreme percentile
+            # Phase 102 (Plan 05): cohort_anchors now requires RatingAnchorContext.
+            cohort_anchors=None,
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        # The finding must be present (zone=typical is emitted — typical is not filtered)
+        assert "[summary score_gap]" in prompt, (
+            "zone=typical finding must still be emitted even with extreme percentile"
+        )
+        # The pctl= annotation should be present (it's metadata on an emitted finding)
+        assert "pctl=5" in prompt, "pctl= token should appear as metadata on the emitted finding"
+
+    def test_enriched_pctl_token_carries_n_games_and_value(self) -> None:
+        """Phase 102 (Plan 04): enriched pctl= token includes n_games and value."""
+        finding = _make_score_gap_finding(zone="weak", value=-0.09)
+        rec = _make_pctl_record(percentile=18.0, value=-9.0, n_games=312, anchor=1480, tc="blitz")
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[finding],
+            metric_percentiles={"score_gap": rec},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=18" in prompt
+        assert "n_games=312" in prompt
+        assert "value=-9" in prompt
+        assert "vs ~1480-rated blitz peers" in prompt
+
+    def test_per_tc_pctl_via_dim_key(self) -> None:
+        """Phase 102 (Plan 04): per-TC metric percentile rendered via per_tc_metric_percentiles
+        when the finding has a time_control dimension.
+        """
+        from typing import cast
+        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
+
+        # Phase 102 UAT: score_gap_conv lives under the per-TC subsection and
+        # carries a time_control dimension (the per_tc lookup key is derived from
+        # metric + time_control).
+        conv_finding = SubsectionFinding(
+            subsection_id=cast(SubsectionId, "endgame_metrics_blitz"),
+            window=cast(Window, "all_time"),
+            metric=cast(MetricId, "score_gap_conv"),
+            value=0.05,
+            zone=cast(Zone, "typical"),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=95,
+            sample_quality=cast(SampleQuality, "adequate"),
+            is_headline_eligible=True,
+            dimension={"time_control": "blitz"},
+        )
+        rec = _make_pctl_record(percentile=79.0, value=47.0, n_games=87, anchor=1480, tc="blitz")
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[conv_finding],
+            per_tc_metric_percentiles={"score_gap_conv:blitz": rec},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "pctl=79" in prompt, "per-TC pctl= token must appear from per_tc_metric_percentiles"
+        assert "vs ~1480-rated blitz peers" in prompt
+
+    def test_recovery_naming_bridge(self) -> None:
+        """Phase 102 (Plan 04): 'recovery_score_gap:blitz' and 'score_gap_recov:blitz'
+        both resolve to the same MetricPercentileRecord via the bridge alias.
+        """
+
+        rec = _make_pctl_record(percentile=25.0, anchor=1500, tc="blitz")
+        per_tc: dict[str, MetricPercentileRecord] = {
+            "score_gap_recov:blitz": rec,
+            "recovery_score_gap:blitz": rec,
+        }
+        # Both keys must resolve to the same record.
+        found_1 = _lookup_pctl_record(
+            "score_gap_recov", "bucket=recovery, time_control=blitz", None, per_tc
+        )
+        found_2 = _lookup_pctl_record(
+            "recovery_score_gap", "bucket=recovery, time_control=blitz", None, per_tc
+        )
+        assert found_1 is not None, "score_gap_recov should resolve via per_tc lookup"
+        assert found_2 is not None, "recovery_score_gap bridge key should also resolve"
+        assert found_1.percentile == 25.0
+        assert found_2.percentile == 25.0
+
+    def test_class_scoped_finding_does_not_resolve_tc_aggregate_pctl(self) -> None:
+        """Phase 102 UAT fix: an Endgame Type (per-class × TC) finding must NOT pick
+        up the per-TC AGGREGATE percentile.
+
+        The per-class type findings share the conversion_win_pct / recovery_save_pct
+        metric names AND a time_control dimension with the Endgame Metrics aggregate
+        findings. Type Breakdown carries no percentiles by design, so a class-scoped
+        dim_key (containing 'endgame_class=') must resolve to None — otherwise rook
+        conversion in blitz would borrow the all-class blitz conversion percentile,
+        whose value also contradicts the finding's own class-specific mean.
+        """
+        per_tc: dict[str, MetricPercentileRecord] = {
+            "conversion_win_pct:blitz": _make_pctl_record(
+                percentile=62.0, value=58.0, n_games=200, anchor=1500, tc="blitz"
+            )
+        }
+        # Class-scoped (Endgame Type) finding → no percentile.
+        assert (
+            _lookup_pctl_record(
+                "conversion_win_pct", "endgame_class=rook, time_control=blitz", None, per_tc
+            )
+            is None
+        ), "per-class Endgame Type findings must not borrow the TC-aggregate percentile"
+        # Aggregate (Endgame Metrics) finding → still resolves.
+        assert (
+            _lookup_pctl_record("conversion_win_pct", "time_control=blitz", None, per_tc)
+            is not None
+        ), "per-TC Endgame Metrics aggregate finding must still resolve its percentile"
+
+
+# ---------------------------------------------------------------------------
+# Phase 102 UAT: per-TC recovery-pattern / asymmetry hints count all_time only
+# ---------------------------------------------------------------------------
+
+
+class TestPerTcTypeHintWindowScoping:
+    """The per-TC `endgame_type_<tc>` members span both windows; the hint helpers
+    must count all_time findings only (no cross-window double-counting)."""
+
+    @staticmethod
+    def _recov(klass: str, window: str, zone: str = "weak") -> SubsectionFinding:
+        from typing import cast
+
+        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
+
+        return SubsectionFinding(
+            subsection_id=cast(SubsectionId, "endgame_type_blitz"),
+            window=cast(Window, window),
+            metric=cast(MetricId, "recovery_save_pct"),
+            value=0.2,
+            zone=cast(Zone, zone),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=30,
+            sample_quality=cast(SampleQuality, "adequate"),
+            is_headline_eligible=True,
+            dimension={"endgame_class": klass, "time_control": "blitz"},
+        )
+
+    @staticmethod
+    def _conv(klass: str, window: str, zone: str) -> SubsectionFinding:
+        from typing import cast
+
+        from app.schemas.insights import MetricId, SampleQuality, SubsectionId, Window, Zone
+
+        return SubsectionFinding(
+            subsection_id=cast(SubsectionId, "endgame_type_blitz"),
+            window=cast(Window, window),
+            metric=cast(MetricId, "conversion_win_pct"),
+            value=0.6,
+            zone=cast(Zone, zone),
+            trend="n_a",
+            weekly_points_in_window=0,
+            sample_size=30,
+            sample_quality=cast(SampleQuality, "adequate"),
+            is_headline_eligible=True,
+            dimension={"endgame_class": klass, "time_control": "blitz"},
+        )
+
+    def test_recovery_pattern_not_double_counted_across_windows(self) -> None:
+        """Two weak classes present in BOTH windows must not register as four."""
+        members = [
+            self._recov("rook", "all_time"),
+            self._recov("pawn", "all_time"),
+            self._recov("rook", "last_3mo"),
+            self._recov("pawn", "last_3mo"),
+        ]
+        assert _recovery_pattern_tag(members, "blitz") == "", (
+            "2 distinct weak classes (each in both windows) must not trip the 4-of-4 hint"
+        )
+
+    def test_recovery_pattern_fires_on_four_all_time_weak(self) -> None:
+        """All four visible classes weak in all_time still fires the hint."""
+        members = [self._recov(k, "all_time") for k in ("rook", "pawn", "queen", "minor_piece")] + [
+            self._recov("rook", "last_3mo")
+        ]
+        tag = _recovery_pattern_tag(members, "blitz")
+        assert "weak across 4 of 4 types in blitz" in tag
+
+    def test_asymmetry_uses_all_time_not_last_3mo(self) -> None:
+        """Asymmetry split must reflect the all_time finding, not last_3mo.
+
+        all_time shows the conv-strong / recov-weak split; last_3mo shows both
+        typical. Only the all_time split should surface.
+        """
+        members = [
+            self._conv("rook", "all_time", "strong"),
+            self._recov("rook", "all_time", "weak"),
+            self._conv("rook", "last_3mo", "typical"),
+            self._recov("rook", "last_3mo", "typical"),
+        ]
+        lines = _asymmetry_lines(members, "blitz")
+        assert len(lines) == 1
+        assert "[asymmetry type=rook tc=blitz]" in lines[0]
+        assert "closes winning endgames but bleeds losing ones" in lines[0]
+
+
+# ---------------------------------------------------------------------------
+# Phase 102 (Plan 05): Rating-basis block tests
+# ---------------------------------------------------------------------------
+
+
+class TestRatingBasisBlock:
+    """Phase 102 (Plan 05): _format_rating_basis_block renders per-TC Lichess-equivalent framing."""
+
+    def _make_cc_heavy_anchor(self, tc: str = "blitz") -> tuple[str, "Any"]:
+        """Pure chess.com anchor — n_lichess_games == 0."""
+        from app.schemas.insights import RatingAnchorContext
+
+        return tc, RatingAnchorContext(
+            anchor_rating=1550,
+            n_chesscom_games=320,
+            n_lichess_games=0,
+            chesscom_median_native=1400,
+        )
+
+    def _make_lichess_anchor(self, tc: str = "blitz") -> tuple[str, "Any"]:
+        """Pure lichess anchor — n_chesscom_games == 0."""
+        from app.schemas.insights import RatingAnchorContext
+
+        return tc, RatingAnchorContext(
+            anchor_rating=1620,
+            n_chesscom_games=0,
+            n_lichess_games=450,
+            lichess_median_native=1620,
+        )
+
+    def _make_mixed_anchor(self, tc: str = "blitz") -> tuple[str, "Any"]:
+        """Mixed anchor — both platforms have games."""
+        from app.schemas.insights import RatingAnchorContext
+
+        return tc, RatingAnchorContext(
+            anchor_rating=1580,
+            n_chesscom_games=200,
+            n_lichess_games=300,
+            chesscom_median_native=1410,
+            lichess_median_native=1600,
+        )
+
+    def _render(self, anchors: "dict[str, Any] | None") -> str:
+        from app.services.insights_llm import _format_rating_basis_block
+
+        return "\n".join(_format_rating_basis_block(anchors))
+
+    def test_empty_when_no_anchors(self) -> None:
+        assert self._render(None) == ""
+        assert self._render({}) == ""
+
+    def test_pure_chesscom_shows_conversion_note(self) -> None:
+        tc, ctx = self._make_cc_heavy_anchor("blitz")
+        output = self._render({tc: ctx})
+        assert "## Rating basis" in output
+        assert "[rating basis] blitz:" in output
+        assert "anchor ~1550 (Lichess-equivalent)" in output
+        assert "chess.com median ~1400 (converted)" in output
+        assert "lichess median n/a" in output
+        assert "320 cc / 0 li" in output
+
+    def test_pure_lichess_shows_native_label_no_conversion(self) -> None:
+        tc, ctx = self._make_lichess_anchor("rapid")
+        output = self._render({tc: ctx})
+        assert "## Rating basis" in output
+        assert "[rating basis] rapid:" in output
+        assert "anchor ~1620 (Lichess-equivalent)" in output
+        assert "lichess median ~1620 (native)" in output
+        # No conversion note for pure-lichess user.
+        assert "(converted)" not in output
+        assert "chess.com median n/a" in output
+        assert "0 cc / 450 li" in output
+
+    def test_mixed_user_shows_both_platforms(self) -> None:
+        tc, ctx = self._make_mixed_anchor("blitz")
+        output = self._render({tc: ctx})
+        assert "chess.com median ~1410 (converted)" in output
+        assert "lichess median ~1600" in output
+        assert "200 cc / 300 li" in output
+
+    def test_tc_ordering_follows_canonical_order(self) -> None:
+        """TCs appear in bullet/blitz/rapid/classical order, not insertion order."""
+        from app.schemas.insights import RatingAnchorContext
+
+        anchors = {
+            "rapid": RatingAnchorContext(
+                anchor_rating=1500, n_chesscom_games=100, n_lichess_games=0
+            ),
+            "bullet": RatingAnchorContext(
+                anchor_rating=1520, n_chesscom_games=50, n_lichess_games=0
+            ),
+        }
+        output = self._render(anchors)
+        bullet_pos = output.find("[rating basis] bullet:")
+        rapid_pos = output.find("[rating basis] rapid:")
+        assert bullet_pos < rapid_pos, "bullet should appear before rapid"
+
+    def test_rating_basis_block_in_assembled_prompt(self) -> None:
+        """Rating-basis block appears in the assembled prompt for a cc-heavy user."""
+        import datetime
+
+        tc, ctx = self._make_cc_heavy_anchor("blitz")
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            cohort_anchors={tc: ctx},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "## Rating basis" in prompt
+        assert "[rating basis] blitz:" in prompt
+        assert "anchor ~1550 (Lichess-equivalent)" in prompt
+        assert "chess.com median ~1400 (converted)" in prompt
+
+    def test_rating_basis_block_absent_for_pure_lichess_in_assembled_prompt(self) -> None:
+        """Rating-basis block still renders for pure-lichess but without conversion copy."""
+        import datetime
+
+        tc, ctx = self._make_lichess_anchor("blitz")
+        findings = EndgameTabFindings(
+            as_of=datetime.datetime.now(datetime.UTC),
+            filters=_sample_filter_context(),
+            findings=[],
+            cohort_anchors={tc: ctx},
+            findings_hash="a" * 64,
+        )
+        prompt = _assemble_user_prompt(findings)
+        assert "## Rating basis" in prompt
+        assert "(converted)" not in prompt
+        assert "lichess median ~1620 (native)" in prompt
+
+    def test_prompt_teaches_lichess_equivalent_framing(self) -> None:
+        """The prompt file contains the D-05a Lichess-equivalent teaching."""
+        from pathlib import Path
+
+        prompt_path = (
+            Path(__file__).resolve().parents[2] / "app" / "prompts" / "endgame_insights.md"
+        )
+        body = prompt_path.read_text(encoding="utf-8")
+        assert "Lichess-equivalent anchor (D-05a)" in body, (
+            "Prompt must contain D-05a teaching about the Lichess-equivalent framing"
+        )
+        assert "n_lichess_games == 0" in body, (
+            "Pure chess.com disclosure branch must be documented in the prompt"
+        )
+        assert "n_chesscom_games == 0" in body, (
+            "Pure lichess disclosure branch must be documented in the prompt"
+        )
+
+    def test_version_is_endgame_v39(self) -> None:
+        """Phase 102 Plan 05/UAT: _PROMPT_VERSION bumped to endgame_v40."""
+        from app.services import insights_llm
+
+        assert insights_llm._PROMPT_VERSION == "endgame_v43"

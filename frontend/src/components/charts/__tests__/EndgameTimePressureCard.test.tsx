@@ -209,7 +209,7 @@ describe('EndgameTimePressureCard — SC-2: 3-column header row', () => {
   it('Net flag rate stays below the Clock Gap bullet, unchanged', () => {
     renderCard(makeCard({ net_timeout_rate: -0.03 }));
     const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
-    expect(netRate.textContent).toContain('Net flag rate');
+    expect(netRate.textContent).toContain('Net Flag Rate');
   });
 });
 
@@ -279,7 +279,7 @@ describe('EndgameTimePressureCard — Plan 88-14 A-3: top-zone stats', () => {
   it('Net flag rate renders with correct formatted value in the row below the bullet', () => {
     renderCard(makeCard({ net_timeout_rate: -0.03 }));
     const netRate = screen.getByTestId('time-pressure-card-bullet-net-flag-rate');
-    expect(netRate.textContent).toContain('Net flag rate');
+    expect(netRate.textContent).toContain('Net Flag Rate');
     // Net flag rate is integer-rounded (16bf43f0); negative shows a minus sign.
     expect(netRate.textContent).toContain('-3%');
   });

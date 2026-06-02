@@ -146,13 +146,15 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - ✓ Per-run/per-xdist-worker test database cloned from a migrated template (`CREATE DATABASE … TEMPLATE`); session-start `TRUNCATE … CASCADE` whole-schema lock retired; advisory-lock template auto-refresh on Alembic head drift; killed runs self-heal; `pytest -n auto` safe and 2.2x faster (18.56s vs 40.29s) — v1.22 Phase 100
 - ✓ 11 frontend deps brought to latest major across six bisectable atomic clusters (lucide-react 1, Vite 8 + plugin-react 6, jsdom 29, eslint 10 stack, TypeScript 6, recharts 3); recharts 3 visual-UAT'd; typescript-eslint ↔ TS6/eslint-10 peer-compat clean — v1.22 Phase 101
 
-### Active (next milestone — TBD)
+### Active — v1.23 LLM Endgame-Insights Statistical-Reasoning Rework
 
-No milestone is currently active. v1.22 Maintenance shipped 2026-05-31. Start the next one with `/gsd-new-milestone`.
+**v1.23** started 2026-06-01 (`/gsd-explore`). Single phase so far:
 
-Candidate next scope (from backlog / deferred):
+- [ ] **Phase 102 — Endgame LLM Statistical-Reasoning Rework** — wire percentile annotations + LLM time-pressure narration into the endgame insights payload/prompt (LLM-01..07); percentile-led, p-values out, CI likely out, no new frontend, UAT-dominated. Scope + locked decisions: `.planning/notes/v1.23-phase-102-endgame-llm-statistical-reasoning.md`. Next: `/gsd-discuss-phase 102`.
+- Follow-up (NOT yet planned): Recommendations-section rework — `SEED-034`.
 
-- [ ] **LLM Endgame-Insights Statistical-Reasoning Rework** — backlog Phase 999.7; LLM-01..07 stay pending in REQUIREMENTS.md (was the originally-planned v1.22 scope, deprioritized in favour of Maintenance)
+Candidate later scope (from backlog / deferred):
+
 - [ ] **SEED-030 Track A** — split oversized multi-concern modules (structural code-health; Track B closed by Phase 99.1)
 - [ ] Other dormant seeds: SEED-010 (library page), SEED-012 (client-side Stockfish tactics), SEED-029 (benchmarks deterministic rebuild), SEED-033 (cap explorer + partial-index Zobrist hashes)
 
