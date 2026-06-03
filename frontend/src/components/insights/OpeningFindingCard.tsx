@@ -28,7 +28,7 @@ import { isConfident } from '@/lib/significance';
 import { UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
 
-const MOBILE_BOARD_SIZE = 115;
+const MOBILE_BOARD_SIZE = 128;
 const DESKTOP_BOARD_SIZE = 110;
 const UNNAMED_SENTINEL = '<unnamed line>';
 
@@ -170,7 +170,7 @@ export function OpeningFindingCard({
           data-testid={`${cardTestId}-score-text`}
           style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
         >
-          <span className="text-xs sm:text-sm text-muted-foreground">Score:</span>
+          <span className="text-muted-foreground">Score:</span>
           <span className="ml-auto font-semibold" style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}>
             {Math.round(finding.score * 100)}%
           </span>
@@ -212,7 +212,7 @@ export function OpeningFindingCard({
             data-testid={`${cardTestId}-eval-text`}
             style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
-            <span className="text-xs sm:text-sm text-muted-foreground">End Eval:</span>
+            <span className="text-muted-foreground">End Eval:</span>
             <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
             {hasMgEval && (
               <BulletConfidencePopover
