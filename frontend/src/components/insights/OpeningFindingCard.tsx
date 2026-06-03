@@ -154,66 +154,62 @@ export function OpeningFindingCard({
     <span className="text-muted-foreground">—</span>
   );
 
-  // Score + eval rows in a 2-col grid so both bullets share the same width
-  // regardless of how the right-hand label renders. The right column auto-sizes
-  // to max(score-text, eval-text), keeping the bullet bars visually aligned.
+  // Score + eval rows. On mobile: label stacks above the bullet chart for each
+  // metric (per-metric flex-col wrapper, label first in DOM). On desktop (sm+):
+  // each wrapper switches to a 2-col grid (bullet left, label right), matching
+  // the previous layout. The label is no longer hidden on mobile.
   const scoreEvalBlock = (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-2 items-center">
+    <div className="flex flex-col gap-2">
       {/* Score row */}
-      <div
-        className="min-w-0 tabular-nums"
-        data-testid={`${cardTestId}-score-bullet`}
-        style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
-      >
-        <MiniBulletChart
-          value={finding.score}
-          center={SCORE_BULLET_CENTER}
-          neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-          neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-          domain={SCORE_BULLET_DOMAIN}
-          ciLow={ciLow}
-          ciHigh={ciHigh}
-          barColor="neutral"
-          ariaLabel={`Score ${Math.round(finding.score * 100)}% vs 50% baseline`}
-        />
-      </div>
-      <span
-        className="flex items-center gap-1 text-sm tabular-nums w-full"
-        data-testid={`${cardTestId}-score-text`}
-        style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
-      >
-        <span className="hidden sm:inline text-muted-foreground">Score:</span>
-        <span className="ml-auto font-semibold" style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}>
-          {Math.round(finding.score * 100)}%
+      <div className="flex flex-col gap-1 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2 sm:items-center">
+        <span
+          className="flex items-center gap-1 text-sm tabular-nums w-full sm:order-last"
+          data-testid={`${cardTestId}-score-text`}
+          style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
+        >
+          <span className="text-muted-foreground">Score:</span>
+          <span className="ml-auto font-semibold" style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}>
+            {Math.round(finding.score * 100)}%
+          </span>
+          <ScoreConfidencePopover
+            level={finding.confidence}
+            pValue={finding.p_value ?? 1}
+            score={finding.score}
+            gameCount={finding.n_games}
+            lastPlayedAt={finding.last_played_at}
+            testId={`${cardTestId}-score-popover`}
+          />
         </span>
-        <ScoreConfidencePopover
-          level={finding.confidence}
-          pValue={finding.p_value ?? 1}
-          score={finding.score}
-          gameCount={finding.n_games}
-          lastPlayedAt={finding.last_played_at}
-          testId={`${cardTestId}-score-popover`}
-        />
-      </span>
+        <div
+          className="min-w-0 tabular-nums sm:order-first"
+          data-testid={`${cardTestId}-score-bullet`}
+          style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
+        >
+          <MiniBulletChart
+            value={finding.score}
+            center={SCORE_BULLET_CENTER}
+            neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+            neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+            domain={SCORE_BULLET_DOMAIN}
+            ciLow={ciLow}
+            ciHigh={ciHigh}
+            barColor="neutral"
+            ariaLabel={`Score ${Math.round(finding.score * 100)}% vs 50% baseline`}
+          />
+        </div>
+      </div>
 
       {/* Eval row — gated on Tier 2 (eval analysis complete). When !tier2 the
-          two eval cells are replaced by the pulsating-Cpu placeholder spanning
-          the 2-col grid, matching OpeningStatsCard. */}
+          pulsating-Cpu placeholder replaces the entire eval row, matching
+          OpeningStatsCard. The WDL score row is not eval-dependent. */}
       {tier2 ? (
-        <>
-          <div
-            className="min-w-0 tabular-nums"
-            data-testid={`${cardTestId}-bullet`}
-            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
-          >
-            {mgBulletContent}
-          </div>
+        <div className="flex flex-col gap-1 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2 sm:items-center">
           <span
-            className="flex items-center gap-1 text-sm tabular-nums w-full"
+            className="flex items-center gap-1 text-sm tabular-nums w-full sm:order-last"
             data-testid={`${cardTestId}-eval-text`}
             style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
-            <span className="hidden sm:inline text-muted-foreground">End Eval:</span>
+            <span className="text-muted-foreground">End Eval:</span>
             <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
             {hasMgEval && (
               <BulletConfidencePopover
@@ -226,7 +222,14 @@ export function OpeningFindingCard({
               />
             )}
           </span>
-        </>
+          <div
+            className="min-w-0 tabular-nums sm:order-first"
+            data-testid={`${cardTestId}-bullet`}
+            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
+          >
+            {mgBulletContent}
+          </div>
+        </div>
       ) : (
         <EvalCpuPlaceholder />
       )}
