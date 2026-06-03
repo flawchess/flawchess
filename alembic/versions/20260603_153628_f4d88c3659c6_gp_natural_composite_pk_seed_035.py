@@ -39,8 +39,8 @@ in 20260601_154355_84fd28051d7d):
 KEPT INTENTIONALLY: `ix_game_positions_game_id`. It backs the ON DELETE CASCADE
 FK game_positions_game_id_fkey and is the more-used index (467k scans). This
 migration does NOT touch it. Its prod-side bloat is reclaimed SEPARATELY by the
-human-run ops script bin/reindex_game_positions.sh (SEED-035 "quick win"), NOT
-by this migration.
+human-run ops script scripts/reindex_game_positions.py (SEED-035 "quick win"),
+NOT by this migration.
 
 TRANSACTION / CONCURRENTLY RECONCILIATION: CREATE/DROP INDEX CONCURRENTLY cannot
 run inside a transaction block. All DDL here runs inside ONE
