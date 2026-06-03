@@ -45,19 +45,19 @@ credentials (host MUST be localhost — the tunnel). No password is committed he
 
 Usage:
     # Inspect index sizes only (read-only), no rebuild:
-    uv run python scripts/reindex_game_positions.py --db prod --verify
+    uv run python scripts/reindex_table.py --db prod --verify
 
     # Print the exact statements without connecting or executing anything:
-    uv run python scripts/reindex_game_positions.py --db prod --dry-run
+    uv run python scripts/reindex_table.py --db prod --dry-run
 
     # Reindex game_positions (default table; prompts for confirmation):
     bin/prod_db_tunnel.sh
     REINDEX_PROD_DB_URL='postgresql+asyncpg://flawchess:<PASSWORD>@localhost:15432/flawchess' \
-        uv run python scripts/reindex_game_positions.py --db prod
+        uv run python scripts/reindex_table.py --db prod
     bin/prod_db_tunnel.sh stop
 
     # Reindex several tables in one run:
-    uv run python scripts/reindex_game_positions.py --db prod --table game_positions games
+    uv run python scripts/reindex_table.py --db prod --table game_positions games
 
 Sequencing (game_positions, post-SEED-035):
     This pass is independent of the SEED-035 migration and may run any time. Prefer running
