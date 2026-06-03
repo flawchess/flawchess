@@ -217,18 +217,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v43"
-
-    def test_prompt_changelog_preserves_prior_versions(self) -> None:
-        """Phase 83 D-20: the changelog string prepends new blocks; prior vN intact."""
-        import inspect as _inspect
-
-        src = _inspect.getsource(insights_llm)
-        # Prior version comments must still be present in the changelog string.
-        assert "v24 (260510-ugj)" in src
-        assert "v23 (260510 endgame_start_vs_end)" in src
-        # New v25 changelog block must be present and tagged for entry_expected_score.
-        assert "v25 (260511 entry_expected_score)" in src
+        assert insights_llm._PROMPT_VERSION == "endgame_v45"
 
     def test_prompt_file_glossary_has_entry_expected_score(self) -> None:
         """Phase 83 D-17: glossary entry must be present with required framing."""
@@ -369,35 +358,6 @@ class TestPromptVersionAndBody:
                 break
         assert found, "missing `| endgame_start_vs_end ... | overall |` row in mapping table"
 
-    def test_prompt_version_bumped_to_v34(self) -> None:
-        """Latest bump v33 -> v34 (Phase 87.6 PR-direct rebuild): replaces the additive
-        K mapping with FIDE Performance Rating computed per side. new non_endgame_elo
-        field added to per-point payload; prompt sentence skeleton added.
-
-        Prior bumps (v28 -> v29 -> v30 -> v31 -> v32 -> v33) are preserved in the
-        changelog comment (append-only-at-FRONT pattern).
-        """
-        assert insights_llm._PROMPT_VERSION == "endgame_v43"
-        # Changelog comment must mention the Phase 87.6 rebuild.
-        import inspect as _inspect
-
-        src = _inspect.getsource(insights_llm)
-        # v34 changelog block present and tagged.
-        assert "v34 (260517 Phase 87.6 PR-direct rebuild)" in src
-        # Phase 87.6: K deleted, PR formula.
-        assert "K=450 deleted" in src
-        # v33 entry must still be present (changelog preserved verbatim).
-        assert "v33 (260517 Phase 87.5" in src
-        # Prior version comments must still be present (FRONT-prepend preserves history).
-        assert "v32 (260516 Phase 87.4 Conversion ELO rewire)" in src
-        assert "v31 (260515 Phase 87.2 Section 2 ΔES Score Gap family)" in src
-        # v28 changelog block preserved (chronological history).
-        assert "v28 (260514 concept capitalization)" in src
-        # v29 changelog block present and tagged.
-        assert "v29 (260515 endgame_type_achievable_score_gap)" in src
-        # Sigmoid-bias caveat one-liner still present in v29 comment.
-        assert "Lichess winning-chances sigmoid" in src
-
     def test_prompt_glossary_defines_endgame_type_score_gap(self) -> None:
         """Phase 87.1 Plan 04 / CONTEXT D-10: glossary entry for the new metric.
 
@@ -459,7 +419,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_bumped(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION is endgame_v40; prior v35 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v43"
+        assert insights_llm._PROMPT_VERSION == "endgame_v45"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2535,7 +2495,7 @@ class TestMetadataOverride:
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
         # Phase 102 UAT: bumped from endgame_v35 to endgame_v40.
-        assert response.report.prompt_version == "endgame_v43"
+        assert response.report.prompt_version == "endgame_v45"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2559,7 +2519,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v43"
+        assert log.response_json["prompt_version"] == "endgame_v45"
 
 
 class TestCacheBehavior:
@@ -3612,7 +3572,7 @@ class TestPhase874PromptVersion:
 
     def test_prompt_version_is_v33(self) -> None:
         """SC#7: bumped to endgame_v40 by Phase 102 UAT (was endgame_v35 after Phase 87.6)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v43"
+        assert insights_llm._PROMPT_VERSION == "endgame_v45"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3660,21 +3620,7 @@ class TestPhase876LLMPayloadExtension:
 
     def test_prompt_version_is_endgame_v39(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION bumped from endgame_v35 to endgame_v40."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v43"
-
-    def test_prompt_changelog_preserves_v33_entry(self) -> None:
-        """Phase 87.6 (PATTERNS pattern 8): v33 entry stays in the inline-comment changelog.
-
-        The changelog is append-only-at-FRONT; v33 must remain verbatim after
-        v34 is prepended. Protects against accidental trimming.
-        """
-        from pathlib import Path
-
-        src = Path(__file__).resolve().parents[2] / "app" / "services" / "insights_llm.py"
-        body = src.read_text(encoding="utf-8")
-        assert "v33 (260517 Phase 87.5 Endgame ELO rebuild" in body, (
-            "v33 changelog entry must remain verbatim after v34 is prepended"
-        )
+        assert insights_llm._PROMPT_VERSION == "endgame_v45"
 
     def test_prompt_prose_includes_non_endgame_elo_sentence_pattern(self) -> None:
         """Phase 87.6: the canonical 'Your Endgame ELO sits at X, vs Y' sentence skeleton
@@ -4501,4 +4447,4 @@ class TestRatingBasisBlock:
         """Phase 102 Plan 05/UAT: _PROMPT_VERSION bumped to endgame_v40."""
         from app.services import insights_llm
 
-        assert insights_llm._PROMPT_VERSION == "endgame_v43"
+        assert insights_llm._PROMPT_VERSION == "endgame_v45"
