@@ -51,7 +51,7 @@ import type * as React from 'react';
 
 import { OpeningFindingCard } from './OpeningFindingCard';
 import type { OpeningInsightFinding } from '@/types/insights';
-import { ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
+import { UNRELIABLE_OPACITY, ZONE_DANGER, ZONE_NEUTRAL, ZONE_SUCCESS } from '@/lib/theme';
 
 function makeFinding(overrides: Partial<OpeningInsightFinding> = {}): OpeningInsightFinding {
   return {
@@ -369,25 +369,58 @@ describe('OpeningFindingCard', () => {
       expect(card.textContent ?? '').not.toMatch(/Confidence:/);
     });
 
-    it('applies UNRELIABLE_OPACITY when finding.confidence === "low"', () => {
-      const finding = makeFinding({ confidence: 'low', n_games: 100 });
+    // Per-row dimming (260603-pgv): only the low-confidence stat row dims, not
+    // the whole card. The dual mobile+desktop layout duplicates the testids, so
+    // we assert on the first match.
+    const opacityStr = String(UNRELIABLE_OPACITY);
+
+    it('dims the Score row cells when finding.confidence === "low"', () => {
+      const finding = makeFinding({
+        confidence: 'low',
+        n_games: 100,
+        eval_confidence: 'high',
+        eval_n: 18,
+        avg_eval_pawns: 0.5,
+      });
       renderCard({ finding, idx: 0 });
-      const card = screen.getByTestId('opening-finding-card-0');
-      expect(card.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
+      expect(screen.getAllByTestId('opening-finding-card-0-score-bullet')[0]?.style.opacity).toBe(opacityStr);
+      expect(screen.getAllByTestId('opening-finding-card-0-score-text')[0]?.style.opacity).toBe(opacityStr);
+      // Eval row stays full opacity.
+      expect(screen.getAllByTestId('opening-finding-card-0-bullet')[0]?.style.opacity).toBe('');
+      expect(screen.getAllByTestId('opening-finding-card-0-eval-text')[0]?.style.opacity).toBe('');
+      // Card root never dims.
+      expect(screen.getByTestId('opening-finding-card-0').style.opacity).toBe('');
     });
 
-    it('applies UNRELIABLE_OPACITY when finding.n_games < 10', () => {
-      const finding = makeFinding({ confidence: 'high', n_games: 9 });
+    it('dims the Eval row cells when finding.eval_confidence === "low"', () => {
+      const finding = makeFinding({
+        confidence: 'high',
+        eval_confidence: 'low',
+        eval_n: 18,
+        avg_eval_pawns: 0.5,
+      });
       renderCard({ finding, idx: 0 });
-      const card = screen.getByTestId('opening-finding-card-0');
-      expect(card.getAttribute('style')).toMatch(/opacity:\s*0\.5/);
+      expect(screen.getAllByTestId('opening-finding-card-0-bullet')[0]?.style.opacity).toBe(opacityStr);
+      expect(screen.getAllByTestId('opening-finding-card-0-eval-text')[0]?.style.opacity).toBe(opacityStr);
+      // Score row stays full opacity.
+      expect(screen.getAllByTestId('opening-finding-card-0-score-bullet')[0]?.style.opacity).toBe('');
+      expect(screen.getAllByTestId('opening-finding-card-0-score-text')[0]?.style.opacity).toBe('');
+      expect(screen.getByTestId('opening-finding-card-0').style.opacity).toBe('');
     });
 
-    it('does NOT apply UNRELIABLE_OPACITY when n_games >= 10 AND confidence !== "low"', () => {
-      const finding = makeFinding({ confidence: 'high', n_games: 100 });
+    it('does NOT dim either row when both confidences are high', () => {
+      const finding = makeFinding({
+        confidence: 'high',
+        eval_confidence: 'high',
+        eval_n: 18,
+        avg_eval_pawns: 0.5,
+      });
       renderCard({ finding, idx: 0 });
-      const card = screen.getByTestId('opening-finding-card-0');
-      expect(card.getAttribute('style') ?? '').not.toMatch(/opacity:\s*0\.5/);
+      expect(screen.getAllByTestId('opening-finding-card-0-score-bullet')[0]?.style.opacity).toBe('');
+      expect(screen.getAllByTestId('opening-finding-card-0-score-text')[0]?.style.opacity).toBe('');
+      expect(screen.getAllByTestId('opening-finding-card-0-bullet')[0]?.style.opacity).toBe('');
+      expect(screen.getAllByTestId('opening-finding-card-0-eval-text')[0]?.style.opacity).toBe('');
+      expect(screen.getByTestId('opening-finding-card-0').style.opacity).toBe('');
     });
   });
 

@@ -231,8 +231,9 @@ function FindingsSection({
           <div className="space-y-2">
             <p>
               A strength or weakness shows up when your score is below 45% or above 55% over at
-              least 20 games. The cards are dimmed when the difference from 50% is plausibly due to chance.
-              The more games you have, the higher the statistical confidence in the findings.
+              least 20 games. The Score or Eval value is dimmed individually when that stat isn't
+              statistically distinguishable from chance, or rests on too few games. The more games
+              you have, the higher the statistical confidence in the findings.
             </p>
             <p>
               All your games are scanned up to 16 half-moves, and evaluated with Stockfish at the transition from opening to middlegame.
