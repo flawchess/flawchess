@@ -167,14 +167,17 @@ export function OpeningStatsCard({
 
   // Score + eval rows. On mobile: label stacks above the bullet chart for each
   // metric (per-metric flex-col wrapper, label first in DOM). On desktop (sm+):
-  // each wrapper switches to a 2-col grid (bullet left, label right), matching
-  // the previous layout. The label is no longer hidden on mobile.
+  // the wrappers become `display:contents` so all four cells (two bullets, two
+  // labels) join ONE shared 2-col grid. The shared `auto` text column is sized
+  // to the WIDER label ("End Eval:"), so both bullets get the same `1fr` width
+  // and stay aligned — without the shared grid each row sized its text column
+  // independently and the narrower "Score:" label left the score bullet wider.
   const scoreEvalBlock = (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2 sm:gap-y-2 sm:items-center">
       {/* Score row */}
-      <div className="flex flex-col gap-1 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2 sm:items-center">
+      <div className="flex flex-col gap-1 sm:contents">
         <span
-          className="flex items-center gap-1 text-sm tabular-nums w-full sm:order-last"
+          className="flex items-center gap-1 text-sm tabular-nums w-full sm:col-start-2 sm:row-start-1"
           data-testid={`${cardTestId}-score-text`}
           style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
         >
@@ -195,7 +198,7 @@ export function OpeningStatsCard({
           />
         </span>
         <div
-          className="min-w-0 tabular-nums sm:order-first"
+          className="min-w-0 tabular-nums sm:col-start-1 sm:row-start-1"
           data-testid={`${cardTestId}-score-bullet`}
           style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
         >
@@ -214,12 +217,12 @@ export function OpeningStatsCard({
       </div>
 
       {/* Eval row — gated on Tier 2 (eval analysis complete).
-          When !tier2, the pulsating-Cpu placeholder replaces the entire eval row.
-          The WDL score row above is not eval-dependent and stays visible. */}
+          When !tier2, the pulsating-Cpu placeholder (col-span-2) replaces the
+          entire eval row. The WDL score row above is not eval-dependent. */}
       {tier2 ? (
-        <div className="flex flex-col gap-1 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2 sm:items-center">
+        <div className="flex flex-col gap-1 sm:contents">
           <span
-            className="flex items-center gap-1 text-sm tabular-nums w-full sm:order-last"
+            className="flex items-center gap-1 text-sm tabular-nums w-full sm:col-start-2 sm:row-start-2"
             data-testid={`${cardTestId}-eval-text`}
             style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
@@ -237,7 +240,7 @@ export function OpeningStatsCard({
             )}
           </span>
           <div
-            className="min-w-0 tabular-nums sm:order-first"
+            className="min-w-0 tabular-nums sm:col-start-1 sm:row-start-2"
             data-testid={`${cardTestId}-bullet`}
             style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
