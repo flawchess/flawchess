@@ -154,61 +154,66 @@ export function OpeningFindingCard({
     <span className="text-muted-foreground">—</span>
   );
 
-  // Score + eval rows. On mobile: label stacks above the bullet chart for each
-  // metric (per-metric flex-col wrapper, label first in DOM). On desktop (sm+):
-  // the wrappers become `display:contents` so all four cells (two bullets, two
-  // labels) join ONE shared 2-col grid. The shared `auto` text column is sized
-  // to the WIDER label ("End Eval:"), so both bullets get the same `1fr` width
-  // and stay aligned — without the shared grid each row sized its text column
-  // independently and the narrower "Score:" label left the score bullet wider.
+  // Score + eval rows in ONE shared 2-col grid (bullet | label) at every
+  // breakpoint. The shared `auto` text column is sized to the WIDER label
+  // ("End Eval:"), so both bullets get the same `1fr` width and stay aligned.
+  // Full-width on mobile (charts stacked above the board) and in the right
+  // column on desktop (board left). The label is always visible — disambiguates
+  // that the eval is sampled at the opening's end, not the displayed position.
   const scoreEvalBlock = (
-    <div className="flex flex-col gap-2 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2 sm:gap-y-2 sm:items-center">
-      {/* Score row */}
-      <div className="flex flex-col gap-1 sm:contents">
-        <span
-          className="flex items-center gap-1 text-sm tabular-nums w-full sm:col-start-2 sm:row-start-1"
-          data-testid={`${cardTestId}-score-text`}
-          style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
-        >
-          <span className="text-muted-foreground">Score:</span>
-          <span className="ml-auto font-semibold" style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}>
-            {Math.round(finding.score * 100)}%
-          </span>
-          <ScoreConfidencePopover
-            level={finding.confidence}
-            pValue={finding.p_value ?? 1}
-            score={finding.score}
-            gameCount={finding.n_games}
-            lastPlayedAt={finding.last_played_at}
-            testId={`${cardTestId}-score-popover`}
-          />
-        </span>
-        <div
-          className="min-w-0 tabular-nums sm:col-start-1 sm:row-start-1"
-          data-testid={`${cardTestId}-score-bullet`}
-          style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
-        >
-          <MiniBulletChart
-            value={finding.score}
-            center={SCORE_BULLET_CENTER}
-            neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-            neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-            domain={SCORE_BULLET_DOMAIN}
-            ciLow={ciLow}
-            ciHigh={ciHigh}
-            barColor="neutral"
-            ariaLabel={`Score ${Math.round(finding.score * 100)}% vs 50% baseline`}
-          />
-        </div>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-2 items-center">
+      {/* Score bullet */}
+      <div
+        className="min-w-0 tabular-nums"
+        data-testid={`${cardTestId}-score-bullet`}
+        style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
+      >
+        <MiniBulletChart
+          value={finding.score}
+          center={SCORE_BULLET_CENTER}
+          neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+          neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+          domain={SCORE_BULLET_DOMAIN}
+          ciLow={ciLow}
+          ciHigh={ciHigh}
+          barColor="neutral"
+          ariaLabel={`Score ${Math.round(finding.score * 100)}% vs 50% baseline`}
+        />
       </div>
+      {/* Score label + value */}
+      <span
+        className="flex items-center gap-1 text-sm tabular-nums w-full"
+        data-testid={`${cardTestId}-score-text`}
+        style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
+      >
+        <span className="text-muted-foreground">Score:</span>
+        <span className="ml-auto font-semibold" style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}>
+          {Math.round(finding.score * 100)}%
+        </span>
+        <ScoreConfidencePopover
+          level={finding.confidence}
+          pValue={finding.p_value ?? 1}
+          score={finding.score}
+          gameCount={finding.n_games}
+          lastPlayedAt={finding.last_played_at}
+          testId={`${cardTestId}-score-popover`}
+        />
+      </span>
 
       {/* Eval row — gated on Tier 2 (eval analysis complete). When !tier2 the
           pulsating-Cpu placeholder (col-span-2) replaces the entire eval row,
           matching OpeningStatsCard. The WDL score row is not eval-dependent. */}
       {tier2 ? (
-        <div className="flex flex-col gap-1 sm:contents">
+        <>
+          <div
+            className="min-w-0 tabular-nums"
+            data-testid={`${cardTestId}-bullet`}
+            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
+          >
+            {mgBulletContent}
+          </div>
           <span
-            className="flex items-center gap-1 text-sm tabular-nums w-full sm:col-start-2 sm:row-start-2"
+            className="flex items-center gap-1 text-sm tabular-nums w-full"
             data-testid={`${cardTestId}-eval-text`}
             style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
@@ -225,14 +230,7 @@ export function OpeningFindingCard({
               />
             )}
           </span>
-          <div
-            className="min-w-0 tabular-nums sm:col-start-1 sm:row-start-2"
-            data-testid={`${cardTestId}-bullet`}
-            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
-          >
-            {mgBulletContent}
-          </div>
-        </div>
+        </>
       ) : (
         <EvalCpuPlaceholder />
       )}
@@ -311,24 +309,20 @@ export function OpeningFindingCard({
         data-testid={`${cardTestId}-content`}
         className="px-4 py-4"
       >
-        {/* Mobile: WDL bar full-width on top, then board + caption left, content right */}
+        {/* Mobile: WDL + Score/Eval charts full-width on top, miniboard + caption below */}
         <div className="flex flex-col gap-2 sm:hidden">
           {wdlLine}
-          <div className="flex gap-3 items-start">
-            <div className="flex flex-col items-end gap-1">
-              <LazyMiniBoard
-                fen={finding.entry_fen}
-                flipped={finding.color === 'black'}
-                size={MOBILE_BOARD_SIZE}
-                arrows={arrows}
-              />
-              {moveCaption}
-            </div>
-            <div className="flex-1 min-w-0 flex flex-col gap-2">
-              {scoreEvalBlock}
-              {linksRow}
-            </div>
+          {scoreEvalBlock}
+          <div className="flex flex-col items-start gap-1">
+            <LazyMiniBoard
+              fen={finding.entry_fen}
+              flipped={finding.color === 'black'}
+              size={MOBILE_BOARD_SIZE}
+              arrows={arrows}
+            />
+            {moveCaption}
           </div>
+          {linksRow}
         </div>
 
         {/* Desktop: board left, content stacked right (header above on both).
