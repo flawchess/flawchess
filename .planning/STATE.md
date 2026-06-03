@@ -4,7 +4,7 @@ milestone: v1.23
 milestone_name: LLM Endgame-Insights Statistical-Reasoning Rework
 status: shipped
 last_updated: "2026-06-03"
-last_activity: 2026-06-03 -- v1.23 shipped (Phases 102 + 103). Phase 103 squash-merged to main; milestone archived, CHANGELOG promoted, tagged v1.23. Deploying to production.
+last_activity: 2026-06-03 -- v1.23 DEPLOYED to production (server at 1165f6a9, site HTTP 200). Phases 102 + 103 shipped; milestone archived, CHANGELOG promoted, tagged v1.23, GitHub release created. Release PR #176 (main → production).
 progress:
   total_phases: 2
   completed_phases: 2
@@ -19,9 +19,9 @@ progress:
 
 Milestone: v1.23 LLM Endgame-Insights Statistical-Reasoning Rework — SHIPPED 2026-06-03
 Phases: 102 (LLM rework, LLM-01..07, HUMAN-UAT signed off 2026-06-02) + 103 (GM-feedback prompt refinements + ~35% condense, endgame_v44, unplanned follow-on)
-Status: Phase 103 squash-merged to main (89403360); milestone archived to milestones/v1.23-ROADMAP.md + v1.23-REQUIREMENTS.md; CHANGELOG [Unreleased] → [v1.23]; tagged v1.23.
-Next: bin/deploy.sh (main → production) — production is behind main by the phase-103 commits. No active milestone after deploy; next feature work via /gsd-new-milestone.
-Last activity: 2026-06-03 -- v1.23 shipped (Phases 102 + 103); milestone closed and tagged; deploying.
+Status: DEPLOYED. Release PR #176 (main → production) squash-merged (1165f6a9); bin/deploy.sh verified server at 1165f6a9, flawchess.com HTTP 200, backend healthy. Milestone archived; CHANGELOG promoted; tagged v1.23 (at b57bf4b5) + GitHub release. During release CI: renamed CI test-DB env var to DATABASE_URL_TEST, forward-ported #175 into main (-s ours), and fixed two serial-CI regressions from the 4f57dc21 env-var refactor (benchmark-import global-settings poisoning + backfill dev-target resolution).
+Next: No active milestone. Next feature work via /gsd-new-milestone. SEED-034 (Recommendations-section rework) and SEED-030 Track A remain candidates.
+Last activity: 2026-06-03 -- v1.23 deployed to production and verified live.
 
 ## Project Reference
 
