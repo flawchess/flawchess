@@ -25,7 +25,7 @@ import {
   scoreZoneColor,
 } from '@/lib/scoreBulletConfig';
 import { isConfident } from '@/lib/significance';
-import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
+import { UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import type { OpeningInsightFinding } from '@/types/insights';
 
 const MOBILE_BOARD_SIZE = 115;
@@ -64,16 +64,14 @@ export function OpeningFindingCard({
     : undefined;
   const isUnnamed = finding.opening_name === UNNAMED_SENTINEL;
 
-  // D-11: Apply UNRELIABLE_OPACITY when n_games < 10 OR confidence is low.
-  const isUnreliable =
-    finding.n_games < MIN_GAMES_FOR_RELIABLE_STATS || finding.confidence === 'low';
   // Full-height left spine: the score-zone accent runs the entire left edge of
   // the card (header band included). It lives on the card root, not the content
   // div — the old content-div border started the colored stripe abruptly under
   // the header band, leaving the rounded top-left corner un-accented.
+  // Per-row dimming (260603-pgv): the whole-card opacity dim was removed; each
+  // stat row now dims independently (see dimScoreRow / dimEvalRow below).
   const rootStyle: React.CSSProperties = {
     borderLeftColor,
-    ...(isUnreliable ? { opacity: UNRELIABLE_OPACITY } : {}),
   };
 
   const cardTestId = `opening-finding-card-${idx}`;
@@ -122,6 +120,12 @@ export function OpeningFindingCard({
     isConfident(finding.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
+  // Per-row dimming (260603-pgv): fade only the stat row whose confidence is
+  // low, instead of the whole card. Eval dims only when an eval value exists
+  // (the placeholder / no-eval "—" cases are never dimmed).
+  const dimScoreRow = !isConfident(finding.confidence);
+  const dimEvalRow = hasMgEval && !isConfident(finding.eval_confidence);
+
   const mgEvalTextContent = hasMgEval ? (
     <span
       className="font-semibold inline-flex items-center gap-0.3"
@@ -159,6 +163,7 @@ export function OpeningFindingCard({
       <div
         className="min-w-0 tabular-nums"
         data-testid={`${cardTestId}-score-bullet`}
+        style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
       >
         <MiniBulletChart
           value={finding.score}
@@ -175,6 +180,7 @@ export function OpeningFindingCard({
       <span
         className="flex items-center gap-1 text-sm tabular-nums w-full"
         data-testid={`${cardTestId}-score-text`}
+        style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
       >
         <span className="hidden sm:inline text-muted-foreground">Score:</span>
         <span className="ml-auto font-semibold" style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}>
@@ -198,12 +204,14 @@ export function OpeningFindingCard({
           <div
             className="min-w-0 tabular-nums"
             data-testid={`${cardTestId}-bullet`}
+            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
             {mgBulletContent}
           </div>
           <span
             className="flex items-center gap-1 text-sm tabular-nums w-full"
             data-testid={`${cardTestId}-eval-text`}
+            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
             <span className="hidden sm:inline text-muted-foreground">Eval:</span>
             <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>

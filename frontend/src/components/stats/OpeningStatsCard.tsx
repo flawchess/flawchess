@@ -26,7 +26,6 @@ import { isConfident } from '@/lib/significance';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
   MIN_GAMES_FOR_RELIABLE_STATS,
-  MIN_GAMES_OPENING_ROW,
   UNRELIABLE_OPACITY,
   ZONE_NEUTRAL,
 } from '@/lib/theme';
@@ -61,11 +60,6 @@ export function OpeningStatsCard({
   const { tier2 } = useReadiness();
 
   const cardTestId = `${testIdPrefix}-${idx}`;
-
-  // Mute the whole card when total games are below the opening-row threshold,
-  // matching the previous MostPlayedOpeningsTable behavior so sparse rows can't
-  // sustain a reliable MG-entry eval signal.
-  const isCardMuted = opening.total < MIN_GAMES_OPENING_ROW;
 
   const hasMgEval =
     opening.eval_n > 0 &&
@@ -106,14 +100,19 @@ export function OpeningStatsCard({
     isConfident(opening.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
+  // Per-row dimming (260603-pgv): fade only the stat row whose confidence is
+  // low, instead of the whole card. Eval dims only when an eval value exists
+  // (the placeholder / no-eval "—" cases are never dimmed).
+  const dimScoreRow = !isConfident(scoreStats.confidence);
+  const dimEvalRow = hasMgEval && !isConfident(opening.eval_confidence);
+
   // Full-height left spine on the card root (see OpeningFindingCard). Reliable
   // cards get the score-zone accent down the whole left edge; unreliable cards
   // (n < MIN_GAMES) get no spine — the uniform 1px border stays, avoiding a 4px
-  // transparent gap and any color signal on sparse data. Opacity dimming is a
-  // separate, broader gate (isCardMuted also covers low confidence).
+  // transparent gap and any color signal on sparse data. The whole-card opacity
+  // dim was removed in 260603-pgv (per-row dimming replaces it).
   const rootStyle: React.CSSProperties = {
     ...(isReliableScore ? { borderLeftColor } : {}),
-    ...(isCardMuted ? { opacity: UNRELIABLE_OPACITY } : {}),
   };
 
   // Phase 80 MG eval text — signed pawns to one decimal (e.g. "+2.1"), zone color
@@ -175,6 +174,7 @@ export function OpeningStatsCard({
       <div
         className="min-w-0 tabular-nums"
         data-testid={`${cardTestId}-score-bullet`}
+        style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
       >
         <MiniBulletChart
           value={derivedScore}
@@ -191,6 +191,7 @@ export function OpeningStatsCard({
       <span
         className="flex items-center gap-1 text-sm tabular-nums w-full"
         data-testid={`${cardTestId}-score-text`}
+        style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
       >
         <span className="hidden sm:inline text-muted-foreground">Score:</span>
         <span
@@ -218,12 +219,14 @@ export function OpeningStatsCard({
           <div
             className="min-w-0 tabular-nums"
             data-testid={`${cardTestId}-bullet`}
+            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
             {mgBulletContent}
           </div>
           <span
             className="flex items-center gap-1 text-sm tabular-nums w-full"
             data-testid={`${cardTestId}-eval-text`}
+            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
             <span className="hidden sm:inline text-muted-foreground">Eval:</span>
             <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
