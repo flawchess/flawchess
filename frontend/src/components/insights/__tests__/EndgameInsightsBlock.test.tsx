@@ -163,6 +163,9 @@ describe('EndgameInsightsBlock', () => {
     expect(recs.textContent).toContain('Recommendations');
     expect(recs.textContent).toContain('Try drilling pawn endgames against an engine.');
     expect(recs.textContent).toContain('Review your last few losses on time.');
+    const studyLink = screen.getByTestId('insights-rec-endgame-study-link');
+    expect(studyLink.getAttribute('href')).toBe('https://lichess.org/study/mtiahamI');
+    expect(studyLink.getAttribute('target')).toBe('_blank');
   });
 
   it('hides overview paragraph when empty string (BETA-02)', () => {

@@ -394,3 +394,14 @@ Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
 *Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`.*
+
+### Phase 103: Some endgame report LLM prompt refinements
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 102
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 103 to break down)

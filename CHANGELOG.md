@@ -8,8 +8,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- Phase 103: the endgame-insights Recommendations card now links to GM Noël Studer's Lichess endgame study (Basic to Advanced) as a fixed study resource.
+
 ### Changed
 
+- Phase 103: refined the endgame-insights AI recommendations from chess-GM feedback. Time-trouble advice now points at decision speed ("make quicker decisions earlier", "play okay-looking moves faster") instead of opening repertoire; recommendations state what to work on without inventing the how (e.g. "Study the basic checkmates and pawn endgames", "Trade pieces when up material"); and the AI no longer names specific theoretical positions (Philidor, Lucena, opposition, …) as study targets, since the data is type-level and can't confirm you mishandled those exact positions.
 - Reduced opening-position index footprint by ~3 GB by capping the move explorer at 28 plies and rebuilding the three Zobrist-hash indexes as partial indexes (`WHERE ply <= 28`). The cap is invisible in normal use (dev DB max bookmark depth: 6 plies). (SEED-033)
 
 ### Fixed
