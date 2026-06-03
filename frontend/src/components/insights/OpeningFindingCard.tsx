@@ -164,13 +164,13 @@ export function OpeningFindingCard({
   const scoreEvalBlock = (
     <div className="flex flex-col gap-2 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2 sm:gap-y-2 sm:items-center">
       {/* Score row */}
-      <div className="flex flex-col gap-1 sm:contents">
+      <div className="flex flex-col gap-0.5 sm:contents">
         <span
           className="flex items-center gap-1 text-sm tabular-nums w-full sm:col-start-2 sm:row-start-1"
           data-testid={`${cardTestId}-score-text`}
           style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
         >
-          <span className="text-muted-foreground">Score:</span>
+          <span className="text-xs sm:text-sm text-muted-foreground">Score:</span>
           <span className="ml-auto font-semibold" style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}>
             {Math.round(finding.score * 100)}%
           </span>
@@ -206,13 +206,13 @@ export function OpeningFindingCard({
           pulsating-Cpu placeholder (col-span-2) replaces the entire eval row,
           matching OpeningStatsCard. The WDL score row is not eval-dependent. */}
       {tier2 ? (
-        <div className="flex flex-col gap-1 sm:contents">
+        <div className="flex flex-col gap-0.5 sm:contents">
           <span
             className="flex items-center gap-1 text-sm tabular-nums w-full sm:col-start-2 sm:row-start-2"
             data-testid={`${cardTestId}-eval-text`}
             style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
-            <span className="text-muted-foreground">End Eval:</span>
+            <span className="text-xs sm:text-sm text-muted-foreground">End Eval:</span>
             <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
             {hasMgEval && (
               <BulletConfidencePopover
