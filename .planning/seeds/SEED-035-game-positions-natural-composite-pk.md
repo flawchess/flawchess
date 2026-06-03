@@ -1,6 +1,8 @@
 ---
 id: SEED-035
-status: open
+status: resolved
+resolved: 2026-06-03
+resolved_by: quick task 260603-o8m (commits adc0864f migration, 694f361a ORM+backfill, 9eae456c reindex script, ed5cf4c6 test). Code shipped to main; prod-scale CONCURRENTLY timing + the actual prod run of bin/reindex_game_positions.sh remain DEPLOY/HUMAN-UAT.
 planted: 2026-06-01
 planted_during: prod /db-report 2026-06-01 review. While comparing index sizes against the 2026-05-29 snapshot (the 2026-05-31 reindex of the three Zobrist hash indexes had just dropped the DB from 14 GB to 9.6 GB), the surrogate `game_positions.id` PK surfaced as the single largest object in the database (1,300 MB) with zero genuine scans and no inbound foreign keys. User proposed promoting a natural composite key.
 trigger_when: When reclaiming storage on the largest table becomes worth a migration on it, or alongside a future game_positions schema change so the table is rewritten/reindexed once. Not urgent — no correctness or performance problem today, purely ~1.45 GB of recoverable space. Promote via /gsd-review-backlog.
