@@ -307,8 +307,9 @@ export function OpeningStatsCard({
         data-testid={`${cardTestId}-content`}
         className="px-4 py-4"
       >
-        {/* Mobile: board left, content right */}
+        {/* Mobile: WDL bar full-width on top, then board left + content right */}
         <div className="flex flex-col gap-2 sm:hidden">
+          {wdlLine}
           <div className="flex gap-3 items-start">
             <LazyMiniBoard
               fen={opening.fen}
@@ -316,7 +317,6 @@ export function OpeningStatsCard({
               size={MOBILE_BOARD_SIZE}
             />
             <div className="flex-1 min-w-0 flex flex-col gap-2">
-              {wdlLine}
               {scoreEvalBlock}
               {linksRow}
             </div>

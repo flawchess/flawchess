@@ -311,8 +311,9 @@ export function OpeningFindingCard({
         data-testid={`${cardTestId}-content`}
         className="px-4 py-4"
       >
-        {/* Mobile: board + caption left, content right */}
+        {/* Mobile: WDL bar full-width on top, then board + caption left, content right */}
         <div className="flex flex-col gap-2 sm:hidden">
+          {wdlLine}
           <div className="flex gap-3 items-start">
             <div className="flex flex-col items-end gap-1">
               <LazyMiniBoard
@@ -324,7 +325,6 @@ export function OpeningFindingCard({
               {moveCaption}
             </div>
             <div className="flex-1 min-w-0 flex flex-col gap-2">
-              {wdlLine}
               {scoreEvalBlock}
               {linksRow}
             </div>
