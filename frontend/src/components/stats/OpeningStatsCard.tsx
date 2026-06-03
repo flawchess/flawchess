@@ -305,16 +305,20 @@ export function OpeningStatsCard({
         data-testid={`${cardTestId}-content`}
         className="px-4 py-4"
       >
-        {/* Mobile: WDL + Score/Eval charts full-width on top, miniboard below */}
+        {/* Mobile: miniboard left; WDL bar + Moves/Games stacked to its right; charts below */}
         <div className="flex flex-col gap-2 sm:hidden">
-          {wdlLine}
+          <div className="flex gap-3 items-start">
+            <LazyMiniBoard
+              fen={opening.fen}
+              flipped={color === 'black'}
+              size={MOBILE_BOARD_SIZE}
+            />
+            <div className="flex-1 min-w-0 flex flex-col gap-2">
+              {wdlLine}
+              {linksRow}
+            </div>
+          </div>
           {scoreEvalBlock}
-          <LazyMiniBoard
-            fen={opening.fen}
-            flipped={color === 'black'}
-            size={MOBILE_BOARD_SIZE}
-          />
-          {linksRow}
         </div>
 
         {/* Desktop: board left, content right (header lives above on both) */}

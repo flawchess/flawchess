@@ -309,20 +309,24 @@ export function OpeningFindingCard({
         data-testid={`${cardTestId}-content`}
         className="px-4 py-4"
       >
-        {/* Mobile: WDL + Score/Eval charts full-width on top, miniboard + caption below */}
+        {/* Mobile: miniboard + caption left; WDL bar + Moves/Games stacked to its right; charts below */}
         <div className="flex flex-col gap-2 sm:hidden">
-          {wdlLine}
-          {scoreEvalBlock}
-          <div className="flex flex-col items-start gap-1">
-            <LazyMiniBoard
-              fen={finding.entry_fen}
-              flipped={finding.color === 'black'}
-              size={MOBILE_BOARD_SIZE}
-              arrows={arrows}
-            />
-            {moveCaption}
+          <div className="flex gap-3 items-start">
+            <div className="flex flex-col items-start gap-1">
+              <LazyMiniBoard
+                fen={finding.entry_fen}
+                flipped={finding.color === 'black'}
+                size={MOBILE_BOARD_SIZE}
+                arrows={arrows}
+              />
+              {moveCaption}
+            </div>
+            <div className="flex-1 min-w-0 flex flex-col gap-2">
+              {wdlLine}
+              {linksRow}
+            </div>
           </div>
-          {linksRow}
+          {scoreEvalBlock}
         </div>
 
         {/* Desktop: board left, content stacked right (header above on both).
