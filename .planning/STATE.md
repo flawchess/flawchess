@@ -1,27 +1,27 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.22
-milestone_name: milestone
-status: verifying
-last_updated: "2026-06-02"
-last_activity: 2026-06-02 -- Phase 102 HUMAN-UAT completed (incl. endgame_v43 review fixes); PR #173 ready to merge
+milestone: v1.23
+milestone_name: LLM Endgame-Insights Statistical-Reasoning Rework
+status: shipped
+last_updated: "2026-06-03"
+last_activity: 2026-06-03 -- v1.23 shipped (Phases 102 + 103). Phase 103 squash-merged to main; milestone archived, CHANGELOG promoted, tagged v1.23. Deploying to production.
 progress:
-  total_phases: 5
-  completed_phases: 1
+  total_phases: 2
+  completed_phases: 2
   total_plans: 3
-  completed_plans: 4
-  percent: 20
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 102 (endgame-llm-statistical-reasoning-rework-v1-23) — EXECUTING
-Plan: 3 of 3
-Status: HUMAN-UAT completed (2026-06-02) — human-verify checkpoint cleared; sign-off extends to endgame_v43 (PR #173 review fixes, commit 087eb370)
-Next: Complete 102-03-SUMMARY.md, squash-merge PR #173 to main, start v1.23 milestone. (Awaiting explicit go-ahead — not yet actioned.)
-Last activity: 2026-06-02 -- Phase 102 HUMAN-UAT completed (incl. endgame_v43 review fixes); PR #173 ready to merge
+Milestone: v1.23 LLM Endgame-Insights Statistical-Reasoning Rework — SHIPPED 2026-06-03
+Phases: 102 (LLM rework, LLM-01..07, HUMAN-UAT signed off 2026-06-02) + 103 (GM-feedback prompt refinements + ~35% condense, endgame_v44, unplanned follow-on)
+Status: Phase 103 squash-merged to main (89403360); milestone archived to milestones/v1.23-ROADMAP.md + v1.23-REQUIREMENTS.md; CHANGELOG [Unreleased] → [v1.23]; tagged v1.23.
+Next: bin/deploy.sh (main → production) — production is behind main by the phase-103 commits. No active milestone after deploy; next feature work via /gsd-new-milestone.
+Last activity: 2026-06-03 -- v1.23 shipped (Phases 102 + 103); milestone closed and tagged; deploying.
 
 ## Project Reference
 
@@ -139,7 +139,8 @@ Carried forward from v1.11 close (still relevant):
 
 ### Roadmap Evolution
 
-- 2026-06-03: Phase 103 added: Some endgame report LLM prompt refinements
+- 2026-06-03: **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework SHIPPED** (Phases 102 + 103, 3 plans, 37 commits since v1.22). Phase 102 (LLM-01..07): cohort-framed percentile annotations + time-pressure narration wired into the endgame-insights payload, prompt taught to reason over the v1.17–v1.21 metric set under the zone gate (p-values + CI bounds OUT), relaxed overview cap, vocabulary audit, `endgame_v35` → `endgame_v43`, HUMAN-UAT signed off 2026-06-02. Phase 103 (unplanned follow-on, direct commits): three GM-feedback recommendation-quality fixes + GM Noël Studer study link + ~35% prompt condense, `endgame_v44`. Archived to milestones/v1.23-ROADMAP.md + v1.23-REQUIREMENTS.md; REQUIREMENTS.md removed (fresh for next milestone); CHANGELOG promoted; tagged v1.23. Deferred at close: SEED-030 Track A (module splitting), plus the dormant seeds/long-range todos carried since v1.22 — none v1.23-scoped.
+- 2026-06-03: Phase 103 added: Some endgame report LLM prompt refinements (shipped same day under v1.23)
 - 2026-05-31: **v1.22 repurposed from "LLM Statistical Reasoning" to "Maintenance — Test Isolation & Frontend Major Upgrades."** New v1.22 holds Phase 100 (Isolated Test DB Per Run, SEED-031) + Phase 101 (Frontend Major Dependency Upgrades, SEED-032), executed sequentially. The previously-planned LLM Endgame-Insights Statistical-Reasoning Rework (the sole v1.22 phase, carried through renumbers 95 → 97 → 98 → 100) was **deprioritized to backlog Phase 999.7** intact rather than renumbered inline; LLM-01..07 stay pending and the REQUIREMENTS.md traceability repoints to 999.7. No v1.23 placeholder created (user chose "backlog only" — the next feature milestone gets named when started). Note: SEED-032 itself recommended *not* cutting a release for tooling upgrades; making this a tagged maintenance milestone is a deliberate override (recharts 3 is user-facing and worth a release). Source: user `/gsd-explore` restructure request.
 - 2026-05-22: v1.19 Endgame Percentiles & LLM Statistical Reasoning opened with a 3-phase directional roadmap. Phase 93 (Global Percentile Benchmark Artifact) — global empirical-CDF artifact via the canonical `/benchmarks` CTE locked into `endgame_zones.py` with TS codegen drift-guard (PCTL-01); blocks the rest. Phase 94 (Backend & Frontend Percentile Annotations) — nullable `{metric}_percentile` field + chip on Tier-1 / Tier-2 endgame cards with desktop + mobile parity, honest Tier-2 copy, minimum-N reliability gate (PCTL-02..06). Phase 95 (LLM Endgame-Insights Statistical-Reasoning Rework) — payload extension with p-values + CI bounds + percentiles, prompt rewrite reasoning over CIs / percentiles with guardrails resolving the `feedback_llm_significance_signal` tension, version bump from `endgame_v35`, UAT pass (LLM-01..07). All 13 requirements mapped, no orphans. Per-phase details intentionally directional — refined at `/gsd:discuss-phase` time. Source: SEED-019 §Proposed Scope and recent v1.17 statistical-rigor work (Phases 85.1 / 86 / 87.2 / 87.6 / 88).
 - 2026-05-22 (later): v1.19 Phase 93/94 scope **narrowed via empirical pre-flight**. A focused /benchmarks pass on the 5 candidate ΔES metrics (`reports/benchmarks-gap-metrics-percentile-candidacy.md`) measured per-user distributions, per-rating-bucket Cohen's d, and skew/kurtosis. Findings: (a) Endgame Score Gap is the cleanest skill-isolating metric (d=0.19, normal-shaped), not "self-relative noise" as a pre-data Socratic critique suggested; (b) Conversion Score Gap is a heavy rating-proxy (d=1.37) but useful for weaker players under an improvement-focus framing; (c) Recovery Score Gap is decisively dropped (d=0.95 inverted, opponent-confounded — the chip would read as the opposite of truth for both weak and strong players); (d) Parity ΔES is the cleanest Section-2 candidate (d=0.30). Chip set narrowed to **4 ΔES rows**: Endgame Score Gap + Achievable Score Gap (page-level) and Parity ΔES + Conversion ΔES (Section 2 cards). Recovery card and the 3 raw % gauges (Conv/Parity/Recov) get no chips. Plan 1 split into Task A (extend `/benchmarks` SKILL.md with a CDF subchapter — methodology source of truth) and Task B (write `scripts/gen_global_percentile_cdf.py` — deterministic regeneration; commits to a new module `app/services/global_percentile_cdf.py`, separate from `endgame_zones.py`). Popover copy reframed: metric-aware (skill-isolating for low-d trio; improvement-focus for high-d Conversion). PCTL-01 + PCTL-04 in REQUIREMENTS.md and Phase 93/94 detail blocks in ROADMAP.md synced to SEED-019. v1.19 is ready for `/gsd:discuss-phase 93`.

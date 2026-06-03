@@ -25,32 +25,21 @@
 - ✅ **v1.20 Import Pipeline Hardening Follow-Up and Readiness** — Phases 95, 96 (shipped 2026-05-29) — see [milestones/v1.20-ROADMAP.md](milestones/v1.20-ROADMAP.md)
 - ✅ **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99, 99.1 (shipped 2026-05-31; PRs #160, #163/#164, #167, #168) — see [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md)
 - ✅ **v1.22 Maintenance — Test Isolation & Frontend Major Upgrades** — Phases 100, 101 (shipped 2026-05-31) — see [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md)
-- 🚧 **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phase 102 (active, started 2026-06-01)
+- ✅ **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phases 102, 103 (shipped 2026-06-03) — see [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md)
 
 ## Phases
 
-**v1.23 LLM Endgame-Insights Statistical-Reasoning Rework (active)** — Phase 102.
+*No active milestone. v1.23 (Phases 102, 103) shipped 2026-06-03 — archived to [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md); see the collapsed block below. v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md). v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
 
-### Phase 102: Endgame LLM Statistical-Reasoning Rework (v1.23)
+<details>
+<summary>✅ v1.23 LLM Endgame-Insights Statistical-Reasoning Rework (Phases 102, 103) — SHIPPED 2026-06-03</summary>
 
-**Goal:** Upgrade the endgame-insights LLM payload + prompt to reason over the v1.17–v1.21 metric set, with **percentile annotations** wired in (the page-level, game-count-weighted value the chip shows) so the model can reference the rank the user sees, plus **LLM narration of time-pressure** (Score Gap by Remaining Time, Clock Gap, Net Flag Rate). The metric *set* is already aligned with the page, so this needs **no new frontend cards** — it is payload + prompt only. Preserve `feedback_llm_significance_signal`: the cohort `zone` field remains the sole gate on *whether* a metric is narrated; percentile informs only *how*. **p-values are OUT; CI bounds likely OUT** (final CI call at discuss-phase). Audit the system prompt's UI-vocabulary mapping against the current user-facing copy — **both** the Endgame Statistics Concepts accordion **and** the tooltip info-icon popover bodies (`MetricStatPopover`, `WdlConfidenceTooltip`, `EvalConfidenceTooltip`, `AchievableScorePopover`, percentile-chip tooltip) so report and hover-help never contradict — then bump `endgame_v35` → `endgame_v36` (cache invalidation via `_PROMPT_VERSION`). Also relax the `overview` field's ~300-word cap (rendered as the "Data Analysis" card) so the model **may** narrate more when there is enough genuinely interesting signal, keeping the no-fabrication / within-noise guards. **UAT-dominated phase** — budget multiple UAT passes over representative production users.
-**Requirements:** LLM-01..07
-**Plans:** 3 plans
-**Context:** Promoted from backlog Phase 999.7 on 2026-06-01 via `/gsd-explore`. Full scope + locked decisions: `.planning/notes/v1.23-phase-102-endgame-llm-statistical-reasoning.md`. A follow-up Recommendations-section rework is captured separately as `SEED-034` and is explicitly **not** in Phase 102 scope.
-Plans:
-**Wave 1**
+- [x] Phase 102: Endgame LLM Statistical-Reasoning Rework (3/3 plans) — cohort-framed percentile annotations + time-pressure narration (Score Gap by Remaining Time / Clock Gap / Net Flag Rate) wired into the endgame-insights payload, prompt taught to reason over the v1.17–v1.21 metric set under the zone gate (p-values + CI bounds OUT), relaxed overview cap, vocabulary audit vs concepts accordion + tooltip popovers, `endgame_v35` → `endgame_v43`; HUMAN-UAT (LLM-07) signed off across short-history / sparse-section / full-history prod users — completed 2026-06-02 (LLM-01..07)
+- [x] Phase 103: Endgame report LLM prompt refinements (unplanned follow-on) — three GM-feedback recommendation-quality fixes (decision-speed time-trouble advice, no fabricated mechanism, no named theoretical positions at any Elo), GM Noël Studer study link in the Recommendations card, prompt condensed ~35%, `endgame_v44` — completed 2026-06-03
 
-- [x] 102-01-PLAN.md — Payload wiring: real Net Flag Rate, 5-quintile Score-Gap-by-time chart block, cohort-framed percentile annotations (zone stays the sole gate)
+See [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md) for full details.
 
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 102-02-PLAN.md — Prompt teaching: percentile + time-pressure narration, vocabulary audit, relaxed overview cap, bump _PROMPT_VERSION endgame_v35 → endgame_v36
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [ ] 102-03-PLAN.md — HUMAN-UAT (LLM-07): generate endgame_v36 reports for short-history / sparse-section / full-history prod users and judge against the locked decisions
-
-*v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md); see the collapsed block below. v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
+</details>
 
 <details>
 <summary>✅ v1.22 Maintenance — Test Isolation & Frontend Major Upgrades (Phases 100, 101) — SHIPPED 2026-05-31</summary>
@@ -349,6 +338,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 95-96. v1.20 phases | v1.20 | 5/5 | Complete | 2026-05-29 |
 | 97-99.1. v1.21 phases | v1.21 | 15/15 | Complete (99.1 INSERTED) | 2026-05-31 |
 | 100-101. v1.22 phases | v1.22 | 3/3 | Complete | 2026-05-31 |
+| 102-103. v1.23 phases | v1.23 | 3/3 | Complete (103 unplanned follow-on) | 2026-06-03 |
 
 ## Backlog
 
@@ -393,15 +383,6 @@ Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)
 
-*Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`.*
+*Phase 999.7 (LLM Endgame-Insights Statistical-Reasoning Rework) promoted to active Phase 102 (v1.23) on 2026-06-01 via `/gsd-explore`; shipped 2026-06-03.*
 
-### Phase 103: Some endgame report LLM prompt refinements
-
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 102
-**Plans:** 0 plans
-
-Plans:
-
-- [ ] TBD (run /gsd-plan-phase 103 to break down)
+*Phase 103 (Endgame report LLM prompt refinements) shipped 2026-06-03 as an unplanned follow-on under v1.23 — see the collapsed v1.23 block above and [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md).*
