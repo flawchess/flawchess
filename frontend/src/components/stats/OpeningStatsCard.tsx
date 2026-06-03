@@ -228,7 +228,7 @@ export function OpeningStatsCard({
             data-testid={`${cardTestId}-eval-text`}
             style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
-            <span className="hidden sm:inline text-muted-foreground">Eval:</span>
+            <span className="hidden sm:inline text-muted-foreground">End Eval:</span>
             <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
             {hasMgEval && (
               <BulletConfidencePopover
