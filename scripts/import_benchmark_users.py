@@ -79,7 +79,16 @@ from app.core.config import settings
 # app.core.database constructs the engine on the next import. main() still
 # asserts the resolved URL is benchmark-shaped as a guard against a misconfigured
 # DATABASE_URL_BENCHMARK.
-settings.DATABASE_URL = settings.DATABASE_URL_BENCHMARK
+#
+# Guarded against pytest: under the test suite this module is imported only for
+# its pure helpers (create_stub_user, compute_deficit_users, the bucketing /
+# parsing functions), which mock their own DB access. Repointing the global
+# settings.DATABASE_URL at import time would poison it for the rest of a serial
+# session — every later test that reads settings.DATABASE_URL (Alembic migration
+# tests, seed_openings) would connect to the benchmark DB (port 5433) instead of
+# this run's per-run test database. Skipping under pytest restores that isolation.
+if "pytest" not in sys.modules:
+    settings.DATABASE_URL = settings.DATABASE_URL_BENCHMARK
 
 from app.core.database import async_session_maker, engine  # noqa: E402
 from app.models.benchmark_ingest_checkpoint import BenchmarkIngestCheckpoint  # noqa: E402

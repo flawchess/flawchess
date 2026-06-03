@@ -81,6 +81,24 @@ _EXPECTED_SUMMARY_TOKENS: list[str] = ["included", "floor_rej", "suppressed"]
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _point_dev_target_at_test_db(test_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resolve ``--target dev`` to this run's per-run test database.
+
+    Since the DB-URL env-var streamline (commit 4f57dc21) the backfill script
+    resolves ``--target dev`` via ``settings.DATABASE_URL_DEV`` rather than the
+    process-wide ``settings.DATABASE_URL``. These tests drive
+    ``main(target="dev")`` against the per-run test DB that ``test_engine``
+    provisioned and that conftest patched onto ``settings.DATABASE_URL`` (port
+    5432), so point ``DATABASE_URL_DEV`` at that same URL. Without this the
+    script would hit the real dev database — and fail outright in CI, whose
+    Postgres has no ``flawchess`` role. The ``:5432`` safety guard still holds.
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "DATABASE_URL_DEV", settings.DATABASE_URL)
+
+
 def _make_session_maker(
     test_engine: AsyncEngine,
 ) -> async_sessionmaker[AsyncSession]:
