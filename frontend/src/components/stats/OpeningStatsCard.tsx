@@ -26,12 +26,11 @@ import { isConfident } from '@/lib/significance';
 import { formatSignedEvalPawns } from '@/lib/clockFormat';
 import {
   MIN_GAMES_FOR_RELIABLE_STATS,
-  MIN_GAMES_OPENING_ROW,
   UNRELIABLE_OPACITY,
   ZONE_NEUTRAL,
 } from '@/lib/theme';
 
-const MOBILE_BOARD_SIZE = 115;
+const MOBILE_BOARD_SIZE = 128;
 const DESKTOP_BOARD_SIZE = 110;
 
 interface OpeningStatsCardProps {
@@ -61,11 +60,6 @@ export function OpeningStatsCard({
   const { tier2 } = useReadiness();
 
   const cardTestId = `${testIdPrefix}-${idx}`;
-
-  // Mute the whole card when total games are below the opening-row threshold,
-  // matching the previous MostPlayedOpeningsTable behavior so sparse rows can't
-  // sustain a reliable MG-entry eval signal.
-  const isCardMuted = opening.total < MIN_GAMES_OPENING_ROW;
 
   const hasMgEval =
     opening.eval_n > 0 &&
@@ -106,14 +100,19 @@ export function OpeningStatsCard({
     isConfident(opening.eval_confidence) &&
     evalZoneHex !== ZONE_NEUTRAL;
 
+  // Per-row dimming (260603-pgv): fade only the stat row whose confidence is
+  // low, instead of the whole card. Eval dims only when an eval value exists
+  // (the placeholder / no-eval "—" cases are never dimmed).
+  const dimScoreRow = !isConfident(scoreStats.confidence);
+  const dimEvalRow = hasMgEval && !isConfident(opening.eval_confidence);
+
   // Full-height left spine on the card root (see OpeningFindingCard). Reliable
   // cards get the score-zone accent down the whole left edge; unreliable cards
   // (n < MIN_GAMES) get no spine — the uniform 1px border stays, avoiding a 4px
-  // transparent gap and any color signal on sparse data. Opacity dimming is a
-  // separate, broader gate (isCardMuted also covers low confidence).
+  // transparent gap and any color signal on sparse data. The whole-card opacity
+  // dim was removed in 260603-pgv (per-row dimming replaces it).
   const rootStyle: React.CSSProperties = {
     ...(isReliableScore ? { borderLeftColor } : {}),
-    ...(isCardMuted ? { opacity: UNRELIABLE_OPACITY } : {}),
   };
 
   // Phase 80 MG eval text — signed pawns to one decimal (e.g. "+2.1"), zone color
@@ -166,66 +165,68 @@ export function OpeningStatsCard({
     />
   );
 
-  // Score + eval rows in a 2-col grid so both bullets share the same width
-  // regardless of how the right-hand label renders. The right column auto-sizes
-  // to max(score-text, eval-text), keeping the bullet bars visually aligned.
+  // Score + eval rows. On mobile: label stacks above the bullet chart for each
+  // metric (per-metric flex-col wrapper, label first in DOM). On desktop (sm+):
+  // the wrappers become `display:contents` so all four cells (two bullets, two
+  // labels) join ONE shared 2-col grid. The shared `auto` text column is sized
+  // to the WIDER label ("End Eval:"), so both bullets get the same `1fr` width
+  // and stay aligned — without the shared grid each row sized its text column
+  // independently and the narrower "Score:" label left the score bullet wider.
   const scoreEvalBlock = (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-2 items-center">
+    <div className="flex flex-col gap-2 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:gap-x-2 sm:gap-y-2 sm:items-center">
       {/* Score row */}
-      <div
-        className="min-w-0 tabular-nums"
-        data-testid={`${cardTestId}-score-bullet`}
-      >
-        <MiniBulletChart
-          value={derivedScore}
-          center={SCORE_BULLET_CENTER}
-          neutralMin={SCORE_BULLET_NEUTRAL_MIN}
-          neutralMax={SCORE_BULLET_NEUTRAL_MAX}
-          domain={SCORE_BULLET_DOMAIN}
-          ciLow={scoreStats.ciLow}
-          ciHigh={scoreStats.ciHigh}
-          barColor="neutral"
-          ariaLabel={`Score ${Math.round(derivedScore * 100)}% vs 50% baseline`}
-        />
-      </div>
-      <span
-        className="flex items-center gap-1 text-sm tabular-nums w-full"
-        data-testid={`${cardTestId}-score-text`}
-      >
-        <span className="hidden sm:inline text-muted-foreground">Score:</span>
+      <div className="flex flex-col gap-0.5 sm:contents">
         <span
-          className="ml-auto font-semibold"
-          style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}
+          className="flex items-center gap-1 text-sm tabular-nums w-full sm:col-start-2 sm:row-start-1"
+          data-testid={`${cardTestId}-score-text`}
+          style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
         >
-          {Math.round(derivedScore * 100)}%
+          <span className="text-muted-foreground">Score:</span>
+          <span
+            className="ml-auto font-semibold"
+            style={showScoreZoneFont ? { color: scoreZoneHex } : undefined}
+          >
+            {Math.round(derivedScore * 100)}%
+          </span>
+          <ScoreConfidencePopover
+            level={scoreStats.confidence}
+            pValue={scoreStats.pValue}
+            score={derivedScore}
+            gameCount={opening.total}
+            lastPlayedAt={opening.last_played_at}
+            testId={`${cardTestId}-score-popover`}
+          />
         </span>
-        <ScoreConfidencePopover
-          level={scoreStats.confidence}
-          pValue={scoreStats.pValue}
-          score={derivedScore}
-          gameCount={opening.total}
-          lastPlayedAt={opening.last_played_at}
-          testId={`${cardTestId}-score-popover`}
-        />
-      </span>
+        <div
+          className="min-w-0 tabular-nums sm:col-start-1 sm:row-start-1"
+          data-testid={`${cardTestId}-score-bullet`}
+          style={dimScoreRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
+        >
+          <MiniBulletChart
+            value={derivedScore}
+            center={SCORE_BULLET_CENTER}
+            neutralMin={SCORE_BULLET_NEUTRAL_MIN}
+            neutralMax={SCORE_BULLET_NEUTRAL_MAX}
+            domain={SCORE_BULLET_DOMAIN}
+            ciLow={scoreStats.ciLow}
+            ciHigh={scoreStats.ciHigh}
+            barColor="neutral"
+            ariaLabel={`Score ${Math.round(derivedScore * 100)}% vs 50% baseline`}
+          />
+        </div>
+      </div>
 
       {/* Eval row — gated on Tier 2 (eval analysis complete).
-          When !tier2, the two eval-row cells are replaced by a single
-          pulsating-Cpu placeholder spanning the full 2-col grid.
-          The WDL score row above is not eval-dependent and stays visible. */}
+          When !tier2, the pulsating-Cpu placeholder (col-span-2) replaces the
+          entire eval row. The WDL score row above is not eval-dependent. */}
       {tier2 ? (
-        <>
-          <div
-            className="min-w-0 tabular-nums"
-            data-testid={`${cardTestId}-bullet`}
-          >
-            {mgBulletContent}
-          </div>
+        <div className="flex flex-col gap-0.5 sm:contents">
           <span
-            className="flex items-center gap-1 text-sm tabular-nums w-full"
+            className="flex items-center gap-1 text-sm tabular-nums w-full sm:col-start-2 sm:row-start-2"
             data-testid={`${cardTestId}-eval-text`}
+            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
           >
-            <span className="hidden sm:inline text-muted-foreground">Eval:</span>
+            <span className="text-muted-foreground">End Eval:</span>
             <span className="ml-auto inline-flex items-center gap-1">{mgEvalTextContent}</span>
             {hasMgEval && (
               <BulletConfidencePopover
@@ -238,7 +239,14 @@ export function OpeningStatsCard({
               />
             )}
           </span>
-        </>
+          <div
+            className="min-w-0 tabular-nums sm:col-start-1 sm:row-start-2"
+            data-testid={`${cardTestId}-bullet`}
+            style={dimEvalRow ? { opacity: UNRELIABLE_OPACITY } : undefined}
+          >
+            {mgBulletContent}
+          </div>
+        </div>
       ) : (
         <EvalCpuPlaceholder />
       )}

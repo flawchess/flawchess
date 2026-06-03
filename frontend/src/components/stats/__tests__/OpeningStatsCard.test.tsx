@@ -189,24 +189,53 @@ describe('OpeningStatsCard — Moves and Games links', () => {
   });
 });
 
-describe('OpeningStatsCard — low-data muting', () => {
-  it('total < MIN_GAMES_OPENING_ROW applies UNRELIABLE_OPACITY to the card root', () => {
-    const opening = makeOpening({ total: 15 });
+describe('OpeningStatsCard — per-row confidence dimming (260603-pgv)', () => {
+  // Per-row dimming replaced the old whole-card "<20 games" opacity dim. The
+  // Score row dims when computeScoreConfidence(...) is 'low'; the Eval row dims
+  // when the literal eval_confidence field is 'low'. The card root never dims.
+  const opacityStr = String(UNRELIABLE_OPACITY);
+
+  function firstStyle(testId: string): HTMLElement | null {
+    return document.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null;
+  }
+
+  it('dims the Score row cells when score confidence is low', () => {
+    // total = 9 < CONFIDENCE_MIN_N (10) -> computeScoreConfidence returns 'low'.
+    const opening = makeOpening({ wins: 3, draws: 2, losses: 4, total: 9 });
     renderCard({ opening, idx: 5 });
-    const card = document.querySelector(
-      '[data-testid="opening-stats-card-5"]',
-    ) as HTMLElement | null;
-    expect(card).not.toBeNull();
-    expect(card?.style.opacity).toBe(String(UNRELIABLE_OPACITY));
+    expect(firstStyle('opening-stats-card-5-score-bullet')?.style.opacity).toBe(opacityStr);
+    expect(firstStyle('opening-stats-card-5-score-text')?.style.opacity).toBe(opacityStr);
+    // Card root never dims.
+    expect(firstStyle('opening-stats-card-5')?.style.opacity).toBe('');
   });
 
-  it('total >= MIN_GAMES_OPENING_ROW does NOT mute the card', () => {
-    const opening = makeOpening({ total: 50 });
+  it('does NOT dim the Score row when score confidence is high', () => {
+    // Large total + lopsided record -> p < 0.01 -> 'high'.
+    const opening = makeOpening({ wins: 40, draws: 5, losses: 5, total: 50 });
     renderCard({ opening, idx: 6 });
-    const card = document.querySelector(
-      '[data-testid="opening-stats-card-6"]',
-    ) as HTMLElement | null;
-    expect(card?.style.opacity).toBe('');
+    expect(firstStyle('opening-stats-card-6-score-bullet')?.style.opacity).toBe('');
+    expect(firstStyle('opening-stats-card-6-score-text')?.style.opacity).toBe('');
+    expect(firstStyle('opening-stats-card-6')?.style.opacity).toBe('');
+  });
+
+  it('dims the Eval row cells when opening.eval_confidence is "low"', () => {
+    // High score confidence isolates the eval-row dim from the score-row dim.
+    const opening = makeOpening({
+      wins: 40,
+      draws: 5,
+      losses: 5,
+      total: 50,
+      eval_n: 18,
+      avg_eval_pawns: 0.5,
+      eval_confidence: 'low',
+    });
+    renderCard({ opening, idx: 7 });
+    expect(firstStyle('opening-stats-card-7-bullet')?.style.opacity).toBe(opacityStr);
+    expect(firstStyle('opening-stats-card-7-eval-text')?.style.opacity).toBe(opacityStr);
+    // Score row + card root stay full opacity.
+    expect(firstStyle('opening-stats-card-7-score-bullet')?.style.opacity).toBe('');
+    expect(firstStyle('opening-stats-card-7-score-text')?.style.opacity).toBe('');
+    expect(firstStyle('opening-stats-card-7')?.style.opacity).toBe('');
   });
 });
 

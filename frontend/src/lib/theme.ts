@@ -83,12 +83,6 @@ export const BREAK_LABEL_FONT_SIZE = 14;
 // icon reads as the primary break marker while the compact "1.1y" text stays at text-sm.
 export const BREAK_LABEL_GLYPH_SIZE = 22;
 
-// Minimum total games to render an opening table row at full opacity. Mirrors
-// backend EVAL_CONFIDENCE_MIN_N (app/services/opening_insights_constants.py) —
-// rows below this threshold can't sustain a reliable MG-entry eval signal, so
-// the whole row is dimmed.
-export const MIN_GAMES_OPENING_ROW = 20;
-
 // Opacity applied to stats/charts with unreliable data (below MIN_GAMES_FOR_RELIABLE_STATS)
 export const UNRELIABLE_OPACITY = 0.5;
 

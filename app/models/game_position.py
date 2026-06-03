@@ -68,38 +68,22 @@ class GamePosition(Base):
             postgresql_where=text("endgame_class IS NOT NULL"),
             postgresql_include=["eval_cp", "eval_mate"],
         ),
-        # Phase 70 (v1.13): partial composite covering index for the
-        # opening_insights_service transition aggregation. COLUMN ORDER
-        # (user_id, game_id, ply) is LOAD-BEARING — matches the window
-        # function's PARTITION BY game_id ORDER BY ply, so PostgreSQL streams
-        # rows from the index without a re-sort (Index Only Scan, Heap
-        # Fetches: 0). Do NOT reorder for symmetry with sibling ix_gp_user_*
-        # indexes. Phase 71 hotfix expanded the predicate to include ply 0:
-        # the SQL needs ply 0's move_san row in the partition so the very
-        # first move of each game is part of entry_san_sequence (otherwise
-        # `_replay_san_sequence` fails with chess.IllegalMoveError).
-        # See alembic migration 20260426_201533_80e22b38993a_add_gp_user_game_ply_index.py
-        # for the original rationale and verified perf numbers
-        # (Hikaru 65k games -> 816 ms).
-        Index(
-            "ix_gp_user_game_ply",
-            "user_id",
-            "game_id",
-            "ply",
-            postgresql_where=text("ply BETWEEN 0 AND 17"),
-            postgresql_include=["full_hash", "move_san"],
-        ),
+        # ix_gp_user_game_ply removed in SEED-035 — its (user_id, game_id, ply) key is
+        # absorbed by the composite PK below (the partial ply BETWEEN 0 AND 17 /
+        # INCLUDE(full_hash, move_san) specialization was acceptable to retire).
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    # Natural composite PK (SEED-035): (user_id, game_id, ply) replaces the former
+    # surrogate `id` column. The key is provably unique (one row per user/game/half-move).
+    # The SQLAlchemy identity map now keys rows on the 3-tuple instead of a single id.
     game_id: Mapped[int] = mapped_column(
-        ForeignKey("games.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("games.id", ondelete="CASCADE"), nullable=False, primary_key=True, index=True
     )
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, primary_key=True
     )  # denormalized for query perf
     ply: Mapped[int] = mapped_column(
-        SmallInteger, nullable=False
+        SmallInteger, nullable=False, primary_key=True
     )  # half-move number (0 = initial), max ~600
 
     # Zobrist hashes — explicit BIGINT for 64-bit values

@@ -229,7 +229,7 @@ def _boards_at_plies(pgn_text: str, plies: Sequence[int]) -> dict[int, chess.Boa
 def _build_span_entry_stmt(
     user_id: int | None,
     limit: int | None,
-) -> Select[tuple[int, int, int, str]]:
+) -> Select[tuple[int, int, str]]:
     """Build the span-entry SELECT statement.
 
     Selects GamePosition rows where:
@@ -294,7 +294,6 @@ def _build_span_entry_stmt(
 
     stmt = (
         select(
-            GamePosition.id,
             GamePosition.game_id,
             GamePosition.ply,
             Game.pgn,
@@ -327,7 +326,7 @@ def _build_span_entry_stmt(
 def _build_middlegame_entry_stmt(
     user_id: int | None,
     limit: int | None,
-) -> Select[tuple[int, int, int, str]]:
+) -> Select[tuple[int, int, str]]:
     """Build the middlegame entry SELECT statement (Phase 79 PHASE-FILL-02).
 
     Selects GamePosition rows where:
@@ -339,7 +338,7 @@ def _build_middlegame_entry_stmt(
     endgame are NOT re-evaluated (D-79-08 — mirrors lichess Divider's single
     Division(midGame, endGame) return).
 
-    Returns rows with the same (id, game_id, ply, pgn) shape as
+    Returns rows with the same (game_id, ply, pgn) shape as
     _build_span_entry_stmt so the shared eval+write loop processes both
     row sets uniformly.
     """
@@ -355,7 +354,6 @@ def _build_middlegame_entry_stmt(
 
     stmt = (
         select(
-            GamePosition.id,
             GamePosition.game_id,
             GamePosition.ply,
             Game.pgn,
@@ -425,28 +423,32 @@ def _build_batch_update_sql(batch_size: int) -> str:
     column types on the SET assignment.
     """
     values = ", ".join(
-        f"((:id_{i})::integer, (:cp_{i})::integer, (:mate_{i})::integer)" for i in range(batch_size)
+        f"((:gid_{i})::integer, (:ply_{i})::integer, (:cp_{i})::integer, (:mate_{i})::integer)"
+        for i in range(batch_size)
     )
+    # SEED-035: rows are now keyed by the natural (game_id, ply) pair instead of
+    # the dropped surrogate id column. The JOIN matches on both PK components.
     return (
         "UPDATE game_positions gp "
         "SET eval_cp = v.cp, eval_mate = v.mate "
-        f"FROM (VALUES {values}) AS v(id, cp, mate) "
-        "WHERE gp.id = v.id "
+        f"FROM (VALUES {values}) AS v(game_id, ply, cp, mate) "
+        "WHERE gp.game_id = v.game_id AND gp.ply = v.ply "
         "AND gp.eval_cp IS NULL AND gp.eval_mate IS NULL"
     )
 
 
 async def _flush_writes(
     session: AsyncSession,
-    writes: list[tuple[int, int | None, int | None]],
+    writes: list[tuple[int, int, int | None, int | None]],
 ) -> None:
-    """Apply pending (id, eval_cp, eval_mate) writes as one batched UPDATE."""
+    """Apply pending (game_id, ply, eval_cp, eval_mate) writes as one batched UPDATE."""
     if not writes:
         return
     sql = _build_batch_update_sql(len(writes))
     params: dict[str, int | None] = {}
-    for i, (rid, cp, mate) in enumerate(writes):
-        params[f"id_{i}"] = rid
+    for i, (gid, ply, cp, mate) in enumerate(writes):
+        params[f"gid_{i}"] = gid
+        params[f"ply_{i}"] = ply
         params[f"cp_{i}"] = cp
         params[f"mate_{i}"] = mate
     # The CAST happens via the column types on game_positions; psycopg/asyncpg
@@ -569,14 +571,13 @@ async def _evaluate_and_write_rows(
         chunk = eval_targets[chunk_start : chunk_start + EVAL_BATCH_SIZE]
         results = await asyncio.gather(*(pool.evaluate(b) for _, b in chunk))
 
-        writes: list[tuple[int, int | None, int | None]] = []
+        writes: list[tuple[int, int, int | None, int | None]] = []
         for (row, _board), (eval_cp, eval_mate) in zip(chunk, results):
             if eval_cp is None and eval_mate is None:
                 skipped_engine_err += 1
                 sentry_sdk.set_context(
                     "backfill_eval",
                     {
-                        "game_position_id": row.id,
                         "game_id": row.game_id,
                         "ply": row.ply,
                         "db_target": db,
@@ -588,7 +589,7 @@ async def _evaluate_and_write_rows(
                     "backfill engine returned (None, None) tuple", level="warning"
                 )
                 continue
-            writes.append((row.id, eval_cp, eval_mate))
+            writes.append((row.game_id, row.ply, eval_cp, eval_mate))
             evaluated += 1
 
         await _flush_writes(session, writes)

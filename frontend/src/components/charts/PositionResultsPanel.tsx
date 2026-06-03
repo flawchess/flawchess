@@ -204,7 +204,7 @@ export function PositionResultsPanel({
               className="flex items-center gap-1 text-sm tabular-nums w-full"
               data-testid="eval-text-position"
             >
-              <span className="text-muted-foreground">Eval:</span>
+              <span className="text-muted-foreground">End Eval:</span>
               {hasMgEval ? (
                 <span
                   className="ml-auto font-semibold inline-flex items-center gap-0.3"
