@@ -1,10 +1,12 @@
 """Phase 70 repository SQL contract tests — INSIGHT-CORE-02, INSIGHT-CORE-03, INSIGHT-CORE-04.
 
-Precondition: The partial composite index ix_gp_user_game_ply must exist in the
-test database before test_partial_index_predicate_alignment runs. This index is
-created by the alembic migration 80e22b38993a_add_gp_user_game_ply_index.py.
-Ensure `uv run alembic upgrade head` has been applied. The test will FAIL (not skip)
-if the index is absent.
+Precondition: The composite primary key on game_positions (user_id, game_id, ply)
+must exist in the test database before test_partial_index_predicate_alignment runs.
+SEED-035 replaced the former surrogate-id PK + the separate partial ix_gp_user_game_ply
+index with this natural composite PK (migration f4d88c3659c6); the PK now provides the
+same (user_id, game_id, ply) ordered access path the opening-insights window function
+relies on. Ensure `uv run alembic upgrade head` has been applied. The test will FAIL
+(not skip) if the PK is absent.
 
 All tests use a real PostgreSQL database via the db_session fixture (rolled-back
 transaction per test). The db_session fixture is provided by tests/conftest.py.
@@ -761,19 +763,28 @@ async def test_apply_game_filters_from_date_narrows_results(db_session: AsyncSes
 
 @pytest.mark.asyncio
 async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> None:
-    """RESEARCH.md A6: EXPLAIN confirms ix_gp_user_game_ply is used (Index Only Scan).
+    """RESEARCH.md A6: the (user_id, game_id, ply) ordered access path exists for the
+    opening-insights window function.
+
+    SEED-035 dropped the former partial ix_gp_user_game_ply index and made
+    (user_id, game_id, ply) the natural composite PRIMARY KEY of game_positions.
+    The PK (game_positions_pkey) now provides the same ordered key the window
+    function's PARTITION BY game_id ORDER BY ply relies on, so this test now
+    verifies the PK key list instead of the retired partial index. The
+    partial-predicate (ply BETWEEN 0 AND 17) and INCLUDE(full_hash, move_san)
+    specializations were intentionally retired with the index.
 
     PRECONDITION: `uv run alembic upgrade head` must have been run against the test DB.
-    This test FAILS (not skips) if the index does not exist.
+    This test FAILS (not skips) if the composite PK does not exist.
     """
-    # First, assert the index exists in the DB
+    # Assert the composite PK exists in the DB (replaces the retired partial index).
     result = await db_session.execute(
-        text("SELECT 1 FROM pg_indexes WHERE indexname='ix_gp_user_game_ply'")
+        text("SELECT 1 FROM pg_indexes WHERE indexname='game_positions_pkey'")
     )
     row = result.scalar_one_or_none()
     assert row == 1, (
-        "Index ix_gp_user_game_ply is missing from the test DB. "
-        "Run `uv run alembic upgrade head` to apply the Phase 70 migration."
+        "Primary key game_positions_pkey is missing from the test DB. "
+        "Run `uv run alembic upgrade head` to apply the SEED-035 migration."
     )
 
     user_id = 11
@@ -794,65 +805,29 @@ async def test_partial_index_predicate_alignment(db_session: AsyncSession) -> No
             ],
         )
 
-    # Verify the index definition aligns with the partial predicate by checking pg_indexes.
-    # On small test datasets PostgreSQL's cost-based planner chooses cheaper indexes
-    # (e.g. ix_gp_user_white_hash for ~20 rows). The partial index ix_gp_user_game_ply
-    # is proven effective at Hikaru-scale (5.7M rows: 2.0 s → 816 ms, verified
-    # 2026-04-26, CONTEXT.md). Here we verify structural alignment, not planner choice.
+    # Verify the composite PK key columns. On small test datasets PostgreSQL's
+    # cost-based planner chooses cheaper indexes (e.g. ix_gp_user_white_hash for
+    # ~20 rows); the composite-PK ordered scan is the winning plan at Hikaru-scale
+    # (5.7M rows: 2.0 s → 816 ms, verified 2026-04-26, CONTEXT.md). Here we verify
+    # structural alignment (the key columns + their order), not planner choice.
     index_check = await db_session.execute(
-        text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_gp_user_game_ply'")
+        text("SELECT indexdef FROM pg_indexes WHERE indexname = 'game_positions_pkey'")
     )
     indexdef = index_check.scalar_one_or_none()
-    assert indexdef is not None, "Index ix_gp_user_game_ply must exist in the test DB"
-    assert "ply" in indexdef.lower(), f"Index must include ply column. Got: {indexdef}"
-    assert "game_id" in indexdef.lower(), f"Index must include game_id column. Got: {indexdef}"
-    assert "user_id" in indexdef.lower(), f"Index must include user_id column. Got: {indexdef}"
-    # Partial predicate must match the flat-query WHERE clause (ply BETWEEN 0 AND 17)
-    assert "0" in indexdef and "17" in indexdef, (
-        f"Index partial predicate must cover ply BETWEEN 0 AND 17. Got: {indexdef}"
-    )
-
-    # Verify the partial index predicate alignment with the flat-query WHERE clause.
-    # On small test datasets, the planner won't always choose ix_gp_user_game_ply
-    # over simpler indexes; on Hikaru-scale (5.7M rows), it's the winning plan
-    # (verified 2026-04-26, CONTEXT.md: 2.0 s → 816 ms).
-    #
-    # What we CAN reliably assert in the test DB:
-    # 1. The index partial predicate covers ply BETWEEN 0 AND 17 (matching flat WHERE)
-    # 2. The index INCLUDE columns match the flat SELECT list (full_hash, move_san)
-    # 3. The EXPLAIN for a query filtering on ALL 3 key columns chooses the index.
-    predicate_check = await db_session.execute(
-        text(
-            "SELECT pg_get_expr(indpred, indrelid) AS predicate "
-            "FROM pg_index i "
-            "JOIN pg_class c ON c.oid = i.indexrelid "
-            "WHERE c.relname = 'ix_gp_user_game_ply'"
-        )
-    )
-    predicate = predicate_check.scalar_one_or_none()
-    assert predicate is not None, "Index ix_gp_user_game_ply predicate must exist"
-    # PostgreSQL renders BETWEEN as: ply >= 0 AND ply <= 17
-    assert "0" in predicate and "17" in predicate, (
-        f"Index predicate must cover ply BETWEEN 0 AND 17. Got: {predicate}"
-    )
-
-    # Verify the INCLUDE columns by checking the indexdef
-    indexdef_check = await db_session.execute(
-        text("SELECT indexdef FROM pg_indexes WHERE indexname = 'ix_gp_user_game_ply'")
-    )
-    indexdef = indexdef_check.scalar_one()
-    assert "full_hash" in indexdef.lower(), f"Index must INCLUDE full_hash. Got: {indexdef}"
-    assert "move_san" in indexdef.lower(), f"Index must INCLUDE move_san. Got: {indexdef}"
+    assert indexdef is not None, "game_positions_pkey must exist in the test DB"
+    assert "ply" in indexdef.lower(), f"PK must include ply column. Got: {indexdef}"
+    assert "game_id" in indexdef.lower(), f"PK must include game_id column. Got: {indexdef}"
+    assert "user_id" in indexdef.lower(), f"PK must include user_id column. Got: {indexdef}"
 
     # Verify the key column ordering by checking the btree key list in the indexdef.
-    # indexdef example: "...USING btree (user_id, game_id, ply) INCLUDE..."
-    # Extract the btree key part between "btree (" and ") INCLUDE" or end of string.
+    # indexdef example: "...USING btree (user_id, game_id, ply)".
+    # Extract the btree key part between "btree (" and the closing paren.
     lower_def = indexdef.lower()
     btree_start = lower_def.index("btree (") + len("btree (")
     btree_end = lower_def.index(")", btree_start)
     btree_keys = lower_def[btree_start:btree_end]  # "user_id, game_id, ply"
     assert btree_keys.index("user_id") < btree_keys.index("game_id") < btree_keys.index("ply"), (
-        f"Index key column order must be (user_id, game_id, ply). Got key list: {btree_keys!r}\n"
+        f"PK key column order must be (user_id, game_id, ply). Got key list: {btree_keys!r}\n"
         f"Full indexdef: {indexdef}"
     )
 
