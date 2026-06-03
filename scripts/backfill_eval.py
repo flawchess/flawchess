@@ -17,8 +17,8 @@ DB target host:port mapping (CLAUDE.md):
     benchmark: localhost:5433  (Docker compose flawchess-benchmark)
     prod:      localhost:15432 (via bin/prod_db_tunnel.sh)
 
-DB URL is derived from settings.DATABASE_URL by swapping the port.  To override,
-set BACKFILL_DEV_DB_URL, BACKFILL_BENCHMARK_DB_URL, or BACKFILL_PROD_DB_URL.
+The URL for each target comes from the DATABASE_URL_{DEV,BENCHMARK,PROD} env
+vars (.env), resolved via app.core.config.db_url_for_target.
 
 Stockfish binary:
     The script invokes app.services.engine, which auto-discovers the binary:
@@ -56,13 +56,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import io
-import os
 import sys
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Sequence
-from urllib.parse import urlparse, urlunparse
 
 import chess
 import chess.pgn
@@ -74,7 +72,7 @@ from sqlalchemy.sql import Select
 # Bootstrap project root so `app.*` imports resolve when running as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.core.config import settings  # noqa: E402
+from app.core.config import db_url_for_target, settings  # noqa: E402
 from app.models.game import Game  # noqa: E402
 from app.models.game_position import GamePosition  # noqa: E402
 from app.repositories.endgame_repository import ENDGAME_PIECE_COUNT_THRESHOLD  # noqa: E402
@@ -111,13 +109,6 @@ DEFAULT_WORKERS = 1
 # bounded while amortizing transaction overhead.
 PHASE_BACKFILL_CHUNK_SIZE = 10_000
 
-# Port map for --db targets per CLAUDE.md.
-_TARGET_PORT: dict[str, int] = {
-    "dev": 5432,
-    "benchmark": 5433,
-    "prod": 15432,
-}
-
 
 def _log(msg: str = "") -> None:
     """Print a message prefixed with a UTC timestamp (second precision)."""
@@ -125,48 +116,15 @@ def _log(msg: str = "") -> None:
     print(f"[{ts}] {msg}")
 
 
-_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
-
-
 def _db_url(target: str) -> str:
-    """Build the asyncpg URL for the chosen --db target.
+    """Resolve the asyncpg URL for the chosen --db target.
 
-    Derives the URL from settings.DATABASE_URL by replacing the host:port
-    with localhost:<target-port>.  The target-specific BACKFILL_{TARGET}_DB_URL
-    env var overrides this for operators who use non-default credentials —
-    typically only needed for prod, whose password differs from the dev DB.
-
-    All targets are reached via localhost (dev/benchmark via Docker, prod via
-    the SSH tunnel from bin/prod_db_tunnel.sh).  Overrides MUST therefore use
-    a localhost host; a non-local host (e.g. the docker-internal `db`) will
-    fail to resolve from a developer workstation.  This is enforced below.
-
-    Ports:
-        dev:       localhost:5432  (flawchess-dev Docker compose)
-        benchmark: localhost:5433  (flawchess-benchmark Docker compose)
-        prod:      localhost:15432 (SSH tunnel via bin/prod_db_tunnel.sh)
+    Reads the matching DATABASE_URL_{DEV,BENCHMARK,PROD} setting (sourced from
+    .env) via db_url_for_target. All targets are reached over localhost
+    (dev/benchmark via Docker, prod via the SSH tunnel from
+    bin/prod_db_tunnel.sh).
     """
-    if target not in _TARGET_PORT:
-        raise ValueError(f"Unknown --db target: {target!r}. Must be one of: {list(_TARGET_PORT)}")
-
-    override_var = f"BACKFILL_{target.upper()}_DB_URL"
-    override = os.environ.get(override_var)
-    if override:
-        host = urlparse(override).hostname
-        if host not in _LOCAL_HOSTS:
-            raise ValueError(
-                f"{override_var} host is {host!r}, but this script always reaches "
-                f"the database via localhost (dev/benchmark via Docker, prod via "
-                f"the SSH tunnel from bin/prod_db_tunnel.sh). Update the override "
-                f"to use localhost:{_TARGET_PORT[target]} (keeping the credentials)."
-            )
-        return override
-
-    port = _TARGET_PORT[target]
-    parsed = urlparse(settings.DATABASE_URL)
-    # Replace host and port; keep scheme, path (DB name), user, password.
-    new_netloc = f"{parsed.username}:{parsed.password}@localhost:{port}"
-    return urlunparse(parsed._replace(netloc=new_netloc))
+    return db_url_for_target(target)
 
 
 def _board_at_ply(pgn_text: str, target_ply: int) -> chess.Board | None:

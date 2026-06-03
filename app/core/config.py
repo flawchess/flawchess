@@ -11,8 +11,17 @@ load_dotenv()
 
 
 class Settings(BaseSettings):
+    # DATABASE_URL is what the running app (and Alembic) connect to. The four
+    # DATABASE_URL_* variants are the single source of truth for the per-target
+    # URLs used by maintenance scripts that take a `--db dev|benchmark|prod`
+    # flag; resolve them via db_url_for_target() rather than port-swapping
+    # DATABASE_URL. All are reached over localhost (dev/benchmark via Docker,
+    # prod via the SSH tunnel from bin/prod_db_tunnel.sh). Override in .env.
     DATABASE_URL: str = "postgresql+asyncpg://flawchess:flawchess@localhost:5432/flawchess"
-    TEST_DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/flawchess_test"
+    DATABASE_URL_DEV: str = "postgresql+asyncpg://flawchess:flawchess@localhost:5432/flawchess"
+    DATABASE_URL_TEST: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/flawchess_test"
+    DATABASE_URL_PROD: str = "postgresql+asyncpg://flawchess:flawchess@localhost:15432/flawchess"
+    DATABASE_URL_BENCHMARK: str = "postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark"
     DB_ECHO: bool = False
     SECRET_KEY: str = "change-me-in-production"
     GOOGLE_OAUTH_CLIENT_ID: str = ""
@@ -60,3 +69,28 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+# Maintenance scripts (backfill_eval, reindex_table, gen_benchmarks, …) accept a
+# `--db` flag and resolve the connection URL through here, so the DATABASE_URL_*
+# settings above are the one place credentials/hosts/ports are configured.
+DbTarget = Literal["dev", "test", "prod", "benchmark"]
+
+
+def db_url_for_target(target: str) -> str:
+    """Resolve a script ``--db`` target to its configured async DB URL.
+
+    ``target`` is one of ``DbTarget`` (typed loosely as ``str`` because callers
+    pass argparse values). Reads the matching ``DATABASE_URL_*`` setting (sourced
+    from ``.env``). Raises ``ValueError`` for an unknown target.
+    """
+    urls: dict[str, str] = {
+        "dev": settings.DATABASE_URL_DEV,
+        "test": settings.DATABASE_URL_TEST,
+        "prod": settings.DATABASE_URL_PROD,
+        "benchmark": settings.DATABASE_URL_BENCHMARK,
+    }
+    try:
+        return urls[target]
+    except KeyError:
+        raise ValueError(f"Unknown DB target: {target!r}. Must be one of: {sorted(urls)}") from None

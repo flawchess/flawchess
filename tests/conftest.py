@@ -334,7 +334,7 @@ def test_engine():
     """
     original_url = settings.DATABASE_URL
     run_db_name = _get_run_db_name()
-    maint = _maint_dsn(settings.TEST_DATABASE_URL)
+    maint = _maint_dsn(settings.DATABASE_URL_TEST)
 
     # Ensure the template DB exists and is at Alembic head.  The advisory-lock-
     # guarded refresh (drop + recreate + migrate) all happens inside
@@ -345,7 +345,7 @@ def test_engine():
     # Clone a per-run DB from the (now fresh) template.
     asyncio.run(_create_run_db(maint, run_db_name))
 
-    p = urllib.parse.urlparse(settings.TEST_DATABASE_URL)
+    p = urllib.parse.urlparse(settings.DATABASE_URL_TEST)
     run_db_url = (
         f"postgresql+asyncpg://{p.username}:{p.password}@{p.hostname}:{p.port}/{run_db_name}"
     )

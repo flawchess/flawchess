@@ -1,5 +1,5 @@
 import type { UseMutationResult } from '@tanstack/react-query';
-import { BarChart3, Info, Lightbulb, ListChecks, Loader2, Sparkles, UserCircle2 } from 'lucide-react';
+import { BarChart3, BookOpen, Info, Lightbulb, ListChecks, Loader2, Sparkles, UserCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -14,6 +14,11 @@ import type {
 } from '@/types/insights';
 
 const FLAG_INSIGHTS_USED = 'insights_used';
+
+// Curated endgame study resource (GM Noël Studer), shown as a static link in the
+// Recommendations card. Kept out of the LLM payload so the URL is always correct
+// and clickable rather than emitted as dead plain text by the model.
+const ENDGAME_STUDY_URL = 'https://lichess.org/study/mtiahamI';
 
 /**
  * Top-of-tab Insights card.
@@ -304,6 +309,21 @@ function RenderedState({
                 <li key={idx}>{rec}</li>
               ))}
             </ul>
+            <div className="mt-3 flex items-start gap-2 border-t border-border/60 pt-3 text-sm text-muted-foreground">
+              <BookOpen className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span>
+                Study endgame technique by level (Basic to Advanced):{' '}
+                <a
+                  href={ENDGAME_STUDY_URL}
+                  className="text-primary underline-offset-4 hover:underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="insights-rec-endgame-study-link"
+                >
+                  GM Noël Studer's endgame study
+                </a>
+              </span>
+            </div>
           </InsightsSection>
         )}
       </div>

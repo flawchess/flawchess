@@ -37,11 +37,10 @@ DB target (per CLAUDE.md), selected with ``--db``:
     benchmark: localhost:5433   (flawchess-benchmark Docker compose) — only if it has bloat
     prod:      localhost:15432  (SSH tunnel via bin/prod_db_tunnel.sh) — the intended target
 
-The connection URL is derived from ``settings.DATABASE_URL`` by swapping the host:port to
-``localhost:<target-port>``. The app DB role owns the tables and CAN reindex; the read-only
-MCP/prod role CANNOT. Because the prod password differs from the dev password baked into
-``settings.DATABASE_URL``, set ``REINDEX_PROD_DB_URL`` to a full libpq URL with the prod
-credentials (host MUST be localhost — the tunnel). No password is committed here.
+The connection URL for each target comes from the DATABASE_URL_{DEV,BENCHMARK,PROD} env vars
+(.env), resolved via ``app.core.config.db_url_for_target``. The app DB role owns the tables
+and CAN reindex; the read-only MCP/prod role CANNOT, so DATABASE_URL_PROD must carry the
+app-role prod credentials (host MUST be localhost — the tunnel). No password is committed here.
 
 Usage:
     # Inspect index sizes only (read-only), no rebuild:
@@ -52,8 +51,7 @@ Usage:
 
     # Reindex game_positions (default table; prompts for confirmation):
     bin/prod_db_tunnel.sh
-    REINDEX_PROD_DB_URL='postgresql+asyncpg://flawchess:<PASSWORD>@localhost:15432/flawchess' \
-        uv run python scripts/reindex_table.py --db prod
+    uv run python scripts/reindex_table.py --db prod
     bin/prod_db_tunnel.sh stop
 
     # Reindex several tables in one run:
@@ -68,12 +66,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import socket
 import sys
 from pathlib import Path
 from typing import Literal, get_args
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -81,7 +78,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 # Bootstrap project root so `app.*` imports resolve when running as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.core.config import settings  # noqa: E402
+from app.core.config import db_url_for_target  # noqa: E402
 
 DbTarget = Literal["dev", "benchmark", "prod"]
 
@@ -92,7 +89,6 @@ _TARGET_PORT: dict[DbTarget, int] = {
     "prod": 15432,
 }
 
-_LOCAL_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 _PROD_TUNNEL_HINT = "Run `bin/prod_db_tunnel.sh` first."
 
 # Seconds to wait when probing whether the prod SSH tunnel is up.
@@ -111,34 +107,13 @@ def _log(msg: str = "") -> None:
 
 
 def _db_url(target: DbTarget) -> str:
-    """Build the asyncpg URL for the chosen --db target.
+    """Resolve the asyncpg URL for the chosen --db target.
 
-    Derives the URL from ``settings.DATABASE_URL`` by replacing host:port with
-    ``localhost:<target-port>``. ``REINDEX_{TARGET}_DB_URL`` overrides this for operators
-    who use non-default credentials — typically only needed for prod, whose password differs
-    from the dev DB. Override hosts MUST be local (the tunnel/Docker reach the DB via
-    localhost).
+    Reads the matching DATABASE_URL_{DEV,BENCHMARK,PROD} setting (sourced from
+    .env) via db_url_for_target. All targets are reached over localhost
+    (dev/benchmark via Docker, prod via the SSH tunnel from bin/prod_db_tunnel.sh).
     """
-    if target not in _TARGET_PORT:
-        raise ValueError(f"Unknown --db target: {target!r}. Must be one of: {list(_TARGET_PORT)}")
-
-    override_var = f"REINDEX_{target.upper()}_DB_URL"
-    override = os.environ.get(override_var)
-    if override:
-        host = urlparse(override).hostname
-        if host not in _LOCAL_HOSTS:
-            raise ValueError(
-                f"{override_var} host is {host!r}, but this script always reaches the "
-                f"database via localhost (dev/benchmark via Docker, prod via the SSH tunnel "
-                f"from bin/prod_db_tunnel.sh). Update the override to use "
-                f"localhost:{_TARGET_PORT[target]} (keeping the credentials)."
-            )
-        return override
-
-    port = _TARGET_PORT[target]
-    parsed = urlparse(settings.DATABASE_URL)
-    new_netloc = f"{parsed.username}:{parsed.password}@localhost:{port}"
-    return urlunparse(parsed._replace(netloc=new_netloc))
+    return db_url_for_target(target)
 
 
 def _assert_target_safe(url: str, target: DbTarget) -> None:
@@ -150,8 +125,7 @@ def _assert_target_safe(url: str, target: DbTarget) -> None:
     if f":{port}" not in url:
         raise SystemExit(
             f"Refusing to run: connection URL does not contain ':{port}' "
-            f"(expected for --db {target}). Check REINDEX_{target.upper()}_DB_URL "
-            f"or settings.DATABASE_URL."
+            f"(expected for --db {target}). Check DATABASE_URL_{target.upper()} in .env."
         )
     if target == "prod":
         try:

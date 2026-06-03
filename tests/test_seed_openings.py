@@ -26,7 +26,7 @@ def seed_openings_for_tests(test_engine):
     import asyncio
 
     # Run the seed against the test DB (settings.DATABASE_URL already patched to
-    # TEST_DATABASE_URL by the conftest test_engine fixture).
+    # DATABASE_URL_TEST by the conftest test_engine fixture).
     asyncio.run(seed_openings())
 
 

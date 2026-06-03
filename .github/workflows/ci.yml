@@ -92,7 +92,7 @@ jobs:
 
       - name: Run pytest
         env:
-          TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/flawchess_test
+          DATABASE_URL_TEST: postgresql+asyncpg://postgres:postgres@localhost:5432/flawchess_test
         run: uv run pytest
 
       - uses: actions/setup-node@v4

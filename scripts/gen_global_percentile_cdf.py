@@ -75,7 +75,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
-import os
 import re
 import sys
 import time
@@ -91,7 +90,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # Bootstrap project root so ``app.*`` imports resolve when running as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.core.config import settings  # noqa: E402
+from app.core.config import db_url_for_target, settings  # noqa: E402
 from app.services.canonical_slice_sql import (  # noqa: E402
     TimeControlBucket,
     per_user_cte_achievable_tc,
@@ -189,7 +188,6 @@ FLOAT_PRECISION: Final[int] = 4
 
 # Port map for --target choices.
 _TARGET_PORT: Final[dict[str, int]] = {"benchmark": 5433}
-_LOCAL_HOSTS: Final[frozenset[str]] = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 # ---------------------------------------------------------------------------
@@ -209,31 +207,14 @@ def _log(msg: str = "") -> None:
 
 
 def _db_url(target: str) -> str:
-    """Build the asyncpg URL for the chosen ``--target``.
+    """Resolve the asyncpg URL for the chosen ``--target``.
 
-    Mirrors ``scripts/backfill_eval.py:_db_url`` and the prior Phase 94.3
-    ``--db benchmark`` form. Phase 94.4 keeps ``benchmark`` as the only
-    supported target.
+    Reads DATABASE_URL_BENCHMARK (sourced from .env) via db_url_for_target.
+    Phase 94.4 keeps ``benchmark`` as the only supported target; the
+    ``_assert_benchmark_db`` guard below still enforces that the resolved URL
+    points at the benchmark Docker DB (port 5433).
     """
-    if target not in _TARGET_PORT:
-        raise ValueError(f"Unknown --target: {target!r}. Must be one of: {list(_TARGET_PORT)}")
-
-    override_var = f"BACKFILL_{target.upper()}_DB_URL"
-    override = os.environ.get(override_var)
-    if override:
-        host = urlparse(override).hostname
-        if host not in _LOCAL_HOSTS:
-            raise ValueError(
-                f"{override_var} host is {host!r}, but this script always reaches "
-                f"the benchmark DB via localhost (Docker on port 5433). Update the "
-                f"override to use localhost:{_TARGET_PORT[target]} (keeping the credentials)."
-            )
-        return override
-
-    port = _TARGET_PORT[target]
-    parsed = urlparse(settings.DATABASE_URL)
-    new_netloc = f"{parsed.username}:{parsed.password}@localhost:{port}"
-    return urlunparse(parsed._replace(netloc=new_netloc))
+    return db_url_for_target(target)
 
 
 def _mask_password(url: str) -> str:

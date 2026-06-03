@@ -8,8 +8,18 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.23] LLM Endgame-Insights Statistical-Reasoning Rework — 2026-06-03
+
+Reworked the AI endgame report so it reasons over the same statistical signals the page shows. The model now references your peer-relative percentile rank (with cohort framing), narrates time pressure, and the recommendations were sharpened with chess-GM feedback. No new cards: this is a payload + prompt change.
+
+### Added
+
+- Phase 103: the endgame-insights Recommendations card now links to GM Noël Studer's Lichess endgame study (Basic to Advanced) as a fixed study resource.
+
 ### Changed
 
+- Phase 102: the AI endgame report now reasons over your peer-relative percentile rank and narrates time pressure. It references the percentile the chip shows ("vs other ~{rating}-rated players") rather than global framing, and narrates Score Gap by Remaining Time, Clock Gap, and Net Flag Rate when the signal warrants it. Whether a metric is mentioned is still gated by its cohort zone (extreme percentiles alone don't trigger narration); the percentile only shapes how it's phrased. The "Data Analysis" overview may run longer when there are genuinely several distinct signals, and stays concise for sparse histories. Prompt vocabulary was audited against the on-page concepts accordion and tooltip hover-help so the report never contradicts them.
+- Phase 103: refined the endgame-insights AI recommendations from chess-GM feedback. Time-trouble advice now points at decision speed ("make quicker decisions earlier", "play okay-looking moves faster") instead of opening repertoire; recommendations state what to work on without inventing the how (e.g. "Study the basic checkmates and pawn endgames", "Trade pieces when up material"); and the AI no longer names specific theoretical positions (Philidor, Lucena, opposition, …) as study targets, since the data is type-level and can't confirm you mishandled those exact positions.
 - Reduced opening-position index footprint by ~3 GB by capping the move explorer at 28 plies and rebuilding the three Zobrist-hash indexes as partial indexes (`WHERE ply <= 28`). The cap is invisible in normal use (dev DB max bookmark depth: 6 plies). (SEED-033)
 
 ### Fixed
@@ -671,7 +681,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.22...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.23...HEAD
+[v1.23]: https://github.com/flawchess/flawchess/compare/v1.22...v1.23
 [v1.22]: https://github.com/flawchess/flawchess/compare/v1.21...v1.22
 [v1.21]: https://github.com/flawchess/flawchess/compare/v1.20...v1.21
 [v1.20]: https://github.com/flawchess/flawchess/compare/v1.19...v1.20

@@ -10,7 +10,13 @@ cd "$(dirname "$0")/.."
 
 PROJECT="flawchess-benchmark"
 COMPOSE_FILE="docker-compose.benchmark.yml"
-BENCHMARK_DB_URL="postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark"
+
+# Single source of truth for the benchmark DB URL is DATABASE_URL_BENCHMARK in
+# .env (see CLAUDE.md "Streamline DB URL env vars"). Read just that line so we
+# don't `source` the whole .env (which holds unrelated secrets with values bash
+# can't always parse). Falls back to the canonical local default if unset.
+BENCHMARK_DB_URL="$(grep -E '^DATABASE_URL_BENCHMARK=' .env 2>/dev/null | head -n1 | cut -d= -f2-)"
+BENCHMARK_DB_URL="${BENCHMARK_DB_URL:-postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark}"
 
 wait_healthy() {
   echo "Waiting for benchmark database to be healthy..."

@@ -123,7 +123,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import socket
 import sys
 import time
@@ -142,7 +141,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # ---------------------------------------------------------------------------
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.core.config import settings  # noqa: E402
+from app.core.config import db_url_for_target  # noqa: E402
 from app.models import oauth_account as _oauth_account_module  # noqa: E402,F401 — registers OAuthAccount for SQLAlchemy mapper (User.oauth_accounts relationship)
 from app.models.user import User  # noqa: E402
 from app.models.user_rating_anchors import TimeControlBucket  # noqa: E402
@@ -188,7 +187,6 @@ _ALL_ANCHOR_COMPOSITIONS: tuple[AnchorComposition, ...] = (
 # ---------------------------------------------------------------------------
 
 _TARGET_PORT: dict[Literal["dev", "prod"], int] = {"dev": 5432, "prod": 15432}
-_LOCAL_HOSTS: frozenset[str] = frozenset({"localhost", "127.0.0.1", "::1"})
 _PROD_TUNNEL_HINT: str = "Run `bin/prod_db_tunnel.sh` first"
 _PROGRESS_LOG_EVERY_N_USERS: int = 100
 
@@ -214,40 +212,17 @@ def _mask_password(url: str) -> str:
 
 
 def _db_url(target: Literal["dev", "prod"]) -> str:
-    """Build the asyncpg URL for the chosen --target.
+    """Resolve the asyncpg URL for the chosen --target.
 
-    Derives the URL from ``settings.DATABASE_URL`` by replacing host:port with
-    ``localhost:<target-port>``.  The target-specific
-    ``BACKFILL_{TARGET}_DB_URL`` env var overrides this for operators who use
-    non-default credentials — typically only needed for prod.
-
-    All targets are reached via localhost (dev via Docker, prod via the SSH
-    tunnel from ``bin/prod_db_tunnel.sh``).  Override hosts MUST be in
-    ``_LOCAL_HOSTS``; a non-local host (e.g. the Docker-internal ``db``) will
-    fail to resolve from a developer workstation.
+    Reads the matching DATABASE_URL_{DEV,PROD} setting (sourced from .env) via
+    db_url_for_target. Both targets are reached over localhost (dev via Docker,
+    prod via the SSH tunnel from bin/prod_db_tunnel.sh).
 
     Ports:
         dev:  localhost:5432  (flawchess-dev Docker compose)
         prod: localhost:15432 (SSH tunnel via bin/prod_db_tunnel.sh)
     """
-    override_var = f"BACKFILL_{target.upper()}_DB_URL"
-    override = os.environ.get(override_var)
-    if override:
-        host = urlparse(override).hostname
-        if host not in _LOCAL_HOSTS:
-            raise ValueError(
-                f"{override_var} host is {host!r}, but this script always reaches "
-                f"the database via localhost (dev via Docker, prod via "
-                f"the SSH tunnel from bin/prod_db_tunnel.sh). Update the override "
-                f"to use localhost:{_TARGET_PORT[target]} (keeping the credentials)."
-            )
-        return override
-
-    port = _TARGET_PORT[target]
-    parsed = urlparse(settings.DATABASE_URL)
-    # Replace host and port; keep scheme, path (DB name), user, password.
-    new_netloc = f"{parsed.username}:{parsed.password}@localhost:{port}"
-    return urlunparse(parsed._replace(netloc=new_netloc))
+    return db_url_for_target(target)
 
 
 def _assert_target_safe(url: str, target: Literal["dev", "prod"]) -> None:
@@ -264,7 +239,7 @@ def _assert_target_safe(url: str, target: Literal["dev", "prod"]) -> None:
         raise SystemExit(
             f"Refusing to run: URL does not contain {port_token!r} "
             f"(expected for --target {target}). "
-            f"Check your BACKFILL_{target.upper()}_DB_URL or settings.DATABASE_URL."
+            f"Check DATABASE_URL_{target.upper()} in .env."
         )
     if target == "prod":
         try:

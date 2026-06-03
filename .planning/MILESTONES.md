@@ -1,5 +1,25 @@
 # Milestones: FlawChess
 
+## v1.23 LLM Endgame-Insights Statistical-Reasoning Rework (Shipped: 2026-06-03)
+
+**Phases completed:** 2 phases (102, 103), 3 plans. Phase 102 landed on `main` via local squash-merge (PR #173 closed in favour of the squash) after full HUMAN-UAT; Phase 103 landed as direct gated commits.
+**Stats:** 39 code files changed, +4,144 / -3,032 lines, 37 commits over 3 days (2026-06-01 → 2026-06-03) since v1.22 (commit `3943b893` → `89403360`).
+**Milestone goal:** Rework the endgame-insights LLM payload + prompt so the model reasons explicitly over the v1.17–v1.21 statistical-rigor metric set and the v1.19 peer-relative percentile annotations, with guardrails that prevent narrating small-but-significant findings. The cohort `zone` field stays the sole gate on *whether* a metric is narrated; percentile informs only *how*. No new frontend cards.
+
+**Key accomplishments:**
+
+- **Phase 102 — Endgame LLM Statistical-Reasoning Rework** (LLM-01..07): wired cohort-framed peer-relative **percentile annotations** (the page-level, game-count-weighted value the chip shows) into the endgame-insights payload alongside the existing `zone` + `sample_quality` fields, and taught the prompt to weave them in naturally ("vs other ~{anchor}-rated players"). Added **LLM narration of time pressure** — Score Gap by Remaining Time (restored from the payload after Phase 88.1 stripped it), Clock Gap, and Net Flag Rate. Relaxed the `overview` ("Data Analysis" card) word cap so longer narration fires only when ≥3 distinct signals genuinely exist, keeping the no-fabrication / within-noise guards. Audited prompt vocabulary against both the Endgame Statistics Concepts accordion and the tooltip info-icon popovers. **p-values + CI bounds stayed OUT** (redundant with the zone band; conflicts with `feedback_llm_significance_signal`). Prompt walked `endgame_v35` → `endgame_v43` across the auto-chain (per-TC metrics_elo, per-TC time-pressure chart block, per-TC type_breakdown), each cache-invalidating via `_PROMPT_VERSION`. HUMAN-UAT (LLM-07) was the primary verification — multiple passes against short-history / sparse-section / full-history production users, signed off 2026-06-02.
+- **Phase 103 — Endgame report LLM prompt refinements** (unplanned follow-on, direct commits): three recommendation-quality fixes from chess-GM feedback — time-trouble advice reframed to decision speed (not opening repertoire), a new register item banning the "do X → effect Y" fabricated-mechanism construction (state the WHAT, leave the HOW to the player), and a ban on naming specific theoretical positions (Philidor, Lucena, opposition, …) as study targets at every Elo since the data is type-level aggregate. Added a fixed GM Noël Studer Lichess endgame study link to the Recommendations card (frontend-only; the prompt does not emit the URL). Prompt then condensed ~35% (`endgame_v44`), payload shape unchanged.
+
+**Tech debt (carried forward, informational):**
+
+- SEED-030 Track A (split oversized multi-concern modules) remains open.
+- SEED-033 explorer ply-cap + partial Zobrist indexes (quick task 260601-og7) landed in this window (~3 GB prod index-footprint reduction); prod reindex ops tracked in the quick task.
+
+See `.planning/milestones/v1.23-ROADMAP.md` and `.planning/milestones/v1.23-REQUIREMENTS.md` (7/7 LLM-01..07 complete).
+
+---
+
 ## v1.22 Maintenance — Test Isolation & Frontend Major Upgrades (Shipped: 2026-05-31)
 
 **Phases completed:** 2 phases (100, 101), 3 plans. Landed directly on `main` (gated per-cluster), no release PR per phase.
