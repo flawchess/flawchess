@@ -340,7 +340,7 @@ def test_backfill_target_dev_refuses_url_without_port_5432() -> None:
     the URL does not contain ':5432'.
 
     The error message must contain '5432' so the operator knows the expected port.
-    Guards against a misconfigured BACKFILL_DEV_DB_URL override.
+    Guards against a misconfigured DATABASE_URL_DEV.
     """
     _assert_target_safe = backfill_user_percentiles._assert_target_safe
     wrong_port_url = f"postgresql://user:pass@localhost:{_DUMMY_NON_5432_PORT}/flawchess"

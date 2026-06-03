@@ -35,19 +35,19 @@ Design decisions (Phase 69 context):
   - Batch size: import_service._BATCH_SIZE = 28 (verified in codebase).
     The benchmark orchestrator does NOT override it.
 
-Safety: this script refuses to run unless DATABASE_URL contains 'flawchess_benchmark'
-and port '5433', preventing accidental writes to dev/prod.
+DB target: the script always runs against the benchmark DB. It reads
+DATABASE_URL_BENCHMARK (.env) and points the global engine at it at import time,
+then refuses to run unless the resolved URL contains 'flawchess_benchmark' and
+port '5433', preventing accidental writes to dev/prod.
 
 Usage (benchmark DB must be running via bin/benchmark_db.sh start):
-    DATABASE_URL=postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark \
-      uv run python scripts/import_benchmark_users.py \
+    uv run python scripts/import_benchmark_users.py \
         --per-cell 100 \
         --snapshot-month-end 2026-03-31 \
         2>&1 | tee logs/benchmark-ingest-percell100-$(date +%Y-%m-%d).log
 
     # Dry-run to preview deficit without importing:
-    DATABASE_URL=postgresql+asyncpg://flawchess_benchmark:flawchess_benchmark@localhost:5433/flawchess_benchmark \
-      uv run python scripts/import_benchmark_users.py \
+    uv run python scripts/import_benchmark_users.py \
         --per-cell 100 \
         --snapshot-month-end 2026-03-31 \
         --dry-run
@@ -72,13 +72,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import cast
 
 from app.core.config import settings
-from app.core.database import async_session_maker, engine
-from app.models.benchmark_ingest_checkpoint import BenchmarkIngestCheckpoint
-from app.models.benchmark_selected_user import BenchmarkSelectedUser
-from app.models.game import Game
-from app.models.oauth_account import OAuthAccount  # noqa: F401 -- required for User relationship
-from app.models.user import User
-from app.services.import_service import create_job, get_job, run_import
+
+# This orchestrator only ever targets the benchmark DB. run_import and the
+# helpers below use the global engine / session maker built from
+# settings.DATABASE_URL, so point that at DATABASE_URL_BENCHMARK (.env) BEFORE
+# app.core.database constructs the engine on the next import. main() still
+# asserts the resolved URL is benchmark-shaped as a guard against a misconfigured
+# DATABASE_URL_BENCHMARK.
+settings.DATABASE_URL = settings.DATABASE_URL_BENCHMARK
+
+from app.core.database import async_session_maker, engine  # noqa: E402
+from app.models.benchmark_ingest_checkpoint import BenchmarkIngestCheckpoint  # noqa: E402
+from app.models.benchmark_selected_user import BenchmarkSelectedUser  # noqa: E402
+from app.models.game import Game  # noqa: E402
+from app.models.oauth_account import OAuthAccount  # noqa: E402, F401 -- required for User relationship
+from app.models.user import User  # noqa: E402
+from app.services.import_service import create_job, get_job, run_import  # noqa: E402
 
 # --------------------------------------------------------------------------------------
 # Constants
@@ -570,12 +579,13 @@ async def main() -> None:
     # Parse args first so --help works without triggering the safety check.
     args = parse_args()
 
-    # Safety check: refuse to run unless DATABASE_URL points at the benchmark DB.
-    # This prevents accidental writes to dev/prod (T-69-01).
+    # Safety check: refuse to run unless the resolved URL points at the benchmark
+    # DB. settings.DATABASE_URL was set from DATABASE_URL_BENCHMARK at import; this
+    # guards against a misconfigured .env value (T-69-01).
     if "5433" not in settings.DATABASE_URL or "flawchess_benchmark" not in settings.DATABASE_URL:
         raise RuntimeError(
             f"Refusing to run benchmark ingest against non-benchmark DB. "
-            f"DATABASE_URL must contain 'flawchess_benchmark' and port 5433. "
+            f"DATABASE_URL_BENCHMARK must contain 'flawchess_benchmark' and port 5433. "
             f"Got: {settings.DATABASE_URL}"
         )
 

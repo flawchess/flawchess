@@ -28,8 +28,8 @@ harness against the dev DB.
     benchmark: localhost:5433  (bin/benchmark_db.sh start)
     dev:       localhost:5432  (docker compose -f docker-compose.dev.yml -p flawchess-dev up -d)
 
-DB URL is derived from settings.DATABASE_URL by swapping the port. Override with
-GEN_BENCHMARK_DB_URL / GEN_DEV_DB_URL (must use a localhost host).
+The URL for each target comes from the DATABASE_URL_{BENCHMARK,DEV} env vars (.env),
+resolved via app.core.config.db_url_for_target.
 
 Usage:
     bin/benchmark_db.sh start
@@ -56,13 +56,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import sys
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -70,7 +68,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # Bootstrap project root so `app.*` imports resolve when running as a script.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.core.config import settings  # noqa: E402
+from app.core.config import db_url_for_target  # noqa: E402
 from scripts.benchmarks import (  # noqa: E402
     chapter1,
     chapter2,
@@ -89,8 +87,6 @@ _TARGET_PORT: dict[str, int] = {
     "dev": 5432,
 }
 
-_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
-
 # Default output directory for the artifact pair (JSON + markdown), relative to repo root.
 _DEFAULT_OUT = "reports/benchmark"
 
@@ -102,34 +98,13 @@ def _log(msg: str = "") -> None:
 
 
 def _db_url(target: str) -> str:
-    """Build the asyncpg URL for the chosen --db target (read-only use).
+    """Resolve the asyncpg URL for the chosen --db target (read-only use).
 
-    Derives from settings.DATABASE_URL by replacing host:port with
-    localhost:<target-port>. For non-default credentials (the benchmark DB runs
-    postgres:postgres, not the dev app user), an override URL wins. We accept
-    GEN_{TARGET}_DB_URL first, then fall back to BACKFILL_{TARGET}_DB_URL — the
-    same var backfill_eval.py already reads, so an existing local .env points
-    this script at the benchmark DB with no extra setup. The override host must
-    be localhost (benchmark/dev are reached via Docker on the workstation).
+    Reads the matching DATABASE_URL_{BENCHMARK,DEV} setting (sourced from .env)
+    via db_url_for_target. Both targets are reached over localhost via Docker on
+    the workstation (benchmark on 5433, dev on 5432).
     """
-    if target not in _TARGET_PORT:
-        raise ValueError(f"Unknown --db target: {target!r}. Must be one of: {list(_TARGET_PORT)}")
-
-    for var in (f"GEN_{target.upper()}_DB_URL", f"BACKFILL_{target.upper()}_DB_URL"):
-        override = os.environ.get(var)
-        if not override:
-            continue
-        host = urlparse(override).hostname
-        if host not in _LOCAL_HOSTS:
-            raise ValueError(
-                f"{var} host is {host!r}, but this script reaches the database via "
-                f"localhost. Use localhost:{_TARGET_PORT[target]} (keeping creds)."
-            )
-        return override
-
-    parsed = urlparse(settings.DATABASE_URL)
-    new_netloc = f"{parsed.username}:{parsed.password}@localhost:{_TARGET_PORT[target]}"
-    return urlunparse(parsed._replace(netloc=new_netloc))
+    return db_url_for_target(target)
 
 
 async def _enforce_read_only(session: AsyncSession) -> None:
@@ -330,23 +305,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _load_dotenv() -> None:
-    """Load the repo-root .env into os.environ (existing vars win).
-
-    settings (pydantic-settings) reads .env into its own object, but _db_url's
-    BACKFILL_{TARGET}_DB_URL override is read from os.environ. Loading .env here
-    means `uv run python scripts/gen_benchmarks.py --db benchmark` resolves the
-    benchmark credentials without a manual `export`. override=False keeps any
-    var already set in the real environment authoritative.
-    """
-    from dotenv import load_dotenv
-
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=False)
-
-
 async def main() -> None:
     """Entry point: parse CLI args, run the generator."""
-    _load_dotenv()
     args = parse_args()
     _log(f"Starting benchmark generation: db={args.db} out={args.out} dry_run={args.dry_run}")
     await run_generate(db=args.db, out=args.out, dry_run=args.dry_run)

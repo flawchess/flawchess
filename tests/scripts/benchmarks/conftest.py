@@ -20,7 +20,6 @@ from scripts import gen_benchmarks
 @pytest.fixture
 async def benchmark_session() -> AsyncGenerator[AsyncSession, None]:
     """Read-only session on the benchmark DB, or skip if unreachable."""
-    gen_benchmarks._load_dotenv()
     url = gen_benchmarks._db_url("benchmark")
     engine = create_async_engine(url, pool_pre_ping=True)
     try:
