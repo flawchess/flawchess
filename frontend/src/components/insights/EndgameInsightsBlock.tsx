@@ -332,7 +332,7 @@ function RenderedState({
               <div className="flex items-start gap-2">
                 <Target className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>
-                  Practice with tactics from real games:{' '}
+                  Practice endgame puzzles:{' '}
                   <a
                     href={ENDGAME_PUZZLES_URL}
                     className="text-primary underline-offset-4 hover:underline"
