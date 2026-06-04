@@ -35,13 +35,22 @@ This is also the data foundation for **SEED-037 (Train)**: the same mistake-dete
 
 ## Page structure — DECIDED (S1 + Overview folded into Library)
 
-**Decision (user, 2026-06-03):** S1 — two new top-level pages, **Library** and **Train**, and the existing thin **Overview** page is folded into Library as a subtab. Final top-level nav: `Import · Library · Openings · Endgames · Train · (Admin)`. Net change is one new top-level entry (Train); Overview demotes to a subtab, so nav crowding is contained. (Train ships in SEED-037, after this milestone; this milestone adds the Library entry and folds in Overview.)
+**Decision (user, 2026-06-03):** S1 — two new top-level pages, **Library** and **Train**, and the existing thin **Overview** page is folded into Library as a subtab. (Train ships in SEED-037, after this milestone; this milestone adds the Library entry and folds in Overview.)
 
-- **Library** — whole-game / cross-game analysis hub. Subtabs (reuse the existing Radix URL-routed tab pattern — `<Tabs variant="brand">`, `navigate('/library/<tab>')`, deep-linkable — from Openings/Endgames):
-  - **Overview** — the existing `/overview` page (`frontend/src/pages/GlobalStats.tsx`: per-platform/TC ELO timelines, WDL by TC and color) **moved in** as the default Library subtab. All-games-scoped and thin, so it's the natural top of the funnel. Migrate `/overview` → `/library` (default tab) or `/library/overview`; keep a redirect from `/overview`.
-  - **Games** — filterable archive + mistake-type filters + mistake-stats panel.
-  - **Analysis** — full-width board, entered from a game card or a specific mistake. (The original seed's worry that "Analysis" overpromises engine analysis is moot — it genuinely does engine analysis now: eval bar + on-demand best move.)
-  - Funnel: **Overview (all games) → Games (filtered subset + mistakes) → Analysis (one game/mistake).**
+**Amendment (user, 2026-06-04 — `/gsd-explore`):** **Import folds into Library as a subtab too**, dropping top-level nav to **4** (+Admin): `Library · Openings · Endgames · Train · (Admin)`. This keeps the mobile bottom-nav comfortable even after Train ships (5 was the crowding concern). Library's subtabs become **`Import · Games · Analysis · Overview`**, and the name is reinforced: a library is a collection you stock (Import) then browse. **The page-structure decision below reflects this amendment; the original 2026-06-03 S1 nav (`Import · Library · …`) is superseded.**
+
+- **Library** — whole-game / cross-game analysis hub, and the **one always-accessible page** (it contains Import, so it can never be import-gated). Subtabs (reuse the existing Radix URL-routed tab pattern — `<Tabs variant="brand">`, `navigate('/library/<tab>')`, deep-linkable — from Openings/Endgames), in order:
+  - **Import** — the existing `/import` page moved in as the **leftmost** subtab and the **zero-game landing** (Home's gameless-user redirect now targets `/library/import`). Always accessible. Migrate `/import` → `/library/import`, keep a redirect from `/import`.
+  - **Games** — filterable archive + mistake-type filters + mistake-stats panel. The milestone's headline surface and the **returning-user default** (a user with games lands here, not on Overview). Import-gated at the subtab level.
+  - **Analysis** — full-width board, entered from a game card or a specific mistake. Import-gated at the subtab level. (The original seed's worry that "Analysis" overpromises engine analysis is moot — it genuinely does engine analysis now: eval bar + on-demand best move.)
+  - **Overview** — the existing `/overview` page (`frontend/src/pages/GlobalStats.tsx`: per-platform/TC ELO timelines, WDL by TC and color) **moved in** as the **last** subtab, repositioned as a supplementary all-games dashboard (no longer the default/top-of-funnel). Always accessible. Migrate `/overview` → `/library/overview`, keep a redirect from `/overview`.
+  - Funnel: **Import (stock the library) → Games (filtered subset + mistakes) → Analysis (one game/mistake) → Overview (all-games dashboard, supplementary).**
+
+**Gating / landing consequences (planner must handle):**
+- **Gating moves from route-level to subtab-level.** Library itself is never import-gated; its **Games** and **Analysis** subtabs sit behind the import-required guard, while **Import** and **Overview** are always open. Openings/Endgames/Train stay route-gated exactly as today.
+- **Default subtab is state-dependent**, so default ≠ leftmost for returning users: zero games → **Import**, has games → **Games**. The existing conditional-redirect logic in `Home.tsx` extends to cover this.
+- The **`totalGames === 0` notification dot** moves from the Import nav item to the **Library** nav item.
+- **Redirects:** `/import` → `/library/import` and `/overview` → `/library/overview`, to preserve bookmarks and onboarding links.
 
 Notes:
 - **Time Management** is NOT a top-level page — it lives in the Endgames Stats tab (+ homepage blurb). Unaffected by this restructure.
@@ -162,7 +171,7 @@ Likely 4-6 phases:
 1. **Mistake-detection service + classification.** Derive per-ply mistakes from stored `eval_cp` using the researched win%-drop method; expose player-mistakes and opponent-misses; tests against benchmark/dev data. (Gated on Q-CLASS research.)
 2. **Mistake-type filter (backend).** Extend the game-filtering path so the archive can filter to games containing mistakes of a given severity/kind. Benchmark the query; add an index only if needed.
 3. **Best-move endpoint.** Single-position `POST /api/analysis/best-move` on the existing EnginePool, rate-limited/queued/concurrency-capped, threat-modeled. (Reused by SEED-037 Train.)
-4. **Library page shell + subtabs (frontend).** New `/library` route with Overview/Games/Analysis subtabs (reuse Radix URL-routed tab pattern). **Migrate `/overview` → Library's Overview subtab** (move `GlobalStats.tsx`, add redirect). Games subtab: archive layout (existing filters + mistake-type control), game cards with mistake badges + "no analysis" state, mobile drawer.
+4. **Library page shell + subtabs (frontend).** New `/library` route with `Import · Games · Analysis · Overview` subtabs (reuse Radix URL-routed tab pattern). **Migrate two routes in:** `/import` → `/library/import` and `/overview` → `/library/overview` (move `Import.tsx` and `GlobalStats.tsx`, add redirects from both). Subtab-level import gating (Games/Analysis gated, Import/Overview always open); state-dependent default landing (zero games → Import, has games → Games); move the zero-game notification dot to the Library nav item. Games subtab: archive layout (existing filters + mistake-type control), game cards with mistake badges + "no analysis" state, mobile drawer.
 5. **Analysis subtab — viewer.** Board + stepper + move list + mistake markers + jump-to-mistake + material/eval timeline + eval bar + "show better move" wired to the best-move endpoint.
 6. **Mistake-stats panel.** Counts/rates per type, normalized, trend over time, analyzed-game denominator; wired to filter state.
 
@@ -183,6 +192,13 @@ Likely 4-6 phases:
 - `frontend/src/hooks/useEvalCoverage.ts` — existing eval-coverage progress plumbing.
 
 ## Source / decision log
+
+**2026-06-04 nav refinement (user + Claude, `/gsd-explore`):**
+- **Import folds into Library as a subtab**, dropping top-level nav to **4** (+Admin): `Library · Openings · Endgames · Train · (Admin)`. Motivation: keep the mobile bottom-nav comfortable after Train ships (5 was the crowding concern).
+- Library subtab order set to **`Import · Games · Analysis · Overview`**. Import leftmost; **Overview demoted to last** as a supplementary dashboard (no longer the default/top-of-funnel).
+- **State-dependent landing:** zero-game user → Import subtab; returning user → **Games** subtab (the milestone's headline surface), confirmed acceptable by user.
+- **Gating moves to subtab level:** Library always accessible (hosts Import); Games/Analysis import-gated; Import/Overview always open. Zero-game notification dot moves to the Library nav item. Redirects: `/import` → `/library/import`, `/overview` → `/library/overview`.
+- Supersedes the 2026-06-03 S1 nav (`Import · Library · …`).
 
 **2026-06-04 split (user + Claude):**
 - SEED-010 split into **SEED-036 (Library, this seed)** + **SEED-037 (Train)**; SEED-010 closed with a pointer to both.
