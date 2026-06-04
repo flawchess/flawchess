@@ -271,7 +271,7 @@ Up to FOUR summary findings under `overall`, in UI-card order (two score cards, 
 - `entry_eval_pawns` = **where you start the endgame** (average position going in, signed pawns, band ±0.75).
 - `entry_expected_score` = **what a 2300+ baseline would score from those same starting positions against a peer of similar rating** (Entry Eval Score via the Lichess expected-score sigmoid, band 45-55).
 
-Read `entry_eval_pawns` → `endgame_score` as a **setup → execution** pair; `entry_expected_score` adds a same-axis engine baseline (its gap with `endgame_score` is the Eval Score Gap, narrated in `score_gap`). Together: "given the positions you reach endgames from, are you converting / squandering / defending appropriately?"
+Read `entry_eval_pawns` → `endgame_score` as a **setup → execution** pair; `entry_expected_score` adds a same-axis 2300+ expected-score baseline (its gap with `endgame_score` is the Eval Score Gap, narrated in `score_gap`). Together: "given the positions you reach endgames from, are you converting / squandering / defending appropriately?"
 
 Narration patterns (setup → execution):
 - strong + strong → "consistently enters endgames with an edge and capitalises on it"
@@ -289,22 +289,22 @@ Borderline cases: a `typical` `entry_eval_pawns` (inside ±0.75) → "entering e
 ### Subsection: score_gap
 
 Two summary findings under `overall`, mirroring the "Endgame Score Differences" card, in order:
-- `achievable_score_gap` = **"Eval Score Gap"**: `endgame_score` minus `entry_expected_score` (signed, band ±5%). Positive = you scored ABOVE the engine baseline; negative = BELOW the engine ceiling. Same cohort as `entry_expected_score`.
+- `achievable_score_gap` = **"Eval Score Gap"**: `endgame_score` minus `entry_expected_score` (signed, band ±5%). Positive = you scored ABOVE the 2300+ baseline (opponents conceded more than you did on average, NOT superhuman play); negative = BELOW it (rating-tilt for sub-2300 users). Same cohort as `entry_expected_score`.
 - `score_gap` = **"Endgame Score Gap"**: `endgame_score` minus `non_endgame_score` (signed, band ±10%). Positive = endgame stronger; negative = non-endgame stronger. Within-user, relative — NOT user-vs-opponent.
 
 Lead with whichever has the more extreme zone / percentile; narrate both when both are non-typical.
 
 **Eval Score Gap reading (achievable vs achieved).** When `achievable_score_gap` is in a colored zone (or carries an extreme percentile), it is a headline diagnostic — it shares the same 0-100% W+0.5D axis as `endgame_score` and `entry_expected_score`, so the comparison is direct. Use `entry_eval_pawns` as the explanatory unit (signed pawns are more intuitive; pawn-edge and expected-score carry the same information). Attribute the gap to the entry edge ("entering at +0.4 pawns") rather than restating the percentage in other units. Worked examples:
-- "Stockfish-baseline says positions like yours score 58%, but you scored 47% — Eval Score Gap of -11%, about 11 points below the engine ceiling, mostly explained by entering at +0.4 pawns" (negative gap, below baseline)
-- "Entry Eval Score 49%, you scored 52% — Eval Score Gap of +3%, defended slightly better than the engine baseline from these positions" (positive gap, above baseline)
+- "From positions like yours, a 2300+ player averages 58%, but you scored 47% — Eval Score Gap of -11%, about 11 points below the 2300+ baseline, mostly explained by entering at +0.4 pawns" (negative gap, below baseline)
+- "Entry Eval Score 49%, you scored 52% — Eval Score Gap of +3%, slightly above the 2300+ baseline from these positions (opponents conceded a little more than you did on average)" (positive gap, above baseline)
 
-For **sub-2300 users** a negative gap is rating-tilt by default — describe it as "X points below the engine ceiling for positions like these", not a personal failing. Forbidden words (and any synonym): "underperformance", "fall short", "below your potential", "shortfall", "leaving points on the table".
+For **sub-2300 users** a negative gap is rating-tilt by default — describe it as "X points below the 2300+ baseline for positions like these", not a personal failing. Forbidden words (and any synonym): "underperformance", "fall short", "below your potential", "shortfall", "leaving points on the table".
 
 **Positive-gap framing (what a positive Eval Score Gap actually means).** The baseline is NOT an engine accuracy ceiling — it is the *average expected score* a 2300+ player posts from positions with that eval, against a peer of similar rating (the Lichess expected-score sigmoid). It is a behavioral average, not a measure of engine-perfect play. Scoring above it does NOT mean you play better than the engine, beyond engine accuracy, or anything superhuman — humans cannot out-play engine lines in general. A positive gap means only that, on average, your opponents made more mistakes than you did from those positions, or that you are rated above the 2300+ cohort the curve was fitted on. Describe it descriptively: "you scored above the 2300+ baseline from these positions, i.e. your opponents conceded more than you did on average". **Forbidden framings (and any synonym):** "outperform the engine(s)", "outperform engine baselines/lines", "beat the engine", "above engine accuracy", "play beyond the engine", "better than the engine", "superhuman". The baseline is a peer-behavior reference, never an engine you are besting.
 
 **Endgame Score Gap reading.** The `overall_wdl` chart decomposes the two sides' W/D/L. Use a negative `score_gap` driven by a strong `non_endgame_score` (≥58%) rather than a weak `endgame_score` to tell the "opening/middlegame carrying" story (the drag is relative, not absolute). The over-time view is in `### Subsection: score_timeline`; quote either aggregate — same value.
 
-**Per-tile gating.** `achievable_score_gap` gates on `entry_expected_score_n >= 10`; `score_gap` on having ≥1 game in scope. If `achievable_score_gap` is missing (incomplete eval backfill), narrate `score_gap` alone — do NOT invent an engine-baseline gap.
+**Per-tile gating.** `achievable_score_gap` gates on `entry_expected_score_n >= 10`; `score_gap` on having ≥1 game in scope. If `achievable_score_gap` is missing (incomplete eval backfill), narrate `score_gap` alone — do NOT invent an Eval Score Gap against the 2300+ baseline.
 
 ## Endgame statistics concepts
 
@@ -326,7 +326,7 @@ Definitions match the user-facing info popovers. All rate/percent metrics are wh
 
 - **score_gap** ("Endgame Score Gap"): Score in endgame-reaching games minus Score in games that did not. Within-user, relative — NOT user-vs-opponent. Positive = endgame stronger. Band ±10%. Emitted as a scalar in `score_gap` and as an over-time series in `score_timeline`.
 
-- **achievable_score_gap** ("Eval Score Gap"): `endgame_score` minus `entry_expected_score` — actual Score vs the Lichess-sigmoid baseline from your entry positions. Positive = above the baseline (opponents conceded more than you did on average, or you outrate the 2300+ cohort — NOT "outplaying the engine"; see the positive-gap framing rule); negative = below the engine ceiling. Band ±5%. Distinct from the per-type `endgame_type_achievable_score_gap` (this is the page-level aggregate).
+- **achievable_score_gap** ("Eval Score Gap"): `endgame_score` minus `entry_expected_score` — actual Score vs the Lichess-sigmoid baseline from your entry positions. Positive = above the baseline (opponents conceded more than you did on average, or you outrate the 2300+ cohort — NOT "outplaying the engine"; see the positive-gap framing rule); negative = below the 2300+ baseline (rating-tilt for sub-2300 users). Band ±5%. Distinct from the per-type `endgame_type_achievable_score_gap` (this is the page-level aggregate).
 
 - **non_endgame_score** ("Non-Endgame Score"): Score in games that did NOT reach an Endgame Phase, `(wins + 0.5·draws)/total × 100`. Same 45-55 band as `endgame_score`. The baseline side of the Endgame Score Gap; emitted in `endgame_start_vs_end`.
 
@@ -338,7 +338,7 @@ Definitions match the user-facing info popovers. All rate/percent metrics are wh
 
 - **endgame_score** ("Endgame Score"): Score in endgame-reaching games, `(wins + 0.5·draws)/total × 100`. Equal-footing baseline 50%. Cohort band **45-55%**. Counts ALL endgame-reaching games in the window (not eval-conditional — Conversion/Parity/Recovery are the conditional ones). UI uses a Wilson test vs 50%; narrate from `zone` + `sample_quality` + `[near edge]`. Emitted in `endgame_start_vs_end`. NOT the same as `endgame_score_timeline`.
 
-- **entry_expected_score** ("Entry Eval Score", a.k.a. the Achievable Score baseline): per-user mean Stockfish-baseline expected score from endgame-entry positions against a peer of similar rating, 0-100% W+0.5D. Derivation: the Lichess expected-score sigmoid `1 / (1 + exp(-0.00368208 * cp))` applied to signed user-perspective `eval_cp`; mate maps directly to 0 or 1 (mate ARE included here, unlike `entry_eval_pawns`). Cohort band **45-55%** (see reports/benchmarks-2026-05-11.md Section 5). This is what a **2300+ rated player** would score from your entry positions against a peer of similar rating; the curve is fitted on 2300+ rapid games, so scoring below it from positive evals is **normal at lower ratings and not a flaw**. For sub-2300 users the gap is rating-tilt — narrate descriptively ("about X points below the engine ceiling for positions like these"). Forbidden framing (and synonyms): "underperformance", "fall short", "below your potential", "shortfall", "leaving points on the table". Emitted in `endgame_start_vs_end`.
+- **entry_expected_score** ("Entry Eval Score", a.k.a. the Achievable Score baseline): per-user mean Stockfish-baseline expected score from endgame-entry positions against a peer of similar rating, 0-100% W+0.5D. Derivation: the Lichess expected-score sigmoid `1 / (1 + exp(-0.00368208 * cp))` applied to signed user-perspective `eval_cp`; mate maps directly to 0 or 1 (mate ARE included here, unlike `entry_eval_pawns`). Cohort band **45-55%** (see reports/benchmarks-2026-05-11.md Section 5). This is what a **2300+ rated player** would score from your entry positions against a peer of similar rating; the curve is fitted on 2300+ rapid games, so scoring below it from positive evals is **normal at lower ratings and not a flaw**. For sub-2300 users the gap is rating-tilt — narrate descriptively ("about X points below the 2300+ baseline for positions like these"). Forbidden framing (and synonyms): "underperformance", "fall short", "below your potential", "shortfall", "leaving points on the table". Emitted in `endgame_start_vs_end`.
 
 - **conversion_win_pct** ("Conversion (Win)"): Win % in the Conversion eval bucket (entered with eval ≥ +1.0). Only wins count. `dimension.bucket` is always `"conversion"`.
 
