@@ -1,5 +1,5 @@
 import type { UseMutationResult } from '@tanstack/react-query';
-import { BarChart3, BookOpen, Info, Lightbulb, ListChecks, Loader2, Sparkles, UserCircle2 } from 'lucide-react';
+import { BarChart3, BookOpen, Info, Lightbulb, ListChecks, Loader2, Sparkles, Target, UserCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -19,6 +19,10 @@ const FLAG_INSIGHTS_USED = 'insights_used';
 // Recommendations card. Kept out of the LLM payload so the URL is always correct
 // and clickable rather than emitted as dead plain text by the model.
 const ENDGAME_STUDY_URL = 'https://lichess.org/study/mtiahamI';
+
+// Lichess endgame puzzle trainer, shown alongside the study link for hands-on
+// practice. Kept out of the LLM payload for the same reason as the study URL.
+const ENDGAME_PUZZLES_URL = 'https://lichess.org/training/endgame';
 
 /**
  * Top-of-tab Insights card.
@@ -309,20 +313,37 @@ function RenderedState({
                 <li key={idx}>{rec}</li>
               ))}
             </ul>
-            <div className="mt-3 flex items-start gap-2 border-t border-border/60 pt-3 text-sm text-muted-foreground">
-              <BookOpen className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <span>
-                Study endgame technique by level (Basic to Advanced):{' '}
-                <a
-                  href={ENDGAME_STUDY_URL}
-                  className="text-primary underline-offset-4 hover:underline"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  data-testid="insights-rec-endgame-study-link"
-                >
-                  GM Noël Studer's endgame study
-                </a>
-              </span>
+            <div className="mt-3 space-y-2 border-t border-border/60 pt-3 text-sm text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <BookOpen className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>
+                  Study endgame technique by level (Basic to Advanced):{' '}
+                  <a
+                    href={ENDGAME_STUDY_URL}
+                    className="text-primary underline-offset-4 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="insights-rec-endgame-study-link"
+                  >
+                    GM Noël Studer's endgame study
+                  </a>
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Target className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>
+                  Practice with tactics from real games:{' '}
+                  <a
+                    href={ENDGAME_PUZZLES_URL}
+                    className="text-primary underline-offset-4 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="insights-rec-endgame-puzzles-link"
+                  >
+                    Lichess endgame puzzles
+                  </a>
+                </span>
+              </div>
             </div>
           </InsightsSection>
         )}
