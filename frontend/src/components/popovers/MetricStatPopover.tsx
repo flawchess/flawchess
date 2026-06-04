@@ -16,7 +16,7 @@
 
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { HelpCircle } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -69,7 +69,7 @@ export function MetricStatPopover({
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <HelpCircle className="h-4 w-4" />
+          <Search className="h-4 w-4" />
         </span>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>

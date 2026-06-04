@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
-import { ArrowLeftRight, HelpCircle } from 'lucide-react';
+import { ArrowLeftRight, Search } from 'lucide-react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import { MIN_GAMES_FOR_RELIABLE_STATS, UNRELIABLE_OPACITY, ZONE_NEUTRAL } from '@/lib/theme';
 import { scoreZoneColor } from '@/lib/scoreBulletConfig';
@@ -447,7 +447,7 @@ function ScoreInfo({ entry }: { entry: NextMoveEntry }) {
             setOpen(false);
           }}
         >
-          <HelpCircle className="inline h-4 w-4" />
+          <Search className="inline h-4 w-4" />
         </button>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
