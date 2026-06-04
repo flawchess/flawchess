@@ -29,6 +29,9 @@ import { EndgamesPage } from '@/pages/Endgames';
 import { GlobalStatsPage } from '@/pages/GlobalStats';
 import { AdminPage } from '@/pages/Admin';
 import { PrivacyPage } from '@/pages/Privacy';
+// Throwaway prototype for GM-coach review of the Train (spaced-repetition) UX.
+// Unlinked public route — not in any nav. Safe to delete (see SEED-037).
+import { TrainSketchPage } from '@/pages/TrainSketch/TrainSketchPage';
 import { useImportPolling, useActiveJobs } from '@/hooks/useImport';
 import { useUserFlag, setUserFlag } from '@/hooks/useUserFlag';
 import { useReadiness } from '@/hooks/useReadiness';
@@ -579,6 +582,8 @@ function AppRoutes() {
         <Route path="/login" element={<AuthPage />} />
         {/* Google OAuth callback — reads token from URL fragment */}
         <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+        {/* Unlinked prototype for GM-coach review of the Train UX (SEED-037). Public, no auth. */}
+        <Route path="/train-sketch" element={<TrainSketchPage />} />
         {/* Protected layout wraps all authenticated pages */}
         <Route element={<ProtectedLayout />}>
           <Route path="/import" element={<ImportPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />

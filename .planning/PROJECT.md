@@ -156,7 +156,7 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 Candidate later scope (from backlog / deferred):
 
 - [ ] **SEED-030 Track A** — split oversized multi-concern modules (structural code-health; Track B closed by Phase 99.1)
-- [ ] Other dormant seeds: SEED-010 (library page), SEED-012 (client-side Stockfish tactics), SEED-029 (benchmarks deterministic rebuild), SEED-033 (cap explorer + partial-index Zobrist hashes)
+- [ ] Other dormant seeds: SEED-036 (Library page — eval-driven mistake archive; split from SEED-010), SEED-037 (Train — spaced-repetition blunder drills; split from SEED-010), SEED-012 (client-side Stockfish tactics), SEED-029 (benchmarks deterministic rebuild), SEED-033 (cap explorer + partial-index Zobrist hashes)
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
