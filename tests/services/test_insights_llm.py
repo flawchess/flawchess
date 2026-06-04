@@ -251,7 +251,9 @@ class TestPromptVersionAndBody:
         )
         body = prompt_path.read_text(encoding="utf-8")
         # The two example narrations from CONTEXT.md D-18 must be present verbatim.
-        assert "Stockfish-baseline says positions like yours score 58%" in body
+        # Phase: "engine baseline" wording was reworded to the 2300+-peer-average
+        # framing (commit 93c092c2) — the pinned string follows the current copy.
+        assert "From positions like yours, a 2300+ player averages 58%" in body
         assert (
             "Entry Eval Score 49%, you scored 52%" in body
         )  # Phase 102: vocab audit renamed "Achievable" → "Entry Eval Score"
