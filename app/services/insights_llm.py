@@ -4,7 +4,7 @@ Scope (Phase 65):
 - get_insights_agent(): singleton pydantic-ai Agent per CONTEXT.md D-21.
 - generate_insights(filter_context, user_id, session): sole orchestration
   entry point called by app/routers/insights.py. Handles tier-1 cache,
-  rate limit, tier-2 soft-fail, fresh LLM call, and log-row write.
+  fresh LLM call, and log-row write.
 - Custom exceptions map to HTTP status codes at the router layer (Plan 06).
 
 Critical invariants:
@@ -33,14 +33,10 @@ from pydantic_ai.models.google import GoogleModel, GoogleModelSettings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.llm_log import LlmLog
 from app.repositories.import_job_repository import get_latest_completed_import_with_games_at
 from app.repositories.llm_log_repository import (
-    count_recent_successful_misses,
     create_llm_log,
-    get_latest_report_for_user,
     get_latest_successful_log_for_user,
-    get_oldest_recent_miss_timestamp,
 )
 from app.schemas.endgames import EndgameCategoryStats, EndgameClass, TimePressureTcCard
 from app.schemas.insights import (
@@ -89,10 +85,8 @@ _TC_BAND_METRICS: frozenset[str] = frozenset(
     }
 )
 
-INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
 _PROMPT_VERSION = "endgame_v46"  # v46 (20260604 jargon de-priming, prose-only): added Audience ban (percentile/quintile/p-value/etc.), replaced incidental "percentile"→"peer-rank" / "quintile"→"clock bucket" in meta-instructions to stop priming the banned words into output; no contract or payload change
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
-_RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
 
 # Structural cache TTL safety net (260425-dxh): bounds the sliding 3-month
@@ -261,14 +255,6 @@ _SYSTEM_PROMPT = (_PROMPTS_DIR / "endgame_insights.md").read_text(
 
 
 # -- Custom exceptions (router maps to HTTP status per Plan 06) --
-
-
-class InsightsRateLimitExceeded(Exception):
-    """Rate limit exhausted AND no tier-2 fallback available. Router -> 429."""
-
-    def __init__(self, retry_after_seconds: int) -> None:
-        super().__init__("rate_limit_exceeded")
-        self.retry_after_seconds = retry_after_seconds
 
 
 class InsightsProviderError(Exception):
@@ -2413,42 +2399,6 @@ def _maybe_strip_overview(report: EndgameInsightsReport) -> EndgameInsightsRepor
     return report.model_copy(update={"overview": ""})
 
 
-# -- Stale-filter detection for soft-fail banner (CONTEXT.md D-14) --
-
-
-def _maybe_stale_filters(
-    fallback_log: LlmLog,
-    current: FilterContext,
-) -> FilterContext | None:
-    """Compare fallback's opponent_strength to current; return fallback-scoped
-    FilterContext if they differ.
-
-    Log rows only persist `opponent_strength` (router enforces all other
-    filters to defaults, so they never vary across logs). The banner only
-    fires when that single field differs — all other FilterContext fields
-    are guaranteed to match.
-
-    Returns None when filters match (banner not shown).
-    """
-    fallback_os = fallback_log.filter_context["opponent_strength"]
-    if fallback_os == current.opponent_strength:
-        return None
-    return current.model_copy(update={"opponent_strength": fallback_os})
-
-
-# -- Rate-limit retry-after computation (CONTEXT.md D-11, RESEARCH.md §4) --
-
-
-async def _compute_retry_after(session: AsyncSession, user_id: int) -> int:
-    """Seconds until oldest successful miss in the 1h window expires."""
-    oldest = await get_oldest_recent_miss_timestamp(session, user_id, _RATE_LIMIT_WINDOW)
-    if oldest is None:
-        return 1
-    expires_at = oldest + _RATE_LIMIT_WINDOW
-    delta = (expires_at - datetime.datetime.now(datetime.UTC)).total_seconds()
-    return max(1, int(delta))
-
-
 # -- Agent invocation wrapper: exception -> (None, marker), success -> (report, ...) --
 
 _THOUGHTS_DETAIL_KEY = "thoughts_tokens"  # pydantic-ai Google adapter key (models/google.py:1454)
@@ -2534,16 +2484,15 @@ async def generate_insights(
     user_id: int,
     session: AsyncSession,
 ) -> EndgameInsightsResponse:
-    """Tier-1 structural cache -> rate-limit -> tier-2 soft-fail -> fresh LLM call.
+    """Tier-1 structural cache -> fresh LLM call.
 
     Cache key (260425-dxh): (user_id, prompt_version, model, opponent_strength).
     Validity rule: row.created_at >= MAX(import_jobs.completed_at WHERE
     games_imported > 0) for this user, AND row younger than
     INSIGHTS_CACHE_MAX_AGE. Reordered so compute_findings only runs on miss.
 
-    Returns EndgameInsightsResponse with status in {fresh, cache_hit,
-    stale_rate_limited}. Raises InsightsRateLimitExceeded (router -> 429),
-    InsightsProviderError (router -> 502), or InsightsValidationFailure
+    Returns EndgameInsightsResponse with status in {fresh, cache_hit}.
+    Raises InsightsProviderError (router -> 502) or InsightsValidationFailure
     (router -> 502) on the respective failure paths.
 
     All DB work runs on the caller-supplied session (sequential awaits).
@@ -2583,21 +2532,6 @@ async def generate_insights(
 
     # Cache miss path: now we pay for compute_findings.
     findings = await compute_findings(filter_context, session, user_id)
-
-    # Rate-limit check (CONTEXT.md D-09, D-10).
-    misses = await count_recent_successful_misses(session, user_id, _RATE_LIMIT_WINDOW)
-    if misses >= INSIGHTS_MISSES_PER_HOUR:
-        fallback = await get_latest_report_for_user(session, user_id, _PROMPT_VERSION, model)
-        if fallback is not None:
-            stale_report = EndgameInsightsReport.model_validate(fallback.response_json)
-            stale = _maybe_stale_filters(fallback, filter_context)
-            return EndgameInsightsResponse(
-                report=_maybe_strip_overview(stale_report),
-                status="stale_rate_limited",
-                stale_filters=stale,
-            )
-        retry_after = await _compute_retry_after(session, user_id)
-        raise InsightsRateLimitExceeded(retry_after_seconds=retry_after)
 
     # Fresh call.
     user_prompt = _assemble_user_prompt(findings)

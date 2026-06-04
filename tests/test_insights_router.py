@@ -265,149 +265,6 @@ class TestHappyPath:
 
 
 # ---------------------------------------------------------------------------
-# TestRateLimit
-# ---------------------------------------------------------------------------
-
-
-class TestRateLimit:
-    @pytest.mark.asyncio
-    async def test_429_when_rate_limited_without_tier2(
-        self,
-        authed_user_with_session: tuple[dict[str, str], User],
-        fake_insights_agent: Any,
-        monkeypatch: pytest.MonkeyPatch,
-        test_engine: AsyncEngine,
-    ) -> None:
-        """After 3 misses with no tier-2 fallback, returns 429 + error envelope."""
-        headers, user = authed_user_with_session
-        fake_insights_agent(_sample_report())
-
-        # Stub compute_findings with a distinct hash (not in DB) so tier-1 always misses
-        async def _fake_compute_new_hash(
-            fc: FilterContext, session: AsyncSession, uid: int
-        ) -> EndgameTabFindings:
-            return EndgameTabFindings(
-                as_of=datetime.datetime.now(datetime.UTC),
-                filters=fc,
-                findings=[],
-                findings_hash="c" * 64,  # distinct from seeded rows
-            )
-
-        monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_new_hash)
-
-        # Seed 3 successful misses using an old prompt_version so that
-        # count_recent_successful_misses counts them (no prompt_version filter)
-        # but get_latest_report_for_user excludes them (has prompt_version filter).
-        # This creates the "rate limited without tier-2" scenario.
-        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-        async with session_maker() as session:
-            await _seed(
-                session,
-                _make_row(
-                    user.id,
-                    response_json=_sample_report().model_dump(),
-                    prompt_version="endgame_v0",  # excluded by get_latest_report_for_user
-                    findings_hash="d" * 64,
-                ),
-                _make_row(
-                    user.id,
-                    response_json=_sample_report().model_dump(),
-                    prompt_version="endgame_v0",
-                    findings_hash="e" * 64,
-                ),
-                _make_row(
-                    user.id,
-                    response_json=_sample_report().model_dump(),
-                    prompt_version="endgame_v0",
-                    findings_hash="f" * 64,
-                ),
-            )
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            response = await client.post(INSIGHTS_ENDPOINT, headers=headers)
-
-        assert response.status_code == 429
-        body = response.json()
-        assert body["error"] == "rate_limit_exceeded"
-        assert body["retry_after_seconds"] is not None
-        assert body["retry_after_seconds"] > 0
-
-    @pytest.mark.asyncio
-    async def test_200_stale_when_rate_limited_with_tier2(
-        self,
-        authed_user_with_session: tuple[dict[str, str], User],
-        fake_insights_agent: Any,
-        monkeypatch: pytest.MonkeyPatch,
-        test_engine: AsyncEngine,
-    ) -> None:
-        """Rate-limited with a matching tier-2 row returns 200 + status='stale_rate_limited'."""
-        headers, user = authed_user_with_session
-        fake_insights_agent(_sample_report())
-
-        async def _fake_compute_new_hash(
-            fc: FilterContext, session: AsyncSession, uid: int
-        ) -> EndgameTabFindings:
-            return EndgameTabFindings(
-                as_of=datetime.datetime.now(datetime.UTC),
-                filters=fc,
-                findings=[],
-                findings_hash="g" * 64,  # distinct from seeded rows
-            )
-
-        monkeypatch.setattr("app.services.insights_llm.compute_findings", _fake_compute_new_hash)
-
-        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-        valid_report = _sample_report()
-        async with session_maker() as session:
-            # 3 old-version misses — fill the rate-limit bucket
-            await _seed(
-                session,
-                _make_row(
-                    user.id,
-                    response_json=valid_report.model_dump(),
-                    prompt_version="endgame_v0",
-                    findings_hash="h" * 64,
-                ),
-                _make_row(
-                    user.id,
-                    response_json=valid_report.model_dump(),
-                    prompt_version="endgame_v0",
-                    findings_hash="i" * 64,
-                ),
-                _make_row(
-                    user.id,
-                    response_json=valid_report.model_dump(),
-                    prompt_version="endgame_v0",
-                    findings_hash="j" * 64,
-                ),
-                # Tier-2 fallback: current prompt_version row.
-                # 260425-dxh: use opponent_strength="stronger" so the structural
-                # cache lookup misses (the request uses default "any") — but
-                # tier-2 fallback (get_latest_report_for_user) does NOT filter
-                # by opponent_strength, so this row is still the served fallback.
-                _make_row(
-                    user.id,
-                    response_json=valid_report.model_dump(),
-                    prompt_version=insights_llm._PROMPT_VERSION,  # matches get_latest_report_for_user filter
-                    findings_hash="k" * 64,
-                    opponent_strength="stronger",
-                ),
-            )
-
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            response = await client.post(INSIGHTS_ENDPOINT, headers=headers)
-
-        assert response.status_code == 200
-        body = response.json()
-        assert body["status"] == "stale_rate_limited"
-        assert body["report"]["overview"] == "FlawChess played solidly overall."
-
-
-# ---------------------------------------------------------------------------
 # TestErrors
 # ---------------------------------------------------------------------------
 
@@ -445,7 +302,7 @@ class TestErrors:
         assert response.status_code == 502
         body = response.json()
         assert body["error"] == "provider_error"
-        assert body["retry_after_seconds"] is None
+        assert "retry_after_seconds" not in body
 
     @pytest.mark.asyncio
     async def test_validation_failure_returns_502(
@@ -477,7 +334,7 @@ class TestErrors:
         assert response.status_code == 502
         body = response.json()
         assert body["error"] == "validation_failure"
-        assert body["retry_after_seconds"] is None
+        assert "retry_after_seconds" not in body
 
 
 # ---------------------------------------------------------------------------

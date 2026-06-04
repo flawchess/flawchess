@@ -622,19 +622,11 @@ class TestEndgameInsightsResponse:
 
     def test_fresh_status(self) -> None:
         resp = EndgameInsightsResponse(report=self._report(), status="fresh")
-        assert resp.stale_filters is None
         assert resp.status == "fresh"
 
-    def test_stale_rate_limited_with_filters(self) -> None:
-        from_date = datetime.date(2026, 2, 1)
-        filters = FilterContext(from_date=from_date, opponent_strength="any")
-        resp = EndgameInsightsResponse(
-            report=self._report(),
-            status="stale_rate_limited",
-            stale_filters=filters,
-        )
-        assert resp.stale_filters is not None
-        assert resp.stale_filters.from_date == from_date
+    def test_cache_hit_status(self) -> None:
+        resp = EndgameInsightsResponse(report=self._report(), status="cache_hit")
+        assert resp.status == "cache_hit"
 
     def test_status_literal_enforced(self) -> None:
         with pytest.raises(ValidationError):
@@ -642,15 +634,15 @@ class TestEndgameInsightsResponse:
 
 
 class TestInsightsErrorResponse:
-    """Phase 65 D-15: HTTP 4xx/5xx error envelope."""
+    """Phase 65 D-15: HTTP 502 error envelope."""
 
-    def test_rate_limit_with_retry_after(self) -> None:
-        resp = InsightsErrorResponse(error="rate_limit_exceeded", retry_after_seconds=3600)
-        assert resp.retry_after_seconds == 3600
-
-    def test_provider_error_no_retry_after(self) -> None:
+    def test_provider_error(self) -> None:
         resp = InsightsErrorResponse(error="provider_error")
-        assert resp.retry_after_seconds is None
+        assert resp.error == "provider_error"
+
+    def test_validation_failure(self) -> None:
+        resp = InsightsErrorResponse(error="validation_failure")
+        assert resp.error == "validation_failure"
 
     def test_error_literal_enforced(self) -> None:
         with pytest.raises(ValidationError):
