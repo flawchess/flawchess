@@ -90,7 +90,7 @@ _TC_BAND_METRICS: frozenset[str] = frozenset(
 )
 
 INSIGHTS_MISSES_PER_HOUR = 3  # CONTEXT.md D-09
-_PROMPT_VERSION = "endgame_v45"  # v45 (20260603 prompt condensation, prose-only): deduped repeated guards/definitions, no contract or payload change
+_PROMPT_VERSION = "endgame_v46"  # v46 (20260604 jargon de-priming, prose-only): added Audience ban (percentile/quintile/p-value/etc.), replaced incidental "percentile"→"peer-rank" / "quintile"→"clock bucket" in meta-instructions to stop priming the banned words into output; no contract or payload change
 _OUTPUT_RETRIES = 2  # CONTEXT.md D-24, RESEARCH.md §2
 _RATE_LIMIT_WINDOW = datetime.timedelta(hours=1)
 _ENDPOINT: LlmLogEndpoint = "insights.endgame"
