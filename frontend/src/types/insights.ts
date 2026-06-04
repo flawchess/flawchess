@@ -14,11 +14,9 @@ export type SectionId =
 
 export type InsightsStatus =
   | 'fresh'
-  | 'cache_hit'
-  | 'stale_rate_limited';
+  | 'cache_hit';
 
 export type InsightsError =
-  | 'rate_limit_exceeded'
   | 'provider_error'
   | 'validation_failure'
   | 'config_error';
@@ -50,14 +48,10 @@ export interface EndgameInsightsReport {
 export interface EndgameInsightsResponse {
   report: EndgameInsightsReport;
   status: InsightsStatus;
-  /** D-13: FE ignores this field. Retained for debug/future use. */
-  stale_filters: unknown;
 }
 
 export interface InsightsErrorResponse {
   error: InsightsError;
-  /** Only populated on HTTP 429 rate_limit_exceeded. */
-  retry_after_seconds: number | null;
 }
 
 export type InsightsAxiosError = AxiosError<InsightsErrorResponse>;

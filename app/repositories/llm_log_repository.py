@@ -19,10 +19,8 @@ error-reporting rule (D-08).
 caller-supplied session because the read path has no durability-vs-rollback
 concern — the caller already has a session.
 
-Phase 65 extends the read surface with two additional helpers per CONTEXT.md
-D-34: `count_recent_successful_misses` (rate-limit count query, D-09) and
-`get_latest_report_for_user` (tier-2 soft-fail fallback, D-11). Both take
-caller-supplied sessions matching the read-path convention. `create_llm_log`
+`get_latest_successful_log_for_user` is the structural cache lookup (260425-dxh)
+keyed on (user_id, prompt_version, model, opponent_strength). `create_llm_log`
 remains the sole own-session entry point (write-path, D-02).
 """
 
@@ -30,7 +28,7 @@ import datetime
 from decimal import Decimal
 
 from genai_prices import Usage, calc_price
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_maker
@@ -206,143 +204,6 @@ async def get_latest_successful_log_for_user(
             LlmLog.model == model,
             LlmLog.filter_context["opponent_strength"].astext == opponent_strength,
             LlmLog.created_at >= cutoff,
-            LlmLog.response_json.is_not(None),
-            LlmLog.error.is_(None),
-        )
-        .order_by(LlmLog.created_at.desc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
-
-
-async def count_recent_successful_misses(
-    session: AsyncSession,
-    user_id: int,
-    window: datetime.timedelta,
-) -> int:
-    """Count successful cache-miss LLM calls for user within the time window.
-
-    "Successful miss" per CONTEXT.md D-09 / D-10:
-      - cache_hit IS FALSE
-      - error IS NULL
-      - response_json IS NOT NULL
-
-    Only these rows consume rate-limit quota. A provider-error row (error
-    populated, response_json NULL) does NOT count — pydantic-ai already
-    retries internally on structured-output failures, so logged failures
-    are "real" failures and shouldn't lock the user out.
-
-    Uses Phase 64's composite index ix_llm_logs_user_id_created_at (DESC)
-    for the equality-on-user_id + range-on-created_at filter. The
-    cache_hit / error / response_json filters apply post-index-scan on the
-    small per-user-per-hour slice.
-
-    Args:
-        session: caller-supplied AsyncSession (read path — no durability concern).
-        user_id: authenticated user scoping the query (mandatory — never call without).
-        window: timedelta defining the look-back window (e.g. timedelta(hours=1)).
-
-    Returns:
-        Integer count of successful-miss rows in the window. Zero when no rows match.
-    """
-    cutoff = datetime.datetime.now(datetime.UTC) - window
-    result = await session.execute(
-        select(func.count())
-        .select_from(LlmLog)
-        .where(
-            LlmLog.user_id == user_id,
-            LlmLog.created_at > cutoff,
-            LlmLog.cache_hit.is_(False),
-            LlmLog.error.is_(None),
-            LlmLog.response_json.is_not(None),
-        )
-    )
-    return result.scalar_one()
-
-
-async def get_oldest_recent_miss_timestamp(
-    session: AsyncSession,
-    user_id: int,
-    window: datetime.timedelta,
-) -> datetime.datetime | None:
-    """Return created_at of the oldest successful miss within the window, or None.
-
-    Used by the rate-limit retry-after computation in the service layer to
-    calculate when the oldest miss in the current window expires. Factored out
-    of the service so DB access stays exclusively in the repository (CLAUDE.md
-    §Architecture: "no SQL in services").
-
-    "Successful miss" definition mirrors count_recent_successful_misses:
-      - cache_hit IS FALSE
-      - error IS NULL
-      - response_json IS NOT NULL
-
-    Args:
-        session: caller-supplied AsyncSession.
-        user_id: authenticated user scoping the query.
-        window: timedelta defining the look-back window (e.g. timedelta(hours=1)).
-
-    Returns:
-        The created_at timestamp of the oldest qualifying row, or None if no
-        rows exist in the window (caller defaults retry_after to 1 second).
-    """
-    cutoff = datetime.datetime.now(datetime.UTC) - window
-    result = await session.execute(
-        select(LlmLog.created_at)
-        .where(
-            LlmLog.user_id == user_id,
-            LlmLog.created_at > cutoff,
-            LlmLog.cache_hit.is_(False),
-            LlmLog.error.is_(None),
-            LlmLog.response_json.is_not(None),
-        )
-        .order_by(LlmLog.created_at.asc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
-
-
-async def get_latest_report_for_user(
-    session: AsyncSession,
-    user_id: int,
-    prompt_version: str,
-    model: str,
-) -> LlmLog | None:
-    """Tier-2 soft-fail lookup per CONTEXT.md D-11.
-
-    Returns the user's most recent successful report under the current
-    prompt_version / model era. Called when rate-limit is exhausted and
-    tier-1 exact cache lookup (get_latest_log_by_hash) returned None.
-
-    Rationale for the era filter (prompt_version + model): serving a stale
-    report from a prior prompt/model era would mix narratives from
-    inconsistent prompts, confusing the user. Limiting to current era
-    ensures stale content is still stylistically / semantically coherent
-    with what a fresh call would have produced.
-
-    "Successful" per same rule as tier-1: response_json IS NOT NULL AND
-    error IS NULL — a cost_unknown row or provider-error row is NOT a
-    valid stale-serve source.
-
-    Index coverage: ix_llm_logs_user_id_created_at (user_id equality +
-    created_at DESC ordering). prompt_version / model / response_json /
-    error filters apply on the small per-user-per-era slice.
-
-    Args:
-        session: caller-supplied AsyncSession.
-        user_id: authenticated user scoping the query.
-        prompt_version: current prompt version (e.g. "endgame_v1") — era key.
-        model: current pydantic-ai model string (e.g. "anthropic:claude-...") — era key.
-
-    Returns:
-        The most recent matching LlmLog, or None if no row matches.
-    """
-    result = await session.execute(
-        select(LlmLog)
-        .where(
-            LlmLog.user_id == user_id,
-            LlmLog.prompt_version == prompt_version,
-            LlmLog.model == model,
             LlmLog.response_json.is_not(None),
             LlmLog.error.is_(None),
         )

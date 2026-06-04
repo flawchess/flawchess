@@ -3,7 +3,7 @@
 Endpoint (mounted under /api):
 - POST /insights/endgame: returns EndgameInsightsResponse with the LLM report.
 
-The router is deliberately thin per CONTEXT.md D-33 — all cache / rate-limit /
+The router is deliberately thin per CONTEXT.md D-33 — all cache /
 LLM-call / logging logic lives in app.services.insights_llm.generate_insights().
 This router: auth + session dep + query-param-to-FilterContext + one service
 call + exception-to-HTTP status mapping (D-16).
@@ -42,7 +42,6 @@ from app.services import insights_llm
 from app.services.insights_llm import (
     INSIGHTS_CACHE_MAX_AGE,
     InsightsProviderError,
-    InsightsRateLimitExceeded,
     InsightsValidationFailure,
 )
 from app.core.opponent_strength import derive_preset
@@ -116,10 +115,9 @@ async def get_endgame_insights(
     custom ranges return 400.
 
     Returns:
-        200: EndgameInsightsResponse with status in {fresh, cache_hit, stale_rate_limited}.
+        200: EndgameInsightsResponse with status in {fresh, cache_hit}.
         400: filters_not_supported (any non-default filter other than opponent_strength,
              or custom (non-preset) opponent gap range).
-        429: InsightsErrorResponse(error='rate_limit_exceeded', retry_after_seconds=N).
         502: InsightsErrorResponse(error='provider_error' | 'validation_failure').
     """
     preset = derive_preset(opponent_gap_min, opponent_gap_max)
@@ -148,20 +146,11 @@ async def get_endgame_insights(
     _validate_full_history_filters(filter_context)
     try:
         return await insights_llm.generate_insights(filter_context, user.id, session)
-    except InsightsRateLimitExceeded as exc:
-        return JSONResponse(
-            status_code=429,
-            content=InsightsErrorResponse(
-                error="rate_limit_exceeded",
-                retry_after_seconds=exc.retry_after_seconds,
-            ).model_dump(),
-        )
     except InsightsValidationFailure:
         return JSONResponse(
             status_code=502,
             content=InsightsErrorResponse(
                 error="validation_failure",
-                retry_after_seconds=None,
             ).model_dump(),
         )
     except InsightsProviderError:
@@ -169,7 +158,6 @@ async def get_endgame_insights(
             status_code=502,
             content=InsightsErrorResponse(
                 error="provider_error",
-                retry_after_seconds=None,
             ).model_dump(),
         )
 

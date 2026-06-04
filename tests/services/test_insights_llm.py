@@ -33,9 +33,7 @@ from app.schemas.insights import (
 )
 from app.services import insights_llm
 from app.services.insights_llm import (
-    INSIGHTS_MISSES_PER_HOUR,
     InsightsProviderError,
-    InsightsRateLimitExceeded,
     InsightsValidationFailure,
     _SYSTEM_PROMPT,
     _assemble_user_prompt,
@@ -217,7 +215,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_is_v33(self) -> None:
         # Phase 87.6 Plan 03 bumped v33 → v34 (PR-direct rebuild + non_endgame_elo).
-        assert insights_llm._PROMPT_VERSION == "endgame_v45"
+        assert insights_llm._PROMPT_VERSION == "endgame_v46"
 
     def test_prompt_file_glossary_has_entry_expected_score(self) -> None:
         """Phase 83 D-17: glossary entry must be present with required framing."""
@@ -253,7 +251,9 @@ class TestPromptVersionAndBody:
         )
         body = prompt_path.read_text(encoding="utf-8")
         # The two example narrations from CONTEXT.md D-18 must be present verbatim.
-        assert "Stockfish-baseline says positions like yours score 58%" in body
+        # Phase: "engine baseline" wording was reworded to the 2300+-peer-average
+        # framing (commit 93c092c2) — the pinned string follows the current copy.
+        assert "From positions like yours, a 2300+ player averages 58%" in body
         assert (
             "Entry Eval Score 49%, you scored 52%" in body
         )  # Phase 102: vocab audit renamed "Achievable" → "Entry Eval Score"
@@ -419,7 +419,7 @@ class TestPromptVersionAndBody:
 
     def test_prompt_version_bumped(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION is endgame_v40; prior v35 stays in changelog."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v45"
+        assert insights_llm._PROMPT_VERSION == "endgame_v46"
 
 
 class TestEndgameTypeAchievableScoreGapPayload:
@@ -2495,7 +2495,7 @@ class TestMetadataOverride:
         assert response.status == "fresh"
         assert response.report.model_used == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
         # Phase 102 UAT: bumped from endgame_v35 to endgame_v40.
-        assert response.report.prompt_version == "endgame_v45"
+        assert response.report.prompt_version == "endgame_v46"
 
         # Log row's response_json also carries the overridden values (the override
         # happens BEFORE create_llm_log per A3). Query by findings_hash (unique
@@ -2519,7 +2519,7 @@ class TestMetadataOverride:
         assert log is not None, f"no log row for findings_hash={findings_hash}"
         assert log.response_json is not None
         assert log.response_json["model_used"] == insights_llm.settings.PYDANTIC_AI_MODEL_INSIGHTS
-        assert log.response_json["prompt_version"] == "endgame_v45"
+        assert log.response_json["prompt_version"] == "endgame_v46"
 
 
 class TestCacheBehavior:
@@ -2895,36 +2895,30 @@ class TestStructuralCacheInvalidation:
 
 
 # ---------------------------------------------------------------------------
-# TestRateLimit
+# TestNoRateLimit
 # ---------------------------------------------------------------------------
 
 
-class TestRateLimit:
+class TestNoRateLimit:
     @pytest.mark.asyncio
-    async def test_boundary_3_misses_allowed_4th_stale(
+    async def test_many_prior_misses_do_not_block_fresh_call(
         self,
         fake_insights_agent: Any,
         fresh_test_user: User,
         test_engine: AsyncEngine,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """After 3 successful misses, 4th call returns stale_rate_limited with tier-2 fallback."""
-        assert INSIGHTS_MISSES_PER_HOUR == 3  # confirm constant
+        """Prior successful misses (any number) do not block a fresh call — rate limit removed."""
         report = _sample_report()
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
-        # Seed 3 successful miss rows (consuming the quota) + 1 tier-2 fallback.
-        # All rows use valid EndgameInsightsReport JSON (get_latest_report_for_user
-        # returns the most recent one, which may be any of these — that's fine as
-        # long as it parses).
-        # 260425-dxh: seed with opponent_strength="stronger" so the structural
-        # cache lookup (which queries with the call's opp_strength="any") MISSES
-        # — but rate-limit count and tier-2 fallback do NOT filter by
-        # opp_strength, so they still pick up these rows.
+        # Seed many miss rows with opponent_strength="stronger" so the structural
+        # cache lookup (which uses opp_strength="any") MISSES — confirming the
+        # fresh path runs without any rate-limit block.
         now = datetime.datetime.now(datetime.UTC)
         valid_report_json = report.model_dump()
         async with session_maker() as session:
-            for i in range(3):
+            for i in range(5):
                 await _seed(
                     session,
                     _make_log_row(
@@ -2935,20 +2929,6 @@ class TestRateLimit:
                         opponent_strength="stronger",
                     ),
                 )
-            # Tier-2 fallback: oldest successful row (get_latest returns newest,
-            # which is one of the 3 above — all valid — so any serves as fallback).
-            # This extra row ensures at least one valid fallback exists regardless
-            # of query ordering.
-            await _seed(
-                session,
-                _make_log_row(
-                    fresh_test_user.id,
-                    created_at=now - datetime.timedelta(minutes=30),
-                    findings_hash="d" * 64,
-                    response_json=valid_report_json,
-                    opponent_strength="stronger",
-                ),
-            )
 
         fake_insights_agent(report)
         monkeypatch.setattr(
@@ -2958,67 +2938,23 @@ class TestRateLimit:
 
         async with session_maker() as session:
             r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
-        assert r.status == "stale_rate_limited"
-        assert r.report.overview == report.overview
+        assert r.status == "fresh"
 
     @pytest.mark.asyncio
-    async def test_429_when_no_tier2(
-        self,
-        fresh_test_user: User,
-        test_engine: AsyncEngine,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Rate-limit exhausted with no tier-2 fallback raises InsightsRateLimitExceeded."""
-        session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-
-        # Seed 3 successful miss rows with an OLD prompt_version so they count
-        # toward the rate-limit (count_recent_successful_misses does NOT filter
-        # by prompt_version) but are NOT returned by get_latest_report_for_user
-        # (which filters by prompt_version="endgame_v16"), producing "no tier-2".
-        now = datetime.datetime.now(datetime.UTC)
-        # Build a valid report JSON for rows (avoids ValidationError in case tier-2
-        # is somehow reached — but with the prompt_version mismatch it should not be).
-        valid_json = _sample_report().model_dump()
-        async with session_maker() as session:
-            for _ in range(3):
-                await _seed(
-                    session,
-                    _make_log_row(
-                        fresh_test_user.id,
-                        created_at=now - datetime.timedelta(minutes=10),
-                        prompt_version="endgame_v0",  # old era — excluded from tier-2
-                        response_json=valid_json,
-                        findings_hash="k" * 64,
-                    ),
-                )
-
-        monkeypatch.setattr(
-            "app.services.insights_llm.compute_findings",
-            # Use a hash that differs from all seeded rows so tier-1 misses
-            lambda fc, sess, uid: _fake_compute_findings(fc, sess, uid, findings_hash="d" * 64),
-        )
-
-        async with session_maker() as session:
-            with pytest.raises(InsightsRateLimitExceeded) as exc_info:
-                await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
-        assert exc_info.value.retry_after_seconds > 0
-
-    @pytest.mark.asyncio
-    async def test_window_rollover(
+    async def test_old_rows_do_not_block_fresh_call(
         self,
         fake_insights_agent: Any,
         fresh_test_user: User,
         test_engine: AsyncEngine,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Misses older than 1h are outside the window; 4th call is fresh (not rate-limited)."""
+        """Old miss rows do not block a fresh call (no rate limiting)."""
         report = _sample_report()
         session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
-        # Seed 3 misses with created_at >61 minutes ago (outside the 1h window).
-        # 260425-dxh: use opponent_strength="stronger" so the structural cache
-        # lookup misses (the call uses default "any") — otherwise these rows
-        # would serve as a cache hit before the rate-limit check ran.
+        # Seed 3 misses with created_at >61 minutes ago.
+        # Use opponent_strength="stronger" so the structural cache
+        # lookup misses (the call uses default "any").
         old_time = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=61)
         async with session_maker() as session:
             for _ in range(3):
@@ -3041,7 +2977,6 @@ class TestRateLimit:
 
         async with session_maker() as session:
             r = await generate_insights(_sample_filter_context(), fresh_test_user.id, session)
-        # Window rolled over — should be fresh, not rate-limited
         assert r.status == "fresh"
 
 
@@ -3572,7 +3507,7 @@ class TestPhase874PromptVersion:
 
     def test_prompt_version_is_v33(self) -> None:
         """SC#7: bumped to endgame_v40 by Phase 102 UAT (was endgame_v35 after Phase 87.6)."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v45"
+        assert insights_llm._PROMPT_VERSION == "endgame_v46"
 
     def test_non_fractional_metrics_renamed(self) -> None:
         """Phase 87.5 (D-06): _NON_FRACTIONAL_METRICS swaps conversion_elo_gap → endgame_elo_gap."""
@@ -3620,7 +3555,7 @@ class TestPhase876LLMPayloadExtension:
 
     def test_prompt_version_is_endgame_v39(self) -> None:
         """Phase 102 UAT: _PROMPT_VERSION bumped from endgame_v35 to endgame_v40."""
-        assert insights_llm._PROMPT_VERSION == "endgame_v45"
+        assert insights_llm._PROMPT_VERSION == "endgame_v46"
 
     def test_prompt_prose_includes_non_endgame_elo_sentence_pattern(self) -> None:
         """Phase 87.6: the canonical 'Your Endgame ELO sits at X, vs Y' sentence skeleton
@@ -4447,4 +4382,4 @@ class TestRatingBasisBlock:
         """Phase 102 Plan 05/UAT: _PROMPT_VERSION bumped to endgame_v40."""
         from app.services import insights_llm
 
-        assert insights_llm._PROMPT_VERSION == "endgame_v45"
+        assert insights_llm._PROMPT_VERSION == "endgame_v46"

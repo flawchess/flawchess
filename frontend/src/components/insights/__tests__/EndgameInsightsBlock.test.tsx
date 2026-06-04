@@ -93,7 +93,6 @@ const RESPONSE_FRESH: EndgameInsightsResponse = {
     prompt_version: 'endgame_v9',
   },
   status: 'fresh',
-  stale_filters: null,
 };
 
 describe('EndgameInsightsBlock', () => {
@@ -185,22 +184,6 @@ describe('EndgameInsightsBlock', () => {
     expect(screen.queryByTestId('btn-generate-insights')).not.toBeNull();
   });
 
-  it('renders stale banner on stale_rate_limited', () => {
-    const stale: EndgameInsightsResponse = { ...RESPONSE_FRESH, status: 'stale_rate_limited' };
-    render(
-      <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
-        rendered={stale}
-        mutation={makeMutation()}
-        onGenerate={vi.fn()}
-      />,
-    );
-    const banner = screen.getByTestId('insights-stale-banner');
-    expect(banner.textContent).toMatch(/Showing your most recent insights/);
-    // Fallback copy — retry_after_seconds not surfaced in 200 envelope.
-    expect(banner.textContent).toMatch(/try again in a moment/);
-  });
-
   it('does NOT render a cache-mismatch indicator (parent gates the rendered prop)', () => {
     // Filter-mismatch gating now lives in the parent (Endgames.tsx) — it only
     // passes `rendered` when the cached report matches current filters. The
@@ -220,7 +203,7 @@ describe('EndgameInsightsBlock', () => {
   it('renders error state with locked copy and Try again button', () => {
     const axiosError = {
       isAxiosError: true,
-      response: { data: { error: 'provider_error', retry_after_seconds: null } },
+      response: { data: { error: 'provider_error' } },
     } as InsightsAxiosError;
     render(
       <EndgameInsightsBlock
@@ -235,48 +218,5 @@ describe('EndgameInsightsBlock', () => {
     expect(errorBlock.textContent).toContain('Please try again in a moment.');
     expect(screen.getByTestId('btn-insights-retry').textContent).toContain('Try again');
     expect(errorBlock.textContent).not.toMatch(/Try again in ~/);
-  });
-
-  it('renders "Try again in ~N min." on 429 with retry_after_seconds', () => {
-    const axiosError = {
-      isAxiosError: true,
-      response: { data: { error: 'rate_limit_exceeded', retry_after_seconds: 180 } },
-    } as InsightsAxiosError;
-    render(
-      <EndgameInsightsBlock
-        appliedFilters={BASE_FILTERS}
-        rendered={null}
-        mutation={makeMutation({ isError: true, error: axiosError })}
-        onGenerate={vi.fn()}
-      />,
-    );
-    // 180 / 60 = 3 min
-    expect(screen.getByTestId('insights-error').textContent).toContain('Try again in ~3 min.');
-  });
-
-  it('minute rounding: 0s → 1 min; 45s → 1 min; 60s → 1 min; 61s → 2 min', () => {
-    for (const [seconds, expected] of [
-      [0, 1],
-      [45, 1],
-      [60, 1],
-      [61, 2],
-    ] as const) {
-      const axiosError = {
-        isAxiosError: true,
-        response: { data: { error: 'rate_limit_exceeded', retry_after_seconds: seconds } },
-      } as InsightsAxiosError;
-      const { unmount } = render(
-        <EndgameInsightsBlock
-          appliedFilters={BASE_FILTERS}
-          rendered={null}
-            mutation={makeMutation({ isError: true, error: axiosError })}
-          onGenerate={vi.fn()}
-        />,
-      );
-      expect(screen.getByTestId('insights-error').textContent).toContain(
-        `Try again in ~${expected} min.`,
-      );
-      unmount();
-    }
   });
 });

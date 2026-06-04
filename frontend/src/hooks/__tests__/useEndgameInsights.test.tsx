@@ -59,7 +59,6 @@ describe('useEndgameInsights', () => {
           prompt_version: 'endgame_v1',
         },
         status: 'fresh',
-        stale_filters: null,
       },
     });
 
@@ -91,7 +90,6 @@ describe('useEndgameInsights', () => {
       data: {
         report: { overview: '', sections: [], model_used: 'm', prompt_version: 'v' },
         status: 'fresh',
-        stale_filters: null,
       },
     });
 
@@ -114,7 +112,6 @@ describe('useEndgameInsights', () => {
         prompt_version: 'endgame_v22',
       },
       status: 'cache_hit',
-      stale_filters: null,
     };
     vi.mocked(apiClient.get).mockResolvedValue({ data: cached });
 
@@ -159,12 +156,12 @@ describe('useEndgameInsights', () => {
     expect(result.current.isError).toBe(false);
   });
 
-  it('surfaces AxiosError on mutation failure', async () => {
-    const axiosError = Object.assign(new Error('429'), {
+  it('surfaces AxiosError on mutation failure (502 provider_error)', async () => {
+    const axiosError = Object.assign(new Error('502'), {
       isAxiosError: true,
       response: {
-        status: 429,
-        data: { error: 'rate_limit_exceeded', retry_after_seconds: 180 },
+        status: 502,
+        data: { error: 'provider_error' },
       },
     });
     vi.mocked(apiClient.post).mockRejectedValue(axiosError);

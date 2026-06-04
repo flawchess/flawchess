@@ -88,20 +88,15 @@ SectionId = Literal[
 ]
 
 # Discriminator on EndgameInsightsResponse. Frontend TanStack Query branches
-# on this value (Phase 66) — "cache_hit" vs "fresh" vs "stale_rate_limited"
-# drive different banner states.
-InsightsStatus = Literal["fresh", "cache_hit", "stale_rate_limited"]
+# on this value (Phase 66) — "cache_hit" vs "fresh" drive different banner states.
+InsightsStatus = Literal["fresh", "cache_hit"]
 
 # Error codes on InsightsErrorResponse. Stable machine-readable prefixes,
 # NOT user-facing copy — Phase 66 frontend owns the retry-message mapping.
-# "rate_limit_exceeded" fires only when BOTH tier-1 cache lookup AND tier-2
-# get_latest_report_for_user return None (D-11); "provider_error" covers
-# ModelAPIError subclasses; "validation_failure" covers
+# "provider_error" covers ModelAPIError subclasses; "validation_failure" covers
 # UnexpectedModelBehavior after output_retries exhaust; "config_error" is
 # defensive (should never reach clients — lifespan aborts first).
-InsightsError = Literal[
-    "rate_limit_exceeded", "provider_error", "validation_failure", "config_error"
-]
+InsightsError = Literal["provider_error", "validation_failure", "config_error"]
 
 
 # ---------------------------------------------------------------------------
@@ -480,26 +475,23 @@ class EndgameInsightsReport(BaseModel):
 class EndgameInsightsResponse(BaseModel):
     """HTTP 200 success envelope.
 
-    `stale_filters` is populated ONLY when `status == "stale_rate_limited"`
-    AND the fallback log's filter_context differs from the current request's
-    FilterContext (D-14). Phase 66 reads this to show a "showing stale
-    results for <filters>" banner.
+    `status` is one of "fresh" (new LLM call) or "cache_hit" (served from
+    the tier-1 structural cache).
     """
 
     report: EndgameInsightsReport
     status: InsightsStatus
-    stale_filters: FilterContext | None = None
 
 
 class InsightsErrorResponse(BaseModel):
-    """HTTP 429 / 502 / 503 error envelope. Frontend owns user-facing copy.
+    """HTTP 502 error envelope. Frontend owns user-facing copy.
 
-    `retry_after_seconds` populated ONLY for 429 (computed from oldest miss
-    in the rate-limit window, D-15 + RESEARCH.md §4). Null for 502/503.
+    Carries only the `error` code; "provider_error" covers ModelAPIError
+    subclasses; "validation_failure" covers UnexpectedModelBehavior after
+    output_retries exhaust.
     """
 
     error: InsightsError
-    retry_after_seconds: int | None = None
 
 
 # Update SubsectionFinding to resolve the forward reference to TimePoint.

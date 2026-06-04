@@ -1,5 +1,5 @@
 import type { UseMutationResult } from '@tanstack/react-query';
-import { BarChart3, BookOpen, Info, Lightbulb, ListChecks, Loader2, Sparkles, UserCircle2 } from 'lucide-react';
+import { BarChart3, BookOpen, Lightbulb, ListChecks, Loader2, Sparkles, Target, UserCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip } from '@/components/ui/tooltip';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -20,6 +20,10 @@ const FLAG_INSIGHTS_USED = 'insights_used';
 // and clickable rather than emitted as dead plain text by the model.
 const ENDGAME_STUDY_URL = 'https://lichess.org/study/mtiahamI';
 
+// Lichess endgame puzzle trainer, shown alongside the study link for hands-on
+// practice. Kept out of the LLM payload for the same reason as the study URL.
+const ENDGAME_PUZZLES_URL = 'https://lichess.org/training/endgame';
+
 /**
  * Top-of-tab Insights card.
  *
@@ -38,10 +42,6 @@ export interface EndgameInsightsBlockProps {
   rendered: EndgameInsightsResponse | null;
   mutation: UseMutationResult<EndgameInsightsResponse, InsightsAxiosError, FilterState>;
   onGenerate: () => void;
-}
-
-function roundMinutes(retryAfterSeconds: number): number {
-  return Math.max(1, Math.ceil(retryAfterSeconds / 60));
 }
 
 /**
@@ -94,14 +94,6 @@ export function EndgameInsightsBlock({
     onGenerate();
   };
 
-  const errorBody = mutation.error?.response?.data;
-  const is429 = errorBody?.error === 'rate_limit_exceeded';
-  const errorRetrySeconds = is429 ? errorBody?.retry_after_seconds ?? null : null;
-  const errorRetryMinutes =
-    errorRetrySeconds !== null ? roundMinutes(errorRetrySeconds) : null;
-
-  const isStale = hasRendered && rendered.status === 'stale_rate_limited';
-
   return (
     <Accordion type="single" collapsible defaultValue="insights">
       <AccordionItem
@@ -123,7 +115,6 @@ export function EndgameInsightsBlock({
         <AccordionContent className="p-4">
           {isError ? (
             <ErrorState
-              retryMinutes={errorRetryMinutes}
               onRetry={handleGenerateClick}
             />
           ) : isPending && !hasRendered ? (
@@ -131,7 +122,6 @@ export function EndgameInsightsBlock({
           ) : hasRendered ? (
             <RenderedState
               response={rendered}
-              isStale={isStale}
               isPending={isPending}
               blockedReason={blockedReason}
               onRegenerate={handleGenerateClick}
@@ -236,13 +226,11 @@ function SkeletonBlock() {
 
 function RenderedState({
   response,
-  isStale,
   isPending,
   blockedReason,
   onRegenerate,
 }: {
   response: EndgameInsightsResponse;
-  isStale: boolean;
   isPending: boolean;
   blockedReason: string | null;
   onRegenerate: () => void;
@@ -251,26 +239,11 @@ function RenderedState({
   const showOverview = overview !== '';
   const showPlayerProfile = playerProfile !== '';
   const showRecommendations = recommendations.length > 0;
-  // WR-03 (phase 68 review): the 200 envelope does not include retry_after_seconds,
-  // so staleMinutes was always null. Dropped the dead "~N min" branch and kept
-  // the generic copy to match current behavior.
-  const staleCopy =
-    "Showing your most recent insights. You've hit the hourly limit; try again in a moment.";
 
   const disabled = isPending || blockedReason !== null;
 
   return (
     <>
-      {isStale && (
-        <div
-          data-testid="insights-stale-banner"
-          role="status"
-          className="flex items-center gap-2 text-xs text-muted-foreground mb-3"
-        >
-          <Info className="size-3.5 shrink-0" aria-hidden="true" />
-          <span>{staleCopy}</span>
-        </div>
-      )}
       <div className="space-y-5 mb-3">
         {showPlayerProfile && (
           <InsightsSection
@@ -309,20 +282,37 @@ function RenderedState({
                 <li key={idx}>{rec}</li>
               ))}
             </ul>
-            <div className="mt-3 flex items-start gap-2 border-t border-border/60 pt-3 text-sm text-muted-foreground">
-              <BookOpen className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <span>
-                Study endgame technique by level (Basic to Advanced):{' '}
-                <a
-                  href={ENDGAME_STUDY_URL}
-                  className="text-primary underline-offset-4 hover:underline"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  data-testid="insights-rec-endgame-study-link"
-                >
-                  GM Noël Studer's endgame study
-                </a>
-              </span>
+            <div className="mt-3 space-y-2 border-t border-border/60 pt-3 text-sm text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <BookOpen className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>
+                  Study endgame technique by level (Basic to Advanced):{' '}
+                  <a
+                    href={ENDGAME_STUDY_URL}
+                    className="text-primary underline-offset-4 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="insights-rec-endgame-study-link"
+                  >
+                    GM Noël Studer's endgame study
+                  </a>
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Target className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>
+                  Practice endgame puzzles:{' '}
+                  <a
+                    href={ENDGAME_PUZZLES_URL}
+                    className="text-primary underline-offset-4 hover:underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="insights-rec-endgame-puzzles-link"
+                  >
+                    Lichess endgame puzzles
+                  </a>
+                </span>
+              </div>
             </div>
           </InsightsSection>
         )}
@@ -378,10 +368,8 @@ function InsightsSection({
 }
 
 function ErrorState({
-  retryMinutes,
   onRetry,
 }: {
-  retryMinutes: number | null;
   onRetry: () => void;
 }) {
   return (
@@ -392,11 +380,6 @@ function ErrorState({
       <p className="text-sm text-muted-foreground">
         Please try again in a moment.
       </p>
-      {retryMinutes !== null && (
-        <p className="text-sm text-muted-foreground">
-          Try again in ~{retryMinutes} min.
-        </p>
-      )}
       <Button
         variant="brand-outline"
         onClick={onRetry}

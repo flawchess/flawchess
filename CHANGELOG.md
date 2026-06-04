@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Changed
+
+- Endgame insights are no longer rate-limited; report caching already keeps the number of fresh AI calls low, so the old hourly limit only got in the way.
+
 ## [v1.23] LLM Endgame-Insights Statistical-Reasoning Rework — 2026-06-03
 
 Reworked the AI endgame report so it reasons over the same statistical signals the page shows. The model now references your peer-relative percentile rank (with cohort framing), narrates time pressure, and the recommendations were sharpened with chess-GM feedback. No new cards: this is a payload + prompt change.

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { HelpCircle } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 // Phase 85.1 Plan 03 (IN-02): import the canonical ConfidenceLevel type from
 // scoreConfidence instead of re-declaring it locally.
@@ -100,7 +100,7 @@ export function AchievableScorePopover({
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <HelpCircle className="h-4 w-4" />
+          <Search className="h-4 w-4" />
         </span>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>

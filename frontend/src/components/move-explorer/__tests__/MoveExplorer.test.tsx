@@ -511,7 +511,7 @@ describe('Phase 77 — Troll-opening inline icon', () => {
 // ---------------------------------------------------------------------------
 
 describe('260508-r61 — Score cell info-icon popover', () => {
-  it('renders the HelpCircle button with the expected testid for every move row', () => {
+  it('renders the Search (score-info) button with the expected testid for every move row', () => {
     render(
       <MoveExplorer
         moves={makeMoves()}

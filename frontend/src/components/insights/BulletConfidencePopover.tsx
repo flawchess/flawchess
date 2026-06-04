@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import { HelpCircle } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EvalConfidenceTooltip } from './EvalConfidenceTooltip';
 
@@ -26,8 +26,8 @@ interface BulletConfidencePopoverProps {
 }
 
 // Hover- and tap-activated popover for the MG-entry bullet chart confidence
-// details. Trigger is a HelpCircle (?) icon rather than the bullet itself so
-// the bullet stays interaction-free.
+// details. Trigger is a Search (magnifying-glass) icon rather than the bullet
+// itself so the bullet stays interaction-free.
 export function BulletConfidencePopover({
   level,
   pValue,
@@ -67,7 +67,7 @@ export function BulletConfidencePopover({
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
-          <HelpCircle className="h-4 w-4" />
+          <Search className="h-4 w-4" />
         </span>
       </PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
