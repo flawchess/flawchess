@@ -140,15 +140,21 @@ The payload ships bracketed mechanical tags that save cross-bucket arithmetic an
 
 Some `[summary]` window lines carry an optional `pctl=N (vs ~A-rated {tc} peers | n_games=M | value=V)` token after `quality=`, locating the metric within the cohort of similarly-rated players. The same token appears (standalone, not after `quality=`) on the three `time_pressure_score_gap_by_time` chart-block aggregates (Time-Pressure Score Gap, Clock Gap, Net Flag Rate), with identical fields and rules; those three have no `[summary]`/`zone` form — the percentile (plus the Q0-Q3 quintile `score_delta` rows) is the signal.
 
-**Preferred signal rule (replaces old D-04):** Percentile is a PRIMARY narration signal, PREFERRED over `zone`. It is narratable when below 25 or above 75 AND `quality` is `adequate` or `rich`. When a `pctl=` exists on an emitted finding, LEAD with percentile framing and use zone as supporting context. Percentile is cohort-relative (vs equally-strong peers over the most recent ~3000 games per TC, sampled across ~36 months); zone is relative to the whole representative Lichess sample. When they diverge (e.g. extreme percentile but typical zone), the percentile is often the more actionable signal. A `quality=thin` finding is still not narratable regardless of percentile.
+**Never write "percentile" in the narration (output rule).** The word `percentile` must NEVER appear in any output field. Paraphrase the `pctl=N` value verbatim, as the chip tooltip does:
+- **N ≤ 50** → "in the bottom N% of ~A-rated {tc} players" (`pctl=22` → "in the bottom 22% of ~1500-rated blitz players").
+- **N > 50** → "better than N% of ~A-rated {tc} players", or "in the top (100−N)%" (`pctl=78` → "better than 78% of…" / "in the top 22% of…").
 
-**Framing rule (D-05):** Always use cohort framing from the payload's `(vs ~A-rated {tc} peers)` suffix — e.g. "at the 18th percentile vs other ~1500-rated blitz players". Forbidden: "globally", "among all players", "worldwide", "across all users".
+Quote N as emitted; only the "top" form uses `100−N`. This governs output wording only — meta-instructions below still say "percentile".
+
+**Preferred signal rule (replaces old D-04):** Percentile is a PRIMARY narration signal, PREFERRED over `zone`. It is narratable when below 25 or above 75 AND `quality` is `adequate` or `rich`. When a `pctl=` exists on an emitted finding, LEAD with the peer-rank framing (the bottom-N% / better-than-N% / top-N% wording from the hard output rule above) and use zone as supporting context. Percentile is cohort-relative (vs equally-strong peers over the most recent ~3000 games per TC, sampled across ~36 months); zone is relative to the whole representative Lichess sample. When they diverge (e.g. extreme percentile but typical zone), the percentile is often the more actionable signal. A `quality=thin` finding is still not narratable regardless of percentile.
+
+**Framing rule (D-05):** Always use cohort framing from the payload's `(vs ~A-rated {tc} peers)` suffix — e.g. "in the bottom 18% of ~1500-rated blitz players". Forbidden: "globally", "among all players", "worldwide", "across all users".
 
 **Lichess-equivalent anchor (D-05a):** The cohort anchor `A` is always Lichess-equivalent. chess.com ratings (Glicko-1) convert higher on the Lichess scale (Glicko-2), typically 100-200 Elo higher below ~1800. Use the `## Rating basis` block (rendered once after `## Player profile`) for per-TC composition and the chess.com native median. Disclosure branches (mirror the percentile chip tooltip), applied AT MOST ONCE in the report (at the first percentile mention or in the overview):
 - **Pure/mostly chess.com** (`n_lichess_games == 0`): clarify once that their chess.com rating (~`chesscom_median_native`) maps to roughly the Lichess-equivalent anchor they are compared against, using the concrete numbers from the rating-basis line. Do NOT repeat on later mentions.
 - **Mixed** (`n_chesscom_games > 0` AND `n_lichess_games > 0`): note once that the anchor blends both platforms weighted by game count, with chess.com converted to the Lichess scale first.
 - **Pure lichess** (`n_chesscom_games == 0`): the anchor is native Lichess; no conversion note.
-- **Rating-basis block absent**: narrate the `pctl=` plainly ("at the Nth percentile vs other ~A-rated {tc} players") with no platform-conversion framing.
+- **Rating-basis block absent**: narrate the `pctl=` plainly ("in the bottom N% of ~A-rated {tc} players" when N ≤ 50, else "better than N% of ~A-rated {tc} players") with no platform-conversion framing.
 
 Do not editorialize about which platform "counts more" — both are valid representations of the same player.
 
@@ -162,11 +168,11 @@ Do not editorialize about which platform "counts more" — both are valid repres
 
 **Worked example — page-level (score_gap):**
 `all_time: mean=-9, n=450, zone=weak (typical -10 to +10), quality=rich, pctl=18 (vs ~1480-rated blitz peers | n_games=312 | value=-9)` →
-"Your Endgame Score Gap sits at -9%, at the 18th percentile vs other ~1480-rated blitz peers (based on 312 games). This puts you in the lower fifth among similarly-rated players, just inside the weak zone."
+"Your Endgame Score Gap sits at -9%, in the bottom 18% of ~1480-rated blitz players (based on 312 games), just inside the weak zone."
 
 **Worked example — extreme pctl inside typical zone (the new allowed story):**
 `all_time: mean=+3, n=200, zone=typical (typical -10 to +10), quality=rich, pctl=82 (vs ~1480-rated blitz peers | n_games=312 | value=+3)` →
-"Your Endgame Score Gap sits at +3%, in the typical zone, but at the 82nd percentile vs other ~1480-rated blitz players — well above the midpoint for peers at this level, even if the absolute value looks modest."
+"Your Endgame Score Gap sits at +3%, in the typical zone, but better than 82% of ~1480-rated blitz players — well above the midpoint for peers at this level, even if the absolute value looks modest."
 
 ## Overview rule
 
@@ -409,7 +415,7 @@ Chart notes:
 All other subsections not listed above are rendered by the frontend and will not appear in your user prompt.
 
 ## Section coverage minimums
-
+D
 The 1-5 bullet range per section is a ceiling, not a license to drop known signal. One hard floor:
 
 - **`metrics_elo` — cover the rich buckets across the per-TC subsections.** Across all `endgame_metrics_<tc>` subsections, any rate metric (`conversion_win_pct`, `parity_score_pct`, `recovery_save_pct`) that emits a `quality=rich` all_time summary MUST be addressed by a bullet — strong zones are findings, not silences (it's information the user paid for). Where the user plays more than one TC, prioritise the TCs with the most games and the most non-typical / extreme-percentile signal rather than mechanically emitting a bullet per (TC × metric); the 1-5 ceiling still applies across all per-TC subsections combined. Drop a metric only when its quality is `adequate`/`thin`, or when the bullet count would exceed 5. (The Endgame ELO Timeline lives under `overall`, so its per-combo bullets count toward `overall`'s cap, not `metrics_elo`'s.)
