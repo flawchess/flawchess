@@ -1,33 +1,32 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.23
-milestone_name: LLM Endgame-Insights Statistical-Reasoning Rework
-status: shipped
-last_updated: "2026-06-03"
-last_activity: 2026-06-03 -- v1.23 DEPLOYED to production (server at 1165f6a9, site HTTP 200). Phases 102 + 103 shipped; milestone archived, CHANGELOG promoted, tagged v1.23, GitHub release created. Release PR #176 (main → production).
+milestone: v1.24
+milestone_name: Library Page
+status: roadmapped
+last_updated: "2026-06-05T00:00:00.000Z"
+last_activity: 2026-06-05
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.23 LLM Endgame-Insights Statistical-Reasoning Rework — SHIPPED 2026-06-03
-Phases: 102 (LLM rework, LLM-01..07, HUMAN-UAT signed off 2026-06-02) + 103 (GM-feedback prompt refinements + ~35% condense, endgame_v44, unplanned follow-on)
-Status: DEPLOYED. Release PR #176 (main → production) squash-merged (1165f6a9); bin/deploy.sh verified server at 1165f6a9, flawchess.com HTTP 200, backend healthy. Milestone archived; CHANGELOG promoted; tagged v1.23 (at b57bf4b5) + GitHub release. During release CI: renamed CI test-DB env var to DATABASE_URL_TEST, forward-ported #175 into main (-s ours), and fixed two serial-CI regressions from the 4f57dc21 env-var refactor (benchmark-import global-settings poisoning + backfill dev-target resolution).
-Next: No active milestone. Next feature work via /gsd-new-milestone. SEED-034 (Recommendations-section rework) and SEED-030 Track A remain candidates.
-Last activity: 2026-06-03 -- v1.23 deployed to production and verified live.
+Phase: 104 — Library Page Shell + Import & Overview Subtab Migration (next to plan)
+Plan: — (roadmap created; awaiting `/gsd-plan-phase 104`)
+Status: Roadmapped — Phase 104 defined, not yet planned
+Last activity: 2026-06-05 — v1.24 roadmap created (single phase, LIB-01..09)
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-31 after v1.21 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.22 Maintenance — Test Isolation & Frontend Major Upgrades (Phases 100, 101, sequential). Phase 100 (SEED-031): per-run/per-xdist-worker test DB cloned from a migrated template, retiring the session-start `TRUNCATE … CASCADE` lock to unblock concurrent agent runs + `pytest -n auto`. Phase 101 (SEED-032): bump the 11 frontend deps a major behind, one cluster at a time low→high risk (lucide → Vite 8 → jsdom 29 → eslint 10 → typescript 6 → recharts 3), recharts gets visual UAT. Backend has no outstanding major bumps. LLM Statistical Reasoning (LLM-01..07) deprioritized to backlog Phase 999.7. v1.21 just shipped: per-TC Endgame Metrics cards (Phase 97), collapsible per-TC Endgame Type Breakdown cards (Phase 98), per-TC Conv/Parity/Recov percentile chips (Phase 99), and cohort-CDF demoted to a DB table (Phase 99.1). Prod backfill of the 12 new rate-percentile metrics is deferred to deploy.
+Current focus: v1.24 Library Page (single phase — Phase 104). First step of SEED-036: introduce the **Library** top-level page with deep-linkable `<Tabs variant="brand">` subtabs and fold the existing Import and Overview pages in as subtabs (each its own tsx, mirroring Openings). Migrate `/import` → `/library/import` and `/overview` → `/library/overview` with redirects; top-level nav drops to Library · Openings · Endgames (+ Admin); the `totalGames === 0` notification dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile + browser-automation parity. **Pure frontend restructure + route migration — no backend endpoints, no schema changes.** The rest of SEED-036 (Games subtab, Analysis viewer, mistake-detection backend, mistake-type filter, mistake-stats panel, best-move endpoint) is deliberately NOT roadmapped — it stays in `.planning/seeds/SEED-036-library-page-milestone.md`. Requirements LIB-01..09 all map to Phase 104. Next: `/gsd-plan-phase 104`.
 
 ## Milestone Progress
 
@@ -139,6 +138,7 @@ Carried forward from v1.11 close (still relevant):
 
 ### Roadmap Evolution
 
+- 2026-06-05: **v1.24 Library Page roadmap created — single phase (Phase 104).** First step of SEED-036, deliberately scoped by the user to ONE cohesive frontend phase: a new top-level **Library** page using the existing Openings-style URL-routed `<Tabs variant="brand">` deep-linkable subtab pattern, with the existing Import and Overview pages folded in as subtabs (each its own tsx). Migrate `/import` → `/library/import` and `/overview` → `/library/overview` with redirects; top-level nav drops to Library · Openings · Endgames (+ Admin); `totalGames === 0` dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview, Home gameless redirect → `/library/import`); subtab-level gating (Library + both subtabs always open); mobile + browser-automation parity. Pure frontend restructure + route migration — no backend endpoints, no schema changes. All 9 requirements (LIB-01..09) map to Phase 104; coverage 9/9, no orphans. The rest of the SEED-036 vision (Games subtab, Analysis viewer, mistake-detection backend, mistake-type filter, mistake-stats panel, best-move endpoint) is **deliberately NOT roadmapped** — captured under v2 Requirements / Out of Scope in REQUIREMENTS.md and in `.planning/seeds/SEED-036-library-page-milestone.md`. Phase numbering continues from v1.23 (ended at Phase 103). Next: `/gsd-plan-phase 104`.
 - 2026-06-03: **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework SHIPPED** (Phases 102 + 103, 3 plans, 37 commits since v1.22). Phase 102 (LLM-01..07): cohort-framed percentile annotations + time-pressure narration wired into the endgame-insights payload, prompt taught to reason over the v1.17–v1.21 metric set under the zone gate (p-values + CI bounds OUT), relaxed overview cap, vocabulary audit, `endgame_v35` → `endgame_v43`, HUMAN-UAT signed off 2026-06-02. Phase 103 (unplanned follow-on, direct commits): three GM-feedback recommendation-quality fixes + GM Noël Studer study link + ~35% prompt condense, `endgame_v44`. Archived to milestones/v1.23-ROADMAP.md + v1.23-REQUIREMENTS.md; REQUIREMENTS.md removed (fresh for next milestone); CHANGELOG promoted; tagged v1.23. Deferred at close: SEED-030 Track A (module splitting), plus the dormant seeds/long-range todos carried since v1.22 — none v1.23-scoped.
 - 2026-06-03: Phase 103 added: Some endgame report LLM prompt refinements (shipped same day under v1.23)
 - 2026-05-31: **v1.22 repurposed from "LLM Statistical Reasoning" to "Maintenance — Test Isolation & Frontend Major Upgrades."** New v1.22 holds Phase 100 (Isolated Test DB Per Run, SEED-031) + Phase 101 (Frontend Major Dependency Upgrades, SEED-032), executed sequentially. The previously-planned LLM Endgame-Insights Statistical-Reasoning Rework (the sole v1.22 phase, carried through renumbers 95 → 97 → 98 → 100) was **deprioritized to backlog Phase 999.7** intact rather than renumbered inline; LLM-01..07 stay pending and the REQUIREMENTS.md traceability repoints to 999.7. No v1.23 placeholder created (user chose "backlog only" — the next feature milestone gets named when started). Note: SEED-032 itself recommended *not* cutting a release for tooling upgrades; making this a tagged maintenance milestone is a deliberate override (recharts 3 is user-facing and worth a release). Source: user `/gsd-explore` restructure request.
