@@ -189,6 +189,33 @@ Above the games list, over the filtered (analyzed-only) set:
 - Analyzed-game count N, shown explicitly as the denominator.
 - Keep WDL bar if cheap, but the mistake metrics are now the centerpiece (the original seed's "WDL-bar-only, no conversion%" stance is superseded).
 
+### Filter placement + tag presentation — DECIDED (2026-06-05)
+
+**Filter placement (which surface owns the rich filters):**
+- **Flaws subtab owns the full severity × tag multi-select** (severity + each tag dimension as separate multi-option filters). Filters there target the row entity (row = one flaw), so they are exact and unambiguous.
+- **Games subtab keeps only the count-level severity filter** ("min blunders / mistakes", already specified). It does **NOT** get the attribution-tag filters. Two reasons: (a) it would re-blur the Games-vs-Flaws split (Games = browse games, Flaws = slice flaws); (b) **cross-row-match ambiguity** — on a game (which *contains* flaws), independent `EXISTS` filters for `severity=blunder` AND `tag=time-pressure` can match a game where those predicates hold on *different* flaws, not the same one. Users read "time-pressure blunder"; naive AND-of-EXISTS doesn't deliver that. **Planner note:** if any tag-aware game filter is ever added, it MUST be a single *correlated* EXISTS (one flaw satisfying all predicates), with UI copy saying "contains a flaw matching all of these." Flaws has no such issue.
+
+**Three-tier tag presentation** (each tier shows tags at a different resolution):
+1. **Game card = curated, skimmable summary.** Analyzed games show **B/M/I severity counts** (non-analyzed → the explicit "no engine analysis" state); plus a *small* set of **aggregated, game-level-deduped tag chips** that **deep-link into a pre-filtered Flaws view** (game + tag). A chip means "≥1 blunder/mistake here carries this tag," shown once — *not* one chip per flaw.
+2. **Mistake-stats panel = full tag distribution** (the "tag statistics"): tempo split (e.g. % of blunders under time pressure), result-changing rate, **phase distribution**, trend over time. Aggregates live here, not on cards.
+3. **Flaws subtab = exact per-flaw filtering** (full multi-select, per above).
+
+**Card-chip curation rules:**
+- **Aggregate + dedupe to the game level** (one chip per tag type present, not per flaw).
+- **Exclude inaccuracy-level tags AND `phase`** from card chips — inaccuracies are noisy/low-value, and `phase` is uniform per game (every game spans all phases), so it's a *stats-panel dimension*, not a card badge.
+- **Card-worthy (discriminating) tags only:** `result-changing`, the tempo pair (`time-pressure` / `hasty`), `miss` / `unpunished`, `from-winning`.
+- **Accepted caveat:** aggregated chips lose the severity↔tag association (a "2 blunders" count + a `time-pressure` chip doesn't prove the *blunder* was the time-pressure one). Fine because the chip deep-links to Flaws where the real association is visible — but the card must not *imply* the association.
+
+**Color-by-family, not per-tag (DECIDED).** 8 distinct tag colors aren't skimmable and would wrap badly on mobile; color is assigned by **tag family** (~4 families), with icon/short label distinguishing within a family. Families:
+- **severity** (B/M/I) — existing severity colors
+- **tempo** (`time-pressure` / `hasty` / `knowledge-gap`) — one accent
+- **opportunity** (`miss` / `unpunished`) — one accent
+- **impact** (`result-changing` / `from-winning`) — one accent
+
+All family colors are semantic constants in `frontend/src/lib/theme.ts` (per project rules; no hard-coded semantic colors).
+
+**Deferred to a UI sketch:** exact card layout — chip count/cap, placement, mobile wrapping — is visual-design territory for a `/gsd-sketch` at the UI phase ("analyzed game card with severity counts + tag chips, desktop + mobile"), not pinned down in prose here.
+
 ### Analysis subtab — per-mistake viewer
 
 Full page width. Hosts:
@@ -272,6 +299,13 @@ Likely 4-6 phases:
 - `frontend/src/hooks/useEvalCoverage.ts` — existing eval-coverage progress plumbing.
 
 ## Source / decision log
+
+**2026-06-05 filter placement + tag presentation (user + Claude, `/gsd-explore`):**
+- **Rich severity × tag filtering lives on Flaws only** (row = flaw → exact). **Games keeps the count-level severity filter only**, not the tag filters — avoids the Games/Flaws blur and the **cross-row-match ambiguity** (independent EXISTS on a game can match severity and tag on *different* flaws; any future tag-aware game filter must be a single correlated EXISTS).
+- **Three-tier tag presentation:** game card = curated B/M/I counts + aggregated/deduped tag chips that deep-link to a pre-filtered Flaws view; mistake-stats panel = full tag distribution/statistics (tempo split, result-changing rate, phase distribution, trend); Flaws = exact per-flaw filtering.
+- **Card-chip curation:** aggregate+dedupe to game level; exclude inaccuracy-level tags AND `phase` (phase is a stats-panel dimension); card-worthy = `result-changing`, tempo pair, `miss`/`unpunished`, `from-winning`. Aggregated chips lose the severity↔tag link (resolved by the deep-link).
+- **Color-by-family, not per-tag** (8 colors aren't skimmable): families = severity / tempo / opportunity / impact, colors as semantic `theme.ts` constants; icon/label distinguishes within a family.
+- **Deferred:** exact card layout → `/gsd-sketch` at the UI phase.
 
 **2026-06-05 extended attribution tag set (user + Claude, `/gsd-explore`, grounded in chess.com/lichess criticism research):**
 - Added six attribution tags beyond severity, all in the cheap data quadrant: **`time-pressure`**, **`hasty`** (unforced rush), **`knowledge-gap`** (slow-and-still-wrong) — a mutually-exclusive **tempo dimension** — plus **`unpunished`** ("got away with it"), **`result-changing`** (flipped the game outcome), and **`phase`**. With the earlier `miss` + `from-winning`, the full set is eight tags.
