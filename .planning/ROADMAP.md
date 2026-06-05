@@ -26,15 +26,16 @@
 - ✅ **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99, 99.1 (shipped 2026-05-31; PRs #160, #163/#164, #167, #168) — see [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md)
 - ✅ **v1.22 Maintenance — Test Isolation & Frontend Major Upgrades** — Phases 100, 101 (shipped 2026-05-31) — see [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md)
 - ✅ **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phases 102, 103 (shipped 2026-06-03) — see [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md)
-- 🚧 **v1.24 Library Page** — Phase 104 (in progress)
+- 🚧 **v1.24 Library Page** — Phases 104, 105 (in progress)
 
 ## Phases
 
-### 🚧 v1.24 Library Page (Phase 104) — IN PROGRESS
+### 🚧 v1.24 Library Page (Phases 104–105) — IN PROGRESS
 
-First step of SEED-036: introduce the **Library** page as a top-level nav destination with URL-routed subtabs, folding the existing **Import** and **Overview** pages in as subtabs (each its own tsx, mirroring the Openings page structure). Pure frontend restructure + route migration — no backend endpoints, no schema changes. The rest of the SEED-036 vision (Games subtab, Analysis viewer, mistake-detection backend, best-move endpoint) is **deliberately not roadmapped** and lives in `.planning/seeds/SEED-036-library-page-milestone.md`.
+SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-level nav + URL-routed subtabs, with Import and Overview folded in) — a pure frontend restructure. **Phase 105** extends into the analysis backend: the on-the-fly mistake-detection + classification + tagging service the analysis surfaces consume. The remaining surfaces (Games subtab, Flaws subtab, Analysis detail viewer, mistake-stats panel, best-move endpoint) stay specified in `.planning/seeds/SEED-036-library-page-milestone.md` and will be roadmapped as subsequent phases.
 
 - [x] **Phase 104: Library Page Shell + Import & Overview Subtab Migration** — new `/library` route with deep-linkable `<Tabs variant="brand">` subtabs; migrate `/import` → `/library/import` and `/overview` → `/library/overview` (each its own tsx, with redirects); top-level nav drops to Library · Openings · Endgames (+ Admin); `totalGames === 0` dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile parity + browser-automation conventions (LIB-01..09) (completed 2026-06-05)
+- [ ] **Phase 105: Mistake-Detection + Classification + Tagging Service (on-the-fly)** — server-side `mistakes` service derives every flaw in a Lichess-analyzed game on-the-fly from stored per-ply `eval_cp`/`eval_mate` — severity (Lichess-aligned 0.05/0.10/0.15 expected-score-drop thresholds) + eight attribution tags (miss, unpunished, from-winning, result-changing, time-pressure, hasty, knowledge-gap, phase) — emitting typed per-flaw objects for the Games/Flaws/Analysis surfaces and SEED-037 Train; no materialization, no schema change, no UI (LIBG-02, LIBG-06, LIBG-07)
 
 #### Phase 104: Library Page Shell + Import & Overview Subtab Migration
 
@@ -59,6 +60,22 @@ First step of SEED-036: introduce the **Library** page as a top-level nav destin
 - [x] 104-02-PLAN.md — Rewire App.tsx nav/routes/redirects/notification-dot at the Library shell and sweep internal /import links to /library/import
 
 **UI hint**: yes
+
+#### Phase 105: Mistake-Detection + Classification + Tagging Service (on-the-fly)
+
+**Goal**: A server-side `mistakes` service derives, on-the-fly from stored per-ply evals, every flaw in a Lichess-analyzed game — severity (inaccuracy / mistake / blunder) plus eight attribution tags — and returns typed per-flaw objects ready for the Games / Flaws / Analysis surfaces and SEED-037 Train to consume. No materialization, no schema change, no UI.
+**Depends on**: Stored per-ply `eval_cp` / `eval_mate`, clocks, `phase`, `material_imbalance`, result + colors (Phases 28.1, 79, 80–83, 91); `app/services/eval_utils.py` (Lichess sigmoid + mate mapping). Independent of Phase 104.
+**Requirements**: LIBG-02, LIBG-06, LIBG-07
+**Success Criteria** (what must be TRUE):
+
+  1. For a Lichess-analyzed game, the service returns the user's flaws with severity computed from the expected-score drop using the Lichess-aligned halved thresholds (inaccuracy ≥ 0.05, mistake ≥ 0.10, blunder ≥ 0.15 on the [0,1] ES scale), from the mover's perspective; derived per-game counts sanity-check *close* (not identical) to the game-level `white_/black_blunders/mistakes/inaccuracies` columns (LIBG-02).
+  2. Each flaw carries its applicable attribution tags — `miss`, `unpunished`, `from-winning`, `result-changing`, `phase`, and exactly one tempo tag from {`time-pressure`, `hasty`, `knowledge-gap`} (derived from move-time + clock; initial thresholds documented and tunable) (LIBG-06).
+  3. Detection is on-the-fly from stored evals with **no new columns / table / migration / reimport**; chess.com and unanalyzed-lichess games return an explicit "no engine analysis" result, never a false zero-flaw game (LIBG-02, LIBG-07).
+  4. Mate evals are handled via Option B (±1000 cp-equivalent ES), not the hard 1.0/0.0 converter; cp↔mate transitions classify sensibly (LIBG-02).
+  5. Each flaw is a typed structured object (ply, FEN, side, severity, tags, eval before/after) documented as the contract for Games / Flaws / Analysis / Train; unit tests cover each severity band, each tag, mate handling, and the no-analysis path (LIBG-07).
+
+**Plans**: TBD (created by `/gsd-plan-phase`)
+**UI hint**: no
 
 *Earlier milestones below. v1.23 (Phases 102, 103) shipped 2026-06-03 — archived to [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md); see the collapsed block. v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md). v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
 

@@ -23,15 +23,17 @@ Requirements for this milestone. Each maps to the single roadmap phase.
 
 ## v2 Requirements
 
-Deferred to future phases of the SEED-036 Library milestone (not in this roadmap):
+SEED-036 Library — analysis half. **LIBG-02 / LIBG-06 / LIBG-07 are now in v1.24 scope (Phase 105)**; the rest stay deferred to subsequent phases (not yet roadmapped). Full design in `.planning/seeds/SEED-036-library-page-milestone.md`.
 
 ### Library — Games & Mistakes
 
-- **LIBG-01**: Games subtab — filterable game archive with mistake-type filter (eval-driven, Lichess-analyzed games only).
-- **LIBG-02**: Mistake-detection backend service deriving per-ply inaccuracy/mistake/blunder from stored `eval_cp` / `eval_mate`.
-- **LIBG-03**: Mistake-stats panel — counts/rates per mistake type, normalized, with trend over time.
-- **LIBG-04**: Analysis subtab — per-mistake viewer (board, stepper, move list, eval/material timeline, jump-to-mistake).
-- **LIBG-05**: On-demand single-position best-move endpoint (`POST /api/analysis/best-move`), rate-limited / concurrency-capped.
+- **LIBG-01**: Games subtab — filterable game archive (metadata + mistake-count filters), game cards with B/M/I counts + curated tag chips, mistake-stats panel with analyzed-% denominator. *(deferred — later phase)*
+- **LIBG-02** *(Phase 105)*: On-the-fly mistake-detection service deriving per-ply severity (inaccuracy/mistake/blunder) from stored `eval_cp` / `eval_mate`, using the Lichess-aligned expected-score-drop thresholds (0.05 / 0.10 / 0.15 on the [0,1] ES scale), from the mover's perspective; mate handled via the ±1000 cp-equivalent mapping (Option B); no materialization, no schema change; chess.com / unanalyzed games yield an explicit "no analysis" result.
+- **LIBG-03**: Mistake-stats panel — counts/rates per mistake type, normalized, with trend over time + analyzed-game (≥90%-coverage) denominator. *(deferred — later phase)*
+- **LIBG-04**: Analysis subtab — per-flaw viewer (board, stepper, move list, eval/material timeline, jump-to-mistake), deep-link detail route. *(deferred — later phase)*
+- **LIBG-05**: On-demand single-position best-move endpoint (`POST /api/analysis/best-move`), rate-limited / concurrency-capped. *(deferred — later phase)*
+- **LIBG-06** *(Phase 105)*: The detection service emits the eight attribution tags per flaw — `miss`, `unpunished`, `from-winning`, `result-changing`, `phase`, and exactly one tempo tag of {`time-pressure`, `hasty`, `knowledge-gap`} (move-time + clock derived; initial thresholds documented and tunable).
+- **LIBG-07** *(Phase 105)*: Each flaw is returned as a typed structured object (ply, FEN, side, severity, tags, eval before/after) documented as the consumption contract for the Games / Flaws / Analysis surfaces and SEED-037 Train, designed so materialization is a drop-in later optimization.
 
 ## Out of Scope
 
@@ -61,12 +63,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIB-07 | Phase 104 | Complete |
 | LIB-08 | Phase 104 | Complete |
 | LIB-09 | Phase 104 | Complete |
+| LIBG-02 | Phase 105 | In progress |
+| LIBG-06 | Phase 105 | In progress |
+| LIBG-07 | Phase 105 | In progress |
 
 **Coverage:**
 
-- v1 requirements: 9 total
-- Mapped to phases: 9
-- Unmapped: 0 ✓
+- v1 requirements: 9 total (all Complete)
+- v1.24 analysis-half (Phase 105): LIBG-02, LIBG-06, LIBG-07
+- Deferred (later phases): LIBG-01, LIBG-03, LIBG-04, LIBG-05
 
 ---
 *Requirements defined: 2026-06-05*
