@@ -3,7 +3,7 @@ id: SEED-012
 status: dormant
 planted: 2026-05-09
 planted_during: /gsd-explore session on offloading bulk Stockfish analysis to clients
-trigger_when: tactics features come up on roadmap (likely during or after Library milestone — see SEED-010), OR when a user explicitly requests "find missed tactics" / "filter games by missed forks", OR when client-side Stockfish prerequisites land (COOP/COEP audit + iOS Safari verification)
+trigger_when: tactics features come up on roadmap (likely during or after Library milestone — see SEED-036), OR when a user explicitly requests "find missed tactics" / "filter games by missed forks", OR when client-side Stockfish prerequisites land (COOP/COEP audit + iOS Safari verification)
 scope: milestone (multi-phase) — eval pipeline + storage + tactics classifier + UI surfaces
 ---
 
@@ -18,18 +18,18 @@ The unlock is **client-side bulk analysis via `stockfish.wasm`** (Lichess-mainta
 Once per-move evals exist for a user's library, an entire feature family lights up:
 
 1. **Tactics found/missed by type** — fork, pin, skewer, discovered attack, removing the defender. Needs a separate classifier on top of the engine output (see "Two-layer architecture" below).
-2. **Filter games by missed tactics** — "show me games where I missed a fork" — feeds directly into the SEED-010 Library page game-level filter dimension.
+2. **Filter games by missed tactics** — "show me games where I missed a fork" — feeds directly into the SEED-036 Library page game-level filter dimension.
 3. **Stats by tactic type** — "you find forks 70% of the time, skewers 35%" — natural Insights surface.
 4. **Move accuracy / ACPL** — Lichess-style accuracy %, blunder/mistake/inaccuracy classification per move, accuracy timeline.
 5. **Opening eval insights** — "your London is +0.4 objectively but you score 40% — execution problem, not preparation."
 6. **Time-pressure × accuracy correlation** — combined with existing clock data: "your accuracy collapses below 30s on the clock."
 
-This seed is **the enabler** for SEED-010's deferred tactical-pattern filters and for several Insights surfaces that currently have no data source.
+This seed is **the enabler** for SEED-036's deferred tactical-pattern filters and for several Insights surfaces that currently have no data source.
 
 ## When to Surface
 
 **Trigger options:**
-- During or after the Library milestone (SEED-010), when tactical filters become near-term.
+- During or after the Library milestone (SEED-036), when tactical filters become near-term.
 - When a user explicitly asks for missed-tactics features.
 - When the prerequisites land (see "Prerequisites" below) — at that point the seed is ready to promote to a milestone via `/gsd-new-milestone`.
 
@@ -163,6 +163,6 @@ For sizing decisions and gut-check on viability.
 
 ## Cross-References
 
-- **SEED-010** (Library milestone) — explicitly defers tactical-pattern filters until "Stockfish eval coverage or a client-side eval pipeline makes those reliable." This seed *is* that pipeline.
+- **SEED-036** (Library milestone, split from SEED-010) — explicitly defers tactical-pattern filters until "Stockfish eval coverage or a client-side eval pipeline makes those reliable." This seed *is* that pipeline.
 - `scripts/backfill_eval.py` — existing server-side backfill of endgame entry positions only. Stays as-is; the client-side path covers the rest.
 - `app/repositories/query_utils.py` — existing shared filter layer; tactical filters added here.

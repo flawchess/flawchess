@@ -191,7 +191,7 @@ export function EndgameOverallPerformanceSection({
                 tooltip={
                   <MetricStatPopover
                     name="Eval Score Gap"
-                    explanation="Your average per-game Endgame Score minus your Entry Eval Score (what a strong player would expect to score from your endgame-entry positions). Positive means you outperformed that expectation; negative means you underperformed."
+                    explanation="Your average per-game Endgame Score minus your Entry Eval Score (what a 2300+ rated rapid player would expect to score from your endgame-entry positions). Positive means you outperformed that expectation; negative means you underperformed."
                     value={achievableGapValue}
                     baseline={0}
                     unit="percent"
