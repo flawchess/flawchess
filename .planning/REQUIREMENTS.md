@@ -27,9 +27,9 @@ SEED-036 Library — analysis half. **LIBG-02 / LIBG-06 / LIBG-07 are in v1.24 s
 
 ### Library — Games & Mistakes
 
-- **LIBG-01**: Games subtab — filterable game archive (metadata + mistake-count filters), game cards with B/M/I counts + curated tag chips, mistake-stats panel with analyzed-% denominator. *(deferred — later phase)*
+- **LIBG-01** *(Phase 107)*: Games subtab frontend — filterable game-card archive (existing metadata filters + the boolean mistake-severity filter; no chessboard, no opening filter), cards reusing the Openings game-card with per-game B/M/I counts + curated/deduped family-colored tag chips (display-only in 107; deep-link to Flaws deferred) + explicit "no engine analysis" state, on the Openings mobile-drawer pattern. Consumes `GET /api/library/games` (Phase 106).
 - **LIBG-02** *(Phase 105)*: On-the-fly mistake-detection service deriving per-ply severity (inaccuracy/mistake/blunder) from stored `eval_cp` / `eval_mate`, using the Lichess-aligned expected-score-drop thresholds (0.05 / 0.10 / 0.15 on the [0,1] ES scale), from the mover's perspective; mate handled via the ±1000 cp-equivalent mapping (Option B); no materialization, no schema change; chess.com / unanalyzed games yield an explicit "no analysis" result.
-- **LIBG-03**: Mistake-stats panel — counts/rates per mistake type, normalized, with trend over time + analyzed-game (≥90%-coverage) denominator. *(deferred — later phase)*
+- **LIBG-03** *(Phase 107)*: Flaw-Stats panel (frontend) — per-severity counts/rates per mistake type (normalized per game and per 100 moves), tag distribution (tempo split, result-changing rate, phase histogram), trend over time, and the explicit `% analyzed` (≥90%-coverage) denominator + N. Consumes `GET /api/library/mistake-stats` (Phase 106).
 - **LIBG-04**: Analysis subtab — per-flaw viewer (board, stepper, move list, eval/material timeline, jump-to-mistake), deep-link detail route. *(deferred — later phase)*
 - **LIBG-05**: On-demand single-position best-move endpoint (`POST /api/analysis/best-move`), rate-limited / concurrency-capped. *(deferred — later phase)*
 - **LIBG-06** *(Phase 105)*: The detection service emits the eight attribution tags per flaw — `miss`, `unpunished`, `from-winning`, `result-changing`, `phase`, and exactly one tempo tag of {`time-pressure`, `hasty`, `knowledge-gap`} (move-time + clock derived; initial thresholds documented and tunable).
@@ -70,13 +70,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIBG-07 | Phase 105 | Complete |
 | LIBG-08 | Phase 106 | Complete |
 | LIBG-09 | Phase 106 | Complete |
+| LIBG-01 | Phase 107 | Planned |
+| LIBG-03 | Phase 107 | Planned |
 
 **Coverage:**
 
 - v1 requirements: 9 total (all Complete)
 - v1.24 analysis-half (Phase 105): LIBG-02, LIBG-06, LIBG-07
 - v1.24 Games-surface backend (Phase 106): LIBG-08, LIBG-09
-- Deferred (later phases): LIBG-01 / LIBG-03 *(UI only — their backend is LIBG-08/09, Phase 106)*, LIBG-04, LIBG-05
+- v1.24 Games-subtab frontend (Phase 107): LIBG-01, LIBG-03
+- Deferred (later phases): LIBG-04 (Analysis viewer), LIBG-05 (best-move endpoint), Flaws subtab UI
 
 ---
 *Requirements defined: 2026-06-05*

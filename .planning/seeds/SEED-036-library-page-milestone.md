@@ -310,6 +310,15 @@ Likely 4-6 phases:
 
 ## Source / decision log
 
+**2026-06-05 next phase = 107 Games-subtab frontend; scoped, roadmapped, ready to sketch (user + Claude, `/gsd-explore`):**
+- **Phase 106 (Games-surface backend) is shipped.** The next phase (107) is the **Games subtab *frontend*** — the only remaining SEED-036 surface whose backend is fully built (both 106 endpoints: `GET /api/library/games`, `GET /api/library/mistake-stats`). Flaws still needs a per-flaw list endpoint; Analysis needs the best-move endpoint (LIBG-05) — both are more backend, so they stay later phases.
+- **Scope = one cohesive surface (chosen over splitting):** the filterable game-card archive **and** the Flaw-Stats panel together, since both 106 endpoints already exist. Maps to **LIBG-01 + LIBG-03** (the frontend of LIBG-08/09). No backend work.
+- **Panel renamed "Flaw-Stats panel"** (not "Mistake-Stats panel"), consistent with the "Flaws" umbrella rule — the surface is *Flaws*; the panel's own counts still use precise terms ("1 blunder · 2 mistakes").
+- **Card tag chips are display-only in 107.** The seed's chip→pre-filtered-Flaws deep-link can't be wired yet (Flaws is a later phase, the route doesn't exist). Chips render (family-colored) but aren't clickable destinations until Flaws ships. **Planner must not assume a Flaws route.**
+- **Optional eval sparkline deferred** — it would need a backend addition (the games-list endpoint returns counts/chips, not the per-ply eval series), so cutting it keeps 107 a pure frontend phase and confirms the 106 contract is sufficient.
+- **Returning-user default subtab flips Overview → Games** (104 set Overview as a placeholder; Games is now the headline surface).
+- **Design path:** `/gsd-sketch` (analyzed card + Flaw-Stats panel, desktop + mobile) → `/gsd-ui-phase` → `/gsd-plan-phase 107`. Phase 107 written into ROADMAP.md (LIBG-01/LIBG-03 mapped). Full scoping note at `.planning/notes/phase-107-games-subtab-scope.md`.
+
 **2026-06-05 next phase = Games-surface backend; ready to plan (user + Claude, `/gsd-explore`):**
 - **Phase 105 is done** (mistake-detection service, verified 9/9, on branch, not yet merged). Classification architecture is fully decided in this seed, so no discuss phase is needed for what comes next.
 - **Next phase (106) = the Games-surface *backend*** — chosen over a vertical Games slice or pulling the best-move endpoint forward. It's the lowest-ambiguity continuation of 105's backend layer (the seed already specs the SQL) and unblocks the frontend. Scope: (a) games-list — boolean mistake-type `EXISTS` filter wired into `apply_game_filters` + per-game B/M/I counts + aggregated/deduped card tag-chips; (b) stats-panel aggregates over the filtered analyzed-only set (per-severity counts/rates, tag distribution, trend-over-time) + the explicit `% analyzed` denominator. Maps to new requirements **LIBG-08** (backend of LIBG-01) + **LIBG-09** (backend of LIBG-03). The Games/Flaws/Analysis **UI** and the best-move endpoint stay in later phases.
