@@ -21,6 +21,7 @@ from app.routers import openings, position_bookmarks, imports, auth
 from app.routers.admin import router as admin_router
 from app.routers.endgames import router as endgames_router
 from app.routers.insights import router as insights_router
+from app.routers.library import router as library_router
 from app.routers.stats import router as stats_router
 from app.routers.users import router as users_router
 from app.services.engine import start_engine, stop_engine
@@ -134,6 +135,7 @@ app.include_router(endgames_router, prefix="/api")
 app.include_router(insights_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
+app.include_router(library_router, prefix="/api")
 
 
 @app.get("/", include_in_schema=False)

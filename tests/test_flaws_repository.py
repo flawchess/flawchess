@@ -1,4 +1,4 @@
-"""Integration tests for app.repositories.mistakes_repository.
+"""Integration tests for app.repositories.flaws_repository.
 
 Uses a real PostgreSQL database through the db_session fixture (rolled-back
 transaction per test). Covers:
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.repositories.mistakes_repository import fetch_game_positions_ordered
+from app.repositories.flaws_repository import fetch_game_positions_ordered
 
 
 # ---------------------------------------------------------------------------

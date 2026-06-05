@@ -4,6 +4,14 @@
 **Domain:** Async SQLAlchemy 2.x window-function queries over `game_positions ⋈ games`; reuse of the Phase 105 `mistakes_service` kernel; on-the-fly mistake aggregation (no materialization).
 **Confidence:** HIGH (entirely codebase-internal; every claim below is grounded in a read file with line numbers).
 
+## Decisions Locked (user, 2026-06-05 — resolved before planning)
+
+These resolve the two open forks below. The planner MUST follow them and need not re-open them.
+
+- **D1 — Tagging architecture: PRAGMATIC kernel-reuse (Open Question 1 / "Critical Contradiction" → RESOLVED).** SQL window-scan handles ONLY the `EXISTS` severity filter, the per-severity flagged-row count aggregates, and the ≥90% analyzed denominator. Tags come from re-calling the existing Phase 105 kernel (`classify_game_mistakes`) per game — over the returned page for card chips, and over the analyzed filtered set for the stats tag-distribution. Add ONE small additive `count_game_severities(game, positions) -> SeverityCounts | GameNotAnalyzed` helper to `mistakes_service.py` for the inaccuracy count (per A3). Do **NOT** refactor the private tag functions into a public row-shaped API; shipped 105 code stays untouched except for that additive helper. The single SQL severity-math transcription is guarded by the cross-check fixture test (criterion 5). Benchmark the O(analyzed games) stats-path kernel calls (A4); if a power user's analyzed set proves too large, that's a follow-up optimization, not in-scope for 106.
+- **D2 — Endpoints: NEW `/library` router (Open Question 2 → RESOLVED).** Create `app/routers/library.py` (prefix `/library`, `GET /games` + `GET /mistake-stats`), `app/services/library_service.py`, `app/repositories/library_repository.py`, `app/schemas/library.py`. Extend `apply_game_filters()` in place with the mistake-`EXISTS` param. Do not fold into openings/endgames.
+- **D3 — Trend bucketing (Open Question 3):** rolling-game-window via the `get_time_series` machinery (researcher recommendation; planner's discretion on window size).
+
 ## Summary
 
 Phase 106 builds two read-only HTTP endpoints for the Library "Games" subtab, both derived on-the-fly. The good news: Phase 105 already shipped the complete pure-Python kernel (`app/services/mistakes_service.py`) and a repository (`app/repositories/mistakes_repository.py`), and the codebase already has every reusable piece this phase needs — `apply_game_filters()`, the `GameRecord` schema, a canonical paginated-archive query (`query_endgame_games`), the ES sigmoid (`eval_cp_to_expected_score`), a rolling-window time-series precedent (`openings_service.get_time_series`), and an existing SQL window-function pattern (`ROW_NUMBER() OVER (PARTITION BY ...)` in `canonical_slice_sql.py`). There is **no greenfield infrastructure** to invent.

@@ -68,8 +68,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIBG-02 | Phase 105 | Complete |
 | LIBG-06 | Phase 105 | Complete |
 | LIBG-07 | Phase 105 | Complete |
-| LIBG-08 | Phase 106 | Planned |
-| LIBG-09 | Phase 106 | Planned |
+| LIBG-08 | Phase 106 | Complete |
+| LIBG-09 | Phase 106 | Complete |
 
 **Coverage:**
 

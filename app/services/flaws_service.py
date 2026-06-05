@@ -1,8 +1,8 @@
-"""Mistake-detection + classification service for Phase 105 (SEED-036).
+"""Flaw-detection + classification service for Phase 105 (SEED-036).
 
-Derives per-ply mistake severity and attribution tags from stored Stockfish evals.
+Derives per-ply flaw severity and attribution tags from stored Stockfish evals.
 No I/O, no DB — the module is a pure Python transform over already-loaded ORM objects.
-See tests/services/test_mistakes_service.py for unit tests.
+See tests/services/test_flaws_service.py for unit tests.
 
 Two output types:
   list[FlawRecord]   analyzed game — one entry per user mistake or blunder
@@ -108,7 +108,21 @@ class GameNotAnalyzed(TypedDict):
     eval_coverage: float  # fraction 0.0–1.0
 
 
-GameMistakesResult = list[FlawRecord] | GameNotAnalyzed
+class SeverityCounts(TypedDict):
+    """Per-game severity counts over the USER's moves (Phase 106, LIBG-08).
+
+    Unlike the FlawRecord list (mistakes + blunders only), this carries all
+    three tiers including the inaccuracy count — which is never exposed via
+    classify_game_flaws (the kernel emits M+B only). See RESEARCH Pitfall 3:
+    the I count must NOT be derived from the M+B FlawRecord set.
+    """
+
+    inaccuracy: int
+    mistake: int
+    blunder: int
+
+
+GameFlawsResult = list[FlawRecord] | GameNotAnalyzed
 
 # Internal type for the all-moves classification pass result per ply
 _MoveEntry = tuple[Literal["white", "black"], FlawSeverity | None, float, float]
@@ -186,7 +200,7 @@ def _recompute_fen_map(pgn: str) -> dict[int, str]:
         # and evals are stored), so a replay failure here is a genuine data
         # inconsistency, not expected user-input noise. Capture it — otherwise
         # every later flaw silently falls back to fen="" via fen_map.get(n, "").
-        sentry_sdk.set_context("mistakes", {"stage": "fen_recompute", "failed_at_ply": len(fens)})
+        sentry_sdk.set_context("flaws", {"stage": "fen_recompute", "failed_at_ply": len(fens)})
         sentry_sdk.capture_exception(exc)
     return fens
 
@@ -427,17 +441,17 @@ def _build_tags(
 # ---------------------------------------------------------------------------
 
 
-def classify_game_mistakes(
+def classify_game_flaws(
     game: Game,
     positions: list[GamePosition],
-) -> GameMistakesResult:
+) -> GameFlawsResult:
     """Derive all user flaws from stored per-ply evals.
 
     Args:
         game: Game row with result, user_color, base_time_seconds,
               increment_seconds, pgn.
         positions: All GamePosition rows for this game, ordered by ply ASC.
-            Load via mistakes_repository.fetch_game_positions_ordered.
+            Load via flaws_repository.fetch_game_positions_ordered.
 
     Returns:
         list[FlawRecord] for analyzed games — one entry per user mistake or
@@ -493,3 +507,47 @@ def classify_game_mistakes(
         flaws.append(flaw)
 
     return flaws
+
+
+def count_game_severities(
+    game: Game,
+    positions: list[GamePosition],
+) -> SeverityCounts | GameNotAnalyzed:
+    """Count per-game inaccuracy/mistake/blunder over the USER's moves.
+
+    The count-only sibling of classify_game_flaws. It exposes the inaccuracy
+    count that the FlawRecord path deliberately omits (the kernel emits M+B only),
+    so the Games-list card can show full B/M/I per game (LIBG-08). No tags, no
+    FEN recompute — pure tally.
+
+    Args:
+        game: Game row (only user_color is read here).
+        positions: All GamePosition rows for this game, ordered by ply ASC.
+
+    Returns:
+        SeverityCounts {inaccuracy, mistake, blunder} restricted to the user's
+        moves (mover == game.user_color, parity per _run_all_moves_pass) for an
+        analyzed game.
+
+        GameNotAnalyzed when eval coverage < EVAL_COVERAGE_MIN — the IDENTICAL
+        gate as classify_game_flaws, so analyzed/unanalyzed classification is
+        consistent across the two entry points (chess.com / unanalyzed lichess
+        games surface "no engine analysis" rather than a false 0/0/0).
+    """
+    # Coverage gate: identical to classify_game_flaws (same shape on miss).
+    coverage = _compute_eval_coverage(positions)
+    if coverage < EVAL_COVERAGE_MIN:
+        return GameNotAnalyzed(reason="no_engine_analysis", eval_coverage=coverage)
+
+    # Reuse the kernel's per-ply classification pass — no severity-math fork.
+    all_moves = _run_all_moves_pass(positions)
+
+    user_color = game.user_color
+    counts = SeverityCounts(inaccuracy=0, mistake=0, blunder=0)
+    for mover, severity, _es_before, _es_after in all_moves.values():
+        if mover != user_color:
+            continue
+        if severity is None:
+            continue
+        counts[severity] += 1
+    return counts

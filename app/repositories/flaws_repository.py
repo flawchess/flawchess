@@ -1,4 +1,4 @@
-"""Mistakes repository: DB queries for mistake-detection service.
+"""Flaws repository: DB queries for the flaw-detection service.
 
 Functions:
 - fetch_game_positions_ordered: all GamePosition rows for one game, ordered by ply ASC

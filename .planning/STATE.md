@@ -3,24 +3,24 @@ gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
 status: executing
-last_updated: "2026-06-05T13:43:11.468Z"
-last_activity: 2026-06-05
+last_updated: "2026-06-05T16:00:00.000Z"
+last_activity: "2026-06-05 -- Phase 106 Plan 03 complete (GET /api/library/mistake-stats: counts/rates, tag distribution, rolling-game trend, >=90% analyzed denominator) — Phase 106 ALL PLANS DONE"
 progress:
-  total_phases: 6
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
-  percent: 33
+  total_phases: 7
+  completed_phases: 3
+  total_plans: 7
+  completed_plans: 7
+  percent: 43
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 999.1
-Plan: Not started
-Status: Phase 105 shipped — squash-merged to main (4843c41b)
-Last activity: 2026-06-05
+Phase: 106 (games-surface-backend-mistake-filter-per-game-counts-stats-a) — ALL PLANS COMPLETE
+Plan: 3 of 3 (Plans 01, 02, 03 complete)
+Status: Phase 106 backend complete — ready for verification / next phase
+Last activity: 2026-06-05 -- Phase 106 Plan 03 complete (GET /api/library/mistake-stats: per-severity counts/rates per game + per 100 user-moves, tag distribution, rolling-game trend, >=90% analyzed denominator + N)
 
 ## Project Reference
 
@@ -272,9 +272,15 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 102 P01 | 30 | 3 tasks | 5 files |
 | Phase 102 P04 | 60min | 5 tasks | 6 files |
 | Phase 104 P01 | 2 | 2 tasks | 4 files |
+| Phase 106 P02 | 18 | 2 tasks | 7 files |
+| Phase 106 P03 | 26 | 2 tasks | 6 files |
 
 ## Decisions
 
+- [Phase 106-01]: SQL severity-math lives once in library_repository (EXISTS filter + per-ply flag observation); tags re-call the 105 kernel downstream — no public-API refactor of 105's private tag functions (D1 confirmed)
+- [Phase 106-01]: apply_game_filters gained keyword-only user_id (default None) alongside mistake_severity, to scope the EXISTS game_positions read (T-106-AC); all existing callers unaffected
+- [Phase 106-01]: count_game_severities is a count-only kernel sibling reusing _run_all_moves_pass + _compute_eval_coverage; inaccuracy count is independent of the M+B FlawRecord set (Pitfall 3)
+- [Phase 106-01]: SQL↔kernel cross-check observes per-ply flags via flagged_plies_for_severity (highest-tier-wins in the test) rather than reverse-engineering the boolean EXISTS
 - [Phase ?]: rate_percentile field trio named distinctly from percentile star (D-01 coexistence)
 - [Phase ?]: alembic_command.upgrade() in sync context — Alembic env.py calls asyncio.run() internally; _ensure_template_fresh returns template URL or None to signal migration need
 - [Phase ?]: DROP DATABASE WITH (FORCE) at teardown: handles residual async connections from session-scoped pytest-asyncio fixtures
@@ -282,3 +288,8 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: sorted() required for set-based pytest.mark.parametrize: non-deterministic iteration causes xdist collection mismatch
 - [Phase ?]: -n auto: 18.56s vs 40.29s serial (2.2x speedup); two concurrent serial runs both RC=0 (SC-1 + SC-3 satisfied)
 - [Phase ?]: Phase 102 Plan 01: real net_timeout_rate scalar + 5-quintile Score-Gap-by-time chart block + pctl= annotations wired into LLM payload
+- [Phase ?]: 106-02: severity Query param constrained to Literal[mistake,blunder] at the route; inaccuracies are count-only, never a filter
+- [Phase 106-03]: D1 pragmatic path: SQL owns the >=90% analyzed denominator (coverage aggregate) + per-severity counts; tag distribution + rates re-call the 105 kernel over the analyzed filtered set (no severity-math fork)
+- [Phase 106-03]: per-100-moves denominator = USER-mover ply count across the analyzed set (W2), not severity events nor both colors; result_changing_rate = result-changing M+B / total M+B (W3)
+- [Phase 106-03]: trend is a trailing rolling-GAME window (ROLLING_WINDOW_SIZE/MIN_GAMES_FOR_TIMELINE via get_time_series precedent), NOT calendar buckets; MistakeTrendPoint.date = window last-game date, a label only (D3/W5)
+- [Phase 106-03]: criterion-1 index decision — no new (game_id, ply) index; the coverage aggregate intersected with the bounded filtered game-id set is PK-backed (~11ms dev EXPLAIN); whole-user aggregate is slow but not the service's access pattern

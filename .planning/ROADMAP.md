@@ -36,7 +36,7 @@ SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-le
 
 - [x] **Phase 104: Library Page Shell + Import & Overview Subtab Migration** — new `/library` route with deep-linkable `<Tabs variant="brand">` subtabs; migrate `/import` → `/library/import` and `/overview` → `/library/overview` (each its own tsx, with redirects); top-level nav drops to Library · Openings · Endgames (+ Admin); `totalGames === 0` dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile parity + browser-automation conventions (LIB-01..09) (completed 2026-06-05)
 - [x] **Phase 105: Mistake-Detection + Classification + Tagging Service (on-the-fly)** — server-side `mistakes` service derives every flaw in a Lichess-analyzed game on-the-fly from stored per-ply `eval_cp`/`eval_mate` — severity (Lichess-aligned 0.05/0.10/0.15 expected-score-drop thresholds) + eight attribution tags (miss, unpunished, from-winning, result-changing, time-pressure, hasty, knowledge-gap, phase) — emitting typed per-flaw objects for the Games/Flaws/Analysis surfaces and SEED-037 Train; no materialization, no schema change, no UI (LIBG-02, LIBG-06, LIBG-07) (completed 2026-06-05)
-- [ ] **Phase 106: Games-Surface Backend — Mistake Filter, Per-Game Counts & Stats Aggregates (on-the-fly)** — two server-side endpoints the Games subtab consumes, both on-the-fly via a SQL window-scan + Python tagging that reuses Phase 105's kernel (no materialization, no schema change): (a) games-list — `apply_game_filters` extended with a boolean mistake-type `EXISTS` over the per-ply ES-drop (severity thresholds bound params), each game carrying B/M/I counts + aggregated/deduped card tag-chips; (b) stats-panel aggregates over the filtered analyzed-only set — per-severity counts/rates (normalized), tag distribution (tempo split, result-changing rate, phase histogram), trend-over-time, and the explicit `% analyzed` (≥90%-coverage) denominator with N (LIBG-08, LIBG-09)
+- [x] **Phase 106: Games-Surface Backend — Mistake Filter, Per-Game Counts & Stats Aggregates (on-the-fly)** — completed 2026-06-05 (3/3 plans) — two server-side endpoints the Games subtab consumes, both on-the-fly via a SQL window-scan + Python tagging that reuses Phase 105's kernel (no materialization, no schema change): (a) games-list — `apply_game_filters` extended with a boolean mistake-type `EXISTS` over the per-ply ES-drop (severity thresholds bound params), each game carrying B/M/I counts + aggregated/deduped card tag-chips; (b) stats-panel aggregates over the filtered analyzed-only set — per-severity counts/rates (normalized), tag distribution (tempo split, result-changing rate, phase histogram), trend-over-time, and the explicit `% analyzed` (≥90%-coverage) denominator with N (LIBG-08, LIBG-09)
 
 #### Phase 104: Library Page Shell + Import & Overview Subtab Migration
 
@@ -95,7 +95,19 @@ SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-le
   4. The stats response states the explicit denominator — the `% analyzed` of the filtered set using the ≥90%-per-ply-coverage definition — and the analyzed-game N, so the panel never implies clean games where evals are simply absent (LIBG-09).
   5. The cross-game work is pushed into a SQL window-function query (`LAG`/`LEAD` over `game_positions ⋈ games`) that returns only flagged mistake+blunder rows enriched for tagging, with Python applying the 8 tags + tag-distribution stats over that reduced set; the severity-drop math is cross-checked against the Python kernel by a fixture test (LIBG-08, LIBG-09).
 
-**Plans**: TBD (run `/gsd-plan-phase 106`)
+**Plans**: 3 plans
+
+**Wave 1**
+
+- [x] 106-01-PLAN.md — Foundation seam: `count_game_severities` kernel helper, `apply_game_filters` mistake-severity EXISTS param, SQL ES-drop transcription + SQL↔kernel cross-check fixture (LIBG-08, LIBG-09) — completed 2026-06-05 (2/2 tasks)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 106-02-PLAN.md — `GET /api/library/games`: mistake-filtered paginated archive + per-game B/M/I counts + curated/deduped chips + no_engine_analysis state (LIBG-08)
+
+**Wave 3** *(blocked on Wave 2 — shared library_* files)*
+
+- [x] 106-03-PLAN.md — `GET /api/library/mistake-stats`: per-severity counts/rates (per game + per 100 user-moves), tag distribution, rolling-game trend, ≥90% analyzed denominator + N (LIBG-09) — completed 2026-06-05 (2/2 tasks)
 
 **UI hint**: no
 

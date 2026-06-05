@@ -1,4 +1,4 @@
-"""Unit tests for app.services.mistakes_service.
+"""Unit tests for app.services.flaws_service.
 
 Covers Phase 105 LIBG-02/06/07: severity classification, 8 attribution tags,
 TypedDict output contract, eval coverage gate, mate Option B, FEN recomputation.
@@ -12,7 +12,7 @@ import pytest
 
 from app.models.game import Game
 from app.models.game_position import GamePosition
-from app.services.mistakes_service import (
+from app.services.flaws_service import (
     BLUNDER_DROP,
     EVAL_COVERAGE_MIN,
     FROM_WINNING_ES,
@@ -23,7 +23,7 @@ from app.services.mistakes_service import (
     TIME_PRESSURE_CLOCK_FRACTION,
     HASTY_MOVE_FRACTION,
     FlawRecord,
-    GameMistakesResult,
+    GameFlawsResult,
     GameNotAnalyzed,
     _classify_severity,
     _classify_tempo,
@@ -31,7 +31,7 @@ from app.services.mistakes_service import (
     _move_time,
     _ply_to_es,
     _recompute_fen_map,
-    classify_game_mistakes,
+    classify_game_flaws,
 )
 
 
@@ -91,7 +91,7 @@ def _make_game(
     return game
 
 
-# Short analyzed-game PGN for use in classify_game_mistakes tests.
+# Short analyzed-game PGN for use in classify_game_flaws tests.
 # Two-move game: 1. e4 e5 (white plays e4, black plays e5).
 _SHORT_PGN = "1. e4 e5 *"
 
@@ -161,11 +161,11 @@ class TestTypeContract:
         assert not_analyzed["reason"] == "no_engine_analysis"
         assert not_analyzed["eval_coverage"] == 0.0
 
-    def test_game_mistakes_result_is_union_type(self) -> None:
-        """GameMistakesResult is the union type (importable and usable as annotation)."""
-        result: GameMistakesResult = []
+    def test_game_flaws_result_is_union_type(self) -> None:
+        """GameFlawsResult is the union type (importable and usable as annotation)."""
+        result: GameFlawsResult = []
         assert isinstance(result, list)
-        result2: GameMistakesResult = {"reason": "no_engine_analysis", "eval_coverage": 0.0}
+        result2: GameFlawsResult = {"reason": "no_engine_analysis", "eval_coverage": 0.0}
         assert isinstance(result2, dict)
 
 
@@ -376,9 +376,7 @@ class TestFenRecompute:
         def fake_capture(exc: BaseException | None = None) -> None:
             captured.append(exc)
 
-        monkeypatch.setattr(
-            "app.services.mistakes_service.sentry_sdk.capture_exception", fake_capture
-        )
+        monkeypatch.setattr("app.services.flaws_service.sentry_sdk.capture_exception", fake_capture)
 
         real_board_fen = chess.Board.board_fen
         calls = {"n": 0}
@@ -401,8 +399,8 @@ class TestFenRecompute:
         assert 1 not in fen_map
 
 
-class TestClassifyGameMistakes:
-    """Tests for classify_game_mistakes — the public API."""
+class TestClassifyGameFlaws:
+    """Tests for classify_game_flaws — the public API."""
 
     # -----------------------------------------------------------------------
     # Helpers: build small position sequences for testing
@@ -430,7 +428,7 @@ class TestClassifyGameMistakes:
         """A chess.com game (all evals null) returns GameNotAnalyzed."""
         game = _make_game(pgn=_SHORT_PGN, user_color="white")
         positions = self._make_chesscom_positions(4)
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, dict), "Expected GameNotAnalyzed dict"
         assert result["reason"] == "no_engine_analysis"
         assert result["eval_coverage"] == pytest.approx(0.0)
@@ -442,7 +440,7 @@ class TestClassifyGameMistakes:
         game = _make_game(pgn=pgn, user_color="white")
         positions = [_make_pos(i, eval_cp=20) for i in range(9)]
         positions.append(_make_pos(9))  # final ply: no eval
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list), "Expected list[FlawRecord]"
 
     def test_coverage_gate_below_threshold_returns_not_analyzed(self) -> None:
@@ -450,7 +448,7 @@ class TestClassifyGameMistakes:
         game = _make_game(pgn=_SHORT_PGN, user_color="white")
         # 10 positions, only 5 with eval = 50% coverage < 90%
         positions = [_make_pos(i, eval_cp=20 if i < 5 else None) for i in range(10)]
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, dict)
         assert result["reason"] == "no_engine_analysis"
 
@@ -476,7 +474,7 @@ class TestClassifyGameMistakes:
         positions[1] = _make_pos(1, eval_cp=50)  # es_before for white mover at ply 2
         positions[2] = _make_pos(2, eval_cp=0)  # es_after for white mover at ply 2
         positions[9] = _make_pos(9)  # final null; coverage = 9/10 = 0.90
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list), (
             "Inaccuracy-only analyzed game must return list, not GameNotAnalyzed"
         )
@@ -503,7 +501,7 @@ class TestClassifyGameMistakes:
         positions[2] = _make_pos(2, eval_cp=-500, move_san="Nf3")
         positions[9] = _make_pos(9)  # final ply: no eval
 
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         assert len(result) >= 1, "Expected at least one blunder FlawRecord"
 
@@ -532,7 +530,7 @@ class TestClassifyGameMistakes:
         positions[2] = _make_pos(2, eval_cp=-500)  # bad position after white's blunder
         positions[9] = _make_pos(9)  # final null; coverage = 9/10 = 0.90
 
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply2_flaws = [r for r in result if r["ply"] == 2]
         assert len(ply2_flaws) == 1
@@ -561,7 +559,7 @@ class TestClassifyGameMistakes:
         positions[3] = _make_pos(3, eval_cp=200)  # after black's blunder
         positions[9] = _make_pos(9)  # final null
 
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         # White is user_color — no black flaws should appear
         for flaw in result:
@@ -582,7 +580,7 @@ class TestClassifyGameMistakes:
         positions[6] = _make_pos(6, eval_cp=-500)  # blunder at ply 6
         positions[9] = _make_pos(9)
 
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         plies = [r["ply"] for r in result]
         assert plies == sorted(plies), "FlawRecords should be ordered by ply ASC"
@@ -674,7 +672,7 @@ class TestTempoTags:
         positions[2] = _make_pos(2, eval_cp=-500, clock_seconds=580.0)
         positions[9] = _make_pos(9)  # final null
 
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         assert len(result) >= 1, "Expected at least one flaw"
         for flaw in result:
@@ -706,7 +704,7 @@ class TestAttributionTags:
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=900)  # es_before for white at ply 2 is high
         positions[2] = _make_pos(2, eval_cp=-500)  # blunder — large drop from winning position
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1, "Expected blunder at ply 2"
@@ -719,7 +717,7 @@ class TestAttributionTags:
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=50)  # es_before ≈ 0.568 < FROM_WINNING_ES
         positions[2] = _make_pos(2, eval_cp=-500)  # blunder
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
@@ -745,7 +743,7 @@ class TestAttributionTags:
         # eval_cp=-400 at [4] means es_after for white ≈ 1-0.731=0.269
         # drop = 0.731 - 0.269 = 0.462 >= 0.15 => blunder for white
         positions[4] = _make_pos(4, eval_cp=-400)  # white blunder right after
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1, "Expected white blunder at ply 4"
@@ -767,7 +765,7 @@ class TestAttributionTags:
             3, eval_cp=20
         )  # opponent's ply 3: fine (negligible drop for black)
         positions[4] = _make_pos(4, eval_cp=-400)  # white blunders at ply 4 (drop ≈ 0.72)
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1
@@ -796,7 +794,7 @@ class TestAttributionTags:
         # positions[5].eval_cp=-380 => es_after(black) ≈ 0.723 (tiny improvement for black)
         # drop ≈ 0.731 - 0.723 = 0.008 < INACCURACY_DROP => fine, not an error
         positions[5] = _make_pos(5, eval_cp=-380)  # black plays fine, small change
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1
@@ -815,7 +813,7 @@ class TestAttributionTags:
         # drop ≈ 0.117 >= 0.10 = mistake, < 0.15 = not blunder
         positions[3] = _make_pos(3, eval_cp=200)
         positions[4] = _make_pos(4, eval_cp=50)  # mistake (drop ≈ 0.117)
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1
@@ -834,7 +832,7 @@ class TestAttributionTags:
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=100)  # es_before ≈ 0.591 >= RESULT_DRAW_THRESHOLD
         positions[2] = _make_pos(2, eval_cp=-500)  # es_after ≈ 0.160 < RESULT_DRAW_THRESHOLD
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
@@ -851,7 +849,7 @@ class TestAttributionTags:
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=-300)  # already below threshold
         positions[2] = _make_pos(2, eval_cp=-600)  # still below threshold
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
@@ -863,7 +861,7 @@ class TestAttributionTags:
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=300, phase=0)  # opening phase
         positions[2] = _make_pos(2, eval_cp=-500, phase=0)  # blunder in opening
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
@@ -877,7 +875,7 @@ class TestAttributionTags:
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=300, phase=1)
         positions[2] = _make_pos(2, eval_cp=-500, phase=1)
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
@@ -889,7 +887,7 @@ class TestAttributionTags:
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=300, phase=2)
         positions[2] = _make_pos(2, eval_cp=-500, phase=2)
-        result = classify_game_mistakes(game, positions)
+        result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
@@ -1019,7 +1017,7 @@ class TestOracleCloseness:
         game.white_mistakes = wm
         game.white_inaccuracies = wi
 
-        flaws = classify_game_mistakes(game, positions)
+        flaws = classify_game_flaws(game, positions)
         assert isinstance(flaws, list)
 
         # Derived counts from emitted records (mistakes + blunders only)
@@ -1028,7 +1026,7 @@ class TestOracleCloseness:
 
         # For inaccuracy count: re-run all-moves pass and count inaccuracy severity entries for white
         # (inaccuracies are count-only per the 2026-06-05 amendment — not emitted but classifiable)
-        from app.services.mistakes_service import _run_all_moves_pass
+        from app.services.flaws_service import _run_all_moves_pass
 
         all_moves = _run_all_moves_pass(positions)
         derived_inaccuracies = sum(
@@ -1063,13 +1061,13 @@ class TestOracleCloseness:
         game.black_mistakes = bm
         game.black_inaccuracies = bi
 
-        flaws = classify_game_mistakes(game, positions)
+        flaws = classify_game_flaws(game, positions)
         assert isinstance(flaws, list)
 
         derived_blunders = sum(1 for f in flaws if f["severity"] == "blunder")
         derived_mistakes = sum(1 for f in flaws if f["severity"] == "mistake")
 
-        from app.services.mistakes_service import _run_all_moves_pass as _ramp_black
+        from app.services.flaws_service import _run_all_moves_pass as _ramp_black
 
         all_moves = _ramp_black(positions)
         derived_inaccuracies = sum(
