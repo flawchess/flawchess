@@ -121,7 +121,22 @@ FROM_WINNING_ES = 0.85     # FlawChess tag threshold (~+470 cp), NOT a Lichess c
 - **`from-winning`**: `ES_before ≥ 0.85`. The draft's separate "Missed Win" / "Blunder (from winning)" classes **collapse** into `<severity> + from-winning`.
 - **`miss`**: the move is a severity-flagged error AND the opponent's *immediately preceding* move was itself a Mistake or Blunder (eval spike, then the player gives it back on the very next ply). Renamed from "Missed Tactic"; it is an **adjacency tag on an existing error, not its own detection rule**. The draft's ES-must-*increase* rule was conceptually broken: a stored eval already prices in best play, so the punishment shows up as a jump on the *opponent's* move, not as a rise on the player's — the player capitalizes by *maintaining* ES, not growing it, and "failed to capitalize" is just a normal drop that happens to follow an opponent error.
 
-**Extended attribution tags (added 2026-06-05, from a review of chess.com/lichess classification criticisms — see research note).** All orthogonal, all additive (none change the severity label), all in the cheap data quadrant (eval-only, eval+clocks, eval+result, or a stored column):
+**Extended attribution tags (added 2026-06-05, from a review of chess.com/lichess classification criticisms — see research note).** All orthogonal, all additive (none change the severity label), all in the cheap data quadrant (eval-only, eval+clocks, eval+result, or a stored column).
+
+**Full tag set at a glance** (8 tags; D = differentiated vs chess.com/lichess, TS = table-stakes):
+
+| Tag | Data dep | D/TS | What it tells the user |
+|-----|----------|------|------------------------|
+| `miss` | eval-only | TS | failed to punish the opponent's error on the next ply |
+| `unpunished` | eval-only | D | your blunder the opponent let slide ("got away with it") |
+| `from-winning` | eval-only | D | bled a clearly-won position (`ES_before ≥ 0.85`) |
+| `result-changing` | eval + result | D | this error actually flipped the game outcome |
+| `time-pressure` | eval + clocks | D | forced rush — low clock; clock-management problem |
+| `hasty` | eval + clocks | D | unforced rush — fast move on a comfortable clock; discipline |
+| `knowledge-gap` | eval + clocks | D | took adequate time, still wrong; the one to study (FlawFix) |
+| `phase` | stored column | TS | opening / middlegame / endgame |
+
+`time-pressure` / `hasty` / `knowledge-gap` are a **mutually-exclusive tempo dimension** (at most one per error). `miss` + `from-winning` were adopted in the ruleset above; the rest are detailed below.
 
 - **`time-pressure`** *(eval + clocks)* — error played on a low clock (forced rush). Diagnosis: clock-management problem.
 - **`hasty`** *(eval + clocks)* — "unforced rush": a fast move played with a *comfortable* clock. Diagnosis: discipline, not time.
