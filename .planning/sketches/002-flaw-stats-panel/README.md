@@ -2,7 +2,7 @@
 sketch: 002
 name: flaw-stats-panel
 question: "How does the Flaw-Stats panel above the games list arrange per-severity rates + tag distribution (tempo split, result-changing, phase) + trend-over-time + the % analyzed / N denominator?"
-winner: null
+winner: "A"
 tags: [panel, stats, library, games, charts, mobile]
 phase: 107
 ---

@@ -20,7 +20,7 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
 | # | Name | Design Question | Winner | Tags |
 |---|------|----------------|--------|------|
 | 001 | analyzed-game-card | Where do B/M/I counts + family tag chips + the no-analysis state sit on the existing card? | **A — Header + 3-col body** | card, library, games, flaws, mobile |
-| 002 | flaw-stats-panel | How to arrange severity rates + tag distribution + trend + the analyzed denominator? | _tbd_ | panel, stats, library, charts, mobile |
+| 002 | flaw-stats-panel | How to arrange severity rates + tag distribution + trend + the analyzed denominator? | **A — Band → trend → tags** | panel, stats, library, charts, mobile |
 
 ## Decisions (winners)
 
@@ -36,3 +36,13 @@ impact) — chips are display-only in 107 (the Flaws deep-link target ships late
   opportunity = cyan, impact = magenta. Color = family; icon/label distinguishes members. Chips
   are **display-only in Phase 107** (Flaws deep-link target ships later).
 - The **"no engine analysis"** state replaces the counts/chips for chess.com / unanalyzed games.
+
+**002 → Variant A (Band → trend → tag distribution).**
+- Top: a single row of **severity-rate cells** (blunders / mistakes / inaccuracies per game +
+  result-changing %), with the **per-game / per-100-moves toggle** in the panel head and the
+  **`% analyzed` + N denominator** pinned right.
+- Middle: the full-width **trend chart** (blunders/game over time) — kept high because "am I
+  blundering less?" is the headline insight.
+- Bottom: the full **tag distribution** — tempo split (stacked violet bar), phase histogram,
+  opportunity + impact rates.
+- Order reads **how often → over time → of what kind**. Mobile reflows the band to stacked cells.

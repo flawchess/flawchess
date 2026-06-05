@@ -95,14 +95,14 @@
 
 <div id="variant-nav">
   <span class="brand">FlawChess ▸ 002 Flaw-Stats Panel</span>
-  <button class="variant-tab active" onclick="showVariant('a', event)">A: Stat band + trend</button>
+  <button class="variant-tab active" onclick="showVariant('a', event)">A: Band → trend → tags ★ Selected</button>
   <button class="variant-tab" onclick="showVariant('b', event)">B: 2-col + trend</button>
   <button class="variant-tab" onclick="showVariant('c', event)">C: KPI tiles</button>
 </div>
 
 <!-- ===== VARIANT A ===== -->
 <section id="variant-a" class="variant active">
-  <p class="note"><b>A — Horizontal stat band + trend.</b> A single row of severity-rate cells with the analyzed denominator pinned right, the tag distribution as a compact block, then the full-width trend chart (the headline "am I blundering less?" insight). Reads top-to-bottom: how often → of what kind → over time.</p>
+  <p class="note"><b>A — Stat band → trend → tag distribution (winner).</b> A single row of severity-rate cells (per-game / per-100 toggle in the head, analyzed denominator pinned right), then the full-width <b>trend</b> chart — the headline "am I blundering less?" insight, kept high — and the full <b>tag distribution</b> at the bottom (tempo split, phase, opportunity, impact). Reads how often → over time → of what kind.</p>
   <div class="panel">
     <div class="panel-head">
       <span class="panel-title">Flaw-Stats</span>
@@ -115,6 +115,7 @@
       <div class="cell"><span class="kpi-num sev-i" data-g="5.1" data-h="2.6">5.1</span><span class="kpi-lab sev-i">Inaccuracies / game</span><span class="delta bad">▲ 4%</span></div>
       <div class="cell"><span class="kpi-num" style="color:var(--fam-impact)">31%</span><span class="kpi-lab">Result-changing</span><span class="delta">of blunders flipped the game</span></div>
     </div>
+    <div class="trend" id="trendA"></div>
     <div class="sub" style="margin-top:14px">
       <h4>Tag distribution</h4>
       <div style="font-size:var(--text-chip);color:var(--color-text-muted);margin-bottom:6px">Tempo split of mistakes + blunders</div>
@@ -140,7 +141,6 @@
         </div>
       </div>
     </div>
-    <div class="trend" id="trendA"></div>
   </div>
 </section>
 
