@@ -371,8 +371,8 @@ export function FilterPanel({
                 className={cn(
                   'rounded border h-11 sm:h-7 text-xs transition-colors',
                   isTimeControlActive(tc)
-                    ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active-hover'
-                    : 'border-border bg-inactive-bg text-muted-foreground hover:bg-inactive-bg-hover hover:text-foreground',
+                    ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
+                    : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
                 )}
               >
                 <span className="flex items-center justify-center gap-1">
@@ -400,8 +400,8 @@ export function FilterPanel({
                 className={cn(
                   'rounded border h-11 sm:h-7 text-xs transition-colors',
                   isPlatformActive(p)
-                    ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active-hover'
-                    : 'border-border bg-inactive-bg text-muted-foreground hover:bg-inactive-bg-hover hover:text-foreground',
+                    ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground pointer-fine:hover:bg-toggle-active-hover'
+                    : 'border-border bg-inactive-bg text-muted-foreground pointer-fine:hover:bg-inactive-bg-hover pointer-fine:hover:text-foreground',
                 )}
               >
                 <span className="flex items-center justify-center gap-1">
