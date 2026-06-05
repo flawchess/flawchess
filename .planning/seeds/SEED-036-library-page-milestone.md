@@ -121,6 +121,24 @@ FROM_WINNING_ES = 0.85     # FlawChess tag threshold (~+470 cp), NOT a Lichess c
 - **`from-winning`**: `ES_before ≥ 0.85`. The draft's separate "Missed Win" / "Blunder (from winning)" classes **collapse** into `<severity> + from-winning`.
 - **`miss`**: the move is a severity-flagged error AND the opponent's *immediately preceding* move was itself a Mistake or Blunder (eval spike, then the player gives it back on the very next ply). Renamed from "Missed Tactic"; it is an **adjacency tag on an existing error, not its own detection rule**. The draft's ES-must-*increase* rule was conceptually broken: a stored eval already prices in best play, so the punishment shows up as a jump on the *opponent's* move, not as a rise on the player's — the player capitalizes by *maintaining* ES, not growing it, and "failed to capitalize" is just a normal drop that happens to follow an opponent error.
 
+**Extended attribution tags (added 2026-06-05, from a review of chess.com/lichess classification criticisms — see research note).** All orthogonal, all additive (none change the severity label), all in the cheap data quadrant (eval-only, eval+clocks, eval+result, or a stored column):
+
+- **`time-pressure`** *(eval + clocks)* — error played on a low clock (forced rush). Diagnosis: clock-management problem.
+- **`hasty`** *(eval + clocks)* — "unforced rush": a fast move played with a *comfortable* clock. Diagnosis: discipline, not time.
+- **`knowledge-gap`** *(eval + clocks)* — the residual tempo state: an error made *after spending adequate/long time* (not fast). Diagnosis: genuine understanding/calculation gap — more time wouldn't have helped, so it is the highest-value error to study and the one **FlawFix (SEED-037) should prioritize**. (Chosen over "blind spot," which is reserved for the pattern-level recurring-theme feature below — a *single* slow-but-wrong move isn't a blind spot; a *repeated* one is.)
+  - These three form a **tempo dimension**: every error carries *at most one* of {`time-pressure`, `hasty`, `knowledge-gap`}, derived from (move-time, clock-state). `hasty` vs `time-pressure` split on clock comfort; `knowledge-gap` is the not-fast case.
+- **`unpunished`** *(eval-only)* — your blunder whose *immediately following* opponent move failed to recover the eval (you "got away with it"). The mirror of `miss` (your `unpunished` = the opponent had a `miss`), but a distinct *user-facing* filter since the user only sees their own moves. Surfaces blunders never learned from because the scoreboard didn't punish them.
+- **`result-changing`** *(eval + game result)* — the error flipped the actual game outcome (winning→drawn/lost, drawn→lost). Ties a flaw to its real consequence; also the principled catch for the already-decided blind spot below.
+- **`phase`** *(stored `phase` column, ~free)* — opening / middlegame / endgame; enables "you blunder most in the endgame" at the stats layer.
+
+**Already-decided blind spot — accepted, with a catch.** Pure-drop + sigmoid saturation inherits lichess's most-cited substantive gap: in a very won position (ES ≳ 0.97) you can shed large material with a sub-threshold win% move and it won't flag. Accepted for v1 because such cases rarely change the result, and `result-changing` catches the ones that do. **Rejected alternative:** a material-swing overlay tag (flag "lost ≥X material, no compensation" from the stored `material_imbalance`, independent of eval drop) — cheap and would visibly beat lichess here, but deferred as low-value/noisy for v1. Revisit if real data shows meaningful missed flags.
+
+**Recurring-theme insights — forward pointer, NOT a per-move tag.** The most-cited coach gap ("you keep doing X") is a *cross-game aggregate*, and naming the theme needs motif detection. It belongs at the **mistake-stats / insights layer** (overlaps SEED-037 Train), not the per-move classifier. Logged so it isn't lost; out of scope for the classification tags.
+
+**Explicitly skipped:** `only-move`/forced (needs the 2nd-best eval we don't store → an engine call, not eval-only; defer to on-demand enrichment) and a "Brilliant"-style positive label (expensive, off-brand — FlawChess flags flaws, not confetti — and the single most-mocked chess.com feature; skip, likely permanently).
+
+**OPEN — time-threshold calibration (TBD).** The `time-pressure` / `hasty` / `knowledge-gap` split needs concrete move-time and clock thresholds, and a decision on whether "fast" / "low clock" are **absolute** or **relative to the base clock / time control** (a 5 s move is fast in classical, normal in bullet). Same calibration bucket as the drop thresholds — tune against real data, do not hard-code in this seed.
+
 **Mate handling — Option B (DECIDED), divergence noted:**
 - Map a mate eval to its **±1000 cp-equivalent ES** (≈ 0.998 / 0.002) and run the normal drop thresholds. **Do NOT reuse `eval_mate_to_expected_score`'s hard 1.0/0.0 in drop math** — that converter was built for the endgame expected-score-averaging path; hard 1.0/0.0 mis-sizes mate-transition swings.
 - **Known divergence from Lichess:** Lichess routes cp↔mate *transitions* through a separate `MateAdvice` ladder keyed on the non-mate cp endpoint (±999 / ±700), so it still flags e.g. "walked into mate from an already-lost position" as an Inaccuracy. Option B's plain sigmoid **under-flags** these (mate≈0.998 vs +1500 cp≈0.996 ⇒ ~0 drop ⇒ no flag). Accepted as a v1 simplification — mate transitions are rare. The full `MateAdvice` ladder is documented in the research note for a possible later Option-A upgrade. Revisit only if mate-edge gaps surface in real data.
@@ -133,8 +151,13 @@ my_inaccuracies = count(Inaccuracy)
 my_mistakes     = count(Mistake)
 my_blunders     = count(Blunder)          # includes from-winning blunders
 my_misses       = count(miss-tagged errors)
+# Every tag is also a filterable/aggregatable dimension, e.g.:
+my_unpunished     = count(unpunished-tagged errors)
+my_result_changing = count(result-changing errors)
+errors_by_tempo   = {time-pressure, hasty, knowledge-gap} histogram   # tempo dimension
+errors_by_phase   = {opening, middlegame, endgame} histogram
 # from-winning stays an analytic sub-tag (exposable as a "squandered wins" filter later);
-# it is not necessarily its own top-level filter toggle in v1.
+# tempo/phase power the stats-panel breakdowns. Not all become top-level filter toggles in v1.
 ```
 
 ### Detection + best-move architecture
@@ -234,6 +257,13 @@ Likely 4-6 phases:
 - `frontend/src/hooks/useEvalCoverage.ts` — existing eval-coverage progress plumbing.
 
 ## Source / decision log
+
+**2026-06-05 extended attribution tag set (user + Claude, `/gsd-explore`, grounded in chess.com/lichess criticism research):**
+- Added six attribution tags beyond severity, all in the cheap data quadrant: **`time-pressure`**, **`hasty`** (unforced rush), **`knowledge-gap`** (slow-and-still-wrong) — a mutually-exclusive **tempo dimension** — plus **`unpunished`** ("got away with it"), **`result-changing`** (flipped the game outcome), and **`phase`**. With the earlier `miss` + `from-winning`, the full set is eight tags.
+- **Naming:** `hasty` for unforced rush (vs `time-pressure`); `knowledge-gap` for the slow-but-wrong residual ("blind spot" deliberately reserved for the pattern-level recurring-theme feature).
+- **Already-decided blind spot accepted** (inherited from lichess's pure-drop sigmoid) — `result-changing` is the principled catch; a material-swing overlay tag was considered and **deferred** (low-value/noisy for v1).
+- **Recurring-theme insights** = forward pointer to the stats/insights layer (overlaps SEED-037), NOT a per-move tag. **`only-move`** and a **"Brilliant"** positive label explicitly skipped (engine-call cost / off-brand / most-mocked feature).
+- **OPEN:** time-threshold calibration for the tempo split (absolute vs relative-to-base-clock) — same tuning bucket as the drop thresholds, not hard-coded.
 
 **2026-06-05 mistake classification ruleset — closes Q-CLASS thresholds (user + Claude, `/gsd-explore`, lila source-verified):**
 - **Severity = Lichess-identical**, but thresholds **halve** on our scale: Lichess judges on `winningChances` [−1,+1] (cutoffs 0.10/0.20/0.30); our `eval_cp_to_expected_score` returns [0,1] = `(wc+1)/2`, so our drop constants are **0.05 (inaccuracy) / 0.10 (mistake) / 0.15 (blunder)**. An early draft's 0.10/0.20/0.30-on-ES was 2× too lenient.

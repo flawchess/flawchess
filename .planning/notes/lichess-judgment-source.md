@@ -123,6 +123,61 @@ reproduce Lichess. Minimal deltas:
 3. **Clamp:** do **not** pre-clamp cp for judgment (raw cp into the sigmoid); ±1000 ceil is
    display-only. Our un-clamped `eval_utils.py` is therefore correct as-is for cp judgments.
 
+## Appendix — criticisms of chess.com / lichess classification → FlawChess tags (2026-06-05)
+
+Researched the most frequent substantive criticisms of both systems to mine for additional
+*tags* (severity stays Lichess-pure; tags layer on top). Prioritized by frequency + instructive
+value, not exhaustiveness.
+
+**Top criticisms — chess.com:** (1) **"Brilliant" is overused / not actually brilliant** —
+the loudest complaint; the sacrifice gate fires on forced recaptures and obvious-but-good
+moves, and rating-relative thresholds offend purists. (2) **Non-determinism** — same game
+re-analyzed gives different labels/accuracies across depths/runs. (3) **"Miss" is confusing**
+— users can't separate it from Mistake/Blunder. (4) **Gamification over instruction** (weakly
+citable sentiment).
+
+**Top criticisms — lichess:** (1) **Too coarse (3 labels)** — no positive feedback, no
+"only move," no thematic grouping (most-requested improvement). (2) **No "missed win"/
+missed-tactic flag.** (3) **Already-decided floor/ceiling** — below ~30% win chance you
+can't "blunder," and in a won position you can hang a queen / miss mate-in-1 with no flag;
+the single most *substantive* lichess gap. (4) **Cloud/depth dependence.**
+
+**Cross-cutting gaps coaches actually want:** recurring/thematic mistakes across games (the
+#1 "real training signal"); time-pressure attribution; "you got away with it" (unpunished
+blunders); tying mistakes to game result and to difficulty of finding the move.
+
+**Candidate tags, ranked by value × cheapness** (D = differentiated vs chess.com/lichess,
+TS = table-stakes catch-up):
+
+| Tag | Data dep | D/TS | Status in SEED-036 |
+|-----|----------|------|--------------------|
+| `miss` (missed win/tactic) | eval-only | TS | **adopted** (earlier) |
+| `from-winning` | eval-only | D | **adopted** (earlier) |
+| `unpunished` ("got away with it") | eval-only | D | **adopted** |
+| `result-changing` (flipped outcome) | eval + result | D | **adopted** |
+| `time-pressure` | eval + clocks | D | **adopted** |
+| `hasty` (unforced rush) | eval + clocks | D | **adopted** |
+| `knowledge-gap` (slow + still wrong) | eval + clocks | D | **adopted** |
+| `phase` | stored column | TS | **adopted** |
+| already-decided suppressor / material-swing overlay | eval (+material) | TS/D | **deferred** — `result-changing` is the v1 catch |
+| recurring-theme clustering | eval-only (+motif to name) | D | **deferred** — stats/insights layer, not a per-move tag |
+| `only-move` / forced | needs 2nd-best eval = engine call (NOT eval-only for us) | TS | **deferred** — on-demand enrichment only |
+| "Brilliant" positive label | engine best-move + 2nd-best | TS-ish | **skipped** — expensive, off-brand, most-mocked |
+| tactical vs positional motif | motif detection | D | **deferred** — expensive, low ROI |
+
+Key correction to the generic research: **`only-move` is NOT eval-only for FlawChess** —
+detecting it needs the second-best move's eval, which stored lichess `%eval` does not provide
+(same limitation that broke the original "Missed Tactic" rule). It requires the best-move
+endpoint, so it's on-demand enrichment, not a bulk tag.
+
+**Skeptical note:** the only pure *entertainment* gripe is "Brilliant feels bad" — everything
+else above is a genuine instructive gap. Positive labeling is optional polish at best, and a
+sloppy version inherits chess.com's most-ridiculed flaw, so FlawChess skips it.
+
+Criticism-source threads (community sentiment where not citable):
+chess.com brilliant-overuse forums, "what is a Miss" forums, "inconsistent analyses" forum;
+lichess "better classification" + "what constitutes an inaccuracy" feedback threads.
+
 ## Sources
 
 - lila `modules/tree/src/main/Advice.scala` — https://github.com/lichess-org/lila/blob/master/modules/tree/src/main/Advice.scala
