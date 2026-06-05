@@ -103,7 +103,7 @@ export function OpponentStrengthFilter({ value, onChange }: OpponentStrengthFilt
               className={cn(
                 'rounded border h-11 sm:h-7 text-xs transition-colors',
                 isActive
-                  ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground hover:bg-toggle-active-hover'
+                  ? 'border-toggle-active bg-toggle-active text-toggle-active-foreground'
                   : 'border-border bg-inactive-bg text-muted-foreground hover:bg-inactive-bg-hover hover:text-foreground',
               )}
             >
