@@ -98,12 +98,44 @@ Filter the archive to games containing at least one mistake of a selected severi
 
 **The eval→expected-score mapping is ALREADY SOLVED — do not rebuild it.** `app/services/eval_utils.py::eval_cp_to_expected_score(eval_cp, user_color)` / `eval_mate_to_expected_score(...)` implement the Lichess sigmoid (`LICHESS_K = 0.00368208`), return [0,1] user-POV, and are already reused across endgame stats. Mistake severity is a **drop in this expected score between consecutive plies** for the side to move. There is no per-ply win%-drop derivation today (only span-level gaps in `endgame_service.py`); that LAG-over-plies derivation is the new work.
 
-**What still needs RESEARCH (Q-CLASS), do not hard-code in this seed:** the *classification layer* on top of the (solved) expected-score drop —
-- The **thresholds** that bucket an expected-score drop into inaccuracy / mistake / blunder (Lichess's own cutoffs are a reference, but confirm; expected-score drops behave better than raw cp in already-decided positions, which is exactly why we use the sigmoid).
-- Distinguish **two kinds of error** (user request):
-  - **Player mistakes** — the user's own move dropped their win%.
-  - **Opponent misses ("missed punishment")** — the opponent's move *handed* the user a swing, and the user's *reply* failed to capitalize (didn't play a clearly-best converting move). This is a distinct, valuable signal and a harder definition.
-- The filter UI should let the user pick severity (inaccuracy / mistake / blunder) and likely the kind (my-mistakes vs missed-punishment), pending the research outcome.
+### Mistake classification ruleset — RESOLVED (2026-06-05, closes Q-CLASS thresholds)
+
+Verified against `lila` source (see `.planning/notes/lichess-judgment-source.md`). **Severity (inaccuracy/mistake/blunder) is Lichess-identical; `from-winning` and `miss` are orthogonal FlawChess tags that never alter the Lichess label.** This supersedes the draft thresholds and the "Missed Tactic" / "missed-punishment" framing.
+
+**Scale correction (critical, the load-bearing finding).** Lichess judges on its `winningChances` scale, which is **[−1, +1]**, with cutoffs 0.10 / 0.20 / 0.30. Our `eval_cp_to_expected_score` returns **[0, 1]** = `(winningChances + 1) / 2`, i.e. **half that scale**, so Lichess's thresholds **halve** on our ES scale. An early draft used 0.10/0.20/0.30 directly on the ES scale — that was **2× too lenient** (a "blunder" would have needed ~330 cp near equality vs Lichess's ~165 cp).
+
+**Constants (our [0,1] ES scale, mover POV):**
+```python
+INACCURACY_DROP = 0.05    # = Lichess 0.10 on [-1,1], halved
+MISTAKE_DROP    = 0.10     # = Lichess 0.20
+BLUNDER_DROP    = 0.15     # = Lichess 0.30
+FROM_WINNING_ES = 0.85     # FlawChess tag threshold (~+470 cp), NOT a Lichess concept
+```
+
+**Severity** (per move, from the *mover's* POV — so opponent moves are classified too, which the `miss` tag needs):
+- `drop = ES_before − ES_after` (side-to-move signed, matching lila's `info.color.fold(-d, d)`).
+- Blunder if `drop ≥ 0.15`; Mistake if `drop ≥ 0.10`; Inaccuracy if `drop ≥ 0.05`; else none. Highest band wins.
+- **Pure drop, NO position guard** — Lichess applies no absolute-strength guard. The draft's `ES_before < 0.85` gate is **dropped** (it was itself a divergence from Lichess and caused a discontinuity at 0.85); **no losing-side floor** is added either (the sigmoid's saturation already suppresses decided-position noise).
+
+**Tags** (orthogonal, additive — never change the severity label):
+- **`from-winning`**: `ES_before ≥ 0.85`. The draft's separate "Missed Win" / "Blunder (from winning)" classes **collapse** into `<severity> + from-winning`.
+- **`miss`**: the move is a severity-flagged error AND the opponent's *immediately preceding* move was itself a Mistake or Blunder (eval spike, then the player gives it back on the very next ply). Renamed from "Missed Tactic"; it is an **adjacency tag on an existing error, not its own detection rule**. The draft's ES-must-*increase* rule was conceptually broken: a stored eval already prices in best play, so the punishment shows up as a jump on the *opponent's* move, not as a rise on the player's — the player capitalizes by *maintaining* ES, not growing it, and "failed to capitalize" is just a normal drop that happens to follow an opponent error.
+
+**Mate handling — Option B (DECIDED), divergence noted:**
+- Map a mate eval to its **±1000 cp-equivalent ES** (≈ 0.998 / 0.002) and run the normal drop thresholds. **Do NOT reuse `eval_mate_to_expected_score`'s hard 1.0/0.0 in drop math** — that converter was built for the endgame expected-score-averaging path; hard 1.0/0.0 mis-sizes mate-transition swings.
+- **Known divergence from Lichess:** Lichess routes cp↔mate *transitions* through a separate `MateAdvice` ladder keyed on the non-mate cp endpoint (±999 / ±700), so it still flags e.g. "walked into mate from an already-lost position" as an Inaccuracy. Option B's plain sigmoid **under-flags** these (mate≈0.998 vs +1500 cp≈0.996 ⇒ ~0 drop ⇒ no flag). Accepted as a v1 simplification — mate transitions are rare. The full `MateAdvice` ladder is documented in the research note for a possible later Option-A upgrade. Revisit only if mate-edge gaps surface in real data.
+
+**`eval_utils.py` compatibility:** the cp sigmoid `1/(1+exp(-0.00368208·cp))` already matches Lichess's `winningChances` (rescaled), and Lichess does **not** clamp cp in its judgment path, so our un-clamped function is correct as-is for cp judgments. Only mate needs the ±1000 cp mapping above (don't reuse the hard-1.0/0.0 converter for drops).
+
+**Game-level rollup (filters):**
+```python
+my_inaccuracies = count(Inaccuracy)
+my_mistakes     = count(Mistake)
+my_blunders     = count(Blunder)          # includes from-winning blunders
+my_misses       = count(miss-tagged errors)
+# from-winning stays an analytic sub-tag (exposable as a "squandered wins" filter later);
+# it is not necessarily its own top-level filter toggle in v1.
+```
 
 ### Detection + best-move architecture
 
@@ -139,7 +171,7 @@ Drawer pattern from Openings on the Games subtab. Analysis subtab stacks indicat
 
 ## Open questions for milestone discuss-phase
 
-- **Q-CLASS (research): mistake classification thresholds + kinds.** The eval→expected-score mapping is solved (`eval_utils.py`); research is only (a) the expected-score-drop thresholds for inaccuracy/mistake/blunder, and (b) the "opponent miss / missed punishment" definition. Do this BEFORE specifying the filter UI. This is the biggest unknown.
+- **Q-CLASS: RESOLVED (2026-06-05).** Thresholds, the two error kinds, and mate handling are all settled — see "Mistake classification ruleset" above and `.planning/notes/lichess-judgment-source.md`. Summary: severity = Lichess-identical on halved drop constants (0.05/0.10/0.15 on our [0,1] ES scale), pure-drop with no position guard, `from-winning` + `miss` as orthogonal tags, mate via Option B (±1000 cp mapping, divergence noted).
 - **Q-COV (research/measurement): eval coverage.** What fraction of Lichess games (and of all games) have full per-ply eval on prod today? Drives how rich v1 feels and whether chess.com coverage-expansion is near-term.
 - **Q-NAME: RESOLVED.** Page name is **Library** (reverted from "Review").
 - **G-1: URL deep-linking.** `/library/analysis/{game_id}?ply={N}` + Games-subtab filter state in query params (Openings precedent). Recommended default; confirm.
@@ -202,6 +234,15 @@ Likely 4-6 phases:
 - `frontend/src/hooks/useEvalCoverage.ts` — existing eval-coverage progress plumbing.
 
 ## Source / decision log
+
+**2026-06-05 mistake classification ruleset — closes Q-CLASS thresholds (user + Claude, `/gsd-explore`, lila source-verified):**
+- **Severity = Lichess-identical**, but thresholds **halve** on our scale: Lichess judges on `winningChances` [−1,+1] (cutoffs 0.10/0.20/0.30); our `eval_cp_to_expected_score` returns [0,1] = `(wc+1)/2`, so our drop constants are **0.05 (inaccuracy) / 0.10 (mistake) / 0.15 (blunder)**. An early draft's 0.10/0.20/0.30-on-ES was 2× too lenient.
+- **Pure drop, no position guard** (matches lila `CpAdvice`): drop the draft's `ES_before < 0.85` gate and add no losing-side floor; the sigmoid's saturation is the only suppression. Removes the 0.85 discontinuity.
+- **`from-winning` tag** (`ES_before ≥ 0.85`) replaces the "Missed Win" / "Blunder-from-winning" classes — severity + tag, not a parallel ladder.
+- **`miss` tag** = an error whose immediately-preceding opponent move was a Mistake/Blunder (adjacency tag, renamed from "Missed Tactic"). The draft's ES-must-increase rule was conceptually broken (stored eval already prices in best play; capitalizing = maintaining ES, not raising it). Detectable from stored evals alone, no `ES_best`/engine needed → keeps the seed's "no engine at detection time" architecture.
+- **Mate = Option B** (DECIDED): map mate → ±1000 cp-equivalent ES, run normal thresholds; do NOT reuse `eval_mate_to_expected_score`'s hard 1.0/0.0 in drop math. Diverges from Lichess's separate `MateAdvice` ladder (under-flags mate transitions from decided positions) — accepted v1 simplification, ladder documented for a later Option-A upgrade.
+- **`eval_utils.py`**: cp sigmoid already matches Lichess and needs no clamp for judgment; only mate needs the ±1000 cp mapping.
+- Source facts captured in `.planning/notes/lichess-judgment-source.md` (lila `Advice.scala`, scalachess `eval.scala`).
 
 **2026-06-05 Games/Flaws/Analysis split + Flaws naming (user + Claude, `/gsd-explore`):**
 - **Subtab bar → `Import · Games · Flaws · Overview` (4 chips).** New **Flaws** subtab added; **Analysis** removed from the bar.
