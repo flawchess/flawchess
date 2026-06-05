@@ -46,7 +46,7 @@ export function GamesTab({
             Import your games from chess.com or lichess to start analyzing positions.
           </p>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/import">Import Games</Link>
+            <Link to="/library/import">Import Games</Link>
           </Button>
         </div>
       ) : filtersMatchNothing ? (

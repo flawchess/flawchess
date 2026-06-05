@@ -620,7 +620,7 @@ export function HomePage() {
     // New users (0 games on both platforms) land on /import for onboarding.
     const hasGames =
       (profile?.chess_com_game_count ?? 0) + (profile?.lichess_game_count ?? 0) > 0;
-    return <Navigate to={hasGames ? '/openings' : '/import'} replace />;
+    return <Navigate to={hasGames ? '/openings' : '/library/import'} replace />;
   }
 
   return <HomePageContent />;

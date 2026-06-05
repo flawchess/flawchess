@@ -48,7 +48,7 @@ function formatLastSync(iso: string | null): string | null {
   return `last sync: ${days} ${days === 1 ? 'day' : 'days'} ago`;
 }
 
-interface ImportPageProps {
+export interface ImportPageProps {
   onImportStarted: (jobId: string) => void;
   activeJobIds: string[];
   onJobDismissed: (jobId: string) => void;

@@ -2,31 +2,31 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: roadmapped
-last_updated: "2026-06-05T00:00:00.000Z"
+status: Phase 104 complete & verified — v1.24 ready for milestone close
+last_updated: "2026-06-05T08:27:37.104Z"
 last_activity: 2026-06-05
 progress:
-  total_phases: 1
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 5
+  completed_phases: 1
+  total_plans: 2
+  completed_plans: 2
+  percent: 20
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 104 — Library Page Shell + Import & Overview Subtab Migration (next to plan)
-Plan: — (roadmap created; awaiting `/gsd-plan-phase 104`)
-Status: Roadmapped — Phase 104 defined, not yet planned
-Last activity: 2026-06-05 — v1.24 roadmap created (single phase, LIB-01..09)
+Phase: 999.1 (backlog placeholder — not active milestone work)
+Plan: Not started
+Status: Phase 104 complete and verified (9/9 must-haves). v1.24 Library Page is a single-phase milestone, so it is now ready for `/gsd-complete-milestone`. The next "phase" (999.1 password-reset) is a parked backlog item, not the intended next step.
+Last activity: 2026-06-05 — Phase 104 executed (2 plans), LIB-09 nested-main gap fixed inline, verification passed
 
 ## Project Reference
 
 See: .planning/PROJECT.md (updated 2026-05-31 after v1.21 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.24 Library Page (single phase — Phase 104). First step of SEED-036: introduce the **Library** top-level page with deep-linkable `<Tabs variant="brand">` subtabs and fold the existing Import and Overview pages in as subtabs (each its own tsx, mirroring Openings). Migrate `/import` → `/library/import` and `/overview` → `/library/overview` with redirects; top-level nav drops to Library · Openings · Endgames (+ Admin); the `totalGames === 0` notification dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile + browser-automation parity. **Pure frontend restructure + route migration — no backend endpoints, no schema changes.** The rest of SEED-036 (Games subtab, Analysis viewer, mistake-detection backend, mistake-type filter, mistake-stats panel, best-move endpoint) is deliberately NOT roadmapped — it stays in `.planning/seeds/SEED-036-library-page-milestone.md`. Requirements LIB-01..09 all map to Phase 104. Next: `/gsd-plan-phase 104`.
+Current focus: v1.24 Library Page (single phase — Phase 104). First step of SEED-036: introduce the **Library** top-level page with deep-linkable `<Tabs variant="brand">` subtabs and fold the existing Import and Overview pages in as subtabs (each its own tsx, mirroring Openings). Migrate `/import` → `/library/import` and `/overview` → `/library/overview` with redirects; top-level nav drops to Library · Openings · Endgames (+ Admin); the `totalGames === 0` notification dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile + browser-automation parity. **Pure frontend restructure + route migration — no backend endpoints, no schema changes.** The rest of SEED-036 (Games subtab, Analysis viewer, mistake-detection backend, mistake-type filter, mistake-stats panel, best-move endpoint) is deliberately NOT roadmapped — it stays in `.planning/seeds/SEED-036-library-page-milestone.md`. Requirements LIB-01..09 all map to Phase 104 — **complete and verified 2026-06-05**. Next: `/gsd-complete-milestone` to ship v1.24.
 
 ## Milestone Progress
 
@@ -271,6 +271,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 100 P02 | 14min | 2 tasks | 4 files |
 | Phase 102 P01 | 30 | 3 tasks | 5 files |
 | Phase 102 P04 | 60min | 5 tasks | 6 files |
+| Phase 104 P01 | 2 | 2 tasks | 4 files |
 
 ## Decisions
 

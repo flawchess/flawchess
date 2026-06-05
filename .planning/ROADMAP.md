@@ -34,19 +34,30 @@
 
 First step of SEED-036: introduce the **Library** page as a top-level nav destination with URL-routed subtabs, folding the existing **Import** and **Overview** pages in as subtabs (each its own tsx, mirroring the Openings page structure). Pure frontend restructure + route migration — no backend endpoints, no schema changes. The rest of the SEED-036 vision (Games subtab, Analysis viewer, mistake-detection backend, best-move endpoint) is **deliberately not roadmapped** and lives in `.planning/seeds/SEED-036-library-page-milestone.md`.
 
-- [ ] **Phase 104: Library Page Shell + Import & Overview Subtab Migration** — new `/library` route with deep-linkable `<Tabs variant="brand">` subtabs; migrate `/import` → `/library/import` and `/overview` → `/library/overview` (each its own tsx, with redirects); top-level nav drops to Library · Openings · Endgames (+ Admin); `totalGames === 0` dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile parity + browser-automation conventions (LIB-01..09)
+- [x] **Phase 104: Library Page Shell + Import & Overview Subtab Migration** — new `/library` route with deep-linkable `<Tabs variant="brand">` subtabs; migrate `/import` → `/library/import` and `/overview` → `/library/overview` (each its own tsx, with redirects); top-level nav drops to Library · Openings · Endgames (+ Admin); `totalGames === 0` dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile parity + browser-automation conventions (LIB-01..09) (completed 2026-06-05)
 
 #### Phase 104: Library Page Shell + Import & Overview Subtab Migration
+
 **Goal**: Users have a single top-level **Library** page that hosts the existing Import and Overview workflows as deep-linkable subtabs, with all old entry points (nav items, `/import`, `/overview`, the gameless-user redirect, the zero-games notification dot) seamlessly repointed at it.
 **Depends on**: Nothing new (builds on the existing Openings/Endgames URL-routed `<Tabs variant="brand">` subtab pattern and the existing Import.tsx / GlobalStats.tsx pages).
 **Requirements**: LIB-01, LIB-02, LIB-03, LIB-04, LIB-05, LIB-06, LIB-07, LIB-08, LIB-09
 **Success Criteria** (what must be TRUE):
+
   1. Top-level navigation shows **Library · Openings · Endgames** (plus superuser-only Admin); Import and Overview are gone as standalone nav items, and the `totalGames === 0` notification dot now appears on the **Library** nav item (LIB-01, LIB-05, LIB-06).
   2. Visiting the Library page lands the user on **Import** when they have zero imported games and on **Overview** when they have games; Home's gameless-user redirect sends them to `/library/import`. The Library page and both subtabs are always reachable (never import-gated) (LIB-07, LIB-08).
   3. Switching between the **Import** and **Overview** subtabs updates the URL to `/library/import` / `/library/overview` and those URLs are directly deep-linkable, using the same Openings-style `<Tabs variant="brand">` pattern, with each subtab implemented as its own `.tsx` file (LIB-02).
   4. Visiting the old `/import` URL redirects to `/library/import` with the full Import workflow intact, and visiting `/overview` redirects to `/library/overview` with the full Overview dashboard intact (LIB-03, LIB-04).
   5. The Library page, its subtab control, and both migrated subtabs render and function correctly on mobile, with `data-testid` / ARIA / semantic-HTML conventions present on all new interactive elements and containers (LIB-09).
-**Plans**: TBD
+
+**Plans**: 2 plansPlans:
+**Wave 1**
+
+- [x] 104-01-PLAN.md — Create the pages/library/ shell (LibraryPage) + Import/Overview subtab wrappers, mirroring the Endgames two-subtab Tabs pattern
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 104-02-PLAN.md — Rewire App.tsx nav/routes/redirects/notification-dot at the Library shell and sweep internal /import links to /library/import
+
 **UI hint**: yes
 
 *Earlier milestones below. v1.23 (Phases 102, 103) shipped 2026-06-03 — archived to [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md); see the collapsed block. v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md). v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
@@ -359,7 +370,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 | 97-99.1. v1.21 phases | v1.21 | 15/15 | Complete (99.1 INSERTED) | 2026-05-31 |
 | 100-101. v1.22 phases | v1.22 | 3/3 | Complete | 2026-05-31 |
 | 102-103. v1.23 phases | v1.23 | 3/3 | Complete (103 unplanned follow-on) | 2026-06-03 |
-| 104. Library Page Shell + Import/Overview Migration | v1.24 | 0/0 | In Progress | - |
+| 104. Library Page Shell + Import/Overview Migration | v1.24 | 2/2 | Complete    | 2026-06-05 |
 
 ## Backlog
 
@@ -367,7 +378,7 @@ See [milestones/v1.15-ROADMAP.md](milestones/v1.15-ROADMAP.md) for full details.
 
 **Goal:** Users can recover account access when they forget their password — request reset link, receive email, set new password
 **Requirements:** TBD
-**Plans:** 1/1 plans complete
+**Plans:** 2/2 plans complete
 
 Plans:
 

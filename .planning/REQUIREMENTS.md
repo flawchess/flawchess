@@ -11,15 +11,15 @@ Requirements for this milestone. Each maps to the single roadmap phase.
 
 ### Library Page
 
-- [ ] **LIB-01**: User can navigate to a new top-level **Library** page from the desktop nav, the mobile bottom bar, and the mobile "More" drawer.
-- [ ] **LIB-02**: The Library page presents deep-linkable, URL-routed subtabs using the same Openings-style `<Tabs variant="brand">` pattern (`navigate('/library/<tab>')`), with each subtab implemented as its own `.tsx` file mirroring the Openings page structure.
-- [ ] **LIB-03**: User can access the existing Import workflow as the **Import** subtab at `/library/import` (its own tsx, leftmost subtab); visiting the old `/import` URL redirects to `/library/import`.
-- [ ] **LIB-04**: User can access the existing global Overview dashboard as the **Overview** subtab at `/library/overview` (its own tsx, migrated from `GlobalStats.tsx`); visiting the old `/overview` URL redirects to `/library/overview`.
-- [ ] **LIB-05**: Top-level navigation shows **Library · Openings · Endgames** (plus the superuser-only Admin item), with Import and Overview removed as standalone top-level nav items.
-- [ ] **LIB-06**: The `totalGames === 0` notification dot appears on the **Library** nav item (moved from the former Import nav item).
-- [ ] **LIB-07**: The default landing subtab is state-dependent — a user with zero imported games lands on **Import**; a user with games lands on **Overview**. Home's gameless-user redirect targets `/library/import`.
-- [ ] **LIB-08**: The Library page is **always accessible** (never import-gated, because it hosts Import); the Import and Overview subtabs are always open.
-- [ ] **LIB-09**: The Library page and both subtabs work on mobile — responsive subtab control plus the responsive layouts preserved from the migrated Import and Overview pages, with `data-testid` / ARIA / semantic-HTML conventions on all new interactive elements and containers.
+- [x] **LIB-01**: User can navigate to a new top-level **Library** page from the desktop nav, the mobile bottom bar, and the mobile "More" drawer.
+- [x] **LIB-02**: The Library page presents deep-linkable, URL-routed subtabs using the same Openings-style `<Tabs variant="brand">` pattern (`navigate('/library/<tab>')`), with each subtab implemented as its own `.tsx` file mirroring the Openings page structure.
+- [x] **LIB-03**: User can access the existing Import workflow as the **Import** subtab at `/library/import` (its own tsx, leftmost subtab); visiting the old `/import` URL redirects to `/library/import`.
+- [x] **LIB-04**: User can access the existing global Overview dashboard as the **Overview** subtab at `/library/overview` (its own tsx, migrated from `GlobalStats.tsx`); visiting the old `/overview` URL redirects to `/library/overview`.
+- [x] **LIB-05**: Top-level navigation shows **Library · Openings · Endgames** (plus the superuser-only Admin item), with Import and Overview removed as standalone top-level nav items.
+- [x] **LIB-06**: The `totalGames === 0` notification dot appears on the **Library** nav item (moved from the former Import nav item).
+- [x] **LIB-07**: The default landing subtab is state-dependent — a user with zero imported games lands on **Import**; a user with games lands on **Overview**. Home's gameless-user redirect targets `/library/import`.
+- [x] **LIB-08**: The Library page is **always accessible** (never import-gated, because it hosts Import); the Import and Overview subtabs are always open.
+- [x] **LIB-09**: The Library page and both subtabs work on mobile — responsive subtab control plus the responsive layouts preserved from the migrated Import and Overview pages, with `data-testid` / ARIA / semantic-HTML conventions on all new interactive elements and containers.
 
 ## v2 Requirements
 
@@ -52,17 +52,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LIB-01 | Phase 104 | Pending |
-| LIB-02 | Phase 104 | Pending |
-| LIB-03 | Phase 104 | Pending |
-| LIB-04 | Phase 104 | Pending |
-| LIB-05 | Phase 104 | Pending |
-| LIB-06 | Phase 104 | Pending |
-| LIB-07 | Phase 104 | Pending |
-| LIB-08 | Phase 104 | Pending |
-| LIB-09 | Phase 104 | Pending |
+| LIB-01 | Phase 104 | Complete |
+| LIB-02 | Phase 104 | Complete |
+| LIB-03 | Phase 104 | Complete |
+| LIB-04 | Phase 104 | Complete |
+| LIB-05 | Phase 104 | Complete |
+| LIB-06 | Phase 104 | Complete |
+| LIB-07 | Phase 104 | Complete |
+| LIB-08 | Phase 104 | Complete |
+| LIB-09 | Phase 104 | Complete |
 
 **Coverage:**
+
 - v1 requirements: 9 total
 - Mapped to phases: 9
 - Unmapped: 0 ✓

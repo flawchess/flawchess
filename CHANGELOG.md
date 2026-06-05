@@ -8,8 +8,13 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+### Added
+
+- **Library page** (Phase 104) — a new top-level **Library** destination in the main nav that hosts Import and Overview as deep-linkable subtabs (`/library/import`, `/library/overview`). Visiting the Library lands you on Import when you have no games yet and on Overview once you do.
+
 ### Changed
 
+- Import and Overview are no longer standalone nav items; they live inside the Library page. The old `/import`, `/overview`, `/rating`, and `/global-stats` links redirect into the matching Library subtab, and the "no games yet" notification dot now sits on the Library nav item (Phase 104).
 - Endgame insights are no longer rate-limited; report caching already keeps the number of fresh AI calls low, so the old hourly limit only got in the way.
 
 ## [v1.23] LLM Endgame-Insights Statistical-Reasoning Rework — 2026-06-03
