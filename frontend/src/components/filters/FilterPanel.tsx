@@ -424,7 +424,7 @@ export function FilterPanel({
 
       {/* More: Opponent Type + Rated */}
       {showMoreSection && (
-        <div>
+        <div className="pt-3 border-t border-border/40">
           <button
             type="button"
             onClick={() => setMoreOpen((v) => !v)}
