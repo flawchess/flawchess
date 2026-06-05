@@ -1,27 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.23
-milestone_name: LLM Endgame-Insights Statistical-Reasoning Rework
-status: shipped
-last_updated: "2026-06-03"
-last_activity: 2026-06-03 -- v1.23 DEPLOYED to production (server at 1165f6a9, site HTTP 200). Phases 102 + 103 shipped; milestone archived, CHANGELOG promoted, tagged v1.23, GitHub release created. Release PR #176 (main → production).
+milestone: v1.24
+milestone_name: Library Page
+status: planning
+last_updated: "2026-06-05T06:53:23.310Z"
+last_activity: 2026-06-05
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Milestone: v1.23 LLM Endgame-Insights Statistical-Reasoning Rework — SHIPPED 2026-06-03
-Phases: 102 (LLM rework, LLM-01..07, HUMAN-UAT signed off 2026-06-02) + 103 (GM-feedback prompt refinements + ~35% condense, endgame_v44, unplanned follow-on)
-Status: DEPLOYED. Release PR #176 (main → production) squash-merged (1165f6a9); bin/deploy.sh verified server at 1165f6a9, flawchess.com HTTP 200, backend healthy. Milestone archived; CHANGELOG promoted; tagged v1.23 (at b57bf4b5) + GitHub release. During release CI: renamed CI test-DB env var to DATABASE_URL_TEST, forward-ported #175 into main (-s ours), and fixed two serial-CI regressions from the 4f57dc21 env-var refactor (benchmark-import global-settings poisoning + backfill dev-target resolution).
-Next: No active milestone. Next feature work via /gsd-new-milestone. SEED-034 (Recommendations-section rework) and SEED-030 Track A remain candidates.
-Last activity: 2026-06-03 -- v1.23 deployed to production and verified live.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-05 — Milestone v1.24 started
 
 ## Project Reference
 

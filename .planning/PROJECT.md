@@ -149,9 +149,9 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - ✓ AI endgame report reasons over peer-relative percentile rank (cohort-framed, "vs ~{anchor}-rated players") and narrates time pressure (Score Gap by Remaining Time, Clock Gap, Net Flag Rate) under the cohort `zone` gate; relaxed Data Analysis overview cap; prompt vocabulary audited against the concepts accordion + tooltip popovers; p-values + CI bounds kept OUT; `endgame_v35` → `endgame_v43` — v1.23 Phase 102 (LLM-01..07)
 - ✓ GM-feedback endgame recommendation refinements — decision-speed time-trouble advice, no fabricated mechanism, no named theoretical positions at any Elo; GM Noël Studer study link in the Recommendations card; prompt condensed ~35% (`endgame_v44`) — v1.23 Phase 103
 
-### No active milestone
+### Active — v1.24 Library Page (Phase 1)
 
-**v1.23 shipped 2026-06-03.** Start the next milestone with `/gsd-new-milestone`. The Recommendations-section rework (`SEED-034`) remains an unplanned follow-up candidate.
+**v1.24 opened 2026-06-05.** See the Current Milestone section below. Requirements tracked in `.planning/REQUIREMENTS.md`.
 
 Candidate later scope (from backlog / deferred):
 
@@ -174,9 +174,19 @@ Candidate later scope (from backlog / deferred):
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: none active
+## Current Milestone: v1.24 Library Page
 
-v1.23 LLM Endgame-Insights Statistical-Reasoning Rework shipped 2026-06-03. No milestone is currently active; start the next one with `/gsd-new-milestone`. The Recommendations-section rework (`SEED-034`) is an unplanned follow-up candidate; SEED-030 Track A (module splitting) and the dormant seeds remain on the backlog.
+**Goal:** Introduce the Library page as a new top-level nav destination with URL-routed subtabs, folding the existing Import and Overview pages in as subtabs — each its own tsx file mirroring the Openings page structure. First step toward the eval-driven mistake archive of SEED-036.
+
+**Target features (Phase 1 only — the rest of SEED-036 is deliberately not roadmapped yet):**
+- New `/library` route + Library page shell using the deep-linkable Radix URL-routed `<Tabs variant="brand">` subtab pattern, same architecture as Openings/Endgames.
+- **Import subtab** — migrate `/import` → `/library/import` (leftmost), keep a redirect from `/import`. Its own tsx.
+- **Overview subtab** — migrate `/overview` → `/library/overview` (from `GlobalStats.tsx`), keep a redirect from `/overview`. Its own tsx.
+- Top-level nav drops to **Library · Openings · Endgames · (Admin)**; the `totalGames === 0` notification dot moves from the Import nav item to the **Library** nav item.
+- Subtab-level gating: Library is always accessible (it hosts Import); Import + Overview are always open. State-dependent landing: zero games → Import, has games → Overview (Games subtab does not exist yet).
+- Mobile parity (subtab control + responsive layout).
+
+**Deferred to future phases (NOT this milestone):** Games subtab + mistake-type filter, mistake-stats panel, Analysis viewer, mistake-detection backend service, on-demand best-move endpoint. Source of truth for the full vision stays `.planning/seeds/SEED-036-library-page-milestone.md`.
 
 ## Current State
 
@@ -389,6 +399,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
+*Last updated: 2026-06-05 — v1.24 Library Page milestone opened. First phase only: create the `/library` page shell with the Openings-style URL-routed subtab pattern and fold the existing Import and Overview pages in as their own-tsx subtabs (`/import` → `/library/import`, `/overview` → `/library/overview`, with redirects); top-level nav drops to Library · Openings · Endgames · (Admin) and the zero-games notification dot moves to the Library nav item. The remaining SEED-036 scope (Games/Analysis subtabs, mistake-detection backend, mistake-type filter, mistake-stats panel, best-move endpoint) is deliberately left unplanned. (Prior footer below.)*
+
 *Last updated: 2026-05-31 — after v1.22 Maintenance — Test Isolation & Frontend Major Upgrades milestone (Phases 100, 101; tag v1.22). Per-run/per-xdist-worker template-cloned test DB retiring the session-start TRUNCATE lock (`pytest -n auto` safe, 2.2x faster), and 11 frontend deps brought to latest major across six bisectable atomic clusters (recharts 3 visual-UAT'd). No active milestone follows; next is `/gsd-new-milestone` (leading candidate: backlog Phase 999.7 LLM Statistical Reasoning). (Prior footer below.)*
 
 *Last updated: 2026-05-31 — after v1.21 Time-Control-Aware Endgame Metrics milestone (Phases 97, 98, 99, 99.1; tag v1.21). The Endgames page is now time-control-honest end to end: per-TC Endgame Metrics cards (TC-specific Conv/Recov bands, shared Parity/Score Gap band), collapsible per-TC Endgame Type Breakdown cards (2×2 type tiles, Mixed dropped, per-(class × TC) bands), peer-relative percentile chips on the per-TC Conv/Parity/Recov rates (12 new per-(metric, TC) cohort metrics), and the generated cohort-CDF lookup demoted from Python source (~130k lines) to a `benchmark_cohort_cdf` DB table (SEED-030 Track B closed). Prod backfill of the 12 rate-percentile metrics deferred to deploy. The v1.20→v1.21 "Current Milestone" header drift flagged at the prior close is now reconciled: header points to v1.22 LLM Statistical Reasoning (Phase 100). (Prior footer: 2026-05-31 mid-v1.21, Phase 99 complete — 3 TC-parameterised pooled-per-user rate builders, 12 new `benchmark_metric` ENUM values via migrations `3981239fd391` / `52c928794fe7`, COHORT_PERCENTILE_CDF regenerated against the benchmark DB snapshot 2026-05-30.)*
