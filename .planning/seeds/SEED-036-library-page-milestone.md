@@ -178,6 +178,9 @@ errors_by_phase   = {opening, middlegame, endgame} histogram
 ### Detection + best-move architecture
 
 - **Detection**: pure derivation over existing `eval_cp` per ply. Server-side query/service, no engine at detection time. Lives near `query_utils.py` / a new mistakes service.
+  - **On-the-fly, NOT materialized (DECIDED 2026-06-05).** Compute severity + all 8 tags per request from stored per-ply evals (+ clocks, `phase`, `material_imbalance`, result, colors); **no new columns, no new table, no migration, no reimport.** Rationale: the classification/tag rules (and especially the tempo thresholds) are still being tuned, so on-the-fly lets us iterate the ruleset and see the whole archive reclassify instantly without a backfill cycle. **Performance is explicitly accepted as "not great" for v1** — the main cost is the aggregate stats-panel pass over a large filtered analyzed set (a single game is cheap). **Design the service so materialization is a drop-in later optimization** (same interface; cache/persist once the ruleset freezes), not a rewrite.
+  - **Build this service FIRST, before the Games subtab UI** — it is the shared foundation for Games (counts), Flaws (per-flaw list), the stats panel (aggregates), Analysis (markers), and SEED-037 Train. (Restores the seed's phase-1-first order; a brief 2026-06-05 idea to ship Games off the existing game-level Lichess B/M/I columns was dropped — we need the per-ply layer anyway.)
+  - **Game-level Lichess columns = test oracle, not source.** `games.white_blunders / white_mistakes / white_inaccuracies` (+ black) hold Lichess's *own* B/M/I counts on analyzed games. NOT the primary path (we derive per-ply to get plies, tags, and a consistent method); instead they sanity-check derived per-game counts in tests — expect *close, not identical* (our thresholds/scale differ from Lichess's).
 - **Best move on demand**: a **single-position server endpoint** (e.g. `POST /api/analysis/best-move` taking a FEN, returning best move + eval, maybe top-N PV). One position is fast on the existing Stockfish `EnginePool`. Used by the Analysis subtab's "show the better move" and **reused by SEED-037 (Train) for move grading**.
   - **This reintroduces server-side Stockfish — but bounded.** It is single-position, user-initiated, and categorically different from the full-game-at-import server-side SF that is **permanently off the table** (OOM history, CLAUDE.md 2026-03-22 / FLAWCHESS-3Q). The endpoint MUST be rate-limited / queued (and concurrency-capped against the existing pool) so it cannot regress into the same OOM failure mode. The planner should treat this as a threat-modeled surface.
 
@@ -299,6 +302,12 @@ Likely 4-6 phases:
 - `frontend/src/hooks/useEvalCoverage.ts` — existing eval-coverage progress plumbing.
 
 ## Source / decision log
+
+**2026-06-05 build the mistake-detection service first, on-the-fly (user + Claude, `/gsd-explore`):**
+- The per-ply severity-classification + tagging service is the **next phase, built before the Games subtab UI** — shared foundation for Games / Flaws / stats panel / Analysis / Train. (A detour to ship Games off the existing game-level Lichess B/M/I columns was considered and dropped: we need the per-ply layer anyway.)
+- **On-the-fly, not materialized:** derive severity + all 8 tags per request from stored per-ply evals; no new columns/table/migration/reimport. Trades performance (accepted "not great" for v1, mainly the stats-panel aggregate) for fast ruleset iteration (esp. the still-open tempo thresholds). Materialize later only once the ruleset freezes; service stays the source either way (drop-in).
+- **Game-level `white_/black_blunders/mistakes/inaccuracies` columns = test oracle**, not the primary path.
+- **Eval-coverage display:** the stats panel shows the **% of (filtered) games that are analyzed**, where "analyzed" = **≥90% of a game's per-ply positions have `eval_cp`/`eval_mate`** (the bimodal-gap coverage-ratio method from `reports/benchmark/benchmark-eval-coverage-2026-05-25.md`). This is the explicit denominator the seed requires.
 
 **2026-06-05 filter placement + tag presentation (user + Claude, `/gsd-explore`):**
 - **Rich severity × tag filtering lives on Flaws only** (row = flaw → exact). **Games keeps the count-level severity filter only**, not the tag filters — avoids the Games/Flaws blur and the **cross-row-match ambiguity** (independent EXISTS on a game can match severity and tag on *different* flaws; any future tag-aware game filter must be a single correlated EXISTS).
