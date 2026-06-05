@@ -23,7 +23,7 @@ Requirements for this milestone. Each maps to the single roadmap phase.
 
 ## v2 Requirements
 
-SEED-036 Library — analysis half. **LIBG-02 / LIBG-06 / LIBG-07 are now in v1.24 scope (Phase 105)**; the rest stay deferred to subsequent phases (not yet roadmapped). Full design in `.planning/seeds/SEED-036-library-page-milestone.md`.
+SEED-036 Library — analysis half. **LIBG-02 / LIBG-06 / LIBG-07 are in v1.24 scope (Phase 105); LIBG-08 / LIBG-09 are now in v1.24 scope (Phase 106).** The rest stay deferred to subsequent phases (not yet roadmapped). Full design in `.planning/seeds/SEED-036-library-page-milestone.md`.
 
 ### Library — Games & Mistakes
 
@@ -34,6 +34,8 @@ SEED-036 Library — analysis half. **LIBG-02 / LIBG-06 / LIBG-07 are now in v1.
 - **LIBG-05**: On-demand single-position best-move endpoint (`POST /api/analysis/best-move`), rate-limited / concurrency-capped. *(deferred — later phase)*
 - **LIBG-06** *(Phase 105)*: The detection service emits the eight attribution tags per flaw — `miss`, `unpunished`, `from-winning`, `result-changing`, `phase`, and exactly one tempo tag of {`time-pressure`, `hasty`, `knowledge-gap`} (move-time + clock derived; initial thresholds documented and tunable).
 - **LIBG-07** *(Phase 105)*: Each flaw is returned as a typed structured object (ply, FEN, side, severity, tags, eval before/after) documented as the consumption contract for the Games / Flaws / Analysis surfaces and SEED-037 Train, designed so materialization is a drop-in later optimization.
+- **LIBG-08** *(Phase 106)*: Games-list endpoint extends `apply_game_filters` with a boolean mistake-type `EXISTS` filter (game contains ≥1 of a selected severity; severity thresholds as bound parameters, no count thresholds, no materialization, no backfill) and returns per-game B/M/I severity counts plus a curated, aggregated/deduped set of card tag-chips (game-level dedupe, inaccuracy-level tags and `phase` excluded), reusing the Phase 105 kernel; chess.com / unanalyzed-lichess games return an explicit "no engine analysis" state, never a false zero-flaw game. Backend of LIBG-01.
+- **LIBG-09** *(Phase 106)*: Stats-panel aggregate endpoint over the filtered analyzed-only set — per-severity counts/rates (normalized per game and per 100 moves), the full tag distribution (tempo split, result-changing rate, phase histogram), and a trend-over-time series — with the explicit `% analyzed` (≥90%-per-ply-coverage) denominator and analyzed-game N stated in the response. Cross-game work pushed into a SQL window-scan returning only flagged mistake+blunder rows; Python applies tags + tag-distribution stats over that reduced set. Backend of LIBG-03.
 
 ## Out of Scope
 
@@ -41,12 +43,12 @@ Explicitly excluded for this milestone. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| Games / Analysis subtabs (any UI) | Need the mistake-detection backend layer; deferred to future SEED-036 phases per explicit user instruction |
-| Mistake-type filter, mistake-stats panel | Same — depend on the deferred eval-derived mistake layer |
+| Games / Flaws / Analysis subtabs (any UI) | Phase 106 builds the Games-surface *backend*; all SEED-036 UI surfaces remain deferred to subsequent phases |
+| Mistake-type filter / stats-panel UI | The backend (LIBG-08/09) lands in Phase 106; the UI that renders them is deferred to the Games-subtab frontend phase |
 | On-demand best-move endpoint (server-side Stockfish) | Belongs with the Analysis subtab; threat-modeled surface deferred to a later phase |
 | Material-delta filter | Cut in the 2026-06-03 SEED-036 rework (pre-eval proxy, superseded by eval-driven mistakes) |
 | Full-game server-side Stockfish at import time | Permanently out of scope (OOM history, CLAUDE.md / FLAWCHESS-3Q) |
-| New backend endpoints or schema changes in this milestone | Phase 1 is a pure frontend restructure + route migration; no backend work |
+| Schema changes / materialization for the mistake layer | Phases 105–106 are on-the-fly only — no new columns, table, migration, or backfill |
 
 ## Traceability
 
@@ -63,15 +65,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIB-07 | Phase 104 | Complete |
 | LIB-08 | Phase 104 | Complete |
 | LIB-09 | Phase 104 | Complete |
-| LIBG-02 | Phase 105 | In progress |
-| LIBG-06 | Phase 105 | In progress |
-| LIBG-07 | Phase 105 | In progress |
+| LIBG-02 | Phase 105 | Complete |
+| LIBG-06 | Phase 105 | Complete |
+| LIBG-07 | Phase 105 | Complete |
+| LIBG-08 | Phase 106 | Planned |
+| LIBG-09 | Phase 106 | Planned |
 
 **Coverage:**
 
 - v1 requirements: 9 total (all Complete)
 - v1.24 analysis-half (Phase 105): LIBG-02, LIBG-06, LIBG-07
-- Deferred (later phases): LIBG-01, LIBG-03, LIBG-04, LIBG-05
+- v1.24 Games-surface backend (Phase 106): LIBG-08, LIBG-09
+- Deferred (later phases): LIBG-01 / LIBG-03 *(UI only — their backend is LIBG-08/09, Phase 106)*, LIBG-04, LIBG-05
 
 ---
 *Requirements defined: 2026-06-05*

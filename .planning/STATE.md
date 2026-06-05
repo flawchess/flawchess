@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: Phase 104 complete & verified; v1.24 extended into the analysis half — Phase 105 (mistake-detection service) ready to plan
-last_updated: "2026-06-05T08:27:37.104Z"
+status: executing
+last_updated: "2026-06-05T13:43:11.468Z"
 last_activity: 2026-06-05
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 50
+  total_phases: 6
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
+  percent: 33
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 105 (Mistake-Detection + Classification + Tagging Service — on-the-fly) — ready to plan
+Phase: 999.1
 Plan: Not started
-Status: Phase 104 complete and verified (9/9 must-haves). v1.24 was extended (2026-06-05, `/gsd-explore`) from shell-only into the SEED-036 analysis half: **Phase 105** builds the on-the-fly mistake-detection + classification + tagging service (severity at Lichess-aligned halved thresholds + the eight attribution tags, derived per-request from stored per-ply evals, no materialization). It is the shared backend foundation for the later Games / Flaws / Analysis / stats surfaces (still seed-only) and SEED-037 Train. Next: `/gsd-plan-phase` for Phase 105. Full design in `.planning/seeds/SEED-036-library-page-milestone.md` (Mistake classification ruleset + tag set + decision log).
-Last activity: 2026-06-05 — Phase 104 executed (2 plans), LIB-09 nested-main gap fixed inline, verification passed
+Status: Executing Phase 105
+Last activity: 2026-06-05
 
 ## Project Reference
 

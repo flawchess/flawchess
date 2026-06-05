@@ -1,0 +1,495 @@
+"""Mistake-detection + classification service for Phase 105 (SEED-036).
+
+Derives per-ply mistake severity and attribution tags from stored Stockfish evals.
+No I/O, no DB — the module is a pure Python transform over already-loaded ORM objects.
+See tests/services/test_mistakes_service.py for unit tests.
+
+Two output types:
+  list[FlawRecord]   analyzed game — one entry per user mistake or blunder
+  GameNotAnalyzed    chess.com / unanalyzed lichess game (< 90% eval coverage)
+
+Note: inaccuracies are detected internally (for counts and the oracle test) but are
+NOT emitted as FlawRecord items. Only mistakes and blunders appear in the returned
+list. An inaccuracy-only analyzed game returns an empty list — distinct from
+GameNotAnalyzed. See the 2026-06-05 amendment in 105-01-PLAN.md.
+"""
+
+from __future__ import annotations
+
+import io
+from typing import Literal, TypedDict
+
+import chess
+import chess.pgn
+import sentry_sdk
+
+from app.models.game import Game
+from app.models.game_position import GamePosition
+from app.services.eval_utils import eval_cp_to_expected_score
+from app.services.normalization import parse_base_and_increment
+from app.services.openings_service import derive_user_result
+
+# ---------------------------------------------------------------------------
+# Named constants — no magic numbers (CLAUDE.md)
+# ---------------------------------------------------------------------------
+
+# Lichess-aligned severity thresholds on the [0,1] ES scale.
+# Lichess uses [−1, +1] winningChances with cutoffs 0.10/0.20/0.30; our scale
+# is (winningChances + 1) / 2, so thresholds halve. See CONTEXT.md §Severity.
+INACCURACY_DROP: float = 0.05
+MISTAKE_DROP: float = 0.10
+BLUNDER_DROP: float = 0.15
+
+# Mate Option B: map mate eval to ±1000 cp before the sigmoid (CONTEXT.md §Mate).
+# Do NOT use eval_mate_to_expected_score (hard 1.0/0.0) for drop math — that
+# function is for endgame span averaging and would mis-size mate transitions.
+MATE_CP_EQUIVALENT: int = 1000
+
+# Eval coverage gate: fraction of plies with non-null eval required for "analyzed".
+# The final ply always has null eval (zobrist.py: no move annotated), so a fully-
+# analyzed 80-ply game scores 80/81 ≈ 98.8% — comfortably above this threshold.
+EVAL_COVERAGE_MIN: float = 0.90
+
+# Attribution tag threshold
+FROM_WINNING_ES: float = 0.85  # tag: from-winning
+
+# Result-changing thresholds (RESEARCH §Pattern 7 — [ASSUMED], tunable)
+RESULT_WIN_THRESHOLD: float = 0.70  # ES >= 0.70 = "winning" zone
+RESULT_DRAW_THRESHOLD: float = 0.40  # ES >= 0.40 = "at least drawing" zone
+
+# Tempo thresholds — relative to base_time_seconds (RESEARCH §Pattern 6).
+# [ASSUMED] initial values; tunable once real data is available.
+TIME_PRESSURE_CLOCK_FRACTION: float = 0.05  # < 5% of base = low clock
+HASTY_MOVE_FRACTION: float = 0.01  # < 1% of base = fast move on comfortable clock
+TIME_PRESSURE_CLOCK_ABS_SECONDS: float = 30.0  # fallback when base_time unknown
+HASTY_MOVE_ABS_SECONDS: float = 5.0  # fallback when base_time unknown
+
+# Oracle closeness tolerance for sanity test against Lichess game-level columns.
+# [ASSUMED] — allows ≤2 off per color per severity (mate-handling divergence).
+SANITY_TOLERANCE: int = 2
+
+# ---------------------------------------------------------------------------
+# Literal type aliases (CLAUDE.md §Type safety: Literal for fixed-value fields)
+# ---------------------------------------------------------------------------
+
+FlawSeverity = Literal["inaccuracy", "mistake", "blunder"]
+FlawTag = Literal[
+    "miss",
+    "unpunished",
+    "from-winning",
+    "result-changing",
+    "time-pressure",
+    "hasty",
+    "knowledge-gap",
+    "phase-opening",
+    "phase-middlegame",
+    "phase-endgame",
+]
+TempoTag = Literal["time-pressure", "hasty", "knowledge-gap"]
+
+# ---------------------------------------------------------------------------
+# TypedDict output contract (CONTEXT.md §Output contract; zobrist.py PlyData style)
+# ---------------------------------------------------------------------------
+
+
+class FlawRecord(TypedDict):
+    ply: int  # half-move number (0-indexed)
+    fen: str  # board_fen() at this ply (piece placement only)
+    side: Literal["white", "black"]  # mover who made the flawed move
+    severity: FlawSeverity
+    tags: list[FlawTag]  # ordered, additive, orthogonal (populated in plan 02)
+    es_before: float  # mover-POV ES before the flaw
+    es_after: float  # mover-POV ES after the flaw
+    move_san: str | None  # SAN from positions[N].move_san
+
+
+class GameNotAnalyzed(TypedDict):
+    reason: Literal["no_engine_analysis"]
+    eval_coverage: float  # fraction 0.0–1.0
+
+
+GameMistakesResult = list[FlawRecord] | GameNotAnalyzed
+
+# Internal type for the all-moves classification pass result per ply
+_MoveEntry = tuple[Literal["white", "black"], FlawSeverity | None, float, float]
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+
+def _ply_to_es(
+    pos: GamePosition,
+    mover_color: Literal["white", "black"],
+) -> float | None:
+    """Return mover-POV ES for this ply, or None if eval unavailable.
+
+    Option B mate: maps mate to ±MATE_CP_EQUIVALENT cp before sigmoid.
+    Do NOT call eval_mate_to_expected_score here — that returns hard 1.0/0.0
+    and was built for endgame span averaging, not per-ply drop math (Pitfall 3
+    in RESEARCH: mis-sizes mate transitions, would always flag mate-adjacent
+    moves as blunders).
+    """
+    if pos.eval_mate is not None:
+        cp_equiv = MATE_CP_EQUIVALENT if pos.eval_mate > 0 else -MATE_CP_EQUIVALENT
+        return eval_cp_to_expected_score(cp_equiv, mover_color)
+    if pos.eval_cp is not None:
+        return eval_cp_to_expected_score(pos.eval_cp, mover_color)
+    return None
+
+
+def _classify_severity(drop: float) -> FlawSeverity | None:
+    """Map a mover-POV ES drop to a severity label, or None if below threshold.
+
+    Highest band wins (CONTEXT.md §Severity). All thresholds are boundary-inclusive.
+    """
+    if drop >= BLUNDER_DROP:
+        return "blunder"
+    if drop >= MISTAKE_DROP:
+        return "mistake"
+    if drop >= INACCURACY_DROP:
+        return "inaccuracy"
+    return None
+
+
+def _compute_eval_coverage(positions: list[GamePosition]) -> float:
+    """Fraction of positions with non-null eval_cp or eval_mate (0.0–1.0).
+
+    The final position always has null eval (no move annotation), which is expected
+    and counts against coverage — but for a fully-analyzed game the fraction is
+    (N-1)/N which is well above the 0.90 threshold. No special case needed.
+    """
+    if not positions:
+        return 0.0
+    n_with_eval = sum(1 for p in positions if p.eval_cp is not None or p.eval_mate is not None)
+    return n_with_eval / len(positions)
+
+
+def _recompute_fen_map(pgn: str) -> dict[int, str]:
+    """Return {ply: board_fen()} for every ply by replaying the PGN with python-chess.
+
+    Uses board_fen() (piece placement only — CLAUDE.md §Chess logic: never board.fen()
+    which includes castling/en passant metadata). Returns empty dict on parse failure,
+    or a partial map if replay fails mid-game (callers fall back to fen="" per ply).
+    """
+    game = chess.pgn.read_game(io.StringIO(pgn))
+    if game is None:
+        return {}
+    board = game.board()
+    fens: dict[int, str] = {0: board.board_fen()}
+    try:
+        for ply, node in enumerate(game.mainline(), start=1):
+            board.push(node.move)
+            fens[ply] = board.board_fen()
+    except (ValueError, AssertionError) as exc:
+        # WR-03 fix: this PGN already parsed cleanly at import time (its positions
+        # and evals are stored), so a replay failure here is a genuine data
+        # inconsistency, not expected user-input noise. Capture it — otherwise
+        # every later flaw silently falls back to fen="" via fen_map.get(n, "").
+        sentry_sdk.set_context("mistakes", {"stage": "fen_recompute", "failed_at_ply": len(fens)})
+        sentry_sdk.capture_exception(exc)
+    return fens
+
+
+def _run_all_moves_pass(
+    positions: list[GamePosition],
+) -> dict[int, _MoveEntry]:
+    """Classify every ply for both colors — required for miss/unpunished tag adjacency checks.
+
+    Returns {ply_N: (mover_color, severity|None, es_before, es_after)} for
+    N in range(1, len(positions)). Plies where either ES is None (interior null
+    eval — Pitfall 4) are skipped and not included in the dict.
+
+    ES semantics (eval-AFTER landmine, Pitfall 1):
+        positions[N].eval_cp = eval AFTER move N was played.
+        ES_before = _ply_to_es(positions[N-1], mover)  # board before mover plays move N
+        ES_after  = _ply_to_es(positions[N],   mover)  # board after mover plays move N
+    """
+    all_moves: dict[int, _MoveEntry] = {}
+    for n in range(1, len(positions)):
+        mover: Literal["white", "black"] = "white" if n % 2 == 0 else "black"
+        es_before = _ply_to_es(positions[n - 1], mover)
+        es_after = _ply_to_es(positions[n], mover)
+        if es_before is None or es_after is None:
+            # Skip plies with missing eval (Pitfall 4: interior null)
+            continue
+        drop = es_before - es_after
+        severity = _classify_severity(drop)
+        all_moves[n] = (mover, severity, es_before, es_after)
+    return all_moves
+
+
+def _build_flaw_record(
+    n: int,
+    mover: Literal["white", "black"],
+    severity: FlawSeverity,
+    es_before: float,
+    es_after: float,
+    fen_map: dict[int, str],
+    positions: list[GamePosition],
+) -> FlawRecord:
+    """Build a single FlawRecord for the mover's mistake/blunder at ply N."""
+    return FlawRecord(
+        ply=n,
+        fen=fen_map.get(n, ""),
+        side=mover,
+        severity=severity,
+        tags=[],
+        es_before=es_before,
+        es_after=es_after,
+        move_san=positions[n].move_san,
+    )
+
+
+def _move_time(
+    positions: list[GamePosition],
+    n: int,
+    increment: float,
+) -> float | None:
+    """Return move time in seconds for the mover at ply N, or None if unavailable.
+
+    Same-side clock is two plies back (Pitfall 2 in RESEARCH — N-1 is the
+    opponent's clock). Returns None for first moves (n < 2), when either
+    clock is null, or when the computed time is negative (a clock anomaly).
+
+    Formula: prev_same_side_clock - clock_after_move + increment
+    (increment is added when the move is completed, so clock_after already
+    reflects the pre-increment state before adding increment back).
+    """
+    if n < 2:
+        return None
+    prev_clock = positions[n - 2].clock_seconds
+    curr_clock = positions[n].clock_seconds
+    if prev_clock is None or curr_clock is None:
+        return None
+    move_time = prev_clock - curr_clock + increment
+    # WR-05 fix: a negative move time is physically impossible (the player's own
+    # clock cannot gain more than the increment between their moves) and signals
+    # inconsistent/corrupt clock data. Treat it as unavailable rather than letting
+    # it satisfy `move_time < fast_move_threshold` and mislabel the move as hasty.
+    if move_time < 0:
+        return None
+    return move_time
+
+
+def _classify_tempo(
+    move_time: float | None,
+    clock_after: float | None,
+    base_time: int | None,
+) -> TempoTag:
+    """Return exactly one tempo tag for a flaw.
+
+    Every flaw carries exactly one of {time-pressure, hasty, knowledge-gap}
+    (LOCKED invariant from CONTEXT.md §Tempo dimension).
+
+    Priority: time-pressure > hasty > knowledge-gap. If clock data is missing,
+    default to knowledge-gap (the most conservative, noise-free label).
+
+    Relative thresholds are used when base_time is available (relative-to-base-clock
+    is context-aware — a 5s move is hasty in classical but normal in bullet).
+    Absolute fallback values are used when base_time is absent or zero.
+    All threshold values are [ASSUMED] initial defaults; tunable on-the-fly.
+    """
+    if clock_after is None or move_time is None:
+        return "knowledge-gap"
+
+    # Pick thresholds — relative when base_time available (guard against div-by-zero)
+    if base_time and base_time > 0:
+        low_clock_threshold = base_time * TIME_PRESSURE_CLOCK_FRACTION
+        fast_move_threshold = base_time * HASTY_MOVE_FRACTION
+    else:
+        low_clock_threshold = TIME_PRESSURE_CLOCK_ABS_SECONDS
+        fast_move_threshold = HASTY_MOVE_ABS_SECONDS
+
+    if clock_after < low_clock_threshold:
+        return "time-pressure"
+    if move_time < fast_move_threshold:
+        return "hasty"
+    return "knowledge-gap"
+
+
+def _is_miss(n: int, all_moves: dict[int, _MoveEntry]) -> bool:
+    """Return True if opponent's move at ply N-1 was a mistake or blunder.
+
+    Requires the all-moves classification pass covering both colors (Pitfall 5).
+    A miss means the user's error followed immediately after an opponent error,
+    suggesting the user may have been rattled or exploiting what they thought
+    was a free recovery.
+    """
+    opponent_n = n - 1
+    if opponent_n < 1:
+        return False
+    entry = all_moves.get(opponent_n)
+    if entry is None:
+        return False
+    opp_severity = entry[1]
+    return opp_severity in ("mistake", "blunder")
+
+
+def _is_unpunished(
+    n: int,
+    all_moves: dict[int, _MoveEntry],
+    severity: FlawSeverity,
+) -> bool:
+    """Return True when a user BLUNDER at ply N was not punished by opponent at N+1.
+
+    unpunished = user's blunder that the opponent did not capitalize on.
+    Only applies to blunders (Pitfall 6 in RESEARCH — applying to inaccuracies
+    and mistakes would produce a noise-heavy flood of tags). If there is no
+    following opponent move (end of game), that too counts as "unpunished".
+    """
+    if severity != "blunder":
+        return False
+    opp_n = n + 1
+    entry = all_moves.get(opp_n)
+    if entry is None:
+        # End of game — opponent never got to punish
+        return True
+    opp_severity = entry[1]
+    return opp_severity not in ("mistake", "blunder")
+
+
+def _is_result_changing(
+    es_before: float,
+    es_after: float,
+    user_result: Literal["win", "draw", "loss"],
+) -> bool:
+    """Return True when the flaw crossed the result boundary given the actual outcome.
+
+    Uses RESULT_WIN_THRESHOLD (0.70) and RESULT_DRAW_THRESHOLD (0.40) per RESEARCH
+    Pattern 7. One boundary is checked per actual outcome:
+    - win:  was winning (>= WIN) and dropped below winning  (<  WIN).
+    - draw: was at-least-drawing (>= DRAW) and dropped to losing zone (< DRAW).
+    - loss: same boundary as draw — flaw that turned a drawable position into a loss.
+
+    [ASSUMED] threshold values; tunable on-the-fly without schema change.
+    """
+    if user_result == "win":
+        return es_before >= RESULT_WIN_THRESHOLD and es_after < RESULT_WIN_THRESHOLD
+    # draw or loss: use the draw/loss boundary
+    return es_before >= RESULT_DRAW_THRESHOLD and es_after < RESULT_DRAW_THRESHOLD
+
+
+def _phase_tag(phase: int | None) -> FlawTag:
+    """Map the GamePosition.phase integer (0/1/2) to a phase-* FlawTag.
+
+    Defaults to phase-middlegame for unknown/null phase values (most positions
+    are middlegame; this avoids spurious phase-opening or phase-endgame tags).
+    """
+    if phase == 0:
+        return "phase-opening"
+    if phase == 2:
+        return "phase-endgame"
+    return "phase-middlegame"
+
+
+def _build_tags(
+    n: int,
+    severity: FlawSeverity,
+    es_before: float,
+    es_after: float,
+    positions: list[GamePosition],
+    all_moves: dict[int, _MoveEntry],
+    user_result: Literal["win", "draw", "loss"],
+    increment: float,
+    base_time: int | None,
+) -> list[FlawTag]:
+    """Assemble the ordered attribution tags list for one user flaw at ply N.
+
+    Tag order: from-winning, result-changing, miss, unpunished, phase-*, tempo.
+    Tags are additive and orthogonal. Exactly one tempo tag is always present.
+    """
+    tags: list[FlawTag] = []
+
+    if es_before >= FROM_WINNING_ES:
+        tags.append("from-winning")
+
+    if _is_result_changing(es_before, es_after, user_result):
+        tags.append("result-changing")
+
+    if _is_miss(n, all_moves):
+        tags.append("miss")
+
+    if _is_unpunished(n, all_moves, severity):
+        tags.append("unpunished")
+
+    tags.append(_phase_tag(positions[n].phase))
+
+    clock_after = positions[n].clock_seconds
+    move_time = _move_time(positions, n, increment)
+    tags.append(_classify_tempo(move_time, clock_after, base_time))
+
+    return tags
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def classify_game_mistakes(
+    game: Game,
+    positions: list[GamePosition],
+) -> GameMistakesResult:
+    """Derive all user flaws from stored per-ply evals.
+
+    Args:
+        game: Game row with result, user_color, base_time_seconds,
+              increment_seconds, pgn.
+        positions: All GamePosition rows for this game, ordered by ply ASC.
+            Load via mistakes_repository.fetch_game_positions_ordered.
+
+    Returns:
+        list[FlawRecord] for analyzed games — one entry per user mistake or
+        blunder (inaccuracies are count-only, NOT emitted). An inaccuracy-only
+        analyzed game returns an empty list, distinct from GameNotAnalyzed.
+
+        GameNotAnalyzed when eval coverage < EVAL_COVERAGE_MIN (chess.com games,
+        unanalyzed lichess games). Never returns a false zero-flaw game (LIBG-02).
+    """
+    # Coverage gate: return early for unanalyzed games (chess.com / no evals)
+    coverage = _compute_eval_coverage(positions)
+    if coverage < EVAL_COVERAGE_MIN:
+        return GameNotAnalyzed(reason="no_engine_analysis", eval_coverage=coverage)
+
+    # Build FEN map once and reuse for all flaw records
+    fen_map = _recompute_fen_map(game.pgn)
+
+    # All-moves pass: classify both colors (needed for miss/unpunished adjacency)
+    all_moves = _run_all_moves_pass(positions)
+
+    # Resolve increment once — fall back to parse_base_and_increment when null
+    increment: float = 0.0
+    if game.increment_seconds is not None:
+        increment = game.increment_seconds
+    elif game.time_control_str:
+        _, parsed_inc = parse_base_and_increment(game.time_control_str)
+        if parsed_inc is not None:
+            increment = parsed_inc
+
+    user_result = derive_user_result(game.result, game.user_color)
+
+    # Emit FlawRecords for user's mistakes and blunders only (inaccuracies are count-only)
+    user_color = game.user_color
+    flaws: list[FlawRecord] = []
+    for n, (mover, severity, es_before, es_after) in all_moves.items():
+        if mover != user_color:
+            continue
+        if severity not in ("mistake", "blunder"):
+            # Inaccuracies are count-only per the 2026-06-05 amendment
+            continue
+        flaw = _build_flaw_record(n, mover, severity, es_before, es_after, fen_map, positions)
+        flaw["tags"] = _build_tags(
+            n,
+            severity,
+            es_before,
+            es_after,
+            positions,
+            all_moves,
+            user_result,
+            increment,
+            game.base_time_seconds,
+        )
+        flaws.append(flaw)
+
+    return flaws

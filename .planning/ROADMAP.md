@@ -26,16 +26,17 @@
 - ✅ **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99, 99.1 (shipped 2026-05-31; PRs #160, #163/#164, #167, #168) — see [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md)
 - ✅ **v1.22 Maintenance — Test Isolation & Frontend Major Upgrades** — Phases 100, 101 (shipped 2026-05-31) — see [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md)
 - ✅ **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phases 102, 103 (shipped 2026-06-03) — see [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md)
-- 🚧 **v1.24 Library Page** — Phases 104, 105 (in progress)
+- 🚧 **v1.24 Library Page** — Phases 104, 105, 106 (in progress)
 
 ## Phases
 
-### 🚧 v1.24 Library Page (Phases 104–105) — IN PROGRESS
+### 🚧 v1.24 Library Page (Phases 104–106) — IN PROGRESS
 
-SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-level nav + URL-routed subtabs, with Import and Overview folded in) — a pure frontend restructure. **Phase 105** extends into the analysis backend: the on-the-fly mistake-detection + classification + tagging service the analysis surfaces consume. The remaining surfaces (Games subtab, Flaws subtab, Analysis detail viewer, mistake-stats panel, best-move endpoint) stay specified in `.planning/seeds/SEED-036-library-page-milestone.md` and will be roadmapped as subsequent phases.
+SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-level nav + URL-routed subtabs, with Import and Overview folded in) — a pure frontend restructure. **Phase 105** extends into the analysis backend: the on-the-fly mistake-detection + classification + tagging service the analysis surfaces consume. **Phase 106** builds the Games-surface backend on top of it — the boolean mistake-type filter, per-game counts/card-chips, and the stats-panel aggregates the Games subtab consumes. The remaining surfaces (Games subtab UI, Flaws subtab, Analysis detail viewer, best-move endpoint) stay specified in `.planning/seeds/SEED-036-library-page-milestone.md` and will be roadmapped as subsequent phases.
 
 - [x] **Phase 104: Library Page Shell + Import & Overview Subtab Migration** — new `/library` route with deep-linkable `<Tabs variant="brand">` subtabs; migrate `/import` → `/library/import` and `/overview` → `/library/overview` (each its own tsx, with redirects); top-level nav drops to Library · Openings · Endgames (+ Admin); `totalGames === 0` dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile parity + browser-automation conventions (LIB-01..09) (completed 2026-06-05)
-- [ ] **Phase 105: Mistake-Detection + Classification + Tagging Service (on-the-fly)** — server-side `mistakes` service derives every flaw in a Lichess-analyzed game on-the-fly from stored per-ply `eval_cp`/`eval_mate` — severity (Lichess-aligned 0.05/0.10/0.15 expected-score-drop thresholds) + eight attribution tags (miss, unpunished, from-winning, result-changing, time-pressure, hasty, knowledge-gap, phase) — emitting typed per-flaw objects for the Games/Flaws/Analysis surfaces and SEED-037 Train; no materialization, no schema change, no UI (LIBG-02, LIBG-06, LIBG-07)
+- [x] **Phase 105: Mistake-Detection + Classification + Tagging Service (on-the-fly)** — server-side `mistakes` service derives every flaw in a Lichess-analyzed game on-the-fly from stored per-ply `eval_cp`/`eval_mate` — severity (Lichess-aligned 0.05/0.10/0.15 expected-score-drop thresholds) + eight attribution tags (miss, unpunished, from-winning, result-changing, time-pressure, hasty, knowledge-gap, phase) — emitting typed per-flaw objects for the Games/Flaws/Analysis surfaces and SEED-037 Train; no materialization, no schema change, no UI (LIBG-02, LIBG-06, LIBG-07) (completed 2026-06-05)
+- [ ] **Phase 106: Games-Surface Backend — Mistake Filter, Per-Game Counts & Stats Aggregates (on-the-fly)** — two server-side endpoints the Games subtab consumes, both on-the-fly via a SQL window-scan + Python tagging that reuses Phase 105's kernel (no materialization, no schema change): (a) games-list — `apply_game_filters` extended with a boolean mistake-type `EXISTS` over the per-ply ES-drop (severity thresholds bound params), each game carrying B/M/I counts + aggregated/deduped card tag-chips; (b) stats-panel aggregates over the filtered analyzed-only set — per-severity counts/rates (normalized), tag distribution (tempo split, result-changing rate, phase histogram), trend-over-time, and the explicit `% analyzed` (≥90%-coverage) denominator with N (LIBG-08, LIBG-09)
 
 #### Phase 104: Library Page Shell + Import & Overview Subtab Migration
 
@@ -74,7 +75,28 @@ SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-le
   4. Mate evals are handled via Option B (±1000 cp-equivalent ES), not the hard 1.0/0.0 converter; cp↔mate transitions classify sensibly (LIBG-02).
   5. Each flaw is a typed structured object (ply, FEN, side, severity, tags, eval before/after) documented as the contract for Games / Flaws / Analysis / Train; unit tests cover each severity band, each tag, mate handling, and the no-analysis path (LIBG-07).
 
-**Plans**: TBD (created by `/gsd-plan-phase`)
+**Plans**: 2 plans
+
+- [x] 105-01-PLAN.md — Core severity engine: types/constants, ES helper + mate Option B, coverage gate, FEN recompute, all-moves pass, severity-only `classify_game_mistakes` + Wave-0 test scaffold
+- [x] 105-02-PLAN.md — Eight attribution tags wired into flaws, ply-ordered ownership-guarded repository read helper + DB test, oracle-closeness sanity test
+
+**UI hint**: no
+
+#### Phase 106: Games-Surface Backend — Mistake Filter, Per-Game Counts & Stats Aggregates (on-the-fly)
+
+**Goal**: Two server-side endpoints the Games subtab consumes — a mistake-filtered game archive with per-game counts/card-chips, and a mistake-stats aggregate — both derived on-the-fly via a SQL window-scan + Python tagging that reuses Phase 105's `mistakes_service` kernel, with no materialization and no schema change.
+**Depends on**: Phase 105 (`mistakes_service` per-game kernel + shared tag functions, `FlawRecord` contract); `app/repositories/query_utils.py::apply_game_filters()`; `app/services/eval_utils.py`; stored per-ply `eval_cp`/`eval_mate`, clocks, `phase`, `material_imbalance`, result + colors. Independent of any frontend work.
+**Requirements**: LIBG-08, LIBG-09
+**Success Criteria** (what must be TRUE):
+
+  1. The game-archive query accepts a boolean mistake-type filter (game contains ≥1 of a selected severity), implemented as a single indexed `EXISTS` over the per-ply ES-drop with severity thresholds passed as bound parameters — no new column, no materialization, no backfill; benchmark the window-scan and add an index on `game_positions(game_id, ply)` only if measured necessary (LIBG-08).
+  2. Each game returned by the archive endpoint carries its per-game B/M/I severity counts plus a curated, aggregated/deduped set of card tag-chips (game-level dedupe, one chip per tag type present, inaccuracy-level tags and `phase` excluded), reusing Phase 105's kernel; chess.com and unanalyzed-lichess games return an explicit "no engine analysis" state, never a false zero-flaw game (LIBG-08).
+  3. A stats-panel aggregate endpoint computes, over the filtered analyzed-only set: per-severity counts and rates normalized per game and per 100 moves; the full tag distribution (tempo split, result-changing rate, phase histogram); and a trend-over-time series (mistake rate by recency window) (LIBG-09).
+  4. The stats response states the explicit denominator — the `% analyzed` of the filtered set using the ≥90%-per-ply-coverage definition — and the analyzed-game N, so the panel never implies clean games where evals are simply absent (LIBG-09).
+  5. The cross-game work is pushed into a SQL window-function query (`LAG`/`LEAD` over `game_positions ⋈ games`) that returns only flagged mistake+blunder rows enriched for tagging, with Python applying the 8 tags + tag-distribution stats over that reduced set; the severity-drop math is cross-checked against the Python kernel by a fixture test (LIBG-08, LIBG-09).
+
+**Plans**: TBD (run `/gsd-plan-phase 106`)
+
 **UI hint**: no
 
 *Earlier milestones below. v1.23 (Phases 102, 103) shipped 2026-06-03 — archived to [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md); see the collapsed block. v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md). v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
