@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sketch 001 — Analyzed Game Card</title>
+<link rel="stylesheet" href="../themes/default.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--color-bg);
+    color: var(--color-text);
+    padding-top: 56px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- variant nav ---- */
+  #variant-nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9998;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    padding: 10px 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  #variant-nav .brand { font-family: var(--font-brand); font-weight: 700; color: var(--brand-brown-highlight); margin-right: 12px; font-size: var(--text-lg); }
+  .variant-tab {
+    font-family: var(--font-sans); font-size: var(--text-sm); font-weight: 700;
+    background: transparent; color: var(--color-text-muted);
+    border: 1px solid var(--color-border); border-radius: var(--radius-full);
+    padding: 6px 14px; cursor: pointer; transition: all 0.15s ease;
+  }
+  .variant-tab:hover { color: var(--color-text); border-color: var(--color-border-strong); }
+  .variant-tab.active { background: var(--brand-brown); color: #fff; border-color: var(--brand-brown); }
+
+  .variant { display: none; padding: 28px 20px 80px; max-width: 1180px; margin: 0 auto; }
+  .variant.active { display: block; }
+
+  .col-head { font-family: var(--font-brand); font-weight: 600; color: var(--color-text-muted);
+    font-size: var(--text-sm); text-transform: uppercase; letter-spacing: 0.05em; margin: 8px 0 14px; }
+  .stage { display: grid; grid-template-columns: 1fr 360px; gap: 40px; align-items: start; }
+  @media (max-width: 900px) { .stage { grid-template-columns: 1fr; } }
+  .mobile-frame { width: 360px; max-width: 100%; border: 1px solid var(--color-border); border-radius: 20px; padding: 12px; background: #0c0b0a; }
+
+  .note { color: var(--color-text-muted); font-size: var(--text-sm); margin: 4px 0 18px; line-height: 1.5; }
+  .stack > * + * { margin-top: 16px; }
+
+  /* ---- base game card (mirrors real GameCard) ---- */
+  .gc {
+    position: relative; overflow: hidden;
+    background: var(--color-charcoal);
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--wdl-border-loss);
+    border-radius: var(--radius-lg);
+    padding: 12px 16px;
+  }
+  .gc::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 600'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 200px; opacity: 0.06;
+  }
+  .gc.win { border-left-color: var(--wdl-border-win); }
+  .gc.draw { border-left-color: var(--wdl-border-draw); }
+  .gc > * { position: relative; z-index: 1; }
+
+  .gc-body { display: flex; gap: 12px; align-items: center; }
+  .miniboard { display: grid; grid-template-columns: repeat(8, 1fr); width: 100px; height: 100px; flex-shrink: 0; border-radius: 3px; overflow: hidden; }
+  .miniboard.lg { width: 108px; height: 108px; }
+  .sq { display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; }
+  .sq.l { background: #F0DAB7; } .sq.d { background: #B68965; }
+  .sq .pc { color: #f7f7f7; text-shadow: 0 0 1px #000, 0 1px 1px rgba(0,0,0,.6); }
+  .sq .pc.b { color: #1c1c1c; text-shadow: 0 0 1px #fff3; }
+
+  .gc-main { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 7px; }
+  .names { font-size: var(--text-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .names .vs { color: var(--color-text-muted); margin: 0 6px; }
+  .names .ico { margin-right: 4px; }
+  .plat { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; color: var(--color-text-muted); }
+  .plat a { color: var(--brand-brown-light); text-decoration: none; }
+  .plat a:hover { color: var(--brand-brown-highlight); }
+  .opening { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--color-text-muted); }
+  .meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--text-sm); color: var(--color-text-muted); }
+  .meta.meta-stack { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .meta .it { display: inline-flex; align-items: center; gap: 4px; }
+  .res-chip { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 4px; font-weight: 800; font-size: 11px; }
+  .res-chip.loss { background: oklch(0.50 0.15 25 / .2); color: oklch(0.70 0.15 25); border: 1px solid oklch(0.50 0.15 25 / .35); }
+  .res-chip.win { background: oklch(0.50 0.14 145 / .2); color: oklch(0.72 0.14 145); border: 1px solid oklch(0.50 0.14 145 / .35); }
+
+  /* ---- severity counts ---- */
+  .sev-row { display: inline-flex; gap: 6px; align-items: center; }
+  .sev {
+    display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 8px; border-radius: var(--radius-sm);
+    font-size: var(--text-sm); font-weight: 800; line-height: 1.3; border: 1px solid transparent;
+  }
+  .sev .lab { font-weight: 700; font-size: var(--text-chip); opacity: .85; }
+  .sev.b { color: var(--sev-blunder); background: oklch(0.58 0.19 25 / .14); border-color: oklch(0.58 0.19 25 / .3); }
+  .sev.m { color: var(--sev-mistake); background: oklch(0.70 0.16 55 / .14); border-color: oklch(0.70 0.16 55 / .3); }
+  .sev.i { color: var(--sev-inaccuracy); background: oklch(0.82 0.13 95 / .12); border-color: oklch(0.82 0.13 95 / .28); }
+  .sev.flat { background: transparent !important; border-color: transparent !important; padding: 0 2px; }
+
+  /* ---- tag chips (color-by-family) ---- */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: var(--radius-full);
+    font-size: var(--text-chip); font-weight: 700; cursor: pointer; transition: all .15s ease;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .chip:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .chip .g { font-size: 11px; }
+  .chip.tempo { color: var(--fam-tempo); background: var(--fam-tempo-bg); border-color: var(--fam-tempo); }
+  .chip.opp   { color: var(--fam-opportunity); background: var(--fam-opportunity-bg); border-color: var(--fam-opportunity); }
+  .chip.impact{ color: var(--fam-impact); background: var(--fam-impact-bg); border-color: var(--fam-impact); }
+
+  /* no-analysis state */
+  .no-analysis { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-chip); font-weight: 700;
+    color: var(--color-text-muted); background: oklch(1 0 0 / 5%); border: 1px dashed var(--color-border-strong);
+    border-radius: var(--radius-full); padding: 3px 10px; }
+
+  .flaw-divider { border-top: 1px dashed var(--color-border); margin-top: 2px; padding-top: 9px; }
+  .flaw-label { font-size: var(--text-chip); text-transform: uppercase; letter-spacing: .05em; color: var(--color-text-muted); font-weight: 700; margin-right: 2px; }
+
+  /* right-rail (variant B) */
+  .gc-rail { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; padding-left: 10px; border-left: 1px solid var(--color-border); align-self: stretch; justify-content: center; }
+  .rail-counts { display: flex; flex-direction: column; gap: 4px; }
+
+  /* ---- variant A v3: full-width header + 3-column body (board | info | flaws) ---- */
+  .gc-header { display: flex; align-items: flex-start; gap: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--color-border); margin-bottom: 12px; }
+  .gc-header .names { display: flex; align-items: center; flex: 1; min-width: 0; font-size: var(--text-base); font-weight: 700; }
+  .gc-header .names.stacked { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .gc-header .plat { margin-left: auto; }
+  .gc-body.body3 { align-items: stretch; }
+  /* width sizes to content; counts stay on one line (nowrap), so the column is as wide as the pills need */
+  .gc-flaws { flex: 0 0 auto; display: flex; flex-direction: column; gap: 9px; padding-left: 14px; border-left: 1px dashed var(--color-border); }
+  .gc-flaws .counts-col { flex-wrap: nowrap; }
+  .flaws-block { margin-top: 4px; padding-top: 11px; border-top: 1px dashed var(--color-border); display: flex; flex-direction: column; gap: 9px; }
+  .flaws-block.full { width: auto; }
+  .counts-col { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sevf { display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 9px; border-radius: var(--radius-sm); font-size: var(--text-sm); font-weight: 700; border: 1px solid transparent; white-space: nowrap; }
+  .sevf b { font-weight: 800; font-size: var(--text-base); }
+  .sevf.b { color: var(--sev-blunder); background: oklch(0.58 0.19 25 / .14); border-color: oklch(0.58 0.19 25 / .3); }
+  .sevf.m { color: var(--sev-mistake); background: oklch(0.70 0.16 55 / .14); border-color: oklch(0.70 0.16 55 / .3); }
+  .sevf.i { color: var(--sev-inaccuracy); background: oklch(0.82 0.13 95 / .12); border-color: oklch(0.82 0.13 95 / .28); }
+
+  /* legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 22px 0 6px; padding: 12px 16px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-sm); color: var(--color-text-muted); }
+  .legend b { color: var(--color-text); }
+  .legend .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+
+  /* toast */
+  #toast { position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--brand-brown); color: #fff; padding: 9px 16px; border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 700; transition: all .2s ease; z-index: 9999; pointer-events: none; box-shadow: var(--shadow-lg); }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* toolbar */
+  #tools { position: fixed; bottom: 12px; right: 12px; z-index: 9999; font-family: system-ui; font-size: 12px; background: rgba(0,0,0,.75); color: #fff; padding: 8px 10px; border-radius: 8px; opacity: .45; transition: opacity .2s; display: flex; gap: 6px; align-items: center; }
+  #tools:hover { opacity: 1; }
+  #tools button { background: #333; color: #fff; border: 1px solid #555; border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+  #tools button.on { background: var(--brand-brown); border-color: var(--brand-brown); }
+</style>
+</head>
+<body>
+
+<div id="variant-nav">
+  <span class="brand">FlawChess ▸ 001 Analyzed Card</span>
+  <button class="variant-tab active" onclick="showVariant('a', event)">A: Header + 3-col body ★ Selected</button>
+  <button class="variant-tab" onclick="showVariant('b', event)">B: Right-rail counts</button>
+  <button class="variant-tab" onclick="showVariant('c', event)">C: Metadata-row badges</button>
+</div>
+
+<!-- ============ VARIANT A ============ -->
+<section id="variant-a" class="variant active">
+  <p class="note"><b style="color:var(--color-text)">A — Header + 3-column body (v3).</b> Player names sit in a full-width <b style="color:var(--color-text)">card header</b>. Desktop body is three columns: <b style="color:var(--color-text)">board</b> · <b style="color:var(--color-text)">game info</b> (opening + metadata) · <b style="color:var(--color-text)">flaws</b> (a dashed-divided right column with full-label counts <span style="color:var(--sev-blunder)">[2&nbsp;Blunders]</span> <span style="color:var(--sev-mistake)">[1&nbsp;Mistake]</span> <span style="color:var(--sev-inaccuracy)">[4&nbsp;Inacc.]</span> stacked, then family-colored tag chips below). No "Flaws" title. On mobile the flaws section stacks full-width under the board + info row, and the header stacks the two names on separate lines (no "vs").</p>
+  <div class="stage">
+    <div>
+      <div class="col-head">Desktop</div>
+      <div class="stack" id="deskA"></div>
+    </div>
+    <div>
+      <div class="col-head">Mobile</div>
+      <div class="mobile-frame"><div class="stack" id="mobA"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ VARIANT B ============ -->
+<section id="variant-b" class="variant">
+  <p class="note"><b style="color:var(--color-text)">B — Right-rail count cluster.</b> Desktop gets a dedicated right rail (like the WDL-bar zone on endgame cards) holding the B/M/I counts stacked; tag chips sit as a row under the opening line. On mobile the rail collapses to a horizontal counts strip above the chips.</p>
+  <div class="stage">
+    <div>
+      <div class="col-head">Desktop</div>
+      <div class="stack" id="deskB"></div>
+    </div>
+    <div>
+      <div class="col-head">Mobile</div>
+      <div class="mobile-frame"><div class="stack" id="mobB"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ VARIANT C ============ -->
+<section id="variant-c" class="variant">
+  <p class="note"><b style="color:var(--color-text)">C — Metadata-row badges.</b> Most compact: B/M/I counts append to the existing metadata wrap-row (after move count); tag chips render as a single second wrap-row right beneath. Adds the least vertical height, but the counts share a row with date/TC so they compete for attention.</p>
+  <div class="stage">
+    <div>
+      <div class="col-head">Desktop</div>
+      <div class="stack" id="deskC"></div>
+    </div>
+    <div>
+      <div class="col-head">Mobile</div>
+      <div class="mobile-frame"><div class="stack" id="mobC"></div></div>
+    </div>
+  </div>
+</section>
+
+<div class="legend">
+  <span><b>Tag families</b> (color = family, icon/label = member):</span>
+  <span><span class="swatch" style="background:var(--fam-tempo)"></span>Tempo — time-pressure · hasty</span>
+  <span><span class="swatch" style="background:var(--fam-opportunity)"></span>Opportunity — miss · unpunished</span>
+  <span><span class="swatch" style="background:var(--fam-impact)"></span>Impact — result-changing · from-winning</span>
+  <span style="opacity:.7">Excluded from cards: inaccuracy-level tags, <i>phase</i>, knowledge-gap → stats panel only.</span>
+</div>
+<p class="note" style="max-width:1140px;margin-top:12px">Chips are <b style="color:var(--color-text)">display-only in Phase 107</b> (the Flaws deep-link target doesn't exist yet). Clicking shows where they'll route later. Aggregated/deduped to game level: one chip per tag type present, never one-per-flaw.</p>
+
+<div id="toast"></div>
+
+<div id="tools">
+  <span style="opacity:.6">view</span>
+  <button onclick="setVw('full', event)" class="on">Full</button>
+  <button onclick="setVw('1280', event)">1280</button>
+  <button onclick="setVw('768', event)">768</button>
+</div>
+
+<script>
+/* ---------- mini-board renderer ---------- */
+function board(ranks, flip) {
+  const wp = {K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙'};
+  const bp = {k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
+  let rows = ranks.slice();
+  if (flip) rows = rows.slice().reverse().map(r => r.split('').reverse().join(''));
+  let html = '';
+  rows.forEach((r, ri) => {
+    for (let ci = 0; ci < 8; ci++) {
+      const ch = r[ci] || '.';
+      const dark = (ri + ci) % 2 === 1;
+      let pc = '';
+      if (wp[ch]) pc = `<span class="pc">${wp[ch]}</span>`;
+      else if (bp[ch]) pc = `<span class="pc b">${bp[ch]}</span>`;
+      html += `<div class="sq ${dark ? 'd' : 'l'}">${pc}</div>`;
+    }
+  });
+  return html;
+}
+const POS = ['r....rk.','ppp..ppp','..n.....','....p...','...qP...','..N..Q..','PPP..PPP','R...R.K.'];
+
+/* ---------- card pieces ---------- */
+function miniboard(flip, lg) { return `<div class="miniboard${lg?' lg':''}">${board(POS, flip)}</div>`; }
+
+function names() {
+  return `<div class="names"><span class="ico">■</span><span>flawmaster (1842)</span><span class="vs">vs</span><span class="ico">□</span><span>endgame_andy (1871)</span>
+    <span class="plat">♘ <a href="#" onclick="toast('Opens game on lichess');return false">↗</a></span></div>`;
+}
+function opening() { return `<div class="opening">📖 <span>Queen's Gambit Declined, Exchange</span></div>`; }
+function metaItems(extra) {
+  return `<span class="it"><span class="res-chip loss">−</span>Resignation</span>
+    <span class="it">📅 May 28, 2026</span>
+    <span class="it">⏱ Blitz · 5+3</span>
+    <span class="it"># 41 moves</span>${extra||''}`;
+}
+
+const sevStrip = `<span class="sev-row">
+  <span class="sev b">2 <span class="lab">B</span></span>
+  <span class="sev m">1 <span class="lab">M</span></span>
+  <span class="sev i">4 <span class="lab">I</span></span></span>`;
+const sevFull = `<div class="counts-col">
+  <span class="sevf b"><b>2</b> Blunders</span>
+  <span class="sevf m"><b>1</b> Mistake</span>
+  <span class="sevf i"><b>4</b> Inacc.</span></div>`;
+const chips = `<div class="chips">
+  <span class="chip impact" onclick="toast('→ Flaws · this game · result-changing')"><span class="g">⚑</span>result-changing</span>
+  <span class="chip tempo" onclick="toast('→ Flaws · this game · time-pressure')"><span class="g">⏱</span>time-pressure</span>
+  <span class="chip opp" onclick="toast('→ Flaws · this game · miss')"><span class="g">◎</span>miss</span>
+</div>`;
+const noAnalysis = `<span class="no-analysis">○ No engine analysis</span>`;
+
+/* ---------- VARIANT A: full-width header + 3-column body (board | info | flaws) ---------- */
+const platLink = `<span class="plat">♘ <a href="#" onclick="toast('Opens game on lichess');return false">↗</a></span>`;
+function headerA(mobile) {
+  if (mobile) {
+    return `<div class="gc-header"><div class="names stacked">
+      <span><span class="ico">■</span>flawmaster (1842)</span>
+      <span><span class="ico">□</span>endgame_andy (1871)</span></div>${platLink}</div>`;
+  }
+  return `<div class="gc-header"><div class="names">
+    <span class="ico">■</span><span>flawmaster (1842)</span><span class="vs">vs</span><span class="ico">□</span><span>endgame_andy (1871)</span></div>${platLink}</div>`;
+}
+function cardA(flip, mobile, analyzed, win) {
+  const cls = win ? 'win' : 'loss';
+  const flawsInner = analyzed ? `${sevFull}${chips}` : noAnalysis;
+  if (mobile) {
+    // Mobile game info: metadata stacks vertically with the game result as the LAST line.
+    const metaMobile = `<div class="meta meta-stack">
+      <span class="it">📅 May 28, 2026</span>
+      <span class="it">⏱ Blitz · 5+3</span>
+      <span class="it"># 41 moves</span>
+      <span class="it"><span class="res-chip loss">−</span>Resignation</span></div>`;
+    return `<div class="gc ${cls}">
+      ${headerA(true)}
+      <div class="gc-body">${miniboard(flip)}
+        <div class="gc-main">${opening()}${metaMobile}</div></div>
+      <div class="flaws-block full">${flawsInner}</div></div>`;
+  }
+  return `<div class="gc ${cls}">
+    ${headerA(false)}
+    <div class="gc-body body3">${miniboard(flip)}
+      <div class="gc-main">${opening()}<div class="meta">${metaItems()}</div></div>
+      <div class="gc-flaws">${flawsInner}</div></div></div>`;
+}
+/* ---------- VARIANT B: right rail ---------- */
+function cardB(flip, mobile, analyzed, win) {
+  const cls = win ? 'win' : 'loss';
+  const railCounts = `<div class="rail-counts">
+    <span class="sev b">2 <span class="lab">Blunders</span></span>
+    <span class="sev m">1 <span class="lab">Mistake</span></span>
+    <span class="sev i">4 <span class="lab">Inacc.</span></span></div>`;
+  const chipRow = analyzed ? chips : `<div>${noAnalysis}</div>`;
+  if (mobile) {
+    const strip = analyzed ? `<div class="flaw-divider"><span class="sev-row"><span class="flaw-label">Flaws</span>${sevStrip}</span></div>${chips}` : `<div class="flaw-divider">${noAnalysis}</div>`;
+    return `<div class="gc ${cls}"><div class="gc-body">${miniboard(flip)}
+      <div class="gc-main">${names()}${opening()}<div class="meta">${metaItems()}</div>${strip}</div></div></div>`;
+  }
+  return `<div class="gc ${cls}"><div class="gc-body">${miniboard(flip)}
+    <div class="gc-main">${names()}${opening()}<div class="meta">${metaItems()}</div>${chipRow}</div>
+    ${analyzed ? `<div class="gc-rail">${railCounts}</div>` : `<div class="gc-rail" style="justify-content:center">${noAnalysis}</div>`}</div></div>`;
+}
+/* ---------- VARIANT C: metadata-row badges ---------- */
+function cardC(flip, mobile, analyzed, win) {
+  const cls = win ? 'win' : 'loss';
+  const inlineCounts = analyzed ? `<span class="it sev-row" style="margin-left:2px">
+      <span class="sev b flat">2<span class="lab">B</span></span>
+      <span class="sev m flat">1<span class="lab">M</span></span>
+      <span class="sev i flat">4<span class="lab">I</span></span></span>` : `<span class="it">${noAnalysis}</span>`;
+  const chipRow = analyzed ? chips : '';
+  return `<div class="gc ${cls}"><div class="gc-body">${miniboard(flip)}
+    <div class="gc-main">${names()}${opening()}<div class="meta">${metaItems(inlineCounts)}</div>${chipRow}</div></div></div>`;
+}
+
+/* ---------- render ---------- */
+function render() {
+  const sets = [['A', cardA], ['B', cardB], ['C', cardC]];
+  sets.forEach(([k, fn]) => {
+    document.getElementById('desk' + k).innerHTML =
+      fn(false, false, true, false) + fn(true, false, true, true) + fn(false, false, false, false);
+    document.getElementById('mob' + k).innerHTML =
+      fn(false, true, true, false) + fn(false, true, false, false);
+  });
+}
+render();
+
+/* ---------- interactions ---------- */
+function showVariant(id, e) {
+  document.querySelectorAll('.variant').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.variant-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('variant-' + id).classList.add('active');
+  e.target.classList.add('active');
+}
+let toastT;
+function toast(msg) {
+  const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1600);
+}
+function setVw(w, e) {
+  document.querySelectorAll('#tools button').forEach(b => b.classList.remove('on'));
+  e.target.classList.add('on');
+  document.querySelectorAll('.variant').forEach(v => { v.style.maxWidth = w === 'full' ? '1180px' : w + 'px'; });
+}
+</script>
+</body>
+</html>
