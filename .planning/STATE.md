@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: executing
-last_updated: "2026-06-05T16:00:00.000Z"
-last_activity: "2026-06-05 -- Phase 106 Plan 03 complete (GET /api/library/mistake-stats: counts/rates, tag distribution, rolling-game trend, >=90% analyzed denominator) — Phase 106 ALL PLANS DONE"
+status: Phase 106 shipped — squash-merged to main (00548457)
+last_updated: "2026-06-05T18:14:31.098Z"
+last_activity: 2026-06-05
 progress:
   total_phases: 7
   completed_phases: 3
@@ -19,8 +19,8 @@ progress:
 
 Phase: 106 (games-surface-backend-mistake-filter-per-game-counts-stats-a) — ALL PLANS COMPLETE
 Plan: 3 of 3 (Plans 01, 02, 03 complete)
-Status: Phase 106 backend complete — ready for verification / next phase
-Last activity: 2026-06-05 -- Phase 106 Plan 03 complete (GET /api/library/mistake-stats: per-severity counts/rates per game + per 100 user-moves, tag distribution, rolling-game trend, >=90% analyzed denominator + N)
+Status: Phase 106 shipped — squash-merged to main (00548457)
+Last activity: 2026-06-05
 
 ## Project Reference
 
