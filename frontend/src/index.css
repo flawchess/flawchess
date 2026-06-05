@@ -50,6 +50,7 @@
     --inactive-bg-hover: #262626;
     --sidebar-bg: #171513;
     --toggle-active: oklch(0.55 0 0);
+    --toggle-active-hover: oklch(0.45 0 0);
     --toggle-active-foreground: oklch(0.98 0 0);
 }
 
@@ -86,6 +87,7 @@
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
     --toggle-active: oklch(0.55 0 0);
+    --toggle-active-hover: oklch(0.45 0 0);
     --toggle-active-foreground: oklch(0.98 0 0);
 }
 
@@ -140,6 +142,7 @@
     --color-inactive-bg-hover: var(--inactive-bg-hover);
     --color-sidebar-bg: var(--sidebar-bg);
     --color-toggle-active: var(--toggle-active);
+    --color-toggle-active-hover: var(--toggle-active-hover);
     --color-toggle-active-foreground: var(--toggle-active-foreground);
 }
 
