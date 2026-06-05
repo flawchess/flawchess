@@ -275,7 +275,6 @@ This project is managed with [GET SHIT DONE (GSD)](https://github.com/gsd-build/
 
 - Data scientist, 15 years web dev, Python expert, proficient with FastAPI
 - Not a frontend specialist but comfortable with React
-- Wants to approve tech decisions before they're locked in
 
 ## Communication Style
 
