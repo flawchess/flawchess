@@ -36,6 +36,7 @@ SEED-036 Library — analysis half. **LIBG-02 / LIBG-06 / LIBG-07 are in v1.24 s
 - **LIBG-07** *(Phase 105)*: Each flaw is returned as a typed structured object (ply, FEN, side, severity, tags, eval before/after) documented as the consumption contract for the Games / Flaws / Analysis surfaces and SEED-037 Train, designed so materialization is a drop-in later optimization.
 - **LIBG-08** *(Phase 106)*: Games-list endpoint extends `apply_game_filters` with a boolean mistake-type `EXISTS` filter (game contains ≥1 of a selected severity; severity thresholds as bound parameters, no count thresholds, no materialization, no backfill) and returns per-game B/M/I severity counts plus a curated, aggregated/deduped set of card tag-chips (game-level dedupe, inaccuracy-level tags and `phase` excluded), reusing the Phase 105 kernel; chess.com / unanalyzed-lichess games return an explicit "no engine analysis" state, never a false zero-flaw game. Backend of LIBG-01.
 - **LIBG-09** *(Phase 106)*: Stats-panel aggregate endpoint over the filtered analyzed-only set — per-severity counts/rates (normalized per game and per 100 moves), the full tag distribution (tempo split, result-changing rate, phase histogram), and a trend-over-time series — with the explicit `% analyzed` (≥90%-per-ply-coverage) denominator and analyzed-game N stated in the response. Cross-game work pushed into a SQL window-scan returning only flagged mistake+blunder rows; Python applies tags + tag-distribution stats over that reduced set. Backend of LIBG-03.
+- **LIBG-10** *(Phase 109)*: Per-card expected-score eval chart on the Games subtab — each *analyzed* card shows a recharts area chart of white-perspective expected score per ply (lichess sigmoid via `eval_utils`, 50% midline, advantage region shaded light-grey >50% / dark-grey <50%), rendered as a dedicated middle column that restructures the desktop card into three equal thirds (miniboard + info · chart · tags) with mobile parity. Dots mark the user's flaws only — blunder/mistake from `game_flaws`, inaccuracy recomputed on the fly from the eval series — colored from `theme.ts`; vertical lines mark the opening (ply 0) / middlegame / endgame transitions from `game_positions.phase`; per-ply tooltips show eval in pawns (or mate in #N) plus flaw tags. The per-ply series + flaw markers + transition plies are delivered inline by extending the existing `GET /api/library/games` `GameFlawCard` payload (no new endpoint, no schema change, no migration); unanalyzed cards render no chart. Realizes the per-card eval sparkline deferred in Phase 107.
 
 ## Out of Scope
 
@@ -72,6 +73,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIBG-09 | Phase 106 | Complete |
 | LIBG-01 | Phase 107 | Planned |
 | LIBG-03 | Phase 107 | Planned |
+| LIBG-10 | Phase 109 | Planned |
 
 **Coverage:**
 
@@ -79,6 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 - v1.24 analysis-half (Phase 105): LIBG-02, LIBG-06, LIBG-07
 - v1.24 Games-surface backend (Phase 106): LIBG-08, LIBG-09
 - v1.24 Games-subtab frontend (Phase 107): LIBG-01, LIBG-03
+- v1.24 Per-card eval chart (Phase 109): LIBG-10
 - Deferred (later phases): LIBG-04 (Analysis viewer), LIBG-05 (best-move endpoint), Flaws subtab UI
 
 ---
