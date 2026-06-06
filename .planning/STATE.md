@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: executing
-last_updated: "2026-06-05T22:36:33.400Z"
-last_activity: 2026-06-05 -- Phase 107 execution started
+status: Phase 107 shipped — squash-merged to main
+last_updated: "2026-06-06T13:39:38.721Z"
+last_activity: 2026-06-06
 progress:
   total_phases: 8
   completed_phases: 3
@@ -19,8 +19,8 @@ progress:
 
 Phase: 107 (games-subtab-frontend-card-archive-filters-flaw-stats-panel) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
-Last activity: 2026-06-06 — Completed quick task 260606-jvg: Library > Stats subtab fixes — rating charts now omit TC series (and legend entries) with no data points, and "Results by Time Control" drops rows for TCs disabled in the filters. Frontend-only; 10 new tests; 756/756. Previously: 2026-06-06 — Completed quick task 260606-io6: Library tag-definition hover/tap popovers (thresholds from constants), a tri-state "Played as" filter (Either/White/Black) wired through games + Stats statistics but not rating charts, and made the TC filter drive which rating-chart series render. Previously: 2026-06-06 — Completed quick task 260606-hfy: fixed Library tab reroute (/library now lands on Games, not Openings), the "N of 0 games" counter (denominator now from imported-game profile counts), and reordered the subtabs to Import / Games / Stats with the Openings Stats icon (BarChart2)
+Status: Phase 107 shipped — squash-merged to main
+Last activity: 2026-06-06
 
 ## Project Reference
 
