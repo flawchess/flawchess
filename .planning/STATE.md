@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: verifying
-last_updated: "2026-06-06T17:22:36.077Z"
-last_activity: "2026-06-06 -- Completed 108-06: backfill_flaws.py, reclassify hook, backfill test (5552c3d7)"
+status: Phase 108 shipped — squash-merged to main (d810e599)
+last_updated: "2026-06-06T21:36:41.655Z"
+last_activity: 2026-06-06
 progress:
   total_phases: 9
   completed_phases: 4
@@ -19,8 +19,8 @@ progress:
 
 Phase: 108 (flaws-subtab-game-flaws-materialization-per-flaw-endpoint-cr) — EXECUTING
 Plan: 8 of 8
-Status: Phase complete — ready for verification
-Last activity: 2026-06-06 -- Completed 108-06: backfill_flaws.py, reclassify hook, backfill test (5552c3d7)
+Status: Phase 108 shipped — squash-merged to main (d810e599)
+Last activity: 2026-06-06
 
 ## Project Reference
 
