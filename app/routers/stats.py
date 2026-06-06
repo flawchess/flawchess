@@ -60,10 +60,12 @@ async def get_global_stats(
     opponent_type: str = Query(default="human"),
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
+    color: str | None = Query(default=None),
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
-    Optionally filtered by from_date, to_date, platform, opponent_type, and opponent gap.
+    Optionally filtered by from_date, to_date, platform, opponent_type, opponent gap,
+    and color ("white" or "black"). Rating-history endpoint is intentionally excluded.
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
@@ -76,6 +78,7 @@ async def get_global_stats(
         opponent_type=opponent_type,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        color=color,
     )
 
 

@@ -23,6 +23,28 @@ export const WDL_BORDER_WIN = '#036C22';
 export const WDL_BORDER_DRAW = '#6B7280';
 export const WDL_BORDER_LOSS = '#9E2020';
 
+// Severity colors (B/M/I — flaw stats panel and library game cards, Phase 107)
+export const SEV_BLUNDER = 'oklch(0.58 0.19 25)';
+export const SEV_MISTAKE = 'oklch(0.70 0.16 55)';
+export const SEV_INACCURACY = 'oklch(0.82 0.13 95)';
+
+// Tag families (flaw chip color-by-family, Phase 107)
+export const FAM_TEMPO = 'oklch(0.70 0.17 290)';
+export const FAM_TEMPO_BG = 'oklch(0.70 0.17 290 / 0.15)';
+export const FAM_TEMPO_LOW_CLOCK = 'oklch(0.74 0.16 290)';
+export const FAM_TEMPO_IMPATIENT = 'oklch(0.62 0.15 300)';
+export const FAM_TEMPO_CONSIDERED = 'oklch(0.50 0.13 305)';
+export const FAM_TEMPO_UNMEASURED = 'oklch(0.40 0 0)';
+export const FAM_OPPORTUNITY = 'oklch(0.72 0.12 200)';
+export const FAM_OPPORTUNITY_BG = 'oklch(0.72 0.12 200 / 0.15)';
+export const FAM_IMPACT = 'oklch(0.66 0.18 330)';
+export const FAM_IMPACT_BG = 'oklch(0.66 0.18 330 / 0.15)';
+
+// Phase histogram bar fills (flaw tag distribution, Phase 107)
+export const PHASE_OPENING = 'oklch(0.62 0.06 70)';
+export const PHASE_MIDDLEGAME = 'oklch(0.62 0.10 230)';
+export const PHASE_ENDGAME = 'oklch(0.62 0.12 300)';
+
 // Glass-effect overlay: white highlight fading to transparent
 // Applied as backgroundImage on WDL bar segments for a polished look
 export const GLASS_OVERLAY =

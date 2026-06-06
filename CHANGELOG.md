@@ -11,6 +11,7 @@ in `YYYY-MM-DD` (Europe/Zurich).
 ### Added
 
 - **Library page** (Phase 104) — a new top-level **Library** destination in the main nav that hosts Import and Overview as deep-linkable subtabs (`/library/import`, `/library/overview`). Visiting the Library lands you on Import when you have no games yet and on Overview once you do.
+- **Games subtab** (Phase 107) — the Library's headline surface: a filterable game-card archive with a Flaw-Stats panel above it. Each analyzed game card shows blunder/mistake/inaccuracy counts plus family-colored tag chips (miss, lucky escape, while ahead, time pressure, hasty, …), with an explicit "no engine analysis" state for unanalyzed games. The Flaw-Stats panel summarizes per-severity rates (per game and per 100 moves), tag distribution (tempo split, phase histogram), trend over time, and the `% analyzed` denominator. Filters (platform, color, time control, rated, opponent, recency, plus a mistake-severity toggle) drive both the list and the panel together. The Games subtab is now the default landing for returning users with games.
 
 ### Changed
 

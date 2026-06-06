@@ -232,26 +232,26 @@ class TestCountGameSeverities:
 
 
 class TestCardChips:
-    """_curate_chips: dedupe, phase-* exclusion, deterministic order."""
+    """_curate_chips: dedupe, phase tag exclusion, deterministic order."""
 
     def test_chips_exclude_phase_and_dedupe(self) -> None:
-        """phase-* tags dropped; one chip per remaining type; stable order."""
+        """Phase tags dropped; one chip per remaining type; stable order."""
         from app.services.library_service import _curate_chips
 
         flaws = [
-            _make_flaw(["from-winning", "phase-middlegame", "hasty"]),
-            # duplicate hasty across flaws -> single chip; phase-opening dropped
-            _make_flaw(["hasty", "phase-opening", "miss"]),
+            _make_flaw(["while-ahead", "middlegame", "impatient"]),
+            # duplicate impatient across flaws -> single chip; opening dropped
+            _make_flaw(["impatient", "opening", "miss"]),
         ]
         chips = _curate_chips(flaws)
-        assert "phase-middlegame" not in chips
-        assert "phase-opening" not in chips
-        # dedupe: hasty appears once
-        assert chips.count("hasty") == 1
+        assert "middlegame" not in chips
+        assert "opening" not in chips
+        # dedupe: impatient appears once
+        assert chips.count("impatient") == 1
         # all non-phase tags present
-        assert set(chips) == {"from-winning", "hasty", "miss"}
-        # deterministic order follows _CHIP_ORDER: miss < from-winning < hasty
-        assert chips == ["miss", "from-winning", "hasty"]
+        assert set(chips) == {"while-ahead", "impatient", "miss"}
+        # deterministic order follows _CHIP_ORDER: miss < while-ahead < impatient
+        assert chips == ["miss", "while-ahead", "impatient"]
 
     def test_chips_empty_when_no_flaws(self) -> None:
         """No flaws -> no chips."""
@@ -260,10 +260,10 @@ class TestCardChips:
         assert _curate_chips([]) == []
 
     def test_chips_only_phase_tags_yields_empty(self) -> None:
-        """A flaw carrying only phase-* tags produces no chips."""
+        """A flaw carrying only phase tags (bare endgame) produces no chips."""
         from app.services.library_service import _curate_chips
 
-        chips = _curate_chips([_make_flaw(["phase-endgame"])])
+        chips = _curate_chips([_make_flaw(["endgame"])])
         assert chips == []
 
 
@@ -526,8 +526,9 @@ class TestFlawStats:
         hist = resp.tag_distribution.phase_histogram
         assert hist["middlegame"] == 1
         assert hist["endgame"] == 1
-        # every flaw carries exactly one tempo tag -> tempo counts sum to total flaws
-        assert sum(resp.tag_distribution.tempo.values()) == 2
+        # at most one tempo tag per flaw -> tempo counts sum to <= total flaws
+        # (seeded positions have no clock data, so tempo is absent here)
+        assert sum(resp.tag_distribution.tempo.values()) <= 2
 
     @pytest.mark.asyncio
     async def test_trend_point_date_is_window_last_game(self, db_session: object) -> None:
@@ -605,3 +606,98 @@ class TestFlawStats:
         assert resp.per_severity_counts["blunder"] == 0
         assert resp.rates.per_100_moves["blunder"] == 0.0
         assert resp.trend == []
+
+    @pytest.mark.asyncio
+    async def test_miss_rate_and_lucky_escape_rate(self, db_session: object) -> None:
+        """1 miss + 1 lucky-escape out of 2 M+B flaws -> rates == 0.5 each."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.library_service import get_flaw_stats
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99975)
+
+        prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
+        # Two white (user) blunders on distinct plies.
+        # ply 2: blunder tagged "miss" — white drops from even to strongly losing
+        # ply 4: blunder tagged "lucky-escape"
+        # Plies 0..10 all evaled -> full coverage -> analyzed game.
+        win_cp = 800
+        game = await _seed_db_game(session, user_id=99975, user_color="white", result="1-0")
+        await _seed_db_pos(session, game=game, ply=0, eval_cp=win_cp)
+        await _seed_db_pos(session, game=game, ply=1, eval_cp=win_cp)  # black clean
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=0)  # white blunder #1 (miss)
+        await _seed_db_pos(session, game=game, ply=3, eval_cp=0)  # black clean
+        await _seed_db_pos(
+            session, game=game, ply=4, eval_cp=curr_b
+        )  # white blunder #2 (lucky-escape)
+        for ply in range(5, 11):
+            await _seed_db_pos(session, game=game, ply=ply, eval_cp=curr_b)
+
+        resp = await get_flaw_stats(
+            session,
+            user_id=99975,
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            flaw_severity=None,
+        )
+        assert resp.per_severity_counts["blunder"] == 2
+        # Verify the rates by calling _compute_tag_distribution directly with
+        # hand-crafted FlawRecords carrying the exact tags under test.
+        from app.services.library_service import _compute_tag_distribution
+        from app.services.library_service import _GameFlaws
+
+        flaws_miss_and_lucky = [
+            _make_flaw(["miss", "middlegame"]),
+            _make_flaw(["lucky-escape", "endgame"]),
+        ]
+        dist = _compute_tag_distribution(
+            [
+                _GameFlaws(
+                    counts={"inaccuracy": 0, "mistake": 0, "blunder": 2},
+                    flaws=flaws_miss_and_lucky,
+                    user_moves=5,
+                    played_at=None,
+                )
+            ]
+        )
+        assert dist.miss_rate == pytest.approx(0.5)
+        assert dist.lucky_escape_rate == pytest.approx(0.5)
+        assert dist.while_ahead_rate == 0.0
+
+    def test_while_ahead_rate(self) -> None:
+        """1 while-ahead of 2 M+B flaws -> while_ahead_rate == 0.5 (pure unit test)."""
+        from app.services.library_service import _compute_tag_distribution
+        from app.services.library_service import _GameFlaws
+
+        flaws = [
+            _make_flaw(["while-ahead", "middlegame"]),
+            _make_flaw(["miss", "endgame"]),
+        ]
+        dist = _compute_tag_distribution(
+            [
+                _GameFlaws(
+                    counts={"inaccuracy": 0, "mistake": 0, "blunder": 2},
+                    flaws=flaws,
+                    user_moves=5,
+                    played_at=None,
+                )
+            ]
+        )
+        assert dist.while_ahead_rate == pytest.approx(0.5)
+        assert dist.miss_rate == pytest.approx(0.5)
+        assert dist.lucky_escape_rate == 0.0
+
+    def test_rates_zero_when_no_mb_flaws(self) -> None:
+        """0 M+B flaws -> all three new rates are 0.0 (no ZeroDivisionError)."""
+        from app.services.library_service import _compute_tag_distribution
+
+        dist = _compute_tag_distribution([])
+        assert dist.miss_rate == 0.0
+        assert dist.lucky_escape_rate == 0.0
+        assert dist.while_ahead_rate == 0.0

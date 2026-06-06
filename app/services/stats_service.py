@@ -206,10 +206,12 @@ async def get_global_stats(
     opponent_type: str = "human",
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> GlobalStatsResponse:
     """Return global W/D/L breakdowns by time control and by color.
 
     Both queries return SQL-aggregated (label, total, wins, draws, losses) rows.
+    When color is set ("white" or "black"), only games played as that color are included.
     """
     tc_rows = await query_results_by_time_control(
         session,
@@ -220,6 +222,7 @@ async def get_global_stats(
         opponent_type=opponent_type,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        color=color,
     )
     color_rows = await query_results_by_color(
         session,
@@ -230,6 +233,7 @@ async def get_global_stats(
         opponent_type=opponent_type,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        color=color,
     )
 
     by_time_control = _rows_to_wdl_categories(

@@ -51,7 +51,7 @@ MATE_CP_EQUIVALENT: int = 1000
 EVAL_COVERAGE_MIN: float = 0.90
 
 # Attribution tag threshold
-FROM_WINNING_ES: float = 0.85  # tag: from-winning
+FROM_WINNING_ES: float = 0.85  # tag: while-ahead
 
 # Result-changing thresholds (RESEARCH §Pattern 7 — [ASSUMED], tunable)
 RESULT_WIN_THRESHOLD: float = 0.70  # ES >= 0.70 = "winning" zone
@@ -75,17 +75,17 @@ SANITY_TOLERANCE: int = 2
 FlawSeverity = Literal["inaccuracy", "mistake", "blunder"]
 FlawTag = Literal[
     "miss",
-    "unpunished",
-    "from-winning",
+    "lucky-escape",
+    "while-ahead",
     "result-changing",
-    "time-pressure",
-    "hasty",
-    "knowledge-gap",
-    "phase-opening",
-    "phase-middlegame",
-    "phase-endgame",
+    "low-clock",
+    "impatient",
+    "considered",
+    "opening",
+    "middlegame",
+    "endgame",
 ]
-TempoTag = Literal["time-pressure", "hasty", "knowledge-gap"]
+TempoTag = Literal["low-clock", "impatient", "considered"]
 
 # ---------------------------------------------------------------------------
 # TypedDict output contract (CONTEXT.md §Output contract; zobrist.py PlyData style)
@@ -290,22 +290,22 @@ def _classify_tempo(
     move_time: float | None,
     clock_after: float | None,
     base_time: int | None,
-) -> TempoTag:
-    """Return exactly one tempo tag for a flaw.
+) -> TempoTag | None:
+    """Return at most one tempo tag for a flaw, or None when clock data is unavailable.
 
-    Every flaw carries exactly one of {time-pressure, hasty, knowledge-gap}
-    (LOCKED invariant from CONTEXT.md §Tempo dimension).
+    Returns one of {low-clock, impatient, considered}, or None when clock_after or
+    move_time is unavailable (no misleading fallback — per the at-most-one rule in
+    flaw-tag-naming.md §"Structural change").
 
-    Priority: time-pressure > hasty > knowledge-gap. If clock data is missing,
-    default to knowledge-gap (the most conservative, noise-free label).
+    Priority: low-clock > impatient > considered.
 
     Relative thresholds are used when base_time is available (relative-to-base-clock
-    is context-aware — a 5s move is hasty in classical but normal in bullet).
+    is context-aware — a 5s move is impatient in classical but normal in bullet).
     Absolute fallback values are used when base_time is absent or zero.
     All threshold values are [ASSUMED] initial defaults; tunable on-the-fly.
     """
     if clock_after is None or move_time is None:
-        return "knowledge-gap"
+        return None
 
     # Pick thresholds — relative when base_time available (guard against div-by-zero)
     if base_time and base_time > 0:
@@ -316,10 +316,10 @@ def _classify_tempo(
         fast_move_threshold = HASTY_MOVE_ABS_SECONDS
 
     if clock_after < low_clock_threshold:
-        return "time-pressure"
+        return "low-clock"
     if move_time < fast_move_threshold:
-        return "hasty"
-    return "knowledge-gap"
+        return "impatient"
+    return "considered"
 
 
 def _is_miss(n: int, all_moves: dict[int, _MoveEntry]) -> bool:
@@ -347,10 +347,10 @@ def _is_unpunished(
 ) -> bool:
     """Return True when a user BLUNDER at ply N was not punished by opponent at N+1.
 
-    unpunished = user's blunder that the opponent did not capitalize on.
+    lucky-escape = user's blunder that the opponent did not capitalize on.
     Only applies to blunders (Pitfall 6 in RESEARCH — applying to inaccuracies
     and mistakes would produce a noise-heavy flood of tags). If there is no
-    following opponent move (end of game), that too counts as "unpunished".
+    following opponent move (end of game), that too counts as "lucky-escape".
     """
     if severity != "blunder":
         return False
@@ -385,16 +385,16 @@ def _is_result_changing(
 
 
 def _phase_tag(phase: int | None) -> FlawTag:
-    """Map the GamePosition.phase integer (0/1/2) to a phase-* FlawTag.
+    """Map the GamePosition.phase integer (0/1/2) to a phase FlawTag.
 
-    Defaults to phase-middlegame for unknown/null phase values (most positions
-    are middlegame; this avoids spurious phase-opening or phase-endgame tags).
+    Defaults to middlegame for unknown/null phase values (most positions
+    are middlegame; this avoids spurious opening or endgame tags).
     """
     if phase == 0:
-        return "phase-opening"
+        return "opening"
     if phase == 2:
-        return "phase-endgame"
-    return "phase-middlegame"
+        return "endgame"
+    return "middlegame"
 
 
 def _build_tags(
@@ -410,13 +410,14 @@ def _build_tags(
 ) -> list[FlawTag]:
     """Assemble the ordered attribution tags list for one user flaw at ply N.
 
-    Tag order: from-winning, result-changing, miss, unpunished, phase-*, tempo.
-    Tags are additive and orthogonal. Exactly one tempo tag is always present.
+    Tag order: while-ahead, result-changing, miss, lucky-escape, phase, tempo.
+    Tags are additive and orthogonal. At most one tempo tag is present (absent
+    when clock data is unavailable).
     """
     tags: list[FlawTag] = []
 
     if es_before >= FROM_WINNING_ES:
-        tags.append("from-winning")
+        tags.append("while-ahead")
 
     if _is_result_changing(es_before, es_after, user_result):
         tags.append("result-changing")
@@ -425,13 +426,15 @@ def _build_tags(
         tags.append("miss")
 
     if _is_unpunished(n, all_moves, severity):
-        tags.append("unpunished")
+        tags.append("lucky-escape")
 
     tags.append(_phase_tag(positions[n].phase))
 
     clock_after = positions[n].clock_seconds
     move_time = _move_time(positions, n, increment)
-    tags.append(_classify_tempo(move_time, clock_after, base_time))
+    tempo = _classify_tempo(move_time, clock_after, base_time)
+    if tempo is not None:
+        tags.append(tempo)
 
     return tags
 

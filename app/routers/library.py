@@ -43,6 +43,7 @@ async def get_library_games(
     limit: int = Query(default=20, ge=1, le=100),
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
+    color: str | None = Query(default=None),
 ) -> LibraryGamesResponse:
     """Return a paginated, flaw-filterable game archive (LIBG-08).
 
@@ -50,6 +51,8 @@ async def get_library_games(
     that severity (or worse) are returned. Each card carries per-game B/M/I counts
     and curated chips; chess.com / unanalyzed-lichess games carry
     analysis_state="no_engine_analysis" with severity_counts=null (never 0/0/0).
+    When `color` is supplied ("white" or "black"), only games played as that color
+    are returned.
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
@@ -67,6 +70,7 @@ async def get_library_games(
         limit=limit,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        color=color,
     )
 
 
@@ -83,6 +87,7 @@ async def get_flaw_stats(
     opponent_type: str = Query(default="human"),
     opponent_gap_min: int | None = Query(default=None),
     opponent_gap_max: int | None = Query(default=None),
+    color: str | None = Query(default=None),
 ) -> FlawStatsResponse:
     """Return the stats-panel aggregate over the filtered analyzed-only set (LIBG-09).
 
@@ -90,7 +95,8 @@ async def get_flaw_stats(
     distribution (tempo split, result-changing rate, phase histogram), a rolling-
     game trend, and the explicit >=90%-coverage analyzed denominator (analyzed_pct
     / analyzed_n / total_n). Same filter set as /games (no pagination). An empty
-    analyzed set returns zeros, never an error.
+    analyzed set returns zeros, never an error. When `color` is supplied ("white"
+    or "black"), stats are computed over only games played as that color.
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")
@@ -106,4 +112,5 @@ async def get_flaw_stats(
         flaw_severity=list(severity) if severity else None,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        color=color,
     )

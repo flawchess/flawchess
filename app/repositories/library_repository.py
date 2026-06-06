@@ -238,6 +238,7 @@ def _filtered_games_base(
     flaw_severity: Sequence[str] | None,
     opponent_gap_min: int | None,
     opponent_gap_max: int | None,
+    color: str | None = None,
 ) -> Select[tuple[int]]:
     """Build the filtered `SELECT Game.id` base shared by the archive + stats paths.
 
@@ -256,6 +257,7 @@ def _filtered_games_base(
         opponent_type=opponent_type,
         from_date=from_date,
         to_date=to_date,
+        color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
         flaw_severity=flaw_severity,
@@ -278,6 +280,7 @@ async def query_filtered_games(
     limit: int,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> tuple[list[Game], int]:
     """Return paginated user Game objects, optionally flaw-severity filtered.
 
@@ -300,6 +303,7 @@ async def query_filtered_games(
         opponent_type=opponent_type,
         from_date=from_date,
         to_date=to_date,
+        color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
         flaw_severity=flaw_severity,
@@ -354,6 +358,7 @@ async def count_filtered_and_analyzed(
     flaw_severity: Sequence[str] | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> tuple[int, int]:
     """Return (total_n, analyzed_n) over the filtered Games-surface set (LIBG-09).
 
@@ -380,6 +385,7 @@ async def count_filtered_and_analyzed(
         flaw_severity=flaw_severity,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        color=color,
     )
     base_subq = base.subquery("filtered")
     total_n = (await session.execute(select(func.count()).select_from(base_subq))).scalar_one()
@@ -407,6 +413,7 @@ async def analyzed_game_ids(
     flaw_severity: Sequence[str] | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> list[int]:
     """Return the analyzed (>=90% coverage) filtered game_ids, played_at ASC.
 
@@ -426,6 +433,7 @@ async def analyzed_game_ids(
         flaw_severity=flaw_severity,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
+        color=color,
     )
     base_subq = base.subquery("filtered")
     analyzed_subq = _analyzed_game_ids_subquery(user_id)

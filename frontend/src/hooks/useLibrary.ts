@@ -1,0 +1,75 @@
+import { useQuery } from '@tanstack/react-query';
+import { libraryApi } from '@/api/client';
+import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
+import type { FilterState } from '@/components/filters/FilterPanel';
+
+// Library queries are similar in cost to endgame queries (GROUP BY on FlawRecords).
+// 5 minutes staleTime + no refetch-on-focus prevents redundant DB load
+// from alt-tabbing or component re-mounts. Data only changes on new imports.
+const LIBRARY_STALE_TIME = 5 * 60 * 1000;
+
+/**
+ * Build shared query params for library endpoints from a FilterState.
+ *
+ * Mirrors buildEndgameParams from useEndgames.ts but drops color/matchSide
+ * (the Games subtab shows all colors) and adds optional severity filter.
+ * severity is omitted from the params object entirely when empty — the API
+ * treats a missing severity param as "no filter" (all games).
+ */
+function buildLibraryParams(
+  filters: FilterState,
+  severity: ('blunder' | 'mistake')[],
+) {
+  const dateParams = dateRangeToWireParams(resolveDateRange(filters));
+  return {
+    time_control: filters.timeControls,
+    platform: filters.platforms,
+    ...dateParams,
+    rated: filters.rated,
+    opponent_type: filters.opponentType,
+    opponent_strength: filters.opponentStrength,
+    severity: severity.length > 0 ? severity : undefined,
+    color: filters.playedAs === 'either' ? undefined : filters.playedAs,
+  };
+}
+
+/**
+ * Fetch the paginated library game archive for the current filter + severity selection.
+ *
+ * Query key: ['library-games', params, offset, limit]
+ * Both offset and limit are part of the key so page changes trigger a new fetch.
+ */
+export function useLibraryGames(
+  filters: FilterState,
+  severity: ('blunder' | 'mistake')[],
+  offset: number,
+  limit: number,
+) {
+  const params = buildLibraryParams(filters, severity);
+  return useQuery({
+    queryKey: ['library-games', params, offset, limit],
+    queryFn: () => libraryApi.getGames({ ...params, offset, limit }),
+    staleTime: LIBRARY_STALE_TIME,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Fetch the Flaw-Stats panel data for the current filter + severity selection.
+ *
+ * Query key: ['library-flaw-stats', params]
+ * No offset — the stats panel aggregates over all matching games, not just
+ * the current page.
+ */
+export function useLibraryFlawStats(
+  filters: FilterState,
+  severity: ('blunder' | 'mistake')[],
+) {
+  const params = buildLibraryParams(filters, severity);
+  return useQuery({
+    queryKey: ['library-flaw-stats', params],
+    queryFn: () => libraryApi.getFlawStats(params),
+    staleTime: LIBRARY_STALE_TIME,
+    refetchOnWindowFocus: false,
+  });
+}

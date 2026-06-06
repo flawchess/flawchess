@@ -106,7 +106,7 @@ export default defineConfig({
     hmr: {
       clientPort: process.env.TUNNEL ? 443 : undefined,
     },
-    allowedHosts: process.env.TUNNEL ? true : [],
+    allowedHosts: process.env.TUNNEL ? true : ['.ts.net'],
     proxy: {
       '/api': 'http://localhost:8000',
     },

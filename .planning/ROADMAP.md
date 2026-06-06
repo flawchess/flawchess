@@ -37,7 +37,7 @@ SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-le
 - [x] **Phase 104: Library Page Shell + Import & Overview Subtab Migration** — new `/library` route with deep-linkable `<Tabs variant="brand">` subtabs; migrate `/import` → `/library/import` and `/overview` → `/library/overview` (each its own tsx, with redirects); top-level nav drops to Library · Openings · Endgames (+ Admin); `totalGames === 0` dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile parity + browser-automation conventions (LIB-01..09) (completed 2026-06-05)
 - [x] **Phase 105: Mistake-Detection + Classification + Tagging Service (on-the-fly)** — server-side `mistakes` service derives every flaw in a Lichess-analyzed game on-the-fly from stored per-ply `eval_cp`/`eval_mate` — severity (Lichess-aligned 0.05/0.10/0.15 expected-score-drop thresholds) + eight attribution tags (miss, unpunished, from-winning, result-changing, time-pressure, hasty, knowledge-gap, phase) — emitting typed per-flaw objects for the Games/Flaws/Analysis surfaces and SEED-037 Train; no materialization, no schema change, no UI (LIBG-02, LIBG-06, LIBG-07) (completed 2026-06-05)
 - [x] **Phase 106: Games-Surface Backend — Mistake Filter, Per-Game Counts & Stats Aggregates (on-the-fly)** — completed 2026-06-05 (3/3 plans) — two server-side endpoints the Games subtab consumes, both on-the-fly via a SQL window-scan + Python tagging that reuses Phase 105's kernel (no materialization, no schema change): (a) games-list — `apply_game_filters` extended with a boolean mistake-type `EXISTS` over the per-ply ES-drop (severity thresholds bound params), each game carrying B/M/I counts + aggregated/deduped card tag-chips; (b) stats-panel aggregates over the filtered analyzed-only set — per-severity counts/rates (normalized), tag distribution (tempo split, result-changing rate, phase histogram), trend-over-time, and the explicit `% analyzed` (≥90%-coverage) denominator with N (LIBG-08, LIBG-09)
-- [ ] **Phase 107: Games Subtab Frontend — Card Archive, Filters & Flaw-Stats Panel** — the Games subtab UI consuming both Phase 106 endpoints: a filterable game-card archive (existing metadata filters + the boolean mistake-severity filter; no chessboard, no opening filter) where each analyzed card shows B/M/I severity counts + curated/deduped family-colored tag chips (display-only in 107 — the deep-link target is the not-yet-built Flaws view) + an explicit "no engine analysis" state, plus the **Flaw-Stats panel** above the list (per-severity rates per game / per 100 moves, tag distribution incl. tempo split & phase histogram, trend-over-time, explicit `% analyzed` + N). Reuses the Openings game-card + mobile-drawer patterns; the returning-user default subtab flips Overview → **Games**. No backend work (the optional per-card eval sparkline is deferred). Design path: `/gsd-sketch` → `/gsd-ui-phase` → plan (LIBG-01, LIBG-03)
+- [x] **Phase 107: Games Subtab Frontend — Card Archive, Filters & Flaw-Stats Panel** — completed 2026-06-06 (squash-merged to main; human UAT passed, small UI polish deferred to an end-of-milestone polish phase) — the Games subtab UI consuming both Phase 106 endpoints: a filterable game-card archive (existing metadata filters + the boolean mistake-severity filter; no chessboard, no opening filter) where each analyzed card shows B/M/I severity counts + curated/deduped family-colored tag chips (display-only in 107 — the deep-link target is the not-yet-built Flaws view) + an explicit "no engine analysis" state, plus the **Flaw-Stats panel** above the list (per-severity rates per game / per 100 moves, tag distribution incl. tempo split & phase histogram, trend-over-time, explicit `% analyzed` + N). Reuses the Openings game-card + mobile-drawer patterns; the returning-user default subtab flips Overview → **Games**. One approved narrow backend slice (D-01: three computed flat-float `TagDistribution` rates — no migration, no new route); the optional per-card eval sparkline is deferred. Design path: `/gsd-sketch` → `/gsd-ui-phase` → plan (LIBG-01, LIBG-03)
 
 #### Phase 104: Library Page Shell + Import & Overview Subtab Migration
 
@@ -114,18 +114,39 @@ SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-le
 
 #### Phase 107: Games Subtab Frontend — Card Archive, Filters & Flaw-Stats Panel
 
-**Goal**: The Library **Games** subtab renders the milestone's headline surface — a filterable game-card archive backed by `GET /api/library/games` and a **Flaw-Stats panel** backed by `GET /api/library/mistake-stats` — turning the already-built Phase 106 backend into the user-facing Games experience, and becoming the returning-user default subtab.
-**Depends on**: Phase 106 (`GET /api/library/games`, `GET /api/library/mistake-stats`); Phase 104 (Library shell + URL-routed subtabs); the Openings game-card / filter-sidebar / mobile-drawer / Games-subtab pagination patterns; the Endgames stats-panel layout reference; `frontend/src/lib/theme.ts` (tag-family semantic colors). No backend work.
+**Goal**: The Library **Games** subtab renders the milestone's headline surface — a filterable game-card archive backed by `GET /api/library/games` and a **Flaw-Stats panel** backed by `GET /api/library/flaw-stats` — turning the already-built Phase 106 backend into the user-facing Games experience, and becoming the returning-user default subtab.
+**Depends on**: Phase 106 (`GET /api/library/games`, `GET /api/library/flaw-stats`); Phase 104 (Library shell + URL-routed subtabs); the Openings game-card / filter-sidebar / mobile-drawer / Games-subtab pagination patterns; the Endgames stats-panel layout reference; `frontend/src/lib/theme.ts` (tag-family semantic colors). One approved narrow backend slice (D-01): three computed flat-float rate fields on `TagDistribution` (`miss_rate`/`lucky_escape_rate`/`while_ahead_rate`) — no migration, no new route.
 **Requirements**: LIBG-01, LIBG-03
 **Success Criteria** (what must be TRUE):
 
   1. The Games subtab lists games from `GET /api/library/games` as cards reusing the Openings game-card structure, each analyzed card additionally showing the per-game **B/M/I severity counts** and a curated, aggregated/deduped set of **family-colored tag chips**; chess.com / unanalyzed-lichess cards show an explicit **"no engine analysis"** state, never a false clean game (LIBG-01).
   2. The card tag chips are **display-only** in this phase (rendered, family-colored per `theme.ts`, no per-tag color sprawl) — the deep-link into a pre-filtered Flaws view is deferred until the Flaws subtab exists; the planner must not assume a `/library/...` Flaws route (LIBG-01).
   3. The subtab exposes the existing metadata filters (color, time control, recency, opponent type, rated) plus the **boolean mistake-severity filter** (game contains ≥1 blunder / mistake), wired to the games endpoint's filter params; there is **no chessboard and no opening/position filter** on this surface (LIBG-01).
-  4. A **Flaw-Stats panel** above the list, fed by `GET /api/library/mistake-stats`, shows per-severity rates (normalized per game and per 100 moves), the tag distribution (tempo split, result-changing rate, phase histogram), a trend-over-time series, and the explicit **`% analyzed` denominator + N**, so the panel never implies clean games where evals are simply absent (LIBG-03).
+  4. A **Flaw-Stats panel** above the list, fed by `GET /api/library/flaw-stats`, shows per-severity rates (normalized per game and per 100 moves), the tag distribution (tempo split, result-changing rate, phase histogram), a trend-over-time series, and the explicit **`% analyzed` denominator + N**, so the panel never implies clean games where evals are simply absent (LIBG-03).
   5. The whole surface works on mobile using the Openings drawer pattern (filters in a drawer; cards and panel stack responsively), with `data-testid` / ARIA / semantic-HTML conventions on all new interactive elements and containers; `isError` branches present on every data-loading chain (LIBG-01, LIBG-03).
 
 **UI hint**: yes
+
+**Plans**: 7 plans (4 waves)
+Plans:
+**Wave 1**
+
+- [x] 107-01-PLAN.md — D-01 backend slice: three flat-float rate fields on `TagDistribution` + counters + tests (LIBG-03)
+- [x] 107-02-PLAN.md — Frontend foundations: theme.ts color constants + library TS types + `libraryApi` client + `useLibrary*` hooks (LIBG-01, LIBG-03)
+- [x] 107-03-PLAN.md — Extract shared `Pagination` component; rewire `GameCardList` behavior-preserving (D-04/D-06) (LIBG-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 107-04-PLAN.md — Card primitives: `SeverityBadge`, `TagChip` (display-only), `NoAnalysisState`, `LibraryFilterPanel` (LIBG-01)
+- [x] 107-05-PLAN.md — Flaw-Stats panel: band + trend + tag distribution (Opportunity/Impact from real D-01 rates) (LIBG-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 107-06-PLAN.md — `LibraryGameCard` + `LibraryGameCardList` (separate component, D-05) (LIBG-01)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 107-07-PLAN.md — `GamesTab` assembly + `LibraryPage` Games subtab + returning-user default redirect; human-verify (LIBG-01, LIBG-03)
 
 *Earlier milestones below. v1.23 (Phases 102, 103) shipped 2026-06-03 — archived to [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md); see the collapsed block. v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md). v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
 

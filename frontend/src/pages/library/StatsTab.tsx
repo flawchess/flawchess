@@ -1,5 +1,5 @@
 import { GlobalStatsPage } from '@/pages/GlobalStats';
 
-export function OverviewTab() {
+export function StatsTab() {
   return <GlobalStatsPage />;
 }

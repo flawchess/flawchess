@@ -8,13 +8,15 @@ import { InfoPopover } from '@/components/ui/info-popover';
 import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from '@/components/filters/FilterPanel';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
+import { useLibraryFlawStats } from '@/hooks/useLibrary';
+import { FlawStatsPanel } from '@/components/library/FlawStatsPanel';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
 import { RatingChart } from '@/components/stats/RatingChart';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
 export function GlobalStatsPage() {
-  // Filter state shared across pages — GlobalStats only uses recency + platforms
+  // Filter state shared across pages — full filter set exposed on the Stats tab
   const [filters, setFilters] = useFilterStore();
 
   const selectedPlatforms = filters.platforms;
@@ -28,6 +30,13 @@ export function GlobalStatsPage() {
 
   const isLoading = ratingLoading || statsLoading;
 
+  // ── Flaw stats (empty severity — severity scoped to Games tab only) ────────
+  const {
+    data: flawStatsData,
+    isLoading: flawStatsLoading,
+    isError: flawStatsError,
+  } = useLibraryFlawStats(filters, []);
+
   // ── Mobile collapsible state ───────────────────────────────────────────────
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
@@ -39,9 +48,9 @@ export function GlobalStatsPage() {
   }, [setFilters]);
 
   // Modified-dot uses the uniform FILTER_DOT_FIELDS comparison (all FilterState keys except
-  // `color`). GlobalStats's own UI only exposes platform + recency, but the dot reflects the
-  // shared filter store — if the user set e.g. timeControls on Openings, the GlobalStats dot
-  // lights up, and clicking Reset here will clear those too (global reset semantics).
+  // `color`). The dot reflects the shared filter store — if the user set e.g. timeControls
+  // on Openings, the Stats dot lights up, and clicking Reset here will clear those too
+  // (global reset semantics).
   const isFiltersModified = useMemo(
     () => !areFiltersEqual(filters, DEFAULT_FILTERS, FILTER_DOT_FIELDS),
     [filters],
@@ -65,7 +74,7 @@ export function GlobalStatsPage() {
             </InfoPopover>
           </h3>
           <div className="p-4">
-            <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" />
+            <RatingChart data={ratingData?.chess_com ?? []} platform="Chess.com" enabledTimeControls={filters.timeControls} />
           </div>
         </section>
       )}
@@ -83,7 +92,7 @@ export function GlobalStatsPage() {
             </InfoPopover>
           </h3>
           <div className="p-4">
-            <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" />
+            <RatingChart data={ratingData?.lichess ?? []} platform="Lichess" enabledTimeControls={filters.timeControls} />
           </div>
         </section>
       )}
@@ -92,6 +101,14 @@ export function GlobalStatsPage() {
       <GlobalStatsCharts
         byTimeControl={globalStats?.by_time_control ?? []}
         byColor={globalStats?.by_color ?? []}
+        enabledTimeControls={filters.timeControls}
+      />
+
+      {/* Flaw stats panel — shared filters, empty severity (severity is scoped to Games tab) */}
+      <FlawStatsPanel
+        stats={flawStatsData}
+        isLoading={flawStatsLoading}
+        isError={flawStatsError}
       />
     </div>
   );
@@ -118,7 +135,7 @@ export function GlobalStatsPage() {
               ) : undefined,
               content: (
                 <div className="p-3">
-                  <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
+                  <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['playedAs', 'timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']} />
                 </div>
               ),
             },
@@ -172,7 +189,7 @@ export function GlobalStatsPage() {
                 </Tooltip>
               </DrawerHeader>
               <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['platform', 'recency']} />
+                <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['playedAs', 'timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']} />
               </div>
             </DrawerContent>
           </Drawer>

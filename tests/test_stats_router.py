@@ -452,3 +452,83 @@ class TestGetRatingHistoryOpponentFilters:
                 headers=auth_headers,
             )
         assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Color filter tests for /stats/global and /stats/rating-history
+# ---------------------------------------------------------------------------
+
+
+class TestGetGlobalStatsColorFilter:
+    """Tests for color param on GET /stats/global.
+
+    rating-history intentionally does NOT accept color (feature 2 excludes it).
+    """
+
+    @pytest.mark.asyncio
+    async def test_color_white_accepted(self, auth_headers: dict[str, str]) -> None:
+        """?color=white is accepted and returns the standard response structure."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/global",
+                params={"color": "white"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "by_time_control" in body
+        assert "by_color" in body
+
+    @pytest.mark.asyncio
+    async def test_color_black_accepted(self, auth_headers: dict[str, str]) -> None:
+        """?color=black is accepted and returns the standard response structure."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/stats/global",
+                params={"color": "black"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "by_time_control" in body
+        assert "by_color" in body
+
+    @pytest.mark.asyncio
+    async def test_color_none_returns_full_results(self, auth_headers: dict[str, str]) -> None:
+        """No color param returns unfiltered results (backward compatibility)."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/api/stats/global", headers=auth_headers)
+        assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_rating_history_color_param_ignored_gracefully(
+        self, auth_headers: dict[str, str]
+    ) -> None:
+        """rating-history does not declare color; FastAPI ignores unknown query params.
+
+        This documents that the endpoint is intentionally color-blind:
+        passing color=white returns 200 (FastAPI ignores undeclared query params)
+        and returns the same structure as without the param.
+        """
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp_filtered = await client.get(
+                "/api/stats/rating-history",
+                params={"color": "white"},
+                headers=auth_headers,
+            )
+            resp_plain = await client.get(
+                "/api/stats/rating-history",
+                headers=auth_headers,
+            )
+        assert resp_filtered.status_code == 200
+        assert resp_plain.status_code == 200
+        # Both return the same structure — color param has no effect on rating history.
+        assert set(resp_filtered.json().keys()) == set(resp_plain.json().keys())

@@ -12,9 +12,9 @@ session is not safe for concurrent coroutine use; CLAUDE.md §Critical
 Constraints).
 
 Chip curation (SEED-036): aggregate tags to the game level across all
-FlawRecords, drop any `phase-*` tag, emit one chip per remaining tag type
-(game-level dedupe), in a deterministic order. FlawRecords are already M+B-only,
-so inaccuracy-level tags never appear.
+FlawRecords, drop any phase tag (opening/middlegame/endgame), emit one chip per
+remaining tag type (game-level dedupe), in a deterministic order. FlawRecords are
+already M+B-only, so inaccuracy-level tags never appear.
 
 chess.com / unanalyzed-lichess games surface the explicit "no engine analysis"
 card state (analysis_state="no_engine_analysis", severity_counts=None), never a
@@ -54,31 +54,32 @@ from app.services.openings_service import (
     derive_user_result,
 )
 
-# Canonical chip order — a subset of flaws_service.FlawTag with all phase-*
+# Canonical chip order — a subset of flaws_service.FlawTag with all phase
 # tags removed. Defines the deterministic ordering of curated card chips.
 # FlawRecords are M+B-only, so inaccuracy-level tags never reach this list.
 _CHIP_ORDER: tuple[FlawTag, ...] = (
     "miss",
-    "unpunished",
-    "from-winning",
+    "lucky-escape",
+    "while-ahead",
     "result-changing",
-    "time-pressure",
-    "hasty",
-    "knowledge-gap",
+    "low-clock",
+    "impatient",
+    "considered",
 )
-_PHASE_TAG_PREFIX = "phase-"
+_PHASE_TAGS: frozenset[str] = frozenset({"opening", "middlegame", "endgame"})
 
 
 def _curate_chips(flaws: list[FlawRecord]) -> list[FlawTag]:
     """Collect a deduped, deterministically-ordered set of card chips.
 
-    Aggregates tags across all of a game's FlawRecords, drops any `phase-*` tag,
-    and emits one chip per remaining tag type in _CHIP_ORDER (SEED-036 curation).
+    Aggregates tags across all of a game's FlawRecords, drops any phase tag
+    (opening/middlegame/endgame), and emits one chip per remaining tag type
+    in _CHIP_ORDER (SEED-036 curation).
     """
     present: set[str] = set()
     for flaw in flaws:
         for tag in flaw["tags"]:
-            if not tag.startswith(_PHASE_TAG_PREFIX):
+            if tag not in _PHASE_TAGS:
                 present.add(tag)
     return [tag for tag in _CHIP_ORDER if tag in present]
 
@@ -154,6 +155,7 @@ async def get_library_games(
     limit: int,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> LibraryGamesResponse:
     """Return the flaw-filtered paginated games archive (LIBG-08).
 
@@ -178,6 +180,7 @@ async def get_library_games(
             limit=limit,
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
+            color=color,
         )
 
         cards = [await _build_card(session, game, user_id) for game in games]
@@ -199,14 +202,17 @@ async def get_library_games(
 # ---------------------------------------------------------------------------
 
 _SEVERITY_TIERS: tuple[FlawSeverity, ...] = ("inaccuracy", "mistake", "blunder")
-_TEMPO_TAGS: tuple[TempoTag, ...] = ("time-pressure", "hasty", "knowledge-gap")
-# game_position.phase ints -> human phase label (Lichess Divider: 0/1/2).
+_TEMPO_TAGS: tuple[TempoTag, ...] = ("low-clock", "impatient", "considered")
+# Identity passthrough: kernel already emits final phase tag strings (opening/middlegame/endgame).
 _PHASE_TAG_TO_KEY: dict[FlawTag, Literal["opening", "middlegame", "endgame"]] = {
-    "phase-opening": "opening",
-    "phase-middlegame": "middlegame",
-    "phase-endgame": "endgame",
+    "opening": "opening",
+    "middlegame": "middlegame",
+    "endgame": "endgame",
 }
 _RESULT_CHANGING_TAG: FlawTag = "result-changing"
+_MISS_TAG: FlawTag = "miss"
+_LUCKY_ESCAPE_TAG: FlawTag = "lucky-escape"
+_WHILE_AHEAD_TAG: FlawTag = "while-ahead"
 _PER_100 = 100.0
 
 
@@ -324,7 +330,7 @@ def _compute_rates(
 def _compute_tag_distribution(per_game: list[_GameFlaws]) -> TagDistribution:
     """Tempo split, result-changing rate, and phase histogram over M+B flaws (W3).
 
-    Each FlawRecord carries exactly one tempo tag and exactly one phase-* tag.
+    Each FlawRecord carries at most one tempo tag and exactly one phase tag.
     result_changing_rate = flaws tagged result-changing / total M+B flaws (0.0 when
     there are none). The numerator/denominator are both M+B FlawRecords — the
     inaccuracy count never enters this distribution.
@@ -337,6 +343,10 @@ def _compute_tag_distribution(per_game: list[_GameFlaws]) -> TagDistribution:
     }
     total_flaws = 0
     result_changing = 0
+    # D-01: Opportunity and Impact counters (Phase 107).
+    miss_count = 0
+    lucky_escape_count = 0
+    while_ahead_count = 0
     for gf in per_game:
         for flaw in gf.flaws:
             total_flaws += 1
@@ -347,11 +357,23 @@ def _compute_tag_distribution(per_game: list[_GameFlaws]) -> TagDistribution:
                     phase_histogram[_PHASE_TAG_TO_KEY[tag]] += 1
                 elif tag == _RESULT_CHANGING_TAG:
                     result_changing += 1
+                elif tag == _MISS_TAG:
+                    miss_count += 1
+                elif tag == _LUCKY_ESCAPE_TAG:
+                    lucky_escape_count += 1
+                elif tag == _WHILE_AHEAD_TAG:
+                    while_ahead_count += 1
     rate = result_changing / total_flaws if total_flaws > 0 else 0.0
+    miss_rate = miss_count / total_flaws if total_flaws > 0 else 0.0
+    lucky_escape_rate = lucky_escape_count / total_flaws if total_flaws > 0 else 0.0
+    while_ahead_rate = while_ahead_count / total_flaws if total_flaws > 0 else 0.0
     return TagDistribution(
         tempo=tempo,
         result_changing_rate=rate,
         phase_histogram=phase_histogram,
+        miss_rate=miss_rate,
+        lucky_escape_rate=lucky_escape_rate,
+        while_ahead_rate=while_ahead_rate,
     )
 
 
@@ -411,6 +433,7 @@ async def get_flaw_stats(
     flaw_severity: list[str] | None,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> FlawStatsResponse:
     """Stats-panel aggregate over the filtered analyzed-only set (LIBG-09).
 
@@ -434,6 +457,7 @@ async def get_flaw_stats(
             flaw_severity=flaw_severity,
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
+            color=color,
         )
         if analyzed_n == 0:
             return _empty_stats(total_n)
@@ -450,6 +474,7 @@ async def get_flaw_stats(
             flaw_severity=flaw_severity,
             opponent_gap_min=opponent_gap_min,
             opponent_gap_max=opponent_gap_max,
+            color=color,
         )
         per_game = await _load_analyzed_flaws(session, user_id, game_ids)
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry

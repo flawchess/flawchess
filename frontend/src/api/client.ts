@@ -13,6 +13,7 @@ import type {
   BookmarkPhaseEntryResponse,
 } from '@/types/stats';
 import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
+import type { LibraryGamesResponse, FlawStatsResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 
@@ -81,6 +82,7 @@ export function buildFilterParams(params: {
   opponent_type?: string;
   opponent_strength?: OpponentStrengthRange;
   window?: number;
+  color?: string | null;
 }): Record<string, string | string[] | number | boolean> {
   const result: Record<string, string | string[] | number | boolean> = {};
   if (params.time_control) result.time_control = params.time_control;
@@ -95,6 +97,7 @@ export function buildFilterParams(params: {
     if (gap.opponent_gap_max !== undefined) result.opponent_gap_max = gap.opponent_gap_max;
   }
   if (params.window) result.window = params.window;
+  if (params.color) result.color = params.color;
   return result;
 }
 
@@ -145,6 +148,7 @@ export const statsApi = {
     platform: string | null,
     opponentType: string,
     opponentStrength: OpponentStrengthRange,
+    color: string | null = null,
   ) =>
     apiClient.get<GlobalStatsResponse>('/stats/global', {
       params: buildFilterParams({
@@ -152,6 +156,7 @@ export const statsApi = {
         platform: platform ? [platform] : null,
         opponent_type: opponentType,
         opponent_strength: opponentStrength,
+        color,
       }),
     }).then(r => r.data),
 
@@ -208,6 +213,52 @@ export const endgameApi = {
         ...buildFilterParams(params),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
+      },
+    }).then(r => r.data),
+};
+
+// ─── Library API ──────────────────────────────────────────────────────────────
+
+export const libraryApi = {
+  getGames: (params: {
+    time_control?: string[] | null;
+    platform?: string[] | null;
+    from_date?: string | null;
+    to_date?: string | null;
+    rated?: boolean | null;
+    opponent_type?: string;
+    opponent_strength?: OpponentStrengthRange;
+    color?: string | null;
+    // severity is multi-value: axios serializes severity=blunder&severity=mistake
+    // (paramsSerializer indexes:null on apiClient ensures no bracket notation)
+    severity?: ('blunder' | 'mistake')[];
+    offset?: number;
+    limit?: number;
+  }) =>
+    apiClient.get<LibraryGamesResponse>('/library/games', {
+      params: {
+        ...buildFilterParams(params),
+        ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
+        offset: params.offset ?? 0,
+        limit: params.limit ?? 20,
+      },
+    }).then(r => r.data),
+
+  getFlawStats: (params: {
+    time_control?: string[] | null;
+    platform?: string[] | null;
+    from_date?: string | null;
+    to_date?: string | null;
+    rated?: boolean | null;
+    opponent_type?: string;
+    opponent_strength?: OpponentStrengthRange;
+    color?: string | null;
+    severity?: ('blunder' | 'mistake')[];
+  }) =>
+    apiClient.get<FlawStatsResponse>('/library/flaw-stats', {
+      params: {
+        ...buildFilterParams(params),
+        ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
       },
     }).then(r => r.data),
 };

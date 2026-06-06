@@ -52,6 +52,8 @@ export interface FilterState {
   /** Custom date range set by the user. Non-null only when recency === 'custom'. */
   customRange: { from?: Date; to?: Date } | null;
   color: Color;
+  /** Tri-state color filter for Library surfaces (Either/White/Black). Default 'either' = no filter. */
+  playedAs: 'either' | 'white' | 'black';
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -64,6 +66,7 @@ export const DEFAULT_FILTERS: FilterState = {
   recency: null,
   customRange: null,
   color: 'white',
+  playedAs: 'either',
 };
 
 /**
@@ -82,6 +85,7 @@ export const FILTER_DOT_FIELDS: ReadonlyArray<keyof FilterState> = [
   'opponentStrength',
   'recency',
   'customRange',
+  'playedAs',
 ] as const;
 
 /**
@@ -131,7 +135,7 @@ export function areFiltersEqual(
   return true;
 }
 
-type FilterField = 'timeControl' | 'platform' | 'rated' | 'opponent' | 'opponentStrength' | 'recency';
+type FilterField = 'timeControl' | 'platform' | 'rated' | 'opponent' | 'opponentStrength' | 'recency' | 'playedAs';
 
 interface FilterPanelProps {
   filters: FilterState;
@@ -140,9 +144,15 @@ interface FilterPanelProps {
   visibleFilters?: FilterField[];
   /** When true, shows a muted helper line below the Reset button explaining deferred apply. */
   showDeferredApplyHint?: boolean;
+  /**
+   * When true, hides the built-in Reset Filters button. Use when the parent
+   * component (e.g. LibraryFilterPanel) owns the Reset button itself so it can
+   * also clear non-FilterState fields (e.g. severityFilter).
+   */
+  hideReset?: boolean;
 }
 
-const ALL_FILTERS: FilterField[] = ['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency'];
+const ALL_FILTERS: FilterField[] = ['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency', 'playedAs'];
 
 const TIME_CONTROLS: TimeControl[] = ['bullet', 'blitz', 'rapid', 'classical'];
 const TIME_CONTROL_LABELS: Record<TimeControl, string> = {
@@ -163,6 +173,7 @@ export function FilterPanel({
   onChange,
   visibleFilters = ALL_FILTERS,
   showDeferredApplyHint = false,
+  hideReset = false,
 }: FilterPanelProps) {
   const update = (partial: Partial<FilterState>) => {
     onChange({ ...filters, ...partial });
@@ -245,6 +256,29 @@ export function FilterPanel({
 
   return (
     <div className="space-y-3">
+      {/* Played as */}
+      {show('playedAs') && (
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Played as</p>
+          <ToggleGroup
+            type="single"
+            value={filters.playedAs}
+            onValueChange={(v) => {
+              if (!v) return;
+              update({ playedAs: v as FilterState['playedAs'] });
+            }}
+            variant="outline"
+            size="sm"
+            data-testid="filter-played-as"
+            className="w-full"
+          >
+            <ToggleGroupItem value="either" data-testid="filter-played-as-either" className="min-h-11 sm:min-h-0 flex-1">Either</ToggleGroupItem>
+            <ToggleGroupItem value="white" data-testid="filter-played-as-white" className="min-h-11 sm:min-h-0 flex-1">White</ToggleGroupItem>
+            <ToggleGroupItem value="black" data-testid="filter-played-as-black" className="min-h-11 sm:min-h-0 flex-1">Black</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+      )}
+
       {/* Recency */}
       {show('recency') && (
         <div>
@@ -492,29 +526,33 @@ export function FilterPanel({
           (Played-as), which is preserved at its current value. This uniform behavior applies
           on every consumer (Openings, Endgames, GlobalStats) and every form factor (desktop
           sidebar, mobile drawer). Because the modified-dot also ignores `color` (see
-          FILTER_DOT_FIELDS), Reset is guaranteed to drop the dot on every page. */}
-      <div className="pt-2 border-t border-border/40">
-        <Button
-          type="button"
-          variant="brand-outline"
-          size="lg"
-          className="w-full min-h-11 sm:min-h-0"
-          data-testid="btn-reset-filters"
-          onClick={() => {
-            onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
-          }}
-        >
-          Reset Filters
-        </Button>
-        {showDeferredApplyHint && (
-          <p
-            className="mt-2 text-sm italic leading-tight text-muted-foreground"
-            data-testid="filter-deferred-apply-hint"
+          FILTER_DOT_FIELDS), Reset is guaranteed to drop the dot on every page.
+          Suppress with hideReset=true when the parent owns the Reset button (e.g.
+          LibraryFilterPanel, which must also clear its severityFilter). */}
+      {!hideReset && (
+        <div className="pt-2 border-t border-border/40">
+          <Button
+            type="button"
+            variant="brand-outline"
+            size="lg"
+            className="w-full min-h-11 sm:min-h-0"
+            data-testid="btn-reset-filters"
+            onClick={() => {
+              onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
+            }}
           >
-            <span className="font-semibold text-foreground/80">Tip:</span> Filter changes apply on closing the filters panel.
-          </p>
-        )}
-      </div>
+            Reset Filters
+          </Button>
+          {showDeferredApplyHint && (
+            <p
+              className="mt-2 text-sm italic leading-tight text-muted-foreground"
+              data-testid="filter-deferred-apply-hint"
+            >
+              <span className="font-semibold text-foreground/80">Tip:</span> Filter changes apply on closing the filters panel.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

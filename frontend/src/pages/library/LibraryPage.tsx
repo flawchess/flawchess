@@ -1,9 +1,10 @@
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { DownloadIcon, LayoutDashboard } from 'lucide-react';
+import { BarChart2, BookOpen, DownloadIcon } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { ImportTab } from '@/pages/library/ImportTab';
-import { OverviewTab } from '@/pages/library/OverviewTab';
+import { StatsTab } from '@/pages/library/StatsTab';
+import { GamesTab } from '@/pages/library/GamesTab';
 import type { ImportPageProps } from '@/pages/Import';
 
 export function LibraryPage({
@@ -27,12 +28,18 @@ export function LibraryPage({
     (location.pathname === '/library' || location.pathname === '/library/') &&
     profile != null
   ) {
+    // Returning users with games land on the Games browser; new users go to Import.
+    // Bug fix: previously sent returning users to /openings (outside the Library page).
     return (
-      <Navigate to={noGames ? '/library/import' : '/library/overview'} replace />
+      <Navigate to={noGames ? '/library/import' : '/library/games'} replace />
     );
   }
 
-  const activeTab = location.pathname.includes('/import') ? 'import' : 'overview';
+  const activeTab = location.pathname.includes('/import')
+    ? 'import'
+    : location.pathname.includes('/games')
+      ? 'games'
+      : 'stats';
 
   return (
     <div data-testid="library-page" className="flex min-h-0 flex-1 flex-col bg-background">
@@ -51,9 +58,13 @@ export function LibraryPage({
                 <DownloadIcon className="mr-1.5 h-4 w-4" />
                 Import
               </TabsTrigger>
-              <TabsTrigger value="overview" data-testid="tab-overview" className="flex-1">
-                <LayoutDashboard className="mr-1.5 h-4 w-4" />
-                Overview
+              <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
+                <BookOpen className="mr-1.5 h-4 w-4" />
+                Games
+              </TabsTrigger>
+              <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
+                <BarChart2 className="mr-1.5 h-4 w-4" />
+                Stats
               </TabsTrigger>
             </TabsList>
             <TabsContent value="import" className="mt-4">
@@ -63,8 +74,11 @@ export function LibraryPage({
                 onJobDismissed={onJobDismissed}
               />
             </TabsContent>
-            <TabsContent value="overview" className="mt-4">
-              <OverviewTab />
+            <TabsContent value="games" className="mt-4">
+              <GamesTab />
+            </TabsContent>
+            <TabsContent value="stats" className="mt-4">
+              <StatsTab />
             </TabsContent>
           </Tabs>
         </div>
@@ -96,12 +110,20 @@ export function LibraryPage({
                   Import
                 </TabsTrigger>
                 <TabsTrigger
-                  value="overview"
+                  value="games"
                   className="flex-1"
-                  data-testid="tab-overview-mobile"
+                  data-testid="tab-games-mobile"
                 >
-                  <LayoutDashboard className="mr-1.5 h-4 w-4" />
-                  Overview
+                  <BookOpen className="mr-1.5 h-4 w-4" />
+                  Games
+                </TabsTrigger>
+                <TabsTrigger
+                  value="stats"
+                  className="flex-1"
+                  data-testid="tab-stats-mobile"
+                >
+                  <BarChart2 className="mr-1.5 h-4 w-4" />
+                  Stats
                 </TabsTrigger>
               </TabsList>
             </div>
@@ -112,8 +134,11 @@ export function LibraryPage({
                 onJobDismissed={onJobDismissed}
               />
             </TabsContent>
-            <TabsContent value="overview" className="mt-4">
-              <OverviewTab />
+            <TabsContent value="games" className="mt-4">
+              <GamesTab />
+            </TabsContent>
+            <TabsContent value="stats" className="mt-4">
+              <StatsTab />
             </TabsContent>
           </Tabs>
         </div>

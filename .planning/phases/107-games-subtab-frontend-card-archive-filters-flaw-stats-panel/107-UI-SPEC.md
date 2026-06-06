@@ -8,6 +8,11 @@ created: 2026-06-05
 revised: 2026-06-05
 ---
 
+> Revision (2026-06-05, tag rename): flaw tag names finalized — `time-pressure`→`low-clock`,
+> `hasty`→`impatient`, `knowledge-gap`→`considered`, `unpunished`→`lucky-escape`,
+> `from-winning`→`while-ahead`, `phase-*`→`opening`/`middlegame`/`endgame`. Tempo is now
+> **optional** (no tag when clock data is missing). See `.planning/notes/flaw-tag-naming.md`.
+
 # Phase 107 — UI Design Contract
 
 > Visual and interaction contract for the Library Games subtab frontend.
@@ -117,11 +122,11 @@ This pattern matches the sketch and keeps severity colors legible on charcoal.
 #### Tag families (chip color-by-family — add to `theme.ts` as new constants)
 | Constant name | Value | Family |
 |---------------|-------|--------|
-| `FAM_TEMPO` | `oklch(0.70 0.17 290)` | Violet — time-pressure, hasty, knowledge-gap |
+| `FAM_TEMPO` | `oklch(0.70 0.17 290)` | Violet — low-clock, impatient, considered |
 | `FAM_TEMPO_BG` | `oklch(0.70 0.17 290 / 0.15)` | Tempo chip background |
-| `FAM_OPPORTUNITY` | `oklch(0.72 0.12 200)` | Cyan — miss, unpunished |
+| `FAM_OPPORTUNITY` | `oklch(0.72 0.12 200)` | Cyan — miss, lucky-escape |
 | `FAM_OPPORTUNITY_BG` | `oklch(0.72 0.12 200 / 0.15)` | Opportunity chip background |
-| `FAM_IMPACT` | `oklch(0.66 0.18 330)` | Magenta — result-changing, from-winning |
+| `FAM_IMPACT` | `oklch(0.66 0.18 330)` | Magenta — result-changing, while-ahead |
 | `FAM_IMPACT_BG` | `oklch(0.66 0.18 330 / 0.15)` | Impact chip background |
 
 Chip border: same as foreground (`FAM_TEMPO`, `FAM_OPPORTUNITY`, `FAM_IMPACT`).
@@ -136,13 +141,18 @@ Chip border: same as foreground (`FAM_TEMPO`, `FAM_OPPORTUNITY`, `FAM_IMPACT`).
 #### Tempo stacked bar shades (within the FAM_TEMPO family)
 | Use | Value |
 |-----|-------|
-| Time-pressure segment | `oklch(0.74 0.16 290)` (lighter violet) |
-| Hasty segment | `oklch(0.62 0.15 300)` (mid violet) |
-| Knowledge-gap segment | `oklch(0.50 0.13 305)` (darker violet) |
+| Low-clock segment | `oklch(0.74 0.16 290)` (lighter violet) |
+| Impatient segment | `oklch(0.62 0.15 300)` (mid violet) |
+| Considered segment | `oklch(0.50 0.13 305)` (darker violet) |
 
 These three shades are derived from the FAM_TEMPO hue family. They may be defined as
-named constants `FAM_TEMPO_TIME_PRESSURE`, `FAM_TEMPO_HASTY`, `FAM_TEMPO_KNOWLEDGE_GAP`
+named constants `FAM_TEMPO_LOW_CLOCK`, `FAM_TEMPO_IMPATIENT`, `FAM_TEMPO_CONSIDERED`
 in `theme.ts` to avoid hard-coded values in the component.
+
+A fourth, neutral shade is needed for the **unmeasured remainder** (flaws with no clock data, which
+now carry no tempo tag) — e.g. `FAM_TEMPO_UNMEASURED` / `oklch(0.40 0 0)` (muted gray). The stacked
+bar must reserve a segment for it so the segments sum to the full M+B flaw count, never to 100% of
+only the measured three.
 
 ---
 
@@ -218,7 +228,7 @@ profile?.lichess_game_count > 0`, the Library default redirect changes from
 │             │                    │  [4 Inacc.]               │
 │             │                    │  ┄ chip row ┄             │
 │             │                    │  ⑤result-changing         │
-│             │                    │  ⏱time-pressure           │
+│             │                    │  ⏱low-clock               │
 │             │                    │  ◎miss                    │
 └─────────────┴────────────────────┴───────────────────────────┘
 ```
@@ -249,14 +259,15 @@ Pills must NOT wrap — the flaw column is sized to the full-label nowrap row.
 Rendered below the severity row. `flex-wrap` is allowed — chips may wrap to a second line.
 Color = family (tempo violet / opportunity cyan / impact magenta). Each chip carries:
 - A small glyph/icon (SVG or lucide icon, distinguishes members within the family).
-- Short label: `result-changing`, `time-pressure`, `miss`, `hasty`, `unpunished`, `from-winning`,
-  `knowledge-gap`.
+- Short label: `result-changing`, `low-clock`, `miss`, `impatient`, `lucky-escape`, `while-ahead`,
+  `considered`.
 - `cursor: pointer` and `hover: filter brightness(1.15) translateY(-1px)` — visual affordance for
   the future deep-link. In Phase 107 chips are non-navigable; clicking shows nothing (or a future
   placeholder toast — planner's choice on whether to wire a toast or leave it as cursor-pointer only).
 - `data-testid="chip-{tagName}-{gameId}"` on each chip.
 
-Excluded from card chips (per Phase 106 curate rules): inaccuracy-level tags, `phase-*` tags.
+Excluded from card chips (per Phase 106 curate rules): inaccuracy-level tags, phase tags
+(`opening`/`middlegame`/`endgame`).
 Cards show only mistake- and blunder-level tags, game-level deduped (one chip per tag type present).
 
 ### "No engine analysis" state (chess.com and unanalyzed lichess)
@@ -390,12 +401,16 @@ Container: `background: var(--color-charcoal)` / border / `border-radius: var(--
 **Tempo split stacked bar** (`data-testid="tempo-stacked-bar"`):
 - Full-width horizontal bar, height 14px (non-layout value — bar track height, not spacing),
   `border-radius: var(--radius-full)`.
-- Three segments (proportional width):
-  - Time-pressure: `FAM_TEMPO_TIME_PRESSURE` / `oklch(0.74 0.16 290)`.
-  - Hasty: `FAM_TEMPO_HASTY` / `oklch(0.62 0.15 300)`.
-  - Knowledge-gap: `FAM_TEMPO_KNOWLEDGE_GAP` / `oklch(0.50 0.13 305)`.
+- Segments (proportional width):
+  - Low-clock: `FAM_TEMPO_LOW_CLOCK` / `oklch(0.74 0.16 290)`.
+  - Impatient: `FAM_TEMPO_IMPATIENT` / `oklch(0.62 0.15 300)`.
+  - Considered: `FAM_TEMPO_CONSIDERED` / `oklch(0.50 0.13 305)`.
+  - **Unmeasured** (no clock data, no tempo tag): `FAM_TEMPO_UNMEASURED` / `oklch(0.40 0 0)`.
+    Width = `total_mb_flaws − sum(tempo counts)`. Omit only when it is zero.
 - Legend below: dot + label + percent for each segment.
-- Source: `tag_distribution.tempo` dict from API (keys: `time-pressure`, `hasty`, `knowledge-gap`).
+- Source: `tag_distribution.tempo` dict from API (keys: `low-clock`, `impatient`, `considered`).
+  Tempo is now optional, so this dict sums to ≤ M+B flaws; the difference is the unmeasured segment.
+  Do NOT normalize the three measured segments to 100%.
 
 **Three sub-columns** (desktop: `grid grid-cols-3 gap-2 mt-3`; mobile: `flex flex-col gap-3 mt-3`):
 
@@ -405,17 +420,17 @@ Container: `background: var(--color-charcoal)` / border / `border-radius: var(--
    - Source: `tag_distribution.phase_histogram`.
 
 2. Opportunity rates (`data-testid="opportunity-rates"`):
-   - Miss rate + Unpunished rate as horizontal bar rows.
+   - Miss rate + Lucky-escape rate as horizontal bar rows.
    - Fill: `FAM_OPPORTUNITY`.
    - Source: `tag_distribution.opportunity` key from the API. Note: the FlawStatsResponse
-     `TagDistribution` carries `tempo` dict and `phase_histogram` dict; miss/unpunished rates
+     `TagDistribution` carries `tempo` dict and `phase_histogram` dict; miss/lucky-escape rates
      must be derived from the full `tag_distribution` data. The planner must verify the exact
      field name on the backend `TagDistribution` schema — see `app/schemas/library.py`. If the
-     schema does not directly expose miss/unpunished rates, derive them as
-     `miss_count / total_mb_flaws` and `unpunished_count / total_mb_flaws` client-side.
+     schema does not directly expose miss/lucky-escape rates, derive them as
+     `miss_count / total_mb_flaws` and `lucky_escape_count / total_mb_flaws` client-side.
 
 3. Impact rates (`data-testid="impact-rates"`):
-   - From-winning rate + Result-changing rate as horizontal bar rows.
+   - While-ahead rate + Result-changing rate as horizontal bar rows.
    - Fill: `FAM_IMPACT`.
    - `result_changing_rate` comes from `tag_distribution.result_changing_rate`.
 
@@ -629,7 +644,7 @@ No destructive actions in this phase.
 | `rates.per_game[severity]` | Band cell numbers (per-game mode) |
 | `rates.per_100_moves[severity]` | Band cell numbers (per-100 mode) |
 | `tag_distribution.result_changing_rate` | Result-changing band cell (%) |
-| `tag_distribution.tempo` | Tempo stacked bar (time-pressure / hasty / knowledge-gap counts) |
+| `tag_distribution.tempo` | Tempo stacked bar (low-clock / impatient / considered counts; remainder = unmeasured) |
 | `tag_distribution.phase_histogram` | Phase histogram bars (opening / middlegame / endgame) |
 | `trend[].date`, `trend[].rate`, `trend[].window_size` | Trend chart X/Y + period label |
 | `analyzed_pct` | Denominator pill percentage |
@@ -637,7 +652,7 @@ No destructive actions in this phase.
 | `total_n` | Context for empty state decisions |
 
 **Note on opportunity/impact rates:** The `TagDistribution` schema exposes only `tempo`,
-`result_changing_rate`, and `phase_histogram`. The miss / unpunished / from-winning rates are NOT
+`result_changing_rate`, and `phase_histogram`. The miss / lucky-escape / while-ahead rates are NOT
 directly in the schema as separate rate fields — they must be derived by the frontend from the raw
 chip data on individual game cards, or the backend schema must be extended. The planner must verify
 this gap and either: (a) derive rates client-side by counting chip types across the fetched page

@@ -212,10 +212,10 @@
 
 <div class="legend">
   <span><b>Tag families</b> (color = family, icon/label = member):</span>
-  <span><span class="swatch" style="background:var(--fam-tempo)"></span>Tempo — time-pressure · hasty</span>
-  <span><span class="swatch" style="background:var(--fam-opportunity)"></span>Opportunity — miss · unpunished</span>
-  <span><span class="swatch" style="background:var(--fam-impact)"></span>Impact — result-changing · from-winning</span>
-  <span style="opacity:.7">Excluded from cards: inaccuracy-level tags, <i>phase</i>, knowledge-gap → stats panel only.</span>
+  <span><span class="swatch" style="background:var(--fam-tempo)"></span>Tempo — low-clock · impatient</span>
+  <span><span class="swatch" style="background:var(--fam-opportunity)"></span>Opportunity — miss · lucky-escape</span>
+  <span><span class="swatch" style="background:var(--fam-impact)"></span>Impact — result-changing · while-ahead</span>
+  <span style="opacity:.7">Excluded from cards: inaccuracy-level tags, <i>phase</i>, considered → stats panel only.</span>
 </div>
 <p class="note" style="max-width:1140px;margin-top:12px">Chips are <b style="color:var(--color-text)">display-only in Phase 107</b> (the Flaws deep-link target doesn't exist yet). Clicking shows where they'll route later. Aggregated/deduped to game level: one chip per tag type present, never one-per-flaw.</p>
 
@@ -275,7 +275,7 @@ const sevFull = `<div class="counts-col">
   <span class="sevf i"><b>4</b> Inacc.</span></div>`;
 const chips = `<div class="chips">
   <span class="chip impact" onclick="toast('→ Flaws · this game · result-changing')"><span class="g">⚑</span>result-changing</span>
-  <span class="chip tempo" onclick="toast('→ Flaws · this game · time-pressure')"><span class="g">⏱</span>time-pressure</span>
+  <span class="chip tempo" onclick="toast('→ Flaws · this game · low-clock')"><span class="g">⏱</span>low-clock</span>
   <span class="chip opp" onclick="toast('→ Flaws · this game · miss')"><span class="g">◎</span>miss</span>
 </div>`;
 const noAnalysis = `<span class="no-analysis">○ No engine analysis</span>`;

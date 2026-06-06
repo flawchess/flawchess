@@ -598,9 +598,9 @@ function AppRoutes() {
         <Route element={<ProtectedLayout />}>
           <Route path="/library/*" element={<LibraryPage onImportStarted={handleImportStarted} activeJobIds={activeJobIds} onJobDismissed={handleJobDismissed} />} />
           <Route path="/import" element={<Navigate to="/library/import" replace />} />
-          <Route path="/overview" element={<Navigate to="/library/overview" replace />} />
-          <Route path="/rating" element={<Navigate to="/library/overview" replace />} />
-          <Route path="/global-stats" element={<Navigate to="/library/overview" replace />} />
+          <Route path="/overview" element={<Navigate to="/library/stats" replace />} />
+          <Route path="/rating" element={<Navigate to="/library/stats" replace />} />
+          <Route path="/global-stats" element={<Navigate to="/library/stats" replace />} />
           <Route path="/openings/*" element={<ImportRequiredRoute><OpeningsPage /></ImportRequiredRoute>} />
           <Route path="/endgames/*" element={<ImportRequiredRoute><EndgamesPage /></ImportRequiredRoute>} />
           <Route path="/admin" element={<SuperuserRoute><AdminPage /></SuperuserRoute>} />

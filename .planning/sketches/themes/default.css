@@ -37,11 +37,11 @@
 
   /* Tag families (chips) — 3 well-separated hues, clear of WDL red/green.
      Within a family, icon + short label distinguishes members. */
-  --fam-tempo: oklch(0.70 0.17 290);       /* violet — time-pressure · hasty · knowledge-gap (clear of severity red/orange/yellow) */
+  --fam-tempo: oklch(0.70 0.17 290);       /* violet — low-clock · impatient · considered (clear of severity red/orange/yellow) */
   --fam-tempo-bg: oklch(0.70 0.17 290 / 0.15);
-  --fam-opportunity: oklch(0.72 0.12 200); /* cyan — miss · unpunished */
+  --fam-opportunity: oklch(0.72 0.12 200); /* cyan — miss · lucky-escape */
   --fam-opportunity-bg: oklch(0.72 0.12 200 / 0.15);
-  --fam-impact: oklch(0.66 0.18 330);      /* magenta — result-changing · from-winning */
+  --fam-impact: oklch(0.66 0.18 330);      /* magenta — result-changing · while-ahead */
   --fam-impact-bg: oklch(0.66 0.18 330 / 0.15);
 
   /* Phase histogram (opening/middle/endgame) — neutral brown-tinted ramp */

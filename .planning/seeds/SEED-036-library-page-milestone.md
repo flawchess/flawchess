@@ -14,6 +14,15 @@ scope: milestone (multi-phase)
 
 > **2026-06-03 origin rework (carried over from SEED-010).** The original v1 centered on a **material-delta filter** as the headline new game-level filter, with tactical/eval filters explicitly deferred behind eval coverage. That framing is **obsolete**: FlawChess now stores per-ply Stockfish evals for analyzed Lichess games, so eval-driven **mistake/blunder filters** are feasible today and become the headline. The material-delta filter is **dropped** (it was a pre-eval proxy). The data layer is kept training-aware so SEED-037 (Train) can consume the same mistake-detection layer. The original decision log is preserved at the bottom for provenance.
 
+> **2026-06-05 tag-naming supersede.** The flaw attribution-tag names referenced throughout this
+> seed (locked in Phase 105) were renamed before the Phase 107 frontend surfaces them:
+> `time-pressure`→`low-clock`, `hasty`→`impatient`, `knowledge-gap`→`considered`,
+> `unpunished`→`lucky-escape`, `from-winning`→`while-ahead`, and the `phase-*` tags dropped their
+> prefix (`opening`/`middlegame`/`endgame`). `miss` and `result-changing` are unchanged. Tempo is
+> now **optional** — a flaw with no clock data carries no tempo tag (was a `knowledge-gap`
+> fallback). The decision-log prose below is left as the historical record; the authoritative
+> current taxonomy is `.planning/notes/flaw-tag-naming.md`.
+
 ## Why This Matters
 
 FlawChess slices data by **position** (Openings) and by **type** (Endgames). There is no surface that operates on **whole games**, and nothing surfaces a player's **mistakes** — where in a game they went wrong, how often, of what severity. Users have to click out to lichess to find and step through a blunder.

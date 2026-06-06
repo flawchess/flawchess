@@ -146,6 +146,7 @@ async def query_results_by_time_control(
     opponent_type: str = "human",
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> list[Row[Any]]:
     """Return (time_control_bucket, total, wins, draws, losses) via SQL aggregation.
 
@@ -186,6 +187,7 @@ async def query_results_by_time_control(
         opponent_type=opponent_type,
         from_date=from_date,
         to_date=to_date,
+        color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )
@@ -204,6 +206,7 @@ async def query_results_by_color(
     opponent_type: str = "human",
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
+    color: str | None = None,
 ) -> list[Row[Any]]:
     """Return (user_color, total, wins, draws, losses) via SQL aggregation.
 
@@ -244,6 +247,7 @@ async def query_results_by_color(
         opponent_type=opponent_type,
         from_date=from_date,
         to_date=to_date,
+        color=color,
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
     )

@@ -587,56 +587,56 @@ class TestClassifyGameFlaws:
 
 
 class TestTempoTags:
-    """Tests for _classify_tempo — exactly one tempo tag per flaw."""
+    """Tests for _classify_tempo — at most one tempo tag per flaw."""
 
-    def test_time_pressure_when_low_clock_fraction(self) -> None:
-        """clock_after < TIME_PRESSURE_CLOCK_FRACTION * base_time yields time-pressure."""
+    def test_low_clock_when_low_clock_fraction(self) -> None:
+        """clock_after < TIME_PRESSURE_CLOCK_FRACTION * base_time yields low-clock."""
         base_time = 600
         low_clock = base_time * TIME_PRESSURE_CLOCK_FRACTION - 1  # just below threshold
         result = _classify_tempo(move_time=30.0, clock_after=low_clock, base_time=base_time)
-        assert result == "time-pressure"
+        assert result == "low-clock"
 
-    def test_hasty_when_fast_move_on_comfortable_clock(self) -> None:
-        """move_time < HASTY_MOVE_FRACTION * base_time on a comfortable clock yields hasty."""
+    def test_impatient_when_fast_move_on_comfortable_clock(self) -> None:
+        """move_time < HASTY_MOVE_FRACTION * base_time on a comfortable clock yields impatient."""
         base_time = 600
         comfortable_clock = base_time * TIME_PRESSURE_CLOCK_FRACTION + 10  # well above threshold
         fast_move = base_time * HASTY_MOVE_FRACTION - 0.1  # just below fast threshold
         result = _classify_tempo(
             move_time=fast_move, clock_after=comfortable_clock, base_time=base_time
         )
-        assert result == "hasty"
+        assert result == "impatient"
 
-    def test_knowledge_gap_when_adequate_time(self) -> None:
-        """Adequate clock and adequate move time yields knowledge-gap."""
+    def test_considered_when_adequate_time(self) -> None:
+        """Adequate clock and adequate move time yields considered."""
         base_time = 600
         comfortable_clock = base_time * TIME_PRESSURE_CLOCK_FRACTION + 60
         adequate_move = base_time * HASTY_MOVE_FRACTION + 5.0
         result = _classify_tempo(
             move_time=adequate_move, clock_after=comfortable_clock, base_time=base_time
         )
-        assert result == "knowledge-gap"
+        assert result == "considered"
 
-    def test_knowledge_gap_when_clock_data_missing(self) -> None:
-        """Missing clock_after defaults to knowledge-gap (most conservative)."""
+    def test_no_tempo_tag_when_clock_data_missing(self) -> None:
+        """Missing clock_after yields None — missing clock/move-time yields no tempo tag, not a fallback."""
         result = _classify_tempo(move_time=10.0, clock_after=None, base_time=600)
-        assert result == "knowledge-gap"
+        assert result is None
 
-    def test_knowledge_gap_when_move_time_missing(self) -> None:
-        """Missing move_time defaults to knowledge-gap."""
+    def test_no_tempo_tag_when_move_time_missing(self) -> None:
+        """Missing move_time yields None — missing clock/move-time yields no tempo tag, not a fallback."""
         result = _classify_tempo(move_time=None, clock_after=100.0, base_time=600)
-        assert result == "knowledge-gap"
+        assert result is None
 
-    def test_abs_fallback_time_pressure_when_no_base_time(self) -> None:
-        """When base_time is None, falls back to absolute threshold for time-pressure."""
-        # clock < 30s absolute = time-pressure
+    def test_abs_fallback_low_clock_when_no_base_time(self) -> None:
+        """When base_time is None, falls back to absolute threshold for low-clock."""
+        # clock < 30s absolute = low-clock
         result = _classify_tempo(move_time=10.0, clock_after=25.0, base_time=None)
-        assert result == "time-pressure"
+        assert result == "low-clock"
 
-    def test_abs_fallback_hasty_when_no_base_time(self) -> None:
-        """When base_time is None, falls back to absolute threshold for hasty."""
-        # clock >= 30s, move < 5s = hasty
+    def test_abs_fallback_impatient_when_no_base_time(self) -> None:
+        """When base_time is None, falls back to absolute threshold for impatient."""
+        # clock >= 30s, move < 5s = impatient
         result = _classify_tempo(move_time=3.0, clock_after=60.0, base_time=None)
-        assert result == "hasty"
+        assert result == "impatient"
 
     def test_move_time_clamps_negative_to_none(self) -> None:
         """WR-05: a clock anomaly producing a negative move time returns None.
@@ -644,8 +644,8 @@ class TestTempoTags:
         Same-side clock is two plies back. If the clock 'gains' more than the
         increment between the player's own moves (corrupt data), the raw formula
         goes negative — which would otherwise satisfy move_time < fast_threshold
-        and mislabel the move as hasty. The fix returns None so tempo falls back
-        to knowledge-gap.
+        and mislabel the move as impatient. The fix returns None so tempo is
+        absent (None) so the move is not mislabeled impatient.
         """
         positions = [_make_pos(i) for i in range(4)]
         # prev same-side clock (n-2) LOWER than current (n) with zero increment
@@ -661,8 +661,8 @@ class TestTempoTags:
         positions[2] = _make_pos(2, clock_seconds=100.0)
         assert _move_time(positions, n=2, increment=0.0) == 0.0
 
-    def test_exactly_one_tempo_tag_per_flaw_in_classify_game(self) -> None:
-        """Every emitted FlawRecord contains exactly one tempo tag."""
+    def test_at_most_one_tempo_tag_per_flaw_in_classify_game(self) -> None:
+        """Every emitted FlawRecord contains at most one tempo tag."""
         pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
         # Construct positions with clocks to exercise tempo logic
         game = _make_game(pgn=pgn, user_color="white", base_time_seconds=600)
@@ -676,16 +676,41 @@ class TestTempoTags:
         assert isinstance(result, list)
         assert len(result) >= 1, "Expected at least one flaw"
         for flaw in result:
-            tempo_tags = [
-                t for t in flaw["tags"] if t in ("time-pressure", "hasty", "knowledge-gap")
-            ]
-            assert len(tempo_tags) == 1, (
-                f"Flaw at ply {flaw['ply']} must have exactly one tempo tag, got: {tempo_tags}"
+            tempo_tags = [t for t in flaw["tags"] if t in ("low-clock", "impatient", "considered")]
+            assert len(tempo_tags) <= 1, (
+                f"Flaw at ply {flaw['ply']} must have at most one tempo tag, got: {tempo_tags}"
+            )
+
+    def test_no_tempo_tag_when_flaw_has_missing_clock_data(self) -> None:
+        """A FlawRecord built from a flaw with missing clock data carries NO tempo tag.
+
+        This tests the at-most-one rule from flaw-tag-naming.md §'Structural change':
+        when clock_after or move_time is None, _classify_tempo returns None and
+        _build_tags omits the tempo append entirely.
+        """
+        pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
+        game = _make_game(pgn=pgn, user_color="white", base_time_seconds=600)
+        # Build positions with NO clock data (clock_seconds=None throughout)
+        positions = [_make_pos(i, eval_cp=0, clock_seconds=None) for i in range(10)]
+        # Induce blunder at ply 2 (white) — clock_seconds remains None
+        positions[1] = _make_pos(1, eval_cp=300, clock_seconds=None)
+        positions[2] = _make_pos(2, eval_cp=-500, clock_seconds=None)
+        positions[9] = _make_pos(9)  # final null
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        assert len(result) >= 1, "Expected at least one flaw"
+        tempo_set = {"low-clock", "impatient", "considered"}
+        for flaw in result:
+            tempo_tags = [t for t in flaw["tags"] if t in tempo_set]
+            assert tempo_tags == [], (
+                f"Flaw at ply {flaw['ply']} must carry no tempo tag when clock data is "
+                f"unavailable, got: {tempo_tags}"
             )
 
 
 class TestAttributionTags:
-    """Tests for miss, unpunished, from-winning, result-changing, and phase tags."""
+    """Tests for miss, lucky-escape, while-ahead, result-changing, and phase tags."""
 
     # PGN long enough to have moves for position building
     _PGN = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
@@ -696,8 +721,8 @@ class TestAttributionTags:
         positions[-1] = _make_pos(n - 1)  # final null
         return positions
 
-    def test_from_winning_tag_when_es_before_above_threshold(self) -> None:
-        """Flaw with es_before >= 0.85 (FROM_WINNING_ES) gets from-winning tag."""
+    def test_while_ahead_tag_when_es_before_above_threshold(self) -> None:
+        """Flaw with es_before >= 0.85 (FROM_WINNING_ES) gets while-ahead tag."""
         # eval_cp_to_expected_score(900, "white") is well above 0.85
         # eval_cp_to_expected_score(-500, "white") is well below 0.85
         game = _make_game(pgn=self._PGN, user_color="white")
@@ -708,10 +733,10 @@ class TestAttributionTags:
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1, "Expected blunder at ply 2"
-        assert "from-winning" in ply2[0]["tags"]
+        assert "while-ahead" in ply2[0]["tags"]
 
-    def test_no_from_winning_tag_when_es_before_below_threshold(self) -> None:
-        """Flaw with es_before < FROM_WINNING_ES does NOT get from-winning tag."""
+    def test_no_while_ahead_tag_when_es_before_below_threshold(self) -> None:
+        """Flaw with es_before < FROM_WINNING_ES does NOT get while-ahead tag."""
         # eval_cp_to_expected_score(50, "white") ≈ 0.568 < 0.85
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
@@ -721,7 +746,7 @@ class TestAttributionTags:
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
-        assert "from-winning" not in ply2[0]["tags"]
+        assert "while-ahead" not in ply2[0]["tags"]
 
     def test_miss_tag_when_preceding_opponent_was_blunder(self) -> None:
         """User flaw at ply N gets miss tag when opponent at ply N-1 was a blunder.
@@ -771,17 +796,17 @@ class TestAttributionTags:
         assert len(ply4) == 1
         assert "miss" not in ply4[0]["tags"]
 
-    def test_unpunished_tag_on_blunder_when_opponent_plays_fine(self) -> None:
-        """User blunder at ply N gets unpunished when opponent at N+1 plays a fine move.
+    def test_lucky_escape_tag_on_blunder_when_opponent_plays_fine(self) -> None:
+        """User blunder at ply N gets lucky-escape when opponent at N+1 plays a fine move.
 
-        unpunished = user's blunder where the opponent did NOT make a mistake/blunder
+        lucky-escape = user's blunder where the opponent did NOT make a mistake/blunder
         in their immediate response (the eval shows the opponent played OK, but
         the user still has the advantage they would have lost — opponent failed
         to maximize the opportunity).
 
         Black at ply 5: positions[4].eval_cp=-400, positions[5].eval_cp=-380
         => drop for black ≈ eval_cp_to_expected_score(-400, "black") - eval_cp_to_expected_score(-380, "black")
-        ≈ 0 (tiny, not an error). Opponent plays normally → unpunished applies.
+        ≈ 0 (tiny, not an error). Opponent plays normally → lucky-escape applies.
         """
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
@@ -799,12 +824,12 @@ class TestAttributionTags:
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1
         assert ply4[0]["severity"] == "blunder"
-        assert "unpunished" in ply4[0]["tags"], (
-            "White blunder should be unpunished when black responds with a fine move"
+        assert "lucky-escape" in ply4[0]["tags"], (
+            "White blunder should be lucky-escape when black responds with a fine move"
         )
 
-    def test_no_unpunished_tag_on_non_blunder(self) -> None:
-        """A user mistake (not blunder) does NOT get the unpunished tag."""
+    def test_no_lucky_escape_tag_on_non_blunder(self) -> None:
+        """A user mistake (not blunder) does NOT get the lucky-escape tag."""
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
         # White makes a mistake at ply 4 (between MISTAKE_DROP and BLUNDER_DROP)
@@ -818,7 +843,7 @@ class TestAttributionTags:
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1
         assert ply4[0]["severity"] == "mistake"
-        assert "unpunished" not in ply4[0]["tags"], "Mistakes should not get unpunished tag"
+        assert "lucky-escape" not in ply4[0]["tags"], "Mistakes should not get lucky-escape tag"
 
     def test_result_changing_on_loss_crossing_draw_threshold(self) -> None:
         """User flaw gets result-changing when crossing from >= RESULT_DRAW_THRESHOLD to below.
@@ -855,8 +880,8 @@ class TestAttributionTags:
         assert len(ply2) == 1
         assert "result-changing" not in ply2[0]["tags"]
 
-    def test_phase_opening_tag_for_phase_0(self) -> None:
-        """Flaw at a position with phase=0 gets phase-opening tag."""
+    def test_opening_tag_for_phase_0(self) -> None:
+        """Flaw at a position with phase=0 gets opening tag."""
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=300, phase=0)  # opening phase
@@ -865,12 +890,12 @@ class TestAttributionTags:
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
-        assert "phase-opening" in ply2[0]["tags"]
-        assert "phase-middlegame" not in ply2[0]["tags"]
-        assert "phase-endgame" not in ply2[0]["tags"]
+        assert "opening" in ply2[0]["tags"]
+        assert "middlegame" not in ply2[0]["tags"]
+        assert "endgame" not in ply2[0]["tags"]
 
-    def test_phase_middlegame_tag_for_phase_1(self) -> None:
-        """Flaw at a position with phase=1 gets phase-middlegame tag."""
+    def test_middlegame_tag_for_phase_1(self) -> None:
+        """Flaw at a position with phase=1 gets middlegame tag."""
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=300, phase=1)
@@ -879,10 +904,10 @@ class TestAttributionTags:
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
-        assert "phase-middlegame" in ply2[0]["tags"]
+        assert "middlegame" in ply2[0]["tags"]
 
-    def test_phase_endgame_tag_for_phase_2(self) -> None:
-        """Flaw at a position with phase=2 gets phase-endgame tag."""
+    def test_endgame_tag_for_phase_2(self) -> None:
+        """Flaw at a position with phase=2 gets endgame tag."""
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
         positions[1] = _make_pos(1, eval_cp=300, phase=2)
@@ -891,7 +916,7 @@ class TestAttributionTags:
         assert isinstance(result, list)
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
-        assert "phase-endgame" in ply2[0]["tags"]
+        assert "endgame" in ply2[0]["tags"]
 
 
 class TestOracleCloseness:

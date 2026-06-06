@@ -1,10 +1,13 @@
 import { InfoPopover } from '@/components/ui/info-popover';
 import { WDLChartRow } from '@/components/charts/WDLChartRow';
 import type { WDLByCategory } from '@/types/stats';
+import type { TimeControl } from '@/types/api';
 
 interface GlobalStatsChartsProps {
   byTimeControl: WDLByCategory[];
   byColor: WDLByCategory[];
+  /** TCs to show in the Results-by-TC panel; null/undefined means all. */
+  enabledTimeControls?: TimeControl[] | null;
 }
 
 interface WDLCategoryChartProps {
@@ -49,11 +52,17 @@ function WDLCategoryChart({ data, title, testId, infoTooltip }: WDLCategoryChart
   );
 }
 
-export function GlobalStatsCharts({ byTimeControl, byColor }: GlobalStatsChartsProps) {
+export function GlobalStatsCharts({ byTimeControl, byColor, enabledTimeControls }: GlobalStatsChartsProps) {
+  // Gate by-TC rows on the enabled filter: drop rows whose label (title-cased by
+  // the backend, e.g. "Bullet") is not in the lowercase filter values (#260606-jvg).
+  const filteredByTimeControl = enabledTimeControls != null
+    ? byTimeControl.filter((cat) => enabledTimeControls.includes(cat.label.toLowerCase() as TimeControl))
+    : byTimeControl;
+
   return (
     <div className="space-y-8">
       <WDLCategoryChart
-        data={byTimeControl}
+        data={filteredByTimeControl}
         title="Results by Time Control"
         testId="global-stats-by-tc"
         infoTooltip="Your win/draw/loss breakdown for each time control: bullet, blitz, rapid, and classical."
