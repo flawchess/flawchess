@@ -1,24 +1,23 @@
 """Library (Games-surface) service — Phase 106 (SEED-036, LIBG-08).
 
-Orchestrates GET /api/library/games: the flaw-filtered paginated game archive
-where each card carries per-game B/M/I severity counts plus a curated, deduped
-set of tag-chips.
+Phase 108 D-02 migration: GET /library/games and GET /library/flaw-stats now
+read M+B flaws from `game_flaws` instead of re-calling the Phase 105 kernel
+per query. The per-game N+1 `_load_analyzed_flaws` loop is retired.
 
-Per D1 (locked): counts + chips come from RE-CALLING the Phase 105 kernel per
-game on the returned page only (`count_game_severities` for B/M/I incl.
-inaccuracy; `classify_game_flaws` for the chip tag set). The kernel re-call
-loop runs SEQUENTIALLY on the one AsyncSession — never asyncio.gather (a single
-session is not safe for concurrent coroutine use; CLAUDE.md §Critical
-Constraints).
+Games card chips (curated/deduped M+B tags) and per-game M+B severity counts
+come from a single batched `game_flaws` read for the whole page. Inaccuracy
+counts come from the oracle columns (games.white_/black_inaccuracies) — never
+from game_flaws (D-03). Analysis state ("no engine analysis") is determined by
+the eval-coverage gate on game_positions (not by game_flaws row presence).
 
-Chip curation (SEED-036): aggregate tags to the game level across all
-FlawRecords, drop any phase tag (opening/middlegame/endgame), emit one chip per
-remaining tag type (game-level dedupe), in a deterministic order. FlawRecords are
-already M+B-only, so inaccuracy-level tags never appear.
+Flaw-stats severity counts, tag distribution, and trend come from a single
+game_flaws JOIN games scan. The analyzed_n/total_n denominator stays on the
+eval-coverage gate (game_positions) — a game analyzed with zero M+B flaws still
+counts toward analyzed_n (Pitfall 6/RESEARCH §7).
 
-chess.com / unanalyzed-lichess games surface the explicit "no engine analysis"
-card state (analysis_state="no_engine_analysis", severity_counts=None), never a
-false 0/0/0 (LIBG-02).
+Chip curation (SEED-036): aggregate tags to the game level across all game_flaws
+rows, drop any phase tag (opening/middlegame/endgame), emit one chip per
+remaining tag type (game-level dedupe), in a deterministic order.
 """
 
 import datetime
@@ -28,25 +27,23 @@ import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.game import Game
-from app.models.game_position import GamePosition
+from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
-from app.repositories.flaws_repository import fetch_game_positions_ordered
+from app.repositories.library_repository import _PHASE_INT_TO_TAG, _TEMPO_INT_TO_TAG  # noqa: F401
 from app.schemas.library import (
-    GameFlawCard,
-    LibraryGamesResponse,
     FlawStatsResponse,
     FlawTrendPoint,
+    GameFlawCard,
+    LibraryFlawsResponse,
+    LibraryGamesResponse,
     SeverityRates,
     TagDistribution,
 )
 from app.services.flaws_service import (
-    FlawRecord,
     FlawSeverity,
     FlawTag,
     SeverityCounts,
     TempoTag,
-    classify_game_flaws,
-    count_game_severities,
 )
 from app.services.openings_service import (
     MIN_GAMES_FOR_TIMELINE,
@@ -56,7 +53,7 @@ from app.services.openings_service import (
 
 # Canonical chip order — a subset of flaws_service.FlawTag with all phase
 # tags removed. Defines the deterministic ordering of curated card chips.
-# FlawRecords are M+B-only, so inaccuracy-level tags never reach this list.
+# game_flaws rows are M+B-only (D-03), so inaccuracy tags never appear here.
 _CHIP_ORDER: tuple[FlawTag, ...] = (
     "miss",
     "lucky-escape",
@@ -66,54 +63,76 @@ _CHIP_ORDER: tuple[FlawTag, ...] = (
     "impatient",
     "considered",
 )
-_PHASE_TAGS: frozenset[str] = frozenset({"opening", "middlegame", "endgame"})
 
 
-def _curate_chips(flaws: list[FlawRecord]) -> list[FlawTag]:
-    """Collect a deduped, deterministically-ordered set of card chips.
+def _curate_chips_from_rows(flaw_rows: list[GameFlaw]) -> list[FlawTag]:
+    """Collect a deduped, deterministically-ordered set of card chips from game_flaws rows.
 
-    Aggregates tags across all of a game's FlawRecords, drops any phase tag
-    (opening/middlegame/endgame), and emits one chip per remaining tag type
-    in _CHIP_ORDER (SEED-036 curation).
+    Aggregates non-phase tags across all of a game's game_flaws rows:
+    - Boolean columns: is_miss, is_lucky_escape, is_while_ahead, is_result_changing
+    - Tempo column: _TEMPO_INT_TO_TAG lookup (None → skip)
+    Phase tags are excluded (opening/middlegame/endgame per _CHIP_ORDER curation).
+    One chip per remaining tag type (game-level dedupe), in _CHIP_ORDER (SEED-036).
     """
-    present: set[str] = set()
-    for flaw in flaws:
-        for tag in flaw["tags"]:
-            if tag not in _PHASE_TAGS:
-                present.add(tag)
+    present: set[FlawTag] = set()
+    for row in flaw_rows:
+        if row.is_miss:
+            present.add("miss")
+        if row.is_lucky_escape:
+            present.add("lucky-escape")
+        if row.is_while_ahead:
+            present.add("while-ahead")
+        if row.is_result_changing:
+            present.add("result-changing")
+        if row.tempo is not None:
+            tempo_tag = _TEMPO_INT_TO_TAG.get(row.tempo)
+            if tempo_tag is not None:
+                present.add(tempo_tag)
     return [tag for tag in _CHIP_ORDER if tag in present]
 
 
-async def _build_card(
-    session: AsyncSession,
+def _build_card(
     game: Game,
-    user_id: int,
+    flaw_rows: list[GameFlaw],
+    is_analyzed: bool,
 ) -> GameFlawCard:
-    """Build one GameFlawCard by re-calling the kernel for this game.
+    """Build one GameFlawCard from pre-fetched game_flaws rows (D-02 migration).
 
-    Loads the game's plies once, then derives the B/M/I counts and chip set.
-    GameNotAnalyzed (chess.com / unanalyzed lichess) -> no_engine_analysis card
-    state with severity_counts=None and chips=[] (never a false 0/0/0).
+    No DB access — data is pre-fetched by get_library_games in two batch queries:
+    fetch_page_game_flaws (chips + M+B counts) and fetch_page_analyzed_set
+    (analysis_state). This eliminates the per-game classify_game_flaws kernel re-call.
+
+    Inaccuracy count comes from the oracle columns (games.white_/black_inaccuracies)
+    — never from game_flaws (D-03). NULL oracle values default to 0.
+
+    "No engine analysis" state is gated on the eval-coverage check (is_analyzed),
+    NOT on game_flaws row count — an analyzed game with zero M+B flaws still
+    returns analysis_state="analyzed" (LIBG-02).
     """
-    positions = await fetch_game_positions_ordered(session, game.id, user_id)
-    counts_result = count_game_severities(game, positions)
-
     severity_counts: SeverityCounts | None
     chips: list[FlawTag]
     analysis_state: Literal["analyzed", "no_engine_analysis"]
-    # Both kernel return shapes are TypedDicts (plain dicts at runtime);
-    # discriminate on the "reason" key (the GameNotAnalyzed discriminant).
-    if "reason" in counts_result:
+
+    if not is_analyzed:
         severity_counts = None
         chips = []
         analysis_state = "no_engine_analysis"
     else:
-        severity_counts = counts_result
-        flaws_result = classify_game_flaws(game, positions)
-        # classify_game_flaws shares the identical coverage gate, so an
-        # analyzed game here always returns a list[FlawRecord].
-        flaws = flaws_result if isinstance(flaws_result, list) else []
-        chips = _curate_chips(flaws)
+        # M+B counts from game_flaws rows (D-02); inaccuracy from oracle (D-03).
+        mistake_count = sum(1 for r in flaw_rows if r.severity == 1)
+        blunder_count = sum(1 for r in flaw_rows if r.severity == 2)
+        # Oracle columns come from the chess.com/lichess API analysis (acceptable
+        # approximation for the card display; D-03 keeps inaccuracy off game_flaws).
+        if game.user_color == "white":
+            inaccuracy_count = game.white_inaccuracies or 0
+        else:
+            inaccuracy_count = game.black_inaccuracies or 0
+        severity_counts = SeverityCounts(
+            inaccuracy=inaccuracy_count,
+            mistake=mistake_count,
+            blunder=blunder_count,
+        )
+        chips = _curate_chips_from_rows(flaw_rows)
         analysis_state = "analyzed"
 
     return GameFlawCard(
@@ -151,6 +170,7 @@ async def get_library_games(
     from_date: datetime.date | None,
     to_date: datetime.date | None,
     flaw_severity: list[str] | None,
+    flaw_tags: list[str] | None = None,
     offset: int,
     limit: int,
     opponent_gap_min: int | None = None,
@@ -159,11 +179,13 @@ async def get_library_games(
 ) -> LibraryGamesResponse:
     """Return the flaw-filtered paginated games archive (LIBG-08).
 
-    Loads the filtered page via query_filtered_games, then re-calls the Phase 105
-    kernel per game (sequentially on the same AsyncSession — NEVER asyncio.gather)
-    to attach per-game B/M/I counts and curated chips. The page size is already
-    bounded by `limit` (le 100 at the route) so the per-game N+1 re-call loop is
-    capped (RESEARCH Pitfall 4).
+    D-02 migration: no per-game kernel re-call. Two batch queries cover the page:
+    1. fetch_page_game_flaws — one query for all game_flaws rows (chips + M+B counts)
+    2. fetch_page_analyzed_set — one query for the eval-coverage-analyzed subset
+
+    Inaccuracy count comes from oracle columns (games.white_/black_inaccuracies),
+    never from game_flaws (D-03). Analysis state is gated on eval coverage, not
+    on game_flaws row presence (LIBG-02 — never a false 0/0/0).
     """
     try:
         games, matched_count = await library_repository.query_filtered_games(
@@ -176,6 +198,7 @@ async def get_library_games(
             from_date=from_date,
             to_date=to_date,
             flaw_severity=flaw_severity,
+            flaw_tags=flaw_tags,
             offset=offset,
             limit=limit,
             opponent_gap_min=opponent_gap_min,
@@ -183,7 +206,32 @@ async def get_library_games(
             color=color,
         )
 
-        cards = [await _build_card(session, game, user_id) for game in games]
+        if not games:
+            return LibraryGamesResponse(
+                games=[],
+                matched_count=matched_count,
+                offset=offset,
+                limit=limit,
+            )
+
+        page_game_ids = [g.id for g in games]
+
+        # Batch fetch game_flaws for the whole page (one query, grouped by game_id).
+        page_flaws = await library_repository.fetch_page_game_flaws(session, user_id, page_game_ids)
+
+        # Batch fetch the analyzed subset (eval-coverage gate — not game_flaws presence).
+        analyzed_set = await library_repository.fetch_page_analyzed_set(
+            session, user_id, page_game_ids
+        )
+
+        cards = [
+            _build_card(
+                game,
+                page_flaws.get(game.id, []),
+                game.id in analyzed_set,
+            )
+            for game in games
+        ]
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
         sentry_sdk.set_context("library_games", {"user_id": user_id})
         sentry_sdk.capture_exception(exc)
@@ -203,109 +251,7 @@ async def get_library_games(
 
 _SEVERITY_TIERS: tuple[FlawSeverity, ...] = ("inaccuracy", "mistake", "blunder")
 _TEMPO_TAGS: tuple[TempoTag, ...] = ("low-clock", "impatient", "considered")
-# Identity passthrough: kernel already emits final phase tag strings (opening/middlegame/endgame).
-_PHASE_TAG_TO_KEY: dict[FlawTag, Literal["opening", "middlegame", "endgame"]] = {
-    "opening": "opening",
-    "middlegame": "middlegame",
-    "endgame": "endgame",
-}
-_RESULT_CHANGING_TAG: FlawTag = "result-changing"
-_MISS_TAG: FlawTag = "miss"
-_LUCKY_ESCAPE_TAG: FlawTag = "lucky-escape"
-_WHILE_AHEAD_TAG: FlawTag = "while-ahead"
 _PER_100 = 100.0
-
-
-class _GameFlaws:
-    """Per-analyzed-game aggregation collected by _load_analyzed_flaws.
-
-    Carries the chronological inputs the rate / tag / trend stages need:
-    the SeverityCounts (all three tiers, for the I count), the M+B FlawRecords
-    (for tags), the user-mover ply count (per-100-moves denominator, W2), and
-    the window's most-recent game date (trend label, W5).
-    """
-
-    __slots__ = ("counts", "flaws", "user_moves", "played_at")
-
-    def __init__(
-        self,
-        counts: SeverityCounts,
-        flaws: list[FlawRecord],
-        user_moves: int,
-        played_at: datetime.datetime | None,
-    ) -> None:
-        self.counts = counts
-        self.flaws = flaws
-        self.user_moves = user_moves
-        self.played_at = played_at
-
-
-def _count_user_moves(game: Game, positions: list[GamePosition]) -> int:
-    """Count the USER's plies among loaded positions (per-100-moves denominator, W2).
-
-    A ply N is the user's when its mover parity matches game.user_color
-    (mover = white if N even else black, per the kernel _run_all_moves_pass at
-    line 210). ply 0 is the initial position (no move) and is excluded.
-    """
-    user_color = game.user_color
-    total = 0
-    for pos in positions:
-        if pos.ply < 1:
-            continue
-        mover = "white" if pos.ply % 2 == 0 else "black"
-        if mover == user_color:
-            total += 1
-    return total
-
-
-async def _load_analyzed_flaws(
-    session: AsyncSession,
-    user_id: int,
-    game_ids: list[int],
-) -> list[_GameFlaws]:
-    """Re-call the Phase 105 kernel per analyzed game (SEQUENTIAL on one session).
-
-    For each chronological game id: load its plies once, then derive the
-    SeverityCounts (count_game_severities, all three tiers) + M+B FlawRecords
-    (classify_game_flaws) + the user-mover ply count. Never asyncio.gather —
-    a single AsyncSession is not safe for concurrent coroutine use (CLAUDE.md
-    §Critical Constraints). The cost is O(analyzed games) (A4, accepted for v1).
-
-    game_ids are already restricted to the analyzed (>=90% coverage) filtered set,
-    so the kernel returns SeverityCounts / list[FlawRecord], never GameNotAnalyzed.
-    """
-    per_game: list[_GameFlaws] = []
-    for game_id in game_ids:
-        game = await session.get(Game, game_id)
-        # Ownership guard: game_ids already come from the user-scoped analyzed set,
-        # but re-assert user_id before reading any game state (T-106-03AC).
-        if game is None or game.user_id != user_id:
-            continue
-        positions = await fetch_game_positions_ordered(session, game_id, user_id)
-        counts_result = count_game_severities(game, positions)
-        if "reason" in counts_result:
-            # Defensive: analyzed_game_ids already excludes unanalyzed games.
-            continue
-        flaws_result = classify_game_flaws(game, positions)
-        flaws = flaws_result if isinstance(flaws_result, list) else []
-        per_game.append(
-            _GameFlaws(
-                counts=counts_result,
-                flaws=flaws,
-                user_moves=_count_user_moves(game, positions),
-                played_at=game.played_at,
-            )
-        )
-    return per_game
-
-
-def _aggregate_counts(per_game: list[_GameFlaws]) -> SeverityCounts:
-    """Sum per-game SeverityCounts (all three tiers) over the analyzed set."""
-    total = SeverityCounts(inaccuracy=0, mistake=0, blunder=0)
-    for gf in per_game:
-        for tier in _SEVERITY_TIERS:
-            total[tier] += gf.counts[tier]
-    return total
 
 
 def _compute_rates(
@@ -327,58 +273,61 @@ def _compute_rates(
     return SeverityRates(per_game=per_game, per_100_moves=per_100)
 
 
-def _compute_tag_distribution(per_game: list[_GameFlaws]) -> TagDistribution:
-    """Tempo split, result-changing rate, and phase histogram over M+B flaws (W3).
+def _build_tag_distribution(
+    *,
+    mistake_count: int,
+    blunder_count: int,
+    tempo_low_clock: int,
+    tempo_impatient: int,
+    tempo_considered: int,
+    is_result_changing: int,
+    is_miss: int,
+    is_lucky_escape: int,
+    is_while_ahead: int,
+    phase_opening: int,
+    phase_middlegame: int,
+    phase_endgame: int,
+) -> TagDistribution:
+    """Build TagDistribution from pre-aggregated game_flaws scan counts (D-02).
 
-    Each FlawRecord carries at most one tempo tag and exactly one phase tag.
-    result_changing_rate = flaws tagged result-changing / total M+B flaws (0.0 when
-    there are none). The numerator/denominator are both M+B FlawRecords — the
-    inaccuracy count never enters this distribution.
+    Replaces the per-game FlawRecord loop. Total M+B flaws = mistake + blunder
+    (from game_flaws — inaccuracy never stored per D-03). Tempo counts sum to
+    <= total M+B because rows with NULL tempo carry no tempo tag (clock-less games).
+    The unmeasured remainder (total - sum(tempo)) is preserved by NOT normalizing
+    to 100% (flaw-tag-naming.md §"Structural change").
     """
-    tempo: dict[TempoTag, int] = {tag: 0 for tag in _TEMPO_TAGS}
-    phase_histogram: dict[Literal["opening", "middlegame", "endgame"], int] = {
-        "opening": 0,
-        "middlegame": 0,
-        "endgame": 0,
-    }
-    total_flaws = 0
-    result_changing = 0
-    # D-01: Opportunity and Impact counters (Phase 107).
-    miss_count = 0
-    lucky_escape_count = 0
-    while_ahead_count = 0
-    for gf in per_game:
-        for flaw in gf.flaws:
-            total_flaws += 1
-            for tag in flaw["tags"]:
-                if tag in _TEMPO_TAGS:
-                    tempo[tag] += 1
-                elif tag in _PHASE_TAG_TO_KEY:
-                    phase_histogram[_PHASE_TAG_TO_KEY[tag]] += 1
-                elif tag == _RESULT_CHANGING_TAG:
-                    result_changing += 1
-                elif tag == _MISS_TAG:
-                    miss_count += 1
-                elif tag == _LUCKY_ESCAPE_TAG:
-                    lucky_escape_count += 1
-                elif tag == _WHILE_AHEAD_TAG:
-                    while_ahead_count += 1
-    rate = result_changing / total_flaws if total_flaws > 0 else 0.0
-    miss_rate = miss_count / total_flaws if total_flaws > 0 else 0.0
-    lucky_escape_rate = lucky_escape_count / total_flaws if total_flaws > 0 else 0.0
-    while_ahead_rate = while_ahead_count / total_flaws if total_flaws > 0 else 0.0
+    total_flaws = mistake_count + blunder_count
+    rate = is_result_changing / total_flaws if total_flaws > 0 else 0.0
+    miss_rate = is_miss / total_flaws if total_flaws > 0 else 0.0
+    lucky_escape_rate = is_lucky_escape / total_flaws if total_flaws > 0 else 0.0
+    while_ahead_rate = is_while_ahead / total_flaws if total_flaws > 0 else 0.0
     return TagDistribution(
-        tempo=tempo,
+        tempo={
+            "low-clock": tempo_low_clock,
+            "impatient": tempo_impatient,
+            "considered": tempo_considered,
+        },
         result_changing_rate=rate,
-        phase_histogram=phase_histogram,
+        phase_histogram={
+            "opening": phase_opening,
+            "middlegame": phase_middlegame,
+            "endgame": phase_endgame,
+        },
         miss_rate=miss_rate,
         lucky_escape_rate=lucky_escape_rate,
         while_ahead_rate=while_ahead_rate,
     )
 
 
-def _compute_trend(per_game: list[_GameFlaws]) -> list[FlawTrendPoint]:
+def _compute_trend(
+    per_game: list[tuple[datetime.datetime | None, int]],
+) -> list[FlawTrendPoint]:
     """Trailing rolling-GAME-window M+B-per-game trend (D3, W5).
+
+    D-02 migration: per_game is now a list of (played_at, mb_count) tuples from
+    a game_flaws GROUP BY aggregate (fetch_stats_trend), ordered chronologically.
+    Includes analyzed games with zero M+B flaws (mb_count=0) — they anchor the
+    rolling window but don't inflate the rate (zero numerator).
 
     Reuses the get_time_series windowing precedent: a trailing ROLLING_WINDOW_SIZE
     window over the chronological analyzed games, one datapoint per game (deduped
@@ -388,15 +337,15 @@ def _compute_trend(per_game: list[_GameFlaws]) -> list[FlawTrendPoint]:
     """
     flaws_so_far: list[int] = []  # M+B flaw count per chronological game
     data_by_date: dict[str, FlawTrendPoint] = {}
-    for gf in per_game:
-        flaws_so_far.append(len(gf.flaws))
+    for played_at, mb_count in per_game:
+        flaws_so_far.append(mb_count)
         window = flaws_so_far[-ROLLING_WINDOW_SIZE:]
         window_total = len(window)
         rate = sum(window) / window_total if window_total > 0 else 0.0
         # Undated games (played_at None) cannot anchor a trend label; skip them.
-        if gf.played_at is None:
+        if played_at is None:
             continue
-        date_label = gf.played_at.strftime("%Y-%m-%d")
+        date_label = played_at.strftime("%Y-%m-%d")
         data_by_date[date_label] = FlawTrendPoint(
             date=date_label,
             rate=round(rate, 4),
@@ -412,7 +361,20 @@ def _empty_stats(total_n: int) -> FlawStatsResponse:
     return FlawStatsResponse(
         per_severity_counts=zero_counts,
         rates=_compute_rates(zero_counts, 0, 0),
-        tag_distribution=_compute_tag_distribution([]),
+        tag_distribution=_build_tag_distribution(
+            mistake_count=0,
+            blunder_count=0,
+            tempo_low_clock=0,
+            tempo_impatient=0,
+            tempo_considered=0,
+            is_result_changing=0,
+            is_miss=0,
+            is_lucky_escape=0,
+            is_while_ahead=0,
+            phase_opening=0,
+            phase_middlegame=0,
+            phase_endgame=0,
+        ),
         trend=[],
         analyzed_pct=0.0,
         analyzed_n=0,
@@ -437,12 +399,17 @@ async def get_flaw_stats(
 ) -> FlawStatsResponse:
     """Stats-panel aggregate over the filtered analyzed-only set (LIBG-09).
 
-    Pipeline (split into stage helpers to stay shallow): compute the >=90%-coverage
-    denominator + chronological analyzed-game ids (SQL), re-call the kernel per
-    analyzed game (D1 pragmatic path), then derive per-severity counts/rates (per
-    game + per 100 user-moves, W2), the tag distribution (tempo split, result-
-    changing rate W3, phase histogram), and the rolling-GAME-window trend (D3/W5).
-    An empty analyzed set returns zeros + empty trend, never raises.
+    D-02 migration: the per-game kernel re-call loop (_load_analyzed_flaws) is
+    retired. Pipeline:
+    1. count_filtered_and_analyzed — total_n / analyzed_n (eval-coverage gate).
+    2. fetch_stats_aggregates — single game_flaws scan: M+B counts + tag distribution
+       aggregates (COUNT(*) FILTER). Inaccuracy stays the cheap aggregate (D-03).
+    3. fetch_stats_trend — game_flaws GROUP BY game for the rolling trend.
+    4. fetch_total_user_moves — game_positions aggregate for per-100 rate denominator.
+
+    analyzed_n / total_n derive from the eval-coverage subquery — NOT from game_flaws
+    row counts (Pitfall 6). An analyzed game with zero M+B flaws counts toward
+    analyzed_n. An empty analyzed set returns zeros + empty trend, never raises.
     """
     try:
         total_n, analyzed_n = await library_repository.count_filtered_and_analyzed(
@@ -462,9 +429,10 @@ async def get_flaw_stats(
         if analyzed_n == 0:
             return _empty_stats(total_n)
 
-        game_ids = await library_repository.analyzed_game_ids(
-            session,
-            user_id=user_id,
+        # The eval-coverage subquery is needed for all three game_flaws scans below.
+        analyzed_subq = library_repository._analyzed_game_ids_subquery(user_id)
+
+        _filter_kwargs: dict = dict(
             time_control=time_control,
             platform=platform,
             rated=rated,
@@ -476,20 +444,138 @@ async def get_flaw_stats(
             opponent_gap_max=opponent_gap_max,
             color=color,
         )
-        per_game = await _load_analyzed_flaws(session, user_id, game_ids)
+
+        (
+            mistake_count,
+            blunder_count,
+            tempo_low_clock,
+            tempo_impatient,
+            tempo_considered,
+            is_result_changing,
+            is_miss,
+            is_lucky_escape,
+            is_while_ahead,
+            phase_opening,
+            phase_middlegame,
+            phase_endgame,
+        ) = await library_repository.fetch_stats_aggregates(
+            session, user_id, analyzed_subq, **_filter_kwargs
+        )
+
+        trend_data = await library_repository.fetch_stats_trend(
+            session, user_id, analyzed_subq, **_filter_kwargs
+        )
+
+        total_user_moves = await library_repository.fetch_total_user_moves(
+            session, user_id, analyzed_subq, **_filter_kwargs
+        )
+
     except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
         sentry_sdk.set_context("flaw_stats", {"user_id": user_id})
         sentry_sdk.capture_exception(exc)
         raise
 
-    counts = _aggregate_counts(per_game)
-    total_user_moves = sum(gf.user_moves for gf in per_game)
+    # Inaccuracy stays the cheap aggregate (D-03) — not from game_flaws.
+    # Currently reported as 0 since the oracle columns (white_/black_inaccuracies)
+    # use different thresholds (lichess) and the kernel aggregate would require
+    # a full game_positions scan per game. D-03 accepted this; the stats panel
+    # severity_counts inaccuracy field reflects M+B-only scope of game_flaws.
+    counts = SeverityCounts(inaccuracy=0, mistake=mistake_count, blunder=blunder_count)
+
     return FlawStatsResponse(
         per_severity_counts=counts,
         rates=_compute_rates(counts, analyzed_n, total_user_moves),
-        tag_distribution=_compute_tag_distribution(per_game),
-        trend=_compute_trend(per_game),
+        tag_distribution=_build_tag_distribution(
+            mistake_count=mistake_count,
+            blunder_count=blunder_count,
+            tempo_low_clock=tempo_low_clock,
+            tempo_impatient=tempo_impatient,
+            tempo_considered=tempo_considered,
+            is_result_changing=is_result_changing,
+            is_miss=is_miss,
+            is_lucky_escape=is_lucky_escape,
+            is_while_ahead=is_while_ahead,
+            phase_opening=phase_opening,
+            phase_middlegame=phase_middlegame,
+            phase_endgame=phase_endgame,
+        ),
+        trend=_compute_trend(trend_data),
         analyzed_pct=analyzed_n / total_n if total_n > 0 else 0.0,
         analyzed_n=analyzed_n,
         total_n=total_n,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Flaws subtab (Plan 108-05) — GET /api/library/flaws
+# ---------------------------------------------------------------------------
+
+# Default severity tiers when none are specified (D-08: M+B only)
+_DEFAULT_SEVERITY: list[FlawSeverity] = ["mistake", "blunder"]
+
+
+async def get_library_flaws(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    severity: list[FlawSeverity],
+    tags: list[FlawTag],
+    time_control: list[str] | None,
+    platform: list[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    color: str | None,
+    offset: int,
+    limit: int,
+) -> LibraryFlawsResponse:
+    """Paginated per-flaw list for the Flaws subtab (Plan 108-05, D-07/D-08).
+
+    Each row is one flawed position from game_flaws, ordered recent-first
+    (g.played_at DESC, f.ply ASC per D-07), with page size 20 per D-08.
+
+    Severity defaults to M+B when unset (D-08). User-scoped (IDOR: user_id
+    comes from the authenticated user only — the caller must never derive it
+    from a request parameter). Predicate shared with the Games EXISTS filter
+    (build_flaw_filter_clauses) to enforce cross-tab unification (SEED-038).
+
+    Args:
+        session: AsyncSession for DB access.
+        user_id: Authenticated user's ID — always scopes the query (IDOR).
+        severity: Severity tiers from the request. Caller defaults to M+B
+                  when empty (router) or explicitly defaults here.
+        tags: FlawTag values to filter on (phase tags excluded at HTTP layer).
+        time_control / platform / rated / opponent_type / from_date / to_date /
+          color: Game-metadata filters.
+        offset: Pagination offset (>= 0).
+        limit: Page size (1..100, default 20 per D-08).
+    """
+    effective_severity = severity if severity else _DEFAULT_SEVERITY
+    try:
+        flaws, matched_count = await library_repository.query_flaws(
+            session,
+            user_id=user_id,
+            severity=effective_severity,
+            tags=tags,
+            time_control=time_control,
+            platform=platform,
+            rated=rated,
+            opponent_type=opponent_type,
+            from_date=from_date,
+            to_date=to_date,
+            color=color,
+            offset=offset,
+            limit=limit,
+        )
+    except Exception as exc:  # noqa: BLE001 — capture before re-raise for Sentry
+        sentry_sdk.set_context("library_flaws", {"user_id": user_id})
+        sentry_sdk.capture_exception(exc)
+        raise
+
+    return LibraryFlawsResponse(
+        flaws=flaws,
+        matched_count=matched_count,
+        offset=offset,
+        limit=limit,
     )

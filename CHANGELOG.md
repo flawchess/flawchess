@@ -12,11 +12,21 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 - **Library page** (Phase 104) — a new top-level **Library** destination in the main nav that hosts Import and Overview as deep-linkable subtabs (`/library/import`, `/library/overview`). Visiting the Library lands you on Import when you have no games yet and on Overview once you do.
 - **Games subtab** (Phase 107) — the Library's headline surface: a filterable game-card archive with a Flaw-Stats panel above it. Each analyzed game card shows blunder/mistake/inaccuracy counts plus family-colored tag chips (miss, lucky escape, while ahead, time pressure, hasty, …), with an explicit "no engine analysis" state for unanalyzed games. The Flaw-Stats panel summarizes per-severity rates (per game and per 100 moves), tag distribution (tempo split, phase histogram), trend over time, and the `% analyzed` denominator. Filters (platform, color, time control, rated, opponent, recency, plus a mistake-severity toggle) drive both the list and the panel together. The Games subtab is now the default landing for returning users with games.
+- **Per-flaw platform deep-link** (Phase 108) — each flaw card on the Flaws subtab now shows the platform icon and an external link that opens the board at the exact half-move where the flaw occurred: lichess via the game viewer, chess.com via the analysis board. On lichess the board opens from your side (flipped when you played black).
+- **Lichess game links open from your perspective** — "open on platform" links on the Openings and Library game cards now flip the lichess board to your side when you played black, matching the card's miniboard orientation. chess.com links are unchanged (no board-orientation URL parameter).
+- **`game_flaws` backfill script** (Phase 108 Plan 06) — `scripts/backfill_flaws.py` recomputes the `game_flaws` materialization table for existing users' analyzed games. Supports `--db {dev,benchmark,prod}`, `--user-id`, `--dry-run`, and `--limit`; batched at 100 games per commit (OOM-safe). `scripts/reclassify_positions.py` now also recomputes `game_flaws` during position reclassification, completing the D-10 single-classify-path invariant across import hook, reclassify, and backfill.
 
 ### Changed
 
+- The flaw filter (Blunders/Mistakes severity + tag families) now lives in its own **Flaw filters** panel with a dedicated button, separate from the game-metadata **Filters** panel, on both the Games and Flaws subtabs (Phase 108). On mobile, flaw-filter selections now apply when you close the panel (matching the game filters), fixing tag selections that previously did not reliably take effect on close.
 - Import and Overview are no longer standalone nav items; they live inside the Library page. The old `/import`, `/overview`, `/rating`, and `/global-stats` links redirect into the matching Library subtab, and the "no games yet" notification dot now sits on the Library nav item (Phase 104).
 - Endgame insights are no longer rate-limited; report caching already keeps the number of fresh AI calls low, so the old hourly limit only got in the way.
+
+### Fixed
+
+- The Flaws subtab miniboard showed the position one ply too early (the board before the move *preceding* the flaw, rather than the decision point right before the flawed move). The flawed-move arrow still pointed at the right squares, so the mistake was subtle. The materialized flaw position is now stored at the correct ply (Phase 108).
+- The severity filter on the Games and Flaws subtabs now selects exactly the chosen tiers (Phase 108). Selecting **Mistakes** only previously also showed blunders, because the filter used a "mistake or worse" threshold; it now uses set-membership, so Mistakes shows mistakes only and Blunders shows blunders only.
+- Tag filters now apply on the **Games** subtab (Phase 108). Selecting tag families (time pressure, miss, result-changing, …) previously had no effect on the game list; the Games archive now shows only games containing at least one flaw matching the combined tag filter (same single-flaw, AND-across-families semantics as the Flaws subtab).
 
 ## [v1.23] LLM Endgame-Insights Statistical-Reasoning Rework — 2026-06-03
 

@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { SlidersHorizontal, Tags, X } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Button } from '@/components/ui/button';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
@@ -10,11 +10,19 @@ import {
   FILTER_DOT_FIELDS,
 } from '@/components/filters/FilterPanel';
 import { LibraryFilterPanel } from '@/components/filters/LibraryFilterPanel';
+import { FlawFilterControl } from '@/components/filters/FlawFilterControl';
+import { usePulseOnChange, ModifiedDot } from '@/components/filters/FilterModifiedDot';
 import { LibraryGameCardList } from '@/components/results/LibraryGameCardList';
 import { useFilterStore } from '@/hooks/useFilterStore';
+import {
+  useFlawFilterStore,
+  DEFAULT_FLAW_FILTER,
+  isFlawFilterNonDefault,
+} from '@/hooks/useFlawFilterStore';
 import { useLibraryGames } from '@/hooks/useLibrary';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import type { FilterState } from '@/components/filters/FilterPanel';
+import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -25,24 +33,28 @@ const PAGE_SIZE = 20;
 /**
  * GamesTab — the Library Games subtab root.
  *
- * Composes LibraryFilterPanel (desktop sidebar / mobile drawer) + LibraryGameCardList,
- * wiring useLibraryGames to the shared filter + local severityFilter state.
- * FlawStatsPanel lives on the Stats tab (GlobalStats.tsx).
+ * Composes two separate filter panels (game-metadata + flaw filter) +
+ * LibraryGameCardList, wiring useLibraryGames to the shared filter + shared flaw
+ * filter state. FlawStatsPanel lives on the Stats tab (GlobalStats.tsx).
  *
- * Desktop layout: SidebarLayout with LibraryFilterPanel in the sidebar.
- * Mobile layout: sticky "Filters" button opening a right Drawer containing
- * LibraryFilterPanel, then the game list.
+ * Desktop layout: SidebarLayout with two strip panels — "Filters" (game metadata,
+ * LibraryFilterPanel with showFlawFilter=false) and "Flaw filters" (severity + tags,
+ * FlawFilterControl).
+ * Mobile layout: two sticky buttons each opening their own right Drawer, then the
+ * game list.
  *
  * Filter interaction per UI-SPEC:
- * - Desktop: filters apply live (on change).
- * - Mobile: filters apply on drawer close.
+ * - Desktop: both panels apply live (on change).
+ * - Mobile: both drawers apply on close. The flaw filter buffers edits in
+ *   pendingFlawFilter and commits to the store when its drawer closes.
  *
  * State management:
  * - appliedFilters: drives useLibraryGames (shared, from useFilterStore).
- * - pendingFilters: tracks edits in the desktop sidebar / mobile drawer.
- * - severityFilter: separate local state (NOT part of FilterState), wired to
- *   useLibraryGames only (decision 5).
- * - offset: page state, reset to 0 on any filter/severity change.
+ * - pendingFilters: tracks game-metadata edits in the desktop sidebar / mobile drawer.
+ * - flawFilter: shared cross-tab state from useFlawFilterStore (D-04).
+ *   Games tab does NOT URL-sync (D-04 — Phase 107 precedent).
+ * - pendingFlawFilter: buffers mobile flaw-drawer edits until close.
+ * - offset: page state, reset to 0 on any filter/flaw-filter change.
  */
 export function GamesTab() {
   // ── Filter state ─────────────────────────────────────────────────────────────
@@ -54,66 +66,50 @@ export function GamesTab() {
     setPendingFilters(appliedFilters);
   }, [appliedFilters]);
 
-  // ── Severity filter (separate local state — NOT part of FilterState) ─────────
-  const [severityFilter, setSeverityFilter] = useState<('blunder' | 'mistake')[]>([]);
+  // ── Flaw filter (shared cross-tab state — D-04) ───────────────────────────────
+  // Games tab does NOT URL-sync (D-04). State is read/written via the shared
+  // useFlawFilterStore so switching Games↔Flaws preserves the selection in memory.
+  const [flawFilter, setFlawFilter] = useFlawFilterStore();
+
+  // Pending flaw filter buffer for the mobile drawer — desktop applies live, mobile
+  // commits to the store on drawer close (apply-on-close), mirroring game-metadata.
+  const [pendingFlawFilter, setPendingFlawFilter] = useState<FlawFilterState>(flawFilter);
+  useEffect(() => {
+    setPendingFlawFilter(flawFilter);
+  }, [flawFilter]);
 
   // ── Pagination state ─────────────────────────────────────────────────────────
   const [offset, setOffset] = useState(0);
 
   // ── Mobile drawer state ──────────────────────────────────────────────────────
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [mobileFlawFiltersOpen, setMobileFlawFiltersOpen] = useState(false);
 
   // ── Desktop sidebar state ────────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState<string | null>(null);
 
-  // ── Modified-filters indicator ───────────────────────────────────────────────
-  // The dot reflects APPLIED filters + severity (what the backend is filtering by).
-  const isModified = useMemo(
-    () =>
-      !areFiltersEqual(appliedFilters, DEFAULT_FILTERS, FILTER_DOT_FIELDS) ||
-      severityFilter.length > 0,
-    [appliedFilters, severityFilter],
+  // ── Modified-filters indicators (one per panel) ───────────────────────────────
+  // The dots reflect APPLIED filters + flaw filter (what the backend is filtering by).
+  const isGameModified = useMemo(
+    () => !areFiltersEqual(appliedFilters, DEFAULT_FILTERS, FILTER_DOT_FIELDS),
+    [appliedFilters],
   );
-  const [isPulsing, setIsPulsing] = useState(false);
-  const pulseTimeoutRef = useRef<number | null>(null);
-  const prevAppliedRef = useRef(appliedFilters);
+  const isFlawModified = useMemo(() => isFlawFilterNonDefault(flawFilter), [flawFilter]);
 
-  useEffect(() => {
-    if (prevAppliedRef.current !== appliedFilters) {
-      prevAppliedRef.current = appliedFilters;
-      setIsPulsing(true);
-      if (pulseTimeoutRef.current !== null) {
-        window.clearTimeout(pulseTimeoutRef.current);
-      }
-      pulseTimeoutRef.current = window.setTimeout(() => {
-        setIsPulsing(false);
-        pulseTimeoutRef.current = null;
-      }, 1000);
-    }
-    return () => {
-      if (pulseTimeoutRef.current !== null) {
-        window.clearTimeout(pulseTimeoutRef.current);
-        pulseTimeoutRef.current = null;
-      }
-    };
-  }, [appliedFilters]);
+  const gamePulsing = usePulseOnChange(appliedFilters);
+  const flawPulsing = usePulseOnChange(flawFilter);
 
-  const modifiedDotNode = isModified ? (
-    <span
-      className="absolute top-0.5 right-0.5 flex h-2.5 w-2.5"
-      data-testid="filters-modified-dot"
-      aria-hidden="true"
-    >
-      {isPulsing && (
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-brown opacity-75" />
-      )}
-      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-brand-brown" />
-    </span>
-  ) : undefined;
+  const gameDotNode = (
+    <ModifiedDot active={isGameModified} pulsing={gamePulsing} testId="filters-modified-dot" />
+  );
+  const flawDotNode = (
+    <ModifiedDot active={isFlawModified} pulsing={flawPulsing} testId="flaw-filters-modified-dot" />
+  );
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
-  // Desktop sidebar: defers filter apply until the panel closes.
+  // Desktop sidebar: defers game-metadata apply until the panel closes. The flaw
+  // panel applies live, so it needs no pending-buffer handling here.
   const handleSidebarOpenChange = useCallback(
     (panelId: string | null) => {
       if (sidebarOpen === 'filters' && panelId !== 'filters') {
@@ -128,7 +124,7 @@ export function GamesTab() {
     [sidebarOpen, pendingFilters, appliedFilters, setAppliedFilters],
   );
 
-  // Mobile drawer: defers filter apply until the drawer closes.
+  // Mobile game-filters drawer: defers apply until the drawer closes.
   const handleMobileFiltersOpenChange = useCallback(
     (open: boolean) => {
       if (!open && mobileFiltersOpen) {
@@ -143,28 +139,43 @@ export function GamesTab() {
     [mobileFiltersOpen, pendingFilters, appliedFilters, setAppliedFilters],
   );
 
-  // Severity filter change — reset pagination.
-  const handleSeverityChange = useCallback((severity: ('blunder' | 'mistake')[]) => {
-    setSeverityFilter(severity);
-    setOffset(0);
-  }, []);
-
-  // Severity filter change for pending (mobile) — does NOT reset offset yet;
-  // offset resets when the drawer closes and pending is committed to applied.
-  const handlePendingSeverityChange = useCallback(
-    (severity: ('blunder' | 'mistake')[]) => {
-      setSeverityFilter(severity);
+  // Mobile flaw-filters drawer: buffers edits and commits to the store on close.
+  const handleMobileFlawFiltersOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open && mobileFlawFiltersOpen) {
+        setFlawFilter(pendingFlawFilter);
+        setOffset(0);
+      }
+      if (open && !mobileFlawFiltersOpen) {
+        setPendingFlawFilter(flawFilter);
+      }
+      setMobileFlawFiltersOpen(open);
     },
-    [],
+    [mobileFlawFiltersOpen, pendingFlawFilter, flawFilter, setFlawFilter],
   );
 
+  // Flaw filter change (desktop live) — reset pagination (D-04).
+  const handleFlawFilterChange = useCallback(
+    (next: FlawFilterState) => {
+      setFlawFilter(next);
+      setOffset(0);
+    },
+    [setFlawFilter],
+  );
+
+  // Clear flaw filter only (desktop live) — does not reset game-metadata filters (D-01).
+  const handleClearFlawFilter = useCallback(() => {
+    setFlawFilter(DEFAULT_FLAW_FILTER);
+    setOffset(0);
+  }, [setFlawFilter]);
+
   // ── Data queries ─────────────────────────────────────────────────────────────
-  // severityFilter is scoped to games only (decision 5); FlawStatsPanel moved to Stats tab.
+  // flawFilter passes both severity and tags to the migrated endpoint (D-04).
   const {
     data: gamesData,
     isLoading: gamesLoading,
     isError: gamesError,
-  } = useLibraryGames(appliedFilters, severityFilter, offset, PAGE_SIZE);
+  } = useLibraryGames(appliedFilters, flawFilter, offset, PAGE_SIZE);
 
   // User's total imported games across all platforms — used as the count-row denominator
   // ("N of {totalImported} games"). Distinct from matchedCount (games matching filters).
@@ -184,7 +195,8 @@ export function GamesTab() {
   const noMatchedGames = !gamesLoading && !gamesError && totalGames > 0 && matchedCount === 0;
 
   // ── Sidebar panel config (SidebarLayout) ────────────────────────────────────
-  const filterPanelContent = (
+  // Game-metadata panel (no flaw control — it lives in its own panel below).
+  const gameFilterPanelContent = (
     <div className="p-4">
       <LibraryFilterPanel
         filters={pendingFilters}
@@ -194,8 +206,20 @@ export function GamesTab() {
           setAppliedFilters(filters);
           setOffset(0);
         }}
-        severityFilter={severityFilter}
-        onSeverityChange={handleSeverityChange}
+        showFlawFilter={false}
+      />
+    </div>
+  );
+
+  // Flaw-filter panel (severity + tags). Desktop applies live to the store.
+  const flawFilterPanelContent = (
+    <div className="p-4">
+      <FlawFilterControl
+        severity={flawFilter.severity}
+        tags={flawFilter.tags}
+        onSeverityChange={(severity) => handleFlawFilterChange({ ...flawFilter, severity })}
+        onTagChange={(tags) => handleFlawFilterChange({ ...flawFilter, tags })}
+        onClear={handleClearFlawFilter}
       />
     </div>
   );
@@ -205,8 +229,15 @@ export function GamesTab() {
       id: 'filters',
       label: 'Filters',
       icon: <SlidersHorizontal className="h-4 w-4" />,
-      content: filterPanelContent,
-      notificationDot: modifiedDotNode,
+      content: gameFilterPanelContent,
+      notificationDot: gameDotNode,
+    },
+    {
+      id: 'flaw-filters',
+      label: 'Flaw filters',
+      icon: <Tags className="h-4 w-4" />,
+      content: flawFilterPanelContent,
+      notificationDot: flawDotNode,
     },
   ];
 
@@ -269,10 +300,10 @@ export function GamesTab() {
         {mainContent}
       </SidebarLayout>
 
-      {/* Mobile layout: sticky filter button + Drawer + stacked content */}
+      {/* Mobile layout: sticky filter buttons + Drawers + stacked content */}
       <div className="md:hidden flex flex-col gap-4">
-        {/* Sticky row with Filters button */}
-        <div className="sticky top-0 z-20 flex justify-end py-2 bg-background/80 backdrop-blur-sm">
+        {/* Sticky row with separate Filters + Flaw filters buttons */}
+        <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
           <Button
             variant="brand-outline"
             className="relative"
@@ -282,11 +313,22 @@ export function GamesTab() {
           >
             <SlidersHorizontal className="mr-2 h-4 w-4" />
             Filters
-            {modifiedDotNode}
+            {gameDotNode}
+          </Button>
+          <Button
+            variant="brand-outline"
+            className="relative"
+            onClick={() => setMobileFlawFiltersOpen(true)}
+            aria-label="Open flaw filters"
+            data-testid="btn-flaw-filters"
+          >
+            <Tags className="mr-2 h-4 w-4" />
+            Flaw filters
+            {flawDotNode}
           </Button>
         </div>
 
-        {/* Filter drawer */}
+        {/* Game-filters drawer */}
         <Drawer
           open={mobileFiltersOpen}
           onOpenChange={handleMobileFiltersOpenChange}
@@ -313,10 +355,53 @@ export function GamesTab() {
               <LibraryFilterPanel
                 filters={pendingFilters}
                 onChange={setPendingFilters}
-                severityFilter={severityFilter}
-                onSeverityChange={handlePendingSeverityChange}
+                showFlawFilter={false}
                 showDeferredApplyHint
               />
+            </div>
+          </DrawerContent>
+        </Drawer>
+
+        {/* Flaw-filters drawer — applies on close (apply-on-close buffer) */}
+        <Drawer
+          open={mobileFlawFiltersOpen}
+          onOpenChange={handleMobileFlawFiltersOpenChange}
+          direction="right"
+        >
+          <DrawerContent
+            className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]"
+            data-testid="drawer-flaw-filter-sidebar"
+          >
+            <DrawerHeader className="flex flex-row items-center justify-between">
+              <DrawerTitle>Flaw filters</DrawerTitle>
+              <DrawerClose asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Close flaw filters"
+                  data-testid="btn-close-flaw-filter-drawer"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </DrawerClose>
+            </DrawerHeader>
+            <div className="overflow-y-auto flex-1 p-4 space-y-3">
+              <FlawFilterControl
+                severity={pendingFlawFilter.severity}
+                tags={pendingFlawFilter.tags}
+                onSeverityChange={(severity) =>
+                  setPendingFlawFilter({ ...pendingFlawFilter, severity })
+                }
+                onTagChange={(tags) => setPendingFlawFilter({ ...pendingFlawFilter, tags })}
+                onClear={() => setPendingFlawFilter(DEFAULT_FLAW_FILTER)}
+              />
+              <p
+                className="text-sm italic leading-tight text-muted-foreground"
+                data-testid="flaw-filter-deferred-apply-hint"
+              >
+                <span className="font-semibold text-foreground/80">Tip:</span> Filter changes apply
+                on closing the filters panel.
+              </p>
             </div>
           </DrawerContent>
         </Drawer>

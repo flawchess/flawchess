@@ -94,7 +94,9 @@ TempoTag = Literal["low-clock", "impatient", "considered"]
 
 class FlawRecord(TypedDict):
     ply: int  # half-move number (0-indexed)
-    fen: str  # board_fen() at this ply (piece placement only)
+    fen: str  # board_fen() of the position BEFORE the flawed move (piece placement
+    # only) — so the Flaws-tab miniboard renders the decision point and move_san
+    # resolves to its from/to arrow squares
     side: Literal["white", "black"]  # mover who made the flawed move
     severity: FlawSeverity
     tags: list[FlawTag]  # ordered, additive, orthogonal (populated in plan 02)
@@ -243,6 +245,13 @@ def _build_flaw_record(
     positions: list[GamePosition],
 ) -> FlawRecord:
     """Build a single FlawRecord for the mover's mistake/blunder at ply N."""
+    # `n` is the 0-indexed half-move of the flawed move (positions[n].move_san is
+    # the move played FROM ply n — see zobrist.py). fen_map[k] is the board AFTER
+    # k half-moves (fen_map[0] = start), so the position BEFORE the flawed move is
+    # fen_map[n] (n half-moves already played), NOT fen_map[n - 1]. Using n - 1
+    # rendered the miniboard one ply too early (decision point off by one move).
+    # This makes the miniboard show the decision point and lets the frontend
+    # resolve move_san → arrow squares.
     return FlawRecord(
         ply=n,
         fen=fen_map.get(n, ""),

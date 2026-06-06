@@ -515,6 +515,44 @@ class TestClassifyGameFlaws:
         assert flaw["es_before"] > flaw["es_after"], "Blunder worsens ES"
         assert isinstance(flaw["tags"], list)  # tags populated in plan 02
 
+    def test_fen_is_decision_point_before_flawed_move(self) -> None:
+        """Regression: flaw['fen'] is the position BEFORE the flawed move, and the
+        move resolves from it (guards the off-by-one that rendered the miniboard
+        one ply too early).
+
+        positions[k].move_san is the move played FROM ply k, so the flaw at ply n
+        plays positions[n].move_san. Its decision point is fen_map[n] (n half-moves
+        already played), NOT fen_map[n - 1]. Verified semantically: pushing the
+        flawed move onto the stored fen must reach the next ply's board
+        (fen_map[n + 1]). The earlier fen_map[n - 1] bug skipped the immediately
+        preceding move (here black's ...a6), so this assertion failed.
+        """
+        pgn = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
+        game = _make_game(pgn=pgn, user_color="white")
+        # Induce a blunder for white at ply 6 — the move FROM ply 6 is Ba4 (7th
+        # half-move). ...a6 (6th half-move) is the move immediately before it; the
+        # off-by-one fen would have shown the board before ...a6.
+        positions = [_make_pos(i, eval_cp=0) for i in range(10)]
+        positions[5] = _make_pos(5, eval_cp=300, move_san="a6")  # before the blunder
+        positions[6] = _make_pos(6, eval_cp=-500, move_san="Ba4")  # the blunder
+        positions[9] = _make_pos(9)  # final null ply
+
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        flaws = [r for r in result if r["ply"] == 6]
+        assert len(flaws) == 1
+        flaw = flaws[0]
+        assert flaw["move_san"] == "Ba4"
+
+        fen_map = _recompute_fen_map(pgn)
+        # The stored fen is the decision point (board after `ply` half-moves).
+        assert flaw["fen"] == fen_map[6]
+        # And playing the flawed move from it reaches the next ply's board.
+        side = "w" if flaw["side"] == "white" else "b"
+        board = chess.Board(f"{flaw['fen']} {side} - - 0 1")
+        board.push_san(flaw["move_san"])
+        assert board.board_fen() == fen_map[7]
+
     def test_es_before_greater_than_es_after_for_blunder(self) -> None:
         """Eval-AFTER landmine: ES_before reads positions[N-1], ES_after reads positions[N].
 

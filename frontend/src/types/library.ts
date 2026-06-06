@@ -137,3 +137,37 @@ export interface FlawStatsResponse {
   analyzed_n: number;
   total_n: number;
 }
+
+// ─── Per-flaw list (GET /api/library/flaws) ───────────────────────────────────
+
+/**
+ * One row in the Flaws subtab — one flawed position (mirrors backend FlawListItem).
+ * Carries full miniboard display payload + game metadata. No *_hash fields.
+ */
+export interface FlawListItem {
+  game_id: number;
+  ply: number;
+  fen: string;
+  move_san: string | null;
+  severity: 'mistake' | 'blunder';
+  tags: FlawTag[];
+  es_before: number;
+  es_after: number;
+  // Game metadata row header
+  user_result: 'win' | 'draw' | 'loss';
+  played_at: string | null;
+  time_control_bucket: string | null;
+  platform: string;
+  platform_url: string | null;
+  white_username: string | null;
+  black_username: string | null;
+  user_color: string;
+}
+
+/** Response for GET /api/library/flaws — paginated per-flaw list (mirrors LibraryFlawsResponse). */
+export interface LibraryFlawsResponse {
+  flaws: FlawListItem[];
+  matched_count: number;
+  offset: number;
+  limit: number;
+}

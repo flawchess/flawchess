@@ -1,229 +1,572 @@
 """Library (Games-surface) repository — Phase 106 (SEED-036, LIBG-08/09).
 
-Single SQL transcription of the Phase 105 ES-drop severity math, used for:
-  - the user-color-scoped EXISTS flaw-severity filter (LIBG-08), and
-  - per-ply flagged-row observation for the cross-check seam guard.
+Phase 108 D-02 migration: the window-scan EXISTS flaw filter is replaced by a
+direct `game_flaws` table lookup. The shared predicate builder
+`build_flaw_filter_clauses` produces the family-aware WHERE clauses (OR within
+family, AND across families per SEED-038); `flaw_exists_from_table` wraps them
+in a correlated EXISTS for the Games tab. The same predicate builder is reused
+by the Flaws SELECT path (Plan 108-05) so cross-tab filter unification is
+enforced in code, not convention.
 
-This is the ONE place where the severity-drop math is duplicated (SQL vs the
-Python kernel in flaws_service.py). To prevent drift it imports the kernel
-constants (LICHESS_K, MISTAKE_DROP, BLUNDER_DROP, INACCURACY_DROP,
-MATE_CP_EQUIVALENT) — no literal thresholds in SQL — and the seam is guarded by
-the SQL<->kernel cross-check fixture test (tests/test_library_repository.py,
-criterion 5 / B2).
-
-Correctness pins replicated from the kernel (flaws_service._run_all_moves_pass
-+ _ply_to_es):
-  - mover = white if ply even else black; the `sign` flip lives inside the ES sigmoid.
-  - eval-AFTER semantics: positions[N].eval_cp is the eval AFTER move N, so
-    ES_before = ES(ply N-1) via LAG, ES_after = ES(ply N).
-  - mate Option B: a non-null eval_mate maps to ±MATE_CP_EQUIVALENT cp BEFORE the
-    sigmoid (never the hard 1.0/0.0 converter).
-  - interior null evals (current OR previous) are non-flaggable (excluded).
-  - USER-COLOR scope (B1): only plies whose mover-parity equals the game's
-    user_color can satisfy the filter — opponent-only blunders never match.
-
-All user input crosses into SQL via bound parameters (user_id, drop threshold);
-no f-string interpolation of user input (T-106-01).
+All user input crosses into SQL via bound parameters (user_id, severity, tag
+values from `_SEVERITY_INT` / `_TEMPO_INT` dict lookups); no f-string
+interpolation of user input (T-108-06).
 """
 
 import datetime
 from collections.abc import Sequence
-from typing import Any
+from typing import Literal
 
-from sqlalchemy import Float, Select, Subquery, and_, case, exists, false, func, or_, select
+from sqlalchemy import Float, Select, Subquery, case, exists, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.game import Game
+from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
-from app.repositories.query_utils import apply_game_filters
-from app.services.eval_utils import LICHESS_K
-from app.services.flaws_service import (
-    BLUNDER_DROP,
-    EVAL_COVERAGE_MIN,
-    INACCURACY_DROP,
-    MATE_CP_EQUIVALENT,
-    MISTAKE_DROP,
-    FlawSeverity,
+from app.repositories.game_flaws_repository import (
+    _PHASE_INT,
+    _SEVERITY_INT,
+    _TEMPO_INT,
 )
+from app.repositories.query_utils import apply_game_filters
+from app.schemas.library import FlawListItem
+from app.services.flaws_service import (
+    EVAL_COVERAGE_MIN,
+    FlawSeverity,
+    FlawTag,
+)
+from app.services.openings_service import derive_user_result
 
-# Severity -> minimum mover-POV ES drop. Imported constants, one source of truth
-# with the Python kernel (_classify_severity). The Games filter offers only
-# mistake/blunder per scope, but inaccuracy is mapped for completeness/cross-check.
-_DROP_THRESHOLD: dict[FlawSeverity, float] = {
-    "inaccuracy": INACCURACY_DROP,
-    "mistake": MISTAKE_DROP,
-    "blunder": BLUNDER_DROP,
+# ---------------------------------------------------------------------------
+# Inverse encoding maps — reconstruct tags from game_flaws integer columns
+# (D-02 migration: chips built from stored rows, not kernel re-call)
+# ---------------------------------------------------------------------------
+
+# int → FlawTag string (reverse of _SEVERITY_INT / _TEMPO_INT / _PHASE_INT).
+# Dict comprehensions produce int→str; the ty: ignore[invalid-assignment] on
+# each line suppresses the Literal narrowing mismatch (correct at runtime).
+_SEVERITY_INT_TO_TAG: dict[int, FlawSeverity] = {  # ty: ignore[invalid-assignment]
+    v: k for k, v in _SEVERITY_INT.items()
+}
+_TEMPO_INT_TO_TAG: dict[int, FlawTag] = {  # ty: ignore[invalid-assignment]
+    v: k for k, v in _TEMPO_INT.items()
+}
+_PHASE_INT_TO_TAG: dict[int, Literal["opening", "middlegame", "endgame"]] = {  # ty: ignore[invalid-assignment]
+    v: k for k, v in _PHASE_INT.items()
 }
 
 
-def _drop_threshold(severity: FlawSeverity) -> float:
-    """Return the minimum ES drop for a severity tier (imported kernel constant)."""
-    return _DROP_THRESHOLD[severity]
+def build_flaw_filter_clauses(
+    severity: Sequence[FlawSeverity],
+    tags: Sequence[FlawTag],
+) -> list[ColumnElement[bool]]:
+    """Return WHERE clauses filtering game_flaws rows (SEED-038 family-aware logic).
 
+    OR within family, AND across families: each returned clause covers one family;
+    the caller ANDs all clauses together. Phase tags (opening/middlegame/endgame)
+    are NOT filter predicates per UI-SPEC §Tag-family sections — they produce no
+    clause here.
 
-def _cp_equiv(eval_cp: Any, eval_mate: Any) -> ColumnElement[Any]:
-    """Mate Option-B cp-equivalent: ±MATE_CP_EQUIVALENT when mate, else raw cp.
+    Encoding maps (_SEVERITY_INT / _TEMPO_INT) are imported from
+    game_flaws_repository — single source of truth, no duplication (SEED-038 /
+    CLAUDE.md §Shared Query Filters).
 
-    Accepts either a mapped column attribute (GamePosition.eval_cp) or a window
-    expression (func.lag(...).over(...)); both are SQL column expressions.
+    Args:
+        severity: Subset of ["mistake", "blunder"]. Set-membership: ["mistake"]
+                  matches mistakes only, ["blunder"] matches blunders only, both
+                  matches either. Empty = no severity filter (match all severities
+                  present in game_flaws).
+        tags: Selected FlawTag values from FlawFilterControl. Empty = no tag
+              filter. Phase tags are ignored (never produce a clause).
 
-    Mirrors flaws_service._ply_to_es: a non-null eval_mate substitutes
-    +MATE_CP_EQUIVALENT when eval_mate > 0 else -MATE_CP_EQUIVALENT, BEFORE the
-    sigmoid (never the hard 1.0/0.0 converter). NOTE: this matches the kernel's
-    `> 0 / else` mapping, NOT sign(): the kernel maps eval_mate == 0 (producible
-    from python-chess Mate(0)) to -MATE_CP_EQUIVALENT, whereas sign(0) == 0 would
-    map it to ES 0.5 and diverge from the Python kernel (WR-01 cross-check drift).
+    Returns:
+        A list of SQLAlchemy column expressions. Empty list = no flaw filter
+        (match all rows). The caller is responsible for ANDing the clauses.
     """
-    return case(
-        (
-            eval_mate.isnot(None),
-            case((eval_mate > 0, MATE_CP_EQUIVALENT), else_=-MATE_CP_EQUIVALENT),
-        ),
-        else_=eval_cp,
-    )
+    clauses: list[ColumnElement[bool]] = []
+
+    # Severity filter — set membership. The UI exposes Blunders/Mistakes as
+    # independent toggles, so ["mistake"] must match mistakes ONLY (not "mistakes or
+    # worse"). A prior MIN-threshold (severity >= min) leaked blunders into a
+    # mistakes-only selection. game_flaws stores only mistake(1)/blunder(2) (D-03).
+    if severity:
+        clauses.append(GameFlaw.severity.in_([_SEVERITY_INT[s] for s in severity]))
+
+    # Tempo family: OR within {low-clock, impatient, considered}
+    tempo_tags = [t for t in tags if t in {"low-clock", "impatient", "considered"}]
+    if tempo_tags:
+        clauses.append(GameFlaw.tempo.in_([_TEMPO_INT[t] for t in tempo_tags]))
+
+    # Opportunity family: OR within {miss, lucky-escape}
+    opp_tags = [t for t in tags if t in {"miss", "lucky-escape"}]
+    if opp_tags:
+        opp_clauses: list[ColumnElement[bool]] = []
+        if "miss" in opp_tags:
+            opp_clauses.append(GameFlaw.is_miss.is_(True))
+        if "lucky-escape" in opp_tags:
+            opp_clauses.append(GameFlaw.is_lucky_escape.is_(True))
+        clauses.append(or_(*opp_clauses))
+
+    # Impact family: OR within {while-ahead, result-changing}
+    imp_tags = [t for t in tags if t in {"while-ahead", "result-changing"}]
+    if imp_tags:
+        imp_clauses: list[ColumnElement[bool]] = []
+        if "while-ahead" in imp_tags:
+            imp_clauses.append(GameFlaw.is_while_ahead.is_(True))
+        if "result-changing" in imp_tags:
+            imp_clauses.append(GameFlaw.is_result_changing.is_(True))
+        clauses.append(or_(*imp_clauses))
+
+    # Phase tags (opening/middlegame/endgame) are intentionally NOT handled —
+    # they are display-only tags in the UI, not filter predicates (RESEARCH Pitfall 5).
+
+    return clauses
 
 
-def _es_expr(cp_equiv: ColumnElement[Any], mover_sign: ColumnElement[Any]) -> ColumnElement[Any]:
-    """Mover-POV expected score: 1/(1+exp(-K * sign * cp_equiv)).
-
-    Transcribes eval_utils.eval_cp_to_expected_score exactly, with LICHESS_K
-    imported (no literal K in SQL).
-    """
-    # Cast to Float so the division is floating-point, matching the Python sigmoid.
-    return 1.0 / (1.0 + func.exp(-LICHESS_K * mover_sign * func.cast(cp_equiv, Float)))
-
-
-def _per_ply_drop_subquery(user_id: int) -> Subquery:
-    """Build the per-ply ES-drop subquery for one user.
-
-    Returns a subquery with columns: game_id, ply, eval_cp, eval_mate, prev_cp,
-    prev_mate, drop (mover-POV ES drop). Non-flaggable rows (current OR previous
-    eval null) are filtered by the caller via _drop_filter, and the mover-parity
-    user-color restriction (against the correlated Game.user_color) by
-    _user_ply_filter — so the same subquery serves both the EXISTS and the
-    per-ply observation helper.
-
-    mover = white if ply even else black -> sign = +1 if ply even else -1.
-    """
-    mover_sign = case((GamePosition.ply % 2 == 0, 1), else_=-1)
-
-    prev_cp = func.lag(GamePosition.eval_cp).over(
-        partition_by=GamePosition.game_id,
-        order_by=GamePosition.ply.asc(),
-    )
-    prev_mate = func.lag(GamePosition.eval_mate).over(
-        partition_by=GamePosition.game_id,
-        order_by=GamePosition.ply.asc(),
-    )
-
-    es_after = _es_expr(_cp_equiv(GamePosition.eval_cp, GamePosition.eval_mate), mover_sign)
-    es_before = _es_expr(_cp_equiv(prev_cp, prev_mate), mover_sign)
-
-    inner = (
-        select(
-            GamePosition.game_id.label("game_id"),
-            GamePosition.ply.label("ply"),
-            GamePosition.eval_cp.label("eval_cp"),
-            GamePosition.eval_mate.label("eval_mate"),
-            prev_cp.label("prev_cp"),
-            prev_mate.label("prev_mate"),
-            (es_before - es_after).label("drop"),
-        )
-        .where(GamePosition.user_id == user_id)
-        .subquery("per_ply")
-    )
-    return inner
-
-
-def _drop_filter(inner: Subquery) -> ColumnElement[bool]:
-    """Non-flaggable rows excluded: both current and previous eval must be present.
-
-    Mirrors the kernel's "skip if either ES is None" (interior null, Pitfall 5).
-    A null previous eval (the first ply of each game window) is also excluded —
-    consistent with the kernel iterating from ply N=1 with a real N-1 neighbour.
-    """
-    has_curr = or_(inner.c.eval_cp.isnot(None), inner.c.eval_mate.isnot(None))
-    has_prev = or_(inner.c.prev_cp.isnot(None), inner.c.prev_mate.isnot(None))
-    return and_(has_curr, has_prev)
-
-
-def _user_ply_filter(inner: Subquery) -> ColumnElement[bool]:
-    """Restrict to the USER's plies (B1): mover-parity == the game's user_color.
-
-    Correlates the outer Game row so the parity is matched against THAT game's
-    user_color. A ply is the user's when:
-      (ply even AND user_color = 'white') OR (ply odd AND user_color = 'black').
-    """
-    return or_(
-        and_(inner.c.ply % 2 == 0, Game.user_color == "white"),
-        and_(inner.c.ply % 2 == 1, Game.user_color == "black"),
-    )
-
-
-def flaw_exists_subquery(
+def flaw_exists_from_table(
     user_id: int,
-    severities: Sequence[FlawSeverity],
+    severity: Sequence[FlawSeverity],
+    tags: Sequence[FlawTag],
 ) -> ColumnElement[bool]:
-    """Correlated EXISTS: True iff the game has >=1 USER ply of a requested severity.
+    """Correlated EXISTS: True iff the game has >=1 flaw row satisfying the filter.
 
-    The drop threshold is MIN over the requested severities (so ["mistake"]
-    matches mistakes-or-worse; ["blunder"] matches blunders only). All thresholds
-    and LICHESS_K are imported constants; user_id is a bound parameter.
+    game_flaws-backed EXISTS (replaces the Phase 106 window-scan EXISTS after
+    D-02 migration). Scopes to the authenticated user and the outer Game.id so
+    cross-user leaks are impossible (T-108-07).
 
-    USER-COLOR scope (B1): only plies whose mover-parity equals the outer game's
-    user_color satisfy the EXISTS, so a game where only the opponent blundered is
-    NOT selected. The EXISTS correlates GamePosition.game_id to the outer Game.id
-    and binds user_id, scoping the read to the authenticated user (T-106-AC).
+    Returns true() when both severity and tags are empty — no filter = match all
+    games. This mirrors the Phase 106 None sentinel: callers that pass no filter
+    see no restriction added to the statement.
+
+    Args:
+        user_id: The authenticated user's ID — always included in the EXISTS
+                 WHERE clause to prevent cross-user information disclosure.
+        severity: Subset of ["mistake", "blunder"]. Empty = no severity filter.
+        tags: Selected FlawTag values. Empty = no tag filter.
     """
-    if not severities:
-        # No severities -> trivially-false predicate (matches no game).
-        return false()
-
-    threshold = min(_drop_threshold(s) for s in severities)
-    inner = _per_ply_drop_subquery(user_id)
-
+    clauses = build_flaw_filter_clauses(severity, tags)
+    if not clauses:
+        # No filter — match all games (caller decides whether to add to statement)
+        return true()
     return exists(
-        select(inner.c.ply).where(
-            inner.c.game_id == Game.id,
-            _drop_filter(inner),
-            _user_ply_filter(inner),
-            inner.c.drop >= threshold,
+        select(GameFlaw.ply).where(
+            GameFlaw.game_id == Game.id,
+            GameFlaw.user_id == user_id,
+            *clauses,
         )
     )
 
 
-async def flagged_plies_for_severity(
+def _reconstruct_tags(flaw: GameFlaw) -> list[FlawTag]:
+    """Reconstruct FlawTag list from game_flaws typed columns in deterministic order.
+
+    Order: impact (result-changing, while-ahead) → opportunity (miss, lucky-escape)
+    → tempo. Phase tags (opening/middlegame/endgame) are intentionally EXCLUDED from
+    the per-flaw tag list returned by the endpoint (they are display-only per UI-SPEC).
+
+    The deterministic order mirrors _CHIP_ORDER in library_service.
+
+    Args:
+        flaw: A GameFlaw ORM row with typed boolean + int columns.
+
+    Returns:
+        A list of FlawTag strings in canonical order, with no phase tags.
+    """
+    tags: list[FlawTag] = []
+    if flaw.is_miss:
+        tags.append("miss")
+    if flaw.is_lucky_escape:
+        tags.append("lucky-escape")
+    if flaw.is_while_ahead:
+        tags.append("while-ahead")
+    if flaw.is_result_changing:
+        tags.append("result-changing")
+    if flaw.tempo is not None:
+        tempo_tag = _TEMPO_INT_TO_TAG.get(flaw.tempo)
+        if tempo_tag is not None:
+            tags.append(tempo_tag)
+    return tags
+
+
+async def query_flaws(
     session: AsyncSession,
     *,
-    game_id: int,
     user_id: int,
-    severity: FlawSeverity,
-) -> list[int]:
-    """Return the USER plies of a single game whose ES drop >= the severity threshold.
+    severity: Sequence[FlawSeverity],
+    tags: Sequence[FlawTag],
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    color: str | None,
+    offset: int,
+    limit: int,
+) -> tuple[list[FlawListItem], int]:
+    """Paginated SELECT f.* FROM game_flaws JOIN games for the Flaws subtab (Plan 108-05).
 
-    Test/seam helper backing the SQL<->kernel cross-check (B2). Applies the same
-    user-color scope and non-flaggable-row exclusion as the EXISTS filter, but
-    observes the per-ply flag directly rather than collapsing to a boolean.
+    Reuses build_flaw_filter_clauses (shared with the Games EXISTS filter) so
+    cross-tab filter unification is enforced in code (SEED-038).
+
+    Ordered recent-first: g.played_at DESC NULLS LAST, f.ply ASC (D-07).
+    User-scoped via GameFlaw.user_id == user_id (T-108-10 IDOR mitigation).
+    Never exposes *_hash columns (CLAUDE.md V5).
+
+    Args:
+        session: AsyncSession for DB access.
+        user_id: The authenticated user's ID — always scopes the query (IDOR).
+        severity: Severity tiers to include. Empty = no severity filter.
+        tags: FlawTag values to filter on (phase tags produce no clause).
+        time_control / platform / rated / opponent_type / from_date / to_date /
+          color: Game-metadata filters (threaded through apply_game_filters).
+        offset: Pagination offset (>= 0).
+        limit: Page size (1..100, default 20 per D-08).
+
+    Returns:
+        (flaws, matched_count) where matched_count is the total before pagination.
     """
-    threshold = _drop_threshold(severity)
-    inner = _per_ply_drop_subquery(user_id)
+    flaw_clauses = build_flaw_filter_clauses(severity, tags)
+
+    # Base: game_flaws JOIN games scoped to this user + flaw filter
+    base_stmt = (
+        select(GameFlaw, Game)
+        .join(Game, Game.id == GameFlaw.game_id)
+        .where(
+            GameFlaw.user_id == user_id,
+            *flaw_clauses,
+        )
+    )
+
+    # Apply game-metadata filters (time_control, platform, etc.) via shared util.
+    # apply_game_filters adds conditions to a Select[T]; we feed it a select on Game
+    # then apply its conditions to base_stmt via a subquery approach.
+    game_filter_stmt: Select[tuple[int]] = select(Game.id).where(Game.user_id == user_id)
+    game_filter_stmt = apply_game_filters(
+        game_filter_stmt,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        color=color,
+        user_id=user_id,
+    )
+    base_stmt = base_stmt.where(GameFlaw.game_id.in_(game_filter_stmt))
+
+    # Count total matching rows (before pagination).
+    count_stmt = select(func.count()).select_from(base_stmt.subquery())
+    matched_count = (await session.execute(count_stmt)).scalar_one()
+
+    if matched_count == 0:
+        return [], 0
+
+    # Paginate, ordered recent-first (D-07).
+    paged_stmt = (
+        base_stmt.order_by(Game.played_at.desc().nulls_last(), GameFlaw.ply.asc())
+        .offset(offset)
+        .limit(limit)
+    )
+    rows = (await session.execute(paged_stmt)).all()
+
+    items: list[FlawListItem] = [
+        FlawListItem(
+            game_id=flaw.game_id,
+            ply=flaw.ply,
+            fen=flaw.fen,
+            move_san=flaw.move_san,
+            severity=_SEVERITY_INT_TO_TAG[flaw.severity],
+            tags=_reconstruct_tags(flaw),
+            es_before=flaw.es_before,
+            es_after=flaw.es_after,
+            user_result=derive_user_result(game.result, game.user_color),
+            played_at=game.played_at,
+            time_control_bucket=game.time_control_bucket,
+            platform=game.platform,
+            platform_url=game.platform_url,
+            white_username=game.white_username,
+            black_username=game.black_username,
+            user_color=game.user_color,
+        )
+        for flaw, game in rows
+    ]
+    return items, matched_count
+
+
+async def fetch_page_game_flaws(
+    session: AsyncSession,
+    user_id: int,
+    game_ids: Sequence[int],
+) -> dict[int, list[GameFlaw]]:
+    """Batch-load all game_flaws rows for a page of games, grouped by game_id.
+
+    Returns a dict mapping game_id -> list[GameFlaw] (may be empty for an
+    analyzed-but-flawless game or a game with no game_flaws rows yet).
+    User-scoped via GameFlaw.user_id == user_id (T-108-08 mitigation).
+
+    Single query for the whole page (no N+1 per-game call). The caller groups
+    by game_id in Python, reconstructing chips and M+B counts from the rows.
+    """
+    if not game_ids:
+        return {}
+    stmt = select(GameFlaw).where(
+        GameFlaw.user_id == user_id,
+        GameFlaw.game_id.in_(game_ids),
+    )
+    rows = list((await session.execute(stmt)).scalars().all())
+    result: dict[int, list[GameFlaw]] = {gid: [] for gid in game_ids}
+    for row in rows:
+        result[row.game_id].append(row)
+    return result
+
+
+async def fetch_page_analyzed_set(
+    session: AsyncSession,
+    user_id: int,
+    game_ids: Sequence[int],
+) -> frozenset[int]:
+    """Return the subset of game_ids that pass the >=90% eval-coverage gate.
+
+    Used in _build_card to determine analysis_state for each page game without
+    a per-game position load. Replaces the per-game count_game_severities
+    analysis_state check after D-02 migration.
+    """
+    if not game_ids:
+        return frozenset()
+    analyzed_subq = _analyzed_game_ids_subquery(user_id)
+    stmt = select(analyzed_subq.c.game_id).where(analyzed_subq.c.game_id.in_(game_ids))
+    rows = (await session.execute(stmt)).scalars().all()
+    return frozenset(rows)
+
+
+async def fetch_stats_aggregates(
+    session: AsyncSession,
+    user_id: int,
+    analyzed_game_ids_subq: Subquery,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+    color: str | None,
+) -> tuple[int, int, int, int, int, int, int, int, int, int, int, int]:
+    """Single game_flaws JOIN games scan producing M+B stats panel aggregates.
+
+    Returns a 12-tuple:
+      (mistake_count, blunder_count,
+       tempo_low_clock, tempo_impatient, tempo_considered,
+       is_result_changing, is_miss, is_lucky_escape, is_while_ahead,
+       phase_opening, phase_middlegame, phase_endgame)
+
+    All counts are over the analyzed+filtered game set.
+    User-scoped (T-108-08). The analyzed_game_ids_subq is the eval-coverage
+    gate (Pitfall 6 — D-03: analyzed_n stays on the coverage subquery).
+    """
+    base_filtered_subq = _filtered_games_base(
+        user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+    ).subquery("filtered")
+    filtered_analyzed_subq = (
+        select(base_filtered_subq.c.id)
+        .where(base_filtered_subq.c.id.in_(select(analyzed_game_ids_subq.c.game_id)))
+        .subquery("filtered_analyzed")
+    )
+
+    stmt = select(
+        func.count().filter(GameFlaw.severity == _SEVERITY_INT["mistake"]),
+        func.count().filter(GameFlaw.severity == _SEVERITY_INT["blunder"]),
+        func.count().filter(GameFlaw.tempo == _TEMPO_INT["low-clock"]),
+        func.count().filter(GameFlaw.tempo == _TEMPO_INT["impatient"]),
+        func.count().filter(GameFlaw.tempo == _TEMPO_INT["considered"]),
+        func.count().filter(GameFlaw.is_result_changing.is_(True)),
+        func.count().filter(GameFlaw.is_miss.is_(True)),
+        func.count().filter(GameFlaw.is_lucky_escape.is_(True)),
+        func.count().filter(GameFlaw.is_while_ahead.is_(True)),
+        func.count().filter(GameFlaw.phase == _PHASE_INT["opening"]),
+        func.count().filter(GameFlaw.phase == _PHASE_INT["middlegame"]),
+        func.count().filter(GameFlaw.phase == _PHASE_INT["endgame"]),
+    ).where(
+        GameFlaw.user_id == user_id,
+        GameFlaw.game_id.in_(select(filtered_analyzed_subq.c.id)),
+    )
+    row = (await session.execute(stmt)).one()
+    return (
+        row[0],  # mistake_count
+        row[1],  # blunder_count
+        row[2],  # tempo_low_clock
+        row[3],  # tempo_impatient
+        row[4],  # tempo_considered
+        row[5],  # is_result_changing
+        row[6],  # is_miss
+        row[7],  # is_lucky_escape
+        row[8],  # is_while_ahead
+        row[9],  # phase_opening
+        row[10],  # phase_middlegame
+        row[11],  # phase_endgame
+    )
+
+
+async def fetch_stats_trend(
+    session: AsyncSession,
+    user_id: int,
+    analyzed_game_ids_subq: Subquery,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+    color: str | None,
+) -> list[tuple[datetime.datetime | None, int]]:
+    """Per-game M+B flaw count for trend computation, ordered by played_at ASC.
+
+    Returns list of (played_at, mb_count) tuples — one entry per analyzed+filtered
+    game, including games with zero M+B flaws (LEFT JOIN semantics via subquery).
+    Ordered oldest-first for rolling-window accumulation in _compute_trend.
+
+    The trend is computed over the same analyzed+filtered set as fetch_stats_aggregates.
+    """
+    base_filtered_subq = _filtered_games_base(
+        user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+    ).subquery("filtered_t")
+    filtered_analyzed_game_ids = (
+        select(base_filtered_subq.c.id)
+        .where(base_filtered_subq.c.id.in_(select(analyzed_game_ids_subq.c.game_id)))
+        .subquery("fa_ids")
+    )
+
+    # Games in the analyzed+filtered set (may have 0 game_flaws rows)
+    games_subq = (
+        select(Game.id, Game.played_at)
+        .where(
+            Game.user_id == user_id,
+            Game.id.in_(select(filtered_analyzed_game_ids.c.id)),
+        )
+        .subquery("analyzed_games")
+    )
+
+    # Flaw counts per game (0 for games with no flaws in game_flaws)
+    flaw_counts_subq = (
+        select(
+            GameFlaw.game_id,
+            func.count().label("mb_count"),
+        )
+        .where(
+            GameFlaw.user_id == user_id,
+            GameFlaw.game_id.in_(select(filtered_analyzed_game_ids.c.id)),
+        )
+        .group_by(GameFlaw.game_id)
+        .subquery("flaw_counts")
+    )
 
     stmt = (
-        select(inner.c.ply)
-        .select_from(inner)
-        .join(Game, Game.id == inner.c.game_id)
-        .where(
-            inner.c.game_id == game_id,
-            Game.user_id == user_id,
-            _drop_filter(inner),
-            _user_ply_filter(inner),
-            inner.c.drop >= threshold,
+        select(
+            games_subq.c.played_at,
+            func.coalesce(flaw_counts_subq.c.mb_count, 0).label("mb_count"),
         )
-        .order_by(inner.c.ply.asc())
+        .outerjoin(flaw_counts_subq, flaw_counts_subq.c.game_id == games_subq.c.id)
+        .order_by(games_subq.c.played_at.asc().nulls_last())
     )
-    rows = (await session.execute(stmt)).scalars().all()
-    return list(rows)
+    rows = (await session.execute(stmt)).all()
+    return [(row[0], row[1]) for row in rows]
+
+
+async def fetch_total_user_moves(
+    session: AsyncSession,
+    user_id: int,
+    analyzed_game_ids_subq: Subquery,
+    *,
+    time_control: Sequence[str] | None,
+    platform: Sequence[str] | None,
+    rated: bool | None,
+    opponent_type: str,
+    from_date: datetime.date | None,
+    to_date: datetime.date | None,
+    flaw_severity: Sequence[str] | None,
+    opponent_gap_min: int | None,
+    opponent_gap_max: int | None,
+    color: str | None,
+) -> int:
+    """Count the user's plies across all analyzed+filtered games (per-100 rate denominator).
+
+    A ply N is the user's when mover parity matches game.user_color:
+    - White moves at even plies (N % 2 == 0)
+    - Black moves at odd plies  (N % 2 != 0)
+    Ply 0 (initial position, no move) is excluded.
+
+    This mirrors _count_user_moves() semantics from library_service.py, computed
+    in one SQL aggregate over game_positions JOIN games (no per-game kernel loop).
+    """
+    base_filtered_subq = _filtered_games_base(
+        user_id,
+        time_control=time_control,
+        platform=platform,
+        rated=rated,
+        opponent_type=opponent_type,
+        from_date=from_date,
+        to_date=to_date,
+        flaw_severity=flaw_severity,
+        opponent_gap_min=opponent_gap_min,
+        opponent_gap_max=opponent_gap_max,
+        color=color,
+    ).subquery("filtered_u")
+    filtered_analyzed_ids = (
+        select(base_filtered_subq.c.id)
+        .where(base_filtered_subq.c.id.in_(select(analyzed_game_ids_subq.c.game_id)))
+        .subquery("fa_ids2")
+    )
+
+    # Count positions where ply >= 1 AND mover matches game.user_color.
+    # Even ply → white mover; odd ply → black mover (matches kernel _run_all_moves_pass).
+    # SQLAlchemy 2.x case(): positional *whens as individual (condition, value) tuples.
+    user_ply = case(
+        ((GamePosition.ply % 2 == 0) & (Game.user_color == "white"), 1),
+        ((GamePosition.ply % 2 != 0) & (Game.user_color == "black"), 1),
+        else_=0,
+    )
+
+    stmt = (
+        select(func.sum(user_ply))
+        .select_from(GamePosition)
+        .join(Game, Game.id == GamePosition.game_id)
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.game_id.in_(select(filtered_analyzed_ids.c.id)),
+            GamePosition.ply >= 1,
+        )
+    )
+    result = (await session.execute(stmt)).scalar_one_or_none()
+    return int(result) if result is not None else 0
 
 
 def _filtered_games_base(
@@ -276,18 +619,21 @@ async def query_filtered_games(
     from_date: datetime.date | None,
     to_date: datetime.date | None,
     flaw_severity: Sequence[str] | None,
+    flaw_tags: Sequence[str] | None = None,
     offset: int,
     limit: int,
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
     color: str | None = None,
 ) -> tuple[list[Game], int]:
-    """Return paginated user Game objects, optionally flaw-severity filtered.
+    """Return paginated user Game objects, optionally flaw-severity/tag filtered.
 
     Mirrors endgame_repository.query_endgame_games' paginated-archive shape, but
     drops the endgame-span subquery — the base select is simply the user's games,
-    with the boolean flaw-severity EXISTS applied via apply_game_filters when
-    severities are supplied (LIBG-08). When flaw_severity is None/empty the
+    with the flaw EXISTS applied via apply_game_filters when severities and/or
+    tags are supplied (LIBG-08, SEED-038). flaw_tags restricts to games with a
+    single flaw satisfying ALL selected tag families (OR within family, AND
+    across families). When both flaw_severity and flaw_tags are None/empty the
     query is a plain filtered archive (no EXISTS).
 
     Returns (page_games, matched_count) where matched_count reflects ALL matching
@@ -307,6 +653,7 @@ async def query_filtered_games(
         opponent_gap_min=opponent_gap_min,
         opponent_gap_max=opponent_gap_max,
         flaw_severity=flaw_severity,
+        flaw_tags=flaw_tags,
         user_id=user_id,
     )
 

@@ -1,10 +1,11 @@
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { BarChart2, BookOpen, DownloadIcon } from 'lucide-react';
+import { BarChart2, BookOpen, DownloadIcon, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { ImportTab } from '@/pages/library/ImportTab';
 import { StatsTab } from '@/pages/library/StatsTab';
 import { GamesTab } from '@/pages/library/GamesTab';
+import { FlawsTab } from '@/pages/library/FlawsTab';
 import type { ImportPageProps } from '@/pages/Import';
 
 export function LibraryPage({
@@ -39,7 +40,9 @@ export function LibraryPage({
     ? 'import'
     : location.pathname.includes('/games')
       ? 'games'
-      : 'stats';
+      : location.pathname.includes('/flaws')
+        ? 'flaws'
+        : 'stats';
 
   return (
     <div data-testid="library-page" className="flex min-h-0 flex-1 flex-col bg-background">
@@ -62,6 +65,10 @@ export function LibraryPage({
                 <BookOpen className="mr-1.5 h-4 w-4" />
                 Games
               </TabsTrigger>
+              <TabsTrigger value="flaws" data-testid="tab-flaws" className="flex-1">
+                <AlertTriangle className="mr-1.5 h-4 w-4" />
+                Flaws
+              </TabsTrigger>
               <TabsTrigger value="stats" data-testid="tab-stats" className="flex-1">
                 <BarChart2 className="mr-1.5 h-4 w-4" />
                 Stats
@@ -76,6 +83,9 @@ export function LibraryPage({
             </TabsContent>
             <TabsContent value="games" className="mt-4">
               <GamesTab />
+            </TabsContent>
+            <TabsContent value="flaws" className="mt-4">
+              <FlawsTab />
             </TabsContent>
             <TabsContent value="stats" className="mt-4">
               <StatsTab />
@@ -118,6 +128,14 @@ export function LibraryPage({
                   Games
                 </TabsTrigger>
                 <TabsTrigger
+                  value="flaws"
+                  className="flex-1"
+                  data-testid="tab-flaws-mobile"
+                >
+                  <AlertTriangle className="mr-1.5 h-4 w-4" />
+                  Flaws
+                </TabsTrigger>
+                <TabsTrigger
                   value="stats"
                   className="flex-1"
                   data-testid="tab-stats-mobile"
@@ -136,6 +154,9 @@ export function LibraryPage({
             </TabsContent>
             <TabsContent value="games" className="mt-4">
               <GamesTab />
+            </TabsContent>
+            <TabsContent value="flaws" className="mt-4">
+              <FlawsTab />
             </TabsContent>
             <TabsContent value="stats" className="mt-4">
               <StatsTab />

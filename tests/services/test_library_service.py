@@ -1,5 +1,11 @@
 """Unit tests for the Phase 106 library-service severity-count seam.
 
+Phase 108 D-02 migration: chip curation and tag-distribution tests updated to
+use the new game_flaws-backed API (_curate_chips_from_rows, _build_tag_distribution).
+The _curate_chips (FlawRecord-based) and _GameFlaws/_compute_tag_distribution helpers
+were retired; tests now either use GameFlaw objects (chip curation) or call
+_build_tag_distribution with direct keyword aggregates (distribution unit tests).
+
 Wave-0 scaffold (106-01). Covers the additive `count_game_severities` kernel
 helper: per-game B/M/I counts (incl. inaccuracy) restricted to the USER's moves,
 gated identically to `classify_game_flaws` (>= EVAL_COVERAGE_MIN coverage,
@@ -7,9 +13,6 @@ else GameNotAnalyzed with reason="no_engine_analysis").
 
 No DB required — GamePosition / Game objects are built in memory à la
 tests/services/test_flaws_service.py.
-
-The `chips` and `stats` placeholder classes are skipped here; they are
-implemented in 106-02 (card chips) / 106-03 (stats panel).
 """
 
 from typing import cast
@@ -17,31 +20,48 @@ from typing import cast
 import pytest
 
 from app.models.game import Game
+from app.models.game_flaw import GameFlaw
 from app.models.game_position import GamePosition
 from app.services.eval_utils import eval_cp_to_expected_score
 from app.services.flaws_service import (
     BLUNDER_DROP,
     MISTAKE_DROP,
-    FlawRecord,
-    FlawTag,
     GameNotAnalyzed,
     SeverityCounts,
     count_game_severities,
 )
 
 
-def _make_flaw(tags: list[FlawTag]) -> FlawRecord:
-    """Build a minimal FlawRecord carrying only the tags under test."""
-    return FlawRecord(
-        ply=2,
-        fen="",
-        side="white",
-        severity="blunder",
-        tags=tags,
-        es_before=0.9,
-        es_after=0.3,
-        move_san=None,
-    )
+def _make_game_flaw(
+    *,
+    user_id: int = 1,
+    game_id: int = 1,
+    ply: int = 2,
+    severity: int = 2,  # 2=blunder
+    tempo: int | None = None,
+    phase: int = 1,  # 1=middlegame
+    is_miss: bool = False,
+    is_lucky_escape: bool = False,
+    is_while_ahead: bool = False,
+    is_result_changing: bool = False,
+) -> GameFlaw:
+    """Build a minimal in-memory GameFlaw object for unit testing (no DB flush)."""
+    row = GameFlaw()
+    row.user_id = user_id
+    row.game_id = game_id
+    row.ply = ply
+    row.severity = severity
+    row.tempo = tempo
+    row.phase = phase
+    row.is_miss = is_miss
+    row.is_lucky_escape = is_lucky_escape
+    row.is_while_ahead = is_while_ahead
+    row.is_result_changing = is_result_changing
+    row.es_before = 0.9
+    row.es_after = 0.3
+    row.move_san = None
+    row.fen = ""
+    return row
 
 
 def _as_counts(result: SeverityCounts | GameNotAnalyzed) -> SeverityCounts:
@@ -227,23 +247,30 @@ class TestCountGameSeverities:
 
 
 # ---------------------------------------------------------------------------
-# TestCardChips (-k chips) — chip curation (106-02)
+# TestCardChips (-k chips) — chip curation (106-02, D-02 updated)
 # ---------------------------------------------------------------------------
 
 
 class TestCardChips:
-    """_curate_chips: dedupe, phase tag exclusion, deterministic order."""
+    """_curate_chips_from_rows: dedupe, phase exclusion, deterministic order.
+
+    D-02 migration: updated from FlawRecord-based _curate_chips to GameFlaw
+    row-based _curate_chips_from_rows. Phase tags (opening/middlegame/endgame)
+    are excluded via the _CHIP_ORDER constant (not encoded in GameFlaw columns).
+    Tempo tags come from the integer `tempo` column via _TEMPO_INT_TO_TAG lookup.
+    """
 
     def test_chips_exclude_phase_and_dedupe(self) -> None:
-        """Phase tags dropped; one chip per remaining type; stable order."""
-        from app.services.library_service import _curate_chips
+        """Phase tags dropped (not in _CHIP_ORDER); one chip per tag; stable order."""
+        from app.services.library_service import _curate_chips_from_rows
 
-        flaws = [
-            _make_flaw(["while-ahead", "middlegame", "impatient"]),
-            # duplicate impatient across flaws -> single chip; opening dropped
-            _make_flaw(["impatient", "opening", "miss"]),
-        ]
-        chips = _curate_chips(flaws)
+        # Flaw 1: while-ahead (phase=middlegame=1 excluded) + impatient (tempo=1)
+        # Flaw 2: impatient (duplicate -> deduped) + miss
+        # _TEMPO_INT: impatient=1, _CHIP_ORDER: miss < while-ahead < impatient
+        row1 = _make_game_flaw(ply=2, phase=1, is_while_ahead=True, tempo=1)  # impatient
+        row2 = _make_game_flaw(ply=4, phase=0, is_miss=True, tempo=1)  # impatient + miss
+        chips = _curate_chips_from_rows([row1, row2])
+        # Phase tags (middlegame/opening) never appear in chips (not in _CHIP_ORDER)
         assert "middlegame" not in chips
         assert "opening" not in chips
         # dedupe: impatient appears once
@@ -254,16 +281,21 @@ class TestCardChips:
         assert chips == ["miss", "while-ahead", "impatient"]
 
     def test_chips_empty_when_no_flaws(self) -> None:
-        """No flaws -> no chips."""
-        from app.services.library_service import _curate_chips
+        """No flaw rows -> no chips."""
+        from app.services.library_service import _curate_chips_from_rows
 
-        assert _curate_chips([]) == []
+        assert _curate_chips_from_rows([]) == []
 
-    def test_chips_only_phase_tags_yields_empty(self) -> None:
-        """A flaw carrying only phase tags (bare endgame) produces no chips."""
-        from app.services.library_service import _curate_chips
+    def test_chips_only_phase_yields_empty(self) -> None:
+        """A flaw row with no boolean tags and no tempo produces no chips.
 
-        chips = _curate_chips([_make_flaw(["endgame"])])
+        Phase is encoded as an integer column (not in chip booleans), so a
+        row with all False booleans and tempo=None yields an empty chip list.
+        """
+        from app.services.library_service import _curate_chips_from_rows
+
+        row = _make_game_flaw(ply=2, phase=2, tempo=None)  # endgame, no other tags
+        chips = _curate_chips_from_rows([row])
         assert chips == []
 
 
@@ -353,6 +385,47 @@ class TestNoEngineAnalysis:
 # ---------------------------------------------------------------------------
 # TestFlawStats (-k stats) — the stats-panel aggregate (106-03)
 # ---------------------------------------------------------------------------
+
+
+async def _seed_db_flaw(
+    session: object,
+    *,
+    game: object,
+    ply: int,
+    severity: int = 2,  # 2=blunder
+    tempo: int | None = None,
+    phase: int = 1,  # 1=middlegame
+    is_miss: bool = False,
+    is_lucky_escape: bool = False,
+    is_while_ahead: bool = False,
+    is_result_changing: bool = False,
+) -> None:
+    """Insert a GameFlaw row for the given game."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.game import Game as GameModel
+    from app.models.game_flaw import GameFlaw
+
+    sess = cast(AsyncSession, session)
+    g = cast(GameModel, game)
+    flaw = GameFlaw(
+        user_id=g.user_id,
+        game_id=g.id,
+        ply=ply,
+        severity=severity,
+        tempo=tempo,
+        phase=phase,
+        is_miss=is_miss,
+        is_lucky_escape=is_lucky_escape,
+        is_while_ahead=is_while_ahead,
+        is_result_changing=is_result_changing,
+        es_before=0.9,
+        es_after=0.3,
+        move_san=None,
+        fen="",
+    )
+    sess.add(flaw)
+    await sess.flush()
 
 
 async def _seed_db_game(
@@ -450,13 +523,16 @@ class TestFlawStats:
         prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
         # White (user) game, plies 0..10 (11 positions, all evaled -> coverage 1.0).
         # User (white) moves are even plies >= 2: 2,4,6,8,10 = 5 user moves.
-        # White blunders ONLY at ply 2 (prev_b -> curr_b); the rest are flat at curr_b.
+        # game_positions provide eval coverage + total_user_moves denominator.
+        # game_flaws provide the M+B count for fetch_stats_aggregates (D-02).
         game = await _seed_db_game(session, user_id=99971, user_color="white")
         await _seed_db_pos(session, game=game, ply=0, eval_cp=prev_b)
         await _seed_db_pos(session, game=game, ply=1, eval_cp=prev_b)  # black clean
         await _seed_db_pos(session, game=game, ply=2, eval_cp=curr_b)  # white blunder
         for ply in range(3, 11):
             await _seed_db_pos(session, game=game, ply=ply, eval_cp=curr_b)  # flat -> clean
+        # Seed one game_flaws row: blunder at ply 2 (white mover, phase=middlegame).
+        await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1)
 
         resp = await get_flaw_stats(
             session,
@@ -491,21 +567,23 @@ class TestFlawStats:
         await ensure_test_user(session, 99972)
 
         prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
-        # Two white (user) blunders. The FIRST starts from a winning ES (>=0.85)
-        # and crosses into losing -> result-changing. The SECOND is already lost
-        # on both sides -> not result-changing. user_result is "win" (result 1-0).
-        # We need two distinct blunder transitions on white moves (plies 2 and 4).
+        # Two white (user) blunders. game_positions provide eval coverage.
+        # game_flaws rows carry the tag columns (is_result_changing, phase).
         game = await _seed_db_game(session, user_id=99972, user_color="white", result="1-0")
-        # ply0 winning baseline; ply2 white blunder from winning -> ~even (result-changing for a win)
         win_cp = 800  # white-POV winning ES ~ >=0.85
         await _seed_db_pos(session, game=game, ply=0, eval_cp=win_cp, phase=1)
         await _seed_db_pos(session, game=game, ply=1, eval_cp=win_cp, phase=1)  # black clean
         await _seed_db_pos(session, game=game, ply=2, eval_cp=0, phase=1)  # white blunder #1
         await _seed_db_pos(session, game=game, ply=3, eval_cp=0, phase=2)  # black clean
-        # ply4 white blunder #2 from even to losing
-        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_b, phase=2)
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_b, phase=2)  # white blunder #2
         for ply in range(5, 11):
             await _seed_db_pos(session, game=game, ply=ply, eval_cp=curr_b, phase=2)
+        # Blunder #1: phase=middlegame (1), result-changing=True (was winning, dropped to even).
+        # Blunder #2: phase=endgame (2), result-changing=False (already losing on both sides).
+        await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1, is_result_changing=True)
+        await _seed_db_flaw(
+            session, game=game, ply=4, severity=2, phase=2, is_result_changing=False
+        )
 
         resp = await get_flaw_stats(
             session,
@@ -519,16 +597,14 @@ class TestFlawStats:
             flaw_severity=None,
         )
         assert resp.per_severity_counts["blunder"] == 2
-        # exactly one of the two blunders is result-changing
+        # exactly one of the two blunders is result-changing -> rate == 0.5
         assert resp.tag_distribution.result_changing_rate == pytest.approx(0.5)
-        # phase histogram: blunder #1 at ply2 (phase opening->1=middlegame),
-        # blunder #2 at ply4 (phase 2=endgame). _phase_tag maps 1->middlegame, 2->endgame.
+        # phase histogram: blunder #1 phase=1=middlegame, blunder #2 phase=2=endgame
         hist = resp.tag_distribution.phase_histogram
         assert hist["middlegame"] == 1
         assert hist["endgame"] == 1
-        # at most one tempo tag per flaw -> tempo counts sum to <= total flaws
-        # (seeded positions have no clock data, so tempo is absent here)
-        assert sum(resp.tag_distribution.tempo.values()) <= 2
+        # tempo: no clock data seeded -> all tempo counts are 0
+        assert sum(resp.tag_distribution.tempo.values()) == 0
 
     @pytest.mark.asyncio
     async def test_trend_point_date_is_window_last_game(self, db_session: object) -> None:
@@ -609,7 +685,13 @@ class TestFlawStats:
 
     @pytest.mark.asyncio
     async def test_miss_rate_and_lucky_escape_rate(self, db_session: object) -> None:
-        """1 miss + 1 lucky-escape out of 2 M+B flaws -> rates == 0.5 each."""
+        """1 miss + 1 lucky-escape out of 2 M+B flaws -> rates == 0.5 each.
+
+        D-02 migration: seeds game_flaws rows directly (is_miss / is_lucky_escape
+        boolean columns) instead of calling the retired _compute_tag_distribution
+        with hand-crafted FlawRecord objects. The API (get_flaw_stats) reads from
+        game_flaws via fetch_stats_aggregates (COUNT(*) FILTER aggregates).
+        """
         from sqlalchemy.ext.asyncio import AsyncSession
 
         from app.services.library_service import get_flaw_stats
@@ -619,21 +701,20 @@ class TestFlawStats:
         await ensure_test_user(session, 99975)
 
         prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
-        # Two white (user) blunders on distinct plies.
-        # ply 2: blunder tagged "miss" — white drops from even to strongly losing
-        # ply 4: blunder tagged "lucky-escape"
-        # Plies 0..10 all evaled -> full coverage -> analyzed game.
+        # White (user) game, plies 0..10 all evaled -> full coverage -> analyzed.
         win_cp = 800
         game = await _seed_db_game(session, user_id=99975, user_color="white", result="1-0")
         await _seed_db_pos(session, game=game, ply=0, eval_cp=win_cp)
         await _seed_db_pos(session, game=game, ply=1, eval_cp=win_cp)  # black clean
-        await _seed_db_pos(session, game=game, ply=2, eval_cp=0)  # white blunder #1 (miss)
+        await _seed_db_pos(session, game=game, ply=2, eval_cp=0)  # white blunder #1
         await _seed_db_pos(session, game=game, ply=3, eval_cp=0)  # black clean
-        await _seed_db_pos(
-            session, game=game, ply=4, eval_cp=curr_b
-        )  # white blunder #2 (lucky-escape)
+        await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_b)  # white blunder #2
         for ply in range(5, 11):
             await _seed_db_pos(session, game=game, ply=ply, eval_cp=curr_b)
+
+        # Seed two game_flaws rows: blunder #1 is a miss, blunder #2 is a lucky-escape.
+        await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1, is_miss=True)
+        await _seed_db_flaw(session, game=game, ply=4, severity=2, phase=2, is_lucky_escape=True)
 
         resp = await get_flaw_stats(
             session,
@@ -647,57 +728,59 @@ class TestFlawStats:
             flaw_severity=None,
         )
         assert resp.per_severity_counts["blunder"] == 2
-        # Verify the rates by calling _compute_tag_distribution directly with
-        # hand-crafted FlawRecords carrying the exact tags under test.
-        from app.services.library_service import _compute_tag_distribution
-        from app.services.library_service import _GameFlaws
-
-        flaws_miss_and_lucky = [
-            _make_flaw(["miss", "middlegame"]),
-            _make_flaw(["lucky-escape", "endgame"]),
-        ]
-        dist = _compute_tag_distribution(
-            [
-                _GameFlaws(
-                    counts={"inaccuracy": 0, "mistake": 0, "blunder": 2},
-                    flaws=flaws_miss_and_lucky,
-                    user_moves=5,
-                    played_at=None,
-                )
-            ]
-        )
-        assert dist.miss_rate == pytest.approx(0.5)
-        assert dist.lucky_escape_rate == pytest.approx(0.5)
-        assert dist.while_ahead_rate == 0.0
+        assert resp.tag_distribution.miss_rate == pytest.approx(0.5)
+        assert resp.tag_distribution.lucky_escape_rate == pytest.approx(0.5)
+        assert resp.tag_distribution.while_ahead_rate == 0.0
 
     def test_while_ahead_rate(self) -> None:
-        """1 while-ahead of 2 M+B flaws -> while_ahead_rate == 0.5 (pure unit test)."""
-        from app.services.library_service import _compute_tag_distribution
-        from app.services.library_service import _GameFlaws
+        """1 while-ahead of 2 M+B flaws -> while_ahead_rate == 0.5 (pure unit test).
 
-        flaws = [
-            _make_flaw(["while-ahead", "middlegame"]),
-            _make_flaw(["miss", "endgame"]),
-        ]
-        dist = _compute_tag_distribution(
-            [
-                _GameFlaws(
-                    counts={"inaccuracy": 0, "mistake": 0, "blunder": 2},
-                    flaws=flaws,
-                    user_moves=5,
-                    played_at=None,
-                )
-            ]
+        D-02 migration: calls _build_tag_distribution with direct keyword aggregates
+        (from the SQL COUNT(*) FILTER scan) instead of the retired
+        _compute_tag_distribution(_GameFlaws) per-game FlawRecord loop.
+        """
+        from app.services.library_service import _build_tag_distribution
+
+        dist = _build_tag_distribution(
+            mistake_count=0,
+            blunder_count=2,
+            tempo_low_clock=0,
+            tempo_impatient=0,
+            tempo_considered=0,
+            is_result_changing=0,
+            is_miss=1,
+            is_lucky_escape=0,
+            is_while_ahead=1,
+            phase_opening=0,
+            phase_middlegame=1,
+            phase_endgame=1,
         )
         assert dist.while_ahead_rate == pytest.approx(0.5)
         assert dist.miss_rate == pytest.approx(0.5)
         assert dist.lucky_escape_rate == 0.0
 
     def test_rates_zero_when_no_mb_flaws(self) -> None:
-        """0 M+B flaws -> all three new rates are 0.0 (no ZeroDivisionError)."""
-        from app.services.library_service import _compute_tag_distribution
+        """0 M+B flaws -> all three rates are 0.0 (no ZeroDivisionError).
 
-        dist = _compute_tag_distribution([])
+        D-02 migration: calls _build_tag_distribution with all-zero aggregates
+        instead of the retired _compute_tag_distribution([]).
+        """
+        from app.services.library_service import _build_tag_distribution
+
+        dist = _build_tag_distribution(
+            mistake_count=0,
+            blunder_count=0,
+            tempo_low_clock=0,
+            tempo_impatient=0,
+            tempo_considered=0,
+            is_result_changing=0,
+            is_miss=0,
+            is_lucky_escape=0,
+            is_while_ahead=0,
+            phase_opening=0,
+            phase_middlegame=0,
+            phase_endgame=0,
+        )
         assert dist.miss_rate == 0.0
         assert dist.lucky_escape_rate == 0.0
         assert dist.while_ahead_rate == 0.0

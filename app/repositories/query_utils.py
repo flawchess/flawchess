@@ -22,6 +22,7 @@ def apply_game_filters(
     opponent_gap_min: int | None = None,
     opponent_gap_max: int | None = None,
     flaw_severity: Sequence[str] | None = None,
+    flaw_tags: Sequence[str] | None = None,
     user_id: int | None = None,
 ) -> Any:
     """Apply standard game filter WHERE clauses to a SELECT statement.
@@ -42,15 +43,20 @@ def apply_game_filters(
                          None = unbounded below.
         opponent_gap_max: Upper bound (inclusive) on opponent_rating - user_rating.
                          None = unbounded above.
-        flaw_severity: When set (e.g. ["blunder"] or ["mistake"]), append a
-                         user-color-scoped EXISTS so only games containing >=1 of
-                         the user's OWN plies at that severity (or worse) match.
-                         None (default) leaves the statement unchanged — all
-                         existing callers are unaffected. Requires the statement
-                         to select from / correlate the Game table (LIBG-08, B1).
-        user_id: The authenticated user's id — required only when flaw_severity
-                         is set, to scope the EXISTS subquery's game_positions read
-                         (T-106-AC). Ignored otherwise.
+        flaw_severity: When set (e.g. ["blunder"] or ["mistake"]), restrict to games
+                         containing >=1 flaw in game_flaws at that severity or worse
+                         (MIN-threshold). None (default) leaves the statement unchanged —
+                         all existing callers are unaffected.
+                         Requires user_id (T-108-07: EXISTS must be user-scoped).
+        flaw_tags: When set (e.g. ["low-clock", "result-changing"]), additionally
+                         restrict to games containing a SINGLE flaw satisfying ALL
+                         selected tag families (single-flaw EXISTS semantics, SEED-038).
+                         OR within family, AND across families. Phase tags are ignored.
+                         None (default) leaves the statement unchanged.
+                         Requires user_id when either flaw_severity or flaw_tags is set.
+        user_id: The authenticated user's id — required when flaw_severity or
+                         flaw_tags is set, to scope the EXISTS subquery's game_flaws read
+                         (T-108-07). Ignored otherwise.
 
     Notes:
         When either gap bound is set, games with missing white/black ratings
@@ -100,15 +106,25 @@ def apply_game_filters(
             stmt = stmt.where(gap >= opponent_gap_min)
         if opponent_gap_max is not None:
             stmt = stmt.where(gap <= opponent_gap_max)
-    if flaw_severity:
+    if flaw_severity or flaw_tags:
         if user_id is None:
-            raise ValueError("flaw_severity filter requires user_id for EXISTS scoping")
+            # Message intentionally omits variable values to preserve Sentry grouping
+            # (T-108-07: scoping requires an authenticated user_id).
+            raise ValueError(
+                "flaw_severity or flaw_tags filter requires user_id for EXISTS scoping"
+            )
         # Lazy import avoids a query_utils <-> library_repository import cycle
         # (mirrors endgame_repository's in-function import pattern).
-        from app.repositories.library_repository import flaw_exists_subquery
-        from app.services.flaws_service import FlawSeverity
+        from app.repositories.library_repository import flaw_exists_from_table
+        from app.services.flaws_service import FlawSeverity, FlawTag
 
-        # Callers pass validated FlawSeverity values; cast narrows Sequence[str].
-        severities = cast(Sequence[FlawSeverity], flaw_severity)
-        stmt = stmt.where(flaw_exists_subquery(user_id=user_id, severities=severities))
+        # Callers pass validated Literal values; cast narrows Sequence[str].
+        severities = cast(Sequence[FlawSeverity], flaw_severity or [])
+        tag_list = cast(Sequence[FlawTag], flaw_tags or [])
+        exists_pred = flaw_exists_from_table(user_id=user_id, severity=severities, tags=tag_list)
+        # flaw_exists_from_table returns true() when both lists are empty, which
+        # means no restriction is added — this path is only reached when at least
+        # one of flaw_severity / flaw_tags is non-empty, so exists_pred is always
+        # a real EXISTS predicate here (not true()).
+        stmt = stmt.where(exists_pred)
     return stmt

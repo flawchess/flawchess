@@ -26,18 +26,19 @@
 - ✅ **v1.21 Time-Control-Aware Endgame Metrics** — Phases 97, 98, 99, 99.1 (shipped 2026-05-31; PRs #160, #163/#164, #167, #168) — see [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md)
 - ✅ **v1.22 Maintenance — Test Isolation & Frontend Major Upgrades** — Phases 100, 101 (shipped 2026-05-31) — see [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md)
 - ✅ **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework** — Phases 102, 103 (shipped 2026-06-03) — see [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md)
-- 🚧 **v1.24 Library Page** — Phases 104, 105, 106, 107 (in progress)
+- 🚧 **v1.24 Library Page** — Phases 104, 105, 106, 107, 108 (in progress)
 
 ## Phases
 
-### 🚧 v1.24 Library Page (Phases 104–107) — IN PROGRESS
+### 🚧 v1.24 Library Page (Phases 104–108) — IN PROGRESS
 
-SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-level nav + URL-routed subtabs, with Import and Overview folded in) — a pure frontend restructure. **Phase 105** extends into the analysis backend: the on-the-fly mistake-detection + classification + tagging service the analysis surfaces consume. **Phase 106** builds the Games-surface backend on top of it — the boolean mistake-type filter, per-game counts/card-chips, and the stats-panel aggregates the Games subtab consumes. **Phase 107** is the Games subtab *frontend* — the filterable card archive + the Flaw-Stats panel, consuming both 106 endpoints (the milestone's headline user-facing surface and the new returning-user default). The remaining surfaces (Flaws subtab, Analysis detail viewer, best-move endpoint) stay specified in `.planning/seeds/SEED-036-library-page-milestone.md` and will be roadmapped as subsequent phases.
+SEED-036, built in stages. **Phase 104** introduced the **Library** page (top-level nav + URL-routed subtabs, with Import and Overview folded in) — a pure frontend restructure. **Phase 105** extends into the analysis backend: the on-the-fly mistake-detection + classification + tagging service the analysis surfaces consume. **Phase 106** builds the Games-surface backend on top of it — the boolean mistake-type filter, per-game counts/card-chips, and the stats-panel aggregates the Games subtab consumes. **Phase 107** is the Games subtab *frontend* — the filterable card archive + the Flaw-Stats panel, consuming both 106 endpoints (the milestone's headline user-facing surface and the new returning-user default). **Phase 108** adds the **Flaws subtab** — a per-flaw miniboard list backed by a `game_flaws` materialization (SEED-038) and a per-flaw endpoint, with a shared cross-tab Flaw filter (single-flaw `EXISTS` semantics) surfaced in both Games and Flaws. The remaining surfaces (Analysis detail viewer, best-move endpoint) stay specified in `.planning/seeds/SEED-036-library-page-milestone.md` and will be roadmapped as subsequent phases.
 
 - [x] **Phase 104: Library Page Shell + Import & Overview Subtab Migration** — new `/library` route with deep-linkable `<Tabs variant="brand">` subtabs; migrate `/import` → `/library/import` and `/overview` → `/library/overview` (each its own tsx, with redirects); top-level nav drops to Library · Openings · Endgames (+ Admin); `totalGames === 0` dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile parity + browser-automation conventions (LIB-01..09) (completed 2026-06-05)
 - [x] **Phase 105: Mistake-Detection + Classification + Tagging Service (on-the-fly)** — server-side `mistakes` service derives every flaw in a Lichess-analyzed game on-the-fly from stored per-ply `eval_cp`/`eval_mate` — severity (Lichess-aligned 0.05/0.10/0.15 expected-score-drop thresholds) + eight attribution tags (miss, unpunished, from-winning, result-changing, time-pressure, hasty, knowledge-gap, phase) — emitting typed per-flaw objects for the Games/Flaws/Analysis surfaces and SEED-037 Train; no materialization, no schema change, no UI (LIBG-02, LIBG-06, LIBG-07) (completed 2026-06-05)
 - [x] **Phase 106: Games-Surface Backend — Mistake Filter, Per-Game Counts & Stats Aggregates (on-the-fly)** — completed 2026-06-05 (3/3 plans) — two server-side endpoints the Games subtab consumes, both on-the-fly via a SQL window-scan + Python tagging that reuses Phase 105's kernel (no materialization, no schema change): (a) games-list — `apply_game_filters` extended with a boolean mistake-type `EXISTS` over the per-ply ES-drop (severity thresholds bound params), each game carrying B/M/I counts + aggregated/deduped card tag-chips; (b) stats-panel aggregates over the filtered analyzed-only set — per-severity counts/rates (normalized), tag distribution (tempo split, result-changing rate, phase histogram), trend-over-time, and the explicit `% analyzed` (≥90%-coverage) denominator with N (LIBG-08, LIBG-09)
 - [x] **Phase 107: Games Subtab Frontend — Card Archive, Filters & Flaw-Stats Panel** — completed 2026-06-06 (squash-merged to main; human UAT passed, small UI polish deferred to an end-of-milestone polish phase) — the Games subtab UI consuming both Phase 106 endpoints: a filterable game-card archive (existing metadata filters + the boolean mistake-severity filter; no chessboard, no opening filter) where each analyzed card shows B/M/I severity counts + curated/deduped family-colored tag chips (display-only in 107 — the deep-link target is the not-yet-built Flaws view) + an explicit "no engine analysis" state, plus the **Flaw-Stats panel** above the list (per-severity rates per game / per 100 moves, tag distribution incl. tempo split & phase histogram, trend-over-time, explicit `% analyzed` + N). Reuses the Openings game-card + mobile-drawer patterns; the returning-user default subtab flips Overview → **Games**. One approved narrow backend slice (D-01: three computed flat-float `TagDistribution` rates — no migration, no new route); the optional per-card eval sparkline is deferred. Design path: `/gsd-sketch` → `/gsd-ui-phase` → plan (LIBG-01, LIBG-03)
+- [ ] **Phase 108: Flaws Subtab — game_flaws Materialization, Per-Flaw Endpoint, Cross-Tab Flaw Filter & Miniboard List** — the **Flaws** subtab (row = one flawed position: miniboard + marked move + severity/tags) backed by a new per-flaw list endpoint, plus a shared cross-tab **Flaw filter** (single-flaw `EXISTS` semantics; OR-within-family / AND-across-family) surfaced in both Games and Flaws. Materializes Phase 105's on-the-fly classifier into a derived **`game_flaws`** table (composite PK `(user_id, game_id, ply)`, typed tag-family columns + display payload), populated on import + eval-backfill via `classify_game_flaws` and recomputed via a new `scripts/backfill_flaws.py`; wires Phase 107's display-only card chips into deep-links to the pre-filtered Flaws view. Analysis detail viewer + best-move endpoint stay deferred to a later phase. Details to be discussed (SEED-036 + SEED-038). `/gsd-discuss-phase 108` → `/gsd-plan-phase 108`
 
 #### Phase 104: Library Page Shell + Import & Overview Subtab Migration
 
@@ -147,6 +148,49 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [ ] 107-07-PLAN.md — `GamesTab` assembly + `LibraryPage` Games subtab + returning-user default redirect; human-verify (LIBG-01, LIBG-03)
+
+#### Phase 108: Flaws Subtab — game_flaws Materialization, Per-Flaw Endpoint, Cross-Tab Flaw Filter & Miniboard List
+
+**Goal**: The Library **Flaws** subtab gives one row per flawed position (miniboard + marked move + severity/tags), backed by a new per-flaw list endpoint, with a shared cross-tab **Flaw filter** (single-flaw `EXISTS` semantics, family-aware OR-within / AND-across logic) surfaced in both Games and Flaws, made efficient and paginable by materializing Phase 105's on-the-fly classifier output into a derived `game_flaws` table. Also retires the display-only limitation of Phase 107's Games-card tag chips by wiring them to deep-link into the pre-filtered Flaws view.
+**Depends on**: Phase 105 (`mistakes_service` per-game kernel + `FlawRecord` contract — the classifier output `game_flaws` materializes); Phase 106 (`apply_game_filters` mistake-filter integration, SQL window-scan precedent); Phase 107 (Games subtab, family-colored tag chips, `theme.ts` constants, filter-sidebar/mobile-drawer patterns); the Openings Insights miniboard + marked-move component. SEED-038 locks the cross-tab filter UX + the `game_flaws` schema/materialization; SEED-036 §"Flaws subtab" + phase-decomp item 5 specify the surface.
+**Requirements**: TBD (`/gsd-discuss-phase 108` → `/gsd-plan-phase 108`)
+**Scope notes** (to confirm in discuss/plan):
+
+  - **`game_flaws` materialization** — new derived table (composite PK `(user_id, game_id, ply)`, typed tag-family columns, display payload `es_before/es_after/move_san`), populated on import + the eval-backfill pass via `classify_game_flaws`, recomputed via a new `scripts/backfill_flaws.py` when thresholds change. Open sub-decisions per SEED-038: inaccuracies stored as rows vs M+B-only (recommend M+B-only); freshness/recompute hook coordination with `reimport_games.py` / `reclassify_positions.py`.
+  - **Per-flaw list endpoint** + a **shared WHERE-clause predicate builder** reused by both the Games `EXISTS` filter and the Flaws `SELECT f.*` list (enforce cross-tab unification in code, not convention).
+  - **Flaws subtab frontend** — paginable miniboard list (reuse Openings Insights miniboard), full severity × tag multi-select, the shared Flaw-filter control surfaced in both tabs, deep-link target `/library/flaws?game_id={ID}&tag={TAG}` from Games-card chips; mobile drawer + browser-automation conventions.
+  - **Out of scope** (separate later phase): the Analysis detail viewer (`/library/analysis/{game_id}?ply={N}`) and the on-demand best-move endpoint.
+
+**Plans**: 8 plans
+Plans:
+**Wave 1**
+
+- [x] 108-01-PLAN.md — `game_flaws` ORM model + Alembic migration (M+B-only, composite PK, typed columns + display payload incl. `fen`) (D-02, D-03, D-10)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 108-02-PLAN.md — `game_flaws` repository (bulk insert + `FlawRecord`→row mapping) + post-eval import hook in `eval_drain.py` (one classify path) (D-10, D-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 108-03-PLAN.md — shared flaw-filter predicate builder + `game_flaws`-backed EXISTS; migrate `apply_game_filters` off the window-scan (D-02, D-03)
+- [x] 108-06-PLAN.md — `scripts/backfill_flaws.py` (batched, `--db/--user-id/--dry-run`) + `reclassify_positions.py` recompute (D-09, D-10)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 108-04-PLAN.md — migrate `/library/games` + `/library/flaw-stats` to read `game_flaws` (chips/counts/stats), inaccuracy stays aggregate (D-02, D-03)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 108-05-PLAN.md — `GET /library/flaws` per-flaw list endpoint (schemas + `query_flaws` + route, recent-first, paginated, IDOR-safe) (D-05, D-07, D-08, D-03)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 108-07-PLAN.md — Flaws subtab frontend: `useFlawFilterStore` + `FlawFilterControl` + `FlawsTab` (URL-synced miniboard list) + `LibraryPage` tab (D-04, D-06, D-07, D-08)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [x] 108-08-PLAN.md — reconcile Games tab: swap severity toggle for `FlawFilterControl`, shared store, chip deep-link to `/library/flaws?tag=` (D-01, D-04, D-05)
 
 *Earlier milestones below. v1.23 (Phases 102, 103) shipped 2026-06-03 — archived to [milestones/v1.23-ROADMAP.md](milestones/v1.23-ROADMAP.md); see the collapsed block. v1.22 (Phases 100, 101) shipped 2026-05-31 — archived to [milestones/v1.22-ROADMAP.md](milestones/v1.22-ROADMAP.md). v1.21 (Phases 97, 98, 99, 99.1) shipped 2026-05-31 — archived to [milestones/v1.21-ROADMAP.md](milestones/v1.21-ROADMAP.md).*
 

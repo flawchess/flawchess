@@ -9,6 +9,7 @@ import { FilterPanel, DEFAULT_FILTERS, areFiltersEqual, FILTER_DOT_FIELDS } from
 import { useFilterStore } from '@/hooks/useFilterStore';
 import { useGlobalStats, useRatingHistory } from '@/hooks/useStats';
 import { useLibraryFlawStats } from '@/hooks/useLibrary';
+import { DEFAULT_FLAW_FILTER } from '@/hooks/useFlawFilterStore';
 import { FlawStatsPanel } from '@/components/library/FlawStatsPanel';
 import { GlobalStatsCharts } from '@/components/stats/GlobalStatsCharts';
 import { EvalCoverageHeader } from '@/components/EvalCoverageHeader';
@@ -35,7 +36,7 @@ export function GlobalStatsPage() {
     data: flawStatsData,
     isLoading: flawStatsLoading,
     isError: flawStatsError,
-  } = useLibraryFlawStats(filters, []);
+  } = useLibraryFlawStats(filters, DEFAULT_FLAW_FILTER);
 
   // ── Mobile collapsible state ───────────────────────────────────────────────
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);

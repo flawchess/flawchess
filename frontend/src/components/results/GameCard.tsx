@@ -5,6 +5,7 @@ import { WDL_BORDER_DRAW, WDL_BORDER_LOSS, WDL_BORDER_WIN } from '@/lib/theme';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
+import { gamePlatformUrl } from '@/lib/platformLinks';
 import type { GameRecord, UserResult } from '@/types/api';
 
 interface GameCardProps {
@@ -81,13 +82,16 @@ export function GameCard({ game }: GameCardProps) {
     </span>
   );
 
+  // lichess link opens from the user's side (board flipped for black); chess.com
+  // has no orientation URL param, so it is unchanged (see lib/platformLinks.ts).
+  const gameUrl = gamePlatformUrl(game.platform, game.platform_url, game.user_color);
   const platformIconAndLink = (
     <span className="ml-auto shrink-0 flex items-center gap-1.5 text-muted-foreground">
       <PlatformIcon platform={game.platform} className="h-4 w-4" />
-      {game.platform_url ? (
+      {gameUrl ? (
         <Tooltip content="Open game on platform">
           <a
-            href={game.platform_url}
+            href={gameUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-brand-brown-light hover:text-brand-brown-highlight transition-colors"

@@ -13,7 +13,7 @@ import type {
   BookmarkPhaseEntryResponse,
 } from '@/types/stats';
 import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
-import type { LibraryGamesResponse, FlawStatsResponse } from '@/types/library';
+import type { LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 
@@ -229,9 +229,10 @@ export const libraryApi = {
     opponent_type?: string;
     opponent_strength?: OpponentStrengthRange;
     color?: string | null;
-    // severity is multi-value: axios serializes severity=blunder&severity=mistake
+    // severity and tag are multi-value: serialized as severity=blunder&severity=mistake
     // (paramsSerializer indexes:null on apiClient ensures no bracket notation)
     severity?: ('blunder' | 'mistake')[];
+    tag?: string[];
     offset?: number;
     limit?: number;
   }) =>
@@ -239,6 +240,7 @@ export const libraryApi = {
       params: {
         ...buildFilterParams(params),
         ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
+        ...(params.tag && params.tag.length > 0 ? { tag: params.tag } : {}),
         offset: params.offset ?? 0,
         limit: params.limit ?? 20,
       },
@@ -259,6 +261,32 @@ export const libraryApi = {
       params: {
         ...buildFilterParams(params),
         ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
+      },
+    }).then(r => r.data),
+
+  getFlaws: (params: {
+    time_control?: string[] | null;
+    platform?: string[] | null;
+    from_date?: string | null;
+    to_date?: string | null;
+    rated?: boolean | null;
+    opponent_type?: string;
+    opponent_strength?: OpponentStrengthRange;
+    color?: string | null;
+    // severity and tag are multi-value: serialized as severity=blunder&severity=mistake
+    // (paramsSerializer indexes:null on apiClient ensures no bracket notation)
+    severity?: ('blunder' | 'mistake')[];
+    tag?: string[];
+    offset?: number;
+    limit?: number;
+  }) =>
+    apiClient.get<LibraryFlawsResponse>('/library/flaws', {
+      params: {
+        ...buildFilterParams(params),
+        ...(params.severity && params.severity.length > 0 ? { severity: params.severity } : {}),
+        ...(params.tag && params.tag.length > 0 ? { tag: params.tag } : {}),
+        offset: params.offset ?? 0,
+        limit: params.limit ?? 20,
       },
     }).then(r => r.data),
 };

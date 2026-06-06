@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: Phase 107 shipped — squash-merged to main
-last_updated: "2026-06-06T13:39:38.721Z"
-last_activity: 2026-06-06
+status: verifying
+last_updated: "2026-06-06T17:22:36.077Z"
+last_activity: "2026-06-06 -- Completed 108-06: backfill_flaws.py, reclassify hook, backfill test (5552c3d7)"
 progress:
-  total_phases: 8
-  completed_phases: 3
-  total_plans: 14
-  completed_plans: 13
-  percent: 38
+  total_phases: 9
+  completed_phases: 4
+  total_plans: 22
+  completed_plans: 21
+  percent: 44
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 107 (games-subtab-frontend-card-archive-filters-flaw-stats-panel) — EXECUTING
-Plan: 7 of 7
-Status: Phase 107 shipped — squash-merged to main
-Last activity: 2026-06-06
+Phase: 108 (flaws-subtab-game-flaws-materialization-per-flaw-endpoint-cr) — EXECUTING
+Plan: 8 of 8
+Status: Phase complete — ready for verification
+Last activity: 2026-06-06 -- Completed 108-06: backfill_flaws.py, reclassify hook, backfill test (5552c3d7)
 
 ## Project Reference
 
@@ -138,6 +138,7 @@ Carried forward from v1.11 close (still relevant):
 
 ### Roadmap Evolution
 
+- 2026-06-06: **Phase 108 added to v1.24 — Flaws subtab.** The **Flaws** subtab (row = one flawed position: miniboard + marked move + severity/tags) backed by a new per-flaw list endpoint, plus a shared cross-tab **Flaw filter** (single-flaw `EXISTS` semantics; OR-within-family / AND-across-family) surfaced in both Games and Flaws. Materializes Phase 105's on-the-fly classifier into a derived **`game_flaws`** table (composite PK `(user_id, game_id, ply)`, typed tag-family columns + display payload), populated on import + eval-backfill via `classify_game_flaws`, recomputed via a new `scripts/backfill_flaws.py`; wires Phase 107's display-only card chips into deep-links to the pre-filtered Flaws view. Scoped to Flaws only — the **Analysis detail viewer + best-move endpoint stay deferred to a later phase** (SEED-036 item 5 split). Sources: SEED-036 §"Flaws subtab" + SEED-038 (locks the cross-tab filter UX + `game_flaws` schema/materialization). Requirements TBD. Details to be discussed. Next: `/gsd-discuss-phase 108` → `/gsd-plan-phase 108`.
 - 2026-06-05: **v1.24 Library Page roadmap created — single phase (Phase 104).** First step of SEED-036, deliberately scoped by the user to ONE cohesive frontend phase: a new top-level **Library** page using the existing Openings-style URL-routed `<Tabs variant="brand">` deep-linkable subtab pattern, with the existing Import and Overview pages folded in as subtabs (each its own tsx). Migrate `/import` → `/library/import` and `/overview` → `/library/overview` with redirects; top-level nav drops to Library · Openings · Endgames (+ Admin); `totalGames === 0` dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview, Home gameless redirect → `/library/import`); subtab-level gating (Library + both subtabs always open); mobile + browser-automation parity. Pure frontend restructure + route migration — no backend endpoints, no schema changes. All 9 requirements (LIB-01..09) map to Phase 104; coverage 9/9, no orphans. The rest of the SEED-036 vision (Games subtab, Analysis viewer, mistake-detection backend, mistake-type filter, mistake-stats panel, best-move endpoint) is **deliberately NOT roadmapped** — captured under v2 Requirements / Out of Scope in REQUIREMENTS.md and in `.planning/seeds/SEED-036-library-page-milestone.md`. Phase numbering continues from v1.23 (ended at Phase 103). Next: `/gsd-plan-phase 104`.
 - 2026-06-03: **v1.23 LLM Endgame-Insights Statistical-Reasoning Rework SHIPPED** (Phases 102 + 103, 3 plans, 37 commits since v1.22). Phase 102 (LLM-01..07): cohort-framed percentile annotations + time-pressure narration wired into the endgame-insights payload, prompt taught to reason over the v1.17–v1.21 metric set under the zone gate (p-values + CI bounds OUT), relaxed overview cap, vocabulary audit, `endgame_v35` → `endgame_v43`, HUMAN-UAT signed off 2026-06-02. Phase 103 (unplanned follow-on, direct commits): three GM-feedback recommendation-quality fixes + GM Noël Studer study link + ~35% prompt condense, `endgame_v44`. Archived to milestones/v1.23-ROADMAP.md + v1.23-REQUIREMENTS.md; REQUIREMENTS.md removed (fresh for next milestone); CHANGELOG promoted; tagged v1.23. Deferred at close: SEED-030 Track A (module splitting), plus the dormant seeds/long-range todos carried since v1.22 — none v1.23-scoped.
 - 2026-06-03: Phase 103 added: Some endgame report LLM prompt refinements (shipped same day under v1.23)
@@ -283,6 +284,12 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 107 P02 | 480 | 3 tasks | 4 files |
 | Phase 107 P03 | 139 | 2 tasks | 2 files |
 | Phase 107 P06 | 206 | 2 tasks | 2 files |
+| Phase 108 P03 | 13min | 3 tasks | 4 files |
+| Phase 108 P06 | 10 | 3 tasks | 4 files |
+| Phase 108 P04 | 55 | 3 tasks | 3 files |
+| Phase 108 P05 | 10min | 3 tasks | 5 files |
+| Phase 108 P07 | 8min | 3 tasks | 9 files |
+| Phase 108 P08 | 12 | - tasks | - files |
 
 ## Decisions
 
@@ -304,3 +311,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase 106-03]: criterion-1 index decision — no new (game_id, ply) index; the coverage aggregate intersected with the bounded filtered game-id set is PK-backed (~11ms dev EXPLAIN); whole-user aggregate is slow but not the service's access pattern
 - [Phase ?]: D-01: Added miss_rate, lucky_escape_rate, while_ahead_rate as flat floats to TagDistribution, mirroring result_changing_rate precedent (no nested dicts)
 - [Phase ?]: libraryApi uses /library/flaw-stats path; severity serialized as repeated query params via existing paramsSerializer convention
+- [Phase ?]: flaw_exists_from_table returns true() for empty filter (match all), not false()
+- [Phase ?]: game_flaws is the single source of truth for M+B flaws in library_service.py (D-02 — no kernel re-call per query)
+- [Phase ?]: FlawFilterControl rendered inline in FlawsTab (not via LibraryFilterPanel modification) since Plan 08 is later; MiniBoard rendered without arrow (board_fen has no full FEN for sanToSquares)
+- [Phase ?]: LibraryFilterPanel now hosts FlawFilterControl for both Games and Flaws tabs (D-01 panel-hosted pattern)

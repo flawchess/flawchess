@@ -8,6 +8,11 @@ games surface "no engine analysis" rather than a false 0/0/0 (LIBG-02).
 GameFlawCard mirrors GameRecord's fields (so the front-end reuses the same
 game-card shape) and never includes any *_hash field (V5 information
 disclosure — API responses expose FEN/usernames only, never internal hashes).
+
+Phase 108 Plan 05: FlawListItem + LibraryFlawsResponse for GET /library/flaws.
+Per-flaw flat list (one row per flawed position), ordered recent-first
+(g.played_at DESC, f.ply), paginated (page size 20 per D-08). Never exposes
+internal *_hash columns (CLAUDE.md V5).
 """
 
 import datetime
@@ -48,6 +53,48 @@ class GameFlawCard(BaseModel):
     severity_counts: SeverityCounts | None
     chips: list[FlawTag]
     analysis_state: Literal["analyzed", "no_engine_analysis"]
+
+
+class FlawListItem(BaseModel):
+    """One row in the Flaws subtab — one flawed position (Plan 108-05, D-07/D-08).
+
+    Carries the full display payload for the miniboard list: board position,
+    marked move, severity, reconstructed tags (from typed game_flaws columns),
+    ES delta, and the game metadata needed for the row header (opponent,
+    date, result). Never exposes *_hash fields (CLAUDE.md V5).
+    """
+
+    game_id: int
+    ply: int
+    fen: str
+    move_san: str | None
+    severity: FlawSeverity  # "mistake" | "blunder" (M+B only, D-03)
+    tags: list[FlawTag]  # reconstructed from typed columns in deterministic order
+    es_before: float
+    es_after: float
+    # Game metadata for the row header
+    user_result: Literal["win", "draw", "loss"]
+    played_at: datetime.datetime | None
+    time_control_bucket: str | None
+    platform: str
+    platform_url: str | None
+    white_username: str | None
+    black_username: str | None
+    user_color: str
+
+
+class LibraryFlawsResponse(BaseModel):
+    """Response for GET /api/library/flaws — paginated per-flaw list (Plan 108-05).
+
+    Mirrors LibraryGamesResponse's pagination shape (flaws / matched_count /
+    offset / limit). matched_count reflects all matching flaw rows before
+    pagination (not a game count — one game may contribute multiple rows).
+    """
+
+    flaws: list[FlawListItem]
+    matched_count: int
+    offset: int
+    limit: int
 
 
 class LibraryGamesResponse(BaseModel):
