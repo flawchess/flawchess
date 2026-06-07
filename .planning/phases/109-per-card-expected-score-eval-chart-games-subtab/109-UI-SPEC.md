@@ -5,6 +5,7 @@ status: draft
 shadcn_initialized: true
 preset: radix-nova / neutral / cssVariables
 created: 2026-06-07
+amended: 2026-06-07
 ---
 
 # Phase 109 — UI Design Contract
@@ -12,6 +13,28 @@ created: 2026-06-07
 > Per-Card Expected-Score Eval Chart (Games subtab). Visual and interaction
 > contract for the recharts area chart embedded in LibraryGameCard and the
 > three-column card restructuring.
+
+---
+
+## Amendment Note (2026-06-07) — D-07/D-08/D-09 Dual-Marker Reconciliation
+
+The original UI-SPEC (created 2026-06-07) specified user-only filled flaw dots.
+Following an owner-directed scope expansion (captured in `109-CONTEXT.md` §"SCOPE
+EXPANSION"), the flaw-dot contract is amended to cover **both players**:
+
+- **D-07:** Player flaws render as **filled** circles; opponent flaws render as
+  **hollow** (stroke-only) circles. Color = severity for both. 6 dot styles total
+  (3 severities × player/opponent).
+- **D-08:** Tooltip severity line is qualified: "You · Blunder" / "Opponent · Mistake"
+  (text-only, since the filled/hollow style isn't visible in a tooltip).
+- **D-09:** Density tuning during visual UAT — inaccuracy dots use a smaller radius
+  (r=2) than B/M (r=2.5); hollow strokes are thin (strokeWidth=1.5). All flaws for
+  both players are shown; no data is dropped.
+
+The `FlawMarker` type gains an `is_user: boolean` discriminator (see Component Contract
+section). The Scatter-based approach is replaced by a custom `dot` render prop on a Line
+overlay (see Flaw Dots section). All other sections (layout, gradient, dims, ARIA) are
+unchanged.
 
 ---
 
@@ -73,7 +96,7 @@ constants.
 |------|-------|-------|
 | Dominant (60%) | `var(--charcoal)` (#161412) | Card body, chart background (charcoal-texture class) |
 | Secondary (30%) | `var(--background)` / `var(--card)` (dark mode: oklch 0.205) | Tooltip popup surface, sidebar, nav |
-| Accent (10%) | `oklch(0.85 0 0)` (BULLET_BAR_NEUTRAL) | ES line stroke |
+| Accent (10%) | `oklch(0.82 0 0)` (EVAL_CHART_LINE) | ES line stroke |
 | Destructive | `var(--destructive)` | — not applicable in this phase |
 
 ### Chart-Specific Color Contract
@@ -185,7 +208,8 @@ interface EvalPoint {
 interface FlawMarker {
   ply: number;
   severity: 'blunder' | 'mistake' | 'inaccuracy';
-  tags: string[];                 // flaw tags for tooltip
+  tags: string[];                 // flaw tags for tooltip (empty for inaccuracies — D-03)
+  is_user: boolean;               // true = filled dot (player); false = hollow dot (opponent) — D-07
 }
 
 interface PhaseTransitions {
@@ -200,8 +224,10 @@ fields to the `GameFlawCard` response.
 
 ### Recharts Architecture
 
-Use `AreaChart` (recharts) inside `ChartContainer`. Follow the established
-`FlawTrendChart` pattern exactly:
+Use `ComposedChart` (recharts) inside `ChartContainer` — not bare `AreaChart` —
+so that the invisible `<Line dot={...}>` flaw-dot overlay can be composed alongside
+the `<Area>`. Follow the established `FlawTrendChart`/`EndgameClockDiffOverTimeChart`
+pattern:
 
 - `isAnimationActive={false}` on all data series — mandatory on charcoal surface
 - No `CartesianGrid` — charcoal texture is the grid signal
@@ -269,7 +295,8 @@ do not connect across nulls.
 
 At most two `<ReferenceLine>` elements (middlegame + endgame). A transition
 that never occurs draws no line. The opening boundary (ply 0) is implicit and
-does not get a line — the chart starts at ply 0 by definition.
+does **not** get a line — the chart starts at ply 0 by definition (D-06 confirmed).
+A line at the leftmost pixel is invisible and redundant; never add one for ply 0.
 
 ```
 {phaseTransitions.middlegame_ply !== null && (
@@ -290,41 +317,52 @@ does not get a line — the chart starts at ply 0 by definition.
 )}
 ```
 
-### Flaw Dots (User's Moves Only)
+### Flaw Dots (Both Players — Amended 2026-06-07 per D-07/D-08/D-09)
 
-Render flaw markers as `<Scatter>` overlaid on the `AreaChart` using
-`ComposedChart` (switch from bare `AreaChart` to `ComposedChart`):
+Render flaw markers for **both players** using a custom `dot` render prop on an
+invisible `<Line>` overlay inside `ComposedChart`. This replaces the previously
+specified `<Scatter>` approach — recharts 3.8.1 Scatter uses area-based `size`,
+not radius `r`, making pixel-precise sizing unreliable. The `<Line dot={...}>` pattern
+is the established project pattern (see `EndgameClockDiffOverTimeChart.tsx`).
 
-```typescript
-// Derive scatter data from flawMarkers by joining to evalSeries on ply
-const scatterData = flawMarkers.map((m) => {
-  const pt = evalSeries.find((p) => p.ply === m.ply);
-  return { ply: m.ply, es: pt?.es ?? null, severity: m.severity };
-}).filter((d) => d.es !== null);
-```
+**Dot styles — 6 total (3 severities × player/opponent):**
 
-Use a `<Scatter>` per severity tier so each can carry its own fill color:
+| Marker | fill | stroke | strokeWidth | Radius |
+|--------|------|--------|-------------|--------|
+| Player blunder | `SEV_BLUNDER` | — | — | 2.5 |
+| Player mistake | `SEV_MISTAKE` | — | — | 2.5 |
+| Player inaccuracy | `SEV_INACCURACY` | — | — | 2 |
+| Opponent blunder | `"none"` | `SEV_BLUNDER` | 1.5 | 2.5 |
+| Opponent mistake | `"none"` | `SEV_MISTAKE` | 1.5 | 2.5 |
+| Opponent inaccuracy | `"none"` | `SEV_INACCURACY` | 1.5 | 2 |
 
-```
-<Scatter
-  data={scatterData.filter(d => d.severity === 'blunder')}
+- **Filled circle** (`fill = severity color`): when `marker.is_user === true` (player's move)
+- **Hollow circle** (`fill="none"`, `stroke = severity color`, `strokeWidth=1.5`):
+  when `marker.is_user === false` (opponent's move). Use `fill="none"` explicitly —
+  do NOT omit the fill attribute (SVG default is black, not transparent).
+
+Build a ply-keyed `Map` from `flawMarkers` before rendering for O(1) lookup inside
+the dot render prop. Return an empty `<g key="...">` (not `null`) for plies without
+a marker (avoids React key warnings — recharts 3.8.1 Pitfall 7).
+
+```tsx
+// Inside ComposedChart — invisible line overlay for flaw dot rendering
+<Line
+  type="monotone"
   dataKey="es"
-  fill={SEV_BLUNDER}
-  r={3}
+  stroke="none"
+  dot={customDotRenderer}
+  activeDot={false}
+  connectNulls={false}
   isAnimationActive={false}
 />
-// repeat for mistake (r=3) and inaccuracy (r=2.5)
 ```
 
-Dot sizes: blunder r=3, mistake r=3, inaccuracy r=2.5. No stroke, solid fill.
+**Density tuning (D-09):** The compact 80–96px sparkline can get dense with both players'
+inaccuracies. Inaccuracy dots are intentionally smaller (r=2) than B/M (r=2.5) and hollow
+strokes are thin (strokeWidth=1.5). Executor tunes further during visual UAT if needed.
 
-**Implementation note:** If Scatter inside ComposedChart proves unreliable for
-this exact recharts version (Phase 109 executor must validate), fall back to a
-custom `dot` render prop on the Area/Line that checks whether the current ply
-matches any flaw marker. The visual result must be identical — colored circle
-at the flaw ply. Document which approach was used in the component docstring.
-
-### Tooltip Contract
+### Tooltip Contract (Amended 2026-06-07 per D-08)
 
 Use `<ChartTooltip>` with a custom `content` render prop. Trigger on hover/tap.
 
@@ -336,7 +374,9 @@ Use `<ChartTooltip>` with a custom `content` render prop. Trigger on hover/tap.
 │ +1.23 pawns (White ahead)       [body] │  ← eval_cp display
 │ OR: Mate in 3 (White)                  │  ← when eval_mate present
 │                                        │
-│ [Blunder] tag1, tag2            [red]  │  ← only when ply is a flaw
+│ You · Blunder                   [red]  │  ← player flaw (is_user=true)
+│   tag1, tag2                  [muted]  │  ← B/M only; inaccuracy shows no tags
+│ OR: Opponent · Mistake          [org]  │  ← opponent flaw (is_user=false)
 └────────────────────────────────────────┘
 ```
 
@@ -347,9 +387,14 @@ Tooltip copy rules:
 - When `eval_mate !== null`: show `Mate in {Math.abs(eval_mate)} ({side})` where
   side is "White" if `eval_mate > 0`, "Black" if `eval_mate < 0`. Never show
   eval_cp when eval_mate is present.
-- When the ply is a user flaw: show severity label in the severity color
-  (`SEV_BLUNDER` / `SEV_MISTAKE` / `SEV_INACCURACY`) + comma-joined tag list
-  in `text-muted-foreground`.
+- When the ply has a flaw marker (either player): show the severity line qualified
+  with player identity — **"You · {Severity}"** when `marker.is_user === true`,
+  **"Opponent · {Severity}"** when `marker.is_user === false`. Colored by severity
+  (`SEV_BLUNDER` / `SEV_MISTAKE` / `SEV_INACCURACY`).
+- For **B/M markers** (either player): append comma-joined tag list in
+  `text-muted-foreground` below the severity line when tags are non-empty (D-03).
+- For **inaccuracy markers** (either player): show severity + eval only. **No tags**
+  — inaccuracy markers always have empty `tags: []` from the backend (D-03).
 - Tooltip container: `rounded-lg border border-border/50 bg-background px-3 py-2
   text-xs shadow-xl space-y-1` (matches existing chart tooltip pattern in project).
 

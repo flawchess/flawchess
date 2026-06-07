@@ -23,6 +23,46 @@ from pydantic import BaseModel
 from app.services.flaws_service import FlawSeverity, FlawTag, SeverityCounts, TempoTag
 
 
+# ---------------------------------------------------------------------------
+# Phase 109 eval chart models (LIBG-10) — defined before GameFlawCard so
+# the three new fields below resolve without forward references.
+# ---------------------------------------------------------------------------
+
+
+class EvalPoint(BaseModel):
+    """One ply's white-perspective ES datapoint for the eval chart line (Phase 109, LIBG-10)."""
+
+    ply: int
+    es: float | None  # white-perspective ES in (0,1); null = missing eval
+    eval_cp: int | None  # raw cp for tooltip display
+    eval_mate: int | None  # signed, white-perspective (positive = White has mate)
+    clock_seconds: (
+        float | None
+    )  # mover's remaining clock AFTER this move; null = no %clk (chess.com)
+    move_seconds: float | None  # time spent on this move (1dp); null when prior clock unknown
+
+
+class FlawMarker(BaseModel):
+    """One flaw dot for the eval chart — both colors, B/M/I (Phase 109, LIBG-10).
+
+    is_user=True → filled circle (player); is_user=False → hollow circle (opponent).
+    tags is empty for inaccuracies (D-03).
+    """
+
+    ply: int
+    severity: FlawSeverity
+    tags: list[FlawTag]  # empty for inaccuracies (D-03)
+    is_user: bool  # True = filled dot (player), False = hollow dot (opponent)
+    move_san: str | None  # SAN of the flawed move (positions[ply].move_san) — tooltip move label
+
+
+class PhaseTransitions(BaseModel):
+    """First ply of middlegame and endgame phases — at most two phase lines (Phase 109, D-06)."""
+
+    middlegame_ply: int | None  # None = middlegame never reached
+    endgame_ply: int | None  # None = endgame never reached
+
+
 class GameFlawCard(BaseModel):
     """A single game card for the Games subtab archive (LIBG-08).
 
@@ -53,6 +93,15 @@ class GameFlawCard(BaseModel):
     severity_counts: SeverityCounts | None
     chips: list[FlawTag]
     analysis_state: Literal["analyzed", "no_engine_analysis"]
+    # Phase 109 additions — null for unanalyzed games (analysis_state === 'no_engine_analysis'):
+    eval_series: list[EvalPoint] | None = None
+    flaw_markers: list[FlawMarker] | None = None
+    phase_transitions: PhaseTransitions | None = None
+    # SAN mainline (one entry per ply, ordered) for client-side per-ply board
+    # reconstruction on eval-chart hover. moves[i] is the move played at ply i, so
+    # replaying moves[0..i] yields the position whose eval is eval_series[i].es.
+    # Null for unanalyzed games / games without positions.
+    moves: list[str] | None = None
 
 
 class FlawListItem(BaseModel):

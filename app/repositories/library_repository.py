@@ -322,6 +322,36 @@ async def fetch_page_game_flaws(
     return result
 
 
+async def fetch_page_eval_positions(
+    session: AsyncSession,
+    user_id: int,
+    analyzed_game_ids: Sequence[int],
+) -> dict[int, list[GamePosition]]:
+    """Batch-load GamePosition rows for analyzed games on a page, grouped by game_id.
+
+    Only called for games in analyzed_set (unanalyzed games get no positions).
+    Selects full ORM objects so _run_all_moves_pass and _build_tags can consume
+    them unchanged. Ordered by game_id, ply ASC for sequential grouping.
+    User-scoped via GamePosition.user_id (IDOR mitigation — T-109-01, same
+    pattern as fetch_page_game_flaws / T-108-08).
+    """
+    if not analyzed_game_ids:
+        return {}
+    stmt = (
+        select(GamePosition)
+        .where(
+            GamePosition.user_id == user_id,
+            GamePosition.game_id.in_(analyzed_game_ids),
+        )
+        .order_by(GamePosition.game_id, GamePosition.ply)
+    )
+    rows = list((await session.execute(stmt)).scalars().all())
+    result: dict[int, list[GamePosition]] = {gid: [] for gid in analyzed_game_ids}
+    for row in rows:
+        result[row.game_id].append(row)
+    return result
+
+
 async def fetch_page_analyzed_set(
     session: AsyncSession,
     user_id: int,

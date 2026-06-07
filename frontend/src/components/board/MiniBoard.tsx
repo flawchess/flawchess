@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Chessboard } from 'react-chessboard';
-import { darkSquareStyle, lightSquareStyle } from '../../lib/theme';
+import { darkSquareStyle, lightSquareStyle, MOVE_HIGHLIGHT_SQUARE } from '../../lib/theme';
 import { squareToCoords, buildArrowPath } from './arrowGeometry';
 
 // Fine-arrow proportions, distinct from ChessBoard.tsx's normalized 0..1 width
@@ -19,11 +19,62 @@ interface MiniBoardArrow {
   color: string;
 }
 
+/** A small severity dot pinned to the top-right corner of a square's piece. */
+interface MiniBoardCornerDot {
+  square: string;
+  color: string;
+}
+
+// Corner-dot radius and edge inset as fractions of a single square's pixel size,
+// so the dot scales with the board. The dot centre is inset from the square's
+// top-right corner by (radius + gap) on both axes so it sits ON the piece corner.
+const CORNER_DOT_RADIUS = 0.2;
+const CORNER_DOT_INSET = 0.24;
+const CORNER_DOT_STROKE = 0.05;
+
 interface MiniBoardProps {
   fen: string;
   size?: number;
   flipped?: boolean;
   arrows?: ReadonlyArray<MiniBoardArrow>;
+  cornerDot?: MiniBoardCornerDot;
+  /** From/to squares of the move that reached this position — highlighted like the Openings board. */
+  lastMove?: { from: string; to: string };
+}
+
+function MiniCornerDotOverlay({
+  dot,
+  size,
+  flipped,
+}: {
+  dot: MiniBoardCornerDot;
+  size: number;
+  flipped: boolean;
+}) {
+  const sqSize = size / 8;
+  // squareToCoords returns the square centre in square units (already orientation-
+  // aware). The square's visual top-right corner is at (x+0.5, y-0.5) in screen
+  // space regardless of flip; inset toward the centre so the dot stays on-board.
+  const [x, y] = squareToCoords(dot.square, flipped);
+  const cx = (x + 0.5 - CORNER_DOT_INSET) * sqSize;
+  const cy = (y - 0.5 + CORNER_DOT_INSET) * sqSize;
+  return (
+    <svg
+      width={size}
+      height={size}
+      style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+      data-testid="mini-board-corner-dot"
+    >
+      <circle
+        cx={cx}
+        cy={cy}
+        r={CORNER_DOT_RADIUS * sqSize}
+        fill={dot.color}
+        stroke="white"
+        strokeWidth={CORNER_DOT_STROKE * sqSize}
+      />
+    </svg>
+  );
 }
 
 function MiniArrowOverlay({
@@ -81,7 +132,26 @@ function MiniArrowOverlay({
   );
 }
 
-export function MiniBoard({ fen, size = 120, flipped = false, arrows }: MiniBoardProps) {
+export function MiniBoard({
+  fen,
+  size = 120,
+  flipped = false,
+  arrows,
+  cornerDot,
+  lastMove,
+}: MiniBoardProps) {
+  // Highlight the move's from/to squares with the same translucent yellow as the
+  // Openings ChessBoard last-move highlight (MOVE_HIGHLIGHT_SQUARE).
+  const lastFrom = lastMove?.from ?? null;
+  const lastTo = lastMove?.to ?? null;
+  const squareStyles = useMemo<Record<string, { backgroundColor: string }>>(() => {
+    if (!lastFrom || !lastTo) return {};
+    return {
+      [lastFrom]: { backgroundColor: MOVE_HIGHLIGHT_SQUARE },
+      [lastTo]: { backgroundColor: MOVE_HIGHLIGHT_SQUARE },
+    };
+  }, [lastFrom, lastTo]);
+
   // Memoize the options object so re-renders of an ancestor (e.g. /openings/games
   // mounts up to 20 MiniBoards) don't hand react-chessboard 5.x a fresh `options`
   // identity and re-fire its internal piece-animation/dnd effects on every parent
@@ -94,11 +164,12 @@ export function MiniBoard({ fen, size = 120, flipped = false, arrows }: MiniBoar
       boardStyle: { width: size, height: size },
       darkSquareStyle,
       lightSquareStyle,
+      squareStyles,
       showNotation: false,
       allowDragging: false,
       showAnimations: false,
     }),
-    [fen, flipped, size],
+    [fen, flipped, size, squareStyles],
   );
 
   return (
@@ -110,6 +181,7 @@ export function MiniBoard({ fen, size = 120, flipped = false, arrows }: MiniBoar
       {arrows && arrows.length > 0 && (
         <MiniArrowOverlay arrows={arrows} size={size} flipped={flipped} />
       )}
+      {cornerDot && <MiniCornerDotOverlay dot={cornerDot} size={size} flipped={flipped} />}
     </div>
   );
 }

@@ -353,23 +353,44 @@ def _is_unpunished(
     n: int,
     all_moves: dict[int, _MoveEntry],
     severity: FlawSeverity,
+    user_result: Literal["win", "draw", "loss"],
 ) -> bool:
-    """Return True when a user BLUNDER at ply N was not punished by opponent at N+1.
+    """Return True when a user BLUNDER at ply N went UNPUNISHED by the opponent.
 
-    lucky-escape = user's blunder that the opponent did not capitalize on.
-    Only applies to blunders (Pitfall 6 in RESEARCH — applying to inaccuracies
-    and mistakes would produce a noise-heavy flood of tags). If there is no
-    following opponent move (end of game), that too counts as "lucky-escape".
+    lucky-escape = user's blunder that the opponent did NOT capitalize on, so the
+    user got away with it. Only applies to blunders (Pitfall 6 in RESEARCH —
+    applying to inaccuracies and mistakes would produce a noise-heavy flood).
+
+    A blunder is "unpunished" when the opponent's immediate reply at N+1 was itself
+    a mistake or blunder: the user's expected score dropped on their blunder, then
+    recovered because the opponent failed to find the punishing line. (ES is
+    zero-sum across colors, so an opponent error == the user's eval bouncing back.)
+
+    Bug fix (2026-06-07): this previously returned the INVERSE — it tagged a
+    blunder whenever the opponent did NOT err, i.e. when the opponent played a fine
+    move and *capitalized*. That fired on the common case (opponents usually reply
+    sensibly), tagging ~42% of all blunders as "lucky escapes" and, worst of all,
+    flagging fatal blunders where the opponent calmly played the winning/mating
+    continuation (e.g. lichess 19BMxZnj: blunder into mate, opponent plays the
+    mate move, user resigns). A lucky escape is the opposite: the opponent slipped.
+
+    End-of-game (no opponent move at N+1) counts as a lucky escape only when the
+    user did NOT lose — a blunder followed by the user resigning or flagging is a
+    loss, not an escape (the opponent never had to punish because the user
+    conceded). user_result != "loss" keeps the genuine end-of-game escapes (the
+    blunder was actually mate, the game drew, or the opponent resigned anyway).
     """
     if severity != "blunder":
         return False
     opp_n = n + 1
     entry = all_moves.get(opp_n)
     if entry is None:
-        # End of game — opponent never got to punish
-        return True
+        # End of game — a lucky escape only if the user didn't lose (a loss here
+        # means the user resigned/flagged right after blundering, not an escape).
+        return user_result != "loss"
     opp_severity = entry[1]
-    return opp_severity not in ("mistake", "blunder")
+    # Unpunished == the opponent erred in reply, letting the user's eval recover.
+    return opp_severity in ("mistake", "blunder")
 
 
 def _is_result_changing(
@@ -434,7 +455,7 @@ def _build_tags(
     if _is_miss(n, all_moves):
         tags.append("miss")
 
-    if _is_unpunished(n, all_moves, severity):
+    if _is_unpunished(n, all_moves, severity, user_result):
         tags.append("lucky-escape")
 
     tags.append(_phase_tag(positions[n].phase))
@@ -446,6 +467,27 @@ def _build_tags(
         tags.append(tempo)
 
     return tags
+
+
+def _resolve_increment(game: Game) -> float:
+    """Return the increment in seconds for this game.
+
+    Single source of truth for increment resolution (Phase 109 — extracted
+    from the inline block in classify_game_flaws to enable reuse by the
+    eval chart builder in library_service.py).
+
+    Priority:
+    1. game.increment_seconds when explicitly stored (already parsed at import time).
+    2. Parsed from game.time_control_str via parse_base_and_increment.
+    3. 0.0 fallback (no increment info available).
+    """
+    if game.increment_seconds is not None:
+        return game.increment_seconds
+    if game.time_control_str:
+        _, parsed_inc = parse_base_and_increment(game.time_control_str)
+        if parsed_inc is not None:
+            return parsed_inc
+    return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -484,14 +526,8 @@ def classify_game_flaws(
     # All-moves pass: classify both colors (needed for miss/unpunished adjacency)
     all_moves = _run_all_moves_pass(positions)
 
-    # Resolve increment once — fall back to parse_base_and_increment when null
-    increment: float = 0.0
-    if game.increment_seconds is not None:
-        increment = game.increment_seconds
-    elif game.time_control_str:
-        _, parsed_inc = parse_base_and_increment(game.time_control_str)
-        if parsed_inc is not None:
-            increment = parsed_inc
+    # Resolve increment once via shared helper (Phase 109: single source of truth).
+    increment = _resolve_increment(game)
 
     user_result = derive_user_result(game.result, game.user_color)
 

@@ -1,10 +1,19 @@
+import { useMemo, useState } from 'react';
+import { Chess } from 'chess.js';
 import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { WDL_BORDER_DRAW, WDL_BORDER_LOSS, WDL_BORDER_WIN } from '@/lib/theme';
+import {
+  SEV_BLUNDER,
+  SEV_MISTAKE,
+  WDL_BORDER_DRAW,
+  WDL_BORDER_LOSS,
+  WDL_BORDER_WIN,
+} from '@/lib/theme';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
+import { EvalChart } from '@/components/library/EvalChart';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip } from '@/components/library/TagChip';
 import { NoAnalysisState } from '@/components/library/NoAnalysisState';
@@ -19,8 +28,45 @@ interface LibraryGameCardProps {
   game: GameFlawCard;
 }
 
-const MOBILE_BOARD_SIZE = 105;
-const DESKTOP_BOARD_SIZE = 100;
+const MOBILE_BOARD_SIZE = 130;
+const DESKTOP_BOARD_SIZE = 132;
+
+// Mistake/blunder corner-dot colors (orange/red) for the live hover miniboard.
+const DOT_COLOR: Record<'mistake' | 'blunder', string> = {
+  mistake: SEV_MISTAKE,
+  blunder: SEV_BLUNDER,
+};
+
+/** One reconstructed ply: the FEN after the move plus the move's from/to squares. */
+interface PerPly {
+  fen: string;
+  from: string;
+  to: string;
+}
+
+/**
+ * Replay the SAN mainline once into per-ply {fen, to} entries (memoized per card).
+ * moves[i] is the move at ply i, so perPly[i] is the position after that move —
+ * matching eval_series[i].es (eval_cp is the post-move eval; see zobrist.py). The
+ * moved piece sits at perPly[i].to, which the corner dot marks for M/B plies.
+ * Stops early on a malformed SAN — earlier plies still scrub.
+ */
+function buildPerPly(moves: string[] | null): PerPly[] | null {
+  if (!moves || moves.length === 0) return null;
+  const chess = new Chess();
+  const out: PerPly[] = [];
+  for (const san of moves) {
+    let mv;
+    try {
+      mv = chess.move(san);
+    } catch {
+      break;
+    }
+    if (!mv) break;
+    out.push({ fen: chess.fen(), from: mv.from, to: mv.to });
+  }
+  return out.length > 0 ? out : null;
+}
 
 const RESULT_CLASSES: Record<UserResult, string> = {
   win: 'bg-green-600/20 text-green-400 border-green-600/30',
@@ -89,6 +135,32 @@ function formatTimeControl(tcStr: string): string {
  * target="_blank" rel="noopener noreferrer" to prevent reverse-tabnabbing (T-107-10).
  */
 export function LibraryGameCard({ game }: LibraryGameCardProps) {
+  // Live miniboard: hovering the eval chart sets the ply; the board scrubs to
+  // that position and (on M/B plies) marks the moved piece. At rest the board
+  // shows result_fen, as before.
+  const [hoverPly, setHoverPly] = useState<number | null>(null);
+  const perPly = useMemo(() => buildPerPly(game.moves), [game.moves]);
+  const mbByPly = useMemo(() => {
+    const m = new Map<number, 'mistake' | 'blunder'>();
+    for (const fm of game.flaw_markers ?? []) {
+      if (fm.severity === 'mistake' || fm.severity === 'blunder') m.set(fm.ply, fm.severity);
+    }
+    return m;
+  }, [game.flaw_markers]);
+
+  const activePly =
+    hoverPly != null && perPly ? Math.min(Math.max(hoverPly, 0), perPly.length - 1) : null;
+  const hoverEntry = activePly != null ? perPly?.[activePly] : undefined;
+  const boardFen = hoverEntry?.fen ?? game.result_fen ?? null;
+  const hoverSeverity = activePly != null ? mbByPly.get(activePly) : undefined;
+  const cornerDot =
+    hoverEntry && hoverSeverity
+      ? { square: hoverEntry.to, color: DOT_COLOR[hoverSeverity] }
+      : undefined;
+  // Highlight the scrubbed move's from/to squares (only while hovering — at rest
+  // the board shows the final position with no single "last move" to mark).
+  const lastMove = hoverEntry ? { from: hoverEntry.from, to: hoverEntry.to } : undefined;
+
   const whiteName = game.white_username ?? '?';
   const blackName = game.black_username ?? '?';
   const whiteRating = game.white_rating !== null ? `(${game.white_rating})` : '';
@@ -252,23 +324,34 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
     );
 
   return (
+    // overflow-visible (overriding .charcoal-texture's overflow:hidden) lets the
+    // EvalChart tooltip overlap the card border instead of being clipped at it.
+    // z-30 while hovering: `.charcoal-texture > *` puts every column in a
+    // z-index:1 stacking context, so a later card's column would otherwise paint
+    // over this card's escaping tooltip. Lifting the whole hovered card above its
+    // siblings keeps the tooltip on top of the following card and its divider.
     <article
       data-testid={`library-game-card-${game.game_id}`}
-      className="charcoal-texture border border-border/20 border-l-4 rounded px-4 py-3"
+      className={cn(
+        'charcoal-texture border border-border/20 border-l-4 rounded px-4 py-3 overflow-visible',
+        hoverPly != null && 'z-30',
+      )}
       style={{ borderLeftColor: BORDER_COLORS[game.user_result] }}
     >
       {/* Full-width header (desktop single-line, mobile two-line) */}
       {desktopHeader}
       {mobileHeader}
 
-      {/* Mobile body: board + info row, then full-width flaw block below */}
+      {/* Mobile body: board+info row, eval chart block, flaw block */}
       <div className="flex flex-col gap-2 sm:hidden">
         <div className="flex gap-3 items-start">
-          {game.result_fen && (
+          {boardFen && (
             <LazyMiniBoard
-              fen={game.result_fen}
+              fen={boardFen}
               flipped={game.user_color === 'black'}
               size={MOBILE_BOARD_SIZE}
+              cornerDot={cornerDot}
+              lastMove={lastMove}
             />
           )}
           <div className="flex-1 min-w-0 flex flex-col gap-1">
@@ -276,32 +359,70 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
             {mobileMetadata}
           </div>
         </div>
+        {/* Eval chart — full-width, analyzed games only (mobile parity with desktop col 2) */}
+        {game.analysis_state === 'analyzed' &&
+          game.eval_series &&
+          game.flaw_markers &&
+          game.phase_transitions && (
+            <EvalChart
+              gameId={game.game_id}
+              evalSeries={game.eval_series}
+              flawMarkers={game.flaw_markers}
+              phaseTransitions={game.phase_transitions}
+              moves={game.moves ?? []}
+              onHoverPlyChange={setHoverPly}
+              // Match the miniboard height (MOBILE_BOARD_SIZE = 130px). Literal
+              // arbitrary value so Tailwind's JIT scanner emits the class.
+              heightClass="h-[130px]"
+            />
+          )}
         {/* Full-width flaw block on mobile */}
         <div className="flex flex-col gap-2">
           {flawContent}
         </div>
       </div>
 
-      {/* Desktop body: 3 columns — board / info / flaw column */}
-      <div className="hidden sm:flex gap-3 items-start">
-        {/* Col 1: mini board */}
-        {game.result_fen && (
-          <LazyMiniBoard
-            fen={game.result_fen}
-            flipped={game.user_color === 'black'}
-            size={DESKTOP_BOARD_SIZE}
-          />
-        )}
-        {/* Col 2: info (opening + metadata) */}
-        <div className="min-w-0 flex-1 flex flex-col gap-2">
-          {openingLine}
-          {desktopMetadata}
+      {/* Desktop body: 3 equal thirds — board+info / eval chart / flaw column */}
+      <div className="hidden sm:grid sm:grid-cols-3 sm:gap-3 sm:items-start">
+        {/* Col 1: mini board + opening + metadata */}
+        <div className="flex gap-3 items-start">
+          {boardFen && (
+            <LazyMiniBoard
+              fen={boardFen}
+              flipped={game.user_color === 'black'}
+              size={DESKTOP_BOARD_SIZE}
+              cornerDot={cornerDot}
+              lastMove={lastMove}
+            />
+          )}
+          <div className="min-w-0 flex-1 flex flex-col gap-2">
+            {openingLine}
+            {desktopMetadata}
+          </div>
         </div>
-        {/* Col 3: flaw column — dashed left border, flex: 0 0 auto so it sizes to the nowrap badge row */}
-        <div
-          className="pl-4 border-l border-dashed border-border flex flex-col gap-2"
-          style={{ flex: '0 0 auto' }}
-        >
+        {/* Col 2: eval chart (analyzed) or NoAnalysisState pill */}
+        <div className="flex items-center justify-center" data-testid={`card-col2-${game.game_id}`}>
+          {game.analysis_state === 'analyzed' &&
+          game.eval_series &&
+          game.flaw_markers &&
+          game.phase_transitions ? (
+            <EvalChart
+              gameId={game.game_id}
+              evalSeries={game.eval_series}
+              flawMarkers={game.flaw_markers}
+              phaseTransitions={game.phase_transitions}
+              moves={game.moves ?? []}
+              onHoverPlyChange={setHoverPly}
+              // Match the miniboard height (DESKTOP_BOARD_SIZE = 132px). Literal
+              // arbitrary value so Tailwind's JIT scanner emits the class.
+              heightClass="h-[132px]"
+            />
+          ) : (
+            <NoAnalysisState gameId={game.game_id} />
+          )}
+        </div>
+        {/* Col 3: flaw column (dropped dashed left border — grid separates columns) */}
+        <div className="flex flex-col gap-2">
           {flawContent}
         </div>
       </div>

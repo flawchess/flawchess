@@ -834,36 +834,53 @@ class TestAttributionTags:
         assert len(ply4) == 1
         assert "miss" not in ply4[0]["tags"]
 
-    def test_lucky_escape_tag_on_blunder_when_opponent_plays_fine(self) -> None:
-        """User blunder at ply N gets lucky-escape when opponent at N+1 plays a fine move.
+    def test_lucky_escape_tag_when_opponent_blunders_back(self) -> None:
+        """User blunder at ply N gets lucky-escape when the opponent ERRS in reply.
 
-        lucky-escape = user's blunder where the opponent did NOT make a mistake/blunder
-        in their immediate response (the eval shows the opponent played OK, but
-        the user still has the advantage they would have lost — opponent failed
-        to maximize the opportunity).
+        lucky-escape = the user's blunder went unpunished because the opponent
+        failed to find the punishing line (their reply was itself a mistake/blunder),
+        so the user's expected score recovered.
 
-        Black at ply 5: positions[4].eval_cp=-400, positions[5].eval_cp=-380
-        => drop for black ≈ eval_cp_to_expected_score(-400, "black") - eval_cp_to_expected_score(-380, "black")
-        ≈ 0 (tiny, not an error). Opponent plays normally → lucky-escape applies.
+        White blunders at ply 4 (400 → -400, drop ≈ 0.462), then black blunders
+        back at ply 5 (-400 → +400): black's es drops from ≈0.731 to ≈0.269
+        (drop ≈ 0.462 = blunder), handing the advantage back to white. White got
+        away with it → lucky-escape.
         """
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
-        # White blunders at ply 4
         positions[3] = _make_pos(3, eval_cp=400)  # before white's ply 4
         positions[4] = _make_pos(4, eval_cp=-400)  # white blunders (drop ≈ 0.462)
-        # Black at ply 5 plays a NORMAL move — almost no change in eval
-        # drop for black: es_before(black) from [4], es_after(black) from [5]
-        # es_before(black) = eval_cp_to_expected_score(-400, "black") ≈ 0.731
-        # positions[5].eval_cp=-380 => es_after(black) ≈ 0.723 (tiny improvement for black)
-        # drop ≈ 0.731 - 0.723 = 0.008 < INACCURACY_DROP => fine, not an error
-        positions[5] = _make_pos(5, eval_cp=-380)  # black plays fine, small change
+        positions[5] = _make_pos(5, eval_cp=400)  # black blunders back → white recovers
         result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1
         assert ply4[0]["severity"] == "blunder"
         assert "lucky-escape" in ply4[0]["tags"], (
-            "White blunder should be lucky-escape when black responds with a fine move"
+            "White blunder should be lucky-escape when black blunders back in reply"
+        )
+
+    def test_no_lucky_escape_when_opponent_capitalizes(self) -> None:
+        """User blunder is NOT lucky-escape when the opponent plays a fine move.
+
+        Regression guard for the inverted-heuristic bug (2026-06-07): a blunder
+        followed by a sensible opponent reply (the opponent capitalizes / holds the
+        advantage) must NOT be tagged lucky-escape. White blunders at ply 4
+        (400 → -400), black plays fine at ply 5 (-380, near-zero drop): black keeps
+        the winning position, so white did not escape.
+        """
+        game = _make_game(pgn=self._PGN, user_color="white")
+        positions = self._make_standard_positions(12)
+        positions[3] = _make_pos(3, eval_cp=400)  # before white's ply 4
+        positions[4] = _make_pos(4, eval_cp=-400)  # white blunders (drop ≈ 0.462)
+        positions[5] = _make_pos(5, eval_cp=-380)  # black plays fine, keeps advantage
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        ply4 = [f for f in result if f["ply"] == 4]
+        assert len(ply4) == 1
+        assert ply4[0]["severity"] == "blunder"
+        assert "lucky-escape" not in ply4[0]["tags"], (
+            "A blunder the opponent capitalizes on is not a lucky escape"
         )
 
     def test_no_lucky_escape_tag_on_non_blunder(self) -> None:
@@ -882,6 +899,66 @@ class TestAttributionTags:
         assert len(ply4) == 1
         assert ply4[0]["severity"] == "mistake"
         assert "lucky-escape" not in ply4[0]["tags"], "Mistakes should not get lucky-escape tag"
+
+    def _make_end_of_game_blunder_positions(self) -> list[GamePosition]:
+        """Positions where the user (white) blunders on the final analyzed ply.
+
+        Index 11 is the trailing null-eval position, so ply 10 (white mover) is the
+        last entry in the all-moves pass and has no opponent move at ply 11 — the
+        end-of-game branch of _is_unpunished. White blunders at ply 10:
+        es_before(white) ≈ 0.731, es_after(white) ≈ 0.269, drop ≈ 0.462 = blunder.
+        """
+        positions = self._make_standard_positions(12)
+        positions[9] = _make_pos(9, eval_cp=400)  # before white's ply 10
+        positions[10] = _make_pos(10, eval_cp=-400)  # white blunders (last move)
+        return positions
+
+    def test_no_lucky_escape_on_end_of_game_blunder_when_user_lost(self) -> None:
+        """A blunder on the user's last move is NOT lucky-escape when the user lost.
+
+        Bug fix: a blunder followed by the user resigning or flagging ends the game
+        with no opponent reply, but it's a loss, not an escape. Previously every
+        end-of-game blunder was tagged lucky-escape; now a loss suppresses it.
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
+        positions = self._make_end_of_game_blunder_positions()
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        ply10 = [f for f in result if f["ply"] == 10]
+        assert len(ply10) == 1
+        assert ply10[0]["severity"] == "blunder"
+        assert "lucky-escape" not in ply10[0]["tags"], (
+            "A blunder on the last move of a lost game (resign/timeout) is not a lucky escape"
+        )
+
+    def test_lucky_escape_on_end_of_game_blunder_when_user_won(self) -> None:
+        """A blunder on the user's last move IS lucky-escape when the user won.
+
+        End-of-game blunder where the user did not lose (e.g. the blunder was
+        actually mate, or the opponent resigned anyway) still counts as an escape.
+        """
+        game = _make_game(pgn=self._PGN, user_color="white", result="1-0")
+        positions = self._make_end_of_game_blunder_positions()
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        ply10 = [f for f in result if f["ply"] == 10]
+        assert len(ply10) == 1
+        assert ply10[0]["severity"] == "blunder"
+        assert "lucky-escape" in ply10[0]["tags"], (
+            "An end-of-game blunder where the user won is still a lucky escape"
+        )
+
+    def test_lucky_escape_on_end_of_game_blunder_when_user_drew(self) -> None:
+        """A blunder on the user's last move IS lucky-escape when the game was drawn."""
+        game = _make_game(pgn=self._PGN, user_color="white", result="1/2-1/2")
+        positions = self._make_end_of_game_blunder_positions()
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        ply10 = [f for f in result if f["ply"] == 10]
+        assert len(ply10) == 1
+        assert "lucky-escape" in ply10[0]["tags"], (
+            "An end-of-game blunder in a drawn game is a lucky escape"
+        )
 
     def test_result_changing_on_loss_crossing_draw_threshold(self) -> None:
         """User flaw gets result-changing when crossing from >= RESULT_DRAW_THRESHOLD to below.

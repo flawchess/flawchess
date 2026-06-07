@@ -11,6 +11,10 @@ export const BOARD_LIGHT_SQUARE = '#F0DAB7';
 export const darkSquareStyle = { backgroundColor: BOARD_DARK_SQUARE } as const;
 export const lightSquareStyle = { backgroundColor: BOARD_LIGHT_SQUARE } as const;
 
+// Move from/to square highlight (translucent yellow) — shared by the Openings
+// ChessBoard last-move highlight and the Library eval-chart MiniBoard scrub.
+export const MOVE_HIGHLIGHT_SQUARE = 'rgba(255, 255, 0, 0.35)';
+
 // WDL colors — used in all win/draw/loss visualizations
 // Richer base colors; the glass overlay softens them visually when applied
 export const WDL_WIN = 'oklch(0.50 0.14 145)';
@@ -27,6 +31,15 @@ export const WDL_BORDER_LOSS = '#9E2020';
 export const SEV_BLUNDER = 'oklch(0.58 0.19 25)';
 export const SEV_MISTAKE = 'oklch(0.70 0.16 55)';
 export const SEV_INACCURACY = 'oklch(0.82 0.13 95)';
+
+// Eval chart area fill and line colors (Phase 109 — EvalChart.tsx).
+// White-ahead region (above midline) = light grey; black-ahead region
+// (below midline) = near-black, mirroring the white/black pieces.
+export const EVAL_CHART_AREA_WHITE_AHEAD = 'oklch(0.85 0 0 / 0.40)';
+export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0.15 0 0 / 0.65)';
+export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
+export const EVAL_CHART_MIDLINE = 'oklch(0.55 0 0)';
+export const EVAL_CHART_PHASE_LINE = 'oklch(0.55 0 0 / 0.60)';
 
 // Tag families (flaw chip color-by-family, Phase 107)
 export const FAM_TEMPO = 'oklch(0.70 0.17 290)';

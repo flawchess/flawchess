@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: Phase 108 shipped — squash-merged to main (d810e599)
-last_updated: "2026-06-06T21:36:41.655Z"
-last_activity: 2026-06-06
+status: executing
+last_updated: "2026-06-07T08:30:00.000Z"
+last_activity: 2026-06-07 -- Phase 109 shipped (squash-merged to main)
 progress:
-  total_phases: 9
-  completed_phases: 4
-  total_plans: 22
-  completed_plans: 21
-  percent: 44
+  total_phases: 10
+  completed_phases: 5
+  total_plans: 26
+  completed_plans: 25
+  percent: 50
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 108 (flaws-subtab-game-flaws-materialization-per-flaw-endpoint-cr) — EXECUTING
-Plan: 8 of 8
-Status: Phase 108 shipped — squash-merged to main (d810e599)
-Last activity: 2026-06-06
+Phase: 109 (per-card-expected-score-eval-chart-games-subtab) — SHIPPED
+Plan: 4 of 4
+Status: Phase 109 shipped (squash-merged to main)
+Last activity: 2026-06-07 -- Phase 109 shipped (squash-merged to main)
 
 ## Project Reference
 
@@ -265,6 +265,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | 260601-og7 | Cap the move explorer at ply 28 and rebuild the three Zobrist-hash indexes on `game_positions` as PARTIAL `WHERE ply <= 28` (SEED-033), reclaiming ~3 GB of index footprint with no data loss, no table rewrite, fully reversible. Single source of truth `MAX_EXPLORER_PLY = 28` in `app/models/game_position.py` ties the index `postgresql_where` predicate to every capped query and the frontend explorer cap (mirrored in new `frontend/src/lib/explorer.ts`). Migration copies the project's one existing CONCURRENTLY pattern (`80e22b38993a` autocommit_block + `postgresql_concurrently=True`) and uses a temp-name + `ALTER INDEX … RENAME` trick to rebuild each index partial under its canonical name with no ACCESS EXCLUSIVE lock; downgrade recreates the full non-partial indexes. Added `ply <= MAX_EXPLORER_PLY` to every `game_positions` hash equality/IN lookup (grep-driven coverage across `stats_repository`, `openings_repository`, `position_bookmark_repository`, `openings_service`). Seed-correction surfaced + verified: `query_wdl_counts` was NOT already bounded by `ix_gp_user_game_ply` (that index serves the opening-insights transition aggregation, not the `_build_base_query` hash join), so the predicate was added there too. Frontend `makeMove` hard-returns false at ply 28 (caps drag-drop + click-to-move + bookmark creation depth; invisible in practice — dev max bookmark depth 6). Migration verified reversible on dev (upgrade → downgrade → upgrade). Gates GREEN: ruff format/check + ty clean, pytest 2198 passed/16 skipped, frontend lint + vitest 745. **Task 5 prod bookmark-depth safety check DONE 2026-06-01 (PASS):** all 91 prod bookmarks resolve within the cap (reachable_within_cap=91, only_past_cap=0, deepest min_ply=10) — no undercount, no grandfather/degrade decision needed. Cleared to ship; the `CONCURRENTLY` migration applies on prod at `bin/deploy.sh` time. Commits `557fceed` + `1fcedea3` + `0948ab61` + `deb0b25f` + `b7735b38` on `main` (worktree merged via `6bb65b8d`); not pushed. | 2026-06-01 | 6bb65b8d | [260601-og7-cap-move-explorer-at-ply-28-and-partial-](./quick/260601-og7-cap-move-explorer-at-ply-28-and-partial-/) |
 | 260604-t54 | Remove the per-user endgame-insights rate limit (`INSIGHTS_MISSES_PER_HOUR=3`) and the tier-2 stale-serve fallback (`status=stale_rate_limited`), now redundant: insights run only over full history and the router 400s every filter except `opponent_strength` (4 presets), so the tier-1 cache key `(user_id, prompt_version, model, opponent_strength)` has a natural miss ceiling of ~4 fresh LLM calls per user per era (invalidated only by re-import) — already below the old limit, which therefore blocked legitimate use (viewing all 4 variants tripped it on the 4th) while doing nothing against guest/bot fan-out. Backend: deleted `InsightsRateLimitExceeded`, `_RATE_LIMIT_WINDOW`, `_compute_retry_after`, `_maybe_stale_filters`, the rate-limit block in `generate_insights()`, and repo fns `count_recent_successful_misses` / `get_oldest_recent_miss_timestamp` / `get_latest_report_for_user` (grep-confirmed no out-of-band callers); dropped the router 429 branch and the dead schema variants/fields (`stale_rate_limited`, `rate_limit_exceeded`, `stale_filters`, `retry_after_seconds`). Frontend: mirrored the slimmer contract in `types/insights.ts` and stripped the 429/stale UI from `EndgameInsightsBlock.tsx` (`roundMinutes`, stale banner, "Try again in ~N min"); generic provider-error path preserved (one shared render tree, no mobile dup). Tier-1 cache + 502 provider_error/validation_failure paths untouched. Tests pruned accordingly (`test_llm_log_repository_reads.py` deleted); CHANGELOG `[Unreleased]` bullet added. Also fixed two pre-existing `main` breakages surfaced by the full-suite gate: 7 prompt-version pin assertions (→ `endgame_v46`, bumped by the preceding prompt-de-priming commit `d278a29d`) and one stale worked-example snapshot assertion (reworded earlier by `93c092c2`). Full local gate GREEN: ruff format/check + ty clean, pytest 2227 passed/10 skipped, frontend lint + knip clean + vitest 744/744. Commits `bd10c454` + `229d929b` (+ docs `1e9c0324`) + test fixes `e7edcb1b` + worked-example pin on `main`; not pushed. | 2026-06-04 | bd10c454 | [260604-t54-remove-insights-rate-limiting-and-stale-](./quick/260604-t54-remove-insights-rate-limiting-and-stale-/) |
 | 260605-v6v | Rename flaw attribution tags to final taxonomy (time-pressure→low-clock, hasty→impatient, knowledge-gap→considered, unpunished→lucky-escape, from-winning→while-ahead, drop phase- prefix) and make the tempo dimension optional (no tag when clock data is missing; `_classify_tempo`→`TempoTag\|None`). Shipped Phase 106 backend; no DB migration (tags computed on-the-fly). Also fixed the latent `_curate_chips` `startswith("phase-")` exclusion that the prefix-drop would have silently broken (→ `_PHASE_TAGS` frozenset). Backend gate GREEN: ruff/ty clean, pytest 2321 passed/10 skipped. Cherry-picked onto `gsd/phase-107` as `3b659b48`+`b78d11f0` (worktree forked off stale base; see SUMMARY). | 2026-06-05 | 3b659b48 | [260605-v6v-rename-flaw-attribution-tags-in-phase-10](./quick/260605-v6v-rename-flaw-attribution-tags-in-phase-10/) |
+| 260607-ehm | Phase 109 feedback — Library → Games cards: hovering the eval chart now scrubs the card's miniboard to the hovered ply. (1) Unsnapped the crosshair + tooltip (both follow the exact ply, no more snap-to-nearest-flaw); tooltip shows move+eval per ply plus You/Opponent severity+tags on M/B plies. (2) Bigger miniboard (desktop 100→132, mobile 105→130). (3) Live board: lifted `hoverPly` into `LibraryGameCard`, added `onHoverPlyChange` to `EvalChart`, reconstruct per-ply FENs from a new `GameFlawCard.moves` SAN mainline via chess.js (memoized); at rest shows `result_fen`. (4) Orange/red corner dot on the moved piece's destination square for M/B plies (new `MiniBoard.cornerDot` prop threaded through `LazyMiniBoard`). Mapping is off-by-one-free because `zobrist.py` stores `eval_cp[ply]` as the post-move eval, so crosshair ply ↔ position after that move. Backend adds `moves` from already-loaded positions (no extra query, analyzed-only). Gates GREEN: ruff/ty clean, pytest 2431 passed/10 skipped (one unrelated guest rate-limit flake, passes in isolation), frontend lint+tsc+knip clean, vitest 825. HUMAN-UAT pending (hover behavior is visual). Commit `9cd63886` on `gsd/phase-109-...`; not pushed. | 2026-06-07 | 9cd63886 | [260607-ehm-evalchart-hover-miniboard-position](./quick/260607-ehm-evalchart-hover-miniboard-position/) |
 
 ## Performance Metrics
 

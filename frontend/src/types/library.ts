@@ -71,6 +71,42 @@ export interface GameFlawCard {
   severity_counts: SeverityCountsData | null;
   chips: FlawTag[];
   analysis_state: AnalysisState;
+  // Phase 109 additions — null for unanalyzed games (analysis_state === 'no_engine_analysis'):
+  eval_series: EvalPoint[] | null;
+  flaw_markers: FlawMarker[] | null;
+  phase_transitions: PhaseTransitions | null;
+  // SAN mainline (one entry per ply, ordered). moves[i] is the move played at
+  // ply i, so replaying moves[0..i] yields the position at eval_series[i].
+  // Null for unanalyzed games. Drives the live miniboard on eval-chart hover.
+  moves: string[] | null;
+}
+
+/** One ply's white-perspective ES datapoint (mirrors backend EvalPoint). */
+export interface EvalPoint {
+  ply: number;
+  es: number | null;       // white-perspective ES in (0,1); null = missing eval
+  eval_cp: number | null;  // raw cp for tooltip
+  eval_mate: number | null; // signed, white-perspective
+  clock_seconds: number | null; // mover's remaining clock after this move; null = no %clk
+  move_seconds: number | null;  // time spent on this move (1dp); null when prior clock unknown
+}
+
+/**
+ * One flaw dot for the eval chart (both colors, B/M/I).
+ * is_user=true → filled circle (player); is_user=false → hollow circle (opponent).
+ */
+export interface FlawMarker {
+  ply: number;
+  severity: FlawSeverity;
+  tags: FlawTag[];    // empty for inaccuracies
+  is_user: boolean;
+  move_san: string | null; // SAN of the flawed move — tooltip move label (null on final position)
+}
+
+/** First ply of middlegame and endgame phases (at most two phase lines). */
+export interface PhaseTransitions {
+  middlegame_ply: number | null;
+  endgame_ply: number | null;
 }
 
 /** Response for GET /api/library/games — paginated game archive (mirrors LibraryGamesResponse). */

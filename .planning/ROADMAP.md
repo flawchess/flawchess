@@ -198,6 +198,13 @@ Plans:
 **Goal**: Every *analyzed* game card in Library → Games shows a per-game expected-score eval chart — a recharts area chart from White's perspective with the advantage region shaded, your flaws marked as colored dots, phase-transition vertical lines, and per-ply tooltips — rendered as a dedicated middle column that restructures the desktop card into three equal thirds.
 **Depends on**: Phase 107 (`LibraryGameCard` / `LibraryGameCardList`, `theme.ts` severity constants, `libraryApi` + `useLibrary*` hooks, recharts-in-card precedent via `FlawTrendChart`); Phase 108 (`game_flaws` table — source of your mistake/blunder dots); existing `app/services/eval_utils.py` (`eval_cp_to_expected_score` / `eval_mate_to_expected_score`, lichess K=0.00368208) and `game_positions` (`eval_cp` / `eval_mate` / `phase`, all per-ply, white-perspective).
 **Requirements**: LIBG-10
+**Plans**: 4 plans (2 waves)
+
+- [x] 109-01-PLAN.md — backend eval-series builder (EvalPoint/FlawMarker/PhaseTransitions, batched positions query, both-player dot detection) + Wave 0 unit tests
+- [x] 109-02-PLAN.md — frontend prerequisites: five EVAL_CHART_* theme constants + library.ts types
+- [x] 109-03-PLAN.md — router integration tests (inline payload, no-N+1, IDOR) + gzipped payload-delta measurement
+- [x] 109-04-PLAN.md — UI-SPEC dual-marker amendment + EvalChart.tsx + LibraryGameCard three-thirds restructure + visual UAT
+
 **Success Criteria** (what must be TRUE):
 
   1. On desktop, an analyzed Games-subtab card is laid out as three equal-width thirds — **miniboard + game info · eval area chart · tags/severity** — with the eval chart occupying the new middle column (not stacked under the tags); mobile stacks the same three blocks in order. Unanalyzed cards keep the existing `NoAnalysisState` pill and render no chart (LIBG-10).

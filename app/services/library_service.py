@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
-from app.repositories.library_repository import _PHASE_INT_TO_TAG, _TEMPO_INT_TO_TAG  # noqa: F401
+from app.repositories.library_repository import _TEMPO_INT_TO_TAG  # noqa: F401
 from app.schemas.library import (
     FlawStatsResponse,
     FlawTrendPoint,
@@ -39,11 +39,21 @@ from app.schemas.library import (
     SeverityRates,
     TagDistribution,
 )
+from app.models.game_position import GamePosition
+from app.schemas.library import EvalPoint, FlawMarker, PhaseTransitions
+from app.services.eval_utils import (
+    eval_cp_to_expected_score,
+    eval_mate_to_expected_score,
+)
 from app.services.flaws_service import (
     FlawSeverity,
     FlawTag,
     SeverityCounts,
     TempoTag,
+    _MoveEntry,
+    _build_tags,
+    _resolve_increment,
+    _run_all_moves_pass,
 )
 from app.services.openings_service import (
     MIN_GAMES_FOR_TIMELINE,
@@ -51,6 +61,176 @@ from app.services.openings_service import (
     derive_user_result,
 )
 
+# ---------------------------------------------------------------------------
+# Phase 109 eval chart helpers (LIBG-10) — Task 1 stubs, Task 2 implements
+# ---------------------------------------------------------------------------
+
+# Tags that are user-framed and must be stripped from opponent flaw markers (D-03).
+_USER_FRAMED_TAGS: frozenset[FlawTag] = frozenset({"miss", "lucky-escape"})
+
+
+def _build_eval_series(
+    game: Game,
+    positions: list[GamePosition],
+) -> tuple[list[EvalPoint], list[FlawMarker], PhaseTransitions]:
+    """Compute white-perspective ES line, flaw markers, and phase transitions.
+
+    Line perspective: white-perspective (eval_mate_to_expected_score/eval_cp_to_expected_score
+    called with "white"). Flaw detection perspective: mover-POV drops via
+    _run_all_moves_pass (D-01/D-04). No DB access — positions are pre-fetched
+    by get_library_games (D-10: single batched query, no N+1).
+
+    Args:
+        game: Game row with user_color, result, base_time_seconds, increment_seconds.
+        positions: All GamePosition rows for this game, ordered by ply ASC.
+
+    Returns:
+        (eval_series, flaw_markers, phase_transitions) tuple where:
+        - eval_series: white-perspective ES per ply (es=None for missing eval, D-05)
+        - flaw_markers: both-color B/M/I dots with is_user discriminator (D-01/D-07)
+        - phase_transitions: first ply of middlegame (phase==1) and endgame (phase==2) (D-06)
+    """
+    all_moves = _run_all_moves_pass(positions)
+    eval_series: list[EvalPoint] = []
+    flaw_markers: list[FlawMarker] = []
+    middlegame_ply: int | None = None
+    endgame_ply: int | None = None
+
+    # Increment for _build_tags tempo computation (Phase 109: shared helper).
+    increment = _resolve_increment(game)
+
+    # Per-color previous clock for move-time computation (Phase 109 feedback:
+    # tooltip shows clock remaining + time spent on the move). clock_seconds is
+    # the mover's remaining time AFTER the move; even ply = White, odd = Black.
+    # Seed with the base time so move 0/1 (each side's first move) get a value.
+    base_time: float | None = game.base_time_seconds
+    prev_clock: dict[int, float | None] = {0: base_time, 1: base_time}  # 0 = White, 1 = Black
+
+    for pos in positions:
+        # White-perspective ES for the chart line (D-04).
+        # Use eval_mate_to_expected_score (hard 1.0/0.0) for the line only —
+        # NOT for drop math (Pitfall 1/2 in RESEARCH: _ply_to_es uses MATE_CP_EQUIVALENT).
+        if pos.eval_mate is not None:
+            es: float | None = eval_mate_to_expected_score(pos.eval_mate, "white")
+        elif pos.eval_cp is not None:
+            es = eval_cp_to_expected_score(pos.eval_cp, "white")
+        else:
+            es = None
+        # Time spent on the move = prior same-color clock − current clock + increment
+        # (increment is added back after each move). Clamp negatives from rounding.
+        color = pos.ply % 2  # 0 = White, 1 = Black
+        clock = pos.clock_seconds
+        move_seconds: float | None = None
+        if clock is not None:
+            prior = prev_clock[color]
+            if prior is not None:
+                move_seconds = round(max(0.0, prior - clock + increment), 1)
+            prev_clock[color] = clock
+
+        eval_series.append(
+            EvalPoint(
+                ply=pos.ply,
+                es=round(es, 3) if es is not None else None,
+                eval_cp=pos.eval_cp,
+                eval_mate=pos.eval_mate,
+                clock_seconds=clock,
+                move_seconds=move_seconds,
+            )
+        )
+
+        # Phase transitions — first ply where phase==1 (middlegame) or phase==2 (endgame).
+        # No ply-0 line (D-06): ply 0 is the initial position, not a transition.
+        if pos.phase == 1 and middlegame_ply is None and pos.ply > 0:
+            middlegame_ply = pos.ply
+        elif pos.phase == 2 and endgame_ply is None and pos.ply > 0:
+            endgame_ply = pos.ply
+
+        # Flaw markers from the mover-POV kernel dict (both colors, D-01/D-02).
+        # The kernel skips plies with missing eval — no entry → no marker.
+        entry = all_moves.get(pos.ply)
+        if entry is None:
+            continue
+        mover_color, severity, es_before, es_after = entry
+        if severity is None:
+            continue
+        is_user = mover_color == game.user_color
+        tags: list[FlawTag]
+        if severity in ("mistake", "blunder"):
+            if is_user:
+                tags = _build_tags(
+                    pos.ply,
+                    severity,
+                    es_before,
+                    es_after,
+                    positions,
+                    all_moves,
+                    derive_user_result(game.result, game.user_color),
+                    increment,
+                    game.base_time_seconds,
+                )
+            else:
+                tags = _build_opponent_tags(
+                    pos.ply,
+                    severity,
+                    es_before,
+                    es_after,
+                    positions,
+                    all_moves,
+                    game,
+                    increment,
+                )
+        else:
+            tags = []  # inaccuracy — no tags (D-03)
+        flaw_markers.append(
+            FlawMarker(
+                ply=pos.ply,
+                severity=severity,
+                tags=tags,
+                is_user=is_user,
+                move_san=pos.move_san,
+            )
+        )
+
+    return (
+        eval_series,
+        flaw_markers,
+        PhaseTransitions(middlegame_ply=middlegame_ply, endgame_ply=endgame_ply),
+    )
+
+
+def _build_opponent_tags(
+    n: int,
+    severity: FlawSeverity,
+    es_before: float,
+    es_after: float,
+    positions: list[GamePosition],
+    all_moves: dict[int, _MoveEntry],
+    game: Game,
+    increment: float,
+) -> list[FlawTag]:
+    """Tags for an opponent flaw dot — mover-framed only (D-03 resolution).
+
+    Flips user_result to opponent's perspective so while-ahead / result-changing
+    are mover-relative. Strips 'miss' and 'lucky-escape' which are user-framed
+    and meaningless/misleading from the opponent's perspective (RESEARCH D-03 Gray Area).
+    """
+    opponent_color: Literal["white", "black"] = "black" if game.user_color == "white" else "white"
+    opponent_result = derive_user_result(game.result, opponent_color)
+    raw_tags = _build_tags(
+        n,
+        severity,
+        es_before,
+        es_after,
+        positions,
+        all_moves,
+        opponent_result,
+        increment,
+        game.base_time_seconds,
+    )
+    return [t for t in raw_tags if t not in _USER_FRAMED_TAGS]
+
+
+# ---------------------------------------------------------------------------
 # Canonical chip order — a subset of flaws_service.FlawTag with all phase
 # tags removed. Defines the deterministic ordering of curated card chips.
 # game_flaws rows are M+B-only (D-03), so inaccuracy tags never appear here.
@@ -95,12 +275,14 @@ def _build_card(
     game: Game,
     flaw_rows: list[GameFlaw],
     is_analyzed: bool,
+    positions: list[GamePosition],
 ) -> GameFlawCard:
     """Build one GameFlawCard from pre-fetched game_flaws rows (D-02 migration).
 
-    No DB access — data is pre-fetched by get_library_games in two batch queries:
-    fetch_page_game_flaws (chips + M+B counts) and fetch_page_analyzed_set
-    (analysis_state). This eliminates the per-game classify_game_flaws kernel re-call.
+    No DB access — data is pre-fetched by get_library_games in three batch queries:
+    fetch_page_game_flaws (chips + M+B counts), fetch_page_analyzed_set
+    (analysis_state), and fetch_page_eval_positions (eval chart data). This
+    eliminates the per-game classify_game_flaws kernel re-call.
 
     Inaccuracy count comes from the oracle columns (games.white_/black_inaccuracies)
     — never from game_flaws (D-03). NULL oracle values default to 0.
@@ -108,6 +290,10 @@ def _build_card(
     "No engine analysis" state is gated on the eval-coverage check (is_analyzed),
     NOT on game_flaws row count — an analyzed game with zero M+B flaws still
     returns analysis_state="analyzed" (LIBG-02).
+
+    Phase 109 (LIBG-10): when is_analyzed and positions are provided, the three
+    new eval chart fields (eval_series, flaw_markers, phase_transitions) are
+    populated via _build_eval_series. Unanalyzed games always get None for these.
     """
     severity_counts: SeverityCounts | None
     chips: list[FlawTag]
@@ -117,6 +303,10 @@ def _build_card(
         severity_counts = None
         chips = []
         analysis_state = "no_engine_analysis"
+        eval_series_data = None
+        flaw_marker_data = None
+        phase_transition_data = None
+        moves_data = None
     else:
         # M+B counts from game_flaws rows (D-02); inaccuracy from oracle (D-03).
         mistake_count = sum(1 for r in flaw_rows if r.severity == 1)
@@ -134,6 +324,23 @@ def _build_card(
         )
         chips = _curate_chips_from_rows(flaw_rows)
         analysis_state = "analyzed"
+        # Phase 109 (LIBG-10): populate eval chart fields for analyzed games.
+        if positions:
+            eval_series_val, flaw_marker_val, phase_transition_val = _build_eval_series(
+                game, positions
+            )
+            eval_series_data = eval_series_val
+            flaw_marker_data = flaw_marker_val
+            phase_transition_data = phase_transition_val
+            # SAN mainline for client-side per-ply board reconstruction on chart
+            # hover. move_san is None on the terminal position only — filter it out
+            # so moves[i] aligns with ply i (positions are ply-ordered).
+            moves_data = [p.move_san for p in positions if p.move_san is not None]
+        else:
+            eval_series_data = None
+            flaw_marker_data = None
+            phase_transition_data = None
+            moves_data = None
 
     return GameFlawCard(
         game_id=game.id,
@@ -156,6 +363,10 @@ def _build_card(
         severity_counts=severity_counts,
         chips=chips,
         analysis_state=analysis_state,
+        eval_series=eval_series_data,
+        flaw_markers=flaw_marker_data,
+        phase_transitions=phase_transition_data,
+        moves=moves_data,
     )
 
 
@@ -224,11 +435,19 @@ async def get_library_games(
             session, user_id, page_game_ids
         )
 
+        # Phase 109 (D-02/D-10): batch-load positions for analyzed games only (no N+1).
+        # Scoped to analyzed_set so unanalyzed games incur zero position rows.
+        analyzed_game_ids = [gid for gid in page_game_ids if gid in analyzed_set]
+        page_positions = await library_repository.fetch_page_eval_positions(
+            session, user_id, analyzed_game_ids
+        )
+
         cards = [
             _build_card(
                 game,
                 page_flaws.get(game.id, []),
                 game.id in analyzed_set,
+                page_positions.get(game.id, []),
             )
             for game in games
         ]
