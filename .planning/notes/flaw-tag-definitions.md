@@ -66,7 +66,7 @@ Both require the full both-color analysis pass.
 
 ## Impact — how far the blunder or mistake swung the game
 
-**At most one impact tag, evaluated top-down as a severity ladder** (`threw-it` →
+**At most one impact tag, evaluated top-down as a severity ladder** (`reversed` →
 `squandered`); the more severe applicable tag wins, the other is suppressed.
 **Outcome-independent**: impact depends only on the Expected Score before and after the
 move, never on how the game actually ended. (This replaces the old `result-changing` tag,
@@ -81,8 +81,8 @@ flaw. A clear-but-not-overwhelming advantage that drops only to slightly worse (
 
 | Family | Name            | Definition |
 |--------|-----------------|------------|
-| Impact | `threw-it`      | You turned a winning game into a losing one: your Expected Score before the move was at least 70% (clearly winning, eval roughly +2.3 or better) and dropped to 30% or below (clearly losing, roughly −2.3). A full reversal across equality. |
-| Impact | `squandered`    | You erased an overwhelming advantage back to roughly even: your Expected Score before the move was at least 85% (eval roughly +4.7 or better) and dropped to 60% or below, but not far enough to be `threw-it`. The win is gone, the game is still playable. |
+| Impact | `reversed`      | You turned a winning game into a losing one: your Expected Score before the move was at least 70% (clearly winning, eval roughly +2.3 or better) and dropped to 30% or below (clearly losing, roughly −2.3). A full reversal across equality. |
+| Impact | `squandered`    | You erased an overwhelming advantage back to roughly even: your Expected Score before the move was at least 85% (eval roughly +4.7 or better) and dropped to 60% or below, but not far enough to be `reversed`. The win is gone, the game is still playable. |
 
 ## Phase — where in the game it happened
 
@@ -105,7 +105,7 @@ family. Older renames (Phase 106) are recorded in `flaw-tag-naming.md`.
 | Tempo  | `impatient`       | `hasty`                   | `impatient` editorialised about character; `hasty` describes the move and is native chess phrasing. (`hasty` was the pre-106 name; this reverts it.) |
 | Tempo  | `considered`      | `unrushed`                | On a blunder card `considered` read as a contradiction ("considered, yet blundered?"). `unrushed` is the clean complement to `hasty` and stays clock-framed (cause-of-error naming is reserved for the future tactic family). |
 | Impact | `while-ahead` (briefly renamed `while-winning`) | *removed* | A pure *state* tag (you were ≥85% when you slipped), not a swing — it had only an entry threshold with nothing to cross, fired on a large fraction of winning-position blunders, and duplicated what `blunder` severity already says. The "lapse while winning" pattern lives better in aggregate (endgame conversion rates), not on individual cards. |
-| Impact | `result-changing` | `threw-it` + `squandered` | `result-changing` depended on the final result and could fire on a *won* game (the result didn't change), overclaiming causality. Split into two outcome-independent swing tags. |
+| Impact | `result-changing` | `reversed` + `squandered` | `result-changing` depended on the final result and could fire on a *won* game (the result didn't change), overclaiming causality. Split into two outcome-independent swing tags. |
 
 ## Threshold reference (source of truth)
 
@@ -126,8 +126,8 @@ fractions (e.g. 85% → `0.85`). The `*_ABS_SECONDS` values are literal seconds.
 | `HASTY_MOVE_FRACTION` | 1% | `hasty` (relative) | shipped |
 | `HASTY_MOVE_ABS_SECONDS` | 5s | `hasty` (fallback) | shipped |
 | `FROM_WINNING_ES` | 85% | `squandered` entry | shipped (was `while-ahead`; that tag is now removed, the constant is reused) |
-| `WINNING_LINE_ES` | 70% | `threw-it` entry (clearly winning before) | proposed (repurposes old `RESULT_WIN_THRESHOLD`) |
-| `LOSING_LINE_ES` | 30% | `threw-it` exit (clearly losing after) | proposed (new) |
+| `WINNING_LINE_ES` | 70% | `reversed` entry (clearly winning before) | proposed (repurposes old `RESULT_WIN_THRESHOLD`) |
+| `LOSING_LINE_ES` | 30% | `reversed` exit (clearly losing after) | proposed (new) |
 | `SQUANDERED_EXIT_ES` | 60% | `squandered` exit (back to roughly even) | proposed (new) |
 | ~~`RESULT_WIN_THRESHOLD`~~ | 70% | (removed — outcome-dependent `result-changing`) | deprecated |
 | ~~`RESULT_DRAW_THRESHOLD`~~ | 40% | (removed — outcome-dependent `result-changing`) | deprecated |
@@ -140,7 +140,7 @@ are shipped in Phase 106 code. **Not yet implemented**, pending a backend pass:
 - Tempo renames `impatient` → `hasty`, `considered` → `unrushed` (`TempoTag` Literal,
   `_classify_tempo`, tests, docstrings).
 - Impact family rebuild: drop `while-ahead` / `result-changing`, add the
-  `threw-it` / `squandered` two-rung ladder (`FlawTag` Literal, the impact classifier, the
+  `reversed` / `squandered` two-rung ladder (`FlawTag` Literal, the impact classifier, the
   new constants above, `_build_tags` single-tag ladder selection, tests).
 
 Like the rest of the taxonomy, tags are computed **on the fly** and not persisted, so there
