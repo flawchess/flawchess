@@ -470,14 +470,17 @@ export function EvalChart({
     >
       <ChartContainer
         config={{}}
-        // rounded-md on the recharts surface SVG (not the wrapper) clips the
-        // fills to rounded corners without clipping the escape-viewBox tooltip,
-        // which lives in a sibling div outside the surface.
-        className={`w-full ${heightClass} [&_.recharts-surface]:rounded-md`}
+        // Clip the recharts surface SVG (not the wrapper) to rounded corners:
+        // !overflow-hidden overrides recharts' inline overflow:visible, and rounds
+        // the fill. This does NOT clip the escape-viewBox tooltip, which lives in a
+        // sibling div outside the surface.
+        className={`w-full ${heightClass} [&_.recharts-surface]:!overflow-hidden [&_.recharts-surface]:rounded-md`}
       >
         <ComposedChart
           data={evalSeries}
-          margin={{ top: 4, right: 4, left: 4, bottom: 4 }}
+          // Zero margins so the eval-bar fill spans the chart's full height and
+          // width, aligning its top/bottom with the adjacent miniboard.
+          margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
           onMouseMove={handlePointerMove}
           onMouseLeave={handleMouseLeave}
           onTouchMove={handlePointerMove}

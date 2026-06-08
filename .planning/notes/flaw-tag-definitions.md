@@ -1,8 +1,8 @@
 ---
 title: Flaw attribution-tag definitions (tooltip-ready)
-date: 2026-06-07
-context: precise, tooltip-usable definitions for every severity tier + attribution tag. Includes the 2026-06-07 /gsd-explore redesign of the impact family (outcome-independent ladder) and the tempo renames (impatient→hasty, considered→unrushed) — these LEAD the shipped Phase 106 code (see "Implementation status").
-source: app/services/flaws_service.py (severity/tempo/opportunity thresholds verified against source; the new impact ladder is a proposed design, not yet in code)
+date: 2026-06-08
+context: precise, tooltip-usable definitions for every severity tier + attribution tag.
+source: app/services/flaws_service.py (all thresholds verified against source)
 related: flaw-tag-naming.md (the authoritative naming taxonomy this builds on)
 ---
 
@@ -69,11 +69,8 @@ Both require the full both-color analysis pass.
 **At most one impact tag, evaluated top-down as a severity ladder** (`reversed` →
 `squandered`); the more severe applicable tag wins, the other is suppressed.
 **Outcome-independent**: impact depends only on the Expected Score before and after the
-move, never on how the game actually ended. (This replaces the old `result-changing` tag,
-which keyed off the final result and could fire on a game you *won* — see "Deprecated /
-renamed".) Both tags are *swings* defined by where you started and where you landed; a tag
-for merely *being* in a winning position when you slipped was considered and dropped (see
-"Deprecated / renamed").
+move, never on how the game actually ended. Both tags are *swings* defined by where you
+started and where you landed.
 
 Impact tags are highlight markers for *dramatic* swings, not an exhaustive label of every
 flaw. A clear-but-not-overwhelming advantage that drops only to slightly worse (e.g. 78%
@@ -95,55 +92,26 @@ middlegame when the phase is unknown).
 | Phase  | `middlegame`   | The blunder or mistake occurred in the middlegame (also the default when the phase can't be determined). |
 | Phase  | `endgame`      | The blunder or mistake occurred in the endgame phase of the game. |
 
-## Deprecated / renamed tags
-
-The 2026-06-07 session renamed the tempo residual pair and replaced the entire impact
-family; a 2026-06-08 follow-up shortened `lucky-escape` → `lucky`. Older renames
-(Phase 106) are recorded in `flaw-tag-naming.md`.
-
-| Family | Deprecated name   | Replacement               | Why |
-|--------|-------------------|---------------------------|-----|
-| Opportunity | `lucky-escape` | `lucky`              | Shortened to a single word for a tighter chip label; the mechanic (a blunder the opponent failed to punish) is unchanged. The DB column followed: `is_lucky_escape` → `is_lucky`. |
-| Tempo  | `impatient`       | `hasty`                   | `impatient` editorialised about character; `hasty` describes the move and is native chess phrasing. (`hasty` was the pre-106 name; this reverts it.) |
-| Tempo  | `considered`      | `unrushed`                | On a blunder card `considered` read as a contradiction ("considered, yet blundered?"). `unrushed` is the clean complement to `hasty` and stays clock-framed (cause-of-error naming is reserved for the future tactic family). |
-| Impact | `while-ahead` (briefly renamed `while-winning`) | *removed* | A pure *state* tag (you were ≥85% when you slipped), not a swing — it had only an entry threshold with nothing to cross, fired on a large fraction of winning-position blunders, and duplicated what `blunder` severity already says. The "lapse while winning" pattern lives better in aggregate (endgame conversion rates), not on individual cards. |
-| Impact | `result-changing` | `reversed` + `squandered` | `result-changing` depended on the final result and could fire on a *won* game (the result didn't change), overclaiming causality. Split into two outcome-independent swing tags. |
-
 ## Threshold reference (source of truth)
 
-Severity / tempo / opportunity values are from `app/services/flaws_service.py`. The impact
-ladder is the **proposed** design from this session and is **not yet in code** (see
-"Implementation status"). Expected-Score and clock-fraction values are shown as
-percentages to match the rest of the doc; the Python constants store them as `0–1`
-fractions (e.g. 85% → `0.85`). The `*_ABS_SECONDS` values are literal seconds.
-`[ASSUMED]` = tunable initial default, no schema change needed to adjust.
+All values are from `app/services/flaws_service.py`. Expected-Score and clock-fraction
+values are shown as percentages to match the rest of the doc; the Python constants store
+them as `0–1` fractions (e.g. 85% → `0.85`). The `*_ABS_SECONDS` values are literal
+seconds.
 
-| Constant | Value | Drives | Status |
-|----------|-------|--------|--------|
-| `INACCURACY_DROP` | 5% | Inaccuracy severity floor | shipped |
-| `MISTAKE_DROP` | 10% | Mistake severity floor | shipped |
-| `BLUNDER_DROP` | 15% | Blunder severity floor | shipped |
-| `TIME_PRESSURE_CLOCK_FRACTION` | 5% | `low-clock` (relative) | shipped |
-| `TIME_PRESSURE_CLOCK_ABS_SECONDS` | 30s | `low-clock` (fallback) | shipped |
-| `HASTY_MOVE_FRACTION` | 1% | `hasty` (relative) | shipped |
-| `HASTY_MOVE_ABS_SECONDS` | 5s | `hasty` (fallback) | shipped |
-| `FROM_WINNING_ES` | 85% | `squandered` entry | shipped (was `while-ahead`; that tag is now removed, the constant is reused) |
-| `WINNING_LINE_ES` | 70% | `reversed` entry (clearly winning before) | proposed (repurposes old `RESULT_WIN_THRESHOLD`) |
-| `LOSING_LINE_ES` | 30% | `reversed` exit (clearly losing after) | proposed (new) |
-| `SQUANDERED_EXIT_ES` | 60% | `squandered` exit (back to roughly even) | proposed (new) |
-| ~~`RESULT_WIN_THRESHOLD`~~ | 70% | (removed — outcome-dependent `result-changing`) | deprecated |
-| ~~`RESULT_DRAW_THRESHOLD`~~ | 40% | (removed — outcome-dependent `result-changing`) | deprecated |
+| Constant | Value | Drives |
+|----------|-------|--------|
+| `INACCURACY_DROP` | 5% | Inaccuracy severity floor |
+| `MISTAKE_DROP` | 10% | Mistake severity floor |
+| `BLUNDER_DROP` | 15% | Blunder severity floor |
+| `TIME_PRESSURE_CLOCK_FRACTION` | 5% | `low-clock` (relative) |
+| `TIME_PRESSURE_CLOCK_ABS_SECONDS` | 30s | `low-clock` (fallback) |
+| `HASTY_MOVE_FRACTION` | 1% | `hasty` (relative) |
+| `HASTY_MOVE_ABS_SECONDS` | 5s | `hasty` (fallback) |
+| `WINNING_LINE_ES` | 70% | `reversed` entry (clearly winning before) |
+| `LOSING_LINE_ES` | 30% | `reversed` exit (clearly losing after) |
+| `FROM_WINNING_ES` | 85% | `squandered` entry (overwhelming advantage before) |
+| `SQUANDERED_EXIT_ES` | 60% | `squandered` exit (back to roughly even) |
 
-## Implementation status
-
-Severity, tempo (under their old names `impatient` / `considered`), opportunity, and phase
-are shipped in Phase 106 code. **Not yet implemented**, pending a backend pass:
-
-- Tempo renames `impatient` → `hasty`, `considered` → `unrushed` (`TempoTag` Literal,
-  `_classify_tempo`, tests, docstrings).
-- Impact family rebuild: drop `while-ahead` / `result-changing`, add the
-  `reversed` / `squandered` two-rung ladder (`FlawTag` Literal, the impact classifier, the
-  new constants above, `_build_tags` single-tag ladder selection, tests).
-
-Like the rest of the taxonomy, tags are computed **on the fly** and not persisted, so there
-is **no DB migration** — the change is pure code + docs.
+Tags are computed **on the fly** and not persisted, so there is no DB column behind any of
+them.
