@@ -14,7 +14,7 @@
  * uses area-based `size` not radius `r`, making pixel-precise sizing unreliable.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import {
@@ -382,13 +382,14 @@ export function EvalChart({
 
   // Chart data trimmed to the eval'd ply range so the fill spans the full width
   // (see trimToEvalRange). Fall back to the raw series if every ply lacks an eval.
-  // Trimming alone makes the last eval'd ply the rightmost category point (which a
-  // point-scale category axis maps to the right edge), so no numeric axis / domain
-  // is needed — and the default category axis keeps recharts' tooltip + activeLabel
-  // hover behaviour intact (a numeric axis broke mouse-leave dismissal, the hover
-  // crosshair, and mobile drag).
-  const trimmed = trimToEvalRange(evalSeries);
-  const chartSeries = trimmed.length > 0 ? trimmed : evalSeries;
+  // MUST be memoized: the component re-renders on every hover move (setHoverPly),
+  // and recharts keys its tooltip/active-hover state on the `data` prop identity —
+  // a fresh array each render resets that state, breaking mouse-leave dismissal and
+  // the touch-drag activeLabel. A stable reference keeps the hover behaviour intact.
+  const chartSeries = useMemo(() => {
+    const trimmed = trimToEvalRange(evalSeries);
+    return trimmed.length > 0 ? trimmed : evalSeries;
+  }, [evalSeries]);
 
   // Hover crosshair tracks the EXACT hovered ply (no snapping). We mirror the ply
   // up to the parent (onHoverPlyChange) so the card's miniboard scrubs in sync,
