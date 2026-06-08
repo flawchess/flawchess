@@ -642,7 +642,7 @@ export function EvalChart({
               x={phaseTransitions.middlegame_ply}
               stroke={EVAL_CHART_PHASE_LINE}
               strokeWidth={1}
-              label={phaseLineLabel('Middlegame')}
+              label={phaseLineLabel('Midgame')}
               aria-hidden="true"
             />
           )}
