@@ -41,9 +41,9 @@ def _make_game_flaw(
     tempo: int | None = None,
     phase: int = 1,  # 1=middlegame
     is_miss: bool = False,
-    is_lucky_escape: bool = False,
-    is_while_ahead: bool = False,
-    is_result_changing: bool = False,
+    is_lucky: bool = False,
+    is_reversed: bool = False,
+    is_squandered: bool = False,
 ) -> GameFlaw:
     """Build a minimal in-memory GameFlaw object for unit testing (no DB flush)."""
     row = GameFlaw()
@@ -54,9 +54,9 @@ def _make_game_flaw(
     row.tempo = tempo
     row.phase = phase
     row.is_miss = is_miss
-    row.is_lucky_escape = is_lucky_escape
-    row.is_while_ahead = is_while_ahead
-    row.is_result_changing = is_result_changing
+    row.is_lucky = is_lucky
+    row.is_reversed = is_reversed
+    row.is_squandered = is_squandered
     row.es_before = 0.9
     row.es_after = 0.3
     row.move_san = None
@@ -264,21 +264,21 @@ class TestCardChips:
         """Phase tags dropped (not in _CHIP_ORDER); one chip per tag; stable order."""
         from app.services.library_service import _curate_chips_from_rows
 
-        # Flaw 1: while-ahead (phase=middlegame=1 excluded) + impatient (tempo=1)
-        # Flaw 2: impatient (duplicate -> deduped) + miss
-        # _TEMPO_INT: impatient=1, _CHIP_ORDER: miss < while-ahead < impatient
-        row1 = _make_game_flaw(ply=2, phase=1, is_while_ahead=True, tempo=1)  # impatient
-        row2 = _make_game_flaw(ply=4, phase=0, is_miss=True, tempo=1)  # impatient + miss
+        # Flaw 1: reversed (phase=middlegame=1 excluded) + hasty (tempo=1)
+        # Flaw 2: hasty (duplicate -> deduped) + miss
+        # _TEMPO_INT: hasty=1, _CHIP_ORDER: miss < reversed < hasty
+        row1 = _make_game_flaw(ply=2, phase=1, is_reversed=True, tempo=1)  # hasty
+        row2 = _make_game_flaw(ply=4, phase=0, is_miss=True, tempo=1)  # hasty + miss
         chips = _curate_chips_from_rows([row1, row2])
         # Phase tags (middlegame/opening) never appear in chips (not in _CHIP_ORDER)
         assert "middlegame" not in chips
         assert "opening" not in chips
-        # dedupe: impatient appears once
-        assert chips.count("impatient") == 1
+        # dedupe: hasty appears once
+        assert chips.count("hasty") == 1
         # all non-phase tags present
-        assert set(chips) == {"while-ahead", "impatient", "miss"}
-        # deterministic order follows _CHIP_ORDER: miss < while-ahead < impatient
-        assert chips == ["miss", "while-ahead", "impatient"]
+        assert set(chips) == {"reversed", "hasty", "miss"}
+        # deterministic order follows _CHIP_ORDER: miss < reversed < hasty
+        assert chips == ["miss", "reversed", "hasty"]
 
     def test_chips_empty_when_no_flaws(self) -> None:
         """No flaw rows -> no chips."""
@@ -396,9 +396,9 @@ async def _seed_db_flaw(
     tempo: int | None = None,
     phase: int = 1,  # 1=middlegame
     is_miss: bool = False,
-    is_lucky_escape: bool = False,
-    is_while_ahead: bool = False,
-    is_result_changing: bool = False,
+    is_lucky: bool = False,
+    is_reversed: bool = False,
+    is_squandered: bool = False,
 ) -> None:
     """Insert a GameFlaw row for the given game."""
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -416,9 +416,9 @@ async def _seed_db_flaw(
         tempo=tempo,
         phase=phase,
         is_miss=is_miss,
-        is_lucky_escape=is_lucky_escape,
-        is_while_ahead=is_while_ahead,
-        is_result_changing=is_result_changing,
+        is_lucky=is_lucky,
+        is_reversed=is_reversed,
+        is_squandered=is_squandered,
         es_before=0.9,
         es_after=0.3,
         move_san=None,
@@ -556,8 +556,8 @@ class TestFlawStats:
         assert resp.rates.per_game["blunder"] == pytest.approx(1.0)
 
     @pytest.mark.asyncio
-    async def test_result_changing_rate_and_distribution(self, db_session: object) -> None:
-        """1 result-changing of 2 M+B flaws -> result_changing_rate == 0.5."""
+    async def test_reversed_rate_and_distribution(self, db_session: object) -> None:
+        """1 reversed of 2 M+B flaws -> reversed_rate == 0.5."""
         from sqlalchemy.ext.asyncio import AsyncSession
 
         from app.services.library_service import get_flaw_stats
@@ -568,7 +568,7 @@ class TestFlawStats:
 
         prev_b, curr_b = _cp_for_white_drop(BLUNDER_DROP)
         # Two white (user) blunders. game_positions provide eval coverage.
-        # game_flaws rows carry the tag columns (is_result_changing, phase).
+        # game_flaws rows carry the tag columns (is_reversed, phase).
         game = await _seed_db_game(session, user_id=99972, user_color="white", result="1-0")
         win_cp = 800  # white-POV winning ES ~ >=0.85
         await _seed_db_pos(session, game=game, ply=0, eval_cp=win_cp, phase=1)
@@ -578,12 +578,10 @@ class TestFlawStats:
         await _seed_db_pos(session, game=game, ply=4, eval_cp=curr_b, phase=2)  # white blunder #2
         for ply in range(5, 11):
             await _seed_db_pos(session, game=game, ply=ply, eval_cp=curr_b, phase=2)
-        # Blunder #1: phase=middlegame (1), result-changing=True (was winning, dropped to even).
-        # Blunder #2: phase=endgame (2), result-changing=False (already losing on both sides).
-        await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1, is_result_changing=True)
-        await _seed_db_flaw(
-            session, game=game, ply=4, severity=2, phase=2, is_result_changing=False
-        )
+        # Blunder #1: phase=middlegame (1), reversed=True (was winning >=0.70, dropped to <=0.30).
+        # Blunder #2: phase=endgame (2), reversed=False (already losing on both sides).
+        await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1, is_reversed=True)
+        await _seed_db_flaw(session, game=game, ply=4, severity=2, phase=2, is_reversed=False)
 
         resp = await get_flaw_stats(
             session,
@@ -597,8 +595,8 @@ class TestFlawStats:
             flaw_severity=None,
         )
         assert resp.per_severity_counts["blunder"] == 2
-        # exactly one of the two blunders is result-changing -> rate == 0.5
-        assert resp.tag_distribution.result_changing_rate == pytest.approx(0.5)
+        # exactly one of the two blunders is reversed -> rate == 0.5
+        assert resp.tag_distribution.reversed_rate == pytest.approx(0.5)
         # phase histogram: blunder #1 phase=1=middlegame, blunder #2 phase=2=endgame
         hist = resp.tag_distribution.phase_histogram
         assert hist["middlegame"] == 1
@@ -684,10 +682,10 @@ class TestFlawStats:
         assert resp.trend == []
 
     @pytest.mark.asyncio
-    async def test_miss_rate_and_lucky_escape_rate(self, db_session: object) -> None:
-        """1 miss + 1 lucky-escape out of 2 M+B flaws -> rates == 0.5 each.
+    async def test_miss_rate_and_lucky_rate(self, db_session: object) -> None:
+        """1 miss + 1 lucky out of 2 M+B flaws -> rates == 0.5 each.
 
-        D-02 migration: seeds game_flaws rows directly (is_miss / is_lucky_escape
+        D-02 migration: seeds game_flaws rows directly (is_miss / is_lucky
         boolean columns) instead of calling the retired _compute_tag_distribution
         with hand-crafted FlawRecord objects. The API (get_flaw_stats) reads from
         game_flaws via fetch_stats_aggregates (COUNT(*) FILTER aggregates).
@@ -712,9 +710,9 @@ class TestFlawStats:
         for ply in range(5, 11):
             await _seed_db_pos(session, game=game, ply=ply, eval_cp=curr_b)
 
-        # Seed two game_flaws rows: blunder #1 is a miss, blunder #2 is a lucky-escape.
+        # Seed two game_flaws rows: blunder #1 is a miss, blunder #2 is a lucky.
         await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1, is_miss=True)
-        await _seed_db_flaw(session, game=game, ply=4, severity=2, phase=2, is_lucky_escape=True)
+        await _seed_db_flaw(session, game=game, ply=4, severity=2, phase=2, is_lucky=True)
 
         resp = await get_flaw_stats(
             session,
@@ -729,11 +727,11 @@ class TestFlawStats:
         )
         assert resp.per_severity_counts["blunder"] == 2
         assert resp.tag_distribution.miss_rate == pytest.approx(0.5)
-        assert resp.tag_distribution.lucky_escape_rate == pytest.approx(0.5)
-        assert resp.tag_distribution.while_ahead_rate == 0.0
+        assert resp.tag_distribution.lucky_rate == pytest.approx(0.5)
+        assert resp.tag_distribution.reversed_rate == 0.0
 
-    def test_while_ahead_rate(self) -> None:
-        """1 while-ahead of 2 M+B flaws -> while_ahead_rate == 0.5 (pure unit test).
+    def test_reversed_rate(self) -> None:
+        """1 reversed of 2 M+B flaws -> reversed_rate == 0.5 (pure unit test).
 
         D-02 migration: calls _build_tag_distribution with direct keyword aggregates
         (from the SQL COUNT(*) FILTER scan) instead of the retired
@@ -745,22 +743,22 @@ class TestFlawStats:
             mistake_count=0,
             blunder_count=2,
             tempo_low_clock=0,
-            tempo_impatient=0,
-            tempo_considered=0,
-            is_result_changing=0,
+            tempo_hasty=0,
+            tempo_unrushed=0,
+            is_reversed=1,
             is_miss=1,
-            is_lucky_escape=0,
-            is_while_ahead=1,
+            is_lucky=0,
+            is_squandered=0,
             phase_opening=0,
             phase_middlegame=1,
             phase_endgame=1,
         )
-        assert dist.while_ahead_rate == pytest.approx(0.5)
+        assert dist.reversed_rate == pytest.approx(0.5)
         assert dist.miss_rate == pytest.approx(0.5)
-        assert dist.lucky_escape_rate == 0.0
+        assert dist.lucky_rate == 0.0
 
     def test_rates_zero_when_no_mb_flaws(self) -> None:
-        """0 M+B flaws -> all three rates are 0.0 (no ZeroDivisionError).
+        """0 M+B flaws -> all four rates are 0.0 (no ZeroDivisionError).
 
         D-02 migration: calls _build_tag_distribution with all-zero aggregates
         instead of the retired _compute_tag_distribution([]).
@@ -771,16 +769,17 @@ class TestFlawStats:
             mistake_count=0,
             blunder_count=0,
             tempo_low_clock=0,
-            tempo_impatient=0,
-            tempo_considered=0,
-            is_result_changing=0,
+            tempo_hasty=0,
+            tempo_unrushed=0,
+            is_reversed=0,
             is_miss=0,
-            is_lucky_escape=0,
-            is_while_ahead=0,
+            is_lucky=0,
+            is_squandered=0,
             phase_opening=0,
             phase_middlegame=0,
             phase_endgame=0,
         )
         assert dist.miss_rate == 0.0
-        assert dist.lucky_escape_rate == 0.0
-        assert dist.while_ahead_rate == 0.0
+        assert dist.lucky_rate == 0.0
+        assert dist.reversed_rate == 0.0
+        assert dist.squandered_rate == 0.0

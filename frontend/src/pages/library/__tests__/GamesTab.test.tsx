@@ -182,7 +182,7 @@ describe('GamesTab', () => {
     });
 
     it('passes flawFilter to useLibraryGames (severity + tags)', () => {
-      mockFlawFilterState = { severity: ['blunder', 'mistake'], tags: ['result-changing'] };
+      mockFlawFilterState = { severity: ['blunder', 'mistake'], tags: ['reversed'] };
       renderGamesTab();
       // useLibraryGames should receive the flawFilter as second arg
       expect(useLibraryGamesSpy).toHaveBeenCalled();
@@ -193,7 +193,7 @@ describe('GamesTab', () => {
       const flawFilterArg = lastCall![1];
       expect(flawFilterArg).toMatchObject({
         severity: ['blunder', 'mistake'],
-        tags: ['result-changing'],
+        tags: ['reversed'],
       });
     });
 

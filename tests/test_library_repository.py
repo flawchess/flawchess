@@ -133,9 +133,9 @@ async def _seed_game_flaw(
                 "tempo": None,
                 "phase": 1,  # middlegame
                 "is_miss": False,
-                "is_lucky_escape": False,
-                "is_while_ahead": False,
-                "is_result_changing": False,
+                "is_lucky": False,
+                "is_reversed": False,
+                "is_squandered": False,
                 "es_before": 0.7,
                 "es_after": 0.2,
                 "move_san": "Nf3",

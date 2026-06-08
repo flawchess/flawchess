@@ -13,7 +13,7 @@
  * uses area-based `size` not radius `r`, making pixel-precise sizing unreliable.
  */
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import {
@@ -22,6 +22,7 @@ import {
   EVAL_CHART_LINE,
   EVAL_CHART_MIDLINE,
   EVAL_CHART_PHASE_LINE,
+  EVAL_MARKER_FILTER_OUTLINE,
   SEV_BLUNDER,
   SEV_INACCURACY,
   SEV_MISTAKE,
@@ -51,6 +52,19 @@ interface EvalChartProps {
    * and board all track the precise hovered ply.
    */
   onHoverPlyChange?: (ply: number | null) => void;
+  /**
+   * Plies to emphasize while the user hovers a tag chip / severity badge in the
+   * card's flaw column. null (default) renders markers normally. A non-empty set
+   * emphasizes matching M/B markers and dims the rest. An empty set is a no-op
+   * (never dims everything).
+   */
+  highlightedPlies?: ReadonlySet<number> | null;
+  /**
+   * Plies whose (user) marker tags match the active flaw-tag filter. Those markers
+   * get a white outline, mirroring the TagChip active-filter ring on the chart.
+   * Independent of highlightedPlies — both can apply at once.
+   */
+  outlinedPlies?: ReadonlySet<number> | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -88,8 +102,20 @@ function midlineGradientOffset(series: EvalPoint[]): number {
 /** Mistake/blunder flaw-dot radius. */
 const FLAW_DOT_RADIUS = 4.5;
 
+/** Radius multiplier for an emphasized (hover-highlighted) marker. */
+const HIGHLIGHT_RADIUS_FACTOR = 1.45;
+
+/** Opacity for non-matching markers while a hover highlight is active. */
+const DIMMED_MARKER_OPACITY = 0.2;
+
+/** Touch movement (px) past which a touch is treated as a drag, not a tap. */
+const TOUCH_SLOP_PX = 10;
+
 /** Hollow-square half-side as a fraction of FLAW_DOT_RADIUS (visually balances the filled circle). */
 const SQUARE_HALF_SIDE_FACTOR = 0.85;
+
+/** White-outline stroke width for filter-matched flaw markers. */
+const FLAW_MARKER_OUTLINE_WIDTH = 1.5;
 
 /**
  * The flaw-marker glyph: filled circle for the player (is_user), hollow square
@@ -105,9 +131,25 @@ function flawDotElement(
   cy: number,
   r: number,
   key: string,
+  opacity = 1,
+  // outline: draw a white ring around the marker when its tag matches an active
+  // flaw-tag filter. Only used for the user's filled-circle markers (the filter is
+  // scoped to is_user); opponent hollow squares are never outlined.
+  outline = false,
 ): React.ReactElement {
   if (isUser) {
-    return <circle key={key} cx={cx} cy={cy} r={r} fill={color} />;
+    return (
+      <circle
+        key={key}
+        cx={cx}
+        cy={cy}
+        r={r}
+        fill={color}
+        opacity={opacity}
+        stroke={outline ? EVAL_MARKER_FILTER_OUTLINE : undefined}
+        strokeWidth={outline ? FLAW_MARKER_OUTLINE_WIDTH : undefined}
+      />
+    );
   }
   const s = r * SQUARE_HALF_SIDE_FACTOR;
   return (
@@ -121,17 +163,27 @@ function flawDotElement(
       stroke={color}
       strokeWidth={2}
       strokeLinejoin="round"
+      opacity={opacity}
     />
   );
 }
 
 /**
  * Custom dot render prop for the invisible <Line> overlay.
- * Draws filled circles (player) or hollow squares (opponent) at mistake/blunder
- * plies — inaccuracies are not in the map, so they get no dot. Returns empty <g>
- * for non-flaw plies — never returns null (Pitfall 7).
+ * Draws filled circles (player) or hollow squares (opponent). Mistake/blunder dots
+ * are always drawn; inaccuracy dots are off-chart by default and only drawn when
+ * their ply is highlighted (Inaccuracies-badge hover/tap), rendered yellow at the
+ * normal blunder size. Returns empty <g> for non-flaw / hidden plies — never null
+ * (Pitfall 7). `markerMap` carries all severities (the caller filters via drawing).
  */
-function buildDotRenderer(markerMap: Map<number, FlawMarker>) {
+function buildDotRenderer(
+  markerMap: Map<number, FlawMarker>,
+  highlightedPlies?: ReadonlySet<number> | null,
+  outlinedPlies?: ReadonlySet<number> | null,
+) {
+  // An empty set is treated as no-op so a tag/badge with no user markers never
+  // dims the whole chart.
+  const highlightActive = highlightedPlies != null && highlightedPlies.size > 0;
   return function customDotRenderer(props: {
     cx?: number;
     cy?: number;
@@ -146,8 +198,28 @@ function buildDotRenderer(markerMap: Map<number, FlawMarker>) {
     if (!marker || payload.es == null) {
       return <g key={`nodot-${payload.ply}`} />;
     }
+    const matched = highlightActive && highlightedPlies!.has(payload.ply);
+    // Inaccuracies stay hidden unless explicitly highlighted (their badge hover).
+    if (marker.severity === 'inaccuracy' && !matched) {
+      return <g key={`nodot-${payload.ply}`} />;
+    }
     const color = severityColor(marker.severity);
-    return flawDotElement(marker.is_user, color, cx, cy, FLAW_DOT_RADIUS, `dot-${payload.ply}`);
+    // Matched M/B dots enlarge for emphasis; a revealed inaccuracy dot renders at
+    // the normal blunder size (hidden→visible is itself the emphasis).
+    const enlarge = matched && marker.severity !== 'inaccuracy';
+    const radius = enlarge ? FLAW_DOT_RADIUS * HIGHLIGHT_RADIUS_FACTOR : FLAW_DOT_RADIUS;
+    const opacity = !highlightActive || matched ? 1 : DIMMED_MARKER_OPACITY;
+    const outline = outlinedPlies != null && outlinedPlies.has(payload.ply);
+    return flawDotElement(
+      marker.is_user,
+      color,
+      cx,
+      cy,
+      radius,
+      `dot-${payload.ply}`,
+      opacity,
+      outline,
+    );
   };
 }
 
@@ -287,20 +359,24 @@ export function EvalChart({
   moves,
   heightClass = 'h-24',
   onHoverPlyChange,
+  highlightedPlies,
+  outlinedPlies,
 }: EvalChartProps) {
   // Stable SVG gradient ID per instance — prevents collisions when 20 cards
   // render simultaneously (useId from React 18+).
   const rawId = useId();
   const gradientId = `eval-gradient-${rawId.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
-  // Only mistakes/blunders are shown on the chart — inaccuracies get no dot.
   // evalByPly resolves a ply to its eval string for the tooltip.
   const mbMarkers = flawMarkers.filter((m) => m.severity !== 'inaccuracy');
   const evalByPly = new Map(evalSeries.map((p) => [p.ply, p]));
 
-  // O(1) ply lookup for the dot renderer and tooltip (mistakes/blunders only).
+  // Tooltip stays mistakes/blunders-only (inaccuracy plies show eval only, no flaw
+  // detail). The dot renderer gets the all-severity map so it can reveal inaccuracy
+  // dots when the Inaccuracies badge is hovered; it hides them otherwise.
   const markerMap = new Map(mbMarkers.map((m) => [m.ply, m]));
-  const dotRenderer = buildDotRenderer(markerMap);
+  const allMarkerMap = new Map(flawMarkers.map((m) => [m.ply, m]));
+  const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies);
   const tooltipContent = buildTooltipContent(moves, markerMap, evalByPly);
 
   // Where the 0.5 midline sits within the filled area's bounding box, so the
@@ -316,19 +392,83 @@ export function EvalChart({
     setHoverPly(ply);
     onHoverPlyChange?.(ply);
   };
+
+  // Mobile sticky-tooltip fix. A touch *drag* emits no synthesized mouse events, so
+  // after the finger lifts a subsequent outside tap never fires the chart's
+  // mouseleave — the path that normally dismisses Recharts' tooltip + our crosshair
+  // (a simple tap works because it *does* synthesize mouse events), leaving the
+  // tooltip up but un-dismissable by an outside tap. We want it to STAY on release
+  // and only clear on an outside tap, so after a real drag we "pin" the tooltip and
+  // arm a document-level outside-pointer listener (below) to dismiss it. Recharts
+  // keeps its tooltip active after the drag, so we leave active uncontrolled
+  // (undefined) and only force it hidden (active={false}) when dismissing.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [suppressTooltip, setSuppressTooltip] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const draggedRef = useRef(false);
+
   // Mouse and touch share this handler. Recharts fires onMouseMove only on
   // pointer devices, so on touch the crosshair + parent miniboard never updated
   // (the tooltip kept working because Recharts tracks tooltip state internally,
   // independent of these callbacks). onTouchMove delivers the same nextState
   // with activeLabel, so wiring it here syncs the crosshair/miniboard on drag.
   const handlePointerMove = (state: { activeLabel?: string | number }) => {
+    setSuppressTooltip(false); // any fresh move re-enables the tooltip
     const raw = state?.activeLabel;
     updateHoverPly(raw == null ? null : Number(raw));
   };
   const handleMouseLeave = () => updateHoverPly(null);
 
+  // Raw touch tracking on the wrapper (Recharts' chart-level handlers don't expose
+  // pixel coordinates). A movement past TOUCH_SLOP_PX counts as a drag.
+  const handleTouchStart = (e: React.TouchEvent): void => {
+    const t = e.touches[0];
+    touchStartRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+    draggedRef.current = false;
+    setPinned(false); // a new touch inside the chart starts a fresh interaction
+    // suppress is left as-is — handlePointerMove re-enables on the first real move,
+    // so a stale (pre-dismiss) Recharts tooltip never flashes before the new ply.
+  };
+  const handleTouchMoveRaw = (e: React.TouchEvent): void => {
+    const start = touchStartRef.current;
+    const t = e.touches[0];
+    if (
+      start &&
+      t &&
+      (Math.abs(t.clientX - start.x) > TOUCH_SLOP_PX ||
+        Math.abs(t.clientY - start.y) > TOUCH_SLOP_PX)
+    ) {
+      draggedRef.current = true;
+    }
+  };
+  const handleTouchEnd = (): void => {
+    // Keep the tooltip up after a drag (do NOT clear). Pin it so the document
+    // listener below can dismiss it on the next tap outside the chart.
+    if (draggedRef.current) setPinned(true);
+    touchStartRef.current = null;
+  };
+
+  // While pinned (tooltip left up after a touch drag), a tap/click anywhere outside
+  // the chart dismisses it — the "tap outside to close" the synthesized-mouse path
+  // can't deliver after a drag. Only armed on mobile (pinned is set by a drag).
+  useEffect(() => {
+    if (!pinned) return;
+    const onOutsidePointerDown = (e: PointerEvent): void => {
+      const node = wrapperRef.current;
+      if (node && e.target instanceof Node && node.contains(e.target)) return; // inside → keep
+      setSuppressTooltip(true); // force Recharts' still-active tooltip hidden
+      setHoverPly(null);
+      onHoverPlyChange?.(null);
+      setPinned(false);
+    };
+    document.addEventListener('pointerdown', onOutsidePointerDown, true);
+    return () => document.removeEventListener('pointerdown', onOutsidePointerDown, true);
+  }, [pinned, onHoverPlyChange]);
+
   return (
     <div
+      ref={wrapperRef}
       data-testid={`eval-chart-${gameId}`}
       aria-label={`Expected score chart for game ${gameId}`}
       role="img"
@@ -344,6 +484,10 @@ export function EvalChart({
       className={`w-full [&_:focus]:outline-none [&_:focus-visible]:outline-none${
         hoverPly != null ? ' relative z-10' : ''
       }`}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMoveRaw}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
     >
       <ChartContainer config={{}} className={`w-full ${heightClass}`}>
         <ComposedChart
@@ -454,6 +598,9 @@ export function EvalChart({
             content={tooltipContent}
             cursor={false}
             allowEscapeViewBox={{ x: false, y: true }}
+            // Controlled only to force-hide after a touch drag (see suppressTooltip);
+            // undefined otherwise so Recharts keeps its normal hover/tap behavior.
+            active={suppressTooltip ? false : undefined}
           />
         </ComposedChart>
       </ChartContainer>

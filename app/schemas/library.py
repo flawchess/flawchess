@@ -190,27 +190,27 @@ class TagDistribution(BaseModel):
                             show the unmeasured remainder (total M+B - sum(tempo))
                             rather than normalizing the three measured segments to 100%
                             (per flaw-tag-naming.md §"Structural change").
-    result_changing_rate  = result-changing M+B flaws / total M+B flaws (W3); 0.0
-                            when there are no M+B flaws.
     phase_histogram       = count of flaws in each game phase (each flaw carries
                             exactly one phase tag).
     miss_rate             = miss M+B flaws / total M+B flaws; 0.0 when there are
                             no M+B flaws. (D-01, Phase 107)
-    lucky_escape_rate     = lucky-escape M+B flaws / total M+B flaws; 0.0 when
+    lucky_rate     = lucky M+B flaws / total M+B flaws; 0.0 when
                             there are no M+B flaws. (D-01, Phase 107)
-    while_ahead_rate      = while-ahead M+B flaws / total M+B flaws; 0.0 when
-                            there are no M+B flaws. (D-01, Phase 107)
+    reversed_rate         = reversed M+B flaws / total M+B flaws; 0.0 when there
+                            are no M+B flaws. (Phase 110, D-03)
+    squandered_rate       = squandered M+B flaws / total M+B flaws; 0.0 when there
+                            are no M+B flaws. (Phase 110, D-03)
     """
 
     tempo: dict[TempoTag, int]
-    result_changing_rate: float
     phase_histogram: dict[Literal["opening", "middlegame", "endgame"], int]
-    # D-01: Opportunity and Impact rates (Phase 107).
+    # D-01: Opportunity and Impact rates.
     # Each = count / total M+B flaws; 0.0 when there are no M+B flaws.
-    # Flat floats, consistent with result_changing_rate precedent (no nested dicts).
+    # Flat floats (no nested dicts).
     miss_rate: float
-    lucky_escape_rate: float
-    while_ahead_rate: float
+    lucky_rate: float
+    reversed_rate: float
+    squandered_rate: float
 
 
 class FlawTrendPoint(BaseModel):

@@ -74,9 +74,9 @@ def _make_flaw_row(game: Game, ply: int = 10) -> GameFlaw:
         tempo=0,  # low-clock
         phase=1,  # middlegame
         is_miss=True,
-        is_lucky_escape=False,
-        is_while_ahead=True,
-        is_result_changing=True,
+        is_lucky=False,
+        is_reversed=True,
+        is_squandered=True,
         es_before=0.75,
         es_after=0.45,
         move_san="Qxf7+",
@@ -114,9 +114,9 @@ class TestGameFlawRoundTrip:
         assert row.tempo == 0
         assert row.phase == 1
         assert row.is_miss is True
-        assert row.is_lucky_escape is False
-        assert row.is_while_ahead is True
-        assert row.is_result_changing is True
+        assert row.is_lucky is False
+        assert row.is_reversed is True
+        assert row.is_squandered is True
         assert abs(row.es_before - 0.75) < 1e-6
         assert abs(row.es_after - 0.45) < 1e-6
         assert row.move_san == "Qxf7+"

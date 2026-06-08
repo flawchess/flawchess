@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { FlawFilterControl } from '../FlawFilterControl';
 import type { FlawTag } from '@/types/library';
 
@@ -78,12 +78,12 @@ describe('FlawFilterControl', () => {
       render(<FlawFilterControl {...defaultProps} />);
       const tagButtons = [
         'filter-flaw-tag-low-clock',
-        'filter-flaw-tag-impatient',
-        'filter-flaw-tag-considered',
+        'filter-flaw-tag-hasty',
+        'filter-flaw-tag-unrushed',
         'filter-flaw-tag-miss',
-        'filter-flaw-tag-lucky-escape',
-        'filter-flaw-tag-result-changing',
-        'filter-flaw-tag-while-ahead',
+        'filter-flaw-tag-lucky',
+        'filter-flaw-tag-reversed',
+        'filter-flaw-tag-squandered',
       ];
       for (const testid of tagButtons) {
         expect(screen.getByTestId(testid)).toBeTruthy();
@@ -109,23 +109,66 @@ describe('FlawFilterControl', () => {
       render(
         <FlawFilterControl
           {...defaultProps}
-          tags={['miss', 'result-changing'] as FlawTag[]}
+          tags={['miss', 'reversed'] as FlawTag[]}
           onTagChange={onTagChange}
         />,
       );
       fireEvent.click(screen.getByTestId('filter-flaw-tag-miss'));
-      expect(onTagChange).toHaveBeenCalledWith(['result-changing']);
+      expect(onTagChange).toHaveBeenCalledWith(['reversed']);
     });
 
     it('tag buttons have aria-pressed reflecting selection', () => {
       render(
         <FlawFilterControl
           {...defaultProps}
-          tags={['result-changing'] as FlawTag[]}
+          tags={['reversed'] as FlawTag[]}
         />,
       );
-      expect(screen.getByTestId('filter-flaw-tag-result-changing').getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByTestId('filter-flaw-tag-reversed').getAttribute('aria-pressed')).toBe('true');
       expect(screen.getByTestId('filter-flaw-tag-miss').getAttribute('aria-pressed')).toBe('false');
+    });
+  });
+
+  describe('canonical tag names + definition popover', () => {
+    it('renders the raw lowercase-with-dash tag name, not a title-cased label', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      const lucky = screen.getByTestId('filter-flaw-tag-lucky');
+      const lowClock = screen.getByTestId('filter-flaw-tag-low-clock');
+      expect(lucky.textContent).toContain('lucky');
+      expect(lowClock.textContent).toContain('low-clock');
+      // The old title-cased TAG_LABELS values must be gone.
+      expect(lucky.textContent).not.toContain('Lucky');
+      expect(lowClock.textContent).not.toContain('Low clock');
+    });
+
+    it('every non-phase tag button shows its canonical lowercase-with-dash name', () => {
+      render(<FlawFilterControl {...defaultProps} />);
+      const canonical: FlawTag[] = [
+        'low-clock', 'hasty', 'unrushed', 'miss', 'lucky', 'reversed', 'squandered',
+      ];
+      for (const tag of canonical) {
+        expect(screen.getByTestId(`filter-flaw-tag-${tag}`).textContent).toContain(tag);
+      }
+    });
+
+    it('hovering a tag button opens its definition popover after the delay', () => {
+      vi.useFakeTimers();
+      try {
+        render(<FlawFilterControl {...defaultProps} />);
+        const btn = screen.getByTestId('filter-flaw-tag-reversed');
+        // Popover is closed initially.
+        expect(screen.queryByTestId('filter-flaw-tag-popover-reversed')).toBeNull();
+        fireEvent.mouseEnter(btn);
+        act(() => {
+          vi.advanceTimersByTime(120);
+        });
+        const popover = screen.getByTestId('filter-flaw-tag-popover-reversed');
+        expect(popover.textContent).toContain('reversed');
+        // Definition prose (not just the tag name) is present.
+        expect(popover.textContent).toContain('Expected Score');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_flaw import GameFlaw
 from app.repositories import library_repository
-from app.repositories.library_repository import _TEMPO_INT_TO_TAG  # noqa: F401
+from app.repositories.library_repository import _TEMPO_INT_TO_TAG
 from app.schemas.library import (
     FlawStatsResponse,
     FlawTrendPoint,
@@ -66,7 +66,7 @@ from app.services.openings_service import (
 # ---------------------------------------------------------------------------
 
 # Tags that are user-framed and must be stripped from opponent flaw markers (D-03).
-_USER_FRAMED_TAGS: frozenset[FlawTag] = frozenset({"miss", "lucky-escape"})
+_USER_FRAMED_TAGS: frozenset[FlawTag] = frozenset({"miss", "lucky"})
 
 
 def _build_eval_series(
@@ -210,8 +210,9 @@ def _build_opponent_tags(
 ) -> list[FlawTag]:
     """Tags for an opponent flaw dot — mover-framed only (D-03 resolution).
 
-    Flips user_result to opponent's perspective so while-ahead / result-changing
-    are mover-relative. Strips 'miss' and 'lucky-escape' which are user-framed
+    Impact tags (reversed/squandered) are outcome-independent (mover-relative by
+    definition). Flips user_result to opponent's perspective for lucky
+    (_is_unpunished). Strips 'miss' and 'lucky' which are user-framed
     and meaningless/misleading from the opponent's perspective (RESEARCH D-03 Gray Area).
     """
     opponent_color: Literal["white", "black"] = "black" if game.user_color == "white" else "white"
@@ -236,12 +237,12 @@ def _build_opponent_tags(
 # game_flaws rows are M+B-only (D-03), so inaccuracy tags never appear here.
 _CHIP_ORDER: tuple[FlawTag, ...] = (
     "miss",
-    "lucky-escape",
-    "while-ahead",
-    "result-changing",
+    "lucky",
+    "reversed",
+    "squandered",
     "low-clock",
-    "impatient",
-    "considered",
+    "hasty",
+    "unrushed",
 )
 
 
@@ -249,7 +250,7 @@ def _curate_chips_from_rows(flaw_rows: list[GameFlaw]) -> list[FlawTag]:
     """Collect a deduped, deterministically-ordered set of card chips from game_flaws rows.
 
     Aggregates non-phase tags across all of a game's game_flaws rows:
-    - Boolean columns: is_miss, is_lucky_escape, is_while_ahead, is_result_changing
+    - Boolean columns: is_miss, is_lucky, is_reversed, is_squandered
     - Tempo column: _TEMPO_INT_TO_TAG lookup (None → skip)
     Phase tags are excluded (opening/middlegame/endgame per _CHIP_ORDER curation).
     One chip per remaining tag type (game-level dedupe), in _CHIP_ORDER (SEED-036).
@@ -258,12 +259,12 @@ def _curate_chips_from_rows(flaw_rows: list[GameFlaw]) -> list[FlawTag]:
     for row in flaw_rows:
         if row.is_miss:
             present.add("miss")
-        if row.is_lucky_escape:
-            present.add("lucky-escape")
-        if row.is_while_ahead:
-            present.add("while-ahead")
-        if row.is_result_changing:
-            present.add("result-changing")
+        if row.is_lucky:
+            present.add("lucky")
+        if row.is_reversed:
+            present.add("reversed")
+        if row.is_squandered:
+            present.add("squandered")
         if row.tempo is not None:
             tempo_tag = _TEMPO_INT_TO_TAG.get(row.tempo)
             if tempo_tag is not None:
@@ -469,7 +470,7 @@ async def get_library_games(
 # ---------------------------------------------------------------------------
 
 _SEVERITY_TIERS: tuple[FlawSeverity, ...] = ("inaccuracy", "mistake", "blunder")
-_TEMPO_TAGS: tuple[TempoTag, ...] = ("low-clock", "impatient", "considered")
+_TEMPO_TAGS: tuple[TempoTag, ...] = ("low-clock", "hasty", "unrushed")
 _PER_100 = 100.0
 
 
@@ -497,12 +498,12 @@ def _build_tag_distribution(
     mistake_count: int,
     blunder_count: int,
     tempo_low_clock: int,
-    tempo_impatient: int,
-    tempo_considered: int,
-    is_result_changing: int,
+    tempo_hasty: int,
+    tempo_unrushed: int,
+    is_reversed: int,
     is_miss: int,
-    is_lucky_escape: int,
-    is_while_ahead: int,
+    is_lucky: int,
+    is_squandered: int,
     phase_opening: int,
     phase_middlegame: int,
     phase_endgame: int,
@@ -516,25 +517,25 @@ def _build_tag_distribution(
     to 100% (flaw-tag-naming.md §"Structural change").
     """
     total_flaws = mistake_count + blunder_count
-    rate = is_result_changing / total_flaws if total_flaws > 0 else 0.0
     miss_rate = is_miss / total_flaws if total_flaws > 0 else 0.0
-    lucky_escape_rate = is_lucky_escape / total_flaws if total_flaws > 0 else 0.0
-    while_ahead_rate = is_while_ahead / total_flaws if total_flaws > 0 else 0.0
+    lucky_rate = is_lucky / total_flaws if total_flaws > 0 else 0.0
+    reversed_rate = is_reversed / total_flaws if total_flaws > 0 else 0.0
+    squandered_rate = is_squandered / total_flaws if total_flaws > 0 else 0.0
     return TagDistribution(
         tempo={
             "low-clock": tempo_low_clock,
-            "impatient": tempo_impatient,
-            "considered": tempo_considered,
+            "hasty": tempo_hasty,
+            "unrushed": tempo_unrushed,
         },
-        result_changing_rate=rate,
         phase_histogram={
             "opening": phase_opening,
             "middlegame": phase_middlegame,
             "endgame": phase_endgame,
         },
         miss_rate=miss_rate,
-        lucky_escape_rate=lucky_escape_rate,
-        while_ahead_rate=while_ahead_rate,
+        lucky_rate=lucky_rate,
+        reversed_rate=reversed_rate,
+        squandered_rate=squandered_rate,
     )
 
 
@@ -584,12 +585,12 @@ def _empty_stats(total_n: int) -> FlawStatsResponse:
             mistake_count=0,
             blunder_count=0,
             tempo_low_clock=0,
-            tempo_impatient=0,
-            tempo_considered=0,
-            is_result_changing=0,
+            tempo_hasty=0,
+            tempo_unrushed=0,
+            is_reversed=0,
             is_miss=0,
-            is_lucky_escape=0,
-            is_while_ahead=0,
+            is_lucky=0,
+            is_squandered=0,
             phase_opening=0,
             phase_middlegame=0,
             phase_endgame=0,
@@ -668,12 +669,12 @@ async def get_flaw_stats(
             mistake_count,
             blunder_count,
             tempo_low_clock,
-            tempo_impatient,
-            tempo_considered,
-            is_result_changing,
+            tempo_hasty,
+            tempo_unrushed,
+            is_reversed,
             is_miss,
-            is_lucky_escape,
-            is_while_ahead,
+            is_lucky,
+            is_squandered,
             phase_opening,
             phase_middlegame,
             phase_endgame,
@@ -708,12 +709,12 @@ async def get_flaw_stats(
             mistake_count=mistake_count,
             blunder_count=blunder_count,
             tempo_low_clock=tempo_low_clock,
-            tempo_impatient=tempo_impatient,
-            tempo_considered=tempo_considered,
-            is_result_changing=is_result_changing,
+            tempo_hasty=tempo_hasty,
+            tempo_unrushed=tempo_unrushed,
+            is_reversed=is_reversed,
             is_miss=is_miss,
-            is_lucky_escape=is_lucky_escape,
-            is_while_ahead=is_while_ahead,
+            is_lucky=is_lucky,
+            is_squandered=is_squandered,
             phase_opening=phase_opening,
             phase_middlegame=phase_middlegame,
             phase_endgame=phase_endgame,

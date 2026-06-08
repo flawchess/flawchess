@@ -245,21 +245,21 @@ class TestFlawRecordToRow:
         )
         assert row["tempo"] == 0
 
-    def test_tempo_impatient_maps_to_1(self) -> None:
-        """impatient tempo tag maps to int 1."""
+    def test_tempo_hasty_maps_to_1(self) -> None:
+        """hasty tempo tag maps to int 1."""
         row = flaw_record_to_row(
             user_id=1,
             game_id=10,
-            flaw=self._make_flaw(tags=["middlegame", "impatient"]),
+            flaw=self._make_flaw(tags=["middlegame", "hasty"]),
         )
         assert row["tempo"] == 1
 
-    def test_tempo_considered_maps_to_2(self) -> None:
-        """considered tempo tag maps to int 2."""
+    def test_tempo_unrushed_maps_to_2(self) -> None:
+        """unrushed tempo tag maps to int 2."""
         row = flaw_record_to_row(
             user_id=1,
             game_id=10,
-            flaw=self._make_flaw(tags=["middlegame", "considered"]),
+            flaw=self._make_flaw(tags=["middlegame", "unrushed"]),
         )
         assert row["tempo"] == 2
 
@@ -305,32 +305,32 @@ class TestFlawRecordToRow:
         assert row_with["is_miss"] is True
         assert row_without["is_miss"] is False
 
-    def test_boolean_tag_lucky_escape(self) -> None:
-        """'lucky-escape' tag sets is_lucky_escape=True."""
+    def test_boolean_tag_lucky(self) -> None:
+        """'lucky' tag sets is_lucky=True."""
         row = flaw_record_to_row(
             user_id=1,
             game_id=10,
-            flaw=self._make_flaw(tags=["middlegame", "lucky-escape"]),
+            flaw=self._make_flaw(tags=["middlegame", "lucky"]),
         )
-        assert row["is_lucky_escape"] is True
+        assert row["is_lucky"] is True
 
-    def test_boolean_tag_while_ahead(self) -> None:
-        """'while-ahead' tag sets is_while_ahead=True."""
+    def test_boolean_tag_reversed(self) -> None:
+        """'reversed' tag sets is_reversed=True (es_before>=0.70, es_after<=0.30)."""
         row = flaw_record_to_row(
             user_id=1,
             game_id=10,
-            flaw=self._make_flaw(tags=["middlegame", "while-ahead"]),
+            flaw=self._make_flaw(tags=["middlegame", "reversed"], es_before=0.90, es_after=0.20),
         )
-        assert row["is_while_ahead"] is True
+        assert row["is_reversed"] is True
 
-    def test_boolean_tag_result_changing(self) -> None:
-        """'result-changing' tag sets is_result_changing=True."""
+    def test_boolean_tag_squandered(self) -> None:
+        """'squandered' tag sets is_squandered=True (es_before>=0.85, es_after<=0.60)."""
         row = flaw_record_to_row(
             user_id=1,
             game_id=10,
-            flaw=self._make_flaw(tags=["middlegame", "result-changing"]),
+            flaw=self._make_flaw(tags=["middlegame", "squandered"], es_before=0.88, es_after=0.55),
         )
-        assert row["is_result_changing"] is True
+        assert row["is_squandered"] is True
 
     def test_passthrough_fields(self) -> None:
         """es_before, es_after, move_san, fen are passed through unchanged."""
@@ -375,9 +375,9 @@ class TestBulkInsertGameFlaws:
             "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
             "side": "white",
             "severity": "blunder",
-            "tags": ["middlegame", "while-ahead"],
-            "es_before": 0.85,
-            "es_after": 0.30,
+            "tags": ["middlegame", "reversed"],
+            "es_before": 0.90,
+            "es_after": 0.20,
             "move_san": "e4",
         }
         row = flaw_record_to_row(user_id=game.user_id, game_id=game.id, flaw=flaw)
@@ -394,11 +394,11 @@ class TestBulkInsertGameFlaws:
         stored = result.scalar_one()
         assert stored.severity == 2  # blunder
         assert stored.phase == 1  # middlegame
-        assert stored.is_while_ahead is True
+        assert stored.is_reversed is True
         assert stored.is_miss is False
         assert stored.tempo is None  # no tempo tag
-        assert abs(stored.es_before - 0.85) < 1e-6
-        assert abs(stored.es_after - 0.30) < 1e-6
+        assert abs(stored.es_before - 0.90) < 1e-6
+        assert abs(stored.es_after - 0.20) < 1e-6
 
     @pytest.mark.asyncio
     async def test_on_conflict_do_nothing_is_idempotent(self, db_session: AsyncSession) -> None:
@@ -570,7 +570,7 @@ class TestMaterializationRoundTrip:
         blunder_flaws = [r for r in classify_result if r["ply"] == 2]
         assert len(blunder_flaws) == 1
         blunder = blunder_flaws[0]
-        tempo_tags = [t for t in blunder["tags"] if t in {"low-clock", "impatient", "considered"}]
+        tempo_tags = [t for t in blunder["tags"] if t in {"low-clock", "hasty", "unrushed"}]
         assert len(tempo_tags) == 0, (
             f"Expected no tempo tags when clock data absent, got {tempo_tags}"
         )
@@ -595,7 +595,7 @@ class TestMaterializationRoundTrip:
 
     @pytest.mark.asyncio
     async def test_boolean_columns_match_tag_membership(self, db_session: AsyncSession) -> None:
-        """Boolean columns (is_miss, is_lucky_escape, is_while_ahead, is_result_changing)
+        """Boolean columns (is_miss, is_lucky, is_reversed, is_squandered)
         match the tag membership in the corresponding FlawRecord.
         """
         game_obj = _make_game_obj(user_color="white", result="1-0")
@@ -628,14 +628,14 @@ class TestMaterializationRoundTrip:
             assert stored_flaw.is_miss == ("miss" in tags), (
                 f"ply={ply}: is_miss mismatch. tags={tags}, stored={stored_flaw.is_miss}"
             )
-            assert stored_flaw.is_lucky_escape == ("lucky-escape" in tags), (
-                f"ply={ply}: is_lucky_escape mismatch. tags={tags}, stored={stored_flaw.is_lucky_escape}"
+            assert stored_flaw.is_lucky == ("lucky" in tags), (
+                f"ply={ply}: is_lucky mismatch. tags={tags}, stored={stored_flaw.is_lucky}"
             )
-            assert stored_flaw.is_while_ahead == ("while-ahead" in tags), (
-                f"ply={ply}: is_while_ahead mismatch. tags={tags}, stored={stored_flaw.is_while_ahead}"
+            assert stored_flaw.is_reversed == ("reversed" in tags), (
+                f"ply={ply}: is_reversed mismatch. tags={tags}, stored={stored_flaw.is_reversed}"
             )
-            assert stored_flaw.is_result_changing == ("result-changing" in tags), (
-                f"ply={ply}: is_result_changing mismatch. tags={tags}, stored={stored_flaw.is_result_changing}"
+            assert stored_flaw.is_squandered == ("squandered" in tags), (
+                f"ply={ply}: is_squandered mismatch. tags={tags}, stored={stored_flaw.is_squandered}"
             )
 
     @pytest.mark.asyncio

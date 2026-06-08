@@ -13,12 +13,12 @@ import type { UserResult } from '@/types/api';
 /** All possible flaw tag strings (backend FlawTag literal). */
 export type FlawTag =
   | 'low-clock'
-  | 'impatient'
-  | 'considered'
+  | 'hasty'
+  | 'unrushed'
   | 'miss'
-  | 'lucky-escape'
-  | 'while-ahead'
-  | 'result-changing'
+  | 'lucky'
+  | 'reversed'
+  | 'squandered'
   | 'opening'
   | 'middlegame'
   | 'endgame';
@@ -27,7 +27,7 @@ export type FlawTag =
 export type FlawSeverity = 'inaccuracy' | 'mistake' | 'blunder';
 
 /** Tempo-family tags — subset of FlawTag (backend TempoTag literal). */
-export type TempoTag = 'low-clock' | 'impatient' | 'considered';
+export type TempoTag = 'low-clock' | 'hasty' | 'unrushed';
 
 /** Analysis state of a game (whether engine evals are present). */
 export type AnalysisState = 'analyzed' | 'no_engine_analysis';
@@ -131,22 +131,22 @@ export interface SeverityRates {
 /**
  * Tag distribution over the analyzed-set M+B FlawRecords (mirrors backend TagDistribution).
  *
- * tempo                = count of each tempo tag; sums to <= M+B flaws (optional — no tag
- *                        when clock data is missing). Panel must show unmeasured remainder.
- * result_changing_rate = result-changing M+B flaws / total M+B flaws; 0.0 when none.
- * phase_histogram      = count of flaws in each game phase.
- * miss_rate            = miss M+B flaws / total M+B flaws; 0.0 when none. (D-01, Phase 107)
- * lucky_escape_rate    = lucky-escape M+B flaws / total M+B flaws; 0.0 when none. (D-01)
- * while_ahead_rate     = while-ahead M+B flaws / total M+B flaws; 0.0 when none. (D-01)
+ * tempo             = count of each tempo tag; sums to <= M+B flaws (optional — no tag
+ *                     when clock data is missing). Panel must show unmeasured remainder.
+ * reversed_rate     = reversed M+B flaws / total M+B flaws; 0.0 when none. (Phase 110)
+ * squandered_rate   = squandered M+B flaws / total M+B flaws; 0.0 when none. (Phase 110)
+ * phase_histogram   = count of flaws in each game phase.
+ * miss_rate         = miss M+B flaws / total M+B flaws; 0.0 when none. (D-01, Phase 107)
+ * lucky_rate = lucky M+B flaws / total M+B flaws; 0.0 when none. (D-01)
  */
 export interface TagDistribution {
   tempo: Record<TempoTag, number>;
-  result_changing_rate: number;
+  reversed_rate: number;
+  squandered_rate: number;
   phase_histogram: Record<'opening' | 'middlegame' | 'endgame', number>;
   // D-01 flat rate fields (Phase 107):
   miss_rate: number;
-  lucky_escape_rate: number;
-  while_ahead_rate: number;
+  lucky_rate: number;
 }
 
 /**

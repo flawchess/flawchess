@@ -3,11 +3,11 @@
 Verifies the SEED-038 family-aware boolean logic and single-flaw EXISTS semantics:
 
 - build_flaw_filter_clauses([], []) returns [] (no filter = match all)
-- single-flaw EXISTS: a game whose one flaw is BOTH low-clock AND result-changing
+- single-flaw EXISTS: a game whose one flaw is BOTH low-clock AND reversed
   matches the combined filter; a game with a low-clock flaw on ply X and a
-  result-changing flaw on a DIFFERENT ply Y does NOT match (AND across families is
+  reversed flaw on a DIFFERENT ply Y does NOT match (AND across families is
   per-flaw, not per-game — the make-or-break SEED-038 test)
-- OR within family: a flaw tagged "miss" OR "lucky-escape" matches either
+- OR within family: a flaw tagged "miss" OR "lucky" matches either
 - severity set-membership: ["mistake"] matches mistakes only (not blunders)
 - cross-user isolation: another user's game_flaws row does not satisfy the EXISTS
   for the requesting user (T-108-07)
@@ -38,8 +38,8 @@ from app.repositories.library_repository import (
 _SEV_MISTAKE = 1
 _SEV_BLUNDER = 2
 _TEMPO_LOW_CLOCK = 0
-_TEMPO_IMPATIENT = 1
-_TEMPO_CONSIDERED = 2
+_TEMPO_HASTY = 1
+_TEMPO_UNRUSHED = 2
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -82,9 +82,9 @@ def _flaw_row(
     severity: int = _SEV_BLUNDER,
     tempo: int | None = None,
     is_miss: bool = False,
-    is_lucky_escape: bool = False,
-    is_while_ahead: bool = False,
-    is_result_changing: bool = False,
+    is_lucky: bool = False,
+    is_reversed: bool = False,
+    is_squandered: bool = False,
 ) -> dict:  # type: ignore[type-arg]
     """Return a game_flaws insert dict with sensible defaults."""
     return {
@@ -95,9 +95,9 @@ def _flaw_row(
         "tempo": tempo,
         "phase": 1,  # middlegame
         "is_miss": is_miss,
-        "is_lucky_escape": is_lucky_escape,
-        "is_while_ahead": is_while_ahead,
-        "is_result_changing": is_result_changing,
+        "is_lucky": is_lucky,
+        "is_reversed": is_reversed,
+        "is_squandered": is_squandered,
         "es_before": 0.7,
         "es_after": 0.2,
         "move_san": "Nf3",
@@ -157,7 +157,7 @@ class TestBuildFlawFilterClausesUnit:
 
     def test_two_families_produce_two_clauses(self) -> None:
         """Tags from two different families → two clauses (AND across families)."""
-        clauses = build_flaw_filter_clauses([], ["low-clock", "result-changing"])
+        clauses = build_flaw_filter_clauses([], ["low-clock", "reversed"])
         assert len(clauses) == 2, "tags from two families should produce two clauses"
 
     def test_phase_tags_produce_no_clause(self) -> None:
@@ -181,7 +181,7 @@ class TestBuildFlawFilterClausesUnit:
 
     def test_severity_plus_tags_produce_correct_count(self) -> None:
         """Severity + tags from two families → three clauses total."""
-        clauses = build_flaw_filter_clauses(["blunder"], ["low-clock", "miss", "result-changing"])
+        clauses = build_flaw_filter_clauses(["blunder"], ["low-clock", "miss", "reversed"])
         # severity (1) + tempo family (1) + opportunity family (1) + impact family (1) = 4
         assert len(clauses) == 4
 
@@ -278,12 +278,12 @@ class TestFlawExistsFromTable:
     async def test_single_flaw_exists_both_families_match(self, db_session: AsyncSession) -> None:
         """SEED-038 make-or-break: a SINGLE flaw satisfying BOTH families matches.
 
-        A game with ONE flaw row tagged low-clock AND result-changing satisfies the
-        combined filter (low-clock + result-changing) because the same row satisfies
+        A game with ONE flaw row tagged low-clock AND reversed satisfies the
+        combined filter (low-clock + reversed) because the same row satisfies
         both clauses simultaneously.
         """
         game = await _seed_game(db_session)
-        # One flaw at ply 2: low-clock tempo AND result-changing impact
+        # One flaw at ply 2: low-clock tempo AND reversed impact
         await bulk_insert_game_flaws(
             db_session,
             [
@@ -293,7 +293,7 @@ class TestFlawExistsFromTable:
                     ply=2,
                     severity=_SEV_BLUNDER,
                     tempo=_TEMPO_LOW_CLOCK,
-                    is_result_changing=True,
+                    is_reversed=True,
                 )
             ],
         )
@@ -302,7 +302,7 @@ class TestFlawExistsFromTable:
             db_session,
             user_id=77001,
             severity=[],
-            tags=["low-clock", "result-changing"],
+            tags=["low-clock", "reversed"],
             candidate_game_ids={game.id},
         )
         assert game.id in matched, (
@@ -316,10 +316,10 @@ class TestFlawExistsFromTable:
         """SEED-038 make-or-break: AND across families is per-flaw, NOT per-game.
 
         A game with:
-        - Flaw at ply 2: low-clock (but NOT result-changing)
-        - Flaw at ply 6: result-changing (but NOT low-clock)
+        - Flaw at ply 2: low-clock (but NOT reversed)
+        - Flaw at ply 6: reversed (but NOT low-clock)
 
-        Must NOT match the filter "low-clock + result-changing" because no SINGLE flaw
+        Must NOT match the filter "low-clock + reversed" because no SINGLE flaw
         satisfies both families simultaneously. This is the key test distinguishing
         single-flaw EXISTS from a game-level OR/AND.
         """
@@ -334,11 +334,11 @@ class TestFlawExistsFromTable:
                     ply=2,
                     severity=_SEV_BLUNDER,
                     tempo=_TEMPO_LOW_CLOCK,
-                    is_result_changing=False,  # explicit
+                    is_reversed=False,  # explicit
                 )
             ],
         )
-        # Ply 6: result-changing flaw only (no tempo tag)
+        # Ply 6: reversed flaw only (no tempo tag)
         await bulk_insert_game_flaws(
             db_session,
             [
@@ -348,7 +348,7 @@ class TestFlawExistsFromTable:
                     ply=6,
                     severity=_SEV_BLUNDER,
                     tempo=None,  # no tempo tag
-                    is_result_changing=True,
+                    is_reversed=True,
                 )
             ],
         )
@@ -357,7 +357,7 @@ class TestFlawExistsFromTable:
             db_session,
             user_id=77001,
             severity=[],
-            tags=["low-clock", "result-changing"],
+            tags=["low-clock", "reversed"],
             candidate_game_ids={game.id},
         )
         assert game.id not in matched, (
@@ -367,10 +367,10 @@ class TestFlawExistsFromTable:
 
     @pytest.mark.asyncio
     async def test_or_within_family_opportunity(self, db_session: AsyncSession) -> None:
-        """OR within the opportunity family: miss OR lucky-escape matches either.
+        """OR within the opportunity family: miss OR lucky matches either.
 
-        A game with a "miss" flaw must match tags=["miss", "lucky-escape"], and a
-        game with a "lucky-escape" flaw must also match — OR within family.
+        A game with a "miss" flaw must match tags=["miss", "lucky"], and a
+        game with a "lucky" flaw must also match — OR within family.
         """
         game_miss = await _seed_game(db_session)
         await bulk_insert_game_flaws(
@@ -381,7 +381,7 @@ class TestFlawExistsFromTable:
         game_lucky = await _seed_game(db_session)
         await bulk_insert_game_flaws(
             db_session,
-            [_flaw_row(user_id=77001, game_id=game_lucky.id, ply=4, is_lucky_escape=True)],
+            [_flaw_row(user_id=77001, game_id=game_lucky.id, ply=4, is_lucky=True)],
         )
 
         game_neither = await _seed_game(db_session)
@@ -393,7 +393,7 @@ class TestFlawExistsFromTable:
                     game_id=game_neither.id,
                     ply=6,
                     is_miss=False,
-                    is_lucky_escape=False,
+                    is_lucky=False,
                 )
             ],
         )
@@ -402,46 +402,44 @@ class TestFlawExistsFromTable:
             db_session,
             user_id=77001,
             severity=[],
-            tags=["miss", "lucky-escape"],
+            tags=["miss", "lucky"],
             candidate_game_ids={game_miss.id, game_lucky.id, game_neither.id},
         )
         assert game_miss.id in matched, "game with a 'miss' flaw must match OR within opportunity"
-        assert game_lucky.id in matched, (
-            "game with a 'lucky-escape' flaw must match OR within opportunity"
-        )
+        assert game_lucky.id in matched, "game with a 'lucky' flaw must match OR within opportunity"
         assert game_neither.id not in matched, "game with neither opportunity tag must not match"
 
     @pytest.mark.asyncio
     async def test_or_within_family_tempo(self, db_session: AsyncSession) -> None:
-        """OR within the tempo family: low-clock OR impatient matches either."""
+        """OR within the tempo family: low-clock OR hasty matches either."""
         game_low_clock = await _seed_game(db_session)
         await bulk_insert_game_flaws(
             db_session,
             [_flaw_row(user_id=77001, game_id=game_low_clock.id, ply=2, tempo=_TEMPO_LOW_CLOCK)],
         )
 
-        game_impatient = await _seed_game(db_session)
+        game_hasty = await _seed_game(db_session)
         await bulk_insert_game_flaws(
             db_session,
-            [_flaw_row(user_id=77001, game_id=game_impatient.id, ply=4, tempo=_TEMPO_IMPATIENT)],
+            [_flaw_row(user_id=77001, game_id=game_hasty.id, ply=4, tempo=_TEMPO_HASTY)],
         )
 
-        game_considered = await _seed_game(db_session)
+        game_unrushed = await _seed_game(db_session)
         await bulk_insert_game_flaws(
             db_session,
-            [_flaw_row(user_id=77001, game_id=game_considered.id, ply=6, tempo=_TEMPO_CONSIDERED)],
+            [_flaw_row(user_id=77001, game_id=game_unrushed.id, ply=6, tempo=_TEMPO_UNRUSHED)],
         )
 
         matched = await _games_matching_exists(
             db_session,
             user_id=77001,
             severity=[],
-            tags=["low-clock", "impatient"],
-            candidate_game_ids={game_low_clock.id, game_impatient.id, game_considered.id},
+            tags=["low-clock", "hasty"],
+            candidate_game_ids={game_low_clock.id, game_hasty.id, game_unrushed.id},
         )
         assert game_low_clock.id in matched
-        assert game_impatient.id in matched
-        assert game_considered.id not in matched, "considered is not in the selected tempo tags"
+        assert game_hasty.id in matched
+        assert game_unrushed.id not in matched, "unrushed is not in the selected tempo tags"
 
     @pytest.mark.asyncio
     async def test_cross_user_isolation(self, db_session: AsyncSession) -> None:

@@ -50,12 +50,12 @@ MATE_CP_EQUIVALENT: int = 1000
 # analyzed 80-ply game scores 80/81 ≈ 98.8% — comfortably above this threshold.
 EVAL_COVERAGE_MIN: float = 0.90
 
-# Attribution tag threshold
-FROM_WINNING_ES: float = 0.85  # tag: while-ahead
-
-# Result-changing thresholds (RESEARCH §Pattern 7 — [ASSUMED], tunable)
-RESULT_WIN_THRESHOLD: float = 0.70  # ES >= 0.70 = "winning" zone
-RESULT_DRAW_THRESHOLD: float = 0.40  # ES >= 0.40 = "at least drawing" zone
+# Impact ladder thresholds (flaw-tag-definitions.md §Impact).
+# Outcome-independent: computed from es_before/es_after only, never the game result.
+FROM_WINNING_ES: float = 0.85  # squandered entry (>= 85%: overwhelming advantage)
+WINNING_LINE_ES: float = 0.70  # reversed entry (>= 70%: clearly winning, ~+2.3 eval)
+LOSING_LINE_ES: float = 0.30  # reversed exit (<= 30%: clearly losing, ~−2.3 eval)
+SQUANDERED_EXIT_ES: float = 0.60  # squandered exit (<= 60%: erased back to roughly even)
 
 # Tempo thresholds — relative to base_time_seconds (RESEARCH §Pattern 6).
 # [ASSUMED] initial values; tunable once real data is available.
@@ -75,17 +75,17 @@ SANITY_TOLERANCE: int = 2
 FlawSeverity = Literal["inaccuracy", "mistake", "blunder"]
 FlawTag = Literal[
     "miss",
-    "lucky-escape",
-    "while-ahead",
-    "result-changing",
+    "lucky",
+    "reversed",
+    "squandered",
     "low-clock",
-    "impatient",
-    "considered",
+    "hasty",
+    "unrushed",
     "opening",
     "middlegame",
     "endgame",
 ]
-TempoTag = Literal["low-clock", "impatient", "considered"]
+TempoTag = Literal["low-clock", "hasty", "unrushed"]
 
 # ---------------------------------------------------------------------------
 # TypedDict output contract (CONTEXT.md §Output contract; zobrist.py PlyData style)
@@ -302,14 +302,14 @@ def _classify_tempo(
 ) -> TempoTag | None:
     """Return at most one tempo tag for a flaw, or None when clock data is unavailable.
 
-    Returns one of {low-clock, impatient, considered}, or None when clock_after or
+    Returns one of {low-clock, hasty, unrushed}, or None when clock_after or
     move_time is unavailable (no misleading fallback — per the at-most-one rule in
     flaw-tag-naming.md §"Structural change").
 
-    Priority: low-clock > impatient > considered.
+    Priority: low-clock > hasty > unrushed.
 
     Relative thresholds are used when base_time is available (relative-to-base-clock
-    is context-aware — a 5s move is impatient in classical but normal in bullet).
+    is context-aware — a 5s move is hasty in classical but normal in bullet).
     Absolute fallback values are used when base_time is absent or zero.
     All threshold values are [ASSUMED] initial defaults; tunable on-the-fly.
     """
@@ -327,8 +327,8 @@ def _classify_tempo(
     if clock_after < low_clock_threshold:
         return "low-clock"
     if move_time < fast_move_threshold:
-        return "impatient"
-    return "considered"
+        return "hasty"
+    return "unrushed"
 
 
 def _is_miss(n: int, all_moves: dict[int, _MoveEntry]) -> bool:
@@ -357,7 +357,7 @@ def _is_unpunished(
 ) -> bool:
     """Return True when a user BLUNDER at ply N went UNPUNISHED by the opponent.
 
-    lucky-escape = user's blunder that the opponent did NOT capitalize on, so the
+    lucky = user's blunder that the opponent did NOT capitalize on, so the
     user got away with it. Only applies to blunders (Pitfall 6 in RESEARCH —
     applying to inaccuracies and mistakes would produce a noise-heavy flood).
 
@@ -393,25 +393,28 @@ def _is_unpunished(
     return opp_severity in ("mistake", "blunder")
 
 
-def _is_result_changing(
-    es_before: float,
-    es_after: float,
-    user_result: Literal["win", "draw", "loss"],
-) -> bool:
-    """Return True when the flaw crossed the result boundary given the actual outcome.
+def _classify_impact(es_before: float, es_after: float) -> Literal["reversed", "squandered"] | None:
+    """Most-severe-wins outcome-independent impact ladder (flaw-tag-definitions.md §Impact).
 
-    Uses RESULT_WIN_THRESHOLD (0.70) and RESULT_DRAW_THRESHOLD (0.40) per RESEARCH
-    Pattern 7. One boundary is checked per actual outcome:
-    - win:  was winning (>= WIN) and dropped below winning  (<  WIN).
-    - draw: was at-least-drawing (>= DRAW) and dropped to losing zone (< DRAW).
-    - loss: same boundary as draw — flaw that turned a drawable position into a loss.
+    At most one tag; most-severe is checked first so a 0.90→0.25 swing returns only
+    "reversed" (not "squandered"). Replaces the prior outcome-dependent helper that
+    keyed off the final game result — impact is now result-independent (computed
+    entirely from es_before/es_after).
 
-    [ASSUMED] threshold values; tunable on-the-fly without schema change.
+    Boundary convention: >= entry / <= exit (inclusive on both ends, per doc prose
+    "or below"; differs from the prior strict < exit — Pitfall 4).
+
+    Rungs:
+      reversed   — es_before >= WINNING_LINE_ES (0.70) AND es_after <= LOSING_LINE_ES (0.30)
+                   Full reversal: winning game turned into a losing one.
+      squandered — es_before >= FROM_WINNING_ES (0.85) AND es_after <= SQUANDERED_EXIT_ES (0.60)
+                   AND not reversed. Overwhelming advantage erased back to roughly even.
     """
-    if user_result == "win":
-        return es_before >= RESULT_WIN_THRESHOLD and es_after < RESULT_WIN_THRESHOLD
-    # draw or loss: use the draw/loss boundary
-    return es_before >= RESULT_DRAW_THRESHOLD and es_after < RESULT_DRAW_THRESHOLD
+    if es_before >= WINNING_LINE_ES and es_after <= LOSING_LINE_ES:
+        return "reversed"
+    if es_before >= FROM_WINNING_ES and es_after <= SQUANDERED_EXIT_ES:
+        return "squandered"
+    return None
 
 
 def _phase_tag(phase: int | None) -> FlawTag:
@@ -440,23 +443,24 @@ def _build_tags(
 ) -> list[FlawTag]:
     """Assemble the ordered attribution tags list for one user flaw at ply N.
 
-    Tag order: while-ahead, result-changing, miss, lucky-escape, phase, tempo.
-    Tags are additive and orthogonal. At most one tempo tag is present (absent
-    when clock data is unavailable).
+    Tag order: impact (reversed/squandered), miss, lucky, phase, tempo.
+    Tags are additive and orthogonal. At most one impact tag and at most one tempo
+    tag are present (tempo absent when clock data is unavailable).
+
+    NOTE: user_result is still required here — _is_unpunished (lucky
+    end-of-game rule) reads it. Only the impact branch no longer uses it.
     """
     tags: list[FlawTag] = []
 
-    if es_before >= FROM_WINNING_ES:
-        tags.append("while-ahead")
-
-    if _is_result_changing(es_before, es_after, user_result):
-        tags.append("result-changing")
+    impact = _classify_impact(es_before, es_after)
+    if impact is not None:
+        tags.append(impact)
 
     if _is_miss(n, all_moves):
         tags.append("miss")
 
     if _is_unpunished(n, all_moves, severity, user_result):
-        tags.append("lucky-escape")
+        tags.append("lucky")
 
     tags.append(_phase_tag(positions[n].phase))
 

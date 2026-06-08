@@ -2,7 +2,7 @@
 /**
  * FlawsTab vitest suite — tests the three key scenarios from Plan 108-07:
  *
- * 1. Deep-link (?tag=result-changing) pre-populates the flaw filter control
+ * 1. Deep-link (?tag=reversed) pre-populates the flaw filter control
  * 2. isError branch renders the mandatory error copy
  * 3. Flaw list renders rows from mocked useLibraryFlaws
  */
@@ -241,7 +241,7 @@ describe('FlawsTab', () => {
               fen: 'rnbqkb1r/pppp1ppp/4pn2/8/2PP4/8/PP2PPPP/RNBQKBNR',
               move_san: 'Nxd4',
               severity: 'blunder',
-              tags: ['result-changing'],
+              tags: ['reversed'],
               es_before: 0.72,
               es_after: 0.28,
               user_result: 'loss',
@@ -291,7 +291,7 @@ describe('FlawsTab', () => {
       expect(screen.getAllByTestId('severity-mistake-2').length).toBeGreaterThanOrEqual(1);
 
       // Tag chips rendered for each flaw (in both desktop + mobile sections)
-      expect(screen.getAllByTestId('stub-tag-chip-result-changing').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByTestId('stub-tag-chip-reversed').length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByTestId('stub-tag-chip-miss').length).toBeGreaterThanOrEqual(1);
     });
 
@@ -305,7 +305,7 @@ describe('FlawsTab', () => {
               fen: 'rnbqkb1r/pppp1ppp/4pn2/8/2PP4/8/PP2PPPP/RNBQKBNR',
               move_san: 'Nxd4',
               severity: 'blunder',
-              tags: ['result-changing'],
+              tags: ['reversed'],
               es_before: 0.72,
               es_after: 0.28,
               user_result: 'loss',
@@ -400,18 +400,18 @@ describe('FlawsTab', () => {
   });
 
   describe('URL sync — deep-link pre-population', () => {
-    it('initializes the store from URL params on mount when ?tag=result-changing', () => {
+    it('initializes the store from URL params on mount when ?tag=reversed', () => {
       // The FlawsTab reads URL params on mount and calls setFlawFilter
-      renderFlawsTab('/library/flaws?tag=result-changing');
+      renderFlawsTab('/library/flaws?tag=reversed');
 
-      // setFlawFilter should have been called with result-changing tag
+      // setFlawFilter should have been called with reversed tag
       expect(mockSetFlawFilter).toHaveBeenCalled();
-      // Find the call that set the result-changing tag
+      // Find the call that set the reversed tag
       const calls = (mockSetFlawFilter as Mock).mock.calls;
       const tagSetCall = calls.find((call) => {
         const arg = call[0];
         const resolved = typeof arg === 'function' ? arg(mockStoreState) : arg;
-        return Array.isArray(resolved.tags) && resolved.tags.includes('result-changing');
+        return Array.isArray(resolved.tags) && resolved.tags.includes('reversed');
       });
       expect(tagSetCall).toBeTruthy();
     });

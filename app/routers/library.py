@@ -38,12 +38,12 @@ SeverityFilter = Literal["mistake", "blunder"]
 # FastAPI 422-rejects any value outside this Literal (T-108-11 mitigation).
 FlawTagFilter = Literal[
     "miss",
-    "lucky-escape",
-    "while-ahead",
-    "result-changing",
+    "lucky",
+    "reversed",
+    "squandered",
     "low-clock",
-    "impatient",
-    "considered",
+    "hasty",
+    "unrushed",
 ]
 
 
@@ -116,11 +116,12 @@ async def get_flaw_stats(
     """Return the stats-panel aggregate over the filtered analyzed-only set (LIBG-09).
 
     Per-severity counts + rates (per game and per 100 user-moves), the full tag
-    distribution (tempo split, result-changing rate, phase histogram), a rolling-
-    game trend, and the explicit >=90%-coverage analyzed denominator (analyzed_pct
-    / analyzed_n / total_n). Same filter set as /games (no pagination). An empty
-    analyzed set returns zeros, never an error. When `color` is supplied ("white"
-    or "black"), stats are computed over only games played as that color.
+    distribution (tempo split, reversed/squandered rates, phase histogram), a
+    rolling-game trend, and the explicit >=90%-coverage analyzed denominator
+    (analyzed_pct / analyzed_n / total_n). Same filter set as /games (no
+    pagination). An empty analyzed set returns zeros, never an error. When
+    `color` is supplied ("white" or "black"), stats are computed over only games
+    played as that color.
     """
     if from_date is not None and to_date is not None and from_date > to_date:
         raise HTTPException(status_code=422, detail="from_date must be <= to_date")

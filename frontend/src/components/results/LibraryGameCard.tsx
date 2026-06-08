@@ -18,7 +18,8 @@ import { SeverityBadge } from '@/components/library/SeverityBadge';
 import { TagChip } from '@/components/library/TagChip';
 import { NoAnalysisState } from '@/components/library/NoAnalysisState';
 import { gamePlatformUrl } from '@/lib/platformLinks';
-import type { GameFlawCard, FlawSeverity } from '@/types/library';
+import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
+import type { GameFlawCard, FlawSeverity, FlawTag } from '@/types/library';
 import type { UserResult } from '@/types/api';
 
 // Standalone component per D-05 — do NOT import from or modify GameCard.tsx.
@@ -82,6 +83,15 @@ const BORDER_COLORS: Record<UserResult, string> = {
 
 // Severity order for the badge row (must not wrap — sized to full-label nowrap row).
 const SEVERITY_ORDER: FlawSeverity[] = ['blunder', 'mistake', 'inaccuracy'];
+
+// Flaw-tag families, mirroring the backend game-selection filter
+// (build_flaw_filter_clauses in library_repository.py): OR within family, AND
+// across families. Phase tags are not filter predicates and are excluded.
+const TAG_FAMILIES: readonly (readonly FlawTag[])[] = [
+  ['low-clock', 'hasty', 'unrushed'],
+  ['miss', 'lucky'],
+  ['reversed', 'squandered'],
+];
 
 // Copied verbatim from GameCard.tsx — same display requirements (D-05 forbids shared import).
 function formatDate(dateStr: string | null): string {
@@ -147,6 +157,61 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
     }
     return m;
   }, [game.flaw_markers]);
+
+  // Per-tag occurrence counts shown on the chips. Scoped to the user's M/B markers
+  // (is_user) so a chip count matches the user-only `chips`/`severity_counts` the
+  // card already shows, and so the count equals the number of dots that highlight
+  // on hover. Inaccuracy markers carry no tags, so they never contribute.
+  const tagCounts = useMemo(() => {
+    const m = new Map<FlawTag, number>();
+    for (const fm of game.flaw_markers ?? []) {
+      if (!fm.is_user) continue;
+      for (const t of fm.tags) m.set(t, (m.get(t) ?? 0) + 1);
+    }
+    return m;
+  }, [game.flaw_markers]);
+
+  // Transient hover highlight: hovering a tag chip or a severity badge in the flaw
+  // column emphasizes the matching markers on this card's eval chart. Inaccuracy is
+  // included — its markers are off-chart by default and get revealed on its hover.
+  const [highlight, setHighlight] = useState<
+    { kind: 'tag'; tag: FlawTag } | { kind: 'severity'; severity: FlawSeverity } | null
+  >(null);
+  const highlightedPlies = useMemo(() => {
+    if (!highlight) return null;
+    const set = new Set<number>();
+    for (const fm of game.flaw_markers ?? []) {
+      if (!fm.is_user) continue;
+      const matches =
+        highlight.kind === 'severity'
+          ? fm.severity === highlight.severity
+          : fm.tags.includes(highlight.tag); // inaccuracies have no tags → never match a tag hover
+      if (matches) set.add(fm.ply);
+    }
+    return set;
+  }, [highlight, game.flaw_markers]);
+
+  // Persistent (not hover) white outline: user markers matching the active flaw-tag
+  // filter under the SAME predicate used to select games (OR within family, AND
+  // across families — build_flaw_filter_clauses). Mirrors the TagChip ring on the chart.
+  const [flawFilter] = useFlawFilterStore();
+  const filterTags = flawFilter.tags;
+  const outlinedPlies = useMemo(() => {
+    const filterSet = new Set<FlawTag>(filterTags);
+    // Per family with ≥1 selected tag, keep the selected subset (the OR-within group).
+    const requiredGroups = TAG_FAMILIES.map((fam) => fam.filter((t) => filterSet.has(t))).filter(
+      (sel) => sel.length > 0,
+    );
+    if (requiredGroups.length === 0) return null; // no (recognized) tag filter → no outline
+    const set = new Set<number>();
+    for (const fm of game.flaw_markers ?? []) {
+      if (!fm.is_user) continue;
+      const markerTags = new Set<FlawTag>(fm.tags);
+      // AND across families: every selected family group must be satisfied by ≥1 tag.
+      if (requiredGroups.every((sel) => sel.some((t) => markerTags.has(t)))) set.add(fm.ply);
+    }
+    return set;
+  }, [filterTags, game.flaw_markers]);
 
   const activePly =
     hoverPly != null && perPly ? Math.min(Math.max(hoverPly, 0), perPly.length - 1) : null;
@@ -291,21 +356,28 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
   const flawContent =
     game.analysis_state === 'analyzed' ? (
       <>
-        {/* Severity count row — nowrap so the flaw column sizes to fit all three badges */}
+        {/* Severity count row — flex-wrap so the longer "Inaccuracies" label wraps
+            gracefully inside the 1/3-width desktop column instead of overflowing. */}
         <div
-          className="flex items-center gap-1.5 flex-nowrap"
+          className="flex items-center gap-1.5 flex-wrap"
           data-testid={`severity-row-${game.game_id}`}
         >
           {SEVERITY_ORDER.map((sev) => {
             const counts = game.severity_counts;
             // noUncheckedIndexedAccess: narrow severity_counts before reading.
             const count = counts !== null ? (counts[sev] ?? 0) : 0;
+            // Every badge drives the hover highlight. B/M emphasize their (already
+            // visible) dots; the inaccuracy badge reveals the otherwise-hidden
+            // yellow inaccuracy dots on the chart.
             return (
               <SeverityBadge
                 key={sev}
                 severity={sev}
                 count={count}
                 gameId={game.game_id}
+                onHover={(active) =>
+                  setHighlight(active ? { kind: 'severity', severity: sev } : null)
+                }
               />
             );
           })}
@@ -314,7 +386,13 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
         {game.chips.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {game.chips.map((tag) => (
-              <TagChip key={tag} tag={tag} gameId={game.game_id} />
+              <TagChip
+                key={tag}
+                tag={tag}
+                gameId={game.game_id}
+                count={tagCounts.get(tag)}
+                onHover={(active) => setHighlight(active ? { kind: 'tag', tag } : null)}
+              />
             ))}
           </div>
         )}
@@ -371,6 +449,8 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
               phaseTransitions={game.phase_transitions}
               moves={game.moves ?? []}
               onHoverPlyChange={setHoverPly}
+              highlightedPlies={highlightedPlies}
+              outlinedPlies={outlinedPlies}
               // Match the miniboard height (MOBILE_BOARD_SIZE = 130px). Literal
               // arbitrary value so Tailwind's JIT scanner emits the class.
               heightClass="h-[130px]"
@@ -413,6 +493,8 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
               phaseTransitions={game.phase_transitions}
               moves={game.moves ?? []}
               onHoverPlyChange={setHoverPly}
+              highlightedPlies={highlightedPlies}
+              outlinedPlies={outlinedPlies}
               // Match the miniboard height (DESKTOP_BOARD_SIZE = 132px). Literal
               // arbitrary value so Tailwind's JIT scanner emits the class.
               heightClass="h-[132px]"

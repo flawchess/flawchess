@@ -62,7 +62,7 @@ Both require the full both-color analysis pass.
 | Family      | Name           | Definition |
 |-------------|----------------|------------|
 | Opportunity | `miss`         | Your blunder or mistake came immediately after the opponent's own mistake or blunder: they handed you something and you didn't take it (or made it worse) on the very next move. Mirrors chess.com's Miss classification (the Ø glyph). |
-| Opportunity | `lucky-escape` | A blunder the opponent failed to punish: their immediate reply was itself a mistake or blunder, so your Expected Score recovered. (Blunders only. End-of-game with no reply counts only if you didn't go on to lose.) The one good-news tag. |
+| Opportunity | `lucky`        | A blunder the opponent failed to punish: their immediate reply was itself a mistake or blunder, so your Expected Score recovered. (Blunders only. End-of-game with no reply counts only if you didn't go on to lose.) The one good-news tag. |
 
 ## Impact — how far the blunder or mistake swung the game
 
@@ -97,11 +97,13 @@ middlegame when the phase is unknown).
 
 ## Deprecated / renamed tags
 
-This session (2026-06-07) renamed the tempo residual pair and replaced the entire impact
-family. Older renames (Phase 106) are recorded in `flaw-tag-naming.md`.
+The 2026-06-07 session renamed the tempo residual pair and replaced the entire impact
+family; a 2026-06-08 follow-up shortened `lucky-escape` → `lucky`. Older renames
+(Phase 106) are recorded in `flaw-tag-naming.md`.
 
 | Family | Deprecated name   | Replacement               | Why |
 |--------|-------------------|---------------------------|-----|
+| Opportunity | `lucky-escape` | `lucky`              | Shortened to a single word for a tighter chip label; the mechanic (a blunder the opponent failed to punish) is unchanged. The DB column followed: `is_lucky_escape` → `is_lucky`. |
 | Tempo  | `impatient`       | `hasty`                   | `impatient` editorialised about character; `hasty` describes the move and is native chess phrasing. (`hasty` was the pre-106 name; this reverts it.) |
 | Tempo  | `considered`      | `unrushed`                | On a blunder card `considered` read as a contradiction ("considered, yet blundered?"). `unrushed` is the clean complement to `hasty` and stays clock-framed (cause-of-error naming is reserved for the future tactic family). |
 | Impact | `while-ahead` (briefly renamed `while-winning`) | *removed* | A pure *state* tag (you were ≥85% when you slipped), not a swing — it had only an entry threshold with nothing to cross, fired on a large fraction of winning-position blunders, and duplicated what `blunder` severity already says. The "lapse while winning" pattern lives better in aggregate (endgame conversion rates), not on individual cards. |

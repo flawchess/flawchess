@@ -1,7 +1,7 @@
 import {
   FAM_TEMPO_LOW_CLOCK,
-  FAM_TEMPO_IMPATIENT,
-  FAM_TEMPO_CONSIDERED,
+  FAM_TEMPO_HASTY,
+  FAM_TEMPO_UNRUSHED,
   FAM_TEMPO_UNMEASURED,
   FAM_OPPORTUNITY,
   FAM_IMPACT,
@@ -84,15 +84,15 @@ function TempoStackedBar({ tagDistribution, totalMbFlaws }: TempoStackedBarProps
   const { tempo } = tagDistribution;
 
   const lowClockCount = tempo['low-clock'] ?? 0;
-  const impatientCount = tempo['impatient'] ?? 0;
-  const consideredCount = tempo['considered'] ?? 0;
-  const measuredSum = lowClockCount + impatientCount + consideredCount;
+  const hastyCount = tempo['hasty'] ?? 0;
+  const unrushedCount = tempo['unrushed'] ?? 0;
+  const measuredSum = lowClockCount + hastyCount + unrushedCount;
   const unmeasuredCount = Math.max(0, totalMbFlaws - measuredSum);
 
   const segments: TempoSegment[] = [
     { key: 'low-clock', label: 'Low-clock', count: lowClockCount, color: FAM_TEMPO_LOW_CLOCK },
-    { key: 'impatient', label: 'Impatient', count: impatientCount, color: FAM_TEMPO_IMPATIENT },
-    { key: 'considered', label: 'Considered', count: consideredCount, color: FAM_TEMPO_CONSIDERED },
+    { key: 'hasty', label: 'Hasty', count: hastyCount, color: FAM_TEMPO_HASTY },
+    { key: 'unrushed', label: 'Unrushed', count: unrushedCount, color: FAM_TEMPO_UNRUSHED },
   ];
 
   // Include unmeasured segment only when non-zero (per UI-SPEC).
@@ -159,13 +159,13 @@ interface FlawTagDistributionProps {
  * Zone 3: tag distribution block (UI-SPEC §Zone 3).
  *
  * Renders three sections:
- * 1. Tempo stacked bar (low-clock / impatient / considered + unmeasured remainder)
+ * 1. Tempo stacked bar (low-clock / hasty / unrushed + unmeasured remainder)
  *    — segments are NOT normalized to 100%; the unmeasured gap is honest.
  * 2. Three sub-columns (By phase / Opportunity / Impact) in a responsive grid.
  *
- * Opportunity and Impact columns read directly from the D-01 flat rate fields
- * on TagDistribution (miss_rate / lucky_escape_rate / while_ahead_rate /
- * result_changing_rate) — no client-side chip derivation, no placeholders (D-03).
+ * Opportunity and Impact columns read directly from the flat rate fields
+ * on TagDistribution (miss_rate / lucky_rate / reversed_rate /
+ * squandered_rate) — no client-side chip derivation, no placeholders (D-03).
  *
  * All colors from theme.ts: FAM_TEMPO_*, FAM_OPPORTUNITY, FAM_IMPACT, PHASE_*.
  * Zero-flaw guard: totalMbFlaws === 0 yields 0%-width bars; no division occurs.
@@ -175,7 +175,7 @@ export function FlawTagDistribution({
   totalMbFlaws,
   analyzedEmpty,
 }: FlawTagDistributionProps) {
-  const { phase_histogram, miss_rate, lucky_escape_rate, while_ahead_rate, result_changing_rate } =
+  const { phase_histogram, miss_rate, lucky_rate, reversed_rate, squandered_rate } =
     tagDistribution;
 
   // Safe total for phase histogram (counts in all phases).
@@ -226,13 +226,13 @@ export function FlawTagDistribution({
             {/* 2. Opportunity rates — D-01 flat fields (D-03, no placeholders) */}
             <SubColumn heading="Opportunity" testId="opportunity-rates">
               <RateBarRow label="Miss" rate={miss_rate} fill={FAM_OPPORTUNITY} />
-              <RateBarRow label="Lucky-escape" rate={lucky_escape_rate} fill={FAM_OPPORTUNITY} />
+              <RateBarRow label="Lucky" rate={lucky_rate} fill={FAM_OPPORTUNITY} />
             </SubColumn>
 
-            {/* 3. Impact rates — D-01 flat fields (D-03, no placeholders) */}
+            {/* 3. Impact rates — Phase 110 renamed fields (D-03, no placeholders) */}
             <SubColumn heading="Impact" testId="impact-rates">
-              <RateBarRow label="While-ahead" rate={while_ahead_rate} fill={FAM_IMPACT} />
-              <RateBarRow label="Result-changing" rate={result_changing_rate} fill={FAM_IMPACT} />
+              <RateBarRow label="Reversed" rate={reversed_rate} fill={FAM_IMPACT} />
+              <RateBarRow label="Squandered" rate={squandered_rate} fill={FAM_IMPACT} />
             </SubColumn>
           </div>
         </>

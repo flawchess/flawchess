@@ -40,7 +40,7 @@ class GameFlaw(Base):
     # 0=inaccuracy is NEVER stored here per D-03 — game_flaws is M+B only.
     severity: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 
-    # Tempo family: 0=low-clock, 1=impatient, 2=considered; NULL when no clock data.
+    # Tempo family: 0=low-clock, 1=hasty, 2=unrushed; NULL when no clock data.
     tempo: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
 
     # Phase family: 0=opening, 1=middlegame, 2=endgame (denormalized from game_positions.phase).
@@ -48,11 +48,11 @@ class GameFlaw(Base):
 
     # Opportunity family (boolean typed columns — OR-within-family semantics per SEED-038).
     is_miss: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    is_lucky_escape: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    is_lucky: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
     # Impact family
-    is_while_ahead: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    is_result_changing: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    is_reversed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    is_squandered: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
     # Display payload (SEED-038: stored at classify time to avoid O(page × game_length)
     # PGN replay per request).

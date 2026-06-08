@@ -149,7 +149,7 @@ export function FlawStatsPanel({ stats, isLoading, isError }: FlawStatsPanelProp
       {!isError && isLoading && (
         <div className="mt-4 space-y-3 animate-pulse">
           <div className="flex gap-2">
-            {[...Array(4)].map((_, i) => (
+            {[...Array(3)].map((_, i) => (
               <div
                 key={i}
                 className="flex-1 min-w-[120px] h-16 rounded border border-border"
@@ -178,7 +178,6 @@ export function FlawStatsPanel({ stats, isLoading, isError }: FlawStatsPanelProp
             {/* Zone 1: Severity-rate band */}
             <FlawStatsBand
               rates={stats.rates}
-              result_changing_rate={stats.tag_distribution.result_changing_rate}
               normalization={normalization}
               analyzedEmpty={analyzedEmpty}
             />

@@ -34,24 +34,33 @@ export const SEV_INACCURACY = 'oklch(0.82 0.13 95)';
 
 // Eval chart area fill and line colors (Phase 109 — EvalChart.tsx).
 // White-ahead region (above midline) = light grey; black-ahead region
-// (below midline) = near-black, mirroring the white/black pieces.
+// (below midline) = perfect black, mirroring the white/black pieces.
 export const EVAL_CHART_AREA_WHITE_AHEAD = 'oklch(0.85 0 0 / 0.40)';
-export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0.15 0 0 / 0.65)';
+export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0 0 0 / 0.65)';
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
 export const EVAL_CHART_MIDLINE = 'oklch(0.55 0 0)';
 export const EVAL_CHART_PHASE_LINE = 'oklch(0.55 0 0 / 0.60)';
+// White outline drawn around eval-chart flaw markers whose tags match an active
+// flaw-tag filter (mirrors the TagChip active-filter ring, on the chart).
+export const EVAL_MARKER_FILTER_OUTLINE = 'oklch(1 0 0)';
 
 // Tag families (flaw chip color-by-family, Phase 107)
 export const FAM_TEMPO = 'oklch(0.70 0.17 290)';
 export const FAM_TEMPO_BG = 'oklch(0.70 0.17 290 / 0.15)';
 export const FAM_TEMPO_LOW_CLOCK = 'oklch(0.74 0.16 290)';
-export const FAM_TEMPO_IMPATIENT = 'oklch(0.62 0.15 300)';
-export const FAM_TEMPO_CONSIDERED = 'oklch(0.50 0.13 305)';
+export const FAM_TEMPO_HASTY = 'oklch(0.62 0.15 300)';
+export const FAM_TEMPO_UNRUSHED = 'oklch(0.50 0.13 305)';
 export const FAM_TEMPO_UNMEASURED = 'oklch(0.40 0 0)';
 export const FAM_OPPORTUNITY = 'oklch(0.72 0.12 200)';
 export const FAM_OPPORTUNITY_BG = 'oklch(0.72 0.12 200 / 0.15)';
 export const FAM_IMPACT = 'oklch(0.66 0.18 330)';
 export const FAM_IMPACT_BG = 'oklch(0.66 0.18 330 / 0.15)';
+
+// D-05 active-filter ring — applied to TagChip when its tag matches an active
+// useFlawFilterStore filter. Ring only: no fill, bold, or size change. The ring
+// color is applied inline (per-family) so only the Tailwind ring-width + offset
+// classes are constant here; callers combine this with a family color string.
+export const ACTIVE_FILTER_RING_CLASS = 'ring-2 ring-offset-1';
 
 // Phase histogram bar fills (flaw tag distribution, Phase 107)
 export const PHASE_OPENING = 'oklch(0.62 0.06 70)';

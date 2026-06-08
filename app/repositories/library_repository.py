@@ -93,29 +93,29 @@ def build_flaw_filter_clauses(
     if severity:
         clauses.append(GameFlaw.severity.in_([_SEVERITY_INT[s] for s in severity]))
 
-    # Tempo family: OR within {low-clock, impatient, considered}
-    tempo_tags = [t for t in tags if t in {"low-clock", "impatient", "considered"}]
+    # Tempo family: OR within {low-clock, hasty, unrushed}
+    tempo_tags = [t for t in tags if t in {"low-clock", "hasty", "unrushed"}]
     if tempo_tags:
         clauses.append(GameFlaw.tempo.in_([_TEMPO_INT[t] for t in tempo_tags]))
 
-    # Opportunity family: OR within {miss, lucky-escape}
-    opp_tags = [t for t in tags if t in {"miss", "lucky-escape"}]
+    # Opportunity family: OR within {miss, lucky}
+    opp_tags = [t for t in tags if t in {"miss", "lucky"}]
     if opp_tags:
         opp_clauses: list[ColumnElement[bool]] = []
         if "miss" in opp_tags:
             opp_clauses.append(GameFlaw.is_miss.is_(True))
-        if "lucky-escape" in opp_tags:
-            opp_clauses.append(GameFlaw.is_lucky_escape.is_(True))
+        if "lucky" in opp_tags:
+            opp_clauses.append(GameFlaw.is_lucky.is_(True))
         clauses.append(or_(*opp_clauses))
 
-    # Impact family: OR within {while-ahead, result-changing}
-    imp_tags = [t for t in tags if t in {"while-ahead", "result-changing"}]
+    # Impact family: OR within {reversed, squandered}
+    imp_tags = [t for t in tags if t in {"reversed", "squandered"}]
     if imp_tags:
         imp_clauses: list[ColumnElement[bool]] = []
-        if "while-ahead" in imp_tags:
-            imp_clauses.append(GameFlaw.is_while_ahead.is_(True))
-        if "result-changing" in imp_tags:
-            imp_clauses.append(GameFlaw.is_result_changing.is_(True))
+        if "reversed" in imp_tags:
+            imp_clauses.append(GameFlaw.is_reversed.is_(True))
+        if "squandered" in imp_tags:
+            imp_clauses.append(GameFlaw.is_squandered.is_(True))
         clauses.append(or_(*imp_clauses))
 
     # Phase tags (opening/middlegame/endgame) are intentionally NOT handled —
@@ -161,7 +161,7 @@ def flaw_exists_from_table(
 def _reconstruct_tags(flaw: GameFlaw) -> list[FlawTag]:
     """Reconstruct FlawTag list from game_flaws typed columns in deterministic order.
 
-    Order: impact (result-changing, while-ahead) → opportunity (miss, lucky-escape)
+    Order: opportunity (miss, lucky) → impact (reversed, squandered)
     → tempo. Phase tags (opening/middlegame/endgame) are intentionally EXCLUDED from
     the per-flaw tag list returned by the endpoint (they are display-only per UI-SPEC).
 
@@ -176,12 +176,12 @@ def _reconstruct_tags(flaw: GameFlaw) -> list[FlawTag]:
     tags: list[FlawTag] = []
     if flaw.is_miss:
         tags.append("miss")
-    if flaw.is_lucky_escape:
-        tags.append("lucky-escape")
-    if flaw.is_while_ahead:
-        tags.append("while-ahead")
-    if flaw.is_result_changing:
-        tags.append("result-changing")
+    if flaw.is_lucky:
+        tags.append("lucky")
+    if flaw.is_reversed:
+        tags.append("reversed")
+    if flaw.is_squandered:
+        tags.append("squandered")
     if flaw.tempo is not None:
         tempo_tag = _TEMPO_INT_TO_TAG.get(flaw.tempo)
         if tempo_tag is not None:
@@ -391,8 +391,8 @@ async def fetch_stats_aggregates(
 
     Returns a 12-tuple:
       (mistake_count, blunder_count,
-       tempo_low_clock, tempo_impatient, tempo_considered,
-       is_result_changing, is_miss, is_lucky_escape, is_while_ahead,
+       tempo_low_clock, tempo_hasty, tempo_unrushed,
+       is_reversed, is_miss, is_lucky, is_squandered,
        phase_opening, phase_middlegame, phase_endgame)
 
     All counts are over the analyzed+filtered game set.
@@ -422,12 +422,12 @@ async def fetch_stats_aggregates(
         func.count().filter(GameFlaw.severity == _SEVERITY_INT["mistake"]),
         func.count().filter(GameFlaw.severity == _SEVERITY_INT["blunder"]),
         func.count().filter(GameFlaw.tempo == _TEMPO_INT["low-clock"]),
-        func.count().filter(GameFlaw.tempo == _TEMPO_INT["impatient"]),
-        func.count().filter(GameFlaw.tempo == _TEMPO_INT["considered"]),
-        func.count().filter(GameFlaw.is_result_changing.is_(True)),
+        func.count().filter(GameFlaw.tempo == _TEMPO_INT["hasty"]),
+        func.count().filter(GameFlaw.tempo == _TEMPO_INT["unrushed"]),
+        func.count().filter(GameFlaw.is_reversed.is_(True)),
         func.count().filter(GameFlaw.is_miss.is_(True)),
-        func.count().filter(GameFlaw.is_lucky_escape.is_(True)),
-        func.count().filter(GameFlaw.is_while_ahead.is_(True)),
+        func.count().filter(GameFlaw.is_lucky.is_(True)),
+        func.count().filter(GameFlaw.is_squandered.is_(True)),
         func.count().filter(GameFlaw.phase == _PHASE_INT["opening"]),
         func.count().filter(GameFlaw.phase == _PHASE_INT["middlegame"]),
         func.count().filter(GameFlaw.phase == _PHASE_INT["endgame"]),
@@ -440,12 +440,12 @@ async def fetch_stats_aggregates(
         row[0],  # mistake_count
         row[1],  # blunder_count
         row[2],  # tempo_low_clock
-        row[3],  # tempo_impatient
-        row[4],  # tempo_considered
-        row[5],  # is_result_changing
+        row[3],  # tempo_hasty
+        row[4],  # tempo_unrushed
+        row[5],  # is_reversed
         row[6],  # is_miss
-        row[7],  # is_lucky_escape
-        row[8],  # is_while_ahead
+        row[7],  # is_lucky
+        row[8],  # is_squandered
         row[9],  # phase_opening
         row[10],  # phase_middlegame
         row[11],  # phase_endgame

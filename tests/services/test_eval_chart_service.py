@@ -323,9 +323,9 @@ class TestFlawMarkers:
                 )
 
     def test_opponent_tags_strip_user_framed(self) -> None:
-        """Opponent B/M markers never contain 'miss' or 'lucky-escape' (D-03 resolution)."""
+        """Opponent B/M markers never contain 'miss' or 'lucky' (D-03 resolution)."""
         # Build positions where an opponent blunder occurs.
-        # The specific tags depend on context, but 'miss' and 'lucky-escape' must be absent.
+        # The specific tags depend on context, but 'miss' and 'lucky' must be absent.
         # ply 2 is white mover (n=2, n%2==0); user=black → white is opponent
         # Use large eval swings to ensure blunder detection
         positions = [
@@ -340,13 +340,13 @@ class TestFlawMarkers:
             assert "miss" not in marker.tags, (
                 f"Opponent marker must not contain 'miss' tag, got {marker.tags}"
             )
-            assert "lucky-escape" not in marker.tags, (
-                f"Opponent marker must not contain 'lucky-escape' tag, got {marker.tags}"
+            assert "lucky" not in marker.tags, (
+                f"Opponent marker must not contain 'lucky' tag, got {marker.tags}"
             )
 
     def test_blunder_has_tags(self) -> None:
         """Blunder markers for the player carry tags (non-empty)."""
-        # Large eval swing to ensure tags are populated (while-ahead etc.)
+        # Large eval swing to ensure tags are populated (reversed etc.)
         positions = [
             _make_pos(0, eval_cp=0),
             _make_pos(1, eval_cp=900),  # white way ahead
@@ -356,7 +356,7 @@ class TestFlawMarkers:
         _, flaw_markers, _ = _build_eval_series(game, positions)
         user_markers = [m for m in flaw_markers if m.is_user and m.severity == "blunder"]
         if user_markers:
-            # while-ahead should be present since es_before >> 0.85
+            # reversed should be present since es_before >= 0.70 and es_after <= 0.30
             # (can't guarantee exact tags without knowing increment, but at least phase is always added)
             assert len(user_markers[0].tags) > 0, "Blunder should carry at least one tag"
 

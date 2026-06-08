@@ -34,10 +34,10 @@ describe('libraryApi.getGames', () => {
 
   it('forwards the tag filter to /library/games (regression: tags were dropped)', async () => {
     const getSpy = vi.spyOn(apiClient, 'get').mockResolvedValue(EMPTY_GAMES_RESPONSE);
-    await libraryApi.getGames({ tag: ['result-changing', 'low-clock'] });
+    await libraryApi.getGames({ tag: ['reversed', 'low-clock'] });
 
     expect(getSpy).toHaveBeenCalledWith('/library/games', expect.anything());
-    expect(lastGetParams(getSpy)).toMatchObject({ tag: ['result-changing', 'low-clock'] });
+    expect(lastGetParams(getSpy)).toMatchObject({ tag: ['reversed', 'low-clock'] });
   });
 
   it('forwards both severity and tag together', async () => {

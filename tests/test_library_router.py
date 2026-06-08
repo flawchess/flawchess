@@ -352,9 +352,9 @@ async def _seed_flaw_committed(
     tempo: int | None = None,
     phase: int = 1,  # 1=middlegame
     is_miss: bool = False,
-    is_lucky_escape: bool = False,
-    is_while_ahead: bool = False,
-    is_result_changing: bool = False,
+    is_lucky: bool = False,
+    is_reversed: bool = False,
+    is_squandered: bool = False,
     fen: str = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1",
     move_san: str | None = "e4",
     es_before: float = 0.9,
@@ -372,9 +372,9 @@ async def _seed_flaw_committed(
             tempo=tempo,
             phase=phase,
             is_miss=is_miss,
-            is_lucky_escape=is_lucky_escape,
-            is_while_ahead=is_while_ahead,
-            is_result_changing=is_result_changing,
+            is_lucky=is_lucky,
+            is_reversed=is_reversed,
+            is_squandered=is_squandered,
             es_before=es_before,
             es_after=es_after,
             move_san=move_san,
@@ -413,7 +413,7 @@ async def flaws_test_state(test_engine: Any) -> dict[str, Any]:
         result="0-1",
         user_color="black",
     )
-    # Flaws on game A1: ply 4 (blunder), ply 8 (mistake, result-changing)
+    # Flaws on game A1: ply 4 (blunder), ply 8 (mistake, reversed)
     await _seed_flaw_committed(
         session_maker,
         user_id=user_a_id,
@@ -429,7 +429,7 @@ async def flaws_test_state(test_engine: Any) -> dict[str, Any]:
         ply=8,
         severity=1,
         phase=1,
-        is_result_changing=True,  # mistake, result-changing
+        is_reversed=True,  # mistake, reversed
     )
 
     # Game A2 — middle (played_at Feb 1)
@@ -513,7 +513,7 @@ class TestGetLibraryGamesTagFilter:
     combined tag filter (single-flaw EXISTS: OR within family, AND across
     families, SEED-038) — the same semantics the Flaws subtab uses. Reuses the
     flaws_test_state fixture, whose user A has 3 games:
-      game_a1 — result-changing (impact family), blunder
+      game_a1 — reversed (impact family), blunder
       game_a2 — miss (opportunity family), low-clock (tempo family)
       game_a3 — mistake only (no curated tags)
     """
@@ -529,16 +529,16 @@ class TestGetLibraryGamesTagFilter:
         assert resp.json()["matched_count"] == 3
 
     @pytest.mark.asyncio
-    async def test_tag_result_changing_matches_only_its_game(
+    async def test_tag_reversed_matches_only_its_game(
         self, flaws_test_state: dict[str, Any]
     ) -> None:
-        """?tag=result-changing returns only the game with that flaw (game_a1)."""
+        """?tag=reversed returns only the game with that flaw (game_a1)."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
                 "/api/library/games",
-                params={"tag": "result-changing"},
+                params={"tag": "reversed"},
                 headers=flaws_test_state["headers_a"],
             )
         assert resp.status_code == 200
@@ -570,7 +570,7 @@ class TestGetLibraryGamesTagFilter:
     ) -> None:
         """Combining tags from different families needs ONE flaw with both.
 
-        result-changing (impact) and low-clock (tempo) live in different games,
+        reversed (impact) and low-clock (tempo) live in different games,
         so no single flaw satisfies both families → 0 games match. This is the
         AND-across-families / single-flaw EXISTS semantics (SEED-038), and the
         exact behaviour that was broken (tags silently dropped) for the Games tab.
@@ -580,7 +580,7 @@ class TestGetLibraryGamesTagFilter:
         ) as client:
             resp = await client.get(
                 "/api/library/games",
-                params={"tag": ["result-changing", "low-clock"]},
+                params={"tag": ["reversed", "low-clock"]},
                 headers=flaws_test_state["headers_a"],
             )
         assert resp.status_code == 200
@@ -769,24 +769,24 @@ class TestGetLibraryFlaws:
             assert flaw["severity"] == "blunder"
 
     @pytest.mark.asyncio
-    async def test_tag_filter_result_changing(self, flaws_test_state: dict[str, Any]) -> None:
-        """?tag=result-changing returns only rows with is_result_changing=True."""
+    async def test_tag_filter_reversed(self, flaws_test_state: dict[str, Any]) -> None:
+        """?tag=reversed returns only rows with is_reversed=True."""
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
         ) as client:
             resp = await client.get(
                 "/api/library/flaws",
-                params={"tag": "result-changing"},
+                params={"tag": "reversed"},
                 headers=flaws_test_state["headers_a"],
             )
         assert resp.status_code == 200
         body = resp.json()
-        # Only game_a1 ply8 has is_result_changing=True
+        # Only game_a1 ply8 has is_reversed=True
         assert body["matched_count"] == 1
         flaw = body["flaws"][0]
         assert flaw["game_id"] == flaws_test_state["game_a1"]
         assert flaw["ply"] == 8
-        assert "result-changing" in flaw["tags"]
+        assert "reversed" in flaw["tags"]
 
     @pytest.mark.asyncio
     async def test_flaw_list_item_fields(self, flaws_test_state: dict[str, Any]) -> None:

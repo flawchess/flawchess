@@ -44,11 +44,12 @@ def apply_game_filters(
         opponent_gap_max: Upper bound (inclusive) on opponent_rating - user_rating.
                          None = unbounded above.
         flaw_severity: When set (e.g. ["blunder"] or ["mistake"]), restrict to games
-                         containing >=1 flaw in game_flaws at that severity or worse
-                         (MIN-threshold). None (default) leaves the statement unchanged —
-                         all existing callers are unaffected.
+                         containing >=1 flaw in game_flaws whose severity is one of the
+                         listed values (set membership / IN, not a min-threshold; e.g.
+                         ["mistake"] matches mistakes only, not blunders). None (default)
+                         leaves the statement unchanged — all existing callers are unaffected.
                          Requires user_id (T-108-07: EXISTS must be user-scoped).
-        flaw_tags: When set (e.g. ["low-clock", "result-changing"]), additionally
+        flaw_tags: When set (e.g. ["low-clock", "reversed"]), additionally
                          restrict to games containing a SINGLE flaw satisfying ALL
                          selected tag families (single-flaw EXISTS semantics, SEED-038).
                          OR within family, AND across families. Phase tags are ignored.

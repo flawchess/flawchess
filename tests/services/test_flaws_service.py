@@ -17,14 +17,18 @@ from app.services.flaws_service import (
     EVAL_COVERAGE_MIN,
     FROM_WINNING_ES,
     INACCURACY_DROP,
+    LOSING_LINE_ES,
     MATE_CP_EQUIVALENT,
     MISTAKE_DROP,
     SANITY_TOLERANCE,
+    SQUANDERED_EXIT_ES,
     TIME_PRESSURE_CLOCK_FRACTION,
     HASTY_MOVE_FRACTION,
+    WINNING_LINE_ES,
     FlawRecord,
     GameFlawsResult,
     GameNotAnalyzed,
+    _classify_impact,
     _classify_severity,
     _classify_tempo,
     _compute_eval_coverage,
@@ -125,8 +129,20 @@ class TestConstants:
         assert EVAL_COVERAGE_MIN == 0.90
 
     def test_from_winning_es_value(self) -> None:
-        """FROM_WINNING_ES must equal 0.85."""
+        """FROM_WINNING_ES must equal 0.85 (squandered entry)."""
         assert FROM_WINNING_ES == 0.85
+
+    def test_winning_line_es_value(self) -> None:
+        """WINNING_LINE_ES must equal 0.70 (reversed entry: clearly winning)."""
+        assert WINNING_LINE_ES == 0.70
+
+    def test_losing_line_es_value(self) -> None:
+        """LOSING_LINE_ES must equal 0.30 (reversed exit: clearly losing)."""
+        assert LOSING_LINE_ES == 0.30
+
+    def test_squandered_exit_es_value(self) -> None:
+        """SQUANDERED_EXIT_ES must equal 0.60 (squandered exit: back to roughly even)."""
+        assert SQUANDERED_EXIT_ES == 0.60
 
 
 class TestTypeContract:
@@ -634,25 +650,25 @@ class TestTempoTags:
         result = _classify_tempo(move_time=30.0, clock_after=low_clock, base_time=base_time)
         assert result == "low-clock"
 
-    def test_impatient_when_fast_move_on_comfortable_clock(self) -> None:
-        """move_time < HASTY_MOVE_FRACTION * base_time on a comfortable clock yields impatient."""
+    def test_hasty_when_fast_move_on_comfortable_clock(self) -> None:
+        """move_time < HASTY_MOVE_FRACTION * base_time on a comfortable clock yields hasty."""
         base_time = 600
         comfortable_clock = base_time * TIME_PRESSURE_CLOCK_FRACTION + 10  # well above threshold
         fast_move = base_time * HASTY_MOVE_FRACTION - 0.1  # just below fast threshold
         result = _classify_tempo(
             move_time=fast_move, clock_after=comfortable_clock, base_time=base_time
         )
-        assert result == "impatient"
+        assert result == "hasty"
 
-    def test_considered_when_adequate_time(self) -> None:
-        """Adequate clock and adequate move time yields considered."""
+    def test_unrushed_when_adequate_time(self) -> None:
+        """Adequate clock and adequate move time yields unrushed."""
         base_time = 600
         comfortable_clock = base_time * TIME_PRESSURE_CLOCK_FRACTION + 60
         adequate_move = base_time * HASTY_MOVE_FRACTION + 5.0
         result = _classify_tempo(
             move_time=adequate_move, clock_after=comfortable_clock, base_time=base_time
         )
-        assert result == "considered"
+        assert result == "unrushed"
 
     def test_no_tempo_tag_when_clock_data_missing(self) -> None:
         """Missing clock_after yields None — missing clock/move-time yields no tempo tag, not a fallback."""
@@ -670,11 +686,11 @@ class TestTempoTags:
         result = _classify_tempo(move_time=10.0, clock_after=25.0, base_time=None)
         assert result == "low-clock"
 
-    def test_abs_fallback_impatient_when_no_base_time(self) -> None:
-        """When base_time is None, falls back to absolute threshold for impatient."""
-        # clock >= 30s, move < 5s = impatient
+    def test_abs_fallback_hasty_when_no_base_time(self) -> None:
+        """When base_time is None, falls back to absolute threshold for hasty."""
+        # clock >= 30s, move < 5s = hasty
         result = _classify_tempo(move_time=3.0, clock_after=60.0, base_time=None)
-        assert result == "impatient"
+        assert result == "hasty"
 
     def test_move_time_clamps_negative_to_none(self) -> None:
         """WR-05: a clock anomaly producing a negative move time returns None.
@@ -682,8 +698,8 @@ class TestTempoTags:
         Same-side clock is two plies back. If the clock 'gains' more than the
         increment between the player's own moves (corrupt data), the raw formula
         goes negative — which would otherwise satisfy move_time < fast_threshold
-        and mislabel the move as impatient. The fix returns None so tempo is
-        absent (None) so the move is not mislabeled impatient.
+        and mislabel the move as hasty. The fix returns None so tempo is
+        absent (None) so the move is not mislabeled hasty.
         """
         positions = [_make_pos(i) for i in range(4)]
         # prev same-side clock (n-2) LOWER than current (n) with zero increment
@@ -714,7 +730,7 @@ class TestTempoTags:
         assert isinstance(result, list)
         assert len(result) >= 1, "Expected at least one flaw"
         for flaw in result:
-            tempo_tags = [t for t in flaw["tags"] if t in ("low-clock", "impatient", "considered")]
+            tempo_tags = [t for t in flaw["tags"] if t in ("low-clock", "hasty", "unrushed")]
             assert len(tempo_tags) <= 1, (
                 f"Flaw at ply {flaw['ply']} must have at most one tempo tag, got: {tempo_tags}"
             )
@@ -738,7 +754,7 @@ class TestTempoTags:
         result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         assert len(result) >= 1, "Expected at least one flaw"
-        tempo_set = {"low-clock", "impatient", "considered"}
+        tempo_set = {"low-clock", "hasty", "unrushed"}
         for flaw in result:
             tempo_tags = [t for t in flaw["tags"] if t in tempo_set]
             assert tempo_tags == [], (
@@ -748,7 +764,7 @@ class TestTempoTags:
 
 
 class TestAttributionTags:
-    """Tests for miss, lucky-escape, while-ahead, result-changing, and phase tags."""
+    """Tests for miss, lucky, reversed, squandered, and phase tags."""
 
     # PGN long enough to have moves for position building
     _PGN = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
@@ -758,33 +774,6 @@ class TestAttributionTags:
         positions = [_make_pos(i, eval_cp=20) for i in range(n)]
         positions[-1] = _make_pos(n - 1)  # final null
         return positions
-
-    def test_while_ahead_tag_when_es_before_above_threshold(self) -> None:
-        """Flaw with es_before >= 0.85 (FROM_WINNING_ES) gets while-ahead tag."""
-        # eval_cp_to_expected_score(900, "white") is well above 0.85
-        # eval_cp_to_expected_score(-500, "white") is well below 0.85
-        game = _make_game(pgn=self._PGN, user_color="white")
-        positions = self._make_standard_positions(12)
-        positions[1] = _make_pos(1, eval_cp=900)  # es_before for white at ply 2 is high
-        positions[2] = _make_pos(2, eval_cp=-500)  # blunder — large drop from winning position
-        result = classify_game_flaws(game, positions)
-        assert isinstance(result, list)
-        ply2 = [f for f in result if f["ply"] == 2]
-        assert len(ply2) == 1, "Expected blunder at ply 2"
-        assert "while-ahead" in ply2[0]["tags"]
-
-    def test_no_while_ahead_tag_when_es_before_below_threshold(self) -> None:
-        """Flaw with es_before < FROM_WINNING_ES does NOT get while-ahead tag."""
-        # eval_cp_to_expected_score(50, "white") ≈ 0.568 < 0.85
-        game = _make_game(pgn=self._PGN, user_color="white")
-        positions = self._make_standard_positions(12)
-        positions[1] = _make_pos(1, eval_cp=50)  # es_before ≈ 0.568 < FROM_WINNING_ES
-        positions[2] = _make_pos(2, eval_cp=-500)  # blunder
-        result = classify_game_flaws(game, positions)
-        assert isinstance(result, list)
-        ply2 = [f for f in result if f["ply"] == 2]
-        assert len(ply2) == 1
-        assert "while-ahead" not in ply2[0]["tags"]
 
     def test_miss_tag_when_preceding_opponent_was_blunder(self) -> None:
         """User flaw at ply N gets miss tag when opponent at ply N-1 was a blunder.
@@ -834,17 +823,17 @@ class TestAttributionTags:
         assert len(ply4) == 1
         assert "miss" not in ply4[0]["tags"]
 
-    def test_lucky_escape_tag_when_opponent_blunders_back(self) -> None:
-        """User blunder at ply N gets lucky-escape when the opponent ERRS in reply.
+    def test_lucky_tag_when_opponent_blunders_back(self) -> None:
+        """User blunder at ply N gets lucky when the opponent ERRS in reply.
 
-        lucky-escape = the user's blunder went unpunished because the opponent
+        lucky = the user's blunder went unpunished because the opponent
         failed to find the punishing line (their reply was itself a mistake/blunder),
         so the user's expected score recovered.
 
         White blunders at ply 4 (400 → -400, drop ≈ 0.462), then black blunders
         back at ply 5 (-400 → +400): black's es drops from ≈0.731 to ≈0.269
         (drop ≈ 0.462 = blunder), handing the advantage back to white. White got
-        away with it → lucky-escape.
+        away with it → lucky.
         """
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
@@ -856,16 +845,16 @@ class TestAttributionTags:
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1
         assert ply4[0]["severity"] == "blunder"
-        assert "lucky-escape" in ply4[0]["tags"], (
-            "White blunder should be lucky-escape when black blunders back in reply"
+        assert "lucky" in ply4[0]["tags"], (
+            "White blunder should be lucky when black blunders back in reply"
         )
 
-    def test_no_lucky_escape_when_opponent_capitalizes(self) -> None:
-        """User blunder is NOT lucky-escape when the opponent plays a fine move.
+    def test_no_lucky_when_opponent_capitalizes(self) -> None:
+        """User blunder is NOT lucky when the opponent plays a fine move.
 
         Regression guard for the inverted-heuristic bug (2026-06-07): a blunder
         followed by a sensible opponent reply (the opponent capitalizes / holds the
-        advantage) must NOT be tagged lucky-escape. White blunders at ply 4
+        advantage) must NOT be tagged lucky. White blunders at ply 4
         (400 → -400), black plays fine at ply 5 (-380, near-zero drop): black keeps
         the winning position, so white did not escape.
         """
@@ -879,12 +868,12 @@ class TestAttributionTags:
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1
         assert ply4[0]["severity"] == "blunder"
-        assert "lucky-escape" not in ply4[0]["tags"], (
+        assert "lucky" not in ply4[0]["tags"], (
             "A blunder the opponent capitalizes on is not a lucky escape"
         )
 
-    def test_no_lucky_escape_tag_on_non_blunder(self) -> None:
-        """A user mistake (not blunder) does NOT get the lucky-escape tag."""
+    def test_no_lucky_tag_on_non_blunder(self) -> None:
+        """A user mistake (not blunder) does NOT get the lucky tag."""
         game = _make_game(pgn=self._PGN, user_color="white")
         positions = self._make_standard_positions(12)
         # White makes a mistake at ply 4 (between MISTAKE_DROP and BLUNDER_DROP)
@@ -898,7 +887,7 @@ class TestAttributionTags:
         ply4 = [f for f in result if f["ply"] == 4]
         assert len(ply4) == 1
         assert ply4[0]["severity"] == "mistake"
-        assert "lucky-escape" not in ply4[0]["tags"], "Mistakes should not get lucky-escape tag"
+        assert "lucky" not in ply4[0]["tags"], "Mistakes should not get lucky tag"
 
     def _make_end_of_game_blunder_positions(self) -> list[GamePosition]:
         """Positions where the user (white) blunders on the final analyzed ply.
@@ -913,12 +902,12 @@ class TestAttributionTags:
         positions[10] = _make_pos(10, eval_cp=-400)  # white blunders (last move)
         return positions
 
-    def test_no_lucky_escape_on_end_of_game_blunder_when_user_lost(self) -> None:
-        """A blunder on the user's last move is NOT lucky-escape when the user lost.
+    def test_no_lucky_on_end_of_game_blunder_when_user_lost(self) -> None:
+        """A blunder on the user's last move is NOT lucky when the user lost.
 
         Bug fix: a blunder followed by the user resigning or flagging ends the game
         with no opponent reply, but it's a loss, not an escape. Previously every
-        end-of-game blunder was tagged lucky-escape; now a loss suppresses it.
+        end-of-game blunder was tagged lucky; now a loss suppresses it.
         """
         game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
         positions = self._make_end_of_game_blunder_positions()
@@ -927,12 +916,12 @@ class TestAttributionTags:
         ply10 = [f for f in result if f["ply"] == 10]
         assert len(ply10) == 1
         assert ply10[0]["severity"] == "blunder"
-        assert "lucky-escape" not in ply10[0]["tags"], (
+        assert "lucky" not in ply10[0]["tags"], (
             "A blunder on the last move of a lost game (resign/timeout) is not a lucky escape"
         )
 
-    def test_lucky_escape_on_end_of_game_blunder_when_user_won(self) -> None:
-        """A blunder on the user's last move IS lucky-escape when the user won.
+    def test_lucky_on_end_of_game_blunder_when_user_won(self) -> None:
+        """A blunder on the user's last move IS lucky when the user won.
 
         End-of-game blunder where the user did not lose (e.g. the blunder was
         actually mate, or the opponent resigned anyway) still counts as an escape.
@@ -944,56 +933,21 @@ class TestAttributionTags:
         ply10 = [f for f in result if f["ply"] == 10]
         assert len(ply10) == 1
         assert ply10[0]["severity"] == "blunder"
-        assert "lucky-escape" in ply10[0]["tags"], (
+        assert "lucky" in ply10[0]["tags"], (
             "An end-of-game blunder where the user won is still a lucky escape"
         )
 
-    def test_lucky_escape_on_end_of_game_blunder_when_user_drew(self) -> None:
-        """A blunder on the user's last move IS lucky-escape when the game was drawn."""
+    def test_lucky_on_end_of_game_blunder_when_user_drew(self) -> None:
+        """A blunder on the user's last move IS lucky when the game was drawn."""
         game = _make_game(pgn=self._PGN, user_color="white", result="1/2-1/2")
         positions = self._make_end_of_game_blunder_positions()
         result = classify_game_flaws(game, positions)
         assert isinstance(result, list)
         ply10 = [f for f in result if f["ply"] == 10]
         assert len(ply10) == 1
-        assert "lucky-escape" in ply10[0]["tags"], (
+        assert "lucky" in ply10[0]["tags"], (
             "An end-of-game blunder in a drawn game is a lucky escape"
         )
-
-    def test_result_changing_on_loss_crossing_draw_threshold(self) -> None:
-        """User flaw gets result-changing when crossing from >= RESULT_DRAW_THRESHOLD to below.
-
-        User lost game (result="0-1", user_color="white").
-        White flaw at ply 2: es_before >= 0.40, es_after < 0.40.
-        """
-        # eval_cp_to_expected_score(100, "white") ≈ 0.591 >= 0.40
-        # eval_cp_to_expected_score(-500, "white") ≈ 0.160 < 0.40
-        game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
-        positions = self._make_standard_positions(12)
-        positions[1] = _make_pos(1, eval_cp=100)  # es_before ≈ 0.591 >= RESULT_DRAW_THRESHOLD
-        positions[2] = _make_pos(2, eval_cp=-500)  # es_after ≈ 0.160 < RESULT_DRAW_THRESHOLD
-        result = classify_game_flaws(game, positions)
-        assert isinstance(result, list)
-        ply2 = [f for f in result if f["ply"] == 2]
-        assert len(ply2) == 1
-        assert "result-changing" in ply2[0]["tags"]
-
-    def test_no_result_changing_when_does_not_cross_boundary(self) -> None:
-        """User flaw does NOT get result-changing when both sides of threshold are same zone."""
-        # Both es_before and es_after are below the relevant threshold:
-        # User lost, but flaw stays below 0.40 before and after (no boundary crossed)
-        # eval_cp_to_expected_score(-300, "white") ≈ 0.333 < RESULT_DRAW_THRESHOLD
-        # eval_cp_to_expected_score(-600, "white") ≈ 0.094 < RESULT_DRAW_THRESHOLD
-        # drop ≈ 0.239 >= BLUNDER_DROP (it's a blunder but not result-changing)
-        game = _make_game(pgn=self._PGN, user_color="white", result="0-1")
-        positions = self._make_standard_positions(12)
-        positions[1] = _make_pos(1, eval_cp=-300)  # already below threshold
-        positions[2] = _make_pos(2, eval_cp=-600)  # still below threshold
-        result = classify_game_flaws(game, positions)
-        assert isinstance(result, list)
-        ply2 = [f for f in result if f["ply"] == 2]
-        assert len(ply2) == 1
-        assert "result-changing" not in ply2[0]["tags"]
 
     def test_opening_tag_for_phase_0(self) -> None:
         """Flaw at a position with phase=0 gets opening tag."""
@@ -1032,6 +986,161 @@ class TestAttributionTags:
         ply2 = [f for f in result if f["ply"] == 2]
         assert len(ply2) == 1
         assert "endgame" in ply2[0]["tags"]
+
+
+class TestImpactLadder:
+    """Boundary tests for _classify_impact and its integration via _build_tags.
+
+    Verifies the outcome-independent two-rung ladder (reversed / squandered) with
+    >= entry / <= exit boundaries (inclusive on both ends, per flaw-tag-definitions.md
+    §Impact §"Boundary convention").
+
+    All cases also confirm outcome-independence: the same ES swing must produce the
+    same impact tag regardless of the game's user_result.
+    """
+
+    # PGN long enough to support classify_game_flaws calls
+    _PGN = "1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O *"
+
+    def _make_standard_positions(self, n: int = 12) -> list[GamePosition]:
+        """Build n positions with moderate eval (no errors)."""
+        positions = [_make_pos(i, eval_cp=20) for i in range(n)]
+        positions[-1] = _make_pos(n - 1)  # final null
+        return positions
+
+    # ------------------------------------------------------------------
+    # _classify_impact unit tests (pure helper boundary tests)
+    # ------------------------------------------------------------------
+
+    def test_reversed_at_exact_entry_exit_boundary(self) -> None:
+        """es_before=0.70 and es_after=0.30 (exact boundary) must return 'reversed'."""
+        assert _classify_impact(0.70, 0.30) == "reversed"
+
+    def test_reversed_entry_below_boundary_returns_none(self) -> None:
+        """es_before=0.69 (just below WINNING_LINE_ES) must not return 'reversed'."""
+        assert _classify_impact(0.69, 0.30) is None
+
+    def test_reversed_exit_above_boundary_returns_none(self) -> None:
+        """es_after=0.31 (just above LOSING_LINE_ES) must not return 'reversed'."""
+        assert _classify_impact(0.70, 0.31) is None
+
+    def test_squandered_at_exact_boundary(self) -> None:
+        """es_before=0.85 and es_after=0.60 (exact boundary) must return 'squandered'."""
+        assert _classify_impact(0.85, 0.60) == "squandered"
+
+    def test_squandered_exit_above_boundary_returns_none(self) -> None:
+        """es_after=0.61 (just above SQUANDERED_EXIT_ES) must not return 'squandered'."""
+        assert _classify_impact(0.85, 0.61) is None
+
+    def test_most_severe_wins_reversed_beats_squandered(self) -> None:
+        """An overwhelming swing (0.90 -> 0.25) qualifies for both rungs;
+        most-severe-wins means only 'reversed' is returned.
+        """
+        # es_before=0.90 >= FROM_WINNING_ES (0.85) => qualifies for squandered entry
+        # es_after=0.25 <= LOSING_LINE_ES (0.30)   => qualifies for reversed exit
+        # Both conditions met; reversed is the more severe and wins.
+        assert _classify_impact(0.90, 0.25) == "reversed"
+
+    def test_deliberate_no_impact_gap_78_to_45(self) -> None:
+        """es_before=0.78 -> es_after=0.45 carries no impact tag (deliberate gap).
+
+        reversed needs entry >= WINNING_LINE_ES (0.70) AND exit <= LOSING_LINE_ES (0.30):
+        entry 0.78 qualifies, but exit 0.45 > 0.30, so reversed does not fire.
+        squandered needs entry >= FROM_WINNING_ES (0.85): 0.78 < 0.85, so squandered does not fire.
+        A clear-but-not-overwhelming swing is captured by blunder severity, not impact.
+        """
+        assert _classify_impact(0.78, 0.45) is None
+
+    def test_outcome_independence_reversed(self) -> None:
+        """The same ES swing must produce 'reversed' for any user_result value.
+
+        _classify_impact does not take user_result; this test drives through
+        classify_game_flaws with the same position but different game results to
+        confirm the impact tag is identical.
+        """
+        # Build positions with es_before >= 0.70 and es_after <= 0.30 for white at ply 2.
+        # eval_cp_to_expected_score(300, "white") ≈ 0.733 >= WINNING_LINE_ES
+        # eval_cp_to_expected_score(-500, "white") ≈ 0.160 <= LOSING_LINE_ES
+        for result_str in ("1-0", "0-1", "1/2-1/2"):
+            game = _make_game(pgn=self._PGN, user_color="white", result=result_str)
+            positions = self._make_standard_positions(12)
+            positions[1] = _make_pos(1, eval_cp=300)  # es_before ≈ 0.733
+            positions[2] = _make_pos(2, eval_cp=-500)  # es_after ≈ 0.160
+            flaws = classify_game_flaws(game, positions)
+            assert isinstance(flaws, list)
+            ply2 = [f for f in flaws if f["ply"] == 2]
+            assert len(ply2) == 1, f"Expected blunder at ply 2 for result={result_str}"
+            assert "reversed" in ply2[0]["tags"], (
+                f"'reversed' must appear for result={result_str} (outcome-independent)"
+            )
+
+    # ------------------------------------------------------------------
+    # Integration tests via classify_game_flaws (at-most-one + tag presence)
+    # ------------------------------------------------------------------
+
+    def test_reversed_in_tags_when_full_reversal(self) -> None:
+        """A full-reversal blunder (winning -> losing) produces 'reversed' in tags."""
+        # eval_cp_to_expected_score(300, "white") ≈ 0.733 >= 0.70 (WINNING_LINE_ES)
+        # eval_cp_to_expected_score(-500, "white") ≈ 0.160 <= 0.30 (LOSING_LINE_ES)
+        game = _make_game(pgn=self._PGN, user_color="white")
+        positions = self._make_standard_positions(12)
+        positions[1] = _make_pos(1, eval_cp=300)  # es_before ≈ 0.733
+        positions[2] = _make_pos(2, eval_cp=-500)  # es_after ≈ 0.160
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        ply2 = [f for f in result if f["ply"] == 2]
+        assert len(ply2) == 1
+        assert "reversed" in ply2[0]["tags"]
+        assert "squandered" not in ply2[0]["tags"], "most-severe-wins: squandered suppressed"
+
+    def test_squandered_in_tags_when_overwhelming_advantage_erased(self) -> None:
+        """An overwhelming-to-roughly-even blunder produces 'squandered' in tags.
+
+        es_before >= 0.85 (FROM_WINNING_ES) and es_after <= 0.60 (SQUANDERED_EXIT_ES)
+        but es_after > 0.30 (above LOSING_LINE_ES) so reversed does NOT fire.
+        eval_cp_to_expected_score(600, "white") ≈ 0.859 >= 0.85
+        eval_cp_to_expected_score(50, "white")  ≈ 0.568 <= 0.60 but > 0.30
+        """
+        game = _make_game(pgn=self._PGN, user_color="white")
+        positions = self._make_standard_positions(12)
+        positions[1] = _make_pos(1, eval_cp=600)  # es_before ≈ 0.859
+        positions[2] = _make_pos(2, eval_cp=50)  # es_after ≈ 0.568
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        ply2 = [f for f in result if f["ply"] == 2]
+        assert len(ply2) == 1
+        assert "squandered" in ply2[0]["tags"]
+        assert "reversed" not in ply2[0]["tags"]
+
+    def test_no_impact_tag_for_moderate_blunder(self) -> None:
+        """A moderate blunder (below impact thresholds) carries no impact tag."""
+        # eval_cp_to_expected_score(200, "white") ≈ 0.685 < WINNING_LINE_ES (0.70)
+        # drop is a blunder but does not cross the reversed threshold
+        game = _make_game(pgn=self._PGN, user_color="white")
+        positions = self._make_standard_positions(12)
+        positions[1] = _make_pos(1, eval_cp=200)  # es_before ≈ 0.685
+        positions[2] = _make_pos(2, eval_cp=-500)  # es_after ≈ 0.160
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        ply2 = [f for f in result if f["ply"] == 2]
+        assert len(ply2) == 1
+        assert "reversed" not in ply2[0]["tags"]
+        assert "squandered" not in ply2[0]["tags"]
+
+    def test_at_most_one_impact_tag(self) -> None:
+        """At most one of 'reversed'/'squandered' appears in any flaw's tags."""
+        game = _make_game(pgn=self._PGN, user_color="white")
+        positions = self._make_standard_positions(12)
+        # Use a full-reversal swing (would qualify for both if not most-severe-wins)
+        positions[1] = _make_pos(1, eval_cp=900)  # es_before well above 0.85
+        positions[2] = _make_pos(2, eval_cp=-500)  # es_after ≈ 0.160
+        result = classify_game_flaws(game, positions)
+        assert isinstance(result, list)
+        for flaw in result:
+            impact_tags = [t for t in flaw["tags"] if t in ("reversed", "squandered")]
+            assert len(impact_tags) <= 1, (
+                f"Flaw at ply {flaw['ply']} must have at most one impact tag, got: {impact_tags}"
+            )
 
 
 class TestOracleCloseness:

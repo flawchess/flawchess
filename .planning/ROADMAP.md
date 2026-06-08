@@ -231,7 +231,29 @@ Plans:
 
 **Requirements**: No new functional requirement — refactor/rename + impact-family rebuild driven by the taxonomy note.
 
-**Plans**: TBD (set at plan time)
+**Plans**: 7 plans
+Plans:
+**Wave 1**
+
+- [x] 110-01-PLAN.md — Backend taxonomy core: constants + FlawTag/TempoTag Literals + _classify_impact ladder + boundary tests
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 110-02-PLAN.md — game_flaws model + forward alter migration + FlawRecord->row writer (3-way impact-column change)
+- [x] 110-03-PLAN.md — API schema/repos/services rate swap + FlawTagFilter Literal + backend tests + dev backfill (users 28 & 44)
+- [x] 110-04-PLAN.md — gen_flaw_thresholds_ts.py generator + generated flawThresholds.ts + second CI drift gate
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 110-05-PLAN.md — Frontend types/theme/tagDefinitions + TagChip Radix-popover restore + active-filter ring
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 110-06-PLAN.md — FlawStatsBand/FlawTagDistribution/FlawFilterControl panel churn + remaining frontend tests
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 110-07-PLAN.md — Grep-clean gate + full local gate + manual UAT (popover + ring, desktop & mobile)
 
 **Scope** (the six asks):
 

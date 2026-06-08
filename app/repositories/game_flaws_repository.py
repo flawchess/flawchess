@@ -26,8 +26,8 @@ from app.services.flaws_service import FlawRecord
 # Inaccuracies are count-only (D-03); flaw_record_to_row raises ValueError on "inaccuracy".
 _SEVERITY_INT: dict[str, int] = {"mistake": 1, "blunder": 2}
 
-# Tempo family: 0=low-clock, 1=impatient, 2=considered; NULL when no clock data.
-_TEMPO_INT: dict[str, int] = {"low-clock": 0, "impatient": 1, "considered": 2}
+# Tempo family: 0=low-clock, 1=hasty, 2=unrushed; NULL when no clock data.
+_TEMPO_INT: dict[str, int] = {"low-clock": 0, "hasty": 1, "unrushed": 2}
 
 # Phase family: 0=opening, 1=middlegame, 2=endgame (denormalized from game_positions.phase).
 _PHASE_INT: dict[str, int] = {"opening": 0, "middlegame": 1, "endgame": 2}
@@ -105,9 +105,9 @@ def flaw_record_to_row(
         "tempo": tempo_int,
         "phase": phase_int,
         "is_miss": "miss" in tags,
-        "is_lucky_escape": "lucky-escape" in tags,
-        "is_while_ahead": "while-ahead" in tags,
-        "is_result_changing": "result-changing" in tags,
+        "is_lucky": "lucky" in tags,
+        "is_reversed": "reversed" in tags,
+        "is_squandered": "squandered" in tags,
         "es_before": flaw["es_before"],
         "es_after": flaw["es_after"],
         "move_san": flaw["move_san"],

@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: executing
-last_updated: "2026-06-07T08:30:00.000Z"
-last_activity: 2026-06-07 -- Phase 109 shipped (squash-merged to main)
+status: verifying
+last_updated: "2026-06-08T05:04:04.519Z"
+last_activity: 2026-06-07 -- Phase 110 Plan 05 complete — FlawTag renames, TagChip Radix popover restored, active-filter ring added
 progress:
-  total_phases: 10
-  completed_phases: 5
-  total_plans: 26
-  completed_plans: 25
-  percent: 50
+  total_phases: 11
+  completed_phases: 6
+  total_plans: 33
+  completed_plans: 32
+  percent: 55
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 109 (per-card-expected-score-eval-chart-games-subtab) — SHIPPED
-Plan: 4 of 4
-Status: Phase 109 shipped (squash-merged to main)
-Last activity: 2026-06-07 -- Phase 109 shipped (squash-merged to main)
+Phase: 110 (flaw-tag-taxonomy-overhaul-rename-impact-family-rebuild-tool) — EXECUTING
+Plan: 7 of 7
+Status: Phase complete — ready for verification
+Last activity: 2026-06-07 -- Phase 110 Plan 05 complete — FlawTag renames, TagChip Radix popover restored, active-filter ring added
 
 ## Project Reference
 
@@ -266,6 +266,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | 260604-t54 | Remove the per-user endgame-insights rate limit (`INSIGHTS_MISSES_PER_HOUR=3`) and the tier-2 stale-serve fallback (`status=stale_rate_limited`), now redundant: insights run only over full history and the router 400s every filter except `opponent_strength` (4 presets), so the tier-1 cache key `(user_id, prompt_version, model, opponent_strength)` has a natural miss ceiling of ~4 fresh LLM calls per user per era (invalidated only by re-import) — already below the old limit, which therefore blocked legitimate use (viewing all 4 variants tripped it on the 4th) while doing nothing against guest/bot fan-out. Backend: deleted `InsightsRateLimitExceeded`, `_RATE_LIMIT_WINDOW`, `_compute_retry_after`, `_maybe_stale_filters`, the rate-limit block in `generate_insights()`, and repo fns `count_recent_successful_misses` / `get_oldest_recent_miss_timestamp` / `get_latest_report_for_user` (grep-confirmed no out-of-band callers); dropped the router 429 branch and the dead schema variants/fields (`stale_rate_limited`, `rate_limit_exceeded`, `stale_filters`, `retry_after_seconds`). Frontend: mirrored the slimmer contract in `types/insights.ts` and stripped the 429/stale UI from `EndgameInsightsBlock.tsx` (`roundMinutes`, stale banner, "Try again in ~N min"); generic provider-error path preserved (one shared render tree, no mobile dup). Tier-1 cache + 502 provider_error/validation_failure paths untouched. Tests pruned accordingly (`test_llm_log_repository_reads.py` deleted); CHANGELOG `[Unreleased]` bullet added. Also fixed two pre-existing `main` breakages surfaced by the full-suite gate: 7 prompt-version pin assertions (→ `endgame_v46`, bumped by the preceding prompt-de-priming commit `d278a29d`) and one stale worked-example snapshot assertion (reworded earlier by `93c092c2`). Full local gate GREEN: ruff format/check + ty clean, pytest 2227 passed/10 skipped, frontend lint + knip clean + vitest 744/744. Commits `bd10c454` + `229d929b` (+ docs `1e9c0324`) + test fixes `e7edcb1b` + worked-example pin on `main`; not pushed. | 2026-06-04 | bd10c454 | [260604-t54-remove-insights-rate-limiting-and-stale-](./quick/260604-t54-remove-insights-rate-limiting-and-stale-/) |
 | 260605-v6v | Rename flaw attribution tags to final taxonomy (time-pressure→low-clock, hasty→impatient, knowledge-gap→considered, unpunished→lucky-escape, from-winning→while-ahead, drop phase- prefix) and make the tempo dimension optional (no tag when clock data is missing; `_classify_tempo`→`TempoTag\|None`). Shipped Phase 106 backend; no DB migration (tags computed on-the-fly). Also fixed the latent `_curate_chips` `startswith("phase-")` exclusion that the prefix-drop would have silently broken (→ `_PHASE_TAGS` frozenset). Backend gate GREEN: ruff/ty clean, pytest 2321 passed/10 skipped. Cherry-picked onto `gsd/phase-107` as `3b659b48`+`b78d11f0` (worktree forked off stale base; see SUMMARY). | 2026-06-05 | 3b659b48 | [260605-v6v-rename-flaw-attribution-tags-in-phase-10](./quick/260605-v6v-rename-flaw-attribution-tags-in-phase-10/) |
 | 260607-ehm | Phase 109 feedback — Library → Games cards: hovering the eval chart now scrubs the card's miniboard to the hovered ply. (1) Unsnapped the crosshair + tooltip (both follow the exact ply, no more snap-to-nearest-flaw); tooltip shows move+eval per ply plus You/Opponent severity+tags on M/B plies. (2) Bigger miniboard (desktop 100→132, mobile 105→130). (3) Live board: lifted `hoverPly` into `LibraryGameCard`, added `onHoverPlyChange` to `EvalChart`, reconstruct per-ply FENs from a new `GameFlawCard.moves` SAN mainline via chess.js (memoized); at rest shows `result_fen`. (4) Orange/red corner dot on the moved piece's destination square for M/B plies (new `MiniBoard.cornerDot` prop threaded through `LazyMiniBoard`). Mapping is off-by-one-free because `zobrist.py` stores `eval_cp[ply]` as the post-move eval, so crosshair ply ↔ position after that move. Backend adds `moves` from already-loaded positions (no extra query, analyzed-only). Gates GREEN: ruff/ty clean, pytest 2431 passed/10 skipped (one unrelated guest rate-limit flake, passes in isolation), frontend lint+tsc+knip clean, vitest 825. HUMAN-UAT pending (hover behavior is visual). Commit `9cd63886` on `gsd/phase-109-...`; not pushed. | 2026-06-07 | 9cd63886 | [260607-ehm-evalchart-hover-miniboard-position](./quick/260607-ehm-evalchart-hover-miniboard-position/) |
+| 260608-ac1 | Phase 110 follow-up — Library Games card tag/eval refinements (frontend-only, no API change). (1) `SeverityBadge` Blunder/Mistake badges get the same active-filter ring as TagChip, gated on the severity filter being narrowed to exactly that severity (default is both M+B on, so the ring marks the active constraint; inaccuracy never rings). (2) Tag chips show per-tag occurrence counts (count-first like the badges), computed from the user's (`is_user`) M/B `flaw_markers` in `LibraryGameCard`. (3) Tag chip text `text-sm`→`text-xs` (⚠️ intentional deviation from the CLAUDE.md text-sm floor, per explicit request; severity badges unchanged). (4) "Inacc."→"Inaccuracies" label; desktop severity row `flex-nowrap`→`flex-wrap` so the longer label wraps instead of overflowing the 1/3 column. (5) Hovering a tag chip or B/M badge highlights the matching M/B markers on that card's eval chart (enlarge+full opacity) and dims the rest via a new optional `EvalChart.highlightedPlies` prop; scoped to `is_user` so the highlighted-dot count == the chip/badge count. New optional props (`count`/`onHover`/`highlightedPlies`) keep FlawsTab call sites unchanged. Gates GREEN: eslint clean, tsc 0 errors, knip clean, vitest 842 passed (72 files; +27 in TagChip/new SeverityBadge suites). HUMAN-UAT pending (items 1/3/5 are visual). Commits `9889c425` (components+tests) + wiring/docs; on `gsd/phase-110-...`; not pushed. | 2026-06-08 | 9889c425 | [260608-ac1-a-few-additions-to-phase-110-tag-filter-](./quick/260608-ac1-a-few-additions-to-phase-110-tag-filter-/) |
 
 ## Performance Metrics
 
@@ -291,6 +292,12 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 108 P05 | 10min | 3 tasks | 5 files |
 | Phase 108 P07 | 8min | 3 tasks | 9 files |
 | Phase 108 P08 | 12 | - tasks | - files |
+| Phase 110 P02 | 22 | 3 tasks | 5 files |
+| Phase 110 P03 | 90 | 4 tasks | 12 files |
+| Phase 110 P04 | 10 | 2 tasks | 3 files |
+| Phase 110 P05 | 14 | 3 tasks | 13 files |
+| Phase 110 P06 | 3min | 3 tasks | 0 files |
+| Phase 110-flaw-tag-taxonomy-overhaul-rename-impact-family-rebuild-tool P07 | continuation close-out | 3 tasks | 2 files |
 
 ## Decisions
 
@@ -316,3 +323,6 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: game_flaws is the single source of truth for M+B flaws in library_service.py (D-02 — no kernel re-call per query)
 - [Phase ?]: FlawFilterControl rendered inline in FlawsTab (not via LibraryFilterPanel modification) since Plan 08 is later; MiniBoard rendered without arrow (board_fen has no full FEN for sanToSquares)
 - [Phase ?]: LibraryFilterPanel now hosts FlawFilterControl for both Games and Flaws tabs (D-01 panel-hosted pattern)
+- [Phase ?]: TagDistribution drops while_ahead_rate/result_changing_rate; adds reversed_rate/squandered_rate (D-03, Plan 110-03)
+- [Phase ?]: D-04 honored: gen_flaw_thresholds_ts.py is independent; two CI drift gates remain separate
+- [Phase ?]: D-07 amendment: FlawFilterControl renders canonical lowercase-with-dash tag slugs with Radix Popover.Anchor hover definitions; TAG_LABELS map removed
