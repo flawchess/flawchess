@@ -41,6 +41,10 @@ export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
 // Shared by the dashed 50% midline, the hover crosshair, and the
 // middlegame/endgame phase verticals (one grey for all reference lines).
 export const EVAL_CHART_PHASE_LINE = 'oklch(0.55 0 0 / 0.60)';
+// Muted grey for the vertical "Middlegame" / "Endgame" text labels rendered
+// alongside the phase verticals — a touch lighter than the line so the rotated
+// text stays legible over both the light and dark eval-bar regions.
+export const EVAL_CHART_PHASE_LABEL = 'oklch(0.65 0 0)';
 // White outline drawn around eval-chart flaw markers whose tags match an active
 // flaw-tag filter (mirrors the TagChip active-filter ring, on the chart).
 export const EVAL_MARKER_FILTER_OUTLINE = 'oklch(1 0 0)';

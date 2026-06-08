@@ -21,6 +21,7 @@ import {
   EVAL_CHART_AREA_BLACK_AHEAD,
   EVAL_CHART_AREA_WHITE_AHEAD,
   EVAL_CHART_LINE,
+  EVAL_CHART_PHASE_LABEL,
   EVAL_CHART_PHASE_LINE,
   EVAL_MARKER_FILTER_OUTLINE,
   SEV_BLUNDER,
@@ -102,6 +103,41 @@ const ES_PAD = 0.08;
 
 /** Game-phase tags — excluded from the tooltip tag list (shown via phase lines). */
 const PHASE_TAGS: ReadonlySet<FlawTag> = new Set(['opening', 'middlegame', 'endgame']);
+
+/** Rotated phase-line label geometry (SVG px). */
+const PHASE_LABEL_FONT_SIZE = 10;
+const PHASE_LABEL_X_OFFSET = 4; // px right of the line
+const PHASE_LABEL_TOP_PAD = 4; // px below the chart top
+
+/**
+ * `label` render prop for a phase-transition ReferenceLine: vertical text drawn
+ * just right of the line, reading top-to-bottom ("Middlegame" / "Endgame").
+ * recharts passes the line's viewBox (x = line x, y = chart top). The text is
+ * rotated 90° about its anchor so it hangs downward from near the top edge.
+ */
+function phaseLineLabel(text: string) {
+  return function PhaseLineLabel(props: {
+    viewBox?: { x?: number; y?: number };
+  }): React.ReactElement {
+    const vb = props.viewBox;
+    if (!vb || vb.x == null) return <g />;
+    const x = vb.x + PHASE_LABEL_X_OFFSET;
+    const y = (vb.y ?? 0) + PHASE_LABEL_TOP_PAD;
+    return (
+      <text
+        x={x}
+        y={y}
+        fill={EVAL_CHART_PHASE_LABEL}
+        fontSize={PHASE_LABEL_FONT_SIZE}
+        textAnchor="start"
+        transform={`rotate(90, ${x}, ${y})`}
+        aria-hidden="true"
+      >
+        {text}
+      </text>
+    );
+  };
+}
 
 /**
  * Trim leading/trailing plies with no eval (es == null) from the series. Most
@@ -606,6 +642,7 @@ export function EvalChart({
               x={phaseTransitions.middlegame_ply}
               stroke={EVAL_CHART_PHASE_LINE}
               strokeWidth={1}
+              label={phaseLineLabel('Middlegame')}
               aria-hidden="true"
             />
           )}
@@ -614,6 +651,7 @@ export function EvalChart({
               x={phaseTransitions.endgame_ply}
               stroke={EVAL_CHART_PHASE_LINE}
               strokeWidth={1}
+              label={phaseLineLabel('Endgame')}
               aria-hidden="true"
             />
           )}
