@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Button } from '@/components/ui/button';
@@ -17,8 +17,16 @@ import { RatingChart } from '@/components/stats/RatingChart';
 import type { FilterState } from '@/components/filters/FilterPanel';
 
 export function GlobalStatsPage() {
-  // Filter state shared across pages — full filter set exposed on the Stats tab
+  // Filter state shared across pages — full filter set exposed on the Stats tab.
+  // `filters` is the committed store value that queries read.
+  // `pendingFilters` is the draft for both desktop sidebar and mobile drawer.
   const [filters, setFilters] = useFilterStore();
+  const [pendingFilters, setPendingFilters] = useState<FilterState>(filters);
+
+  // Sync pending -> committed when the filter store changes from another page/tab.
+  useEffect(() => {
+    setPendingFilters(filters);
+  }, [filters]);
 
   const selectedPlatforms = filters.platforms;
 
@@ -44,9 +52,33 @@ export function GlobalStatsPage() {
   // ── Desktop sidebar state ───────────────────────────────────────────────────
   const [sidebarOpen, setSidebarOpen] = useState<string | null>(null);
 
-  const handleFilterChange = useCallback((newFilters: FilterState) => {
-    setFilters(newFilters);
-  }, [setFilters]);
+  // Desktop sidebar open-change: snapshot committed filters as pending draft on open.
+  const handleSidebarOpenChange = useCallback((panel: string | null) => {
+    if (panel === 'filters' && sidebarOpen !== 'filters') {
+      setPendingFilters(filters);
+    }
+    setSidebarOpen(panel);
+  }, [sidebarOpen, filters]);
+
+  // Desktop Apply: commit pending to store and close panel.
+  const handleDesktopFiltersApply = useCallback(() => {
+    setFilters(pendingFilters);
+    setSidebarOpen(null);
+  }, [pendingFilters, setFilters]);
+
+  // Mobile drawer: snapshot committed on open; close without Apply discards draft.
+  const handleMobileFiltersOpenChange = useCallback((open: boolean) => {
+    if (open && !mobileFiltersOpen) {
+      setPendingFilters(filters);
+    }
+    setMobileFiltersOpen(open);
+  }, [mobileFiltersOpen, filters]);
+
+  // Mobile Apply: commit pending to store and close drawer.
+  const handleMobileFiltersApply = useCallback(() => {
+    setFilters(pendingFilters);
+    setMobileFiltersOpen(false);
+  }, [pendingFilters, setFilters]);
 
   // Modified-dot uses the uniform FILTER_DOT_FIELDS comparison (all FilterState keys except
   // `color`). The dot reflects the shared filter store — if the user set e.g. timeControls
@@ -56,7 +88,6 @@ export function GlobalStatsPage() {
     () => !areFiltersEqual(filters, DEFAULT_FILTERS, FILTER_DOT_FIELDS),
     [filters],
   );
-  // NOTE: no pulse on GlobalStats — it's immediate-apply.
 
   const content = isLoading ? (
     <div className="text-muted-foreground">Loading...</div>
@@ -136,13 +167,13 @@ export function GlobalStatsPage() {
               ) : undefined,
               content: (
                 <div className="p-3">
-                  <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['playedAs', 'timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']} />
+                  <FilterPanel filters={pendingFilters} onChange={setPendingFilters} onApply={handleDesktopFiltersApply} visibleFilters={['playedAs', 'timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']} />
                 </div>
               ),
             },
           ]}
           activePanel={sidebarOpen}
-          onActivePanelChange={setSidebarOpen}
+          onActivePanelChange={handleSidebarOpenChange}
         >
           <EvalCoverageHeader />
           {content}
@@ -176,8 +207,8 @@ export function GlobalStatsPage() {
             </Tooltip>
           </div>
 
-          {/* Filter drawer */}
-          <Drawer open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen} direction="right">
+          {/* Filter drawer — staged Apply-only */}
+          <Drawer open={mobileFiltersOpen} onOpenChange={handleMobileFiltersOpenChange} direction="right">
             <DrawerContent className="!w-full sm:!w-3/4 !bottom-auto !rounded-bl-xl max-h-[85vh]" data-testid="drawer-filter-sidebar">
               <DrawerHeader className="flex flex-row items-center justify-between">
                 <DrawerTitle>Filters</DrawerTitle>
@@ -190,7 +221,7 @@ export function GlobalStatsPage() {
                 </Tooltip>
               </DrawerHeader>
               <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                <FilterPanel filters={filters} onChange={handleFilterChange} visibleFilters={['playedAs', 'timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']} />
+                <FilterPanel filters={pendingFilters} onChange={setPendingFilters} onApply={handleMobileFiltersApply} visibleFilters={['playedAs', 'timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']} />
               </div>
             </DrawerContent>
           </Drawer>
