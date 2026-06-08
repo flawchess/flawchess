@@ -87,6 +87,24 @@ const ES_CEIL = 1;
 /** Game-phase tags — excluded from the tooltip tag list (shown via phase lines). */
 const PHASE_TAGS: ReadonlySet<FlawTag> = new Set(['opening', 'middlegame', 'endgame']);
 
+/**
+ * Trim leading/trailing plies with no eval (es == null) from the series. Most
+ * games have 1-2 trailing eval-less plies (the final position after the last move
+ * is never evaluated). recharts' XAxis defaults to allowDataOverflow={false}, so
+ * it extends the x-domain to fit EVERY data point's ply value regardless of an
+ * explicit domain — those trailing points padded the right edge, stopping the fill
+ * (and its right rounded corners) short. Dropping them from the data is what
+ * actually makes the last eval'd ply land on the right edge. Interior eval gaps are
+ * kept (connectNulls={false} renders them as breaks).
+ */
+function trimToEvalRange(series: EvalPoint[]): EvalPoint[] {
+  let start = 0;
+  let end = series.length;
+  while (start < end && series[start]?.es == null) start++;
+  while (end > start && series[end - 1]?.es == null) end--;
+  return series.slice(start, end);
+}
+
 /** Mistake/blunder flaw-dot radius. */
 const FLAW_DOT_RADIUS = 4.5;
 
@@ -362,15 +380,12 @@ export function EvalChart({
   const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies);
   const tooltipContent = buildTooltipContent(moves, markerMap, evalByPly);
 
-  // Numeric x-domain spanning the plies that actually have an eval (es != null).
-  // A numeric XAxis maps the domain ends to the chart's left/right edges, so the
-  // fill reaches both edges. Crucially the domain is the *eval'd* ply range, not
-  // [minPly, maxPly]: most games have 1-2 trailing plies with no eval (the final
-  // position is never evaluated), and including them would pad the right side with
-  // empty space — the fill stopped short of the edge and the right rounded corners
-  // never appeared. connectNulls={false} still leaves any interior eval gaps open.
-  const esPlies = evalSeries.filter((p) => p.es != null).map((p) => p.ply);
-  const basisPlies = esPlies.length > 0 ? esPlies : evalSeries.map((p) => p.ply);
+  // Chart data trimmed to the eval'd ply range so the fill spans the full width
+  // (see trimToEvalRange). Fall back to the raw series if every ply lacks an eval.
+  const chartSeries = trimToEvalRange(evalSeries);
+  const basisSeries = chartSeries.length > 0 ? chartSeries : evalSeries;
+  const basisPlies = basisSeries.map((p) => p.ply);
+  // Numeric XAxis maps the domain ends to the chart's left/right edges.
   const xDomain: [number, number] = [Math.min(...basisPlies), Math.max(...basisPlies)];
 
   // Hover crosshair tracks the EXACT hovered ply (no snapping). We mirror the ply
@@ -488,7 +503,7 @@ export function EvalChart({
         className={`w-full ${heightClass} [&_.recharts-surface]:!overflow-hidden [&_.recharts-surface]:rounded-md`}
       >
         <ComposedChart
-          data={evalSeries}
+          data={chartSeries}
           // Zero margins so the eval-bar fill spans the chart's full height and
           // width, aligning its top/bottom with the adjacent miniboard.
           margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
