@@ -380,7 +380,7 @@ function buildTooltipContent(
     payload,
   }: {
     active?: boolean;
-    payload?: Array<{ payload?: EvalPoint }>;
+    payload?: ReadonlyArray<{ payload?: EvalPoint }>;
   }): React.ReactElement | null {
     if (!active || !payload?.length) return null;
     const point = payload[0]?.payload as EvalPoint | undefined;

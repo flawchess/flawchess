@@ -58,7 +58,7 @@ import type { Color, MatchSide } from '@/types/api';
 import { resolveMatchSide } from '@/types/api';
 import type { PositionBookmarkResponse, TimeSeriesRequest } from '@/types/position_bookmarks';
 import { useDeepLinkHighlight } from './openings/useDeepLinkHighlight';
-import { useSidebarState, type SidebarPanel } from './openings/useSidebarState';
+import { useSidebarState } from './openings/useSidebarState';
 import { useTabReset } from './openings/useTabReset';
 import { useOpeningsHandlers } from './openings/useOpeningsHandlers';
 import { ExplorerTab } from './openings/ExplorerTab';

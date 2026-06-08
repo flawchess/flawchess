@@ -51,34 +51,9 @@ vi.mock('@/components/library/TagChip', () => ({
 }));
 
 // Stub LibraryFilterPanel to avoid window.matchMedia (FilterPanel) in jsdom.
-// The stub renders FlawFilterControl if the new flawFilter props are passed,
-// so tests that check for flaw-filter-control or btn-clear-flaw-filter still work.
-vi.mock('@/components/filters/LibraryFilterPanel', async () => {
-  const { FlawFilterControl } = await vi.importActual<typeof import('@/components/filters/FlawFilterControl')>('@/components/filters/FlawFilterControl');
-  return {
-    LibraryFilterPanel: ({
-      flawFilter,
-      onFlawFilterChange,
-      onClearFlawFilter,
-    }: {
-      flawFilter?: { severity: ('blunder' | 'mistake')[]; tags: string[] };
-      onFlawFilterChange?: (next: { severity: ('blunder' | 'mistake')[]; tags: string[] }) => void;
-      onClearFlawFilter?: () => void;
-    }) => (
-      <div data-testid="stub-library-filter-panel">
-        {flawFilter && onFlawFilterChange && onClearFlawFilter && (
-          <FlawFilterControl
-            severity={flawFilter.severity}
-            tags={flawFilter.tags as import('@/types/library').FlawTag[]}
-            onSeverityChange={(severity) => onFlawFilterChange({ ...flawFilter, severity })}
-            onTagChange={(tags) => onFlawFilterChange({ ...flawFilter, tags })}
-            onClear={onClearFlawFilter}
-          />
-        )}
-      </div>
-    ),
-  };
-});
+vi.mock('@/components/filters/LibraryFilterPanel', () => ({
+  LibraryFilterPanel: () => <div data-testid="stub-library-filter-panel" />,
+}));
 
 // Stub useUserProfile
 vi.mock('@/hooks/useUserProfile', () => ({
@@ -416,14 +391,18 @@ describe('FlawsTab', () => {
       expect(tagSetCall).toBeTruthy();
     });
 
-    it('renders the clear button when store state has tags (non-default)', () => {
+    it('reflects store state with tags in the FlawFilterControl (tag button selected)', () => {
       // Set store to have a tag pre-selected (simulating deep-link result)
       mockStoreState = { severity: ['blunder', 'mistake'], tags: ['miss'] };
       renderFlawsTab('/library/flaws');
 
-      // Clear button should appear in at least one FlawFilterControl instance
-      const clearBtns = screen.getAllByTestId('btn-clear-flaw-filter');
-      expect(clearBtns.length).toBeGreaterThanOrEqual(1);
+      // The "miss" tag button should appear as aria-pressed=true in the FlawFilterControl.
+      // The Clear affordance is now in FilterActions (Reset button), not in FlawFilterControl.
+      const missBtns = screen.getAllByTestId('filter-flaw-tag-miss');
+      expect(missBtns.length).toBeGreaterThanOrEqual(1);
+      // At least one should be selected
+      const selectedMiss = missBtns.find((b) => b.getAttribute('aria-pressed') === 'true');
+      expect(selectedMiss).toBeTruthy();
     });
 
     it('does NOT call setFlawFilter from URL when no tag/severity params present', () => {

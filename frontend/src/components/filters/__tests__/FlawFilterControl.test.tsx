@@ -9,7 +9,6 @@ const defaultProps = {
   tags: [] as FlawTag[],
   onSeverityChange: vi.fn(),
   onTagChange: vi.fn(),
-  onClear: vi.fn(),
 };
 
 afterEach(() => {
@@ -154,7 +153,8 @@ describe('FlawFilterControl', () => {
   });
 
   describe('clear affordance', () => {
-    it('clear button is hidden when filter is at default (both severities, no tags)', () => {
+    it('no "Clear flaw filter" button rendered (reset is now in parent FilterActions footer)', () => {
+      // The clear affordance was removed — Reset is handled by FilterActions in the parent panel.
       render(
         <FlawFilterControl
           {...defaultProps}
@@ -165,38 +165,14 @@ describe('FlawFilterControl', () => {
       expect(screen.queryByTestId('btn-clear-flaw-filter')).toBeNull();
     });
 
-    it('clear button is shown when a tag is selected', () => {
+    it('no "Clear flaw filter" button even when tags are selected', () => {
       render(
         <FlawFilterControl
           {...defaultProps}
           tags={['miss'] as FlawTag[]}
         />,
       );
-      expect(screen.getByTestId('btn-clear-flaw-filter')).toBeTruthy();
-    });
-
-    it('clear button is shown when severity is not both M+B', () => {
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          severity={['blunder']}
-          tags={[]}
-        />,
-      );
-      expect(screen.getByTestId('btn-clear-flaw-filter')).toBeTruthy();
-    });
-
-    it('clicking clear calls onClear', () => {
-      const onClear = vi.fn();
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          tags={['miss'] as FlawTag[]}
-          onClear={onClear}
-        />,
-      );
-      fireEvent.click(screen.getByTestId('btn-clear-flaw-filter'));
-      expect(onClear).toHaveBeenCalledOnce();
+      expect(screen.queryByTestId('btn-clear-flaw-filter')).toBeNull();
     });
   });
 
@@ -220,15 +196,5 @@ describe('FlawFilterControl', () => {
       expect(btn.getAttribute('aria-label')).toBe('Filter flaws by tag: miss');
     });
 
-    it('clear button has correct aria-label', () => {
-      render(
-        <FlawFilterControl
-          {...defaultProps}
-          tags={['miss'] as FlawTag[]}
-        />,
-      );
-      const clearBtn = screen.getByTestId('btn-clear-flaw-filter');
-      expect(clearBtn.getAttribute('aria-label')).toBe('Clear all flaw filter selections');
-    });
   });
 });
