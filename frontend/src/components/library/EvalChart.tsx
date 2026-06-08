@@ -362,6 +362,13 @@ export function EvalChart({
   const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies);
   const tooltipContent = buildTooltipContent(moves, markerMap, evalByPly);
 
+  // Numeric x-domain [firstPly, lastPly]. A numeric XAxis maps the first/last ply
+  // to the chart's left/right edges, so the area fill spans the full width. The
+  // default category axis band-centers points, leaving the last ply short of the
+  // right edge (fill ended before the edge, breaking the right rounded corners).
+  const plies = evalSeries.map((p) => p.ply);
+  const xDomain: [number, number] = [Math.min(...plies), Math.max(...plies)];
+
   // Hover crosshair tracks the EXACT hovered ply (no snapping). We mirror the ply
   // up to the parent (onHoverPlyChange) so the card's miniboard scrubs in sync,
   // and draw our own vertical ReferenceLine at that ply (the default tooltip
@@ -485,8 +492,9 @@ export function EvalChart({
           onMouseLeave={handleMouseLeave}
           onTouchMove={handlePointerMove}
         >
-          {/* Hidden axes — compact sparkline mode, no ticks or labels. */}
-          <XAxis dataKey="ply" hide />
+          {/* Hidden axes — compact sparkline mode, no ticks or labels.
+              type="number" + explicit domain so the fill reaches both edges. */}
+          <XAxis dataKey="ply" type="number" domain={xDomain} hide />
           <YAxis hide domain={[ES_FLOOR, ES_CEIL]} />
 
           {/* Eval bar — two solid regions split by the ES line. The black area
