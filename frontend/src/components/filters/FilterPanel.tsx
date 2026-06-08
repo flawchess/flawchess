@@ -18,6 +18,7 @@ import { ChevronDown } from 'lucide-react';
 import { OpponentStrengthFilter } from './OpponentStrengthFilter';
 import { CustomRangePopover, formatCustomRangeLabel } from './CustomRangePopover';
 import { CustomRangeDrawer } from './CustomRangeDrawer';
+import { FilterActions } from './FilterActions';
 
 // ─── Mobile breakpoint detection ──────────────────────────────────────────────
 // Same threshold as ScoreChart.tsx (768px = Tailwind `md`).
@@ -142,8 +143,13 @@ interface FilterPanelProps {
   onChange: (filters: FilterState) => void;
   /** Which filter sections to show. Defaults to all. */
   visibleFilters?: FilterField[];
-  /** When true, shows a muted helper line below the Reset button explaining deferred apply. */
-  showDeferredApplyHint?: boolean;
+  /**
+   * When provided, renders FilterActions (Reset + Apply) footer below the filters.
+   * Apply commits the current pending state (handled by caller); Reset clears to
+   * DEFAULT_FILTERS while preserving `color` and `customRange: null`.
+   * When omitted (and hideReset is false), renders a lone Reset button.
+   */
+  onApply?: () => void;
   /**
    * When true, hides the built-in Reset Filters button. Use when the parent
    * component (e.g. LibraryFilterPanel) owns the Reset button itself so it can
@@ -172,7 +178,7 @@ export function FilterPanel({
   filters,
   onChange,
   visibleFilters = ALL_FILTERS,
-  showDeferredApplyHint = false,
+  onApply,
   hideReset = false,
 }: FilterPanelProps) {
   const update = (partial: Partial<FilterState>) => {
@@ -521,37 +527,37 @@ export function FilterPanel({
         </div>
       )}
 
-      {/* Reset Filters — full panel width, below the last filter row.
+      {/* Reset + Apply footer — full panel width, below the last filter row.
+          When onApply is provided: renders FilterActions (Reset left / Apply right).
+          When onApply is absent: renders a lone Reset button (backward-compat for callers
+          that do not yet pass onApply). Suppress entirely with hideReset=true when the
+          parent owns the footer (e.g. LibraryFilterPanel).
           GLOBAL RESET: clears every FilterState field to DEFAULT_FILTERS EXCEPT `color`
-          (Played-as), which is preserved at its current value. This uniform behavior applies
-          on every consumer (Openings, Endgames, GlobalStats) and every form factor (desktop
-          sidebar, mobile drawer). Because the modified-dot also ignores `color` (see
-          FILTER_DOT_FIELDS), Reset is guaranteed to drop the dot on every page.
-          Suppress with hideReset=true when the parent owns the Reset button (e.g.
-          LibraryFilterPanel, which must also clear its severityFilter). */}
+          (Played-as), which is preserved at its current value. Because the modified-dot
+          also ignores `color` (see FILTER_DOT_FIELDS), Reset is guaranteed to drop the
+          dot on every page. */}
       {!hideReset && (
-        <div className="pt-2 border-t border-border/40">
-          <Button
-            type="button"
-            variant="brand-outline"
-            size="lg"
-            className="w-full min-h-11 sm:min-h-0"
-            data-testid="btn-reset-filters"
-            onClick={() => {
-              onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
-            }}
-          >
-            Reset Filters
-          </Button>
-          {showDeferredApplyHint && (
-            <p
-              className="mt-2 text-sm italic leading-tight text-muted-foreground"
-              data-testid="filter-deferred-apply-hint"
+        onApply != null ? (
+          <FilterActions
+            onReset={() => onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null })}
+            onApply={onApply}
+          />
+        ) : (
+          <div className="pt-2 border-t border-border/40">
+            <Button
+              type="button"
+              variant="brand-outline"
+              size="lg"
+              className="w-full min-h-11 sm:min-h-0"
+              data-testid="btn-reset-filters"
+              onClick={() => {
+                onChange({ ...DEFAULT_FILTERS, color: filters.color, customRange: null });
+              }}
             >
-              <span className="font-semibold text-foreground/80">Tip:</span> Filter changes apply on closing the filters panel.
-            </p>
-          )}
-        </div>
+              Reset Filters
+            </Button>
+          </div>
+        )
       )}
     </div>
   );
