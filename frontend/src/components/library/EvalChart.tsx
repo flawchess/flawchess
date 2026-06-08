@@ -84,6 +84,14 @@ const ES_MIDLINE = 0.5;
 const ES_FLOOR = 0;
 const ES_CEIL = 1;
 
+/**
+ * Extra Y-domain headroom above 1.0 and below 0.0 so flaw markers sitting at the
+ * extremes (es ≈ 0 / 1, e.g. a checkmate ply) aren't clipped at the chart edges.
+ * The area fills still span only ES_FLOOR..ES_CEIL, so this reads as a thin strip
+ * of card background above and below the eval bar.
+ */
+const ES_PAD = 0.08;
+
 /** Game-phase tags — excluded from the tooltip tag list (shown via phase lines). */
 const PHASE_TAGS: ReadonlySet<FlawTag> = new Set(['opening', 'middlegame', 'endgame']);
 
@@ -517,7 +525,7 @@ export function EvalChart({
           {/* Hidden axes — compact sparkline mode, no ticks or labels. Default
               category axis (point scale) maps first/last ply to the edges. */}
           <XAxis dataKey="ply" hide />
-          <YAxis hide domain={[ES_FLOOR, ES_CEIL]} />
+          <YAxis hide domain={[ES_FLOOR - ES_PAD, ES_CEIL + ES_PAD]} />
 
           {/* Eval bar — two solid regions split by the ES line. The black area
               fills from the line up to 100% (baseValue=ES_CEIL); the grey area

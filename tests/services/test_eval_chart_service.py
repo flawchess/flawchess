@@ -456,3 +456,58 @@ class TestPhaseTransitions:
         _, _, phase_transitions = _build_eval_series(game, positions)
         assert phase_transitions.middlegame_ply == 2
         assert phase_transitions.endgame_ply == 4
+
+
+# ---------------------------------------------------------------------------
+# TestCheckmateFinalPly — the terminal (unevaluated) checkmate ply gets es 1.0/0.0
+# ---------------------------------------------------------------------------
+
+
+class TestCheckmateFinalPly:
+    def test_white_checkmate_fills_final_es_1(self) -> None:
+        """White delivers mate on ply 2 → unevaluated final ply 3 gets es=1.0."""
+        positions = [
+            _make_pos(0, eval_cp=300, move_san="Qh5"),
+            _make_pos(1, eval_cp=350, move_san="Nc6"),
+            _make_pos(2, eval_cp=None, move_san="Qxf7#"),  # White's mating move
+            _make_pos(3, eval_cp=None, eval_mate=None, move_san=None),  # final position
+        ]
+        game = _make_game()
+        eval_series, _, _ = _build_eval_series(game, positions)
+        assert eval_series[-1].es == pytest.approx(1.0)
+
+    def test_black_checkmate_fills_final_es_0(self) -> None:
+        """Black delivers mate on ply 3 → unevaluated final ply 4 gets es=0.0."""
+        positions = [
+            _make_pos(0, eval_cp=-100, move_san="f3"),
+            _make_pos(1, eval_cp=-150, move_san="e5"),
+            _make_pos(2, eval_cp=-200, move_san="g4"),
+            _make_pos(3, eval_cp=None, move_san="Qh4#"),  # Black's mating move (odd ply)
+            _make_pos(4, eval_cp=None, eval_mate=None, move_san=None),  # final position
+        ]
+        game = _make_game()
+        eval_series, _, _ = _build_eval_series(game, positions)
+        assert eval_series[-1].es == pytest.approx(0.0)
+
+    def test_non_checkmate_final_ply_stays_null(self) -> None:
+        """Resignation/timeout: last move has no '#' → final ply es stays None (trimmed)."""
+        positions = [
+            _make_pos(0, eval_cp=100, move_san="e4"),
+            _make_pos(1, eval_cp=120, move_san="e5"),
+            _make_pos(2, eval_cp=None, move_san="Nf3"),  # resigned here, no mate
+            _make_pos(3, eval_cp=None, eval_mate=None, move_san=None),  # final position
+        ]
+        game = _make_game()
+        eval_series, _, _ = _build_eval_series(game, positions)
+        assert eval_series[-1].es is None
+
+    def test_evaluated_final_ply_unchanged(self) -> None:
+        """A final ply that already has an eval is never overwritten by the mate fill."""
+        positions = [
+            _make_pos(0, eval_cp=100, move_san="e4"),
+            _make_pos(1, eval_cp=120, move_san="Qh4#"),  # mate SAN but ply already evaluated
+        ]
+        game = _make_game()
+        eval_series, _, _ = _build_eval_series(game, positions)
+        assert eval_series[-1].es is not None
+        assert eval_series[-1].es != pytest.approx(0.0)

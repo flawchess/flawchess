@@ -33,12 +33,10 @@ export const SEV_MISTAKE = 'oklch(0.70 0.16 55)';
 export const SEV_INACCURACY = 'oklch(0.82 0.13 95)';
 
 // Eval chart area fill and line colors (Phase 109 — EvalChart.tsx).
-// White-ahead region (above midline) = light grey; black-ahead region
-// (below midline) = perfect black, mirroring the white/black pieces.
-export const EVAL_CHART_AREA_WHITE_AHEAD = 'oklch(0.85 0 0 / 0.40)';
-// Solid #0A0A0A — matches the card header/content background so the black-ahead
-// region reads as a flat eval bar against the card, not a translucent overlay.
-export const EVAL_CHART_AREA_BLACK_AHEAD = '#0A0A0A';
+// White-ahead region (above midline) = lighter grey; black-ahead region
+// (below midline) = dark grey, mirroring the white/black pieces.
+export const EVAL_CHART_AREA_WHITE_AHEAD = 'oklch(0.78 0 0)';
+export const EVAL_CHART_AREA_BLACK_AHEAD = 'oklch(0.32 0 0)';
 export const EVAL_CHART_LINE = 'oklch(0.82 0 0)';
 export const EVAL_CHART_MIDLINE = 'oklch(0.78 0 0)';
 export const EVAL_CHART_PHASE_LINE = 'oklch(0.55 0 0 / 0.60)';
