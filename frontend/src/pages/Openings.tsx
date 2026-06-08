@@ -131,6 +131,9 @@ export function OpeningsPage() {
   const [boardFlipped, setBoardFlipped] = useState(false);
 
   // ── Filter state (shared across pages) ───────────────────────────────────────
+  // `filters` is the committed store value that queries read.
+  // `localFilters` is the single draft for both desktop sidebar and mobile drawer.
+  // Edits always go to localFilters; Apply commits localFilters → filters (store).
   const [filters, setFilters] = useFilterStore();
   const debouncedFilters = useDebounce(filters, 300);
 
@@ -379,11 +382,24 @@ export function OpeningsPage() {
     if (activeTab !== 'stats') navigate('/openings/stats');
   }, [activeTab, navigate]);
 
-  const handleFiltersChange = useCallback((newFilters: FilterState) => {
-    setFilters(newFilters);
+  // ── Desktop sidebar filter panel Apply handler ────────────────────────────────
+  // Commits localFilters to the store, fires the pulse, closes the panel, and
+  // handles color/matchSide-driven navigation + board flip.
+  const handleDesktopFiltersApply = useCallback(() => {
+    // Set the ref BEFORE setFilters so the existing useEffect detects the commit.
+    if (!areFiltersEqual(localFilters, filters)) {
+      justCommittedFromDrawerRef.current = true;
+    }
+    setFilters(localFilters);
     setGamesOffset(0);
     sidebar.setFiltersHintDismissed(true);
-  }, [setFilters, setGamesOffset, sidebar]);
+    setBoardFlipped(localFilters.color === 'black');
+    if ((localFilters.color !== filters.color || localFilters.matchSide !== filters.matchSide)
+        && activeTab !== 'explorer' && activeTab !== 'games') {
+      navigate('/openings/explorer');
+    }
+    sidebar.setSidebarOpen(null);
+  }, [localFilters, filters, setFilters, setGamesOffset, sidebar, activeTab, navigate]);
 
   const openBookmarkDialog = useCallback(() => {
     // Use currentPly, not full moveHistory length — user may have navigated back
@@ -439,6 +455,17 @@ export function OpeningsPage() {
     mostPlayedData,
   });
 
+  // ── Desktop sidebar panel-change handler ─────────────────────────────────────
+  // Wraps sidebar.setSidebarOpen so we can snapshot localFilters when the filters
+  // panel opens (discard-on-close: do NOT commit when it closes without Apply).
+  const handleDesktopSidebarOpenChange = useCallback((panel: string | null) => {
+    if (panel === 'filters' && sidebar.sidebarOpen !== 'filters') {
+      // Filters panel opening — snapshot committed state as the new draft.
+      setLocalFilters({ ...filters });
+    }
+    sidebar.setSidebarOpen(panel as 'filters' | 'bookmarks' | null);
+  }, [sidebar, filters]);
+
   // ── Mobile sidebar handlers ──────────────────────────────────────────────────
 
   const openFilterSidebar = useCallback(() => {
@@ -447,23 +474,30 @@ export function OpeningsPage() {
   }, [filters, sidebar]);
 
   const handleFilterSidebarOpenChange = useCallback((open: boolean) => {
-    if (!open && sidebar.filterSidebarOpen) {
-      // Pulse the filter indicator if the drawer commit actually changes `filters`.
-      // Check BEFORE handleFiltersChange runs (which updates `filters`).
-      if (!areFiltersEqual(localFilters, filters)) {
-        justCommittedFromDrawerRef.current = true;
-      }
-      // Commit deferred filters on close (D-10, D-12)
-      handleFiltersChange(localFilters);
-      setBoardFlipped(localFilters.color === 'black');
-      // Navigate to explorer if color or piece filter changed
-      if ((localFilters.color !== filters.color || localFilters.matchSide !== filters.matchSide)
-          && activeTab !== 'explorer' && activeTab !== 'games') {
-        navigate('/openings/explorer');
-      }
+    if (open && !sidebar.filterSidebarOpen) {
+      // Snapshot committed state on open.
+      setLocalFilters({ ...filters });
     }
+    // Close without Apply: do NOT commit. The draft is discarded (re-snapshotted on next open).
     sidebar.setFilterSidebarOpen(open);
-  }, [sidebar, localFilters, handleFiltersChange, filters, activeTab, navigate]);
+  }, [sidebar, filters]);
+
+  // Mobile Apply handler: commits localFilters to store, fires pulse, closes drawer,
+  // handles navigation + board flip.
+  const handleMobileFiltersApply = useCallback(() => {
+    if (!areFiltersEqual(localFilters, filters)) {
+      justCommittedFromDrawerRef.current = true;
+    }
+    setFilters(localFilters);
+    setGamesOffset(0);
+    sidebar.setFiltersHintDismissed(true);
+    setBoardFlipped(localFilters.color === 'black');
+    if ((localFilters.color !== filters.color || localFilters.matchSide !== filters.matchSide)
+        && activeTab !== 'explorer' && activeTab !== 'games') {
+      navigate('/openings/explorer');
+    }
+    sidebar.setFilterSidebarOpen(false);
+  }, [localFilters, filters, setFilters, setGamesOffset, sidebar, activeTab, navigate]);
 
   const updateMatchSide = useUpdateMatchSide();
 
@@ -528,7 +562,7 @@ export function OpeningsPage() {
 
   const desktopFilterPanelContent = (
     <div className="p-3 space-y-3">
-      {/* Piece filter */}
+      {/* Piece filter — staged: updates localFilters draft only (committed on Apply) */}
       <div className="space-y-3">
         <div>
           <div className="mb-1 flex items-center gap-1">
@@ -539,11 +573,10 @@ export function OpeningsPage() {
           </div>
           <ToggleGroup
             type="single"
-            value={filters.matchSide}
+            value={localFilters.matchSide}
             onValueChange={(v) => {
               if (!v) return;
-              handleFiltersChange({ ...filters, matchSide: v as MatchSide });
-              if (activeTab !== 'explorer' && activeTab !== 'games') navigate('/openings/explorer');
+              setLocalFilters((prev) => ({ ...prev, matchSide: v as MatchSide }));
             }}
             variant="outline"
             size="sm"
@@ -557,8 +590,8 @@ export function OpeningsPage() {
         </div>
       </div>
       <div className="border-t border-border/20" />
-      {/* FilterPanel — all filter controls. Uses filters/handleFiltersChange directly (NOT localFilters — desktop applies live) */}
-      <FilterPanel filters={filters} onChange={handleFiltersChange} />
+      {/* FilterPanel — reads/writes localFilters (draft). Apply is handled by onApply. */}
+      <FilterPanel filters={localFilters} onChange={setLocalFilters} onApply={handleDesktopFiltersApply} />
     </div>
   );
 
@@ -748,7 +781,7 @@ export function OpeningsPage() {
             },
           ] satisfies SidebarPanelConfig[]}
           activePanel={sidebar.sidebarOpen}
-          onActivePanelChange={(panel) => sidebar.setSidebarOpen(panel as SidebarPanel | null)}
+          onActivePanelChange={handleDesktopSidebarOpenChange}
           stripExtra={
             <Tooltip content={`Played as: ${filters.color === 'white' ? 'White' : 'Black'}`} side="right">
               <Button
@@ -1106,7 +1139,7 @@ export function OpeningsPage() {
                 <FilterPanel
                   filters={localFilters}
                   onChange={setLocalFilters}
-                  showDeferredApplyHint
+                  onApply={handleMobileFiltersApply}
                 />
               </div>
             </DrawerContent>

@@ -302,32 +302,39 @@ export function EndgamesPage() {
     PAGE_SIZE,
   );
 
-  // ── Desktop sidebar handler — defers filter apply until the panel closes ────
-  // When the filter panel closes (filters -> null or filters -> other), commit
-  // pending -> applied. When it opens, snapshot applied as pending.
+  // ── Desktop sidebar handler — staged Apply-only model ────────────────────────
+  // On open: snapshot committed filters as pending draft.
+  // On close without Apply: discard the draft (do NOT commit).
   const handleSidebarOpenChange = useCallback((panelId: string | null) => {
-    if (sidebarOpen === 'filters' && panelId !== 'filters') {
-      setAppliedFilters(pendingFilters);
-      setGamesOffset(0);
-    }
     if (sidebarOpen !== 'filters' && panelId === 'filters') {
       setPendingFilters(appliedFilters);
     }
     setSidebarOpen(panelId);
-  }, [sidebarOpen, pendingFilters, appliedFilters, setAppliedFilters]);
+  }, [sidebarOpen, appliedFilters]);
 
-  // ── Mobile drawer handler — defers filter apply until the drawer closes ─────
+  // ── Desktop Apply handler — commits pending to store, fires pulse, closes panel ──
+  const handleDesktopFiltersApply = useCallback(() => {
+    setAppliedFilters(pendingFilters);
+    setGamesOffset(0);
+    setSidebarOpen(null);
+  }, [pendingFilters, setAppliedFilters, setGamesOffset]);
+
+  // ── Mobile drawer handler — staged Apply-only model ───────────────────────────
+  // On open: snapshot committed filters as pending draft.
+  // On close without Apply: discard the draft (do NOT commit).
   const handleMobileFiltersOpenChange = useCallback((open: boolean) => {
-    if (!open && mobileFiltersOpen) {
-      // Commit deferred filters on close
-      setAppliedFilters(pendingFilters);
-      setGamesOffset(0);
-    }
     if (open && !mobileFiltersOpen) {
       setPendingFilters(appliedFilters);
     }
     setMobileFiltersOpen(open);
-  }, [mobileFiltersOpen, pendingFilters, appliedFilters, setAppliedFilters]);
+  }, [mobileFiltersOpen, appliedFilters]);
+
+  // ── Mobile Apply handler — commits pending to store, fires pulse, closes drawer ──
+  const handleMobileFiltersApply = useCallback(() => {
+    setAppliedFilters(pendingFilters);
+    setGamesOffset(0);
+    setMobileFiltersOpen(false);
+  }, [pendingFilters, setAppliedFilters, setGamesOffset]);
 
   // ── Category selection handler ──────────────────────────────────────────────
 
@@ -827,7 +834,7 @@ export function EndgamesPage() {
                   <FilterPanel
                     filters={pendingFilters}
                     onChange={setPendingFilters}
-                    showDeferredApplyHint
+                    onApply={handleDesktopFiltersApply}
                   />
                 </div>
               ),
@@ -944,7 +951,7 @@ export function EndgamesPage() {
                   <FilterPanel
                     filters={pendingFilters}
                     onChange={setPendingFilters}
-                    showDeferredApplyHint
+                    onApply={handleMobileFiltersApply}
                   />
                 </div>
               </DrawerContent>
