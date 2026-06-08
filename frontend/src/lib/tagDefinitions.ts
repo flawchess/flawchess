@@ -54,14 +54,14 @@ const SQUANDERED_EXIT_PCT = pct(SQUANDERED_EXIT_ES);
  * All thresholds are interpolated from @/generated/flawThresholds; no literals.
  */
 export const TAG_DEFINITIONS: Record<FlawTag, string> = {
-  'low-clock': `Played when your clock was under ${LOW_CLOCK_PCT} of your starting time (or under ${LOW_CLOCK_ABS}). A forced time problem.`,
-  'hasty': `Played in under ${HASTY_PCT} of your starting time (or under ${HASTY_ABS}) while you still had a comfortable clock. Self-inflicted haste.`,
-  'unrushed': 'You had time and did not rush, yet the move was still a blunder or mistake. No time excuse — purely a matter of judgement.',
+  'low-clock': `Played when your clock was under ${LOW_CLOCK_PCT} of your starting time (or under ${LOW_CLOCK_ABS}).`,
+  'hasty': `Played in under ${HASTY_PCT} of your starting time (or under ${HASTY_ABS}) while you still had a comfortable clock.`,
+  'unrushed': 'You had time and did not rush, yet the move was still a blunder or mistake.',
   'miss': 'Your blunder or mistake came immediately after the opponent\'s own mistake or blunder: they handed you something and you missed it on the very next move.',
-  'lucky': 'A blunder the opponent failed to punish: their immediate reply was itself a mistake or blunder, so your Expected Score recovered. The one good-news tag.',
-  'reversed': `You turned a winning game into a losing one: your Expected Score before the move was at least ${WIN_PCT} (clearly winning) and dropped to ${LOSING_PCT} or below (clearly losing). A full reversal across equality.`,
-  'squandered': `You erased an overwhelming advantage back to roughly even: your Expected Score before the move was at least ${FROM_WIN_PCT} and dropped to ${SQUANDERED_EXIT_PCT} or below, but not far enough to be reversed. The win is gone, the game is still playable.`,
+  'lucky': 'A blunder the opponent failed to punish: their immediate reply was itself a mistake or blunder, so your expected score recovered.',
+  'reversed': `You turned a winning game into a losing one: your expected score before the move was at least ${WIN_PCT} (clearly winning) and dropped to ${LOSING_PCT} or below (clearly losing).`,
+  'squandered': `You erased an overwhelming advantage back to roughly even: your expected score before the move was at least ${FROM_WIN_PCT} and dropped to ${SQUANDERED_EXIT_PCT} or below, but not far enough to be reversed.`,
   'opening': 'The blunder or mistake occurred in the opening phase of the game.',
-  'middlegame': 'The blunder or mistake occurred in the middlegame (also the default when the phase cannot be determined).',
+  'middlegame': 'The blunder or mistake occurred in the middlegame.',
   'endgame': 'The blunder or mistake occurred in the endgame phase of the game.',
 };

@@ -51,9 +51,9 @@ erred). Three non-overlapping signals, each a different actionable story.
 
 | Family | Name        | Definition |
 |--------|-------------|------------|
-| Tempo  | `low-clock` | You were short on time when you blundered or made the mistake: your remaining clock was under 5% of the base time (or under 30s when base time is unknown). A forced time problem. |
-| Tempo  | `hasty`     | You had a comfortable clock but still moved fast: the move took under 1% of the base time (or under 5s when base time is unknown). Self-inflicted haste. |
-| Tempo  | `unrushed`  | You had time and didn't rush, yet the move was still a blunder or mistake. No time excuse — purely a matter of judgement. |
+| Tempo  | `low-clock` | You were short on time when you blundered or made the mistake: your remaining clock was under 5% of the base time (or under 30s when base time is unknown). |
+| Tempo  | `hasty`     | You had a comfortable clock but still moved fast: the move took under 1% of the base time (or under 5s when base time is unknown). |
+| Tempo  | `unrushed`  | You had time and didn't rush, yet the move was still a blunder or mistake. |
 
 ## Opportunity — how the blunder or mistake related to the opponent's play
 
@@ -62,7 +62,7 @@ Both require the full both-color analysis pass.
 | Family      | Name           | Definition |
 |-------------|----------------|------------|
 | Opportunity | `miss`         | Your blunder or mistake came immediately after the opponent's own mistake or blunder: they handed you something and you didn't take it (or made it worse) on the very next move. Mirrors chess.com's Miss classification (the Ø glyph). |
-| Opportunity | `lucky`        | A blunder the opponent failed to punish: their immediate reply was itself a mistake or blunder, so your Expected Score recovered. (Blunders only. End-of-game with no reply counts only if you didn't go on to lose.) The one good-news tag. |
+| Opportunity | `lucky`        | A blunder the opponent failed to punish: their immediate reply was itself a mistake or blunder, so your Expected Score recovered. (Blunders only. End-of-game with no reply counts only if you didn't go on to lose.) |
 
 ## Impact — how far the blunder or mistake swung the game
 
@@ -78,8 +78,8 @@ flaw. A clear-but-not-overwhelming advantage that drops only to slightly worse (
 
 | Family | Name            | Definition |
 |--------|-----------------|------------|
-| Impact | `reversed`      | You turned a winning game into a losing one: your Expected Score before the move was at least 70% (clearly winning, eval roughly +2.3 or better) and dropped to 30% or below (clearly losing, roughly −2.3). A full reversal across equality. |
-| Impact | `squandered`    | You erased an overwhelming advantage back to roughly even: your Expected Score before the move was at least 85% (eval roughly +4.7 or better) and dropped to 60% or below, but not far enough to be `reversed`. The win is gone, the game is still playable. |
+| Impact | `reversed`      | You turned a winning game into a losing one: your Expected Score before the move was at least 70% (clearly winning, eval roughly +2.3 or better) and dropped to 30% or below (clearly losing, roughly −2.3). |
+| Impact | `squandered`    | You erased an overwhelming advantage back to roughly even: your Expected Score before the move was at least 85% (eval roughly +4.7 or better) and dropped to 60% or below, but not far enough to be `reversed`. |
 
 ## Phase — where in the game it happened
 
@@ -89,7 +89,7 @@ middlegame when the phase is unknown).
 | Family | Name           | Definition |
 |--------|----------------|------------|
 | Phase  | `opening`      | The blunder or mistake occurred in the opening phase of the game. |
-| Phase  | `middlegame`   | The blunder or mistake occurred in the middlegame (also the default when the phase can't be determined). |
+| Phase  | `middlegame`   | The blunder or mistake occurred in the middlegame. |
 | Phase  | `endgame`      | The blunder or mistake occurred in the endgame phase of the game. |
 
 ## Threshold reference (source of truth)
