@@ -13,6 +13,7 @@ import {
 } from '@/components/filters/FilterPanel';
 import { LibraryFilterPanel } from '@/components/filters/LibraryFilterPanel';
 import { FlawFilterControl } from '@/components/filters/FlawFilterControl';
+import { FilterActions } from '@/components/filters/FilterActions';
 import { usePulseOnChange, ModifiedDot } from '@/components/filters/FilterModifiedDot';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
@@ -22,7 +23,6 @@ import { useFilterStore } from '@/hooks/useFilterStore';
 import {
   useFlawFilterStore,
   DEFAULT_FLAW_FILTER,
-  isFlawFilterNonDefault,
 } from '@/hooks/useFlawFilterStore';
 import { useLibraryFlaws } from '@/hooks/useLibrary';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -173,9 +173,6 @@ export function FlawsTab() {
   const [flawFilter, setFlawFilter] = useFlawFilterStore();
 
   // Mount: read URL params → initialize store (only when URL has params — D-04/OQ3)
-  // Do not overwrite existing in-memory selection on plain navigation without params.
-  // Using ref to capture the initial URL params at mount time only, so we don't
-  // re-run on every searchParams change (which would fight with the URL-sync effect below).
   const didInitFromUrl = useRef(false);
   const initialSearchParams = useRef(searchParams);
   useEffect(() => {
@@ -197,34 +194,22 @@ export function FlawsTab() {
   useEffect(() => {
     const params = new URLSearchParams();
     flawFilter.tags.forEach((t) => params.append('tag', t));
-    // Only include severity in URL when not both (clean URL for default state)
     if (flawFilter.severity.length < 2) {
       flawFilter.severity.forEach((s) => params.append('severity', s));
     }
     setSearchParams(params, { replace: true });
   }, [flawFilter, setSearchParams]);
 
-  // ── Pending flaw filter (mobile drawer buffer) ────────────────────────────────
-  // Desktop applies the flaw filter live (writes the store on each toggle); the
-  // mobile drawer instead buffers edits here and commits them to the store when the
-  // drawer closes (apply-on-close), matching the game-metadata drawer behavior.
+  // ── Pending flaw filter draft — shared buffer for desktop Tags panel and mobile drawer ──
   const [pendingFlawFilter, setPendingFlawFilter] = useState<FlawFilterState>(flawFilter);
 
-  // Keep the pending buffer fresh whenever the committed store changes (desktop live
-  // edits, URL deep-link init, cross-tab sync) so the next mobile drawer open starts
-  // from the current selection.
+  // Keep the pending buffer fresh whenever the committed store changes.
   useEffect(() => {
     setPendingFlawFilter(flawFilter);
   }, [flawFilter]);
 
   // ── Pagination state ─────────────────────────────────────────────────────────
   const [offset, setOffset] = useState(0);
-
-  // Desktop (live) clear — commits default to the store immediately.
-  const handleFlawFilterClear = useCallback(() => {
-    setFlawFilter(DEFAULT_FLAW_FILTER);
-    setOffset(0);
-  }, [setFlawFilter]);
 
   // ── Mobile drawer state ──────────────────────────────────────────────────────
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -238,7 +223,10 @@ export function FlawsTab() {
     () => !areFiltersEqual(appliedFilters, DEFAULT_FILTERS, FILTER_DOT_FIELDS),
     [appliedFilters],
   );
-  const isFlawModified = useMemo(() => isFlawFilterNonDefault(flawFilter), [flawFilter]);
+  const isFlawModified = useMemo(() => {
+    const { severity, tags } = flawFilter;
+    return severity.length < 2 || tags.length > 0;
+  }, [flawFilter]);
 
   const gamePulsing = usePulseOnChange(appliedFilters);
   const flawPulsing = usePulseOnChange(flawFilter);
@@ -250,55 +238,69 @@ export function FlawsTab() {
     <ModifiedDot active={isFlawModified} pulsing={flawPulsing} testId="flaw-filters-modified-dot" />
   );
 
-  // ── Handlers for game-metadata filters ───────────────────────────────────────
+  // ── Handlers ─────────────────────────────────────────────────────────────────
 
-  // Desktop sidebar: defers game-metadata apply until the panel closes. The flaw
-  // panel applies live, so it needs no pending-buffer handling here.
+  // Desktop sidebar: on open, snapshot committed state. Close without Apply = discard draft.
   const handleSidebarOpenChange = useCallback(
     (panelId: string | null) => {
-      if (sidebarOpen === 'filters' && panelId !== 'filters') {
-        setAppliedFilters(pendingFilters);
-        setOffset(0);
-      }
-      if (sidebarOpen !== 'filters' && panelId === 'filters') {
+      if (sidebarOpen !== panelId && panelId === 'filters') {
         setPendingFilters(appliedFilters);
+      }
+      if (sidebarOpen !== panelId && panelId === 'tags') {
+        setPendingFlawFilter(flawFilter);
       }
       setSidebarOpen(panelId);
     },
-    [sidebarOpen, pendingFilters, appliedFilters, setAppliedFilters],
+    [sidebarOpen, appliedFilters, flawFilter],
   );
 
-  // Mobile game-filters drawer: defers apply until the drawer closes.
+  // Desktop game-metadata Apply: commit and close.
+  const handleDesktopFiltersApply = useCallback(() => {
+    setAppliedFilters(pendingFilters);
+    setOffset(0);
+    setSidebarOpen(null);
+  }, [pendingFilters, setAppliedFilters]);
+
+  // Desktop Tags Apply: commit and close.
+  const handleDesktopTagsApply = useCallback(() => {
+    setFlawFilter(pendingFlawFilter);
+    setOffset(0);
+    setSidebarOpen(null);
+  }, [pendingFlawFilter, setFlawFilter]);
+
+  // Mobile game-filters drawer: on open snapshot committed; Apply commits + closes.
   const handleMobileFiltersOpenChange = useCallback(
     (open: boolean) => {
-      if (!open && mobileFiltersOpen) {
-        setAppliedFilters(pendingFilters);
-        setOffset(0);
-      }
       if (open && !mobileFiltersOpen) {
         setPendingFilters(appliedFilters);
       }
       setMobileFiltersOpen(open);
     },
-    [mobileFiltersOpen, pendingFilters, appliedFilters, setAppliedFilters],
+    [mobileFiltersOpen, appliedFilters],
   );
 
-  // Mobile flaw-filters drawer: buffers edits in pendingFlawFilter and commits them
-  // to the store on close (apply-on-close), so tag/severity selections take effect
-  // when the panel closes rather than mid-edit.
+  const handleMobileFiltersApply = useCallback(() => {
+    setAppliedFilters(pendingFilters);
+    setOffset(0);
+    setMobileFiltersOpen(false);
+  }, [pendingFilters, setAppliedFilters]);
+
+  // Mobile Tags drawer: on open snapshot committed; Apply commits + closes.
   const handleMobileFlawFiltersOpenChange = useCallback(
     (open: boolean) => {
-      if (!open && mobileFlawFiltersOpen) {
-        setFlawFilter(pendingFlawFilter);
-        setOffset(0);
-      }
       if (open && !mobileFlawFiltersOpen) {
         setPendingFlawFilter(flawFilter);
       }
       setMobileFlawFiltersOpen(open);
     },
-    [mobileFlawFiltersOpen, pendingFlawFilter, flawFilter, setFlawFilter],
+    [mobileFlawFiltersOpen, flawFilter],
   );
+
+  const handleMobileTagsApply = useCallback(() => {
+    setFlawFilter(pendingFlawFilter);
+    setOffset(0);
+    setMobileFlawFiltersOpen(false);
+  }, [pendingFlawFilter, setFlawFilter]);
 
   // ── Data queries ─────────────────────────────────────────────────────────────
   const {
@@ -307,7 +309,6 @@ export function FlawsTab() {
     isError: flawsError,
   } = useLibraryFlaws(appliedFilters, flawFilter, offset, PAGE_SIZE);
 
-  // User's total imported games
   const { data: profile } = useUserProfile();
   const totalImported =
     profile != null ? profile.chess_com_game_count + profile.lichess_game_count : 0;
@@ -317,47 +318,40 @@ export function FlawsTab() {
   const matchedCount = flawsData?.matched_count ?? 0;
   const flaws = flawsData?.flaws ?? [];
 
-  // No games at all for this user
   const noGamesImported = !flawsLoading && !flawsError && totalGames === 0;
-  // Games exist but none are analyzed (no flaws in DB at all — inferred from matched_count=0 + no error)
   const noAnalyzedGames = !flawsLoading && !flawsError && totalGames > 0 && matchedCount === 0 && flawsData != null;
-  // Filter matched nothing (we cannot distinguish "no analyzed games" from "filter matched nothing"
-  // without an extra endpoint, so we use the simpler copy as the primary empty state)
   const noMatchedFlaws = noAnalyzedGames;
 
   // ── Filter panel content ─────────────────────────────────────────────────────
 
-  // Game-metadata panel (no flaw control — it lives in its own panel below).
+  // Game-metadata panel — staged: edits update pending only; Apply commits.
   const gameFilterPanelContent = (
     <div className="p-4">
       <LibraryFilterPanel
         filters={pendingFilters}
-        onChange={(filters) => {
-          setPendingFilters(filters);
-          // Desktop live apply
-          setAppliedFilters(filters);
-          setOffset(0);
-        }}
+        onChange={setPendingFilters}
+        onApply={handleDesktopFiltersApply}
         showFlawFilter={false}
       />
     </div>
   );
 
-  // Flaw-filter panel (severity + tags). Desktop applies live to the store.
-  const flawFilterPanelContent = (
+  // Tags (flaw-filter) panel — staged: edits update pendingFlawFilter only; Apply commits.
+  const tagsFilterPanelContent = (
     <div className="p-4">
       <FlawFilterControl
-        severity={flawFilter.severity}
-        tags={flawFilter.tags}
-        onSeverityChange={(severity) => {
-          setFlawFilter({ ...flawFilter, severity });
-          setOffset(0);
-        }}
-        onTagChange={(tags) => {
-          setFlawFilter({ ...flawFilter, tags });
-          setOffset(0);
-        }}
-        onClear={handleFlawFilterClear}
+        severity={pendingFlawFilter.severity}
+        tags={pendingFlawFilter.tags}
+        onSeverityChange={(severity) =>
+          setPendingFlawFilter((prev) => ({ ...prev, severity }))
+        }
+        onTagChange={(tags) => setPendingFlawFilter((prev) => ({ ...prev, tags }))}
+      />
+      <FilterActions
+        resetTestId="btn-tags-reset"
+        applyTestId="btn-tags-apply"
+        onReset={() => setPendingFlawFilter(DEFAULT_FLAW_FILTER)}
+        onApply={handleDesktopTagsApply}
       />
     </div>
   );
@@ -371,10 +365,10 @@ export function FlawsTab() {
       notificationDot: gameDotNode,
     },
     {
-      id: 'flaw-filters',
-      label: 'Flaw filters',
+      id: 'tags',
+      label: 'Tags',
       icon: <Tags className="h-4 w-4" />,
-      content: flawFilterPanelContent,
+      content: tagsFilterPanelContent,
       notificationDot: flawDotNode,
     },
   ];
@@ -406,14 +400,12 @@ export function FlawsTab() {
       {/* Flaw list — only when not errored */}
       {!flawsError && (
         <section aria-label="Flaw results" data-testid="flaw-list">
-          {/* Matched count row */}
           {flawsData != null && (
             <p className="text-sm text-muted-foreground mb-4">
               {matchedCount} flaw{matchedCount === 1 ? '' : 's'} matched
             </p>
           )}
 
-          {/* Empty: no flaws matched */}
           {noMatchedFlaws && (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <p className="text-base font-bold">No flaws matched</p>
@@ -423,7 +415,6 @@ export function FlawsTab() {
             </div>
           )}
 
-          {/* Flaw rows */}
           {matchedCount > 0 && (
             <div className="flex flex-col gap-3">
               {flaws.map((flaw) => (
@@ -432,7 +423,6 @@ export function FlawsTab() {
             </div>
           )}
 
-          {/* Pagination */}
           {matchedCount > PAGE_SIZE && (
             <div className="mt-6">
               <Pagination
@@ -465,12 +455,12 @@ export function FlawsTab() {
 
       {/* Mobile layout: sticky filter buttons + Drawers + stacked content */}
       <div className="md:hidden flex flex-col gap-4">
-        {/* Sticky row with separate Filters + Flaw filters buttons */}
+        {/* Sticky row with separate Filters + Tags buttons */}
         <div className="sticky top-0 z-20 flex justify-end gap-2 py-2 bg-background/80 backdrop-blur-sm">
           <Button
             variant="brand-outline"
             className="relative"
-            onClick={() => setMobileFiltersOpen(true)}
+            onClick={() => handleMobileFiltersOpenChange(true)}
             aria-label="Open game filters"
             data-testid="btn-game-filters"
           >
@@ -481,12 +471,12 @@ export function FlawsTab() {
           <Button
             variant="brand-outline"
             className="relative"
-            onClick={() => setMobileFlawFiltersOpen(true)}
-            aria-label="Open flaw filters"
+            onClick={() => handleMobileFlawFiltersOpenChange(true)}
+            aria-label="Open tags"
             data-testid="btn-flaw-filters"
           >
             <Tags className="mr-2 h-4 w-4" />
-            Flaw filters
+            Tags
             {flawDotNode}
           </Button>
         </div>
@@ -518,14 +508,14 @@ export function FlawsTab() {
               <LibraryFilterPanel
                 filters={pendingFilters}
                 onChange={setPendingFilters}
+                onApply={handleMobileFiltersApply}
                 showFlawFilter={false}
-                showDeferredApplyHint
               />
             </div>
           </DrawerContent>
         </Drawer>
 
-        {/* Flaw-filters drawer — applies on close (apply-on-close buffer) */}
+        {/* Tags (flaw-filter) drawer — staged Apply-only */}
         <Drawer
           open={mobileFlawFiltersOpen}
           onOpenChange={handleMobileFlawFiltersOpenChange}
@@ -536,12 +526,12 @@ export function FlawsTab() {
             data-testid="drawer-flaw-filter-sidebar"
           >
             <DrawerHeader className="flex flex-row items-center justify-between">
-              <DrawerTitle>Flaw filters</DrawerTitle>
+              <DrawerTitle>Tags</DrawerTitle>
               <DrawerClose asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label="Close flaw filters"
+                  aria-label="Close tags"
                   data-testid="btn-close-flaw-filter-drawer"
                 >
                   <X className="h-4 w-4" />
@@ -553,18 +543,16 @@ export function FlawsTab() {
                 severity={pendingFlawFilter.severity}
                 tags={pendingFlawFilter.tags}
                 onSeverityChange={(severity) =>
-                  setPendingFlawFilter({ ...pendingFlawFilter, severity })
+                  setPendingFlawFilter((prev) => ({ ...prev, severity }))
                 }
-                onTagChange={(tags) => setPendingFlawFilter({ ...pendingFlawFilter, tags })}
-                onClear={() => setPendingFlawFilter(DEFAULT_FLAW_FILTER)}
+                onTagChange={(tags) => setPendingFlawFilter((prev) => ({ ...prev, tags }))}
               />
-              <p
-                className="text-sm italic leading-tight text-muted-foreground"
-                data-testid="flaw-filter-deferred-apply-hint"
-              >
-                <span className="font-semibold text-foreground/80">Tip:</span> Filter changes apply
-                on closing the filters panel.
-              </p>
+              <FilterActions
+                resetTestId="btn-tags-reset"
+                applyTestId="btn-tags-apply"
+                onReset={() => setPendingFlawFilter(DEFAULT_FLAW_FILTER)}
+                onApply={handleMobileTagsApply}
+              />
             </div>
           </DrawerContent>
         </Drawer>

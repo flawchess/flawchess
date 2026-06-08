@@ -10,7 +10,6 @@ import {
   FAM_IMPACT_BG,
 } from '@/lib/theme';
 import type { FlawTag } from '@/types/library';
-import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,7 +18,6 @@ export interface FlawFilterControlProps {
   tags: FlawTag[];
   onSeverityChange: (next: ('blunder' | 'mistake')[]) => void;
   onTagChange: (next: FlawTag[]) => void;
-  onClear: () => void;
 }
 
 // ─── Tag → glyph (lucide icons, rendered at h-3 w-3) ──────────────────────────
@@ -116,10 +114,8 @@ function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButton
  * FlawFilterControl — severity × tag-family multi-select filter control.
  *
  * Renders:
- * - "Show flaws with:" label
  * - Two severity toggle buttons (Blunders / Mistakes) with at-least-one guard
  * - Three family groups: Timing / Opportunity / Impact (phase tags excluded)
- * - "Clear flaw filter" link when non-default state
  *
  * Tag buttons show the canonical lowercase-with-dash name (matching chips + panel).
  * Definitions live in the <TagLegend> "Explanation" popover on the Games cards, not as
@@ -128,13 +124,15 @@ function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButton
  * UI-SPEC: uses toggle-active CSS variables for severity; family FAM_* colors for tags.
  * All interactive elements have data-testid + ARIA per CLAUDE.md browser automation rules.
  * text-sm floor throughout (CLAUDE.md typography rule).
+ *
+ * The Reset+Apply footer is owned by the parent panel (FilterActions) — this component
+ * does not render it.
  */
 export function FlawFilterControl({
   severity,
   tags,
   onSeverityChange,
   onTagChange,
-  onClear,
 }: FlawFilterControlProps) {
   // At-least-one-severity guard: ignore click that would empty the severity array
   const handleSeverityToggle = (sev: 'blunder' | 'mistake'): void => {
@@ -150,13 +148,10 @@ export function FlawFilterControl({
     onTagChange(next);
   };
 
-  const nonDefault = isFlawFilterNonDefault({ severity, tags });
-
   return (
     <div data-testid="flaw-filter-control" className="flex flex-col gap-3">
       {/* ── Severity section ───────────────────────────────────────────── */}
       <div className="flex flex-col gap-2">
-        <p className="text-sm text-muted-foreground">Show flaws with:</p>
         <div className="flex gap-2 flex-wrap">
           <button
             type="button"
@@ -216,19 +211,6 @@ export function FlawFilterControl({
           </div>
         </div>
       ))}
-
-      {/* ── Clear affordance ───────────────────────────────────────────── */}
-      {nonDefault && (
-        <button
-          type="button"
-          data-testid="btn-clear-flaw-filter"
-          aria-label="Clear all flaw filter selections"
-          className="text-sm text-muted-foreground underline cursor-pointer text-left"
-          onClick={onClear}
-        >
-          Clear flaw filter
-        </button>
-      )}
     </div>
   );
 }
