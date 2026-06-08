@@ -21,7 +21,6 @@ import {
   EVAL_CHART_AREA_BLACK_AHEAD,
   EVAL_CHART_AREA_WHITE_AHEAD,
   EVAL_CHART_LINE,
-  EVAL_CHART_MIDLINE,
   EVAL_CHART_PHASE_LINE,
   EVAL_MARKER_FILTER_OUTLINE,
   SEV_BLUNDER,
@@ -331,8 +330,11 @@ function buildTooltipContent(
     const point = payload[0]?.payload as EvalPoint | undefined;
     if (!point || point.ply == null || point.es == null) return null;
 
-    const evalStr = formatEval(evalByPly.get(point.ply));
-    const moveLabel = formatMoveLabel(point.ply, moves[point.ply] ?? null);
+    const san = moves[point.ply] ?? null;
+    // A mating move (SAN ends '#') has no engine eval — show "Checkmate" instead
+    // of an empty "Eval: —" so the decisive final ply reads clearly.
+    const evalStr = san?.endsWith('#') ? 'Checkmate' : formatEval(evalByPly.get(point.ply));
+    const moveLabel = formatMoveLabel(point.ply, san);
     const marker = markerMap.get(point.ply); // M/B only — undefined on clean plies
 
     return (
@@ -576,7 +578,7 @@ export function EvalChart({
           {hoverPly != null && (
             <ReferenceLine
               x={hoverPly}
-              stroke={EVAL_CHART_MIDLINE}
+              stroke={EVAL_CHART_PHASE_LINE}
               strokeWidth={1}
               strokeDasharray="3 3"
               aria-hidden="true"

@@ -464,8 +464,8 @@ class TestPhaseTransitions:
 
 
 class TestCheckmateFinalPly:
-    def test_white_checkmate_fills_mate_tail_es_1(self) -> None:
-        """White mates on ply 2 → the unevaluated mating ply AND final ply get es=1.0."""
+    def test_white_checkmate_fills_mate_ply_es_1(self) -> None:
+        """White mates on ply 2 → the mating ply gets es=1.0; the terminal ply is nulled."""
         positions = [
             _make_pos(0, eval_cp=300, move_san="Qh5"),
             _make_pos(1, eval_cp=350, move_san="Nc6"),
@@ -474,13 +474,13 @@ class TestCheckmateFinalPly:
         ]
         game = _make_game()
         eval_series, _, _ = _build_eval_series(game, positions)
-        # Both the mating ply and the terminal ply are filled — no null gap that
-        # would break the chart line at the mate.
         assert eval_series[2].es == pytest.approx(1.0)
-        assert eval_series[3].es == pytest.approx(1.0)
+        # The chart ends ON the mate — the terminal (move_san=None) ply is nulled so
+        # the client trims it instead of showing a stray "Ply N · Eval: —" point.
+        assert eval_series[3].es is None
 
-    def test_black_checkmate_fills_mate_tail_es_0(self) -> None:
-        """Black mates on ply 3 → the mating ply AND final ply get es=0.0."""
+    def test_black_checkmate_fills_mate_ply_es_0(self) -> None:
+        """Black mates on ply 3 → the mating ply gets es=0.0; the terminal ply is nulled."""
         positions = [
             _make_pos(0, eval_cp=-100, move_san="f3"),
             _make_pos(1, eval_cp=-150, move_san="e5"),
@@ -491,10 +491,10 @@ class TestCheckmateFinalPly:
         game = _make_game()
         eval_series, _, _ = _build_eval_series(game, positions)
         assert eval_series[3].es == pytest.approx(0.0)
-        assert eval_series[4].es == pytest.approx(0.0)
+        assert eval_series[4].es is None
 
-    def test_bogus_mate_zero_final_ply_overwritten(self) -> None:
-        """A lichess `eval_mate=0` final annotation is overwritten with the real result."""
+    def test_bogus_mate_zero_terminal_ply_nulled(self) -> None:
+        """A lichess `eval_mate=0` terminal annotation is nulled (chart ends on the mate)."""
         positions = [
             _make_pos(0, eval_cp=300, move_san="Qh5"),
             _make_pos(1, eval_cp=350, move_san="Nc6"),
@@ -503,8 +503,9 @@ class TestCheckmateFinalPly:
         ]
         game = _make_game()
         eval_series, _, _ = _build_eval_series(game, positions)
-        # Without the override, eval_mate=0 maps to es=0.0 even though White won.
-        assert eval_series[3].es == pytest.approx(1.0)
+        assert eval_series[2].es == pytest.approx(1.0)
+        # Without nulling, eval_mate=0 maps to es=0.0 and renders as a stray ply.
+        assert eval_series[3].es is None
 
     def test_non_checkmate_final_ply_stays_null(self) -> None:
         """Resignation/timeout: no move has '#' → tail es stays None (trimmed by client)."""

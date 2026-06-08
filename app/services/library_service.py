@@ -191,24 +191,24 @@ def _build_eval_series(
             )
         )
 
-    # Checkmate tail: lichess emits no %eval once the game is over, so BOTH the
-    # mating move's resulting position and the terminal position carry no eval —
-    # their es is None, which breaks the chart line at the mate and orphans/trims
-    # the decisive final ply (and an occasional bogus `eval_mate=0` annotation maps
-    # to 0.0 regardless of winner). A checkmate is decisive on the board, so once we
-    # spot the mating move (SAN ends '#'), overwrite es for that ply and every ply
-    # after it with 1.0/0.0 (white-perspective) from the mating side's color (ply
-    # parity: even=White), giving a continuous bar through to the result. Only the
-    # final move can be mate, so there is at most one '#'. Non-checkmate
+    # Checkmate: lichess emits no %eval once the game is over, so the mating move's
+    # resulting position has es=None, which breaks the chart line at the mate. The
+    # mate is decisive on the board, so set the mating ply's es to 1.0/0.0
+    # (white-perspective) from the mating side's color (ply parity: even=White) and
+    # make the chart END on the mate by nulling every ply after it: the trailing
+    # terminal position (move_san=None) is not a real move and would otherwise show
+    # as a stray "Ply N · Eval: —" point (or carry a bogus `eval_mate=0` annotation
+    # that maps to 0.0 regardless of winner). Frontend trims the nulled tail. Only
+    # the final move can be mate, so there is at most one '#'. Non-checkmate
     # terminations (resignation, timeout) have no '#' and are left untouched.
     mate_idx = next(
         (i for i, pos in enumerate(positions) if (pos.move_san or "").endswith("#")),
         None,
     )
     if mate_idx is not None:
-        decisive_es = 1.0 if positions[mate_idx].ply % 2 == 0 else 0.0
-        for point in eval_series[mate_idx:]:
-            point.es = decisive_es
+        eval_series[mate_idx].es = 1.0 if positions[mate_idx].ply % 2 == 0 else 0.0
+        for point in eval_series[mate_idx + 1 :]:
+            point.es = None
 
     return (
         eval_series,
