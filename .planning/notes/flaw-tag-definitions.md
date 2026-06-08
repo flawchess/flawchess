@@ -61,7 +61,7 @@ Both require the full both-color analysis pass.
 
 | Family      | Name           | Definition |
 |-------------|----------------|------------|
-| Opportunity | `miss`         | Your blunder or mistake came immediately after the opponent's own mistake or blunder: they handed you something and you didn't take it (or made it worse) on the very next move. Mirrors chess.com's Miss classification (the Ø glyph). |
+| Opportunity | `miss`         | Your blunder or mistake came immediately after the opponent's own mistake or blunder: they handed you something and you didn't take it (or made it worse) on the very next move. |
 | Opportunity | `lucky`        | A blunder the opponent failed to punish: their immediate reply was itself a mistake or blunder, so your Expected Score recovered. (Blunders only. End-of-game with no reply counts only if you didn't go on to lose.) |
 
 ## Impact — how far the blunder or mistake swung the game

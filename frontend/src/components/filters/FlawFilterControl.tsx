@@ -1,5 +1,3 @@
-import * as React from 'react';
-import { Popover as PopoverPrimitive } from 'radix-ui';
 import { Clock, Zap, Brain, Target, Clover, TrendingDown, Swords } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -12,7 +10,6 @@ import {
   FAM_IMPACT_BG,
 } from '@/lib/theme';
 import type { FlawTag } from '@/types/library';
-import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
 import { isFlawFilterNonDefault } from '@/hooks/useFlawFilterStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -76,7 +73,7 @@ const FAMILY_SECTIONS: FamilySection[] = [
   },
 ];
 
-// ─── Tag filter button (with hover definition popover) ────────────────────────
+// ─── Tag filter button ────────────────────────────────────────────────────────
 
 interface TagFilterButtonProps {
   tag: FlawTag;
@@ -87,78 +84,29 @@ interface TagFilterButtonProps {
 }
 
 /**
- * A single tag toggle button that shows the tag's definition on hover.
- *
- * Renders the canonical lowercase-with-dash tag string (e.g. `lucky`) — the same
- * names the chips and Flaw-Stats panel use. The definition popover mirrors TagChip: a
- * Radix Popover opened on hover (100ms delay), body "<bold tag-name>: <definition>".
- *
- * The popover uses Popover.Anchor (not Trigger) so the button's onClick keeps toggling the
- * filter — only hover opens the popover, never the click. Hover is desktop-only by nature
- * (CLAUDE.md mobile-parity exception for hover tooltips); tap still toggles the filter.
+ * A single tag toggle button. Renders the canonical lowercase-with-dash tag string
+ * (e.g. `lucky`) — the same names the chips and Flaw-Stats panel use. Definitions are
+ * surfaced once via the <TagLegend> "Explanation" popover on the Games cards, not as a
+ * per-button hover tooltip here.
  */
 function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButtonProps) {
   const Icon = TAG_ICONS[tag];
-  const [open, setOpen] = React.useState(false);
-  const openTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Open on hover after a short delay; close on a brief grace delay so moving the
-  // pointer from the button into the portal-rendered popover body does not close it
-  // first (the body's onMouseEnter cancels the pending close).
-  const scheduleOpen = (): void => {
-    if (closeTimeout.current) clearTimeout(closeTimeout.current);
-    openTimeout.current = setTimeout(() => setOpen(true), 100);
-  };
-  const scheduleClose = (): void => {
-    if (openTimeout.current) clearTimeout(openTimeout.current);
-    closeTimeout.current = setTimeout(() => setOpen(false), 80);
-  };
-  const cancelClose = (): void => {
-    if (closeTimeout.current) clearTimeout(closeTimeout.current);
-  };
-
   return (
-    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
-      <PopoverPrimitive.Anchor asChild>
-        <button
-          type="button"
-          data-testid={`filter-flaw-tag-${tag}`}
-          aria-pressed={selected}
-          aria-label={`Filter flaws by tag: ${tag}`}
-          className={cn(
-            'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm font-bold border transition-colors',
-            !selected && 'border-border bg-inactive-bg text-muted-foreground',
-          )}
-          style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
-          onClick={() => onToggle(tag)}
-          onMouseEnter={scheduleOpen}
-          onMouseLeave={scheduleClose}
-        >
-          {Icon && <Icon className="h-3 w-3 shrink-0" />}
-          {tag}
-        </button>
-      </PopoverPrimitive.Anchor>
-      <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content
-          side="top"
-          sideOffset={4}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          onMouseEnter={cancelClose}
-          onMouseLeave={scheduleClose}
-          data-testid={`filter-flaw-tag-popover-${tag}`}
-          className={cn(
-            'z-50 max-w-xs rounded-md border-0 outline-none bg-foreground px-3 py-1.5 text-xs text-background',
-            'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
-            'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
-            'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2',
-            'data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
-          )}
-        >
-          <span className="font-bold">{tag}</span>: {TAG_DEFINITIONS[tag]}
-        </PopoverPrimitive.Content>
-      </PopoverPrimitive.Portal>
-    </PopoverPrimitive.Root>
+    <button
+      type="button"
+      data-testid={`filter-flaw-tag-${tag}`}
+      aria-pressed={selected}
+      aria-label={`Filter flaws by tag: ${tag}`}
+      className={cn(
+        'inline-flex items-center gap-1 h-11 sm:h-7 rounded-full px-3 py-0.5 text-sm font-bold border transition-colors',
+        !selected && 'border-border bg-inactive-bg text-muted-foreground',
+      )}
+      style={selected ? { color, borderColor: color, backgroundColor: bg } : undefined}
+      onClick={() => onToggle(tag)}
+    >
+      {Icon && <Icon className="h-3 w-3 shrink-0" />}
+      {tag}
+    </button>
   );
 }
 
@@ -173,12 +121,13 @@ function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButton
  * - Three family groups: Timing / Opportunity / Impact (phase tags excluded)
  * - "Clear flaw filter" link when non-default state
  *
- * Tag buttons show the canonical lowercase-with-dash name (matching chips + panel) and
- * surface the tag's definition on hover.
+ * Tag buttons show the canonical lowercase-with-dash name (matching chips + panel).
+ * Definitions live in the <TagLegend> "Explanation" popover on the Games cards, not as
+ * per-button hover tooltips here.
  *
  * UI-SPEC: uses toggle-active CSS variables for severity; family FAM_* colors for tags.
  * All interactive elements have data-testid + ARIA per CLAUDE.md browser automation rules.
- * text-sm floor throughout (CLAUDE.md typography rule; popover body uses the text-xs tooltip exception).
+ * text-sm floor throughout (CLAUDE.md typography rule).
  */
 export function FlawFilterControl({
   severity,

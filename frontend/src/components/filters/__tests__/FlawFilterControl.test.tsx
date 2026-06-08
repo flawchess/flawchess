@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { FlawFilterControl } from '../FlawFilterControl';
 import type { FlawTag } from '@/types/library';
 
@@ -129,7 +129,7 @@ describe('FlawFilterControl', () => {
     });
   });
 
-  describe('canonical tag names + definition popover', () => {
+  describe('canonical tag names', () => {
     it('renders the raw lowercase-with-dash tag name, not a title-cased label', () => {
       render(<FlawFilterControl {...defaultProps} />);
       const lucky = screen.getByTestId('filter-flaw-tag-lucky');
@@ -151,25 +151,6 @@ describe('FlawFilterControl', () => {
       }
     });
 
-    it('hovering a tag button opens its definition popover after the delay', () => {
-      vi.useFakeTimers();
-      try {
-        render(<FlawFilterControl {...defaultProps} />);
-        const btn = screen.getByTestId('filter-flaw-tag-reversed');
-        // Popover is closed initially.
-        expect(screen.queryByTestId('filter-flaw-tag-popover-reversed')).toBeNull();
-        fireEvent.mouseEnter(btn);
-        act(() => {
-          vi.advanceTimersByTime(120);
-        });
-        const popover = screen.getByTestId('filter-flaw-tag-popover-reversed');
-        expect(popover.textContent).toContain('reversed');
-        // Definition prose (not just the tag name) is present.
-        expect(popover.textContent).toContain('Expected Score');
-      } finally {
-        vi.useRealTimers();
-      }
-    });
   });
 
   describe('clear affordance', () => {
