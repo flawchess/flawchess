@@ -362,12 +362,16 @@ export function EvalChart({
   const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies);
   const tooltipContent = buildTooltipContent(moves, markerMap, evalByPly);
 
-  // Numeric x-domain [firstPly, lastPly]. A numeric XAxis maps the first/last ply
-  // to the chart's left/right edges, so the area fill spans the full width. The
-  // default category axis band-centers points, leaving the last ply short of the
-  // right edge (fill ended before the edge, breaking the right rounded corners).
-  const plies = evalSeries.map((p) => p.ply);
-  const xDomain: [number, number] = [Math.min(...plies), Math.max(...plies)];
+  // Numeric x-domain spanning the plies that actually have an eval (es != null).
+  // A numeric XAxis maps the domain ends to the chart's left/right edges, so the
+  // fill reaches both edges. Crucially the domain is the *eval'd* ply range, not
+  // [minPly, maxPly]: most games have 1-2 trailing plies with no eval (the final
+  // position is never evaluated), and including them would pad the right side with
+  // empty space — the fill stopped short of the edge and the right rounded corners
+  // never appeared. connectNulls={false} still leaves any interior eval gaps open.
+  const esPlies = evalSeries.filter((p) => p.es != null).map((p) => p.ply);
+  const basisPlies = esPlies.length > 0 ? esPlies : evalSeries.map((p) => p.ply);
+  const xDomain: [number, number] = [Math.min(...basisPlies), Math.max(...basisPlies)];
 
   // Hover crosshair tracks the EXACT hovered ply (no snapping). We mirror the ply
   // up to the parent (onHoverPlyChange) so the card's miniboard scrubs in sync,
