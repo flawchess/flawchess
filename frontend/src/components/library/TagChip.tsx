@@ -203,6 +203,12 @@ export function TagChip({ tag, gameId, count, onHover }: TagChipProps) {
         <PopoverPrimitive.Content
           side={popoverSide}
           sideOffset={4}
+          // This is a hover/tap definition popover, not a focus-managed dialog.
+          // Radix returns focus to the trigger <span> (tabIndex=0) when the popover
+          // closes; on mouse leave that left a lingering white focus ring (the global
+          // outline-ring) on every chip, looking like a stray border. Suppress the
+          // close-auto-focus so only the colored active-filter ring is ever shown.
+          onCloseAutoFocus={(e) => e.preventDefault()}
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
           data-testid={`tag-popover-${tag}-${gameId}`}
