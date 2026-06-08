@@ -1,8 +1,9 @@
 /**
  * EvalChart — per-game expected-score area chart (Phase 109, LIBG-10).
  *
- * White-perspective ES per ply, filled from the 0.5 midline with two-region
- * shading (light grey >0.5 / near-black <0.5), a 50% midline, at most two
+ * White-perspective ES per ply, shown as a filled eval bar: the area below the
+ * ES line (0% → eval) is grey, the area above it (eval → 100%) is near-black,
+ * with rounded chart corners, a 50% midline, at most two
  * phase-transition vertical lines
  * (middlegame, endgame — no ply-0 line per D-06), and dual-marker flaw dots
  * (filled = player, hollow = opponent, color = severity — D-07).
@@ -13,7 +14,7 @@
  * uses area-based `size` not radius `r`, making pixel-precise sizing unreliable.
  */
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Area, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import {
@@ -76,28 +77,15 @@ function severityColor(sev: FlawSeverity): string {
   return SEV_INACCURACY;
 }
 
-/** ES midline — the area fills from here, and the gradient splits here. */
+/** ES midline — the 50% reference line. */
 const ES_MIDLINE = 0.5;
+
+/** ES domain bounds — the two area fills span from the eval line to these. */
+const ES_FLOOR = 0;
+const ES_CEIL = 1;
 
 /** Game-phase tags — excluded from the tooltip tag list (shown via phase lines). */
 const PHASE_TAGS: ReadonlySet<FlawTag> = new Set(['opening', 'middlegame', 'endgame']);
-
-/**
- * Fraction (0–1, from the top) of the filled area's bounding box where ES=0.5
- * falls. The Area fills from the 0.5 baseline, so its bbox spans
- * [min(ES,0.5), max(ES,0.5)]; an SVG `objectBoundingBox` gradient maps 0→top,
- * 1→bottom. Placing the white/black colour stops at this offset pins the colour
- * split to the 50% midline regardless of how far the eval swings (previously a
- * hard-coded 50% stop sat below the midline whenever the eval never reached the
- * chart top/bottom).
- */
-function midlineGradientOffset(series: EvalPoint[]): number {
-  const values = series.map((p) => p.es).filter((v): v is number => v != null);
-  const top = Math.max(...values, ES_MIDLINE);
-  const bottom = Math.min(...values, ES_MIDLINE);
-  if (top === bottom) return ES_MIDLINE;
-  return (top - ES_MIDLINE) / (top - bottom);
-}
 
 /** Mistake/blunder flaw-dot radius. */
 const FLAW_DOT_RADIUS = 4.5;
@@ -362,11 +350,6 @@ export function EvalChart({
   highlightedPlies,
   outlinedPlies,
 }: EvalChartProps) {
-  // Stable SVG gradient ID per instance — prevents collisions when 20 cards
-  // render simultaneously (useId from React 18+).
-  const rawId = useId();
-  const gradientId = `eval-gradient-${rawId.replace(/[^a-zA-Z0-9]/g, '_')}`;
-
   // evalByPly resolves a ply to its eval string for the tooltip.
   const mbMarkers = flawMarkers.filter((m) => m.severity !== 'inaccuracy');
   const evalByPly = new Map(evalSeries.map((p) => [p.ply, p]));
@@ -378,10 +361,6 @@ export function EvalChart({
   const allMarkerMap = new Map(flawMarkers.map((m) => [m.ply, m]));
   const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies);
   const tooltipContent = buildTooltipContent(moves, markerMap, evalByPly);
-
-  // Where the 0.5 midline sits within the filled area's bounding box, so the
-  // gradient colour split lands exactly on the midline (see helper).
-  const gradientOffset = midlineGradientOffset(evalSeries);
 
   // Hover crosshair tracks the EXACT hovered ply (no snapping). We mirror the ply
   // up to the parent (onHoverPlyChange) so the card's miniboard scrubs in sync,
@@ -489,7 +468,13 @@ export function EvalChart({
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
     >
-      <ChartContainer config={{}} className={`w-full ${heightClass}`}>
+      <ChartContainer
+        config={{}}
+        // rounded-md on the recharts surface SVG (not the wrapper) clips the
+        // fills to rounded corners without clipping the escape-viewBox tooltip,
+        // which lives in a sibling div outside the surface.
+        className={`w-full ${heightClass} [&_.recharts-surface]:rounded-md`}
+      >
         <ComposedChart
           data={evalSeries}
           margin={{ top: 4, right: 4, left: 4, bottom: 4 }}
@@ -497,36 +482,33 @@ export function EvalChart({
           onMouseLeave={handleMouseLeave}
           onTouchMove={handlePointerMove}
         >
-          <defs>
-            {/*
-              Two-region vertical gradient split at the 0.5 midline. The split
-              offset is data-dependent (gradientOffset) because the Area fills
-              from the 0.5 baseline, so its bounding box — to which an
-              objectBoundingBox gradient maps — only spans the eval's actual
-              range. Above the split = White-ahead (light grey); below = Black-
-              ahead (near-black).
-            */}
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset={0}              stopColor={EVAL_CHART_AREA_WHITE_AHEAD} />
-              <stop offset={gradientOffset} stopColor={EVAL_CHART_AREA_WHITE_AHEAD} />
-              <stop offset={gradientOffset} stopColor={EVAL_CHART_AREA_BLACK_AHEAD} />
-              <stop offset={1}              stopColor={EVAL_CHART_AREA_BLACK_AHEAD} />
-            </linearGradient>
-          </defs>
-
           {/* Hidden axes — compact sparkline mode, no ticks or labels. */}
           <XAxis dataKey="ply" hide />
-          <YAxis hide domain={[0, 1]} />
+          <YAxis hide domain={[ES_FLOOR, ES_CEIL]} />
 
-          {/* ES area — fills from the 0.5 midline (baseValue), two-region
-              gradient split at that midline, no dot markers. */}
+          {/* Eval bar — two solid regions split by the ES line. The black area
+              fills from the line up to 100% (baseValue=ES_CEIL); the grey area
+              fills from the line down to 0% (baseValue=ES_FLOOR). Grey is drawn
+              last so it carries the ES stroke line. */}
           <Area
             type="monotone"
             dataKey="es"
-            baseValue={ES_MIDLINE}
+            baseValue={ES_CEIL}
+            stroke="none"
+            fill={EVAL_CHART_AREA_BLACK_AHEAD}
+            fillOpacity={1}
+            dot={false}
+            activeDot={false}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+          <Area
+            type="monotone"
+            dataKey="es"
+            baseValue={ES_FLOOR}
             stroke={EVAL_CHART_LINE}
             strokeWidth={1.5}
-            fill={`url(#${gradientId})`}
+            fill={EVAL_CHART_AREA_WHITE_AHEAD}
             fillOpacity={1}
             dot={false}
             activeDot={false}
@@ -536,7 +518,7 @@ export function EvalChart({
 
           {/* 50% midline — dashed horizontal reference. */}
           <ReferenceLine
-            y={0.5}
+            y={ES_MIDLINE}
             stroke={EVAL_CHART_MIDLINE}
             strokeWidth={1}
             strokeDasharray="3 3"
