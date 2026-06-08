@@ -382,11 +382,13 @@ export function EvalChart({
 
   // Chart data trimmed to the eval'd ply range so the fill spans the full width
   // (see trimToEvalRange). Fall back to the raw series if every ply lacks an eval.
-  const chartSeries = trimToEvalRange(evalSeries);
-  const basisSeries = chartSeries.length > 0 ? chartSeries : evalSeries;
-  const basisPlies = basisSeries.map((p) => p.ply);
-  // Numeric XAxis maps the domain ends to the chart's left/right edges.
-  const xDomain: [number, number] = [Math.min(...basisPlies), Math.max(...basisPlies)];
+  // Trimming alone makes the last eval'd ply the rightmost category point (which a
+  // point-scale category axis maps to the right edge), so no numeric axis / domain
+  // is needed — and the default category axis keeps recharts' tooltip + activeLabel
+  // hover behaviour intact (a numeric axis broke mouse-leave dismissal, the hover
+  // crosshair, and mobile drag).
+  const trimmed = trimToEvalRange(evalSeries);
+  const chartSeries = trimmed.length > 0 ? trimmed : evalSeries;
 
   // Hover crosshair tracks the EXACT hovered ply (no snapping). We mirror the ply
   // up to the parent (onHoverPlyChange) so the card's miniboard scrubs in sync,
@@ -511,9 +513,9 @@ export function EvalChart({
           onMouseLeave={handleMouseLeave}
           onTouchMove={handlePointerMove}
         >
-          {/* Hidden axes — compact sparkline mode, no ticks or labels.
-              type="number" + explicit domain so the fill reaches both edges. */}
-          <XAxis dataKey="ply" type="number" domain={xDomain} hide />
+          {/* Hidden axes — compact sparkline mode, no ticks or labels. Default
+              category axis (point scale) maps first/last ply to the edges. */}
+          <XAxis dataKey="ply" hide />
           <YAxis hide domain={[ES_FLOOR, ES_CEIL]} />
 
           {/* Eval bar — two solid regions split by the ES line. The black area
