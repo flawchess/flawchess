@@ -133,8 +133,9 @@ function formatTimeControl(tcStr: string): string {
  * Analyzed game card for the Library Games subtab.
  *
  * Standalone component per D-05 — does NOT extend or modify GameCard. Borrows
- * GameCard's metadata/board/platform patterns but adds a full-width header,
- * 3-column desktop body with a dashed flaw column, and a flaw block on mobile.
+ * GameCard's metadata/board/platform patterns but adds a full-width header, a
+ * responsive body (1 column mobile, 2 columns tablet, 3 columns desktop), and a
+ * flaw block on mobile.
  *
  * Flaw column branches on analysis_state:
  * - "analyzed"         → SeverityBadge × 3 (nowrap row) + TagChip row (flex-wrap)
@@ -470,8 +471,10 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
         </div>
       </div>
 
-      {/* Desktop body: 3 equal thirds — board+info / eval chart / flaw column */}
-      <div className="hidden sm:grid sm:grid-cols-3 sm:gap-3 sm:items-start">
+      {/* Tablet/desktop body: 2 columns (sm–lg) → 3 columns (lg+). On tablet the
+          flaw column (col-span-2) drops to a full-width second row beneath
+          board+info / eval chart; on desktop all three share one row. */}
+      <div className="hidden sm:grid sm:grid-cols-2 lg:grid-cols-3 sm:gap-3 sm:items-start">
         {/* Col 1: mini board + opening + metadata */}
         <div className="flex gap-3 items-start">
           {boardFen && (
@@ -512,8 +515,9 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
             <NoAnalysisState gameId={game.game_id} />
           )}
         </div>
-        {/* Col 3: flaw column (dropped dashed left border — grid separates columns) */}
-        <div className="flex flex-col gap-2">
+        {/* Col 3: flaw column. Spans both columns on tablet (full-width second
+            row), single column on desktop (the grid separates columns — no divider). */}
+        <div className="flex flex-col gap-2 sm:col-span-2 lg:col-span-1">
           {flawContent}
         </div>
       </div>
