@@ -104,6 +104,17 @@ const ES_PAD = 0.08;
 /** Game-phase tags — excluded from the tooltip tag list (shown via phase lines). */
 const PHASE_TAGS: ReadonlySet<FlawTag> = new Set(['opening', 'middlegame', 'endgame']);
 
+/**
+ * The API's middlegame_ply / endgame_ply is the FIRST ply *in* the new phase
+ * (the first middlegame/endgame position). Drawing the vertical on that ply sits
+ * it on top of that data point, reading as one move late — the move that ply
+ * represents is what *entered* the phase. Render the line one ply earlier so it
+ * falls on the boundary between the last prior-phase ply and the first new-phase
+ * ply. (The API value itself is left untouched — it's reused as the "phase entry"
+ * ply by the endgame analytics.)
+ */
+const PHASE_LINE_PLY_OFFSET = 1;
+
 /** Rotated phase-line label geometry (SVG px). */
 const PHASE_LABEL_FONT_SIZE = 10;
 const PHASE_LABEL_X_OFFSET = 4; // px right of the line
@@ -639,7 +650,7 @@ export function EvalChart({
               Opening boundary (ply 0) gets no line — implicit start of chart. */}
           {phaseTransitions.middlegame_ply != null && (
             <ReferenceLine
-              x={phaseTransitions.middlegame_ply}
+              x={phaseTransitions.middlegame_ply - PHASE_LINE_PLY_OFFSET}
               stroke={EVAL_CHART_PHASE_LINE}
               strokeWidth={1}
               label={phaseLineLabel('Midgame')}
@@ -648,7 +659,7 @@ export function EvalChart({
           )}
           {phaseTransitions.endgame_ply != null && (
             <ReferenceLine
-              x={phaseTransitions.endgame_ply}
+              x={phaseTransitions.endgame_ply - PHASE_LINE_PLY_OFFSET}
               stroke={EVAL_CHART_PHASE_LINE}
               strokeWidth={1}
               label={phaseLineLabel('Endgame')}
