@@ -15,7 +15,7 @@ import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
 import { EvalChart } from '@/components/library/EvalChart';
 import { SeverityBadge } from '@/components/library/SeverityBadge';
-import { TagChip } from '@/components/library/TagChip';
+import { TagChip, TagLegend } from '@/components/library/TagChip';
 import { NoAnalysisState } from '@/components/library/NoAnalysisState';
 import { gamePlatformUrl } from '@/lib/platformLinks';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
@@ -382,18 +382,25 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
             );
           })}
         </div>
-        {/* Tag chip row — flex-wrap allowed */}
+        {/* Tag chip row — flex-wrap allowed. Definitions live in the single
+            <TagLegend> "Explanation" popover below, not per-chip overlays, so the
+            eval chart is never covered (definition={false}). Hover still highlights
+            the chart markers via onHover. */}
         {game.chips.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {game.chips.map((tag) => (
-              <TagChip
-                key={tag}
-                tag={tag}
-                gameId={game.game_id}
-                count={tagCounts.get(tag)}
-                onHover={(active) => setHighlight(active ? { kind: 'tag', tag } : null)}
-              />
-            ))}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
+              {game.chips.map((tag) => (
+                <TagChip
+                  key={tag}
+                  tag={tag}
+                  gameId={game.game_id}
+                  count={tagCounts.get(tag)}
+                  definition={false}
+                  onHover={(active) => setHighlight(active ? { kind: 'tag', tag } : null)}
+                />
+              ))}
+            </div>
+            <TagLegend tags={game.chips} gameId={game.game_id} />
           </div>
         )}
       </>

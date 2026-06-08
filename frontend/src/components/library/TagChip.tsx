@@ -15,6 +15,7 @@ import {
 import type { FlawTag } from '@/types/library';
 import { TAG_DEFINITIONS } from '@/lib/tagDefinitions';
 import { useFlawFilterStore } from '@/hooks/useFlawFilterStore';
+import { InfoPopover } from '@/components/ui/info-popover';
 
 // Card switches to the stacked mobile layout below Tailwind's `sm` (640px), where
 // the tag chips sit *below* the eval chart. A top-opening popover would then cover
@@ -107,6 +108,14 @@ interface TagChipProps {
    * alongside the definition popover; omitted call sites get no highlight wiring.
    */
   onHover?: (active: boolean) => void;
+  /**
+   * When false, the per-chip hover/tap definition popover is suppressed and the
+   * chip renders as a plain (highlight-only) span. The Games card sets this and
+   * surfaces definitions once via <TagLegend> below the chip row instead, so the
+   * eval chart is never covered by a per-chip overlay. Defaults to true (FlawsTab
+   * keeps the inline popover).
+   */
+  definition?: boolean;
 }
 
 /**
@@ -128,7 +137,7 @@ interface TagChipProps {
  *
  * Colors come from theme.ts FAM_* constants — no per-tag color sprawl.
  */
-export function TagChip({ tag, gameId, count, onHover }: TagChipProps) {
+export function TagChip({ tag, gameId, count, onHover, definition = true }: TagChipProps) {
   const family = getTagFamily(tag);
   const { color, bg } = TAG_FAMILY_COLORS[family];
   const Icon = TAG_ICONS[tag];
@@ -163,42 +172,48 @@ export function TagChip({ tag, gameId, count, onHover }: TagChipProps) {
     if (closeTimeout.current) clearTimeout(closeTimeout.current);
   };
 
+  const chip = (
+    <span
+      className={cn(
+        // text-xs (one level below the severity badges) is an intentional
+        // deviation from the CLAUDE.md text-sm floor, per explicit request to
+        // make the tag chips a bit smaller than the M/B/I count badges.
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 cursor-pointer text-xs font-bold transition-all hover:brightness-110 hover:-translate-y-px',
+        isActive && ACTIVE_FILTER_RING_CLASS,
+      )}
+      style={{
+        color,
+        backgroundColor: bg,
+        borderColor: color,
+        // Ring color matches the family color for D-05 active-filter emphasis.
+        ...(isActive ? { '--tw-ring-color': color } as React.CSSProperties : {}),
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Tag: ${tag} — ${TAG_DEFINITIONS[tag]}`}
+      data-testid={`chip-${tag}-${gameId}`}
+      onMouseEnter={() => {
+        if (definition) scheduleOpen();
+        onHover?.(true);
+      }}
+      onMouseLeave={() => {
+        if (definition) scheduleClose();
+        onHover?.(false);
+      }}
+    >
+      {count != null && count > 1 && <span className="font-bold">{count}</span>}
+      <Icon className="h-3 w-3 shrink-0" />
+      {tag}
+    </span>
+  );
+
+  // Games card suppresses the per-chip overlay (definition=false) and shows a
+  // single <TagLegend> below the chip row instead; return the plain chip.
+  if (!definition) return chip;
+
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
-      <PopoverPrimitive.Trigger asChild>
-        <span
-          className={cn(
-            // text-xs (one level below the severity badges) is an intentional
-            // deviation from the CLAUDE.md text-sm floor, per explicit request to
-            // make the tag chips a bit smaller than the M/B/I count badges.
-            'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 cursor-pointer text-xs font-bold transition-all hover:brightness-110 hover:-translate-y-px',
-            isActive && ACTIVE_FILTER_RING_CLASS,
-          )}
-          style={{
-            color,
-            backgroundColor: bg,
-            borderColor: color,
-            // Ring color matches the family color for D-05 active-filter emphasis.
-            ...(isActive ? { '--tw-ring-color': color } as React.CSSProperties : {}),
-          }}
-          role="button"
-          tabIndex={0}
-          aria-label={`Tag: ${tag} — ${TAG_DEFINITIONS[tag]}`}
-          data-testid={`chip-${tag}-${gameId}`}
-          onMouseEnter={() => {
-            scheduleOpen();
-            onHover?.(true);
-          }}
-          onMouseLeave={() => {
-            scheduleClose();
-            onHover?.(false);
-          }}
-        >
-          {count != null && count > 1 && <span className="font-bold">{count}</span>}
-          <Icon className="h-3 w-3 shrink-0" />
-          {tag}
-        </span>
-      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Trigger asChild>{chip}</PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content
           side={popoverSide}
@@ -224,5 +239,47 @@ export function TagChip({ tag, gameId, count, onHover }: TagChipProps) {
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>
+  );
+}
+
+// ─── Tag legend ────────────────────────────────────────────────────────────────
+
+interface TagLegendProps {
+  /** The (unique) tags shown on this card; only these are explained. */
+  tags: FlawTag[];
+  gameId: number;
+}
+
+/**
+ * Single shared "Explanation" line rendered below a card's tag chip row. Replaces
+ * the per-chip hover/tap popovers on the Games card (which covered the eval chart);
+ * one HelpCircle popover lists every tag on this card with its family-colored icon
+ * and definition. Opt-in by click/hover on the icon — no overlay during normal use.
+ */
+export function TagLegend({ tags, gameId }: TagLegendProps) {
+  if (tags.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1 text-sm text-muted-foreground">
+      <span>Explanation</span>
+      <InfoPopover ariaLabel="Tag explanations" testId={`tag-legend-${gameId}`}>
+        <div className="flex flex-col gap-1.5">
+          {tags.map((tag) => {
+            const Icon = TAG_ICONS[tag];
+            const { color } = TAG_FAMILY_COLORS[getTagFamily(tag)];
+            return (
+              <div key={tag} className="flex items-start gap-1.5">
+                <Icon className="mt-0.5 h-3 w-3 shrink-0" style={{ color }} />
+                <span>
+                  <span className="font-bold" style={{ color }}>
+                    {tag}
+                  </span>
+                  : {TAG_DEFINITIONS[tag]}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </InfoPopover>
+    </div>
   );
 }
