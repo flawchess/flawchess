@@ -455,6 +455,7 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
               flawMarkers={game.flaw_markers}
               phaseTransitions={game.phase_transitions}
               moves={game.moves ?? []}
+              flipped={game.user_color === 'black'}
               onHoverPlyChange={setHoverPly}
               highlightedPlies={highlightedPlies}
               outlinedPlies={outlinedPlies}
@@ -499,6 +500,7 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
               flawMarkers={game.flaw_markers}
               phaseTransitions={game.phase_transitions}
               moves={game.moves ?? []}
+              flipped={game.user_color === 'black'}
               onHoverPlyChange={setHoverPly}
               highlightedPlies={highlightedPlies}
               outlinedPlies={outlinedPlies}

@@ -47,6 +47,15 @@ interface EvalChartProps {
   /** Tailwind height class — 'h-24' (desktop default) or 'h-20' (mobile). */
   heightClass?: string;
   /**
+   * Flip the chart vertically (player perspective). The eval series is always
+   * white-perspective, so for a black player "white ahead" would read as the line
+   * going down when they're winning. Setting this reverses the Y axis so the
+   * player's advantage reads as up and their (dark) share fills from the bottom,
+   * matching the flipped miniboard. The tooltip eval number stays white-perspective
+   * (standard chess/engine convention). Pass `user_color === 'black'`.
+   */
+  flipped?: boolean;
+  /**
    * Fired with the exact hovered ply (null on mouse-leave) so the parent card can
    * drive its miniboard to that position. No snapping — the crosshair, tooltip,
    * and board all track the precise hovered ply.
@@ -374,6 +383,7 @@ export function EvalChart({
   phaseTransitions,
   moves,
   heightClass = 'h-24',
+  flipped = false,
   onHoverPlyChange,
   highlightedPlies,
   outlinedPlies,
@@ -527,7 +537,11 @@ export function EvalChart({
           {/* Hidden axes — compact sparkline mode, no ticks or labels. Default
               category axis (point scale) maps first/last ply to the edges. */}
           <XAxis dataKey="ply" hide />
-          <YAxis hide domain={[ES_FLOOR - ES_PAD, ES_CEIL + ES_PAD]} />
+          {/* reversed when the player is black: flips the whole chart along the 50%
+              midline so the player's advantage reads as up and their (dark) share
+              fills from the bottom. Areas, markers, crosshair, and phase lines all
+              follow the reversed scale automatically — no data transform needed. */}
+          <YAxis hide reversed={flipped} domain={[ES_FLOOR - ES_PAD, ES_CEIL + ES_PAD]} />
 
           {/* Eval bar — two solid regions split by the ES line. The black area
               fills from the line up to the top edge (baseValue=ES_CEIL+ES_PAD);
