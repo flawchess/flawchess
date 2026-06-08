@@ -44,15 +44,16 @@ export function FilterActions({
         >
           {resetLabel}
         </Button>
-        <button
+        <Button
           type="button"
+          size="lg"
           className="btn-brand flex-1 min-h-11 sm:min-h-0"
           data-testid={applyTestId}
           aria-label="Apply"
           onClick={onApply}
         >
           Apply
-        </button>
+        </Button>
       </div>
     </div>
   );
