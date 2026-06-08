@@ -191,17 +191,24 @@ def _build_eval_series(
             )
         )
 
-    # Final-ply checkmate: the terminal position is never engine-evaluated (no move
-    # leads out of it), so its es is None and the frontend would trim it. But a
-    # checkmate is decisive on the board — fill its expected score with 1.0/0.0
-    # (white-perspective) so the chart shows the mating ply as a flat 100% / 0% bar.
-    # The mate is detected from the LAST played move's SAN ('#'); the mover's color
-    # (ply parity: even=White) decides the winner. Non-checkmate terminations
-    # (resignation, timeout) leave a non-decisive final position correctly trimmed.
-    if eval_series and eval_series[-1].es is None and len(positions) >= 2:
-        mating_pos = positions[-2]  # position the mating move was played from
-        if mating_pos.move_san is not None and mating_pos.move_san.endswith("#"):
-            eval_series[-1].es = 1.0 if mating_pos.ply % 2 == 0 else 0.0
+    # Checkmate tail: lichess emits no %eval once the game is over, so BOTH the
+    # mating move's resulting position and the terminal position carry no eval —
+    # their es is None, which breaks the chart line at the mate and orphans/trims
+    # the decisive final ply (and an occasional bogus `eval_mate=0` annotation maps
+    # to 0.0 regardless of winner). A checkmate is decisive on the board, so once we
+    # spot the mating move (SAN ends '#'), overwrite es for that ply and every ply
+    # after it with 1.0/0.0 (white-perspective) from the mating side's color (ply
+    # parity: even=White), giving a continuous bar through to the result. Only the
+    # final move can be mate, so there is at most one '#'. Non-checkmate
+    # terminations (resignation, timeout) have no '#' and are left untouched.
+    mate_idx = next(
+        (i for i, pos in enumerate(positions) if (pos.move_san or "").endswith("#")),
+        None,
+    )
+    if mate_idx is not None:
+        decisive_es = 1.0 if positions[mate_idx].ply % 2 == 0 else 0.0
+        for point in eval_series[mate_idx:]:
+            point.es = decisive_es
 
     return (
         eval_series,

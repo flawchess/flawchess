@@ -528,13 +528,16 @@ export function EvalChart({
           <YAxis hide domain={[ES_FLOOR - ES_PAD, ES_CEIL + ES_PAD]} />
 
           {/* Eval bar — two solid regions split by the ES line. The black area
-              fills from the line up to 100% (baseValue=ES_CEIL); the grey area
-              fills from the line down to 0% (baseValue=ES_FLOOR). Grey is drawn
-              last so it carries the ES stroke line. */}
+              fills from the line up to the top edge (baseValue=ES_CEIL+ES_PAD);
+              the grey area fills from the line down to the bottom edge
+              (baseValue=ES_FLOOR-ES_PAD). Extending the baseValues into the
+              ES_PAD headroom keeps both fills full-bleed (so the rounded corners
+              show) while the markers still get ES_PAD of clip-free room at the
+              extremes. Grey is drawn last so it carries the ES stroke line. */}
           <Area
             type="monotone"
             dataKey="es"
-            baseValue={ES_CEIL}
+            baseValue={ES_CEIL + ES_PAD}
             stroke="none"
             fill={EVAL_CHART_AREA_BLACK_AHEAD}
             fillOpacity={1}
@@ -546,7 +549,7 @@ export function EvalChart({
           <Area
             type="monotone"
             dataKey="es"
-            baseValue={ES_FLOOR}
+            baseValue={ES_FLOOR - ES_PAD}
             stroke={EVAL_CHART_LINE}
             strokeWidth={1.5}
             fill={EVAL_CHART_AREA_WHITE_AHEAD}
@@ -557,10 +560,11 @@ export function EvalChart({
             isAnimationActive={false}
           />
 
-          {/* 50% midline — dashed horizontal reference. */}
+          {/* 50% midline — dashed horizontal reference. Uses the phase-line grey
+              so it reads at the same weight as the middlegame/endgame verticals. */}
           <ReferenceLine
             y={ES_MIDLINE}
-            stroke={EVAL_CHART_MIDLINE}
+            stroke={EVAL_CHART_PHASE_LINE}
             strokeWidth={1}
             strokeDasharray="3 3"
             aria-hidden="true"
