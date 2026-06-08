@@ -261,7 +261,7 @@ export function TagLegend({ tags, gameId }: TagLegendProps) {
   return (
     <div className="flex items-center gap-1 text-sm text-muted-foreground">
       <span>Explanation</span>
-      <InfoPopover ariaLabel="Tag explanations" testId={`tag-legend-${gameId}`}>
+      <InfoPopover ariaLabel="Tag explanations" testId={`tag-legend-${gameId}`} side="bottom">
         <div className="flex flex-col gap-1.5">
           {tags.map((tag) => {
             const Icon = TAG_ICONS[tag];
