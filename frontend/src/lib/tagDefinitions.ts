@@ -77,7 +77,7 @@ export const TAG_DEFINITIONS: Record<FlawTag, string> = {
   'miss': 'Your blunder or mistake came immediately after the opponent\'s own mistake or blunder: they handed you something and you missed it on the very next move.',
   'lucky': 'A blunder the opponent failed to punish: their immediate reply was itself a mistake or blunder, so your eval recovered.',
   'reversed': `You turned a winning game into a losing one: your eval before the move was at least ${WIN_EVAL} (clearly winning) and dropped to ${LOSING_EVAL} or below (clearly losing).`,
-  'squandered': `You erased an overwhelming advantage back to roughly even: your eval before the move was at least ${FROM_WIN_EVAL} and dropped to ${SQUANDERED_EXIT_EVAL} or below, but not far enough to be reversed.`,
+  'squandered': `You erased a winning, near-decisive advantage back to roughly even: your eval before the move was at least ${FROM_WIN_EVAL} and dropped to ${SQUANDERED_EXIT_EVAL} or below, but not far enough to be reversed.`,
   'opening': 'The blunder or mistake occurred in the opening phase of the game.',
   'middlegame': 'The blunder or mistake occurred in the middlegame.',
   'endgame': 'The blunder or mistake occurred in the endgame phase of the game.',
