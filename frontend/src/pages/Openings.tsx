@@ -590,8 +590,15 @@ export function OpeningsPage() {
         </div>
       </div>
       <div className="border-t border-border/20" />
-      {/* FilterPanel — reads/writes localFilters (draft). Apply is handled by onApply. */}
-      <FilterPanel filters={localFilters} onChange={setLocalFilters} onApply={handleDesktopFiltersApply} />
+      {/* FilterPanel — reads/writes localFilters (draft). Apply is handled by onApply.
+          'playedAs' is omitted: Openings uses the dedicated white/black color button
+          (no "either" option) above, so the tri-state Played-as belongs to Library only. */}
+      <FilterPanel
+        filters={localFilters}
+        onChange={setLocalFilters}
+        onApply={handleDesktopFiltersApply}
+        visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
+      />
     </div>
   );
 
@@ -1135,11 +1142,13 @@ export function OpeningsPage() {
                   </ToggleGroup>
                 </div>
 
-                {/* Remaining filters (5 fields: timeControl, platform, rated, opponent, recency) */}
+                {/* Remaining filters — 'playedAs' omitted (Openings uses the dedicated
+                    white/black color button above, no "either" option). */}
                 <FilterPanel
                   filters={localFilters}
                   onChange={setLocalFilters}
                   onApply={handleMobileFiltersApply}
+                  visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
                 />
               </div>
             </DrawerContent>
