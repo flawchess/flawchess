@@ -1,12 +1,10 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ExternalLink, SlidersHorizontal, Tags, X } from 'lucide-react';
+import { SlidersHorizontal, Tags, X } from 'lucide-react';
 import { SidebarLayout } from '@/components/layout/SidebarLayout';
 import { Button } from '@/components/ui/button';
 import { LoadError } from '@/components/ui/load-error';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Tooltip } from '@/components/ui/tooltip';
-import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerClose } from '@/components/ui/drawer';
 import {
   DEFAULT_FILTERS,
@@ -17,9 +15,7 @@ import { LibraryFilterPanel } from '@/components/filters/LibraryFilterPanel';
 import { FlawFilterControl } from '@/components/filters/FlawFilterControl';
 import { FilterActions } from '@/components/filters/FilterActions';
 import { usePulseOnChange, ModifiedDot } from '@/components/filters/FilterModifiedDot';
-import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
-import { SeverityBadge } from '@/components/library/SeverityBadge';
-import { TagChip } from '@/components/library/TagChip';
+import { FlawCard } from '@/components/library/FlawCard';
 import { Pagination } from '@/components/results/Pagination';
 import { useFilterStore } from '@/hooks/useFilterStore';
 import {
@@ -28,117 +24,13 @@ import {
 } from '@/hooks/useFlawFilterStore';
 import { useLibraryFlaws } from '@/hooks/useLibrary';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { sanToSquares } from '@/lib/sanToSquares';
-import { flawPlyUrl, supportsPlyDeepLink } from '@/lib/platformLinks';
-import { SEV_BLUNDER } from '@/lib/theme';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
-import type { FlawListItem, FlawTag } from '@/types/library';
+import type { FlawTag } from '@/types/library';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 20;
-const MINI_BOARD_SIZE = 80;
-
-// ─── Flaw Row ─────────────────────────────────────────────────────────────────
-
-/**
- * One row in the flaw list: miniboard + severity badge + tags + game metadata.
- */
-function FlawRow({ flaw }: { flaw: FlawListItem }) {
-  const flipped = flaw.user_color === 'black';
-
-  // Mark the flawed move on the miniboard. `flaw.fen` is the pre-move position as
-  // board_fen() (piece placement only — no side-to-move/castling, per CLAUDE.md).
-  // chess.js needs a full FEN, so augment with the side to move (the flaw is the
-  // user's move → user_color) and unknown castling/en-passant ("-"). Normal moves
-  // resolve to from/to squares; castling/en-passant fall back to null (no arrow).
-  // Blunder-red from theme.ts (never hard-code semantic colors).
-  const sideToMove = flaw.user_color === 'black' ? 'b' : 'w';
-  const moveSquares = flaw.move_san
-    ? sanToSquares(`${flaw.fen} ${sideToMove} - - 0 1`, flaw.move_san)
-    : null;
-
-  // Format date as YYYY-MM-DD
-  const dateLabel = flaw.played_at
-    ? new Date(flaw.played_at).toLocaleDateString('en-CA')
-    : null;
-
-  // Opponent label
-  const opponent = flipped
-    ? (flaw.white_username ?? 'Unknown')
-    : (flaw.black_username ?? 'Unknown');
-
-  // Platform icon + external link to the flaw position, mirroring LibraryGameCard.
-  // Both platforms deep-link to the exact ply — lichess via a #{ply} fragment,
-  // chess.com via the analysis board's ?move= param (see lib/platformLinks.ts).
-  const flawUrl = flawPlyUrl(flaw.platform, flaw.platform_url, flaw.ply, flaw.user_color);
-  const linkTooltip = supportsPlyDeepLink(flaw.platform)
-    ? 'Open at this move on platform'
-    : 'Open game on platform';
-  const platformIconAndLink = (
-    <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-      <PlatformIcon platform={flaw.platform} className="h-4 w-4" />
-      {flawUrl ? (
-        <Tooltip content={linkTooltip}>
-          <a
-            href={flawUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-brand-brown-light hover:text-brand-brown-highlight transition-colors"
-            aria-label={linkTooltip}
-            data-testid={`flaw-card-link-${flaw.game_id}-${flaw.ply}`}
-          >
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </Tooltip>
-      ) : null}
-    </span>
-  );
-
-  return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-3 rounded-lg border border-border/60 bg-card/40">
-      {/* Miniboard */}
-      <LazyMiniBoard
-        fen={flaw.fen}
-        flipped={flipped}
-        size={MINI_BOARD_SIZE}
-        arrows={
-          moveSquares
-            ? [{ from: moveSquares.from, to: moveSquares.to, color: SEV_BLUNDER }]
-            : undefined
-        }
-      />
-
-      {/* Main content */}
-      <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-        {/* Severity badge + tags row */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <SeverityBadge severity={flaw.severity} count={1} gameId={flaw.game_id} />
-          {flaw.tags.map((tag) => (
-            <TagChip key={tag} tag={tag} gameId={flaw.game_id} />
-          ))}
-        </div>
-
-        {/* Move SAN if available */}
-        {flaw.move_san && (
-          <p className="text-sm font-bold text-foreground">
-            Move {Math.ceil(flaw.ply / 2)}: {flaw.move_san}
-          </p>
-        )}
-
-        {/* Game metadata */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-muted-foreground">
-          <span>vs {opponent}</span>
-          {dateLabel && <span>{dateLabel}</span>}
-          {flaw.time_control_bucket && <span>{flaw.time_control_bucket}</span>}
-          <span className="capitalize">{flaw.user_result}</span>
-          {platformIconAndLink}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -412,9 +304,12 @@ export function FlawsTab() {
           )}
 
           {matchedCount > 0 && (
-            <div className="flex flex-col gap-3">
+            <div
+              className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
+              data-testid="flaw-grid"
+            >
               {flaws.map((flaw) => (
-                <FlawRow key={`${flaw.game_id}-${flaw.ply}`} flaw={flaw} />
+                <FlawCard key={`${flaw.game_id}-${flaw.ply}`} flaw={flaw} />
               ))}
             </div>
           )}

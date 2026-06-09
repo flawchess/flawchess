@@ -28,6 +28,13 @@ import type { UserResult } from '@/types/api';
 
 interface LibraryGameCardProps {
   game: GameFlawCard;
+  /**
+   * When the card is opened from the Flaws subtab, the ply of the clicked flaw. Its
+   * eval-chart marker gets a "ping" ring so the eye lands on it on open. The pulse
+   * yields to the hover-driven highlight systems the first time the user hovers a
+   * tag/severity or scrubs the chart (see `yieldFocus`). Omitted on the Games subtab.
+   */
+  focusPly?: number | null;
 }
 
 const MOBILE_BOARD_SIZE = 130;
@@ -146,11 +153,19 @@ function formatTimeControl(tcStr: string): string {
  * rendered as React children or href (auto-escaped). platform_url uses
  * target="_blank" rel="noopener noreferrer" to prevent reverse-tabnabbing (T-107-10).
  */
-export function LibraryGameCard({ game }: LibraryGameCardProps) {
+export function LibraryGameCard({ game, focusPly }: LibraryGameCardProps) {
   // Live miniboard: hovering the eval chart sets the ply; the board scrubs to
   // that position and (on M/B plies) marks the moved piece. At rest the board
   // shows result_fen, as before.
   const [hoverPly, setHoverPly] = useState<number | null>(null);
+
+  // Clicked-flaw focus pulse (Flaws subtab). Seeded from the prop at mount (the
+  // card only mounts once the game has loaded). It is an attention cue, not a
+  // persistent mode: it yields the first time the user reaches for the hover-driven
+  // highlight tools — hovering a tag/severity or scrubbing the chart — so the focus
+  // pulse and the enlarge/dim highlight are never on screen at the same time.
+  const [focusedPly, setFocusedPly] = useState<number | null>(focusPly ?? null);
+  const yieldFocus = () => setFocusedPly(null);
   const perPly = useMemo(() => buildPerPly(game.moves), [game.moves]);
   const mbByPly = useMemo(() => {
     const m = new Map<number, 'mistake' | 'blunder'>();
@@ -179,6 +194,18 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
   const [highlight, setHighlight] = useState<
     { kind: 'tag'; tag: FlawTag } | { kind: 'severity'; severity: FlawSeverity } | null
   >(null);
+  // Hovering a tag/severity (non-null highlight) or scrubbing the chart is the user
+  // reaching for the category-highlight tools, so the focus pulse steps aside.
+  const setHighlightYieldingFocus = (
+    next: { kind: 'tag'; tag: FlawTag } | { kind: 'severity'; severity: FlawSeverity } | null,
+  ) => {
+    if (next) yieldFocus();
+    setHighlight(next);
+  };
+  const handleHoverPlyChange = (ply: number | null) => {
+    if (ply != null) yieldFocus();
+    setHoverPly(ply);
+  };
   const highlightedPlies = useMemo(() => {
     if (!highlight) return null;
     const set = new Set<number>();
@@ -314,7 +341,14 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
     <span className="inline-flex items-center gap-1">
       <Clock className="h-3.5 w-3.5" />
       <span className="capitalize">{game.time_control_bucket}</span>
-      {game.time_control_str ? ` · ${formatTimeControl(game.time_control_str)}` : ''}
+      {game.time_control_str ? ` ${formatTimeControl(game.time_control_str)}` : ''}
+    </span>
+  );
+
+  const moveCountItem = game.move_count !== null && (
+    <span className="inline-flex items-center gap-1">
+      <Hash className="h-3.5 w-3.5" />
+      {game.move_count} Moves
     </span>
   );
 
@@ -325,27 +359,21 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
     </span>
   );
 
-  // Mobile: vertical stack; move count omitted (matching GameCard mobile behavior).
-  const mobileMetadata = (
+  // Shared game-info block (same order on every game card):
+  //   line 1: "<TC name> <base>[+inc]" • "# n Moves" — the two parts wrap at the
+  //           bullet when the column is too narrow for one line.
+  //   line 2: date
+  //   line 3: termination (result chip + reason)
+  const metadata = (
     <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+      {/* TC + move count share a line, separated by a gap; they wrap onto
+          separate lines (no dangling separator) when the column is too narrow. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+        {timeControlItem}
+        {moveCountItem}
+      </div>
       {dateItem}
-      {timeControlItem}
       {terminationItem}
-    </div>
-  );
-
-  // Desktop: wrap row; order: termination · date · tc · move count.
-  const desktopMetadata = (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-      {terminationItem}
-      {dateItem}
-      {timeControlItem}
-      {game.move_count !== null && (
-        <span className="inline-flex items-center gap-1">
-          <Hash className="h-3.5 w-3.5" />
-          {game.move_count} moves
-        </span>
-      )}
     </div>
   );
 
@@ -354,8 +382,8 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
   const flawContent =
     game.analysis_state === 'analyzed' ? (
       <>
-        {/* Severity count row — flex-wrap so the longer "Inaccuracies" label wraps
-            gracefully inside the 1/3-width desktop column instead of overflowing. */}
+        {/* Severity count row — flex-wrap so the badges wrap gracefully inside the
+            1/3-width desktop column instead of overflowing. */}
         <div
           className="flex items-center gap-1.5 flex-wrap"
           data-testid={`severity-row-${game.game_id}`}
@@ -374,31 +402,29 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
                 count={count}
                 gameId={game.game_id}
                 onHover={(active) =>
-                  setHighlight(active ? { kind: 'severity', severity: sev } : null)
+                  setHighlightYieldingFocus(active ? { kind: 'severity', severity: sev } : null)
                 }
               />
             );
           })}
         </div>
         {/* Tag chip row — flex-wrap allowed. Definitions live in the single
-            <TagLegend> "Explanation" popover below, not per-chip overlays, so the
-            eval chart is never covered (definition={false}). Hover still highlights
-            the chart markers via onHover. */}
+            <TagLegend> "Tags" popover, rendered inline after the last chip (not on a
+            separate line), not per-chip overlays, so the eval chart is never covered
+            (definition={false}). Hover still highlights the chart markers via onHover. */}
         {game.chips.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <div className="flex flex-wrap gap-1.5">
-              {game.chips.map((tag) => (
-                <TagChip
-                  key={tag}
-                  tag={tag}
-                  gameId={game.game_id}
-                  count={tagCounts.get(tag)}
-                  definition={false}
-                  onHover={(active) => setHighlight(active ? { kind: 'tag', tag } : null)}
-                />
-              ))}
-            </div>
-            <TagLegend tags={game.chips} gameId={game.game_id} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            {game.chips.map((tag) => (
+              <TagChip
+                key={tag}
+                tag={tag}
+                gameId={game.game_id}
+                count={tagCounts.get(tag)}
+                definition={false}
+                onHover={(active) => setHighlightYieldingFocus(active ? { kind: 'tag', tag } : null)}
+              />
+            ))}
+            <TagLegend tags={game.chips} gameId={game.game_id} label="Tags" />
           </div>
         )}
       </>
@@ -437,7 +463,7 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
           )}
           <div className="flex-1 min-w-0 flex flex-col gap-1">
             {openingLine}
-            {mobileMetadata}
+            {metadata}
           </div>
         </div>
         {/* Eval chart — full-width, analyzed games only (mobile parity with desktop col 2) */}
@@ -452,9 +478,10 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
               phaseTransitions={game.phase_transitions}
               moves={game.moves ?? []}
               flipped={game.user_color === 'black'}
-              onHoverPlyChange={setHoverPly}
+              onHoverPlyChange={handleHoverPlyChange}
               highlightedPlies={highlightedPlies}
               outlinedPlies={outlinedPlies}
+              focusedPly={focusedPly}
               // Match the miniboard height (MOBILE_BOARD_SIZE = 130px). Literal
               // arbitrary value so Tailwind's JIT scanner emits the class.
               heightClass="h-[130px]"
@@ -483,7 +510,7 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
           )}
           <div className="min-w-0 flex-1 flex flex-col gap-2">
             {openingLine}
-            {desktopMetadata}
+            {metadata}
           </div>
         </div>
         {/* Col 2: eval chart (analyzed) or NoAnalysisState pill */}
@@ -499,9 +526,10 @@ export function LibraryGameCard({ game }: LibraryGameCardProps) {
               phaseTransitions={game.phase_transitions}
               moves={game.moves ?? []}
               flipped={game.user_color === 'black'}
-              onHoverPlyChange={setHoverPly}
+              onHoverPlyChange={handleHoverPlyChange}
               highlightedPlies={highlightedPlies}
               outlinedPlies={outlinedPlies}
+              focusedPly={focusedPly}
               // Match the miniboard height (DESKTOP_BOARD_SIZE = 132px). Literal
               // arbitrary value so Tailwind's JIT scanner emits the class.
               heightClass="h-[132px]"

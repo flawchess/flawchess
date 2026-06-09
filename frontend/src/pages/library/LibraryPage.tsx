@@ -1,5 +1,5 @@
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { BarChart2, BookOpen, DownloadIcon, AlertTriangle } from 'lucide-react';
+import { BarChart2, Swords, DownloadIcon, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { ImportTab } from '@/pages/library/ImportTab';
@@ -62,7 +62,7 @@ export function LibraryPage({
                 Import
               </TabsTrigger>
               <TabsTrigger value="games" data-testid="tab-games" className="flex-1">
-                <BookOpen className="mr-1.5 h-4 w-4" />
+                <Swords className="mr-1.5 h-4 w-4" />
                 Games
               </TabsTrigger>
               <TabsTrigger value="flaws" data-testid="tab-flaws" className="flex-1">
@@ -124,7 +124,7 @@ export function LibraryPage({
                   className="flex-1"
                   data-testid="tab-games-mobile"
                 >
-                  <BookOpen className="h-4 w-4" />
+                  <Swords className="h-4 w-4" />
                   Games
                 </TabsTrigger>
                 <TabsTrigger

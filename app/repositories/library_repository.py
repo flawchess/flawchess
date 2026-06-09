@@ -19,6 +19,7 @@ from typing import Literal
 
 from sqlalchemy import Float, Select, Subquery, case, exists, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.game import Game
@@ -207,6 +208,12 @@ async def query_flaws(
 ) -> tuple[list[FlawListItem], int]:
     """Paginated SELECT f.* FROM game_flaws JOIN games for the Flaws subtab (Plan 108-05).
 
+    Phase 112 (D-05/D-08): extended with two aliased game_positions outer-joins to
+    source move_san, eval_cp/eval_mate before and after the flaw:
+      - PositionAt  (alias for ply=N): move_san + eval-after fields
+      - PositionBefore (alias for ply=N-1): eval-before fields
+    LEFT JOIN ensures no crash when ply=0/1 has no prior position.
+
     Reuses build_flaw_filter_clauses (shared with the Games EXISTS filter) so
     cross-tab filter unification is enforced in code (SEED-038).
 
@@ -229,10 +236,29 @@ async def query_flaws(
     """
     flaw_clauses = build_flaw_filter_clauses(severity, tags)
 
-    # Base: game_flaws JOIN games scoped to this user + flaw filter
+    # Two aliases for game_positions (Phase 112, D-08):
+    # PositionAt:     ply=N  → move_san + eval-after (same row as the flawed move)
+    # PositionBefore: ply=N-1 → eval-before (position BEFORE the flawed move)
+    # User-scoped on both joins (T-112-02: no cross-user position rows can attach).
+    PositionAt = aliased(GamePosition, name="pos_at")  # noqa: N806
+    PositionBefore = aliased(GamePosition, name="pos_before")  # noqa: N806
+
+    # Base: game_flaws JOIN games + two LEFT JOINs on game_positions scoped to user
     base_stmt = (
-        select(GameFlaw, Game)
+        select(GameFlaw, Game, PositionAt, PositionBefore)
         .join(Game, Game.id == GameFlaw.game_id)
+        .outerjoin(
+            PositionAt,
+            (PositionAt.game_id == GameFlaw.game_id)
+            & (PositionAt.user_id == GameFlaw.user_id)
+            & (PositionAt.ply == GameFlaw.ply),
+        )
+        .outerjoin(
+            PositionBefore,
+            (PositionBefore.game_id == GameFlaw.game_id)
+            & (PositionBefore.user_id == GameFlaw.user_id)
+            & (PositionBefore.ply == GameFlaw.ply - 1),
+        )
         .where(
             GameFlaw.user_id == user_id,
             *flaw_clauses,
@@ -242,6 +268,7 @@ async def query_flaws(
     # Apply game-metadata filters (time_control, platform, etc.) via shared util.
     # apply_game_filters adds conditions to a Select[T]; we feed it a select on Game
     # then apply its conditions to base_stmt via a subquery approach.
+    # apply_game_filters filters only Game columns — no conflict with GamePosition aliases.
     game_filter_stmt: Select[tuple[int]] = select(Game.id).where(Game.user_id == user_id)
     game_filter_stmt = apply_game_filters(
         game_filter_stmt,
@@ -276,21 +303,28 @@ async def query_flaws(
             game_id=flaw.game_id,
             ply=flaw.ply,
             fen=flaw.fen,
-            move_san=flaw.move_san,
+            move_san=pos_at.move_san if pos_at else None,
             severity=_SEVERITY_INT_TO_TAG[flaw.severity],
             tags=_reconstruct_tags(flaw),
-            es_before=flaw.es_before,
-            es_after=flaw.es_after,
+            eval_cp_before=pos_before.eval_cp if pos_before else None,
+            eval_mate_before=pos_before.eval_mate if pos_before else None,
+            eval_cp_after=pos_at.eval_cp if pos_at else None,
+            eval_mate_after=pos_at.eval_mate if pos_at else None,
+            white_rating=game.white_rating,
+            black_rating=game.black_rating,
             user_result=derive_user_result(game.result, game.user_color),
             played_at=game.played_at,
             time_control_bucket=game.time_control_bucket,
+            time_control_str=game.time_control_str,
+            move_count=game.move_count,
+            termination=game.termination,
             platform=game.platform,
             platform_url=game.platform_url,
             white_username=game.white_username,
             black_username=game.black_username,
             user_color=game.user_color,
         )
-        for flaw, game in rows
+        for flaw, game, pos_at, pos_before in rows
     ]
     return items, matched_count
 

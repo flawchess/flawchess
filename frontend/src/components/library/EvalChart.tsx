@@ -76,6 +76,15 @@ interface EvalChartProps {
    * Independent of highlightedPlies — both can apply at once.
    */
   outlinedPlies?: ReadonlySet<number> | null;
+  /**
+   * The single ply the card was opened to focus (the flaw clicked in the Flaws
+   * subtab). Its marker gets an expanding "ping" ring in its severity color so the
+   * eye lands on it the moment the modal opens. Purely additive — it does NOT dim
+   * or enlarge anything, so it never competes with `highlightedPlies`. The parent
+   * clears it (passes null) the first time the user hovers a tag/severity or scrubs
+   * the chart, handing the chart back to the hover-driven highlight systems.
+   */
+  focusedPly?: number | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -187,6 +196,48 @@ const SQUARE_HALF_SIDE_FACTOR = 0.85;
 /** White-outline stroke width for filter-matched flaw markers. */
 const FLAW_MARKER_OUTLINE_WIDTH = 1.5;
 
+/** Focus "ping" ring: expands from the dot radius to this radius while fading out. */
+const FOCUS_PULSE_MAX_RADIUS = 13;
+/** Focus-ping stroke width and one-cycle duration (SVG SMIL). */
+const FOCUS_PULSE_STROKE_WIDTH = 2;
+const FOCUS_PULSE_DURATION = '1.4s';
+
+/**
+ * Expanding-and-fading "ping" ring behind the focused flaw's marker — the same
+ * attention affordance the app uses elsewhere (Tailwind `animate-ping`), expressed
+ * as SVG SMIL since this lives inside the recharts surface. Drawn in the marker's
+ * severity color. Self-contained (no extra deps) and additive: it sits behind the
+ * normal dot and changes nothing about how the dot itself renders, so the hover
+ * enlarge/dim and the filter outline are entirely unaffected.
+ */
+function focusPulseElement(color: string, cx: number, cy: number, key: string): React.ReactElement {
+  return (
+    <circle
+      key={key}
+      cx={cx}
+      cy={cy}
+      r={FLAW_DOT_RADIUS}
+      fill="none"
+      stroke={color}
+      strokeWidth={FOCUS_PULSE_STROKE_WIDTH}
+      aria-hidden="true"
+    >
+      <animate
+        attributeName="r"
+        values={`${FLAW_DOT_RADIUS};${FOCUS_PULSE_MAX_RADIUS}`}
+        dur={FOCUS_PULSE_DURATION}
+        repeatCount="indefinite"
+      />
+      <animate
+        attributeName="opacity"
+        values="0.9;0"
+        dur={FOCUS_PULSE_DURATION}
+        repeatCount="indefinite"
+      />
+    </circle>
+  );
+}
+
 /**
  * The flaw-marker glyph: filled circle for the player (is_user), hollow square
  * for the opponent — color = severity (D-07). Shared by the chart dot renderer
@@ -250,6 +301,7 @@ function buildDotRenderer(
   markerMap: Map<number, FlawMarker>,
   highlightedPlies?: ReadonlySet<number> | null,
   outlinedPlies?: ReadonlySet<number> | null,
+  focusedPly?: number | null,
 ) {
   // An empty set is treated as no-op so a tag/badge with no user markers never
   // dims the whole chart.
@@ -269,8 +321,10 @@ function buildDotRenderer(
       return <g key={`nodot-${payload.ply}`} />;
     }
     const matched = highlightActive && highlightedPlies!.has(payload.ply);
-    // Inaccuracies stay hidden unless explicitly highlighted (their badge hover).
-    if (marker.severity === 'inaccuracy' && !matched) {
+    const focused = focusedPly != null && payload.ply === focusedPly;
+    // Inaccuracies stay hidden unless explicitly highlighted (their badge hover) or
+    // the card was opened focused on them (defensive — Flaws subtab is M/B only).
+    if (marker.severity === 'inaccuracy' && !matched && !focused) {
       return <g key={`nodot-${payload.ply}`} />;
     }
     const color = severityColor(marker.severity);
@@ -280,7 +334,7 @@ function buildDotRenderer(
     const radius = enlarge ? FLAW_DOT_RADIUS * HIGHLIGHT_RADIUS_FACTOR : FLAW_DOT_RADIUS;
     const opacity = !highlightActive || matched ? 1 : DIMMED_MARKER_OPACITY;
     const outline = outlinedPlies != null && outlinedPlies.has(payload.ply);
-    return flawDotElement(
+    const dot = flawDotElement(
       marker.is_user,
       color,
       cx,
@@ -289,6 +343,15 @@ function buildDotRenderer(
       `dot-${payload.ply}`,
       opacity,
       outline,
+    );
+    // Focus ping: a separate, additive channel. Group the ping ring behind the
+    // (untouched) dot so the dot keeps its normal hover/filter rendering.
+    if (!focused) return dot;
+    return (
+      <g key={`focus-${payload.ply}`}>
+        {focusPulseElement(color, cx, cy, `pulse-${payload.ply}`)}
+        {dot}
+      </g>
     );
   };
 }
@@ -432,6 +495,7 @@ export function EvalChart({
   onHoverPlyChange,
   highlightedPlies,
   outlinedPlies,
+  focusedPly,
 }: EvalChartProps) {
   // evalByPly resolves a ply to its eval string for the tooltip.
   const mbMarkers = flawMarkers.filter((m) => m.severity !== 'inaccuracy');
@@ -442,7 +506,7 @@ export function EvalChart({
   // dots when the Inaccuracies badge is hovered; it hides them otherwise.
   const markerMap = new Map(mbMarkers.map((m) => [m.ply, m]));
   const allMarkerMap = new Map(flawMarkers.map((m) => [m.ply, m]));
-  const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies);
+  const dotRenderer = buildDotRenderer(allMarkerMap, highlightedPlies, outlinedPlies, focusedPly);
   const tooltipContent = buildTooltipContent(moves, markerMap, evalByPly);
 
   // Chart data trimmed to the eval'd ply range so the fill spans the full width

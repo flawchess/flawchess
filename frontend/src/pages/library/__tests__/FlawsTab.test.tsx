@@ -43,11 +43,13 @@ vi.mock('@/components/layout/SidebarLayout', () => ({
   ),
 }));
 
-// Stub TagChip to avoid Popover/portal issues in jsdom
+// Stub TagChip and TagLegend to avoid Popover/portal issues in jsdom.
+// TagLegend is also used by FlawCard (rendered via the grid in this tab).
 vi.mock('@/components/library/TagChip', () => ({
   TagChip: ({ tag }: { tag: string }) => (
     <span data-testid={`stub-tag-chip-${tag}`}>{tag}</span>
   ),
+  TagLegend: () => null,
 }));
 
 // Stub LibraryFilterPanel to avoid window.matchMedia (FilterPanel) in jsdom.
@@ -73,11 +75,18 @@ type MockFlawsResult = {
       move_san: string | null;
       severity: 'mistake' | 'blunder';
       tags: string[];
-      es_before: number;
-      es_after: number;
+      eval_cp_before: number | null;
+      eval_mate_before: number | null;
+      eval_cp_after: number | null;
+      eval_mate_after: number | null;
+      white_rating: number | null;
+      black_rating: number | null;
       user_result: 'win' | 'draw' | 'loss';
       played_at: string | null;
       time_control_bucket: string | null;
+      time_control_str: string | null;
+      move_count: number | null;
+      termination: string | null;
       platform: string;
       platform_url: string | null;
       white_username: string | null;
@@ -102,6 +111,8 @@ vi.mock('@/hooks/useLibrary', () => ({
   useLibraryFlaws: () => mockFlawsResult,
   useLibraryGames: () => ({ data: undefined, isLoading: false, isError: false }),
   useLibraryFlawStats: () => ({ data: undefined, isLoading: false, isError: false }),
+  // useLibraryGame is called by FlawCard (rendered inside the grid); disabled by default
+  useLibraryGame: () => ({ data: undefined, isLoading: false, isError: false }),
 }));
 
 // ── useFlawFilterStore mock — allows per-test state control ───────────────────
@@ -217,11 +228,18 @@ describe('FlawsTab', () => {
               move_san: 'Nxd4',
               severity: 'blunder',
               tags: ['reversed'],
-              es_before: 0.72,
-              es_after: 0.28,
+              eval_cp_before: 150,
+              eval_mate_before: null,
+              eval_cp_after: -80,
+              eval_mate_after: null,
+              white_rating: null,
+              black_rating: null,
               user_result: 'loss',
               played_at: '2026-05-01T10:00:00Z',
               time_control_bucket: 'blitz',
+              time_control_str: '300+0',
+              move_count: 41,
+              termination: 'resignation',
               platform: 'lichess',
               platform_url: 'https://lichess.org/abcd1234',
               white_username: 'opponent',
@@ -235,11 +253,18 @@ describe('FlawsTab', () => {
               move_san: 'Nd4',
               severity: 'mistake',
               tags: ['miss'],
-              es_before: 0.55,
-              es_after: 0.45,
+              eval_cp_before: 30,
+              eval_mate_before: null,
+              eval_cp_after: -20,
+              eval_mate_after: null,
+              white_rating: null,
+              black_rating: null,
               user_result: 'draw',
               played_at: '2026-05-02T12:00:00Z',
               time_control_bucket: 'rapid',
+              time_control_str: '600+5',
+              move_count: 58,
+              termination: 'timeout',
               platform: 'chess.com',
               platform_url: null,
               white_username: 'testuser',
@@ -281,11 +306,18 @@ describe('FlawsTab', () => {
               move_san: 'Nxd4',
               severity: 'blunder',
               tags: ['reversed'],
-              es_before: 0.72,
-              es_after: 0.28,
+              eval_cp_before: 150,
+              eval_mate_before: null,
+              eval_cp_after: -80,
+              eval_mate_after: null,
+              white_rating: null,
+              black_rating: null,
               user_result: 'loss',
               played_at: '2026-05-01T10:00:00Z',
               time_control_bucket: 'blitz',
+              time_control_str: '300+0',
+              move_count: 41,
+              termination: 'resignation',
               platform: 'lichess',
               platform_url: 'https://lichess.org/abcd1234',
               white_username: 'opponent',
@@ -299,11 +331,18 @@ describe('FlawsTab', () => {
               move_san: 'Nd4',
               severity: 'mistake',
               tags: ['miss'],
-              es_before: 0.55,
-              es_after: 0.45,
+              eval_cp_before: 30,
+              eval_mate_before: null,
+              eval_cp_after: -20,
+              eval_mate_after: null,
+              white_rating: null,
+              black_rating: null,
               user_result: 'draw',
               played_at: '2026-05-02T12:00:00Z',
               time_control_bucket: 'rapid',
+              time_control_str: '600+5',
+              move_count: 58,
+              termination: 'timeout',
               platform: 'chess.com',
               platform_url: 'https://www.chess.com/game/live/999',
               white_username: 'testuser',
@@ -324,12 +363,13 @@ describe('FlawsTab', () => {
       // Links land on the blunder (position AFTER the flawed move), so a flaw at
       // 0-indexed ply N maps to N + 1 half-moves.
       // Lichess flaw (game 1, ply 24, user played black) → black POV at #25.
-      const lichessLinks = screen.getAllByTestId('flaw-card-link-1-24');
+      // testid updated: FlawCard uses flaw-card-platform-link-{id}-{ply} (was flaw-card-link-*)
+      const lichessLinks = screen.getAllByTestId('flaw-card-platform-link-1-24');
       expect(lichessLinks.length).toBeGreaterThanOrEqual(1);
       expect(lichessLinks[0]?.getAttribute('href')).toBe('https://lichess.org/abcd1234/black#25');
 
       // chess.com flaw (game 2, ply 32, user played white) → analysis board move=33.
-      const chessComLinks = screen.getAllByTestId('flaw-card-link-2-32');
+      const chessComLinks = screen.getAllByTestId('flaw-card-platform-link-2-32');
       expect(chessComLinks.length).toBeGreaterThanOrEqual(1);
       expect(chessComLinks[0]?.getAttribute('href')).toBe(
         'https://www.chess.com/analysis/game/live/999?tab=details-tab&move=33',

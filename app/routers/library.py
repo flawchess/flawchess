@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.models.user import User
-from app.schemas.library import FlawStatsResponse, LibraryFlawsResponse, LibraryGamesResponse
+from app.schemas.library import (
+    FlawStatsResponse,
+    GameFlawCard,
+    LibraryFlawsResponse,
+    LibraryGamesResponse,
+)
 from app.services import library_service
 from app.users import current_active_user
 
@@ -98,6 +103,25 @@ async def get_library_games(
     )
 
 
+@router.get("/games/{game_id}", response_model=GameFlawCard)
+async def get_library_game(
+    game_id: int,
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+    user: Annotated[User, Depends(current_active_user)],
+) -> GameFlawCard:
+    """Return a single GameFlawCard for the authenticated user's game (SC-7).
+
+    IDOR guard (T-112-01): returns 404 when the game does not exist OR when
+    the game belongs to a different user. Returns 404 (not 403) to avoid
+    confirming whether the id exists for the requester. game_id is typed int
+    so FastAPI rejects non-integer values with 422 (T-112-05).
+    """
+    card = await library_service.get_library_game(session, user_id=user.id, game_id=game_id)
+    if card is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+    return card
+
+
 @router.get("/flaw-stats", response_model=FlawStatsResponse)
 async def get_flaw_stats(
     session: Annotated[AsyncSession, Depends(get_async_session)],
@@ -161,8 +185,10 @@ async def get_library_flaws(
 
     One row per flawed position from game_flaws, ordered recent-first
     (g.played_at DESC, f.ply ASC — D-07), with each row carrying the full
-    miniboard display payload (fen, move_san, severity, tags, es_before/after)
-    and game metadata (opponent, date, result).
+    miniboard display payload (fen, move_san from game_positions join, severity,
+    tags, before/after eval from game_positions) and game metadata (opponent,
+    ratings, date, result). Phase 112 (D-05/D-07/D-08): es_before/es_after dropped;
+    raw eval + ratings added.
 
     Severity defaults to M+B when omitted (D-08); game_flaws stores M+B only
     (D-03). Phase tags (opening/middlegame/endgame) in `tag` are rejected with

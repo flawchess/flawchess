@@ -13,7 +13,7 @@ import type {
   BookmarkPhaseEntryResponse,
 } from '@/types/stats';
 import type { EndgameGamesResponse, EndgameOverviewResponse } from '@/types/endgames';
-import type { LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse } from '@/types/library';
+import type { GameFlawCard, LibraryGamesResponse, FlawStatsResponse, LibraryFlawsResponse } from '@/types/library';
 import type { OpponentStrengthRange } from '@/types/api';
 import { rangeToQueryParams } from '@/lib/opponentStrength';
 
@@ -289,4 +289,7 @@ export const libraryApi = {
         limit: params.limit ?? 20,
       },
     }).then(r => r.data),
+
+  getGame: (gameId: number) =>
+    apiClient.get<GameFlawCard>(`/library/games/${gameId}`).then(r => r.data),
 };

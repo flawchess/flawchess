@@ -1,8 +1,8 @@
 ---
 title: Flaw attribution-tag definitions (tooltip-ready)
-date: 2026-06-08
+date: 2026-06-08 (impact thresholds recalibrated 2026-06-09)
 context: precise, tooltip-usable definitions for every severity tier + attribution tag.
-source: app/services/flaws_service.py (all thresholds verified against source)
+source: app/services/flaws_service.py. Severity/tempo/opportunity/phase thresholds verified against source. Impact thresholds (`reversed`/`squandered`) recalibrated to round-eval anchors on 2026-06-09 (see Impact section); the flaws_service.py constant + test + tooltip update is a pending /gsd-quick, so code still holds the prior values (70/30, 85/60) until it lands.
 related: flaw-tag-naming.md (the authoritative naming taxonomy this builds on)
 ---
 
@@ -20,9 +20,10 @@ sigmoid in `eval_utils.py`. "Expected Score drop" = Expected Score before the mo
 Expected Score after, measured in percentage points.
 
 The sigmoid is flatter than gut feel, so the corresponding engine evals look large.
-Rough map on the absolute scale: Expected Score 50% ≈ 0.00, 60% ≈ +1.1, 70% ≈ +2.3,
-85% ≈ +4.7 (symmetric below 50%). Eval equivalents below are approximate and given so
-players can think in Stockfish terms.
+Rough map on the absolute scale: Expected Score 50% ≈ 0.0, 59% ≈ +1.0, 68% ≈ +2.0,
+75% ≈ +3.0, 85% ≈ +4.7 (symmetric below 50%). The impact thresholds are deliberately
+anchored to round Stockfish evals (±1.0 / ±2.0 / +3.0). Eval equivalents below are
+approximate and given so players can think in Stockfish terms.
 
 ## Severity
 
@@ -73,13 +74,29 @@ move, never on how the game actually ended. Both tags are *swings* defined by wh
 started and where you landed.
 
 Impact tags are highlight markers for *dramatic* swings, not an exhaustive label of every
-flaw. A clear-but-not-overwhelming advantage that drops only to slightly worse (e.g. 78%
-→ 45%) carries no impact tag; its size is already captured by severity (`blunder`).
+flaw. A clearly-winning-but-not-near-decisive advantage that drops only to slightly worse
+(e.g. 70% → 45%) carries no impact tag; its size is already captured by severity
+(`blunder`).
+
+By construction every `squandered` (and every `reversed`) is also at least a `blunder`:
+the smallest qualifying squandered swing is 75% → 59%, a 16-point drop, just past the
+15-point blunder floor. Impact tags never fire on a sub-blunder move.
+
+**Recalibrated 2026-06-09 (pending implementation).** The impact thresholds were loosened
+from their original values (`reversed` 70/30, `squandered` 85/60) to round-eval anchors
+(`reversed` 68/32 ≈ ±2.0, `squandered` 75/59 ≈ +3.0/+1.0). Rationale: the planned
+[[SEED-040-flaw-stats-opponent-comparison]] you-vs-opponent surface computes
+`reversed`/`squandered` as a **Wilson difference-of-proportions** with a benchmark IQR
+zone, which needs a denser event count than a single population baseline. Benchmark-DB
+measurement: the change ~3× the squandered rate (per-user share with ≥10 instances
+34% → 68%) while keeping `reversed` roughly flat (+21%, already healthy) — the
+`squandered` *entry* is the load-bearing lever. Tags stay meaningful (still a
+blunder-sized throw of a winning game), but "overwhelming" becomes "winning, near-decisive."
 
 | Family | Name            | Definition |
 |--------|-----------------|------------|
-| Impact | `reversed`      | You turned a winning game into a losing one: your Expected Score before the move was at least 70% (clearly winning, eval roughly +2.3 or better) and dropped to 30% or below (clearly losing, roughly −2.3). |
-| Impact | `squandered`    | You erased an overwhelming advantage back to roughly even: your Expected Score before the move was at least 85% (eval roughly +4.7 or better) and dropped to 60% or below, but not far enough to be `reversed`. |
+| Impact | `reversed`      | You turned a winning game into a losing one: your Expected Score before the move was at least 68% (clearly winning, eval roughly +2.0 or better) and dropped to 32% or below (clearly losing, roughly −2.0). |
+| Impact | `squandered`    | You erased a winning, near-decisive advantage back to roughly even: your Expected Score before the move was at least 75% (eval roughly +3.0 or better) and dropped to 59% or below, but not far enough to be `reversed`. |
 
 ## Phase — where in the game it happened
 
@@ -94,10 +111,11 @@ middlegame when the phase is unknown).
 
 ## Threshold reference (source of truth)
 
-All values are from `app/services/flaws_service.py`. Expected-Score and clock-fraction
-values are shown as percentages to match the rest of the doc; the Python constants store
-them as `0–1` fractions (e.g. 85% → `0.85`). The `*_ABS_SECONDS` values are literal
-seconds.
+All values are from `app/services/flaws_service.py`, except the impact rows marked `*`,
+which are the recalibrated 2026-06-09 targets pending implementation (the code still holds
+the prior values). Expected-Score and clock-fraction values are shown as percentages to
+match the rest of the doc; the Python constants store them as `0–1` fractions (e.g.
+85% → `0.85`). The `*_ABS_SECONDS` values are literal seconds.
 
 | Constant | Value | Drives |
 |----------|-------|--------|
@@ -108,10 +126,16 @@ seconds.
 | `TIME_PRESSURE_CLOCK_ABS_SECONDS` | 30s | `low-clock` (fallback) |
 | `HASTY_MOVE_FRACTION` | 1% | `hasty` (relative) |
 | `HASTY_MOVE_ABS_SECONDS` | 5s | `hasty` (fallback) |
-| `WINNING_LINE_ES` | 70% | `reversed` entry (clearly winning before) |
-| `LOSING_LINE_ES` | 30% | `reversed` exit (clearly losing after) |
-| `FROM_WINNING_ES` | 85% | `squandered` entry (overwhelming advantage before) |
-| `SQUANDERED_EXIT_ES` | 60% | `squandered` exit (back to roughly even) |
+| `WINNING_LINE_ES` | 68%* | `reversed` entry (clearly winning before, ≈ +2.0) |
+| `LOSING_LINE_ES` | 32%* | `reversed` exit (clearly losing after, ≈ −2.0) |
+| `FROM_WINNING_ES` | 75%* | `squandered` entry (winning, near-decisive before, ≈ +3.0) |
+| `SQUANDERED_EXIT_ES` | 59%* | `squandered` exit (back to a slight edge, ≈ +1.0) |
+
+`*` Recalibrated target values (2026-06-09, round-eval anchors). The flaws_service.py
+constants still hold the prior values (`WINNING_LINE_ES` 70%, `LOSING_LINE_ES` 30%,
+`FROM_WINNING_ES` 85%, `SQUANDERED_EXIT_ES` 60%) until the implementation /gsd-quick lands.
+The exact stored fractions are the sigmoid of the round eval: ES(+2.0)=0.6762,
+ES(−2.0)=0.3238, ES(+3.0)=0.7511, ES(+1.0)=0.5910.
 
 Tags are computed **on the fly** and not persisted, so there is no DB column behind any of
 them.

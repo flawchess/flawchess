@@ -65,7 +65,11 @@ async def _seed_game(
 
 
 def _make_flaw_row(game: Game, ply: int = 10) -> GameFlaw:
-    """Return an unsaved GameFlaw instance with representative column values."""
+    """Return an unsaved GameFlaw instance with representative column values.
+
+    Phase 112 (D-07): es_before, es_after, move_san removed from game_flaws.
+    Only fen is kept as denormalized display data (game_positions has no FEN column).
+    """
     return GameFlaw(
         user_id=game.user_id,
         game_id=game.id,
@@ -77,9 +81,6 @@ def _make_flaw_row(game: Game, ply: int = 10) -> GameFlaw:
         is_lucky=False,
         is_reversed=True,
         is_squandered=True,
-        es_before=0.75,
-        es_after=0.45,
-        move_san="Qxf7+",
         fen="rnbqkb1r/pppp1ppp/5n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R",
     )
 
@@ -117,10 +118,11 @@ class TestGameFlawRoundTrip:
         assert row.is_lucky is False
         assert row.is_reversed is True
         assert row.is_squandered is True
-        assert abs(row.es_before - 0.75) < 1e-6
-        assert abs(row.es_after - 0.45) < 1e-6
-        assert row.move_san == "Qxf7+"
         assert "rnbqkb1r" in row.fen  # board_fen prefix
+        # Phase 112 (D-07): es_before, es_after, move_san dropped — sourced via join
+        assert not hasattr(row, "es_before"), "GameFlaw must not have es_before after Phase 112"
+        assert not hasattr(row, "es_after"), "GameFlaw must not have es_after after Phase 112"
+        assert not hasattr(row, "move_san"), "GameFlaw must not have move_san after Phase 112"
 
 
 # ---------------------------------------------------------------------------

@@ -1,14 +1,17 @@
 """GameFlaw ORM model — derived materialization table for M+B flaws (SEED-038).
 
 Stores one row per user mistake or blunder, keyed by (user_id, game_id, ply).
-Inaccuracies are never stored here (D-03).  The display payload (es_before,
-es_after, move_san, fen) is persisted at classify time so the Flaws-tab
-miniboard renders without replaying PGN per request.
+Inaccuracies are never stored here (D-03).
+
+Phase 112 (D-07): dropped es_before, es_after, move_san — those display values
+are now sourced at query time from a game_positions join (D-08). The fen column
+is retained: game_positions stores only Zobrist hashes (no FEN column), so fen
+is the one denormalized display column that cannot be recovered without PGN replay.
 """
 
 from typing import Optional
 
-from sqlalchemy import Boolean, Float, ForeignKey, Index, SmallInteger, String
+from sqlalchemy import Boolean, ForeignKey, Index, SmallInteger, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -54,11 +57,10 @@ class GameFlaw(Base):
     is_reversed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     is_squandered: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
-    # Display payload (SEED-038: stored at classify time to avoid O(page × game_length)
-    # PGN replay per request).
-    es_before: Mapped[float] = mapped_column(Float, nullable=False)
-    es_after: Mapped[float] = mapped_column(Float, nullable=False)
-    move_san: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    fen: Mapped[str] = mapped_column(
-        String, nullable=False
-    )  # board_fen() BEFORE the flawed move (miniboard decision point + arrow source)
+    # fen: board_fen() BEFORE the flawed move — the one denormalized display column
+    # that cannot be recovered without PGN replay (game_positions stores only Zobrist
+    # hashes, no FEN; see Pitfall 4 in 112-CONTEXT.md). Used by the miniboard to render
+    # the decision-point position and compute move_san → arrow squares.
+    # Dropped in Phase 112 (D-07): es_before, es_after, move_san — now sourced from
+    # a game_positions join in query_flaws (D-08, library_repository.py).
+    fen: Mapped[str] = mapped_column(String, nullable=False)

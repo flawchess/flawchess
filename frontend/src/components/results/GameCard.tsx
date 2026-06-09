@@ -2,6 +2,7 @@ import { BookOpen, Calendar, Clock, Equal, ExternalLink, Hash, Minus, Plus } fro
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WDL_BORDER_DRAW, WDL_BORDER_LOSS, WDL_BORDER_WIN } from '@/lib/theme';
+import { Card, CardHeader } from '@/components/ui/card';
 import { Tooltip } from '@/components/ui/tooltip';
 import { PlatformIcon } from '@/components/icons/PlatformIcon';
 import { LazyMiniBoard } from '@/components/board/LazyMiniBoard';
@@ -105,36 +106,28 @@ export function GameCard({ game }: GameCardProps) {
     </span>
   );
 
-  // Mobile: player names stack on two lines (no "vs" separator); no W/D/L badge —
-  // the result is shown next to the termination row via a small +/=/− chip instead.
-  const mobileIdentifier = (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 min-w-0 flex flex-col text-sm">
-        <span className="text-foreground truncate">
+  // HEADER — banded title bar via the shared CardHeader (compact size). Carries the
+  // player info and the platform link. Desktop: single line "■ White (rating) vs □
+  // Black (rating)"; mobile: two stacked lines, no "vs". The CardHeader is always
+  // flex, so the responsive switch lives on the two inner blocks. No W/D/L badge —
+  // the termination row carries the result chip.
+  const header = (
+    <CardHeader as="h4" size="compact">
+      <span className="hidden sm:block truncate text-foreground min-w-0">
+        ■ {whiteName} {whiteRating}
+        <span className="mx-1.5 text-muted-foreground font-normal">vs</span>□ {blackName}{' '}
+        {blackRating}
+      </span>
+      <div className="flex sm:hidden min-w-0 flex-1 flex-col text-foreground">
+        <span className="truncate">
           ■ {whiteName} {whiteRating}
         </span>
-        <span className="text-foreground truncate">
+        <span className="truncate">
           □ {blackName} {blackRating}
         </span>
       </div>
       {platformIconAndLink}
-    </div>
-  );
-
-  // Desktop: single-line "White vs Black"; no W/D/L badge — termination row carries the result chip.
-  const desktopIdentifier = (
-    <div className="flex items-center gap-2">
-      <span className="text-sm truncate">
-        <span className="text-foreground">
-          ■ {whiteName} {whiteRating}
-        </span>
-        <span className="mx-1.5 text-muted-foreground">vs</span>
-        <span className="text-foreground">
-          □ {blackName} {blackRating}
-        </span>
-      </span>
-      {platformIconAndLink}
-    </div>
+    </CardHeader>
   );
 
   const openingLine = (
@@ -157,67 +150,74 @@ export function GameCard({ game }: GameCardProps) {
     <span className="inline-flex items-center gap-1" data-testid={`game-card-tc-${game.game_id}`}>
       <Clock className="h-3.5 w-3.5" />
       <span className="capitalize">{game.time_control_bucket}</span>
-      {game.time_control_str ? ` · ${formatTimeControl(game.time_control_str)}` : ''}
+      {game.time_control_str ? ` ${formatTimeControl(game.time_control_str)}` : ''}
+    </span>
+  );
+
+  const moveCountItem = game.move_count !== null && (
+    <span className="inline-flex items-center gap-1">
+      <Hash className="h-3.5 w-3.5" />
+      {game.move_count}
+      {/* "Moves" label is desktop-only; mobile shows just "# <n>" to save width. */}
+      <span className="hidden sm:inline">&nbsp;Moves</span>
     </span>
   );
 
   const terminationItem = game.termination && game.termination !== 'unknown' && (
-    <span className="inline-flex items-center gap-1 capitalize" data-testid={`game-card-termination-${game.game_id}`}>
+    <span
+      className="inline-flex items-center gap-1 capitalize"
+      data-testid={`game-card-termination-${game.game_id}`}
+    >
       {resultIndicator}
       {game.termination}
     </span>
   );
 
-  // Mobile: each indicator on its own line (vertical stack); move count omitted.
-  const mobileMetadata = (
+  // Shared game-info block (same order on every game card):
+  //   line 1: "<TC name> <base>[+inc]" • "# n Moves" — the two parts wrap at the
+  //           bullet when the column is too narrow for one line.
+  //   line 2: date
+  //   line 3: termination (result chip + reason)
+  const metadata = (
     <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+      {/* TC + move count share a line, separated by a gap; they wrap onto
+          separate lines (no dangling separator) when the column is too narrow. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+        {timeControlItem}
+        {moveCountItem}
+      </div>
       {dateItem}
-      {timeControlItem}
       {terminationItem}
-    </div>
-  );
-
-  // Desktop: indicators wrap on a single row; order is termination · date · tc · moves.
-  const desktopMetadata = (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-      {terminationItem}
-      {dateItem}
-      {timeControlItem}
-      {game.move_count !== null && (
-        <span className="inline-flex items-center gap-1">
-          <Hash className="h-3.5 w-3.5" />
-          {game.move_count} moves
-        </span>
-      )}
     </div>
   );
 
   return (
-    <div
+    <Card
+      as="article"
       data-testid={`game-card-${game.game_id}`}
-      className="charcoal-texture border border-border/20 border-l-4 rounded px-4 py-3"
-      style={{ borderLeftColor: BORDER_COLORS[game.user_result] }}
+      accentColor={BORDER_COLORS[game.user_result]}
+      className="border border-border/20"
     >
-      {/* Mobile layout: identifier line full width on top, then board + opening/metadata below */}
-      <div className="flex flex-col gap-2 sm:hidden">
-        {mobileIdentifier}
-        <div className="flex gap-3 items-start">
-          {game.result_fen && (
-            <LazyMiniBoard
-              fen={game.result_fen}
-              flipped={game.user_color === 'black'}
-              size={MOBILE_BOARD_SIZE}
-            />
-          )}
-          <div className="flex-1 min-w-0 flex flex-col gap-1">
-            {openingLine}
-            {mobileMetadata}
-          </div>
+      {/* Banded header: player info + platform link (desktop single-line, mobile two-line) */}
+      {header}
+
+      {/* Mobile layout: board + opening/metadata below the header */}
+      <div className="flex gap-3 items-start sm:hidden px-4 py-3">
+        {game.result_fen && (
+          <LazyMiniBoard
+            fen={game.result_fen}
+            flipped={game.user_color === 'black'}
+            size={MOBILE_BOARD_SIZE}
+          />
+        )}
+        <div className="flex-1 min-w-0 flex flex-col gap-1">
+          {openingLine}
+          {metadata}
         </div>
       </div>
 
-      {/* Desktop layout: board left, identifier + opening + metadata stacked right */}
-      <div className="hidden sm:flex gap-3 items-center">
+      {/* Desktop layout: board left, opening + metadata stacked right */}
+      <div className="hidden sm:flex gap-3 items-center px-4 py-3">
         {game.result_fen && (
           <LazyMiniBoard
             fen={game.result_fen}
@@ -226,11 +226,10 @@ export function GameCard({ game }: GameCardProps) {
           />
         )}
         <div className="min-w-0 flex-1 flex flex-col gap-2">
-          {desktopIdentifier}
           {openingLine}
-          {desktopMetadata}
+          {metadata}
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

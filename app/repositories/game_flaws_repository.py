@@ -108,9 +108,10 @@ def flaw_record_to_row(
         "is_lucky": "lucky" in tags,
         "is_reversed": "reversed" in tags,
         "is_squandered": "squandered" in tags,
-        "es_before": flaw["es_before"],
-        "es_after": flaw["es_after"],
-        "move_san": flaw["move_san"],
+        # Phase 112 (D-07): es_before, es_after, move_san removed — these were display-only
+        # columns now sourced via a game_positions join in query_flaws (D-08).
+        # The FlawRecord TypedDict still carries them for internal kernel use; they are
+        # intentionally not persisted here (Pitfall 6 in 112-CONTEXT.md).
         "fen": flaw["fen"],
     }
 

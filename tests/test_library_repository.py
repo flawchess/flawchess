@@ -136,9 +136,6 @@ async def _seed_game_flaw(
                 "is_lucky": False,
                 "is_reversed": False,
                 "is_squandered": False,
-                "es_before": 0.7,
-                "es_after": 0.2,
-                "move_san": "Nf3",
                 "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
             }
         ],
@@ -447,3 +444,319 @@ class TestAnalyzedDenominator:
 
 # Keep `func` import referenced (used by downstream count-aggregate scaffolds).
 _ = func
+
+
+# ---------------------------------------------------------------------------
+# TestEvalJoin (Phase 112-01): regression guard + schema check
+# ---------------------------------------------------------------------------
+
+
+async def _seed_game_flaw_with_es(
+    session: AsyncSession,
+    *,
+    game: Game,
+    ply: int,
+    severity: int = 2,
+    fen: str = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
+) -> None:
+    """Insert a game_flaws row for eval-join regression tests.
+
+    Phase 112 (D-07): es_before/es_after/move_san are no longer stored in game_flaws;
+    they are sourced at query time via a game_positions join. The test verifies that
+    the join reproduces the correct eval values from the seeded game_positions rows.
+    """
+    await bulk_insert_game_flaws(
+        session,
+        [
+            {
+                "user_id": game.user_id,
+                "game_id": game.id,
+                "ply": ply,
+                "severity": severity,
+                "tempo": None,
+                "phase": 1,  # middlegame
+                "is_miss": False,
+                "is_lucky": False,
+                "is_reversed": False,
+                "is_squandered": False,
+                "fen": fen,
+            }
+        ],
+    )
+
+
+class TestEvalJoinReproducesEs:
+    """Phase 112 Pitfall 1 regression guard: game_positions join has correct ply offset.
+
+    Verifies that the two aliased LEFT JOINs on game_positions (PositionAt at ply=N,
+    PositionBefore at ply=N-1) return the eval values the kernel uses for es_before/es_after.
+    If the ply offset is wrong, the ES computed from the join will differ from the seed-computed ES.
+    """
+
+    @pytest.mark.asyncio
+    async def test_eval_join_reproduces_es(self, db_session: AsyncSession) -> None:
+        """Joined eval_cp reproduces the ES values the kernel would compute.
+
+        Seed: flaw at ply=2 (white mover per kernel parity: even=white).
+          - positions[1].eval_cp = +100  (eval_before in flaws_service terms: positions[N-1])
+          - positions[2].eval_cp = -50   (eval_after: positions[N])
+        ES values computed directly from seeded evals (Phase 112: no longer stored):
+          - es_before = eval_cp_to_expected_score(+100, "white") ≈ 0.591
+          - es_after  = eval_cp_to_expected_score(-50, "white")  ≈ 0.454
+        The test asserts abs(computed_from_join - computed_from_seed) < 1e-6 for both.
+        """
+        from app.repositories.library_repository import query_flaws
+        from app.services.eval_utils import eval_cp_to_expected_score
+
+        game = await _seed_game(db_session, user_color="white")
+        # Seed positions 0..3 (ply 0=initial, 1=black, 2=white mover flaw, 3=next)
+        # Kernel parity: n % 2 == 0 → white mover. Flaw at ply=2 → white.
+        await _seed_position(db_session, game=game, ply=0, eval_cp=0, move_san=None)
+        await _seed_position(db_session, game=game, ply=1, eval_cp=100, move_san="e5")
+        # ply=2: white mover; eval_before = positions[1].eval_cp = 100; eval_after = positions[2].eval_cp = -50
+        await _seed_position(db_session, game=game, ply=2, eval_cp=-50, move_san="Nf3")
+        await _seed_position(db_session, game=game, ply=3, eval_cp=-30, move_san="d5")
+
+        # Compute expected ES values using the same kernel formula
+        mover_color = "white"  # ply=2, even → white
+        expected_es_before = eval_cp_to_expected_score(100, mover_color)
+        expected_es_after = eval_cp_to_expected_score(-50, mover_color)
+
+        # Seed the flaw row with the kernel-computed ES values
+        await _seed_game_flaw_with_es(
+            db_session,
+            game=game,
+            ply=2,
+            severity=2,  # blunder
+        )
+
+        # Run query_flaws and check the join produces the right eval fields
+        items, count = await query_flaws(
+            db_session,
+            user_id=99999,
+            severity=["mistake", "blunder"],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            offset=0,
+            limit=20,
+        )
+        assert count > 0, "expected at least one flaw row"
+
+        # Find the flaw for our seeded game
+        our_flaw = next((item for item in items if item.game_id == game.id and item.ply == 2), None)
+        assert our_flaw is not None, "flaw at ply=2 must appear in results"
+
+        # Verify eval fields are sourced from game_positions
+        assert our_flaw.eval_cp_after == -50, (
+            f"eval_cp_after must be -50 (positions[ply=2].eval_cp), got {our_flaw.eval_cp_after}"
+        )
+        assert our_flaw.eval_cp_before == 100, (
+            f"eval_cp_before must be 100 (positions[ply=1].eval_cp), got {our_flaw.eval_cp_before}"
+        )
+        assert our_flaw.move_san == "Nf3", f"move_san must be 'Nf3', got {our_flaw.move_san}"
+
+        # ES reproduction: convert joined eval to ES and compare with seed-computed values
+        # Mover is white (ply=2, even): no negation needed
+        computed_es_before = eval_cp_to_expected_score(our_flaw.eval_cp_before, mover_color)
+        computed_es_after = eval_cp_to_expected_score(our_flaw.eval_cp_after, mover_color)
+
+        assert abs(computed_es_before - expected_es_before) < 1e-6, (
+            f"Computed es_before {computed_es_before} must match stored {expected_es_before}"
+        )
+        assert abs(computed_es_after - expected_es_after) < 1e-6, (
+            f"Computed es_after {computed_es_after} must match stored {expected_es_after}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_eval_join_reproduces_es_with_mate(self, db_session: AsyncSession) -> None:
+        """Mate rows: eval_mate maps to ±MATE_CP_EQUIVALENT before sigmoid.
+
+        Flaw at ply=3 (black mover, odd ply).
+        positions[2].eval_mate = +3 → white has mate-in-3 → black is losing.
+        eval_before for black mover = eval_cp_to_expected_score(-MATE_CP_EQUIVALENT, "black")
+        """
+        from app.repositories.library_repository import query_flaws
+        from app.services.eval_utils import eval_cp_to_expected_score
+        from app.services.flaws_service import MATE_CP_EQUIVALENT
+
+        game = await _seed_game(db_session, user_color="black")
+        await _seed_position(db_session, game=game, ply=0, eval_cp=0, move_san=None)
+        await _seed_position(db_session, game=game, ply=1, eval_cp=50, move_san="e4")
+        await _seed_position(db_session, game=game, ply=2, eval_mate=3, move_san="e5")
+        # ply=3: black mover flaw (odd ply → black); eval_before = positions[2].eval_mate = +3
+        await _seed_position(db_session, game=game, ply=3, eval_cp=-400, move_san="Nf6")
+
+        # Kernel: ply=3, n=3, n%2==1 → black mover
+        mover_color = "black"
+        # es_before: positions[2].eval_mate=+3 (white has mate) → cp_equiv = -MATE_CP_EQUIVALENT for black
+        # eval_cp_to_expected_score uses white-POV: +MATE_CP_EQUIVALENT → white winning
+        # From black's perspective: -MATE_CP_EQUIVALENT passed as eval_cp
+        # Actually _ply_to_es: eval_mate > 0 → cp_equiv = +MATE_CP_EQUIVALENT, then eval_cp_to_expected_score(+MATE_CP_EQ, "black")
+        cp_equiv_before = MATE_CP_EQUIVALENT  # eval_mate=+3>0 → +MATE_CP_EQUIVALENT
+        expected_es_before = eval_cp_to_expected_score(cp_equiv_before, mover_color)
+        expected_es_after = eval_cp_to_expected_score(-400, mover_color)
+
+        await _seed_game_flaw_with_es(
+            db_session,
+            game=game,
+            ply=3,
+            severity=2,
+        )
+
+        items, count = await query_flaws(
+            db_session,
+            user_id=99999,
+            severity=["mistake", "blunder"],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            offset=0,
+            limit=20,
+        )
+
+        our_flaw = next((item for item in items if item.game_id == game.id and item.ply == 3), None)
+        assert our_flaw is not None, "flaw at ply=3 must appear in results"
+        assert our_flaw.eval_mate_before == 3, (
+            f"eval_mate_before must be 3 (positions[ply=2].eval_mate), got {our_flaw.eval_mate_before}"
+        )
+        assert our_flaw.eval_cp_after == -400, (
+            f"eval_cp_after must be -400, got {our_flaw.eval_cp_after}"
+        )
+
+        # ES reproduction with mate: use MATE_CP_EQUIVALENT
+        cp_before = MATE_CP_EQUIVALENT  # eval_mate_before=3 > 0 → +MATE_CP_EQUIVALENT
+        computed_es_before = eval_cp_to_expected_score(cp_before, mover_color)
+        # eval_cp_after is asserted non-None above; assert for ty narrowing
+        assert our_flaw.eval_cp_after is not None
+        computed_es_after = eval_cp_to_expected_score(our_flaw.eval_cp_after, mover_color)
+
+        assert abs(computed_es_before - expected_es_before) < 1e-6, (
+            f"Mate es_before {computed_es_before} must match stored {expected_es_before}"
+        )
+        assert abs(computed_es_after - expected_es_after) < 1e-6, (
+            f"Mate es_after {computed_es_after} must match stored {expected_es_after}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_eval_join_null_before_at_ply_1(self, db_session: AsyncSession) -> None:
+        """A flaw at ply=1 with no ply=0 eval yields eval_cp_before=None (no crash).
+
+        ply=0 (initial position) usually has eval_cp=None; the LEFT JOIN produces null.
+        """
+        from app.repositories.library_repository import query_flaws
+
+        game = await _seed_game(db_session, user_color="black")
+        # ply=0: no eval (typical initial position)
+        await _seed_position(db_session, game=game, ply=0, eval_cp=None, move_san=None)
+        # ply=1: black's first move; flaw at ply=1
+        await _seed_position(db_session, game=game, ply=1, eval_cp=50, move_san="e4")
+
+        await _seed_game_flaw_with_es(db_session, game=game, ply=1, severity=2)
+
+        items, count = await query_flaws(
+            db_session,
+            user_id=99999,
+            severity=["mistake", "blunder"],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            offset=0,
+            limit=20,
+        )
+
+        our_flaw = next((item for item in items if item.game_id == game.id and item.ply == 1), None)
+        assert our_flaw is not None, "flaw at ply=1 must appear"
+        # ply=0 has eval_cp=None, LEFT JOIN on ply=0 returns a row but eval_cp=None
+        # Actually ply=0 HAS a game_positions row (just eval_cp=None), so the join finds the row
+        # but eval_cp_before = None (the eval_cp on that row is None)
+        assert our_flaw.eval_cp_before is None, (
+            f"ply=0 has null eval_cp, so eval_cp_before must be None, got {our_flaw.eval_cp_before}"
+        )
+        assert our_flaw.eval_cp_after == 50
+
+
+class TestFlawsEndpointSchema:
+    """Phase 112-01 Task 2: FlawListItem carries new fields, drops ES fields."""
+
+    @pytest.mark.asyncio
+    async def test_flaws_endpoint_schema(self, db_session: AsyncSession) -> None:
+        """FlawListItem carries white_rating/black_rating, move_san, eval fields; no es_before/es_after."""
+        from app.repositories.library_repository import query_flaws
+
+        game = await _seed_game(db_session, user_color="white")
+        # Seed positions for the flaw
+        await _seed_position(db_session, game=game, ply=0, eval_cp=0, move_san=None)
+        await _seed_position(db_session, game=game, ply=1, eval_cp=150, move_san="d4")
+        await _seed_position(db_session, game=game, ply=2, eval_cp=-100, move_san="Nf3")
+
+        await bulk_insert_game_flaws(
+            db_session,
+            [
+                {
+                    "user_id": game.user_id,
+                    "game_id": game.id,
+                    "ply": 2,
+                    "severity": 2,
+                    "tempo": None,
+                    "phase": 1,
+                    "is_miss": False,
+                    "is_lucky": False,
+                    "is_reversed": False,
+                    "is_squandered": False,
+                    "fen": "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR",
+                }
+            ],
+        )
+
+        items, count = await query_flaws(
+            db_session,
+            user_id=99999,
+            severity=["mistake", "blunder"],
+            tags=[],
+            time_control=None,
+            platform=None,
+            rated=None,
+            opponent_type="all",
+            from_date=None,
+            to_date=None,
+            color=None,
+            offset=0,
+            limit=20,
+        )
+
+        our_flaw = next((item for item in items if item.game_id == game.id and item.ply == 2), None)
+        assert our_flaw is not None, "flaw at ply=2 must appear"
+
+        # Schema assertions: new fields present
+        assert our_flaw.move_san is not None, "move_san must be join-sourced and non-None"
+        assert our_flaw.eval_cp_after is not None, "eval_cp_after must be set from game_positions"
+        assert our_flaw.eval_cp_before is not None, "eval_cp_before must be set from game_positions"
+
+        # Ratings (sourced from Game; Game was seeded without explicit ratings → None is valid)
+        # Check the attribute exists on the model
+        assert hasattr(our_flaw, "white_rating"), "FlawListItem must have white_rating field"
+        assert hasattr(our_flaw, "black_rating"), "FlawListItem must have black_rating field"
+        assert hasattr(our_flaw, "eval_cp_before"), "FlawListItem must have eval_cp_before"
+        assert hasattr(our_flaw, "eval_cp_after"), "FlawListItem must have eval_cp_after"
+        assert hasattr(our_flaw, "eval_mate_before"), "FlawListItem must have eval_mate_before"
+        assert hasattr(our_flaw, "eval_mate_after"), "FlawListItem must have eval_mate_after"
+
+        # Schema assertions: ES fields must NOT be present (dropped in Task 2)
+        assert not hasattr(our_flaw, "es_before"), "FlawListItem must NOT have es_before"
+        assert not hasattr(our_flaw, "es_after"), "FlawListItem must NOT have es_after"

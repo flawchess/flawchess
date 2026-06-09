@@ -29,11 +29,19 @@ const SEV_BORDER_COLORS: Record<FlawSeverity, string> = {
   inaccuracy: 'oklch(0.82 0.13 95 / 0.30)',
 };
 
-// Full label text per severity (displayed in the badge)
+// Full (plural) label text per severity — used with a leading count (Games card)
 const SEVERITY_LABELS: Record<FlawSeverity, string> = {
   blunder: 'Blunders',
   mistake: 'Mistakes',
-  inaccuracy: 'Inaccuracies',
+  inaccuracy: 'Inacc.',
+};
+
+// Singular label — used by the Flaws card, where each card is a single flaw so a
+// count + plural ("1 Blunders") would be wrong/noisy. Just "Blunder".
+const SEVERITY_LABELS_SINGULAR: Record<FlawSeverity, string> = {
+  blunder: 'Blunder',
+  mistake: 'Mistake',
+  inaccuracy: 'Inaccuracy',
 };
 
 interface SeverityBadgeProps {
@@ -46,6 +54,14 @@ interface SeverityBadgeProps {
    * Omitted call sites (e.g. FlawsTab) get no hover behavior.
    */
   onHover?: (active: boolean) => void;
+  /**
+   * When false, render the singular label only ("Blunder") with no leading count —
+   * the Flaws card uses this since each card is exactly one flaw. Defaults to true
+   * (Games card keeps the count + plural, e.g. "3 Blunders").
+   */
+  showCount?: boolean;
+  /** Extra classes merged onto the badge span (e.g. `self-start` to size to content). */
+  className?: string;
 }
 
 /**
@@ -61,7 +77,14 @@ interface SeverityBadgeProps {
  * constraint* (you've filtered to only blunders, or only mistakes). Inaccuracy is
  * not a filterable severity, so its badge never rings.
  */
-export function SeverityBadge({ severity, count, gameId, onHover }: SeverityBadgeProps) {
+export function SeverityBadge({
+  severity,
+  count,
+  gameId,
+  onHover,
+  showCount = true,
+  className,
+}: SeverityBadgeProps) {
   const [flawFilter] = useFlawFilterStore();
   const isActive =
     (severity === 'blunder' || severity === 'mistake') &&
@@ -73,6 +96,7 @@ export function SeverityBadge({ severity, count, gameId, onHover }: SeverityBadg
       className={cn(
         'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 whitespace-nowrap',
         isActive && ACTIVE_FILTER_RING_CLASS,
+        className,
       )}
       style={{
         color: SEV_COLORS[severity],
@@ -81,15 +105,17 @@ export function SeverityBadge({ severity, count, gameId, onHover }: SeverityBadg
         // Ring color matches the severity color for active-filter emphasis.
         ...(isActive ? ({ '--tw-ring-color': SEV_COLORS[severity] } as React.CSSProperties) : {}),
       }}
-      aria-label={`${count} ${severity}s`}
+      aria-label={showCount ? `${count} ${severity}s` : SEVERITY_LABELS_SINGULAR[severity]}
       data-testid={`severity-${severity}-${gameId}`}
       onMouseEnter={onHover ? () => onHover(true) : undefined}
       onMouseLeave={onHover ? () => onHover(false) : undefined}
       onFocus={onHover ? () => onHover(true) : undefined}
       onBlur={onHover ? () => onHover(false) : undefined}
     >
-      <span className="text-base font-bold">{count}</span>
-      <span className="text-sm font-bold">{SEVERITY_LABELS[severity]}</span>
+      {showCount && <span className="text-base font-bold">{count}</span>}
+      <span className="text-sm font-bold">
+        {showCount ? SEVERITY_LABELS[severity] : SEVERITY_LABELS_SINGULAR[severity]}
+      </span>
     </span>
   );
 }

@@ -120,6 +120,32 @@ already designed (missed-X = opponent `allowed-X` adjacent to your `is_miss`).
   `/benchmarks` **Cohen's-d collapse verdict** per metric per axis to decide whether
   each metric needs cell-specific zones or collapses to a global zone.
 
+## Upstream: impact-tag threshold recalibration (2026-06-09)
+
+The `reversed`/`squandered` thresholds were recalibrated to round-eval anchors specifically
+to give *this* comparison a usable signal (see [[flaw-tag-definitions]] §Impact). The impact
+family is the sparsest, and this seed consumes it as a **Wilson difference-of-proportions**
+with a per-(ELO×TC) IQR blue zone — both the CI width on a user's own proportion and the
+zone's non-degeneracy depend on event density. With the original cutoffs most cohort users
+in a cell had ~0–2 squandered events, which would collapse the delta IQR and leave every
+squandered bullet "inconclusive."
+
+Benchmark-DB measurement (2026-06-09, replicating `flaws_service` over the cohort's own
+moves): the recalibration **~3× the squandered rate** (per-user share with ≥10 instances
+**34% → 68%**) and left `reversed` roughly flat (**+21%**, already healthy at ~51% of users
+≥10). New cutoffs: `reversed` 68/32 (≈ ±2.0), `squandered` 75/59 (≈ +3.0/+1.0). The
+`squandered` *entry* is the load-bearing lever.
+
+**Coupling to resolve at plan time (phase 2):** impact tags are *proportions*, so the
+**denominator** matters as much as the entry cutoff. If the denominator is "winning positions
+reached" (squander opportunities), loosening the entry from +4.7 to +3.0 also *enlarges* the
+denominator, so the observed *rate* moves less than the 3× raw-count change implies. The
+raw-count density gain is unambiguous and is what rescues the Wilson CI; the rate effect and
+the per-cell IQR-zone stability check must be measured against the **final denominator
+definition** during the benchmark backfill. Calibrate threshold + denominator together, not
+in isolation. (Threshold implementation itself is a self-contained `/gsd-quick`: 4 constants
++ the exact-value tests in `tests/services/test_flaws_service.py` + the tooltip copy.)
+
 ## Cost & feasibility
 
 - **Eval-only families are computable now.** Tempo/phase/opportunity/impact need no

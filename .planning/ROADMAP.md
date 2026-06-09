@@ -660,14 +660,14 @@ Plans:
 **Goal:** Rework the Library → Flaws subtab so each flawed position renders as a proper `Card` matching the Games-subtab visual language — a banded header with player/opponent names + ratings, a full-size (132px) miniboard with the flaw arrow, the move in standard notation alongside the eval swing, and family-colored tag chips with the shared Explanation tooltip — laid out as a responsive 2-up card grid, with a "View game" action that opens the full analyzed game card in a modal.
 **Requirements**: TBD (see Success Criteria; derives from the Phase 108 Flaws surface)
 **Depends on:** Phase 108 (Flaws subtab + per-flaw endpoint), Phase 110 (finalized tag taxonomy + chip tooltips)
-**Plans:** 0 plans
+**Plans:** 4/4 plans complete
 
 **Success Criteria** (what must be TRUE):
 
   1. Flaw results render as `Card`s in a responsive grid — **1 column mobile → 2 columns desktop** — replacing the current full-width single-column row list.
   2. Each card has a banded `CardHeader` identical in content to the Games card: `■ White (rating) vs □ Black (rating)` + platform icon/link (single line desktop, two stacked lines mobile). **Requires `white_rating` / `black_rating` added to the `/library/flaws` payload + `FlawListItem`** (data already on the `games` row).
   3. The miniboard renders at the Games-card size (**132px desktop**, replacing the current 80px) with the flawed-move arrow.
-  4. The flawed move is shown in **standard notation** (`16...Nxd4`; white `N.` / black `N...`) via the shared `formatCandidateMove` helper — not the current "Move 7: Nxd4" — with the **eval swing** (`es_before → es_after`, e.g. `−2.4`) on the **same line**, plus the severity badge.
+  4. The flawed move is shown in **standard notation** (`16...Nxd4`; white `N.` / black `N...`) via shared move-notation logic (CONTEXT D-04) — not the current "Move 7: Nxd4" — with the **eval swing** rendered from raw `eval_cp`/`eval_mate` (user-POV, mate-aware, e.g. `+4.7 → #-3`; CONTEXT D-05/D-06, supersedes the earlier `es_before → es_after` framing) on the **same line**, plus the severity badge.
   5. Tag chips use the family-colored `TagChip` + a single `Explanation` (`TagLegend`) tooltip listing each tag's definition (matching the Games card), replacing the current per-chip popovers.
   6. Within-card layout: miniboard column on the left + a stacked content column on the right (move+swing+severity → tag chips → Explanation → metadata: date · TC · termination + result indicator).
   7. A **`View game`** action opens a **modal** showing the full analyzed game's `LibraryGameCard` (eval chart, all flaws), fetched on open via a **new `GET /api/library/games/{game_id}`** endpoint returning a single `GameFlawCard`.
@@ -687,5 +687,18 @@ Plans:
   - **D-03 — eval swing surfaced** on the move line (previously in the payload but unused).
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 112 to break down)
+- [x] 112-01-PLAN.md — Slim game_flaws schema + game_positions eval join + ratings (Wave 1, ES-reproduction gated)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 112-02-PLAN.md — GET /library/games/{game_id} single-game endpoint + IDOR guard (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 112-03-PLAN.md — FlawCard component + eval-swing formatter (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 112-04-PLAN.md — View-game modal + hook + responsive grid in FlawsTab + CHANGELOG (Wave 4)

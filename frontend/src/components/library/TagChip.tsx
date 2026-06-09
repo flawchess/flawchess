@@ -248,19 +248,22 @@ interface TagLegendProps {
   /** The (unique) tags shown on this card; only these are explained. */
   tags: FlawTag[];
   gameId: number;
+  /** Visible label before the info icon. Defaults to "Tags"; the label doubles as
+   *  the section heading on both the Games card and FlawCard. */
+  label?: string;
 }
 
 /**
- * Single shared "Explanation" line rendered below a card's tag chip row. Replaces
+ * Single shared explanation line rendered below a card's tag chip row. Replaces
  * the per-chip hover/tap popovers on the Games card (which covered the eval chart);
  * one HelpCircle popover lists every tag on this card with its family-colored icon
  * and definition. Opt-in by click/hover on the icon — no overlay during normal use.
  */
-export function TagLegend({ tags, gameId }: TagLegendProps) {
+export function TagLegend({ tags, gameId, label = 'Tags' }: TagLegendProps) {
   if (tags.length === 0) return null;
   return (
     <div className="flex items-center gap-1 text-sm text-muted-foreground">
-      <span>Explanation</span>
+      <span>{label}</span>
       <InfoPopover ariaLabel="Tag explanations" testId={`tag-legend-${gameId}`} side="bottom">
         <div className="flex flex-col gap-1.5">
           {tags.map((tag) => {

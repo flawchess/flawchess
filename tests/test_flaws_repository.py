@@ -5,6 +5,7 @@ transaction per test). Covers:
 - fetch_game_positions_ordered: returns [] for unknown game_id
 - fetch_game_positions_ordered: returns positions sorted by ply ASC even if inserted out of order
 - fetch_game_positions_ordered: user_id ownership guard (different user returns [])
+- flaw_record_to_row: output must not contain es_before/es_after/move_san (Phase 112 D-07)
 """
 
 import uuid
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.game import Game
 from app.models.game_position import GamePosition
 from app.repositories.flaws_repository import fetch_game_positions_ordered
+from app.repositories.game_flaws_repository import flaw_record_to_row
 
 
 # ---------------------------------------------------------------------------
@@ -143,3 +145,55 @@ class TestFetchGamePositionsOrdered:
             user_id=99998,  # different user
         )
         assert rows == [], "A different user_id must not be able to fetch another user's positions"
+
+
+# ---------------------------------------------------------------------------
+# TestFlawRecordToRow (Phase 112-01 Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestFlawRecordToRow:
+    """Phase 112 D-07: flaw_record_to_row must not persist es_before/es_after/move_san."""
+
+    def test_flaw_record_to_row_omits_dropped_columns(self) -> None:
+        """flaw_record_to_row output must not contain es_before, es_after, or move_san.
+
+        Phase 112 (D-07): these three keys were removed from the DB schema; writing
+        them to the row dict would cause an insert failure after the migration.
+        The FlawRecord TypedDict still carries them for internal kernel use
+        (Pitfall 6 in 112-CONTEXT.md) — this test guards the write-path.
+        """
+        from app.services.flaws_service import FlawRecord
+
+        flaw: FlawRecord = {
+            "ply": 4,
+            "fen": "rnbqkb1r/pppp1ppp/4pn2/8/2PP4/8/PP2PPPP/RNBQKBNR",
+            "side": "white",
+            "severity": "blunder",
+            "tags": ["middlegame", "reversed"],
+            "es_before": 0.75,  # still in TypedDict (kernel-internal)
+            "es_after": 0.20,  # still in TypedDict (kernel-internal)
+            "move_san": "Nxd4",  # still in TypedDict (kernel-internal)
+        }
+
+        row = flaw_record_to_row(user_id=1, game_id=42, flaw=flaw)
+
+        # These keys must NOT appear in the DB row dict (dropped in Phase 112 D-07)
+        assert "es_before" not in row, (
+            "flaw_record_to_row must not write es_before to DB (Phase 112 D-07)"
+        )
+        assert "es_after" not in row, (
+            "flaw_record_to_row must not write es_after to DB (Phase 112 D-07)"
+        )
+        assert "move_san" not in row, (
+            "flaw_record_to_row must not write move_san to DB (Phase 112 D-07)"
+        )
+
+        # fen must still be present (Pitfall 4: cannot be dropped)
+        assert "fen" in row, "fen must still be present in the DB row dict"
+        assert row["fen"] == flaw["fen"]
+
+        # Core identity fields must still be present
+        assert row["user_id"] == 1
+        assert row["game_id"] == 42
+        assert row["ply"] == 4

@@ -179,20 +179,34 @@ export interface FlawStatsResponse {
 /**
  * One row in the Flaws subtab — one flawed position (mirrors backend FlawListItem).
  * Carries full miniboard display payload + game metadata. No *_hash fields.
+ *
+ * Phase 112 (SC-2 + SC-4): added white_rating/black_rating and before/after raw eval;
+ * dropped es_before/es_after (D-07). move_san now join-sourced from game_positions (D-08).
  */
 export interface FlawListItem {
   game_id: number;
   ply: number;
   fen: string;
+  /** SAN of the flawed move — sourced from game_positions at ply=N (Phase 112, D-08). */
   move_san: string | null;
   severity: 'mistake' | 'blunder';
   tags: FlawTag[];
-  es_before: number;
-  es_after: number;
+  /** Before/after eval from game_positions join (white-POV). Phase 112, D-05. */
+  eval_cp_before: number | null;
+  eval_mate_before: number | null;
+  eval_cp_after: number | null;
+  eval_mate_after: number | null;
+  /** Player ratings from the games join (Phase 112, D-03). */
+  white_rating: number | null;
+  black_rating: number | null;
   // Game metadata row header
   user_result: 'win' | 'draw' | 'loss';
   played_at: string | null;
   time_control_bucket: string | null;
+  /** Game-info line parity with the Games card (Phase 112 follow-up). */
+  time_control_str: string | null;
+  move_count: number | null;
+  termination: string | null;
   platform: string;
   platform_url: string | null;
   white_username: string | null;

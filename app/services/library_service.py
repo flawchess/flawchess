@@ -390,6 +390,47 @@ def _build_card(
     )
 
 
+async def get_library_game(
+    session: AsyncSession,
+    user_id: int,
+    game_id: int,
+) -> GameFlawCard | None:
+    """Return a single GameFlawCard for a game owned by the authenticated user.
+
+    IDOR guard (T-112-01): returns None when the game does not exist OR when
+    game.user_id != user_id. The router maps None → HTTP 404 (not 403, to avoid
+    confirming whether the id exists). Do not distinguish missing vs not-owned —
+    both return None.
+
+    Reuses _build_card with the same three batch queries as get_library_games
+    (fetch_page_analyzed_set, fetch_page_game_flaws, fetch_page_eval_positions),
+    called with [game_id]. Queries run sequentially on the one AsyncSession
+    (no asyncio.gather — CLAUDE.md §"Never use asyncio.gather on the same AsyncSession").
+    """
+    game = await session.get(Game, game_id)
+    if game is None or game.user_id != user_id:
+        return None
+
+    game_ids = [game_id]
+
+    is_analyzed = game_id in await library_repository.fetch_page_analyzed_set(
+        session, user_id, game_ids
+    )
+    flaw_rows = (await library_repository.fetch_page_game_flaws(session, user_id, game_ids)).get(
+        game_id, []
+    )
+
+    positions: list[GamePosition]
+    if is_analyzed:
+        positions = (
+            await library_repository.fetch_page_eval_positions(session, user_id, game_ids)
+        ).get(game_id, [])
+    else:
+        positions = []
+
+    return _build_card(game, flaw_rows, is_analyzed, positions)
+
+
 async def get_library_games(
     session: AsyncSession,
     user_id: int,

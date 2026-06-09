@@ -57,9 +57,7 @@ def _make_game_flaw(
     row.is_lucky = is_lucky
     row.is_reversed = is_reversed
     row.is_squandered = is_squandered
-    row.es_before = 0.9
-    row.es_after = 0.3
-    row.move_san = None
+    # Phase 112 (D-07): es_before, es_after, move_san removed from game_flaws
     row.fen = ""
     return row
 
@@ -419,9 +417,7 @@ async def _seed_db_flaw(
         is_lucky=is_lucky,
         is_reversed=is_reversed,
         is_squandered=is_squandered,
-        es_before=0.9,
-        es_after=0.3,
-        move_san=None,
+        # Phase 112 (D-07): es_before, es_after, move_san removed from game_flaws
         fen="",
     )
     sess.add(flaw)
@@ -783,3 +779,93 @@ class TestFlawStats:
         assert dist.lucky_rate == 0.0
         assert dist.reversed_rate == 0.0
         assert dist.squandered_rate == 0.0
+
+
+# ---------------------------------------------------------------------------
+# TestGetLibraryGame (-k get_library_game) — single-game card (Plan 112-02, SC-7)
+# ---------------------------------------------------------------------------
+
+
+class TestGetLibraryGame:
+    """get_library_game: single-game card builder with IDOR guard.
+
+    Plan 112-02 (SC-7): GET /api/library/games/{game_id} returns one GameFlawCard
+    for the authenticated user's own game, None for another user's game or a
+    missing game (→ 404 at the router). No router dependency — service-level only.
+    """
+
+    @pytest.mark.asyncio
+    async def test_own_game_returns_card(self, db_session: object) -> None:
+        """get_library_game returns a GameFlawCard for a game owned by the user.
+
+        Seeds user A with an analyzed game (10 positions, >=90% eval coverage)
+        and one game_flaw row. Asserts the returned card has the expected game_id
+        and a non-null analysis_state.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.schemas.library import GameFlawCard
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99980)
+
+        game_obj = await _seed_db_game(session, user_id=99980, user_color="white", result="1-0")
+        game = cast(GameModel, game_obj)
+        # Seed 10 positions, 9 with eval_cp (coverage = 9/10 = 0.9 >= EVAL_COVERAGE_MIN)
+        for ply in range(9):
+            await _seed_db_pos(session, game=game, ply=ply, eval_cp=0)
+        # Final position: no eval (standard lichess convention)
+        await _seed_db_pos(session, game=game, ply=9, eval_cp=None)
+        # One blunder flaw
+        await _seed_db_flaw(session, game=game, ply=2, severity=2, phase=1)
+
+        card = await get_library_game(session, user_id=99980, game_id=game.id)
+
+        assert card is not None, "Expected a GameFlawCard for own game, got None"
+        assert isinstance(card, GameFlawCard), f"Expected GameFlawCard, got {type(card)}"
+        assert card.game_id == game.id
+
+    @pytest.mark.asyncio
+    async def test_cross_user_returns_none(self, db_session: object) -> None:
+        """get_library_game returns None when game belongs to a different user (IDOR guard).
+
+        Seeds user A with a game. User B requests that game_id. Must return None
+        (not the card, not a 403, not a 404 exception — the IDOR guard lives at
+        the service layer; the router maps None → 404). This is the T-112-01
+        mitigation: game.user_id != user_id → return None.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.game import Game as GameModel
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99981)  # user A
+        await ensure_test_user(session, 99982)  # user B
+
+        game_obj = await _seed_db_game(session, user_id=99981, user_color="white", result="1-0")
+        game_a = cast(GameModel, game_obj)
+
+        # User B tries to fetch user A's game — must return None (IDOR guard)
+        result = await get_library_game(session, user_id=99982, game_id=game_a.id)
+        assert result is None, (
+            f"IDOR breach: expected None for cross-user access, got game_id={getattr(result, 'game_id', result)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_missing_game_returns_none(self, db_session: object) -> None:
+        """get_library_game returns None for a non-existent game_id."""
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.services.library_service import get_library_game
+        from tests.conftest import ensure_test_user
+
+        session = cast(AsyncSession, db_session)
+        await ensure_test_user(session, 99983)
+
+        result = await get_library_game(session, user_id=99983, game_id=999999999)
+        assert result is None, f"Expected None for non-existent game_id, got {result}"

@@ -2,25 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: Phase 111 shipped — squash-merged to main (f1a51d27)
-last_updated: "2026-06-09T14:02:57.360Z"
-last_activity: 2026-06-09
+status: executing
+last_updated: "2026-06-09T16:36:29.747Z"
+last_activity: 2026-06-09 -- Phase 112 execution started
 progress:
-  total_phases: 11
-  completed_phases: 6
-  total_plans: 33
-  completed_plans: 32
-  percent: 55
+  total_phases: 13
+  completed_phases: 7
+  total_plans: 37
+  completed_plans: 36
+  percent: 54
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 110 (flaw-tag-taxonomy-overhaul-rename-impact-family-rebuild-tool) — EXECUTING
-Plan: 7 of 7
-Status: Phase 111 shipped — squash-merged to main (f1a51d27)
-Last activity: 2026-06-09
+Phase: 112 (flaws-subtab-card-rework) — EXECUTING
+Plan: 3 of 4
+Status: Ready to execute
+Last activity: 2026-06-09 -- Phase 112 execution started
 
 ## Project Reference
 
@@ -302,6 +302,7 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 | Phase 110 P05 | 14 | 3 tasks | 13 files |
 | Phase 110 P06 | 3min | 3 tasks | 0 files |
 | Phase 110-flaw-tag-taxonomy-overhaul-rename-impact-family-rebuild-tool P07 | continuation close-out | 3 tasks | 2 files |
+| Phase 112-flaws-subtab-card-rework P04 | 10 | 3 tasks | 8 files |
 
 ## Decisions
 
@@ -330,3 +331,4 @@ Last activity: 2026-06-03 — Completed quick task 260603-q85: disambiguated the
 - [Phase ?]: TagDistribution drops while_ahead_rate/result_changing_rate; adds reversed_rate/squandered_rate (D-03, Plan 110-03)
 - [Phase ?]: D-04 honored: gen_flaw_thresholds_ts.py is independent; two CI drift gates remain separate
 - [Phase ?]: D-07 amendment: FlawFilterControl renders canonical lowercase-with-dash tag slugs with Radix Popover.Anchor hover definitions; TAG_LABELS map removed| 113 | Unstick mobile Library subtab nav; only Filters/Tags row pins | 2026-06-09 | 56bebc21 | — |
+- [Phase ?]: useLibraryGame fetches only when modal opens (enabled: gameId !== null); Dialog sm:max-w-4xl per UI-SPEC

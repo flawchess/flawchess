@@ -356,11 +356,12 @@ async def _seed_flaw_committed(
     is_reversed: bool = False,
     is_squandered: bool = False,
     fen: str = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1",
-    move_san: str | None = "e4",
-    es_before: float = 0.9,
-    es_after: float = 0.3,
 ) -> None:
-    """Insert and commit a GameFlaw row."""
+    """Insert and commit a GameFlaw row.
+
+    Phase 112 (D-07): es_before, es_after, move_san removed from game_flaws;
+    they are sourced at query time via a game_positions join.
+    """
     from app.models.game_flaw import GameFlaw
 
     async with session_maker() as session:
@@ -375,9 +376,6 @@ async def _seed_flaw_committed(
             is_lucky=is_lucky,
             is_reversed=is_reversed,
             is_squandered=is_squandered,
-            es_before=es_before,
-            es_after=es_after,
-            move_san=move_san,
             fen=fen,
         )
         session.add(flaw)
@@ -808,8 +806,13 @@ class TestGetLibraryFlaws:
             "move_san",
             "severity",
             "tags",
-            "es_before",
-            "es_after",
+            # Phase 112 (SC-2+SC-4): new fields; es_before/es_after removed
+            "eval_cp_before",
+            "eval_mate_before",
+            "eval_cp_after",
+            "eval_mate_after",
+            "white_rating",
+            "black_rating",
             "user_result",
             "played_at",
             "time_control_bucket",
@@ -1401,3 +1404,141 @@ class TestEvalSeriesPayload:
             f"{_EVAL_PAYLOAD_GZIP_CEILING_BYTES} bytes. "
             "Review columnar encoding per D-05 if this persists with a full page."
         )
+
+
+# ---------------------------------------------------------------------------
+# Plan 112-02: GET /library/games/{game_id} — single-game card endpoint (SC-7)
+# ---------------------------------------------------------------------------
+
+
+@pytest_asyncio.fixture(scope="module")
+async def game_by_id_test_state(test_engine: Any) -> dict[str, Any]:
+    """Seed two users for GET /library/games/{game_id} IDOR + happy-path tests.
+
+    User A: one analyzed game (10 positions, >=90% eval coverage, one flaw row).
+    User B: one game (used as cross-user IDOR target — user A must get 404).
+
+    Committed rows so the ASGI client sessions see the data.
+    """
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:8]
+
+    headers_a, user_a_id = await _register_and_login(f"gbid_a_{suffix}@example.com")
+    headers_b, user_b_id = await _register_and_login(f"gbid_b_{suffix}@example.com")
+
+    # User A: analyzed game with >=90% eval coverage (10 positions, 9 with eval)
+    game_a = await _seed_game_committed(
+        session_maker,
+        user_id=user_a_id,
+        played_at=datetime.datetime(2026, 5, 1, tzinfo=datetime.timezone.utc),
+        result="1-0",
+        user_color="white",
+    )
+    await _seed_positions_committed(
+        session_maker,
+        user_id=user_a_id,
+        game_id=game_a,
+        positions=_make_analyzed_positions(n_plies=10),
+    )
+    await _seed_flaw_committed(
+        session_maker,
+        user_id=user_a_id,
+        game_id=game_a,
+        ply=4,
+        severity=2,
+        phase=1,
+    )
+
+    # User B: one game (IDOR target)
+    game_b = await _seed_game_committed(
+        session_maker,
+        user_id=user_b_id,
+        played_at=datetime.datetime(2026, 5, 2, tzinfo=datetime.timezone.utc),
+        result="0-1",
+        user_color="black",
+    )
+
+    return {
+        "headers_a": headers_a,
+        "headers_b": headers_b,
+        "user_a_id": user_a_id,
+        "user_b_id": user_b_id,
+        "game_a": game_a,
+        "game_b": game_b,
+    }
+
+
+class TestLibraryGameById:
+    """Tests for GET /api/library/games/{game_id} (Plan 112-02, SC-7).
+
+    Three required cases: own game 200, cross-user 404 (IDOR guard T-112-01),
+    missing game 404.
+    """
+
+    @pytest.mark.asyncio
+    async def test_library_game_by_id_own_game_200(
+        self, game_by_id_test_state: dict[str, Any]
+    ) -> None:
+        """User A requests their own analyzed game — returns 200 with a valid GameFlawCard.
+
+        Checks: status 200, game_id matches, eval/flaw fields present (analyzed game).
+        """
+        game_a = game_by_id_test_state["game_a"]
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                f"/api/library/games/{game_a}",
+                headers=game_by_id_test_state["headers_a"],
+            )
+
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        body = resp.json()
+        assert body["game_id"] == game_a, f"Expected game_id={game_a}, got {body['game_id']}"
+        # Analyzed game must carry eval and flaw fields (not null)
+        assert body["analysis_state"] == "analyzed", (
+            f"Expected analysis_state='analyzed', got {body['analysis_state']}"
+        )
+        assert body["severity_counts"] is not None, (
+            "severity_counts must not be null for analyzed game"
+        )
+
+    @pytest.mark.asyncio
+    async def test_library_game_by_id_cross_user_404(
+        self, game_by_id_test_state: dict[str, Any]
+    ) -> None:
+        """User A requests user B's game — must return 404 (not 403, not B's card).
+
+        IDOR guard T-112-01: the service returns None for cross-user access and
+        the router maps None → HTTP 404 with detail="Game not found". Returns 404
+        (not 403) to avoid confirming whether the id exists for the requester.
+        """
+        game_b = game_by_id_test_state["game_b"]
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                f"/api/library/games/{game_b}",
+                headers=game_by_id_test_state["headers_a"],
+            )
+
+        assert resp.status_code == 404, (
+            f"IDOR breach: expected 404 for cross-user game, got {resp.status_code}"
+        )
+        detail = resp.json().get("detail", "")
+        assert "not found" in detail.lower(), f"Expected 'not found' in detail, got {detail!r}"
+
+    @pytest.mark.asyncio
+    async def test_library_game_by_id_missing_404(
+        self, game_by_id_test_state: dict[str, Any]
+    ) -> None:
+        """User A requests a non-existent game_id — must return 404."""
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/api/library/games/999999999",
+                headers=game_by_id_test_state["headers_a"],
+            )
+
+        assert resp.status_code == 404, f"Expected 404 for missing game_id, got {resp.status_code}"

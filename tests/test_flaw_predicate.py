@@ -98,9 +98,6 @@ def _flaw_row(
         "is_lucky": is_lucky,
         "is_reversed": is_reversed,
         "is_squandered": is_squandered,
-        "es_before": 0.7,
-        "es_after": 0.2,
-        "move_san": "Nf3",
         "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR",
     }
 

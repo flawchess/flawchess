@@ -2,7 +2,7 @@
 /**
  * SeverityBadge vitest suite — covers the quick-260608-ac1 additions:
  *
- * 1. "Inaccuracies" label (renamed from "Inacc.")
+ * 1. "Inacc." abbreviated label
  * 2. Active-filter ring when the severity filter is narrowed to exactly this severity
  * 3. No ring under the default both-M+B filter, and never for inaccuracy
  * 4. onHover fires true/false on pointer enter/leave
@@ -30,11 +30,10 @@ const ringClasses = ACTIVE_FILTER_RING_CLASS.split(' ');
 
 describe('SeverityBadge', () => {
   describe('labels', () => {
-    it('renders the full "Inaccuracies" label (not "Inacc.")', () => {
+    it('renders the abbreviated "Inacc." label', () => {
       render(<SeverityBadge severity="inaccuracy" count={4} gameId={1} />);
       const badge = screen.getByTestId('severity-inaccuracy-1');
-      expect(badge.textContent).toContain('Inaccuracies');
-      expect(badge.textContent).not.toContain('Inacc.');
+      expect(badge.textContent).toContain('Inacc.');
     });
   });
 

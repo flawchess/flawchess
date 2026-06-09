@@ -109,22 +109,41 @@ class FlawListItem(BaseModel):
 
     Carries the full display payload for the miniboard list: board position,
     marked move, severity, reconstructed tags (from typed game_flaws columns),
-    ES delta, and the game metadata needed for the row header (opponent,
-    date, result). Never exposes *_hash fields (CLAUDE.md V5).
+    before/after raw eval (from game_positions join), and the game metadata
+    needed for the row header (opponent, ratings, date, result).
+
+    Phase 112 (SC-2 + SC-4): adds white_rating/black_rating and before/after
+    eval fields (eval_cp/eval_mate); drops es_before/es_after (now dead — D-07).
+    move_san is now join-sourced from game_positions (D-08).
+    Never exposes *_hash fields (CLAUDE.md V5).
     """
 
     game_id: int
     ply: int
     fen: str
-    move_san: str | None
+    move_san: str | None  # from game_positions join at ply=N (D-08, Phase 112)
     severity: FlawSeverity  # "mistake" | "blunder" (M+B only, D-03)
     tags: list[FlawTag]  # reconstructed from typed columns in deterministic order
-    es_before: float
-    es_after: float
+    # Before/after eval from game_positions join (D-05, Phase 112).
+    # eval_cp_before / eval_mate_before: game_positions at ply=N-1 (white-POV).
+    # eval_cp_after  / eval_mate_after:  game_positions at ply=N   (white-POV).
+    # All nullable: LEFT JOIN; ply=0 has no ply-1 row; chess.com has no eval.
+    eval_cp_before: int | None
+    eval_mate_before: int | None
+    eval_cp_after: int | None
+    eval_mate_after: int | None
+    # Player ratings from the games join (D-03, Phase 112).
+    white_rating: int | None
+    black_rating: int | None
     # Game metadata for the row header
     user_result: Literal["win", "draw", "loss"]
     played_at: datetime.datetime | None
     time_control_bucket: str | None
+    # Game-info line parity with the Games card (raw TC string, move count,
+    # termination reason). All from the games join; nullable like the source rows.
+    time_control_str: str | None
+    move_count: int | None
+    termination: str | None
     platform: str
     platform_url: str | None
     white_username: str | None

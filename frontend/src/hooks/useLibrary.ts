@@ -4,6 +4,7 @@ import { resolveDateRange, dateRangeToWireParams } from '@/lib/recency';
 import type { FilterState } from '@/components/filters/FilterPanel';
 import type { FlawTag } from '@/types/library';
 import type { FlawFilterState } from '@/hooks/useFlawFilterStore';
+import type { GameFlawCard } from '@/types/library';
 
 // Library queries are similar in cost to endgame queries (GROUP BY on FlawRecords).
 // 5 minutes staleTime + no refetch-on-focus prevents redundant DB load
@@ -75,6 +76,23 @@ export function useLibraryFlawStats(
   return useQuery({
     queryKey: ['library-flaw-stats', params],
     queryFn: () => libraryApi.getFlawStats(params),
+    staleTime: LIBRARY_STALE_TIME,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Fetch a single game by id for the "View game" modal.
+ *
+ * Query key: ['library-game', gameId]
+ * Disabled when gameId is null — no fetch fires until the modal opens.
+ * Returns the full GameFlawCard for rendering in LibraryGameCard.
+ */
+export function useLibraryGame(gameId: number | null): ReturnType<typeof useQuery<GameFlawCard>> {
+  return useQuery<GameFlawCard>({
+    queryKey: ['library-game', gameId],
+    queryFn: () => libraryApi.getGame(gameId!),
+    enabled: gameId !== null,
     staleTime: LIBRARY_STALE_TIME,
     refetchOnWindowFocus: false,
   });

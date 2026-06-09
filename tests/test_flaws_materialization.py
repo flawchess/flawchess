@@ -333,16 +333,17 @@ class TestFlawRecordToRow:
         assert row["is_squandered"] is True
 
     def test_passthrough_fields(self) -> None:
-        """es_before, es_after, move_san, fen are passed through unchanged."""
+        """fen is passed through; es_before/es_after/move_san are NOT in output (Phase 112 D-07)."""
         flaw = self._make_flaw(ply=15, es_before=0.72, es_after=0.31, tags=["middlegame"])
         flaw["move_san"] = "Rxf7"
         flaw["fen"] = "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R"
         row = flaw_record_to_row(user_id=1, game_id=10, flaw=flaw)
         assert row["ply"] == 15
-        assert row["es_before"] == pytest.approx(0.72)
-        assert row["es_after"] == pytest.approx(0.31)
-        assert row["move_san"] == "Rxf7"
         assert "r1bqkbnr" in row["fen"]
+        # Phase 112 (D-07): these three keys removed from DB write-path
+        assert "es_before" not in row, "es_before must not be in row dict (Phase 112 D-07)"
+        assert "es_after" not in row, "es_after must not be in row dict (Phase 112 D-07)"
+        assert "move_san" not in row, "move_san must not be in row dict (Phase 112 D-07)"
 
     def test_user_id_and_game_id_in_row(self) -> None:
         """user_id and game_id are present in the output row."""
@@ -397,8 +398,12 @@ class TestBulkInsertGameFlaws:
         assert stored.is_reversed is True
         assert stored.is_miss is False
         assert stored.tempo is None  # no tempo tag
-        assert abs(stored.es_before - 0.90) < 1e-6
-        assert abs(stored.es_after - 0.20) < 1e-6
+        # Phase 112 (D-07): es_before/es_after/move_san no longer on GameFlaw model
+        assert not hasattr(stored, "es_before")
+        assert not hasattr(stored, "es_after")
+        assert not hasattr(stored, "move_san")
+        # fen is still present (Pitfall 4)
+        assert stored.fen == flaw["fen"]
 
     @pytest.mark.asyncio
     async def test_on_conflict_do_nothing_is_idempotent(self, db_session: AsyncSession) -> None:

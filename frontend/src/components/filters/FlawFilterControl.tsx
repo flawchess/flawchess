@@ -85,7 +85,7 @@ interface TagFilterButtonProps {
 /**
  * A single tag toggle button. Renders the canonical lowercase-with-dash tag string
  * (e.g. `lucky`) — the same names the chips and Flaw-Stats panel use. Definitions are
- * surfaced once via the <TagLegend> "Explanation" popover on the Games cards, not as a
+ * surfaced once via the <TagLegend> "Tags" popover on the Games cards, not as a
  * per-button hover tooltip here.
  */
 function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButtonProps) {
@@ -120,7 +120,7 @@ function TagFilterButton({ tag, selected, color, bg, onToggle }: TagFilterButton
  * - Three family groups: Timing / Opportunity / Impact (phase tags excluded)
  *
  * Tag buttons show the canonical lowercase-with-dash name (matching chips + panel).
- * Definitions live in the <TagLegend> "Explanation" popover on the Games cards, not as
+ * Definitions live in the <TagLegend> "Tags" popover on the Games cards, not as
  * per-button hover tooltips here.
  *
  * UI-SPEC: uses toggle-active CSS variables for severity; family FAM_* colors for tags.
