@@ -831,10 +831,13 @@ export function EndgamesPage() {
               notificationDot: modifiedDotNode,
               content: (
                 <div className="p-3">
+                  {/* 'playedAs' omitted: endgame queries ignore color/playedAs entirely
+                      (see useEndgames "no color per D-02"), so the control was a no-op here. */}
                   <FilterPanel
                     filters={pendingFilters}
                     onChange={setPendingFilters}
                     onApply={handleDesktopFiltersApply}
+                    visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
                   />
                 </div>
               ),
@@ -948,10 +951,12 @@ export function EndgamesPage() {
                   </Tooltip>
                 </DrawerHeader>
                 <div className="overflow-y-auto flex-1 p-4 space-y-4">
+                  {/* 'playedAs' omitted — see desktop panel note (no-op for endgame queries). */}
                   <FilterPanel
                     filters={pendingFilters}
                     onChange={setPendingFilters}
                     onApply={handleMobileFiltersApply}
+                    visibleFilters={['timeControl', 'platform', 'opponent', 'opponentStrength', 'rated', 'recency']}
                   />
                 </div>
               </DrawerContent>
