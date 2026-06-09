@@ -1,25 +1,26 @@
 ---
 gsd_state_version: 1.0
-milestone: null
-milestone_name: null
-status: v1.24 Library Page shipped 2026-06-09 (tag v1.24) — milestone archived; no active milestone
-last_updated: "2026-06-09T21:30:00.000Z"
+milestone: v1.25
+milestone_name: Flaw-Stats Opponent Comparison
+status: planning
+last_updated: "2026-06-09T21:50:55.411Z"
 last_activity: 2026-06-09
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 37
-  completed_plans: 37
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: none — between milestones
-Status: v1.24 Library Page shipped 2026-06-09 (Phases 104–112; tag v1.24); milestone archived to `.planning/milestones/v1.24-*`
-Last activity: 2026-06-09
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-09 — Milestone v1.25 started
 
 ## Project Reference
 
