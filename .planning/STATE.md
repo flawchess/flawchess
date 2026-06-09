@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.24
 milestone_name: Library Page
-status: executing
-last_updated: "2026-06-09T16:36:29.747Z"
-last_activity: 2026-06-09 -- Phase 112 execution started
+status: Phase 112 shipped — squash-merged to main (b46b82a5)
+last_updated: "2026-06-09T20:55:58.430Z"
+last_activity: 2026-06-09
 progress:
   total_phases: 13
   completed_phases: 7
@@ -19,8 +19,8 @@ progress:
 
 Phase: 112 (flaws-subtab-card-rework) — EXECUTING
 Plan: 3 of 4
-Status: Ready to execute
-Last activity: 2026-06-09 -- Phase 112 execution started
+Status: Phase 112 shipped — squash-merged to main (b46b82a5)
+Last activity: 2026-06-09
 
 ## Project Reference
 
