@@ -8,6 +8,10 @@ in `YYYY-MM-DD` (Europe/Zurich).
 
 ## [Unreleased]
 
+## [v1.24] Library Page — 2026-06-09
+
+The **Library** — a new top-level destination and SEED-036's analysis half: an eval-driven mistake/flaw archive over your analyzed games. Import and Overview fold in as subtabs; new Games and Flaws subtabs surface every blunder, mistake, and inaccuracy with per-game eval charts, family-colored flaw tags, a finalized tag taxonomy, and a cross-tab Flaw filter. Phases 104–112.
+
 ### Added
 
 - **Library page** (Phase 104) — a new top-level **Library** destination in the main nav that hosts Import and Overview as deep-linkable subtabs (`/library/import`, `/library/overview`). Visiting the Library lands you on Import when you have no games yet and on Overview once you do.
@@ -709,7 +713,8 @@ bookmarks, game cards, and rating / stats pages.
 - Rating history, global stats, openings W/D/L charts.
 - Multi-user auth with data isolation.
 
-[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.23...HEAD
+[Unreleased]: https://github.com/flawchess/flawchess/compare/v1.24...HEAD
+[v1.24]: https://github.com/flawchess/flawchess/compare/v1.23...v1.24
 [v1.23]: https://github.com/flawchess/flawchess/compare/v1.22...v1.23
 [v1.22]: https://github.com/flawchess/flawchess/compare/v1.21...v1.22
 [v1.21]: https://github.com/flawchess/flawchess/compare/v1.20...v1.21

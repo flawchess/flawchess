@@ -149,14 +149,25 @@ Users get position-precise WDL analysis (openings + endgames + time pressure) on
 - ✓ AI endgame report reasons over peer-relative percentile rank (cohort-framed, "vs ~{anchor}-rated players") and narrates time pressure (Score Gap by Remaining Time, Clock Gap, Net Flag Rate) under the cohort `zone` gate; relaxed Data Analysis overview cap; prompt vocabulary audited against the concepts accordion + tooltip popovers; p-values + CI bounds kept OUT; `endgame_v35` → `endgame_v43` — v1.23 Phase 102 (LLM-01..07)
 - ✓ GM-feedback endgame recommendation refinements — decision-speed time-trouble advice, no fabricated mechanism, no named theoretical positions at any Elo; GM Noël Studer study link in the Recommendations card; prompt condensed ~35% (`endgame_v44`) — v1.23 Phase 103
 
-### Active — v1.24 Library Page (Phase 1)
+- ✓ Top-level **Library** page hosting Import and Overview as deep-linkable URL-routed `<Tabs variant="brand">` subtabs (`/library/import`, `/library/overview`); nav dropped to Library · Openings · Endgames (+ Admin); old routes redirect, `totalGames === 0` dot moved to Library, state-dependent landing (LIB-01..09) — v1.24 Phase 104
+- ✓ On-the-fly mistake-detection service — per-ply severity (Lichess-aligned 0.05/0.10/0.15 ES-drop thresholds, mate Option B) + attribution tags derived from stored `eval_cp`/`eval_mate`, typed `FlawRecord` contract, no schema change (LIBG-02/06/07) — v1.24 Phase 105
+- ✓ Games-surface backend — `GET /api/library/games` mistake-filtered archive (per-game B/M/I counts + deduped chips) + `GET /api/library/mistake-stats` aggregates, via `apply_game_filters` `EXISTS` + SQL window-scan (LIBG-08/09) — v1.24 Phase 106
+- ✓ Games subtab frontend — filterable game-card archive + Flaw-Stats panel (per-severity rates, tag distribution, trend, `% analyzed` + N); returning-user default subtab (LIBG-01/03) — v1.24 Phase 107
+- ✓ Flaws subtab + `game_flaws` materialization (composite PK `(user_id, game_id, ply)`, M+B-only) + per-flaw endpoint + shared cross-tab Flaw filter (single-flaw `EXISTS`, OR-within / AND-across family) + `scripts/backfill_flaws.py` single-classify-path — v1.24 Phase 108 (SEED-038)
+- ✓ Per-card expected-score eval chart — recharts area chart (white-perspective lichess sigmoid, 50% midline, advantage shading), your-flaw dots, phase-transition lines, per-ply tooltips scrubbing the miniboard; delivered inline on the existing payload (LIBG-10) — v1.24 Phase 109
+- ✓ Flaw-tag taxonomy overhaul — tempo `hasty`/`unrushed`, outcome-independent impact ladder `reversed`/`squandered`, canonical chip names + definition popovers (codegen'd `flawThresholds.ts` + CI drift gate), active-filter chip emphasis — v1.24 Phase 110
+- ✓ Apply-only filter model across all filter panels (Reset + Apply footer) + Flaws-subtab card rework (2-up `Card` grid, banded header + 132px miniboard + eval swing, View-game modal via `GET /api/library/games/{game_id}`) — v1.24 Phases 111, 112
 
-**v1.24 opened 2026-06-05.** See the Current Milestone section below. Requirements tracked in `.planning/REQUIREMENTS.md`.
+### Active — Planning next milestone
 
-Candidate later scope (from backlog / deferred):
+**v1.24 Library Page shipped 2026-06-09.** No milestone currently open — start the next with `/gsd-new-milestone`.
 
+Candidate next scope (from backlog / deferred):
+
+- [ ] **SEED-036 remainder** — the Analysis detail viewer (LIBG-04) + on-demand best-move endpoint (LIBG-05), deferred from v1.24; full spec in `.planning/seeds/SEED-036-library-page-milestone.md`
+- [ ] **SEED-037 Train** — spaced-repetition blunder drills over the new `game_flaws` archive (split from SEED-010; natural follow-on to v1.24)
 - [ ] **SEED-030 Track A** — split oversized multi-concern modules (structural code-health; Track B closed by Phase 99.1)
-- [ ] Other dormant seeds: SEED-036 (Library page — eval-driven mistake archive; split from SEED-010), SEED-037 (Train — spaced-repetition blunder drills; split from SEED-010), SEED-012 (client-side Stockfish tactics), SEED-029 (benchmarks deterministic rebuild), SEED-033 (cap explorer + partial-index Zobrist hashes)
+- [ ] Other dormant seeds: SEED-012 (client-side Stockfish tactics), SEED-029 (benchmarks deterministic rebuild), SEED-033 (cap explorer + partial-index Zobrist hashes), SEED-039/040 (tactic-family flaw tags, flaw-stats opponent comparison)
 
 ### Deferred (gated on full benchmark ingest — SEED-006)
 
@@ -174,23 +185,9 @@ Candidate later scope (from backlog / deferred):
 - Swipe-to-navigate between tabs — conflicts with chessboard touch gestures
 - Material configuration filter for endgames — deferred to future milestone
 
-## Current Milestone: v1.24 Library Page
-
-**Goal:** Introduce the Library page as a new top-level nav destination with URL-routed subtabs, folding the existing Import and Overview pages in as subtabs — each its own tsx file mirroring the Openings page structure. First step toward the eval-driven mistake archive of SEED-036.
-
-**Target features (Phase 1 only — the rest of SEED-036 is deliberately not roadmapped yet):**
-- New `/library` route + Library page shell using the deep-linkable Radix URL-routed `<Tabs variant="brand">` subtab pattern, same architecture as Openings/Endgames.
-- **Import subtab** — migrate `/import` → `/library/import` (leftmost), keep a redirect from `/import`. Its own tsx.
-- **Overview subtab** — migrate `/overview` → `/library/overview` (from `GlobalStats.tsx`), keep a redirect from `/overview`. Its own tsx.
-- Top-level nav drops to **Library · Openings · Endgames · (Admin)**; the `totalGames === 0` notification dot moves from the Import nav item to the **Library** nav item.
-- Subtab-level gating: Library is always accessible (it hosts Import); Import + Overview are always open. State-dependent landing: zero games → Import, has games → Overview (Games subtab does not exist yet).
-- Mobile parity (subtab control + responsive layout).
-
-**Deferred to future phases (NOT this milestone):** Games subtab + mistake-type filter, mistake-stats panel, Analysis viewer, mistake-detection backend service, on-demand best-move endpoint. Source of truth for the full vision stays `.planning/seeds/SEED-036-library-page-milestone.md`.
-
 ## Current State
 
-v1.24 Library Page — Phase 104 (single phase, the whole milestone) complete and verified 2026-06-05 (2 plans, local branch `gsd/phase-104-...`). A new top-level **Library** page now hosts the existing Import and Overview workflows as deep-linkable URL-routed `<Tabs variant="brand">` subtabs (`/library/import`, `/library/overview`), mirroring the Openings/Endgames shell pattern; both subtab pages are thin wrappers around the unchanged `ImportPage` / `GlobalStatsPage` (D-01). Top-level nav dropped to **Library · Openings · Endgames (+ Admin)** across desktop nav, mobile bottom bar, and mobile More drawer; the `totalGames === 0` notification dot moved to the Library item on all three surfaces; `/import`, `/overview`, `/rating`, `/global-stats` redirect into the matching subtab; Home's gameless redirect and `ImportRequiredRoute` now target `/library/import`. State-dependent landing (zero games → Import, has games → Overview); Library + both subtabs always reachable. Pure frontend restructure + route migration — no backend or schema changes. LIB-01..09 all satisfied; the one verification gap (a phase-introduced triple-nested `<main>` on `/library/*`) was fixed inline by making the LibraryPage shell a `<div>` (commit f1ff037b). The rest of SEED-036 (Games subtab, Analysis viewer, mistake-detection backend, best-move endpoint) stays unroadmapped in `.planning/seeds/SEED-036-library-page-milestone.md`. Next: `/gsd-complete-milestone` to ship v1.24.
+v1.24 Library Page shipped 2026-06-09 — 9 phases (104–112), 37 plans, ~105 commits over 6 days (`a3585d6c` → `4192f4b9`). What began as a pure-frontend shell + route migration grew into the full analysis half of SEED-036: an eval-driven mistake/flaw archive over the user's analyzed games. **Phase 104** introduced the top-level **Library** page (Import + Overview folded in as deep-linkable URL-routed `<Tabs variant="brand">` subtabs; nav dropped to Library · Openings · Endgames (+ Admin); old routes redirect, `totalGames === 0` dot moved to Library, state-dependent landing). **Phases 105–106** built the on-the-fly mistake-detection kernel (per-ply severity from stored `eval_cp`/`eval_mate` via Lichess-aligned ES-drop thresholds + attribution tags, typed `FlawRecord`) and the two Games-surface endpoints. **Phase 107** shipped the Games subtab (filterable card archive + Flaw-Stats panel; now the returning-user default). **Phase 108** added the Flaws subtab backed by a materialized **`game_flaws`** table (composite PK `(user_id, game_id, ply)`, M+B-only), a per-flaw endpoint, a shared cross-tab Flaw filter, and `scripts/backfill_flaws.py` over a single classify path. **Phase 109** put a per-card expected-score eval chart on each analyzed Games card (inline payload, no new endpoint). **Phase 110** finalized the flaw-tag taxonomy (tempo `hasty`/`unrushed`, outcome-independent impact ladder `reversed`/`squandered`, canonical chip names + definition popovers under a codegen drift gate). **Phases 111–112** polished the filter UX into a staged Apply-only model and reworked the Flaws subtab into a 2-up `Card` grid with a View-game modal (new `GET /api/library/games/{game_id}`). Four Alembic migrations (create `game_flaws`, alter impact columns, rename `lucky`, drop display columns); `game_flaws` ships empty to prod. Deferred to a later phase (still in SEED-036): the Analysis detail viewer (LIBG-04) and the on-demand best-move endpoint (LIBG-05). Twenty-five milestones complete (v1.0–v1.24), live at flawchess.com. Next: `/gsd-new-milestone`.
 
 v1.23 LLM Endgame-Insights Statistical-Reasoning Rework shipped 2026-06-03 — 2 phases (102, 103), 3 plans, 37 commits over 3 days (`3943b893` → `89403360`). Phase 102 reworked the endgame-insights LLM payload + prompt to reason over the v1.17–v1.21 statistical metric set and the v1.19 peer-relative percentile annotations: cohort-framed percentile rank woven into narration ("vs ~{anchor}-rated players"), time-pressure narration restored (Score Gap by Remaining Time, Clock Gap, Net Flag Rate), a relaxed Data Analysis overview cap that only fires longer with ≥3 distinct signals, and a vocabulary audit against the concepts accordion + tooltip popovers. The cohort `zone` field stays the sole gate on *whether* a metric is narrated (preserving `feedback_llm_significance_signal`); p-values + CI bounds stayed OUT. Prompt walked `endgame_v35` → `endgame_v43` across the auto-chain; HUMAN-UAT (LLM-07, the primary verification) signed off 2026-06-02 across short-history / sparse-section / full-history production users. Phase 103 (unplanned follow-on) applied three chess-GM recommendation-quality fixes — decision-speed time-trouble advice, no fabricated mechanism, no named theoretical positions at any Elo — added a fixed GM Noël Studer study link to the Recommendations card, and condensed the prompt ~35% (`endgame_v44`, payload shape unchanged). Phase 102 landed via local squash-merge (PR #173 closed); Phase 103 via direct gated commits. Twenty-four milestones complete (v1.0–v1.23), live at flawchess.com. Requirements LLM-01..07 all complete (archived at `.planning/milestones/v1.23-REQUIREMENTS.md`); REQUIREMENTS.md removed, fresh for the next milestone.
 
@@ -239,7 +236,7 @@ v1.12 Benchmark DB Infrastructure & Ingestion Pipeline shipped 2026-04-26 (PR #6
 
 ## Context
 
-- **Current state:** v1.13 shipped 2026-04-27. 70 phases complete across 13 milestones. Live at flawchess.com with CI/CD and Sentry.
+- **Current state:** v1.24 Library Page shipped 2026-06-09. 25 milestones complete (v1.0–v1.24); ~32k LOC backend (`app`), ~48k LOC frontend (`frontend/src`). Live at flawchess.com with CI/CD and Sentry.
 - **Stack:** FastAPI + React 19/TS/Vite 5 + PostgreSQL + python-chess + TanStack Query + Tailwind + shadcn/ui (Command, Popover)
 - **Auth:** FastAPI-Users (JWT + Google SSO + guest sessions with is_guest flag + impersonation via ClaimAwareJWTStrategy)
 - **Core algorithm:** Zobrist hashes (white_hash, black_hash, full_hash) precomputed at import for indexed integer equality lookups
@@ -401,6 +398,8 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
+*Last updated: 2026-06-09 after v1.24 Library Page milestone (Phases 104–112; tag v1.24). The Library shipped as a full eval-driven mistake/flaw archive: Import/Overview folded into deep-linkable subtabs, on-the-fly mistake-detection kernel + materialized `game_flaws` table, Games and Flaws subtabs, per-card expected-score eval charts, a finalized flaw-tag taxonomy (`hasty`/`unrushed`, `reversed`/`squandered`), a cross-tab Flaw filter, and an Apply-only filter model. What started as a pure-frontend Phase-104 shell grew into a 9-phase full-stack milestone. Deferred to a later phase (still in SEED-036): the Analysis detail viewer (LIBG-04) + best-move endpoint (LIBG-05). Phase 111 (Library UI polish) shipped via direct commits with no GSD plan artifacts. No active milestone follows; next is `/gsd-new-milestone` (leading candidate: SEED-036 remainder or SEED-037 Train over the new `game_flaws` archive). (Prior footer below.)*
+
 *Last updated: 2026-06-05 — v1.24 Library Page milestone opened. First phase only: create the `/library` page shell with the Openings-style URL-routed subtab pattern and fold the existing Import and Overview pages in as their own-tsx subtabs (`/import` → `/library/import`, `/overview` → `/library/overview`, with redirects); top-level nav drops to Library · Openings · Endgames · (Admin) and the zero-games notification dot moves to the Library nav item. The remaining SEED-036 scope (Games/Analysis subtabs, mistake-detection backend, mistake-type filter, mistake-stats panel, best-move endpoint) is deliberately left unplanned. (Prior footer below.)*
 
 *Last updated: 2026-05-31 — after v1.22 Maintenance — Test Isolation & Frontend Major Upgrades milestone (Phases 100, 101; tag v1.22). Per-run/per-xdist-worker template-cloned test DB retiring the session-start TRUNCATE lock (`pytest -n auto` safe, 2.2x faster), and 11 frontend deps brought to latest major across six bisectable atomic clusters (recharts 3 visual-UAT'd). No active milestone follows; next is `/gsd-new-milestone` (leading candidate: backlog Phase 999.7 LLM Statistical Reasoning). (Prior footer below.)*

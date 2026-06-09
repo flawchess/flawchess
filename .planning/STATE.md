@@ -1,32 +1,31 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.24
-milestone_name: Library Page
-status: Phase 112 shipped — squash-merged to main (b46b82a5)
-last_updated: "2026-06-09T20:55:58.430Z"
+milestone: null
+milestone_name: null
+status: v1.24 Library Page shipped 2026-06-09 (tag v1.24) — milestone archived; no active milestone
+last_updated: "2026-06-09T21:30:00.000Z"
 last_activity: 2026-06-09
 progress:
-  total_phases: 13
-  completed_phases: 7
+  total_phases: 9
+  completed_phases: 9
   total_plans: 37
-  completed_plans: 36
-  percent: 54
+  completed_plans: 37
+  percent: 100
 ---
 
 # Project State: FlawChess
 
 ## Current Position
 
-Phase: 112 (flaws-subtab-card-rework) — EXECUTING
-Plan: 3 of 4
-Status: Phase 112 shipped — squash-merged to main (b46b82a5)
+Phase: none — between milestones
+Status: v1.24 Library Page shipped 2026-06-09 (Phases 104–112; tag v1.24); milestone archived to `.planning/milestones/v1.24-*`
 Last activity: 2026-06-09
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-31 after v1.21 milestone)
+See: .planning/PROJECT.md (updated 2026-06-09 after v1.24 milestone)
 Core value: Position-precise WDL across openings + endgames + time pressure on top of users' actual chess.com / lichess games, with personalized LLM commentary on endgame performance and an auto-generated opening-strengths/weaknesses report.
-Current focus: v1.24 Library Page (single phase — Phase 104). First step of SEED-036: introduce the **Library** top-level page with deep-linkable `<Tabs variant="brand">` subtabs and fold the existing Import and Overview pages in as subtabs (each its own tsx, mirroring Openings). Migrate `/import` → `/library/import` and `/overview` → `/library/overview` with redirects; top-level nav drops to Library · Openings · Endgames (+ Admin); the `totalGames === 0` notification dot moves to the Library nav item; state-dependent landing (zero games → Import, has games → Overview); subtab-level gating (Library + both subtabs always open); mobile + browser-automation parity. **Pure frontend restructure + route migration — no backend endpoints, no schema changes.** The rest of SEED-036 (Games subtab, Analysis viewer, mistake-detection backend, mistake-type filter, mistake-stats panel, best-move endpoint) is deliberately NOT roadmapped — it stays in `.planning/seeds/SEED-036-library-page-milestone.md`. Requirements LIB-01..09 all map to Phase 104 — **complete and verified 2026-06-05**. Next: `/gsd-complete-milestone` to ship v1.24.
+Current focus: No active milestone. v1.24 delivered the **Library** — Import/Overview folded into deep-linkable subtabs plus the full eval-driven mistake/flaw archive of SEED-036's analysis half (on-the-fly mistake kernel, materialized `game_flaws` table, Games + Flaws subtabs, per-card eval charts, finalized flaw-tag taxonomy, cross-tab Flaw filter, Apply-only filters). Deferred to a later phase (still in SEED-036): the Analysis detail viewer (LIBG-04) + best-move endpoint (LIBG-05). Start the next milestone with `/gsd-new-milestone` (leading candidates: the SEED-036 remainder, or SEED-037 Train — spaced-repetition blunder drills over the new `game_flaws` archive).
 
 ## Milestone Progress
 
@@ -49,6 +48,15 @@ Twenty-two milestones complete (v1.0–v1.21). v1.21 Time-Control-Aware Endgame 
 ## Accumulated Context
 
 ### Deferred Items
+
+Reviewed and resolved/carried at **v1.24 milestone close on 2026-06-09** (user chose "mark all resolved & proceed"; open-artifact audit: 24 items, none blocking the release):
+
+| Category | Item | Disposition |
+|----------|------|-------------|
+| uat | Phase 108 / 109 UAT.md (`testing`, pending scenarios) | Resolved — both human-UAT'd at ship time per ROADMAP/SUMMARY notes; only the `.md` frontmatter status is stale (no functional gap). Phase 112 UAT already `passed`. |
+| quick_task | 10 incomplete (260531-jga deps, 260601-og7 explorer cap, 260603-o8m/pgv/q85 openings, 260604-t54 insights rate-limit, 260606-glq/hfy/io6 library, 260608-w23 filters) | Carried — the library/filter/insights ones shipped within v1.24 phases (changelog reflects them) but frontmatter unset; the rest are long-range. Not v1.24 blockers. |
+| todos | 5 pending (bitboard storage, phase-70 amendments, benchmark-rebuild/-skill-v2, rerun-benchmarks) + ~5 more | Carried — long-range ideas + per-phase backfill tasks, not v1.24-scoped. |
+| seeds | SEED-012, SEED-036 (deferred half), SEED-037, SEED-038/039/040 | Dormant/carried — SEED-038 delivered (Phase 108); SEED-036's deferred surfaces (LIBG-04/05) + SEED-037 Train are the leading next-milestone candidates. |
 
 Acknowledged and deferred at v1.22 milestone close on 2026-05-31 (open-artifact audit: 13 items — all dormant seeds + long-range todos, none v1.22-scoped):
 
